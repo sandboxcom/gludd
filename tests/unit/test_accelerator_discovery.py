@@ -15,6 +15,10 @@ from general_ludd.hardware.accelerator_discovery import (
     parse_slurm_nodes,
     probe_intel_xpu_gpus,
 )
+from general_ludd.hardware.accelerator_slurm import (
+    parse_slurm_nodes as split_parse_slurm_nodes,
+)
+from general_ludd.hardware.accelerator_types import AcceleratorKind as SplitAcceleratorKind
 from general_ludd.hardware.survey import GpuInfo
 
 
@@ -24,6 +28,12 @@ class _Survey:
 
     def probe_gpus(self) -> list[GpuInfo]:
         return list(self._gpus)
+
+
+def test_discovery_preserves_split_module_public_compatibility() -> None:
+    """Existing integrations keep stable imports after internal decomposition."""
+    assert AcceleratorKind is SplitAcceleratorKind
+    assert parse_slurm_nodes is split_parse_slurm_nodes
 
 
 class _Slurm:

@@ -7,6 +7,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from general_ludd.models.model_deployment_metadata import (
+    ModelDeploymentMetadata as SplitModelDeploymentMetadata,
+)
 from general_ludd.models.model_registry import (
     DownloadedModel,
     ModelDeploymentMetadata,
@@ -436,3 +439,7 @@ class TestModelRegistryRefresh:
             reg._downloaded["manual"] = DownloadedModel(model_id="manual", local_path="/tmp")
             reg.refresh()
             assert reg.get_downloaded("manual") is None
+def test_registry_preserves_deployment_metadata_public_compatibility() -> None:
+    """Registry callers retain the established deployment metadata import."""
+    assert ModelDeploymentMetadata is SplitModelDeploymentMetadata
+

@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Check out the exact revision
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
       - name: Materialize the short-lived GitHub assertion
@@ -38,8 +40,9 @@ jobs:
               flag: 'wx',
             });
       - name: Deploy, exercise, and tear down one bounded model candidate
-        run: make azure-containerapp-live-proof
+        run: make azure-self-improve-live-proof
         env:
+          SELF_IMPROVE_MODEL_PATH: ""
           AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE: workload_identity
           AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE: ""
           AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE: ${{ runner.temp }}/gludd-azure-oidc.jwt

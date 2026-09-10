@@ -51,6 +51,9 @@ from general_ludd.self_improve.azure_containerapp_bootstrap import (
     WorkloadIdentityAzureCredentialProvider,
     build_azure_containerapp_bootstrap_wiring,
 )
+from general_ludd.self_improve.azure_containerapp_bootstrap_credentials import (
+    AzureCredentialAcquisition as SplitAzureCredentialAcquisition,
+)
 from general_ludd.self_improve.model_candidates import ModelCandidateProvider
 
 SUBSCRIPTION = "11111111-2222-3333-4444-555555555555"
@@ -59,6 +62,11 @@ CLIENT = "99999999-8888-7777-6666-555555555555"
 REVISION = "7ae557604adf67be50417f59c2c2f167def9a775"
 IMAGE = "vllm/vllm-openai@sha256:" + ("a" * 64)
 NOW = datetime(2026, 9, 7, 12, 0, tzinfo=UTC)
+
+
+def test_bootstrap_preserves_credential_public_compatibility() -> None:
+    """Existing callers retain the established credential acquisition import."""
+    assert AzureCredentialAcquisition is SplitAzureCredentialAcquisition
 
 
 def _retention_config(**overrides: object) -> dict[str, object]:

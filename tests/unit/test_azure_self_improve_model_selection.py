@@ -32,12 +32,20 @@ from general_ludd.self_improve.azure_model_selection import (
     model_selection_identity_digest,
     write_azure_model_selection,
 )
+from general_ludd.self_improve.azure_model_selection_types import (
+    AzureModelSelectionPolicy as SplitAzureModelSelectionPolicy,
+)
 from general_ludd.self_improve.candidate_classification import (
     classify_candidate_task,
 )
 from general_ludd.self_improve.model_candidates import ModelCandidateProvider
 
 IMAGE = "registry.example/vllm@sha256:" + "9" * 64
+
+
+def test_selector_preserves_policy_public_compatibility() -> None:
+    """Existing selection integrations retain the established policy import."""
+    assert AzureModelSelectionPolicy is SplitAzureModelSelectionPolicy
 
 
 def _digest(value: str) -> str:
