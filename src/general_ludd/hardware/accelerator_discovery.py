@@ -14,7 +14,7 @@ import math
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Protocol, cast
+from typing import Protocol, cast, runtime_checkable
 
 from general_ludd.hardware.survey import GpuInfo, HardwareSurvey
 
@@ -188,6 +188,7 @@ class AcceleratorInventory:
         }
 
 
+@runtime_checkable
 class SlurmNodeSource(Protocol):
     """Minimum existing Slurm adapter surface needed by discovery."""
 
@@ -196,6 +197,7 @@ class SlurmNodeSource(Protocol):
         ...
 
 
+@runtime_checkable
 class _XpuRuntime(Protocol):
     def is_available(self) -> bool: ...
 
@@ -204,10 +206,12 @@ class _XpuRuntime(Protocol):
     def get_device_properties(self, index: int) -> object: ...
 
 
+@runtime_checkable
 class _TorchRuntime(Protocol):
     xpu: _XpuRuntime
 
 
+@runtime_checkable
 class _JaxRuntime(Protocol):
     def devices(self) -> Sequence[object]: ...
 
