@@ -19,6 +19,9 @@ from general_ludd.self_improve._candidate_prediction import (
     stable_digest,
     stratum_key,
 )
+from general_ludd.self_improve.candidate_classification import (
+    CandidateTaskClassification,
+)
 from general_ludd.self_improve.model_candidates import ModelCandidateProvider
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 
@@ -278,6 +281,28 @@ def load_calibration_attempts(
     return tuple(attempts)
 
 
+def load_calibration_attempts_for_task(
+    store: CapabilityEvidenceStore,
+    classification: CandidateTaskClassification,
+) -> tuple[CandidateAttempt, ...]:
+    """Load untampered outcomes for one content-free task category."""
+    if not isinstance(store, CapabilityEvidenceStore):
+        raise ValueError("store must be a CapabilityEvidenceStore")
+    if not isinstance(classification, CandidateTaskClassification):
+        raise ValueError("classification must be a CandidateTaskClassification")
+    attempts: list[CandidateAttempt] = []
+    for record in store.list_all():
+        if (
+            record.get("task_type") != classification.task_type.value
+            or record.get("task_kind") != classification.task_kind
+        ):
+            continue
+        attempt = _attempt_from_record(record)
+        if attempt is not None:
+            attempts.append(attempt)
+    return tuple(attempts)
+
+
 def prequential_brier_skill(
     attempts: Sequence[CandidateAttempt],
 ) -> CalibrationReport:
@@ -327,6 +352,7 @@ __all__ = (
     "CalibrationSkipReason",
     "CalibrationUpdate",
     "load_calibration_attempts",
+    "load_calibration_attempts_for_task",
     "prequential_brier_skill",
     "record_calibration_attempt",
 )

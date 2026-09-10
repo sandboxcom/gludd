@@ -10,6 +10,9 @@ from typing import Any, cast
 import pytest
 
 from general_ludd.schemas.benchmark import TaskType
+from general_ludd.self_improve.candidate_classification import (
+    classify_candidate_task,
+)
 from general_ludd.self_improve.candidate_routing import (
     CalibrationSkipReason,
     CandidateAttempt,
@@ -17,6 +20,7 @@ from general_ludd.self_improve.candidate_routing import (
     CandidatePrediction,
     CandidateTrialPurpose,
     load_calibration_attempts,
+    load_calibration_attempts_for_task,
     plan_bounded_candidate_trials,
     prequential_brier_skill,
     rank_candidate_predictions,
@@ -358,6 +362,32 @@ def test_loader_round_trips_valid_records_and_ignores_tampering(tmp_path: Any) -
     )
 
     assert loaded == (accepted,)
+
+
+def test_task_loader_returns_only_validated_exact_task_category_evidence(
+    tmp_path: Any,
+) -> None:
+    store = CapabilityEvidenceStore(str(tmp_path / "routing.json"))
+    classification = classify_candidate_task("Implement a bounded Python feature")
+    matching = _accepted(
+        replace(
+            _prediction("matching"),
+            task_type=classification.task_type,
+            task_kind=classification.task_kind,
+        )
+    )
+    other_kind = _accepted(
+        replace(matching.prediction, task_kind="documentation_draft")
+    )
+    record_calibration_attempt(store, matching, privacy_approved=True)
+    record_calibration_attempt(store, other_kind, privacy_approved=True)
+    tampered = dict(store.list_all()[0])
+    tampered["accepted"] = False
+    store.register_evidence(tampered)
+
+    loaded = load_calibration_attempts_for_task(store, classification)
+
+    assert loaded == (matching,)
 
 
 def test_ranking_uses_only_exact_identity_and_stratum_evidence() -> None:

@@ -30,6 +30,7 @@ class GpuInfo:
     vram_gb: float
     index: int = 0
     backend: str = ""  # "nvidia", "metal", "rocm", "unknown"
+    vendor: str = ""
 
 
 @dataclass(frozen=True)
@@ -48,13 +49,16 @@ class HardwareInventory:
 
     @property
     def gpu_count(self) -> int:
+        """Return the number of discovered GPU devices."""
         return len(self.gpus)
 
     @property
     def total_vram_gb(self) -> float:
+        """Return total reported accelerator memory in GiB."""
         return round(sum(g.vram_gb for g in self.gpus), 2)
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize the hardware snapshot to JSON-compatible values."""
         return asdict(self)
 
 
@@ -210,6 +214,17 @@ class HardwareSurvey:
                         break
         return gpus
 
+    def probe_gpu_xpu(self) -> list[GpuInfo]:
+        """Query Intel GPUs through PyTorch's supported XPU runtime API."""
+        try:
+            from general_ludd.hardware.accelerator_discovery import (
+                probe_intel_xpu_gpus,
+            )
+
+            return list(probe_intel_xpu_gpus())
+        except Exception:
+            return []
+
     def probe_gpus(self) -> list[GpuInfo]:
         """Discover all local GPUs by trying each backend."""
         gpus: list[GpuInfo] = []
@@ -225,7 +240,12 @@ class HardwareSurvey:
         gpus.extend(metal_gpus)
 
         rocm_gpus = self.probe_gpu_rocm()
+        if rocm_gpus:
+            return rocm_gpus
         gpus.extend(rocm_gpus)
+
+        xpu_gpus = self.probe_gpu_xpu()
+        gpus.extend(xpu_gpus)
 
         return gpus
 

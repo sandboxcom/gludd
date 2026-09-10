@@ -41,15 +41,18 @@ def test_live_workflow_materializes_one_private_short_lived_assertion() -> None:
     assert "core.setSecret(token)" in workflow
     assert "fs.rmSync(tokenPath" in workflow
     assert "if: always()" in workflow
+    assert "fetch-depth: 0" in workflow
 
 
 def test_live_workflow_calls_only_the_bounded_make_contract() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    assert "make azure-containerapp-live-proof" in workflow
+    assert "make azure-self-improve-live-proof" in workflow
+    assert "make azure-containerapp-live-proof" not in workflow
     assert "AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE: workload_identity" in workflow
     assert "AZURE_CONTAINERAPP_LIVE_PROOF_LIVE: '1'" in workflow
     assert "AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD: '5'" in workflow
     assert "AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES: '60'" in workflow
     assert "AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET: always_destroy" in workflow
+    assert 'SELF_IMPROVE_MODEL_PATH: ""' in workflow
     assert re.search(r"timeout-minutes:\s+75\b", workflow)

@@ -14,6 +14,7 @@ from general_ludd.self_improve._candidate_calibration import (
     CalibrationSkipReason,
     CalibrationUpdate,
     load_calibration_attempts,
+    load_calibration_attempts_for_task,
     prequential_brier_skill,
     record_calibration_attempt,
 )
@@ -61,6 +62,7 @@ __all__ = (
     "CandidateTrialPurpose",
     "execute_candidate_trial_plan",
     "load_calibration_attempts",
+    "load_calibration_attempts_for_task",
     "plan_bounded_candidate_trials",
     "prequential_brier_skill",
     "rank_candidate_predictions",

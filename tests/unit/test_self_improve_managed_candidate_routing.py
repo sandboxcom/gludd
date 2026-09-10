@@ -34,6 +34,7 @@ from general_ludd.self_improve.managed_candidate_routing import (
     route_managed_candidate_proposals,
 )
 from general_ludd.self_improve.model_candidates import (
+    AzureContainerAppCandidateIdentity,
     AzureFoundryAPIFamily,
     AzureFoundryCandidateIdentity,
     BackendCallBudget,
@@ -70,6 +71,23 @@ def _azure_identity() -> AzureFoundryCandidateIdentity:
         api_version="v1",
         model_version="2026-09-01",
         etag='"immutable-etag"',
+    )
+
+
+def _containerapp_identity(suffix: str) -> AzureContainerAppCandidateIdentity:
+    app = f"gludd-vllm-{suffix}"
+    return AzureContainerAppCandidateIdentity(
+        endpoint=f"https://{app}.unit.eastus.azurecontainerapps.io",
+        resource_id=(
+            "/subscriptions/12345678-1234-1234-1234-123456789abc/"
+            "resourceGroups/gludd-models-eastus/providers/Microsoft.App/"
+            f"containerApps/{app}"
+        ),
+        revision_name=f"{app}--0000001",
+        image_digest="sha256:" + "c" * 64,
+        model_name="vendor/discovered-coder",
+        model_revision="d" * 40,
+        workload_profile_type="Consumption-GPU-NC24-A100",
     )
 
 
@@ -170,7 +188,7 @@ def _spec(
     failure: BackendInfrastructureError | None = None,
     barrier: threading.Barrier | None = None,
 ) -> ManagedCandidateTrialSpec[str]:
-    remote = identity.provider is ModelCandidateProvider.AZURE_FOUNDRY
+    remote = identity.provider is not ModelCandidateProvider.LOCAL_GGUF
     backend = _Backend(identity, response, calls, failure=failure, barrier=barrier)
     selected_decoder = decode or (
         (lambda value: value.text)
@@ -284,6 +302,46 @@ def test_historical_rejection_and_acceptance_promote_azure_on_next_task_trial(
     assert second.selected == "azure-better"
     assert second.selected_prediction.provider is ModelCandidateProvider.AZURE_FOUNDRY
     assert len(store.list_all()) == 4
+
+
+def test_containerapp_calibration_survives_owned_app_redeployment(
+    tmp_path: Path,
+) -> None:
+    store = CapabilityEvidenceStore(str(tmp_path / "evidence.json"))
+    first_calls: list[ModelCandidateProvider] = []
+    first = _route(
+        tmp_path,
+        store,
+        (
+            _spec(_local_identity(), "local-rejected", first_calls, accepted=False),
+            _spec(
+                _containerapp_identity("first"),
+                AzureCandidateResponse("cloud-accepted", 13, 7, 20),
+                first_calls,
+                accepted=True,
+            ),
+        ),
+    )
+    assert first.selected == "cloud-accepted"
+
+    second_calls: list[ModelCandidateProvider] = []
+    second = _route(
+        tmp_path,
+        store,
+        (
+            _spec(_local_identity(), "local-now-valid", second_calls, accepted=True),
+            _spec(
+                _containerapp_identity("second"),
+                AzureCandidateResponse("cloud-redeployed", 13, 7, 20),
+                second_calls,
+                accepted=True,
+            ),
+        ),
+        task_text="Add another bounded public Python capability.",
+    )
+
+    assert second_calls[0] is ModelCandidateProvider.AZURE_CONTAINER_APP
+    assert second.selected == "cloud-redeployed"
 
 
 def test_infrastructure_failure_is_censored_and_excluded_from_calibration(

@@ -142,6 +142,11 @@ class LocalGGUFCandidateIdentity:
             }
         )
 
+    @property
+    def evidence_identity_digest(self) -> str:
+        """Return the stable artifact identity used for learned outcomes."""
+        return self.identity_digest
+
 
 _MODEL_INFERENCE_SUFFIXES = (
     ".services.ai.azure.com",
@@ -218,6 +223,11 @@ class AzureFoundryCandidateIdentity:
             }
         )
 
+    @property
+    def evidence_identity_digest(self) -> str:
+        """Return the stable deployment identity used for learned outcomes."""
+        return self.identity_digest
+
 
 @dataclass(frozen=True, slots=True)
 class AzureContainerAppCandidateIdentity:
@@ -281,6 +291,20 @@ class AzureContainerAppCandidateIdentity:
                 "provider": self.provider.value,
                 "resource_id": self.resource_id,
                 "revision_name": self.revision_name,
+                "workload_profile_type": self.workload_profile_type,
+            }
+        )
+
+    @property
+    def evidence_identity_digest(self) -> str:
+        """Bind model/runtime/GPU truth while excluding ephemeral app coordinates."""
+        return _stable_digest(
+            {
+                "image_digest": self.image_digest,
+                "model_name": self.model_name,
+                "model_revision": self.model_revision,
+                "protocol": "gludd-containerapp-candidate-evidence-v1",
+                "provider": self.provider.value,
                 "workload_profile_type": self.workload_profile_type,
             }
         )

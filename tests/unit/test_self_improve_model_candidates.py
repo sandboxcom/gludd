@@ -200,6 +200,29 @@ def test_containerapp_identity_digest_binds_every_deployment_field(
     assert mutation(original).identity_digest != original.identity_digest
 
 
+def test_containerapp_evidence_identity_survives_ephemeral_redeployment() -> None:
+    original = _azure_containerapp_identity()
+    redeployed = replace(
+        original,
+        endpoint="https://gludd-vllm-next.otherstone.eastus.azurecontainerapps.io",
+        resource_id=original.resource_id.replace(
+            "gludd-vllm-proof", "gludd-vllm-next"
+        ),
+        revision_name="gludd-vllm-next--0000001",
+    )
+
+    assert redeployed.identity_digest != original.identity_digest
+    assert redeployed.evidence_identity_digest == original.evidence_identity_digest
+    assert replace(
+        redeployed,
+        model_revision="e" * 40,
+    ).evidence_identity_digest != original.evidence_identity_digest
+    assert replace(
+        redeployed,
+        workload_profile_type="Consumption-GPU-NC24-A100",
+    ).evidence_identity_digest != original.evidence_identity_digest
+
+
 def test_containerapp_candidate_requires_explicit_azure_opt_in() -> None:
     backend = _FakeBackend(_azure_containerapp_identity())
     disabled = BoundedCandidateSession(backend, _budget(), azure_enabled=False)

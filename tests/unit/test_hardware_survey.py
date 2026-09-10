@@ -232,6 +232,29 @@ class TestHardwareSurveyROCm:
             assert survey.probe_gpu_rocm() == []
 
 
+class TestHardwareSurveyIntelXpu:
+    def test_intel_xpu_uses_shared_runtime_discovery(self):
+        survey = HardwareSurvey()
+        gpu = GpuInfo(name="Intel Arc", vram_gb=16.0, backend="xpu")
+        with patch(
+            "general_ludd.hardware.accelerator_discovery.probe_intel_xpu_gpus",
+            return_value=(gpu,),
+        ) as probe:
+            assert survey.probe_gpu_xpu() == [gpu]
+        probe.assert_called_once()
+
+    def test_intel_xpu_is_used_when_other_backends_are_absent(self):
+        survey = HardwareSurvey()
+        gpu = GpuInfo(name="Intel Arc", vram_gb=16.0, backend="xpu")
+        with (
+            patch.object(survey, "probe_gpu_nvidia", return_value=[]),
+            patch.object(survey, "probe_gpu_metal", return_value=[]),
+            patch.object(survey, "probe_gpu_rocm", return_value=[]),
+            patch.object(survey, "probe_gpu_xpu", return_value=[gpu]),
+        ):
+            assert survey.probe_gpus() == [gpu]
+
+
 class TestHardwareSurveyProbeGpus:
     def test_nvidia_wins_over_others(self):
         survey = HardwareSurvey()

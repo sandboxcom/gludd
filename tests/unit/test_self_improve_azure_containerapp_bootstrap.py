@@ -36,6 +36,7 @@ from general_ludd.infra.azure_containerapp_make_types import (
 from general_ludd.infra.azure_containerapp_owned_candidate import (
     owned_candidate_deployment_digest,
 )
+from general_ludd.infra.azure_containerapp_topology import AzureProfileCapacity
 from general_ludd.infra.azure_idle_retention import (
     AzureIdleRetentionPolicy,
     AzureRetentionPreset,
@@ -75,6 +76,19 @@ def _retention_config(**overrides: object) -> dict[str, object]:
     }
     result.update(overrides)
     return result
+
+
+def _profile_capacity(
+    profile: object,
+    *,
+    max_replicas: int,
+    hourly_cost_microusd: int,
+) -> dict[str, object]:
+    return AzureProfileCapacity(
+        profile=cast(Any, profile),
+        max_replicas=max_replicas,
+        hourly_cost_microusd_per_replica=hourly_cost_microusd,
+    ).payload()
 
 
 def test_runtime_trace_forwards_only_structured_infrastructure_facts() -> None:
@@ -120,10 +134,18 @@ def _config(**overrides: object) -> dict[str, object]:
         "runtime_overhead_mib": 3072,
         "peak_concurrency": 3,
         "per_replica_concurrency": 2,
-        "t4_max_replicas": 4,
-        "a100_max_replicas": 2,
-        "t4_hourly_cost_microusd": 900_000,
-        "a100_hourly_cost_microusd": 3_500_000,
+        "profile_capacities": [
+            _profile_capacity(
+                T4_PROFILE,
+                max_replicas=4,
+                hourly_cost_microusd=900_000,
+            ),
+            _profile_capacity(
+                A100_PROFILE,
+                max_replicas=2,
+                hourly_cost_microusd=3_500_000,
+            ),
+        ],
         "max_hourly_cost_microusd": 4_000_000,
         "max_cost_usd": 5.0,
         "ttl_minutes": 30,
@@ -460,17 +482,66 @@ def test_large_model_selects_a100_without_user_selecting_a_gpu(tmp_path: Path) -
     assert wiring.app_policy.workload_profile_name == "gpu-a100"
 
 
+def test_inventory_can_expose_only_the_selected_gpu_profile(tmp_path: Path) -> None:
+    wiring = _build(
+        tmp_path,
+        _config(
+            model_name="vendor/task-selected-coder",
+            parameter_count=20_000_000_000,
+            peak_concurrency=1,
+            per_replica_concurrency=1,
+            profile_capacities=[
+                _profile_capacity(
+                    A100_PROFILE,
+                    max_replicas=1,
+                    hourly_cost_microusd=3_500_000,
+                )
+            ],
+        ),
+        resources_builder=lambda **_kwargs: pytest.fail("must stay lazy"),
+    )
+
+    assert isinstance(wiring, AzureContainerAppBootstrapWiring)
+    assert [profile.workload_profile_type for profile in wiring.topology.profiles] == [
+        A100_PROFILE.workload_profile_type
+    ]
+
+
 @pytest.mark.parametrize(
     ("override", "match"),
     [
         ({"unexpected": "field"}, "exact schema"),
         ({"acknowledgement": "yes"}, "acknowledgement"),
-        ({"t4_hourly_cost_microusd": True}, "bounded integer"),
+        (
+            {
+                "profile_capacities": [
+                    {
+                        **_profile_capacity(
+                            T4_PROFILE,
+                            max_replicas=1,
+                            hourly_cost_microusd=900_000,
+                        ),
+                        "hourly_cost_microusd_per_replica": True,
+                    }
+                ]
+            },
+            "hourly_cost",
+        ),
         (
             {
                 "peak_concurrency": 9,
-                "t4_max_replicas": 2,
-                "a100_max_replicas": 8,
+                "profile_capacities": [
+                    _profile_capacity(
+                        T4_PROFILE,
+                        max_replicas=2,
+                        hourly_cost_microusd=900_000,
+                    ),
+                    _profile_capacity(
+                        A100_PROFILE,
+                        max_replicas=8,
+                        hourly_cost_microusd=3_500_000,
+                    ),
+                ],
             },
             "profile quota",
         ),

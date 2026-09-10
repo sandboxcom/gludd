@@ -3,27 +3,36 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from typing import cast
 
 from general_ludd.infra.azure_containerapp_gpu import (
-    A100_PROFILE,
-    T4_PROFILE,
+    AzureContainerAppGPUProfile,
     ModelServingRequirement,
 )
 
 _TASK_ID_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
 _SUPPORTED_RUNTIMES = frozenset({"vllm-openai"})
-_PROFILE_NAMES = {
-    T4_PROFILE.workload_profile_type: "gpu-t4",
-    A100_PROFILE.workload_profile_type: "gpu-a100",
-}
 _MAX_APPS = 64
 _MAX_REPLICAS = 1_024
 _MAX_REPLICAS_PER_APP = 100
 _MAX_CONCURRENCY = 100_000
 _MAX_TTL_MINUTES = 24 * 60
 _MAX_COST_MICROUSD = 1_000_000_000_000
+_PROFILE_CAPACITY_KEYS = frozenset(
+    {
+        "cpu_cores",
+        "gpu_vram_mib",
+        "hourly_cost_microusd_per_replica",
+        "max_replicas",
+        "memory_gib",
+        "name",
+        "usable_vram_mib",
+        "workload_profile_name",
+        "workload_profile_type",
+    }
+)
 
 
 class AzureRunnerTopologyError(ValueError):
@@ -43,19 +52,61 @@ def _bounded_positive(name: str, value: int, maximum: int) -> None:
 class AzureProfileCapacity:
     """One permitted serverless-GPU profile and its hard budget."""
 
-    workload_profile_type: str
+    profile: AzureContainerAppGPUProfile
     max_replicas: int
     hourly_cost_microusd_per_replica: int
 
     def __post_init__(self) -> None:
         """Require a documented profile and finite positive bounds."""
-        if self.workload_profile_type not in _PROFILE_NAMES:
-            raise ValueError("workload_profile_type must be a supported GPU profile")
+        if not isinstance(self.profile, AzureContainerAppGPUProfile):
+            raise ValueError("profile must be an AzureContainerAppGPUProfile")
         _bounded_positive("max_replicas", self.max_replicas, _MAX_REPLICAS)
         _bounded_positive(
             "hourly_cost_microusd_per_replica",
             self.hourly_cost_microusd_per_replica,
             _MAX_COST_MICROUSD,
+        )
+
+    @property
+    def workload_profile_type(self) -> str:
+        """Return the provider inventory key used by topology maps."""
+        return self.profile.workload_profile_type
+
+    def payload(self) -> dict[str, object]:
+        """Return one generic, provider-inventory capacity record."""
+        return {
+            "cpu_cores": self.profile.cpu_cores,
+            "gpu_vram_mib": self.profile.gpu_vram_mib,
+            "hourly_cost_microusd_per_replica": (
+                self.hourly_cost_microusd_per_replica
+            ),
+            "max_replicas": self.max_replicas,
+            "memory_gib": self.profile.memory_gib,
+            "name": self.profile.name,
+            "usable_vram_mib": self.profile.usable_vram_mib,
+            "workload_profile_name": self.profile.workload_profile_name,
+            "workload_profile_type": self.profile.workload_profile_type,
+        }
+
+    @classmethod
+    def from_payload(cls, raw: object) -> AzureProfileCapacity:
+        """Parse one exact-schema inventory record without named accelerator keys."""
+        if not isinstance(raw, Mapping) or set(raw) != _PROFILE_CAPACITY_KEYS:
+            raise ValueError("profile capacity has an unsupported schema")
+        return cls(
+            profile=AzureContainerAppGPUProfile(
+                name=cast(str, raw["name"]),
+                workload_profile_name=cast(str, raw["workload_profile_name"]),
+                workload_profile_type=cast(str, raw["workload_profile_type"]),
+                gpu_vram_mib=cast(int, raw["gpu_vram_mib"]),
+                usable_vram_mib=cast(int, raw["usable_vram_mib"]),
+                cpu_cores=cast(int, raw["cpu_cores"]),
+                memory_gib=cast(int, raw["memory_gib"]),
+            ),
+            max_replicas=cast(int, raw["max_replicas"]),
+            hourly_cost_microusd_per_replica=cast(
+                int, raw["hourly_cost_microusd_per_replica"]
+            ),
         )
 
 

@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "models": [
+    {
+      "model_id": "gludd-ci/task-coder-seven",
+      "revision": "1111111111111111111111111111111111111111",
+      "parameter_count": 7000000000,
+      "context_tokens": 32768,
+      "storage_bytes": 14000000000,
+      "weight_bits": 16,
+      "license_id": "apache-2.0",
+      "tags": [
+        "safetensors",
+        "text-generation"
+      ],
+      "pipeline_tag": "text-generation",
+      "library_name": "transformers",
+      "downloads": 100
+    },
+    {
+      "model_id": "gludd-ci/task-coder-twenty",
+      "revision": "2222222222222222222222222222222222222222",
+      "parameter_count": 20000000000,
+      "context_tokens": 65536,
+      "storage_bytes": 40000000000,
+      "weight_bits": 16,
+      "license_id": "apache-2.0",
+      "tags": [
+        "safetensors",
+        "text-generation"
+      ],
+      "pipeline_tag": "text-generation",
+      "library_name": "transformers",
+      "downloads": 50
+    }
+  ]
+}

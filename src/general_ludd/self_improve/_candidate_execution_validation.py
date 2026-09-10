@@ -77,7 +77,8 @@ def validated_trial_calls(
     for trial, call in zip(trials, ordered, strict=True):
         identity = call.session.candidate_identity
         if (
-            identity.identity_digest != trial.prediction.candidate_identity_digest
+            identity.evidence_identity_digest
+            != trial.prediction.candidate_identity_digest
             or identity.provider is not trial.prediction.provider
         ):
             raise ValueError("call session identity does not match its approved trial")

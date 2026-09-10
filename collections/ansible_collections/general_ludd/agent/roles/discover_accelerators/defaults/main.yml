@@ -1,0 +1,5 @@
+---
+gludd_accelerator_scope: all
+gludd_daemon_url: http://localhost:8000
+gludd_daemon_psk: ""
+gludd_accelerator_timeout: 30

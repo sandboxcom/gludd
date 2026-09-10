@@ -10,6 +10,7 @@ import pytest
 from general_ludd.infra.azure_containerapp_gpu import (
     A100_PROFILE,
     T4_PROFILE,
+    AzureContainerAppGPUProfile,
     ModelServingRequirement,
 )
 from general_ludd.infra.azure_containerapp_topology import (
@@ -42,13 +43,13 @@ def _requirement(
 
 
 def _capacity(
-    profile_type: str,
+    profile: AzureContainerAppGPUProfile,
     *,
     max_replicas: int = 8,
     hourly_cost_microusd: int = 1_000_000,
 ) -> AzureProfileCapacity:
     return AzureProfileCapacity(
-        workload_profile_type=profile_type,
+        profile=profile,
         max_replicas=max_replicas,
         hourly_cost_microusd_per_replica=hourly_cost_microusd,
     )
@@ -57,9 +58,9 @@ def _capacity(
 def _constraints(**overrides: object) -> AzureFleetConstraints:
     values: dict[str, object] = {
         "profile_capacities": (
-            _capacity(T4_PROFILE.workload_profile_type),
+            _capacity(T4_PROFILE),
             _capacity(
-                A100_PROFILE.workload_profile_type,
+                A100_PROFILE,
                 max_replicas=4,
                 hourly_cost_microusd=4_000_000,
             ),
@@ -215,8 +216,8 @@ def test_ambiguous_or_cyclic_task_graph_fails_closed(
         (
             _constraints(
                 profile_capacities=(
-                    _capacity(T4_PROFILE.workload_profile_type, max_replicas=1),
-                    _capacity(A100_PROFILE.workload_profile_type),
+                    _capacity(T4_PROFILE, max_replicas=1),
+                    _capacity(A100_PROFILE),
                 )
             ),
             "profile quota",
@@ -244,13 +245,14 @@ def test_every_fleet_budget_is_enforced_before_a_plan_is_returned(
         plan_azure_runner_topology(demands, constraints)
 
 
-def test_missing_right_sized_profile_refuses_oversized_substitution() -> None:
+def test_explicit_hardware_inventory_can_select_its_smallest_available_profile() -> None:
     constraints = _constraints(
-        profile_capacities=(_capacity(A100_PROFILE.workload_profile_type),)
+        profile_capacities=(_capacity(A100_PROFILE),)
     )
 
-    with pytest.raises(AzureRunnerTopologyError, match="right-sized profile"):
-        plan_azure_runner_topology((_demand("small"),), constraints)
+    plan = plan_azure_runner_topology((_demand("small"),), constraints)
+
+    assert plan.apps[0].workload_profile_type == A100_PROFILE.workload_profile_type
 
 
 @pytest.mark.parametrize(
@@ -283,8 +285,8 @@ def test_invalid_runner_demand_is_rejected_at_construction(
         (
             {
                 "profile_capacities": (
-                    _capacity(T4_PROFILE.workload_profile_type),
-                    _capacity(T4_PROFILE.workload_profile_type),
+                    _capacity(T4_PROFILE),
+                    _capacity(T4_PROFILE),
                 )
             },
             "duplicate profile",
@@ -303,16 +305,20 @@ def test_invalid_or_unbounded_fleet_constraint_is_rejected(
     ("factory", "message"),
     [
         (
-            lambda: _capacity("Consumption-GPU-UNKNOWN"),
-            "workload_profile_type",
+            lambda: AzureProfileCapacity(
+                profile=cast(Any, object()),
+                max_replicas=1,
+                hourly_cost_microusd_per_replica=1,
+            ),
+            "profile",
         ),
         (
-            lambda: _capacity(T4_PROFILE.workload_profile_type, max_replicas=0),
+            lambda: _capacity(T4_PROFILE, max_replicas=0),
             "max_replicas",
         ),
         (
             lambda: _capacity(
-                T4_PROFILE.workload_profile_type,
+                T4_PROFILE,
                 hourly_cost_microusd=0,
             ),
             "hourly_cost",
@@ -359,6 +365,35 @@ def test_public_planner_rejects_untyped_effect_boundaries() -> None:
             cast(Any, (DemandShapedObject(),)),
             _constraints(),
         )
+
+
+def test_topology_accepts_provider_inventory_profile_without_code_key() -> None:
+    inventory_profile = AzureContainerAppGPUProfile(
+        name="inventory-profile",
+        workload_profile_name="gpu-inventory-01",
+        workload_profile_type="provider/Profile-vNext",
+        gpu_vram_mib=48 * 1024,
+        usable_vram_mib=44 * 1024,
+        cpu_cores=16,
+        memory_gib=128,
+    )
+    constraints = _constraints(
+        profile_capacities=(_capacity(inventory_profile),),
+    )
+
+    plan = plan_azure_runner_topology(
+        (
+            _demand(
+                "future",
+                requirement=_requirement(parameter_count=12_000_000_000),
+                peak_concurrency=1,
+            ),
+        ),
+        constraints,
+    )
+
+    assert plan.apps[0].profile_name == "gpu-inventory-01"
+    assert plan.apps[0].workload_profile_type == "provider/Profile-vNext"
 
 
 def test_topology_traces_are_continuous_and_content_free() -> None:

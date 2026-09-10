@@ -73,6 +73,8 @@ class TestHardwareRouterWired:
             with TestClient(app) as client:
                 asyncio.run(_seed_default_project(app))
                 assert app.state._hardware_inventory is not None
+                assert app.state._accelerator_discovery is not None
+                assert app.state._accelerator_inventory is None
 
                 resp = client.get("/admin/hardware/inventory")
                 assert resp.status_code == 200

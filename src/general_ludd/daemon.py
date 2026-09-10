@@ -3321,11 +3321,24 @@ def create_daemon_app(
 
     app.state.plan_critique = PlanCritique()
 
+    from general_ludd.hardware.accelerator_discovery import HardwareDiscovery
     from general_ludd.hardware.probe import probe_hardware
     from general_ludd.hardware.survey import HardwareSurvey
 
     app.state._hardware = probe_hardware()
-    app.state._hardware_inventory = HardwareSurvey().survey()
+    hardware_survey = HardwareSurvey()
+    app.state._hardware_inventory = hardware_survey.survey()
+    app.state._accelerator_inventory = None
+    app.state._accelerator_discovery = HardwareDiscovery(
+        survey=hardware_survey,
+        surveyed_gpus=app.state._hardware_inventory.gpus,
+        trace_sink=lambda trace: logger.info(
+            "accelerator discovery event=%s source=%s count=%d",
+            trace.event.value,
+            trace.source,
+            trace.discovered_count,
+        ),
+    )
     logger.info(
         "Hardware inventory surveyed: GPU=%d RAM=%.1fGB Disk=%.1fGB",
         app.state._hardware_inventory.gpu_count,

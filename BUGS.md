@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-10 — (resolved locally; live attestation pending) Accelerator inventory stopped at Apple, NVIDIA, and AMD
+
+- **What happened**: Gludd could survey Apple Metal, NVIDIA, and AMD devices and submit Slurm jobs, but it had no Intel XPU probe, no JAX TPU probe, no Slurm node/GRES inventory, and no common fact that automation could consume. The model-fit API also contained a fixed list of model names rather than deriving requirements from model evidence.
+- **Root cause**: Local OS probes, model-fit heuristics, Slurm submission, and Ansible orchestration were implemented as separate surfaces. Submission support was mistaken for resource discovery, and optional accelerator runtimes had no normalized contract or events.
+- **Fix applied**: One bounded inventory now normalizes local GPUs, JAX TPUs, and live Slurm GPU/TPU GRES; accounts for scheduler state and usage; preserves unknown capacity; emits content-free source events; exposes local and Slurm APIs; and publishes the result through a check-mode-safe Ansible module and role. The daemon reuses its startup survey instead of repeating expensive probes. Device model names remain observed values rather than config keys.
+- **Evidence**: Failing-first tests covered every absent runtime, scheduler, API, fact, caching, and observability boundary. The pre-cache discovery profile passed 155 tests with the core module at 98%, and the Ansible fact profile passed 10 tests with its module at 93%; final widened validation and live hardware attestation remain pending.
+- **Practitioner evidence**: Intel users report CPU-only PyTorch builds failing to expose XPU; JAX operators report TPU runtime mismatches falling back to CPU; Slurm operators report NVML/GRES count drift and MIG-specific accounting complexity; and PyTorch users report MPS memory-pressure and leak behavior. `docs/features/ACCELERATOR_DISCOVERY.md` links the reports and records the resulting fail-closed choices.
+- **Lesson**: Being able to submit work is not evidence that a scheduler or runtime has usable accelerators. Discovery must report provenance, uncertainty, current availability, and observable failures before routing can trust it.
+
 ### 2026-09-10 — (resolved locally; paid proof pending) Live candidates were unreachable from the benchmark CLI
 
 - **What happened**: Gludd's managed runner could compose, route, evaluate, and clean up local and Azure Container Apps candidates when called as a Python service, but the repository's real self-improvement benchmark CLI always constructed that service without its live runtime configuration. The standalone Azure canary consequently proved deployment and inference only; it could not prove that Azure output became a validated code proposal.

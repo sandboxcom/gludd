@@ -10,6 +10,7 @@ import pytest
 from general_ludd.infra.azure_containerapp_gpu import (
     A100_PROFILE,
     T4_PROFILE,
+    AzureContainerAppGPUProfile,
     AzureContainerAppGPUUnavailable,
     ModelServingRequirement,
     SizingTrace,
@@ -74,6 +75,25 @@ def test_four_bit_seven_billion_stays_on_t4() -> None:
     assert selection.profile == T4_PROFILE
 
 
+def test_selector_accepts_extensible_hardware_inventory_without_named_keys() -> None:
+    future_profile = AzureContainerAppGPUProfile(
+        name="inventory-profile",
+        workload_profile_name="gpu-inventory-01",
+        workload_profile_type="provider/Profile-vNext",
+        gpu_vram_mib=48 * 1024,
+        usable_vram_mib=44 * 1024,
+        cpu_cores=16,
+        memory_gib=128,
+    )
+
+    selection = select_smallest_sufficient_profile(
+        _requirement(parameter_count=12_000_000_000),
+        hardware_profiles=(future_profile,),
+    )
+
+    assert selection.profile is future_profile
+
+
 def test_model_too_large_for_a100_fails_closed() -> None:
     with pytest.raises(AzureContainerAppGPUUnavailable, match="exceeds A100"):
         select_smallest_sufficient_profile(
@@ -100,6 +120,7 @@ def test_missing_required_a100_does_not_underprovision() -> None:
 def test_profile_contracts_match_azure_serverless_gpu_shapes() -> None:
     assert asdict(T4_PROFILE) == {
         "name": "T4",
+        "workload_profile_name": "gpu-t4",
         "workload_profile_type": "Consumption-GPU-NC8as-T4",
         "gpu_vram_mib": 16 * 1024,
         "usable_vram_mib": 14_745,
@@ -108,6 +129,7 @@ def test_profile_contracts_match_azure_serverless_gpu_shapes() -> None:
     }
     assert asdict(A100_PROFILE) == {
         "name": "A100",
+        "workload_profile_name": "gpu-a100",
         "workload_profile_type": "Consumption-GPU-NC24-A100",
         "gpu_vram_mib": 80 * 1024,
         "usable_vram_mib": 73_728,

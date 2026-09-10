@@ -220,8 +220,8 @@ def _requirement() -> ModelServingRequirement:
         revision=_MODEL_REVISION,
         parameter_count=_PARAMETER_COUNT,
         weight_bits=16,
-        kv_cache_mib=2048,
-        runtime_overhead_mib=3072,
+        kv_cache_mib=2_048,
+        runtime_overhead_mib=3_072,
     )
 
 

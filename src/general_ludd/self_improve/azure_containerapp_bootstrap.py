@@ -36,11 +36,7 @@ from general_ludd.infra.azure_containerapp_environment_lifecycle import (
     AzureEnvironmentLifecyclePolicy,
     AzureEnvironmentProfile,
 )
-from general_ludd.infra.azure_containerapp_gpu import (
-    A100_PROFILE,
-    T4_PROFILE,
-    ModelServingRequirement,
-)
+from general_ludd.infra.azure_containerapp_gpu import ModelServingRequirement
 from general_ludd.infra.azure_containerapp_live_proof import (
     LIVE_PROOF_ACKNOWLEDGEMENT,
     AzureContainerAppLiveProofPolicy,
@@ -96,10 +92,7 @@ _BASE_CONFIG_KEYS = frozenset(
         "runtime_overhead_mib",
         "peak_concurrency",
         "per_replica_concurrency",
-        "t4_max_replicas",
-        "a100_max_replicas",
-        "t4_hourly_cost_microusd",
-        "a100_hourly_cost_microusd",
+        "profile_capacities",
         "max_hourly_cost_microusd",
         "max_cost_usd",
         "ttl_minutes",
@@ -258,10 +251,7 @@ class _Settings:
     runtime_overhead_mib: int
     peak_concurrency: int
     per_replica_concurrency: int
-    t4_max_replicas: int
-    a100_max_replicas: int
-    t4_hourly_cost_microusd: int
-    a100_hourly_cost_microusd: int
+    profile_capacities: tuple[AzureProfileCapacity, ...]
     max_hourly_cost_microusd: int
     max_cost_usd: float
     ttl_minutes: int
@@ -294,6 +284,16 @@ def _number(config: Mapping[str, object], name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{name} must be a bounded number")
     return float(value)
+
+
+def _profile_capacities(config: Mapping[str, object]) -> tuple[AzureProfileCapacity, ...]:
+    raw = config.get("profile_capacities")
+    if not isinstance(raw, list) or not raw:
+        raise ValueError("profile_capacities must be a non-empty array")
+    capacities = tuple(AzureProfileCapacity.from_payload(item) for item in raw)
+    if len({item.workload_profile_type for item in capacities}) != len(capacities):
+        raise ValueError("profile_capacities contains duplicate profile types")
+    return capacities
 
 
 def _absolute_path(config: Mapping[str, object], name: str) -> Path:
@@ -401,10 +401,7 @@ def _parse_settings(config: Mapping[str, object]) -> _Settings:
         runtime_overhead_mib=_integer(config, "runtime_overhead_mib"),
         peak_concurrency=_integer(config, "peak_concurrency"),
         per_replica_concurrency=_integer(config, "per_replica_concurrency"),
-        t4_max_replicas=_integer(config, "t4_max_replicas"),
-        a100_max_replicas=_integer(config, "a100_max_replicas"),
-        t4_hourly_cost_microusd=_integer(config, "t4_hourly_cost_microusd"),
-        a100_hourly_cost_microusd=_integer(config, "a100_hourly_cost_microusd"),
+        profile_capacities=_profile_capacities(config),
         max_hourly_cost_microusd=_integer(config, "max_hourly_cost_microusd"),
         max_cost_usd=_number(config, "max_cost_usd"),
         ttl_minutes=_integer(config, "ttl_minutes"),
@@ -445,28 +442,14 @@ def _topology(
     requirement: ModelServingRequirement,
     progress_sink: Callable[[str], None],
 ) -> AzureRunnerTopologyPlan:
+    max_profile_replicas = max(
+        capacity.max_replicas for capacity in settings.profile_capacities
+    )
     constraints = AzureFleetConstraints(
-        profile_capacities=(
-            AzureProfileCapacity(
-                T4_PROFILE.workload_profile_type,
-                settings.t4_max_replicas,
-                settings.t4_hourly_cost_microusd,
-            ),
-            AzureProfileCapacity(
-                A100_PROFILE.workload_profile_type,
-                settings.a100_max_replicas,
-                settings.a100_hourly_cost_microusd,
-            ),
-        ),
+        profile_capacities=settings.profile_capacities,
         max_apps=1,
-        max_total_replicas=max(
-            settings.t4_max_replicas,
-            settings.a100_max_replicas,
-        ),
-        max_replicas_per_app=max(
-            settings.t4_max_replicas,
-            settings.a100_max_replicas,
-        ),
+        max_total_replicas=max_profile_replicas,
+        max_replicas_per_app=max_profile_replicas,
         max_hourly_cost_microusd=settings.max_hourly_cost_microusd,
         ttl_minutes=settings.ttl_minutes,
     )
@@ -826,11 +809,7 @@ def build_azure_containerapp_bootstrap_wiring(
     )
     topology = _topology(settings, requirement, progress_sink)
     app_plan = topology.apps[0]
-    profile_name = (
-        "gpu-t4"
-        if app_plan.workload_profile_type == T4_PROFILE.workload_profile_type
-        else "gpu-a100"
-    )
+    profile_name = app_plan.profile_name
     timestamp = now()
     if timestamp.tzinfo is None or timestamp.utcoffset() is None:
         raise ValueError("now must return a timezone-aware datetime")

@@ -62,7 +62,9 @@ def _validated_specs(
         raise ValueError("candidate specs must contain between one and sixteen items")
     if not all(isinstance(item, ManagedCandidateTrialSpec) for item in items):
         raise ValueError("candidate specs must contain ManagedCandidateTrialSpec values")
-    identities = tuple(item.session.candidate_identity.identity_digest for item in items)
+    identities = tuple(
+        item.session.candidate_identity.evidence_identity_digest for item in items
+    )
     if len(identities) != len(set(identities)):
         raise ValueError("candidate specs must not repeat an immutable identity")
     return items
@@ -113,7 +115,9 @@ def _predictions(
     )
     return tuple(
         CandidatePrediction(
-            candidate_identity_digest=spec.session.candidate_identity.identity_digest,
+            candidate_identity_digest=(
+                spec.session.candidate_identity.evidence_identity_digest
+            ),
             provider=spec.session.candidate_identity.provider,
             task_type=classification.task_type,
             task_kind=classification.task_kind,
@@ -192,7 +196,7 @@ def _trial_calls(
     lock: threading.Lock,
 ) -> tuple[CandidateTrialCall, ...]:
     by_identity = {
-        spec.session.candidate_identity.identity_digest: spec for spec in specs
+        spec.session.candidate_identity.evidence_identity_digest: spec for spec in specs
     }
     return tuple(
         CandidateTrialCall(

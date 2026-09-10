@@ -17,7 +17,6 @@ from general_ludd.infra.azure_containerapp_gpu import (
     select_smallest_sufficient_profile,
 )
 from general_ludd.infra.azure_containerapp_topology_types import (
-    _PROFILE_NAMES,
     AzureEnvironmentProfilePlan,
     AzureFleetConstraints,
     AzureProfileCapacity,
@@ -104,13 +103,15 @@ def _app_plan(
     grouped_demands: tuple[AzureRunnerDemand, ...],
     batches: tuple[tuple[str, ...], ...],
     all_demands: dict[str, AzureRunnerDemand],
-    profile_types: frozenset[str],
+    capacities: dict[str, AzureProfileCapacity],
 ) -> AzureRunnerAppPlan:
     representative = grouped_demands[0]
     try:
         selection = select_smallest_sufficient_profile(
             representative.requirement,
-            available_profile_types=set(profile_types),
+            hardware_profiles=tuple(
+                capacity.profile for capacity in capacities.values()
+            ),
         )
     except AzureContainerAppGPUUnavailable:
         raise AzureRunnerTopologyError(
@@ -124,7 +125,7 @@ def _app_plan(
         model_id=representative.requirement.model_id,
         model_revision=representative.requirement.revision,
         runtime=representative.runtime,
-        profile_name=_PROFILE_NAMES[selection.profile.workload_profile_type],
+        profile_name=selection.profile.workload_profile_name,
         workload_profile_type=selection.profile.workload_profile_type,
         per_replica_concurrency=per_replica,
         min_replicas=1,
@@ -181,7 +182,7 @@ def _group_apps(
                     tuple(group),
                     batches,
                     demand_map,
-                    frozenset(capacities),
+                    capacities,
                 )
                 for key, group in grouped.items()
             ),
@@ -202,7 +203,7 @@ def _profile_plan(
             raise AzureRunnerTopologyError("fleet exceeds a profile quota")
     profiles = tuple(
         AzureEnvironmentProfilePlan(
-            profile_name=_PROFILE_NAMES[profile_type],
+            profile_name=capacities[profile_type].profile.workload_profile_name,
             workload_profile_type=profile_type,
             max_replicas=replicas,
         )

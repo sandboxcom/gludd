@@ -45,6 +45,11 @@ SELF_IMPROVE_TASK_FILE ?=
 SELF_IMPROVE_MAX_ATTEMPTS ?= 2
 SELF_IMPROVE_VALIDATE_ONLY ?= 0
 SELF_IMPROVE_CONFIG_FILE ?=
+AZURE_SELF_IMPROVE_MODEL_POLICY ?= config/self-improve/azure-model-selection-policy.json
+AZURE_SELF_IMPROVE_MODEL_CATALOG ?= config/self-improve/azure-model-catalog-ci.json
+AZURE_SELF_IMPROVE_EVIDENCE_FILE ?= .gludd/capability-evidence.json
+AZURE_SELF_IMPROVE_REGISTRY_CACHE ?= .gludd/model-registry-cache
+AZURE_SELF_IMPROVE_TASK_FILE ?= config/self-improve/catalog-truth.json
 SELF_IMPROVE_CATALOG_LIVE ?= 0
 SELF_IMPROVE_MULTIFILE_LIVE ?= 0
 SELF_IMPROVE_FAILURE_CORPUS_FILE ?= config/self-improve/failure-corpus.json
@@ -195,7 +200,7 @@ _NO_UV_SYNC_GOALS := \
     check-disk check-disk-classification disk disk-check disk-guard cache-disk cache-clean disk-user-caches audit-home-tmp \
     cache-resource-inventory cache-resource-remove tmp-gludd-usage tmp-gludd-worktree-usage \
     tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
-    clean clean-artifacts clean-worktree-venvs clean-worktree-caches active-work-status ps agent-worktree agent-worktree-base azure-self-improve-auth-args \
+    clean clean-artifacts clean-worktree-venvs clean-worktree-caches active-work-status ps agent-worktree agent-worktree-base azure-self-improve-auth-args azure-self-improve-live-proof \
     development-merge-forward development-merge-forward-batch uv-cache-path
 ifneq (,$(filter $(_NO_UV_SYNC_GOALS),$(MAKECMDGOALS)))
 override UV := echo
@@ -234,7 +239,7 @@ PYTEST_VERBOSITY ?= -v
         feature-start feature-done test-and-commit preflight \
         agent-worktree agent-worktree-base agent-merge agent-cleanup agent-worktree-list \
         agent-worktree-dev agent-merge-dev \
-        self-improve-local-proposal azure-self-improve-auth-args azure-accelerator-role-apply azure-accelerator-role-args azure-accelerator-role-update-args azure-accelerator-auth-args azure-containerapp-environment-bootstrap-args azure-accelerator-auth-check azure-containerapp-preflight azure-containerapp-terraform-phase azure-containerapp-live-proof test-azure-containerapp-coverage test-self-improve test-self-improve-all test-self-improve-acceptance-matrix test-self-improve-private-policy \
+        self-improve-local-proposal azure-self-improve-auth-args azure-self-improve-live-proof azure-accelerator-role-apply azure-accelerator-role-args azure-accelerator-role-update-args azure-accelerator-auth-args azure-containerapp-environment-bootstrap-args azure-accelerator-auth-check azure-containerapp-preflight azure-containerapp-terraform-phase azure-containerapp-live-proof test-azure-containerapp-coverage test-self-improve test-self-improve-all test-self-improve-acceptance-matrix test-self-improve-private-policy \
           development-push development-merge-forward development-merge-forward-batch development-merge-to-master development-start development-status require-sandboxcom-ssh-key workstream-register workstream-unregister wt-prune-safe \
         git-commit-no-verify git-amend-msg \
 _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
@@ -295,7 +300,7 @@ log-agent-result disk-guard disk-check check-disk check-disk-classification chec
 git-tag-delete git-tag-move release-deploy append-text write-text-b64 replace-text-b64 mkdir-p replace-lines _no-raw-git-guard _no-bypass-guard _pre-commit-stage-guard _merge-strategy-guard _stash-leak-guard \
           _force-push-audit _recursive-merge-guard _commit-msg-audit \
           check-spec-enforcement-coverage check-structural-test-fragility lint-specs triage-failures audit-spec-completeness \
-          git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke mac-unified-memory-smoke gpu-hardware-smoke check-no-prompt-prone-edit-tools add-target edit-target edit-makefile-target validate-makefile \
+          git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke local-accelerator-inventory mac-unified-memory-smoke gpu-hardware-smoke check-no-prompt-prone-edit-tools add-target edit-target edit-makefile-target validate-makefile \
          build-llamacpp-tools
 
 help:
@@ -439,6 +444,7 @@ help:
 	@echo "  test-count            Count collected tests"
 	@echo "  test-failures         Show bounded cached failures (TEST_FAILURES_CACHE, TEST_FAILURES_LIMIT)"
 	@echo   provider-smoke        Run gludd smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json
+	@echo "  local-accelerator-inventory  Discover local GPU/TPU resources without provisioning"
 	@echo "  mac-unified-memory-smoke  Local Apple unified-memory smoke (LIVE=1 BACKEND=mps ARGS=...)"
 	@echo "  gpu-hardware-smoke        Local AMD/NVIDIA GPU smoke (LIVE=1 BACKEND=cuda|rocm ARGS=...)"
 	@echo "  provider-harness      Validate Azure/RunPod credentials, billing bounds, and optional Gludd telemetry"
@@ -515,6 +521,7 @@ help:
 	@echo "  agent-worktree-list           List active git worktrees"
 	@echo "  self-improve-local-proposal  Owned local GGUF proposal worker (SELF_IMPROVE_MODEL_PATH/PROMPT_FILE/PROPOSAL_FILE)"
 	@echo "  azure-self-improve-auth-args  Emit validated NUL arguments for one least-privilege Azure SP command"
+	@echo "  azure-self-improve-live-proof  Discover, select, deploy, evaluate, and tear down one bounded Azure candidate"
 	@echo "  azure-accelerator-role-apply Apply/validate the exact GPU role through Microsoft SDKs (AZURE_ACCELERATOR_*)"
 	@echo "  azure-accelerator-role-args  Deprecated compatibility argv for Azure CLI role creation"
 	@echo "  azure-accelerator-role-update-args  Emit validated NUL arguments to narrow an existing GPU role"
@@ -3471,6 +3478,9 @@ provider-smoke:
 	@test -n "$(SMOKE_TEST)" || { echo Usage: make provider-smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json; exit 1; }
 	@$(UV) run gludd smoke "$(PROVIDER)" "$(SMOKE_TEST)" $(ARGS)
 
+local-accelerator-inventory:
+	@$(UV) run python scripts/discover_accelerators.py
+
 # Local hardware smoke targets are dry-run by default; LIVE=1 opts into bounded
 # inference on the attached device. BACKEND and ARGS are forwarded verbatim.
 mac-unified-memory-smoke:
@@ -5888,13 +5898,64 @@ self-improve-local-proposal:
 	fi
 
 # Local self-improvement benchmark — compares every proposed edit with Codex.
+# Usage: make azure-self-improve-live-proof TARGET=development SELF_IMPROVE_BASELINE_REF=<sha> SELF_IMPROVE_REFERENCE_REF=<sha> AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE=file AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE=/private/auth.json AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID=<uuid> AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP=gludd-models-eastus AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT=gludd-gpu-environment AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION=eastus AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR=auto AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD=5 AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES=60 AZURE_CONTAINERAPP_LIVE_PROOF_LIVE=0 AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT=DEPLOY_ONE_CONTAINER_APP_AND_DESTROY AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET=always_destroy AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS=21600 AZURE_SELF_IMPROVE_MODEL_POLICY=config/self-improve/azure-model-selection-policy.json AZURE_SELF_IMPROVE_MODEL_CATALOG=config/self-improve/azure-model-catalog-ci.json AZURE_SELF_IMPROVE_EVIDENCE_FILE=/tmp/gludd-self-improve-evidence.json AZURE_SELF_IMPROVE_REGISTRY_CACHE=/tmp/gludd-self-improve-model-cache AZURE_SELF_IMPROVE_TASK_FILE=config/self-improve/catalog-truth.json
+azure-self-improve-live-proof:
+	@# Inputs: TARGET SELF_IMPROVE_MODEL_PATH SELF_IMPROVE_BASELINE_REF SELF_IMPROVE_REFERENCE_REF AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES AZURE_CONTAINERAPP_LIVE_PROOF_LIVE AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS AZURE_SELF_IMPROVE_MODEL_POLICY AZURE_SELF_IMPROVE_MODEL_CATALOG AZURE_SELF_IMPROVE_EVIDENCE_FILE AZURE_SELF_IMPROVE_REGISTRY_CACHE AZURE_SELF_IMPROVE_TASK_FILE
+	@case "$(AZURE_CONTAINERAPP_LIVE_PROOF_LIVE)" in 0|1) ;; *) echo "AZURE_CONTAINERAPP_LIVE_PROOF_LIVE must be 0 or 1" >&2; exit 2;; esac
+	@case "$(AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE)" in \
+		file) [ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE is required for file auth" >&2; exit 2; } ;; \
+		workload_identity) \
+			[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE is required for workload identity" >&2; exit 2; }; \
+			[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID is required for workload identity" >&2; exit 2; }; \
+			[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID is required for workload identity" >&2; exit 2; } ;; \
+		*) echo "AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE must be file or workload_identity" >&2; exit 2 ;; \
+	esac
+	@[ -n "$(SELF_IMPROVE_BASELINE_REF)" ] || { echo "SELF_IMPROVE_BASELINE_REF is required" >&2; exit 2; }
+	@[ -n "$(SELF_IMPROVE_REFERENCE_REF)" ] || { echo "SELF_IMPROVE_REFERENCE_REF is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES is required" >&2; exit 2; }
+	@temporary_directory="$$(mktemp -d "$${TMPDIR:-/tmp}/gludd-azure-self-improve.XXXXXX")"; \
+		trap 'rm -rf "$$temporary_directory"' EXIT INT TERM; \
+		selection_file="$$temporary_directory/model-selection.json"; \
+		runtime_file="$$temporary_directory/runtime.json"; \
+		echo "AZURE_SELF_IMPROVE_PHASE phase=model_selection secret_output=false"; \
+		$(UV) run $(if $(filter 1,$(AZURE_CONTAINERAPP_LIVE_PROOF_LIVE)),--extra azure,) python scripts/select_azure_self_improve_model.py \
+			--task-file "$(AZURE_SELF_IMPROVE_TASK_FILE)" \
+			--policy-file "$(AZURE_SELF_IMPROVE_MODEL_POLICY)" \
+			--evidence-file "$(AZURE_SELF_IMPROVE_EVIDENCE_FILE)" \
+			$(if $(filter 0,$(AZURE_CONTAINERAPP_LIVE_PROOF_LIVE)),--catalog-file "$(AZURE_SELF_IMPROVE_MODEL_CATALOG)",) \
+			--registry-cache-dir "$(AZURE_SELF_IMPROVE_REGISTRY_CACHE)" \
+			--output "$$selection_file"; \
+		echo "AZURE_SELF_IMPROVE_PHASE phase=runtime_compile secret_output=false"; \
+		$(UV) run python scripts/render_azure_self_improve_runtime_config.py \
+			$(if $(filter file,$(AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE)),--auth-file "$(AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE)",--federated-token-file "$(AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE)" --azure-client-id "$(AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID)" --azure-tenant-id "$(AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID)") \
+			--model-selection-file "$$selection_file" \
+			--subscription-id "$(AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID)" \
+			--resource-group "$(AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP)" \
+			--environment "$(AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT)" \
+			--location "$(AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION)" \
+			--allowed-cidr "$(AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR)" \
+			--max-cost-usd "$(AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD)" \
+			--ttl-minutes "$(AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES)" \
+			--acknowledgement "$(AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT)" \
+			--idle-retention-preset "$(AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET)" \
+			--idle-retention-seconds "$(AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS)" \
+			--output "$$runtime_file"; \
+		echo "AZURE_SELF_IMPROVE_PHASE phase=mixed_candidate_evaluation secret_output=false"; \
+		$(MAKE) --no-print-directory test-self-improve TARGET="$(TARGET)" SELF_IMPROVE_MODEL_PATH="$(SELF_IMPROVE_MODEL_PATH)" SELF_IMPROVE_CONFIG_FILE="$$runtime_file" SELF_IMPROVE_BASELINE_REF="$(SELF_IMPROVE_BASELINE_REF)" SELF_IMPROVE_REFERENCE_REF="$(SELF_IMPROVE_REFERENCE_REF)" SELF_IMPROVE_TASK_FILE="$(AZURE_SELF_IMPROVE_TASK_FILE)" SELF_IMPROVE_MAX_ATTEMPTS=1 SELF_IMPROVE_VALIDATE_ONLY=$(if $(filter 1,$(AZURE_CONTAINERAPP_LIVE_PROOF_LIVE)),0,1)
+
 # Usage: make test-self-improve TARGET=name [SELF_IMPROVE_MODEL_PATH=optional override] [SELF_IMPROVE_CONFIG_FILE=optional.json] SELF_IMPROVE_BASELINE_REF=<sha> SELF_IMPROVE_REFERENCE_REF=<sha> SELF_IMPROVE_TASK_FILE=task.json SELF_IMPROVE_VALIDATE_ONLY=0
 test-self-improve:
 	@[ -n "$(TARGET)" ] || { echo "TARGET is required"; exit 2; }
 	@[ -n "$(SELF_IMPROVE_BASELINE_REF)" ] || { echo "SELF_IMPROVE_BASELINE_REF is required"; exit 2; }
 	@[ -n "$(SELF_IMPROVE_REFERENCE_REF)" ] || { echo "SELF_IMPROVE_REFERENCE_REF is required"; exit 2; }
 	@[ -n "$(SELF_IMPROVE_TASK_FILE)" ] || { echo "SELF_IMPROVE_TASK_FILE is required"; exit 2; }
-	@$(UV) run python scripts/run_self_improve_e2e.py --target "$(TARGET)" --local-model-path "$(SELF_IMPROVE_MODEL_PATH)" --self-improve-config-file "$(SELF_IMPROVE_CONFIG_FILE)" --baseline-ref "$(SELF_IMPROVE_BASELINE_REF)" --reference-ref "$(SELF_IMPROVE_REFERENCE_REF)" --task-file "$(SELF_IMPROVE_TASK_FILE)" --max-attempts "$(SELF_IMPROVE_MAX_ATTEMPTS)" $(if $(filter 1,$(SELF_IMPROVE_VALIDATE_ONLY)),--validate-only,)
+	@$(UV) run $(if $(strip $(SELF_IMPROVE_CONFIG_FILE)),--extra azure,) python scripts/run_self_improve_e2e.py --target "$(TARGET)" --local-model-path "$(SELF_IMPROVE_MODEL_PATH)" --self-improve-config-file "$(SELF_IMPROVE_CONFIG_FILE)" --baseline-ref "$(SELF_IMPROVE_BASELINE_REF)" --reference-ref "$(SELF_IMPROVE_REFERENCE_REF)" --task-file "$(SELF_IMPROVE_TASK_FILE)" --max-attempts "$(SELF_IMPROVE_MAX_ATTEMPTS)" $(if $(filter 1,$(SELF_IMPROVE_VALIDATE_ONLY)),--validate-only,)
 
 # Canonical ten-shape contract; validate-only is safe, live inference is explicit.
 test-self-improve-acceptance-matrix:

@@ -5,7 +5,14 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from general_ludd.models.model_registry import DownloadedModel, ModelRegistry, ModelSearchResult
+import pytest
+
+from general_ludd.models.model_registry import (
+    DownloadedModel,
+    ModelDeploymentMetadata,
+    ModelRegistry,
+    ModelSearchResult,
+)
 
 
 class TestModelSearchResult:
@@ -87,6 +94,103 @@ class TestModelRegistryUnit:
 
             assert info["model_id"] == "meta/llama"
             assert info["downloads"] == 10000
+
+    def test_deployment_metadata_uses_hub_revision_config_and_safetensors(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            reg = ModelRegistry(cache_dir=tmpdir)
+            mock_info = MagicMock()
+            mock_info.id = "vendor/coder"
+            mock_info.sha = "a" * 40
+            mock_info.downloads = 1234
+            mock_info.tags = ["code", "vllm", "text-generation", "license:apache-2.0"]
+            mock_info.pipeline_tag = "text-generation"
+            mock_info.library_name = "transformers"
+            mock_info.private = False
+            mock_info.gated = False
+            mock_info.used_storage = 14_000_000_000
+            mock_info.config = {"max_position_embeddings": 32_768}
+            mock_info.safetensors = MagicMock(
+                total=7_000_000_000,
+                parameters={"BF16": 7_000_000_000},
+            )
+
+            with patch.object(reg, "_get_api") as mock_api:
+                api = MagicMock()
+                api.model_info.return_value = mock_info
+                mock_api.return_value = api
+                metadata = reg.get_deployment_metadata("vendor/coder")
+
+            assert metadata == ModelDeploymentMetadata(
+                model_id="vendor/coder",
+                revision="a" * 40,
+                parameter_count=7_000_000_000,
+                context_tokens=32_768,
+                storage_bytes=14_000_000_000,
+                weight_bits=16,
+                license_id="apache-2.0",
+                tags=("code", "license:apache-2.0", "text-generation", "vllm"),
+                pipeline_tag="text-generation",
+                library_name="transformers",
+                downloads=1234,
+            )
+            api.model_info.assert_called_once_with(
+                repo_id="vendor/coder",
+                expand=[
+                    "cardData",
+                    "config",
+                    "downloads",
+                    "gated",
+                    "library_name",
+                    "pipeline_tag",
+                    "private",
+                    "safetensors",
+                    "sha",
+                    "tags",
+                    "usedStorage",
+                ],
+            )
+
+    @pytest.mark.parametrize(
+        ("field", "value", "message"),
+        (
+            ("sha", "main", "immutable revision"),
+            ("private", True, "public ungated"),
+            ("gated", "auto", "public ungated"),
+            ("safetensors", None, "safetensors"),
+            ("config", {}, "context"),
+        ),
+    )
+    def test_deployment_metadata_fails_closed_on_incomplete_hub_truth(
+        self,
+        field,
+        value,
+        message,
+    ):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            reg = ModelRegistry(cache_dir=tmpdir)
+            mock_info = MagicMock()
+            mock_info.id = "vendor/coder"
+            mock_info.sha = "a" * 40
+            mock_info.downloads = 1
+            mock_info.tags = ["code", "vllm", "license:apache-2.0"]
+            mock_info.pipeline_tag = "text-generation"
+            mock_info.library_name = "transformers"
+            mock_info.private = False
+            mock_info.gated = False
+            mock_info.used_storage = 10
+            mock_info.config = {"max_position_embeddings": 4096}
+            mock_info.safetensors = MagicMock(
+                total=3_000_000_000,
+                parameters={"F16": 3_000_000_000},
+            )
+            setattr(mock_info, field, value)
+
+            with patch.object(reg, "_get_api") as mock_api:
+                api = MagicMock()
+                api.model_info.return_value = mock_info
+                mock_api.return_value = api
+                with pytest.raises(ValueError, match=message):
+                    reg.get_deployment_metadata("vendor/coder")
 
     def test_list_files(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -34,6 +34,8 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class FitResult:
+    """Describe whether and how one model can fit surveyed hardware."""
+
     can_run: bool = False
     estimated_vram_gb: float = 0.0
     quant_method: str = ""
@@ -71,6 +73,7 @@ def _gpu_name_to_table_key(name: str) -> str | None:
 
 
 def gpu_info_to_gpu_table(gpu: GpuInfo) -> str | None:
+    """Map legacy GPU names to deployment-optimizer compatibility keys."""
     return _gpu_name_to_table_key(gpu.name)
 
 
@@ -166,6 +169,7 @@ def _build_inventory(survey: HardwareSurvey, gpus: list[GpuInfo]) -> HardwareInv
 
 
 def unified_probe(*, survey: HardwareSurvey | None = None) -> HardwareInventory:
+    """Return the first usable local accelerator backend and host capacity."""
     s = survey if survey is not None else HardwareSurvey()
 
     nvidia = s.probe_gpu_nvidia()
@@ -179,6 +183,10 @@ def unified_probe(*, survey: HardwareSurvey | None = None) -> HardwareInventory:
     rocm = s.probe_gpu_rocm()
     if rocm:
         return _build_inventory(s, rocm)
+
+    xpu = s.probe_gpu_xpu()
+    if xpu:
+        return _build_inventory(s, xpu)
 
     return _build_inventory(s, [])
 
@@ -195,6 +203,7 @@ def can_run_model(
     pricing_catalog: PricingCatalog | None = None,
     evidence_store: CapabilityEvidenceStore | None = None,
 ) -> FitResult:
+    """Determine the highest-quality quantization that fits the inventory."""
     model_key = model_name.lower().strip()
     spec = _extract_model_params(model_key)
 
