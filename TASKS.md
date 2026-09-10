@@ -578,6 +578,8 @@ next paired exact-SHA run remains pending.
 
 ---
 
+S83.158 adapter compatibility evidence: `tests/unit/test_project_local_gludd_phase2.py` now models the cancellation-aware core-runner contract explicitly while retaining the project-local environment-precedence assertions; the complete file passes 16/16 under the exact runtime used by the gate.
+
 ## Session 79 — Crypto Library Refactor + Behavioral Guardrails (2026-08-05, 86,428 tests)
 
 ### Crypto Refactor — 8/12 files COMPLETE
