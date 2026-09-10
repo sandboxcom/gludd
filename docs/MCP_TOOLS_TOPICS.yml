@@ -41,6 +41,52 @@ general_ludd.agent.gludd_abtest:
       returned: always
       type: dict
   module: gludd_abtest
+general_ludd.agent.gludd_accelerator_facts:
+  DOCUMENTATION:
+    description:
+    - Reads Gludd's normalized, read-only accelerator discovery endpoints.
+    - Returns Apple Metal, Intel XPU, JAX TPU, NVIDIA, AMD, and Slurm GRES inventory
+      under C(ansible_facts.gludd_accelerators).
+    - Hardware models are returned as observed values rather than schema keys.
+    - Performs no provisioning and is safe in check mode.
+    module: gludd_accelerator_facts
+    options:
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the Gludd daemon.
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon authentication.
+        no_log: true
+        type: str
+      scope:
+        choices:
+        - local
+        - slurm
+        - all
+        default: all
+        description: Inventory sources to query.
+        type: str
+      timeout:
+        default: 30
+        description: Per-request timeout in seconds.
+        type: int
+    short_description: Expose Gludd local and Slurm accelerator inventory as facts
+  EXAMPLES:
+  - general_ludd.agent.gludd_accelerator_facts:
+      scope: all
+    name: Discover every usable accelerator
+  - ansible.builtin.debug:
+      msg: '{{ ansible_facts.gludd_accelerators.resources }}'
+    name: Schedule only when a Slurm accelerator is free
+    when: ansible_facts.gludd_accelerators.available_count | int > 0
+  RETURN:
+    ansible_facts:
+      description: Facts containing the normalized accelerator inventory.
+      returned: always
+      type: dict
+  module: gludd_accelerator_facts
 general_ludd.agent.gludd_accounting:
   DOCUMENTATION:
     description:
