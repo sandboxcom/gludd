@@ -5,8 +5,8 @@ Azure OpenAI, and Azure Container Apps discovery/inference, candidate-set
 assembly, content-free calibrated routing, and managed-runner selection are
 implemented behind explicit policy. Gludd now plans and owns the complete Azure
 Container Apps resource-group/environment/app lifecycle through the Microsoft SDK
-and OpenTofu; a paid canary remains pending the existing role's 17-action
-least-privilege update and live evidence.
+and OpenTofu. The 17-action least-privilege role and workload-identity path are
+implemented; a paid code-improvement canary remains pending live evidence.
 
 ## Outcome
 
@@ -301,13 +301,36 @@ For Entra inference, the adapter uses the documented
 this discovery-backed path because the ARM lookup still requires Entra
 authorization.
 
-The Container Apps path uses a separate resource-group-scoped accelerator
-identity. Its private Azure CLI JSON is parsed directly by the credential loader;
-it is never sourced into a shell. That identity may read/join the existing managed
-environment and create/read/delete only Container Apps in the dedicated resource
-group. It has no Cognitive Services, registry, network, secret, provider-
-registration, resource-group, or IAM authority. The exact role and operator
-bootstrap are documented in `docs/azure-iam-setup.md`.
+The Container Apps path uses one resource-group-scoped accelerator identity. Its
+private Azure CLI JSON is parsed directly by the credential loader; it is never
+sourced into a shell. A protected GitHub Actions job can instead pass a short-lived
+OIDC assertion to Microsoft's explicit workload-identity credential. The identity
+may create or read the exact owner-tagged resource group, manage only Container
+Apps and managed environments inside it, read their documented operation status
+and single-resource metrics, and perform no resource-group deletion. It has no
+Cognitive Services, registry, network, secret, provider-registration, unrelated
+Compute, logging, billing, or IAM authority. The exact role and operator bootstrap
+are documented in `docs/azure-iam-setup.md`.
+
+### Runtime configuration file
+
+The benchmark CLI accepts an optional `--self-improve-config-file`; the Make
+contract exposes it as `SELF_IMPROVE_CONFIG_FILE`. An empty value preserves the
+legacy local-only path. A nonempty value must name a regular, non-symlink JSON
+object no larger than 65,536 bytes. The Container Apps object uses exactly one of
+two credential forms:
+
+- `auth_file` for the private Azure CLI JSON used by a local operator; or
+- `client_id`, `tenant_id`, and `federated_token_file` for a short-lived GitHub
+  OIDC assertion.
+
+Ambiguous, incomplete, or additional authentication fields fail before any Azure
+client is created. Parsing only connects the existing managed runner to the
+existing topology, SDK resource-group bootstrap, OpenTofu/AzAPI lifecycle, bounded
+candidate session, evaluator, and cleanup contracts; it does not introduce a
+second infrastructure implementation. Every live run still requires the explicit
+deployment acknowledgement, one-call token/cost/deadline ceilings, an immutable
+image/model revision, and an idle-retention policy.
 
 ## Discovery and prediction verification
 

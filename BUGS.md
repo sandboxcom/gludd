@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-10 — (resolved locally; paid proof pending) Live candidates were unreachable from the benchmark CLI
+
+- **What happened**: Gludd's managed runner could compose, route, evaluate, and clean up local and Azure Container Apps candidates when called as a Python service, but the repository's real self-improvement benchmark CLI always constructed that service without its live runtime configuration. The standalone Azure canary consequently proved deployment and inference only; it could not prove that Azure output became a validated code proposal.
+- **Root cause**: Configuration-driven Container Apps wiring stopped at the service composition API. The CLI and its Make contract had no bounded configuration-file input, and the hosted workload-identity credential form was not accepted by that configuration parser.
+- **Fix applied**: The CLI now loads one optional regular, non-symlink, size-bounded JSON object and passes it to the existing managed runner. Empty input preserves local-only behavior. Container Apps accepts exactly either the existing private credential file or a client/tenant/federated-token triple and lazily builds Microsoft's workload-identity credential only at the approved Azure effect boundary.
+- **Evidence**: Failing-first tests reproduced the missing module, parser option, Make forwarding, managed-runner delegation, and workload-identity schema. The focused runtime/bootstrap/CLI replay passes 246 tests with two intentional skips; the identical Azure profile passes 898/898 at 92% aggregate branch coverage with all 45 files at or above 75%. Ruff, strict scoped typing, docstrings, Markdown, the 154-target Make contract, its behavioral example, duplicate-target detection, and changed-surface registration are green. A paid code-improvement run is still required before claiming live success.
+- **Practitioner evidence**: Azure Container Apps issue #1511 reports intermittent GPU image-pull stalls, Azure CLI issue #31239 records GPU workload-profile naming contradictions, and vLLM issue #45094 reports health endpoints remaining successful while decode is deadlocked. The feature guide therefore requires visible phase heartbeats, immutable deployment evidence, an actual decoded/evaluated patch—not readiness alone—and verified cleanup.
+- **Lesson**: Infrastructure readiness and token generation are prerequisites, not self-improvement evidence. The live acceptance boundary must run through the same proposal codec and deterministic evaluator used for ordinary repository work.
+
 ### 2026-09-09 — (resolved locally; hosted proof pending) GHA had no Azure authentication boundary
 
 - **What happened**: The credential-free GitHub Actions suite could prove Azure lifecycle policy with fakes but could not run the opt-in paid deployment. The only live CLI input was a local mode-`0600` service-principal JSON file, which correctly was not committed or available to hosted runners.

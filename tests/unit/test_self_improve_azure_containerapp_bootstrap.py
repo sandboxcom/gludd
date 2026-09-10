@@ -15,13 +15,20 @@ from general_ludd.azure.accelerator_credential_source import (
 )
 from general_ludd.azure.accelerator_credentials import (
     AzureAcceleratorCredentials,
+    AzureAcceleratorWorkloadIdentity,
 )
 from general_ludd.azure.resource_group_bootstrap import (
     AzureResourceGroupBootstrapPolicy,
     AzureResourceGroupBootstrapState,
     AzureResourceGroupBootstrapTrace,
 )
+from general_ludd.infra.azure_containerapp_environment_lifecycle import (
+    AzureEnvironmentLifecyclePolicy,
+)
 from general_ludd.infra.azure_containerapp_gpu import A100_PROFILE, T4_PROFILE
+from general_ludd.infra.azure_containerapp_live_proof import (
+    AzureContainerAppLiveProofPolicy,
+)
 from general_ludd.infra.azure_containerapp_make_types import (
     MakeRuntimeEvent,
     MakeRuntimeState,
@@ -40,6 +47,7 @@ from general_ludd.self_improve.azure_containerapp_bootstrap import (
     AzureCredentialAcquisition,
     FileAzureCredentialProvider,
     OpenBaoAzureCredentialProvider,
+    WorkloadIdentityAzureCredentialProvider,
     build_azure_containerapp_bootstrap_wiring,
 )
 from general_ludd.self_improve.model_candidates import ModelCandidateProvider
@@ -131,6 +139,21 @@ def _config(**overrides: object) -> dict[str, object]:
     return {"interval": 10, "azure_containerapp": azure}
 
 
+def _workload_identity_config(**overrides: object) -> dict[str, object]:
+    config = _config()
+    azure = cast(dict[str, object], config["azure_containerapp"])
+    azure.pop("auth_file")
+    azure.update(
+        {
+            "client_id": CLIENT,
+            "tenant_id": TENANT,
+            "federated_token_file": "/private/github-assertion.jwt",
+        }
+    )
+    azure.update(overrides)
+    return config
+
+
 def test_runtime_trace_surfaces_retention_decision_without_resource_identity() -> None:
     messages: list[str] = []
     bootstrap._runtime_trace(
@@ -198,8 +221,8 @@ class _OwnedFactory:
     def __init__(
         self,
         *,
-        app_policy: object,
-        environment_policy: object,
+        app_policy: AzureContainerAppLiveProofPolicy,
+        environment_policy: AzureEnvironmentLifecyclePolicy,
         environment_runtime: object,
         app_runtime: object,
         backend_factory: object,
@@ -401,8 +424,8 @@ def test_config_derives_t4_topology_and_bootstraps_fresh_owned_sessions(
         == wiring.bootstrap_factory.deployment_digest
     )
 
-    first = wiring.bootstrap_factory()
-    second = wiring.bootstrap_factory()
+    first = cast(_Backend, wiring.bootstrap_factory())
+    second = cast(_Backend, wiring.bootstrap_factory())
 
     assert first.name == "backend-1"
     assert second.name == "backend-2"
@@ -520,7 +543,10 @@ def test_resource_construction_failure_releases_credential_once(tmp_path: Path) 
 def test_credential_providers_enforce_exact_acquire_release_contracts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    credentials = _CredentialProvider().acquire().credentials
+    credentials = cast(
+        AzureAcceleratorCredentials,
+        _CredentialProvider().acquire().credentials,
+    )
 
     with pytest.raises(ValueError, match="credential contract"):
         AzureCredentialAcquisition(cast(Any, object()), lambda: None)
@@ -541,6 +567,37 @@ def test_credential_providers_enforce_exact_acquire_release_contracts(
     file_acquisition.release()
     assert file_acquisition.credentials is credentials
     assert loaded == [(Path("/private/azure-auth.json"), SUBSCRIPTION)]
+
+    workload_calls: list[dict[str, object]] = []
+    workload_credentials = AzureAcceleratorWorkloadIdentity(
+        client_id=CLIENT,
+        subscription_id=SUBSCRIPTION,
+        tenant_id=TENANT,
+        federated_token_file="/private/github-assertion.jwt",
+    )
+
+    def workload_identity(**kwargs: object) -> AzureAcceleratorWorkloadIdentity:
+        workload_calls.append(kwargs)
+        return workload_credentials
+
+    monkeypatch.setattr(bootstrap, "build_azure_workload_identity", workload_identity)
+    workload_acquisition = WorkloadIdentityAzureCredentialProvider(
+        client_id=CLIENT,
+        subscription_id=SUBSCRIPTION,
+        tenant_id=TENANT,
+        federated_token_file=Path("/private/github-assertion.jwt"),
+    ).acquire()
+    workload_acquisition.release()
+    assert workload_acquisition.credentials is workload_credentials
+    assert workload_calls == [
+        {
+            "client_id": CLIENT,
+            "subscription_id": SUBSCRIPTION,
+            "tenant_id": TENANT,
+            "federated_token_file": Path("/private/github-assertion.jwt"),
+            "expected_subscription_id": SUBSCRIPTION,
+        }
+    ]
 
     lease = AzureAcceleratorCredentialLease(
         credentials=credentials,
@@ -614,6 +671,51 @@ def test_configuration_boundaries_fail_before_credential_acquisition(
         )
 
     assert provider.acquisitions == 0
+
+
+def test_workload_identity_configuration_selects_ephemeral_provider_lazily(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+    credential = AzureAcceleratorWorkloadIdentity(
+        client_id=CLIENT,
+        subscription_id=SUBSCRIPTION,
+        tenant_id=TENANT,
+        federated_token_file="/private/github-assertion.jwt",
+    )
+
+    def build_identity(**kwargs: object) -> AzureAcceleratorWorkloadIdentity:
+        calls.append(kwargs)
+        return credential
+
+    monkeypatch.setattr(bootstrap, "build_azure_workload_identity", build_identity)
+    wiring = build_azure_containerapp_bootstrap_wiring(
+        tmp_path,
+        _workload_identity_config(),
+        progress_sink=lambda _message: None,
+        resources_builder=lambda **_kwargs: _Resources([], _Backend("unused")),
+        resource_group_bootstrapper=lambda *_args, **_kwargs: None,
+        owned_factory_type=_OwnedFactory,
+        now=lambda: NOW,
+    )
+    assert isinstance(wiring, AzureContainerAppBootstrapWiring)
+    assert calls == []
+
+    backend = wiring.bootstrap_factory()
+
+    assert isinstance(backend, _Backend)
+    assert len(calls) == 1
+    assert calls[0]["federated_token_file"] == Path(
+        "/private/github-assertion.jwt"
+    )
+
+
+def test_bootstrap_rejects_ambiguous_authentication_schema(tmp_path: Path) -> None:
+    config = _workload_identity_config(auth_file="/private/azure-auth.json")
+
+    with pytest.raises(ValueError, match="exact schema"):
+        _build(tmp_path, config)
 
 
 def test_bootstrap_rejects_credential_subscription_drift_and_releases_it(

@@ -3414,10 +3414,12 @@ def test_make_contract_forwards_local_comparison_inputs() -> None:
         "SELF_IMPROVE_BASELINE_REF",
         "SELF_IMPROVE_REFERENCE_REF",
         "SELF_IMPROVE_TASK_FILE",
+        "SELF_IMPROVE_CONFIG_FILE",
     ):
         assert token in makefile
         assert token in contract
     assert '--contract-file "$(SELF_IMPROVE_CONTRACT_FILE)"' in makefile
+    assert '--self-improve-config-file "$(SELF_IMPROVE_CONFIG_FILE)"' in makefile
 
 
 def test_gateway_fails_closed_for_each_malformed_model_response(tmp_path: Path) -> None:

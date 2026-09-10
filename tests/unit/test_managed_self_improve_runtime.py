@@ -290,14 +290,21 @@ def test_cli_benchmark_delegates_approved_plan_preparation(
         return plan
 
     monkeypatch.setattr(runtime_module, "prepare_managed_self_improve_plan", prepare)
-    monkeypatch.setattr(
-        runtime_module,
-        "build_managed_self_improve_runner",
-        lambda *_args, **_kwargs: SimpleNamespace(
+    built: list[dict[str, object]] = []
+
+    def build(*_args: object, **kwargs: object) -> SimpleNamespace:
+        built.append(kwargs)
+        return SimpleNamespace(
             run=lambda approved: SimpleNamespace(
                 final_result=expected if approved is plan else None
             )
-        ),
+        )
+
+    monkeypatch.setattr(runtime_module, "build_managed_self_improve_runner", build)
+    runtime_config = tmp_path / "runtime.json"
+    runtime_config.write_text(
+        '{"azure_containerapp":{"schema_version":1,"enabled":false}}',
+        encoding="utf-8",
     )
     args = argparse.Namespace(
         target="unit",
@@ -308,6 +315,7 @@ def test_cli_benchmark_delegates_approved_plan_preparation(
         max_attempts=2,
         merge=False,
         validate_only=False,
+        self_improve_config_file=str(runtime_config),
     )
 
     assert runtime_module.run_benchmark(args) is expected
@@ -327,6 +335,34 @@ def test_cli_benchmark_delegates_approved_plan_preparation(
             "make_runner_factory": runtime_module.MakeRunner,
         }
     ]
+    assert built == [
+        {
+            "root_runner": prepared[0]["root_runner"],
+            "make_runner_factory": runtime_module.MakeRunner,
+            "self_improve_config": {
+                "azure_containerapp": {"schema_version": 1, "enabled": False}
+            },
+        }
+    ]
+
+
+def test_cli_parser_accepts_explicit_runtime_config_file() -> None:
+    args = runtime_module._parser().parse_args(
+        [
+            "--target",
+            "unit",
+            "--baseline-ref",
+            "a" * 40,
+            "--reference-ref",
+            "b" * 40,
+            "--task-file",
+            "task.json",
+            "--self-improve-config-file",
+            "/tmp/self-improve.json",
+        ]
+    )
+
+    assert args.self_improve_config_file == "/tmp/self-improve.json"
 
 
 def test_serialized_plan_runs_through_package_factory_without_shell_or_merge(

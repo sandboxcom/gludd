@@ -22,7 +22,10 @@ from general_ludd.azure.accelerator_credential_source import (
     AzureAcceleratorCredentialLease,
 )
 from general_ludd.azure.accelerator_credentials import (
+    AzureAcceleratorAuthentication,
     AzureAcceleratorCredentials,
+    AzureAcceleratorWorkloadIdentity,
+    build_azure_workload_identity,
     load_azure_accelerator_credentials,
 )
 from general_ludd.azure.resource_group_bootstrap import (
@@ -74,12 +77,11 @@ from general_ludd.self_improve.model_candidates import (
 )
 
 _PROTOCOL = "gludd-configured-azure-containerapp-bootstrap-v1"
-_CONFIG_KEYS = frozenset(
+_BASE_CONFIG_KEYS = frozenset(
     {
         "schema_version",
         "enabled",
         "acknowledgement",
-        "auth_file",
         "subscription_id",
         "resource_group",
         "environment_name",
@@ -110,6 +112,12 @@ _CONFIG_KEYS = frozenset(
         "idle_retention",
     }
 )
+_FILE_AUTH_KEYS = _BASE_CONFIG_KEYS | {"auth_file"}
+_WORKLOAD_IDENTITY_KEYS = _BASE_CONFIG_KEYS | {
+    "client_id",
+    "tenant_id",
+    "federated_token_file",
+}
 _RETENTION_KEYS = frozenset(
     {
         "schema_version",
@@ -150,12 +158,15 @@ class _RuntimeResources(Protocol):
 class AzureCredentialAcquisition:
     """One credential acquisition whose release action is deliberately opaque."""
 
-    credentials: AzureAcceleratorCredentials
+    credentials: AzureAcceleratorAuthentication
     release: Callable[[], None] = field(repr=False, compare=False)
 
     def __post_init__(self) -> None:
         """Validate the credential and opaque release boundary."""
-        if not isinstance(self.credentials, AzureAcceleratorCredentials):
+        if not isinstance(
+            self.credentials,
+            (AzureAcceleratorCredentials, AzureAcceleratorWorkloadIdentity),
+        ):
             raise ValueError("credentials must use the accelerator credential contract")
         if not callable(self.release):
             raise ValueError("credential release must be callable")
@@ -173,6 +184,35 @@ class FileAzureCredentialProvider:
         """Load and validate a fresh credential acquisition."""
         credentials = load_azure_accelerator_credentials(
             self._path,
+            expected_subscription_id=self._subscription_id,
+        )
+        return AzureCredentialAcquisition(credentials, lambda: None)
+
+
+class WorkloadIdentityAzureCredentialProvider:
+    """Lazily bind one private GitHub assertion to an Azure workload identity."""
+
+    def __init__(
+        self,
+        *,
+        client_id: str,
+        subscription_id: str,
+        tenant_id: str,
+        federated_token_file: Path,
+    ) -> None:
+        """Capture only public identifiers and the private assertion path."""
+        self._client_id = client_id
+        self._subscription_id = subscription_id
+        self._tenant_id = tenant_id
+        self._federated_token_file = federated_token_file
+
+    def acquire(self) -> AzureCredentialAcquisition:
+        """Validate a fresh assertion immediately before Azure effects."""
+        credentials = build_azure_workload_identity(
+            client_id=self._client_id,
+            subscription_id=self._subscription_id,
+            tenant_id=self._tenant_id,
+            federated_token_file=self._federated_token_file,
             expected_subscription_id=self._subscription_id,
         )
         return AzureCredentialAcquisition(credentials, lambda: None)
@@ -200,7 +240,10 @@ class OpenBaoAzureCredentialProvider:
 
 @dataclass(frozen=True, slots=True)
 class _Settings:
-    auth_file: Path = field(repr=False)
+    auth_file: Path | None = field(repr=False)
+    client_id: str | None
+    tenant_id: str | None
+    federated_token_file: Path | None = field(repr=False)
     subscription_id: str
     resource_group: str
     environment_name: str
@@ -253,6 +296,29 @@ def _number(config: Mapping[str, object], name: str) -> float:
     return float(value)
 
 
+def _absolute_path(config: Mapping[str, object], name: str) -> Path:
+    path = Path(_text(config, name)).expanduser()
+    if not path.is_absolute() or ".." in path.parts:
+        raise ValueError(f"{name} must be an absolute confined path")
+    return path
+
+
+def _authentication_settings(
+    config: Mapping[str, object],
+) -> tuple[Path | None, str | None, str | None, Path | None]:
+    keys = set(config)
+    if keys == _FILE_AUTH_KEYS:
+        return _absolute_path(config, "auth_file"), None, None, None
+    if keys == _WORKLOAD_IDENTITY_KEYS:
+        return (
+            None,
+            _text(config, "client_id"),
+            _text(config, "tenant_id"),
+            _absolute_path(config, "federated_token_file"),
+        )
+    raise ValueError("azure_containerapp must use the exact schema")
+
+
 def _parse_idle_retention(
     raw: object,
 ) -> tuple[AzureIdleRetentionPolicy, int | None]:
@@ -302,8 +368,9 @@ def _parse_idle_retention(
 
 
 def _parse_settings(config: Mapping[str, object]) -> _Settings:
-    if set(config) != _CONFIG_KEYS:
-        raise ValueError("azure_containerapp must use the exact schema")
+    auth_file, client_id, tenant_id, federated_token_file = (
+        _authentication_settings(config)
+    )
     if config.get("schema_version") != 1 or isinstance(
         config.get("schema_version"), bool
     ):
@@ -312,14 +379,14 @@ def _parse_settings(config: Mapping[str, object]) -> _Settings:
         raise ValueError("azure_containerapp enabled must be true")
     if config.get("acknowledgement") != LIVE_PROOF_ACKNOWLEDGEMENT:
         raise ValueError("azure_containerapp acknowledgement is invalid")
-    auth_file = Path(_text(config, "auth_file")).expanduser()
-    if not auth_file.is_absolute() or ".." in auth_file.parts:
-        raise ValueError("auth_file must be an absolute path")
     retention_policy, expected_next_demand_seconds = _parse_idle_retention(
         config.get("idle_retention")
     )
     return _Settings(
         auth_file=auth_file,
+        client_id=client_id,
+        tenant_id=tenant_id,
+        federated_token_file=federated_token_file,
         subscription_id=_text(config, "subscription_id"),
         resource_group=_text(config, "resource_group"),
         environment_name=_text(config, "environment_name"),
@@ -583,7 +650,7 @@ class ConfiguredAzureContainerAppBootstrapFactory:
 
     def _ensure_resource_group(
         self,
-        credentials: AzureAcceleratorCredentials,
+        credentials: AzureAcceleratorAuthentication,
         release: Callable[[], None],
     ) -> None:
         """Acquire the owned resource group or release the credential lease."""
@@ -812,10 +879,7 @@ def build_azure_containerapp_bootstrap_wiring(
     state = project_state(project_root=canonical_root)
     work_root = state.directory("azure-containerapp", "applications")
     environment_work_root = state.directory("azure-containerapp", "environments")
-    provider = credential_provider or FileAzureCredentialProvider(
-        settings.auth_file,
-        settings.subscription_id,
-    )
+    provider = credential_provider or _default_credential_provider(settings)
     factory = ConfiguredAzureContainerAppBootstrapFactory(
         app_policy=app_policy,
         environment_policy=environment_policy,
@@ -858,11 +922,32 @@ def build_azure_containerapp_bootstrap_wiring(
     )
 
 
+def _default_credential_provider(settings: _Settings) -> _CredentialProvider:
+    if settings.auth_file is not None:
+        return FileAzureCredentialProvider(
+            settings.auth_file,
+            settings.subscription_id,
+        )
+    if (
+        settings.client_id is None
+        or settings.tenant_id is None
+        or settings.federated_token_file is None
+    ):
+        raise ValueError("Azure workload identity configuration is incomplete")
+    return WorkloadIdentityAzureCredentialProvider(
+        client_id=settings.client_id,
+        subscription_id=settings.subscription_id,
+        tenant_id=settings.tenant_id,
+        federated_token_file=settings.federated_token_file,
+    )
+
+
 __all__ = (
     "AzureContainerAppBootstrapWiring",
     "AzureCredentialAcquisition",
     "ConfiguredAzureContainerAppBootstrapFactory",
     "FileAzureCredentialProvider",
     "OpenBaoAzureCredentialProvider",
+    "WorkloadIdentityAzureCredentialProvider",
     "build_azure_containerapp_bootstrap_wiring",
 )

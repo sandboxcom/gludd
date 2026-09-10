@@ -121,6 +121,9 @@ S83.157 exact changed-surface registration (from the active gate):
 - `src/general_ludd/self_improve/managed_remote_codec.py`
 - `src/general_ludd/self_improve/managed_runtime_evaluation.py`
 - `src/general_ludd/self_improve/model_candidates.py`
+- `src/general_ludd/self_improve/runtime.py`
+- `src/general_ludd/self_improve/runtime_config.py`
+- `src/general_ludd/self_improve/azure_containerapp_bootstrap.py`
 - `tests/e2e/test_azure_containerapp_live_proof_cli.py`
 - `tests/unit/test_azure_accelerator_credentials.py`
 - `tests/unit/test_azure_accelerator_least_privilege.py`
@@ -166,6 +169,10 @@ S83.157 exact changed-surface registration (from the active gate):
 - `tests/unit/test_self_improve_managed_remote_codec.py`
 - `tests/unit/test_self_improve_managed_runtime_evaluation.py`
 - `tests/unit/test_self_improve_model_candidates.py`
+- `tests/unit/test_managed_self_improve_runtime.py`
+- `tests/unit/test_self_improve_azure_containerapp_bootstrap.py`
+- `tests/unit/test_self_improve_codex_comparison.py`
+- `tests/unit/test_self_improve_runtime_config.py`
 - `tests/unit/test_validate_azure_accelerator_credentials.py`
 
 S83.157/S83.158 exact autonomous-compute and atomic-scheduler surface:

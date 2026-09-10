@@ -180,6 +180,7 @@ from general_ludd.self_improve.runtime_builder import (
 from general_ludd.self_improve.runtime_builder import (
     build_managed_self_improve_runner as _build_managed_runner_composition,
 )
+from general_ludd.self_improve.runtime_config import load_self_improve_runtime_config
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 from general_ludd.small_models.recommender import map_task_to_capabilities
 
@@ -3102,6 +3103,9 @@ def run_benchmark(args: argparse.Namespace) -> AttemptResult:
         root,
         root_runner=root_runner,
         make_runner_factory=MakeRunner,
+        self_improve_config=load_self_improve_runtime_config(
+            getattr(args, "self_improve_config_file", "")
+        ),
     )
     try:
         return service.run(approved_plan).final_result
@@ -3187,6 +3191,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--baseline-ref", required=True)
     parser.add_argument("--reference-ref", required=True)
     parser.add_argument("--task-file", required=True)
+    parser.add_argument(
+        "--self-improve-config-file",
+        default="",
+        help="Optional bounded JSON configuration enabling explicit live candidates",
+    )
     parser.add_argument("--max-attempts", type=int, default=2, choices=range(1, 4))
     parser.add_argument("--merge", action="store_true")
     parser.add_argument("--validate-only", action="store_true")
