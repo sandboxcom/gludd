@@ -19,6 +19,7 @@ provisioner:
     cleanup: "${MOLECULE_PROJECT_DIRECTORY}/molecule/shared/mock_daemon_cleanup.yml"
     destroy: "${MOLECULE_PROJECT_DIRECTORY}/molecule/shared/mock_daemon_destroy.yml"
     create: "${MOLECULE_PROJECT_DIRECTORY}/molecule/shared/create.yml"
+    prepare: default/prepare.yml
     converge: default/converge.yml
     verify: default/verify.yml
 verifier:
@@ -29,6 +30,7 @@ scenario:
     - destroy
     - syntax
     - create
+    - prepare
     - converge
     - verify
     - cleanup
