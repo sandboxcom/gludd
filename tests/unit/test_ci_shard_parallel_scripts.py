@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import argparse
 import importlib.util
+import json
 import py_compile
 import subprocess
 import sys
@@ -57,7 +59,10 @@ def _load_script(script_name: str) -> ModuleType:
         sys.path.remove(str(scripts_dir))
 
 
-def test_parallel_shard_runner_namespaces_gludd_state_files(tmp_path: Path, monkeypatch) -> None:
+def test_parallel_shard_runner_namespaces_gludd_state_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("GLUDD_STOP_STATE_FILE", "/tmp/gludd-stop-state.json")
     module = _load_script("run_ci_shards_parallel.py")
     env_for_shard = module._env_for_shard
@@ -91,7 +96,9 @@ def test_parallel_shard_runner_keeps_tmpdir_outside_pytest_basetemp(
     assert not Path(env["TMPDIR"]).is_relative_to(pytest_basetemp)
 
 
-def test_parallel_shard_command_uses_nested_pytest_basetemp(monkeypatch) -> None:
+def test_parallel_shard_command_uses_nested_pytest_basetemp(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     module = _load_script("run_ci_shards_parallel.py")
     monkeypatch.setattr(module, "expand_shard", lambda _shard: ["tests/unit/test_example.py"])
     monkeypatch.setattr(module.os, "getpid", lambda: 4242)
@@ -117,6 +124,30 @@ def test_parallel_shard_runner_does_not_use_sigterm_cleanup() -> None:
 
     assert "SIGTERM" not in source
     assert "signal.SIGINT" in source
+
+
+def test_background_shard_runner_forwards_the_finite_deadline() -> None:
+    source = (ROOT / "scripts" / "start_ci_shards_parallel_bg.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "type=parse_positive_int" in source
+    assert source.count('"--max-runtime-seconds"') == 2
+    assert '"max_runtime_seconds": args.max_runtime_seconds' in source
+
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    deadline_arg = '--max-runtime-seconds "$(or $(MAX_RUNTIME_SECONDS),3600)"'
+    assert makefile.count(deadline_arg) == 2
+
+
+def test_parallel_shard_deadline_has_practitioner_evidence() -> None:
+    contract = (ROOT / "docs" / "features" / "GATE_RESOURCE_LIFECYCLE.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "SHARD-TIMEOUT" in contract
+    assert "pytest-dev/pytest-xdist/issues/1313" in contract
+    assert "pytest-dev/pytest-timeout/issues/159" in contract
 
 
 def test_junit_summary_counts_and_first_failure_ids(tmp_path: Path) -> None:
@@ -167,9 +198,86 @@ def test_shard_argument_and_worker_parsing() -> None:
     assert module._has_xdist_worker_arg(["-n4"])
     assert module._has_xdist_worker_arg(["--numprocesses=3"])
     assert not module._has_xdist_worker_arg(["-q"])
+    assert module.parse_positive_int("17") == 17
+    with pytest.raises(argparse.ArgumentTypeError, match="positive integer"):
+        module.parse_positive_int("0")
+    with pytest.raises(argparse.ArgumentTypeError, match="positive integer"):
+        module.parse_positive_int("invalid")
 
 
-def test_command_rejects_empty_shard(monkeypatch) -> None:
+def test_background_runner_persists_and_forwards_runtime_bound(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("start_ci_shards_parallel_bg.py")
+    state_file = tmp_path / "state.json"
+    monkeypatch.setattr(module, "STATE_FILE", state_file)
+    monkeypatch.setattr(module, "LOG_DIR", tmp_path / "logs")
+    observed: dict[str, object] = {}
+
+    class StartedProcess:
+        pid = 5150
+
+    def fake_popen(
+        command: list[str],
+        *,
+        stdout: object,
+        stderr: object,
+        start_new_session: bool,
+    ) -> StartedProcess:
+        observed.update(
+            command=command,
+            stdout=stdout,
+            stderr=stderr,
+            start_new_session=start_new_session,
+        )
+        return StartedProcess()
+
+    monkeypatch.setattr(module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "start_ci_shards_parallel_bg.py",
+            "--shards",
+            "unit-2 unit-3a",
+            "--pytest-args=-W error",
+            "--workers-per-shard",
+            "2",
+            "--max-runtime-seconds",
+            "321",
+        ],
+    )
+
+    assert module.main() == 0
+    payload = json.loads(state_file.read_text(encoding="utf-8"))
+    assert payload["pid"] == 5150
+    assert payload["max_runtime_seconds"] == 321
+    assert payload["command"][-2:] == ["--max-runtime-seconds", "321"]
+    assert observed["start_new_session"] is True
+
+
+def test_background_runner_rejects_an_empty_shard_set(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("start_ci_shards_parallel_bg.py")
+    state_file = tmp_path / "state.json"
+    monkeypatch.setattr(module, "STATE_FILE", state_file)
+    monkeypatch.setattr(module, "LOG_DIR", tmp_path / "logs")
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        ["start_ci_shards_parallel_bg.py", "--shards", " , "],
+    )
+
+    assert module.main() == 2
+    assert "no shards supplied" in capsys.readouterr().err
+    assert not state_file.exists()
+
+
+def test_command_rejects_empty_shard(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_script("run_ci_shards_parallel.py")
     monkeypatch.setattr(module, "expand_shard", lambda _shard: [])
 
@@ -190,13 +298,17 @@ def test_missing_junit_summary_is_zeroed(tmp_path: Path) -> None:
 
 def test_run_persists_results_and_cleans_workspaces(
     tmp_path: Path,
-    monkeypatch,
-    capsys,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     module = _load_script("run_ci_shards_parallel.py")
     workspaces: list[Path] = []
 
-    def command_for_shard(shard: str, _args: list[str], _workers: int):
+    def command_for_shard(
+        shard: str,
+        _args: list[str],
+        _workers: int,
+    ) -> tuple[list[str], Path]:
         workspace = tmp_path / shard
         workspace.mkdir()
         workspaces.append(workspace)
@@ -231,7 +343,7 @@ def test_run_persists_results_and_cleans_workspaces(
 
 def test_run_terminates_children_on_unexpected_failure(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = _load_script("run_ci_shards_parallel.py")
     workspace = tmp_path / "pending"
@@ -260,7 +372,54 @@ def test_run_terminates_children_on_unexpected_failure(
     assert len(terminated) == 1
 
 
-def test_run_reports_signal_exit(tmp_path: Path, monkeypatch, capsys) -> None:
+def test_run_times_out_and_reaps_a_pending_shard(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_parallel.py")
+    workspace = tmp_path / "pending"
+    workspace.mkdir()
+
+    class PendingProcess:
+        pid = 9101
+
+        @staticmethod
+        def poll() -> None:
+            return None
+
+    monkeypatch.setattr(
+        module,
+        "_command_for_shard",
+        lambda *_args: (["pytest", "pending"], workspace),
+    )
+    monkeypatch.setattr(
+        module.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: PendingProcess(),
+    )
+    moments = iter([100.0, 111.0])
+    monkeypatch.setattr(module.time, "monotonic", lambda: next(moments))
+    terminated: list[object] = []
+    monkeypatch.setattr(module, "_terminate_all", lambda running: terminated.extend(running))
+    summary_dir = tmp_path / "summaries"
+    monkeypatch.setenv("GLUDD_SHARD_SUMMARY_DIR", str(summary_dir))
+
+    assert module.run(["pending"], [], 1, 5, max_runtime_seconds=10) == 124
+
+    output = capsys.readouterr().out
+    assert "SHARD-TIMEOUT shard=pending elapsed_seconds=11 limit_seconds=10" in output
+    assert '"returncode": 124' in (summary_dir / "pending.json").read_text(
+        encoding="utf-8"
+    )
+    assert len(terminated) == 1
+
+
+def test_run_reports_signal_exit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     module = _load_script("run_ci_shards_parallel.py")
 
     class SignaledProcess:
@@ -269,7 +428,11 @@ def test_run_reports_signal_exit(tmp_path: Path, monkeypatch, capsys) -> None:
         def poll(self) -> int:
             return -2
 
-    def command_for_shard(shard: str, _args: list[str], _workers: int):
+    def command_for_shard(
+        shard: str,
+        _args: list[str],
+        _workers: int,
+    ) -> tuple[list[str], Path]:
         workspace = tmp_path / shard
         workspace.mkdir()
         return ["pytest", shard], workspace
@@ -286,13 +449,16 @@ def test_run_reports_signal_exit(tmp_path: Path, monkeypatch, capsys) -> None:
     assert "SHARD-SIGNAL shard=signal signal=SIGINT rc=-2" in capsys.readouterr().out
 
 
-def test_terminate_all_escalates_process_group(tmp_path: Path, monkeypatch) -> None:
+def test_terminate_all_escalates_process_group(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     module = _load_script("run_ci_shards_parallel.py")
 
     class RunningProcess:
         pid = 7000
 
-        def poll(self):
+        def poll(self) -> None:
             return None
 
     process = RunningProcess()
@@ -308,16 +474,23 @@ def test_terminate_all_escalates_process_group(tmp_path: Path, monkeypatch) -> N
     assert signals == [(7000, module.signal.SIGINT), (7000, module.signal.SIGKILL)]
 
 
-def test_main_forwards_parsed_arguments(monkeypatch) -> None:
+def test_main_forwards_parsed_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_script("run_ci_shards_parallel.py")
     observed: dict[str, object] = {}
 
-    def fake_run(shards, pytest_args, workers_per_shard, heartbeat_seconds):
+    def fake_run(
+        shards: list[str],
+        pytest_args: list[str],
+        workers_per_shard: int,
+        heartbeat_seconds: int,
+        max_runtime_seconds: int,
+    ) -> int:
         observed.update(
             shards=shards,
             pytest_args=pytest_args,
             workers_per_shard=workers_per_shard,
             heartbeat_seconds=heartbeat_seconds,
+            max_runtime_seconds=max_runtime_seconds,
         )
         return 7
 
@@ -334,6 +507,8 @@ def test_main_forwards_parsed_arguments(monkeypatch) -> None:
             "2",
             "--heartbeat-seconds",
             "9",
+            "--max-runtime-seconds",
+            "123",
         ],
     )
 
@@ -343,4 +518,5 @@ def test_main_forwards_parsed_arguments(monkeypatch) -> None:
         "pytest_args": ["-q", "-x"],
         "workers_per_shard": 2,
         "heartbeat_seconds": 9,
+        "max_runtime_seconds": 123,
     }

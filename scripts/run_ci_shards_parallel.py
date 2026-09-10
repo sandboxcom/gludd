@@ -23,6 +23,9 @@ if TYPE_CHECKING:
 else:
     from ci_named_shard_files import expand_shard
 
+DEFAULT_MAX_RUNTIME_SECONDS = 3600
+TIMEOUT_RETURN_CODE = 124
+
 SHARD_STATE_ENV_VARS = (
     "GLUDD_STOP_STATE_FILE",
     "GLUDD_STREAK_FILE",
@@ -73,6 +76,17 @@ def _parse_shards(raw: str) -> list[str]:
     if not shards:
         raise SystemExit("no shards supplied")
     return shards
+
+
+def parse_positive_int(raw: str) -> int:
+    """Parse one finite positive command-line bound."""
+    try:
+        value = int(raw)
+    except ValueError:
+        raise argparse.ArgumentTypeError("must be a positive integer") from None
+    if value <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return value
 
 
 def _has_xdist_worker_arg(args: list[str]) -> bool:
@@ -211,7 +225,16 @@ def _cleanup(running: list[RunningShard]) -> None:
         shutil.rmtree(item.basetemp, ignore_errors=True)
 
 
-def run(shards: list[str], pytest_args: list[str], workers_per_shard: int, heartbeat_seconds: int) -> int:
+def run(
+    shards: list[str],
+    pytest_args: list[str],
+    workers_per_shard: int,
+    heartbeat_seconds: int,
+    max_runtime_seconds: int = DEFAULT_MAX_RUNTIME_SECONDS,
+) -> int:
+    """Run shards concurrently and reap every process at the finite deadline."""
+    if max_runtime_seconds <= 0:
+        raise ValueError("max_runtime_seconds must be positive")
     running: list[RunningShard] = []
     summary_dir = Path(os.environ.get("GLUDD_SHARD_SUMMARY_DIR", ".gate-logs/ci-shards"))
     for shard in shards:
@@ -227,7 +250,8 @@ def run(shards: list[str], pytest_args: list[str], workers_per_shard: int, heart
 
     pending = {item.name for item in running}
     results: dict[str, int] = {}
-    next_heartbeat = time.monotonic() + max(5, heartbeat_seconds)
+    started_at = time.monotonic()
+    next_heartbeat = started_at + max(5, heartbeat_seconds)
     try:
         while pending:
             for item in running:
@@ -260,8 +284,32 @@ def run(shards: list[str], pytest_args: list[str], workers_per_shard: int, heart
                 else:
                     print(f"SHARD-FAIL shard={item.name} rc={rc}", flush=True)
             now = time.monotonic()
-            if pending and now >= next_heartbeat:
-                print(f"SHARD-HEARTBEAT pending={sorted(pending)} completed={results}", flush=True)
+            elapsed = max(0.0, now - started_at)
+            if pending and elapsed >= max_runtime_seconds:
+                for item in running:
+                    if item.name not in pending:
+                        continue
+                    results[item.name] = TIMEOUT_RETURN_CODE
+                    counts = _read_junit_summary(item.junit_report)
+                    summary_path = _persist_shard_summary(
+                        summary_dir,
+                        item.name,
+                        TIMEOUT_RETURN_CODE,
+                        counts,
+                    )
+                    print(
+                        "SHARD-TIMEOUT "
+                        f"shard={item.name} elapsed_seconds={int(elapsed)} "
+                        f"limit_seconds={max_runtime_seconds} summary={summary_path}",
+                        flush=True,
+                    )
+                pending.clear()
+            elif pending and now >= next_heartbeat:
+                print(
+                    f"SHARD-HEARTBEAT pending={sorted(pending)} completed={results} "
+                    f"elapsed_seconds={int(elapsed)} limit_seconds={max_runtime_seconds}",
+                    flush=True,
+                )
                 next_heartbeat = now + max(5, heartbeat_seconds)
             if pending:
                 time.sleep(1)
@@ -285,12 +333,18 @@ def main() -> int:
     parser.add_argument("--pytest-args", default="", help="extra pytest args passed to every shard")
     parser.add_argument("--workers-per-shard", type=int, default=1)
     parser.add_argument("--heartbeat-seconds", type=int, default=30)
+    parser.add_argument(
+        "--max-runtime-seconds",
+        type=parse_positive_int,
+        default=DEFAULT_MAX_RUNTIME_SECONDS,
+    )
     args = parser.parse_args()
     return run(
         _parse_shards(args.shards),
         shlex.split(args.pytest_args),
         args.workers_per_shard,
         args.heartbeat_seconds,
+        args.max_runtime_seconds,
     )
 
 

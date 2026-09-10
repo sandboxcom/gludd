@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-10 — (resolved locally) Parallel shard supervision had no terminal deadline
+
+- **What happened**: `unit-3a` completed and persisted its failures while the paired `unit-3b` pytest controller and xdist worker remained live indefinitely. The wrapper emitted liveness heartbeats but had no whole-run deadline, so the per-test timeout could not recover a controller/worker shutdown stall.
+- **Root cause**: `scripts/run_ci_shards_parallel.py` owned process groups and cleanup but bounded only its interrupt grace period. `scripts/start_ci_shards_parallel_bg.py` inherited the same omission, and the two Make entry points exposed no runtime constraint.
+- **Fix applied**: Both foreground and background Make paths now forward one positive, configurable one-hour-default deadline. The monotonic supervisor emits elapsed/limit heartbeats, persists exit 124 plus `SHARD-TIMEOUT` for every pending shard, and reaps only its owned process groups with bounded interrupt/kill escalation.
+- **Evidence**: Two failing-first tests reproduced the absent runtime API and CLI option. The focused `tests/unit/test_ci_shard_parallel_scripts.py` suite passes 20/20 and pins timeout classification, durable summary, foreground/background forwarding, process-group cleanup, and practitioner documentation in `docs/features/GATE_RESOURCE_LIFECYCLE.md`.
+- **Practitioner evidence**: pytest-xdist issues #1313 and #220 document controller-side hangs and the long-standing request for master-side worker timeouts; pytest-timeout issue #159 recommends an owning wrapper when child processes can survive a test timeout.
+- **Lesson**: Heartbeats prove only that a supervisor loop is alive. Every owned work boundary also needs a finite terminal deadline and authoritative descendant cleanup.
+
 ### 2026-09-10 — (resolved locally; live attestation pending) Accelerator inventory stopped at Apple, NVIDIA, and AMD
 
 - **What happened**: Gludd could survey Apple Metal, NVIDIA, and AMD devices and submit Slurm jobs, but it had no Intel XPU probe, no JAX TPU probe, no Slurm node/GRES inventory, and no common fact that automation could consume. The model-fit API also contained a fixed list of model names rather than deriving requirements from model evidence.

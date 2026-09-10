@@ -578,6 +578,10 @@ next paired exact-SHA run remains pending.
 
 ---
 
+S83.158 parallel-shard supervision evidence spans `Makefile`, `config/coverage_ci_shards_parallel.ini`, `scripts/run_ci_shards_parallel.py`, `scripts/start_ci_shards_parallel_bg.py`, `tests/unit/test_ci_shard_parallel_scripts.py`, `docs/features/GATE_RESOURCE_LIFECYCLE.md`, and `BUGS.md`: a real stuck xdist worker exposed the missing whole-run deadline; two failing-first contracts pinned the absent runtime API and CLI option; foreground and background execution now share a positive one-hour-default monotonic deadline, persist exit 124 and a content-free timeout event, and reap only owned process groups. The focused suite passes 22/22; branch-aware coverage is 92% aggregate with the foreground runner at 92% and background runner at 96%, so both exceed the 75% per-file floor. Exact-head shard and full-gate replay remain pending.
+
+S83.158 resource-ownership evidence: `config/resource_ownership_inventory.json` was mechanically refreshed for the unchanged foreground/background process-acquisition statements after their source lines moved; the inventory verifies 203 owned resources with no stale or unregistered process boundary.
+
 S83.158 adapter compatibility evidence: `tests/unit/test_project_local_gludd_phase2.py` now models the cancellation-aware core-runner contract explicitly while retaining the project-local environment-precedence assertions; the complete file passes 16/16 under the exact runtime used by the gate.
 
 ## Session 79 — Crypto Library Refactor + Behavioral Guardrails (2026-08-05, 86,428 tests)

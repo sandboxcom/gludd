@@ -166,6 +166,39 @@ shows the same standalone node-down line in a real hang. Matching those
 boundaries, instead of a phrase anywhere in output, preserves real crash
 detection without treating user-controlled output as controller state.
 
+### Parallel-shard terminal deadline
+
+On 2026-09-10, a foreground `unit-3a unit-3b` replica demonstrated a
+controller-level stall that the 180-second per-test timeout could not own.
+`unit-3a` reached a durable result, while the `unit-3b` pytest controller and
+its xdist worker remained live and the wrapper emitted heartbeats indefinitely.
+No JUnit document was finalized. Recovery required the existing
+namespace-checked process-tree boundary, which found and reaped the worker,
+pytest controller, and uv child without touching another checkout.
+
+The foreground and background parallel-shard entry points now pass the same
+strictly positive `MAX_RUNTIME_SECONDS` constraint to their supervisor. The
+default is 3,600 seconds. The supervisor measures one monotonic run deadline,
+adds elapsed and limit fields to every heartbeat, and assigns exit code 124 to
+each still-pending shard when the deadline expires. Before cleanup it persists a
+bounded per-shard summary and emits `SHARD-TIMEOUT` with only the shard name,
+elapsed time, configured limit, and owned summary path. Its unconditional final
+cleanup then interrupts and, after the existing ten-second grace period, kills
+only the process groups it created. A completed peer retains its actual result;
+timed-out work is never reported as passed or retried automatically.
+
+This outer deadline is intentionally independent of a test-function alarm.
+Practitioners have documented xdist controllers waiting forever on dead worker
+pipes after tests stop producing events in
+[pytest-xdist issue 1313](https://github.com/pytest-dev/pytest-xdist/issues/1313),
+and the open request for master-side worker timeouts dates to 2017 in
+[pytest-xdist issue 220](https://github.com/pytest-dev/pytest-xdist/issues/220).
+The pytest-timeout maintainer also recommends an owning wrapper when a timed-out
+pytest process can leave child processes behind:
+[pytest-timeout issue 159](https://github.com/pytest-dev/pytest-timeout/issues/159).
+These reports do not prove the exact local root cause; they establish that an
+individual-test timeout is not a complete suite/process-lifecycle boundary.
+
 ### Hermetic gate validation state
 
 On 2026-08-20, a definitive gate started from a clean checkout but finished
