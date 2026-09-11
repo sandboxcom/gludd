@@ -78,7 +78,7 @@ class _IdentityDrift(ValueError):
     pass
 
 
-class _TransportResponseError(BackendInfrastructureError):
+class ContainerAppTransportResponseError(BackendInfrastructureError):
     """Censored transport error carrying only fixed response diagnostics."""
 
     def __init__(
@@ -88,6 +88,7 @@ class _TransportResponseError(BackendInfrastructureError):
         *,
         http_status: int = 0,
     ) -> None:
+        """Record only fixed failure classes and a bounded HTTP status."""
         super().__init__(failure)
         self.response_failure = response_failure
         self.http_status = http_status
@@ -250,7 +251,7 @@ def response_json(response: object, *, maximum_bytes: int) -> object:
                 if isinstance(status_code, int) and not isinstance(status_code, bool)
                 else ContainerAppResponseFailure.HTTP_STATUS
             )
-            raise _TransportResponseError(
+            raise ContainerAppTransportResponseError(
                 failure,
                 response_failure,
                 http_status=(
@@ -261,32 +262,32 @@ def response_json(response: object, *, maximum_bytes: int) -> object:
             )
         content_type = typed_response.headers.get("content-type", "")
         if not isinstance(content_type, str):
-            raise _TransportResponseError(
+            raise ContainerAppTransportResponseError(
                 BackendFailure.INVALID_RESPONSE,
                 ContainerAppResponseFailure.CONTENT_TYPE,
             )
         if content_type.partition(";")[0].strip().casefold() != "application/json":
-            raise _TransportResponseError(
+            raise ContainerAppTransportResponseError(
                 BackendFailure.INVALID_RESPONSE,
                 ContainerAppResponseFailure.CONTENT_TYPE,
             )
         raw = typed_response.content
         if not isinstance(raw, bytes) or len(raw) > maximum_bytes:
-            raise _TransportResponseError(
+            raise ContainerAppTransportResponseError(
                 BackendFailure.INVALID_RESPONSE,
                 ContainerAppResponseFailure.RESPONSE_BODY,
             )
         try:
             return json.loads(raw.decode("utf-8"), object_pairs_hook=_strict_object)
         except Exception:
-            raise _TransportResponseError(
+            raise ContainerAppTransportResponseError(
                 BackendFailure.INVALID_RESPONSE,
                 ContainerAppResponseFailure.JSON_BODY,
             ) from None
     except BackendInfrastructureError:
         raise
     except Exception:
-        raise _TransportResponseError(
+        raise ContainerAppTransportResponseError(
             BackendFailure.INVALID_RESPONSE,
             ContainerAppResponseFailure.RESPONSE_BODY,
         ) from None
@@ -483,6 +484,7 @@ __all__ = (
     "ContainerAppBackendTrace",
     "ContainerAppResponseFailure",
     "ContainerAppTraceEvent",
+    "ContainerAppTransportResponseError",
     "HTTPClient",
     "discard_trace",
     "emit_failure",
