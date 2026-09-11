@@ -12,6 +12,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from general_ludd.infra import azure_containerapp_sdk as subject
+from general_ludd.infra.azure_containerapp_arm import (
+    ENVIRONMENT_PREFLIGHT_API_VERSION,
+)
 from general_ludd.infra.azure_containerapp_gpu import ModelServingRequirement
 from general_ludd.infra.azure_containerapp_live_proof import (
     LIVE_PROOF_ACKNOWLEDGEMENT,
@@ -487,15 +490,16 @@ def test_sdk_read_views_call_only_exact_microsoft_read_operations_and_normalize(
     root = policy.environment_id
 
     environment = transports.preflight.get_json(
-        f"{root}?api-version=2025-07-01",
+        f"{root}?api-version={ENVIRONMENT_PREFLIGHT_API_VERSION}",
         "bounded-token",
     )
     usages = transports.preflight.get_json(
-        f"{root}/usages?api-version=2025-07-01",
+        f"{root}/usages?api-version={ENVIRONMENT_PREFLIGHT_API_VERSION}",
         "bounded-token",
     )
     states = transports.preflight.get_json(
-        f"{root}/workloadProfileStates?api-version=2025-07-01",
+        f"{root}/workloadProfileStates"
+        f"?api-version={ENVIRONMENT_PREFLIGHT_API_VERSION}",
         "bounded-token",
     )
     app = transports.app.get_json("bounded-token")

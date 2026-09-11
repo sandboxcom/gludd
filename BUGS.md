@@ -13,6 +13,15 @@ All premature-stop incidents and process failures are tracked here.
 - **Practitioner evidence**: GNU Make documents that recursive recipe lines execute despite `-n`; Stack Overflow reports 72302726, 73359439, and 50510278 show the same long-lived operator surprise. `docs/features/GATE_RESOURCE_LIFECYCLE.md` links the primary and practitioner sources.
 - **Lesson**: A destructive recipe must contain no recursive-Make marker anywhere in its shell line. Dry-run safety requires an actual filesystem sentinel test, not inspection of printed commands alone.
 
+### 2026-09-11 — (resolved locally) Azure preflight tests disagreed on the supported ARM API version
+
+- **What happened**: The exact-head gate reached the Azure preflight batch and found that the usages-path contract required `2026-01-01`, while production and another broad authentication test still required `2025-07-01`.
+- **Root cause**: The independent operation-version pin was advanced without advancing the shared read-only preflight constant; a second test duplicated the older literal instead of consuming that constant.
+- **Fix applied**: The environment/usages/workload-profile read boundary now uses Microsoft's published stable `2026-01-01` operation version. The usages test remains the independent literal pin, and the broad preflight test consumes the production constant. Terraform lifecycle writes retain their separately reviewed API version.
+- **Evidence**: The original test failed first with the exact `2025-07-01` request. The complete ARM/preflight slice now passes 128/128; scoped Ruff and strict mypy are green.
+- **Practitioner evidence**: Microsoft's current managed-environment usages reference publishes the exact `2026-01-01` URI. Azure CLI issue #32181 records a real Container Apps outage caused by selecting an unsupported hard-coded version. `docs/features/SELF_IMPROVEMENT_MIXED_MODELS.md` links both sources and records the versioning rule.
+- **Lesson**: API-version strings are operation contracts, not chronology guesses. Keep one production constant, one independent published-version pin, and no contradictory literals.
+
 ### 2026-09-10 — (resolved locally) Local and Azure proposal workers shared semantics but not one envelope
 
 - **What happened**: The local worker received an owned prompt artifact while the Azure adapters received separately extracted prompt, instruction, schema, and digest fields. A legacy raw-string remote-codec path could also omit the trusted contract and response schema entirely. Compatible fields were mistaken for one common transport protocol.

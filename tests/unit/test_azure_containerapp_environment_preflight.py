@@ -6,6 +6,9 @@ from dataclasses import dataclass
 
 import pytest
 
+from general_ludd.infra.azure_containerapp_arm import (
+    ENVIRONMENT_PREFLIGHT_API_VERSION,
+)
 from general_ludd.infra.azure_containerapp_gpu import ModelServingRequirement
 from general_ludd.infra.azure_containerapp_preflight import (
     AzureContainerAppPreflightError,
@@ -154,9 +157,13 @@ def test_named_environment_preflight_uses_only_three_exact_resource_gets() -> No
     assert result.quota_name == PROFILE_NAME
     assert result.quota_remaining == 1
     assert transport.calls == [
-        (f"{ROOT}?api-version=2025-07-01", TOKEN),
-        (f"{ROOT}/usages?api-version=2025-07-01", TOKEN),
-        (f"{ROOT}/workloadProfileStates?api-version=2025-07-01", TOKEN),
+        (f"{ROOT}?api-version={ENVIRONMENT_PREFLIGHT_API_VERSION}", TOKEN),
+        (f"{ROOT}/usages?api-version={ENVIRONMENT_PREFLIGHT_API_VERSION}", TOKEN),
+        (
+            f"{ROOT}/workloadProfileStates"
+            f"?api-version={ENVIRONMENT_PREFLIGHT_API_VERSION}",
+            TOKEN,
+        ),
     ]
     assert all("/locations/" not in path for path, _token in transport.calls)
 

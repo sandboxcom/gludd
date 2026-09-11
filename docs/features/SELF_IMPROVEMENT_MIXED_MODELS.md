@@ -655,6 +655,23 @@ improvement. The paid app was destroyed in 20 seconds and its absence verified;
 the empty Consumption environment was retained for 21,600 seconds only because
 its measured retained hourly cost was zero.
 
+#### Azure preflight API-version pin (2026-09-11)
+
+The read-only managed-environment preflight now pins `2026-01-01` for the exact
+environment, usages, and workload-profile-state paths. Microsoft's current
+[Managed Environment Usages reference](https://learn.microsoft.com/en-us/rest/api/resource-manager/containerapps/managed-environment-usages/list?view=rest-resource-manager-containerapps-2026-01-01)
+publishes that stable version and exact usages URI. Lifecycle writes remain on
+their separately reviewed version; a read-version refresh does not silently
+change Terraform-owned mutation semantics.
+
+This version is independently pinned by the usages-path test, while all other
+preflight tests consume the production constant so they cannot contradict it.
+That separation responds to the practitioner failure in
+[Azure CLI issue #32181](https://github.com/Azure/azure-cli/issues/32181), where
+a hard-coded Container Apps version was rejected by ARM even though it looked
+temporally current. Gludd therefore treats the published operation catalog—not
+the date alone—as authoritative and keeps the version under exact-path tests.
+
 ### S83.150 live-adapter research
 
 Research checked on 2026-09-04 before the adapter was implemented:

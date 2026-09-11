@@ -8,7 +8,10 @@ from typing import Any, cast
 import pytest
 
 import general_ludd.infra.azure_containerapp_preflight_parsing as preflight_parsing
-from general_ludd.infra.azure_containerapp_arm import AzureContainerAppARMError
+from general_ludd.infra.azure_containerapp_arm import (
+    ENVIRONMENT_PREFLIGHT_API_VERSION,
+    AzureContainerAppARMError,
+)
 from general_ludd.infra.azure_containerapp_gpu import ModelServingRequirement
 from general_ludd.infra.azure_containerapp_preflight import (
     ARM_SCOPE,
@@ -153,7 +156,7 @@ def test_authentication_uses_only_arm_scope() -> None:
     assert credential.scopes == [ARM_SCOPE]
     assert transport.calls
     assert all(
-        path.endswith("?api-version=2025-07-01")
+        path.endswith(f"?api-version={ENVIRONMENT_PREFLIGHT_API_VERSION}")
         for path, _bearer_token in transport.calls
     )
 
