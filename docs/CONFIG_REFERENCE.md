@@ -126,6 +126,7 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_CONTAINER_RUNTIME` | Auto-indexed (see source) | — | optional | `scripts/mac_unified_memory_smoke.py:130` |
 | `GLUDD_CONTEXT_ENFORCE` | Auto-indexed (see source) | — | optional | `scripts/test_hook_runtime.py:3314` |
 | `GLUDD_CONTINUE_DIRECTIVE` | Auto-indexed (see source) | `/tmp/gludd-continue-directive.json` | optional | `scripts/agent_watchdog.py:340` |
+| `GLUDD_CREDENTIAL_HOME` | Override the durable, owner-private root for versioned Azure accelerator credentials. The root must be absolute, outside temporary/runtime directories and Git worktrees; unsafe roots fail closed. Credential generations are retained and the active link is recoverable—this is not a cache or cleanup target. | `$XDG_DATA_HOME/general-ludd/credentials` (or `~/.local/share/general-ludd/credentials`) | optional | `src/general_ludd/azure/accelerator_credential_store.py:36` |
 | `GLUDD_COVERAGE_AUDIT` | Auto-indexed (see source) | — | optional | `scripts/audit_coverage.py:292` |
 | `GLUDD_COVERAGE_AUDIT_TIMEOUT_SECONDS` | Auto-indexed (see source) | `1800` | optional | `scripts/audit_coverage.py:154` |
 | `GLUDD_DAEMON_PORT` | Auto-indexed (see source) | — | optional | `scripts/smoke_daemon.py:113` |
