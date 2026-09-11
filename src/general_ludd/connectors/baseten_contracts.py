@@ -60,6 +60,56 @@ ConfigValue = str | int | float | bool | None
 HeterogeneousConfig = Mapping[str, ConfigValue]
 
 
+def normalize_baseten_deployment(
+    deployment: Mapping[str, object],
+    model_id: object,
+    model_name: object,
+) -> BasetenDeployment:
+    """Copy only typed deployment fields from an untrusted provider item."""
+    result: BasetenDeployment = {}
+    deployment_id = deployment.get("id")
+    if isinstance(deployment_id, str):
+        result["id"] = deployment_id
+    if isinstance(model_id, str):
+        result["model_id"] = model_id
+    if isinstance(model_name, str):
+        result["name"] = model_name
+    status = deployment.get("status")
+    if isinstance(status, str):
+        result["status"] = status
+    environment = deployment.get("environment")
+    if isinstance(environment, str):
+        result["environment"] = environment
+    created_at = deployment.get("created_at")
+    if isinstance(created_at, str):
+        result["created_at"] = created_at
+    return result
+
+
+def normalize_baseten_deployments(payload: object) -> list[BasetenDeployment]:
+    """Flatten a bounded model-list response into canonical deployments."""
+    items = payload.get("items") if isinstance(payload, Mapping) else payload
+    if not isinstance(items, list):
+        return []
+    normalized: list[BasetenDeployment] = []
+    for model in items:
+        if not isinstance(model, Mapping):
+            continue
+        deployments = model.get("deployments")
+        if not isinstance(deployments, list):
+            continue
+        normalized.extend(
+            normalize_baseten_deployment(
+                deployment,
+                model.get("id"),
+                model.get("name"),
+            )
+            for deployment in deployments
+            if isinstance(deployment, Mapping)
+        )
+    return normalized
+
+
 __all__ = [
     "BasetenConfig",
     "BasetenDeployment",
@@ -69,4 +119,6 @@ __all__ = [
     "ConfigValue",
     "HeterogeneousConfig",
     "HttpRequest",
+    "normalize_baseten_deployment",
+    "normalize_baseten_deployments",
 ]

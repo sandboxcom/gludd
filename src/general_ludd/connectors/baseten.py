@@ -48,6 +48,8 @@ from general_ludd.connectors.baseten_contracts import (
     ConfigValue,
     HeterogeneousConfig,
     HttpRequest,
+    normalize_baseten_deployment,
+    normalize_baseten_deployments,
 )
 from general_ludd.connectors.baseten_contracts import (
     BasetenModel as BasetenModel,
@@ -309,26 +311,7 @@ class BasetenClient:
         Tolerates either ``{"items": [...]}`` (paginated) or a bare list of
         models, and tolerates per-model shapes with or without ``deployments``.
         """
-        models: list[Mapping[str, object]] = []
-        items_raw: object = payload.get("items") if isinstance(payload, Mapping) else None
-        if isinstance(items_raw, list):
-            models = [m for m in items_raw if isinstance(m, Mapping)]
-        elif isinstance(payload, list):
-            models = [m for m in payload if isinstance(m, Mapping)]
-
-        out: list[BasetenDeployment] = []
-        for model in models:
-            model_id = model.get("id")
-            model_name = model.get("name")
-            deployments_raw = model.get("deployments")
-            if not isinstance(deployments_raw, list):
-                continue
-            for dep in deployments_raw:
-                if not isinstance(dep, Mapping):
-                    continue
-                normalized = self._normalize_deployment(dep, model_id, model_name)
-                out.append(normalized)
-        return out
+        return normalize_baseten_deployments(payload)
 
     @staticmethod
     def _normalize_deployment(
@@ -337,24 +320,7 @@ class BasetenClient:
         model_name: object,
     ) -> BasetenDeployment:
         """Coerce a raw deployment Mapping into the typed shape."""
-        result: BasetenDeployment = {}
-        dep_id = dep.get("id")
-        if isinstance(dep_id, str):
-            result["id"] = dep_id
-        if isinstance(model_id, str):
-            result["model_id"] = model_id
-        if isinstance(model_name, str):
-            result["name"] = model_name
-        status = dep.get("status")
-        if isinstance(status, str):
-            result["status"] = status
-        env = dep.get("environment")
-        if isinstance(env, str):
-            result["environment"] = env
-        created = dep.get("created_at")
-        if isinstance(created, str):
-            result["created_at"] = created
-        return result
+        return normalize_baseten_deployment(dep, model_id, model_name)
 
     # -- invoke --------------------------------------------------------------
 
