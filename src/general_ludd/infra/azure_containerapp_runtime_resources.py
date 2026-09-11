@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,14 +13,9 @@ from general_ludd.azure.accelerator_credentials import (
     AzureAcceleratorAuthentication,
     AzureAcceleratorCredentials,
     AzureAcceleratorWorkloadIdentity,
-    build_azure_management_credential,
 )
 from general_ludd.infra.azure_containerapp_environment_lifecycle import (
     AzureContainerAppEnvironmentRuntime,
-    AzureEnvironmentLifecyclePolicy,
-)
-from general_ludd.infra.azure_containerapp_environment_make_runtime import (
-    AzureContainerAppEnvironmentTerraformRuntime,
 )
 from general_ludd.infra.azure_containerapp_gpu import ModelServingRequirement
 from general_ludd.infra.azure_containerapp_live_proof import (
@@ -28,18 +23,31 @@ from general_ludd.infra.azure_containerapp_live_proof import (
     AzureContainerAppProofRuntime,
 )
 from general_ludd.infra.azure_containerapp_make_runtime import (
-    AzureContainerAppTerraformRuntime,
     MakeRuntimeEvent,
 )
 from general_ludd.infra.azure_containerapp_preflight import (
     ARM_SCOPE,
-    AzureContainerAppReadOnlyPreflight,
     PreflightTrace,
 )
-from general_ludd.infra.azure_containerapp_sdk import (
-    AzureContainerAppsSDKReadError,
-    AzureContainerAppsSDKReadTransports,
-    build_container_apps_sdk_client,
+from general_ludd.infra.azure_containerapp_runtime_factories import (
+    AzureContainerAppRuntimeFactories,
+    resolve_azure_containerapp_runtime_factories,
+)
+from general_ludd.infra.azure_containerapp_runtime_factories import (
+    _credential_client as _credential_client,
+)
+from general_ludd.infra.azure_containerapp_runtime_readers import (
+    AzureContainerAppRuntimeReaders,
+)
+from general_ludd.infra.azure_containerapp_runtime_state import (
+    _app_provisioning_state as _app_provisioning_state,
+)
+from general_ludd.infra.azure_containerapp_runtime_state import (
+    _environment_ready as _environment_ready,
+)
+from general_ludd.infra.azure_containerapp_runtime_state import _ready as _ready
+from general_ludd.infra.azure_containerapp_runtime_state import (
+    _revision_state as _revision_state,
 )
 from general_ludd.self_improve.azure_backend import (
     AzureApprovedPrompt,
@@ -51,46 +59,10 @@ from general_ludd.self_improve.azure_containerapp_backend import (
 )
 from general_ludd.self_improve.model_candidates import (
     AzureContainerAppCandidateIdentity,
-    BackendFailure,
-    BackendInfrastructureError,
     CandidateBackend,
 )
 
 _Backend = CandidateBackend[AzureApprovedPrompt, AzureCandidateResponse]
-_APP_PROVISIONING_STATES = frozenset(
-    {
-        "Canceled",
-        "Deleting",
-        "Failed",
-        "InProgress",
-        "Provisioning",
-        "Succeeded",
-        "Updating",
-    }
-)
-_REPLICA_STATES = frozenset({"Running", "NotRunning", "Unknown"})
-_CONTAINER_STATES = frozenset({"Running", "Waiting", "Terminated", "Unknown"})
-_REPLICA_REASONS = frozenset(
-    {
-        "capacity_exhausted",
-        "container_crash",
-        "identity_initializing",
-        "image_initializing",
-        "image_pull_failure",
-        "readiness_probe_failure",
-        "resource_exhausted",
-        "startup_probe_failure",
-    }
-)
-_TERMINAL_REPLICA_REASONS = frozenset(
-    {
-        "capacity_exhausted",
-        "container_crash",
-        "image_pull_failure",
-        "resource_exhausted",
-        "startup_probe_failure",
-    }
-)
 
 
 class _ClosableCredential(Protocol):
@@ -117,241 +89,6 @@ def _discard_backend(_trace: ContainerAppBackendTrace) -> None:
 
 def _discard_progress(_message: str) -> None:
     return None
-
-
-def _credential_client(credentials: AzureAcceleratorAuthentication) -> _ClosableCredential:
-    return cast(_ClosableCredential, build_azure_management_credential(credentials))
-
-
-def _ready(document: object | None) -> bool:
-    if not isinstance(document, Mapping):
-        return False
-    properties = document.get("properties")
-    return bool(
-        isinstance(properties, Mapping)
-        and properties.get("provisioningState") == "Succeeded"
-        and isinstance(properties.get("latestReadyRevisionName"), str)
-        and properties.get("latestReadyRevisionName")
-    )
-
-
-def _environment_ready(document: object | None) -> bool:
-    if not isinstance(document, Mapping):
-        return False
-    properties = document.get("properties")
-    return bool(
-        isinstance(properties, Mapping)
-        and properties.get("provisioningState") == "Succeeded"
-    )
-
-
-def _app_provisioning_state(document: object | None) -> tuple[str, bool]:
-    """Return only bounded app readiness facts safe for progress events."""
-    properties = document.get("properties") if isinstance(document, Mapping) else None
-    values = properties if isinstance(properties, Mapping) else {}
-    state = _fixed_state(values.get("provisioningState"), _APP_PROVISIONING_STATES)
-    ready_revision = bool(
-        isinstance(values.get("latestReadyRevisionName"), str)
-        and values.get("latestReadyRevisionName")
-    )
-    return state, ready_revision
-
-
-def _fixed_state(value: object, allowed: frozenset[str]) -> str:
-    return value if isinstance(value, str) and value in allowed else "Unknown"
-
-
-@dataclass(frozen=True, slots=True)
-class _RevisionState:
-    active: bool
-    replicas: int
-    health_state: str
-    provisioning_state: str
-    running_state: str
-
-    def ready(self, minimum_replicas: int) -> bool:
-        return bool(
-            self.active
-            and self.replicas >= minimum_replicas
-            and self.health_state == "Healthy"
-            and self.provisioning_state == "Provisioned"
-            and self.running_state in {"Running", "Unknown"}
-        )
-
-    @property
-    def terminal(self) -> bool:
-        return bool(
-            self.health_state == "Unhealthy"
-            or self.provisioning_state in {"Failed", "Deprovisioned"}
-            or self.running_state in {"Stopped", "Degraded", "Failed"}
-        )
-
-
-def _revision_state(document: object | None) -> _RevisionState:
-    properties = document.get("properties") if isinstance(document, Mapping) else None
-    values = properties if isinstance(properties, Mapping) else {}
-    replicas = values.get("replicas")
-    bounded_replicas = (
-        replicas
-        if isinstance(replicas, int)
-        and not isinstance(replicas, bool)
-        and 0 <= replicas <= 100_000
-        else 0
-    )
-    return _RevisionState(
-        active=values.get("active") is True,
-        replicas=bounded_replicas,
-        health_state=_fixed_state(
-            values.get("healthState"),
-            frozenset({"Healthy", "Unhealthy", "None", "Unknown"}),
-        ),
-        provisioning_state=_fixed_state(
-            values.get("provisioningState"),
-            frozenset(
-                {
-                    "Provisioning",
-                    "Provisioned",
-                    "Failed",
-                    "Deprovisioning",
-                    "Deprovisioned",
-                    "Unknown",
-                }
-            ),
-        ),
-        running_state=_fixed_state(
-            values.get("runningState"),
-            frozenset(
-                {"Running", "Processing", "Stopped", "Degraded", "Failed", "Unknown"}
-            ),
-        ),
-    )
-
-
-def _ready_revision_name(document: object | None) -> str | None:
-    properties = document.get("properties") if isinstance(document, Mapping) else None
-    value = (
-        properties.get("latestReadyRevisionName")
-        if isinstance(properties, Mapping)
-        else None
-    )
-    return value if isinstance(value, str) and value else None
-
-
-def _observed_revision_name(document: object | None, app_name: str) -> str | None:
-    value = document.get("name") if isinstance(document, Mapping) else None
-    prefix = f"{app_name}--"
-    if not isinstance(value, str) or not value.startswith(prefix) or len(value) > 64:
-        return None
-    suffix = value[len(prefix) :]
-    if not suffix or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789-" for character in suffix):
-        return None
-    return value
-
-
-def _bounded_status_count(value: object) -> int:
-    if (
-        isinstance(value, int)
-        and not isinstance(value, bool)
-        and 0 <= value <= 1_000_000
-    ):
-        return value
-    return 0
-
-
-def _safe_status_values(value: object, allowed: frozenset[str]) -> tuple[str, ...]:
-    if (
-        not isinstance(value, Sequence)
-        or isinstance(value, (str, bytes, bytearray))
-        or len(value) > 32
-    ):
-        return ()
-    return tuple(sorted({item for item in value if isinstance(item, str) and item in allowed}))
-
-
-def _event_value(values: tuple[str, ...]) -> str:
-    if not values:
-        return "None"
-    if len(values) == 1:
-        return values[0]
-    return "Mixed"
-
-
-@dataclass(frozen=True, slots=True)
-class _ReplicaStatus:
-    replicas: int
-    ready_containers: int
-    started_containers: int
-    restarts: int
-    replica_states: tuple[str, ...]
-    container_states: tuple[str, ...]
-    reasons: tuple[str, ...]
-
-    @property
-    def terminal(self) -> bool:
-        return bool(_TERMINAL_REPLICA_REASONS.intersection(self.reasons))
-
-    def ready(self, minimum_replicas: int) -> bool:
-        return bool(
-            self.replicas >= minimum_replicas
-            and self.ready_containers >= minimum_replicas
-            and self.started_containers >= minimum_replicas
-            and self.replica_states == ("Running",)
-            and self.container_states == ("Running",)
-            and not self.terminal
-        )
-
-
-def _replica_status(document: object) -> _ReplicaStatus:
-    values = document if isinstance(document, Mapping) else {}
-    return _ReplicaStatus(
-        replicas=_bounded_status_count(values.get("replicaCount")),
-        ready_containers=_bounded_status_count(values.get("readyContainerCount")),
-        started_containers=_bounded_status_count(values.get("startedContainerCount")),
-        restarts=_bounded_status_count(values.get("restartCount")),
-        replica_states=_safe_status_values(
-            values.get("replicaRunningStates"),
-            _REPLICA_STATES,
-        ),
-        container_states=_safe_status_values(
-            values.get("containerRunningStates"),
-            _CONTAINER_STATES,
-        ),
-        reasons=_safe_status_values(values.get("reasonClasses"), _REPLICA_REASONS),
-    )
-
-
-def _replica_progress(status: _ReplicaStatus, minimum_replicas: int) -> str:
-    reason = status.reasons[0] if len(status.reasons) == 1 else (
-        "multiple" if status.reasons else "none"
-    )
-    state = (
-        "terminal"
-        if status.terminal
-        else "ready"
-        if status.ready(minimum_replicas)
-        else "heartbeat"
-    )
-    return (
-        f"azure_containerapp_replica_poll phase=readiness state={state} "
-        f"replicas={status.replicas} ready_containers={status.ready_containers} "
-        f"started_containers={status.started_containers} restarts={status.restarts} "
-        f"replica_state={_event_value(status.replica_states)} "
-        f"container_state={_event_value(status.container_states)} reason={reason}"
-    )
-
-
-def _with_ready_revision(document: object | None, revision_name: str) -> object | None:
-    if not isinstance(document, Mapping):
-        return document
-    properties = document.get("properties")
-    if not isinstance(properties, Mapping):
-        return document
-    normalized = dict(document)
-    normalized["properties"] = {
-        **properties,
-        "latestReadyRevisionName": revision_name,
-    }
-    return normalized
 
 
 class AzureContainerAppRuntimeResources:
@@ -422,6 +159,148 @@ class AzureContainerAppRuntimeResources:
             raise RuntimeError("Azure live resource cleanup failed")
 
 
+@dataclass(frozen=True, slots=True)
+class _OpenReadTransports:
+    environment: Any
+    lifecycle: Any
+    app: Any
+
+    def close_quietly(self) -> None:
+        for client in (self.app, self.lifecycle, self.environment):
+            with suppress(Exception):
+                client.close()
+
+
+def _open_read_transports(
+    *,
+    credential: _ClosableCredential,
+    policy: AzureContainerAppLiveProofPolicy,
+    environment_factory: Callable[..., Any] | None,
+    lifecycle_factory: Callable[..., Any] | None,
+    app_factory: Callable[..., Any] | None,
+    factories: AzureContainerAppRuntimeFactories,
+) -> _OpenReadTransports:
+    environment: Any | None = None
+    lifecycle: Any | None = None
+    app: Any | None = None
+    sdk_client: Any | None = None
+    legacy = (environment_factory, lifecycle_factory, app_factory)
+    try:
+        if any(factory is not None for factory in legacy):
+            if not all(factory is not None for factory in legacy):
+                raise ValueError("all legacy Azure read transports must be supplied")
+            environment = cast(Callable[..., Any], environment_factory)(
+                subscription_id=policy.subscription_id,
+                resource_group=policy.resource_group,
+                environment_name=policy.environment_name,
+            )
+            lifecycle = cast(Callable[..., Any], lifecycle_factory)(
+                subscription_id=policy.subscription_id,
+                resource_group=policy.resource_group,
+                environment_name=policy.environment_name,
+            )
+            app = cast(Callable[..., Any], app_factory)(
+                subscription_id=policy.subscription_id,
+                resource_group=policy.resource_group,
+                app_name=policy.app_name,
+            )
+        else:
+            sdk_client = factories.sdk_client(credential, policy.subscription_id)
+            views = factories.sdk_transports(client=sdk_client, policy=policy)
+            environment, lifecycle, app = views.preflight, views.lifecycle, views.app
+            sdk_client = None
+        return _OpenReadTransports(environment, lifecycle, app)
+    except BaseException:
+        for client in (app, lifecycle, environment, sdk_client):
+            if client is not None:
+                with suppress(Exception):
+                    client.close()
+        raise
+
+
+def _validate_runtime_build(
+    credentials: AzureAcceleratorAuthentication,
+    policy: AzureContainerAppLiveProofPolicy,
+    requirement: ModelServingRequirement,
+    callbacks: tuple[Callable[..., object], ...],
+    credential_release: Callable[[], None] | None,
+) -> None:
+    if not isinstance(
+        credentials,
+        (AzureAcceleratorCredentials, AzureAcceleratorWorkloadIdentity),
+    ):
+        raise ValueError("credentials must use the Azure accelerator contract")
+    if not isinstance(policy, AzureContainerAppLiveProofPolicy):
+        raise ValueError("policy must be AzureContainerAppLiveProofPolicy")
+    if credentials.subscription_id != policy.subscription_id:
+        raise ValueError("credentials do not match the approved subscription")
+    if not isinstance(requirement, ModelServingRequirement):
+        raise ValueError("requirement must be ModelServingRequirement")
+    if not all(callable(callback) for callback in callbacks) or (
+        credential_release is not None and not callable(credential_release)
+    ):
+        raise ValueError("runtime resource callbacks must be callable")
+
+
+def _assemble_runtime_resources(
+    *,
+    credential: _ClosableCredential,
+    transports: _OpenReadTransports,
+    credentials: AzureAcceleratorAuthentication,
+    policy: AzureContainerAppLiveProofPolicy,
+    requirement: ModelServingRequirement,
+    work_root: str | Path,
+    environment_work_root: str | Path,
+    credential_release: Callable[[], None] | None,
+    factories: AzureContainerAppRuntimeFactories,
+    preflight_trace_sink: Callable[[PreflightTrace], None],
+    terraform_trace_sink: Callable[[MakeRuntimeEvent], None],
+    environment_terraform_trace_sink: Callable[[MakeRuntimeEvent], None],
+    backend_trace_sink: Callable[[ContainerAppBackendTrace], None],
+    progress_sink: Callable[[str], None],
+    monotonic: Callable[[], float],
+    sleep: Callable[[float], None],
+) -> AzureContainerAppRuntimeResources:
+    readers = AzureContainerAppRuntimeReaders(
+        credential=credential,
+        environment_transport=transports.environment,
+        lifecycle_transport=transports.lifecycle,
+        app_transport=transports.app,
+        policy=policy,
+        preflight_factory=factories.preflight,
+        preflight_trace_sink=preflight_trace_sink,
+        progress_sink=progress_sink,
+        monotonic=monotonic,
+        sleep=sleep,
+    )
+    runtime = factories.app_runtime(
+        work_root=work_root,
+        credentials=credentials,
+        requirement=requirement,
+        preflight_check=readers.preflight,
+        read_app=readers.read_app,
+        trace_sink=terraform_trace_sink,
+    )
+    environment_runtime = factories.environment_runtime(
+        work_root=environment_work_root,
+        credentials=credentials,
+        read_environment=readers.read_environment,
+        list_environment_apps=readers.list_environment_apps,
+        trace_sink=environment_terraform_trace_sink,
+    )
+    return AzureContainerAppRuntimeResources(
+        runtime=runtime,
+        environment_runtime=environment_runtime,
+        credential=credential,
+        environment_transport=transports.environment,
+        lifecycle_transport=transports.lifecycle,
+        app_transport=transports.app,
+        credential_release=credential_release,
+        backend_trace_sink=backend_trace_sink,
+        backend_factory_builder=factories.backend,
+    )
+
+
 def build_azure_containerapp_runtime_resources(
     *,
     credentials: AzureAcceleratorAuthentication,
@@ -451,317 +330,66 @@ def build_azure_containerapp_runtime_resources(
     _sdk_transports_factory: Callable[..., Any] | None = None,
 ) -> AzureContainerAppRuntimeResources:
     """Build an exact, secret-safe resource bundle for one approved deployment."""
-    if not isinstance(
+    _validate_runtime_build(
         credentials,
-        (AzureAcceleratorCredentials, AzureAcceleratorWorkloadIdentity),
-    ):
-        raise ValueError("credentials must use the Azure accelerator contract")
-    if not isinstance(policy, AzureContainerAppLiveProofPolicy):
-        raise ValueError("policy must be AzureContainerAppLiveProofPolicy")
-    if credentials.subscription_id != policy.subscription_id:
-        raise ValueError("credentials do not match the approved subscription")
-    if not isinstance(requirement, ModelServingRequirement):
-        raise ValueError("requirement must be ModelServingRequirement")
-    callbacks = (
-        preflight_trace_sink,
-        terraform_trace_sink,
-        environment_terraform_trace_sink,
-        backend_trace_sink,
-        progress_sink,
-        monotonic,
-        sleep,
+        policy,
+        requirement,
+        (
+            preflight_trace_sink,
+            terraform_trace_sink,
+            environment_terraform_trace_sink,
+            backend_trace_sink,
+            progress_sink,
+            monotonic,
+            sleep,
+        ),
+        credential_release,
     )
-    if not all(callable(callback) for callback in callbacks) or (
-        credential_release is not None and not callable(credential_release)
-    ):
-        raise ValueError("runtime resource callbacks must be callable")
-
+    factories = resolve_azure_containerapp_runtime_factories(
+        credential=_credential_factory,
+        preflight=_preflight_factory,
+        app_runtime=_app_runtime_factory,
+        environment_runtime=_environment_runtime_factory,
+        backend=_backend_factory,
+        sdk_client=_sdk_client_factory,
+        sdk_transports=_sdk_transports_factory,
+    )
     credential: _ClosableCredential | None = None
-    environment_transport: Any | None = None
-    lifecycle_transport: Any | None = None
-    app_transport: Any | None = None
-    unowned_sdk_client: Any | None = None
-    credential_factory = _credential_client if _credential_factory is None else _credential_factory
-    preflight_factory = (
-        AzureContainerAppReadOnlyPreflight
-        if _preflight_factory is None
-        else _preflight_factory
-    )
-    app_runtime_factory = (
-        AzureContainerAppTerraformRuntime
-        if _app_runtime_factory is None
-        else _app_runtime_factory
-    )
-    environment_runtime_factory = (
-        AzureContainerAppEnvironmentTerraformRuntime
-        if _environment_runtime_factory is None
-        else _environment_runtime_factory
-    )
-    backend_factory = (
-        build_azure_containerapp_candidate_backend
-        if _backend_factory is None
-        else _backend_factory
-    )
+    transports: _OpenReadTransports | None = None
     try:
-        credential = credential_factory(credentials)
-        legacy_factories = (
-            _environment_transport_factory,
-            _lifecycle_transport_factory,
-            _app_transport_factory,
-        )
-        if any(factory is not None for factory in legacy_factories):
-            if not all(factory is not None for factory in legacy_factories):
-                raise ValueError("all legacy Azure read transports must be supplied")
-            environment_transport = cast(Callable[..., Any], legacy_factories[0])(
-                subscription_id=policy.subscription_id,
-                resource_group=policy.resource_group,
-                environment_name=policy.environment_name,
-            )
-            lifecycle_transport = cast(Callable[..., Any], legacy_factories[1])(
-                subscription_id=policy.subscription_id,
-                resource_group=policy.resource_group,
-                environment_name=policy.environment_name,
-            )
-            app_transport = cast(Callable[..., Any], legacy_factories[2])(
-                subscription_id=policy.subscription_id,
-                resource_group=policy.resource_group,
-                app_name=policy.app_name,
-            )
-        else:
-            sdk_client_factory = (
-                build_container_apps_sdk_client
-                if _sdk_client_factory is None
-                else _sdk_client_factory
-            )
-            sdk_transports_factory = (
-                AzureContainerAppsSDKReadTransports
-                if _sdk_transports_factory is None
-                else _sdk_transports_factory
-            )
-            unowned_sdk_client = sdk_client_factory(
-                credential,
-                policy.subscription_id,
-            )
-            sdk_transports = sdk_transports_factory(
-                client=unowned_sdk_client,
-                policy=policy,
-            )
-            environment_transport = sdk_transports.preflight
-            lifecycle_transport = sdk_transports.lifecycle
-            app_transport = sdk_transports.app
-            unowned_sdk_client = None
-
-        def preflight(
-            active_policy: AzureContainerAppLiveProofPolicy,
-            active_requirement: ModelServingRequirement,
-        ) -> None:
-            preflight_factory(
-                cast(Any, credential),
-                cast(Any, environment_transport),
-                trace_sink=preflight_trace_sink,
-            ).check(
-                subscription_id=active_policy.subscription_id,
-                resource_group=active_policy.resource_group,
-                environment_name=active_policy.environment_name,
-                workload_profile_name=active_policy.workload_profile_name,
-                location=active_policy.location,
-                requirement=active_requirement,
-            )
-
-        def read_app(
-            active_policy: AzureContainerAppLiveProofPolicy,
-            expect_absent: bool,
-        ) -> object | None:
-            deadline = monotonic() + (600.0 if expect_absent else 900.0)
-            last_document: object | None = None
-            replica_diagnostics_available = True
-            while True:
-                token = credential.get_token(ARM_SCOPE).token
-                last_document = app_transport.get_json(token)
-                revision_ready = _ready(last_document)
-                revision_reader = getattr(app_transport, "get_revision_json", None)
-                active_revision_reader = getattr(
-                    app_transport,
-                    "get_active_revision_json",
-                    None,
-                )
-                replica_status_reader = getattr(
-                    app_transport,
-                    "get_replica_status_json",
-                    None,
-                )
-                if (
-                    not expect_absent
-                    and last_document is not None
-                    and active_policy.min_replicas > 0
-                ):
-                    revision_name = (
-                        _ready_revision_name(last_document) if revision_ready else None
-                    )
-                    if revision_name is not None and callable(revision_reader):
-                        revision = revision_reader(token, revision_name)
-                    elif callable(active_revision_reader):
-                        revision = active_revision_reader(token)
-                    else:
-                        revision = None
-                    state = _revision_state(revision)
-                    if state.terminal:
-                        raise BackendInfrastructureError(BackendFailure.UNAVAILABLE)
-                    revision_ready = state.ready(active_policy.min_replicas)
-                    observed_revision_name = _observed_revision_name(
-                        revision,
-                        active_policy.app_name,
-                    )
-                    if (
-                        observed_revision_name is not None
-                        and callable(replica_status_reader)
-                        and replica_diagnostics_available
-                    ):
-                        try:
-                            replica_status = _replica_status(
-                                replica_status_reader(token, observed_revision_name)
-                            )
-                        except AzureContainerAppsSDKReadError:
-                            replica_diagnostics_available = False
-                            progress_sink(
-                                "azure_containerapp_replica_poll phase=readiness "
-                                "state=supplementary_unavailable "
-                                "reason=sdk_read_failed"
-                            )
-                        else:
-                            progress_sink(
-                                _replica_progress(
-                                    replica_status,
-                                    active_policy.min_replicas,
-                                )
-                            )
-                            if replica_status.terminal:
-                                raise BackendInfrastructureError(
-                                    BackendFailure.UNAVAILABLE
-                                )
-                            if (
-                                replica_status.ready(active_policy.min_replicas)
-                                and state.active
-                                and state.replicas >= active_policy.min_replicas
-                                and state.health_state == "Healthy"
-                                and state.provisioning_state == "Provisioned"
-                            ):
-                                revision_ready = True
-                    if revision_ready and observed_revision_name is not None:
-                        last_document = _with_ready_revision(
-                            last_document,
-                            observed_revision_name,
-                        )
-                    if not revision_ready:
-                        progress_sink(
-                            "azure_containerapp_revision_poll "
-                            "phase=readiness state=heartbeat "
-                            f"provisioning_state={state.provisioning_state} "
-                            f"health_state={state.health_state} "
-                            f"running_state={state.running_state} "
-                            f"replicas={state.replicas}"
-                        )
-                if (expect_absent and last_document is None) or (
-                    not expect_absent and revision_ready
-                ):
-                    return last_document
-                if monotonic() >= deadline:
-                    if not expect_absent:
-                        raise BackendInfrastructureError(BackendFailure.TIMEOUT)
-                    return last_document
-                app_state, has_ready_revision = _app_provisioning_state(last_document)
-                progress_sink(
-                    "azure_containerapp_poll phase="
-                    f"{'absence' if expect_absent else 'readiness'} state=heartbeat "
-                    f"provisioning_state={app_state} "
-                    f"latest_ready_revision={str(has_ready_revision).lower()}"
-                )
-                sleep(10.0)
-
-        def read_environment(
-            active_policy: AzureEnvironmentLifecyclePolicy,
-            expect_absent: bool,
-        ) -> object | None:
-            if active_policy.environment_id.casefold() != policy.environment_id.casefold():
-                raise RuntimeError("environment policy escaped the bound resource")
-            deadline = monotonic() + (900.0 if expect_absent else 1_200.0)
-            last_document: object | None = None
-            while True:
-                token = credential.get_token(ARM_SCOPE).token
-                last_document = lifecycle_transport.get_environment(token)
-                if (expect_absent and last_document is None) or (
-                    not expect_absent
-                    and (last_document is None or _environment_ready(last_document))
-                ):
-                    return last_document
-                if monotonic() >= deadline:
-                    return last_document
-                progress_sink(
-                    "azure_containerapp_environment_poll phase="
-                    f"{'absence' if expect_absent else 'readiness'} state=heartbeat"
-                )
-                sleep(10.0)
-
-        def list_environment_apps(
-            active_policy: AzureEnvironmentLifecyclePolicy,
-        ) -> tuple[str, ...]:
-            if active_policy.environment_id.casefold() != policy.environment_id.casefold():
-                raise RuntimeError("environment policy escaped the bound resource")
-            expected_app_id = policy.expected_resource_id.casefold()
-            deadline = monotonic() + 300.0
-            while True:
-                token = credential.get_token(ARM_SCOPE).token
-                app_ids = lifecycle_transport.list_environment_app_ids(token)
-                if not app_ids or any(
-                    app_id.casefold() != expected_app_id for app_id in app_ids
-                ):
-                    return app_ids
-                if monotonic() >= deadline:
-                    return app_ids
-                progress_sink(
-                    "azure_containerapp_environment_poll "
-                    "phase=inventory state=heartbeat"
-                )
-                sleep(10.0)
-
-        runtime = app_runtime_factory(
-            work_root=work_root,
-            credentials=credentials,
-            requirement=requirement,
-            preflight_check=preflight,
-            read_app=read_app,
-            trace_sink=terraform_trace_sink,
-        )
-        environment_runtime = environment_runtime_factory(
-            work_root=environment_work_root,
-            credentials=credentials,
-            read_environment=read_environment,
-            list_environment_apps=list_environment_apps,
-            trace_sink=environment_terraform_trace_sink,
-        )
-        resources = AzureContainerAppRuntimeResources(
-            runtime=runtime,
-            environment_runtime=environment_runtime,
+        credential = factories.credential(credentials)
+        transports = _open_read_transports(
             credential=credential,
-            environment_transport=environment_transport,
-            lifecycle_transport=lifecycle_transport,
-            app_transport=app_transport,
-            credential_release=credential_release,
-            backend_trace_sink=backend_trace_sink,
-            backend_factory_builder=backend_factory,
+            policy=policy,
+            environment_factory=_environment_transport_factory,
+            lifecycle_factory=_lifecycle_transport_factory,
+            app_factory=_app_transport_factory,
+            factories=factories,
         )
-        return resources
+        return _assemble_runtime_resources(
+            credential=credential,
+            transports=transports,
+            credentials=credentials,
+            policy=policy,
+            requirement=requirement,
+            work_root=work_root,
+            environment_work_root=environment_work_root,
+            credential_release=credential_release,
+            factories=factories,
+            preflight_trace_sink=preflight_trace_sink,
+            terraform_trace_sink=terraform_trace_sink,
+            environment_terraform_trace_sink=environment_terraform_trace_sink,
+            backend_trace_sink=backend_trace_sink,
+            progress_sink=progress_sink,
+            monotonic=monotonic,
+            sleep=sleep,
+        )
     except BaseException:
-        for client in (
-            app_transport,
-            lifecycle_transport,
-            environment_transport,
-            unowned_sdk_client,
-            credential,
-        ):
-            if client is not None:
-                with suppress(Exception):
-                    client.close()
+        if transports is not None:
+            transports.close_quietly()
+        if credential is not None:
+            with suppress(Exception):
+                credential.close()
         if credential_release is not None:
             with suppress(Exception):
                 credential_release()

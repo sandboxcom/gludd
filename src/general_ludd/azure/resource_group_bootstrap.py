@@ -275,6 +275,92 @@ def _discard_trace(_event: AzureResourceGroupBootstrapTrace) -> None:
     return None
 
 
+@dataclass(slots=True)
+class _BootstrapObservation:
+    ownership_state: AzureResourceGroupOwnershipState | None = None
+    owner_digest: str | None = None
+
+
+def _observe_group(
+    value: object,
+    policy: AzureResourceGroupBootstrapPolicy,
+    observation: _BootstrapObservation,
+) -> AzureResourceGroupOwnershipState:
+    state = _ownership_state(value, policy)
+    observation.ownership_state = state
+    observation.owner_digest = _observed_owner_digest(value)
+    return state
+
+
+def _require_exact_group(
+    value: object,
+    policy: AzureResourceGroupBootstrapPolicy,
+    observation: _BootstrapObservation,
+) -> None:
+    _observe_group(value, policy, observation)
+    if not _is_exact_owned_group(value, policy):
+        raise AzureResourceGroupBootstrapError("ownership")
+
+
+def _ensure_with_client(
+    policy: AzureResourceGroupBootstrapPolicy,
+    client: _ResourceClient,
+    trace_sink: Callable[[AzureResourceGroupBootstrapTrace], None],
+    observation: _BootstrapObservation,
+) -> AzureResourceGroupBootstrapResult:
+    try:
+        existing = client.resource_groups.get(policy.resource_group)
+    except Exception as error:
+        if _status_code(error) != 404:
+            raise
+        trace_sink(AzureResourceGroupBootstrapTrace(AzureResourceGroupBootstrapState.ABSENT))
+        trace_sink(
+            AzureResourceGroupBootstrapTrace(
+                AzureResourceGroupBootstrapState.CREATE_STARTED
+            )
+        )
+        created = client.resource_groups.create_or_update(
+            policy.resource_group,
+            {"location": policy.location, "tags": dict(policy.tags)},
+        )
+        _require_exact_group(created, policy, observation)
+        observed = client.resource_groups.get(policy.resource_group)
+        _require_exact_group(observed, policy, observation)
+        return AzureResourceGroupBootstrapResult(
+            AzureResourceGroupBootstrapState.CREATED
+        )
+
+    ownership_state = _observe_group(existing, policy, observation)
+    if ownership_state is not AzureResourceGroupOwnershipState.LEGACY_OWNED:
+        if not _is_exact_owned_group(existing, policy):
+            raise AzureResourceGroupBootstrapError("ownership")
+        return AzureResourceGroupBootstrapResult(
+            AzureResourceGroupBootstrapState.REUSED
+        )
+    tags = _member(existing, "tags")
+    if not isinstance(tags, Mapping) or any(
+        not isinstance(name, str) or not isinstance(value, str)
+        for name, value in tags.items()
+    ):
+        raise AzureResourceGroupBootstrapError("ownership")
+    trace_sink(
+        AzureResourceGroupBootstrapTrace(
+            AzureResourceGroupBootstrapState.MIGRATION_STARTED,
+            ownership_state=ownership_state,
+            observed_owner_digest=observation.owner_digest,
+            expected_owner_digest=policy.owner_digest,
+        )
+    )
+    migrated = client.resource_groups.create_or_update(
+        policy.resource_group,
+        {"location": policy.location, "tags": {**dict(tags), **policy.tags}},
+    )
+    _require_exact_group(migrated, policy, observation)
+    observed = client.resource_groups.get(policy.resource_group)
+    _require_exact_group(observed, policy, observation)
+    return AzureResourceGroupBootstrapResult(AzureResourceGroupBootstrapState.MIGRATED)
+
+
 def ensure_azure_resource_group(
     policy: AzureResourceGroupBootstrapPolicy,
     credentials: AzureAcceleratorAuthentication,
@@ -300,82 +386,12 @@ def ensure_azure_resource_group(
     client: _ResourceClient | None = None
     result: AzureResourceGroupBootstrapResult | None = None
     failure: str | None = None
-    ownership_state: AzureResourceGroupOwnershipState | None = None
-    observed_owner_digest: str | None = None
+    observation = _BootstrapObservation()
     try:
         trace_sink(AzureResourceGroupBootstrapTrace(AzureResourceGroupBootstrapState.CHECK_STARTED))
         credential = credential_builder(credentials)
         client = client_builder(credential, policy.subscription_id)
-        try:
-            existing = client.resource_groups.get(policy.resource_group)
-        except Exception as error:
-            if _status_code(error) != 404:
-                raise
-            trace_sink(AzureResourceGroupBootstrapTrace(AzureResourceGroupBootstrapState.ABSENT))
-            trace_sink(
-                AzureResourceGroupBootstrapTrace(
-                    AzureResourceGroupBootstrapState.CREATE_STARTED
-                )
-            )
-            created = client.resource_groups.create_or_update(
-                policy.resource_group,
-                {"location": policy.location, "tags": dict(policy.tags)},
-            )
-            ownership_state = _ownership_state(created, policy)
-            observed_owner_digest = _observed_owner_digest(created)
-            if not _is_exact_owned_group(created, policy):
-                raise AzureResourceGroupBootstrapError("ownership") from None
-            observed = client.resource_groups.get(policy.resource_group)
-            ownership_state = _ownership_state(observed, policy)
-            observed_owner_digest = _observed_owner_digest(observed)
-            if not _is_exact_owned_group(observed, policy):
-                raise AzureResourceGroupBootstrapError("ownership") from None
-            result = AzureResourceGroupBootstrapResult(
-                AzureResourceGroupBootstrapState.CREATED
-            )
-        else:
-            ownership_state = _ownership_state(existing, policy)
-            observed_owner_digest = _observed_owner_digest(existing)
-            if ownership_state is AzureResourceGroupOwnershipState.LEGACY_OWNED:
-                tags = _member(existing, "tags")
-                if not isinstance(tags, Mapping) or any(
-                    not isinstance(name, str) or not isinstance(value, str)
-                    for name, value in tags.items()
-                ):
-                    raise AzureResourceGroupBootstrapError("ownership")
-                trace_sink(
-                    AzureResourceGroupBootstrapTrace(
-                        AzureResourceGroupBootstrapState.MIGRATION_STARTED,
-                        ownership_state=ownership_state,
-                        observed_owner_digest=observed_owner_digest,
-                        expected_owner_digest=policy.owner_digest,
-                    )
-                )
-                migrated = client.resource_groups.create_or_update(
-                    policy.resource_group,
-                    {
-                        "location": policy.location,
-                        "tags": {**dict(tags), **policy.tags},
-                    },
-                )
-                ownership_state = _ownership_state(migrated, policy)
-                observed_owner_digest = _observed_owner_digest(migrated)
-                if not _is_exact_owned_group(migrated, policy):
-                    raise AzureResourceGroupBootstrapError("ownership")
-                observed = client.resource_groups.get(policy.resource_group)
-                ownership_state = _ownership_state(observed, policy)
-                observed_owner_digest = _observed_owner_digest(observed)
-                if not _is_exact_owned_group(observed, policy):
-                    raise AzureResourceGroupBootstrapError("ownership")
-                result = AzureResourceGroupBootstrapResult(
-                    AzureResourceGroupBootstrapState.MIGRATED
-                )
-            elif not _is_exact_owned_group(existing, policy):
-                raise AzureResourceGroupBootstrapError("ownership")
-            else:
-                result = AzureResourceGroupBootstrapResult(
-                    AzureResourceGroupBootstrapState.REUSED
-                )
+        result = _ensure_with_client(policy, client, trace_sink, observation)
     except BaseException as error:
         failure = _failure_class(error)
     client_closed = _close(client)
@@ -388,8 +404,8 @@ def ensure_azure_resource_group(
                 AzureResourceGroupBootstrapTrace(
                     AzureResourceGroupBootstrapState.FAILED,
                     failure,
-                    ownership_state,
-                    observed_owner_digest,
+                    observation.ownership_state,
+                    observation.owner_digest,
                     policy.owner_digest,
                 )
             )

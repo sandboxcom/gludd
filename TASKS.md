@@ -202,6 +202,33 @@ S83.157 exact changed-surface registration (from the active gate):
 - `tests/unit/test_self_improve_codex_comparison.py`
 - `tests/unit/test_self_improve_runtime_config.py`
 - `tests/unit/test_validate_azure_accelerator_credentials.py`
+- `config/coverage_complexity_refactors.ini`
+- `src/general_ludd/agents/behavior.py`
+- `src/general_ludd/agents/behavior_contracts.py`
+- `src/general_ludd/budget/credit_providers.py`
+- `src/general_ludd/budget/credit_tracker.py`
+- `src/general_ludd/collections/importer.py`
+- `src/general_ludd/collections/terraform_metadata.py`
+- `src/general_ludd/connectors/baseten.py`
+- `src/general_ludd/connectors/baseten_contracts.py`
+- `src/general_ludd/infra/azure_containerapp_runtime_factories.py`
+- `src/general_ludd/infra/azure_containerapp_runtime_readers.py`
+- `src/general_ludd/infra/azure_containerapp_runtime_state.py`
+- `src/general_ludd/self_improve/managed_mutation.py`
+- `src/general_ludd/self_improve/managed_prompt_contracts.py`
+- `src/general_ludd/self_improve/managed_remote_schema.py`
+- `src/general_ludd/self_improve/runtime_events.py`
+- `tests/unit/test_agent_behavior_contracts.py`
+- `tests/unit/test_azure_containerapp_runtime_factories.py`
+- `tests/unit/test_azure_containerapp_runtime_readers.py`
+- `tests/unit/test_azure_containerapp_runtime_state.py`
+- `tests/unit/test_baseten_contracts.py`
+- `tests/unit/test_credit_provider_contracts.py`
+- `tests/unit/test_managed_mutation.py`
+- `tests/unit/test_managed_prompt_contracts.py`
+- `tests/unit/test_managed_remote_schema.py`
+- `tests/unit/test_self_improve_runtime_events.py`
+- `tests/unit/test_terraform_collection_metadata.py`
 
 S83.157/S83.158 exact autonomous-compute and atomic-scheduler surface:
 

@@ -267,8 +267,6 @@ src/general_ludd/connectors/azure_monitor.py:AzureMonitorSource
 src/general_ludd/connectors/azure_resource_graph.py:AzureResourceGraphSource
 src/general_ludd/connectors/base.py:run_healthcheck
 src/general_ludd/connectors/baseten.py:BasetenClient
-src/general_ludd/connectors/baseten.py:BasetenConfig
-src/general_ludd/connectors/baseten.py:BasetenModelsResponse
 src/general_ludd/connectors/bugsnag.py:BugsnagSource
 src/general_ludd/connectors/buildkite.py:BuildkiteBuild
 src/general_ludd/connectors/buildkite.py:BuildkiteLogResponse

@@ -8,19 +8,16 @@ execution boundary without importing the command-line script.
 
 from __future__ import annotations
 
-import difflib
 import hashlib
 import hmac
 import json
 import os
 import re
 import shlex
-import tempfile
 import threading
 from collections.abc import Callable
 from contextlib import AbstractContextManager, ExitStack
 from dataclasses import dataclass, field, replace
-from enum import StrEnum
 from pathlib import Path
 from typing import Final, Protocol, cast, runtime_checkable
 
@@ -76,6 +73,16 @@ from general_ludd.self_improve.managed_candidate_routing import (
     ManagedCandidateTrialSpec,
     route_managed_candidate_proposals,
 )
+from general_ludd.self_improve.managed_mutation import (
+    ModelPlanError,
+    ModelPlanFailure,
+    SelfImprovePolicyViolation,
+    apply_proposal,
+)
+from general_ludd.self_improve.managed_mutation import (
+    _write_atomic_temp as _write_atomic_temp,
+)
+from general_ludd.self_improve.managed_prompt_contracts import PromptShard
 from general_ludd.self_improve.model_candidate_planner import (
     CODE_TASK_CAPABILITY_POLICY_ID,
     CodeTaskShape,
@@ -106,7 +113,6 @@ from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 
 _MAX_TASK_BYTES: Final = 262_144
 _MAX_PLAN_BYTES: Final = 4_194_304
-_MAX_PROMPT_SHARD_BYTES: Final = 16_384
 _FORBIDDEN_COMMAND_CHARS: Final = frozenset(";|&$()<>\n\r")
 _SHA_RE: Final = re.compile(r"^[0-9a-f]{40}$")
 _DIGEST_RE: Final = re.compile(r"^[0-9a-f]{64}$")
@@ -121,31 +127,6 @@ _MANAGED_CANDIDATE_EVALUATOR_DIGEST: Final = stable_digest(
 )
 
 
-class ModelPlanFailure(StrEnum):
-    """Secret-safe terminal states for bounded model selection."""
-
-    EXHAUSTED = "model_plan_exhausted"
-
-
-class ModelPlanError(RuntimeError):
-    """Typed failure raised before a candidate can begin an attempt."""
-
-    def __init__(self, failure: ModelPlanFailure) -> None:
-        """Retain only a stable category and operator-safe message."""
-        if failure is not ModelPlanFailure.EXHAUSTED:
-            raise ValueError("unsupported typed model plan failure")
-        super().__init__("managed model candidate plan failed: model_plan_exhausted")
-        self.failure = failure
-
-
-class SelfImprovePolicyViolation(ValueError):
-    """Secret-safe rejection raised when project privacy cannot be proven."""
-
-    def __init__(self) -> None:
-        """Use one fixed message so paths, source, and parser errors never escape."""
-        super().__init__("self-improvement blocked by project privacy policy")
-
-
 def _is_safe_make_command(command: str) -> bool:
     try:
         tokens = shlex.split(command)
@@ -157,133 +138,6 @@ def _is_safe_make_command(command: str) -> bool:
         and len(command.encode("utf-8")) <= 4096
         and not any(character in command for character in _FORBIDDEN_COMMAND_CHARS)
     )
-
-
-def apply_proposal(repo_root: Path, proposal: ProposalManifest) -> int:
-    """Transactionally apply confined exact patches and return changed line count."""
-    proposal.validate_paths(repo_root)
-    originals: dict[Path, tuple[bool, str, int]] = {}
-    planned: dict[Path, tuple[bool, str]] = {}
-    for edit in proposal.edits:
-        destination = repo_root / edit.path
-        if destination.is_symlink():
-            raise ValueError(f"proposal path must not be a symlink: {edit.path}")
-        if destination not in originals:
-            exists = destination.is_file()
-            before = destination.read_text(encoding="utf-8") if exists else ""
-            mode = destination.stat().st_mode if exists else 0o644
-            originals[destination] = (exists, before, mode)
-            planned[destination] = (exists, before)
-        exists, current = planned[destination]
-        if edit.operation == "replace":
-            if proposal.schema_version == 2:
-                if not exists or current != edit.old_text:
-                    raise ValueError(
-                        f"replace old_text must equal the complete trusted snapshot: {edit.path}"
-                    )
-                planned[destination] = (True, edit.new_text)
-            else:
-                if not exists or current.count(edit.old_text) != 1:
-                    raise ValueError(
-                        f"replace old_text must occur exactly once: {edit.path}"
-                    )
-                planned[destination] = (
-                    True,
-                    current.replace(edit.old_text, edit.new_text, 1),
-                )
-        elif edit.operation == "create":
-            if exists:
-                raise ValueError(f"create target already exists: {edit.path}")
-            planned[destination] = (True, edit.new_text)
-        elif edit.operation == "delete":
-            if not exists or current != edit.old_text:
-                raise ValueError(
-                    f"delete old_text must equal the complete file: {edit.path}"
-                )
-            planned[destination] = (False, "")
-        else:
-            raise ValueError(f"unsupported edit operation: {edit.operation}")
-
-    changed_lines = sum(
-        _line_delta(originals[path][1], final_text)
-        for path, (_exists, final_text) in planned.items()
-    )
-    staged: dict[Path, Path] = {}
-    backups: dict[Path, Path] = {}
-    try:
-        for destination, (final_exists, final_text) in planned.items():
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            original_exists, original_text, original_mode = originals[destination]
-            if original_exists:
-                backups[destination] = _write_atomic_temp(
-                    destination,
-                    original_text,
-                    original_mode,
-                    ".self-improve-backup",
-                )
-            if final_exists:
-                staged[destination] = _write_atomic_temp(
-                    destination,
-                    final_text,
-                    original_mode,
-                    ".self-improve-tmp",
-                )
-        try:
-            for destination, (final_exists, _final_text) in planned.items():
-                if final_exists:
-                    os.replace(staged[destination], destination)
-                    staged.pop(destination)
-                else:
-                    destination.unlink()
-        except BaseException:
-            for destination, (original_exists, _text, _mode) in originals.items():
-                if original_exists:
-                    backup = backups.get(destination)
-                    if backup is not None and backup.exists():
-                        os.replace(backup, destination)
-                else:
-                    destination.unlink(missing_ok=True)
-            raise
-        return changed_lines
-    finally:
-        for temporary in (*staged.values(), *backups.values()):
-            temporary.unlink(missing_ok=True)
-
-
-def _write_atomic_temp(
-    destination: Path,
-    content: str,
-    mode: int,
-    suffix: str,
-) -> Path:
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        dir=destination.parent,
-        prefix=".gludd-self-improve-",
-        suffix=suffix,
-        delete=False,
-    ) as handle:
-        handle.write(content)
-        handle.flush()
-        os.fsync(handle.fileno())
-        temporary = Path(handle.name)
-    os.chmod(temporary, mode)
-    return temporary
-
-
-def _line_delta(before: str, after: str) -> int:
-    delta = 0
-    for line in difflib.unified_diff(
-        before.splitlines(),
-        after.splitlines(),
-        lineterm="",
-    ):
-        if line.startswith(("+++", "---", "@@")):
-            continue
-        if line.startswith(("+", "-")):
-            delta += 1
-    return delta
 
 
 @dataclass(frozen=True, slots=True)
@@ -364,46 +218,6 @@ class TaskSpec:
             "reference_elapsed_seconds": float(self.reference_elapsed_seconds),
             "task_id": self.task_id,
         }
-
-
-@dataclass(frozen=True, slots=True)
-class PromptShard:
-    """One bounded proposal prompt with an exact, disjoint edit focus."""
-
-    focus_paths: tuple[str, ...]
-    prompt: str
-    editable_ranges: tuple[tuple[int, int], ...] = ()
-
-    def __post_init__(self) -> None:
-        """Reject empty, mutable, duplicate, or oversized shard state."""
-        if (
-            not isinstance(self.focus_paths, tuple)
-            or not self.focus_paths
-            or not all(isinstance(path, str) and path for path in self.focus_paths)
-            or len(set(self.focus_paths)) != len(self.focus_paths)
-        ):
-            raise ValueError("prompt shard focus paths must be a non-empty unique tuple")
-        if not isinstance(self.prompt, str) or not self.prompt.strip():
-            raise ValueError("prompt shard must not be empty")
-        if len(self.prompt.encode("utf-8")) > _MAX_PROMPT_SHARD_BYTES:
-            raise ValueError(f"prompt shard exceeds {_MAX_PROMPT_SHARD_BYTES} bytes")
-        if not isinstance(self.editable_ranges, tuple):
-            raise ValueError("prompt shard editable ranges must be an immutable tuple")
-        previous_end = 1
-        for item in self.editable_ranges:
-            if (
-                not isinstance(item, tuple)
-                or len(item) != 2
-                or any(
-                    isinstance(value, bool) or not isinstance(value, int)
-                    for value in item
-                )
-            ):
-                raise ValueError("prompt shard editable ranges must contain integer pairs")
-            start, end = item
-            if start < 1 or end <= start or start < previous_end:
-                raise ValueError("prompt shard editable ranges must be ordered half-open ranges")
-            previous_end = end
 
 
 @dataclass(frozen=True, slots=True)
@@ -2654,6 +2468,95 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
             self.progress_sink("SELF_IMPROVE_CANDIDATE_ROUTE phase=completed")
             return generated
 
+    def _candidate_acquisition(
+        self,
+        plan: ApprovedSelfImprovePlan,
+        candidate: PlannedModelCandidate | None,
+        manager: _LeaseManager,
+    ) -> AbstractContextManager[AcquiredModel]:
+        if plan.explicit_model_path is not None:
+            return manager.acquire(
+                plan.task.objective,
+                explicit_path=plan.explicit_model_path,
+            )
+        if candidate is not None:
+            return manager.acquire(
+                plan.task.objective,
+                model_config=candidate.config,
+                resolved_revision=candidate.resolved_revision,
+            )
+        raise RuntimeError("local model candidate was not selected")
+
+    def _generate_from_acquired_model(
+        self,
+        plan: ApprovedSelfImprovePlan,
+        prompt: PromptPlan | str,
+        candidate: PlannedModelCandidate | None,
+        acquired: AcquiredModel,
+        classification: CandidateTaskClassification | None,
+        reservation: _Reservation | None,
+        candidate_identity: ModelArtifactIdentity | None,
+        *,
+        outcomes: ManagedOutcomeAdapter | None = None,
+        attempt: int = 1,
+    ) -> GeneratedProposal:
+        self.progress_sink(
+            "SELF_IMPROVE_MODEL_ACQUIRED "
+            f"model={acquired.model_id} source={acquired.source} "
+            f"revision={acquired.resolved_revision or 'explicit'} "
+            f"sha256={acquired.artifact_sha256}"
+        )
+        acquired_filename = getattr(acquired, "filename", acquired.path.name)
+        self.progress_sink(
+            "SELF_IMPROVE_CANDIDATE_LOCAL_BIND phase=started "
+            f"candidate_planned={str(candidate is not None).lower()} "
+            "filename_suffix_gguf="
+            f"{str(acquired_filename.lower().endswith('.gguf')).lower()}"
+        )
+        try:
+            local_identity = _local_backend_identity(acquired, candidate)
+            backend = LocalProposalBackendAdapter(local_identity, self.proposal_generator)
+        except BaseException as error:
+            self.progress_sink(
+                "SELF_IMPROVE_CANDIDATE_LOCAL_BIND phase=failed "
+                "failure=identity "
+                f"category={_local_identity_failure_category(error)}"
+            )
+            raise
+        self.progress_sink(
+            "SELF_IMPROVE_CANDIDATE_LOCAL_BIND phase=bound "
+            f"identity_digest={local_identity.evidence_identity_digest}"
+        )
+        invocation = LocalProposalInvocation(
+            acquired.path,
+            prompt,
+            plan.task,
+            plan.reference,
+        )
+        proposal: object
+        if self.live_candidate_wiring is None:
+            proposal = backend.generate(
+                invocation,
+                max_output_tokens=plan.required_output_tokens,
+                timeout_seconds=600.0,
+            )
+        else:
+            if classification is None:
+                raise RuntimeError("live candidate classification was not created")
+            proposal = self._generate_live_candidate_proposal(
+                plan,
+                prompt,
+                classification,
+                backend,
+                invocation,
+                outcomes,
+                attempt=attempt,
+            )
+        generated = _decode_local_routing_response(proposal)
+        if reservation is not None and candidate_identity is not None:
+            reservation.mark_eligible(candidate_identity)
+        return generated
+
     def _generate_proposal(
         self,
         plan: ApprovedSelfImprovePlan,
@@ -2694,83 +2597,22 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
                 attempt=attempt,
             )
             return _decode_local_routing_response(remote_proposal)
-        if plan.explicit_model_path is not None:
-            acquisition = manager.acquire(
-                plan.task.objective,
-                explicit_path=plan.explicit_model_path,
-            )
-        elif candidate is not None:
-            acquisition = manager.acquire(
-                plan.task.objective,
-                model_config=candidate.config,
-                resolved_revision=candidate.resolved_revision,
-            )
-        else:
-            raise RuntimeError("local model candidate was not selected")
+        acquisition = self._candidate_acquisition(plan, candidate, manager)
         acquired_model: AcquiredModel | None = None
         try:
             with acquisition as acquired:
                 acquired_model = acquired
-                self.progress_sink(
-                    "SELF_IMPROVE_MODEL_ACQUIRED "
-                    f"model={acquired.model_id} source={acquired.source} "
-                    f"revision={acquired.resolved_revision or 'explicit'} "
-                    f"sha256={acquired.artifact_sha256}"
-                )
-                acquired_filename = getattr(acquired, "filename", acquired.path.name)
-                self.progress_sink(
-                    "SELF_IMPROVE_CANDIDATE_LOCAL_BIND phase=started "
-                    f"candidate_planned={str(candidate is not None).lower()} "
-                    "filename_suffix_gguf="
-                    f"{str(acquired_filename.lower().endswith('.gguf')).lower()}"
-                )
-                try:
-                    local_identity = _local_backend_identity(acquired, candidate)
-                    backend = LocalProposalBackendAdapter(
-                        local_identity,
-                        self.proposal_generator,
-                    )
-                except BaseException as error:
-                    self.progress_sink(
-                        "SELF_IMPROVE_CANDIDATE_LOCAL_BIND phase=failed "
-                        "failure=identity "
-                        f"category={_local_identity_failure_category(error)}"
-                    )
-                    raise
-                self.progress_sink(
-                    "SELF_IMPROVE_CANDIDATE_LOCAL_BIND phase=bound "
-                    f"identity_digest={local_identity.evidence_identity_digest}"
-                )
-                invocation = LocalProposalInvocation(
-                    acquired.path,
+                return self._generate_from_acquired_model(
+                    plan,
                     prompt,
-                    plan.task,
-                    plan.reference,
+                    candidate,
+                    acquired,
+                    classification,
+                    reservation,
+                    candidate_identity,
+                    outcomes=outcomes,
+                    attempt=attempt,
                 )
-                wiring = self.live_candidate_wiring
-                proposal: object
-                if wiring is None:
-                    proposal = backend.generate(
-                        invocation,
-                        max_output_tokens=plan.required_output_tokens,
-                        timeout_seconds=600.0,
-                    )
-                else:
-                    if classification is None:
-                        raise RuntimeError("live candidate classification was not created")
-                    proposal = self._generate_live_candidate_proposal(
-                        plan,
-                        prompt,
-                        classification,
-                        backend,
-                        invocation,
-                        outcomes,
-                        attempt=attempt,
-                    )
-                generated = _decode_local_routing_response(proposal)
-                if reservation is not None and candidate_identity is not None:
-                    reservation.mark_eligible(candidate_identity)
-                return generated
         finally:
             if acquired_model is not None and self.release_sink is not None:
                 self.release_sink(acquired_model)
@@ -3387,6 +3229,7 @@ __all__ = (
     "PlanBoundProposal",
     "PromptPlan",
     "PromptShard",
+    "SelfImprovePolicyViolation",
     "TaskSpec",
     "_attempt_identity_digest",
     "_build_validation_retry_prompt_plan",

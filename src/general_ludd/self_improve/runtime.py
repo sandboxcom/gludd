@@ -26,7 +26,6 @@ from pathlib import Path
 from typing import Final, Protocol, TextIO, cast, runtime_checkable
 
 from general_ludd.hardware.model_fit import unified_probe as unified_probe
-from general_ludd.local_model import LocalModelConfig
 from general_ludd.planning.repo_map import RepoMapBuilder
 from general_ludd.self_improve.codex_comparison import (
     COMPACT_PROPOSAL_PROTOCOL_V3,
@@ -152,17 +151,11 @@ from general_ludd.self_improve.managed_runtime_evaluation import (
     evaluate_policy_bound_managed_proposal as evaluate_policy_bound_managed_proposal,
 )
 from general_ludd.self_improve.model_candidate_planner import (
-    PlannedModelCandidate,
     load_latest_failed_model_ids,
     record_self_improve_outcome,
 )
 from general_ludd.self_improve.model_candidate_planner import (
     plan_model_candidates as plan_model_candidates,
-)
-from general_ludd.self_improve.model_lifecycle import (
-    AcquiredModel,
-    ModelAcquisitionEvent,
-    ModelArtifactIdentity,
 )
 from general_ludd.self_improve.model_lifecycle import (
     ModelAcquisitionError as ModelAcquisitionError,
@@ -184,6 +177,12 @@ from general_ludd.self_improve.runtime_builder import (
     build_managed_self_improve_runner as _build_managed_runner_composition,
 )
 from general_ludd.self_improve.runtime_config import load_self_improve_runtime_config
+from general_ludd.self_improve.runtime_events import (
+    planned_artifact_identity,
+    report_model_acquisition_event,
+    report_model_release,
+    report_model_resolution_failure,
+)
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 from general_ludd.small_models.recommender import map_task_to_capabilities
 
@@ -211,53 +210,11 @@ _RELEVANCE_STOPWORDS: Final = frozenset(
         "that", "the", "this", "uses", "with", "without",
     }
 )
-def _report_model_resolution_failure(
-    model: LocalModelConfig,
-    reason: str,
-) -> None:
-    print(
-        "SELF_IMPROVE_MODEL_UNAVAILABLE "
-        f"model={model.name} error={json.dumps(reason[:1000])}",
-        flush=True,
-    )
 
-
-def _planned_artifact_identity(
-    candidate: PlannedModelCandidate,
-) -> ModelArtifactIdentity:
-    """Adapt a planner result to the lifecycle's immutable artifact boundary."""
-    return ModelArtifactIdentity(
-        model_id=candidate.config.name,
-        repo_id=candidate.config.repo,
-        filename=candidate.config.filename,
-        revision=candidate.resolved_revision,
-    )
-
-
-def _report_model_acquisition_event(event: ModelAcquisitionEvent) -> None:
-    """Publish one secret-safe, bounded acquisition phase marker."""
-    print(
-        "SELF_IMPROVE_MODEL_ACQUISITION "
-        f"phase={event.phase.value} operation={event.operation_id} "
-        f"repository={event.repository_key} model={event.model_key or 'none'} "
-        f"revision={event.revision or 'none'} "
-        f"elapsed_seconds={event.elapsed_seconds:.2f} "
-        f"failure={event.failure.value if event.failure is not None else 'none'}",
-        flush=True,
-    )
-
-
-def _report_model_release(model: AcquiredModel) -> None:
-    try:
-        released = not model.lease_path.exists()
-    except OSError:
-        released = False
-    print(
-        "SELF_IMPROVE_MODEL_RELEASED "
-        f"model={model.model_id} lease_released={str(released).lower()}",
-        flush=True,
-    )
-
+_planned_artifact_identity = planned_artifact_identity
+_report_model_acquisition_event = report_model_acquisition_event
+_report_model_release = report_model_release
+_report_model_resolution_failure = report_model_resolution_failure
 
 
 @dataclass(frozen=True)

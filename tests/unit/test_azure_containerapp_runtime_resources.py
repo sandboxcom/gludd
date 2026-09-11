@@ -757,3 +757,127 @@ def test_resource_construction_failure_closes_partial_clients_and_releases_lease
         )
 
     assert lifecycle == ["app", "lifecycle", "environment", "credential", "lease"]
+
+
+def test_partial_legacy_transport_failure_closes_every_acquired_owner(
+    tmp_path: Path,
+) -> None:
+    """Construction rollback closes completed transports before identity release."""
+    lifecycle: list[str] = []
+
+    class Client:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def close(self) -> None:
+            lifecycle.append(self.name)
+
+    def fail_lifecycle(**_kwargs: object) -> object:
+        raise RuntimeError("private provider failure")
+
+    with pytest.raises(RuntimeError, match="private provider failure"):
+        resources_module.build_azure_containerapp_runtime_resources(
+            credentials=_credentials(),
+            policy=_policy(),
+            requirement=_requirement(),
+            work_root=tmp_path / "apps",
+            environment_work_root=tmp_path / "environments",
+            credential_release=lambda: lifecycle.append("lease"),
+            _credential_factory=lambda _value: Client("credential"),
+            _environment_transport_factory=lambda **_kwargs: Client("environment"),
+            _lifecycle_transport_factory=fail_lifecycle,
+            _app_transport_factory=lambda **_kwargs: Client("app"),
+        )
+
+    assert lifecycle == ["environment", "credential", "lease"]
+
+
+def test_incomplete_legacy_transport_set_fails_before_transport_construction(
+    tmp_path: Path,
+) -> None:
+    """A mixed legacy/SDK configuration cannot acquire an ambiguous owner set."""
+    lifecycle: list[str] = []
+
+    class Credential:
+        def close(self) -> None:
+            lifecycle.append("credential")
+
+    with pytest.raises(ValueError, match="all legacy Azure read transports"):
+        resources_module.build_azure_containerapp_runtime_resources(
+            credentials=_credentials(),
+            policy=_policy(),
+            requirement=_requirement(),
+            work_root=tmp_path / "apps",
+            environment_work_root=tmp_path / "environments",
+            credential_release=lambda: lifecycle.append("lease"),
+            _credential_factory=lambda _value: Credential(),
+            _environment_transport_factory=lambda **_kwargs: object(),
+        )
+
+    assert lifecycle == ["credential", "lease"]
+
+
+def test_sdk_view_construction_failure_closes_unowned_client_first(
+    tmp_path: Path,
+) -> None:
+    """The official SDK client cannot leak when its bounded views fail to build."""
+    lifecycle: list[str] = []
+
+    class Client:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def close(self) -> None:
+            lifecycle.append(self.name)
+
+    def fail_views(**_kwargs: object) -> object:
+        raise RuntimeError("private view failure")
+
+    with pytest.raises(RuntimeError, match="private view failure"):
+        resources_module.build_azure_containerapp_runtime_resources(
+            credentials=_credentials(),
+            policy=_policy(),
+            requirement=_requirement(),
+            work_root=tmp_path / "apps",
+            environment_work_root=tmp_path / "environments",
+            credential_release=lambda: lifecycle.append("lease"),
+            _credential_factory=lambda _value: Client("credential"),
+            _sdk_client_factory=lambda *_args: Client("sdk"),
+            _sdk_transports_factory=fail_views,
+        )
+
+    assert lifecycle == ["sdk", "credential", "lease"]
+
+
+def test_cleanup_attempts_every_owner_when_clients_and_release_fail() -> None:
+    """One close failure never prevents later resources from being released."""
+    lifecycle: list[str] = []
+
+    class Client:
+        def __init__(self, name: str, *, fail: bool = False) -> None:
+            self.name = name
+            self.fail = fail
+
+        def close(self) -> None:
+            lifecycle.append(self.name)
+            if self.fail:
+                raise RuntimeError("private cleanup failure")
+
+    def release() -> None:
+        lifecycle.append("lease")
+        raise RuntimeError("private lease failure")
+
+    resources = resources_module.AzureContainerAppRuntimeResources(
+        runtime=cast(object, SimpleNamespace()),
+        environment_runtime=cast(object, SimpleNamespace()),
+        credential=Client("credential"),
+        environment_transport=Client("environment"),
+        lifecycle_transport=Client("lifecycle", fail=True),
+        app_transport=Client("app", fail=True),
+        credential_release=release,
+    )
+
+    with pytest.raises(RuntimeError, match="Azure live resource cleanup failed"):
+        resources.close()
+
+    assert lifecycle == ["app", "lifecycle", "environment", "credential", "lease"]

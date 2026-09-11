@@ -686,7 +686,7 @@
     },
     {
       "path": "src/general_ludd/budget/credit_tracker.py",
-      "line": 199,
+      "line": 142,
       "column": 28,
       "kind": "client",
       "owner": "CreditTracker._get_http",
@@ -2082,8 +2082,8 @@
       "owned": true
     },
     {
-      "path": "src/general_ludd/self_improve/managed_runner.py",
-      "line": 259,
+      "path": "src/general_ludd/self_improve/managed_mutation.py",
+      "line": 136,
       "column": 9,
       "kind": "temp-artifact",
       "owner": "_write_atomic_temp",
@@ -2094,7 +2094,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/runtime.py",
-      "line": 420,
+      "line": 377,
       "column": 15,
       "kind": "process",
       "owner": "MakeRunner._run_observable_argv",
@@ -2105,7 +2105,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/runtime.py",
-      "line": 519,
+      "line": 476,
       "column": 9,
       "kind": "temp-artifact",
       "owner": "_run_local_proposal_request",

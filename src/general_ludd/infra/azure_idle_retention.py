@@ -539,6 +539,41 @@ def _validated_inputs(
     return current, trace_sink or _noop_trace
 
 
+def _retention_horizon(
+    policy: AzureIdleRetentionPolicy,
+    expected_next_demand_seconds: int | None,
+) -> int:
+    if expected_next_demand_seconds is None:
+        return policy.max_retention_seconds
+    if expected_next_demand_seconds <= policy.max_retention_seconds:
+        return expected_next_demand_seconds
+    return 0
+
+
+def _retention_decisions(
+    ordered: tuple[AzureRetentionLayer, ...],
+    selected: tuple[AzureRetentionLayer, ...],
+    exclusions: dict[AzureRetentionLayerKind, AzureRetentionReason | None],
+) -> tuple[AzureRetentionLayerDecision, ...]:
+    selected_kinds = {layer.kind for layer in selected}
+    return tuple(
+        AzureRetentionLayerDecision(
+            layer.kind,
+            (
+                AzureRetentionDisposition.RETAIN
+                if layer.kind in selected_kinds
+                else AzureRetentionDisposition.DESTROY
+            ),
+            (
+                AzureRetentionReason.SELECTED
+                if layer.kind in selected_kinds
+                else exclusions[layer.kind] or AzureRetentionReason.BUDGET_TRADEOFF
+            ),
+        )
+        for layer in ordered
+    )
+
+
 def plan_azure_idle_retention(
     layers: tuple[AzureRetentionLayer, ...],
     *,
@@ -560,13 +595,7 @@ def plan_azure_idle_retention(
         trace_sink,
     )
     ordered = tuple(sorted(layers, key=lambda layer: _LAYER_ORDER[layer.kind]))
-    horizon = policy.max_retention_seconds
-    if expected_next_demand_seconds is not None:
-        horizon = (
-            expected_next_demand_seconds
-            if expected_next_demand_seconds <= policy.max_retention_seconds
-            else 0
-        )
+    horizon = _retention_horizon(policy, expected_next_demand_seconds)
     _emit(
         sink,
         AzureRetentionTrace(
@@ -586,24 +615,8 @@ def plan_azure_idle_retention(
         layer for layer in ordered if exclusions[layer.kind] is None
     )
     selected = _best_subset(eligible, policy, horizon)
+    decisions = _retention_decisions(ordered, selected, exclusions)
     selected_kinds = {layer.kind for layer in selected}
-    decisions = tuple(
-        AzureRetentionLayerDecision(
-            layer.kind,
-            (
-                AzureRetentionDisposition.RETAIN
-                if layer.kind in selected_kinds
-                else AzureRetentionDisposition.DESTROY
-            ),
-            (
-                AzureRetentionReason.SELECTED
-                if layer.kind in selected_kinds
-                else exclusions[layer.kind]
-                or AzureRetentionReason.BUDGET_TRADEOFF
-            ),
-        )
-        for layer in ordered
-    )
     hourly, monthly, projected, saved = _subset_metrics(selected, horizon)
     retention_seconds = horizon if selected else 0
     digest = _digest(

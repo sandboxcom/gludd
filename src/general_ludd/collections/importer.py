@@ -33,6 +33,24 @@ from pathlib import Path
 
 import yaml
 
+from general_ludd.collections.terraform_metadata import (
+    is_floating_version as _is_floating_version,
+)
+from general_ludd.collections.terraform_metadata import (
+    iter_provider_entries as _iter_provider_entries,
+)
+from general_ludd.collections.terraform_metadata import (
+    parse_required_providers as _parse_required_providers,
+)
+from general_ludd.collections.terraform_metadata import (
+    parse_tfvars_keys as _parse_tfvars_keys,
+)
+from general_ludd.collections.terraform_metadata import (
+    parse_variable_names as _parse_variable_names,
+)
+
+__all__ = ("_iter_provider_entries",)
+
 _DENY_REASSIGN_RE = re.compile(r"deny\s*[-+]?=")
 
 
@@ -253,101 +271,6 @@ def _iter_child_dirs(parent: Path) -> list[Path]:
     if not parent.is_dir():
         return []
     return sorted(p for p in parent.iterdir() if p.is_dir())
-
-
-_VARIABLE_RE = re.compile(r'^\s*variable\s+"([^"]+)"\s*\{', re.MULTILINE)
-
-
-def _parse_variable_names(text: str) -> list[str]:
-    """Extract ``variable "x"`` names from a ``variables.tf`` body."""
-    return _VARIABLE_RE.findall(text)
-
-
-_TFVARS_KEY_RE = re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=')
-
-
-def _parse_tfvars_keys(text: str) -> set[str]:
-    """Extract top-level assignment keys (``foo = ...``) from a tfvars body.
-
-    Ignores blank lines, comments, and HCL block headers (``resource "..."``
-    etc.) — those are not tfvars assignments.
-    """
-    keys: set[str] = set()
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or stripped.startswith("//"):
-            continue
-        m = _TFVARS_KEY_RE.match(line)
-        if m:
-            keys.add(m.group(1))
-    return keys
-
-
-_VERSION_RE = re.compile(r'version\s*=\s*"(?P<v>[^"]+)"')
-_REQUIRED_PROVIDERS_HEADER_RE = re.compile(r'required_providers\s*\{')
-
-
-def _parse_required_providers(text: str) -> dict[str, str]:
-    """Parse every ``required_providers`` block into a {name: version} map.
-
-    Handles arbitrary nesting via a small depth-tracking scan: find each
-    ``required_providers {`` header, then walk forward counting ``{``/``}``
-    until the block closes, and within that span extract
-    ``<name> = { ... version = "..." ... }`` entries.
-    """
-    out: dict[str, str] = {}
-    for hdr in _REQUIRED_PROVIDERS_HEADER_RE.finditer(text):
-        start = hdr.end()
-        depth = 1
-        i = start
-        while i < len(text) and depth > 0:
-            ch = text[i]
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-            i += 1
-        block_body = text[start:i - 1]
-        # Each provider entry is ``name = { ... }``. Walk depth again per entry.
-        for name, entry in _iter_provider_entries(block_body):
-            m = _VERSION_RE.search(entry)
-            if m:
-                out[name] = m.group("v")
-    return out
-
-
-_PROVIDER_NAME_RE = re.compile(r'([A-Za-z0-9_-]+)\s*=\s*\{')
-
-
-def _iter_provider_entries(body: str) -> list[tuple[str, str]]:
-    """Yield ``(name, entry_body)`` pairs for ``name = { ... }`` blocks."""
-    entries: list[tuple[str, str]] = []
-    for m in _PROVIDER_NAME_RE.finditer(body):
-        name = m.group(1)
-        start = m.end()
-        depth = 1
-        i = start
-        while i < len(body) and depth > 0:
-            ch = body[i]
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-            i += 1
-        entries.append((name, body[start:i - 1]))
-    return entries
-
-
-def _is_floating_version(version: str) -> bool:
-    """True when a version constraint is not pinned (``~>`` or ``=``).
-
-    A floating ``>=``/``>``/``<=``/``<`` constraint allows unplanned provider
-    upgrades and is flagged as a warning; ``~> 2.8`` and ``= 2.8.0`` are pins.
-    """
-    v = version.strip()
-    if v.startswith("~>") or v.startswith("="):
-        return False
-    return bool(v)
 
 
 def _find_first(iterator: Iterator[Path]) -> Path | None:
