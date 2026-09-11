@@ -10,6 +10,10 @@ import pytest
 from general_ludd.models.model_deployment_metadata import (
     ModelDeploymentMetadata as SplitModelDeploymentMetadata,
 )
+from general_ludd.models.model_deployment_metadata import (
+    ModelDeploymentMetadataFailure,
+    ModelDeploymentMetadataUnavailable,
+)
 from general_ludd.models.model_registry import (
     DownloadedModel,
     ModelDeploymentMetadata,
@@ -76,6 +80,23 @@ class TestModelRegistryUnit:
                 mock_api.return_value = api
                 reg.search(query="llama", tags=["text-generation", "pytorch"])
                 api.list_models.assert_called_once()
+
+    def test_search_uses_current_hugging_face_sort_contract(self):
+        """Discovery must not pass the removed ``direction`` argument."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            reg = ModelRegistry(cache_dir=tmpdir)
+            with patch.object(reg, "_get_api") as mock_api:
+                api = MagicMock()
+                api.list_models.return_value = []
+                mock_api.return_value = api
+
+                reg.search(query="coder", sort="downloads", limit=7)
+
+                api.list_models.assert_called_once_with(
+                    sort="downloads",
+                    limit=7,
+                    search="coder",
+                )
 
     def test_get_model_info(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -153,14 +174,93 @@ class TestModelRegistryUnit:
                 ],
             )
 
+    def test_deployment_metadata_falls_back_to_immutable_config_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            reg = ModelRegistry(cache_dir=tmpdir, hf_token="hub-token")
+            mock_info = MagicMock()
+            mock_info.id = "vendor/coder"
+            mock_info.sha = "a" * 40
+            mock_info.downloads = 1234
+            mock_info.tags = [
+                "code",
+                "vllm",
+                "text-generation",
+                "license:apache-2.0",
+            ]
+            mock_info.pipeline_tag = "text-generation"
+            mock_info.library_name = "transformers"
+            mock_info.private = False
+            mock_info.gated = False
+            mock_info.used_storage = 14_000_000_000
+            mock_info.config = {}
+            mock_info.safetensors = MagicMock(
+                total=7_000_000_000,
+                parameters={"BF16": 7_000_000_000},
+            )
+            config_path = Path(tmpdir) / "config.json"
+            config_path.write_text('{"max_position_embeddings":32768}')
+
+            with (
+                patch.object(reg, "_get_api") as mock_api,
+                patch(
+                    "huggingface_hub.hf_hub_download",
+                    return_value=str(config_path),
+                ) as download,
+            ):
+                api = MagicMock()
+                api.model_info.return_value = mock_info
+                mock_api.return_value = api
+
+                metadata = reg.get_deployment_metadata("vendor/coder")
+
+            assert metadata.context_tokens == 32_768
+            download.assert_called_once_with(
+                repo_id="vendor/coder",
+                filename="config.json",
+                revision="a" * 40,
+                cache_dir=tmpdir,
+                token="hub-token",
+            )
+
     @pytest.mark.parametrize(
-        ("field", "value", "message"),
+        ("field", "value", "message", "failure"),
         (
-            ("sha", "main", "immutable revision"),
-            ("private", True, "public ungated"),
-            ("gated", "auto", "public ungated"),
-            ("safetensors", None, "safetensors"),
-            ("config", {}, "context"),
+            (
+                "sha",
+                "main",
+                "immutable revision",
+                ModelDeploymentMetadataFailure.RECORD,
+            ),
+            (
+                "private",
+                True,
+                "public ungated",
+                ModelDeploymentMetadataFailure.VISIBILITY,
+            ),
+            (
+                "gated",
+                "auto",
+                "public ungated",
+                ModelDeploymentMetadataFailure.VISIBILITY,
+            ),
+            (
+                "safetensors",
+                None,
+                "safetensors",
+                ModelDeploymentMetadataFailure.SAFETENSORS,
+            ),
+            (
+                "config",
+                {},
+                "context",
+                ModelDeploymentMetadataFailure.CONTEXT,
+            ),
+            (
+                "tags",
+                ["code", "vllm"],
+                "declared license",
+                ModelDeploymentMetadataFailure.LICENSE,
+            ),
         ),
     )
     def test_deployment_metadata_fails_closed_on_incomplete_hub_truth(
@@ -168,6 +268,7 @@ class TestModelRegistryUnit:
         field,
         value,
         message,
+        failure,
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             reg = ModelRegistry(cache_dir=tmpdir)
@@ -188,12 +289,21 @@ class TestModelRegistryUnit:
             )
             setattr(mock_info, field, value)
 
-            with patch.object(reg, "_get_api") as mock_api:
+            with (
+                patch.object(reg, "_get_api") as mock_api,
+                patch(
+                    "huggingface_hub.hf_hub_download",
+                    side_effect=OSError("unavailable"),
+                ),
+            ):
                 api = MagicMock()
                 api.model_info.return_value = mock_info
                 mock_api.return_value = api
-                with pytest.raises(ValueError, match=message):
+                with pytest.raises(
+                    ModelDeploymentMetadataUnavailable, match=message
+                ) as raised:
                     reg.get_deployment_metadata("vendor/coder")
+                assert raised.value.failure is failure
 
     def test_list_files(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -442,4 +552,3 @@ class TestModelRegistryRefresh:
 def test_registry_preserves_deployment_metadata_public_compatibility() -> None:
     """Registry callers retain the established deployment metadata import."""
     assert ModelDeploymentMetadata is SplitModelDeploymentMetadata
-

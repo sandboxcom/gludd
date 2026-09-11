@@ -25,6 +25,8 @@ _PROFILE_GPUS = {
     "Consumption-GPU-NC8as-T4": GPUType.T4,
     "Consumption-GPU-NC24-A100": GPUType.A100_80,
 }
+_MIN_VLLM_CONTEXT_TOKENS = 512
+_MAX_VLLM_CONTEXT_TOKENS = 32_768
 
 
 def build_containerapp_compute_config(
@@ -45,6 +47,12 @@ def build_containerapp_compute_config(
         gpu_type = _PROFILE_GPUS[policy.workload_profile_type]
     except KeyError:
         raise AzureContainerAppMakeRuntimeError("sizing") from None
+    context_length = max(
+        _MIN_VLLM_CONTEXT_TOKENS,
+        policy.call_budget.max_total_tokens,
+    )
+    if context_length > _MAX_VLLM_CONTEXT_TOKENS:
+        raise AzureContainerAppMakeRuntimeError("sizing")
     try:
         return config_factory(
             provider=ComputeProvider.AZURE,
@@ -68,7 +76,7 @@ def build_containerapp_compute_config(
             deploy_type="containerapp",
             allowed_cidr=policy.allowed_cidr,
             deployment_profile={
-                "context_length": 4096,
+                "context_length": context_length,
                 "max_num_seqs": 1,
                 "gpu_memory_utilization": 0.9,
                 "enforce_eager": False,

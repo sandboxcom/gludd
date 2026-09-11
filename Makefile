@@ -38,6 +38,7 @@ SELF_IMPROVE_MODEL_PATH ?=
 SELF_IMPROVE_PROMPT_FILE ?=
 SELF_IMPROVE_PROPOSAL_FILE ?=
 SELF_IMPROVE_CONTRACT_FILE ?=
+SELF_IMPROVE_ENVELOPE_FILE ?=
 SELF_IMPROVE_WORKER_VALIDATE_ONLY ?= 0
 SELF_IMPROVE_BASELINE_REF ?=
 SELF_IMPROVE_REFERENCE_REF ?=
@@ -200,7 +201,7 @@ _NO_UV_SYNC_GOALS := \
     check-disk check-disk-classification disk disk-check disk-guard cache-disk cache-clean disk-user-caches audit-home-tmp \
     cache-resource-inventory cache-resource-remove tmp-gludd-usage tmp-gludd-worktree-usage \
     tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
-    clean clean-artifacts clean-worktree-venvs clean-worktree-caches active-work-status ps agent-worktree agent-worktree-base azure-self-improve-auth-args azure-self-improve-live-proof \
+    clean clean-artifacts clean-worktree-venvs clean-worktree-caches active-work-status ps agent-worktree agent-worktree-base azure-self-improve-auth-args \
     development-merge-forward development-merge-forward-batch uv-cache-path
 ifneq (,$(filter $(_NO_UV_SYNC_GOALS),$(MAKECMDGOALS)))
 override UV := echo
@@ -239,7 +240,7 @@ PYTEST_VERBOSITY ?= -v
         feature-start feature-done test-and-commit preflight \
         agent-worktree agent-worktree-base agent-merge agent-cleanup agent-worktree-list \
         agent-worktree-dev agent-merge-dev \
-        self-improve-local-proposal azure-self-improve-auth-args azure-self-improve-live-proof azure-accelerator-role-apply azure-accelerator-role-args azure-accelerator-role-update-args azure-accelerator-auth-args azure-containerapp-environment-bootstrap-args azure-accelerator-auth-check azure-containerapp-preflight azure-containerapp-terraform-phase azure-containerapp-live-proof test-azure-containerapp-coverage test-self-improve test-self-improve-all test-self-improve-acceptance-matrix test-self-improve-private-policy \
+		self-improve-local-proposal azure-self-improve-auth-args azure-self-improve-live-proof azure-accelerator-role-apply azure-accelerator-role-args azure-accelerator-role-update-args azure-accelerator-auth-args azure-accelerator-auth-store azure-containerapp-environment-bootstrap-args azure-accelerator-auth-check azure-containerapp-preflight azure-containerapp-terraform-phase azure-containerapp-live-proof test-azure-containerapp-coverage test-self-improve test-self-improve-all test-self-improve-acceptance-matrix test-self-improve-private-policy \
           development-push development-merge-forward development-merge-forward-batch development-merge-to-master development-start development-status require-sandboxcom-ssh-key workstream-register workstream-unregister wt-prune-safe \
         git-commit-no-verify git-amend-msg \
 _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
@@ -528,6 +529,7 @@ help:
 	@echo "  azure-accelerator-auth-args  Emit validated NUL arguments for its Azure SP credential command"
 	@echo "  azure-containerapp-environment-bootstrap-args  Emit one operator-owned shared GPU environment deployment"
 	@echo "  azure-accelerator-auth-check Secret-safe validation of Azure CLI --json-auth output"
+	@echo "  azure-accelerator-auth-store Preserve stdin/source JSON as immutable protected generations"
 	@echo "  azure-containerapp-preflight Traced read-only named-environment GPU sizing and quota proof"
 	@echo "  azure-containerapp-terraform-phase  Owned app-only Terraform phase (AZURE_CONTAINERAPP_TF_*)"
 	@echo "  azure-containerapp-live-proof  Hermetic/live bounded deploy-infer-destroy proof (AZURE_CONTAINERAPP_LIVE_PROOF_*)"
@@ -1242,7 +1244,10 @@ check-makefile-structure:
 	@$(UV) run python -m pytest tests/unit/test_makefile_syntax.py -q -n 0
 
 collect-check:
-	@$(UV) run python scripts/stream_command.py --root "$(OBSERVED_ROOT)" --label collect-check \
+	@ANSIBLE_TMP="$(OBSERVED_ROOT)/ansible-local-$${PPID}-$$$$"; \
+	mkdir -p "$$ANSIBLE_TMP"; \
+	trap 'rm -rf -- "$$ANSIBLE_TMP"' EXIT INT TERM; \
+	ANSIBLE_LOCAL_TEMP="$$ANSIBLE_TMP" $(UV) run python scripts/stream_command.py --root "$(OBSERVED_ROOT)" --label collect-check \
 		--heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" --quiet-secs "$(OBSERVED_QUIET_SECS)" \
 		--max-secs "$(OBSERVED_MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)" --quiet --pytest-trace -- \
 		$(UV) run python scripts/collection_lock.py --run $(UV) run python -m pytest tests/ --co -q -p scripts.xdist_trace_plugin; RC=$$?; \
@@ -5772,6 +5777,17 @@ azure-accelerator-auth-args:
 	@# Inputs: AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_ACCELERATOR_RESOURCE_GROUP AZURE_ACCELERATOR_SP_NAME
 	@$(UV) run python scripts/render_azure_accelerator_auth_args.py auth
 
+# Atomically ingest Azure CLI JSON; old and failed generations are never pruned.
+azure-accelerator-auth-store:
+	@# Inputs: AZURE_ACCELERATOR_AUTH_FILE AZURE_ACCELERATOR_AUTH_SOURCE_FILE AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_ACCELERATOR_AUTH_STORE_VALIDATE_ONLY
+	@[ -n "$(AZURE_ACCELERATOR_SUBSCRIPTION_ID)" ] || { echo "AZURE_ACCELERATOR_SUBSCRIPTION_ID is required" >&2; exit 2; }
+	@case "$(AZURE_ACCELERATOR_AUTH_STORE_VALIDATE_ONLY)" in 0|1) ;; *) echo "AZURE_ACCELERATOR_AUTH_STORE_VALIDATE_ONLY must be 0 or 1" >&2; exit 2 ;; esac
+	@$(UV) run python scripts/store_azure_accelerator_credentials.py \
+		$(if $(strip $(AZURE_ACCELERATOR_AUTH_FILE)),--auth-file "$(AZURE_ACCELERATOR_AUTH_FILE)",) \
+		$(if $(strip $(AZURE_ACCELERATOR_AUTH_SOURCE_FILE)),--source-file "$(AZURE_ACCELERATOR_AUTH_SOURCE_FILE)",) \
+		--subscription-id "$(AZURE_ACCELERATOR_SUBSCRIPTION_ID)" \
+		$(if $(filter 1,$(AZURE_ACCELERATOR_AUTH_STORE_VALIDATE_ONLY)),--validate-only,)
+
 # Stdout is one NUL-delimited argv for an operator-owned ARM group deployment.
 # The Gludd service principal intentionally cannot execute this bootstrap.
 azure-containerapp-environment-bootstrap-args:
@@ -5871,7 +5887,7 @@ azure-containerapp-live-proof:
 # One credential-free local/GHA contract for every Azure Container Apps boundary.
 test-azure-containerapp-coverage:
 	@$(MAKE) --no-print-directory coverage-files \
-		COVERAGE_TESTFILES='tests/unit/test_ansible_runtime_artifacts.py tests/unit/test_azure_accelerator_credentials.py tests/unit/test_azure_accelerator_openbao.py tests/unit/test_azure_accelerator_role.py tests/unit/test_azure_resource_group_bootstrap.py tests/unit/test_azure_containerapp_ansible_orchestration.py tests/unit/test_azure_containerapp_arm.py tests/unit/test_azure_containerapp_environment_document.py tests/unit/test_azure_containerapp_environment_lifecycle.py tests/unit/test_azure_containerapp_environment_operations.py tests/unit/test_azure_containerapp_environment_retention.py tests/unit/test_azure_containerapp_environment_make_runtime.py tests/unit/test_azure_containerapp_environment_preflight.py tests/unit/test_azure_containerapp_environment_terraform.py tests/unit/test_azure_containerapp_gpu.py tests/unit/test_azure_idle_retention.py tests/unit/test_azure_containerapp_live_proof.py tests/unit/test_azure_containerapp_make_runtime.py tests/unit/test_azure_containerapp_owned_lifecycle.py tests/unit/test_azure_containerapp_preflight.py tests/unit/test_azure_containerapp_preflight_cli.py tests/unit/test_azure_containerapp_runtime_resources.py tests/unit/test_azure_containerapp_sdk.py tests/unit/test_azure_containerapp_terraform_executor.py tests/unit/test_azure_containerapp_terraform_phase.py tests/unit/test_azure_containerapp_topology.py tests/unit/test_azure_containerapp_tfvars.py tests/unit/test_deployment_telemetry.py tests/unit/test_provider_auth.py tests/unit/test_self_improve_azure_containerapp_backend.py tests/unit/test_self_improve_azure_containerapp_bootstrap.py tests/unit/test_self_improve_runtime_config.py tests/e2e/test_azure_containerapp_live_proof_cli.py tests/e2e/test_azure_containerapp_gha_oidc.py' \
+		COVERAGE_TESTFILES='tests/unit/test_ansible_runtime_artifacts.py tests/unit/test_azure_accelerator_credentials.py tests/unit/test_azure_accelerator_openbao.py tests/unit/test_azure_accelerator_role.py tests/unit/test_azure_resource_group_bootstrap.py tests/unit/test_azure_containerapp_ansible_orchestration.py tests/unit/test_azure_containerapp_arm.py tests/unit/test_azure_containerapp_bootstrap_planning.py tests/unit/test_azure_containerapp_environment_document.py tests/unit/test_azure_containerapp_environment_lifecycle.py tests/unit/test_azure_containerapp_environment_operations.py tests/unit/test_azure_containerapp_environment_retention.py tests/unit/test_azure_containerapp_environment_make_runtime.py tests/unit/test_azure_containerapp_environment_preflight.py tests/unit/test_azure_containerapp_environment_terraform.py tests/unit/test_azure_containerapp_gpu.py tests/unit/test_azure_idle_retention.py tests/unit/test_azure_containerapp_live_proof.py tests/unit/test_azure_containerapp_make_runtime.py tests/unit/test_azure_containerapp_owned_lifecycle.py tests/unit/test_azure_containerapp_preflight.py tests/unit/test_azure_containerapp_preflight_cli.py tests/unit/test_azure_containerapp_runtime_resources.py tests/unit/test_azure_containerapp_sdk.py tests/unit/test_azure_containerapp_terraform_executor.py tests/unit/test_azure_containerapp_terraform_phase.py tests/unit/test_azure_containerapp_topology.py tests/unit/test_azure_containerapp_tfvars.py tests/unit/test_deployment_telemetry.py tests/unit/test_provider_auth.py tests/unit/test_self_improve_azure_containerapp_backend.py tests/unit/test_self_improve_azure_containerapp_bootstrap.py tests/unit/test_self_improve_runtime_config.py tests/e2e/test_azure_containerapp_live_proof_cli.py tests/e2e/test_azure_containerapp_gha_oidc.py' \
 		COVERAGE_CONFIG=config/coverage_azure_containerapp.ini \
 		COVERAGE_REPORT=.gate-logs/coverage-azure-containerapp.json \
 		COVERAGE_AGGREGATE_MIN=85 \
@@ -5884,13 +5900,17 @@ test-azure-containerapp-coverage:
 
 # Isolated inference worker: the parent owns its process group and exchange files.
 self-improve-local-proposal:
-	@if [ "$(SELF_IMPROVE_WORKER_VALIDATE_ONLY)" = "1" ]; then \
-		echo "SELF_IMPROVE_LOCAL_PROPOSAL_PLAN model=$(SELF_IMPROVE_MODEL_PATH) prompt=$(SELF_IMPROVE_PROMPT_FILE) proposal=$(SELF_IMPROVE_PROPOSAL_FILE) contract=$(SELF_IMPROVE_CONTRACT_FILE)"; \
+	@if [ -n "$(SELF_IMPROVE_CONTRACT_FILE)" ] && [ -n "$(SELF_IMPROVE_ENVELOPE_FILE)" ]; then \
+		echo "SELF_IMPROVE_CONTRACT_FILE and SELF_IMPROVE_ENVELOPE_FILE are mutually exclusive"; exit 2; \
+	elif [ "$(SELF_IMPROVE_WORKER_VALIDATE_ONLY)" = "1" ]; then \
+		echo "SELF_IMPROVE_LOCAL_PROPOSAL_PLAN model=$(SELF_IMPROVE_MODEL_PATH) prompt=$(SELF_IMPROVE_PROMPT_FILE) proposal=$(SELF_IMPROVE_PROPOSAL_FILE) contract=$(SELF_IMPROVE_CONTRACT_FILE) envelope=$(SELF_IMPROVE_ENVELOPE_FILE)"; \
 	else \
 		[ -n "$(SELF_IMPROVE_MODEL_PATH)" ] || { echo "SELF_IMPROVE_MODEL_PATH is required"; exit 2; }; \
 		[ -n "$(SELF_IMPROVE_PROMPT_FILE)" ] || { echo "SELF_IMPROVE_PROMPT_FILE is required"; exit 2; }; \
 		[ -n "$(SELF_IMPROVE_PROPOSAL_FILE)" ] || { echo "SELF_IMPROVE_PROPOSAL_FILE is required"; exit 2; }; \
-		if [ -n "$(SELF_IMPROVE_CONTRACT_FILE)" ]; then \
+		if [ -n "$(SELF_IMPROVE_ENVELOPE_FILE)" ]; then \
+			$(UV) run --extra local-inference python scripts/self_improve_local_proposal.py --model-path "$(SELF_IMPROVE_MODEL_PATH)" --prompt-file "$(SELF_IMPROVE_PROMPT_FILE)" --proposal-file "$(SELF_IMPROVE_PROPOSAL_FILE)" --envelope-file "$(SELF_IMPROVE_ENVELOPE_FILE)"; \
+		elif [ -n "$(SELF_IMPROVE_CONTRACT_FILE)" ]; then \
 			$(UV) run --extra local-inference python scripts/self_improve_local_proposal.py --model-path "$(SELF_IMPROVE_MODEL_PATH)" --prompt-file "$(SELF_IMPROVE_PROMPT_FILE)" --proposal-file "$(SELF_IMPROVE_PROPOSAL_FILE)" --contract-file "$(SELF_IMPROVE_CONTRACT_FILE)"; \
 		else \
 			$(UV) run --extra local-inference python scripts/self_improve_local_proposal.py --model-path "$(SELF_IMPROVE_MODEL_PATH)" --prompt-file "$(SELF_IMPROVE_PROMPT_FILE)" --proposal-file "$(SELF_IMPROVE_PROPOSAL_FILE)"; \
@@ -5919,7 +5939,7 @@ azure-self-improve-live-proof:
 	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR is required" >&2; exit 2; }
 	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD is required" >&2; exit 2; }
 	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES is required" >&2; exit 2; }
-	@temporary_directory="$$(mktemp -d "$${TMPDIR:-/tmp}/gludd-azure-self-improve.XXXXXX")"; \
+	@set -eu; temporary_directory="$$(mktemp -d "$${TMPDIR:-/tmp}/gludd-azure-self-improve.XXXXXX")"; \
 		trap 'rm -rf "$$temporary_directory"' EXIT INT TERM; \
 		selection_file="$$temporary_directory/model-selection.json"; \
 		runtime_file="$$temporary_directory/runtime.json"; \

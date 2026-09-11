@@ -15,6 +15,10 @@ from general_ludd.infra.azure_containerapp_gpu import (
     T4_PROFILE,
 )
 from general_ludd.infra.azure_containerapp_topology import AzureProfileCapacity
+from general_ludd.models.model_deployment_metadata import (
+    ModelDeploymentMetadataFailure,
+    ModelDeploymentMetadataUnavailable,
+)
 from general_ludd.models.model_registry import (
     ModelDeploymentMetadata,
     ModelSearchResult,
@@ -187,11 +191,62 @@ def test_discovery_uses_categorical_query_and_selects_cheapest_untested_fit() ->
             "tags": ["code", "vllm"],
             "sort": "downloads",
             "limit": 20,
+            "author": "trusted",
         }
     ]
     assert task not in json.dumps(registry.searches)
     assert all("small-coder" not in json.dumps(trace) for trace in traces)
     assert traces[-1]["event"] == "SELF_IMPROVE_AZURE_MODEL_SELECTED"
+
+
+def test_discovery_queries_allowed_publishers_with_one_bounded_total_budget() -> None:
+    first = _metadata(
+        "trusted/first-coder",
+        revision="c" * 40,
+        parameters=3_000_000_000,
+        downloads=20,
+    )
+    second = _metadata(
+        "second/second-coder",
+        revision="d" * 40,
+        parameters=4_000_000_000,
+        downloads=10,
+    )
+    registry = _Registry((first, second))
+    traces: list[dict[str, object]] = []
+
+    discover_and_select_azure_model(
+        registry,
+        classify_candidate_task("Implement a public Python feature."),
+        replace(
+            _policy(),
+            allowed_publishers=("trusted", "second"),
+            search_limit=5,
+        ),
+        attempts=(),
+        trace_sink=traces.append,
+    )
+
+    assert registry.searches == [
+        {
+            "query": "code",
+            "tags": ["code", "vllm"],
+            "sort": "downloads",
+            "limit": 3,
+            "author": "trusted",
+        },
+        {
+            "query": "code",
+            "tags": ["code", "vllm"],
+            "sort": "downloads",
+            "limit": 2,
+            "author": "second",
+        },
+    ]
+    assert traces[0]["publisher_query_count"] == 2
+    assert traces[0]["discovered_count"] == 2
+    assert traces[0]["hydrated_count"] == 2
+    assert traces[0]["schema_version"] == 3
 
 
 def test_least_tested_challenger_rotates_then_empirical_quality_wins() -> None:
@@ -235,48 +290,137 @@ def test_least_tested_challenger_rotates_then_empirical_quality_wins() -> None:
 
 
 @pytest.mark.parametrize(
-    "model",
+    ("model", "rejection"),
     (
-        _metadata(
-            "untrusted/coder",
-            revision="1" * 40,
-            parameters=3_000_000_000,
+        (
+            _metadata(
+                "untrusted/coder",
+                revision="1" * 40,
+                parameters=3_000_000_000,
+            ),
+            "publisher_not_allowed",
         ),
-        _metadata(
-            "trusted/wrong-license",
-            revision="2" * 40,
-            parameters=3_000_000_000,
-            license_id="other",
+        (
+            _metadata(
+                "trusted/wrong-license",
+                revision="2" * 40,
+                parameters=3_000_000_000,
+                license_id="other",
+            ),
+            "license_not_allowed",
         ),
-        _metadata(
-            "trusted/custom-code",
-            revision="3" * 40,
-            parameters=3_000_000_000,
-            tags=("code", "custom_code", "text-generation", "vllm"),
+        (
+            _metadata(
+                "trusted/missing-tag",
+                revision="3" * 40,
+                parameters=3_000_000_000,
+                tags=("code", "text-generation"),
+            ),
+            "required_tag_missing",
         ),
-        _metadata(
-            "trusted/short-context",
-            revision="4" * 40,
-            parameters=3_000_000_000,
-            context=8_192,
+        (
+            _metadata(
+                "trusted/custom-code",
+                revision="4" * 40,
+                parameters=3_000_000_000,
+                tags=("code", "custom_code", "text-generation", "vllm"),
+            ),
+            "blocked_tag",
         ),
-        _metadata(
-            "trusted/too-large",
-            revision="5" * 40,
-            parameters=70_000_000_000,
+        (
+            replace(
+                _metadata(
+                    "trusted/wrong-pipeline",
+                    revision="5" * 40,
+                    parameters=3_000_000_000,
+                ),
+                pipeline_tag="text-classification",
+            ),
+            "pipeline_unsupported",
+        ),
+        (
+            _metadata(
+                "trusted/short-context",
+                revision="6" * 40,
+                parameters=3_000_000_000,
+                context=8_192,
+            ),
+            "context_too_short",
+        ),
+        (
+            _metadata(
+                "trusted/too-large",
+                revision="7" * 40,
+                parameters=70_000_000_000,
+            ),
+            "hardware_unavailable",
         ),
     ),
 )
 def test_discovery_rejects_untrusted_or_unfitted_candidates(
     model: ModelDeploymentMetadata,
+    rejection: str,
 ) -> None:
+    traces: list[dict[str, object]] = []
     with pytest.raises(ValueError, match="no deployable Azure model"):
         discover_and_select_azure_model(
             _Registry((model,)),
             classify_candidate_task("Implement a public Python feature."),
             _policy(),
             attempts=(),
+            trace_sink=traces.append,
         )
+
+    assert traces == [
+        {
+            "event": "SELF_IMPROVE_AZURE_MODEL_DISCOVERY_COMPLETED",
+            "discovered_count": 1,
+            "eligible_count": 0,
+            "hydrated_count": 1,
+            "publisher_query_count": 1,
+            "rejection_counts": {rejection: 1},
+            "schema_version": 3,
+        }
+    ]
+
+
+def test_discovery_reports_cost_and_metadata_rejections_without_model_ids() -> None:
+    affordable = _metadata(
+        "trusted/affordable",
+        revision="8" * 40,
+        parameters=3_000_000_000,
+    )
+    unavailable = _metadata(
+        "trusted/unavailable",
+        revision="9" * 40,
+        parameters=3_000_000_000,
+    )
+
+    class _PartiallyUnavailableRegistry(_Registry):
+        def get_deployment_metadata(self, model_id: str) -> ModelDeploymentMetadata:
+            if model_id == unavailable.model_id:
+                raise ModelDeploymentMetadataUnavailable(
+                    ModelDeploymentMetadataFailure.CONTEXT,
+                    "provider response included sensitive details",
+                )
+            return super().get_deployment_metadata(model_id)
+
+    traces: list[dict[str, object]] = []
+    with pytest.raises(ValueError, match="no deployable Azure model"):
+        discover_and_select_azure_model(
+            _PartiallyUnavailableRegistry((affordable, unavailable)),
+            classify_candidate_task("Implement a public Python feature."),
+            replace(_policy(), max_hourly_cost_microusd=800_000),
+            attempts=(),
+            trace_sink=traces.append,
+        )
+
+    assert traces[-1]["rejection_counts"] == {
+        "hourly_cost_exceeded": 1,
+        "metadata_context_unavailable": 1,
+    }
+    assert "trusted/" not in json.dumps(traces)
+    assert "sensitive" not in json.dumps(traces)
 
 
 def test_selection_writer_is_exclusive_private_and_exact(tmp_path: Path) -> None:

@@ -11,7 +11,7 @@ from typing import Final, Self
 import httpx
 
 _ARM_ORIGIN: Final = "https://management.azure.com"
-ENVIRONMENT_PREFLIGHT_API_VERSION: Final = "2026-01-01"
+ENVIRONMENT_PREFLIGHT_API_VERSION: Final = "2025-07-01"
 _ENVIRONMENT_LIFECYCLE_API_VERSION: Final = "2025-07-01"
 _CONTAINER_APP_API_VERSION: Final = "2025-01-01"
 _MAX_RESPONSE_BYTES: Final = 1024 * 1024

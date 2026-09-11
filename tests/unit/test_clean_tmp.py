@@ -5,6 +5,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+import scripts.clean_tmp as clean_tmp
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "clean_tmp.py"
 
@@ -44,3 +47,39 @@ def test_clean_tmp_never_targets_active_gludd_test_directories() -> None:
 
     assert '"gludd-iso-*"' not in source
     assert 'Path("/tmp/gludd-gate-basetemp")' not in source
+    assert "gludd-azure-accelerator-auth" not in source
+
+
+def test_documented_azure_credentials_are_never_under_temporary_storage() -> None:
+    documentation = "\n".join(
+        (
+            (ROOT / "docs" / "azure-iam-setup.md").read_text(encoding="utf-8"),
+            (ROOT / "config" / "infra" / "IAM_README.md").read_text(
+                encoding="utf-8"
+            ),
+        )
+    )
+
+    assert "/tmp/gludd-azure-accelerator-auth" not in documentation
+    assert "azure-accelerator-auth-store" in documentation
+
+
+def test_cleanup_reclaims_explicit_disposable_file_but_preserves_credentials(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    durable_root = tmp_path / "durable"
+    runtime_root.mkdir()
+    durable_root.mkdir()
+    disposable = runtime_root / "gludd-test-gate.txt"
+    credential = durable_root / "azure-accelerator-auth.json"
+    disposable.write_text("reclaim me", encoding="utf-8")
+    credential.write_text("preserve me", encoding="utf-8")
+    monkeypatch.setattr(clean_tmp, "_candidates", lambda: [disposable])
+    monkeypatch.setattr(clean_tmp, "_allowed_roots", lambda: [runtime_root.resolve()])
+
+    assert clean_tmp.main() == 0
+
+    assert not disposable.exists()
+    assert credential.read_text(encoding="utf-8") == "preserve me"

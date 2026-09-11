@@ -154,9 +154,9 @@ def test_named_environment_preflight_uses_only_three_exact_resource_gets() -> No
     assert result.quota_name == PROFILE_NAME
     assert result.quota_remaining == 1
     assert transport.calls == [
-        (f"{ROOT}?api-version=2026-01-01", TOKEN),
-        (f"{ROOT}/usages?api-version=2026-01-01", TOKEN),
-        (f"{ROOT}/workloadProfileStates?api-version=2026-01-01", TOKEN),
+        (f"{ROOT}?api-version=2025-07-01", TOKEN),
+        (f"{ROOT}/usages?api-version=2025-07-01", TOKEN),
+        (f"{ROOT}/workloadProfileStates?api-version=2025-07-01", TOKEN),
     ]
     assert all("/locations/" not in path for path, _token in transport.calls)
 

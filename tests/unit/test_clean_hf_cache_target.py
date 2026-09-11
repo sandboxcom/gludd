@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 import general_ludd.self_improve.model_lifecycle as lifecycle
+from general_ludd.self_improve.hf_cache_delete import CacheDeletionError
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -205,3 +206,59 @@ def test_model_lifecycle_cache_cli_returns_bounded_error(
         "error_type": "ValueError",
         "status": "refused",
     }
+
+
+def test_model_lifecycle_cache_cli_exposes_only_allowlisted_deletion_reason(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A refused cleanup identifies its safe stage without leaking a cache path."""
+    private_path = str(tmp_path / "private-cache-token")
+
+    class RefusingManager:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def diagnose_reclaim(self, *, required_bytes: int) -> lifecycle.ModelCacheDiagnostic:
+            return lifecycle.ModelCacheDiagnostic(
+                cache_key="a" * 16,
+                payload_bytes=2,
+                required_bytes=required_bytes,
+                quota_bytes=1,
+                reserve_bytes=0,
+                disk_free_bytes=10,
+                owned_count=1,
+                leased_count=0,
+                eviction_candidate_count=1,
+                under_pressure=True,
+                can_reclaim=True,
+            )
+
+        def reclaim(self, *, required_bytes: int) -> tuple[Path, ...]:
+            del required_bytes
+            raise CacheDeletionError("cache deletion strategy does not target exact revision")
+
+    monkeypatch.setattr(lifecycle, "ModelLeaseManager", RefusingManager)
+
+    assert (
+        lifecycle.main(
+            [
+                "--cache-root",
+                private_path,
+                "--required-bytes",
+                "1",
+                "--validate-only",
+                "0",
+            ]
+        )
+        == 2
+    )
+
+    captured = capsys.readouterr()
+    assert json.loads(captured.err) == {
+        "error_reason": "strategy_not_exact_revision",
+        "error_type": "CacheDeletionError",
+        "status": "refused",
+    }
+    assert "private-cache-token" not in captured.err

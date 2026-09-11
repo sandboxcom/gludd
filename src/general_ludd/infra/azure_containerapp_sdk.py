@@ -16,7 +16,10 @@ from datetime import UTC, datetime, timedelta
 from threading import RLock
 from typing import Any, Protocol, cast
 
-from general_ludd.infra.azure_containerapp_arm import AzureContainerAppARMError
+from general_ludd.infra.azure_containerapp_arm import (
+    ENVIRONMENT_PREFLIGHT_API_VERSION,
+    AzureContainerAppARMError,
+)
 from general_ludd.infra.azure_containerapp_live_proof import (
     AzureContainerAppLiveProofPolicy,
 )
@@ -24,12 +27,18 @@ from general_ludd.self_improve.model_candidates import (
     AzureContainerAppCandidateIdentity,
 )
 
-_ENVIRONMENT_API_VERSION = "2025-07-01"
 _GPU_METRIC_NAME = "GpuUtilizationPercentage"
 _GPU_METRIC_NAMESPACE = "Microsoft.App/containerapps"
 _MAX_COLLECTION_ITEMS = 512
 _MAX_METRIC_POINTS = 10_000
 _MAX_TOKEN_CHARS = 8192
+_MAX_STATUS_DETAIL_CHARS = 4096
+_REPLICA_RUNNING_STATES = frozenset(
+    {"Running", "NotRunning", "Unknown"}
+)
+_CONTAINER_RUNNING_STATES = frozenset(
+    {"Running", "Waiting", "Terminated", "Unknown"}
+)
 _CONTAINER_APP_ID = re.compile(
     r"/subscriptions/[0-9a-f-]{36}/resourceGroups/[A-Za-z0-9_().-]{1,90}/"
     r"providers/Microsoft\.App/containerApps/[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?",
@@ -286,9 +295,12 @@ def _profile_state_document(values: object) -> dict[str, object]:
 
 
 def _container_document(value: object) -> dict[str, object]:
-    configuration = _member(value, "configuration")
+    properties = _member(value, "properties")
+    if properties is None:
+        properties = value
+    configuration = _member(properties, "configuration")
     ingress = _member(configuration, "ingress")
-    template = _member(value, "template")
+    template = _member(properties, "template")
     containers = _sequence(
         _member(template, "containers", default=()),
         "Container App containers",
@@ -305,20 +317,20 @@ def _container_document(value: object) -> dict[str, object]:
         "location": _member(value, "location"),
         "properties": {
             "provisioningState": _enum_text(
-                _member(value, "provisioning_state", "provisioningState")
+                _member(properties, "provisioning_state", "provisioningState")
             ),
             "latestReadyRevisionName": _member(
-                value,
+                properties,
                 "latest_ready_revision_name",
                 "latestReadyRevisionName",
             ),
             "workloadProfileName": _member(
-                value,
+                properties,
                 "workload_profile_name",
                 "workloadProfileName",
             ),
             "managedEnvironmentId": _member(
-                value,
+                properties,
                 "environment_id",
                 "managedEnvironmentId",
             ),
@@ -382,6 +394,109 @@ def _revision_document(value: object) -> dict[str, object]:
     }
 
 
+def _safe_running_state(value: object, allowed: frozenset[str]) -> str:
+    normalized = _enum_text(value)
+    return normalized if isinstance(normalized, str) and normalized in allowed else "Unknown"
+
+
+def _startup_reason_class(value: object) -> str | None:
+    """Map provider-controlled replica details to a fixed diagnostic class."""
+    if not isinstance(value, str) or not value or len(value) > _MAX_STATUS_DETAIL_CHARS:
+        return None
+    normalized = value.casefold()
+    checks = (
+        (("workload profile full", "insufficient gpu", "no nodes available"), "capacity_exhausted"),
+        (("imagepullbackoff", "errimagepull", "failed to pull image"), "image_pull_failure"),
+        (("crashloopbackoff", "containercrashing"), "container_crash"),
+        (("startup probe",), "startup_probe_failure"),
+        (("readiness probe",), "readiness_probe_failure"),
+        (("out of memory", "oomkilled"), "resource_exhausted"),
+        (("pulling image", "container creating"), "image_initializing"),
+        (("system identity container",), "identity_initializing"),
+    )
+    for markers, classification in checks:
+        if any(marker in normalized for marker in markers):
+            return classification
+    return None
+
+
+def _replica_status_document(value: object) -> dict[str, object]:
+    """Aggregate bounded replica health without retaining names or provider text."""
+    raw_records = _member(value, "value", default=value)
+    records = _bounded_iterable(raw_records, "Container App replica inventory")
+    replica_states: set[str] = set()
+    container_states: set[str] = set()
+    reason_classes: set[str] = set()
+    ready_count = 0
+    started_count = 0
+    restart_count = 0
+    container_count = 0
+    for record in records:
+        properties = _member(record, "properties")
+        if properties is None:
+            properties = record
+        replica_states.add(
+            _safe_running_state(
+                _member(properties, "running_state", "runningState"),
+                _REPLICA_RUNNING_STATES,
+            )
+        )
+        replica_reason = _startup_reason_class(
+            _member(properties, "running_state_details", "runningStateDetails")
+        )
+        if replica_reason is not None:
+            reason_classes.add(replica_reason)
+        containers = _sequence(
+            _member(properties, "containers", default=()),
+            "Container App replica containers",
+        )
+        container_count += len(containers)
+        if container_count > _MAX_COLLECTION_ITEMS:
+            raise AzureContainerAppsSDKReadError(
+                "Azure SDK Container App replica response is incomplete or ambiguous"
+            )
+        for container in containers:
+            if _member(container, "ready") is True:
+                ready_count += 1
+            if _member(container, "started") is True:
+                started_count += 1
+            observed_restarts = _member(
+                container,
+                "restart_count",
+                "restartCount",
+                default=0,
+            )
+            if (
+                isinstance(observed_restarts, bool)
+                or not isinstance(observed_restarts, int)
+                or not 0 <= observed_restarts <= 1_000_000
+            ):
+                raise AzureContainerAppsSDKReadError(
+                    "Azure SDK Container App replica response is incomplete or ambiguous"
+                )
+            restart_count += observed_restarts
+            container_states.add(
+                _safe_running_state(
+                    _member(container, "running_state", "runningState"),
+                    _CONTAINER_RUNNING_STATES,
+                )
+            )
+            container_reason = _startup_reason_class(
+                _member(container, "running_state_details", "runningStateDetails")
+            )
+            if container_reason is not None:
+                reason_classes.add(container_reason)
+    return {
+        "replicaCount": len(records),
+        "readyContainerCount": ready_count,
+        "startedContainerCount": started_count,
+        "restartCount": restart_count,
+        "replicaRunningStates": sorted(replica_states),
+        "containerRunningStates": sorted(container_states),
+        "reasonClasses": sorted(reason_classes),
+    }
+
+
 class _SDKOwner:
     def __init__(self, client: _ClosableClient) -> None:
         self.client = client
@@ -416,9 +531,9 @@ class AzureContainerAppsSDKPreflightTransport(_SDKView):
         self._policy = policy
         root = policy.environment_id
         self._operations = {
-            f"{root}?api-version={_ENVIRONMENT_API_VERSION}": self._environment,
-            f"{root}/usages?api-version={_ENVIRONMENT_API_VERSION}": self._usages,
-            f"{root}/workloadProfileStates?api-version={_ENVIRONMENT_API_VERSION}": (
+            f"{root}?api-version={ENVIRONMENT_PREFLIGHT_API_VERSION}": self._environment,
+            f"{root}/usages?api-version={ENVIRONMENT_PREFLIGHT_API_VERSION}": self._usages,
+            f"{root}/workloadProfileStates?api-version={ENVIRONMENT_PREFLIGHT_API_VERSION}": (
                 self._profile_states
             ),
         }
@@ -476,6 +591,44 @@ class AzureContainerAppsSDKAppTransport(_SDKView):
         )
         return None if value is None else _container_document(value)
 
+    def get_active_revision_json(self, bearer_token: str) -> object | None:
+        """Read one unambiguous active or sole revision during startup."""
+        _validated_token(bearer_token)
+        values = _sdk_read(
+            lambda: self._client.container_apps_revisions.list_revisions(
+                self._policy.resource_group,
+                self._policy.app_name,
+            )
+        )
+        records = _bounded_iterable(values, "Container App revision inventory")
+        documents = tuple(_revision_document(record) for record in records)
+        prefix = f"{self._policy.app_name}--"
+        for document in documents:
+            name = document.get("name")
+            if (
+                not isinstance(name, str)
+                or not name.startswith(prefix)
+                or len(name) > 64
+                or re.fullmatch(r"[a-z0-9][a-z0-9-]*", name[len(prefix) :]) is None
+            ):
+                raise AzureContainerAppsSDKReadError(
+                    "Azure SDK revision inventory is incomplete or ambiguous"
+                )
+        active = tuple(
+            document
+            for document in documents
+            if _member(document.get("properties"), "active") is True
+        )
+        if len(active) == 1:
+            return active[0]
+        if not active and len(documents) == 1:
+            return documents[0]
+        if not documents:
+            return None
+        raise AzureContainerAppsSDKReadError(
+            "Azure SDK revision inventory is incomplete or ambiguous"
+        )
+
     def get_revision_json(
         self,
         bearer_token: str,
@@ -508,6 +661,31 @@ class AzureContainerAppsSDKAppTransport(_SDKView):
                 "Azure SDK revision response is incomplete or ambiguous"
             )
         return document
+
+    def get_replica_status_json(
+        self,
+        bearer_token: str,
+        revision_name: str,
+    ) -> object:
+        """Read aggregate status for replicas owned by one exact app revision."""
+        _validated_token(bearer_token)
+        prefix = f"{self._policy.app_name}--"
+        if (
+            not isinstance(revision_name, str)
+            or not revision_name.startswith(prefix)
+            or len(revision_name) > 64
+            or re.fullmatch(r"[a-z0-9][a-z0-9-]*", revision_name[len(prefix) :])
+            is None
+        ):
+            raise ValueError("revision_name must identify the approved app")
+        value = _sdk_read(
+            lambda: self._client.container_apps_revision_replicas.list_replicas(
+                self._policy.resource_group,
+                self._policy.app_name,
+                revision_name,
+            )
+        )
+        return _replica_status_document(value)
 
 
 class AzureContainerAppsSDKLifecycleTransport(_SDKView):

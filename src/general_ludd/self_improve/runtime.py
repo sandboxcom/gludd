@@ -86,7 +86,10 @@ from general_ludd.self_improve.live_candidate_wiring import (
 from general_ludd.self_improve.live_candidate_wiring import (
     build_live_managed_candidate_wiring as build_live_managed_candidate_wiring,
 )
-from general_ludd.self_improve.managed_candidate_routing import ManagedCandidateProposalCodec
+from general_ludd.self_improve.managed_candidate_routing import (
+    ManagedCandidateProposalCodec,
+    ManagedCandidateProposalEnvelope,
+)
 from general_ludd.self_improve.managed_remote_codec import (
     build_managed_remote_proposal_codec,
 )
@@ -501,12 +504,17 @@ def _run_local_proposal_request(
     request: str,
     *,
     contract: ProposalContract | None = None,
+    envelope: ManagedCandidateProposalEnvelope | None = None,
 ) -> str:
     """Run one bounded request through one isolated parent-owned Make worker."""
     if not model_path.is_file():
         raise FileNotFoundError(f"local GGUF is not readable: {model_path}")
     if not request.strip() or len(request.encode("utf-8")) > _MAX_TASK_BYTES:
         raise ValueError(f"proposal prompt must contain 1..{_MAX_TASK_BYTES} bytes")
+    if contract is not None and envelope is not None:
+        raise ValueError("proposal contract and envelope are mutually exclusive")
+    if envelope is not None and envelope.request_text != request:
+        raise ValueError("proposal envelope request does not match prompt bytes")
 
     with tempfile.TemporaryDirectory(
         prefix="gludd-self-improve-proposal-"
@@ -515,6 +523,7 @@ def _run_local_proposal_request(
         prompt_path = exchange / "prompt.txt"
         proposal_path = exchange / "proposal.json"
         contract_path = exchange / "contract.json"
+        envelope_path = exchange / "envelope.json"
         temporary = _write_atomic_temp(
             prompt_path,
             request,
@@ -530,6 +539,14 @@ def _run_local_proposal_request(
                 ".contract-tmp",
             )
             os.replace(contract_temporary, contract_path)
+        if envelope is not None:
+            envelope_temporary = _write_atomic_temp(
+                envelope_path,
+                envelope.to_json(),
+                0o600,
+                ".envelope-tmp",
+            )
+            os.replace(envelope_temporary, envelope_path)
         worker_variables = {
             "SELF_IMPROVE_MODEL_PATH": str(model_path),
             "SELF_IMPROVE_PROMPT_FILE": str(prompt_path),
@@ -537,15 +554,34 @@ def _run_local_proposal_request(
         }
         if contract is not None:
             worker_variables["SELF_IMPROVE_CONTRACT_FILE"] = str(contract_path)
+        if envelope is not None:
+            worker_variables["SELF_IMPROVE_ENVELOPE_FILE"] = str(envelope_path)
         result = runner.run_observable(
             "self-improve-local-proposal",
             worker_variables,
             timeout=300,
         )
         if result.returncode != 0:
-            diagnostic = (result.stderr or result.stdout or "no worker diagnostic")[-2000:]
+            protocol = (
+                contract.proposal_protocol
+                if contract is not None
+                else (
+                    ProposalContract.from_json(envelope.request_contract_json).proposal_protocol
+                    if envelope is not None
+                    else None
+                )
+            )
+            marker = LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.error_marker + " "
+            if any(line.startswith(marker) for line in result.stdout.splitlines()):
+                feedback = _validation_retry_feedback(
+                    result.stdout,
+                    proposal_protocol=protocol,
+                )
+                raise ValueError(feedback)
+            diagnostic = result.stderr.strip()[:300]
+            suffix = f" {diagnostic}" if diagnostic else ""
             raise RuntimeError(
-                f"local proposal worker failed rc={result.returncode}: {diagnostic}"
+                f"local proposal worker failed rc={result.returncode}{suffix}"
             )
         if (
             proposal_path.is_symlink()
@@ -1289,8 +1325,27 @@ def _generate_local_proposal_plan_result(
     plan: PromptPlan,
     task: TaskSpec,
     reference: CodexReference,
+    *,
+    proposal_codec: ManagedCandidateProposalCodec[GeneratedProposal] | None = None,
 ) -> GeneratedProposal:
     """Decode all shards and retain only validated compact-v4 repair material."""
+    if proposal_codec is not None:
+        if not isinstance(proposal_codec, ManagedCandidateProposalCodec):
+            raise ValueError("proposal_codec must be a managed proposal envelope")
+        if proposal_codec.request_contract_json is None:
+            raise ValueError("managed local proposal envelope has no request contract")
+        envelope = proposal_codec.worker_envelope
+        ProposalContract.from_json(envelope.request_contract_json)
+        raw = _run_local_proposal_request(
+            runner,
+            model_path,
+            proposal_codec.request_text,
+            envelope=envelope,
+        )
+        generated = proposal_codec.decoder(raw)
+        if not isinstance(generated, GeneratedProposal):
+            raise ValueError("managed local proposal envelope decoder returned invalid output")
+        return generated
     required_tests = _required_prompt_tests(task, reference)
     if plan.proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V4:
         return _generate_compact_v4_plan_result(

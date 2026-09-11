@@ -114,12 +114,24 @@ instead of attempting another create:
 make --no-print-directory azure-accelerator-role-update-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus | xargs -0 az
 ```
 
-For a new installation, create one accelerator service principal and write its
-JSON securely:
+For a new installation, create one accelerator service principal and stream its
+one-time JSON directly into Gludd's durable, versioned credential store:
 
 ```sh
-(umask 077; make --no-print-directory azure-accelerator-auth-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus AZURE_ACCELERATOR_SP_NAME=gludd-accelerator-20260905 | xargs -0 az > /tmp/gludd-azure-accelerator-auth.json)
+make --no-print-directory azure-accelerator-auth-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus AZURE_ACCELERATOR_SP_NAME=gludd-accelerator-20260905 | xargs -0 az | make --no-print-directory azure-accelerator-auth-store AZURE_ACCELERATOR_AUTH_FILE="$HOME/.local/share/general-ludd/credentials/azure-accelerator-auth.json" AZURE_ACCELERATOR_AUTH_SOURCE_FILE= AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_AUTH_STORE_VALIDATE_ONLY=0
 ```
+
+The sink validates the bounded JSON before mutation, writes a fresh immutable
+generation at mode `0600`, fsyncs it, and atomically activates a hard link. It
+never deletes or prunes generations. If activation is interrupted, the prior
+active link remains and the new staged generation remains recoverable. If the
+active link later disappears, Gludd restores only the generation named by its
+non-secret manifest. Both the credential root and lifecycle audit remain outside
+OS temporary directories, worktrees, caches, and every Gludd cleanup namespace.
+Live file-auth entry points reject paths in `/tmp`, `/var/tmp`, `/run`, runtime
+directories, and Git worktrees. Ordinary cleanup continues reclaiming only
+explicitly classified disposable artifacts; an unclassified path is never
+assumed disposable.
 
 `az ad sp create-for-rbac` scopes the assignment using `--scopes`; it does not
 accept a useful `--subscription` option in this command path. Accordingly,
@@ -144,17 +156,17 @@ contract. OpenBao can create still shorter-lived principals, but its own root
 identity would require separate Entra and role-assignment administration; Gludd
 does not add that broker authority to this accelerator role.
 
-Validate the private file without printing a secret:
+Validate the protected active link without printing a secret:
 
 ```sh
-make azure-accelerator-auth-check AZURE_ACCELERATOR_AUTH_FILE=/tmp/gludd-azure-accelerator-auth.json AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_AUTH_VALIDATE_ONLY=0
+make azure-accelerator-auth-check AZURE_ACCELERATOR_AUTH_FILE="$HOME/.local/share/general-ludd/credentials/azure-accelerator-auth.json" AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_AUTH_VALIDATE_ONLY=0
 ```
 
 Then prove the exact environment, profile type, environment usage, and profile
 headroom through three fixed read-only ARM paths:
 
 ```sh
-make azure-containerapp-preflight AZURE_ACCELERATOR_AUTH_FILE=/tmp/gludd-azure-accelerator-auth.json AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_CONTAINERAPP_RESOURCE_GROUP=gludd-models-eastus AZURE_CONTAINERAPP_ENVIRONMENT=gludd-gpu-environment AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME=gpu-t4 AZURE_CONTAINERAPP_LOCATION=eastus AZURE_CONTAINERAPP_MODEL_ID=Qwen/Qwen2.5-0.5B-Instruct AZURE_CONTAINERAPP_MODEL_REVISION=7ae557604adf67be50417f59c2c2f167def9a775 AZURE_CONTAINERAPP_PARAMETER_COUNT=494032768 AZURE_CONTAINERAPP_WEIGHT_BITS=16 AZURE_CONTAINERAPP_KV_CACHE_MIB=2048 AZURE_CONTAINERAPP_RUNTIME_OVERHEAD_MIB=3072 AZURE_CONTAINERAPP_PREFLIGHT_LIVE=1
+make azure-containerapp-preflight AZURE_ACCELERATOR_AUTH_FILE="$HOME/.local/share/general-ludd/credentials/azure-accelerator-auth.json" AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_CONTAINERAPP_RESOURCE_GROUP=gludd-models-eastus AZURE_CONTAINERAPP_ENVIRONMENT=gludd-gpu-environment AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME=gpu-t4 AZURE_CONTAINERAPP_LOCATION=eastus AZURE_CONTAINERAPP_MODEL_ID=Qwen/Qwen2.5-0.5B-Instruct AZURE_CONTAINERAPP_MODEL_REVISION=7ae557604adf67be50417f59c2c2f167def9a775 AZURE_CONTAINERAPP_PARAMETER_COUNT=494032768 AZURE_CONTAINERAPP_WEIGHT_BITS=16 AZURE_CONTAINERAPP_KV_CACHE_MIB=2048 AZURE_CONTAINERAPP_RUNTIME_OVERHEAD_MIB=3072 AZURE_CONTAINERAPP_PREFLIGHT_LIVE=1
 ```
 
 The preflight does not list subscription resources or call the regional profile
@@ -341,6 +353,18 @@ the original practitioner threads:
   `azure-mgmt-resource` modules into narrower packages. Version 26 documents the
   resource-group client under `azure.mgmt.resource.resources`; the live bootstrap
   import check and unit contract pin that exact supported path.
+- systemd's long-lived [temporary-file deletion report #30760][systemd-30760]
+  demonstrates that an open or recently useful `/tmp` path can disappear without
+  an application unlink, while its maintained [temporary-directory guidance]
+  explicitly says persistent data must not live there. This is design evidence,
+  not evidence about the historical missing Gludd file: no unlink audit existed,
+  so its deleter remains unknown.
+- Azure CLI's [application credential reference][azure-app-credential] states
+  that password content cannot be retrieved later and that reset clears existing
+  credentials unless `--append` is explicit. The older Azure CLI
+  [credential-reset report #11458][azure-cli-11458] also documents confusing
+  app-versus-service-principal behavior. Gludd therefore captures command output
+  once into immutable storage and never performs an implicit reset or prune.
 
 Practitioner threads are operational evidence rather than service contracts. The
 official quota, workload-profile, GPU, RBAC, and REST references below define the
@@ -378,6 +402,10 @@ normative boundary.
 [azapi-875]: https://github.com/Azure/terraform-provider-azapi/issues/875
 [azure-sdk-30256]: https://github.com/Azure/azure-sdk-for-python/issues/30256
 [azure-sdk-41450]: https://github.com/Azure/azure-sdk-for-python/issues/41450
+[systemd-30760]: https://github.com/systemd/systemd/issues/30760
+[temporary-directory guidance]: https://github.com/systemd/systemd/blob/main/docs/TEMPORARY_DIRECTORIES.md
+[azure-app-credential]: https://learn.microsoft.com/en-us/cli/azure/ad/app/credential
+[azure-cli-11458]: https://github.com/Azure/azure-cli/issues/11458
 [azure-custom-role-scope]: https://learn.microsoft.com/en-us/azure/role-based-access-control/custom-roles
 [azure-role-definitions]: https://learn.microsoft.com/en-us/azure/role-based-access-control/role-definitions
 [azure-app-permissions]: https://learn.microsoft.com/en-us/azure/role-based-access-control/permissions/compute#microsoftapp

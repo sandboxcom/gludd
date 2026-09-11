@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,6 +37,7 @@ from general_ludd.infra.azure_containerapp_preflight import (
     PreflightTrace,
 )
 from general_ludd.infra.azure_containerapp_sdk import (
+    AzureContainerAppsSDKReadError,
     AzureContainerAppsSDKReadTransports,
     build_container_apps_sdk_client,
 )
@@ -50,10 +51,46 @@ from general_ludd.self_improve.azure_containerapp_backend import (
 )
 from general_ludd.self_improve.model_candidates import (
     AzureContainerAppCandidateIdentity,
+    BackendFailure,
+    BackendInfrastructureError,
     CandidateBackend,
 )
 
 _Backend = CandidateBackend[AzureApprovedPrompt, AzureCandidateResponse]
+_APP_PROVISIONING_STATES = frozenset(
+    {
+        "Canceled",
+        "Deleting",
+        "Failed",
+        "InProgress",
+        "Provisioning",
+        "Succeeded",
+        "Updating",
+    }
+)
+_REPLICA_STATES = frozenset({"Running", "NotRunning", "Unknown"})
+_CONTAINER_STATES = frozenset({"Running", "Waiting", "Terminated", "Unknown"})
+_REPLICA_REASONS = frozenset(
+    {
+        "capacity_exhausted",
+        "container_crash",
+        "identity_initializing",
+        "image_initializing",
+        "image_pull_failure",
+        "readiness_probe_failure",
+        "resource_exhausted",
+        "startup_probe_failure",
+    }
+)
+_TERMINAL_REPLICA_REASONS = frozenset(
+    {
+        "capacity_exhausted",
+        "container_crash",
+        "image_pull_failure",
+        "resource_exhausted",
+        "startup_probe_failure",
+    }
+)
 
 
 class _ClosableCredential(Protocol):
@@ -108,6 +145,18 @@ def _environment_ready(document: object | None) -> bool:
     )
 
 
+def _app_provisioning_state(document: object | None) -> tuple[str, bool]:
+    """Return only bounded app readiness facts safe for progress events."""
+    properties = document.get("properties") if isinstance(document, Mapping) else None
+    values = properties if isinstance(properties, Mapping) else {}
+    state = _fixed_state(values.get("provisioningState"), _APP_PROVISIONING_STATES)
+    ready_revision = bool(
+        isinstance(values.get("latestReadyRevisionName"), str)
+        and values.get("latestReadyRevisionName")
+    )
+    return state, ready_revision
+
+
 def _fixed_state(value: object, allowed: frozenset[str]) -> str:
     return value if isinstance(value, str) and value in allowed else "Unknown"
 
@@ -126,7 +175,7 @@ class _RevisionState:
             and self.replicas >= minimum_replicas
             and self.health_state == "Healthy"
             and self.provisioning_state == "Provisioned"
-            and self.running_state == "Running"
+            and self.running_state in {"Running", "Unknown"}
         )
 
     @property
@@ -186,6 +235,123 @@ def _ready_revision_name(document: object | None) -> str | None:
         else None
     )
     return value if isinstance(value, str) and value else None
+
+
+def _observed_revision_name(document: object | None, app_name: str) -> str | None:
+    value = document.get("name") if isinstance(document, Mapping) else None
+    prefix = f"{app_name}--"
+    if not isinstance(value, str) or not value.startswith(prefix) or len(value) > 64:
+        return None
+    suffix = value[len(prefix) :]
+    if not suffix or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789-" for character in suffix):
+        return None
+    return value
+
+
+def _bounded_status_count(value: object) -> int:
+    if (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and 0 <= value <= 1_000_000
+    ):
+        return value
+    return 0
+
+
+def _safe_status_values(value: object, allowed: frozenset[str]) -> tuple[str, ...]:
+    if (
+        not isinstance(value, Sequence)
+        or isinstance(value, (str, bytes, bytearray))
+        or len(value) > 32
+    ):
+        return ()
+    return tuple(sorted({item for item in value if isinstance(item, str) and item in allowed}))
+
+
+def _event_value(values: tuple[str, ...]) -> str:
+    if not values:
+        return "None"
+    if len(values) == 1:
+        return values[0]
+    return "Mixed"
+
+
+@dataclass(frozen=True, slots=True)
+class _ReplicaStatus:
+    replicas: int
+    ready_containers: int
+    started_containers: int
+    restarts: int
+    replica_states: tuple[str, ...]
+    container_states: tuple[str, ...]
+    reasons: tuple[str, ...]
+
+    @property
+    def terminal(self) -> bool:
+        return bool(_TERMINAL_REPLICA_REASONS.intersection(self.reasons))
+
+    def ready(self, minimum_replicas: int) -> bool:
+        return bool(
+            self.replicas >= minimum_replicas
+            and self.ready_containers >= minimum_replicas
+            and self.started_containers >= minimum_replicas
+            and self.replica_states == ("Running",)
+            and self.container_states == ("Running",)
+            and not self.terminal
+        )
+
+
+def _replica_status(document: object) -> _ReplicaStatus:
+    values = document if isinstance(document, Mapping) else {}
+    return _ReplicaStatus(
+        replicas=_bounded_status_count(values.get("replicaCount")),
+        ready_containers=_bounded_status_count(values.get("readyContainerCount")),
+        started_containers=_bounded_status_count(values.get("startedContainerCount")),
+        restarts=_bounded_status_count(values.get("restartCount")),
+        replica_states=_safe_status_values(
+            values.get("replicaRunningStates"),
+            _REPLICA_STATES,
+        ),
+        container_states=_safe_status_values(
+            values.get("containerRunningStates"),
+            _CONTAINER_STATES,
+        ),
+        reasons=_safe_status_values(values.get("reasonClasses"), _REPLICA_REASONS),
+    )
+
+
+def _replica_progress(status: _ReplicaStatus, minimum_replicas: int) -> str:
+    reason = status.reasons[0] if len(status.reasons) == 1 else (
+        "multiple" if status.reasons else "none"
+    )
+    state = (
+        "terminal"
+        if status.terminal
+        else "ready"
+        if status.ready(minimum_replicas)
+        else "heartbeat"
+    )
+    return (
+        f"azure_containerapp_replica_poll phase=readiness state={state} "
+        f"replicas={status.replicas} ready_containers={status.ready_containers} "
+        f"started_containers={status.started_containers} restarts={status.restarts} "
+        f"replica_state={_event_value(status.replica_states)} "
+        f"container_state={_event_value(status.container_states)} reason={reason}"
+    )
+
+
+def _with_ready_revision(document: object | None, revision_name: str) -> object | None:
+    if not isinstance(document, Mapping):
+        return document
+    properties = document.get("properties")
+    if not isinstance(properties, Mapping):
+        return document
+    normalized = dict(document)
+    normalized["properties"] = {
+        **properties,
+        "latestReadyRevisionName": revision_name,
+    }
+    return normalized
 
 
 class AzureContainerAppRuntimeResources:
@@ -408,27 +574,84 @@ def build_azure_containerapp_runtime_resources(
         ) -> object | None:
             deadline = monotonic() + (600.0 if expect_absent else 900.0)
             last_document: object | None = None
+            replica_diagnostics_available = True
             while True:
                 token = credential.get_token(ARM_SCOPE).token
                 last_document = app_transport.get_json(token)
                 revision_ready = _ready(last_document)
                 revision_reader = getattr(app_transport, "get_revision_json", None)
+                active_revision_reader = getattr(
+                    app_transport,
+                    "get_active_revision_json",
+                    None,
+                )
+                replica_status_reader = getattr(
+                    app_transport,
+                    "get_replica_status_json",
+                    None,
+                )
                 if (
                     not expect_absent
-                    and revision_ready
+                    and last_document is not None
                     and active_policy.min_replicas > 0
-                    and callable(revision_reader)
                 ):
-                    revision_name = _ready_revision_name(last_document)
-                    revision = (
-                        revision_reader(token, revision_name)
-                        if revision_name is not None
-                        else None
+                    revision_name = (
+                        _ready_revision_name(last_document) if revision_ready else None
                     )
+                    if revision_name is not None and callable(revision_reader):
+                        revision = revision_reader(token, revision_name)
+                    elif callable(active_revision_reader):
+                        revision = active_revision_reader(token)
+                    else:
+                        revision = None
                     state = _revision_state(revision)
                     if state.terminal:
-                        raise RuntimeError("Azure revision entered a terminal state")
+                        raise BackendInfrastructureError(BackendFailure.UNAVAILABLE)
                     revision_ready = state.ready(active_policy.min_replicas)
+                    observed_revision_name = _observed_revision_name(
+                        revision,
+                        active_policy.app_name,
+                    )
+                    if (
+                        observed_revision_name is not None
+                        and callable(replica_status_reader)
+                        and replica_diagnostics_available
+                    ):
+                        try:
+                            replica_status = _replica_status(
+                                replica_status_reader(token, observed_revision_name)
+                            )
+                        except AzureContainerAppsSDKReadError:
+                            replica_diagnostics_available = False
+                            progress_sink(
+                                "azure_containerapp_replica_poll phase=readiness "
+                                "state=supplementary_unavailable "
+                                "reason=sdk_read_failed"
+                            )
+                        else:
+                            progress_sink(
+                                _replica_progress(
+                                    replica_status,
+                                    active_policy.min_replicas,
+                                )
+                            )
+                            if replica_status.terminal:
+                                raise BackendInfrastructureError(
+                                    BackendFailure.UNAVAILABLE
+                                )
+                            if (
+                                replica_status.ready(active_policy.min_replicas)
+                                and state.active
+                                and state.replicas >= active_policy.min_replicas
+                                and state.health_state == "Healthy"
+                                and state.provisioning_state == "Provisioned"
+                            ):
+                                revision_ready = True
+                    if revision_ready and observed_revision_name is not None:
+                        last_document = _with_ready_revision(
+                            last_document,
+                            observed_revision_name,
+                        )
                     if not revision_ready:
                         progress_sink(
                             "azure_containerapp_revision_poll "
@@ -443,10 +666,15 @@ def build_azure_containerapp_runtime_resources(
                 ):
                     return last_document
                 if monotonic() >= deadline:
+                    if not expect_absent:
+                        raise BackendInfrastructureError(BackendFailure.TIMEOUT)
                     return last_document
+                app_state, has_ready_revision = _app_provisioning_state(last_document)
                 progress_sink(
                     "azure_containerapp_poll phase="
-                    f"{'absence' if expect_absent else 'readiness'} state=heartbeat"
+                    f"{'absence' if expect_absent else 'readiness'} state=heartbeat "
+                    f"provisioning_state={app_state} "
+                    f"latest_ready_revision={str(has_ready_revision).lower()}"
                 )
                 sleep(10.0)
 

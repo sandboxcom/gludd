@@ -25,6 +25,7 @@ from typing import Protocol, cast, runtime_checkable
 from general_ludd.local_model._local_model_configs import _LOCAL_MODELS, LocalModelConfig
 from general_ludd.self_improve.hf_cache_delete import (
     CacheArtifactIdentity,
+    CacheDeletionError,
     HuggingFaceCacheDeletion,
 )
 from general_ludd.small_models.download import DownloadedModel, ModelDownloader
@@ -45,6 +46,32 @@ _JSON_LIMIT = 64 * 1024
 _DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 15.0
 _DEFAULT_ACQUISITION_TIMEOUT_SECONDS = 600.0
 _PROCESS_SHUTDOWN_GRACE_SECONDS = 5.0
+_CACHE_DELETION_ERROR_REASONS = {
+    "cache root is unavailable": "root_unavailable",
+    "repository identity is invalid": "repository_identity_invalid",
+    "immutable revision is invalid": "revision_invalid",
+    "artifact filename is invalid": "filename_invalid",
+    "artifact path must be absolute": "path_not_absolute",
+    "artifact path is outside cache root": "path_outside_root",
+    "exact artifact was not found": "artifact_not_found",
+    "cache scan failed": "scan_failed",
+    "cache scan reported warnings": "scan_warning",
+    "cache scan result is invalid": "scan_invalid",
+    "cache revision is not unique": "revision_not_unique",
+    "cache repository is outside cache root": "repository_outside_root",
+    "cache repository is unavailable": "repository_unavailable",
+    "cache repository path is not canonical": "repository_not_canonical",
+    "cache snapshot identity is invalid": "snapshot_identity_invalid",
+    "cache artifact target is invalid": "artifact_target_invalid",
+    "cache deletion planning failed": "planning_failed",
+    "cache deletion strategy reaches outside exact repository": "strategy_outside_repository",
+    "cache deletion strategy does not target exact revision": "strategy_not_exact_revision",
+    "cache deletion strategy is invalid": "strategy_invalid",
+    "cache deletion execution failed": "execution_failed",
+    "deletion verification failed": "verification_failed",
+    "exact artifact remains after deletion": "artifact_remains",
+    "exact revision remains after deletion": "revision_remains",
+}
 DEFAULT_SELF_IMPROVE_MODEL_PRIORITY = (
     "qwen2.5-coder-1.5b",
     "qwen2.5-coder-3b",
@@ -931,7 +958,7 @@ class _ModelLeasePlanOperations(_ModelLeaseConfiguration):
                 primary_error.add_note(
                     f"model lease cleanup also failed: {str(cleanup_error)[:1000]}"
                 )
-            if primary_error is None:
+            if primary_error is None and explicit_path is None:
                 manager.reclaim(required_bytes=0)
 
     @staticmethod
@@ -1443,6 +1470,7 @@ class _ModelLeaseAcquisitionOperations(_ModelLeaseReclamationOperations):
         return self._lease_artifact(cached)
 
     def _acquire_explicit(self, explicit_path: Path) -> AcquiredModel:
+        logical_filename = explicit_path.expanduser().name
         try:
             path = explicit_path.expanduser().resolve(strict=True)
         except OSError as exc:
@@ -1455,7 +1483,7 @@ class _ModelLeaseAcquisitionOperations(_ModelLeaseReclamationOperations):
             path=path,
             model_id="explicit",
             repo_id=None,
-            filename=path.name,
+            filename=logical_filename,
             resolved_revision=None,
             artifact_sha256=digest,
             source="explicit",
@@ -1904,15 +1932,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 0 if status != "refused" else 2
     except (OSError, RuntimeError, ValueError) as error:
+        error_payload = {
+            "error_type": type(error).__name__,
+            "status": "refused",
+        }
+        if isinstance(error, CacheDeletionError):
+            safe_reason = _CACHE_DELETION_ERROR_REASONS.get(str(error))
+            if safe_reason is not None:
+                error_payload["error_reason"] = safe_reason
         print(
-            json.dumps(
-                {
-                    "error_type": type(error).__name__,
-                    "status": "refused",
-                },
-                sort_keys=True,
-                separators=(",", ":"),
-            ),
+            json.dumps(error_payload, sort_keys=True, separators=(",", ":")),
             file=sys.stderr,
             flush=True,
         )

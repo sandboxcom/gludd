@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "task_queries": {
-    "bounded_enumeration": "test",
+    "bounded_enumeration": "code",
     "coding": "code",
     "context_compaction": "summarization",
     "documentation_draft": "documentation",

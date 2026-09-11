@@ -5,14 +5,24 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from general_ludd.self_improve.model_candidates import BackendFailure
+
 
 class OwnedCandidateLifecycleError(RuntimeError):
     """Fixed-context failure that never retains provider or prompt content."""
 
-    def __init__(self, operation: str) -> None:
+    def __init__(
+        self,
+        operation: str,
+        *,
+        failure: BackendFailure | None = None,
+    ) -> None:
         """Initialize a censored failure for one lifecycle operation."""
+        if failure is not None and not isinstance(failure, BackendFailure):
+            raise ValueError("failure must be a typed BackendFailure")
         super().__init__(f"owned Azure candidate lifecycle failed: {operation}")
         self.operation = operation
+        self.failure = failure
 
 
 class OwnedCandidateLifecycleEvent(StrEnum):

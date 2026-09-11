@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -11,7 +12,9 @@ from typing import cast
 import pytest
 
 import general_ludd.self_improve as self_improve_package
+import general_ludd.self_improve.managed_runner as managed_runner_module
 from general_ludd.self_improve.azure_backend import (
+    AzureApprovedPrompt,
     AzureCandidateResponse,
     AzureCredentialReference,
     AzureCredentialSource,
@@ -84,6 +87,23 @@ def _local_identity(*, model_id: str = "local-coder") -> LocalGGUFCandidateIdent
     )
 
 
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    (
+        ("model_id must be one bounded canonical label", "model_id"),
+        ("filename must be one confined GGUF path", "filename"),
+        ("artifact_sha256 must be one SHA-256 digest", "artifact_digest"),
+        ("repo_id and revision must be supplied together", "provenance_pair"),
+        ("private unexpected validation detail", "unknown"),
+    ),
+)
+def test_local_identity_failure_trace_uses_only_fixed_categories(
+    message: str,
+    expected: str,
+) -> None:
+    assert managed_runner_module._local_identity_failure_category(ValueError(message)) == expected
+
+
 def _azure_identity() -> AzureFoundryCandidateIdentity:
     return AzureFoundryCandidateIdentity(
         endpoint="https://unit-test.openai.azure.com",
@@ -154,6 +174,7 @@ class _AzureBackend:
     def __init__(self, text: str = "unused") -> None:
         self.close_calls = 0
         self.generate_calls = 0
+        self.requests: list[object] = []
         self.text = text
 
     @property
@@ -162,13 +183,14 @@ class _AzureBackend:
 
     def generate(
         self,
-        _request: object,
+        request: object,
         *,
         max_output_tokens: int,
         timeout_seconds: float,
     ) -> AzureCandidateResponse:
         del max_output_tokens, timeout_seconds
         self.generate_calls += 1
+        self.requests.append(request)
         return AzureCandidateResponse(
             text=self.text,
             input_tokens=1,
@@ -208,6 +230,26 @@ class _ContainerAppBackend:
 
     def close(self) -> None:
         self.close_calls += 1
+
+
+class _BarrierContainerAppBackend(_ContainerAppBackend):
+    def __init__(self, text: str, barrier: threading.Barrier) -> None:
+        super().__init__(text)
+        self.barrier = barrier
+
+    def generate(
+        self,
+        request: object,
+        *,
+        max_output_tokens: int,
+        timeout_seconds: float,
+    ) -> AzureCandidateResponse:
+        self.barrier.wait(timeout=1.0)
+        return super().generate(
+            request,
+            max_output_tokens=max_output_tokens,
+            timeout_seconds=timeout_seconds,
+        )
 
 
 class _ContainerAppBootstrapFactory:
@@ -523,6 +565,39 @@ def test_live_wiring_assembles_authorized_mixed_set_and_closes_azure() -> None:
     assert "AZURE_UNIT_TEST_KEY" not in serialized
 
 
+def test_live_wiring_assembles_remote_only_when_local_is_unavailable() -> None:
+    """A cooled-down local fleet must not suppress an approved remote candidate."""
+    classification = classify_candidate_task("Implement a bounded Python feature.")
+    azure = _AzureBackend()
+    policy = LiveCandidateWiringPolicy(
+        local_budget=_budget(),
+        required_providers=(ModelCandidateProvider.AZURE_FOUNDRY,),
+        azure_config=_azure_config(),
+        azure_budget=_budget(),
+        azure_estimated_cost_microusd=1_000,
+    )
+    wiring = LiveManagedCandidateWiring(
+        policy,
+        azure_backend_factory=lambda _config: azure,
+    )
+
+    with wiring.assemble(
+        classification,
+        expected_classification_digest=classification.classification_digest,
+        local_backend=None,
+        privacy_state=CandidatePrivacyState.APPROVED_PUBLIC,
+        input_tokens=12,
+        max_output_tokens=32,
+    ) as candidate_set:
+        assert candidate_set.assembly.providers == (
+            ModelCandidateProvider.AZURE_FOUNDRY,
+        )
+        assert candidate_set.local_session is None
+        assert candidate_set.azure_session is not None
+
+    assert azure.close_calls == 1
+
+
 def test_local_only_wiring_never_constructs_an_azure_backend() -> None:
     classification = classify_candidate_task("Implement a focused coding change.")
     azure_builds: list[AzureOpenAIConfig] = []
@@ -743,13 +818,6 @@ def test_policy_rejects_invalid_provider_and_budget_boundaries() -> None:
         LiveCandidateWiringPolicy(
             local_budget=_budget(),
             required_providers=(),
-        )
-    with pytest.raises(ValueError, match="requires the local provider"):
-        LiveCandidateWiringPolicy(
-            local_budget=_budget(),
-            required_providers=(ModelCandidateProvider.AZURE_FOUNDRY,),
-            azure_config=_azure_config(),
-            azure_budget=_budget(),
         )
     with pytest.raises(ValueError, match="hard bound"):
         LiveCandidateWiringPolicy(
@@ -1050,6 +1118,20 @@ def _approved_plan(repo_root: Path, model_path: Path) -> ApprovedSelfImprovePlan
     )
 
 
+def _approved_dynamic_plan(repo_root: Path) -> ApprovedSelfImprovePlan:
+    return ApprovedSelfImprovePlan.approve(
+        approval_id="approval-live-candidate-remote-only",
+        todo_id="S83.150",
+        project_id="live-candidate-wiring",
+        repo_root=repo_root,
+        task=_task(),
+        reference=_reference(),
+        prompt="bounded approved prompt",
+        required_output_tokens=32,
+        max_attempts=1,
+    )
+
+
 def _runner(
     wiring: LiveManagedCandidateWiring,
     generated: list[tuple[Path, str]],
@@ -1208,6 +1290,9 @@ def test_managed_routing_privacy_blocks_before_codec_models_and_evidence(
         decoder=lambda text: GeneratedProposal(ProposalManifest.from_json(text)),
         protocol_digest="5" * 64,
         sampling_digest="6" * 64,
+        request_contract_json='{"contract":"trusted"}',
+        response_instruction="Return the approved envelope.",
+        response_schema_json='{"type":"object"}',
     )
 
     def model_manager_factory(**_kwargs: object) -> _AcquisitionManager:
@@ -1296,6 +1381,7 @@ def test_managed_runner_routes_real_local_and_foundry_work_by_calibrated_outcome
     azure = _AzureBackend(remote.to_json())
     progress: list[str] = []
     generated: list[tuple[Path, str]] = []
+    local_codecs: list[ManagedCandidateProposalCodec[GeneratedProposal] | None] = []
     store = CapabilityEvidenceStore(str(tmp_path / "candidate-evidence.json"))
     accept_local = False
 
@@ -1304,8 +1390,11 @@ def test_managed_runner_routes_real_local_and_foundry_work_by_calibrated_outcome
         prompt: object,
         _task_spec: TaskSpec,
         _reference_spec: CodexReference,
+        *,
+        proposal_codec: ManagedCandidateProposalCodec[GeneratedProposal] | None = None,
     ) -> ProposalManifest:
         generated.append((model, cast(str, prompt)))
+        local_codecs.append(proposal_codec)
         return local
 
     def evaluate(
@@ -1340,6 +1429,12 @@ def test_managed_runner_routes_real_local_and_foundry_work_by_calibrated_outcome
         decoder=lambda text: GeneratedProposal(ProposalManifest.from_json(text)),
         protocol_digest="1" * 64,
         sampling_digest="2" * 64,
+        request_contract_json='{"contract":"trusted"}',
+        response_instruction="Return the approved envelope.",
+        response_schema_json=(
+            '{"additionalProperties":false,"properties":{"ok":{"const":true,'
+            '"type":"boolean"}},"required":["ok"],"type":"object"}'
+        ),
     )
     runner = ManagedSelfImproveRunner(
         proposal_generator=cast(Callable[..., ProposalManifest], generate),
@@ -1371,8 +1466,38 @@ def test_managed_runner_routes_real_local_and_foundry_work_by_calibrated_outcome
     assert first.evaluated_result.comparison.accepted is True
     assert first.selected_candidate_provider is ModelCandidateProvider.AZURE_FOUNDRY
     assert azure.generate_calls == 1
+    approved_request = cast(AzureApprovedPrompt, azure.requests[0])
+    assert approved_request.envelope_digest == codec.envelope_digest
+    assert approved_request._reveal_envelope_after_recheck() == codec.worker_envelope
+    assert approved_request._reveal_generation_after_recheck() == (
+        "bounded approved prompt",
+        "Return the approved envelope.",
+        codec.response_schema_json,
+    )
     assert generated == [(model_path, "bounded approved prompt")]
+    assert local_codecs == [codec]
     assert len(store.list_all()) == 2
+    assert (
+        "SELF_IMPROVE_CANDIDATE_LOCAL_BIND phase=started "
+        "candidate_planned=false filename_suffix_gguf=true"
+    ) in progress
+    assert any(
+        message.startswith("SELF_IMPROVE_CANDIDATE_LOCAL_BIND phase=bound")
+        for message in progress
+    )
+    assert any(
+        message.startswith("SELF_IMPROVE_CANDIDATE_PROTOCOL phase=bound")
+        for message in progress
+    )
+    assert any(
+        "SELF_IMPROVE_CANDIDATE_ASSEMBLY phase=completed local=true "
+        "azure_foundry=true containerapp=false" in message
+        for message in progress
+    )
+    assert any(
+        message.startswith("SELF_IMPROVE_CANDIDATE_ROUTE phase=completed")
+        for message in progress
+    )
 
     accept_local = True
     second = runner._generate_proposal(
@@ -1396,6 +1521,100 @@ def test_managed_runner_routes_real_local_and_foundry_work_by_calibrated_outcome
     assert "bounded approved prompt" not in rendered
     assert "return 1" not in rendered
     assert "return 2" not in rendered
+
+
+def test_managed_runner_uses_remote_when_local_candidate_plan_is_exhausted(
+    tmp_path: Path,
+) -> None:
+    """A local cooldown cannot erase an independently approved remote trial."""
+    remote = _routed_proposal(new_text="return 2")
+    azure = _AzureBackend(remote.to_json())
+    store = CapabilityEvidenceStore(str(tmp_path / "candidate-evidence.json"))
+    progress: list[str] = []
+
+    class NoLocalCandidateManager:
+        def __init__(self, **_kwargs: object) -> None:
+            self.cache_root = tmp_path / "cache"
+            self.cache_root.mkdir()
+
+        def resolve_revision(self, _repo_id: str) -> str:
+            return "a" * 40
+
+        def acquire(self, *_args: object, **_kwargs: object) -> object:
+            raise AssertionError("remote-only routing must not acquire a local model")
+
+    def evaluate(
+        _task_spec: TaskSpec,
+        _reference_spec: CodexReference,
+        bound: object,
+        _attempt: int,
+        *,
+        expected_attempt_identity_digest: str,
+        merge: bool,
+    ) -> AttemptResult:
+        assert merge is False
+        proposal = cast(object, bound).proposal
+        assert proposal == remote
+        return AttemptResult(
+            comparison=ComparisonResult(
+                accepted=True,
+                score=1.0,
+                blockers=(),
+                changed_file_precision=1.0,
+                changed_file_recall=1.0,
+            ),
+            evidence=_candidate_evidence(accepted=True),
+            patch_equivalence="accepted",
+            proposal=proposal,
+            diagnostics="",
+            attempt_identity_digest=expected_attempt_identity_digest,
+        )
+
+    codec = ManagedCandidateProposalCodec(
+        request_text="bounded approved prompt",
+        decoder=lambda text: GeneratedProposal(ProposalManifest.from_json(text)),
+        protocol_digest="9" * 64,
+        sampling_digest="a" * 64,
+        request_contract_json='{"contract":"trusted"}',
+        response_instruction="Return the approved envelope.",
+        response_schema_json='{"type":"object"}',
+    )
+    runner = ManagedSelfImproveRunner(
+        proposal_generator=cast(
+            Callable[..., ProposalManifest],
+            lambda *_args, **_kwargs: pytest.fail("local generation must not run"),
+        ),
+        attempt_evaluator=cast(Callable[..., AttemptResult], evaluate),
+        model_manager_factory=cast(
+            Callable[..., object],
+            lambda **kwargs: NoLocalCandidateManager(**kwargs),
+        ),
+        outcome_adapter_factory=lambda _root: CapabilityEvidenceOutcomeAdapter(store),
+        candidate_planner=cast(Callable[..., object], lambda *_args, **_kwargs: ()),
+        hardware_probe=cast(Callable[[], object], lambda: object()),
+        progress_sink=progress.append,
+        live_candidate_wiring=LiveManagedCandidateWiring(
+            LiveCandidateWiringPolicy(
+                local_budget=_budget(),
+                required_providers=(ModelCandidateProvider.AZURE_FOUNDRY,),
+                azure_config=_azure_config(),
+                azure_budget=_budget(),
+                azure_estimated_cost_microusd=1_000,
+            ),
+            azure_backend_factory=lambda _config: azure,
+        ),
+        remote_proposal_codec_factory=lambda _prompt, _task, _reference: codec,
+    )
+
+    result = runner.run(_approved_dynamic_plan(tmp_path))
+
+    assert result.accepted is True
+    assert result.final_result.proposal == remote
+    assert result.attempted_model_ids == ()
+    assert azure.generate_calls == 1
+    assert azure.close_calls == 1
+    assert len(store.list_all()) == 1
+    assert any("azure_foundry" in message for message in progress)
 
 
 def test_managed_run_uses_containerapp_assistant_without_duplicate_evaluation(
@@ -1444,6 +1663,9 @@ def test_managed_run_uses_containerapp_assistant_without_duplicate_evaluation(
         decoder=lambda text: GeneratedProposal(ProposalManifest.from_json(text)),
         protocol_digest="3" * 64,
         sampling_digest="4" * 64,
+        request_contract_json='{"contract":"trusted"}',
+        response_instruction="Return the approved envelope.",
+        response_schema_json='{"type":"object"}',
     )
     runner = ManagedSelfImproveRunner(
         proposal_generator=cast(
@@ -1474,9 +1696,100 @@ def test_managed_run_uses_containerapp_assistant_without_duplicate_evaluation(
 
     assert result.accepted is True
     assert result.final_result.proposal == remote
-    assert evaluations == [local, remote]
+    assert len(evaluations) == 2
+    assert frozenset(evaluations) == frozenset((local, remote))
     assert containerapp.generate_calls == 1
     assert containerapp.close_calls == 1
     assert manager.releases == 1
     assert len(store.list_all()) == 2
     assert any("azure_container_app" in message for message in progress)
+
+
+def test_managed_runner_overlaps_local_failure_with_containerapp_success(
+    tmp_path: Path,
+) -> None:
+    model_path = tmp_path / "local-coder.Q4_K_M.gguf"
+    model_path.write_bytes(b"model")
+    remote = _routed_proposal(new_text="return 4")
+    barrier = threading.Barrier(2)
+    containerapp = _BarrierContainerAppBackend(remote.to_json(), barrier)
+    store = CapabilityEvidenceStore(str(tmp_path / "candidate-evidence.json"))
+
+    def failed_local(*_args: object, **_kwargs: object) -> ProposalManifest:
+        barrier.wait(timeout=1.0)
+        raise RuntimeError("private-local-worker-tail")
+
+    def evaluate(
+        _task_spec: TaskSpec,
+        _reference_spec: CodexReference,
+        bound: object,
+        _attempt: int,
+        *,
+        expected_attempt_identity_digest: str,
+        merge: bool,
+    ) -> AttemptResult:
+        assert merge is False
+        proposal = cast(object, bound).proposal
+        assert proposal == remote
+        return AttemptResult(
+            comparison=ComparisonResult(
+                accepted=True,
+                score=1.0,
+                blockers=(),
+                changed_file_precision=1.0,
+                changed_file_recall=1.0,
+            ),
+            evidence=_candidate_evidence(accepted=True),
+            patch_equivalence="accepted",
+            proposal=proposal,
+            diagnostics="",
+            attempt_identity_digest=expected_attempt_identity_digest,
+        )
+
+    codec = ManagedCandidateProposalCodec(
+        request_text="bounded approved prompt",
+        decoder=lambda text: GeneratedProposal(ProposalManifest.from_json(text)),
+        protocol_digest="7" * 64,
+        sampling_digest="8" * 64,
+        request_contract_json='{"contract":"trusted"}',
+        response_instruction="Return the approved envelope.",
+        response_schema_json='{"type":"object"}',
+    )
+    runner = ManagedSelfImproveRunner(
+        proposal_generator=cast(Callable[..., ProposalManifest], failed_local),
+        attempt_evaluator=cast(Callable[..., AttemptResult], evaluate),
+        progress_sink=lambda _message: None,
+        live_candidate_wiring=LiveManagedCandidateWiring(
+            LiveCandidateWiringPolicy(
+                local_budget=_budget(),
+                required_providers=(
+                    ModelCandidateProvider.LOCAL_GGUF,
+                    ModelCandidateProvider.AZURE_CONTAINER_APP,
+                ),
+                containerapp_identity=_containerapp_identity(),
+                containerapp_budget=_budget(),
+                containerapp_estimated_cost_microusd=2_000,
+            ),
+            containerapp_backend_factory=lambda _identity: containerapp,
+        ),
+        remote_proposal_codec_factory=lambda _prompt, _task, _reference: codec,
+    )
+    plan = _approved_plan(tmp_path, model_path)
+
+    generated = runner._generate_proposal(
+        plan,
+        plan.prompt,
+        None,
+        cast(object, _AcquisitionManager(model_path)),
+        False,
+        None,
+        None,
+        outcomes=CapabilityEvidenceOutcomeAdapter(store),
+        attempt=1,
+    )
+
+    assert generated.proposal == remote
+    assert generated.selected_candidate_provider is ModelCandidateProvider.AZURE_CONTAINER_APP
+    assert containerapp.generate_calls == 1
+    assert len(store.list_all()) == 1
+    assert "private-local-worker-tail" not in repr(generated)

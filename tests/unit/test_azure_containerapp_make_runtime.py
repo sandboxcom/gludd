@@ -32,7 +32,11 @@ from general_ludd.infra.azure_containerapp_terraform_executor import (
     TerraformUIEvent,
 )
 from general_ludd.infra.compute import GPUType
-from general_ludd.self_improve.model_candidates import BackendCallBudget
+from general_ludd.self_improve.model_candidates import (
+    BackendCallBudget,
+    BackendFailure,
+    BackendInfrastructureError,
+)
 
 SUBSCRIPTION = "12345678-1234-1234-1234-123456789abc"
 MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
@@ -110,8 +114,9 @@ def _requirement() -> ModelServingRequirement:
 
 
 def test_compute_config_boundary_preserves_warm_replica_and_pinned_model() -> None:
+    budget = BackendCallBudget(1, 24_576, 4_096, 28_672, 500_000, 30.0)
     config = build_containerapp_compute_config(
-        _policy(min_replicas=1),
+        _policy(min_replicas=1, call_budget=budget),
         _requirement(),
     )
 
@@ -119,6 +124,17 @@ def test_compute_config_boundary_preserves_warm_replica_and_pinned_model() -> No
     assert config.model_name == MODEL
     assert config.model_revision == REVISION
     assert config.container_image == IMAGE
+    assert config.deployment_profile["context_length"] == budget.max_total_tokens
+
+
+def test_compute_config_rejects_call_budget_above_runtime_context_limit() -> None:
+    budget = BackendCallBudget(1, 32_768, 1, 32_769, 500_000, 30.0)
+
+    with pytest.raises(AzureContainerAppMakeRuntimeError, match="sizing"):
+        build_containerapp_compute_config(
+            _policy(call_budget=budget),
+            _requirement(),
+        )
 
 
 def _credentials() -> AzureAcceleratorCredentials:
@@ -547,6 +563,33 @@ def test_apply_rejects_mutated_arm_deployment_evidence(
         runtime.apply(policy)
 
     assert captured.value.phase == "deployment-evidence"
+
+
+def test_apply_preserves_typed_readiness_timeout(tmp_path: Path) -> None:
+    """The runtime must not collapse a supervised timeout into an internal error."""
+    policy = _policy()
+
+    def timed_out(
+        _policy: AzureContainerAppLiveProofPolicy,
+        _expect_absent: bool,
+    ) -> object:
+        raise BackendInfrastructureError(BackendFailure.TIMEOUT)
+
+    runtime = AzureContainerAppMakeRuntime(
+        work_root=tmp_path / "gludd-azure-live-proof",
+        credentials=_credentials(),
+        requirement=_requirement(),
+        terraform_executor=_Runner(policy),
+        terraform_generator=_Materializer(),
+        preflight_check=lambda _policy, _requirement: None,
+        read_app=timed_out,
+    )
+    runtime.plan(policy)
+
+    with pytest.raises(BackendInfrastructureError) as captured:
+        runtime.apply(policy)
+
+    assert captured.value.failure is BackendFailure.TIMEOUT
 
 
 def test_runtime_rejects_policy_drift_before_another_make_invocation(

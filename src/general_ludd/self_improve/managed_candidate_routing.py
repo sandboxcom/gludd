@@ -40,8 +40,10 @@ from general_ludd.self_improve.candidate_execution import (
 from general_ludd.self_improve.managed_candidate_routing_types import (
     CandidateObservedUsage,
     CandidateProposalAssessment,
+    CandidateProposalDecodeFailure,
     CandidateProposalDecodeRejected,
     ManagedCandidateProposalCodec,
+    ManagedCandidateProposalEnvelope,
     ManagedCandidateRouteFailure,
     ManagedCandidateRoutingError,
     ManagedCandidateRoutingEvent,
@@ -154,6 +156,10 @@ def _candidate_evaluator(
     decoded: dict[str, _ProposalT],
     assessments: dict[str, CandidateProposalAssessment],
     lock: threading.Lock,
+    *,
+    plan_digest: str,
+    trial_count: int,
+    sink: Callable[[object], None],
 ) -> Callable[[object], CandidateEvaluation]:
     def evaluate(response: object) -> CandidateEvaluation:
         usage = spec.usage_reader(response)
@@ -161,7 +167,20 @@ def _candidate_evaluator(
             raise TypeError("usage reader returned an invalid observation")
         try:
             proposal = spec.decoder(response)
-        except CandidateProposalDecodeRejected:
+        except CandidateProposalDecodeRejected as error:
+            with lock:
+                _emit_routing_trace(
+                    sink,
+                    ManagedCandidateRoutingTrace(
+                        ManagedCandidateRoutingEvent.CANDIDATE_PROTOCOL_REJECTED,
+                        plan_digest,
+                        trial_count,
+                        candidate_identity_digest=identity_digest,
+                        provider=spec.session.candidate_identity.provider.value,
+                        accepted=False,
+                        protocol_failure=error.failure,
+                    ),
+                )
             return CandidateEvaluation(
                 accepted=False,
                 evaluation_score=0.0,
@@ -194,6 +213,7 @@ def _trial_calls(
     decoded: dict[str, _ProposalT],
     assessments: dict[str, CandidateProposalAssessment],
     lock: threading.Lock,
+    sink: Callable[[object], None],
 ) -> tuple[CandidateTrialCall, ...]:
     by_identity = {
         spec.session.candidate_identity.evidence_identity_digest: spec for spec in specs
@@ -209,6 +229,9 @@ def _trial_calls(
                 decoded,
                 assessments,
                 lock,
+                plan_digest=plan.plan_digest,
+                trial_count=len(plan.trials),
+                sink=sink,
             ),
         )
         for trial in plan.trials
@@ -368,7 +391,7 @@ def route_managed_candidate_proposals(
     decoded: dict[str, _ProposalT] = {}
     assessments: dict[str, CandidateProposalAssessment] = {}
     decoded_lock = threading.Lock()
-    calls = _trial_calls(plan, candidates, decoded, assessments, decoded_lock)
+    calls = _trial_calls(plan, candidates, decoded, assessments, decoded_lock, sink)
     execution = execute_candidate_trial_plan(
         plan,
         calls,
@@ -383,8 +406,10 @@ def route_managed_candidate_proposals(
 __all__ = (
     "CandidateObservedUsage",
     "CandidateProposalAssessment",
+    "CandidateProposalDecodeFailure",
     "CandidateProposalDecodeRejected",
     "ManagedCandidateProposalCodec",
+    "ManagedCandidateProposalEnvelope",
     "ManagedCandidateRouteFailure",
     "ManagedCandidateRoutingError",
     "ManagedCandidateRoutingEvent",

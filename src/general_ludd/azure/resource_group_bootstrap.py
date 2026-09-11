@@ -61,8 +61,23 @@ class AzureResourceGroupBootstrapState(StrEnum):
     ABSENT = "absent"
     CREATE_STARTED = "create_started"
     CREATED = "created"
+    MIGRATION_STARTED = "migration_started"
+    MIGRATED = "migrated"
     REUSED = "reused"
     FAILED = "failed"
+
+
+class AzureResourceGroupOwnershipState(StrEnum):
+    """Content-free classification of one existing group ownership check."""
+
+    EXACT_OWNED = "exact_owned"
+    OPERATOR_STAGED = "operator_staged"
+    UNTAGGED_HANDOFF = "untagged_handoff"
+    LEGACY_OWNED = "legacy_owned"
+    OWNER_MISMATCH = "owner_mismatch"
+    RESERVED_TAG_MISMATCH = "reserved_tag_mismatch"
+    NAME_MISMATCH = "name_mismatch"
+    LOCATION_MISMATCH = "location_mismatch"
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +86,18 @@ class AzureResourceGroupBootstrapTrace:
 
     state: AzureResourceGroupBootstrapState
     failure_class: str | None = None
+    ownership_state: AzureResourceGroupOwnershipState | None = None
+    observed_owner_digest: str | None = None
+    expected_owner_digest: str | None = None
+
+    def __post_init__(self) -> None:
+        """Reject non-digest identity material at the trace boundary."""
+        if any(
+            value is not None
+            and (not isinstance(value, str) or _DIGEST.fullmatch(value) is None)
+            for value in (self.observed_owner_digest, self.expected_owner_digest)
+        ):
+            raise ValueError("trace owner identities must be SHA-256 digests")
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +124,7 @@ class AzureResourceGroupBootstrapPolicy:
     resource_group: str
     location: str
     owner_digest: str
+    legacy_owner_digests: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Validate all policy values before constructing an Azure client."""
@@ -108,6 +136,19 @@ class AzureResourceGroupBootstrapPolicy:
             raise ValueError("location must be a canonical Azure location")
         if _DIGEST.fullmatch(self.owner_digest) is None:
             raise ValueError("owner_digest must be a lowercase SHA-256 digest")
+        if not isinstance(self.legacy_owner_digests, tuple):
+            raise ValueError("legacy_owner_digests must be an immutable tuple")
+        if (
+            len(set(self.legacy_owner_digests)) != len(self.legacy_owner_digests)
+            or self.owner_digest in self.legacy_owner_digests
+            or any(
+                not isinstance(digest, str) or _DIGEST.fullmatch(digest) is None
+                for digest in self.legacy_owner_digests
+            )
+        ):
+            raise ValueError(
+                "legacy_owner_digests must contain unique prior SHA-256 digests"
+            )
 
     @property
     def tags(self) -> Mapping[str, str]:
@@ -176,11 +217,45 @@ def _is_exact_owned_group(
     value: object,
     policy: AzureResourceGroupBootstrapPolicy,
 ) -> bool:
-    return bool(
-        _member(value, "name") == policy.resource_group
-        and _normalized_location(_member(value, "location")) == policy.location
-        and _member(value, "tags") == policy.tags
-    )
+    return _ownership_state(value, policy) is AzureResourceGroupOwnershipState.EXACT_OWNED
+
+
+def _ownership_state(
+    value: object,
+    policy: AzureResourceGroupBootstrapPolicy,
+) -> AzureResourceGroupOwnershipState:
+    if _member(value, "name") != policy.resource_group:
+        return AzureResourceGroupOwnershipState.NAME_MISMATCH
+    if _normalized_location(_member(value, "location")) != policy.location:
+        return AzureResourceGroupOwnershipState.LOCATION_MISMATCH
+    tags = _member(value, "tags")
+    if not isinstance(tags, Mapping) or not (
+        set(tags) & {"gludd-managed-by", "gludd-purpose", "gludd-owner-digest"}
+    ):
+        return AzureResourceGroupOwnershipState.UNTAGGED_HANDOFF
+    if any(tags.get(name) != expected for name, expected in _BASE_TAGS.items()):
+        return AzureResourceGroupOwnershipState.RESERVED_TAG_MISMATCH
+    owner_digest = tags.get("gludd-owner-digest")
+    if owner_digest is None:
+        return AzureResourceGroupOwnershipState.OPERATOR_STAGED
+    if owner_digest in policy.legacy_owner_digests:
+        return AzureResourceGroupOwnershipState.LEGACY_OWNED
+    if owner_digest != policy.owner_digest:
+        return AzureResourceGroupOwnershipState.OWNER_MISMATCH
+    if all(tags.get(name) == expected for name, expected in policy.tags.items()):
+        return AzureResourceGroupOwnershipState.EXACT_OWNED
+    return AzureResourceGroupOwnershipState.RESERVED_TAG_MISMATCH
+
+
+def _observed_owner_digest(value: object) -> str | None:
+    """Return only a validated one-way owner identity from an SDK document."""
+    tags = _member(value, "tags")
+    if not isinstance(tags, Mapping):
+        return None
+    owner_digest = tags.get("gludd-owner-digest")
+    if not isinstance(owner_digest, str) or _DIGEST.fullmatch(owner_digest) is None:
+        return None
+    return owner_digest
 
 
 def _close(value: object | None) -> bool:
@@ -225,6 +300,8 @@ def ensure_azure_resource_group(
     client: _ResourceClient | None = None
     result: AzureResourceGroupBootstrapResult | None = None
     failure: str | None = None
+    ownership_state: AzureResourceGroupOwnershipState | None = None
+    observed_owner_digest: str | None = None
     try:
         trace_sink(AzureResourceGroupBootstrapTrace(AzureResourceGroupBootstrapState.CHECK_STARTED))
         credential = credential_builder(credentials)
@@ -244,20 +321,61 @@ def ensure_azure_resource_group(
                 policy.resource_group,
                 {"location": policy.location, "tags": dict(policy.tags)},
             )
+            ownership_state = _ownership_state(created, policy)
+            observed_owner_digest = _observed_owner_digest(created)
             if not _is_exact_owned_group(created, policy):
                 raise AzureResourceGroupBootstrapError("ownership") from None
             observed = client.resource_groups.get(policy.resource_group)
+            ownership_state = _ownership_state(observed, policy)
+            observed_owner_digest = _observed_owner_digest(observed)
             if not _is_exact_owned_group(observed, policy):
                 raise AzureResourceGroupBootstrapError("ownership") from None
             result = AzureResourceGroupBootstrapResult(
                 AzureResourceGroupBootstrapState.CREATED
             )
         else:
-            if not _is_exact_owned_group(existing, policy):
+            ownership_state = _ownership_state(existing, policy)
+            observed_owner_digest = _observed_owner_digest(existing)
+            if ownership_state is AzureResourceGroupOwnershipState.LEGACY_OWNED:
+                tags = _member(existing, "tags")
+                if not isinstance(tags, Mapping) or any(
+                    not isinstance(name, str) or not isinstance(value, str)
+                    for name, value in tags.items()
+                ):
+                    raise AzureResourceGroupBootstrapError("ownership")
+                trace_sink(
+                    AzureResourceGroupBootstrapTrace(
+                        AzureResourceGroupBootstrapState.MIGRATION_STARTED,
+                        ownership_state=ownership_state,
+                        observed_owner_digest=observed_owner_digest,
+                        expected_owner_digest=policy.owner_digest,
+                    )
+                )
+                migrated = client.resource_groups.create_or_update(
+                    policy.resource_group,
+                    {
+                        "location": policy.location,
+                        "tags": {**dict(tags), **policy.tags},
+                    },
+                )
+                ownership_state = _ownership_state(migrated, policy)
+                observed_owner_digest = _observed_owner_digest(migrated)
+                if not _is_exact_owned_group(migrated, policy):
+                    raise AzureResourceGroupBootstrapError("ownership")
+                observed = client.resource_groups.get(policy.resource_group)
+                ownership_state = _ownership_state(observed, policy)
+                observed_owner_digest = _observed_owner_digest(observed)
+                if not _is_exact_owned_group(observed, policy):
+                    raise AzureResourceGroupBootstrapError("ownership")
+                result = AzureResourceGroupBootstrapResult(
+                    AzureResourceGroupBootstrapState.MIGRATED
+                )
+            elif not _is_exact_owned_group(existing, policy):
                 raise AzureResourceGroupBootstrapError("ownership")
-            result = AzureResourceGroupBootstrapResult(
-                AzureResourceGroupBootstrapState.REUSED
-            )
+            else:
+                result = AzureResourceGroupBootstrapResult(
+                    AzureResourceGroupBootstrapState.REUSED
+                )
     except BaseException as error:
         failure = _failure_class(error)
     client_closed = _close(client)
@@ -270,6 +388,9 @@ def ensure_azure_resource_group(
                 AzureResourceGroupBootstrapTrace(
                     AzureResourceGroupBootstrapState.FAILED,
                     failure,
+                    ownership_state,
+                    observed_owner_digest,
+                    policy.owner_digest,
                 )
             )
         except Exception:
@@ -287,5 +408,6 @@ __all__ = (
     "AzureResourceGroupBootstrapResult",
     "AzureResourceGroupBootstrapState",
     "AzureResourceGroupBootstrapTrace",
+    "AzureResourceGroupOwnershipState",
     "ensure_azure_resource_group",
 )

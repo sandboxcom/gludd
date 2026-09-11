@@ -39,7 +39,10 @@ from general_ludd.self_improve.azure_backend import (
     AzureApprovedPrompt,
     AzureCandidateResponse,
 )
-from general_ludd.self_improve.model_candidates import AzureContainerAppCandidateIdentity
+from general_ludd.self_improve.model_candidates import (
+    AzureContainerAppCandidateIdentity,
+    BackendInfrastructureError,
+)
 
 _PROTOCOL = "gludd-owned-azure-containerapp-candidate-v1"
 @runtime_checkable
@@ -490,7 +493,7 @@ class AzureContainerAppOwnedCandidateFactory:
                 raise ValueError
             self._emit(OwnedCandidateLifecycleEvent.BACKEND_ACQUIRED, identity)
             return _OwnedCandidateBackend(self, delegate)
-        except BaseException:
+        except BaseException as cause:
             cleaned = self._cleanup(
                 delegate,
                 app_apply_started=app_apply_started,
@@ -499,7 +502,10 @@ class AzureContainerAppOwnedCandidateFactory:
             self._cleanup_emit(OwnedCandidateLifecycleEvent.FAILED, identity)
             if not cleaned:
                 raise OwnedCandidateLifecycleError("cleanup") from None
-            raise OwnedCandidateLifecycleError(phase) from None
+            failure = (
+                cause.failure if isinstance(cause, BackendInfrastructureError) else None
+            )
+            raise OwnedCandidateLifecycleError(phase, failure=failure) from None
 
 
 __all__ = (

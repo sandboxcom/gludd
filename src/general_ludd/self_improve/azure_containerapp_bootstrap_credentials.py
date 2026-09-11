@@ -11,12 +11,14 @@ from typing import Protocol
 from general_ludd.azure.accelerator_credential_source import (
     AzureAcceleratorCredentialLease,
 )
+from general_ludd.azure.accelerator_credential_store import (
+    load_preserved_azure_accelerator_credentials as load_azure_accelerator_credentials,
+)
 from general_ludd.azure.accelerator_credentials import (
     AzureAcceleratorAuthentication,
     AzureAcceleratorCredentials,
     AzureAcceleratorWorkloadIdentity,
     build_azure_workload_identity,
-    load_azure_accelerator_credentials,
 )
 
 

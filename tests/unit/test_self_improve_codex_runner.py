@@ -1932,6 +1932,53 @@ def test_generate_local_proposal_rejects_missing_and_invalid_worker_output(
         runner_module.generate_local_proposal(NoOutputRunner(), model, "prompt")
 
 
+def test_local_worker_validation_failure_is_typed_without_raw_output(
+    tmp_path: Path,
+) -> None:
+    """Treat model protocol violations as quality evidence, not infrastructure."""
+    model = tmp_path / "model.gguf"
+    model.write_bytes(b"gguf")
+
+    class ValidationRejectRunner:
+        def run_observable(
+            self,
+            target: str,
+            variables: dict[str, str],
+            *,
+            timeout: int,
+        ) -> MakeResult:
+            del target, variables, timeout
+            return MakeResult(
+                ("make", "worker"),
+                2,
+                (
+                    "PRIVATE_SOURCE=do-not-retain\n"
+                    "SELF_IMPROVE_LOCAL_PROPOSAL_ERROR "
+                    "compact span new lines exceed 64; received_new_lines=>64 "
+                    "max_new_lines=64\n"
+                    "PASSWORD=hunter2\n"
+                ),
+                "",
+                0.1,
+            )
+
+    with pytest.raises(ValueError) as raised:
+        runner_module.generate_local_proposal(
+            ValidationRejectRunner(),
+            model,
+            "prompt",
+        )
+
+    diagnostic = str(raised.value)
+    assert "type=edit_line_budget" in diagnostic
+    assert "source=proposal_error" in diagnostic
+    assert "detail=compact span new lines exceed 64" in diagnostic
+    assert "PRIVATE_SOURCE" not in diagnostic
+    assert "do-not-retain" not in diagnostic
+    assert "PASSWORD" not in diagnostic
+    assert "hunter2" not in diagnostic
+
+
 def test_local_exchange_cleans_after_compact_parent_aggregate_rejection(
     tmp_path: Path,
 ) -> None:

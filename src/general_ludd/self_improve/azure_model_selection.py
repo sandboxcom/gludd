@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import json
 import os
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
+from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
 
 from general_ludd.infra.azure_containerapp_gpu import (
     AzureContainerAppGPUUnavailable,
     select_smallest_sufficient_profile,
+)
+from general_ludd.models.model_deployment_metadata import (
+    ModelDeploymentMetadataUnavailable,
 )
 from general_ludd.models.model_registry import (
     ModelDeploymentMetadata,
@@ -38,26 +43,40 @@ class _ModelRegistry(Protocol):
     def get_deployment_metadata(self, model_id: str) -> ModelDeploymentMetadata: ...
 
 
+class _AzureModelRejection(StrEnum):
+    """Secret-free reason one discovered model was not deployable."""
+
+    PUBLISHER_NOT_ALLOWED = "publisher_not_allowed"
+    LICENSE_NOT_ALLOWED = "license_not_allowed"
+    REQUIRED_TAG_MISSING = "required_tag_missing"
+    BLOCKED_TAG = "blocked_tag"
+    PIPELINE_UNSUPPORTED = "pipeline_unsupported"
+    CONTEXT_TOO_SHORT = "context_too_short"
+    HARDWARE_UNAVAILABLE = "hardware_unavailable"
+    HOURLY_COST_EXCEEDED = "hourly_cost_exceeded"
+    METADATA_UNAVAILABLE = "metadata_unavailable"
+
+
 def _admit(
     model: ModelDeploymentMetadata,
     policy: AzureModelSelectionPolicy,
-) -> EligibleAzureModel | None:
+) -> tuple[EligibleAzureModel | None, _AzureModelRejection | None]:
     publisher = model.model_id.split("/", 1)[0].casefold()
     if publisher not in {item.casefold() for item in policy.allowed_publishers}:
-        return None
+        return None, _AzureModelRejection.PUBLISHER_NOT_ALLOWED
     if model.license_id.casefold() not in {
         item.casefold() for item in policy.allowed_licenses
     }:
-        return None
+        return None, _AzureModelRejection.LICENSE_NOT_ALLOWED
     tags = {tag.casefold() for tag in model.tags}
     if not {tag.casefold() for tag in policy.required_tags} <= tags:
-        return None
+        return None, _AzureModelRejection.REQUIRED_TAG_MISSING
     if {tag.casefold() for tag in policy.blocked_tags} & tags:
-        return None
+        return None, _AzureModelRejection.BLOCKED_TAG
     if model.pipeline_tag.casefold() != "text-generation":
-        return None
+        return None, _AzureModelRejection.PIPELINE_UNSUPPORTED
     if model.context_tokens < policy.minimum_context_tokens:
-        return None
+        return None, _AzureModelRejection.CONTEXT_TOO_SHORT
     try:
         selected = select_smallest_sufficient_profile(
             model_requirement(model, policy),
@@ -66,7 +85,7 @@ def _admit(
             ),
         )
     except AzureContainerAppGPUUnavailable:
-        return None
+        return None, _AzureModelRejection.HARDWARE_UNAVAILABLE
     hourly = next(
         capacity.hourly_cost_microusd_per_replica
         for capacity in policy.profile_capacities
@@ -74,13 +93,16 @@ def _admit(
         == selected.profile.workload_profile_type
     )
     if hourly > policy.max_hourly_cost_microusd:
-        return None
-    return EligibleAzureModel(
-        model=model,
-        workload_profile_type=selected.profile.workload_profile_type,
-        required_vram_mib=selected.required_vram_mib,
-        hourly_cost_microusd=hourly,
-        identity_digest=model_selection_identity_digest(model, policy),
+        return None, _AzureModelRejection.HOURLY_COST_EXCEEDED
+    return (
+        EligibleAzureModel(
+            model=model,
+            workload_profile_type=selected.profile.workload_profile_type,
+            required_vram_mib=selected.required_vram_mib,
+            hourly_cost_microusd=hourly,
+            identity_digest=model_selection_identity_digest(model, policy),
+        ),
+        None,
     )
 
 
@@ -99,28 +121,56 @@ def _discover(
     policy: AzureModelSelectionPolicy,
     sink: Callable[[Mapping[str, object]], None],
 ) -> tuple[EligibleAzureModel, ...]:
-    results = registry.search(
-        query=policy.search_query,
-        tags=list(policy.required_tags),
-        sort="downloads",
-        limit=policy.search_limit,
+    base_quota, extra_slots = divmod(
+        policy.search_limit, len(policy.allowed_publishers)
     )
+    results: list[ModelSearchResult] = []
+    publisher_query_count = 0
+    for index, publisher in enumerate(policy.allowed_publishers):
+        publisher_limit = base_quota + (1 if index < extra_slots else 0)
+        if publisher_limit == 0:
+            continue
+        publisher_query_count += 1
+        results.extend(
+            registry.search(
+                query=policy.search_query,
+                tags=list(policy.required_tags),
+                sort="downloads",
+                limit=publisher_limit,
+                author=publisher,
+            )
+        )
+    results.sort(key=lambda result: (-result.downloads, result.model_id))
+    del results[policy.search_limit :]
     unique_ids = tuple(dict.fromkeys(result.model_id for result in results))
     admitted: list[EligibleAzureModel] = []
+    rejection_counts: Counter[str] = Counter()
     for model_id in unique_ids:
         try:
-            candidate = _admit(registry.get_deployment_metadata(model_id), policy)
+            candidate, rejection = _admit(
+                registry.get_deployment_metadata(model_id), policy
+            )
+        except ModelDeploymentMetadataUnavailable as error:
+            candidate = None
+            rejection = None
+            rejection_counts[f"metadata_{error.failure.value}_unavailable"] += 1
         except (OSError, RuntimeError, ValueError):
             candidate = None
+            rejection = _AzureModelRejection.METADATA_UNAVAILABLE
         if candidate is not None:
             admitted.append(candidate)
+        elif rejection is not None:
+            rejection_counts[rejection.value] += 1
     _emit(
         sink,
         {
             "event": "SELF_IMPROVE_AZURE_MODEL_DISCOVERY_COMPLETED",
             "discovered_count": len(unique_ids),
             "eligible_count": len(admitted),
-            "schema_version": 1,
+            "hydrated_count": len(unique_ids),
+            "publisher_query_count": publisher_query_count,
+            "rejection_counts": dict(sorted(rejection_counts.items())),
+            "schema_version": 3,
         },
     )
     return tuple(admitted)

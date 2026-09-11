@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-10 — (resolved locally) Local and Azure proposal workers shared semantics but not one envelope
+
+- **What happened**: The local worker received an owned prompt artifact while the Azure adapters received separately extracted prompt, instruction, schema, and digest fields. A legacy raw-string remote-codec path could also omit the trusted contract and response schema entirely. Compatible fields were mistaken for one common transport protocol.
+- **Root cause**: Local subprocess transport and Azure privacy approval evolved as provider-specific boundaries. The shared parent decoder unified responses, but there was no serializable value object committing every request and response artifact before either worker ran.
+- **Fix applied**: One canonical proposal envelope now binds the exact request, trusted contract, response instruction, response schema, protocol digest, and sampling digest. Local and Azure reparse and re-digest that complete serialization at their execution boundaries, both emit its content-free digest through terminal response traces, and raw-string remote routing fails closed. The portable response schema uses fixed ordinal properties rather than unsupported cross-provider array-uniqueness keywords.
+- **Evidence**: Failing-first tests reproduced the incomplete legacy route, maximum-escaping decode failure, and missing response-trace digest. The combined worker/codec/backend/runner suite passes 320/320. A live concurrent local/Azure run emitted identical digest `d93971ac138f3bcdd4a555ce97c6059cebcb085dfe9a4047c59a457fea09e516`; Azure produced 4,894 input and 480 output tokens, both provider results reached the shared decoder, calibration persisted, and the paid app was destroyed with absence verified.
+- **Practitioner evidence**: vLLM issues #8350, #12692, and #53975 plus llama.cpp's JSON-Schema guide document inconsistent structured-output support. `docs/features/SELF_IMPROVEMENT_MIXED_MODELS.md` links the sources and explains the fixed-ordinal compatibility choice.
+- **Lesson**: Provider adapters may project a canonical artifact into different SDK calls, but they must never construct, omit, or reinterpret protocol state independently.
+
 ### 2026-09-10 — (resolved locally) Parallel shard supervision had no terminal deadline
 
 - **What happened**: `unit-3a` completed and persisted its failures while the paired `unit-3b` pytest controller and xdist worker remained live indefinitely. The wrapper emitted liveness heartbeats but had no whole-run deadline, so the per-test timeout could not recover a controller/worker shutdown stall.

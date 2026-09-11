@@ -8,9 +8,11 @@ import sys
 import uuid
 from collections.abc import Sequence
 
+from general_ludd.azure.accelerator_credential_store import (
+    load_preserved_azure_accelerator_credentials as load_azure_accelerator_credentials,
+)
 from general_ludd.azure.accelerator_credentials import (
     AzureAcceleratorCredentialError,
-    load_azure_accelerator_credentials,
 )
 
 SUCCESS_MARKER = (

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import tomllib
 from collections.abc import Callable, Iterator, Mapping
@@ -27,6 +28,9 @@ from general_ludd.self_improve.azure_backend import (
     AzureSdkFactories,
     AzureTraceEvent,
     build_azure_openai_candidate_backend,
+)
+from general_ludd.self_improve.managed_candidate_routing import (
+    ManagedCandidateProposalEnvelope,
 )
 from general_ludd.self_improve.model_candidates import (
     AzureFoundryAPIFamily,
@@ -194,24 +198,8 @@ class _FakeResponses:
         self.results = list(results or (_response(),))
         self.calls: list[dict[str, object]] = []
 
-    def create(
-        self,
-        *,
-        model: str,
-        input: str,
-        max_output_tokens: int,
-        store: bool,
-        timeout: float,
-    ) -> object:
-        self.calls.append(
-            {
-                "model": model,
-                "input": input,
-                "max_output_tokens": max_output_tokens,
-                "store": store,
-                "timeout": timeout,
-            }
-        )
+    def create(self, **kwargs: object) -> object:
+        self.calls.append(kwargs)
         result = self.results.pop(0) if len(self.results) > 1 else self.results[0]
         if isinstance(result, BaseException):
             raise result
@@ -343,6 +331,9 @@ def _approved_prompt(
     *,
     prompt: str = _PROMPT,
     events: list[str] | None = None,
+    envelope_digest: str | None = None,
+    response_instruction: str | None = None,
+    response_schema_json: str | None = None,
 ) -> AzureApprovedPrompt:
     source = tmp_path / "src" / "approved.py"
     source.parent.mkdir(parents=True, exist_ok=True)
@@ -357,6 +348,23 @@ def _approved_prompt(
         prompt=prompt,
         source_paths=("src/approved.py",),
         policy_guard=guard,
+        envelope_digest=envelope_digest,
+        response_instruction=response_instruction,
+        response_schema_json=response_schema_json,
+    )
+
+
+def _worker_envelope() -> ManagedCandidateProposalEnvelope:
+    return ManagedCandidateProposalEnvelope(
+        request_text=_PROMPT,
+        request_contract_json='{"contract":"trusted"}',
+        response_instruction="Return the exact approved JSON object.",
+        response_schema_json=(
+            '{"additionalProperties":false,"properties":{"ok":{"const":true,'
+            '"type":"boolean"}},"required":["ok"],"type":"object"}'
+        ),
+        protocol_digest="c" * 64,
+        sampling_digest="d" * 64,
     )
 
 
@@ -682,13 +690,115 @@ def test_approval_censors_hostile_string_subclass(tmp_path: Path) -> None:
 
 
 def test_approval_object_repr_redacts_prompt_and_source_paths(tmp_path: Path) -> None:
-    request = _approved_prompt(tmp_path)
+    instruction = "PRIVATE_TRANSPORT_INSTRUCTION"
+    schema_json = (
+        '{"additionalProperties":false,"properties":{"private_path":'
+        '{"const":"src/approved.py","type":"string"}},'
+        '"required":["private_path"],"type":"object"}'
+    )
+    request = _approved_prompt(
+        tmp_path,
+        response_instruction=instruction,
+        response_schema_json=schema_json,
+    )
 
     rendered = repr(request)
     assert _PROMPT not in rendered
     assert "src/approved.py" not in rendered
+    assert instruction not in rendered
+    assert schema_json not in rendered
     assert request.policy_digest in rendered
     assert len(request.approval_digest) == 64
+
+
+def test_approval_binds_and_rechecks_shared_envelope_digest(tmp_path: Path) -> None:
+    request = _approved_prompt(tmp_path, envelope_digest="a" * 64)
+    harness = _FactoryHarness()
+    backend = _build(harness)
+
+    object.__setattr__(request, "envelope_digest", "b" * 64)
+
+    with pytest.raises(AzurePromptApprovalError):
+        backend.generate(request, max_output_tokens=100, timeout_seconds=5.0)
+
+    assert harness.openai_calls == []
+    assert harness.responses.calls == []
+
+
+def test_approval_carries_and_rechecks_the_complete_worker_envelope(
+    tmp_path: Path,
+) -> None:
+    envelope = _worker_envelope()
+    source = tmp_path / "src" / "approved.py"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("PUBLIC = True\n", encoding="utf-8")
+    guard = SelfImproveRuntimePolicyGuard.load(
+        tmp_path,
+        lambda _event: None,
+        AzurePromptApprovalError,
+    )
+
+    request = AzureApprovedPrompt.approve_envelope(
+        envelope=envelope,
+        source_paths=("src/approved.py",),
+        policy_guard=guard,
+    )
+
+    assert request.envelope_digest == envelope.envelope_digest
+    assert request._reveal_envelope_after_recheck() == envelope
+
+    object.__setattr__(request, "_envelope_json", envelope.to_json() + " ")
+    with pytest.raises(AzurePromptApprovalError):
+        request._reveal_envelope_after_recheck()
+
+
+@pytest.mark.parametrize("envelope_digest", ("", "A" * 64, "a" * 63, cast(Any, 1)))
+def test_approval_rejects_noncanonical_envelope_digest(
+    tmp_path: Path,
+    envelope_digest: str,
+) -> None:
+    with pytest.raises(AzurePromptApprovalError):
+        _approved_prompt(tmp_path, envelope_digest=envelope_digest)
+
+
+@pytest.mark.parametrize(
+    ("instruction", "schema_json"),
+    [
+        ("instruction only", None),
+        (None, '{"type":"object"}'),
+        ("instruction", "not-json"),
+        ("instruction", '{ "type": "object" }'),
+        ("\x00", '{"type":"object"}'),
+        ("instruction", "[]"),
+    ],
+)
+def test_approval_rejects_partial_or_noncanonical_transport_contracts(
+    tmp_path: Path,
+    instruction: str | None,
+    schema_json: str | None,
+) -> None:
+    source = tmp_path / "src" / "approved.py"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("PUBLIC = True\n", encoding="utf-8")
+    guard = SelfImproveRuntimePolicyGuard.load(
+        tmp_path,
+        lambda _event: None,
+        AzurePromptApprovalError,
+    )
+
+    with pytest.raises(AzurePromptApprovalError) as captured:
+        AzureApprovedPrompt.approve(
+            prompt=_PROMPT,
+            source_paths=("src/approved.py",),
+            policy_guard=guard,
+            response_instruction=instruction,
+            response_schema_json=schema_json,
+        )
+
+    if instruction is not None:
+        assert instruction not in str(captured.value)
+    if schema_json is not None:
+        assert schema_json not in str(captured.value)
 
 
 def test_policy_drift_blocks_before_provider_request(tmp_path: Path) -> None:
@@ -714,6 +824,29 @@ def test_policy_drift_blocks_before_provider_request(tmp_path: Path) -> None:
 def test_approval_digest_tampering_blocks_before_provider_request(tmp_path: Path) -> None:
     request = _approved_prompt(tmp_path)
     object.__setattr__(request, "policy_digest", "forged-policy-digest")
+    harness = _FactoryHarness()
+    backend = _build(harness)
+
+    with pytest.raises(AzurePromptApprovalError):
+        backend.generate(request, max_output_tokens=100, timeout_seconds=5.0)
+
+    assert harness.openai_calls == []
+    assert harness.responses.calls == []
+    assert backend.accounting == AzureBackendAccounting()
+
+
+def test_approved_transport_contract_tampering_blocks_before_provider_request(
+    tmp_path: Path,
+) -> None:
+    request = _approved_prompt(
+        tmp_path,
+        response_instruction="Return approved JSON.",
+        response_schema_json=(
+            '{"additionalProperties":false,"properties":{},"required":[],'
+            '"type":"object"}'
+        ),
+    )
+    object.__setattr__(request, "_response_schema_json", '{"type":"array"}')
     harness = _FactoryHarness()
     backend = _build(harness)
 
@@ -932,6 +1065,59 @@ def test_api_key_is_resolved_lazily_and_request_is_exact_and_non_stored(
         AzureTraceEvent.REQUEST_STARTED,
         AzureTraceEvent.RESPONSE_ACCEPTED,
     ]
+
+
+def test_foundry_request_carries_the_same_approved_structured_contract(
+    tmp_path: Path,
+) -> None:
+    envelope = _worker_envelope()
+    source = tmp_path / "src" / "approved.py"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("PUBLIC = True\n", encoding="utf-8")
+    guard = SelfImproveRuntimePolicyGuard.load(
+        tmp_path,
+        lambda _event: None,
+        AzurePromptApprovalError,
+    )
+    approved = AzureApprovedPrompt.approve_envelope(
+        envelope=envelope,
+        source_paths=("src/approved.py",),
+        policy_guard=guard,
+    )
+    harness = _FactoryHarness()
+    traces: list[AzureBackendTrace] = []
+    backend = _build(harness, traces=traces)
+
+    backend.generate(
+        approved,
+        max_output_tokens=20,
+        timeout_seconds=4.0,
+    )
+
+    assert harness.responses.calls == [
+        {
+            "model": "reviewer-green",
+            "input": [
+                {"role": "system", "content": envelope.response_instruction},
+                {"role": "user", "content": envelope.request_text},
+            ],
+            "max_output_tokens": 20,
+            "store": False,
+            "timeout": 4.0,
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "gludd_proposal_batch",
+                    "schema": json.loads(envelope.response_schema_json),
+                    "strict": True,
+                }
+            },
+        }
+    ]
+    assert traces[-2].event is AzureTraceEvent.REQUEST_STARTED
+    assert traces[-2].envelope_digest == envelope.envelope_digest
+    assert traces[-1].event is AzureTraceEvent.RESPONSE_ACCEPTED
+    assert traces[-1].envelope_digest == envelope.envelope_digest
 
 
 def test_entra_authentication_uses_official_scope_and_no_secret_string(

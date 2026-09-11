@@ -62,6 +62,36 @@ bounded visible startup supervision. AzAPI issues
 [#875](https://github.com/Azure/terraform-provider-azapi/issues/875) justify pinned
 v2 export syntax and rejecting sensitive or broad response material in plans.
 
+A 2026-09-10 live canary exposed version skew before the paid app mutation: the
+preflight caller used an unverified `2026-01-01` path while the official SDK
+adapter admitted `2025-07-01`. Microsoft's current
+[managed-environment get](https://learn.microsoft.com/en-us/rest/api/resource-manager/containerapps/managed-environments/get?view=rest-resource-manager-containerapps-2025-07-01)
+and
+[environment-usage list](https://learn.microsoft.com/en-us/rest/api/resource-manager/containerapps/managed-environment-usages/list?view=rest-resource-manager-containerapps-2025-07-01)
+contracts both document `2025-07-01`. Gludd now imports one shared version into
+the fixed-path SDK boundary and exercises the real caller/adapter pair in a
+credential-free integration test. The long-lived user report in Azure SDK issue
+[#34445](https://github.com/Azure/azure-sdk-for-python/issues/34445) records a
+similar service-Swagger/SDK release lag; it reinforces testing the composed SDK
+boundary instead of assuming independently valid version constants interoperate.
+Typed, allowlisted preflight reasons are emitted without provider bodies and are
+mapped to the model-neutral authentication, authorization, not-found, quota,
+timeout, transport, invalid-response, or unavailable categories.
+
+The same canary then created the environment in 722 seconds and the app ARM
+resource in 18 seconds, but no revision became ready before the bounded 900-second
+deadline; the owned lifecycle deleted the GPU app in 20 seconds and independently
+verified absence. Microsoft's supported
+[revision-list operation](https://learn.microsoft.com/en-us/rest/api/resource-manager/containerapps/container-apps-revisions/list-revisions?view=rest-resource-manager-containerapps-2025-07-01)
+is therefore part of startup observation even before Azure publishes a latest
+ready revision. Gludd selects only an unambiguous active or sole app-owned revision
+and emits bounded provisioning, health, running, and replica-count facts. Terminal
+states stop the supervisor immediately. Practitioner reports
+[#477](https://github.com/microsoft/azure-container-apps/issues/477) and
+[#646](https://github.com/microsoft/azure-container-apps/issues/646) show that
+startup-probe and image-pull failures can otherwise look like long provisioning
+stalls, which is why a generic polling heartbeat is not sufficient evidence.
+
 ## Candidate identities
 
 All candidate types are frozen values with a canonical SHA-256
@@ -491,6 +521,139 @@ The bounded executor carries those operational lessons forward: because endpoint
 and deployment mistakes have historically surfaced as ambiguous provider errors,
 an execution-time failure is retained only as a typed infrastructure observation.
 It never becomes a negative quality label or a reason to try a different provider.
+
+### S83.157 live model-registry compatibility research
+
+Research checked on 2026-09-10 after the first authenticated live proof reached
+Hugging Face discovery:
+
+- The current official
+  [`HfApi.list_models` reference](https://huggingface.co/docs/huggingface_hub/package_reference/hf_api)
+  supports `sort` and `limit` but no longer accepts the historical `direction`
+  argument. Sorting by downloads already yields the highest-ranked models first.
+  Gludd therefore uses the current public signature and has a unit contract that
+  rejects reintroducing `direction`.
+- A long-lived practitioner request,
+  [huggingface_hub issue #2741](https://github.com/huggingface/huggingface_hub/issues/2741),
+  has tracked the lack of independently addressable `list_models` pages since
+  January 2025. A May 2026 report was closed as a duplicate after confirming the
+  same limitation in 1.x. Gludd intentionally performs a bounded top-N query and
+  must not present that result as an exhaustive Hub inventory.
+- Older Hugging Face forum guidance, including
+  [“List all tasks from hfapi”](https://discuss.huggingface.co/t/list-all-tasks-from-hfapi/68661),
+  still shows `direction=-1`. That user-facing example explains why working 0.x
+  integrations can fail immediately after an SDK upgrade. Forum snippets are
+  treated as historical operational evidence; the current package reference is
+  the normative call contract.
+
+### Live vLLM rejection-envelope research
+
+Research checked on 2026-09-10 after an authenticated Container Apps proof
+reached `/v1/chat/completions` and received HTTP 400:
+
+- Practitioner reports [#42474](https://github.com/vllm-project/vllm/issues/42474),
+  [#33418](https://github.com/vllm-project/vllm/issues/33418), and
+  [#34340](https://github.com/vllm-project/vllm/issues/34340) show that context
+  overflow is returned as `BadRequestError` with both root and nested `error`
+  envelopes. Across versions, `param` may be `max_tokens`, `input_tokens`, or
+  null, and the message varies between "requested", "request has", and prompt
+  token wording. Gludd recognizes only the bounded envelope schema plus these
+  invariant context markers and emits the fixed
+  `context_window_exceeded` category.
+- Practitioner report
+  [#17977](https://github.com/vllm-project/vllm/issues/17977) records the same
+  root `BadRequestError` envelope when a tokenizer has no chat template. That
+  case is kept distinct as `chat_template_unavailable`; model discovery alone
+  is therefore not treated as proof that chat generation is usable.
+- Practitioner report
+  [#6890](https://github.com/vllm-project/vllm/issues/6890) shows an otherwise
+  valid-looking request rejected with a provider-controlled validation message.
+  Unknown recognized vLLM rejections remain the fixed
+  `provider_bad_request` category rather than being guessed or relabelled.
+
+These reports are compatibility evidence, not normative API contracts. Provider
+messages can contain request data, so Gludd never stores or emits them. It parses
+at most 16 KiB, rejects duplicate JSON fields and unexpected envelope keys, and
+retains only the HTTP status and one fixed category. Infrastructure rejections
+remain censored from model-quality calibration.
+
+### Canonical local/Azure proposal-envelope research
+
+Research checked on 2026-09-10 after a live Azure response passed the HTTP
+contract but failed Gludd's proposal decoder:
+
+- The official
+  [vLLM structured-output guide](https://docs.vllm.ai/en/latest/features/structured_outputs/)
+  documents JSON Schema through the OpenAI-compatible `response_format` field
+  and notes that the older guided-decoding parameters are deprecated. Gludd
+  therefore uses the maintained structured-output surface rather than inventing
+  a vLLM-only response parser.
+- A practitioner answer in
+  [“How to get structured outputs in vLLM?”](https://discuss.vllm.ai/t/how-to-get-structured-outputs-in-vllm/2142/10)
+  reports that behavior can differ by serving API and model configuration. A
+  longer-lived user discussion,
+  [“I got tired of digging through structured outputs”](https://www.reddit.com/r/LLMDevs/comments/1tarfl4/i_got_tired_of_digging_through_structured_outputs/),
+  likewise cautions that OpenAI-compatible endpoints do not imply identical
+  schema behavior. These are operational reports, not normative contracts; they
+  justify retaining Gludd's strict parent-side decoder after constrained
+  generation.
+- The pinned image digest resolves to
+  [`vllm/vllm-openai:v0.10.2`](https://hub.docker.com/layers/vllm/vllm-openai/v0.10.2/images/sha256-df2607b26bdda2875de4832f4d08da0055b4b6e3570347f3a849bcc652771dd6).
+  Current vLLM source documents `uniqueItems` and `contains` as unsupported by
+  XGrammar, while the
+  [llama.cpp JSON-Schema guide](https://github.com/ggml-org/llama.cpp/blob/master/grammars/README.md#json-schemas--gbnf)
+  reports that `prefixItems` is broken and `uniqueItems` is unsupported. A
+  shared worker contract therefore cannot depend on either strategy to make a
+  proposal array unique. Gludd uses fixed object properties keyed by shard
+  ordinal, with each property bound to one constant focus path; both grammar
+  engines can enforce that shape using their established object/property
+  subset.
+- Long-lived vLLM reports
+  [#8350](https://github.com/vllm-project/vllm/issues/8350) and
+  [#12692](https://github.com/vllm-project/vllm/issues/12692) document incomplete
+  or ignored guided output in older engine paths. A newer report,
+  [#53975](https://github.com/vllm-project/vllm/issues/53975), demonstrates that
+  legacy `guided_json` can be silently ignored while the maintained
+  `response_format.json_schema` path works. These practitioner reports reinforce
+  two existing decisions: use `response_format`, and still apply Gludd's strict
+  parent decoder to every response.
+
+Local and Azure workers now receive one immutable provider-neutral proposal
+codec rather than independently constructing merely compatible payloads. That
+single envelope owns the exact canonical `GLUDD_SELF_IMPROVE_PROMPT_BATCH_V1`
+request bytes, trusted request contract, response instruction, canonical JSON
+Schema, protocol digest, sampling digest, and shared decoder. The local worker
+reads the canonical serialized artifact directly. Azure approval carries that
+same complete serialization as an opaque privacy capability, reparses it and
+recomputes its digest immediately before inference, then projects its exact
+model-visible fields into the provider API. Neither worker may synthesize or
+rewrite the envelope. One `envelope_digest` commits to every artifact and is
+emitted content-free by both request boundaries, alongside bounded provider
+token accounting, so cross-worker parity is mechanically auditable. The schema
+binds response protocol, proposal count, each shard ordinal to one constant
+focus path, and compact edit fields; every provider response is passed through
+the envelope's shared decoder. Legacy raw-string prompts fail closed instead of
+creating a managed remote worker without those artifacts, and the serialized
+wire bound accounts for worst-case JSON escaping of every accepted artifact.
+Invalid JSON, root shape, protocol identity, proposal count, proposal shape,
+scope, line budget, content budget, and semantic validation each produce a fixed
+content-free category in routing traces; request, response, contract, provider
+text, and schema contents are never emitted.
+
+#### Live canonical-envelope proof (2026-09-10)
+
+An opt-in mixed run executed a local SmolLM2 GGUF worker and a self-provisioned
+Azure Container App worker concurrently. Both request boundaries emitted the
+same envelope digest,
+`d93971ac138f3bcdd4a555ce97c6059cebcb085dfe9a4047c59a457fea09e516`.
+Azure returned a structured response with 4,894 input tokens and 480 output
+tokens; the shared decoder rejected it as `proposal_scope`. The local response
+was independently rejected as `proposal_validation`, and both observations were
+persisted as negative calibration evidence. This proves transport, concurrency,
+accounting, decoder, and lifecycle parity; it does not claim a successful code
+improvement. The paid app was destroyed in 20 seconds and its absence verified;
+the empty Consumption environment was retained for 21,600 seconds only because
+its measured retained hourly cost was zero.
 
 ### S83.150 live-adapter research
 

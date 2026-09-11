@@ -14,9 +14,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from general_ludd.azure.accelerator_credential_store import (
+    load_preserved_azure_accelerator_credentials as load_azure_accelerator_credentials,
+)
 from general_ludd.azure.accelerator_credentials import (
     build_azure_workload_identity,
-    load_azure_accelerator_credentials,
 )
 from general_ludd.azure.resource_group_bootstrap import ensure_azure_resource_group
 from general_ludd.infra.azure_containerapp_environment_lifecycle import (
@@ -49,6 +51,7 @@ from general_ludd.self_improve.azure_containerapp_bootstrap_credentials import (
     WorkloadIdentityAzureCredentialProvider as _WorkloadIdentityAzureCredentialProvider,
 )
 from general_ludd.self_improve.azure_containerapp_bootstrap_planning import (
+    azure_bootstrap_legacy_owner_digests,
     azure_bootstrap_owner_digest,
     plan_azure_bootstrap_topology,
 )
@@ -70,6 +73,7 @@ from general_ludd.self_improve.model_candidates import (
     BackendCallBudget,
     ModelCandidateProvider,
 )
+from general_ludd.self_improve.private_policy import load_self_improve_policy
 
 
 class FileAzureCredentialProvider(_FileAzureCredentialProvider):
@@ -127,6 +131,7 @@ class _BootstrapPlan:
     topology: AzureRunnerTopologyPlan
     app_policy: AzureContainerAppLiveProofPolicy
     environment_policy: AzureEnvironmentLifecyclePolicy
+    legacy_owner_digests: tuple[str, ...]
     work_root: Path
     environment_work_root: Path
 
@@ -197,6 +202,10 @@ def _build_plan(
     topology = plan_azure_bootstrap_topology(settings, requirement, progress_sink)
     app_plan = topology.apps[0]
     owner_digest = azure_bootstrap_owner_digest(canonical_root, settings)
+    try:
+        privacy_policy_digest = load_self_improve_policy(canonical_root).digest
+    except (OSError, ValueError):
+        privacy_policy_digest = None
     app_suffix = hashlib.sha256(
         f"{owner_digest}:{app_plan.runner_id}".encode("ascii")
     ).hexdigest()[:16]
@@ -244,6 +253,11 @@ def _build_plan(
         topology=topology,
         app_policy=app_policy,
         environment_policy=environment_policy,
+        legacy_owner_digests=azure_bootstrap_legacy_owner_digests(
+            canonical_root,
+            settings,
+            privacy_policy_digest=privacy_policy_digest,
+        ),
         work_root=state.directory("azure-containerapp", "applications"),
         environment_work_root=state.directory(
             "azure-containerapp",
@@ -297,6 +311,7 @@ def _build_factory(
         progress_sink=progress_sink,
         idle_retention_policy=settings.idle_retention_policy,
         expected_next_demand_seconds=settings.expected_next_demand_seconds,
+        legacy_owner_digests=plan.legacy_owner_digests,
     )
 
 
@@ -336,7 +351,6 @@ def build_azure_containerapp_bootstrap_wiring(
     policy = LiveCandidateWiringPolicy(
         local_budget=plan.call_budget,
         required_providers=(
-            ModelCandidateProvider.LOCAL_GGUF,
             ModelCandidateProvider.AZURE_CONTAINER_APP,
         ),
         containerapp_bootstrap_digest=factory.deployment_digest,

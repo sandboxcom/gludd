@@ -1483,6 +1483,60 @@ def test_local_gateway_prefers_native_schema_constrained_chat_completion(
     assert messages[-1] == {"role": "user", "content": "Repair the example."}
 
 
+def test_local_gateway_submits_the_exact_shared_envelope_artifacts(tmp_path: Path) -> None:
+    """Local inference must not reconstruct provider-specific prompt or schema state."""
+    model_path = tmp_path / "model.gguf"
+    model_path.write_bytes(b"GGUF")
+    protocol_digest = "f" * 64
+    request = comparison_module.encode_prompt_batch(
+        ("bounded shard prompt",), protocol_digest=protocol_digest
+    )
+    contract = ProposalContract.for_request(
+        request=request,
+        baseline_sha="a" * 40,
+        task_id="S83.133",
+        tests=("tests/unit/test_example.py",),
+        make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
+        proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+    instruction = "return the exact approved structured envelope"
+    schema_json = '{"additionalProperties":false,"type":"object"}'
+    raw_response = '{"protocol":"test","proposals":[]}'
+    calls: list[dict[str, object]] = []
+
+    class FakeChatModel:
+        def create_chat_completion(self, **kwargs: object) -> dict[str, object]:
+            calls.append(kwargs)
+            content = '{"ok":true}' if len(calls) == 1 else raw_response
+            return {
+                "choices": [
+                    {"finish_reason": "stop", "message": {"content": content}}
+                ]
+            }
+
+    gateway = LocalProposalGateway(
+        model_path,
+        model_factory=lambda **_kwargs: FakeChatModel(),
+    )
+
+    observed = gateway.propose_envelope(
+        request,
+        contract=contract,
+        response_instruction=instruction,
+        response_schema_json=schema_json,
+    )
+
+    assert observed == raw_response
+    assert calls[1]["messages"] == [
+        {"role": "system", "content": instruction},
+        {"role": "user", "content": request},
+    ]
+    assert calls[1]["response_format"] == {
+        "type": "json_object",
+        "schema": json.loads(schema_json),
+    }
+
+
 def test_compact_gateway_uses_one_fast_canary_and_expands_trusted_contract(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -3410,6 +3464,7 @@ def test_make_contract_forwards_local_comparison_inputs() -> None:
     contract = Path("config/make_target_contract.json").read_text(encoding="utf-8")
     for token in (
         "SELF_IMPROVE_CONTRACT_FILE",
+        "SELF_IMPROVE_ENVELOPE_FILE",
         "SELF_IMPROVE_MODEL_PATH",
         "SELF_IMPROVE_BASELINE_REF",
         "SELF_IMPROVE_REFERENCE_REF",
@@ -3419,6 +3474,7 @@ def test_make_contract_forwards_local_comparison_inputs() -> None:
         assert token in makefile
         assert token in contract
     assert '--contract-file "$(SELF_IMPROVE_CONTRACT_FILE)"' in makefile
+    assert '--envelope-file "$(SELF_IMPROVE_ENVELOPE_FILE)"' in makefile
     assert '--self-improve-config-file "$(SELF_IMPROVE_CONFIG_FILE)"' in makefile
 
 

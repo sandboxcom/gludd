@@ -8,12 +8,15 @@ import os
 from dataclasses import dataclass, field
 from dataclasses import fields as dataclass_fields
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from general_ludd.models.model_deployment_metadata import (
     ModelDeploymentMetadata as ModelDeploymentMetadata,
 )
 from general_ludd.models.model_deployment_metadata import (
+    ModelDeploymentMetadataFailure,
+    ModelDeploymentMetadataUnavailable,
     model_context_tokens,
     model_license_id,
     safetensors_shape,
@@ -22,6 +25,7 @@ from general_ludd.models.model_deployment_metadata import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_CACHE_DIR = os.path.expanduser("~/.cache/general-ludd/models")
+_MAX_MODEL_CONFIG_BYTES = 1_048_576
 
 
 @dataclass
@@ -76,7 +80,9 @@ class ModelRegistry:
     ) -> list[ModelSearchResult]:
         """Search the configured public model catalog with bounded filters."""
         api = self._get_api()
-        kwargs: dict[str, object] = {"sort": sort, "limit": limit, "direction": -1}
+        # huggingface_hub 1.x removed the legacy ``direction`` parameter.
+        # The Hub's current sort contract returns highest-ranked results first.
+        kwargs: dict[str, object] = {"sort": sort, "limit": limit}
         if query:
             kwargs["search"] = query
         if tags:
@@ -129,28 +135,96 @@ class ModelRegistry:
                 "usedStorage",
             ],
         )
+        revision = str(getattr(info, "sha", "")).casefold()
+        if len(revision) != 40 or any(
+            character not in "0123456789abcdef" for character in revision
+        ):
+            raise ModelDeploymentMetadataUnavailable(
+                ModelDeploymentMetadataFailure.RECORD,
+                "model deployment requires an immutable revision",
+            )
         if getattr(info, "private", None) is not False or getattr(
             info, "gated", None
         ) is not False:
-            raise ValueError("model deployment requires a public ungated repository")
-        parameter_count, weight_bits = safetensors_shape(info)
+            raise ModelDeploymentMetadataUnavailable(
+                ModelDeploymentMetadataFailure.VISIBILITY,
+                "model deployment requires a public ungated repository",
+            )
+        try:
+            parameter_count, weight_bits = safetensors_shape(info)
+        except ValueError as error:
+            raise ModelDeploymentMetadataUnavailable(
+                ModelDeploymentMetadataFailure.SAFETENSORS,
+                str(error),
+            ) from None
         tags = tuple(sorted(set(getattr(info, "tags", None) or ())))
         storage = getattr(info, "used_storage", None)
         if isinstance(storage, bool) or not isinstance(storage, int) or storage <= 0:
             storage = (parameter_count * weight_bits + 7) // 8
-        return ModelDeploymentMetadata(
-            model_id=str(getattr(info, "id", "")),
-            revision=str(getattr(info, "sha", "")).casefold(),
-            parameter_count=parameter_count,
-            context_tokens=model_context_tokens(info),
-            storage_bytes=storage,
-            weight_bits=weight_bits,
-            license_id=model_license_id(info, tags),
-            tags=tags,
-            pipeline_tag=str(getattr(info, "pipeline_tag", "") or ""),
-            library_name=str(getattr(info, "library_name", "") or ""),
-            downloads=int(getattr(info, "downloads", 0) or 0),
-        )
+        try:
+            context_tokens = model_context_tokens(info)
+        except ValueError:
+            try:
+                context_tokens = self._immutable_config_context(model_id, revision)
+            except ValueError as error:
+                raise ModelDeploymentMetadataUnavailable(
+                    ModelDeploymentMetadataFailure.CONTEXT,
+                    str(error),
+                ) from None
+        try:
+            license_id = model_license_id(info, tags)
+        except ValueError as error:
+            raise ModelDeploymentMetadataUnavailable(
+                ModelDeploymentMetadataFailure.LICENSE,
+                str(error),
+            ) from None
+        try:
+            return ModelDeploymentMetadata(
+                model_id=str(getattr(info, "id", "")),
+                revision=revision,
+                parameter_count=parameter_count,
+                context_tokens=context_tokens,
+                storage_bytes=storage,
+                weight_bits=weight_bits,
+                license_id=license_id,
+                tags=tags,
+                pipeline_tag=str(getattr(info, "pipeline_tag", "") or ""),
+                library_name=str(getattr(info, "library_name", "") or ""),
+                downloads=int(getattr(info, "downloads", 0) or 0),
+            )
+        except ValueError as error:
+            raise ModelDeploymentMetadataUnavailable(
+                ModelDeploymentMetadataFailure.RECORD,
+                str(error),
+            ) from None
+
+    def _immutable_config_context(self, model_id: str, revision: str) -> int:
+        """Read bounded context metadata from one commit-pinned config file."""
+        from huggingface_hub import hf_hub_download
+
+        try:
+            config_path = Path(
+                hf_hub_download(
+                    repo_id=model_id,
+                    filename="config.json",
+                    revision=revision,
+                    cache_dir=str(self._cache_dir),
+                    token=self._hf_token,
+                )
+            )
+            if (
+                not config_path.is_file()
+                or config_path.stat().st_size > _MAX_MODEL_CONFIG_BYTES
+            ):
+                raise ValueError
+            payload = json.loads(config_path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError
+            return model_context_tokens(SimpleNamespace(config=payload))
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+            raise ValueError(
+                "model deployment requires bounded context metadata"
+            ) from None
 
     def list_files(self, model_id: str) -> list[str]:
         """List repository files for one public model identifier."""

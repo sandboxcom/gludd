@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import secrets
 import sys
@@ -19,12 +18,14 @@ from typing import Any, Protocol, cast
 from general_ludd.azure.accelerator_credential_source import (
     AzureAcceleratorCredentialLease,
 )
+from general_ludd.azure.accelerator_credential_store import (
+    load_preserved_azure_accelerator_credentials as load_azure_accelerator_credentials,
+)
 from general_ludd.azure.accelerator_credentials import (
     AzureAcceleratorAuthentication,
     AzureAcceleratorCredentials,
     AzureAcceleratorWorkloadIdentity,
     build_azure_workload_identity,
-    load_azure_accelerator_credentials,
 )
 from general_ludd.azure.resource_group_bootstrap import (
     AzureResourceGroupBootstrapPolicy,
@@ -98,6 +99,9 @@ from general_ludd.self_improve.model_candidates import (
     CandidateBackend,
 )
 from general_ludd.self_improve.private_policy import SelfImproveRuntimePolicyGuard
+from general_ludd.self_improve.azure_containerapp_bootstrap_planning import (
+    azure_bootstrap_owner_digest,
+)
 
 _DefaultResources = AzureContainerAppRuntimeResources
 
@@ -291,20 +295,7 @@ def _environment_policy(
     """Bind stable project ownership and a bounded expiry to one environment."""
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
-    owner_payload = {
-        "environment_id": app_policy.environment_id.casefold(),
-        "policy_digest": guard.expected_digest,
-        "project_root": str(project_root.resolve()),
-        "protocol": "gludd-owned-azure-containerapp-environment-v1",
-    }
-    owner_digest = hashlib.sha256(
-        json.dumps(
-            owner_payload,
-            ensure_ascii=True,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode("ascii")
-    ).hexdigest()
+    owner_digest = azure_bootstrap_owner_digest(project_root, app_policy)
     expires_at = (
         now.astimezone(UTC) + timedelta(minutes=app_policy.ttl_minutes)
     ).replace(microsecond=0)

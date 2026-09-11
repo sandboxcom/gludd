@@ -12,6 +12,7 @@ from general_ludd.self_improve.azure_backend import AzureCandidateResponse
 from general_ludd.self_improve.azure_containerapp_transport_types import (
     ContainerAppBackendAccounting,
     ContainerAppBackendTrace,
+    ContainerAppResponseFailure,
     ContainerAppTraceEvent,
 )
 from general_ludd.self_improve.model_candidates import (
@@ -25,6 +26,13 @@ from general_ludd.self_improve.model_candidates import (
 MAX_DISCOVERY_BYTES: Final = 1_048_576
 MAX_RESPONSE_BYTES: Final = 16_777_216
 MAX_PROVIDER_TOKENS: Final = 100_000_000
+_MAX_PROVIDER_ERROR_BYTES: Final = 16_384
+_VLLM_ERROR_FIELDS: Final = frozenset(
+    {"object", "message", "type", "param", "code"}
+)
+_VLLM_ERROR_PARAMETERS: Final = frozenset(
+    {None, "input_tokens", "max_completion_tokens", "max_tokens"}
+)
 
 
 class HTTPClient(Protocol):
@@ -68,6 +76,21 @@ class _DuplicateJSONField(ValueError):
 
 class _IdentityDrift(ValueError):
     pass
+
+
+class _TransportResponseError(BackendInfrastructureError):
+    """Censored transport error carrying only fixed response diagnostics."""
+
+    def __init__(
+        self,
+        failure: BackendFailure,
+        response_failure: ContainerAppResponseFailure,
+        *,
+        http_status: int = 0,
+    ) -> None:
+        super().__init__(failure)
+        self.response_failure = response_failure
+        self.http_status = http_status
 
 
 def _strict_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -138,26 +161,135 @@ def _status_failure(status_code: object) -> BackendFailure | None:
     return BackendFailure.INVALID_RESPONSE
 
 
+def _vllm_error_mapping(payload: object) -> Mapping[str, object] | None:
+    """Return only the exact bounded vLLM error envelope shape."""
+    if not isinstance(payload, Mapping):
+        return None
+    candidate: object = payload
+    if set(payload) == {"error"}:
+        candidate = payload.get("error")
+    if not isinstance(candidate, Mapping):
+        return None
+    keys = set(candidate)
+    if (
+        not {"message", "type", "code"}.issubset(keys)
+        or not keys.issubset(_VLLM_ERROR_FIELDS)
+        or candidate.get("object") not in {None, "error"}
+        or candidate.get("type") != "BadRequestError"
+        or candidate.get("code") != 400
+        or candidate.get("param") not in _VLLM_ERROR_PARAMETERS
+    ):
+        return None
+    return candidate
+
+
+def _response_failure_for_status(
+    response: _HTTPResponse,
+    status_code: int,
+    *,
+    maximum_bytes: int,
+) -> ContainerAppResponseFailure:
+    """Classify a recognized error without retaining provider-controlled text."""
+    if status_code != 400:
+        return ContainerAppResponseFailure.HTTP_STATUS
+    try:
+        content_type = response.headers.get("content-type", "")
+        raw = response.content
+        if (
+            not isinstance(content_type, str)
+            or content_type.partition(";")[0].strip().casefold()
+            != "application/json"
+            or not isinstance(raw, bytes)
+            or len(raw) > min(maximum_bytes, _MAX_PROVIDER_ERROR_BYTES)
+        ):
+            return ContainerAppResponseFailure.HTTP_STATUS
+        payload = json.loads(raw.decode("utf-8"), object_pairs_hook=_strict_object)
+        error = _vllm_error_mapping(payload)
+        if error is None:
+            return ContainerAppResponseFailure.HTTP_STATUS
+        message = error.get("message")
+        if not isinstance(message, str):
+            return ContainerAppResponseFailure.HTTP_STATUS
+        normalized = message.casefold()
+        if (
+            "maximum context length" in normalized
+            and "tokens" in normalized
+            and (
+                "requested" in normalized
+                or "request has" in normalized
+                or "request contains" in normalized
+                or error.get("param")
+                in {"input_tokens", "max_completion_tokens", "max_tokens"}
+            )
+        ):
+            return ContainerAppResponseFailure.CONTEXT_WINDOW_EXCEEDED
+        if "chat template" in normalized and any(
+            marker in normalized
+            for marker in ("does not define", "not defined", "provide a chat template")
+        ):
+            return ContainerAppResponseFailure.CHAT_TEMPLATE_UNAVAILABLE
+        return ContainerAppResponseFailure.PROVIDER_BAD_REQUEST
+    except Exception:
+        return ContainerAppResponseFailure.HTTP_STATUS
+    return ContainerAppResponseFailure.HTTP_STATUS
+
+
 def response_json(response: object, *, maximum_bytes: int) -> object:
     """Decode one bounded, duplicate-free JSON response."""
     try:
         typed_response = cast(_HTTPResponse, response)
-        failure = _status_failure(typed_response.status_code)
+        status_code = typed_response.status_code
+        failure = _status_failure(status_code)
         if failure is not None:
-            raise BackendInfrastructureError(failure)
+            response_failure = (
+                _response_failure_for_status(
+                    typed_response,
+                    status_code,
+                    maximum_bytes=maximum_bytes,
+                )
+                if isinstance(status_code, int) and not isinstance(status_code, bool)
+                else ContainerAppResponseFailure.HTTP_STATUS
+            )
+            raise _TransportResponseError(
+                failure,
+                response_failure,
+                http_status=(
+                    status_code
+                    if isinstance(status_code, int) and not isinstance(status_code, bool)
+                    else 0
+                ),
+            )
         content_type = typed_response.headers.get("content-type", "")
         if not isinstance(content_type, str):
-            raise ValueError
+            raise _TransportResponseError(
+                BackendFailure.INVALID_RESPONSE,
+                ContainerAppResponseFailure.CONTENT_TYPE,
+            )
         if content_type.partition(";")[0].strip().casefold() != "application/json":
-            raise ValueError
+            raise _TransportResponseError(
+                BackendFailure.INVALID_RESPONSE,
+                ContainerAppResponseFailure.CONTENT_TYPE,
+            )
         raw = typed_response.content
         if not isinstance(raw, bytes) or len(raw) > maximum_bytes:
-            raise ValueError
-        return json.loads(raw.decode("utf-8"), object_pairs_hook=_strict_object)
+            raise _TransportResponseError(
+                BackendFailure.INVALID_RESPONSE,
+                ContainerAppResponseFailure.RESPONSE_BODY,
+            )
+        try:
+            return json.loads(raw.decode("utf-8"), object_pairs_hook=_strict_object)
+        except Exception:
+            raise _TransportResponseError(
+                BackendFailure.INVALID_RESPONSE,
+                ContainerAppResponseFailure.JSON_BODY,
+            ) from None
     except BackendInfrastructureError:
         raise
     except Exception:
-        raise BackendInfrastructureError(BackendFailure.INVALID_RESPONSE) from None
+        raise _TransportResponseError(
+            BackendFailure.INVALID_RESPONSE,
+            ContainerAppResponseFailure.RESPONSE_BODY,
+        ) from None
 
 
 def request_json(
@@ -349,6 +481,7 @@ __all__ = (
     "MAX_RESPONSE_BYTES",
     "ContainerAppBackendAccounting",
     "ContainerAppBackendTrace",
+    "ContainerAppResponseFailure",
     "ContainerAppTraceEvent",
     "HTTPClient",
     "discard_trace",

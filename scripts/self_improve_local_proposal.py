@@ -27,6 +27,9 @@ from general_ludd.self_improve.codex_comparison import (
     encode_prompt_batch,
     encode_proposal_batch,
 )
+from general_ludd.self_improve.managed_candidate_routing import (
+    ManagedCandidateProposalEnvelope,
+)
 
 _MAX_PROMPT_BYTES = 262_144
 _MAX_CONTRACT_BYTES = 196_608
@@ -54,6 +57,16 @@ class _ProposalGateway(Protocol):
     ) -> ProposalManifest | CompactSpanProposal:
         """Generate one validated proposal."""
 
+    def propose_envelope(
+        self,
+        request: str,
+        *,
+        contract: ProposalContract,
+        response_instruction: str,
+        response_schema_json: str,
+    ) -> str:
+        """Generate one raw response from the exact shared envelope."""
+
 
 _GatewayFactory = Callable[[Path], _ProposalGateway]
 
@@ -63,6 +76,7 @@ def run_worker(
     model_path: Path,
     *,
     contract_path: Path | None = None,
+    envelope_path: Path | None = None,
     gateway_factory: _GatewayFactory = LocalProposalGateway,
 ) -> Path:
     """Decode one request or an ordered batch and atomically publish its result."""
@@ -87,11 +101,17 @@ def run_worker(
         raise ValueError("prompt must not be empty")
 
     expected_contract_path = exchange / "contract.json"
+    expected_envelope_path = exchange / "envelope.json"
     contract: ProposalContract | None = None
-    if contract_path is None:
+    envelope: ManagedCandidateProposalEnvelope | None = None
+    if contract_path is not None and envelope_path is not None:
+        raise ValueError("proposal contract and envelope transports are mutually exclusive")
+    if contract_path is None and envelope_path is None:
         if expected_contract_path.exists() or expected_contract_path.is_symlink():
             raise ValueError("proposal contract requires explicit canonical transport")
-    else:
+        if expected_envelope_path.exists() or expected_envelope_path.is_symlink():
+            raise ValueError("proposal envelope requires explicit canonical transport")
+    elif contract_path is not None:
         if not isinstance(contract_path, Path):
             raise ValueError("proposal contract path must be a pathlib.Path")
         if (
@@ -108,6 +128,26 @@ def run_worker(
         except (OSError, UnicodeDecodeError) as exc:
             raise ValueError(f"proposal contract is not readable UTF-8: {exc}") from exc
         contract = ProposalContract.from_json(contract_raw)
+    else:
+        if not isinstance(envelope_path, Path):
+            raise ValueError("proposal envelope path must be a pathlib.Path")
+        if (
+            envelope_path.name != "envelope.json"
+            or envelope_path.parent.resolve(strict=True) != exchange
+        ):
+            raise ValueError("proposal envelope path is not canonical")
+        if envelope_path.is_symlink() or not envelope_path.is_file():
+            raise ValueError("proposal envelope must be one regular confined file")
+        if envelope_path.stat().st_size > 1_572_864:
+            raise ValueError("proposal envelope exceeds 1572864 bytes")
+        try:
+            envelope_raw = envelope_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise ValueError(f"proposal envelope is not readable UTF-8: {exc}") from exc
+        envelope = ManagedCandidateProposalEnvelope.from_json(envelope_raw)
+        if envelope.request_text != request:
+            raise ValueError("proposal envelope request does not match canonical prompt bytes")
+        contract = ProposalContract.from_json(envelope.request_contract_json)
 
     prompts, protocol_digest = decode_prompt_batch(request)
     sampling_seed = (
@@ -147,68 +187,99 @@ def run_worker(
     )
     print(
         f"SELF_IMPROVE_LOCAL_PROPOSAL_START model={model_path.name} "
-        f"shards={total} mode={'compact' if contract is not None else 'legacy'} "
+        f"shards={total} "
+        f"mode={'envelope' if envelope is not None else ('compact' if contract is not None else 'legacy')} "
         f"prompt_bytes={len(request.encode('utf-8'))}",
         flush=True,
     )
-    for index, prompt in enumerate(prompts, start=1):
+    if envelope is not None:
+        if contract is None:
+            raise RuntimeError("proposal envelope lost its trusted contract")
         print(
-            "SELF_IMPROVE_LOCAL_PROPOSAL_SAMPLING "
-            f"shard={index}/{total} profile={sampling_profile} "
-            f"candidate={sampling_candidate}/{sampling_candidate_limit} "
-            f"seed={sampling_seed} context_sha256={sampling_context_sha256} "
-            f"repair_state_sha256={repair_state_sha256}",
-            flush=True,
-        )
-        print(
-            "SELF_IMPROVE_PROMPT_SHARD_START "
-            f"shard={index}/{total} "
-            f"protocol_digest={protocol_digest or 'legacy'} "
-            f"prompt_bytes={len(prompt.encode('utf-8'))}",
+            "SELF_IMPROVE_LOCAL_PROPOSAL_ENVELOPE phase=started "
+            f"envelope_digest={envelope.envelope_digest} shards={total}",
             flush=True,
         )
         try:
-            proposal = (
-                gateway.propose(prompt, contract=contract)
-                if contract is not None
-                else gateway.propose(prompt)
+            serialized = gateway.propose_envelope(
+                request,
+                contract=contract,
+                response_instruction=envelope.response_instruction,
+                response_schema_json=envelope.response_schema_json,
             )
         except BaseException:
             print(
-                f"SELF_IMPROVE_PROMPT_SHARD_END shard={index}/{total} succeeded=false",
+                "SELF_IMPROVE_LOCAL_PROPOSAL_ENVELOPE phase=failed "
+                f"envelope_digest={envelope.envelope_digest}",
                 flush=True,
             )
             raise
-        proposals.append(proposal)
         print(
-            f"SELF_IMPROVE_PROMPT_SHARD_END shard={index}/{total} succeeded=true",
+            "SELF_IMPROVE_LOCAL_PROPOSAL_ENVELOPE phase=succeeded "
+            f"envelope_digest={envelope.envelope_digest}",
             flush=True,
         )
-
-    if contract is not None and contract.proposal_protocol.endswith("-v4"):
-        if protocol_digest is None or not all(
-            isinstance(proposal, CompactSpanProposal) for proposal in proposals
-        ):
-            raise ValueError("compact-v4 worker result does not match its batch contract")
-        serialized = encode_compact_span_batch(
-            [
-                proposal
-                for proposal in proposals
-                if isinstance(proposal, CompactSpanProposal)
-            ],
-            protocol_digest=protocol_digest,
-        )
-    elif protocol_digest is None:
-        if len(proposals) != 1 or not isinstance(proposals[0], ProposalManifest):
-            raise ValueError("legacy worker result does not match its request contract")
-        serialized = proposals[0].to_json()
     else:
-        if not all(isinstance(proposal, ProposalManifest) for proposal in proposals):
-            raise ValueError("compact-v3 worker result does not match its batch contract")
-        serialized = encode_proposal_batch(
-            [proposal for proposal in proposals if isinstance(proposal, ProposalManifest)],
-            protocol_digest=protocol_digest,
-        )
+        for index, prompt in enumerate(prompts, start=1):
+            print(
+                "SELF_IMPROVE_LOCAL_PROPOSAL_SAMPLING "
+                f"shard={index}/{total} profile={sampling_profile} "
+                f"candidate={sampling_candidate}/{sampling_candidate_limit} "
+                f"seed={sampling_seed} context_sha256={sampling_context_sha256} "
+                f"repair_state_sha256={repair_state_sha256}",
+                flush=True,
+            )
+            print(
+                "SELF_IMPROVE_PROMPT_SHARD_START "
+                f"shard={index}/{total} "
+                f"protocol_digest={protocol_digest or 'legacy'} "
+                f"prompt_bytes={len(prompt.encode('utf-8'))}",
+                flush=True,
+            )
+            try:
+                proposal = (
+                    gateway.propose(prompt, contract=contract)
+                    if contract is not None
+                    else gateway.propose(prompt)
+                )
+            except BaseException:
+                print(
+                    f"SELF_IMPROVE_PROMPT_SHARD_END shard={index}/{total} succeeded=false",
+                    flush=True,
+                )
+                raise
+            proposals.append(proposal)
+            print(
+                f"SELF_IMPROVE_PROMPT_SHARD_END shard={index}/{total} succeeded=true",
+                flush=True,
+            )
+
+        if contract is not None and contract.proposal_protocol.endswith("-v4"):
+            if protocol_digest is None or not all(
+                isinstance(proposal, CompactSpanProposal) for proposal in proposals
+            ):
+                raise ValueError("compact-v4 worker result does not match its batch contract")
+            serialized = encode_compact_span_batch(
+                [
+                    proposal
+                    for proposal in proposals
+                    if isinstance(proposal, CompactSpanProposal)
+                ],
+                protocol_digest=protocol_digest,
+            )
+        elif protocol_digest is None:
+            if len(proposals) != 1 or not isinstance(proposals[0], ProposalManifest):
+                raise ValueError("legacy worker result does not match its request contract")
+            serialized = proposals[0].to_json()
+        else:
+            if not all(isinstance(proposal, ProposalManifest) for proposal in proposals):
+                raise ValueError("compact-v3 worker result does not match its batch contract")
+            serialized = encode_proposal_batch(
+                [proposal for proposal in proposals if isinstance(proposal, ProposalManifest)],
+                protocol_digest=protocol_digest,
+            )
+    if not isinstance(serialized, str):
+        raise ValueError("proposal envelope response must be UTF-8 text")
     if len(serialized.encode("utf-8")) > _MAX_PROPOSAL_BYTES:
         raise ValueError(f"proposal output exceeds {_MAX_PROPOSAL_BYTES} bytes")
 
@@ -253,6 +324,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--prompt-file", required=True, type=Path)
     parser.add_argument("--proposal-file", required=True, type=Path)
     parser.add_argument("--contract-file", type=Path)
+    parser.add_argument("--envelope-file", type=Path)
     parser.add_argument("--model-path", required=True, type=Path)
     return parser
 
@@ -267,6 +339,7 @@ def main(
     prompt_file = args.prompt_file
     proposal_file = args.proposal_file
     contract_file = args.contract_file
+    envelope_file = args.envelope_file
     if (
         prompt_file.name != "prompt.txt"
         or proposal_file.name != "proposal.json"
@@ -278,6 +351,14 @@ def main(
                 or contract_file.parent.resolve() != prompt_file.parent.resolve()
             )
         )
+        or (
+            envelope_file is not None
+            and (
+                envelope_file.name != "envelope.json"
+                or envelope_file.parent.resolve() != prompt_file.parent.resolve()
+            )
+        )
+        or (contract_file is not None and envelope_file is not None)
     ):
         print(
             "SELF_IMPROVE_LOCAL_PROPOSAL_ERROR exchange paths are not canonical",
@@ -286,7 +367,20 @@ def main(
         )
         return 2
     try:
-        if contract_file is None and gateway_factory is LocalProposalGateway:
+        if envelope_file is not None and gateway_factory is LocalProposalGateway:
+            run_worker(
+                prompt_file.parent,
+                args.model_path,
+                envelope_path=envelope_file,
+            )
+        elif envelope_file is not None:
+            run_worker(
+                prompt_file.parent,
+                args.model_path,
+                envelope_path=envelope_file,
+                gateway_factory=gateway_factory,
+            )
+        elif contract_file is None and gateway_factory is LocalProposalGateway:
             run_worker(prompt_file.parent, args.model_path)
         elif contract_file is None:
             run_worker(

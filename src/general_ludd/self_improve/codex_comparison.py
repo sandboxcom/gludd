@@ -280,15 +280,15 @@ def _compact_proposal_schema_for_ranges(
     return schema
 
 
-_COMPACT_SYSTEM_PROMPT = (
-    "Return one compact JSON object with only e; stop immediately after its closing }. "
+_COMPACT_EDIT_SEMANTICS = (
     f"Each e item has only s, n, z. Emit the fewest complete edits, at most "
     f"{_COMPACT_SPAN_MAX_EDITS}; never repeat an edit, coordinate, or unchanged context. "
-    "Prefer increasing s; the parent sorts valid non-overlapping snapshot spans. It owns path, "
-    "baseline, commit metadata, and line-separator bytes. s is the 1-based baseline "
+    "Prefer increasing s; the parent sorts valid non-overlapping snapshot spans. "
+    "s is the 1-based baseline "
     "start, n is old lines consumed, and z is logical replacement-line content without "
     "labels; the parent preserves trusted LF/CRLF and final-newline boundaries, so do not "
-    "add unchanged neighboring lines. Choose s only from the per-shard grammar enum. "
+    "add unchanged neighboring lines. Choose s only from the schema enum and the "
+    "matching prompt's editable ranges. "
     f"Each edit may consume at most {_COMPACT_SPAN_MAX_OLD_LINES} old lines and "
     f"contain at most {_COMPACT_SPAN_MAX_NEW_LINES} replacement lines. Across every "
     f"shard, emit at most {_COMPACT_SPAN_MAX_CHANGED_LINES} changed lines, counting "
@@ -300,6 +300,11 @@ _COMPACT_SYSTEM_PROMPT = (
     "contain at most 3,072 UTF-8 bytes total. Never copy protocol metadata, file "
     "markers, numbered-line labels, or shell/environment assignments into z. For a "
     "Python focus file, z must remain syntactically valid in its shown indentation."
+)
+_COMPACT_SYSTEM_PROMPT = (
+    "Return one compact JSON object with only e; stop immediately after its closing }. "
+    "The trusted parent owns path, baseline, commit metadata, and line-separator bytes. "
+    + _COMPACT_EDIT_SEMANTICS
 )
 
 _LEGACY_COMPACT_PROPOSAL_JSON_SCHEMA: dict[str, object] = {
@@ -1631,6 +1636,128 @@ def encode_compact_span_batch(
         separators=(",", ":"),
         sort_keys=True,
     )
+
+
+def proposal_batch_response_instruction(proposal_protocol: str) -> str:
+    """Return the canonical model instruction for one batch response protocol."""
+    prefix = (
+        "Read the user content as exactly one canonical "
+        "GLUDD_SELF_IMPROVE_PROMPT_BATCH_V1 envelope and complete every ordered prompt. "
+        "Return exactly one JSON object matching the supplied response JSON schema, "
+        "with one proposal per prompt in the same order. Copy every schema constant "
+        "exactly. Emit no markdown or prose and stop after the closing brace. "
+    )
+    if proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V4:
+        return (
+            prefix
+            + "Each proposal contains only focus_path and e; copy focus_path from its "
+            "matching prompt's trusted binding. The trusted parent owns baseline, commit "
+            "metadata, and line-separator bytes. "
+            + _COMPACT_EDIT_SEMANTICS
+        )
+    if proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V3:
+        return (
+            prefix
+            + "Each proposal is one complete manifest matching the schema; use only its "
+            "matching prompt's focus paths and exact trusted baseline text. Every edit "
+            "must change content and must not overlap or repeat another edit."
+        )
+    raise ValueError("proposal response instruction protocol is unsupported")
+
+
+def proposal_batch_json_schema(
+    *,
+    proposal_protocol: str,
+    protocol_digest: str,
+    expected_count: int,
+    focus_paths: Sequence[str] = (),
+    editable_ranges: Sequence[tuple[tuple[int, int], ...]] = (),
+) -> dict[str, object]:
+    """Build the shared local/remote JSON Schema for one proposal envelope."""
+    if (
+        isinstance(expected_count, bool)
+        or not isinstance(expected_count, int)
+        or not 1 <= expected_count <= _MAX_PROMPT_BATCH_SHARDS
+    ):
+        raise ValueError("expected proposal count is outside the batch bound")
+    if _PROTOCOL_DIGEST_RE.fullmatch(protocol_digest) is None:
+        raise ValueError("proposal schema digest must be lowercase SHA-256")
+    response_protocol: str
+    proposal_schema: dict[str, object]
+    if proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V4:
+        paths = tuple(focus_paths)
+        ranges_by_path = tuple(editable_ranges)
+        if (
+            len(paths) != expected_count
+            or len(set(paths)) != len(paths)
+            or any(not isinstance(path, str) or not _safe_relative_path(path) for path in paths)
+            or len(ranges_by_path) != expected_count
+        ):
+            raise ValueError("compact proposal schema requires one unique confined path per shard")
+        validated_ranges = tuple(
+            _validated_compact_editable_ranges(tuple(ranges))
+            for ranges in ranges_by_path
+        )
+        compact = copy.deepcopy(_COMPACT_PROPOSAL_JSON_SCHEMA)
+        compact_properties = cast(dict[str, object], compact["properties"])
+        edits_schema = cast(dict[str, object], compact_properties["e"])
+        if validated_ranges and all(validated_ranges):
+            coordinates = sorted(
+                {
+                    coordinate
+                    for ranges in validated_ranges
+                    for start, end in ranges
+                    for coordinate in range(start, end + 1)
+                }
+            )
+            edit_item = cast(dict[str, object], edits_schema["items"])
+            edit_properties = cast(dict[str, object], edit_item["properties"])
+            if len(coordinates) <= _COMPACT_MAX_SCOPE_COORDINATES:
+                edit_properties["s"] = {"type": "integer", "enum": coordinates}
+            edit_properties["n"] = {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": min(
+                    _COMPACT_SPAN_MAX_OLD_LINES,
+                    max(
+                        end - start
+                        for ranges in validated_ranges
+                        for start, end in ranges
+                    ),
+                ),
+            }
+        proposal_schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["focus_path", "e"],
+            "properties": {
+                "focus_path": {"type": "string", "enum": list(paths)},
+                "e": edits_schema,
+            },
+        }
+        response_protocol = _COMPACT_SPAN_BATCH_PROTOCOL
+    elif proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V3:
+        if focus_paths or editable_ranges:
+            raise ValueError("legacy proposal schema does not accept compact scope bindings")
+        proposal_schema = copy.deepcopy(_PROPOSAL_JSON_SCHEMA)
+        response_protocol = _PROPOSAL_BATCH_PROTOCOL
+    else:
+        raise ValueError("proposal schema protocol is unsupported")
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["protocol", "protocol_digest", "proposals"],
+        "properties": {
+            "protocol": {"type": "string", "const": response_protocol},
+            "protocol_digest": {"type": "string", "const": protocol_digest},
+            "proposals": {
+                "type": "array",
+                "minItems": expected_count,
+                "maxItems": expected_count,
+                "items": proposal_schema,
+            },
+        },
+    }
 
 
 def decode_compact_span_batch(
@@ -3263,6 +3390,64 @@ class LocalProposalGateway:
             )
         return model(prompt, max_tokens=4096, temperature=0.0, echo=False)
 
+    def propose_envelope(
+        self,
+        request: str,
+        *,
+        contract: ProposalContract,
+        response_instruction: str,
+        response_schema_json: str,
+    ) -> str:
+        """Submit one canonical provider-neutral envelope without reconstruction."""
+        if not isinstance(contract, ProposalContract):
+            raise ValueError("proposal envelope contract is invalid")
+        if (
+            type(response_instruction) is not str
+            or not response_instruction.strip()
+            or "\x00" in response_instruction
+        ):
+            raise ValueError("proposal envelope response instruction is invalid")
+        try:
+            schema = json.loads(response_schema_json)
+        except (TypeError, json.JSONDecodeError, UnicodeDecodeError):
+            raise ValueError("proposal envelope response schema is invalid") from None
+        canonical_schema = json.dumps(
+            schema,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        if not isinstance(schema, dict) or canonical_schema != response_schema_json:
+            raise ValueError("proposal envelope response schema is not canonical")
+        decode_prompt_batch(request)
+        contract.verify_sampling_context(request)
+        model = self._load_model()
+        if not hasattr(model, "create_chat_completion"):
+            raise ValueError("proposal envelope requires chat-completion support")
+        chat_model = cast("_ChatLocalModel", model)
+        self._run_structured_canary(chat_model, contract.proposal_protocol)
+        legacy = contract.proposal_protocol == _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION
+        budget = _COMPACT_PROPOSAL_TOKENS if legacy else _COMPACT_SPAN_PROPOSAL_TOKENS
+        output = chat_model.create_chat_completion(
+            messages=[
+                {"role": "system", "content": response_instruction},
+                {"role": "user", "content": request},
+            ],
+            max_tokens=budget,
+            response_format={"type": "json_object", "schema": schema},
+            grammar=self._grammar_for_schema(schema),
+            **_proposal_sampling_arguments(
+                contract.sampling_profile,
+                sampling_seed=contract.sampling_seed,
+            ),
+        )
+        return _completion_text(
+            output,
+            phase="proposal",
+            budget=budget,
+            require_stop=_STRUCTURED_OUTPUT_REQUIRE_STOP,
+        )
+
     def propose(
         self,
         prompt: str,
@@ -3430,5 +3615,7 @@ __all__ = [
     "expand_compact_span_proposals",
     "local_proposal_attempt_identity_digest",
     "merge_proposal_manifests",
+    "proposal_batch_json_schema",
+    "proposal_batch_response_instruction",
     "safe_evaluation_retry_diagnosis",
 ]

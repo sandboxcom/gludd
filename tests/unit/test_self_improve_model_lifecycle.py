@@ -9,6 +9,7 @@ import pytest
 
 from general_ludd.local_model._local_model_configs import LocalModelConfig
 from general_ludd.self_improve.hf_cache_delete import CacheDeletionError
+from general_ludd.self_improve.model_candidates import LocalGGUFCandidateIdentity
 from general_ludd.self_improve.model_lifecycle import ModelLeaseManager
 from general_ludd.small_models.download import DownloadedModel, DownloadSource
 
@@ -130,11 +131,18 @@ def test_managed_acquisition_binds_cache_revision_digest_manifest_and_lease(
 
 def test_explicit_path_override_is_hashed_and_never_managed_or_downloaded(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     explicit = tmp_path / "operator.gguf"
     explicit.write_bytes(b"operator supplied")
     downloader = _Downloader(tmp_path / "self-improve-cache")
     manager = _manager(tmp_path, downloader)
+    reclaim_calls: list[int] = []
+    monkeypatch.setattr(
+        manager,
+        "reclaim",
+        lambda *, required_bytes: reclaim_calls.append(required_bytes),
+    )
 
     with manager.acquire("coding", explicit_path=explicit) as model:
         assert model.path == explicit
@@ -145,7 +153,31 @@ def test_explicit_path_override_is_hashed_and_never_managed_or_downloaded(
         assert not model.manifest_path.exists()
 
     assert downloader.calls == []
+    assert reclaim_calls == []
     assert not model.lease_path.exists()
+
+
+def test_explicit_symlink_retains_approved_gguf_filename_for_candidate_identity(
+    tmp_path: Path,
+) -> None:
+    blob = tmp_path / ("a" * 64)
+    blob.write_bytes(b"content addressed model")
+    explicit = tmp_path / "Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf"
+    explicit.symlink_to(blob)
+    manager = _manager(tmp_path, _Downloader(tmp_path / "self-improve-cache"))
+
+    with manager.acquire("coding", explicit_path=explicit) as model:
+        assert model.path == blob.resolve(strict=True)
+        assert model.filename == explicit.name
+        identity = LocalGGUFCandidateIdentity(
+            model_id=model.model_id,
+            repo_id=model.repo_id,
+            filename=model.filename,
+            revision=model.resolved_revision,
+            artifact_sha256=model.artifact_sha256,
+        )
+
+    assert identity.filename.endswith(".gguf")
 
 
 @pytest.mark.parametrize("raised", [RuntimeError("worker failed"), KeyboardInterrupt()])

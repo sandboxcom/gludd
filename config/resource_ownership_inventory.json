@@ -323,7 +323,7 @@
     },
     {
       "path": "scripts/self_improve_local_proposal.py",
-      "line": 217,
+      "line": 288,
       "column": 13,
       "kind": "temp-artifact",
       "owner": "run_worker",
@@ -2050,7 +2050,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/azure_containerapp_transport.py",
-      "line": 336,
+      "line": 468,
       "column": 8,
       "kind": "client",
       "owner": "new_httpx_client",
@@ -2083,7 +2083,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/managed_runner.py",
-      "line": 258,
+      "line": 259,
       "column": 9,
       "kind": "temp-artifact",
       "owner": "_write_atomic_temp",
@@ -2094,7 +2094,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/runtime.py",
-      "line": 417,
+      "line": 420,
       "column": 15,
       "kind": "process",
       "owner": "MakeRunner._run_observable_argv",
@@ -2105,7 +2105,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/runtime.py",
-      "line": 511,
+      "line": 519,
       "column": 9,
       "kind": "temp-artifact",
       "owner": "_run_local_proposal_request",

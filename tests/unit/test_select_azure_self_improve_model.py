@@ -138,6 +138,41 @@ def test_offline_cli_selects_task_fit_without_named_model_default(
     assert "SELF_IMPROVE_AZURE_MODEL_SELECTED" in trace
 
 
+def test_cli_classifies_only_the_validated_task_objective(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Control fields and test commands must not distort model-work classification."""
+    output = tmp_path / "selection.json"
+    arguments = _arguments(tmp_path, output)
+    task = Path(arguments[arguments.index("--task-file") + 1])
+    task.write_text(
+        json.dumps(
+            {
+                "task_id": "S83.157",
+                "objective": "Implement a bounded Python feature",
+                "canonical_make_commands": [
+                    "make test-files TESTFILES=tests/unit/test_example.py"
+                ],
+                "reference_elapsed_seconds": 60,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert subject.main(arguments) == 0
+
+    events = [
+        json.loads(line)
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("{")
+    ]
+    classified = next(
+        event for event in events if event.get("event") == "self_improve_candidate_classified"
+    )
+    assert classified["task_kind"] == "coding"
+
+
 def test_cli_rejects_unknown_policy_or_catalog_fields(tmp_path: Path) -> None:
     for target_name in ("policy.json", "catalog.json"):
         output = tmp_path / f"{target_name}.selection.json"
@@ -170,3 +205,14 @@ def test_selector_script_contains_no_named_operational_model() -> None:
     assert "Qwen/" not in source
     assert "DeepSeek" not in source
     assert "Mistral" not in source
+
+
+def test_repository_policy_routes_bounded_code_enumeration_to_code_models() -> None:
+    """A catalog-editing task must discover code models, not models named test."""
+    policy = json.loads(
+        Path("config/self-improve/azure-model-selection-policy.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert policy["task_queries"]["bounded_enumeration"] == "code"

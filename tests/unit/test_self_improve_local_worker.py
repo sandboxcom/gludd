@@ -19,6 +19,9 @@ from general_ludd.self_improve.codex_comparison import (
     ProposalManifest,
     encode_prompt_batch,
 )
+from general_ludd.self_improve.managed_candidate_routing import (
+    ManagedCandidateProposalEnvelope,
+)
 from general_ludd.self_improve.runtime import MakeResult, generate_local_proposal
 
 
@@ -259,6 +262,76 @@ def test_worker_rejects_implicit_or_noncanonical_contract_transport(
         )
 
 
+def test_worker_executes_one_exact_shared_envelope_call(tmp_path: Path) -> None:
+    """The owned local worker must not rebuild or split canonical artifacts."""
+    model = tmp_path / "model.gguf"
+    model.write_bytes(b"gguf")
+    exchange = tmp_path / "exchange"
+    exchange.mkdir()
+    request = encode_prompt_batch(("bounded shard",), protocol_digest="f" * 64)
+    (exchange / "prompt.txt").write_text(request, encoding="utf-8")
+    contract = ProposalContract.for_request(
+        request=request,
+        baseline_sha="a" * 40,
+        task_id="S83.133",
+        tests=("tests/unit/test_example.py",),
+        make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
+        proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+    envelope = ManagedCandidateProposalEnvelope(
+        request_text=request,
+        request_contract_json=contract.to_json(),
+        response_instruction="return the approved structured batch",
+        response_schema_json='{"type":"object"}',
+        protocol_digest="e" * 64,
+        sampling_digest="d" * 64,
+    )
+    envelope_path = exchange / "envelope.json"
+    envelope_path.write_text(envelope.to_json(), encoding="utf-8")
+    raw_response = '{"protocol":"test","proposals":[]}'
+    calls: list[tuple[str, ProposalContract, str, str]] = []
+
+    class EnvelopeGateway(_FakeGateway):
+        def propose(self, *args: object, **kwargs: object) -> ProposalManifest:
+            del args, kwargs
+            raise AssertionError("envelope execution must not use per-shard propose")
+
+        def propose_envelope(
+            self,
+            observed_request: str,
+            *,
+            contract: ProposalContract,
+            response_instruction: str,
+            response_schema_json: str,
+        ) -> str:
+            calls.append(
+                (
+                    observed_request,
+                    contract,
+                    response_instruction,
+                    response_schema_json,
+                )
+            )
+            return raw_response
+
+    output = run_worker(
+        exchange,
+        model,
+        envelope_path=envelope_path,
+        gateway_factory=EnvelopeGateway,
+    )
+
+    assert output.read_text(encoding="utf-8") == raw_response + "\n"
+    assert calls == [
+        (
+            request,
+            contract,
+            envelope.response_instruction,
+            envelope.response_schema_json,
+        )
+    ]
+
+
 @pytest.mark.parametrize(
     "field",
     ["sampling_seed", "sampling_context_sha256", "sampling_candidate_index"],
@@ -445,6 +518,50 @@ def test_worker_main_passes_one_explicit_canonical_contract(
         ]
     ) == 0
     assert calls == [(exchange, model, contract)]
+
+
+def test_worker_main_passes_one_explicit_canonical_envelope(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Carry the complete envelope through the CLI without sibling discovery."""
+    exchange = tmp_path / "exchange"
+    exchange.mkdir()
+    prompt = exchange / "prompt.txt"
+    proposal = exchange / "proposal.json"
+    envelope = exchange / "envelope.json"
+    model = tmp_path / "model.gguf"
+    prompt.write_text("repair", encoding="utf-8")
+    envelope.write_text("{}", encoding="utf-8")
+    model.write_bytes(b"gguf")
+    calls: list[tuple[Path, Path, Path | None]] = []
+
+    def fake_worker(
+        exchange_dir: Path,
+        model_path: Path,
+        *,
+        contract_path: Path | None = None,
+        envelope_path: Path | None = None,
+        gateway_factory: object = None,
+    ) -> Path:
+        del contract_path, gateway_factory
+        calls.append((exchange_dir, model_path, envelope_path))
+        return proposal
+
+    monkeypatch.setattr(worker_module, "run_worker", fake_worker)
+    assert worker_module.main(
+        [
+            "--prompt-file",
+            str(prompt),
+            "--proposal-file",
+            str(proposal),
+            "--envelope-file",
+            str(envelope),
+            "--model-path",
+            str(model),
+        ]
+    ) == 0
+    assert calls == [(exchange, model, envelope)]
 
 
 def test_worker_rejects_exchange_that_is_not_a_directory(tmp_path: Path) -> None:

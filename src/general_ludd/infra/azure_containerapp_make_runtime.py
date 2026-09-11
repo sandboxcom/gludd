@@ -63,6 +63,7 @@ from general_ludd.infra.azure_containerapp_terraform_executor import (
 )
 from general_ludd.infra.compute import ComputeConfig
 from general_ludd.infra.terraform import TerraformGenerator
+from general_ludd.self_improve.model_candidates import BackendInfrastructureError
 
 _mapping = mapping
 _member = member
@@ -348,6 +349,8 @@ class AzureContainerAppTerraformRuntime:
         )
         try:
             document = self._read_app(policy, False)
+        except BackendInfrastructureError:
+            raise
         except Exception:
             raise AzureContainerAppMakeRuntimeError("deployment-evidence") from None
         _validate_app_document(document, policy, evidence)

@@ -47,6 +47,8 @@ from general_ludd.self_improve.azure_backend import (
 from general_ludd.self_improve.model_candidates import (
     AzureContainerAppCandidateIdentity,
     BackendCallBudget,
+    BackendFailure,
+    BackendInfrastructureError,
 )
 from general_ludd.self_improve.private_policy import SelfImproveRuntimePolicyGuard
 
@@ -556,6 +558,46 @@ def test_owned_candidate_factory_cleans_every_paid_resource_after_discovery_fail
 
     assert SECRET not in repr(captured.value)
     assert factory.active is False
+    assert events[-7:] == [
+        "app:destroy",
+        "app:exists",
+        "environment:read",
+        "environment:inventory",
+        "environment:destroy",
+        "environment:read",
+        "resources:close",
+    ]
+
+
+def test_owned_candidate_preserves_typed_apply_failure_after_cleanup() -> None:
+    """Cleanup censorship must retain the fixed backend failure classification."""
+    events: list[str] = []
+    app_policy = _app_policy()
+    environment_policy = _environment_policy(app_policy)
+
+    class TimedOutAppRuntime(_AppRuntime):
+        def apply(
+            self,
+            policy: AzureContainerAppLiveProofPolicy,
+        ) -> AzureContainerAppDeploymentEvidence:
+            del policy
+            self._call("apply")
+            raise BackendInfrastructureError(BackendFailure.TIMEOUT)
+
+    factory = AzureContainerAppOwnedCandidateFactory(
+        app_policy=app_policy,
+        environment_policy=environment_policy,
+        environment_runtime=_EnvironmentRuntime(environment_policy, events),
+        app_runtime=TimedOutAppRuntime(app_policy, events),
+        backend_factory=_Backend,
+        resource_release=lambda: events.append("resources:close"),
+    )
+
+    with pytest.raises(OwnedCandidateLifecycleError) as captured:
+        factory()
+
+    assert captured.value.operation == "apply"
+    assert captured.value.failure is BackendFailure.TIMEOUT
     assert events[-7:] == [
         "app:destroy",
         "app:exists",

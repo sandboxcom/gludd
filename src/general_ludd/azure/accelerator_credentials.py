@@ -168,6 +168,10 @@ def _reject_duplicate_fields(pairs: list[tuple[str, object]]) -> dict[str, objec
 def _open_private_regular_file(path: Path) -> tuple[int, os.stat_result]:
     try:
         before = path.lstat()
+    except FileNotFoundError:
+        raise AzureAcceleratorCredentialError(
+            "credential input file does not exist"
+        ) from None
     except OSError:
         raise AzureAcceleratorCredentialError(
             "credential input must be an owned private regular file"
@@ -180,6 +184,10 @@ def _open_private_regular_file(path: Path) -> tuple[int, os.stat_result]:
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(path, flags)
+    except FileNotFoundError:
+        raise AzureAcceleratorCredentialError(
+            "credential input file does not exist"
+        ) from None
     except OSError:
         raise AzureAcceleratorCredentialError(
             "credential input must be an owned private regular file"
@@ -414,11 +422,36 @@ def load_azure_accelerator_credentials(
     expected_subscription_id: str | None = None,
 ) -> AzureAcceleratorCredentials:
     """Load one private Azure CLI JSON file through a race-safe descriptor."""
+    raw = read_azure_accelerator_credential_payload(path)
+
+    return parse_azure_accelerator_credentials(
+        raw,
+        expected_subscription_id=expected_subscription_id,
+    )
+
+
+def read_azure_accelerator_credential_payload(
+    path: str | os.PathLike[str],
+) -> bytes:
+    """Read one bounded private credential payload through a stable descriptor."""
     descriptor, _opened = _open_private_regular_file(Path(path))
     try:
-        payload = _parse_payload(_read_bounded(descriptor))
+        return _read_bounded(descriptor)
     finally:
         os.close(descriptor)
+
+
+def parse_azure_accelerator_credentials(
+    raw: bytes,
+    *,
+    expected_subscription_id: str | None = None,
+) -> AzureAcceleratorCredentials:
+    """Parse one bounded Azure CLI JSON payload without persisting its secret."""
+    if not isinstance(raw, bytes):
+        raise AzureAcceleratorCredentialError("credential input must be bytes")
+    if len(raw) > _MAX_CREDENTIAL_BYTES:
+        raise AzureAcceleratorCredentialError("credential input is too large")
+    payload = _parse_payload(raw)
 
     values = {field_name: _required_string(payload, field_name) for field_name in _REQUIRED_FIELDS}
     _validate_public_cloud_endpoints(payload)
@@ -441,4 +474,6 @@ __all__ = [
     "build_azure_management_credential",
     "build_azure_workload_identity",
     "load_azure_accelerator_credentials",
+    "parse_azure_accelerator_credentials",
+    "read_azure_accelerator_credential_payload",
 ]

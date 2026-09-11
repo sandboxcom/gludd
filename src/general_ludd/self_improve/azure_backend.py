@@ -9,6 +9,7 @@ so ordinary tests and GitHub Actions never need credentials or network access.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -18,6 +19,9 @@ from enum import StrEnum
 from typing import Final, Protocol, cast
 from urllib.parse import urlsplit
 
+from general_ludd.self_improve.managed_candidate_routing_types import (
+    ManagedCandidateProposalEnvelope,
+)
 from general_ludd.self_improve.model_candidates import (
     AzureFoundryAPIFamily,
     AzureFoundryCandidateIdentity,
@@ -36,8 +40,11 @@ _SUBSCRIPTION_RE: Final = re.compile(
 _RESOURCE_GROUP_RE: Final = re.compile(r"^[A-Za-z0-9_.()\-]{1,90}$")
 _ACCOUNT_RE: Final = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$")
 _ENVIRONMENT_RE: Final = re.compile(r"^AZURE_[A-Z0-9_]{1,120}$")
+_ENVELOPE_DIGEST_RE: Final = re.compile(r"^[0-9a-f]{64}$")
 _MAX_PROMPT_BYTES: Final = 1_048_576
 _MAX_RESPONSE_BYTES: Final = 16_777_216
+_MAX_RESPONSE_INSTRUCTION_BYTES: Final = 16_384
+_MAX_RESPONSE_SCHEMA_BYTES: Final = 262_144
 _MAX_PROVIDER_TOKENS: Final = 100_000_000
 _APPROVAL_TOKEN: Final = object()
 _MUTABLE_DISCOVERY_ALIASES: Final = frozenset({"default", "latest", "preview", "stable"})
@@ -178,8 +185,12 @@ class AzureApprovedPrompt:
     _prompt: str = field(repr=False)
     _source_paths: tuple[str, ...] = field(repr=False)
     _policy_guard: SelfImproveRuntimePolicyGuard = field(repr=False, compare=False)
+    _response_instruction: str | None = field(repr=False)
+    _response_schema_json: str | None = field(repr=False)
+    _envelope_json: str | None = field(repr=False)
     policy_digest: str
     approval_digest: str
+    envelope_digest: str | None
 
     def __init__(
         self,
@@ -189,6 +200,10 @@ class AzureApprovedPrompt:
         policy_guard: SelfImproveRuntimePolicyGuard,
         policy_digest: str,
         approval_digest: str,
+        envelope_digest: str | None = None,
+        response_instruction: str | None = None,
+        response_schema_json: str | None = None,
+        envelope_json: str | None = None,
         _token: object,
     ) -> None:
         """Construct one policy-approved capability with the private token."""
@@ -197,8 +212,12 @@ class AzureApprovedPrompt:
         object.__setattr__(self, "_prompt", prompt)
         object.__setattr__(self, "_source_paths", source_paths)
         object.__setattr__(self, "_policy_guard", policy_guard)
+        object.__setattr__(self, "_response_instruction", response_instruction)
+        object.__setattr__(self, "_response_schema_json", response_schema_json)
+        object.__setattr__(self, "_envelope_json", envelope_json)
         object.__setattr__(self, "policy_digest", policy_digest)
         object.__setattr__(self, "approval_digest", approval_digest)
+        object.__setattr__(self, "envelope_digest", envelope_digest)
 
     @classmethod
     def approve(
@@ -207,6 +226,9 @@ class AzureApprovedPrompt:
         prompt: str,
         source_paths: tuple[str, ...],
         policy_guard: SelfImproveRuntimePolicyGuard,
+        envelope_digest: str | None = None,
+        response_instruction: str | None = None,
+        response_schema_json: str | None = None,
     ) -> AzureApprovedPrompt:
         """Create a capability only for one complete, currently public scope."""
         if type(prompt) is not str:
@@ -229,6 +251,36 @@ class AzureApprovedPrompt:
             or not isinstance(policy_guard, SelfImproveRuntimePolicyGuard)
         ):
             raise AzurePromptApprovalError
+        if (response_instruction is None) != (response_schema_json is None):
+            raise AzurePromptApprovalError
+        if envelope_digest is not None and (
+            type(envelope_digest) is not str
+            or _ENVELOPE_DIGEST_RE.fullmatch(envelope_digest) is None
+        ):
+            raise AzurePromptApprovalError
+        if response_instruction is not None:
+            if (
+                type(response_instruction) is not str
+                or not response_instruction.strip()
+                or "\x00" in response_instruction
+                or len(response_instruction.encode("utf-8"))
+                > _MAX_RESPONSE_INSTRUCTION_BYTES
+                or type(response_schema_json) is not str
+                or len(response_schema_json.encode("utf-8")) > _MAX_RESPONSE_SCHEMA_BYTES
+            ):
+                raise AzurePromptApprovalError
+            try:
+                schema = json.loads(response_schema_json)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                raise AzurePromptApprovalError from None
+            canonical_schema = json.dumps(
+                schema,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            if not isinstance(schema, dict) or canonical_schema != response_schema_json:
+                raise AzurePromptApprovalError
         policy = None
         try:
             policy = policy_guard.require(source_paths)
@@ -236,15 +288,13 @@ class AzureApprovedPrompt:
             policy = None
         if policy is None:
             raise AzurePromptApprovalError
-        approval_digest = _stable_digest(
-            {
-                "policy_digest": policy.digest,
-                "prompt_sha256": hashlib.sha256(prompt_bytes).hexdigest(),
-                "protocol": "gludd-azure-approved-prompt-v1",
-                "source_path_sha256": tuple(
-                    sorted(hashlib.sha256(path.encode("utf-8")).hexdigest() for path in source_paths)
-                ),
-            }
+        approval_digest = _prompt_approval_digest(
+            prompt=prompt,
+            source_paths=source_paths,
+            policy_digest=policy.digest,
+            envelope_digest=envelope_digest,
+            response_instruction=response_instruction,
+            response_schema_json=response_schema_json,
         )
         return cls(
             prompt=prompt,
@@ -252,8 +302,57 @@ class AzureApprovedPrompt:
             policy_guard=policy_guard,
             policy_digest=policy.digest,
             approval_digest=approval_digest,
+            envelope_digest=envelope_digest,
+            response_instruction=response_instruction,
+            response_schema_json=response_schema_json,
+            envelope_json=None,
             _token=_APPROVAL_TOKEN,
         )
+
+    @classmethod
+    def approve_envelope(
+        cls,
+        *,
+        envelope: ManagedCandidateProposalEnvelope,
+        source_paths: tuple[str, ...],
+        policy_guard: SelfImproveRuntimePolicyGuard,
+    ) -> AzureApprovedPrompt:
+        """Approve and retain one complete provider-neutral worker envelope."""
+        if type(envelope) is not ManagedCandidateProposalEnvelope:
+            raise AzurePromptApprovalError
+        try:
+            envelope_json = envelope.to_json()
+            verified = ManagedCandidateProposalEnvelope.from_json(envelope_json)
+        except (TypeError, ValueError, UnicodeError):
+            raise AzurePromptApprovalError from None
+        approved = cls.approve(
+            prompt=verified.request_text,
+            source_paths=source_paths,
+            policy_guard=policy_guard,
+            envelope_digest=verified.envelope_digest,
+            response_instruction=verified.response_instruction,
+            response_schema_json=verified.response_schema_json,
+        )
+        object.__setattr__(approved, "_envelope_json", envelope_json)
+        return approved
+
+    def _verified_envelope(self) -> ManagedCandidateProposalEnvelope | None:
+        """Reconstruct the complete artifact and reject any internal drift."""
+        if self._envelope_json is None:
+            return None
+        try:
+            envelope = ManagedCandidateProposalEnvelope.from_json(self._envelope_json)
+        except (TypeError, ValueError, UnicodeError):
+            raise AzurePromptApprovalError from None
+        if (
+            self.envelope_digest is None
+            or not hmac.compare_digest(envelope.envelope_digest, self.envelope_digest)
+            or envelope.request_text != self._prompt
+            or envelope.response_instruction != self._response_instruction
+            or envelope.response_schema_json != self._response_schema_json
+        ):
+            raise AzurePromptApprovalError
+        return envelope
 
     def _reveal_after_recheck(self) -> str:
         policy = None
@@ -265,7 +364,35 @@ class AzureApprovedPrompt:
             raise AzurePromptApprovalError
         if policy.digest != self.policy_digest:
             raise AzurePromptApprovalError
+        try:
+            expected_approval_digest = _prompt_approval_digest(
+                prompt=self._prompt,
+                source_paths=self._source_paths,
+                policy_digest=self.policy_digest,
+                envelope_digest=self.envelope_digest,
+                response_instruction=self._response_instruction,
+                response_schema_json=self._response_schema_json,
+            )
+        except Exception:
+            raise AzurePromptApprovalError from None
+        if expected_approval_digest != self.approval_digest:
+            raise AzurePromptApprovalError
+        self._verified_envelope()
         return self._prompt
+
+    def _reveal_envelope_after_recheck(
+        self,
+    ) -> ManagedCandidateProposalEnvelope | None:
+        """Reveal the complete worker artifact only after policy reauthorization."""
+        self._reveal_after_recheck()
+        return self._verified_envelope()
+
+    def _reveal_generation_after_recheck(
+        self,
+    ) -> tuple[str, str | None, str | None]:
+        """Reveal one prompt and its inseparable transport contract after recheck."""
+        prompt = self._reveal_after_recheck()
+        return prompt, self._response_instruction, self._response_schema_json
 
 
 class AzureTraceEvent(StrEnum):
@@ -287,6 +414,7 @@ class AzureBackendTrace:
 
     event: AzureTraceEvent
     candidate_digest: str | None = None
+    envelope_digest: str | None = None
     request_number: int = 0
     failure: BackendFailure | None = None
     input_tokens: int = 0
@@ -348,15 +476,7 @@ class _Closable(Protocol):
 
 
 class _ResponsesOperations(Protocol):
-    def create(
-        self,
-        *,
-        model: str,
-        input: str,
-        max_output_tokens: int,
-        store: bool,
-        timeout: float,
-    ) -> object:
+    def create(self, **kwargs: object) -> object:
         """Invoke the Azure-hosted OpenAI Responses endpoint."""
         ...
 
@@ -505,6 +625,42 @@ def _stable_digest(value: Mapping[str, object]) -> str:
         sort_keys=True,
     ).encode("ascii")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _prompt_approval_digest(
+    *,
+    prompt: str,
+    source_paths: tuple[str, ...],
+    policy_digest: str,
+    envelope_digest: str | None,
+    response_instruction: str | None,
+    response_schema_json: str | None,
+) -> str:
+    """Bind prompt, scope, policy, and structured contract without retaining content."""
+    return _stable_digest(
+        {
+            "policy_digest": policy_digest,
+            "envelope_digest": envelope_digest,
+            "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+            "protocol": "gludd-azure-approved-prompt-v2",
+            "response_instruction_sha256": (
+                hashlib.sha256(response_instruction.encode("utf-8")).hexdigest()
+                if response_instruction is not None
+                else None
+            ),
+            "response_schema_sha256": (
+                hashlib.sha256(response_schema_json.encode("utf-8")).hexdigest()
+                if response_schema_json is not None
+                else None
+            ),
+            "source_path_sha256": tuple(
+                sorted(
+                    hashlib.sha256(path.encode("utf-8")).hexdigest()
+                    for path in source_paths
+                )
+            ),
+        }
+    )
 
 
 _STATUS_FAILURES: Final[dict[int, BackendFailure]] = {
@@ -815,7 +971,7 @@ class AzureOpenAICandidateBackend:
         *,
         max_output_tokens: int,
         timeout_seconds: float,
-    ) -> str:
+    ) -> tuple[str, str | None, str | None, str | None]:
         """Validate bounds and recheck immutable deployment and privacy state."""
         if self._closed:
             raise BackendInfrastructureError(BackendFailure.UNAVAILABLE)
@@ -846,7 +1002,16 @@ class AzureOpenAICandidateBackend:
             )
             raise BackendPolicyError(BackendPolicyFailure.IDENTITY_DRIFT)
         try:
-            return request._reveal_after_recheck()
+            envelope = request._reveal_envelope_after_recheck()
+            if envelope is not None:
+                return (
+                    envelope.request_text,
+                    envelope.response_instruction,
+                    envelope.response_schema_json,
+                    envelope.envelope_digest,
+                )
+            prompt, instruction, schema = request._reveal_generation_after_recheck()
+            return prompt, instruction, schema, None
         except AzurePromptApprovalError:
             _emit(
                 self._trace_sink,
@@ -861,6 +1026,9 @@ class AzureOpenAICandidateBackend:
         self,
         client: _OpenAIClient,
         prompt: str,
+        response_instruction: str | None,
+        response_schema_json: str | None,
+        envelope_digest: str | None,
         request_number: int,
         *,
         max_output_tokens: int,
@@ -870,13 +1038,29 @@ class AzureOpenAICandidateBackend:
         response: object = None
         request_error: BackendInfrastructureError | None = None
         try:
-            response = client.responses.create(
-                model=self._config.deployment,
-                input=prompt,
-                max_output_tokens=max_output_tokens,
-                store=False,
-                timeout=float(timeout_seconds),
-            )
+            request_arguments: dict[str, object] = {
+                "model": self._config.deployment,
+                "input": prompt,
+                "max_output_tokens": max_output_tokens,
+                "store": False,
+                "timeout": float(timeout_seconds),
+            }
+            if response_instruction is not None:
+                if response_schema_json is None:
+                    raise BackendInfrastructureError(BackendFailure.INTERNAL)
+                request_arguments["input"] = [
+                    {"role": "system", "content": response_instruction},
+                    {"role": "user", "content": prompt},
+                ]
+                request_arguments["text"] = {
+                    "format": {
+                        "type": "json_schema",
+                        "name": "gludd_proposal_batch",
+                        "schema": json.loads(response_schema_json),
+                        "strict": True,
+                    }
+                }
+            response = client.responses.create(**request_arguments)
         except Exception as error:
             self._requests_failed += 1
             request_error = _censored_sdk_error(error)
@@ -885,6 +1069,7 @@ class AzureOpenAICandidateBackend:
                 AzureBackendTrace(
                     event=AzureTraceEvent.REQUEST_FAILED,
                     candidate_digest=self._identity.identity_digest,
+                    envelope_digest=envelope_digest,
                     request_number=request_number,
                     failure=request_error.failure,
                 ),
@@ -896,6 +1081,7 @@ class AzureOpenAICandidateBackend:
     def _accept_generation(
         self,
         response: object,
+        envelope_digest: str | None,
         request_number: int,
         *,
         max_output_tokens: int,
@@ -912,6 +1098,7 @@ class AzureOpenAICandidateBackend:
                 AzureBackendTrace(
                     event=AzureTraceEvent.REQUEST_FAILED,
                     candidate_digest=self._identity.identity_digest,
+                    envelope_digest=envelope_digest,
                     request_number=request_number,
                     failure=failure,
                 ),
@@ -926,6 +1113,7 @@ class AzureOpenAICandidateBackend:
             AzureBackendTrace(
                 event=AzureTraceEvent.RESPONSE_ACCEPTED,
                 candidate_digest=self._identity.identity_digest,
+                envelope_digest=envelope_digest,
                 request_number=request_number,
                 input_tokens=accepted.input_tokens,
                 output_tokens=accepted.output_tokens,
@@ -942,10 +1130,12 @@ class AzureOpenAICandidateBackend:
         timeout_seconds: float,
     ) -> AzureCandidateResponse:
         """Recheck identity/privacy, call once, and return validated accounting."""
-        prompt = self._approved_generation_prompt(
+        prompt, response_instruction, response_schema_json, envelope_digest = (
+            self._approved_generation_prompt(
             request,
             max_output_tokens=max_output_tokens,
             timeout_seconds=timeout_seconds,
+        )
         )
         client = self._ensure_openai_client()
         request_number = self._requests_started + 1
@@ -954,6 +1144,7 @@ class AzureOpenAICandidateBackend:
             AzureBackendTrace(
                 event=AzureTraceEvent.REQUEST_STARTED,
                 candidate_digest=self._identity.identity_digest,
+                envelope_digest=envelope_digest,
                 request_number=request_number,
             ),
         )
@@ -961,12 +1152,16 @@ class AzureOpenAICandidateBackend:
         response = self._invoke_generation(
             client,
             prompt,
+            response_instruction,
+            response_schema_json,
+            envelope_digest,
             request_number,
             max_output_tokens=max_output_tokens,
             timeout_seconds=timeout_seconds,
         )
         return self._accept_generation(
             response,
+            envelope_digest,
             request_number,
             max_output_tokens=max_output_tokens,
         )

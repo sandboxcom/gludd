@@ -98,7 +98,7 @@ def _prediction(
     privacy_digest: str,
 ) -> CandidatePrediction:
     return CandidatePrediction(
-        candidate_identity_digest=identity.identity_digest,
+        candidate_identity_digest=identity.evidence_identity_digest,
         provider=identity.provider,
         task_type=TaskType.FEATURE,
         task_kind="code_generation",

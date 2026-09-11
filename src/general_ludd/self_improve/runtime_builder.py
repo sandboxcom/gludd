@@ -15,6 +15,9 @@ from general_ludd.self_improve.live_candidate_wiring import (
     LiveCandidateWiringPolicy,
     LiveManagedCandidateWiring,
 )
+from general_ludd.self_improve.managed_candidate_routing import (
+    ManagedCandidateProposalCodec,
+)
 from general_ludd.self_improve.managed_runner import (
     AttemptResult,
     GeneratedProposal,
@@ -99,6 +102,8 @@ class _RuntimeCompositionApi(Protocol):
         prompt: PromptPlan,
         task: TaskSpec,
         reference: CodexReference,
+        *,
+        proposal_codec: ManagedCandidateProposalCodec[GeneratedProposal] | None = None,
     ) -> ProposalManifest | GeneratedProposal:
         """Generate one plan-bound local proposal."""
 
@@ -220,6 +225,8 @@ def _build_managed_callbacks(
         prompt: PromptPlan | str,
         task: TaskSpec,
         reference: CodexReference,
+        *,
+        proposal_codec: ManagedCandidateProposalCodec[GeneratedProposal] | None = None,
     ) -> ProposalManifest | GeneratedProposal:
         if isinstance(prompt, PromptPlan):
             return runtime_api._generate_local_proposal_plan_result(
@@ -228,8 +235,14 @@ def _build_managed_callbacks(
                 prompt,
                 task,
                 reference,
+                proposal_codec=proposal_codec,
             )
-        return runtime_api.generate_local_proposal(operation_runner, model_path, prompt)
+        generated = runtime_api.generate_local_proposal(operation_runner, model_path, prompt)
+        return (
+            generated
+            if proposal_codec is None
+            else proposal_codec.decoder(generated.to_json())
+        )
 
     def evaluate(
         task: TaskSpec,

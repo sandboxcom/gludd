@@ -43,6 +43,9 @@ from general_ludd.self_improve.managed_candidate_assembly import (
     ManagedCandidateSource,
     assemble_managed_candidates,
 )
+from general_ludd.self_improve.managed_candidate_routing_types import (
+    ManagedCandidateProposalEnvelope,
+)
 from general_ludd.self_improve.model_candidates import (
     AzureContainerAppCandidateIdentity,
     AzureFoundryCandidateIdentity,
@@ -261,8 +264,6 @@ class LiveCandidateWiringPolicy:
             or len(set(self.required_providers)) != len(self.required_providers)
         ):
             raise ValueError("required_providers must be one unique typed tuple")
-        if ModelCandidateProvider.LOCAL_GGUF not in self.required_providers:
-            raise ValueError("the legacy managed runner requires the local provider")
         if (
             isinstance(self.azure_estimated_cost_microusd, bool)
             or not isinstance(self.azure_estimated_cost_microusd, int)
@@ -351,7 +352,7 @@ class LiveManagedCandidateSet(Generic[_RequestT, _ResponseT]):
     def __init__(
         self,
         assembly: ManagedCandidateAssembly,
-        local_session: BoundedCandidateSession[_RequestT, _ResponseT],
+        local_session: BoundedCandidateSession[_RequestT, _ResponseT] | None,
         azure_session: BoundedCandidateSession[
             AzureApprovedPrompt, AzureCandidateResponse
         ]
@@ -418,6 +419,7 @@ def bind_managed_candidate_execution_boundary(
     expected_project_identity_digest: str,
     project_identity_probe: Callable[[], str],
     remote_enabled: bool,
+    proposal_envelope: ManagedCandidateProposalEnvelope | None = None,
 ) -> tuple[CandidateExecutionBoundary, AzureApprovedPrompt | None]:
     """Bind project identity, privacy policy, and optional remote prompt authority."""
     if repo_root is None:
@@ -428,15 +430,26 @@ def bind_managed_candidate_execution_boundary(
         progress_sink,
         violation_factory,
     )
-    approved_prompt = (
-        AzureApprovedPrompt.approve(
-            prompt=request_text,
-            source_paths=source_paths,
-            policy_guard=policy_guard,
+    if proposal_envelope is not None and (
+        type(proposal_envelope) is not ManagedCandidateProposalEnvelope
+        or proposal_envelope.request_text != request_text
+    ):
+        raise violation_factory()
+    approved_prompt = None
+    if remote_enabled:
+        approved_prompt = (
+            AzureApprovedPrompt.approve_envelope(
+                envelope=proposal_envelope,
+                source_paths=source_paths,
+                policy_guard=policy_guard,
+            )
+            if proposal_envelope is not None
+            else AzureApprovedPrompt.approve(
+                prompt=request_text,
+                source_paths=source_paths,
+                policy_guard=policy_guard,
+            )
         )
-        if remote_enabled
-        else None
-    )
     return (
         CandidateExecutionBoundary(
             policy_guard=policy_guard,
@@ -712,7 +725,7 @@ class LiveManagedCandidateWiring:
         self,
         classification: CandidateTaskClassification,
         expected_classification_digest: str,
-        local_session: BoundedCandidateSession[_RequestT, _ResponseT],
+        local_session: BoundedCandidateSession[_RequestT, _ResponseT] | None,
         discovered: _DiscoveredRemoteCandidates,
         privacy_state: CandidatePrivacyState,
         *,
@@ -720,12 +733,14 @@ class LiveManagedCandidateWiring:
         max_output_tokens: int,
     ) -> ManagedCandidateAssembly:
         """Reauthorize all sessions after discovery and assemble exact sources."""
-        local_session.authorize(
-            input_tokens=input_tokens,
-            max_output_tokens=max_output_tokens,
-            estimated_cost_microusd=0,
-        )
-        sources = [self._local_source(local_session, privacy_state)]
+        sources: list[ManagedCandidateSource] = []
+        if local_session is not None:
+            local_session.authorize(
+                input_tokens=input_tokens,
+                max_output_tokens=max_output_tokens,
+                estimated_cost_microusd=0,
+            )
+            sources.append(self._local_source(local_session, privacy_state))
         if discovered.azure_session is not None:
             discovered.azure_session.authorize(
                 input_tokens=input_tokens,
@@ -764,30 +779,32 @@ class LiveManagedCandidateWiring:
         classification: CandidateTaskClassification,
         *,
         expected_classification_digest: str,
-        local_backend: CandidateBackend[_RequestT, _ResponseT],
+        local_backend: CandidateBackend[_RequestT, _ResponseT] | None,
         privacy_state: CandidatePrivacyState,
         input_tokens: int,
         max_output_tokens: int,
     ) -> LiveManagedCandidateSet[_RequestT, _ResponseT]:
         """Authorize, discover, and assemble once without provider fallback."""
-        local_session = BoundedCandidateSession(
-            local_backend,
-            self._policy.local_budget,
-            azure_enabled=False,
-        )
-        local_session.authorize(
-            input_tokens=input_tokens,
-            max_output_tokens=max_output_tokens,
-            estimated_cost_microusd=0,
-        )
-        local_source = self._local_source(local_session, privacy_state)
-        assemble_managed_candidates(
-            classification,
-            (local_source,),
-            expected_classification_digest=expected_classification_digest,
-            required_providers=(ModelCandidateProvider.LOCAL_GGUF,),
-            azure_enabled=False,
-        )
+        local_session: BoundedCandidateSession[_RequestT, _ResponseT] | None = None
+        if local_backend is not None:
+            local_session = BoundedCandidateSession(
+                local_backend,
+                self._policy.local_budget,
+                azure_enabled=False,
+            )
+            local_session.authorize(
+                input_tokens=input_tokens,
+                max_output_tokens=max_output_tokens,
+                estimated_cost_microusd=0,
+            )
+            local_source = self._local_source(local_session, privacy_state)
+            assemble_managed_candidates(
+                classification,
+                (local_source,),
+                expected_classification_digest=expected_classification_digest,
+                required_providers=(ModelCandidateProvider.LOCAL_GGUF,),
+                azure_enabled=False,
+            )
 
         self._require_configuration_unchanged(
             ModelCandidateProvider.AZURE_FOUNDRY,

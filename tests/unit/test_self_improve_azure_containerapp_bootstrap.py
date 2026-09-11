@@ -21,6 +21,7 @@ from general_ludd.azure.resource_group_bootstrap import (
     AzureResourceGroupBootstrapPolicy,
     AzureResourceGroupBootstrapState,
     AzureResourceGroupBootstrapTrace,
+    AzureResourceGroupOwnershipState,
 )
 from general_ludd.infra.azure_containerapp_environment_lifecycle import (
     AzureEnvironmentLifecyclePolicy,
@@ -36,12 +37,17 @@ from general_ludd.infra.azure_containerapp_make_types import (
 from general_ludd.infra.azure_containerapp_owned_candidate import (
     owned_candidate_deployment_digest,
 )
+from general_ludd.infra.azure_containerapp_owned_candidate_types import (
+    OwnedCandidateLifecycleError,
+)
+from general_ludd.infra.azure_containerapp_preflight_types import PreflightTrace
 from general_ludd.infra.azure_containerapp_topology import AzureProfileCapacity
 from general_ludd.infra.azure_idle_retention import (
     AzureIdleRetentionPolicy,
     AzureRetentionPreset,
 )
 from general_ludd.self_improve import azure_containerapp_bootstrap as bootstrap
+from general_ludd.self_improve import azure_containerapp_bootstrap_runtime as bootstrap_runtime
 from general_ludd.self_improve import runtime as self_improve_runtime
 from general_ludd.self_improve.azure_containerapp_bootstrap import (
     AzureContainerAppBootstrapWiring,
@@ -54,7 +60,16 @@ from general_ludd.self_improve.azure_containerapp_bootstrap import (
 from general_ludd.self_improve.azure_containerapp_bootstrap_credentials import (
     AzureCredentialAcquisition as SplitAzureCredentialAcquisition,
 )
-from general_ludd.self_improve.model_candidates import ModelCandidateProvider
+from general_ludd.self_improve.azure_containerapp_transport_types import (
+    ContainerAppBackendTrace,
+    ContainerAppResponseFailure,
+    ContainerAppTraceEvent,
+)
+from general_ludd.self_improve.model_candidates import (
+    BackendFailure,
+    BackendInfrastructureError,
+    ModelCandidateProvider,
+)
 
 SUBSCRIPTION = "11111111-2222-3333-4444-555555555555"
 TENANT = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -120,6 +135,124 @@ def test_runtime_trace_forwards_only_structured_infrastructure_facts() -> None:
     assert "action=create" in messages[0]
     assert "event_kind=apply_progress" in messages[0]
     assert "secret_output=false" in messages[0]
+
+
+def test_runtime_trace_surfaces_safe_backend_failure_diagnostics() -> None:
+    """The common formatter must not discard typed Container App failures."""
+    messages: list[str] = []
+
+    bootstrap._runtime_trace(
+        messages.append,
+        "backend",
+        ContainerAppBackendTrace(
+            ContainerAppTraceEvent.REQUEST_FAILED,
+            candidate_digest="a" * 64,
+            request_number=1,
+            failure=BackendFailure.INVALID_RESPONSE,
+            response_failure=ContainerAppResponseFailure.HTTP_STATUS,
+            http_status=400,
+        ),
+    )
+
+    assert "failure_class=invalid_response" in messages[0]
+    assert "response_failure=http_status" in messages[0]
+    assert "http_status=400" in messages[0]
+    assert "operation_digest=" + ("a" * 64) in messages[0]
+    assert "secret_output=false" in messages[0]
+
+
+def test_runtime_trace_exposes_only_typed_legacy_owner_migration() -> None:
+    """Live diagnosis can distinguish a proven legacy identity from adoption."""
+    messages: list[str] = []
+
+    bootstrap._runtime_trace(
+        messages.append,
+        "resource_group",
+        AzureResourceGroupBootstrapTrace(
+            AzureResourceGroupBootstrapState.MIGRATION_STARTED,
+            ownership_state=AzureResourceGroupOwnershipState.LEGACY_OWNED,
+        ),
+    )
+
+    assert len(messages) == 1
+    assert "state=migration_started" in messages[0]
+    assert "ownership_state=legacy_owned" in messages[0]
+    assert "secret_output=false" in messages[0]
+
+
+def test_runtime_trace_exposes_validated_owner_digest_comparison() -> None:
+    """One-way owner identities make a live mismatch independently diagnosable."""
+    messages: list[str] = []
+
+    bootstrap._runtime_trace(
+        messages.append,
+        "resource_group",
+        AzureResourceGroupBootstrapTrace(
+            AzureResourceGroupBootstrapState.FAILED,
+            failure_class="ownership",
+            observed_owner_digest="b" * 64,
+            expected_owner_digest="a" * 64,
+        ),
+    )
+
+    assert "observed_owner_digest=" + ("b" * 64) in messages[0]
+    assert "expected_owner_digest=" + ("a" * 64) in messages[0]
+    assert "secret_output=false" in messages[0]
+
+
+def test_runtime_trace_exposes_only_allowlisted_preflight_reason() -> None:
+    """Live refusal diagnosis exposes a category without provider-controlled text."""
+    messages: list[str] = []
+
+    bootstrap._runtime_trace(
+        messages.append,
+        "preflight",
+        PreflightTrace(
+            "preflight_refused",
+            "eastus",
+            reason="workload_profile_missing",
+        ),
+    )
+    bootstrap._runtime_trace(
+        messages.append,
+        "preflight",
+        PreflightTrace(
+            "preflight_refused",
+            "eastus",
+            reason="private-provider-response unit-secret",
+        ),
+    )
+
+    assert "preflight_reason=workload_profile_missing" in messages[0]
+    assert "preflight_reason=none" in messages[1]
+    assert "private-provider-response" not in repr(messages)
+    assert "unit-secret" not in repr(messages)
+
+
+@pytest.mark.parametrize(
+    ("reason", "expected"),
+    [
+        ("authentication_failed", BackendFailure.AUTHENTICATION),
+        ("environment_unauthorized", BackendFailure.AUTHORIZATION),
+        ("environment_not_found", BackendFailure.NOT_FOUND),
+        ("gpu_quota_exhausted", BackendFailure.RATE_LIMITED),
+        ("usages_http_429", BackendFailure.RATE_LIMITED),
+        ("environment_http_408", BackendFailure.TIMEOUT),
+        ("workload_profile_states_http_504", BackendFailure.TIMEOUT),
+        ("environment_read_failed", BackendFailure.TRANSPORT),
+        ("environment_http_503", BackendFailure.TRANSPORT),
+        ("environment_response_invalid", BackendFailure.INVALID_RESPONSE),
+        ("environment_identity_mismatch", BackendFailure.INVALID_RESPONSE),
+        ("profile_unavailable", BackendFailure.UNAVAILABLE),
+        ("private-provider-response unit-secret", None),
+    ],
+)
+def test_preflight_reason_maps_to_model_neutral_failure(
+    reason: str,
+    expected: BackendFailure | None,
+) -> None:
+    """Only locally defined refusal categories reach model-quality censorship."""
+    assert bootstrap_runtime._preflight_backend_failure(reason) is expected
 
 
 def _config(**overrides: object) -> dict[str, object]:
@@ -286,6 +419,7 @@ def _build(
     credential_provider: _CredentialProvider | None = None,
     resources_builder: Any = None,
     resource_group_bootstrapper: Any = None,
+    owned_factory_type: Any = _OwnedFactory,
 ) -> AzureContainerAppBootstrapWiring | None:
     provider = credential_provider or _CredentialProvider()
     group_bootstrapper = resource_group_bootstrapper or (
@@ -298,7 +432,7 @@ def _build(
         credential_provider=provider,
         resources_builder=resources_builder,
         resource_group_bootstrapper=group_bootstrapper,
-        owned_factory_type=_OwnedFactory,
+        owned_factory_type=owned_factory_type,
         now=lambda: NOW,
     )
 
@@ -355,6 +489,7 @@ def test_same_scoped_credential_bootstraps_owned_group_before_runtime_resources(
         "component=resource_group" in event
         and "state=create_started" in event
         and "failure_class=none" in event
+        and "ownership_state=none" in event
         for event in progress
     )
     assert "unit-secret" not in repr(progress)
@@ -374,9 +509,10 @@ def test_group_bootstrap_failure_releases_same_credential_before_resources(
     )
     assert isinstance(wiring, AzureContainerAppBootstrapWiring)
 
-    with pytest.raises(RuntimeError, match="resource-group acquisition failed") as caught:
+    with pytest.raises(BackendInfrastructureError) as caught:
         wiring.bootstrap_factory()
 
+    assert caught.value.failure is BackendFailure.INTERNAL
     assert "provider-secret" not in str(caught.value)
     assert provider.acquisitions == provider.releases == 1
 
@@ -446,7 +582,6 @@ def test_config_derives_t4_topology_and_bootstraps_fresh_owned_sessions(
     assert wiring.idle_retention_policy.preset is AzureRetentionPreset.ZERO_COST_ONLY
     assert wiring.idle_retention_policy.max_retention_seconds == 21_600
     assert wiring.policy.required_providers == (
-        ModelCandidateProvider.LOCAL_GGUF,
         ModelCandidateProvider.AZURE_CONTAINER_APP,
     )
     assert (
@@ -612,9 +747,84 @@ def test_resource_construction_failure_releases_credential_once(tmp_path: Path) 
     )
     assert isinstance(wiring, AzureContainerAppBootstrapWiring)
 
-    with pytest.raises(RuntimeError, match="Azure bootstrap resource construction failed"):
+    with pytest.raises(BackendInfrastructureError) as caught:
         wiring.bootstrap_factory()
 
+    assert caught.value.failure is BackendFailure.INTERNAL
+    assert provider.acquisitions == 1
+    assert provider.releases == 1
+
+
+def test_preflight_refusal_is_classified_from_typed_trace(tmp_path: Path) -> None:
+    """A known Azure refusal remains actionable after owned-lifecycle censorship."""
+    provider = _CredentialProvider()
+    resource_events: list[str] = []
+
+    class RefusingOwnedFactory(_OwnedFactory):
+        def __call__(self) -> _Backend:
+            raise OwnedCandidateLifecycleError("preflight")
+
+    def resources(**kwargs: object) -> _Resources:
+        trace_sink = cast(Any, kwargs["preflight_trace_sink"])
+        trace_sink(
+            PreflightTrace(
+                "preflight_refused",
+                "eastus",
+                reason="usages_unauthorized",
+            )
+        )
+        return _Resources(resource_events, _Backend("unused"))
+
+    wiring = _build(
+        tmp_path,
+        credential_provider=provider,
+        resources_builder=resources,
+        owned_factory_type=RefusingOwnedFactory,
+    )
+    assert isinstance(wiring, AzureContainerAppBootstrapWiring)
+
+    with pytest.raises(BackendInfrastructureError) as caught:
+        wiring.bootstrap_factory()
+
+    assert caught.value.failure is BackendFailure.AUTHORIZATION
+    assert resource_events == ["resources.close"]
+
+
+def test_owned_apply_timeout_remains_typed_after_bootstrap_cleanup(tmp_path: Path) -> None:
+    """A readiness timeout must remain retryable across the owned lifecycle."""
+    provider = _CredentialProvider()
+    resource_events: list[str] = []
+
+    class TimedOutOwnedFactory(_OwnedFactory):
+        def __call__(self) -> _Backend:
+            raise OwnedCandidateLifecycleError(
+                "apply",
+                failure=BackendFailure.TIMEOUT,
+            )
+
+    def resources(**kwargs: object) -> _Resources:
+        release = cast(Any, kwargs["credential_release"])
+
+        class ReleasingResources(_Resources):
+            def close(self) -> None:
+                if "resources.close" not in resource_events:
+                    super().close()
+                    release()
+
+        return ReleasingResources(resource_events, _Backend("unused"))
+
+    wiring = _build(
+        tmp_path,
+        credential_provider=provider,
+        resources_builder=resources,
+        owned_factory_type=TimedOutOwnedFactory,
+    )
+
+    with pytest.raises(BackendInfrastructureError) as caught:
+        wiring.bootstrap_factory()
+
+    assert caught.value.failure is BackendFailure.TIMEOUT
+    assert resource_events == ["resources.close"]
     assert provider.acquisitions == 1
     assert provider.releases == 1
 

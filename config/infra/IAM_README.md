@@ -371,9 +371,14 @@ make --no-print-directory azure-accelerator-role-args AZURE_ACCELERATOR_SUBSCRIP
 # If the named role already exists, update it to the same exact definition.
 make --no-print-directory azure-accelerator-role-update-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=00000000-0000-0000-0000-000000000000 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus | xargs -0 az
 
-# Create the one accelerator principal and keep the one-time output private.
-(umask 077; make --no-print-directory azure-accelerator-auth-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=00000000-0000-0000-0000-000000000000 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus AZURE_ACCELERATOR_SP_NAME=gludd-accelerator-test-20260905 | xargs -0 az > /tmp/gludd-azure-accelerator-auth.json)
+# Create the one accelerator principal and atomically preserve every generation.
+make --no-print-directory azure-accelerator-auth-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=00000000-0000-0000-0000-000000000000 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus AZURE_ACCELERATOR_SP_NAME=gludd-accelerator-test-20260905 | xargs -0 az | make --no-print-directory azure-accelerator-auth-store AZURE_ACCELERATOR_AUTH_FILE="$HOME/.local/share/general-ludd/credentials/azure-accelerator-auth.json" AZURE_ACCELERATOR_AUTH_SOURCE_FILE= AZURE_ACCELERATOR_SUBSCRIPTION_ID=00000000-0000-0000-0000-000000000000 AZURE_ACCELERATOR_AUTH_STORE_VALIDATE_ONLY=0
 ```
+
+The final Make target consumes the secret on stdin, validates it, and stores it
+outside temporary, worktree, cache, and cleanup roots as an immutable `0600`
+generation plus an atomically recoverable active link. No automatic cleanup path
+can prune protected generations; disposable caches remain independently bounded.
 
 An existing principal needs no new secret after the role update. Gludd uses the
 same credential for the owner-tagged group bootstrap and the OpenTofu lifecycle,

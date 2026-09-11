@@ -85,6 +85,7 @@ from general_ludd.self_improve.model_candidate_planner import (
     record_self_improve_outcome,
 )
 from general_ludd.self_improve.model_candidates import (
+    BackendInfrastructureError,
     BoundedCandidateSession,
     LocalGGUFCandidateIdentity,
     ModelCandidateProvider,
@@ -871,7 +872,7 @@ class ApprovedSelfImprovePlan:
             object.__setattr__(
                 self,
                 "explicit_model_path",
-                self.explicit_model_path.expanduser().resolve(strict=False),
+                Path(os.path.abspath(self.explicit_model_path.expanduser())),
             )
         if not isinstance(self.task, TaskSpec):
             raise ValueError("task must be an immutable TaskSpec")
@@ -1048,7 +1049,7 @@ class ApprovedSelfImprovePlan:
             and prompt.proposal_protocol != COMPACT_PROPOSAL_PROTOCOL_V3
         ):
             raise ValueError("legacy approved plan cannot carry compact-v4 prompt state")
-        explicit_path = _optional_canonical_path(
+        explicit_path = _optional_absolute_path(
             mapping["explicit_model_path"],
             "explicit_model_path",
         )
@@ -1417,6 +1418,8 @@ class _ProposalGenerator(Protocol):
         prompt: PromptPlan | str,
         task: TaskSpec,
         reference: CodexReference,
+        *,
+        proposal_codec: ManagedCandidateProposalCodec[GeneratedProposal] | None = None,
     ) -> ProposalManifest | GeneratedProposal: ...
 
 
@@ -1434,12 +1437,13 @@ class _RemoteProposalCodecFactory(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class LocalProposalInvocation:
-    """Exact legacy local-generator arguments transported through a backend seam."""
+    """Exact local arguments plus the shared provider-neutral envelope."""
 
     model_path: Path
     prompt: PromptPlan | str
     task: TaskSpec
     reference: CodexReference
+    proposal_codec: ManagedCandidateProposalCodec[GeneratedProposal] | None = None
 
 
 class LocalProposalBackendAdapter:
@@ -1470,11 +1474,19 @@ class LocalProposalBackendAdapter:
     ) -> ProposalManifest | GeneratedProposal:
         """Forward the legacy four arguments byte-for-byte and preserve failures."""
         del max_output_tokens, timeout_seconds
+        if request.proposal_codec is None:
+            return self._generator(
+                request.model_path,
+                request.prompt,
+                request.task,
+                request.reference,
+            )
         return self._generator(
             request.model_path,
             request.prompt,
             request.task,
             request.reference,
+            proposal_codec=request.proposal_codec,
         )
 
 
@@ -1606,6 +1618,22 @@ def _default_artifact_identity(candidate: PlannedModelCandidate) -> ModelArtifac
         filename=candidate.config.filename,
         revision=candidate.resolved_revision,
     )
+
+
+_LOCAL_IDENTITY_FAILURE_CATEGORIES: Final[dict[str, str]] = {
+    "model_id must be one bounded canonical label": "model_id",
+    "filename must be one canonical GGUF path": "filename",
+    "filename must be one confined GGUF path": "filename",
+    "artifact_sha256 must be one SHA-256 digest": "artifact_digest",
+    "repo_id and revision must be supplied together": "provenance_pair",
+    "repo_id must be one canonical owner/repository pair": "repository",
+    "revision must be one immutable commit SHA": "revision",
+}
+
+
+def _local_identity_failure_category(error: BaseException) -> str:
+    """Map fixed validator messages to content-free trace categories."""
+    return _LOCAL_IDENTITY_FAILURE_CATEGORIES.get(str(error), "unknown")
 
 
 def _local_backend_identity(
@@ -1754,6 +1782,11 @@ def _candidate_routing_trace_message(trace: object) -> str:
             "candidate_identity_digest": trace.candidate_identity_digest,
             "event": trace.event.value,
             "plan_digest": trace.plan_digest,
+            "protocol_failure": (
+                None
+                if trace.protocol_failure is None
+                else trace.protocol_failure.value
+            ),
             "provider": trace.provider,
             "trial_count": trace.trial_count,
         }
@@ -1880,6 +1913,21 @@ class _ManagedRunnerPolicySupport:
     def live_candidate_wiring_enabled(self) -> bool:
         """Return whether explicit live discovery was installed at construction."""
         return self.live_candidate_wiring is not None
+
+    def _remote_only_enabled(self) -> bool:
+        """Return whether policy permits a configured remote trial without local."""
+        wiring = self.live_candidate_wiring
+        if wiring is None or self.remote_proposal_codec_factory is None:
+            return False
+        policy = wiring.policy
+        return (
+            ModelCandidateProvider.LOCAL_GGUF not in policy.required_providers
+            and (
+                policy.azure_config is not None
+                or policy.containerapp_identity is not None
+                or policy.containerapp_bootstrap_digest is not None
+            )
+        )
 
     def _emit_policy_decision(
         self,
@@ -2036,12 +2084,17 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
                         state.model_manager,
                         state.outcomes,
                         stack,
+                        allow_empty=self._remote_only_enabled(),
                     )
                 if state.candidate_index >= len(state.candidates):
-                    raise ModelPlanError(ModelPlanFailure.EXHAUSTED)
-                candidate = state.candidates[state.candidate_index]
-                state.candidate_index += 1
-                identity = self.artifact_identity(candidate)
+                    if state.candidate_index == 0 and self._remote_only_enabled():
+                        state.candidate_index = 1
+                    else:
+                        raise ModelPlanError(ModelPlanFailure.EXHAUSTED)
+                else:
+                    candidate = state.candidates[state.candidate_index]
+                    state.candidate_index += 1
+                    identity = self.artifact_identity(candidate)
             if candidate is not None:
                 state.attempted_models.append(candidate.config.name)
         return _ManagedAttemptContext(
@@ -2087,6 +2140,12 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
             self.progress_sink(
                 "SELF_IMPROVE_MODEL_ACQUISITION_REJECTED "
                 f"attempt={attempt} failure={failure}"
+            )
+            raise
+        except BackendInfrastructureError as exc:
+            self.progress_sink(
+                "SELF_IMPROVE_REMOTE_INFRASTRUCTURE_REJECTED "
+                f"attempt={attempt} failure={exc.failure.value}"
             )
             raise
         except BaseException as exc:
@@ -2230,7 +2289,9 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
         manager: _LeaseManager,
         outcomes: ManagedOutcomeAdapter,
         stack: ExitStack,
-    ) -> tuple[tuple[PlannedModelCandidate, ...], _Reservation]:
+        *,
+        allow_empty: bool = False,
+    ) -> tuple[tuple[PlannedModelCandidate, ...], _Reservation | None]:
         prior_failed = outcomes.load_failed_model_ids(
             task_text=plan.task.objective,
             attempt_identity_digest=plan.attempt_identity_digest,
@@ -2279,6 +2340,8 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
             + shape_telemetry
         )
         if not candidates:
+            if allow_empty:
+                return (), None
             raise ModelPlanError(ModelPlanFailure.EXHAUSTED)
         hints = manager.owned_identities_for_model_ids(prior_failed)
         reserved = stack.enter_context(
@@ -2326,7 +2389,7 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
         self,
         plan: ApprovedSelfImprovePlan,
         candidate_set: LiveManagedCandidateSet[LocalProposalInvocation, object],
-        invocation: LocalProposalInvocation,
+        invocation: LocalProposalInvocation | None,
         codec: ManagedCandidateProposalCodec[GeneratedProposal],
         approved_prompt: AzureApprovedPrompt | None,
         assessor: Callable[
@@ -2336,27 +2399,32 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
         input_tokens: int,
     ) -> tuple[ManagedCandidateTrialSpec[GeneratedProposal], ...]:
         """Build exact local and remote trials without invoking a provider."""
-        local_identity = candidate_set.local_session.candidate_identity
-        specs: list[ManagedCandidateTrialSpec[GeneratedProposal]] = [
-            ManagedCandidateTrialSpec(
-                session=cast(
-                    "BoundedCandidateSession[object, object]",
-                    candidate_set.local_session,
-                ),
-                request=invocation,
-                decoder=_decode_local_routing_response,
-                usage_reader=lambda response: _local_routing_usage(
-                    response,
-                    input_tokens=input_tokens,
-                    output_token_limit=plan.required_output_tokens,
-                ),
-                assessor=assessor(local_identity.evidence_identity_digest),
-                predicted_latency_ms=1_000,
-                predicted_input_tokens=input_tokens,
-                predicted_output_tokens=plan.required_output_tokens,
-                predicted_cost_microusd=0,
+        specs: list[ManagedCandidateTrialSpec[GeneratedProposal]] = []
+        local_session = candidate_set.local_session
+        if local_session is not None:
+            if invocation is None:
+                raise RuntimeError("local candidate has no invocation")
+            local_identity = local_session.candidate_identity
+            specs.append(
+                ManagedCandidateTrialSpec(
+                    session=cast(
+                        "BoundedCandidateSession[object, object]",
+                        local_session,
+                    ),
+                    request=invocation,
+                    decoder=_decode_local_routing_response,
+                    usage_reader=lambda response: _local_routing_usage(
+                        response,
+                        input_tokens=input_tokens,
+                        output_token_limit=plan.required_output_tokens,
+                    ),
+                    assessor=assessor(local_identity.evidence_identity_digest),
+                    predicted_latency_ms=1_000,
+                    predicted_input_tokens=input_tokens,
+                    predicted_output_tokens=plan.required_output_tokens,
+                    predicted_cost_microusd=0,
+                )
             )
-        ]
         policy = cast(LiveManagedCandidateWiring, self.live_candidate_wiring).policy
         remote_candidates = (
             (candidate_set.azure_session, policy.azure_estimated_cost_microusd, 5_000),
@@ -2421,7 +2489,7 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
         self,
         plan: ApprovedSelfImprovePlan,
         candidate_set: LiveManagedCandidateSet[LocalProposalInvocation, object],
-        invocation: LocalProposalInvocation,
+        invocation: LocalProposalInvocation | None,
         codec: ManagedCandidateProposalCodec[GeneratedProposal],
         outcomes: ManagedOutcomeAdapter,
         classification: CandidateTaskClassification,
@@ -2443,6 +2511,7 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
                 candidate_set.azure_session is not None
                 or candidate_set.containerapp_session is not None
             ),
+            proposal_envelope=codec.worker_envelope,
         )
         evaluated: dict[str, AttemptResult] = {}
         evaluated_lock = threading.Lock()
@@ -2480,7 +2549,7 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
             prompt_protocol_digest=codec.protocol_digest,
             evaluator_digest=_MANAGED_CANDIDATE_EVALUATOR_DIGEST,
             sampling_digest=codec.sampling_digest,
-            concurrent=False,
+            concurrent=True,
             trace_sink=lambda trace: self.progress_sink(
                 _candidate_routing_trace_message(trace)
             ),
@@ -2492,8 +2561,8 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
         plan: ApprovedSelfImprovePlan,
         prompt: PromptPlan | str,
         classification: CandidateTaskClassification,
-        backend: LocalProposalBackendAdapter,
-        invocation: LocalProposalInvocation,
+        backend: LocalProposalBackendAdapter | None,
+        invocation: LocalProposalInvocation | None,
         outcomes: ManagedOutcomeAdapter | None,
         *,
         attempt: int,
@@ -2501,45 +2570,89 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
         """Assemble and optionally route one explicit live candidate set."""
         self._execution_policy(plan)
         codec_factory = self.remote_proposal_codec_factory
-        codec = (
-            None
-            if codec_factory is None
-            else codec_factory(prompt, plan.task, plan.reference)
+        self.progress_sink("SELF_IMPROVE_CANDIDATE_PROTOCOL phase=started")
+        try:
+            codec = (
+                None
+                if codec_factory is None
+                else codec_factory(prompt, plan.task, plan.reference)
+            )
+        except BaseException:
+            self.progress_sink(
+                "SELF_IMPROVE_CANDIDATE_PROTOCOL phase=failed failure=construction"
+            )
+            raise
+        self.progress_sink(
+            "SELF_IMPROVE_CANDIDATE_PROTOCOL phase=bound "
+            f"enabled={str(codec is not None).lower()} "
+            f"envelope_digest={codec.envelope_digest if codec is not None else 'none'}"
         )
+        if invocation is not None and codec is not None:
+            invocation = replace(invocation, proposal_codec=codec)
         if codec is not None and outcomes is None:
             raise RuntimeError("candidate routing requires a durable outcome adapter")
         input_tokens = max(1, (_prompt_bytes(prompt) + 3) // 4)
         wiring = cast(LiveManagedCandidateWiring, self.live_candidate_wiring)
-        with wiring.assemble(
-            classification,
-            expected_classification_digest=classification.classification_digest,
-            local_backend=(
-                _RoutingLocalProposalBackend(backend) if codec is not None else backend
-            ),
-            privacy_state=CandidatePrivacyState.APPROVED_PUBLIC,
-            input_tokens=input_tokens,
-            max_output_tokens=plan.required_output_tokens,
-        ) as candidate_set:
+        self.progress_sink(
+            "SELF_IMPROVE_CANDIDATE_ASSEMBLY phase=started "
+            f"local={str(backend is not None).lower()}"
+        )
+        try:
+            candidate_set = wiring.assemble(
+                classification,
+                expected_classification_digest=classification.classification_digest,
+                local_backend=(
+                    _RoutingLocalProposalBackend(backend)
+                    if codec is not None and backend is not None
+                    else backend
+                ),
+                privacy_state=CandidatePrivacyState.APPROVED_PUBLIC,
+                input_tokens=input_tokens,
+                max_output_tokens=plan.required_output_tokens,
+            )
+        except BaseException:
+            self.progress_sink(
+                "SELF_IMPROVE_CANDIDATE_ASSEMBLY phase=failed failure=construction"
+            )
+            raise
+        with candidate_set:
+            self.progress_sink(
+                "SELF_IMPROVE_CANDIDATE_ASSEMBLY phase=completed "
+                f"local={str(candidate_set.local_session is not None).lower()} "
+                f"azure_foundry={str(candidate_set.azure_session is not None).lower()} "
+                f"containerapp={str(candidate_set.containerapp_session is not None).lower()}"
+            )
             if codec is None:
+                if candidate_set.local_session is None or invocation is None:
+                    raise RuntimeError("remote-only candidate routing requires a codec")
                 return candidate_set.local_session.generate(
                     invocation,
                     input_tokens=input_tokens,
                     max_output_tokens=plan.required_output_tokens,
                     estimated_cost_microusd=0,
                 )
-            return self._route_live_candidate_set(
-                plan,
-                cast(
-                    "LiveManagedCandidateSet[LocalProposalInvocation, object]",
-                    candidate_set,
-                ),
-                invocation,
-                codec,
-                cast(ManagedOutcomeAdapter, outcomes),
-                classification,
-                input_tokens=input_tokens,
-                attempt=attempt,
-            )
+            self.progress_sink("SELF_IMPROVE_CANDIDATE_ROUTE phase=started")
+            try:
+                generated = self._route_live_candidate_set(
+                    plan,
+                    cast(
+                        "LiveManagedCandidateSet[LocalProposalInvocation, object]",
+                        candidate_set,
+                    ),
+                    invocation,
+                    codec,
+                    cast(ManagedOutcomeAdapter, outcomes),
+                    classification,
+                    input_tokens=input_tokens,
+                    attempt=attempt,
+                )
+            except BaseException:
+                self.progress_sink(
+                    "SELF_IMPROVE_CANDIDATE_ROUTE phase=failed failure=execution"
+                )
+                raise
+            self.progress_sink("SELF_IMPROVE_CANDIDATE_ROUTE phase=completed")
+            return generated
 
     def _generate_proposal(
         self,
@@ -2564,6 +2677,23 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
         if self.live_candidate_wiring is not None:
             self._execution_policy(plan)
             classification = classify_candidate_task(plan.task.objective)
+        if (
+            plan.explicit_model_path is None
+            and candidate is None
+            and self._remote_only_enabled()
+        ):
+            if classification is None:
+                raise RuntimeError("live candidate classification was not created")
+            remote_proposal = self._generate_live_candidate_proposal(
+                plan,
+                prompt,
+                classification,
+                None,
+                None,
+                outcomes,
+                attempt=attempt,
+            )
+            return _decode_local_routing_response(remote_proposal)
         if plan.explicit_model_path is not None:
             acquisition = manager.acquire(
                 plan.task.objective,
@@ -2587,9 +2717,29 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
                     f"revision={acquired.resolved_revision or 'explicit'} "
                     f"sha256={acquired.artifact_sha256}"
                 )
-                backend = LocalProposalBackendAdapter(
-                    _local_backend_identity(acquired, candidate),
-                    self.proposal_generator,
+                acquired_filename = getattr(acquired, "filename", acquired.path.name)
+                self.progress_sink(
+                    "SELF_IMPROVE_CANDIDATE_LOCAL_BIND phase=started "
+                    f"candidate_planned={str(candidate is not None).lower()} "
+                    "filename_suffix_gguf="
+                    f"{str(acquired_filename.lower().endswith('.gguf')).lower()}"
+                )
+                try:
+                    local_identity = _local_backend_identity(acquired, candidate)
+                    backend = LocalProposalBackendAdapter(
+                        local_identity,
+                        self.proposal_generator,
+                    )
+                except BaseException as error:
+                    self.progress_sink(
+                        "SELF_IMPROVE_CANDIDATE_LOCAL_BIND phase=failed "
+                        "failure=identity "
+                        f"category={_local_identity_failure_category(error)}"
+                    )
+                    raise
+                self.progress_sink(
+                    "SELF_IMPROVE_CANDIDATE_LOCAL_BIND phase=bound "
+                    f"identity_digest={local_identity.evidence_identity_digest}"
                 )
                 invocation = LocalProposalInvocation(
                     acquired.path,
@@ -3211,8 +3361,16 @@ def _canonical_path(value: object, label: str) -> Path:
     return path
 
 
-def _optional_canonical_path(value: object, label: str) -> Path | None:
-    return None if value is None else _canonical_path(value, label)
+def _optional_absolute_path(value: object, label: str) -> Path | None:
+    """Validate one lexical absolute path while preserving a final symlink name."""
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{label} must be an absolute canonical path")
+    path = Path(value)
+    if not path.is_absolute() or Path(os.path.abspath(path)) != path:
+        raise ValueError(f"{label} must be an absolute canonical path")
+    return path
 
 
 __all__ = (

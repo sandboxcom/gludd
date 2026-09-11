@@ -21,6 +21,7 @@ SUBSCRIPTION_ID = "11111111-2222-3333-4444-555555555555"
 TENANT_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 CLIENT_ID = "99999999-8888-7777-6666-555555555555"
 OWNER_DIGEST = "a" * 64
+LEGACY_OWNER_DIGEST = "b" * 64
 _USE_CREATED = object()
 
 
@@ -177,6 +178,152 @@ def test_exact_owned_group_is_reused_without_any_write() -> None:
     assert result.state is AzureResourceGroupBootstrapState.REUSED
     assert groups.create_calls == []
     assert client.closed == credential.closed == 1
+
+
+def test_operator_staged_group_reports_its_safe_ownership_state() -> None:
+    policy = _policy()
+    groups = _Groups(
+        SimpleNamespace(
+            name=policy.resource_group,
+            location="East US",
+            tags={
+                "gludd-managed-by": "general-ludd",
+                "gludd-purpose": "accelerator-boundary",
+            },
+        )
+    )
+    events: list[object] = []
+
+    with pytest.raises(AzureResourceGroupBootstrapError) as captured:
+        ensure_azure_resource_group(
+            policy,
+            _credentials(),
+            credential_builder=lambda _credentials: _Closable(),
+            client_builder=lambda _credential, _subscription: _Client(groups),
+            trace_sink=events.append,
+        )
+
+    assert captured.value.failure_class == "ownership"
+    assert events[-1].ownership_state == "operator_staged"
+    assert groups.create_calls == []
+
+
+def test_owner_mismatch_trace_exposes_only_valid_digest_comparison() -> None:
+    """Diagnostics retain one-way identities without provider-controlled text."""
+    policy = _policy()
+    groups = _Groups(
+        SimpleNamespace(
+            name=policy.resource_group,
+            location="eastus",
+            tags={
+                **policy.tags,
+                "gludd-owner-digest": LEGACY_OWNER_DIGEST,
+                "provider-note": "must-not-escape",
+            },
+        )
+    )
+    events: list[object] = []
+
+    with pytest.raises(AzureResourceGroupBootstrapError):
+        ensure_azure_resource_group(
+            policy,
+            _credentials(),
+            credential_builder=lambda _credentials: _Closable(),
+            client_builder=lambda _credential, _subscription: _Client(groups),
+            trace_sink=events.append,
+        )
+
+    assert events[-1].observed_owner_digest == LEGACY_OWNER_DIGEST
+    assert events[-1].expected_owner_digest == OWNER_DIGEST
+    assert "must-not-escape" not in repr(events)
+
+
+def test_owned_group_with_unrelated_tags_is_reused_without_overwrite() -> None:
+    policy = _policy()
+    groups = _Groups(
+        SimpleNamespace(
+            name=policy.resource_group,
+            location="eastus",
+            tags={**policy.tags, "cost-center": "preserve-me"},
+        )
+    )
+
+    result = ensure_azure_resource_group(
+        policy,
+        _credentials(),
+        credential_builder=lambda _credentials: _Closable(),
+        client_builder=lambda _credential, _subscription: _Client(groups),
+    )
+
+    assert result.state is AzureResourceGroupBootstrapState.REUSED
+    assert groups.create_calls == []
+
+
+def test_exact_legacy_owner_is_migrated_and_unrelated_tags_are_preserved() -> None:
+    """Only an explicitly calculated prior owner may cross the identity boundary."""
+    policy = AzureResourceGroupBootstrapPolicy(
+        subscription_id=SUBSCRIPTION_ID,
+        resource_group="gludd-models-eastus",
+        location="eastus",
+        owner_digest=OWNER_DIGEST,
+        legacy_owner_digests=(LEGACY_OWNER_DIGEST,),
+    )
+    groups = _Groups(
+        SimpleNamespace(
+            name=policy.resource_group,
+            location="eastus",
+            tags={
+                "gludd-managed-by": "general-ludd",
+                "gludd-purpose": "accelerator-boundary",
+                "gludd-owner-digest": LEGACY_OWNER_DIGEST,
+                "cost-center": "preserve-me",
+            },
+        )
+    )
+    events: list[object] = []
+
+    result = ensure_azure_resource_group(
+        policy,
+        _credentials(),
+        credential_builder=lambda _credentials: _Closable(),
+        client_builder=lambda _credential, _subscription: _Client(groups),
+        trace_sink=events.append,
+    )
+
+    assert result.state is AzureResourceGroupBootstrapState.MIGRATED
+    assert groups.create_calls == [
+        (
+            policy.resource_group,
+            {
+                "location": policy.location,
+                "tags": {"cost-center": "preserve-me", **policy.tags},
+            },
+        )
+    ]
+    assert [event.state for event in events] == [
+        AzureResourceGroupBootstrapState.CHECK_STARTED,
+        AzureResourceGroupBootstrapState.MIGRATION_STARTED,
+        AzureResourceGroupBootstrapState.MIGRATED,
+    ]
+
+
+def test_untagged_group_reports_explicit_handoff_state_without_adoption() -> None:
+    policy = _policy()
+    groups = _Groups(
+        SimpleNamespace(name=policy.resource_group, location="eastus", tags={})
+    )
+    events: list[object] = []
+
+    with pytest.raises(AzureResourceGroupBootstrapError):
+        ensure_azure_resource_group(
+            policy,
+            _credentials(),
+            credential_builder=lambda _credentials: _Closable(),
+            client_builder=lambda _credential, _subscription: _Client(groups),
+            trace_sink=events.append,
+        )
+
+    assert events[-1].ownership_state == "untagged_handoff"
 
 
 def test_mapping_shaped_owned_group_is_reused_without_any_write() -> None:

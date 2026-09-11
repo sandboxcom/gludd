@@ -255,6 +255,7 @@ def test_make_target_runs_real_benchmark_with_one_temporary_config() -> None:
     assert "SELF_IMPROVE_MAX_ATTEMPTS=1" in recipe
     assert "SELF_IMPROVE_VALIDATE_ONLY=" in recipe
     assert "$(AZURE_SELF_IMPROVE_TASK_FILE)" in recipe
+    assert '@set -eu; temporary_directory="$$(mktemp -d' in recipe
     assert (
         "AZURE_SELF_IMPROVE_TASK_FILE ?= config/self-improve/catalog-truth.json"
         in makefile
@@ -262,6 +263,16 @@ def test_make_target_runs_real_benchmark_with_one_temporary_config() -> None:
     assert "azure-containerapp-live-proof" not in recipe
     assert " az " not in recipe
     assert " terraform " not in recipe
+
+
+def test_live_proof_target_never_replaces_its_python_phases_with_echo() -> None:
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+    no_uv_goals = makefile.split("_NO_UV_SYNC_GOALS :=", 1)[1].split(
+        "ifneq (,$(filter $(_NO_UV_SYNC_GOALS)",
+        1,
+    )[0]
+
+    assert "azure-self-improve-live-proof" not in no_uv_goals
 
 
 def test_operational_renderer_contains_no_named_model_default() -> None:

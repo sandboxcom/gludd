@@ -153,7 +153,7 @@ def test_authentication_uses_only_arm_scope() -> None:
     assert credential.scopes == [ARM_SCOPE]
     assert transport.calls
     assert all(
-        path.endswith("?api-version=2026-01-01")
+        path.endswith("?api-version=2025-07-01")
         for path, _bearer_token in transport.calls
     )
 

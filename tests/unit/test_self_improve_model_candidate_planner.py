@@ -39,6 +39,10 @@ def _revision(_repo_id: str) -> str:
 def test_code_task_shape_is_public_planner_contract() -> None:
     assert "CodeTaskShape" in planner_module.__all__
     assert "CODE_TASK_CAPABILITY_POLICY_ID" in planner_module.__all__
+    assert (
+        planner_module.CODE_TASK_CAPABILITY_POLICY_ID
+        == "self-improve-code-task-capability-floor-v2"
+    )
 
 
 def _register_failure_evidence(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -24,8 +25,10 @@ from general_ludd.self_improve.candidate_classification import (
 from general_ludd.self_improve.managed_candidate_routing import (
     CandidateObservedUsage,
     CandidateProposalAssessment,
+    CandidateProposalDecodeFailure,
     CandidateProposalDecodeRejected,
     ManagedCandidateProposalCodec,
+    ManagedCandidateProposalEnvelope,
     ManagedCandidateRouteFailure,
     ManagedCandidateRoutingError,
     ManagedCandidateRoutingEvent,
@@ -403,7 +406,9 @@ def test_all_protocol_rejections_calibrate_false_and_raise_fixed_failure(
     traces: list[object] = []
 
     def reject(_response: object) -> str:
-        raise CandidateProposalDecodeRejected
+        raise CandidateProposalDecodeRejected(
+            CandidateProposalDecodeFailure.EDIT_LINE_BUDGET
+        )
 
     with pytest.raises(ManagedCandidateRoutingError) as raised:
         _route(
@@ -433,6 +438,23 @@ def test_all_protocol_rejections_calibrate_false_and_raise_fixed_failure(
     assert len(store.list_all()) == 2
     assert all(record["accepted"] is False for record in store.list_all())
     assert traces[-1].event is ManagedCandidateRoutingEvent.NO_EVALUATED_PROPOSAL
+    protocol_rejections = [
+        trace
+        for trace in traces
+        if getattr(trace, "event", None)
+        is ManagedCandidateRoutingEvent.CANDIDATE_PROTOCOL_REJECTED
+    ]
+    assert len(protocol_rejections) == 2
+    assert {trace.provider for trace in protocol_rejections} == {
+        ModelCandidateProvider.LOCAL_GGUF.value,
+        ModelCandidateProvider.AZURE_FOUNDRY.value,
+    }
+    assert all(trace.accepted is False for trace in protocol_rejections)
+    assert all(
+        trace.protocol_failure
+        is CandidateProposalDecodeFailure.EDIT_LINE_BUDGET
+        for trace in protocol_rejections
+    )
     rendered = repr(traces)
     assert "sensitive-invalid" not in rendered
     assert "private-request" not in rendered
@@ -499,6 +521,13 @@ def test_public_routing_value_objects_reject_ambiguous_or_unsafe_shapes() -> Non
             1,
             accepted=cast(bool, 1),
         )
+    with pytest.raises(ValueError, match="protocol_failure"):
+        ManagedCandidateRoutingTrace(
+            ManagedCandidateRoutingEvent.CANDIDATE_PROTOCOL_REJECTED,
+            digest,
+            1,
+            protocol_failure=cast(CandidateProposalDecodeFailure, "private"),
+        )
     with pytest.raises(ValueError, match="accepted"):
         CandidateProposalAssessment(cast(bool, 1), 1.0, 0)
     with pytest.raises(ValueError, match="must not contain blockers"):
@@ -511,6 +540,129 @@ def test_public_routing_value_objects_reject_ambiguous_or_unsafe_shapes() -> Non
             cast(Callable[[str], str], None),
             digest,
             digest,
+        )
+    with pytest.raises(ValueError, match="provided together"):
+        ManagedCandidateProposalCodec(
+            "bounded request",
+            str,
+            digest,
+            digest,
+            response_instruction="structured",
+        )
+    with pytest.raises(ValueError, match="canonical JSON"):
+        ManagedCandidateProposalCodec(
+            "bounded request",
+            str,
+            digest,
+            digest,
+            response_instruction="structured",
+            response_schema_json='{ "type": "object" }',
+        )
+
+
+def test_proposal_codec_envelope_digest_binds_every_protocol_artifact() -> None:
+    """Every worker-visible or trusted artifact must rotate one envelope identity."""
+    protocol_digest = _digest("protocol")
+    sampling_digest = _digest("sampling")
+    base = {
+        "request_text": "one canonical request",
+        "decoder": str,
+        "protocol_digest": protocol_digest,
+        "sampling_digest": sampling_digest,
+        "request_contract_json": '{"kind":"proposal"}',
+        "response_instruction": "return one structured proposal",
+        "response_schema_json": '{"type":"object"}',
+    }
+    baseline = ManagedCandidateProposalCodec(**base).envelope_digest
+    mutations = (
+        {"request_text": "another canonical request"},
+        {"protocol_digest": _digest("protocol-v2")},
+        {"sampling_digest": _digest("sampling-v2")},
+        {"request_contract_json": '{"kind":"proposal-v2"}'},
+        {"response_instruction": "return another structured proposal"},
+        {"response_schema_json": '{"type":"string"}'},
+    )
+
+    observed = {
+        ManagedCandidateProposalCodec(**(base | mutation)).envelope_digest
+        for mutation in mutations
+    }
+
+    assert len(baseline) == 64
+    assert len(observed) == len(mutations)
+    assert baseline not in observed
+
+
+def test_proposal_envelope_round_trip_preserves_exact_worker_artifacts() -> None:
+    """The owned local process must receive one digest-checked serialized envelope."""
+    envelope = ManagedCandidateProposalEnvelope(
+        request_text="one canonical request",
+        request_contract_json='{"kind":"proposal"}',
+        response_instruction="return one structured proposal",
+        response_schema_json='{"type":"object"}',
+        protocol_digest=_digest("protocol"),
+        sampling_digest=_digest("sampling"),
+    )
+
+    restored = ManagedCandidateProposalEnvelope.from_json(envelope.to_json())
+
+    assert restored == envelope
+    assert restored.envelope_digest == envelope.envelope_digest
+    assert json.loads(restored.to_json())["envelope_digest"] == envelope.envelope_digest
+
+
+def test_proposal_envelope_round_trip_accepts_maximum_escaped_request() -> None:
+    """The wire bound must contain every request accepted by the value object."""
+    envelope = ManagedCandidateProposalEnvelope(
+        request_text="\x01" * 1_048_576,
+        request_contract_json='{"kind":"proposal"}',
+        response_instruction="return one structured proposal",
+        response_schema_json='{"type":"object"}',
+        protocol_digest=_digest("protocol"),
+        sampling_digest=_digest("sampling"),
+    )
+
+    restored = ManagedCandidateProposalEnvelope.from_json(envelope.to_json())
+
+    assert restored.envelope_digest == envelope.envelope_digest
+
+
+def test_proposal_envelope_rejects_artifact_tampering() -> None:
+    """A worker must reject even canonical JSON when an artifact changed in transit."""
+    envelope = ManagedCandidateProposalEnvelope(
+        request_text="one canonical request",
+        request_contract_json='{"kind":"proposal"}',
+        response_instruction="return one structured proposal",
+        response_schema_json='{"type":"object"}',
+        protocol_digest=_digest("protocol"),
+        sampling_digest=_digest("sampling"),
+    )
+    value = json.loads(envelope.to_json())
+    value["response_instruction"] = "tampered instruction"
+    tampered = json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+    with pytest.raises(ValueError, match="digest mismatch"):
+        ManagedCandidateProposalEnvelope.from_json(tampered)
+
+
+@pytest.mark.parametrize(
+    "contract",
+    ('{ "kind": "proposal" }', '["not-an-object"]', "not-json", ""),
+)
+def test_proposal_codec_rejects_noncanonical_request_contract(contract: str) -> None:
+    """No adapter may reinterpret a malformed or noncanonical trusted contract."""
+    with pytest.raises(ValueError, match="canonical JSON"):
+        ManagedCandidateProposalCodec(
+            "one canonical request",
+            str,
+            _digest("protocol"),
+            _digest("sampling"),
+            request_contract_json=contract,
         )
 
 

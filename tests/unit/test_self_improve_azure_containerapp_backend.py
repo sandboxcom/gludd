@@ -24,7 +24,11 @@ from general_ludd.self_improve.azure_containerapp_transport import (
 from general_ludd.self_improve.azure_containerapp_transport_types import (
     ContainerAppBackendAccounting,
     ContainerAppBackendTrace,
+    ContainerAppResponseFailure,
     ContainerAppTraceEvent,
+)
+from general_ludd.self_improve.managed_candidate_routing import (
+    ManagedCandidateProposalEnvelope,
 )
 from general_ludd.self_improve.model_candidates import (
     AzureContainerAppCandidateIdentity,
@@ -182,7 +186,12 @@ class _Client:
         self.close_calls += 1
 
 
-def _approved(tmp_path: Path) -> AzureApprovedPrompt:
+def _approved(
+    tmp_path: Path,
+    *,
+    response_instruction: str | None = None,
+    response_schema_json: str | None = None,
+) -> AzureApprovedPrompt:
     source = tmp_path / "src" / "approved.py"
     source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text("PUBLIC = True\n", encoding="utf-8")
@@ -195,6 +204,40 @@ def _approved(tmp_path: Path) -> AzureApprovedPrompt:
         prompt=_PROMPT,
         source_paths=("src/approved.py",),
         policy_guard=guard,
+        response_instruction=response_instruction,
+        response_schema_json=response_schema_json,
+    )
+
+
+def _approved_envelope(
+    tmp_path: Path,
+) -> tuple[AzureApprovedPrompt, ManagedCandidateProposalEnvelope]:
+    envelope = ManagedCandidateProposalEnvelope(
+        request_text=_PROMPT,
+        request_contract_json='{"contract":"trusted"}',
+        response_instruction="Return exactly the approved response envelope.",
+        response_schema_json=(
+            '{"additionalProperties":false,"properties":{"ok":{"const":true,'
+            '"type":"boolean"}},"required":["ok"],"type":"object"}'
+        ),
+        protocol_digest="c" * 64,
+        sampling_digest="d" * 64,
+    )
+    source = tmp_path / "src" / "approved.py"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("PUBLIC = True\n", encoding="utf-8")
+    guard = SelfImproveRuntimePolicyGuard.load(
+        tmp_path,
+        lambda _event: None,
+        AzurePromptApprovalError,
+    )
+    return (
+        AzureApprovedPrompt.approve_envelope(
+            envelope=envelope,
+            source_paths=("src/approved.py",),
+            policy_guard=guard,
+        ),
+        envelope,
     )
 
 
@@ -371,6 +414,39 @@ def test_generation_rediscovery_and_payload_are_exact_and_bounded(tmp_path: Path
     ]
 
 
+def test_generation_carries_approved_protocol_contract_without_rewriting_envelope(
+    tmp_path: Path,
+) -> None:
+    client = _Client(gets=(_models(), _models()))
+    traces: list[ContainerAppBackendTrace] = []
+    backend = _build(client, traces=traces)
+    approved, envelope = _approved_envelope(tmp_path)
+
+    backend.generate(
+        approved,
+        max_output_tokens=20,
+        timeout_seconds=4.0,
+    )
+
+    payload = client.post_calls[0]["json"]
+    assert payload["messages"] == [
+        {"role": "system", "content": envelope.response_instruction},
+        {"role": "user", "content": envelope.request_text},
+    ]
+    assert payload["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "gludd_proposal_batch",
+            "schema": json.loads(envelope.response_schema_json),
+            "strict": True,
+        },
+    }
+    assert traces[-2].event is ContainerAppTraceEvent.REQUEST_STARTED
+    assert traces[-2].envelope_digest == envelope.envelope_digest
+    assert traces[-1].event is ContainerAppTraceEvent.RESPONSE_ACCEPTED
+    assert traces[-1].envelope_digest == envelope.envelope_digest
+
+
 def test_model_inventory_drift_blocks_generation_without_fallback(tmp_path: Path) -> None:
     client = _Client(gets=(_models(), _models("other/model")))
     traces: list[ContainerAppBackendTrace] = []
@@ -419,6 +495,186 @@ def test_malformed_provider_response_is_rejected_and_accounted(
     assert backend.accounting.responses_received == 1
     assert backend.accounting.responses_accepted == 0
     assert backend.accounting.requests_failed == 1
+
+
+def test_http_rejection_emits_only_safe_status_diagnostics(tmp_path: Path) -> None:
+    """A live provider rejection remains diagnosable without retaining its body."""
+    traces: list[ContainerAppBackendTrace] = []
+    client = _Client(
+        gets=(_models(), _models()),
+        posts=(_Response({}, status_code=400),),
+    )
+    backend = _build(client, traces=traces)
+
+    with pytest.raises(BackendInfrastructureError) as captured:
+        backend.generate(
+            _approved(tmp_path),
+            max_output_tokens=20,
+            timeout_seconds=4.0,
+        )
+
+    assert captured.value.failure is BackendFailure.INVALID_RESPONSE
+    assert traces[-1] == ContainerAppBackendTrace(
+        ContainerAppTraceEvent.REQUEST_FAILED,
+        candidate_digest=_identity().identity_digest,
+        request_number=1,
+        failure=BackendFailure.INVALID_RESPONSE,
+        response_failure=ContainerAppResponseFailure.HTTP_STATUS,
+        http_status=400,
+    )
+
+
+def test_vllm_context_rejection_is_classified_without_retaining_message(
+    tmp_path: Path,
+) -> None:
+    """A recognized vLLM error becomes one fixed category, never retained text."""
+    secret_canary = "provider-body-secret-that-must-not-survive"
+    traces: list[ContainerAppBackendTrace] = []
+    client = _Client(
+        gets=(_models(), _models()),
+        posts=(
+            _Response(
+                {
+                    "object": "error",
+                    "message": (
+                        "This model's maximum context length is 4096 tokens. "
+                        "However, you requested 6144 tokens. "
+                        f"{secret_canary}"
+                    ),
+                    "type": "BadRequestError",
+                    "param": None,
+                    "code": 400,
+                },
+                status_code=400,
+            ),
+        ),
+    )
+    backend = _build(client, traces=traces)
+
+    with pytest.raises(BackendInfrastructureError) as captured:
+        backend.generate(
+            _approved(tmp_path),
+            max_output_tokens=4_096,
+            timeout_seconds=4.0,
+        )
+
+    assert captured.value.failure is BackendFailure.INVALID_RESPONSE
+    assert traces[-1].response_failure is (
+        ContainerAppResponseFailure.CONTEXT_WINDOW_EXCEEDED
+    )
+    assert traces[-1].http_status == 400
+    retained = repr((captured.value, traces))
+    assert secret_canary not in retained
+    assert "maximum context length" not in retained
+
+
+def test_nested_vllm_context_error_with_null_parameter_is_classified(
+    tmp_path: Path,
+) -> None:
+    """Newer vLLM envelopes and fixed token parameter names stay diagnosable."""
+    traces: list[ContainerAppBackendTrace] = []
+    backend = _build(
+        _Client(
+            gets=(_models(), _models()),
+            posts=(
+                _Response(
+                    {
+                        "error": {
+                            "message": (
+                                "'max_tokens' is too large: this model's maximum "
+                                "context length is 32768 tokens and the request has "
+                                "30000 input tokens."
+                            ),
+                            "type": "BadRequestError",
+                            "param": None,
+                            "code": 400,
+                        }
+                    },
+                    status_code=400,
+                ),
+            ),
+        ),
+        traces=traces,
+    )
+
+    with pytest.raises(BackendInfrastructureError):
+        backend.generate(
+            _approved(tmp_path),
+            max_output_tokens=4_096,
+            timeout_seconds=4.0,
+        )
+
+    assert traces[-1].response_failure is (
+        ContainerAppResponseFailure.CONTEXT_WINDOW_EXCEEDED
+    )
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        (
+            "The tokenizer does not define a chat template; provide a chat template.",
+            ContainerAppResponseFailure.CHAT_TEMPLATE_UNAVAILABLE,
+        ),
+        (
+            "Request validation failed for a provider-controlled reason.",
+            ContainerAppResponseFailure.PROVIDER_BAD_REQUEST,
+        ),
+    ],
+)
+def test_vllm_other_bad_requests_are_reduced_to_fixed_diagnostics(
+    tmp_path: Path,
+    message: str,
+    expected: ContainerAppResponseFailure,
+) -> None:
+    traces: list[ContainerAppBackendTrace] = []
+    backend = _build(
+        _Client(
+            gets=(_models(), _models()),
+            posts=(
+                _Response(
+                    {
+                        "object": "error",
+                        "message": message,
+                        "type": "BadRequestError",
+                        "param": None,
+                        "code": 400,
+                    },
+                    status_code=400,
+                ),
+            ),
+        ),
+        traces=traces,
+    )
+
+    with pytest.raises(BackendInfrastructureError):
+        backend.generate(
+            _approved(tmp_path),
+            max_output_tokens=20,
+            timeout_seconds=4.0,
+        )
+
+    assert traces[-1].response_failure is expected
+    assert message not in repr(traces)
+
+
+def test_response_contract_failure_is_distinct_from_http_failure(tmp_path: Path) -> None:
+    """Valid JSON with the wrong schema gets a fixed, provider-free diagnosis."""
+    traces: list[ContainerAppBackendTrace] = []
+    backend = _build(
+        _Client(gets=(_models(), _models()), posts=({},)),
+        traces=traces,
+    )
+
+    with pytest.raises(BackendInfrastructureError):
+        backend.generate(
+            _approved(tmp_path),
+            max_output_tokens=20,
+            timeout_seconds=4.0,
+        )
+
+    assert traces[-1].response_failure is ContainerAppResponseFailure.CHAT_CONTRACT
+    assert traces[-1].http_status == 0
 
 
 @pytest.mark.parametrize(

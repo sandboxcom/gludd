@@ -21,14 +21,30 @@ class ContainerAppTraceEvent(StrEnum):
     REQUEST_FAILED = "azure_containerapp_request_failed"
 
 
+class ContainerAppResponseFailure(StrEnum):
+    """Provider-free response diagnostics safe for logs and retained evidence."""
+
+    HTTP_STATUS = "http_status"
+    CONTEXT_WINDOW_EXCEEDED = "context_window_exceeded"
+    CHAT_TEMPLATE_UNAVAILABLE = "chat_template_unavailable"
+    PROVIDER_BAD_REQUEST = "provider_bad_request"
+    CONTENT_TYPE = "content_type"
+    RESPONSE_BODY = "response_body"
+    JSON_BODY = "json_body"
+    CHAT_CONTRACT = "chat_contract"
+
+
 @dataclass(frozen=True, slots=True)
 class ContainerAppBackendTrace:
     """Request-, response-, endpoint-, and credential-free trace evidence."""
 
     event: ContainerAppTraceEvent
     candidate_digest: str | None = None
+    envelope_digest: str | None = None
     request_number: int = 0
     failure: BackendFailure | None = None
+    response_failure: ContainerAppResponseFailure | None = None
+    http_status: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
@@ -50,5 +66,6 @@ class ContainerAppBackendAccounting:
 __all__ = (
     "ContainerAppBackendAccounting",
     "ContainerAppBackendTrace",
+    "ContainerAppResponseFailure",
     "ContainerAppTraceEvent",
 )

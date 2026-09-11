@@ -12,9 +12,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from general_ludd.infra import azure_containerapp_sdk as subject
+from general_ludd.infra.azure_containerapp_gpu import ModelServingRequirement
 from general_ludd.infra.azure_containerapp_live_proof import (
     LIVE_PROOF_ACKNOWLEDGEMENT,
     AzureContainerAppLiveProofPolicy,
+)
+from general_ludd.infra.azure_containerapp_preflight import (
+    AzureContainerAppReadOnlyPreflight,
 )
 from general_ludd.infra.azure_containerapp_sdk import (
     AzureContainerAppGPUUtilizationAttestor,
@@ -203,6 +207,72 @@ def test_environment_document_accepts_sdk_flattened_properties_shape() -> None:
     }
 
 
+def test_container_document_normalizes_sdk_enum_properties() -> None:
+    """SDK enum wrappers must not turn a succeeded app into Unknown."""
+    policy = _policy()
+    value = SimpleNamespace(
+        id=policy.expected_resource_id,
+        name=policy.app_name,
+        type="Microsoft.App/containerApps",
+        location=policy.location,
+        provisioning_state=SimpleNamespace(value="Succeeded"),
+        latest_ready_revision_name=f"{policy.app_name}--0000007",
+        workload_profile_name=policy.workload_profile_name,
+        environment_id=policy.environment_id,
+        configuration=SimpleNamespace(
+            ingress=SimpleNamespace(fqdn="proof.example.invalid")
+        ),
+        template=SimpleNamespace(
+            containers=[SimpleNamespace(image=IMAGE, args=[])],
+            scale=SimpleNamespace(min_replicas=1, max_replicas=1, rules=[]),
+        ),
+    )
+
+    document = cast(dict[str, Any], subject._container_document(value))
+
+    assert document["properties"]["provisioningState"] == "Succeeded"
+    assert (
+        document["properties"]["latestReadyRevisionName"]
+        == f"{policy.app_name}--0000007"
+    )
+
+
+def test_container_document_accepts_nested_sdk_properties_shape() -> None:
+    """Normalize both SDK generations without losing ready-revision truth."""
+    policy = _policy()
+    value = SimpleNamespace(
+        id=policy.expected_resource_id,
+        name=policy.app_name,
+        type="Microsoft.App/containerApps",
+        location=policy.location,
+        properties=SimpleNamespace(
+            provisioning_state="Succeeded",
+            latest_ready_revision_name=f"{policy.app_name}--0000007",
+            workload_profile_name=policy.workload_profile_name,
+            environment_id=policy.environment_id,
+            configuration=SimpleNamespace(
+                ingress=SimpleNamespace(fqdn="proof.example.invalid")
+            ),
+            template=SimpleNamespace(
+                containers=[SimpleNamespace(image=IMAGE, args=[])],
+                scale=SimpleNamespace(min_replicas=1, max_replicas=1, rules=[]),
+            ),
+        ),
+    )
+
+    document = cast(dict[str, Any], subject._container_document(value))
+
+    assert document["properties"]["provisioningState"] == "Succeeded"
+    assert (
+        document["properties"]["latestReadyRevisionName"]
+        == f"{policy.app_name}--0000007"
+    )
+    assert document["properties"]["workloadProfileName"] == "gpu-t4"
+    assert document["properties"]["template"]["containers"] == [
+        {"image": IMAGE, "args": []}
+    ]
+
+
 class _ManagedEnvironments:
     def __init__(self, calls: list[tuple[str, tuple[object, ...]]]) -> None:
         self.calls = calls
@@ -331,6 +401,68 @@ class _ContainerAppsRevisions:
             provisioning_error="provider-secret-must-not-be-normalized",
         )
 
+    def list_revisions(
+        self,
+        resource_group_name: str,
+        container_app_name: str,
+    ) -> list[object]:
+        self.calls.append(
+            ("revisions.list", (resource_group_name, container_app_name))
+        )
+        return [
+            SimpleNamespace(
+                name=f"{container_app_name}--0000007",
+                active=True,
+                replicas=0,
+                health_state="None",
+                provisioning_state="Provisioning",
+                running_state="Processing",
+                provisioning_error="provider-secret-must-not-be-normalized",
+            )
+        ]
+
+
+class _ContainerAppsRevisionReplicas:
+    def __init__(self, calls: list[tuple[str, tuple[object, ...]]]) -> None:
+        self.calls = calls
+
+    def list_replicas(
+        self,
+        resource_group_name: str,
+        container_app_name: str,
+        revision_name: str,
+    ) -> object:
+        self.calls.append(
+            (
+                "replicas.list",
+                (resource_group_name, container_app_name, revision_name),
+            )
+        )
+        return SimpleNamespace(
+            value=[
+                SimpleNamespace(
+                    running_state="NotRunning",
+                    running_state_details=(
+                        "provider-controlled prefix: ImagePullBackOff on legion"
+                    ),
+                    containers=[
+                        SimpleNamespace(
+                            ready=False,
+                            started=False,
+                            restart_count=3,
+                            running_state="Waiting",
+                            running_state_details=(
+                                "private detail: ErrImagePull on legion"
+                            ),
+                            log_stream_endpoint="https://secret.invalid/log",
+                            exec_endpoint="wss://secret.invalid/exec",
+                        )
+                    ],
+                    init_containers=[],
+                )
+            ]
+        )
+
 
 class _ContainerAppsClient:
     def __init__(self) -> None:
@@ -339,6 +471,9 @@ class _ContainerAppsClient:
         self.managed_environment_usages = _ManagedEnvironmentUsages(self.calls)
         self.container_apps = _ContainerApps(self.calls)
         self.container_apps_revisions = _ContainerAppsRevisions(self.calls)
+        self.container_apps_revision_replicas = _ContainerAppsRevisionReplicas(
+            self.calls
+        )
         self.close_count = 0
 
     def close(self) -> None:
@@ -364,8 +499,13 @@ def test_sdk_read_views_call_only_exact_microsoft_read_operations_and_normalize(
         "bounded-token",
     )
     app = transports.app.get_json("bounded-token")
+    active_revision = transports.app.get_active_revision_json("bounded-token")
     revision_name = f"{policy.app_name}--0000007"
     revision = transports.app.get_revision_json("bounded-token", revision_name)
+    replica_status = transports.app.get_replica_status_json(
+        "bounded-token",
+        revision_name,
+    )
     lifecycle_environment = transports.lifecycle.get_environment("bounded-token")
     app_ids = transports.lifecycle.list_environment_app_ids("bounded-token")
     environment_document = cast(dict[str, Any], environment)
@@ -373,6 +513,7 @@ def test_sdk_read_views_call_only_exact_microsoft_read_operations_and_normalize(
     states_document = cast(dict[str, Any], states)
     app_document = cast(dict[str, Any], app)
     revision_document = cast(dict[str, Any], revision)
+    active_revision_document = cast(dict[str, Any], active_revision)
     lifecycle_document = cast(dict[str, Any], lifecycle_environment)
 
     assert environment_document["properties"]["workloadProfiles"][0] == {
@@ -394,7 +535,28 @@ def test_sdk_read_views_call_only_exact_microsoft_read_operations_and_normalize(
             "runningState": "Running",
         },
     }
+    assert active_revision_document == {
+        "name": revision_name,
+        "properties": {
+            "active": True,
+            "replicas": 0,
+            "healthState": "None",
+            "provisioningState": "Provisioning",
+            "runningState": "Processing",
+        },
+    }
     assert "provider-secret" not in repr(revision_document)
+    assert replica_status == {
+        "replicaCount": 1,
+        "readyContainerCount": 0,
+        "startedContainerCount": 0,
+        "restartCount": 3,
+        "replicaRunningStates": ["NotRunning"],
+        "containerRunningStates": ["Waiting"],
+        "reasonClasses": ["image_pull_failure"],
+    }
+    assert "private detail" not in repr(replica_status)
+    assert "secret.invalid" not in repr(replica_status)
     assert lifecycle_document["id"] == policy.environment_id
     assert app_ids == (policy.expected_resource_id,)
     assert client.calls == [
@@ -402,8 +564,13 @@ def test_sdk_read_views_call_only_exact_microsoft_read_operations_and_normalize(
         ("usages.list", (policy.resource_group, policy.environment_name)),
         ("profile_states.list", (policy.resource_group, policy.environment_name)),
         ("app.get", (policy.resource_group, policy.app_name)),
+        ("revisions.list", (policy.resource_group, policy.app_name)),
         (
             "revision.get",
+            (policy.resource_group, policy.app_name, revision_name),
+        ),
+        (
+            "replicas.list",
             (policy.resource_group, policy.app_name, revision_name),
         ),
         ("environment.get", (policy.resource_group, policy.environment_name)),
@@ -413,6 +580,40 @@ def test_sdk_read_views_call_only_exact_microsoft_read_operations_and_normalize(
     transports.lifecycle.close()
     transports.preflight.close()
     assert client.close_count == 1
+
+
+def test_read_only_preflight_and_sdk_transport_share_one_supported_api_contract() -> None:
+    """The live preflight must be able to traverse the SDK's fixed-path allowlist."""
+    policy = _policy()
+    client = _ContainerAppsClient()
+    transports = AzureContainerAppsSDKReadTransports(client=client, policy=policy)
+    credential = SimpleNamespace(
+        get_token=lambda *_scopes: SimpleNamespace(token="bounded-token")
+    )
+    requirement = ModelServingRequirement(
+        model_id=policy.model_name,
+        revision=policy.model_revision,
+        parameter_count=494_032_768,
+        weight_bits=16,
+        kv_cache_mib=2_048,
+        runtime_overhead_mib=3_072,
+    )
+
+    result = AzureContainerAppReadOnlyPreflight(
+        credential,
+        transports.preflight,
+    ).check(
+        subscription_id=policy.subscription_id,
+        resource_group=policy.resource_group,
+        environment_name=policy.environment_name,
+        workload_profile_name=policy.workload_profile_name,
+        location=policy.location,
+        requirement=requirement,
+    )
+
+    assert result.ready is True
+    assert result.profile.workload_profile_type == policy.workload_profile_type
+    assert result.quota_remaining == 3
 
 
 def test_sdk_read_views_reject_scope_escape_and_censor_provider_failure() -> None:
@@ -430,6 +631,53 @@ def test_sdk_read_views_reject_scope_escape_and_censor_provider_failure() -> Non
             "bounded-token",
             "foreign-app--0000001",
         )
+    with pytest.raises(ValueError, match="revision_name"):
+        transports.app.get_replica_status_json(
+            "bounded-token",
+            "foreign-app--0000001",
+        )
+
+
+def test_active_revision_inventory_handles_eventual_absence_and_ambiguity() -> None:
+    """Startup observation accepts zero/one revisions and rejects ambiguous state."""
+    policy = _policy()
+    client = _ContainerAppsClient()
+
+    class RevisionInventory:
+        def __init__(self) -> None:
+            self.records: list[object] = []
+
+        def list_revisions(self, *_args: object) -> list[object]:
+            return self.records
+
+    revisions = RevisionInventory()
+    client.container_apps_revisions = revisions
+    transports = AzureContainerAppsSDKReadTransports(client=client, policy=policy)
+
+    assert transports.app.get_active_revision_json("bounded-token") is None
+
+    def revision(suffix: str) -> object:
+        return SimpleNamespace(
+            name=f"{policy.app_name}--{suffix}",
+            active=True,
+            replicas=0,
+            health_state="None",
+            provisioning_state="Provisioning",
+            running_state="Processing",
+        )
+
+    revisions.records = [
+        revision("0000001"),
+        revision("0000002"),
+    ]
+    with pytest.raises(AzureContainerAppsSDKReadError, match="ambiguous"):
+        transports.app.get_active_revision_json("bounded-token")
+
+    secret = "provider-secret-must-not-appear"
+    revisions.records = [SimpleNamespace(name=secret, active=True)]
+    with pytest.raises(AzureContainerAppsSDKReadError, match="ambiguous") as caught:
+        transports.app.get_active_revision_json("bounded-token")
+    assert secret not in repr(caught.value)
 
     class ProviderFailure(RuntimeError):
         status_code = 500

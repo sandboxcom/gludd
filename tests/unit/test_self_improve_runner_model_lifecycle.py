@@ -29,6 +29,10 @@ from general_ludd.self_improve.managed_runner import (
     PromptShard,
 )
 from general_ludd.self_improve.model_candidate_planner import PlannedModelCandidate
+from general_ludd.self_improve.model_candidates import (
+    BackendFailure,
+    BackendInfrastructureError,
+)
 from general_ludd.self_improve.model_lifecycle import (
     ModelAcquisitionEvent,
     ModelAcquisitionPhase,
@@ -1668,6 +1672,44 @@ def test_typed_acquisition_refusal_does_not_poison_evidence_or_retry_plan(
     assert "must not be exposed" not in feedback
 
 
+def test_remote_infrastructure_failure_does_not_poison_local_model_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _wire_common(tmp_path, monkeypatch)
+    outcomes: list[str] = []
+
+    def fail_remote(*_args: object, **_kwargs: object) -> GeneratedProposal:
+        raise BackendInfrastructureError(BackendFailure.UNAVAILABLE)
+
+    monkeypatch.setattr(
+        runner.ManagedSelfImproveRunner,
+        "_generate_proposal",
+        fail_remote,
+    )
+    monkeypatch.setattr(
+        runner,
+        "record_self_improve_outcome",
+        lambda *_args, **_kwargs: outcomes.append("recorded"),
+    )
+    args = _args(_task_file(tmp_path))
+    args.max_attempts = 2
+
+    with pytest.raises(BackendInfrastructureError) as raised:
+        runner.run_benchmark(args)
+
+    assert raised.value.failure is BackendFailure.UNAVAILABLE
+    assert outcomes == []
+    output = capsys.readouterr().out
+    assert (
+        "SELF_IMPROVE_REMOTE_INFRASTRUCTURE_REJECTED "
+        "attempt=1 failure=unavailable"
+    ) in output
+    assert "SELF_IMPROVE_MODEL_OUTCOME" not in output
+    assert "SELF_IMPROVE_PROPOSAL_REJECTED" not in output
+
+
 def test_prompt_plan_generation_failure_retries_with_next_reserved_candidate(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1920,7 +1962,7 @@ def test_run_benchmark_default_sink_flushes_evaluation_and_retry_diagnosis(
     first_event = output_lines.index(evaluation_lines[0])
     retry_event = output_lines.index(retry_lines[0])
     rotated_attempt_identity = (
-        "b05cc2cb5ea4968303bf49f0006db5b5598e3588341d531ddf7fa650abd5ce01"
+        "ff2fc33035c7d2e42aca71065eb7586df0d335dedf4df19a968219ab4ba5da38"
     )
     assert rotated_attempt_identity not in {
         "a954fb52b2c47704813156f2a16e610aa47addee2d1af1cf90061855ac9aa87c",

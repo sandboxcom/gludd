@@ -78,7 +78,7 @@ _FEEDBACK_OUTCOME_FIELDS = frozenset(
 _FEEDBACK_OUTCOME_RECORD_KEYS = _OUTCOME_RECORD_KEYS | _FEEDBACK_OUTCOME_FIELDS
 _FEEDBACK_SCHEMA_VERSION = 1
 CODE_TASK_CAPABILITY_POLICY_ID: Final = (
-    "self-improve-code-task-capability-floor-v1"
+    "self-improve-code-task-capability-floor-v2"
 )
 _COMPLEX_CODE_MIN_MODEL_SIZE_MB: Final = 900
 _COMPLEX_CODE_SOURCE_BYTES: Final = 8_192

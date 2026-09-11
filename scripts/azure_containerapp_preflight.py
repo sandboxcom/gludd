@@ -10,9 +10,11 @@ from collections.abc import Callable, Sequence
 from dataclasses import asdict
 from typing import Protocol, cast
 
+from general_ludd.azure.accelerator_credential_store import (
+    load_preserved_azure_accelerator_credentials as load_azure_accelerator_credentials,
+)
 from general_ludd.azure.accelerator_credentials import (
     AzureAcceleratorCredentialError,
-    load_azure_accelerator_credentials,
 )
 from general_ludd.infra.azure_containerapp_arm import HttpxARMJSONTransport
 from general_ludd.infra.azure_containerapp_gpu import (

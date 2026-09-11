@@ -36,7 +36,11 @@ from general_ludd.self_improve.azure_containerapp_backend import (
     ContainerAppBackendTrace,
     ContainerAppTraceEvent,
 )
-from general_ludd.self_improve.model_candidates import AzureContainerAppCandidateIdentity
+from general_ludd.self_improve.model_candidates import (
+    AzureContainerAppCandidateIdentity,
+    BackendFailure,
+    BackendInfrastructureError,
+)
 
 SUBSCRIPTION = "12345678-1234-1234-1234-123456789abc"
 PROMPT_TEXT = "Suggest one deterministic edge-case test for a public Python function."
@@ -1126,9 +1130,9 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
     timeout_clock = iter((0.0, 901.0))
     app_documents.append({"properties": {"provisioningState": "Updating"}})
     monkeypatch.setattr(live_cli.time, "monotonic", lambda: next(timeout_clock))
-    assert runtime_arguments["read_app"](policy, False) == {
-        "properties": {"provisioningState": "Updating"}
-    }
+    with pytest.raises(BackendInfrastructureError) as timeout:
+        runtime_arguments["read_app"](policy, False)
+    assert timeout.value.failure is BackendFailure.TIMEOUT
 
     identity = AzureContainerAppCandidateIdentity(
         endpoint=(

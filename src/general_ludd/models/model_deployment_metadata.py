@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any
 
 _REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -17,6 +18,25 @@ _CONTEXT_FIELDS = (
     "max_seq_len",
     "seq_length",
 )
+
+
+class ModelDeploymentMetadataFailure(StrEnum):
+    """Stable stage at which public deployment metadata was unusable."""
+
+    VISIBILITY = "visibility"
+    SAFETENSORS = "safetensors"
+    CONTEXT = "context"
+    LICENSE = "license"
+    RECORD = "record"
+
+
+class ModelDeploymentMetadataUnavailable(ValueError):
+    """Report a typed metadata failure without exposing provider response data."""
+
+    def __init__(self, failure: ModelDeploymentMetadataFailure, message: str) -> None:
+        """Retain the bounded failure category and caller-safe message."""
+        super().__init__(message)
+        self.failure = failure
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +143,8 @@ def safetensors_shape(info: Any) -> tuple[int, int]:
 
 __all__ = (
     "ModelDeploymentMetadata",
+    "ModelDeploymentMetadataFailure",
+    "ModelDeploymentMetadataUnavailable",
     "model_context_tokens",
     "model_license_id",
     "safetensors_shape",

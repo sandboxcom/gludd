@@ -722,6 +722,37 @@ def test_complete_approved_plan_json_round_trip_preserves_immutable_components(
     assert restored.explicit_model_path == (tmp_path / "model.gguf").resolve()
 
 
+def test_approved_plan_preserves_explicit_gguf_symlink_name(
+    tmp_path: Path,
+) -> None:
+    blob = tmp_path / ("a" * 64)
+    blob.write_bytes(b"content addressed model")
+    logical_model = tmp_path / "Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf"
+    logical_model.symlink_to(blob)
+
+    plan = ApprovedSelfImprovePlan.approve(
+        approval_id="approval-explicit-symlink",
+        todo_id="todo-explicit-symlink",
+        project_id="project-explicit-symlink",
+        repo_root=tmp_path,
+        task=_task(),
+        reference=_reference(),
+        prompt="bounded prompt",
+        required_output_tokens=32,
+        max_attempts=1,
+        explicit_model_path=logical_model,
+    )
+
+    assert plan.explicit_model_path is not None
+    assert plan.explicit_model_path.name == logical_model.name
+    assert plan.explicit_model_path.is_symlink()
+    restored = ApprovedSelfImprovePlan.from_json(plan.to_json())
+    assert restored == plan
+    assert restored.explicit_model_path is not None
+    assert restored.explicit_model_path.name == logical_model.name
+    assert restored.explicit_model_path.is_symlink()
+
+
 def test_approved_plan_v3_round_trip_binds_compact_v4_ranges_and_identity(
     tmp_path: Path,
 ) -> None:

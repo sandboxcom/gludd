@@ -7,6 +7,7 @@ and HTTPS origin.  It probes only ``/v1/models`` and posts only to
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from contextlib import suppress
 
@@ -20,6 +21,7 @@ from general_ludd.self_improve.azure_containerapp_transport import (
     MAX_RESPONSE_BYTES,
     ContainerAppBackendAccounting,
     ContainerAppBackendTrace,
+    ContainerAppResponseFailure,
     ContainerAppTraceEvent,
     HTTPClient,
     discard_trace,
@@ -84,7 +86,7 @@ class AzureContainerAppCandidateBackend:
         *,
         max_output_tokens: int,
         timeout_seconds: float,
-    ) -> str:
+    ) -> tuple[str, str | None, str | None, str | None]:
         """Validate request bounds and recheck the project-private capability."""
         if self._closed:
             raise BackendInfrastructureError(BackendFailure.UNAVAILABLE)
@@ -100,7 +102,16 @@ class AzureContainerAppCandidateBackend:
         ):
             raise ValueError("Container App generation limits are invalid")
         try:
-            return request._reveal_after_recheck()
+            envelope = request._reveal_envelope_after_recheck()
+            if envelope is not None:
+                return (
+                    envelope.request_text,
+                    envelope.response_instruction,
+                    envelope.response_schema_json,
+                    envelope.envelope_digest,
+                )
+            prompt, instruction, schema = request._reveal_generation_after_recheck()
+            return prompt, instruction, schema, None
         except AzurePromptApprovalError:
             emit_trace(
                 self._trace_sink,
@@ -114,19 +125,35 @@ class AzureContainerAppCandidateBackend:
     def _invoke_generation(
         self,
         prompt: str,
+        response_instruction: str | None,
+        response_schema_json: str | None,
+        envelope_digest: str | None,
         request_number: int,
         *,
         max_output_tokens: int,
         timeout_seconds: float,
     ) -> object:
         """Post one deterministic, non-streaming vLLM request."""
-        payload = {
+        messages = [{"role": "user", "content": prompt}]
+        payload: dict[str, object] = {
             "model": self._identity.model_name,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages,
             "max_tokens": max_output_tokens,
             "temperature": 0,
             "stream": False,
         }
+        if response_instruction is not None:
+            if response_schema_json is None:
+                raise BackendInfrastructureError(BackendFailure.INTERNAL)
+            messages.insert(0, {"role": "system", "content": response_instruction})
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "gludd_proposal_batch",
+                    "schema": json.loads(response_schema_json),
+                    "strict": True,
+                },
+            }
         try:
             return request_json(
                 self._client.post,
@@ -142,8 +169,11 @@ class AzureContainerAppCandidateBackend:
                 ContainerAppBackendTrace(
                     ContainerAppTraceEvent.REQUEST_FAILED,
                     candidate_digest=self._identity.identity_digest,
+                    envelope_digest=envelope_digest,
                     request_number=request_number,
                     failure=error.failure,
+                    response_failure=getattr(error, "response_failure", None),
+                    http_status=getattr(error, "http_status", 0),
                 ),
             )
             raise
@@ -151,6 +181,7 @@ class AzureContainerAppCandidateBackend:
     def _accept_generation(
         self,
         response_payload: object,
+        envelope_digest: str | None,
         request_number: int,
         *,
         max_output_tokens: int,
@@ -171,8 +202,10 @@ class AzureContainerAppCandidateBackend:
                 ContainerAppBackendTrace(
                     ContainerAppTraceEvent.REQUEST_FAILED,
                     candidate_digest=self._identity.identity_digest,
+                    envelope_digest=envelope_digest,
                     request_number=request_number,
                     failure=failure,
+                    response_failure=ContainerAppResponseFailure.CHAT_CONTRACT,
                 ),
             )
             raise BackendInfrastructureError(failure) from None
@@ -185,6 +218,7 @@ class AzureContainerAppCandidateBackend:
             ContainerAppBackendTrace(
                 ContainerAppTraceEvent.RESPONSE_ACCEPTED,
                 candidate_digest=self._identity.identity_digest,
+                envelope_digest=envelope_digest,
                 request_number=request_number,
                 input_tokens=accepted.input_tokens,
                 output_tokens=accepted.output_tokens,
@@ -201,10 +235,12 @@ class AzureContainerAppCandidateBackend:
         timeout_seconds: float,
     ) -> AzureCandidateResponse:
         """Recheck privacy and model identity, then invoke exactly once."""
-        prompt = self._approved_prompt(
-            request,
-            max_output_tokens=max_output_tokens,
-            timeout_seconds=timeout_seconds,
+        prompt, response_instruction, response_schema_json, envelope_digest = (
+            self._approved_prompt(
+                request,
+                max_output_tokens=max_output_tokens,
+                timeout_seconds=timeout_seconds,
+            )
         )
         timeout = float(timeout_seconds)
         probe_model(
@@ -220,18 +256,23 @@ class AzureContainerAppCandidateBackend:
             ContainerAppBackendTrace(
                 ContainerAppTraceEvent.REQUEST_STARTED,
                 candidate_digest=self._identity.identity_digest,
+                envelope_digest=envelope_digest,
                 request_number=request_number,
             ),
         )
         self._requests_started += 1
         response_payload = self._invoke_generation(
             prompt,
+            response_instruction,
+            response_schema_json,
+            envelope_digest,
             request_number,
             max_output_tokens=max_output_tokens,
             timeout_seconds=timeout,
         )
         return self._accept_generation(
             response_payload,
+            envelope_digest,
             request_number,
             max_output_tokens=max_output_tokens,
         )

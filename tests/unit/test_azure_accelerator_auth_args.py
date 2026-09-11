@@ -498,3 +498,11 @@ def test_renderer_and_make_targets_never_receive_a_credential() -> None:
     assert "subprocess" not in script
     assert "CLIENT_SECRET" not in role_target
     assert "CLIENT_SECRET" not in auth_target
+
+
+def test_makefile_exposes_secret_stdin_durable_store_contract() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+
+    assert "azure-accelerator-auth-store:" in makefile
+    assert "scripts/store_azure_accelerator_credentials.py" in makefile
+    assert "AZURE_ACCELERATOR_AUTH_STORE_VALIDATE_ONLY" in makefile

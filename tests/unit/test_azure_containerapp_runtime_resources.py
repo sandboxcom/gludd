@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
@@ -18,7 +20,12 @@ from general_ludd.infra.azure_containerapp_live_proof import (
     LIVE_PROOF_ACKNOWLEDGEMENT,
     AzureContainerAppLiveProofPolicy,
 )
-from general_ludd.self_improve.model_candidates import BackendCallBudget
+from general_ludd.infra.azure_containerapp_sdk import AzureContainerAppsSDKReadError
+from general_ludd.self_improve.model_candidates import (
+    BackendCallBudget,
+    BackendFailure,
+    BackendInfrastructureError,
+)
 
 SUBSCRIPTION = "12345678-1234-1234-1234-123456789abc"
 
@@ -86,6 +93,417 @@ def _environment_policy(
     )
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("healthState", "Unhealthy"),
+        ("provisioningState", "Failed"),
+        ("provisioningState", "Deprovisioned"),
+        ("runningState", "Stopped"),
+        ("runningState", "Degraded"),
+        ("runningState", "Failed"),
+    ],
+)
+def test_revision_terminal_states_are_locally_typed(field: str, value: str) -> None:
+    """A pending revision can stop its own supervisor without provider text."""
+    properties: dict[str, object] = {
+        "active": True,
+        "replicas": 0,
+        "healthState": "None",
+        "provisioningState": "Provisioning",
+        "runningState": "Processing",
+    }
+    properties[field] = value
+
+    assert resources_module._revision_state({"properties": properties}).terminal is True
+
+
+def test_healthy_revision_tolerates_azure_running_state_lag() -> None:
+    """Azure's Healthy state is authoritative when runningState stays Unknown."""
+    state = resources_module._revision_state(
+        {
+            "properties": {
+                "active": True,
+                "replicas": 1,
+                "healthState": "Healthy",
+                "provisioningState": "Provisioned",
+                "runningState": "Unknown",
+            }
+        }
+    )
+
+    assert state.ready(1) is True
+
+
+def test_app_progress_state_rejects_provider_controlled_text() -> None:
+    """Only an allowlisted state and ready-revision boolean may reach events."""
+    secret = "private-provider-response-never-log"
+
+    assert resources_module._app_provisioning_state(
+        {
+            "properties": {
+                "provisioningState": secret,
+                "latestReadyRevisionName": 7,
+            }
+        }
+    ) == ("Unknown", False)
+
+
+@pytest.mark.parametrize(
+    ("revision", "expected_failure"),
+    [
+        (None, BackendFailure.TIMEOUT),
+        (
+            {
+                "properties": {
+                    "active": True,
+                    "replicas": 0,
+                    "healthState": "Unhealthy",
+                    "provisioningState": "Failed",
+                    "runningState": "Failed",
+                }
+            },
+            BackendFailure.UNAVAILABLE,
+        ),
+    ],
+)
+def test_app_readiness_supervisor_returns_typed_failure(
+    tmp_path: Path,
+    revision: object | None,
+    expected_failure: BackendFailure,
+) -> None:
+    """A stalled or terminal revision must fail without provider-controlled text."""
+    policy = _policy()
+    runtime_arguments: dict[str, object] = {}
+    ticks = iter((0.0, 901.0))
+
+    class Credential:
+        def get_token(self, *_scopes: str) -> object:
+            return SimpleNamespace(token="unit-token")
+
+        def close(self) -> None:
+            return None
+
+    class Transport:
+        def close(self) -> None:
+            return None
+
+    class AppTransport(Transport):
+        def get_json(self, token: str) -> object:
+            assert token == "unit-token"
+            return {"properties": {"provisioningState": "Succeeded"}}
+
+        def get_active_revision_json(self, token: str) -> object | None:
+            assert token == "unit-token"
+            return revision
+
+    resources = resources_module.build_azure_containerapp_runtime_resources(
+        credentials=_credentials(),
+        policy=policy,
+        requirement=_requirement(),
+        work_root=tmp_path / "apps",
+        environment_work_root=tmp_path / "environments",
+        monotonic=lambda: next(ticks),
+        sleep=lambda _seconds: None,
+        _credential_factory=lambda _value: Credential(),
+        _environment_transport_factory=lambda **_kwargs: Transport(),
+        _lifecycle_transport_factory=lambda **_kwargs: Transport(),
+        _app_transport_factory=lambda **_kwargs: AppTransport(),
+        _app_runtime_factory=lambda **kwargs: (
+            runtime_arguments.update(kwargs) or SimpleNamespace()
+        ),
+        _environment_runtime_factory=lambda **_kwargs: SimpleNamespace(),
+    )
+    read_app = cast(
+        Callable[[AzureContainerAppLiveProofPolicy, bool], object],
+        runtime_arguments["read_app"],
+    )
+
+    with pytest.raises(BackendInfrastructureError) as captured:
+        read_app(policy, False)
+
+    assert captured.value.failure is expected_failure
+    resources.close()
+
+
+def test_replica_diagnostics_stop_terminal_startup_without_leaking_details(
+    tmp_path: Path,
+) -> None:
+    """A safe replica reason must stop doomed startup before its deadline."""
+    policy = _policy()
+    revision_name = f"{policy.app_name}--0000007"
+    runtime_arguments: dict[str, object] = {}
+    progress: list[str] = []
+
+    class Credential:
+        def get_token(self, *_scopes: str) -> object:
+            return SimpleNamespace(token="unit-token")
+
+        def close(self) -> None:
+            return None
+
+    class Transport:
+        def close(self) -> None:
+            return None
+
+    class AppTransport(Transport):
+        def get_json(self, _token: str) -> object:
+            return {"properties": {"provisioningState": "Succeeded"}}
+
+        def get_active_revision_json(self, _token: str) -> object:
+            return {
+                "name": revision_name,
+                "properties": {
+                    "active": True,
+                    "replicas": 1,
+                    "healthState": "None",
+                    "provisioningState": "Provisioned",
+                    "runningState": "Unknown",
+                },
+            }
+
+        def get_replica_status_json(
+            self,
+            _token: str,
+            observed_revision_name: str,
+        ) -> object:
+            assert observed_revision_name == revision_name
+            return {
+                "replicaCount": 1,
+                "readyContainerCount": 0,
+                "startedContainerCount": 0,
+                "restartCount": 3,
+                "replicaRunningStates": ["NotRunning"],
+                "containerRunningStates": ["Waiting"],
+                "reasonClasses": ["image_pull_failure"],
+                "providerDetail": "private-provider-text",
+            }
+
+    resources = resources_module.build_azure_containerapp_runtime_resources(
+        credentials=_credentials(),
+        policy=policy,
+        requirement=_requirement(),
+        work_root=tmp_path / "apps",
+        environment_work_root=tmp_path / "environments",
+        monotonic=lambda: 0.0,
+        sleep=lambda _seconds: pytest.fail("terminal replica must not sleep"),
+        progress_sink=progress.append,
+        _credential_factory=lambda _value: Credential(),
+        _environment_transport_factory=lambda **_kwargs: Transport(),
+        _lifecycle_transport_factory=lambda **_kwargs: Transport(),
+        _app_transport_factory=lambda **_kwargs: AppTransport(),
+        _app_runtime_factory=lambda **kwargs: (
+            runtime_arguments.update(kwargs) or SimpleNamespace()
+        ),
+        _environment_runtime_factory=lambda **_kwargs: SimpleNamespace(),
+    )
+    read_app = cast(
+        Callable[[AzureContainerAppLiveProofPolicy, bool], object],
+        runtime_arguments["read_app"],
+    )
+
+    with pytest.raises(BackendInfrastructureError) as captured:
+        read_app(policy, False)
+
+    assert captured.value.failure is BackendFailure.UNAVAILABLE
+    assert progress == [
+        "azure_containerapp_replica_poll phase=readiness state=terminal "
+        "replicas=1 ready_containers=0 started_containers=0 restarts=3 "
+        "replica_state=NotRunning container_state=Waiting "
+        "reason=image_pull_failure"
+    ]
+    assert "private-provider-text" not in repr(progress)
+    resources.close()
+
+
+def test_replica_diagnostics_confirm_ready_when_revision_running_state_lags(
+    tmp_path: Path,
+) -> None:
+    """Healthy ready containers may resolve Azure's stale revision status."""
+    policy = _policy()
+    revision_name = f"{policy.app_name}--0000007"
+    runtime_arguments: dict[str, object] = {}
+    progress: list[str] = []
+
+    class Credential:
+        def get_token(self, *_scopes: str) -> object:
+            return SimpleNamespace(token="unit-token")
+
+        def close(self) -> None:
+            return None
+
+    class Transport:
+        def close(self) -> None:
+            return None
+
+    class AppTransport(Transport):
+        def get_json(self, _token: str) -> object:
+            return {"properties": {"provisioningState": "Succeeded"}}
+
+        def get_active_revision_json(self, _token: str) -> object:
+            return {
+                "name": revision_name,
+                "properties": {
+                    "active": True,
+                    "replicas": 1,
+                    "healthState": "Healthy",
+                    "provisioningState": "Provisioned",
+                    "runningState": "Unknown",
+                },
+            }
+
+        def get_replica_status_json(
+            self,
+            _token: str,
+            observed_revision_name: str,
+        ) -> object:
+            assert observed_revision_name == revision_name
+            return {
+                "replicaCount": 1,
+                "readyContainerCount": 1,
+                "startedContainerCount": 1,
+                "restartCount": 0,
+                "replicaRunningStates": ["Running"],
+                "containerRunningStates": ["Running"],
+                "reasonClasses": [],
+            }
+
+    resources = resources_module.build_azure_containerapp_runtime_resources(
+        credentials=_credentials(),
+        policy=policy,
+        requirement=_requirement(),
+        work_root=tmp_path / "apps",
+        environment_work_root=tmp_path / "environments",
+        monotonic=lambda: 0.0,
+        sleep=lambda _seconds: pytest.fail("ready replica must not sleep"),
+        progress_sink=progress.append,
+        _credential_factory=lambda _value: Credential(),
+        _environment_transport_factory=lambda **_kwargs: Transport(),
+        _lifecycle_transport_factory=lambda **_kwargs: Transport(),
+        _app_transport_factory=lambda **_kwargs: AppTransport(),
+        _app_runtime_factory=lambda **kwargs: (
+            runtime_arguments.update(kwargs) or SimpleNamespace()
+        ),
+        _environment_runtime_factory=lambda **_kwargs: SimpleNamespace(),
+    )
+    read_app = cast(
+        Callable[[AzureContainerAppLiveProofPolicy, bool], object],
+        runtime_arguments["read_app"],
+    )
+
+    document = cast(dict[str, object], read_app(policy, False))
+
+    assert document == {
+        "properties": {
+            "provisioningState": "Succeeded",
+            "latestReadyRevisionName": revision_name,
+        }
+    }
+    assert progress == [
+        "azure_containerapp_replica_poll phase=readiness state=ready "
+        "replicas=1 ready_containers=1 started_containers=1 restarts=0 "
+        "replica_state=Running container_state=Running reason=none"
+    ]
+    resources.close()
+
+
+def test_replica_diagnostic_read_failure_is_supplementary_and_not_retried(
+    tmp_path: Path,
+) -> None:
+    """A missing optional replica read must not require wider Azure privilege."""
+    policy = _policy()
+    revision_name = f"{policy.app_name}--0000007"
+    runtime_arguments: dict[str, object] = {}
+    progress: list[str] = []
+    revision_documents = [
+        {
+            "name": revision_name,
+            "properties": {
+                "active": True,
+                "replicas": 1,
+                "healthState": "None",
+                "provisioningState": "Provisioned",
+                "runningState": "Unknown",
+            },
+        },
+        {
+            "name": revision_name,
+            "properties": {
+                "active": True,
+                "replicas": 1,
+                "healthState": "Healthy",
+                "provisioningState": "Provisioned",
+                "runningState": "Unknown",
+            },
+        },
+    ]
+    replica_calls = 0
+
+    class Credential:
+        def get_token(self, *_scopes: str) -> object:
+            return SimpleNamespace(token="unit-token")
+
+        def close(self) -> None:
+            return None
+
+    class Transport:
+        def close(self) -> None:
+            return None
+
+    class AppTransport(Transport):
+        def get_json(self, _token: str) -> object:
+            return {"properties": {"provisioningState": "Succeeded"}}
+
+        def get_active_revision_json(self, _token: str) -> object:
+            return revision_documents.pop(0)
+
+        def get_replica_status_json(
+            self,
+            _token: str,
+            _revision_name: str,
+        ) -> object:
+            nonlocal replica_calls
+            replica_calls += 1
+            raise AzureContainerAppsSDKReadError("censored", status_code=403)
+
+    ticks = iter((0.0, 0.0))
+    resources = resources_module.build_azure_containerapp_runtime_resources(
+        credentials=_credentials(),
+        policy=policy,
+        requirement=_requirement(),
+        work_root=tmp_path / "apps",
+        environment_work_root=tmp_path / "environments",
+        monotonic=lambda: next(ticks),
+        sleep=lambda _seconds: None,
+        progress_sink=progress.append,
+        _credential_factory=lambda _value: Credential(),
+        _environment_transport_factory=lambda **_kwargs: Transport(),
+        _lifecycle_transport_factory=lambda **_kwargs: Transport(),
+        _app_transport_factory=lambda **_kwargs: AppTransport(),
+        _app_runtime_factory=lambda **kwargs: (
+            runtime_arguments.update(kwargs) or SimpleNamespace()
+        ),
+        _environment_runtime_factory=lambda **_kwargs: SimpleNamespace(),
+    )
+    read_app = cast(
+        Callable[[AzureContainerAppLiveProofPolicy, bool], object],
+        runtime_arguments["read_app"],
+    )
+
+    document = cast(dict[str, object], read_app(policy, False))
+
+    assert replica_calls == 1
+    assert document["properties"] == {
+        "provisioningState": "Succeeded",
+        "latestReadyRevisionName": revision_name,
+    }
+    assert progress[0] == (
+        "azure_containerapp_replica_poll phase=readiness "
+        "state=supplementary_unavailable reason=sdk_read_failed"
+    )
+    resources.close()
+
+
 def test_resources_build_polling_runtimes_and_release_credentials_last(
     tmp_path: Path,
 ) -> None:
@@ -109,7 +527,7 @@ def test_resources_build_polling_runtimes_and_release_credentials_last(
         },
         None,
     ]
-    revision_documents = [
+    pending_revision_documents = [
         {
             "name": f"{policy.app_name}--0000007",
             "properties": {
@@ -119,7 +537,9 @@ def test_resources_build_polling_runtimes_and_release_credentials_last(
                 "provisioningState": "Provisioning",
                 "runningState": "Processing",
             },
-        },
+        }
+    ]
+    revision_documents = [
         {
             "name": f"{policy.app_name}--0000007",
             "properties": {
@@ -166,6 +586,10 @@ def test_resources_build_polling_runtimes_and_release_credentials_last(
             assert token == "unit-token"
             assert revision_name == f"{policy.app_name}--0000007"
             return revision_documents.pop(0)
+
+        def get_active_revision_json(self, token: str) -> object | None:
+            assert token == "unit-token"
+            return pending_revision_documents.pop(0)
 
         def close(self) -> None:
             lifecycle.append("app.close")
@@ -241,13 +665,19 @@ def test_resources_build_polling_runtimes_and_release_credentials_last(
         "lease.release",
     ]
     assert progress[:3] == [
-        "azure_containerapp_poll phase=readiness state=heartbeat",
         (
             "azure_containerapp_revision_poll phase=readiness state=heartbeat "
             "provisioning_state=Provisioning health_state=None "
             "running_state=Processing replicas=0"
         ),
-        "azure_containerapp_poll phase=readiness state=heartbeat",
+        (
+            "azure_containerapp_poll phase=readiness state=heartbeat "
+            "provisioning_state=Updating latest_ready_revision=false"
+        ),
+        (
+            "azure_containerapp_poll phase=absence state=heartbeat "
+            "provisioning_state=Succeeded latest_ready_revision=true"
+        ),
     ]
 
 

@@ -365,6 +365,15 @@ def test_symlink_and_non_regular_files_are_rejected(tmp_path: Path) -> None:
         load_azure_accelerator_credentials(tmp_path)
 
 
+def test_missing_file_has_precise_secret_free_diagnostic(tmp_path: Path) -> None:
+    missing = tmp_path / "absent.json"
+
+    with pytest.raises(AzureAcceleratorCredentialError, match="does not exist") as captured:
+        load_azure_accelerator_credentials(missing)
+
+    assert str(missing) not in str(captured.value)
+
+
 def test_wrong_owner_is_rejected_without_reading_payload(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
