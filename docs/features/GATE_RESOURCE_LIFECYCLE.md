@@ -89,6 +89,33 @@ selects ignored build outputs, so Git-tracked inputs such as
 pathspecs as restricting the affected paths:
 [git-clean documentation](https://git-scm.com/docs/git-clean.html).
 
+#### Dry-run deletion incident and prevention
+
+An exact-head gate exposed a GNU Make recursion trap: the historical `clean`
+recipe put `$(MAKE)` validation and destructive cleanup in one shell recipe
+line. GNU Make intentionally executes any recipe line containing `$(MAKE)` even
+under `-n`, so the Makefile audit's `make -n clean` invocation deleted the
+gate's live `.venv` and caches. The failure was therefore repository-owned—not
+macOS cleanup—and the next unit shard could no longer import pytest.
+
+The recipe now runs the validation test directly through the repository's
+locked Python environment and contains no recursive-Make marker. A structural
+test rejects any future `$(MAKE)` in the `clean` recipe, while a behavioral test
+runs the real dry-run against a sentinel `.venv` and proves its bytes survive.
+Actual cleanup remains available only through the explicit
+`CLEAN_VALIDATE_ONLY=0` contract; cache-pressure reclamation remains separately
+bounded, observable, and lease-aware rather than being disabled. The damaged
+shared uv cache was preserved for diagnosis and a new versioned cache root was
+selected, avoiding an unreviewed deletion while restoring deterministic builds.
+
+This behavior follows GNU Make's documented special handling of recursive
+recipe lines in [How the `MAKE` Variable Works](https://www.gnu.org/software/make/manual/html_node/MAKE-Variable.html).
+Long-lived practitioner reports show the same surprising behavior in
+[recursive dry runs](https://stackoverflow.com/questions/72302726/gnu-make-recursive-dry-run-runs-commands),
+[recipes calling recipes](https://stackoverflow.com/questions/73359439/makefile-calling-a-recipe-within-another-recipe-will-not-run-dry-it),
+and the common recommendation to use `$(MAKE)` precisely because GNU Make runs
+it despite `-n` in [recursive Make guidance](https://stackoverflow.com/questions/50510278/makefile-why-always-use-make-instead-of-make).
+
 ### Adaptive shard termination
 
 The adaptive runner returns a result containing the child return code, captured

@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-11 — (resolved locally) `make -n clean` deleted the gate's live environment
+
+- **What happened**: The exact-head gate completed its early phases and 3,379 integration tests, then a Makefile audit dry-ran `clean`. The following unit shard reported that pytest was absent from the same `.venv`; rebuilding against the old shared uv cache also exposed incomplete `ninja` metadata.
+- **Root cause**: Validation through recursive `$(MAKE)` and every destructive cleanup command occupied one shell recipe line. GNU Make intentionally executes recipe lines containing `$(MAKE)` under `-n`, so the audit performed the entire line, including `rm -rf .venv`. macOS did not delete the artifact.
+- **Fix applied**: `clean` now executes its one validation test directly through the locked `uv` environment and contains no recursive-Make escape hatch. Structural and real sandbox-sentinel regressions prohibit the pattern and prove `make -n clean CLEAN_VALIDATE_ONLY=0` preserves a required `.venv`. The corrupt cache generation remains preserved for diagnosis; builds use a new versioned cache while explicit cleanup and the bounded lease-aware disk guard remain available.
+- **Evidence**: Both failing-first regressions now pass, the complete Make audit/cache suite passes 31/31, `make sync` restored 199 locked packages, and `make healthcheck` passes. Exact-head gate evidence is pending.
+- **Practitioner evidence**: GNU Make documents that recursive recipe lines execute despite `-n`; Stack Overflow reports 72302726, 73359439, and 50510278 show the same long-lived operator surprise. `docs/features/GATE_RESOURCE_LIFECYCLE.md` links the primary and practitioner sources.
+- **Lesson**: A destructive recipe must contain no recursive-Make marker anywhere in its shell line. Dry-run safety requires an actual filesystem sentinel test, not inspection of printed commands alone.
+
 ### 2026-09-10 — (resolved locally) Local and Azure proposal workers shared semantics but not one envelope
 
 - **What happened**: The local worker received an owned prompt artifact while the Azure adapters received separately extracted prompt, instruction, schema, and digest fields. A legacy raw-string remote-codec path could also omit the trusted contract and response schema entirely. Compatible fields were mistaken for one common transport protocol.

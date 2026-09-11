@@ -27,7 +27,7 @@ NODE_DEPS_NPM_CACHE ?= /tmp/gludd-npm-cache-public-v1
 NODE_DEPS_NPM_REGISTRY ?= https://registry.npmjs.org
 NODE_DEPS_NPM_UPDATE_NOTIFIER ?= false
 NODE_DEPS_AUDIT_LEVEL ?= moderate
-GLUDD_UV_CACHE_DIR ?= /tmp/gludd-uv-cache-public-v1
+GLUDD_UV_CACHE_DIR ?= /tmp/gludd-uv-cache-public-v2
 override UV_CACHE_DIR := $(GLUDD_UV_CACHE_DIR)
 export UV_CACHE_DIR
 RELEASE_READINESS_VALIDATE_ONLY ?= 0
@@ -6215,7 +6215,7 @@ test-and-commit: _commit-lock-acquire
 
 clean:
 	@if [ "$(CLEAN_VALIDATE_ONLY)" = "1" ]; then \
-		$(MAKE) --no-print-directory test-specific TESTFILE=tests/unit/test_packaging_templates_committed.py::test_clean_preserves_tracked_distribution_templates PYTEST_ARGS='-q -n 0'; \
+		$(UV) run python -m pytest tests/unit/test_packaging_templates_committed.py::test_clean_preserves_tracked_distribution_templates -q -n 0; \
 	elif [ "$(CLEAN_VALIDATE_ONLY)" = "0" ]; then \
 		rm -rf .venv build *.egg-info src/*.egg-info .pytest_cache .mypy_cache .coverage coverage.xml htmlcov .ruff_cache; \
 		git clean -fdX -- dist; \

@@ -368,6 +368,38 @@ class TestKeyScriptsExist:
 class TestDryRun:
     KEY = ("help", "lint", "typecheck", "test-count", "collect-check", "clean")
 
+    def test_clean_dry_run_has_no_recursive_make_escape_hatch(self) -> None:
+        content = MAKEFILE.read_text(encoding="utf-8")
+        recipe = _recipe_body(content, "clean")
+
+        assert "$(MAKE)" not in recipe, (
+            "GNU Make executes recursive-make recipe lines even with -n; "
+            "clean must never put deletion on such a line"
+        )
+
+    def test_clean_dry_run_preserves_sentinel_environment(self, tmp_path: Path) -> None:
+        sentinel = tmp_path / ".venv" / "required-package"
+        sentinel.parent.mkdir()
+        sentinel.write_text("leased", encoding="utf-8")
+
+        result = subprocess.run(
+            [
+                "make",
+                "-n",
+                "-f",
+                str(MAKEFILE),
+                "clean",
+                "CLEAN_VALIDATE_ONLY=0",
+            ],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert sentinel.read_text(encoding="utf-8") == "leased"
+
     @pytest.mark.parametrize("target", KEY)
     def test_dry_run_ok(self, target: str) -> None:
         r = subprocess.run(

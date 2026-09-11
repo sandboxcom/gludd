@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SAFE_CACHE = "/tmp/gludd-uv-cache-public-v1"
+SAFE_CACHE = "/tmp/gludd-uv-cache-public-v2"
 
 
 def test_make_overrides_ambient_uv_cache_with_writable_shared_cache() -> None:
