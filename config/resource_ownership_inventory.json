@@ -2050,7 +2050,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/azure_containerapp_transport.py",
-      "line": 468,
+      "line": 469,
       "column": 8,
       "kind": "client",
       "owner": "new_httpx_client",
