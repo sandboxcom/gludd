@@ -252,6 +252,7 @@
       "collection_import_paths": [],
       "collection_requirement_paths": [],
       "core_import_paths": [
+        "src/general_ludd/azure/accelerator_credential_store.py",
         "src/general_ludd/security/sandboxes/vm/image_builder.py"
       ],
       "disposition": "retain-core",
@@ -635,7 +636,7 @@
       "collection_requirement_paths": [],
       "core_import_paths": [
         "src/general_ludd/account/ephemeral.py",
-        "src/general_ludd/agents/behavior.py",
+        "src/general_ludd/agents/behavior_contracts.py",
         "src/general_ludd/agents/context.py",
         "src/general_ludd/agents/hibernation.py",
         "src/general_ludd/agents/researcher.py",
