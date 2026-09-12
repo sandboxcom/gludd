@@ -229,6 +229,14 @@ def _build_managed_callbacks(
         proposal_codec: ManagedCandidateProposalCodec[GeneratedProposal] | None = None,
     ) -> ProposalManifest | GeneratedProposal:
         if isinstance(prompt, PromptPlan):
+            if proposal_codec is None:
+                return runtime_api._generate_local_proposal_plan_result(
+                    operation_runner,
+                    model_path,
+                    prompt,
+                    task,
+                    reference,
+                )
             return runtime_api._generate_local_proposal_plan_result(
                 operation_runner,
                 model_path,
