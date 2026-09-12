@@ -108,6 +108,7 @@ COVERAGE_SOURCES = (
     "*/src/general_ludd/self_improve/harness.py",
     "*/src/general_ludd/self_improve/managed_candidate_routing.py",
     "*/src/general_ludd/self_improve/managed_candidate_routing_types.py",
+    "*/src/general_ludd/self_improve/managed_execution.py",
     "*/src/general_ludd/self_improve/managed_remote_codec.py",
     "*/src/general_ludd/self_improve/managed_runtime_evaluation.py",
     "*/src/general_ludd/self_improve/runtime.py",
@@ -127,6 +128,7 @@ COVERAGE_SOURCES = (
     "*/src/general_ludd/event_loop/loop.py",
     "*/src/general_ludd/worker/app.py",
     "*/src/general_ludd/daemon.py",
+    "*/src/general_ludd/util/owned_process.py",
 )
 OBJECTIVE = (
     "Fix the local-model self-improvement runner so it rejects model candidates "
