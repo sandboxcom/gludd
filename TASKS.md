@@ -65,6 +65,8 @@ S83.157 candidate-timeout evidence: the next bounded live retry reached concurre
 
 S83.157 latest ownership evidence: the full gate found four line-coordinate drifts with unchanged stable resource hashes across the Azure Terraform executor, local proposal runtime, and capability evidence store. The repository-owned writer refreshed only the mechanical inventory; the independent read-only replay passes with exactly 204 resources: 28 async tasks, 72 clients, 31 processes, 9 services, and 64 temporary artifacts.
 
+S83.157 production GPU-attestation evidence: the production Azure candidate boundary now returns an inference response only after the stable Monitor SDK reports positive `GpuUtilizationPercentage` for the exact owner-bound app revision. It lazily constructs the Monitor owner only for Azure execution, validates metric and revision identity plus finite range and sample count, maps every SDK/malformed/zero-evidence path into censored typed infrastructure failures, emits content-free start/success/failure traces, and safely unwinds partial construction and all owners. The failing-first Azure profile passes 1,018/1,018 at 92% aggregate branch coverage with all 54 files above 75%, including the runtime resource owner at 93%; scoped resource-ownership verification passes with exactly 204 resources. A post-wiring paid run with positive GPU evidence and one accepted proposal remains pending.
+
 S83.157 exact changed-surface registration (from the active gate):
 
 Candidate-timeout and canonical-coverage surface:

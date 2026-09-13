@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 from collections.abc import Callable
 from contextlib import suppress
@@ -49,6 +50,11 @@ from general_ludd.infra.azure_containerapp_runtime_state import _ready as _ready
 from general_ludd.infra.azure_containerapp_runtime_state import (
     _revision_state as _revision_state,
 )
+from general_ludd.infra.azure_containerapp_sdk import (
+    AzureContainerAppGPUUtilizationAttestor,
+    AzureGPUUtilizationEvidence,
+    build_monitor_sdk_client,
+)
 from general_ludd.self_improve.azure_backend import (
     AzureApprovedPrompt,
     AzureCandidateResponse,
@@ -57,8 +63,17 @@ from general_ludd.self_improve.azure_containerapp_backend import (
     ContainerAppBackendTrace,
     build_azure_containerapp_candidate_backend,
 )
+from general_ludd.self_improve.azure_containerapp_transport import (
+    emit_failure,
+    emit_trace,
+)
+from general_ludd.self_improve.azure_containerapp_transport_types import (
+    ContainerAppTraceEvent,
+)
 from general_ludd.self_improve.model_candidates import (
     AzureContainerAppCandidateIdentity,
+    BackendFailure,
+    BackendInfrastructureError,
     CandidateBackend,
 )
 
@@ -72,6 +87,30 @@ class _ClosableCredential(Protocol):
 
 
 class _ClosableClient(Protocol):
+    def close(self) -> None: ...
+
+
+class _ClosableBackend(Protocol):
+    @property
+    def candidate_identity(self) -> AzureContainerAppCandidateIdentity: ...
+
+    def generate(
+        self,
+        request: AzureApprovedPrompt,
+        *,
+        max_output_tokens: int,
+        timeout_seconds: float,
+    ) -> AzureCandidateResponse: ...
+
+    def close(self) -> None: ...
+
+
+class _GPUAttestor(Protocol):
+    def attest(
+        self,
+        identity: AzureContainerAppCandidateIdentity,
+    ) -> AzureGPUUtilizationEvidence: ...
+
     def close(self) -> None: ...
 
 
@@ -89,6 +128,143 @@ def _discard_backend(_trace: ContainerAppBackendTrace) -> None:
 
 def _discard_progress(_message: str) -> None:
     return None
+
+
+def _valid_gpu_evidence(
+    evidence: object,
+    identity: AzureContainerAppCandidateIdentity,
+) -> bool:
+    """Accept only positive, exact-revision, bounded utilization evidence."""
+    return (
+        isinstance(evidence, AzureGPUUtilizationEvidence)
+        and evidence.metric_name == "GpuUtilizationPercentage"
+        and evidence.revision_name == identity.revision_name
+        and not isinstance(evidence.maximum_percent, bool)
+        and isinstance(evidence.maximum_percent, (int, float))
+        and math.isfinite(evidence.maximum_percent)
+        and 0 < evidence.maximum_percent <= 100
+        and not isinstance(evidence.positive_sample_count, bool)
+        and isinstance(evidence.positive_sample_count, int)
+        and 1 <= evidence.positive_sample_count <= 10_000
+    )
+
+
+class _GPUAttestedBackend:
+    """Withhold one validated Container App response until GPU use is proven."""
+
+    def __init__(
+        self,
+        delegate: _ClosableBackend,
+        attestor: _GPUAttestor,
+        trace_sink: Callable[[ContainerAppBackendTrace], None],
+    ) -> None:
+        if not callable(getattr(delegate, "generate", None)) or not callable(
+            getattr(delegate, "close", None)
+        ):
+            raise ValueError("delegate must be one closable candidate backend")
+        identity = delegate.candidate_identity
+        if not isinstance(identity, AzureContainerAppCandidateIdentity):
+            raise ValueError("delegate must bind one Container App identity")
+        if not callable(getattr(attestor, "attest", None)) or not callable(trace_sink):
+            raise ValueError("GPU attestation callbacks must be callable")
+        self._delegate = delegate
+        self._attestor = attestor
+        self._trace_sink = trace_sink
+        self._identity = identity
+        self._closed = False
+        self._request_number = 0
+
+    @property
+    def candidate_identity(self) -> AzureContainerAppCandidateIdentity:
+        return self._identity
+
+    def _attestation_failed(
+        self,
+        failure: BackendFailure,
+        request_number: int,
+        envelope_digest: str | None,
+    ) -> None:
+        emit_failure(
+            self._trace_sink,
+            ContainerAppBackendTrace(
+                ContainerAppTraceEvent.GPU_ATTESTATION_FAILED,
+                candidate_digest=self._identity.identity_digest,
+                envelope_digest=envelope_digest,
+                request_number=request_number,
+                failure=failure,
+            ),
+        )
+
+    def generate(
+        self,
+        request: AzureApprovedPrompt,
+        *,
+        max_output_tokens: int,
+        timeout_seconds: float,
+    ) -> AzureCandidateResponse:
+        """Run inference once, attest its exact revision, then release output."""
+        if self._closed:
+            raise BackendInfrastructureError(BackendFailure.UNAVAILABLE)
+        response = self._delegate.generate(
+            request,
+            max_output_tokens=max_output_tokens,
+            timeout_seconds=timeout_seconds,
+        )
+        self._request_number += 1
+        request_number = self._request_number
+        envelope_digest = (
+            request.envelope_digest if isinstance(request, AzureApprovedPrompt) else None
+        )
+        emit_trace(
+            self._trace_sink,
+            ContainerAppBackendTrace(
+                ContainerAppTraceEvent.GPU_ATTESTATION_STARTED,
+                candidate_digest=self._identity.identity_digest,
+                envelope_digest=envelope_digest,
+                request_number=request_number,
+            ),
+        )
+        try:
+            evidence = self._attestor.attest(self._identity)
+        except BackendInfrastructureError as error:
+            self._attestation_failed(
+                error.failure,
+                request_number,
+                envelope_digest,
+            )
+            raise BackendInfrastructureError(error.failure) from None
+        except Exception:
+            failure = BackendFailure.INTERNAL
+            self._attestation_failed(failure, request_number, envelope_digest)
+            raise BackendInfrastructureError(failure) from None
+        if not _valid_gpu_evidence(evidence, self._identity):
+            failure = BackendFailure.INVALID_RESPONSE
+            self._attestation_failed(failure, request_number, envelope_digest)
+            raise BackendInfrastructureError(failure)
+        emit_trace(
+            self._trace_sink,
+            ContainerAppBackendTrace(
+                ContainerAppTraceEvent.GPU_ATTESTATION_SUCCEEDED,
+                candidate_digest=self._identity.identity_digest,
+                envelope_digest=envelope_digest,
+                request_number=request_number,
+                gpu_maximum_percent=float(evidence.maximum_percent),
+                gpu_positive_sample_count=evidence.positive_sample_count,
+            ),
+        )
+        return response
+
+    def close(self) -> None:
+        """Idempotently release the underlying inference transport."""
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._delegate.close()
+        except BackendInfrastructureError:
+            raise
+        except Exception:
+            raise BackendInfrastructureError(BackendFailure.INTERNAL) from None
 
 
 class AzureContainerAppRuntimeResources:
@@ -110,6 +286,12 @@ class AzureContainerAppRuntimeResources:
         backend_factory_builder: Callable[..., _Backend] = (
             build_azure_containerapp_candidate_backend
         ),
+        policy: AzureContainerAppLiveProofPolicy | None = None,
+        monitor_client_factory: Callable[..., Any] = build_monitor_sdk_client,
+        gpu_attestor_factory: Callable[..., Any] = (
+            AzureContainerAppGPUUtilizationAttestor
+        ),
+        progress_sink: Callable[[str], None] = _discard_progress,
     ) -> None:
         """Initialize every client and release hook under one owner."""
         self.runtime = runtime
@@ -121,18 +303,77 @@ class AzureContainerAppRuntimeResources:
         self._credential_release = credential_release
         self._backend_trace_sink = backend_trace_sink
         self._backend_factory_builder = backend_factory_builder
+        self._policy = policy
+        self._monitor_client_factory = monitor_client_factory
+        self._gpu_attestor_factory = gpu_attestor_factory
+        self._progress_sink = progress_sink
+        self._backends: list[_GPUAttestedBackend] = []
+        self._gpu_attestors: list[_GPUAttestor] = []
         self._closed = False
 
     def backend_factory(
         self,
         identity: AzureContainerAppCandidateIdentity,
     ) -> _Backend:
-        """Bind only the exact deployed revision through the bounded backend."""
-        return self._backend_factory_builder(
-            identity,
-            discovery_timeout_seconds=120.0,
-            trace_sink=self._backend_trace_sink,
-        )
+        """Bind inference and lazy exact-revision GPU attestation as one backend."""
+        policy = self._policy
+        if self._closed:
+            raise BackendInfrastructureError(BackendFailure.UNAVAILABLE)
+        if policy is None or (
+            identity.resource_id.casefold() != policy.expected_resource_id.casefold()
+        ):
+            raise BackendInfrastructureError(BackendFailure.INVALID_RESPONSE)
+        delegate: _ClosableBackend | None = None
+        monitor: _ClosableClient | None = None
+        attestor: _GPUAttestor | None = None
+        try:
+            candidate_delegate = self._backend_factory_builder(
+                identity,
+                discovery_timeout_seconds=120.0,
+                trace_sink=self._backend_trace_sink,
+            )
+            if not callable(getattr(candidate_delegate, "close", None)):
+                raise TypeError
+            delegate = cast(_ClosableBackend, candidate_delegate)
+            candidate_monitor = self._monitor_client_factory(
+                self._credential,
+                policy.subscription_id,
+            )
+            if not callable(getattr(candidate_monitor, "close", None)):
+                raise TypeError
+            monitor = cast(_ClosableClient, candidate_monitor)
+            candidate_attestor = self._gpu_attestor_factory(
+                client=monitor,
+                expected_resource_id=policy.expected_resource_id,
+                progress_sink=self._progress_sink,
+            )
+            if not all(
+                callable(getattr(candidate_attestor, member, None))
+                for member in ("attest", "close")
+            ):
+                raise TypeError
+            attestor = cast(_GPUAttestor, candidate_attestor)
+            backend = _GPUAttestedBackend(
+                delegate,
+                attestor,
+                self._backend_trace_sink,
+            )
+        except Exception as error:
+            if attestor is not None:
+                with suppress(Exception):
+                    attestor.close()
+            elif monitor is not None:
+                with suppress(Exception):
+                    monitor.close()
+            if delegate is not None:
+                with suppress(Exception):
+                    delegate.close()
+            if isinstance(error, BackendInfrastructureError):
+                raise
+            raise BackendInfrastructureError(BackendFailure.INTERNAL) from None
+        self._backends.append(backend)
+        self._gpu_attestors.append(attestor)
+        return cast(_Backend, backend)
 
     def close(self) -> None:
         """Close transports and identity before revoking the optional lease."""
@@ -141,13 +382,15 @@ class AzureContainerAppRuntimeResources:
         self._closed = True
         failed = False
         for client in (
+            *reversed(self._backends),
+            *reversed(self._gpu_attestors),
             self._app_transport,
             self._lifecycle_transport,
             self._environment_transport,
             self._credential,
         ):
             try:
-                client.close()
+                cast(_ClosableClient, client).close()
             except Exception:
                 failed = True
         if self._credential_release is not None:
@@ -298,6 +541,10 @@ def _assemble_runtime_resources(
         credential_release=credential_release,
         backend_trace_sink=backend_trace_sink,
         backend_factory_builder=factories.backend,
+        policy=policy,
+        monitor_client_factory=factories.monitor_client,
+        gpu_attestor_factory=factories.gpu_attestor,
+        progress_sink=progress_sink,
     )
 
 
@@ -328,6 +575,8 @@ def build_azure_containerapp_runtime_resources(
     _backend_factory: Callable[..., Any] | None = None,
     _sdk_client_factory: Callable[..., Any] | None = None,
     _sdk_transports_factory: Callable[..., Any] | None = None,
+    _monitor_client_factory: Callable[..., Any] | None = None,
+    _gpu_attestor_factory: Callable[..., Any] | None = None,
 ) -> AzureContainerAppRuntimeResources:
     """Build an exact, secret-safe resource bundle for one approved deployment."""
     _validate_runtime_build(
@@ -353,6 +602,8 @@ def build_azure_containerapp_runtime_resources(
         backend=_backend_factory,
         sdk_client=_sdk_client_factory,
         sdk_transports=_sdk_transports_factory,
+        monitor_client=_monitor_client_factory,
+        gpu_attestor=_gpu_attestor_factory,
     )
     credential: _ClosableCredential | None = None
     transports: _OpenReadTransports | None = None

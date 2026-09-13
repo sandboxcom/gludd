@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Callable
 from contextlib import suppress
@@ -228,6 +229,22 @@ def runtime_trace(
         or token_counts[0] + token_counts[1] != token_counts[2]
     ):
         token_counts = (0, 0, 0)
+    gpu_maximum_percent = getattr(event, "gpu_maximum_percent", 0.0)
+    gpu_positive_sample_count = getattr(event, "gpu_positive_sample_count", 0)
+    if (
+        isinstance(gpu_maximum_percent, bool)
+        or not isinstance(gpu_maximum_percent, (int, float))
+        or not math.isfinite(gpu_maximum_percent)
+        or not 0 <= gpu_maximum_percent <= 100
+        or isinstance(gpu_positive_sample_count, bool)
+        or not isinstance(gpu_positive_sample_count, int)
+        or not 0 <= gpu_positive_sample_count <= 10_000
+        or (gpu_maximum_percent > 0) != (gpu_positive_sample_count > 0)
+    ):
+        gpu_maximum_percent = 0.0
+        gpu_positive_sample_count = 0
+    else:
+        gpu_maximum_percent = float(gpu_maximum_percent)
     event_source = getattr(event, "event_source", None)
     preflight_reason = _safe_preflight_reason(getattr(event, "reason", None))
     allowed_fields = {
@@ -303,6 +320,8 @@ def runtime_trace(
         f"retention_hourly_cost_microusd={retention_hourly_cost} "
         f"input_tokens={token_counts[0]} output_tokens={token_counts[1]} "
         f"total_tokens={token_counts[2]} "
+        f"gpu_maximum_percent={gpu_maximum_percent} "
+        f"gpu_positive_sample_count={gpu_positive_sample_count} "
         f"preflight_reason={preflight_reason or 'none'}{structured} "
         "secret_output=false"
     )

@@ -76,8 +76,10 @@ from general_ludd.infra.azure_containerapp_runtime_resources import (
 )
 from general_ludd.infra.azure_containerapp_runtime_resources import _ready as _ready
 from general_ludd.infra.azure_containerapp_sdk import (
+    AzureContainerAppGPUUtilizationAttestor,
     AzureContainerAppsSDKReadTransports,
     build_container_apps_sdk_client,
+    build_monitor_sdk_client,
 )
 from general_ludd.infra.azure_idle_retention import (
     AzureIdleRetentionPolicy,
@@ -93,15 +95,15 @@ from general_ludd.self_improve.azure_containerapp_backend import (
     ContainerAppBackendTrace,
     build_azure_containerapp_candidate_backend,
 )
+from general_ludd.self_improve.azure_containerapp_bootstrap_planning import (
+    azure_bootstrap_owner_digest,
+)
 from general_ludd.self_improve.model_candidates import (
     AzureContainerAppCandidateIdentity,
     BackendCallBudget,
     CandidateBackend,
 )
 from general_ludd.self_improve.private_policy import SelfImproveRuntimePolicyGuard
-from general_ludd.self_improve.azure_containerapp_bootstrap_planning import (
-    azure_bootstrap_owner_digest,
-)
 
 _DefaultResources = AzureContainerAppRuntimeResources
 
@@ -490,6 +492,8 @@ def _default_live_resources(
         _credential_factory=_credential_client,
         _sdk_client_factory=build_container_apps_sdk_client,
         _sdk_transports_factory=AzureContainerAppsSDKReadTransports,
+        _monitor_client_factory=build_monitor_sdk_client,
+        _gpu_attestor_factory=AzureContainerAppGPUUtilizationAttestor,
         _preflight_factory=AzureContainerAppReadOnlyPreflight,
         _app_runtime_factory=AzureContainerAppTerraformRuntime,
         _environment_runtime_factory=(

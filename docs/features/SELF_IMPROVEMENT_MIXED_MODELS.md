@@ -40,10 +40,10 @@ it does not reproduce raw ARM calls.
 
 The Azure CLI argument renderer is intentionally not an Azure client. It validates
 identifiers and the checked-in exact role, then writes one NUL-delimited argv for
-the real `az` executable. The existing custom read-only ARM transport is being
-replaced by Microsoft's stable
+the real `az` executable. The existing custom read-only ARM transport is replaced by
+Microsoft's stable
 [`azure-mgmt-appcontainers`](https://pypi.org/project/azure-mgmt-appcontainers/)
-client, while GPU evidence will use the stable
+client, while GPU evidence uses the stable
 [`azure-mgmt-monitor`](https://pypi.org/project/azure-mgmt-monitor/) single-resource
 metrics operation. `azure-monitor-querymetrics` is not suitable here because its
 batch API documents subscription-level authorization, broader than Gludd's exact
@@ -790,9 +790,28 @@ with provider text and exception context excluded, so it cannot become negative 
 calibration. Legacy injected callbacks that do not declare the optional timeout or
 proposal-codec keyword retain their existing call shape. The canonical self-improvement
 gate passes 7,131 tests with 3 skips and 1 expected failure at 90% aggregate coverage;
-every one of its 48 measured files clears the 75% individual threshold. Proposal-scope
-diagnostics and production GPU attestation remain the next fail-closed gates before
-another paid retry.
+every one of its 48 measured files clears the 75% individual threshold. Actionable
+proposal-scope diagnostics remain the next fail-closed gate before another paid retry.
+
+#### Production exact-revision GPU attestation (2026-09-13)
+
+The production runtime now withholds every Azure model response until the stable
+Monitor client observes a positive `GpuUtilizationPercentage` maximum for the exact
+owner-bound app revision that served it. Monitor construction is lazy and occurs only
+for the exact Azure backend. Resource identity, metric name, revision dimension,
+finite percentage bounds, and positive sample count all fail closed. Authentication,
+authorization, throttling, timeout, not-found, malformed-response, transport, and
+unexpected failures become censored typed infrastructure failures; they cannot be
+mistaken for model quality or release unverified output. The wrapper closes its
+backend, attestor, and partially constructed SDK clients on every exit path.
+
+This closes the CPU-fallback class reported in Container Apps issue
+[#1682](https://github.com/microsoft/azure-container-apps/issues/1682) at the actual
+response boundary rather than treating a healthy replica as GPU proof. The identical
+local/GitHub-Actions Azure profile passes 1,018 tests at 92% aggregate branch coverage,
+all 54 measured files clear 75%, and the runtime resource owner reaches 93%. A fresh
+bounded paid canary must still emit positive exact-revision GPU evidence and produce
+one accepted code improvement before the live capability is complete.
 
 ### S83.150 live-adapter research
 

@@ -32,6 +32,7 @@ from general_ludd.infra.azure_containerapp_sdk import (
 from general_ludd.self_improve.model_candidates import (
     AzureContainerAppCandidateIdentity,
     BackendCallBudget,
+    BackendFailure,
 )
 
 SUBSCRIPTION = "11111111-2222-3333-4444-555555555555"
@@ -856,8 +857,79 @@ def test_gpu_attestor_refuses_ambiguous_or_impossible_metric_evidence(
         lookback=timedelta(minutes=15),
     )
 
-    with pytest.raises(AzureGPUUtilizationAttestationError):
+    with pytest.raises(AzureGPUUtilizationAttestationError) as captured:
         attestor.attest(identity)
+
+    assert captured.value.failure is BackendFailure.INVALID_RESPONSE
+
+
+@pytest.mark.parametrize(
+    ("status_code", "expected"),
+    [
+        (401, BackendFailure.AUTHENTICATION),
+        (403, BackendFailure.AUTHORIZATION),
+        (404, BackendFailure.NOT_FOUND),
+        (408, BackendFailure.TIMEOUT),
+        (429, BackendFailure.RATE_LIMITED),
+        (500, BackendFailure.TRANSPORT),
+        (400, BackendFailure.INVALID_RESPONSE),
+    ],
+)
+def test_gpu_attestor_classifies_monitor_failures_without_provider_text(
+    status_code: int,
+    expected: BackendFailure,
+) -> None:
+    """Monitor errors retain only an actionable model-neutral category."""
+    identity = _identity()
+    secret = "provider-secret-must-not-escape"
+
+    class ProviderFailure(RuntimeError):
+        def __init__(self) -> None:
+            super().__init__(secret)
+            self.status_code = status_code
+
+    client = _MonitorClient([])
+    client.metrics.list = MagicMock(side_effect=ProviderFailure())
+    attestor = AzureContainerAppGPUUtilizationAttestor(
+        client=client,
+        expected_resource_id=identity.resource_id,
+    )
+
+    with pytest.raises(AzureGPUUtilizationAttestationError) as captured:
+        attestor.attest(identity)
+
+    assert captured.value.failure is expected
+    assert secret not in str(captured.value)
+    assert secret not in repr(captured.value)
+
+
+def test_gpu_attestor_reports_timeout_when_no_positive_sample_arrives() -> None:
+    """A zero-only metric window cannot become evidence by exhausting polling."""
+    identity = _identity()
+    clock = [datetime(2026, 9, 7, 12, 0, tzinfo=UTC)]
+    client = _MonitorClient(
+        [
+            _metric_response(identity.revision_name, [0.0]),
+            _metric_response(identity.revision_name, [0.0]),
+        ]
+    )
+
+    def sleep(seconds: float) -> None:
+        clock[0] += timedelta(seconds=seconds)
+
+    attestor = AzureContainerAppGPUUtilizationAttestor(
+        client=client,
+        expected_resource_id=identity.resource_id,
+        now=lambda: clock[0],
+        sleep=sleep,
+        poll_timeout_seconds=1.0,
+        poll_interval_seconds=1.0,
+    )
+
+    with pytest.raises(AzureGPUUtilizationAttestationError) as captured:
+        attestor.attest(identity)
+
+    assert captured.value.failure is BackendFailure.TIMEOUT
 
 
 def test_gpu_attestor_rejects_foreign_identity_before_monitor_call() -> None:

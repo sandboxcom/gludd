@@ -25,6 +25,8 @@ from general_ludd.infra.azure_containerapp_live_proof import (
 )
 from general_ludd.self_improve.model_candidates import (
     AzureContainerAppCandidateIdentity,
+    BackendFailure,
+    BackendInfrastructureError,
 )
 
 _GPU_METRIC_NAME = "GpuUtilizationPercentage"
@@ -62,7 +64,7 @@ class AzureContainerAppsSDKReadError(AzureContainerAppARMError):
     """Fixed-context failure from an official Container Apps SDK read."""
 
 
-class AzureGPUUtilizationAttestationError(RuntimeError):
+class AzureGPUUtilizationAttestationError(BackendInfrastructureError):
     """Fixed-context refusal when positive GPU evidence cannot be proven."""
 
 
@@ -176,6 +178,28 @@ def _status_code(error: BaseException) -> int | None:
     response = getattr(error, "response", None)
     observed = getattr(response, "status_code", None)
     return observed if isinstance(observed, int) else None
+
+
+def _gpu_monitor_failure(error: BaseException) -> BackendFailure:
+    """Reduce one Monitor exception to a provider-text-free failure class."""
+    if isinstance(error, BackendInfrastructureError):
+        return error.failure
+    if isinstance(error, TimeoutError):
+        return BackendFailure.TIMEOUT
+    status_code = _status_code(error)
+    if status_code == 401:
+        return BackendFailure.AUTHENTICATION
+    if status_code == 403:
+        return BackendFailure.AUTHORIZATION
+    if status_code == 404:
+        return BackendFailure.NOT_FOUND
+    if status_code in {408, 504}:
+        return BackendFailure.TIMEOUT
+    if status_code == 429:
+        return BackendFailure.RATE_LIMITED
+    if status_code is not None and 400 <= status_code < 500:
+        return BackendFailure.INVALID_RESPONSE
+    return BackendFailure.TRANSPORT
 
 
 def _sdk_read(
@@ -780,12 +804,12 @@ def _metric_revision(series: object) -> str | None:
 def _positive_metric_values(response: object, revision_name: str) -> tuple[float, ...]:
     metrics = _sequence(_member(response, "value", default=()), "GPU metric")
     if len(metrics) != 1:
-        raise AzureGPUUtilizationAttestationError("GPU metric response is ambiguous")
+        raise AzureGPUUtilizationAttestationError(BackendFailure.INVALID_RESPONSE)
     metric = metrics[0]
     if _member(_member(metric, "name"), "value") != _GPU_METRIC_NAME:
-        raise AzureGPUUtilizationAttestationError("GPU metric identity is invalid")
+        raise AzureGPUUtilizationAttestationError(BackendFailure.INVALID_RESPONSE)
     if _enum_text(_member(metric, "unit")) != "Percent":
-        raise AzureGPUUtilizationAttestationError("GPU metric unit is invalid")
+        raise AzureGPUUtilizationAttestationError(BackendFailure.INVALID_RESPONSE)
     series_values = _sequence(
         _member(metric, "timeseries", "time_series", default=()),
         "GPU metric series",
@@ -795,7 +819,7 @@ def _positive_metric_values(response: object, revision_name: str) -> tuple[float
     for series in series_values:
         if _metric_revision(series) != revision_name:
             raise AzureGPUUtilizationAttestationError(
-                "GPU metric revision identity is invalid"
+                BackendFailure.INVALID_RESPONSE
             )
         points = _sequence(
             _member(series, "data", default=()),
@@ -814,12 +838,12 @@ def _positive_metric_values(response: object, revision_name: str) -> tuple[float
                 or not 0 <= value <= 100
             ):
                 raise AzureGPUUtilizationAttestationError(
-                    "GPU metric sample is invalid"
+                    BackendFailure.INVALID_RESPONSE
                 )
             if value > 0:
                 samples.append(float(value))
     if point_count > _MAX_METRIC_POINTS:
-        raise AzureGPUUtilizationAttestationError("GPU metric response is too large")
+        raise AzureGPUUtilizationAttestationError(BackendFailure.INVALID_RESPONSE)
     return tuple(samples)
 
 
@@ -873,10 +897,15 @@ class AzureContainerAppGPUUtilizationAttestor:
         self._lock = RLock()
 
     def _timestamp(self) -> datetime:
-        value = self._now()
+        try:
+            value = self._now()
+        except Exception:
+            raise AzureGPUUtilizationAttestationError(
+                BackendFailure.INTERNAL
+            ) from None
         if value.tzinfo is None or value.utcoffset() is None:
             raise AzureGPUUtilizationAttestationError(
-                "GPU metric clock must be timezone-aware"
+                BackendFailure.INTERNAL
             )
         return value.astimezone(UTC)
 
@@ -907,12 +936,17 @@ class AzureContainerAppGPUUtilizationAttestor:
                     metricnamespace=_GPU_METRIC_NAMESPACE,
                     validate_dimensions=True,
                 )
+            except Exception as error:
+                raise AzureGPUUtilizationAttestationError(
+                    _gpu_monitor_failure(error)
+                ) from None
+            try:
                 samples = _positive_metric_values(response, identity.revision_name)
             except AzureGPUUtilizationAttestationError:
                 raise
             except Exception:
                 raise AzureGPUUtilizationAttestationError(
-                    "Azure Monitor GPU metric read failed"
+                    BackendFailure.INVALID_RESPONSE
                 ) from None
             if samples:
                 return AzureGPUUtilizationEvidence(
@@ -923,7 +957,7 @@ class AzureContainerAppGPUUtilizationAttestor:
                 )
             if observed >= deadline:
                 raise AzureGPUUtilizationAttestationError(
-                    "Azure Monitor did not prove positive GPU utilization"
+                    BackendFailure.TIMEOUT
                 )
             try:
                 self._progress_sink(
@@ -933,9 +967,14 @@ class AzureContainerAppGPUUtilizationAttestor:
                 )
             except Exception:
                 raise AzureGPUUtilizationAttestationError(
-                    "GPU metric progress publication failed"
+                    BackendFailure.INTERNAL
                 ) from None
-            self._sleep(self._poll_interval_seconds)
+            try:
+                self._sleep(self._poll_interval_seconds)
+            except Exception:
+                raise AzureGPUUtilizationAttestationError(
+                    BackendFailure.INTERNAL
+                ) from None
 
     def close(self) -> None:
         """Close the shared Monitor client exactly once."""
@@ -943,7 +982,12 @@ class AzureContainerAppGPUUtilizationAttestor:
             if self._closed:
                 return
             self._closed = True
-        self._client.close()
+        try:
+            self._client.close()
+        except Exception:
+            raise AzureGPUUtilizationAttestationError(
+                BackendFailure.INTERNAL
+            ) from None
 
 
 __all__ = (

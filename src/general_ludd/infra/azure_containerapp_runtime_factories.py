@@ -20,8 +20,10 @@ from general_ludd.infra.azure_containerapp_preflight import (
     AzureContainerAppReadOnlyPreflight,
 )
 from general_ludd.infra.azure_containerapp_sdk import (
+    AzureContainerAppGPUUtilizationAttestor,
     AzureContainerAppsSDKReadTransports,
     build_container_apps_sdk_client,
+    build_monitor_sdk_client,
 )
 from general_ludd.self_improve.azure_containerapp_backend import (
     build_azure_containerapp_candidate_backend,
@@ -43,6 +45,8 @@ class AzureContainerAppRuntimeFactories:
     backend: Callable[..., Any]
     sdk_client: Callable[..., Any]
     sdk_transports: Callable[..., Any]
+    monitor_client: Callable[..., Any]
+    gpu_attestor: Callable[..., Any]
 
 
 def resolve_azure_containerapp_runtime_factories(
@@ -54,6 +58,8 @@ def resolve_azure_containerapp_runtime_factories(
     backend: Callable[..., Any] | None,
     sdk_client: Callable[..., Any] | None,
     sdk_transports: Callable[..., Any] | None,
+    monitor_client: Callable[..., Any] | None,
+    gpu_attestor: Callable[..., Any] | None,
 ) -> AzureContainerAppRuntimeFactories:
     """Choose explicit test seams or the official production SDK adapters."""
     return AzureContainerAppRuntimeFactories(
@@ -75,6 +81,14 @@ def resolve_azure_containerapp_runtime_factories(
             AzureContainerAppsSDKReadTransports
             if sdk_transports is None
             else sdk_transports
+        ),
+        monitor_client=(
+            build_monitor_sdk_client if monitor_client is None else monitor_client
+        ),
+        gpu_attestor=(
+            AzureContainerAppGPUUtilizationAttestor
+            if gpu_attestor is None
+            else gpu_attestor
         ),
     )
 

@@ -7,6 +7,7 @@ import json
 import re
 from collections.abc import Callable
 from pathlib import Path
+from typing import Protocol
 
 from general_ludd.git_automation.locking import git_common_directory
 from general_ludd.infra.azure_containerapp_gpu import ModelServingRequirement
@@ -28,9 +29,22 @@ _MAX_LINKED_WORKTREES = 128
 _MAX_GITDIR_BYTES = 4_096
 
 
+class _AzureOwnershipScope(Protocol):
+    """Minimum Azure coordinates needed to derive a project owner identity."""
+
+    @property
+    def subscription_id(self) -> str: ...
+
+    @property
+    def resource_group(self) -> str: ...
+
+    @property
+    def environment_name(self) -> str: ...
+
+
 def _owner_digest(
     identity_root: Path,
-    settings: AzureContainerAppBootstrapSettings,
+    settings: _AzureOwnershipScope,
 ) -> str:
     """Hash one explicit project identity using the stable ownership protocol."""
     encoded = json.dumps(
@@ -52,7 +66,7 @@ def _owner_digest(
 
 def azure_bootstrap_owner_digest(
     repo_root: Path,
-    settings: AzureContainerAppBootstrapSettings,
+    settings: _AzureOwnershipScope,
 ) -> str:
     """Bind environment ownership to one canonical project and Azure scope."""
     common_directory = git_common_directory(str(repo_root))

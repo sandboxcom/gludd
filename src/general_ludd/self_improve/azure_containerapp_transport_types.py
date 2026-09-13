@@ -19,6 +19,9 @@ class ContainerAppTraceEvent(StrEnum):
     REQUEST_STARTED = "azure_containerapp_request_started"
     RESPONSE_ACCEPTED = "azure_containerapp_response_accepted"
     REQUEST_FAILED = "azure_containerapp_request_failed"
+    GPU_ATTESTATION_STARTED = "azure_containerapp_gpu_attestation_started"
+    GPU_ATTESTATION_SUCCEEDED = "azure_containerapp_gpu_attestation_succeeded"
+    GPU_ATTESTATION_FAILED = "azure_containerapp_gpu_attestation_failed"
 
 
 class ContainerAppResponseFailure(StrEnum):
@@ -48,6 +51,8 @@ class ContainerAppBackendTrace:
     input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
+    gpu_maximum_percent: float = 0.0
+    gpu_positive_sample_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)

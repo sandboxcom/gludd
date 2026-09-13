@@ -31,6 +31,9 @@ from general_ludd.infra.azure_containerapp_make_runtime import (
     MakeRuntimeState,
 )
 from general_ludd.infra.azure_containerapp_preflight import PreflightTrace
+from general_ludd.infra.azure_containerapp_sdk import (
+    AzureGPUUtilizationEvidence,
+)
 from general_ludd.self_improve.azure_backend import AzureCandidateResponse
 from general_ludd.self_improve.azure_containerapp_backend import (
     ContainerAppBackendTrace,
@@ -1026,7 +1029,43 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
                 )
             )
 
-    backend = object()
+    response = AzureCandidateResponse("accepted", 11, 3, 14)
+    backend: object | None = None
+
+    class FakeBackend:
+        def __init__(self, identity: AzureContainerAppCandidateIdentity) -> None:
+            self.candidate_identity = identity
+
+        def generate(self, *_args: object, **_kwargs: object) -> AzureCandidateResponse:
+            lifecycle.append("backend.generate")
+            return response
+
+        def close(self) -> None:
+            lifecycle.append("backend.close")
+
+    class FakeMonitor:
+        def close(self) -> None:
+            lifecycle.append("monitor.close")
+
+    class FakeAttestor:
+        def __init__(self, client: FakeMonitor) -> None:
+            self.client = client
+
+        def attest(
+            self,
+            identity: AzureContainerAppCandidateIdentity,
+        ) -> AzureGPUUtilizationEvidence:
+            lifecycle.append("gpu.attest")
+            return AzureGPUUtilizationEvidence(
+                metric_name="GpuUtilizationPercentage",
+                maximum_percent=42.0,
+                positive_sample_count=1,
+                revision_name=identity.revision_name,
+            )
+
+        def close(self) -> None:
+            lifecycle.append("attestor.close")
+            self.client.close()
 
     def build_backend(
         identity: AzureContainerAppCandidateIdentity,
@@ -1034,6 +1073,7 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
         discovery_timeout_seconds: float,
         trace_sink: Any,
     ) -> object:
+        nonlocal backend
         backend_arguments.update(
             identity=identity,
             discovery_timeout_seconds=discovery_timeout_seconds,
@@ -1041,6 +1081,7 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
         trace_sink(
             ContainerAppBackendTrace(event=ContainerAppTraceEvent.DISCOVERY_STARTED)
         )
+        backend = FakeBackend(identity)
         return backend
 
     monkeypatch.setattr(
@@ -1091,6 +1132,20 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
         FakeEnvironmentRuntime,
     )
     monkeypatch.setattr(live_cli, "build_azure_containerapp_candidate_backend", build_backend)
+    monkeypatch.setattr(
+        live_cli,
+        "build_monitor_sdk_client",
+        lambda active_credential, subscription_id: (
+            FakeMonitor()
+            if (active_credential, subscription_id) == (credential, SUBSCRIPTION)
+            else (_ for _ in ()).throw(AssertionError("unexpected Monitor request"))
+        ),
+    )
+    monkeypatch.setattr(
+        live_cli,
+        "AzureContainerAppGPUUtilizationAttestor",
+        lambda **kwargs: FakeAttestor(cast(FakeMonitor, kwargs["client"])),
+    )
     monkeypatch.setattr(
         live_cli,
         "ensure_azure_resource_group",
@@ -1145,7 +1200,14 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
         model_revision=policy.model_revision,
         workload_profile_type=policy.workload_profile_type,
     )
-    assert resources.backend_factory(identity) is backend
+    attested_backend = resources.backend_factory(identity)
+    assert attested_backend is not backend
+    assert attested_backend.candidate_identity is identity
+    assert attested_backend.generate(
+        cast(Any, object()),
+        max_output_tokens=8,
+        timeout_seconds=30.0,
+    ) is response
     resources.close()
     resources.close()
 
@@ -1154,6 +1216,8 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
     assert "AZURE_CONTAINERAPP_TERRAFORM_TRACE" in output
     assert "AZURE_CONTAINERAPP_ENVIRONMENT_TERRAFORM_TRACE" in output
     assert "AZURE_CONTAINERAPP_BACKEND_TRACE" in output
+    assert "azure_containerapp_gpu_attestation_succeeded" in output
+    assert "gpu_maximum_percent=42.0" in output
     assert "AZURE_CONTAINERAPP_ARM_TRACE phase=readiness state=heartbeat" in output
     assert "AZURE_CONTAINERAPP_ARM_TRACE phase=absence state=heartbeat" in output
     assert "unit-token" not in output
@@ -1215,6 +1279,11 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
         "discovery_timeout_seconds": 120.0,
     }
     assert lifecycle == [
+        "backend.generate",
+        "gpu.attest",
+        "backend.close",
+        "attestor.close",
+        "monitor.close",
         "app.close",
         "lifecycle.close",
         "environment.close",

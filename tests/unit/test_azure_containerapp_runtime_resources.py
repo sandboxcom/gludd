@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -20,8 +21,18 @@ from general_ludd.infra.azure_containerapp_live_proof import (
     LIVE_PROOF_ACKNOWLEDGEMENT,
     AzureContainerAppLiveProofPolicy,
 )
-from general_ludd.infra.azure_containerapp_sdk import AzureContainerAppsSDKReadError
+from general_ludd.infra.azure_containerapp_sdk import (
+    AzureContainerAppsSDKReadError,
+    AzureGPUUtilizationAttestationError,
+    AzureGPUUtilizationEvidence,
+)
+from general_ludd.self_improve.azure_backend import AzureCandidateResponse
+from general_ludd.self_improve.azure_containerapp_transport_types import (
+    ContainerAppBackendTrace,
+    ContainerAppTraceEvent,
+)
 from general_ludd.self_improve.model_candidates import (
+    AzureContainerAppCandidateIdentity,
     BackendCallBudget,
     BackendFailure,
     BackendInfrastructureError,
@@ -70,6 +81,24 @@ def _requirement() -> ModelServingRequirement:
         weight_bits=16,
         kv_cache_mib=2_048,
         runtime_overhead_mib=3_072,
+    )
+
+
+def _identity(
+    policy: AzureContainerAppLiveProofPolicy | None = None,
+) -> AzureContainerAppCandidateIdentity:
+    active = policy or _policy()
+    return AzureContainerAppCandidateIdentity(
+        endpoint=(
+            "https://gludd-vllm-managed-abc123.kindstone.eastus."
+            "azurecontainerapps.io"
+        ),
+        resource_id=active.expected_resource_id,
+        revision_name=f"{active.app_name}--0000007",
+        image_digest="sha256:" + "a" * 64,
+        model_name=active.model_name,
+        model_revision=active.model_revision,
+        workload_profile_type=active.workload_profile_type,
     )
 
 
@@ -817,6 +846,481 @@ def test_default_resources_build_one_shared_official_sdk_reader(
         "sdk.views",
         {"client": client, "policy": policy},
     )
+    resources.close()
+
+
+def test_backend_withholds_response_until_exact_gpu_utilization_is_attested(
+    tmp_path: Path,
+) -> None:
+    """A validated inference cannot leave the Azure boundary before GPU proof."""
+    policy = _policy()
+    identity = _identity(policy)
+    response = AzureCandidateResponse("accepted", 11, 3, 14)
+    calls: list[str] = []
+    traces: list[ContainerAppBackendTrace] = []
+
+    class Client:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def close(self) -> None:
+            calls.append(f"{self.name}.close")
+
+    class Credential(Client):
+        pass
+
+    class Backend:
+        candidate_identity = identity
+
+        def generate(
+            self,
+            _request: object,
+            *,
+            max_output_tokens: int,
+            timeout_seconds: float,
+        ) -> AzureCandidateResponse:
+            assert (max_output_tokens, timeout_seconds) == (8, 30.0)
+            calls.append("inference")
+            return response
+
+        def close(self) -> None:
+            calls.append("backend.close")
+
+    class Attestor:
+        def __init__(self, monitor: Client) -> None:
+            self.monitor = monitor
+
+        def attest(
+            self,
+            observed: AzureContainerAppCandidateIdentity,
+        ) -> AzureGPUUtilizationEvidence:
+            assert observed is identity
+            calls.append("gpu.attest")
+            return AzureGPUUtilizationEvidence(
+                metric_name="GpuUtilizationPercentage",
+                maximum_percent=37.5,
+                positive_sample_count=2,
+                revision_name=identity.revision_name,
+            )
+
+        def close(self) -> None:
+            calls.append("attestor.close")
+            self.monitor.close()
+
+    def backend_factory(
+        observed: AzureContainerAppCandidateIdentity,
+        **kwargs: object,
+    ) -> Backend:
+        assert observed is identity
+        assert kwargs == {
+            "discovery_timeout_seconds": 120.0,
+            "trace_sink": traces.append,
+        }
+        calls.append("backend.open")
+        return Backend()
+
+    def monitor_factory(credential: object, subscription_id: str) -> Client:
+        assert isinstance(credential, Credential)
+        assert subscription_id == SUBSCRIPTION
+        calls.append("monitor.open")
+        return Client("monitor")
+
+    def attestor_factory(**kwargs: object) -> Attestor:
+        assert kwargs["expected_resource_id"] == policy.expected_resource_id
+        assert callable(kwargs["progress_sink"])
+        calls.append("attestor.open")
+        return Attestor(cast(Client, kwargs["client"]))
+
+    resources = resources_module.build_azure_containerapp_runtime_resources(
+        credentials=_credentials(),
+        policy=policy,
+        requirement=_requirement(),
+        work_root=tmp_path / "apps",
+        environment_work_root=tmp_path / "environments",
+        backend_trace_sink=traces.append,
+        _credential_factory=lambda _value: Credential("credential"),
+        _environment_transport_factory=lambda **_kwargs: Client("environment"),
+        _lifecycle_transport_factory=lambda **_kwargs: Client("lifecycle"),
+        _app_transport_factory=lambda **_kwargs: Client("app"),
+        _app_runtime_factory=lambda **_kwargs: SimpleNamespace(),
+        _environment_runtime_factory=lambda **_kwargs: SimpleNamespace(),
+        _backend_factory=backend_factory,
+        _monitor_client_factory=monitor_factory,
+        _gpu_attestor_factory=attestor_factory,
+    )
+
+    assert calls == []
+    backend = resources.backend_factory(identity)
+    assert calls == ["backend.open", "monitor.open", "attestor.open"]
+
+    assert backend.generate(
+        cast(object, SimpleNamespace()),
+        max_output_tokens=8,
+        timeout_seconds=30.0,
+    ) is response
+    calls.append("response.returned")
+
+    assert calls[3:6] == ["inference", "gpu.attest", "response.returned"]
+    assert [trace.event for trace in traces] == [
+        ContainerAppTraceEvent.GPU_ATTESTATION_STARTED,
+        ContainerAppTraceEvent.GPU_ATTESTATION_SUCCEEDED,
+    ]
+    assert traces[-1].candidate_digest == identity.identity_digest
+    assert traces[-1].gpu_maximum_percent == 37.5
+    assert traces[-1].gpu_positive_sample_count == 2
+
+    cast(Any, backend).close()
+    resources.close()
+    resources.close()
+    assert calls.count("backend.close") == 1
+    assert calls.count("attestor.close") == 1
+    assert calls.count("monitor.close") == 1
+    assert calls.count("credential.close") == 1
+
+
+def test_gpu_attestation_failure_blocks_response_and_remains_censored() -> None:
+    """A Monitor refusal is infrastructure failure, never model output."""
+    identity = _identity()
+    response = AzureCandidateResponse("provider-private-output", 11, 3, 14)
+    calls: list[str] = []
+    traces: list[ContainerAppBackendTrace] = []
+
+    class Backend:
+        candidate_identity = identity
+
+        def generate(self, *_args: object, **_kwargs: object) -> AzureCandidateResponse:
+            calls.append("inference")
+            return response
+
+        def close(self) -> None:
+            calls.append("backend.close")
+
+    class Attestor:
+        def attest(self, observed: AzureContainerAppCandidateIdentity) -> object:
+            assert observed is identity
+            calls.append("gpu.attest")
+            raise AzureGPUUtilizationAttestationError(BackendFailure.AUTHORIZATION)
+
+    backend = resources_module._GPUAttestedBackend(
+        Backend(),
+        Attestor(),
+        traces.append,
+    )
+
+    with pytest.raises(BackendInfrastructureError) as captured:
+        backend.generate(
+            cast(object, SimpleNamespace()),
+            max_output_tokens=8,
+            timeout_seconds=30.0,
+        )
+
+    assert captured.value.failure is BackendFailure.AUTHORIZATION
+    assert "provider-private-output" not in str(captured.value)
+    assert calls == ["inference", "gpu.attest"]
+    assert [trace.event for trace in traces] == [
+        ContainerAppTraceEvent.GPU_ATTESTATION_STARTED,
+        ContainerAppTraceEvent.GPU_ATTESTATION_FAILED,
+    ]
+    assert traces[-1].failure is BackendFailure.AUTHORIZATION
+    backend.close()
+    backend.close()
+    assert calls.count("backend.close") == 1
+
+
+def test_gpu_evidence_validation_rejects_every_ambiguous_field() -> None:
+    """No malformed, zero, foreign, or unbounded metric can satisfy proof."""
+    identity = _identity()
+    valid = AzureGPUUtilizationEvidence(
+        metric_name="GpuUtilizationPercentage",
+        maximum_percent=37.5,
+        positive_sample_count=2,
+        revision_name=identity.revision_name,
+    )
+    invalid = (
+        object(),
+        replace(valid, metric_name="CpuPercentage"),
+        replace(valid, revision_name="foreign--0000001"),
+        replace(valid, maximum_percent=cast(Any, True)),
+        replace(valid, maximum_percent=cast(Any, "37.5")),
+        replace(valid, maximum_percent=float("nan")),
+        replace(valid, maximum_percent=0.0),
+        replace(valid, maximum_percent=100.1),
+        replace(valid, positive_sample_count=cast(Any, True)),
+        replace(valid, positive_sample_count=cast(Any, "2")),
+        replace(valid, positive_sample_count=0),
+        replace(valid, positive_sample_count=10_001),
+    )
+
+    assert resources_module._valid_gpu_evidence(valid, identity) is True
+    assert all(
+        resources_module._valid_gpu_evidence(evidence, identity) is False
+        for evidence in invalid
+    )
+
+
+@pytest.mark.parametrize(
+    ("attestation_result", "expected"),
+    [
+        (RuntimeError("provider-private"), BackendFailure.INTERNAL),
+        (object(), BackendFailure.INVALID_RESPONSE),
+    ],
+)
+def test_gpu_backend_censors_untyped_or_malformed_attestation(
+    attestation_result: object,
+    expected: BackendFailure,
+) -> None:
+    """Injected adapter bugs cannot release output or exception details."""
+    identity = _identity()
+
+    class Backend:
+        candidate_identity = identity
+
+        def generate(self, *_args: object, **_kwargs: object) -> AzureCandidateResponse:
+            return AzureCandidateResponse("provider-private-output", 1, 1, 2)
+
+        def close(self) -> None:
+            return None
+
+    class Attestor:
+        def attest(self, _identity: AzureContainerAppCandidateIdentity) -> object:
+            if isinstance(attestation_result, Exception):
+                raise attestation_result
+            return attestation_result
+
+    backend = resources_module._GPUAttestedBackend(
+        Backend(),
+        Attestor(),
+        lambda _trace: None,
+    )
+
+    with pytest.raises(BackendInfrastructureError) as captured:
+        backend.generate(
+            cast(Any, object()),
+            max_output_tokens=8,
+            timeout_seconds=30.0,
+        )
+
+    assert captured.value.failure is expected
+    assert "provider-private" not in str(captured.value)
+
+
+@pytest.mark.parametrize(
+    ("close_error", "expected"),
+    [
+        (
+            BackendInfrastructureError(BackendFailure.AUTHORIZATION),
+            BackendFailure.AUTHORIZATION,
+        ),
+        (RuntimeError("provider-private"), BackendFailure.INTERNAL),
+    ],
+)
+def test_gpu_backend_close_preserves_only_typed_failure(
+    close_error: Exception,
+    expected: BackendFailure,
+) -> None:
+    """Delegate cleanup failures are typed, censored, and idempotent."""
+    identity = _identity()
+
+    class Backend:
+        candidate_identity = identity
+
+        def generate(self, *_args: object, **_kwargs: object) -> AzureCandidateResponse:
+            return AzureCandidateResponse("unused", 1, 1, 2)
+
+        def close(self) -> None:
+            raise close_error
+
+    backend = resources_module._GPUAttestedBackend(
+        Backend(),
+        SimpleNamespace(attest=lambda _identity: object()),
+        lambda _trace: None,
+    )
+
+    with pytest.raises(BackendInfrastructureError) as captured:
+        backend.close()
+
+    assert captured.value.failure is expected
+    assert "provider-private" not in str(captured.value)
+    backend.close()
+    with pytest.raises(BackendInfrastructureError) as closed:
+        backend.generate(
+            cast(Any, object()),
+            max_output_tokens=8,
+            timeout_seconds=30.0,
+        )
+    assert closed.value.failure is BackendFailure.UNAVAILABLE
+
+
+def test_backend_factory_closes_partial_gpu_owners_on_construction_failure(
+    tmp_path: Path,
+) -> None:
+    """A failed attestor cannot leak its HTTP backend or Monitor client."""
+    identity = _identity()
+    calls: list[str] = []
+
+    class Client:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def close(self) -> None:
+            calls.append(f"{self.name}.close")
+
+    class Backend:
+        candidate_identity = identity
+
+        def generate(self, *_args: object, **_kwargs: object) -> object:
+            return object()
+
+        def close(self) -> None:
+            calls.append("backend.close")
+
+    resources = resources_module.build_azure_containerapp_runtime_resources(
+        credentials=_credentials(),
+        policy=_policy(),
+        requirement=_requirement(),
+        work_root=tmp_path / "apps",
+        environment_work_root=tmp_path / "environments",
+        _credential_factory=lambda _value: Client("credential"),
+        _environment_transport_factory=lambda **_kwargs: Client("environment"),
+        _lifecycle_transport_factory=lambda **_kwargs: Client("lifecycle"),
+        _app_transport_factory=lambda **_kwargs: Client("app"),
+        _app_runtime_factory=lambda **_kwargs: SimpleNamespace(),
+        _environment_runtime_factory=lambda **_kwargs: SimpleNamespace(),
+        _backend_factory=lambda *_args, **_kwargs: Backend(),
+        _monitor_client_factory=lambda *_args: Client("monitor"),
+        _gpu_attestor_factory=lambda **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("provider-private-construction-error")
+        ),
+    )
+
+    with pytest.raises(BackendInfrastructureError) as captured:
+        resources.backend_factory(identity)
+
+    assert captured.value.failure is BackendFailure.INTERNAL
+    assert "provider-private" not in str(captured.value)
+    assert calls[:2] == ["monitor.close", "backend.close"]
+    resources.close()
+
+
+def test_backend_factory_rejects_closed_unbound_and_foreign_resource_scopes() -> None:
+    """The resource owner cannot be reused or rebound to another Azure app."""
+    policy = _policy()
+
+    class Client:
+        def close(self) -> None:
+            return None
+
+    def resources(
+        active_policy: AzureContainerAppLiveProofPolicy | None,
+    ) -> resources_module.AzureContainerAppRuntimeResources:
+        return resources_module.AzureContainerAppRuntimeResources(
+            runtime=cast(Any, SimpleNamespace()),
+            environment_runtime=cast(Any, SimpleNamespace()),
+            credential=cast(Any, Client()),
+            environment_transport=Client(),
+            lifecycle_transport=Client(),
+            app_transport=Client(),
+            credential_release=None,
+            policy=active_policy,
+        )
+
+    unbound = resources(None)
+    with pytest.raises(BackendInfrastructureError) as missing:
+        unbound.backend_factory(_identity(policy))
+    assert missing.value.failure is BackendFailure.INVALID_RESPONSE
+
+    bound = resources(policy)
+    foreign_policy = replace(policy, app_name="gludd-vllm-managed-foreign")
+    with pytest.raises(BackendInfrastructureError) as foreign:
+        bound.backend_factory(_identity(foreign_policy))
+    assert foreign.value.failure is BackendFailure.INVALID_RESPONSE
+
+    bound.close()
+    with pytest.raises(BackendInfrastructureError) as closed:
+        bound.backend_factory(_identity(policy))
+    assert closed.value.failure is BackendFailure.UNAVAILABLE
+    unbound.close()
+
+
+@pytest.mark.parametrize(
+    "mode",
+    ("typed-builder", "delegate-shape", "monitor-shape", "attestor-owned"),
+)
+def test_backend_factory_censors_invalid_dependency_construction(
+    mode: str,
+) -> None:
+    """Every dependency-stage failure unwinds only the owners already acquired."""
+    policy = _policy()
+    identity = _identity(policy)
+    calls: list[str] = []
+
+    class Client:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def close(self) -> None:
+            calls.append(f"{self.name}.close")
+
+    class Backend:
+        candidate_identity: object = identity
+
+        def generate(self, *_args: object, **_kwargs: object) -> AzureCandidateResponse:
+            return AzureCandidateResponse("unused", 1, 1, 2)
+
+        def close(self) -> None:
+            calls.append("backend.close")
+
+    class Attestor:
+        def __init__(self, monitor: Client) -> None:
+            self.monitor = monitor
+
+        def attest(self, _identity: AzureContainerAppCandidateIdentity) -> object:
+            return object()
+
+        def close(self) -> None:
+            calls.append("attestor.close")
+            self.monitor.close()
+
+    def backend_builder(*_args: object, **_kwargs: object) -> object:
+        if mode == "typed-builder":
+            raise BackendInfrastructureError(BackendFailure.AUTHORIZATION)
+        if mode == "delegate-shape":
+            return object()
+        backend = Backend()
+        if mode == "attestor-owned":
+            backend.candidate_identity = object()
+        return backend
+
+    monitor = Client("monitor")
+    resources = resources_module.AzureContainerAppRuntimeResources(
+        runtime=cast(Any, SimpleNamespace()),
+        environment_runtime=cast(Any, SimpleNamespace()),
+        credential=cast(Any, Client("credential")),
+        environment_transport=Client("environment"),
+        lifecycle_transport=Client("lifecycle"),
+        app_transport=Client("app"),
+        credential_release=None,
+        backend_factory_builder=cast(Any, backend_builder),
+        policy=policy,
+        monitor_client_factory=(
+            (lambda *_args: object())
+            if mode == "monitor-shape"
+            else (lambda *_args: monitor)
+        ),
+        gpu_attestor_factory=lambda **_kwargs: Attestor(monitor),
+    )
+
+    with pytest.raises(BackendInfrastructureError) as captured:
+        resources.backend_factory(identity)
+
+    expected = (
+        BackendFailure.AUTHORIZATION
+        if mode == "typed-builder"
+        else BackendFailure.INTERNAL
+    )
+    assert captured.value.failure is expected
+    assert "backend.close" in calls if mode in {"monitor-shape", "attestor-owned"} else True
+    assert "attestor.close" in calls if mode == "attestor-owned" else True
     resources.close()
 
 

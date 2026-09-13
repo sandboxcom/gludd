@@ -161,6 +161,38 @@ def test_runtime_trace_surfaces_safe_backend_failure_diagnostics() -> None:
     assert "secret_output=false" in messages[0]
 
 
+def test_runtime_trace_surfaces_only_validated_gpu_attestation_evidence() -> None:
+    """Positive utilization facts are visible without Azure resource identity."""
+    messages: list[str] = []
+
+    bootstrap._runtime_trace(
+        messages.append,
+        "backend",
+        ContainerAppBackendTrace(
+            ContainerAppTraceEvent.GPU_ATTESTATION_SUCCEEDED,
+            candidate_digest="a" * 64,
+            request_number=1,
+            gpu_maximum_percent=37.5,
+            gpu_positive_sample_count=2,
+        ),
+    )
+    bootstrap._runtime_trace(
+        messages.append,
+        "backend",
+        SimpleNamespace(
+            event=ContainerAppTraceEvent.GPU_ATTESTATION_SUCCEEDED,
+            gpu_maximum_percent=float("nan"),
+            gpu_positive_sample_count=True,
+        ),
+    )
+
+    assert "gpu_maximum_percent=37.5" in messages[0]
+    assert "gpu_positive_sample_count=2" in messages[0]
+    assert "gpu_maximum_percent=0.0" in messages[1]
+    assert "gpu_positive_sample_count=0" in messages[1]
+    assert "secret_output=false" in messages[0]
+
+
 def test_runtime_trace_exposes_only_typed_legacy_owner_migration() -> None:
     """Live diagnosis can distinguish a proven legacy identity from adoption."""
     messages: list[str] = []
