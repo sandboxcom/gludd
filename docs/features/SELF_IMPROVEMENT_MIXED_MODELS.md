@@ -848,14 +848,24 @@ The next paid canary again completed real A100 inference with 4,037 input and 24
 output tokens, but the Monitor service rejected that concrete-revision filter with
 HTTP 400 before returning metric data. This is consistent with the same SDK contract:
 `validate_dimensions=true` rejects an unrecognized filter value, while a freshly
-created revision may not yet exist in Monitor's dimension-value index. Gludd now asks
-Monitor to split both dimensions with `revisionName eq '*' and podName eq '*'`, then
-independently requires every returned data-bearing series to carry the exact
+created revision may not yet exist in Monitor's dimension-value index. Gludd therefore
+asked Monitor to split both dimensions with `revisionName eq '*' and podName eq '*'`,
+then independently required every returned data-bearing series to carry the exact
 owner-verified revision. Foreign, absent, or ambiguous revision metadata still fails
-closed, so the ingestion workaround cannot attest an earlier deployment. The app was
-destroyed in 19 seconds and independently verified absent; the zero-cost environment
-was retained. The hermetic Azure profile remains green locally, but another live retry
-is still the acceptance boundary.
+closed, so the ingestion workaround cannot attest an earlier deployment.
+
+A subsequent paid retry disproved that wildcard query as a complete remedy: Azure
+Monitor still returned HTTP 400 immediately after successful A100 inference. A
+[Microsoft Q&A report about delayed metric dimensions](https://learn.microsoft.com/en-us/answers/questions/5811384/not-able-to-select-the-failure-type-dimension-valu)
+notes that dimension values populate only after metric data arrives and that new
+metrics can take 10--15 minutes to appear. Gludd now treats only HTTP 400 from this
+owner-scoped query as a potentially transient registration state, emits a content-free
+`query_pending` heartbeat, and retries within the existing bounded attestation
+deadline. If registration never becomes ready, it fails closed with the typed
+`metric_query_rejected` reason and validated status 400; every other Monitor failure
+remains immediate. The app was destroyed in 19 seconds and independently verified
+absent, while only the measured-zero-cost environment was retained. A live retry is
+still required to establish positive GPU telemetry.
 
 The same run also confirmed a local failure-classification defect. A fatal native
 decode error used the validation-retry marker and was therefore eligible to poison
@@ -864,6 +874,14 @@ and emits a content-free typed infrastructure marker with exit 3 for `OSError` o
 `RuntimeError`; the parent converts only that stable marker to `unavailable` and never
 persists it as model-quality evidence. Both local and Azure trials continue to consume
 the same parent-built request/contract envelope and common evaluator.
+
+After that correction, the managed local Qwen2.5-Coder 1.5B candidate completed the
+same 4,037-token request concurrently with Azure, generated 403 completion tokens,
+produced a 1,296-byte proposal artifact, applied its patch, passed syntax validation,
+passed all 27 task-targeted tests, and passed full isolated collection. Its proposal
+was still rejected by the commit-quality guard, so the model received negative quality
+evidence rather than an accepted improvement. This proves real local work and common
+evaluation, but not yet a successful self-improvement outcome.
 
 #### Parent-owned per-ordinal proposal scope (2026-09-13)
 
