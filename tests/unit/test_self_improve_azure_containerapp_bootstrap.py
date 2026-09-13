@@ -584,6 +584,7 @@ def test_config_derives_t4_topology_and_bootstraps_fresh_owned_sessions(
     assert wiring.policy.required_providers == (
         ModelCandidateProvider.AZURE_CONTAINER_APP,
     )
+    assert wiring.policy.continue_on_remote_infrastructure_failure is True
     assert (
         wiring.policy.containerapp_bootstrap_digest
         == wiring.bootstrap_factory.deployment_digest

@@ -672,6 +672,35 @@ a hard-coded Container Apps version was rejected by ARM even though it looked
 temporally current. Gludd therefore treats the published operation catalog—not
 the date alone—as authoritative and keeps the version under exact-path tests.
 
+#### Live A100 scheduling failure and local continuity (2026-09-12)
+
+A subsequent live run discovered and selected an immutable model that required
+`Consumption-GPU-NC24-A100`, reused the owned environment, and created the paid
+app in 18 seconds. Azure reported the app and revision as provisioned and healthy,
+but the replica API continued to report zero running containers for the complete
+900-second readiness bound. Gludd refused to treat those control-plane labels as
+model readiness, destroyed the paid app in 20 seconds, independently verified its
+absence, and retained only the measured-zero-cost environment under the configured
+retention policy.
+
+This is consistent with the long-lived operator report
+[Microsoft Q&A 5572527](https://learn.microsoft.com/en-us/answers/questions/5572527/container-app-using-serverless-gpu-stuck-assigning),
+which covers both T4 and A100 serverless replicas remaining in
+`AssigningReplica`, and with the official
+[Container Apps quota documentation](https://learn.microsoft.com/en-us/azure/container-apps/quotas),
+which warns that exhausted environment GPU quota can restrict scaling or time out
+provisioning. The live path therefore continues to require replica/container
+evidence and must not infer readiness from a successful ARM write.
+
+The run also exposed an orchestration coupling: the typed Azure timeout occurred
+while assembling candidates and prevented the already-approved local candidate
+from running. Config-derived mixed execution now explicitly opts into local
+continuation for a typed remote infrastructure failure. That option does not
+relax configuration, identity, budget, or privacy checks; those failures remain
+terminal, as does any remote failure when no validated local session exists. The
+continuation event contains only the fixed infrastructure category. Default and
+operator-composed policies remain fail closed unless they select this behavior.
+
 ### S83.150 live-adapter research
 
 Research checked on 2026-09-04 before the adapter was implemented:

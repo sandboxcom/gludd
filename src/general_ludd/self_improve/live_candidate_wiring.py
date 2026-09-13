@@ -50,6 +50,7 @@ from general_ludd.self_improve.model_candidates import (
     AzureContainerAppCandidateIdentity,
     AzureFoundryCandidateIdentity,
     BackendCallBudget,
+    BackendInfrastructureError,
     BoundedCandidateSession,
     CandidateBackend,
     ModelCandidateProvider,
@@ -175,6 +176,9 @@ def _configuration_digest(
 ) -> str:
     payload: dict[str, object] = {
         "budget": _budget_payload(policy.local_budget),
+        "continue_on_remote_infrastructure_failure": (
+            policy.continue_on_remote_infrastructure_failure
+        ),
         "protocol": LIVE_CANDIDATE_WIRING_PROTOCOL,
         "provider": provider.value,
         "required_providers": [item.value for item in policy.required_providers],
@@ -190,6 +194,9 @@ def _configuration_digest(
             "api_version": config.api_version,
             "azure_enabled": config.azure_enabled,
             "budget": _budget_payload(budget),
+            "continue_on_remote_infrastructure_failure": (
+                policy.continue_on_remote_infrastructure_failure
+            ),
             "credential_environment": config.credential.environment_variable,
             "credential_source": config.credential.source.value,
             "deployment": config.deployment,
@@ -211,6 +218,9 @@ def _configuration_digest(
         payload = {
             "azure_enabled": True,
             "budget": _budget_payload(budget),
+            "continue_on_remote_infrastructure_failure": (
+                policy.continue_on_remote_infrastructure_failure
+            ),
             "estimated_cost_microusd": (
                 policy.containerapp_estimated_cost_microusd
             ),
@@ -249,11 +259,16 @@ class LiveCandidateWiringPolicy:
     containerapp_bootstrap_digest: str | None = None
     containerapp_budget: BackendCallBudget | None = None
     containerapp_estimated_cost_microusd: int = 0
+    continue_on_remote_infrastructure_failure: bool = False
 
     def __post_init__(self) -> None:
         """Reject ambiguous provider, opt-in, and budget combinations."""
         if not isinstance(self.local_budget, BackendCallBudget):
             raise ValueError("local_budget must be a BackendCallBudget")
+        if not isinstance(self.continue_on_remote_infrastructure_failure, bool):
+            raise ValueError(
+                "continue_on_remote_infrastructure_failure must be an explicit boolean"
+            )
         if (
             type(self.required_providers) is not tuple
             or not self.required_providers
@@ -844,6 +859,39 @@ class LiveManagedCandidateWiring:
             for event in assembly.event_payloads():
                 self._emit(event)
             return candidate_set
+        except BackendInfrastructureError as error:
+            discovered.close_safely()
+            if (
+                not self._policy.continue_on_remote_infrastructure_failure
+                or local_session is None
+            ):
+                raise
+            local_source = self._local_source(local_session, privacy_state)
+            assembly = assemble_managed_candidates(
+                classification,
+                (local_source,),
+                expected_classification_digest=expected_classification_digest,
+                required_providers=(ModelCandidateProvider.LOCAL_GGUF,),
+                azure_enabled=False,
+            )
+            self._emit(
+                {
+                    "event": "self_improve_remote_infrastructure_skipped",
+                    "failure": error.failure.value,
+                    "schema_version": 1,
+                }
+            )
+            self._emit(classification.event_payload())
+            for event in assembly.event_payloads():
+                self._emit(event)
+            return LiveManagedCandidateSet(
+                assembly,
+                local_session,
+                None,
+                None,
+                None,
+                None,
+            )
         except BaseException:
             discovered.close_safely()
             raise

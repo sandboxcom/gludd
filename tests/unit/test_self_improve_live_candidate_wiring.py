@@ -1222,6 +1222,58 @@ def test_managed_runner_does_not_fall_back_when_azure_discovery_fails(
     assert manager.releases == 1
 
 
+def test_managed_runner_explicitly_continues_local_after_containerapp_failure(
+    tmp_path: Path,
+) -> None:
+    model_path = tmp_path / "local-coder.Q4_K_M.gguf"
+    model_path.write_bytes(b"model")
+    manager = _AcquisitionManager(model_path)
+    generated: list[tuple[Path, str]] = []
+    failure = BackendInfrastructureError(BackendFailure.TIMEOUT)
+
+    class FailingBootstrap:
+        deployment_digest = "e" * 64
+
+        def __call__(self) -> _ContainerAppBackend:
+            raise failure
+
+    policy = LiveCandidateWiringPolicy(
+        local_budget=_budget(),
+        required_providers=(
+            ModelCandidateProvider.LOCAL_GGUF,
+            ModelCandidateProvider.AZURE_CONTAINER_APP,
+        ),
+        containerapp_bootstrap_digest=FailingBootstrap.deployment_digest,
+        containerapp_budget=_budget(),
+        continue_on_remote_infrastructure_failure=True,
+    )
+    progress: list[str] = []
+    runner = _runner(
+        LiveManagedCandidateWiring(
+            policy,
+            containerapp_bootstrap_factory=FailingBootstrap(),
+            event_sink=lambda event: progress.append(json.dumps(event, sort_keys=True)),
+        ),
+        generated,
+    )
+
+    result = runner._generate_proposal(
+        _approved_plan(tmp_path, model_path),
+        "bounded approved prompt",
+        None,
+        cast(object, manager),
+        False,
+        None,
+        None,
+    )
+
+    assert isinstance(result, GeneratedProposal)
+    assert generated == [(model_path, "bounded approved prompt")]
+    assert manager.releases == 1
+    assert any("remote_infrastructure_skipped" in event for event in progress)
+    assert any('"failure": "timeout"' in event for event in progress)
+
+
 def test_managed_runner_rechecks_privacy_before_any_live_discovery(
     tmp_path: Path,
 ) -> None:

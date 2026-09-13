@@ -358,6 +358,7 @@ def build_azure_containerapp_bootstrap_wiring(
         containerapp_estimated_cost_microusd=(
             settings.estimated_request_cost_microusd
         ),
+        continue_on_remote_infrastructure_failure=True,
     )
     progress_sink(
         "SELF_IMPROVE_AZURE_BOOTSTRAP phase=configured "
