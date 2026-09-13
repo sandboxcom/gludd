@@ -42,6 +42,11 @@ from general_ludd.self_improve.managed_runner import (
     apply_proposal,
 )
 from general_ludd.self_improve.model_candidate_planner import PlannedModelCandidate
+from general_ludd.self_improve.model_candidates import (
+    BackendFailure,
+    BackendInfrastructureError,
+    LocalGGUFCandidateIdentity,
+)
 from general_ludd.self_improve.model_lifecycle import ModelArtifactIdentity
 from general_ludd.self_improve.runtime import (
     MakeResult,
@@ -100,6 +105,76 @@ def _proposal() -> ProposalManifest:
           "commit_message": "feat: improve example"
         }"""
     )
+
+
+def test_local_candidate_adapter_forwards_the_approved_timeout(tmp_path: Path) -> None:
+    """The local adapter cannot replace its candidate call budget with 300 seconds."""
+    observed: dict[str, object] = {}
+
+    def generate(
+        _model_path: Path,
+        _prompt: PromptPlan | str,
+        _task: TaskSpec,
+        _reference: CodexReference,
+        *,
+        proposal_codec: object | None = None,
+        timeout_seconds: float | None = None,
+    ) -> ProposalManifest:
+        observed.update(
+            proposal_codec=proposal_codec,
+            timeout_seconds=timeout_seconds,
+        )
+        return _proposal()
+
+    identity = LocalGGUFCandidateIdentity(
+        model_id="local-test",
+        filename="model.gguf",
+        artifact_sha256="c" * 64,
+    )
+    adapter = managed_runner_module.LocalProposalBackendAdapter(
+        identity,
+        cast(Any, generate),
+    )
+    invocation = managed_runner_module.LocalProposalInvocation(
+        model_path=tmp_path / "model.gguf",
+        prompt="repair exactly",
+        task=_task(),
+        reference=_reference(),
+    )
+
+    assert adapter.generate(
+        invocation,
+        max_output_tokens=64,
+        timeout_seconds=30.0,
+    ).task_id == "S83.200"
+    assert observed == {"proposal_codec": None, "timeout_seconds": 30.0}
+
+
+def test_local_candidate_adapter_preserves_typed_worker_timeout(tmp_path: Path) -> None:
+    """A killed local worker is infrastructure timeout, never model-quality evidence."""
+    def generate(*_args: object, **_kwargs: object) -> ProposalManifest:
+        raise TimeoutError("private worker detail")
+
+    adapter = managed_runner_module.LocalProposalBackendAdapter(
+        LocalGGUFCandidateIdentity(
+            model_id="local-test",
+            filename="model.gguf",
+            artifact_sha256="c" * 64,
+        ),
+        cast(Any, generate),
+    )
+    invocation = managed_runner_module.LocalProposalInvocation(
+        model_path=tmp_path / "model.gguf",
+        prompt="repair exactly",
+        task=_task(),
+        reference=_reference(),
+    )
+
+    with pytest.raises(BackendInfrastructureError) as captured:
+        adapter.generate(invocation, max_output_tokens=64, timeout_seconds=30.0)
+
+    assert captured.value.failure is BackendFailure.TIMEOUT
+    assert captured.value.__context__ is None
 
 
 def _evidence() -> CandidateEvidence:

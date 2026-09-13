@@ -146,6 +146,38 @@ def test_parent_delegates_inference_to_owned_make_worker(tmp_path: Path) -> None
     assert not Path(variables["SELF_IMPROVE_PROPOSAL_FILE"]).exists()
 
 
+def test_parent_honors_explicit_candidate_timeout(tmp_path: Path) -> None:
+    """A routed call budget must bound the owned local worker process."""
+    model = tmp_path / "model.gguf"
+    model.write_bytes(b"gguf")
+    runner = _OwnedRunner()
+
+    proposal = generate_local_proposal(
+        runner,
+        model,
+        "repair exactly",
+        timeout_seconds=30.0,
+    )
+
+    assert proposal.task_id == "S83.133"
+    assert runner.calls[0][2] == 30
+
+
+def test_parent_classifies_owned_worker_deadline_as_timeout(tmp_path: Path) -> None:
+    """The process supervisor's deadline must remain typed at the router boundary."""
+    model = tmp_path / "model.gguf"
+    model.write_bytes(b"gguf")
+    runner = _OwnedRunner(returncode=124)
+
+    with pytest.raises(TimeoutError, match="local proposal worker timed out"):
+        generate_local_proposal(
+            runner,
+            model,
+            "repair exactly",
+            timeout_seconds=30.0,
+        )
+
+
 def test_parent_surfaces_native_worker_failure_without_parsing_output(tmp_path: Path) -> None:
     model = tmp_path / "model.gguf"
     model.write_bytes(b"gguf")

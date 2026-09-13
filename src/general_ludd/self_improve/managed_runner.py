@@ -24,6 +24,7 @@ from typing import Final, Protocol, cast, runtime_checkable
 from general_ludd.hardware.model_fit import unified_probe
 from general_ludd.hardware.survey import HardwareInventory
 from general_ludd.local_model import LocalModelConfig
+from general_ludd.self_improve._callback_compat import invoke_with_supported_keywords
 from general_ludd.self_improve._candidate_execution_types import (
     CandidateExecutionTrace,
 )
@@ -92,6 +93,7 @@ from general_ludd.self_improve.model_candidate_planner import (
     record_self_improve_outcome,
 )
 from general_ludd.self_improve.model_candidates import (
+    BackendFailure,
     BackendInfrastructureError,
     BoundedCandidateSession,
     LocalGGUFCandidateIdentity,
@@ -1234,6 +1236,7 @@ class _ProposalGenerator(Protocol):
         reference: CodexReference,
         *,
         proposal_codec: ManagedCandidateProposalCodec[GeneratedProposal] | None = None,
+        timeout_seconds: float = 300.0,
     ) -> ProposalManifest | GeneratedProposal: ...
 
 
@@ -1286,22 +1289,21 @@ class LocalProposalBackendAdapter:
         max_output_tokens: int,
         timeout_seconds: float,
     ) -> ProposalManifest | GeneratedProposal:
-        """Forward the legacy four arguments byte-for-byte and preserve failures."""
-        del max_output_tokens, timeout_seconds
-        if request.proposal_codec is None:
-            return self._generator(
-                request.model_path,
-                request.prompt,
-                request.task,
-                request.reference,
+        """Forward the approved deadline when supported and type worker timeouts."""
+        del max_output_tokens
+        arguments = (request.model_path, request.prompt, request.task, request.reference)
+        optional_keywords: dict[str, object] = {"timeout_seconds": timeout_seconds}
+        if request.proposal_codec is not None:
+            optional_keywords["proposal_codec"] = request.proposal_codec
+        try:
+            return invoke_with_supported_keywords(
+                self._generator,
+                arguments,
+                optional_keywords,
             )
-        return self._generator(
-            request.model_path,
-            request.prompt,
-            request.task,
-            request.reference,
-            proposal_codec=request.proposal_codec,
-        )
+        except TimeoutError:
+            pass
+        raise BackendInfrastructureError(BackendFailure.TIMEOUT) from None
 
 
 @dataclass(frozen=True, slots=True)

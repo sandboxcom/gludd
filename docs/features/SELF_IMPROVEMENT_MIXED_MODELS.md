@@ -6,7 +6,9 @@ assembly, content-free calibrated routing, and managed-runner selection are
 implemented behind explicit policy. Gludd now plans and owns the complete Azure
 Container Apps resource-group/environment/app lifecycle through the Microsoft SDK
 and OpenTofu. The 17-action least-privilege role and workload-identity path are
-implemented; a paid code-improvement canary remains pending live evidence.
+implemented. Paid canaries now prove concurrent local and Azure inference plus
+verified app teardown, but an accepted code improvement and positive Azure Monitor
+GPU-utilization evidence remain pending.
 
 ## Outcome
 
@@ -764,6 +766,33 @@ The first adoption proof also showed that AzAPI normalizes the imported plan's
 rather than the `null` emitted by a create plan. The auditor accepts only `null` or
 the exact pinned managed-environment type and API version; every other type, version,
 ID, missing field, resource address, action, or mutation channel still fails closed.
+
+#### Concurrent A100/local retry and candidate deadline (2026-09-13)
+
+The next bounded retry reconciled the retained environment, created the paid A100
+app in 18 seconds, accepted the exact healthy revision despite Azure's contradictory
+empty supplementary replica inventory, and reached direct inference. Azure consumed
+4,894 input and 480 output tokens; the common parent decoder safely rejected the
+structured response as `proposal_scope`. At the same time, evidence-based routing
+selected a local CodeLlama 7B candidate instead of the earlier Qwen 3B candidate.
+That worker ran for 301 seconds before the parent killed it, even though its approved
+candidate-call budget was 30 seconds. The Azure app was then destroyed in 29 seconds,
+absence was independently verified, and only the measured-zero-cost empty environment
+was retained. This proves simultaneous provider execution and safe lifecycle cleanup,
+not an accepted improvement or positive GPU metric.
+
+The live evidence exposed two separate contracts rather than a model-quality failure.
+The local adapter had discarded its approved timeout and the process wrapper used a
+fixed 300-second deadline; the resulting process exit was also reduced to `internal`.
+The adapter now forwards the exact finite candidate timeout through the runtime builder
+to the owned Make worker. Exit 124 becomes a censored `timeout` infrastructure failure,
+with provider text and exception context excluded, so it cannot become negative model
+calibration. Legacy injected callbacks that do not declare the optional timeout or
+proposal-codec keyword retain their existing call shape. The canonical self-improvement
+gate passes 7,131 tests with 3 skips and 1 expected failure at 90% aggregate coverage;
+every one of its 48 measured files clears the 75% individual threshold. Proposal-scope
+diagnostics and production GPU attestation remain the next fail-closed gates before
+another paid retry.
 
 ### S83.150 live-adapter research
 

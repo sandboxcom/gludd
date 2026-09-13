@@ -61,7 +61,29 @@ S83.157 imported-plan identity evidence: the next bounded retry completed exact 
 
 S83.157 supplementary-replica evidence: the 2026-09-13 bounded retry reconciled the retained environment, passed both audited OpenTofu plans, and created the one A100 app in 18 seconds. Azure then reported the exact revision active, `Healthy`, `Provisioned`, and at one replica while its supplementary replica-list operation returned an empty inventory for the complete readiness bound. Gludd destroyed the paid app in 19 seconds, independently verified absence, retained only the measured-zero-cost empty environment, and continued with the local candidate; the local proposal was safely rejected by Python syntax preflight. A failing-first regression now treats that contradictory empty inventory as supplementary unavailable only after the exact revision independently satisfies every readiness field; nonempty terminal replica evidence still vetoes readiness and direct inference plus positive GPU utilization remain mandatory. The SDK/runtime slice passes 41/41, the Azure local/GHA profile passes 996/996 at 92% aggregate branch coverage with all 54 files above 75%, and the structural complexity suite passes 20/20. A live retry on the repaired boundary and one accepted code improvement remain pending.
 
+S83.157 candidate-timeout evidence: the next bounded live retry reached concurrent execution with the same canonical envelope: Azure completed one A100 inference with 4,894 input and 480 output tokens before the common decoder rejected the response as `proposal_scope`, while evidence-based local selection moved from Qwen 3B to CodeLlama 7B. The local worker exposed a fixed 300-second process deadline despite its approved 30-second call budget and was killed after 301 seconds; Gludd then destroyed the paid app in 29 seconds, independently verified absence, and retained only the measured-zero-cost empty environment. Failing-first tests now require the exact finite candidate timeout to cross the local adapter, runtime builder, and owned Make-worker boundary, translate exit 124 into a censored typed `timeout` infrastructure failure with no exception context, and preserve legacy injected callback compatibility for both deadline and proposal-envelope keywords. The canonical self-improvement gate passes 7,131 tests with 3 skips and 1 expected failure at 90% aggregate coverage; all 48 measured files clear 75%, including the new callback seam at 94%, the remote codec at 94%, and the shared owned-process supervisor at 95%. Scoped Ruff, strict typing, all 17 complexity ratchets, the 157-target Make contract, its exact behavioral example, and 1,073-target duplicate detection are green. An accepted proposal, actionable content-free scope diagnosis, production GPU attestation, and exact-head gate remain pending.
+
+S83.157 latest ownership evidence: the full gate found four line-coordinate drifts with unchanged stable resource hashes across the Azure Terraform executor, local proposal runtime, and capability evidence store. The repository-owned writer refreshed only the mechanical inventory; the independent read-only replay passes with exactly 204 resources: 28 async tasks, 72 clients, 31 processes, 9 services, and 64 temporary artifacts.
+
 S83.157 exact changed-surface registration (from the active gate):
+
+Candidate-timeout and canonical-coverage surface:
+
+- `Makefile`
+- `config/coverage_self_improve.ini`
+- `config/self-improve/context-budget-lifecycle.json`
+- `docs/features/SELF_IMPROVEMENT_MIXED_MODELS.md`
+- `src/general_ludd/self_improve/_callback_compat.py`
+- `src/general_ludd/self_improve/managed_runner.py`
+- `src/general_ludd/self_improve/runtime.py`
+- `src/general_ludd/self_improve/runtime_builder.py`
+- `tests/unit/test_managed_self_improve_process.py`
+- `tests/unit/test_managed_self_improve_runner.py`
+- `tests/unit/test_self_improve_callback_compat.py`
+- `tests/unit/test_self_improve_local_worker.py`
+- `tests/unit/test_self_improve_managed_remote_codec.py`
+- `tests/unit/test_self_improve_multifile_fixture.py`
+- `tests/unit/test_owned_process_supervisor.py`
 
 - `infra/terraform/modules/azure-container-app-vllm/main.tf`
 - `infra/terraform/modules/azure-container-app-environment/main.tf`

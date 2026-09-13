@@ -1434,7 +1434,7 @@
     },
     {
       "path": "src/general_ludd/infra/azure_containerapp_terraform_executor.py",
-      "line": 406,
+      "line": 433,
       "column": 27,
       "kind": "temp-artifact",
       "owner": "_diagnostic_output",
@@ -2094,7 +2094,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/runtime.py",
-      "line": 377,
+      "line": 376,
       "column": 15,
       "kind": "process",
       "owner": "MakeRunner._run_observable_argv",
@@ -2105,7 +2105,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/runtime.py",
-      "line": 476,
+      "line": 477,
       "column": 9,
       "kind": "temp-artifact",
       "owner": "_run_local_proposal_request",
@@ -2134,6 +2134,17 @@
       "acquisition": "tempfile.mkstemp(dir=str(target.parent), prefix=f'.{target.name}.restore.', suffix='.tmp')",
       "teardown": "atomic-replace-or-unlink",
       "source_hash": "2408c6c5758bb907850ea06627e18fcb07d8ea8a66846a4104aecbcc8ee1ba39",
+      "owned": true
+    },
+    {
+      "path": "src/general_ludd/small_models/evidence_store.py",
+      "line": 93,
+      "column": 41,
+      "kind": "temp-artifact",
+      "owner": "CapabilityEvidenceStore._save",
+      "acquisition": "tempfile.mkstemp(dir=directory, prefix=f'.{os.path.basename(self._path)}.', suffix='.tmp')",
+      "teardown": "os.unlink(temporary_path)",
+      "source_hash": "a0bc4850757643f4e6d7775470d13ede638d81b1f621bd57b90b9905c6a09df7",
       "owned": true
     },
     {

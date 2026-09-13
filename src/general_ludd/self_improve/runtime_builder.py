@@ -9,6 +9,10 @@ from functools import partial
 from pathlib import Path
 from typing import Protocol, cast
 
+from general_ludd.self_improve._callback_compat import (
+    invoke_with_optional_timeout,
+    invoke_with_supported_keywords,
+)
 from general_ludd.self_improve.codex_comparison import CodexReference, ProposalManifest
 from general_ludd.self_improve.live_candidate_wiring import (
     AzureCandidateBackendFactory,
@@ -111,6 +115,7 @@ class _RuntimeCompositionApi(Protocol):
         reference: CodexReference,
         *,
         proposal_codec: ManagedCandidateProposalCodec[GeneratedProposal] | None = None,
+        timeout_seconds: float = 300.0,
     ) -> ProposalManifest | GeneratedProposal:
         """Generate one plan-bound local proposal."""
 
@@ -119,6 +124,8 @@ class _RuntimeCompositionApi(Protocol):
         root_runner: object,
         model_path: Path,
         prompt: str,
+        *,
+        timeout_seconds: float = 300.0,
     ) -> ProposalManifest:
         """Generate one legacy string-prompt proposal."""
 
@@ -286,25 +293,23 @@ def _build_managed_callbacks(
         reference: CodexReference,
         *,
         proposal_codec: ManagedCandidateProposalCodec[GeneratedProposal] | None = None,
+        timeout_seconds: float = 300.0,
     ) -> ProposalManifest | GeneratedProposal:
         if isinstance(prompt, PromptPlan):
-            if proposal_codec is None:
-                return runtime_api._generate_local_proposal_plan_result(
-                    operation_runner,
-                    model_path,
-                    prompt,
-                    task,
-                    reference,
-                )
-            return runtime_api._generate_local_proposal_plan_result(
-                operation_runner,
-                model_path,
-                prompt,
-                task,
-                reference,
-                proposal_codec=proposal_codec,
+            return invoke_with_supported_keywords(
+                runtime_api._generate_local_proposal_plan_result,
+                (operation_runner, model_path, prompt, task, reference),
+                {
+                    "proposal_codec": proposal_codec,
+                    "timeout_seconds": timeout_seconds,
+                },
             )
-        generated = runtime_api.generate_local_proposal(operation_runner, model_path, prompt)
+        local_generator = runtime_api.generate_local_proposal
+        generated = invoke_with_optional_timeout(
+            local_generator,
+            (operation_runner, model_path, prompt),
+            timeout_seconds=timeout_seconds,
+        )
         return (
             generated
             if proposal_codec is None

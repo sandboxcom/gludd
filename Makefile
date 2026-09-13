@@ -6005,7 +6005,7 @@ test-self-improve-failure-corpus:
 # Reproducible multi-file context/lifecycle sentinel; safe plan by default.
 test-self-improve-multifile:
 	@case "$(SELF_IMPROVE_MULTIFILE_LIVE)" in 0|1) ;; *) echo "SELF_IMPROVE_MULTIFILE_LIVE must be 0 or 1"; exit 2;; esac
-	@EXPECTED_FIXTURE_SHA256_OCTETS="e5 31 0a 09 13 78 5d ec c8 e6 c1 3b cb f7 87 70 b8 2d 96 9b c9 5b 95 1c b1 42 37 c6 60 91 3b 1b"; \
+	@EXPECTED_FIXTURE_SHA256_OCTETS="76 3f c9 c6 bc ea 10 30 35 a1 48 a1 aa 5e df d4 15 cc 9e 81 06 15 f5 17 cd 1e 36 0a 05 ce 7c 4d"; \
 		EXPECTED_FIXTURE_SHA256="$$(printf '%s' "$$EXPECTED_FIXTURE_SHA256_OCTETS" | tr -d ' ')"; \
 		ACTUAL_FIXTURE_SHA256="$$($(PYTHON) -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "config/self-improve/context-budget-lifecycle.json")"; \
 		[ "$$ACTUAL_FIXTURE_SHA256" = "$$EXPECTED_FIXTURE_SHA256" ] || { echo "multifile fixture drift: expected=$$EXPECTED_FIXTURE_SHA256 actual=$$ACTUAL_FIXTURE_SHA256"; exit 2; }

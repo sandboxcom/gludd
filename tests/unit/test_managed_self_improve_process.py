@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import multiprocessing
+import signal
 import threading
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from general_ludd.self_improve.managed_execution import (
     managed_execution_timeout_seconds,
 )
 from general_ludd.self_improve.managed_runner import ApprovedSelfImprovePlan, TaskSpec
+from general_ludd.util import owned_process as owned_process_module
 from general_ludd.util.owned_process import OwnedProcessTimeout
 
 
@@ -304,3 +306,62 @@ def test_executor_rejects_wrong_plan_type_before_process_start(
             approved_self_improve_plan.repo_root,
             object(),  # type: ignore[arg-type]
         )
+
+
+class _ControlledOwnedChild:
+    """Minimal deterministic child used to prove shared teardown branches."""
+
+    def __init__(
+        self,
+        *,
+        alive: bool,
+        stop_after_joins: int | None = None,
+        pid: int | None = 654_321,
+    ) -> None:
+        self._alive = alive
+        self._stop_after_joins = stop_after_joins
+        self._pid = pid
+        self.join_count = 0
+
+    @property
+    def pid(self) -> int | None:
+        return self._pid
+
+    def is_alive(self) -> bool:
+        return self._alive
+
+    def join(self, _timeout: float | None = None) -> None:
+        self.join_count += 1
+        if self._stop_after_joins == self.join_count:
+            self._alive = False
+
+    def close(self) -> None:
+        return None
+
+
+def test_owned_group_signal_falls_back_to_exact_pid_and_ignores_unstarted_child(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing process group still receives a bounded direct-child signal."""
+    direct: list[tuple[int, signal.Signals]] = []
+    monkeypatch.setattr(
+        owned_process_module.os,
+        "killpg",
+        lambda _pid, _sig: (_ for _ in ()).throw(ProcessLookupError()),
+    )
+    monkeypatch.setattr(
+        owned_process_module.os,
+        "kill",
+        lambda pid, sent: direct.append((pid, sent)),
+    )
+
+    owned_process_module._signal_owned_group(
+        _ControlledOwnedChild(alive=False, pid=None),
+        signal.SIGTERM,
+    )
+    owned_process_module._signal_owned_group(
+        _ControlledOwnedChild(alive=True),
+        signal.SIGTERM,
+    )
+
+    assert direct == [(654_321, signal.SIGTERM)]

@@ -9,6 +9,7 @@ from typing import cast
 import pytest
 
 import general_ludd.self_improve.runtime as runtime_module
+from general_ludd.self_improve import managed_remote_codec as codec_module
 from general_ludd.self_improve.codex_comparison import (
     COMPACT_PROPOSAL_PROTOCOL_V3,
     COMPACT_PROPOSAL_PROTOCOL_V4,
@@ -313,9 +314,11 @@ def test_local_and_remote_candidates_consume_one_canonical_codec_envelope(
         *,
         contract: ProposalContract | None = None,
         envelope: ManagedCandidateProposalEnvelope | None = None,
+        timeout_seconds: float = 300.0,
     ) -> str:
         assert contract is None
         assert envelope is not None
+        assert timeout_seconds == 300.0
         exchanges.append((request, envelope.to_json()))
         return response
 
@@ -464,6 +467,64 @@ def test_compact_remote_decoder_types_semantic_edit_rejections() -> None:
         with pytest.raises(CandidateProposalDecodeRejected) as raised:
             codec.decoder(response)
         assert raised.value.failure is failure
+
+
+@pytest.mark.parametrize(
+    ("detail", "failure"),
+    [
+        ("changed lines exceed the contract", CandidateProposalDecodeFailure.EDIT_LINE_BUDGET),
+        ("new text exceeds the budget", CandidateProposalDecodeFailure.EDIT_CONTENT_BUDGET),
+        ("edit is outside trusted ranges", CandidateProposalDecodeFailure.PROPOSAL_SCOPE),
+        ("coordinates must be integers", CandidateProposalDecodeFailure.PROPOSAL_SHAPE),
+        ("unclassified validation failure", CandidateProposalDecodeFailure.PROPOSAL_VALIDATION),
+    ],
+)
+def test_validation_failures_preserve_actionable_content_free_categories(
+    detail: str,
+    failure: CandidateProposalDecodeFailure,
+) -> None:
+    """Semantic failures become fixed categories without echoing model content."""
+    assert codec_module._validation_failure(ValueError(detail)) is failure
+
+
+def test_legacy_decoder_rejects_non_object_proposal_shape() -> None:
+    """Legacy remote responses must contain one object per approved shard."""
+    plan = PromptPlan(
+        shards=(PromptShard(("src/general_ludd/example.py",), "bounded prompt"),),
+        source_bytes=0,
+        proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V3,
+    )
+    codec = _managed_remote_proposal_codec(plan, _task(), _reference())
+    assert codec is not None
+    response = json.dumps(
+        {
+            "protocol": MANAGED_PROPOSAL_BATCH_PROTOCOL,
+            "protocol_digest": plan.protocol_digest,
+            "proposals": {"0": "not-an-object"},
+        }
+    )
+
+    with pytest.raises(CandidateProposalDecodeRejected) as raised:
+        codec.decoder(response)
+
+    assert raised.value.failure is CandidateProposalDecodeFailure.PROPOSAL_SHAPE
+
+
+@pytest.mark.parametrize("focus_paths", [(), ("one.py", "two.py")])
+def test_compact_remote_codec_requires_one_baselined_path_per_shard(
+    focus_paths: tuple[str, ...],
+) -> None:
+    """Remote compact inference cannot run without an exact baseline/path binding."""
+    baseline_files = tuple((path, "pass\n") for path in focus_paths)
+    plan = PromptPlan(
+        shards=(PromptShard(focus_paths or ("one.py",), "bounded", ((1, 2),)),),
+        source_bytes=sum(len(content.encode()) for _, content in baseline_files),
+        baseline_files=baseline_files,
+        proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+
+    with pytest.raises(ValueError, match="exact baseline shards"):
+        _managed_remote_proposal_codec(plan, _task(), _reference())
 
 
 def test_compact_syntax_repair_stays_on_the_owned_local_regeneration_path() -> None:

@@ -27,6 +27,7 @@ from typing import Final, Protocol, TextIO, cast, runtime_checkable
 
 from general_ludd.hardware.model_fit import unified_probe as unified_probe
 from general_ludd.planning.repo_map import RepoMapBuilder
+from general_ludd.self_improve._callback_compat import validated_timeout_seconds
 from general_ludd.self_improve.codex_comparison import (
     COMPACT_PROPOSAL_PROTOCOL_V3,
     COMPACT_PROPOSAL_PROTOCOL_V4,
@@ -94,6 +95,7 @@ from general_ludd.self_improve.managed_remote_codec import (
 )
 from general_ludd.self_improve.managed_runner import (
     ApprovedSelfImprovePlan,
+    AttemptResult,
     CapabilityEvidenceOutcomeAdapter,
     GeneratedProposal,
     ManagedOutcomeAdapter,
@@ -107,9 +109,6 @@ from general_ludd.self_improve.managed_runner import (
     _validation_retry_feedback,
     build_retry_prompt_plan,
     build_syntax_repair_prompt_plan,
-)
-from general_ludd.self_improve.managed_runner import (
-    AttemptResult as AttemptResult,
 )
 from general_ludd.self_improve.managed_runner import (
     ModelPlanFailure as ModelPlanFailure,
@@ -237,7 +236,7 @@ class _ObservableRunner(Protocol):
         target: str,
         variables: dict[str, str],
         *,
-        timeout: int,
+        timeout: float,
     ) -> MakeResult:
         """Run an owned Make target and return bounded evidence."""
 
@@ -363,14 +362,14 @@ class MakeRunner:
         target: str,
         variables: dict[str, str],
         *,
-        timeout: int,
+        timeout: float,
     ) -> MakeResult:
         """Run one explicit Make target in an owned observable process group."""
         _validate_target_and_variables(target, variables)
         argv = ["make", target, *[f"{key}={value}" for key, value in variables.items()]]
         return self._run_observable_argv(argv, timeout=timeout)
 
-    def _run_observable_argv(self, argv: list[str], *, timeout: int) -> MakeResult:
+    def _run_observable_argv(self, argv: list[str], *, timeout: float) -> MakeResult:
         command = shlex.join(argv)
         started = time.monotonic()
         print(f"SELF_IMPROVE_COMMAND_START command={json.dumps(command)}", flush=True)
@@ -462,6 +461,7 @@ def _run_local_proposal_request(
     *,
     contract: ProposalContract | None = None,
     envelope: ManagedCandidateProposalEnvelope | None = None,
+    timeout_seconds: float = 300.0,
 ) -> str:
     """Run one bounded request through one isolated parent-owned Make worker."""
     if not model_path.is_file():
@@ -472,21 +472,15 @@ def _run_local_proposal_request(
         raise ValueError("proposal contract and envelope are mutually exclusive")
     if envelope is not None and envelope.request_text != request:
         raise ValueError("proposal envelope request does not match prompt bytes")
+    timeout = validated_timeout_seconds(timeout_seconds)
 
-    with tempfile.TemporaryDirectory(
-        prefix="gludd-self-improve-proposal-"
-    ) as raw_exchange:
+    with tempfile.TemporaryDirectory(prefix="gludd-self-improve-proposal-") as raw_exchange:
         exchange = Path(raw_exchange)
         prompt_path = exchange / "prompt.txt"
         proposal_path = exchange / "proposal.json"
         contract_path = exchange / "contract.json"
         envelope_path = exchange / "envelope.json"
-        temporary = _write_atomic_temp(
-            prompt_path,
-            request,
-            0o600,
-            ".prompt-tmp",
-        )
+        temporary = _write_atomic_temp(prompt_path, request, 0o600, ".prompt-tmp")
         os.replace(temporary, prompt_path)
         if contract is not None:
             contract_temporary = _write_atomic_temp(
@@ -516,9 +510,11 @@ def _run_local_proposal_request(
         result = runner.run_observable(
             "self-improve-local-proposal",
             worker_variables,
-            timeout=300,
+            timeout=timeout,
         )
         if result.returncode != 0:
+            if result.returncode == 124:
+                raise TimeoutError("local proposal worker timed out")
             protocol = (
                 contract.proposal_protocol
                 if contract is not None
@@ -560,10 +556,17 @@ def generate_local_proposal(
     runner: _ObservableRunner,
     model_path: Path,
     prompt: str,
+    *,
+    timeout_seconds: float = 300.0,
 ) -> ProposalManifest:
     """Generate one legacy proposal through one isolated owned Make worker."""
     return ProposalManifest.from_json(
-        _run_local_proposal_request(runner, model_path, prompt)
+        _run_local_proposal_request(
+            runner,
+            model_path,
+            prompt,
+            timeout_seconds=timeout_seconds,
+        )
     )
 
 
@@ -1284,6 +1287,7 @@ def _generate_local_proposal_plan_result(
     reference: CodexReference,
     *,
     proposal_codec: ManagedCandidateProposalCodec[GeneratedProposal] | None = None,
+    timeout_seconds: float = 300.0,
 ) -> GeneratedProposal:
     """Decode all shards and retain only validated compact-v4 repair material."""
     if proposal_codec is not None:
@@ -1298,6 +1302,7 @@ def _generate_local_proposal_plan_result(
             model_path,
             proposal_codec.request_text,
             envelope=envelope,
+            timeout_seconds=timeout_seconds,
         )
         generated = proposal_codec.decoder(raw)
         if not isinstance(generated, GeneratedProposal):
