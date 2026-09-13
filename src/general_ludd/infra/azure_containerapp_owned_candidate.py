@@ -371,6 +371,7 @@ class AzureContainerAppOwnedCandidateFactory:
         self,
         delegate: _Backend | None,
         *,
+        environment_acquired: bool,
         app_apply_started: bool,
         identity: AzureContainerAppCandidateIdentity | None,
     ) -> bool:
@@ -424,7 +425,9 @@ class AzureContainerAppOwnedCandidateFactory:
             except Exception:
                 app_absent = False
                 clean = False
-        environment_released = self._release_environment()
+        environment_released = (
+            self._release_environment() if environment_acquired else True
+        )
         resources_released = self._release_resources()
         with self._lock:
             self._active = False
@@ -434,6 +437,7 @@ class AzureContainerAppOwnedCandidateFactory:
         identity = delegate.candidate_identity
         if not self._cleanup(
             delegate,
+            environment_acquired=True,
             app_apply_started=True,
             identity=identity,
         ):
@@ -449,6 +453,7 @@ class AzureContainerAppOwnedCandidateFactory:
             self._used = True
             self._active = True
         phase = "environment"
+        environment_acquired = False
         app_apply_started = False
         identity: AzureContainerAppCandidateIdentity | None = None
         delegate: _Backend | None = None
@@ -459,6 +464,7 @@ class AzureContainerAppOwnedCandidateFactory:
                 self._environment_policy,
                 runtime=self._environment_runtime,
             )
+            environment_acquired = True
             self._environment_latency_seconds = max(
                 self._monotonic() - environment_started,
                 0.000_001,
@@ -496,6 +502,7 @@ class AzureContainerAppOwnedCandidateFactory:
         except BaseException as cause:
             cleaned = self._cleanup(
                 delegate,
+                environment_acquired=environment_acquired,
                 app_apply_started=app_apply_started,
                 identity=identity,
             )

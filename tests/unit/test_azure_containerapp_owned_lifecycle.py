@@ -904,6 +904,38 @@ def test_environment_creation_failure_is_typed_and_never_starts_app_work(
     assert SECRET not in repr(captured.value)
 
 
+def test_existing_environment_survives_failed_acquisition_plan() -> None:
+    events: list[str] = []
+    lifecycle_traces: list[OwnedCandidateLifecycleTrace] = []
+    app_policy = _app_policy()
+    environment_policy = _environment_policy(app_policy)
+    environment_runtime = _EnvironmentRuntime(
+        environment_policy,
+        events,
+        fail_at="plan",
+    )
+    environment_runtime.document = _environment_document(environment_policy)
+
+    factory = AzureContainerAppOwnedCandidateFactory(
+        app_policy=app_policy,
+        environment_policy=environment_policy,
+        environment_runtime=environment_runtime,
+        app_runtime=_AppRuntime(app_policy, events),
+        backend_factory=_Backend,
+        resource_release=lambda: events.append("resources:close"),
+        trace_sink=lifecycle_traces.append,
+    )
+
+    with pytest.raises(OwnedCandidateLifecycleError, match="environment"):
+        factory()
+
+    assert environment_runtime.document is not None
+    assert "environment:destroy" not in events
+    assert OwnedCandidateLifecycleEvent.ENVIRONMENT_RELEASE_STARTED not in {
+        trace.event for trace in lifecycle_traces
+    }
+
+
 def test_environment_retained_due_to_remaining_app_is_terminal_cleanup_failure(
     tmp_path: Path,
 ) -> None:
