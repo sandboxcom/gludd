@@ -90,7 +90,9 @@ def _managed_batch_items(
         )
     ordered = tuple(proposals[key] for key in expected_keys)
     if compact and any(
-        not isinstance(proposal, dict) or set(proposal) != {"focus_path", "e"}
+        not isinstance(proposal, dict)
+        or set(proposal) != {"focus_path", "e"}
+        or not isinstance(proposal.get("focus_path"), str)
         for proposal in ordered
     ):
         raise CandidateProposalDecodeRejected(
@@ -202,12 +204,16 @@ def _decode_remote_compact_plan(
         expected_count=len(plan.shards),
         compact=True,
     )
+    bound_proposals = tuple(
+        {**proposal, "focus_path": path}
+        for proposal, path in zip(proposals, paths, strict=True)
+    )
     try:
         legacy_response = json.dumps(
             {
                 "protocol": "self-improve-local-proposal-batch-v2",
                 "protocol_digest": plan.protocol_digest,
-                "proposals": proposals,
+                "proposals": bound_proposals,
             },
             ensure_ascii=False,
             separators=(",", ":"),

@@ -273,6 +273,69 @@ def test_managed_compact_schema_binds_each_shard_to_one_ordinal_path() -> None:
     assert tuple(edit.path for edit in generated.proposal.edits) == paths
 
 
+@pytest.mark.parametrize(
+    "reported_paths",
+    [
+        (
+            "tests/unit/test_example.py",
+            "src/general_ludd/example.py",
+        ),
+        (
+            "../../private-credential.json",
+            "private/project/logic.py",
+        ),
+    ],
+)
+def test_compact_decoder_binds_model_edits_by_parent_owned_ordinal(
+    reported_paths: tuple[str, str],
+) -> None:
+    """A model-authored path cannot swap or expand its approved file scope."""
+    paths = (
+        "src/general_ludd/example.py",
+        "tests/unit/test_example.py",
+    )
+    baselines = ("return 0\n", "assert False\n")
+    plan = PromptPlan(
+        shards=tuple(
+            PromptShard((path,), f"bounded prompt {ordinal}", ((1, 2),))
+            for ordinal, path in enumerate(paths)
+        ),
+        source_bytes=sum(len(value.encode("utf-8")) for value in baselines),
+        baseline_files=tuple(zip(paths, baselines, strict=True)),
+        proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
+    )
+    codec = _managed_remote_proposal_codec(plan, _task(), _reference())
+    assert codec is not None
+    response = json.dumps(
+        {
+            "protocol": MANAGED_PROPOSAL_BATCH_PROTOCOL,
+            "protocol_digest": plan.protocol_digest,
+            "proposals": {
+                "0": {
+                    "focus_path": reported_paths[0],
+                    "e": [{"s": 1, "n": 1, "z": "return 1\n"}],
+                },
+                "1": {
+                    "focus_path": reported_paths[1],
+                    "e": [{"s": 1, "n": 1, "z": "assert True\n"}],
+                },
+            },
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+    generated = codec.decoder(response)
+
+    assert tuple(proposal.focus_path for proposal in generated.compact_proposals) == paths
+    assert tuple(edit.path for edit in generated.proposal.edits) == paths
+    assert tuple(edit.new_text for edit in generated.proposal.edits) == (
+        "return 1\n",
+        "assert True\n",
+    )
+    assert all(reported not in repr(generated) for reported in reported_paths)
+
+
 def test_local_and_remote_candidates_consume_one_canonical_codec_envelope(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -405,6 +468,20 @@ def test_compact_remote_decoder_exposes_only_fixed_protocol_failure_categories()
         ),
         (
             json.dumps({**valid, "proposals": {"0": {"private": "response"}}}),
+            CandidateProposalDecodeFailure.PROPOSAL_SHAPE,
+        ),
+        (
+            json.dumps(
+                {
+                    **valid,
+                    "proposals": {
+                        "0": {
+                            "focus_path": {"private": "response"},
+                            "e": [{"s": 1, "n": 1, "z": "return 1\n"}],
+                        }
+                    },
+                }
+            ),
             CandidateProposalDecodeFailure.PROPOSAL_SHAPE,
         ),
     )

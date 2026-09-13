@@ -790,8 +790,9 @@ with provider text and exception context excluded, so it cannot become negative 
 calibration. Legacy injected callbacks that do not declare the optional timeout or
 proposal-codec keyword retain their existing call shape. The canonical self-improvement
 gate passes 7,131 tests with 3 skips and 1 expected failure at 90% aggregate coverage;
-every one of its 48 measured files clears the 75% individual threshold. Actionable
-proposal-scope diagnostics remain the next fail-closed gate before another paid retry.
+every one of its 48 measured files clears the 75% individual threshold. Parent-owned
+scope binding and production GPU attestation were the next fail-closed gates; the two
+sections below close both locally before another paid retry.
 
 #### Production exact-revision GPU attestation (2026-09-13)
 
@@ -812,6 +813,31 @@ local/GitHub-Actions Azure profile passes 1,018 tests at 92% aggregate branch co
 all 54 measured files clear 75%, and the runtime resource owner reaches 93%. A fresh
 bounded paid canary must still emit positive exact-revision GPU evidence and produce
 one accepted code improvement before the live capability is complete.
+
+#### Parent-owned per-ordinal proposal scope (2026-09-13)
+
+The live rejection exposed a decoder/schema mismatch. The managed schema previously
+built one compact item from the union of every shard's editable coordinates and copied
+it to every ordinal. A response could therefore satisfy the advertised schema while
+selecting a line legal only in another file. The decoder also used the model's redundant
+`focus_path` field to reorder the batch, allowing two approved paths to exchange edits.
+
+Each ordinal now receives a schema generated from only its exact path and editable
+ranges. After checking that the transport field is a string, the parent discards its
+value and binds the edit to the already-approved ordinal. A model can neither add a
+path nor swap two approved files; the trusted baseline, editable ranges, expansion,
+assessment, and gate remain unchanged. This mirrors the local decoder, which has
+always received its focus path from parent state rather than model output.
+
+Parent-side validation remains mandatory even when vLLM advertises structured output.
+Practitioner report
+[#15236](https://github.com/vllm-project/vllm/issues/15236) documents release-dependent
+xgrammar failures for enums and numeric ranges, while report
+[#17481](https://github.com/vllm-project/vllm/issues/17481) describes schema-shaped
+Qwen output with unconstrained integers and truncation. Gludd therefore treats the
+server schema as a generation aid, never as its authorization boundary. The managed
+routing profile passes 48 tests at 91% aggregate branch coverage, with all five files
+above 75%; the codec reaches 94% and the schema owner reaches 89%.
 
 ### S83.150 live-adapter research
 

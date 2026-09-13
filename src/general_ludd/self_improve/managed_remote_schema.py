@@ -73,6 +73,26 @@ def managed_response_schema(
             item_properties = item.get("properties")
             if not isinstance(item_properties, dict):
                 raise ValueError("compact proposal schema properties are invalid")
+            exact_schema = proposal_batch_json_schema(
+                proposal_protocol=proposal_protocol,
+                protocol_digest=protocol_digest,
+                expected_count=1,
+                focus_paths=(focus_paths[ordinal],),
+                editable_ranges=(editable_ranges[ordinal],),
+            )
+            exact_properties = exact_schema["properties"]
+            if not isinstance(exact_properties, dict):
+                raise ValueError("compact proposal schema root properties are invalid")
+            exact_proposals = exact_properties["proposals"]
+            if not isinstance(exact_proposals, dict):
+                raise ValueError("compact proposal schema transport properties are invalid")
+            exact_item = exact_proposals.get("items")
+            if not isinstance(exact_item, dict):
+                raise ValueError("compact proposal schema item is invalid")
+            item = copy.deepcopy(exact_item)
+            item_properties = item.get("properties")
+            if not isinstance(item_properties, dict):
+                raise ValueError("compact proposal schema properties are invalid")
             item_properties["focus_path"] = {
                 "const": focus_paths[ordinal],
                 "type": "string",
