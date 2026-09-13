@@ -9,7 +9,6 @@ from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from typing import Any, Final, cast
 
-from general_ludd.hardware.model_fit import can_run_model
 from general_ludd.hardware.survey import HardwareInventory
 from general_ludd.local_model._local_model_configs import _LOCAL_MODELS, LocalModelConfig
 from general_ludd.schemas.benchmark import TaskRole, TaskType
@@ -84,6 +83,8 @@ _COMPLEX_CODE_MIN_MODEL_SIZE_MB: Final = 900
 _COMPLEX_CODE_SOURCE_BYTES: Final = 8_192
 _MAX_CODE_TASK_FILES: Final = 32
 _MAX_CODE_TASK_SOURCE_BYTES: Final = 67_108_864
+_METAL_MODEL_ARTIFACT_CAPACITY_FRACTION: Final = 0.70
+_DEDICATED_MODEL_ARTIFACT_CAPACITY_FRACTION: Final = 0.85
 
 
 def _stable_digest(payload: Mapping[str, object]) -> str:
@@ -200,6 +201,24 @@ def _estimated_required_context(
 
 def _coding_models() -> tuple[LocalModelConfig, ...]:
     return tuple(model for model in _LOCAL_MODELS if model.category == "coding")
+
+
+def _artifact_has_runtime_headroom(
+    hardware: HardwareInventory,
+    model: LocalModelConfig,
+) -> bool:
+    """Reserve unified Metal memory for KV cache and decode workspaces."""
+    if not hardware.gpus or model.size_mb <= 0:
+        return False
+    fraction = (
+        _METAL_MODEL_ARTIFACT_CAPACITY_FRACTION
+        if any(gpu.backend.casefold() == "metal" for gpu in hardware.gpus)
+        else _DEDICATED_MODEL_ARTIFACT_CAPACITY_FRACTION
+    )
+    capacity_mb = (
+        hardware.total_vram_gb * 1024 * fraction
+    )
+    return model.size_mb <= capacity_mb
 
 
 def _model_identifiers(model: LocalModelConfig) -> frozenset[str]:
@@ -411,7 +430,7 @@ def plan_model_candidates(
         and model.size_mb > failed_size_floor
         and model.size_mb >= capability_floor
         and model.context_size >= required_context
-        and can_run_model(hardware, model.name).can_run
+        and _artifact_has_runtime_headroom(hardware, model)
     ]
     if not eligible:
         return ()

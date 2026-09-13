@@ -447,6 +447,25 @@ def test_unavailable_candidate_is_observable_and_next_models_fill_plan(
     assert unavailable == [(preferred.name, "repository unavailable")]
 
 
+def test_metal_planner_reserves_runtime_memory_beyond_the_model_artifact(
+    tmp_path: object,
+) -> None:
+    """A model that leaves no Metal decode headroom must not be scheduled."""
+    candidates = plan_model_candidates(
+        "implement a focused Python change",
+        1024,
+        ("qwen2.5-coder-1.5b", "qwen2.5-coder-3b"),
+        _hardware(5.36),
+        _store(tmp_path),
+        _revision,
+        max_candidates=2,
+    )
+
+    assert [candidate.config.name for candidate in candidates] == [
+        "phi-3-mini-4k"
+    ]
+
+
 @pytest.mark.parametrize(
     ("task_text", "output_tokens", "max_candidates", "message"),
     [
