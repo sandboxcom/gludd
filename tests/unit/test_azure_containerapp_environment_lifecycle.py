@@ -301,6 +301,15 @@ class _Runtime:
         self.document = None
 
 
+class _ImportingRuntime(_Runtime):
+    def import_existing_environment(
+        self,
+        policy: AzureEnvironmentLifecyclePolicy,
+    ) -> None:
+        self.policies.append(policy)
+        self._call("import")
+
+
 def test_absent_environment_is_planned_applied_and_independently_verified() -> None:
     policy = _policy()
     runtime = _Runtime(policy, document=None)
@@ -335,6 +344,16 @@ def test_existing_owned_environment_is_reused_through_a_noop_plan() -> None:
 
     assert result.disposition is EnvironmentLifecycleDisposition.REUSED
     assert runtime.calls == ["read", "plan", "apply", "read"]
+
+
+def test_existing_owned_environment_is_imported_before_planning_when_supported() -> None:
+    policy = _policy()
+    runtime = _ImportingRuntime(policy, document=_document(policy))
+
+    result = ensure_azure_containerapp_environment(policy, runtime=runtime)
+
+    assert result.disposition is EnvironmentLifecycleDisposition.REUSED
+    assert runtime.calls == ["read", "import", "plan", "apply", "read"]
 
 
 def test_missing_profile_is_added_without_removing_existing_owned_profile() -> None:

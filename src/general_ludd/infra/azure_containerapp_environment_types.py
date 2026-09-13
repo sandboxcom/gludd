@@ -186,6 +186,8 @@ class EnvironmentLifecycleEvent(StrEnum):
     INSPECTION_FAILED = "inspection_failed"
     ENVIRONMENT_ABSENT = "environment_absent"
     OWNERSHIP_VERIFIED = "ownership_verified"
+    STATE_IMPORT_STARTED = "state_import_started"
+    STATE_IMPORT_SUCCEEDED = "state_import_succeeded"
     PLAN_STARTED = "plan_started"
     PLAN_AUDITED = "plan_audited"
     APPLY_STARTED = "apply_started"
@@ -257,7 +259,20 @@ class AzureContainerAppEnvironmentRuntime(Protocol):
         ...
 
 
+@runtime_checkable
+class AzureContainerAppEnvironmentImportRuntime(Protocol):
+    """Optional Terraform state adoption after independent ownership proof."""
+
+    def import_existing_environment(
+        self,
+        policy: AzureEnvironmentLifecyclePolicy,
+    ) -> None:
+        """Import the exact verified environment into its owner-bound state."""
+        ...
+
+
 __all__ = [
+    "AzureContainerAppEnvironmentImportRuntime",
     "AzureContainerAppEnvironmentRuntime",
     "AzureEnvironmentLifecycleError",
     "AzureEnvironmentLifecyclePolicy",

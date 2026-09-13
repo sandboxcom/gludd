@@ -17,6 +17,11 @@ from general_ludd.infra.azure_containerapp_terraform_executor import (
 )
 
 SECRET = "executor-secret-that-must-stay-private"
+ENVIRONMENT_IMPORT_ID = (
+    "/subscriptions/22222222-2222-4222-8222-222222222222/"
+    "resourceGroups/gludd-models-eastus/providers/Microsoft.App/"
+    "managedEnvironments/gludd-gpu-environment?api-version=2025-07-01"
+)
 
 
 class _Clock:
@@ -180,6 +185,75 @@ def test_executor_runs_direct_list_argv_with_exact_environment_and_traces(
     assert json.loads(json_file.read_text(encoding="utf-8")) == {"safe": True}
     assert oct(json_file.stat().st_mode & 0o777) == "0o600"
     assert SECRET not in repr(events)
+
+
+def test_executor_imports_only_the_exact_existing_environment_with_list_argv(
+    tmp_path: Path,
+) -> None:
+    allowed_root, terraform_dir, plan_file, json_file = _owned_root(tmp_path)
+    processes: list[_Process] = []
+
+    def factory(argv: list[str], **kwargs: object) -> _Process:
+        process = _Process(argv, **cast_kwargs(kwargs))
+        processes.append(process)
+        return process
+
+    executor = AzureContainerAppTerraformPhaseExecutor(
+        binary_resolver=lambda: "/opt/gludd/bin/tofu",
+        process_factory=factory,
+    )
+    executor.run(
+        phase="import",
+        terraform_dir=terraform_dir,
+        plan_file=plan_file,
+        json_file=json_file,
+        allowed_root=allowed_root,
+        environment=_environment(),
+        timeout_seconds=30,
+        import_resource_id=ENVIRONMENT_IMPORT_ID,
+    )
+
+    assert processes[0].argv == [
+        "/opt/gludd/bin/tofu",
+        "import",
+        "-input=false",
+        "-no-color",
+        "module.environment.azapi_resource.managed_environment",
+        ENVIRONMENT_IMPORT_ID,
+    ]
+    assert SECRET not in repr(processes[0].argv)
+
+
+@pytest.mark.parametrize(
+    "phase, resource_id",
+    (("import", None), ("plan", ENVIRONMENT_IMPORT_ID), ("import", "unsafe")),
+)
+def test_executor_rejects_ambiguous_import_boundaries_before_process_start(
+    tmp_path: Path,
+    phase: str,
+    resource_id: str | None,
+) -> None:
+    allowed_root, terraform_dir, plan_file, json_file = _owned_root(tmp_path)
+
+    def forbidden_process(*_args: object, **_kwargs: object) -> _Process:
+        pytest.fail("invalid import boundary must not start OpenTofu")
+
+    executor = AzureContainerAppTerraformPhaseExecutor(
+        binary_resolver=lambda: "/opt/gludd/bin/tofu",
+        process_factory=forbidden_process,
+    )
+
+    with pytest.raises(AzureContainerAppTerraformPhaseError):
+        executor.run(
+            phase=phase,
+            terraform_dir=terraform_dir,
+            plan_file=plan_file,
+            json_file=json_file,
+            allowed_root=allowed_root,
+            environment=_environment(),
+            timeout_seconds=30,
+            import_resource_id=resource_id,
+        )
 
 
 def test_apply_streams_only_allowlisted_machine_ui_resource_facts(

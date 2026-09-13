@@ -16,6 +16,9 @@ from pathlib import Path
 from typing import IO, Any
 
 from general_ludd.config.binary_paths import BinaryPathResolver
+from general_ludd.infra.azure_containerapp_environment_plan_contract import (
+    ENVIRONMENT_API_TYPE,
+)
 from general_ludd.infra.azure_containerapp_make_types import (
     MakeRuntimeState as TerraformRuntimeState,
 )
@@ -31,6 +34,7 @@ TERRAFORM_PHASES = (
     "output",
     "destroy",
 )
+_EXECUTOR_PHASES = (*TERRAFORM_PHASES, "import")
 _JSON_PHASES = frozenset({"show-plan", "output"})
 _MACHINE_UI_PHASES = frozenset({"plan", "apply", "destroy"})
 _PLAN_REQUIRED_PHASES = frozenset({"show-plan", "apply"})
@@ -40,6 +44,13 @@ _MAX_DIAGNOSTIC_BYTES = 256 * 1024
 _MAX_UI_LINE_CHARS = 64 * 1024
 _UI_READ_CHARS = 64 * 1024
 _ENVIRONMENT_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_ENVIRONMENT_API_VERSION = ENVIRONMENT_API_TYPE.rsplit("@", 1)[1]
+_ENVIRONMENT_IMPORT_ID = re.compile(
+    r"^/subscriptions/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-"
+    r"[0-9a-f]{12}/resourceGroups/[A-Za-z0-9_().-]{1,90}/providers/"
+    r"Microsoft\.App/managedEnvironments/[a-z0-9](?:[a-z0-9-]{0,58}[a-z0-9])?"
+    rf"\?api-version={re.escape(_ENVIRONMENT_API_VERSION)}$"
+)
 _SUPPORTED_UI_VERSION = re.compile(r"(?:0|1)\.[0-9]+(?:\.[0-9]+)?")
 _SAFE_RESOURCE_TYPES = frozenset({"azapi_resource"})
 _SAFE_ACTIONS = frozenset(
@@ -314,7 +325,23 @@ def _validate_owned_paths(
     return resolved_dir, resolved_plan, resolved_json
 
 
-def _command(phase: str, binary: str, plan_file: Path) -> list[str]:
+def _command(
+    phase: str,
+    binary: str,
+    plan_file: Path,
+    import_resource_id: str | None,
+) -> list[str]:
+    if phase == "import":
+        if import_resource_id is None:
+            raise ValueError
+        return [
+            binary,
+            "import",
+            "-input=false",
+            "-no-color",
+            "module.environment.azapi_resource.managed_environment",
+            import_resource_id,
+        ]
     commands = {
         "init": [binary, "init", "-backend=false", "-input=false", "-no-color"],
         "validate": [binary, "validate", "-no-color"],
@@ -473,6 +500,7 @@ class AzureContainerAppTerraformPhaseExecutor:
         allowed_root: str | os.PathLike[str],
         environment: Mapping[str, str],
         timeout_seconds: int,
+        import_resource_id: str | None = None,
         progress: ProgressSink = _discard_progress,
     ) -> None:
         """Validate ownership, execute list argv, and emit content-free progress."""
@@ -486,7 +514,12 @@ class AzureContainerAppTerraformPhaseExecutor:
         started: float | None = None
         failure_class = "internal"
         try:
-            if phase not in TERRAFORM_PHASES:
+            if phase not in _EXECUTOR_PHASES:
+                raise ValueError
+            if (phase == "import") != (import_resource_id is not None) or (
+                import_resource_id is not None
+                and _ENVIRONMENT_IMPORT_ID.fullmatch(import_resource_id) is None
+            ):
                 raise ValueError
             if (
                 isinstance(timeout_seconds, bool)
@@ -528,7 +561,7 @@ class AzureContainerAppTerraformPhaseExecutor:
             started = self._monotonic()
             progress(phase, TerraformRuntimeState.STARTED, 0)
             process = self._process_factory(
-                _command(phase, binary, resolved_plan),
+                _command(phase, binary, resolved_plan, import_resource_id),
                 cwd=str(resolved_dir),
                 env=process_environment,
                 stdin=subprocess.DEVNULL,

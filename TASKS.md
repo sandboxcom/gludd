@@ -55,6 +55,8 @@ S83.157 retained-state evidence: the general planner exposes `always_destroy`, `
 
 S83.157 persisted-selection evidence: the public compiler now gives discovery and the managed runtime the same absolute capability-evidence store, and the selected Azure model/runtime/GPU digest is identical to the eventual Container App evidence identity. The store preserves malformed artifacts, rejects symlinks and non-regular inputs, uses unpredictable owner-private temporary files plus fsync and atomic replacement, and cannot follow a planted predictable temporary symlink into a credential artifact. The focused composed slice passes 259/259, the local/GHA Azure profile passes 973/973 at 92% aggregate branch coverage with all 52 measured files above 75%, and the store passes 23/23 at 92% branch coverage; Ruff, strict mypy, collection (113,592/113,593 with one intentional deselection), the Make contract, and its credential-free behavioral example are green. Exact-head gate and one accepted paid mixed-model code improvement remain pending.
 
+S83.157 retained-environment adoption evidence: the 2026-09-13 bounded live retry verified the retained owner-tagged A100 environment but exposed missing local OpenTofu state in the isolated worktree; the resulting duplicate-create plan was rejected before mutation. The lifecycle now imports only that independently verified exact environment into its owner-bound state, pins the AzAPI import query to `2025-07-01`, accepts only the provider's exact canonical stored-ID forms, and rejects symlinks, malformed state, multiple resources, foreign addresses, IDs, and API versions. Import and ownership transitions remain content-free. The focused implementation slice passes 135/135, its full structural complexity gate passes 20/20, and scoped Ruff is green; the identical local/GHA Azure profile passes 990/990 at 92% aggregate branch coverage with all 54 measured files above 75%, and the 157-target Make contract plus its documented behavioral example are green. Exact-head gate, paid model inference, positive GPU utilization, and one accepted code improvement remain pending.
+
 S83.157 exact changed-surface registration (from the active gate):
 
 - `infra/terraform/modules/azure-container-app-vllm/main.tf`
@@ -105,6 +107,8 @@ S83.157 exact changed-surface registration (from the active gate):
 - `src/general_ludd/infra/azure_containerapp_environment_lifecycle.py`
 - `src/general_ludd/infra/azure_containerapp_environment_make_runtime.py`
 - `src/general_ludd/infra/azure_containerapp_environment_materializer.py`
+- `src/general_ludd/infra/azure_containerapp_environment_runtime_types.py`
+- `src/general_ludd/infra/azure_containerapp_environment_state.py`
 - `src/general_ludd/infra/azure_containerapp_environment_types.py`
 - `src/general_ludd/infra/azure_containerapp_environment_validation.py`
 - `src/general_ludd/infra/azure_idle_retention.py`
@@ -156,6 +160,8 @@ S83.157 exact changed-surface registration (from the active gate):
 - `tests/unit/test_azure_containerapp_environment_bootstrap.py`
 - `tests/unit/test_azure_containerapp_environment_lifecycle.py`
 - `tests/unit/test_azure_containerapp_environment_make_runtime.py`
+- `tests/unit/test_azure_containerapp_environment_runtime_types.py`
+- `tests/unit/test_azure_containerapp_environment_state.py`
 - `tests/unit/test_azure_containerapp_environment_terraform.py`
 - `tests/unit/test_azure_containerapp_environment_preflight.py`
 - `tests/unit/test_azure_containerapp_gpu.py`

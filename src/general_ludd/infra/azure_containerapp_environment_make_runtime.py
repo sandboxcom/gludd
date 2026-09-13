@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from pathlib import Path
-from typing import Protocol, cast
+from typing import cast
 
 from general_ludd.azure.accelerator_credentials import (
     AzureAcceleratorAuthentication,
@@ -23,6 +23,14 @@ from general_ludd.infra.azure_containerapp_environment_lifecycle import (
 from general_ludd.infra.azure_containerapp_environment_materializer import (
     AzureContainerAppEnvironmentTerraformMaterializer,
     verify_existing_state_boundary,
+)
+from general_ludd.infra.azure_containerapp_environment_runtime_types import (
+    EnvironmentTerraformExecutor,
+    EnvironmentTerraformMaterializer,
+)
+from general_ludd.infra.azure_containerapp_environment_state import (
+    environment_import_id,
+    state_tracks_environment,
 )
 from general_ludd.infra.azure_containerapp_make_types import (
     AZURE_RESOURCE_MANAGER_TARGET,
@@ -44,30 +52,6 @@ from general_ludd.infra.azure_containerapp_terraform_executor import (
     terraform_process_environment,
 )
 
-
-class _TerraformExecutor(Protocol):
-    def run(
-        self,
-        *,
-        phase: str,
-        terraform_dir: str | os.PathLike[str],
-        plan_file: str | os.PathLike[str],
-        json_file: str | os.PathLike[str],
-        allowed_root: str | os.PathLike[str],
-        environment: dict[str, str],
-        timeout_seconds: int,
-        progress: Callable[[str, TerraformRuntimeState, int], None],
-    ) -> None: ...
-
-
-class _EnvironmentTerraformMaterializer(Protocol):
-    def materialize(
-        self,
-        policy: AzureEnvironmentLifecyclePolicy,
-        destination: str | os.PathLike[str],
-    ) -> Path: ...
-
-
 ReadEnvironment = Callable[[AzureEnvironmentLifecyclePolicy, bool], object | None]
 ListEnvironmentApps = Callable[[AzureEnvironmentLifecyclePolicy], tuple[str, ...]]
 
@@ -86,8 +70,8 @@ class AzureContainerAppEnvironmentTerraformRuntime:
         credentials: AzureAcceleratorAuthentication,
         read_environment: ReadEnvironment,
         list_environment_apps: ListEnvironmentApps,
-        terraform_executor: _TerraformExecutor | None = None,
-        terraform_materializer: _EnvironmentTerraformMaterializer | None = None,
+        terraform_executor: EnvironmentTerraformExecutor | None = None,
+        terraform_materializer: EnvironmentTerraformMaterializer | None = None,
         trace_sink: Callable[[MakeRuntimeEvent], None] = _discard_trace,
         heartbeat_seconds: float = 15.0,
     ) -> None:
@@ -237,6 +221,7 @@ class AzureContainerAppEnvironmentTerraformRuntime:
         phase: str,
         *,
         timeout_seconds: int,
+        import_resource_id: str | None = None,
         timeout_reconciliation: Callable[[], bool] | None = None,
     ) -> None:
         tf_dir, plan_file, plan_json = self._paths()
@@ -269,6 +254,7 @@ class AzureContainerAppEnvironmentTerraformRuntime:
                 allowed_root=self._work_root,
                 environment=environment,
                 timeout_seconds=timeout_seconds,
+                import_resource_id=import_resource_id,
                 progress=progress,
             )
         except AzureContainerAppMakeRuntimeError:
@@ -341,6 +327,26 @@ class AzureContainerAppEnvironmentTerraformRuntime:
         result = read_bounded_json(plan_json, phase="show-plan")
         self._planned_operation_digest = policy.operation_digest
         return result
+
+    def import_existing_environment(
+        self,
+        policy: AzureEnvironmentLifecyclePolicy,
+    ) -> None:
+        """Import one independently verified environment into empty local state."""
+        self._bind_state(policy)
+        self._materialize_policy(policy)
+        tf_dir, _plan_file, _plan_json = self._paths()
+        state_path = tf_dir / "terraform.tfstate"
+        if state_tracks_environment(state_path, policy):
+            return
+        self._invoke("init", timeout_seconds=300)
+        self._invoke(
+            "import",
+            timeout_seconds=600,
+            import_resource_id=environment_import_id(policy),
+        )
+        if not state_tracks_environment(state_path, policy):
+            raise AzureContainerAppMakeRuntimeError("state-import")
 
     def apply(self, policy: AzureEnvironmentLifecyclePolicy) -> None:
         """Apply only the saved plan bound to the exact current desired state."""

@@ -28,6 +28,7 @@ from general_ludd.infra.azure_containerapp_environment_retention import (
     release_azure_containerapp_environment,
 )
 from general_ludd.infra.azure_containerapp_environment_types import (
+    AzureContainerAppEnvironmentImportRuntime,
     AzureContainerAppEnvironmentRuntime,
     AzureEnvironmentLifecycleError,
     AzureEnvironmentLifecyclePolicy,
@@ -74,6 +75,22 @@ def _cleanup_failed_create(
     raise AzureEnvironmentLifecycleError(failure_phase) from None
 
 
+def _import_verified_environment(
+    policy: AzureEnvironmentLifecyclePolicy,
+    runtime: AzureContainerAppEnvironmentRuntime,
+    trace_sink: _TraceSink,
+) -> None:
+    """Adopt state only after the independent reader proves Gludd ownership."""
+    if not isinstance(runtime, AzureContainerAppEnvironmentImportRuntime):
+        return
+    _emit(trace_sink, EnvironmentLifecycleEvent.STATE_IMPORT_STARTED, policy)
+    try:
+        runtime.import_existing_environment(policy)
+    except Exception:
+        raise AzureEnvironmentLifecycleError("state-import") from None
+    _emit(trace_sink, EnvironmentLifecycleEvent.STATE_IMPORT_SUCCEEDED, policy)
+
+
 def ensure_azure_containerapp_environment(
     policy: AzureEnvironmentLifecyclePolicy,
     *,
@@ -111,6 +128,7 @@ def ensure_azure_containerapp_environment(
             raise
         effective_policy = _merged_policy(policy, existing_profiles)
         _emit(trace_sink, EnvironmentLifecycleEvent.OWNERSHIP_VERIFIED, effective_policy)
+        _import_verified_environment(effective_policy, runtime, trace_sink)
 
     _emit(trace_sink, EnvironmentLifecycleEvent.PLAN_STARTED, effective_policy)
     try:

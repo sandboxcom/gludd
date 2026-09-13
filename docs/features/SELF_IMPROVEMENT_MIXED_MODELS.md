@@ -713,6 +713,29 @@ terminal, as does any remote failure when no validated local session exists. The
 continuation event contains only the fixed infrastructure category. Default and
 operator-composed policies remain fail closed unless they select this behavior.
 
+#### Retained environment state adoption (2026-09-13)
+
+A later bounded retry independently verified the retained owner-tagged A100
+environment, but its isolated worktree had no matching local OpenTofu state.
+OpenTofu consequently planned a duplicate create, which the plan auditor correctly
+rejected before mutation. Gludd now adopts that exact environment only after the
+independent ARM reader has verified its subscription, group, name, ownership tags,
+and workload profiles. The importer accepts one exact AzAPI address and resource
+ID, rejects foreign or ambiguous state, emits content-free import transitions, and
+runs before the audited reconciliation plan. It never imports an unowned resource.
+
+This handles the operational problem described by users in
+[OpenTofu issue #1571](https://github.com/opentofu/opentofu/issues/1571): an existing
+remote object that is absent from state otherwise requires an error-prone manual
+import. Microsoft's
+[AzAPI provider guidance](https://github.com/MicrosoftDocs/azure-dev-docs/blob/main/articles/terraform/overview-azapi-provider.md)
+requires the import resource ID to carry an API-version query parameter. Gludd
+therefore pins `2025-07-01` at the import boundary and accepts only the corresponding
+canonical stored ID, with or without that exact query after provider normalization.
+The provider's own current
+[import changelog](https://github.com/Azure/terraform-provider-azapi/blob/main/CHANGELOG.md)
+confirms support for ID-only and ID-plus-API-version forms.
+
 ### S83.150 live-adapter research
 
 Research checked on 2026-09-04 before the adapter was implemented:

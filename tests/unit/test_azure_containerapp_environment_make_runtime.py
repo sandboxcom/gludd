@@ -166,6 +166,7 @@ class _Runner:
         allowed_root: str | Path,
         environment: dict[str, str],
         timeout_seconds: int,
+        import_resource_id: str | None = None,
         progress: object,
     ) -> None:
         cast(Any, progress)(phase, TerraformRuntimeState.STARTED, 0)
@@ -178,6 +179,7 @@ class _Runner:
                 "allowed_root": Path(allowed_root),
                 "environment": dict(environment),
                 "timeout_seconds": timeout_seconds,
+                "import_resource_id": import_resource_id,
             }
         )
         if phase == "show-plan":
@@ -186,6 +188,14 @@ class _Runner:
                 json.dumps(_plan(policy, self.action)),
                 encoding="utf-8",
             )
+        if phase == "import":
+            policy = self.materializer.calls[-1][0]
+            state_path = Path(terraform_dir) / "terraform.tfstate"
+            state_path.write_text(
+                json.dumps(_environment_state(policy)),
+                encoding="utf-8",
+            )
+            state_path.chmod(0o600)
         if phase == self.fail_phase:
             cast(Any, progress)(phase, TerraformRuntimeState.FAILED, 0)
             raise AzureContainerAppTerraformPhaseError(phase, self.failure_class)
@@ -221,6 +231,77 @@ def _runtime(
         trace_sink=cast(Any, trace_sink or (lambda _event: None)),
     )
     return runtime, active_materializer, active_runner
+
+
+def _environment_state(policy: AzureEnvironmentLifecyclePolicy) -> dict[str, object]:
+    return {
+        "version": 4,
+        "resources": [
+            {
+                "module": "module.environment",
+                "mode": "managed",
+                "type": "azapi_resource",
+                "name": "managed_environment",
+                "instances": [{"attributes": {"id": policy.environment_id}}],
+            }
+        ],
+    }
+
+
+def test_runtime_imports_verified_existing_environment_only_when_state_is_unbound(
+    tmp_path: Path,
+) -> None:
+    policy = _policy()
+    runtime, _materializer, runner = _runtime(tmp_path)
+
+    runtime.import_existing_environment(policy)
+
+    assert [call["phase"] for call in runner.calls] == ["init", "import"]
+    assert runner.calls[-1]["import_resource_id"] == (
+        f"{policy.environment_id}?api-version=2025-07-01"
+    )
+    runtime.import_existing_environment(policy)
+
+    assert [call["phase"] for call in runner.calls] == ["init", "import"]
+
+
+@pytest.mark.parametrize(
+    "state",
+    (
+        {"version": 4, "resources": "not-a-list"},
+        {
+            "version": 4,
+            "resources": [
+                {
+                    "module": "module.environment",
+                    "mode": "managed",
+                    "type": "azapi_resource",
+                    "name": "managed_environment",
+                    "instances": [{"attributes": {"id": "/foreign"}}],
+                }
+            ],
+        },
+    ),
+)
+def test_runtime_rejects_ambiguous_existing_state_before_import(
+    tmp_path: Path,
+    state: object,
+) -> None:
+    policy = _policy()
+    runtime, materializer, runner = _runtime(tmp_path)
+    runtime._bind_state(policy)
+    runtime._materialize_policy(policy)
+    terraform_dir = materializer.calls[-1][1]
+    (terraform_dir / "terraform.tfstate").write_text(
+        json.dumps(state),
+        encoding="utf-8",
+    )
+    (terraform_dir / "terraform.tfstate").chmod(0o600)
+
+    with pytest.raises(AzureContainerAppMakeRuntimeError, match="state-ownership"):
+        runtime.import_existing_environment(policy)
+
+    assert runner.calls == []
 
 
 def test_runtime_materializes_and_runs_terraform_directly(

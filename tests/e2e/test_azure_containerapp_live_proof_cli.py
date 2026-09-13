@@ -1647,6 +1647,8 @@ def test_azure_containerapp_coverage_has_one_local_and_hosted_contract() -> None
     assert "tests/unit/test_azure_containerapp_environment_operations.py" in recipe
     assert "tests/unit/test_azure_containerapp_environment_retention.py" in recipe
     assert "tests/unit/test_azure_containerapp_environment_make_runtime.py" in recipe
+    assert "tests/unit/test_azure_containerapp_environment_runtime_types.py" in recipe
+    assert "tests/unit/test_azure_containerapp_environment_state.py" in recipe
     assert "tests/unit/test_azure_containerapp_environment_terraform.py" in recipe
     assert "tests/unit/test_azure_idle_retention.py" in recipe
     assert "tests/unit/test_azure_containerapp_owned_lifecycle.py" in recipe
@@ -1688,6 +1690,8 @@ def test_azure_containerapp_coverage_has_one_local_and_hosted_contract() -> None
     assert "azure_containerapp_environment_operations.py" in coverage_config
     assert "azure_containerapp_environment_retention.py" in coverage_config
     assert "azure_containerapp_environment_make_runtime.py" in coverage_config
+    assert "azure_containerapp_environment_runtime_types.py" in coverage_config
+    assert "azure_containerapp_environment_state.py" in coverage_config
     assert "azure_containerapp_owned_candidate.py" in coverage_config
     assert "azure_containerapp_owned_lifecycle.py" in coverage_config
     assert "azure_containerapp_runtime_resources.py" in coverage_config
