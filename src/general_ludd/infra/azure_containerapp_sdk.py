@@ -77,6 +77,7 @@ class AzureGPUMetricResponseReason(StrEnum):
     SAMPLE_COUNT_EXCEEDED = "sample_count_exceeded"
     RESPONSE_SHAPE_INVALID = "response_shape_invalid"
     EVIDENCE_CONTRACT_INVALID = "evidence_contract_invalid"
+    METRIC_QUERY_REJECTED = "metric_query_rejected"
 
 
 class AzureGPUUtilizationAttestationError(BackendInfrastructureError):
@@ -982,6 +983,25 @@ class AzureContainerAppGPUUtilizationAttestor:
                 BackendFailure.INTERNAL
             ) from None
 
+    def _wait_for_poll(self, phase: str, *, http_status: int = 0) -> None:
+        """Emit one content-free heartbeat and wait one bounded interval."""
+        status = f" http_status={http_status}" if http_status else ""
+        try:
+            self._progress_sink(
+                "azure_containerapp_gpu_metric "
+                f"phase={phase} state=heartbeat{status} secret_output=false"
+            )
+        except Exception:
+            raise AzureGPUUtilizationAttestationError(
+                BackendFailure.INTERNAL
+            ) from None
+        try:
+            self._sleep(self._poll_interval_seconds)
+        except Exception:
+            raise AzureGPUUtilizationAttestationError(
+                BackendFailure.INTERNAL
+            ) from None
+
     def attest(
         self,
         identity: AzureContainerAppCandidateIdentity,
@@ -1011,8 +1031,18 @@ class AzureContainerAppGPUUtilizationAttestor:
                 )
             except Exception as error:
                 http_status = _status_code(error) or 0
+                failure = _gpu_monitor_failure(error)
+                if http_status == 400:
+                    if observed < deadline:
+                        self._wait_for_poll("query_pending", http_status=http_status)
+                        continue
+                    raise AzureGPUUtilizationAttestationError(
+                        failure,
+                        AzureGPUMetricResponseReason.METRIC_QUERY_REJECTED,
+                        http_status=http_status,
+                    ) from None
                 raise AzureGPUUtilizationAttestationError(
-                    _gpu_monitor_failure(error),
+                    failure,
                     http_status=http_status,
                 ) from None
             try:
@@ -1039,22 +1069,7 @@ class AzureContainerAppGPUUtilizationAttestor:
                 raise AzureGPUUtilizationAttestationError(
                     BackendFailure.TIMEOUT
                 )
-            try:
-                self._progress_sink(
-                    "azure_containerapp_gpu_metric "
-                    "phase=awaiting_positive_sample state=heartbeat "
-                    "secret_output=false"
-                )
-            except Exception:
-                raise AzureGPUUtilizationAttestationError(
-                    BackendFailure.INTERNAL
-                ) from None
-            try:
-                self._sleep(self._poll_interval_seconds)
-            except Exception:
-                raise AzureGPUUtilizationAttestationError(
-                    BackendFailure.INTERNAL
-                ) from None
+            self._wait_for_poll("awaiting_positive_sample")
 
     def close(self) -> None:
         """Close the shared Monitor client exactly once."""

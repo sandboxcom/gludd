@@ -968,7 +968,6 @@ def test_gpu_attestor_emits_content_free_metric_rejection_reason() -> None:
         (408, BackendFailure.TIMEOUT),
         (429, BackendFailure.RATE_LIMITED),
         (500, BackendFailure.TRANSPORT),
-        (400, BackendFailure.INVALID_RESPONSE),
     ],
 )
 def test_gpu_attestor_classifies_monitor_failures_without_provider_text(
@@ -998,6 +997,78 @@ def test_gpu_attestor_classifies_monitor_failures_without_provider_text(
     assert captured.value.http_status == status_code
     assert secret not in str(captured.value)
     assert secret not in repr(captured.value)
+
+
+def test_gpu_attestor_polls_transient_bad_request_until_metric_index_is_ready() -> None:
+    """A fresh resource's delayed metric registration is bounded eventual absence."""
+    identity = _identity()
+    clock = [datetime(2026, 9, 7, 12, 0, tzinfo=UTC)]
+    events: list[str] = []
+    secret = "provider-query-detail-must-not-escape"
+
+    class MetricIndexPending(RuntimeError):
+        status_code = 400
+
+    client = _MonitorClient([])
+    client.metrics.list = MagicMock(
+        side_effect=[
+            MetricIndexPending(secret),
+            _metric_response(identity.revision_name, [12.5]),
+        ]
+    )
+
+    def sleep(seconds: float) -> None:
+        clock[0] += timedelta(seconds=seconds)
+
+    attestor = AzureContainerAppGPUUtilizationAttestor(
+        client=client,
+        expected_resource_id=identity.resource_id,
+        progress_sink=events.append,
+        now=lambda: clock[0],
+        sleep=sleep,
+        poll_timeout_seconds=20.0,
+        poll_interval_seconds=10.0,
+    )
+
+    assert attestor.attest(identity).maximum_percent == 12.5
+    assert client.metrics.list.call_count == 2
+    assert events == [
+        "azure_containerapp_gpu_metric phase=query_pending state=heartbeat "
+        "http_status=400 secret_output=false"
+    ]
+    assert secret not in "\n".join(events)
+
+
+def test_gpu_attestor_reports_typed_rejection_when_bad_request_never_clears() -> None:
+    """A malformed or unavailable metric query cannot poll or expose text forever."""
+    identity = _identity()
+    clock = [datetime(2026, 9, 7, 12, 0, tzinfo=UTC)]
+
+    class MetricQueryRejected(RuntimeError):
+        status_code = 400
+
+    client = _MonitorClient([])
+    client.metrics.list = MagicMock(side_effect=MetricQueryRejected("private"))
+
+    def sleep(seconds: float) -> None:
+        clock[0] += timedelta(seconds=seconds)
+
+    attestor = AzureContainerAppGPUUtilizationAttestor(
+        client=client,
+        expected_resource_id=identity.resource_id,
+        now=lambda: clock[0],
+        sleep=sleep,
+        poll_timeout_seconds=1.0,
+        poll_interval_seconds=1.0,
+    )
+
+    with pytest.raises(AzureGPUUtilizationAttestationError) as captured:
+        attestor.attest(identity)
+
+    assert captured.value.failure is BackendFailure.INVALID_RESPONSE
+    assert captured.value.reason == "metric_query_rejected"
+    assert captured.value.http_status == 400
+    assert "private" not in str(captured.value)
 
 
 def test_gpu_attestor_reports_timeout_when_no_positive_sample_arrives() -> None:
