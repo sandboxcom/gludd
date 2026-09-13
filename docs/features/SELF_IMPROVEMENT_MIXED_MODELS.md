@@ -5,7 +5,7 @@ Azure OpenAI, and Azure Container Apps discovery/inference, candidate-set
 assembly, content-free calibrated routing, and managed-runner selection are
 implemented behind explicit policy. Gludd now plans and owns the complete Azure
 Container Apps resource-group/environment/app lifecycle through the Microsoft SDK
-and OpenTofu. The 17-action least-privilege role and workload-identity path are
+and OpenTofu. The 18-action least-privilege role and workload-identity path are
 implemented. Paid canaries now prove concurrent local and Azure inference plus
 verified app teardown, but an accepted code improvement and positive Azure Monitor
 GPU-utilization evidence remain pending.
@@ -79,6 +79,32 @@ boundary instead of assuming independently valid version constants interoperate.
 Typed, allowlisted preflight reasons are emitted without provider bodies and are
 mapped to the model-neutral authentication, authorization, not-found, quota,
 timeout, transport, invalid-response, or unavailable categories.
+
+## Local model cache safety
+
+Managed local candidates are downloaded at immutable revisions into Gludd's
+dedicated cache and receive ownership manifests. Reclamation considers only
+manifested artifacts, then excludes active leases and every candidate protected by
+a live plan reservation. The deletion adapter uses Hugging Face's public
+[`scan_cache_dir`](https://huggingface.co/docs/huggingface_hub/en/package_reference/cache#huggingface_hub.scan_cache_dir)
+and `delete_revisions` APIs; it independently matches repository, revision,
+filename, canonical snapshot, resolved blob, and every path in the returned
+strategy before execution, rescans immediately before deletion, and proves the
+exact revision absent afterward. It cannot select an unowned path or reach outside
+the selected repository.
+
+The supported scanner records a `CorruptedCacheException` for a repository it
+skips and returns only independently valid repositories. Gludd therefore allows
+that official warning type only when the requested revision is separately present
+in the valid typed inventory; a warned target is absent and cannot produce a
+deletion plan. Unknown warning types still stop reclamation without exposing paths
+or warning text. This distinction matters in practice: Hugging Face issue
+[#4420](https://github.com/huggingface/huggingface_hub/issues/4420) reports cache
+listings that omitted an on-disk repository, while issue
+[#4412](https://github.com/huggingface/huggingface_hub/issues/4412) records orphaned
+partial downloads missing from older scan/prune inventories. Gludd neither treats
+scanner totals as ownership evidence nor deletes partial or omitted content through
+this path.
 
 The same canary then created the environment in 722 seconds and the app ARM
 resource in 18 seconds, but no revision became ready before the bounded 900-second

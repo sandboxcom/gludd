@@ -127,30 +127,17 @@ def _is_within(path: Path, parent: Path) -> bool:
     return True
 
 
-def _is_owned_control_directory_warning(
-    warning: BaseException,
-    *,
-    cache_root: Path,
-) -> bool:
-    """Recognize only Hugging Face's exact warning for Gludd-owned metadata."""
+def _is_supported_skipped_repo_warning(warning: BaseException) -> bool:
+    """Recognize the public warning type used for repositories omitted from a scan.
+
+    ``scan_cache_dir`` records ``CorruptedCacheException`` for each repository it
+    skips and returns only independently valid repositories in ``repos``.  The
+    deletion path still requires its exact target in that valid inventory and
+    validates every path in the SDK-produced strategy before execution.
+    """
     from huggingface_hub.errors import CorruptedCacheException
 
-    control_directory = cache_root / ".gludd"
-    try:
-        canonical_control = control_directory.resolve(strict=True)
-    except (OSError, RuntimeError):
-        return False
-    expected = (
-        "Repo path is not a valid HuggingFace cache directory: "
-        f"{control_directory}"
-    )
-    return (
-        isinstance(warning, CorruptedCacheException)
-        and not control_directory.is_symlink()
-        and canonical_control == control_directory
-        and control_directory.is_dir()
-        and str(warning) == expected
-    )
+    return isinstance(warning, CorruptedCacheException)
 
 
 def _paths_from_strategy(strategy: _DeleteStrategy, field_name: str) -> frozenset[Path]:
@@ -256,10 +243,7 @@ class HuggingFaceCacheDeletion:
         unexpected_warnings = tuple(
             warning
             for warning in warnings
-            if not _is_owned_control_directory_warning(
-                warning,
-                cache_root=self._cache_root,
-            )
+            if not _is_supported_skipped_repo_warning(warning)
         )
         if unexpected_warnings:
             raise CacheDeletionError("cache scan reported warnings")

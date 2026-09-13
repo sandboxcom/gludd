@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from huggingface_hub.errors import CorruptedCacheException
 
 from general_ludd.self_improve.hf_cache_delete import (
     CacheArtifactIdentity,
@@ -251,6 +252,53 @@ def test_scan_warnings_and_exceptions_are_bounded_and_fail_closed(
     assert "private filesystem detail" not in str(raised.value)
     assert raised.value.__cause__ is None
     assert raised.value.__suppress_context__ is True
+
+
+def test_official_warning_for_skipped_repo_does_not_block_exact_valid_target(
+    tmp_path: Path,
+) -> None:
+    """A skipped foreign repo cannot veto a separately proven exact strategy."""
+    cache_root, identity, repo, strategy, state = _cache_fixture(tmp_path)
+    skipped_repo = cache_root / "models--corrupt--foreign"
+    warning = CorruptedCacheException(
+        f"Snapshots dir doesn't exist in cached repo: {skipped_repo}"
+    )
+
+    plan = HuggingFaceCacheDeletion(
+        cache_root,
+        scanner=lambda **_kwargs: _FakeCacheInfo(
+            repos=(repo,),
+            strategy=strategy,
+            warnings=(warning,),
+        ),
+    ).plan(identity)
+
+    assert plan.dry_run().expected_freed_bytes == 4
+    assert state == {"executed": False, "deleted": False}
+
+
+def test_official_warning_cannot_make_a_skipped_target_deletable(
+    tmp_path: Path,
+) -> None:
+    """A warned target is absent from the valid inventory and remains untouched."""
+    cache_root, identity, _repo, _strategy, state = _cache_fixture(tmp_path)
+    warning = CorruptedCacheException(
+        "Snapshots dir doesn't exist in cached repo: "
+        f"{cache_root / 'models--example--model'}"
+    )
+
+    with pytest.raises(CacheDeletionError, match="exact artifact was not found"):
+        HuggingFaceCacheDeletion(
+            cache_root,
+            scanner=lambda **_kwargs: _FakeCacheInfo(
+                repos=(),
+                strategy=None,
+                warnings=(warning,),
+            ),
+        ).plan(identity)
+
+    assert identity.path.read_bytes() == b"GGUF"
+    assert state == {"executed": False, "deleted": False}
 
 
 def test_exact_repo_revision_filename_and_path_must_all_match(
