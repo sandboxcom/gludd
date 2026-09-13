@@ -867,6 +867,41 @@ remains immediate. The app was destroyed in 19 seconds and independently verifie
 absent, while only the measured-zero-cost environment was retained. A live retry is
 still required to establish positive GPU telemetry.
 
+Two further bounded canaries narrowed that failure without accepting unverified
+evidence. Microsoft's Monitor walkthrough states that only one dimension may use the
+wildcard filter in a request, so Gludd changed the query to split only
+`revisionName`; the service still returned HTTP 400. A second canary disabled the
+SDK's local dimension-value validation while retaining Gludd's exact-revision parser;
+the service again returned HTTP 400 for the full 300-second deadline. This rules out
+both the two-wildcard filter and client-side dimension-index validation as the cause.
+Each app was destroyed in 19 seconds and independently verified absent.
+
+Those canaries did prove real mixed execution. Azure and local Qwen2.5-Coder 3B
+consumed the same parent-built envelope digest concurrently. Azure completed 4,037
+input plus 246 output tokens. The local worker completed the same input plus 202
+output tokens, produced a 630-byte two-file proposal, passed syntax, all 27 targeted
+tests, and full repository collection, then was rejected by the commit guard. The
+guard formerly reduced that failure to `category=none`; it now maps only exact
+Make-owned terminal lines to `commit_lint_guard`, `commit_docstring_guard`, or
+`commit_lock`. Arbitrary model or provider output remains unclassified and is never
+forwarded.
+
+Gludd now discovers the resource's metric definition through Microsoft's official
+[MetricDefinitionsOperations API](https://learn.microsoft.com/en-us/python/api/azure-mgmt-monitor/azure.mgmt.monitor.operations.metricdefinitionsoperations?view=azure-python)
+before querying values. It locally verifies the exact name, namespace, Percent unit,
+Maximum aggregation, and `revisionName` dimension, polls boundedly when a fresh
+resource has no definition yet, and uses the advertised namespace casing rather than
+guessing. The runtime role adds only the corresponding documented read action,
+`Microsoft.Insights/metricDefinitions/read`; its other 17 actions and exact
+resource-group scope are unchanged. Microsoft's
+[Monitor RBAC operation list](https://learn.microsoft.com/en-us/azure/role-based-access-control/permissions/monitor)
+distinguishes definition reads from metric-value reads. The long-lived
+[Microsoft Q&A dimension-delay report](https://learn.microsoft.com/en-us/answers/questions/5811384/not-able-to-select-the-failure-type-dimension-valu)
+remains relevant for the bounded pending state, but repeated service-side HTTP 400
+responses show that waiting alone is not a sufficient query strategy. Positive GPU
+telemetry and an accepted mixed-provider improvement remain required before this
+capability is described as complete.
+
 The same run also confirmed a local failure-classification defect. A fatal native
 decode error used the validation-retry marker and was therefore eligible to poison
 model-quality calibration. The owned child now reserves exit 2 for proposal validation

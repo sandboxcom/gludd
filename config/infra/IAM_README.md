@@ -349,14 +349,15 @@ az role assignment delete --assignee-object-id <operator-object-id> --role "User
 ### Create the Container Apps runtime identity
 
 The accelerator role is intentionally limited to 14 `Microsoft.App` operations,
-`Microsoft.Insights/metrics/read`, and resource-group `read`/`write` at one exact
-resource-group path. It can create the absent owner-tagged group, create and
-remove only Gludd-owned managed environments and Container Apps inside it, and
-read their quota, status, inventory, and GPU metrics. It cannot register
+`Microsoft.Insights/metricDefinitions/read`, `Microsoft.Insights/metrics/read`,
+and resource-group `read`/`write` at one exact resource-group path. It can create
+the absent owner-tagged group, create and remove only Gludd-owned managed
+environments and Container Apps inside it, and read their quota, status,
+advertised metric contracts, inventory, and GPU metrics. It cannot register
 providers, delete the group, change IAM, use virtual machines or networks, manage
 registries or logging, read secrets, or access Cognitive Services. `NotActions`
 is empty: Azure treats it as subtraction from wildcard grants, not an explicit
-deny, so least privilege comes from the exact 17-action allowlist and exact-scope
+deny, so least privilege comes from the exact 18-action allowlist and exact-scope
 assignment.
 
 ```bash
@@ -385,7 +386,7 @@ same credential for the owner-tagged group bootstrap and the OpenTofu lifecycle,
 or acquires an equivalent short-lived credential from the configured OpenBao
 Azure role. Downstream workers receive only their scoped OpenBao lease/capability
 and never the accelerator credential. Do not assign the complete accelerator
-role at subscription scope: Azure would apply all 17 actions there, and OpenBao
+role at subscription scope: Azure would apply all 18 actions there, and OpenBao
 cannot retroactively narrow a token already exposed to a component.
 
 The operator creating or updating the custom role needs
