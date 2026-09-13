@@ -814,6 +814,23 @@ all 54 measured files clear 75%, and the runtime resource owner reaches 93%. A f
 bounded paid canary must still emit positive exact-revision GPU evidence and produce
 one accepted code improvement before the live capability is complete.
 
+The first post-wiring paid canary provisioned the selected A100 app, completed one
+4,894-input-token Azure inference, and then correctly withheld that response when GPU
+evidence was not yet available. The new attestor exposed an eventual-consistency bug:
+an empty metric collection was classified as malformed immediately instead of being
+polled within the existing bounded deadline. The app was still destroyed and its
+absence independently verified; only the measured-zero-cost empty environment was
+retained. Microsoft's
+[Azure Monitor walkthrough](https://learn.microsoft.com/en-us/azure/azure-monitor/platform/rest-api-walkthrough)
+documents an empty `timeseries` as a normal no-data response, and a long-lived
+[Microsoft Q&A report](https://learn.microsoft.com/en-au/answers/questions/460863/azure-monitor-rest-api-empty-timeseries-data-point)
+describes missing minute-granularity data points in successful metric responses. The
+parser now treats only a structurally valid empty metric collection or empty time
+series as pending and emits its normal content-free heartbeat before polling again.
+Missing, null, multiple, foreign-revision, nonfinite, and out-of-range evidence still
+fails closed. A paid retry remains necessary because this canary provided Azure
+inference and safe lifecycle evidence, not positive GPU proof or an accepted change.
+
 #### Parent-owned per-ordinal proposal scope (2026-09-13)
 
 The live rejection exposed a decoder/schema mismatch. The managed schema previously

@@ -802,7 +802,12 @@ def _metric_revision(series: object) -> str | None:
 
 
 def _positive_metric_values(response: object, revision_name: str) -> tuple[float, ...]:
-    metrics = _sequence(_member(response, "value", default=()), "GPU metric")
+    metric_values = _member(response, "value")
+    if metric_values is None:
+        raise AzureGPUUtilizationAttestationError(BackendFailure.INVALID_RESPONSE)
+    metrics = _sequence(metric_values, "GPU metric")
+    if not metrics:
+        return ()
     if len(metrics) != 1:
         raise AzureGPUUtilizationAttestationError(BackendFailure.INVALID_RESPONSE)
     metric = metrics[0]

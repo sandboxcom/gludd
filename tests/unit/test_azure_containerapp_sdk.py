@@ -833,13 +833,71 @@ def test_gpu_attestor_polls_content_free_until_a_positive_sample() -> None:
 
 
 @pytest.mark.parametrize(
+    "pending_response",
+    [
+        SimpleNamespace(value=[]),
+        SimpleNamespace(
+            value=[
+                SimpleNamespace(
+                    name=SimpleNamespace(value="GpuUtilizationPercentage"),
+                    unit="Percent",
+                    timeseries=[],
+                )
+            ]
+        ),
+    ],
+    ids=("empty-metric-collection", "empty-time-series"),
+)
+def test_gpu_attestor_polls_when_monitor_has_not_ingested_samples_yet(
+    pending_response: object,
+) -> None:
+    """A valid no-data response is eventual absence, never malformed evidence."""
+    identity = _identity()
+    clock = [datetime(2026, 9, 7, 12, 0, tzinfo=UTC)]
+    events: list[str] = []
+    client = _MonitorClient(
+        [
+            pending_response,
+            _metric_response(identity.revision_name, [6.25]),
+        ]
+    )
+
+    def sleep(seconds: float) -> None:
+        clock[0] += timedelta(seconds=seconds)
+
+    attestor = AzureContainerAppGPUUtilizationAttestor(
+        client=client,
+        expected_resource_id=identity.resource_id,
+        progress_sink=events.append,
+        now=lambda: clock[0],
+        sleep=sleep,
+        poll_timeout_seconds=20.0,
+        poll_interval_seconds=10.0,
+    )
+
+    assert attestor.attest(identity).maximum_percent == 6.25
+    assert len(client.metrics.calls) == 2
+    assert events == [
+        "azure_containerapp_gpu_metric phase=awaiting_positive_sample state=heartbeat secret_output=false"
+    ]
+
+
+@pytest.mark.parametrize(
     "response",
     [
+        SimpleNamespace(),
+        SimpleNamespace(value=None),
         _metric_response("gludd-vllm-sdk-proof--foreign", [50.0]),
         _metric_response("gludd-vllm-sdk-proof--0000007", [float("nan")]),
         _metric_response("gludd-vllm-sdk-proof--0000007", [101.0]),
     ],
-    ids=("foreign-revision", "nan", "above-percent-range"),
+    ids=(
+        "missing-metric-collection",
+        "null-metric-collection",
+        "foreign-revision",
+        "nan",
+        "above-percent-range",
+    ),
 )
 def test_gpu_attestor_refuses_ambiguous_or_impossible_metric_evidence(
     response: object,
