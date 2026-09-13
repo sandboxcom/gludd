@@ -378,6 +378,7 @@ class EvaluationDiagnosisProtocol:
     phase_kinds: tuple[tuple[str, str], ...]
     diagnosis_failure_classes: tuple[str, ...]
     syntax_categories: tuple[str, ...]
+    commit_categories: tuple[str, ...]
     failure_hypothesis: str
     unavailable_hypothesis: str
 
@@ -435,6 +436,11 @@ EVALUATION_DIAGNOSIS_PROTOCOL = EvaluationDiagnosisProtocol(
         "python_read",
         "python_size",
         "python_encoding",
+    ),
+    commit_categories=(
+        "commit_docstring_guard",
+        "commit_lint_guard",
+        "commit_lock",
     ),
     failure_hypothesis="approved evaluation failed; correct only the typed phase",
     unavailable_hypothesis="evaluation diagnosis was unavailable",
@@ -2817,6 +2823,7 @@ def safe_evaluation_retry_diagnosis(diagnostics: object) -> str:
     line = value.get("line")
     column = value.get("column")
     syntax_categories = frozenset(protocol.syntax_categories)
+    commit_categories = frozenset(protocol.commit_categories)
     no_syntax_context = (
         category == "none"
         and path_digest == ""
@@ -2838,6 +2845,16 @@ def safe_evaluation_retry_diagnosis(diagnostics: object) -> str:
         and isinstance(column, int)
         and 0 <= column <= protocol.max_coordinate
     )
+    commit_context = (
+        isinstance(category, str)
+        and category in commit_categories
+        and failure_class == "commit_failed"
+        and phase == "commit"
+        and command_kind == "repository_commit"
+        and path_digest == ""
+        and line == 0
+        and column == 0
+    )
     expected_hypothesis = (
         protocol.unavailable_hypothesis
         if failure_class == "diagnosis_unavailable"
@@ -2855,7 +2872,7 @@ def safe_evaluation_retry_diagnosis(diagnostics: object) -> str:
         or exit_code == 0
         or not -255 <= exit_code <= 255
         or failure_class not in protocol.diagnosis_failure_classes
-        or not (no_syntax_context or syntax_context)
+        or not (no_syntax_context or syntax_context or commit_context)
         or value.get("finish_reason") != "unknown"
         or value.get("finished") is not True
         or value.get("hypothesis") != expected_hypothesis

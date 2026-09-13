@@ -1962,7 +1962,7 @@ def test_run_benchmark_default_sink_flushes_evaluation_and_retry_diagnosis(
     first_event = output_lines.index(evaluation_lines[0])
     retry_event = output_lines.index(retry_lines[0])
     rotated_attempt_identity = (
-        "2397eeb29d5dfd75482b6559f2de682f57f24ea8955d611a7b97f254d14a6728"
+        "c82b17180e087de248e2d4c2b50da5e84e6c3b5afc283ac3ba03179418d9f49a"
     )
     assert rotated_attempt_identity not in {
         "a954fb52b2c47704813156f2a16e610aa47addee2d1af1cf90061855ac9aa87c",

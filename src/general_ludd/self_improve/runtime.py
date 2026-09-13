@@ -2120,6 +2120,7 @@ class _AttemptState:
     worktree_clean: bool = False
     changed_lines: int = 0
     syntax_diagnostic: str | None = None
+    commit_diagnostic_category: str = "none"
 
 
 @dataclass(frozen=True)
@@ -2347,6 +2348,37 @@ def _inspect_committed_candidate(
     state.patch_identity = patch.stdout.strip()
 
 
+_COMMIT_FAILURE_MARKERS = (
+    (
+        "_commit-lint-guard: FAIL — lint errors in staged files. Fix before committing.",
+        "commit_lint_guard",
+    ),
+    (
+        "_commit-docstring-guard: FAIL - add or repair Google-style docstrings "
+        "in staged source files.",
+        "commit_docstring_guard",
+    ),
+    (
+        "COMMIT-LOCK: another commit is in flight. Retry serially.",
+        "commit_lock",
+    ),
+)
+
+
+def _commit_failure_category(result: MakeResult) -> str:
+    """Classify only exact parent-owned terminal markers from a failed commit."""
+    if result.returncode == 0:
+        return "none"
+    lines = {
+        line.strip()
+        for line in (result.stdout + "\n" + result.stderr)[-16_384:].splitlines()
+    }
+    for marker, category in _COMMIT_FAILURE_MARKERS:
+        if marker in lines:
+            return category
+    return "none"
+
+
 def _commit_candidate(
     runner: _RuntimeMakeRunner,
     proposal: ProposalManifest,
@@ -2378,6 +2410,7 @@ def _commit_candidate(
         failure_class="commit_failed",
     )
     state.results.append(committed)
+    state.commit_diagnostic_category = _commit_failure_category(committed)
     if staged.returncode == 0 and committed.returncode == 0:
         state.commit_count = 1
         _inspect_committed_candidate(runner, reference, branch, state, progress_sink)
@@ -2519,6 +2552,11 @@ def _build_attempt_result(
                 state.syntax_diagnostic
                 if failed_event.phase == "syntax_preflight"
                 else None
+            ),
+            category=(
+                state.commit_diagnostic_category
+                if failed_event.phase == "commit"
+                else "none"
             ),
         )
     return AttemptResult(

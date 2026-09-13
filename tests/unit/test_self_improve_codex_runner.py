@@ -945,6 +945,110 @@ def test_evaluate_attempt_covers_green_commit_and_cleanup(
     assert relative not in "\n".join(progress)
 
 
+@pytest.mark.parametrize(
+    ("marker", "expected_category"),
+    [
+        (
+            "_commit-lint-guard: FAIL — lint errors in staged files. "
+            "Fix before committing.",
+            "commit_lint_guard",
+        ),
+        (
+            "_commit-docstring-guard: FAIL - add or repair Google-style "
+            "docstrings in staged source files.",
+            "commit_docstring_guard",
+        ),
+        (
+            "COMMIT-LOCK: another commit is in flight. Retry serially.",
+            "commit_lock",
+        ),
+    ],
+)
+def test_commit_candidate_surfaces_only_allowlisted_guard_category(
+    marker: str,
+    expected_category: str,
+) -> None:
+    """Make-owned commit markers become useful evidence without raw output."""
+    secret = "SECRET_TOKEN=/private/model/worktree"
+
+    class CandidateRunner:
+        def run(
+            self,
+            target: str,
+            variables: dict[str, str] | None = None,
+            *,
+            timeout: int = 120,
+            read_only: bool = False,
+        ) -> MakeResult:
+            del variables, timeout, read_only
+            if target == "repo-commit":
+                return MakeResult(
+                    ("make", target),
+                    2,
+                    f"{secret}\n{marker}\n",
+                    secret,
+                    0.25,
+                )
+            return MakeResult(("make", target), 0, "", "", 0.1)
+
+    proposal = _manifest()
+    reference = CodexReference(
+        baseline_sha="a" * 40,
+        reference_sha="b" * 40,
+        changed_files=frozenset(edit.path for edit in proposal.edits),
+        test_files=frozenset(proposal.tests),
+        changed_lines=2,
+        elapsed_seconds=1.0,
+    )
+    progress: list[str] = []
+    state = runner_module._AttemptState(runner_module.time.monotonic(), [], [])
+
+    runner_module._commit_candidate(
+        CandidateRunner(),
+        proposal,
+        reference,
+        "candidate",
+        state,
+        progress.append,
+    )
+    result = runner_module._build_attempt_result(
+        proposal,
+        reference,
+        "c" * 64,
+        state,
+        runner_module._AttemptQuality(
+            90.0,
+            80.0,
+            True,
+            True,
+            True,
+            0,
+            frozenset(),
+        ),
+        True,
+        None,
+    )
+    diagnosis = result.diagnostics
+
+    assert json.loads(diagnosis)["category"] == expected_category
+    assert state.commit_count == 0
+    assert secret not in diagnosis
+    assert secret not in "\n".join(progress)
+
+
+def test_unknown_commit_failure_output_remains_content_free_and_unclassified() -> None:
+    """Never infer a category from model- or provider-controlled prose."""
+    result = MakeResult(
+        ("make", "repo-commit"),
+        2,
+        "SECRET_TOKEN arbitrary commit failure",
+        "/private/model/worktree",
+        0.1,
+    )
+
+    assert runner_module._commit_failure_category(result) == "none"
+
+
 def test_evaluate_attempt_rejects_scope_before_worktree() -> None:
     reference = CodexReference(
         baseline_sha="a" * 40,

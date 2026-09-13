@@ -343,9 +343,18 @@ def _compact_evaluation_diagnosis(
     event: _EvaluationLifecycleEvent,
     *,
     syntax_diagnostic: str | None = None,
+    category: str = "none",
 ) -> str:
     """Reuse the installed trace sanitizer, then add bounded lifecycle fields."""
     protocol = EVALUATION_DIAGNOSIS_PROTOCOL
+    if category != "none" and (
+        category not in protocol.commit_categories
+        or event.phase != "commit"
+        or event.command_kind != "repository_commit"
+        or event.failure_class != "commit_failed"
+        or syntax_diagnostic is not None
+    ):
+        raise ValueError("evaluation diagnosis category is incompatible with its event")
     compact = compact_failure_diagnosis(
         event.render()
         + "\nSELF_IMPROVE_LOCAL_DECODE finish=unknown"
@@ -357,6 +366,9 @@ def _compact_evaluation_diagnosis(
     payload = json.loads(compact)
     if not isinstance(payload, dict):
         raise RuntimeError("evaluation diagnosis sanitizer returned a non-object")
+    context = _syntax_diagnosis_fields(syntax_diagnostic)
+    if category != "none":
+        context["category"] = category
     payload.update(
         {
             "command_kind": event.command_kind,
@@ -364,7 +376,7 @@ def _compact_evaluation_diagnosis(
             "duration_ms": event.duration_ms,
             "protocol": protocol.version,
             "schema_version": protocol.schema_version,
-            **_syntax_diagnosis_fields(syntax_diagnostic),
+            **context,
         }
     )
     artifact = json.dumps(
