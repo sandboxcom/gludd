@@ -845,8 +845,21 @@ def test_gpu_attestor_polls_content_free_until_a_positive_sample() -> None:
                 )
             ]
         ),
+        SimpleNamespace(
+            value=[
+                SimpleNamespace(
+                    name=SimpleNamespace(value="GpuUtilizationPercentage"),
+                    unit="Percent",
+                    timeseries=[SimpleNamespace(metadatavalues=[], data=[])],
+                )
+            ]
+        ),
     ],
-    ids=("empty-metric-collection", "empty-time-series"),
+    ids=(
+        "empty-metric-collection",
+        "empty-time-series",
+        "empty-dimension-series",
+    ),
 )
 def test_gpu_attestor_polls_when_monitor_has_not_ingested_samples_yet(
     pending_response: object,
@@ -919,6 +932,30 @@ def test_gpu_attestor_refuses_ambiguous_or_impossible_metric_evidence(
         attestor.attest(identity)
 
     assert captured.value.failure is BackendFailure.INVALID_RESPONSE
+
+
+def test_gpu_attestor_emits_content_free_metric_rejection_reason() -> None:
+    """Malformed provider data identifies only the rejected invariant."""
+    identity = _identity()
+    secret = "provider-secret-revision"
+    events: list[str] = []
+    client = _MonitorClient([_metric_response(secret, [50.0])])
+    attestor = AzureContainerAppGPUUtilizationAttestor(
+        client=client,
+        expected_resource_id=identity.resource_id,
+        progress_sink=events.append,
+    )
+
+    with pytest.raises(AzureGPUUtilizationAttestationError) as captured:
+        attestor.attest(identity)
+
+    assert getattr(captured.value, "reason", None) == "revision_dimension_mismatch"
+    assert events == [
+        "azure_containerapp_gpu_metric phase=response_rejected state=failed "
+        "reason=revision_dimension_mismatch secret_output=false"
+    ]
+    assert secret not in repr(captured.value)
+    assert secret not in "\n".join(events)
 
 
 @pytest.mark.parametrize(

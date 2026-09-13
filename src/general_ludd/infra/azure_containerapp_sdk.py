@@ -13,6 +13,7 @@ import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 from threading import RLock
 from typing import Any, Protocol, cast
 
@@ -64,8 +65,35 @@ class AzureContainerAppsSDKReadError(AzureContainerAppARMError):
     """Fixed-context failure from an official Container Apps SDK read."""
 
 
+class AzureGPUMetricResponseReason(StrEnum):
+    """Content-free Azure Monitor response invariant that was rejected."""
+
+    MISSING_METRIC_COLLECTION = "missing_metric_collection"
+    AMBIGUOUS_METRIC_COUNT = "ambiguous_metric_count"
+    METRIC_NAME_MISMATCH = "metric_name_mismatch"
+    METRIC_UNIT_MISMATCH = "metric_unit_mismatch"
+    REVISION_DIMENSION_MISMATCH = "revision_dimension_mismatch"
+    SAMPLE_VALUE_INVALID = "sample_value_invalid"
+    SAMPLE_COUNT_EXCEEDED = "sample_count_exceeded"
+    RESPONSE_SHAPE_INVALID = "response_shape_invalid"
+
+
 class AzureGPUUtilizationAttestationError(BackendInfrastructureError):
     """Fixed-context refusal when positive GPU evidence cannot be proven."""
+
+    def __init__(
+        self,
+        failure: BackendFailure,
+        reason: AzureGPUMetricResponseReason | None = None,
+    ) -> None:
+        """Retain only the typed backend class and content-free invariant."""
+        if reason is not None and (
+            not isinstance(reason, AzureGPUMetricResponseReason)
+            or failure is not BackendFailure.INVALID_RESPONSE
+        ):
+            raise ValueError("metric response reason requires invalid_response")
+        super().__init__(failure)
+        self.reason = reason.value if reason is not None else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -804,17 +832,29 @@ def _metric_revision(series: object) -> str | None:
 def _positive_metric_values(response: object, revision_name: str) -> tuple[float, ...]:
     metric_values = _member(response, "value")
     if metric_values is None:
-        raise AzureGPUUtilizationAttestationError(BackendFailure.INVALID_RESPONSE)
+        raise AzureGPUUtilizationAttestationError(
+            BackendFailure.INVALID_RESPONSE,
+            AzureGPUMetricResponseReason.MISSING_METRIC_COLLECTION,
+        )
     metrics = _sequence(metric_values, "GPU metric")
     if not metrics:
         return ()
     if len(metrics) != 1:
-        raise AzureGPUUtilizationAttestationError(BackendFailure.INVALID_RESPONSE)
+        raise AzureGPUUtilizationAttestationError(
+            BackendFailure.INVALID_RESPONSE,
+            AzureGPUMetricResponseReason.AMBIGUOUS_METRIC_COUNT,
+        )
     metric = metrics[0]
     if _member(_member(metric, "name"), "value") != _GPU_METRIC_NAME:
-        raise AzureGPUUtilizationAttestationError(BackendFailure.INVALID_RESPONSE)
+        raise AzureGPUUtilizationAttestationError(
+            BackendFailure.INVALID_RESPONSE,
+            AzureGPUMetricResponseReason.METRIC_NAME_MISMATCH,
+        )
     if _enum_text(_member(metric, "unit")) != "Percent":
-        raise AzureGPUUtilizationAttestationError(BackendFailure.INVALID_RESPONSE)
+        raise AzureGPUUtilizationAttestationError(
+            BackendFailure.INVALID_RESPONSE,
+            AzureGPUMetricResponseReason.METRIC_UNIT_MISMATCH,
+        )
     series_values = _sequence(
         _member(metric, "timeseries", "time_series", default=()),
         "GPU metric series",
@@ -822,15 +862,18 @@ def _positive_metric_values(response: object, revision_name: str) -> tuple[float
     samples: list[float] = []
     point_count = 0
     for series in series_values:
-        if _metric_revision(series) != revision_name:
-            raise AzureGPUUtilizationAttestationError(
-                BackendFailure.INVALID_RESPONSE
-            )
         points = _sequence(
             _member(series, "data", default=()),
             "GPU metric points",
             limit=_MAX_METRIC_POINTS,
         )
+        if not points:
+            continue
+        if _metric_revision(series) != revision_name:
+            raise AzureGPUUtilizationAttestationError(
+                BackendFailure.INVALID_RESPONSE,
+                AzureGPUMetricResponseReason.REVISION_DIMENSION_MISMATCH,
+            )
         for point in points:
             point_count += 1
             value = _member(point, "maximum")
@@ -843,12 +886,16 @@ def _positive_metric_values(response: object, revision_name: str) -> tuple[float
                 or not 0 <= value <= 100
             ):
                 raise AzureGPUUtilizationAttestationError(
-                    BackendFailure.INVALID_RESPONSE
+                    BackendFailure.INVALID_RESPONSE,
+                    AzureGPUMetricResponseReason.SAMPLE_VALUE_INVALID,
                 )
             if value > 0:
                 samples.append(float(value))
     if point_count > _MAX_METRIC_POINTS:
-        raise AzureGPUUtilizationAttestationError(BackendFailure.INVALID_RESPONSE)
+        raise AzureGPUUtilizationAttestationError(
+            BackendFailure.INVALID_RESPONSE,
+            AzureGPUMetricResponseReason.SAMPLE_COUNT_EXCEEDED,
+        )
     return tuple(samples)
 
 
@@ -914,6 +961,17 @@ class AzureContainerAppGPUUtilizationAttestor:
             )
         return value.astimezone(UTC)
 
+    def _report_response_rejection(self, reason: str) -> None:
+        try:
+            self._progress_sink(
+                "azure_containerapp_gpu_metric phase=response_rejected state=failed "
+                f"reason={reason} secret_output=false"
+            )
+        except Exception:
+            raise AzureGPUUtilizationAttestationError(
+                BackendFailure.INTERNAL
+            ) from None
+
     def attest(
         self,
         identity: AzureContainerAppCandidateIdentity,
@@ -947,11 +1005,16 @@ class AzureContainerAppGPUUtilizationAttestor:
                 ) from None
             try:
                 samples = _positive_metric_values(response, identity.revision_name)
-            except AzureGPUUtilizationAttestationError:
+            except AzureGPUUtilizationAttestationError as error:
+                if error.reason is not None:
+                    self._report_response_rejection(error.reason)
                 raise
             except Exception:
+                reason = AzureGPUMetricResponseReason.RESPONSE_SHAPE_INVALID
+                self._report_response_rejection(reason.value)
                 raise AzureGPUUtilizationAttestationError(
-                    BackendFailure.INVALID_RESPONSE
+                    BackendFailure.INVALID_RESPONSE,
+                    reason,
                 ) from None
             if samples:
                 return AzureGPUUtilizationEvidence(
@@ -999,6 +1062,7 @@ __all__ = (
     "AzureContainerAppGPUUtilizationAttestor",
     "AzureContainerAppsSDKReadError",
     "AzureContainerAppsSDKReadTransports",
+    "AzureGPUMetricResponseReason",
     "AzureGPUUtilizationAttestationError",
     "AzureGPUUtilizationEvidence",
     "build_container_apps_sdk_client",
