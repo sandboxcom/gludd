@@ -131,6 +131,12 @@ class AzureContainerAppRuntimeReaders:
                 "state=supplementary_unavailable reason=sdk_read_failed"
             )
             return state.ready(minimum_replicas), False
+        if status.replicas == 0 and state.ready(minimum_replicas):
+            self.progress_sink(
+                "azure_containerapp_replica_poll phase=readiness "
+                "state=supplementary_unavailable reason=empty_inventory"
+            )
+            return True, False
         self.progress_sink(_replica_progress(status, minimum_replicas))
         if status.terminal:
             raise BackendInfrastructureError(BackendFailure.UNAVAILABLE)

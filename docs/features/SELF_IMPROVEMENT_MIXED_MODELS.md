@@ -702,7 +702,30 @@ which covers both T4 and A100 serverless replicas remaining in
 [Container Apps quota documentation](https://learn.microsoft.com/en-us/azure/container-apps/quotas),
 which warns that exhausted environment GPU quota can restrict scaling or time out
 provisioning. The live path therefore continues to require replica/container
-evidence and must not infer readiness from a successful ARM write.
+evidence when Azure supplies it and must not infer successful model execution from
+a successful ARM write.
+
+A 2026-09-13 retained-environment retry exposed a narrower control-plane
+contradiction: for the same exact revision, the revision operation reported
+`active=true`, one replica, `Healthy`, and `Provisioned`, while the supplementary
+replica-list operation repeatedly returned an empty inventory with no terminal
+reason. Microsoft's current
+[revision schema](https://learn.microsoft.com/en-us/rest/api/resource-manager/containerapps/container-apps-revisions/list-revisions?view=rest-resource-manager-containerapps-2026-01-01)
+defines `healthState` as the revision's current health and `replicas` as its number
+of currently running pods. Treating the contradictory optional empty list as an
+authoritative zero kept a healthy revision in the readiness loop for the full
+bound and delayed cleanup. Gludd now
+classifies an empty replica inventory as `supplementary_unavailable` only when the
+exact revision independently satisfies every required readiness field. A nonempty
+inventory still must prove its containers ready, and any typed terminal replica or
+revision state still stops immediately. That distinction is important in the
+practitioner evidence from Container Apps issue
+[#1705](https://github.com/microsoft/azure-container-apps/issues/1705): its
+nonempty replica record reported `WorkLoad Profile Full`, no ready container, and
+an HTTP 504, which Gludd continues to classify as terminal capacity exhaustion.
+The next boundaries remain direct endpoint health, canonical proposal decoding,
+and positive Azure Monitor GPU utilization, so this compatibility fallback cannot
+turn an ARM label alone into an accepted code improvement.
 
 The run also exposed an orchestration coupling: the typed Azure timeout occurred
 while assembling candidates and prevented the already-approved local candidate
