@@ -151,14 +151,27 @@ def test_runtime_trace_surfaces_safe_backend_failure_diagnostics() -> None:
             failure=BackendFailure.INVALID_RESPONSE,
             response_failure=ContainerAppResponseFailure.HTTP_STATUS,
             http_status=400,
+            reason="metric_unit_mismatch",
+        ),
+    )
+    bootstrap._runtime_trace(
+        messages.append,
+        "backend",
+        SimpleNamespace(
+            event=ContainerAppTraceEvent.GPU_ATTESTATION_FAILED,
+            reason="provider-private-response unit-secret",
         ),
     )
 
     assert "failure_class=invalid_response" in messages[0]
     assert "response_failure=http_status" in messages[0]
     assert "http_status=400" in messages[0]
+    assert "attestation_reason=metric_unit_mismatch" in messages[0]
     assert "operation_digest=" + ("a" * 64) in messages[0]
     assert "secret_output=false" in messages[0]
+    assert "attestation_reason=none" in messages[1]
+    assert "provider-private-response" not in repr(messages)
+    assert "unit-secret" not in repr(messages)
 
 
 def test_runtime_trace_surfaces_only_validated_gpu_attestation_evidence() -> None:

@@ -31,6 +31,7 @@ from general_ludd.infra.azure_containerapp_owned_candidate_types import (
     OwnedCandidateLifecycleError,
 )
 from general_ludd.infra.azure_containerapp_preflight_types import PreflightTrace
+from general_ludd.infra.azure_containerapp_sdk import AzureGPUMetricResponseReason
 from general_ludd.infra.azure_idle_retention import AzureIdleRetentionPolicy
 from general_ludd.self_improve.azure_containerapp_bootstrap_credentials import (
     AzureCredentialProvider,
@@ -110,6 +111,9 @@ _PREFLIGHT_INVALID_RESPONSE_REASONS = frozenset(
         "workload_profile_type_mismatch",
     }
 )
+_GPU_ATTESTATION_REASONS = frozenset(
+    reason.value for reason in AzureGPUMetricResponseReason
+)
 
 
 def _safe_preflight_reason(value: object) -> str | None:
@@ -119,6 +123,11 @@ def _safe_preflight_reason(value: object) -> str | None:
     if value in _PREFLIGHT_REASONS or _PREFLIGHT_HTTP_REASON.fullmatch(value):
         return value
     return None
+
+
+def _safe_gpu_attestation_reason(value: object) -> str | None:
+    """Return only one locally defined, content-free GPU refusal reason."""
+    return value if isinstance(value, str) and value in _GPU_ATTESTATION_REASONS else None
 
 
 def _preflight_backend_failure(reason: object) -> BackendFailure | None:
@@ -246,7 +255,9 @@ def runtime_trace(
     else:
         gpu_maximum_percent = float(gpu_maximum_percent)
     event_source = getattr(event, "event_source", None)
-    preflight_reason = _safe_preflight_reason(getattr(event, "reason", None))
+    event_reason = getattr(event, "reason", None)
+    preflight_reason = _safe_preflight_reason(event_reason)
+    attestation_reason = _safe_gpu_attestation_reason(event_reason)
     allowed_fields = {
         "event_source": frozenset({"opentofu_ui", "azure_resource_manager"}),
         "resource_type": frozenset(
@@ -322,6 +333,7 @@ def runtime_trace(
         f"total_tokens={token_counts[2]} "
         f"gpu_maximum_percent={gpu_maximum_percent} "
         f"gpu_positive_sample_count={gpu_positive_sample_count} "
+        f"attestation_reason={attestation_reason or 'none'} "
         f"preflight_reason={preflight_reason or 'none'}{structured} "
         "secret_output=false"
     )

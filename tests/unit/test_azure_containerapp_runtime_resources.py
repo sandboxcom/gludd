@@ -23,6 +23,7 @@ from general_ludd.infra.azure_containerapp_live_proof import (
 )
 from general_ludd.infra.azure_containerapp_sdk import (
     AzureContainerAppsSDKReadError,
+    AzureGPUMetricResponseReason,
     AzureGPUUtilizationAttestationError,
     AzureGPUUtilizationEvidence,
 )
@@ -999,7 +1000,10 @@ def test_gpu_attestation_failure_blocks_response_and_remains_censored() -> None:
         def attest(self, observed: AzureContainerAppCandidateIdentity) -> object:
             assert observed is identity
             calls.append("gpu.attest")
-            raise AzureGPUUtilizationAttestationError(BackendFailure.AUTHORIZATION)
+            raise AzureGPUUtilizationAttestationError(
+                BackendFailure.INVALID_RESPONSE,
+                AzureGPUMetricResponseReason.METRIC_UNIT_MISMATCH,
+            )
 
     backend = resources_module._GPUAttestedBackend(
         Backend(),
@@ -1014,14 +1018,15 @@ def test_gpu_attestation_failure_blocks_response_and_remains_censored() -> None:
             timeout_seconds=30.0,
         )
 
-    assert captured.value.failure is BackendFailure.AUTHORIZATION
+    assert captured.value.failure is BackendFailure.INVALID_RESPONSE
     assert "provider-private-output" not in str(captured.value)
     assert calls == ["inference", "gpu.attest"]
     assert [trace.event for trace in traces] == [
         ContainerAppTraceEvent.GPU_ATTESTATION_STARTED,
         ContainerAppTraceEvent.GPU_ATTESTATION_FAILED,
     ]
-    assert traces[-1].failure is BackendFailure.AUTHORIZATION
+    assert traces[-1].failure is BackendFailure.INVALID_RESPONSE
+    assert traces[-1].reason == "metric_unit_mismatch"
     backend.close()
     backend.close()
     assert calls.count("backend.close") == 1

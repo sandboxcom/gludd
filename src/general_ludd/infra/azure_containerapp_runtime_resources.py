@@ -52,6 +52,8 @@ from general_ludd.infra.azure_containerapp_runtime_state import (
 )
 from general_ludd.infra.azure_containerapp_sdk import (
     AzureContainerAppGPUUtilizationAttestor,
+    AzureGPUMetricResponseReason,
+    AzureGPUUtilizationAttestationError,
     AzureGPUUtilizationEvidence,
     build_monitor_sdk_client,
 )
@@ -183,6 +185,7 @@ class _GPUAttestedBackend:
         failure: BackendFailure,
         request_number: int,
         envelope_digest: str | None,
+        reason: str | None = None,
     ) -> None:
         emit_failure(
             self._trace_sink,
@@ -192,6 +195,7 @@ class _GPUAttestedBackend:
                 envelope_digest=envelope_digest,
                 request_number=request_number,
                 failure=failure,
+                reason=reason,
             ),
         )
 
@@ -227,10 +231,16 @@ class _GPUAttestedBackend:
         try:
             evidence = self._attestor.attest(self._identity)
         except BackendInfrastructureError as error:
+            reason = (
+                error.reason
+                if isinstance(error, AzureGPUUtilizationAttestationError)
+                else None
+            )
             self._attestation_failed(
                 error.failure,
                 request_number,
                 envelope_digest,
+                reason,
             )
             raise BackendInfrastructureError(error.failure) from None
         except Exception:
@@ -239,7 +249,12 @@ class _GPUAttestedBackend:
             raise BackendInfrastructureError(failure) from None
         if not _valid_gpu_evidence(evidence, self._identity):
             failure = BackendFailure.INVALID_RESPONSE
-            self._attestation_failed(failure, request_number, envelope_digest)
+            self._attestation_failed(
+                failure,
+                request_number,
+                envelope_digest,
+                AzureGPUMetricResponseReason.EVIDENCE_CONTRACT_INVALID.value,
+            )
             raise BackendInfrastructureError(failure)
         emit_trace(
             self._trace_sink,

@@ -47,6 +47,7 @@ class ContainerAppBackendTrace:
     request_number: int = 0
     failure: BackendFailure | None = None
     response_failure: ContainerAppResponseFailure | None = None
+    reason: str | None = None
     http_status: int = 0
     input_tokens: int = 0
     output_tokens: int = 0

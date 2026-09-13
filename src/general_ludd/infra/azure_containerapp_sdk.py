@@ -76,6 +76,7 @@ class AzureGPUMetricResponseReason(StrEnum):
     SAMPLE_VALUE_INVALID = "sample_value_invalid"
     SAMPLE_COUNT_EXCEEDED = "sample_count_exceeded"
     RESPONSE_SHAPE_INVALID = "response_shape_invalid"
+    EVIDENCE_CONTRACT_INVALID = "evidence_contract_invalid"
 
 
 class AzureGPUUtilizationAttestationError(BackendInfrastructureError):
