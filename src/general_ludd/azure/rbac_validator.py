@@ -352,6 +352,7 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
             "Microsoft.Insights/diagnosticSettings/read",
             "Microsoft.Insights/diagnosticSettings/write",
             "Microsoft.Insights/diagnosticSettings/delete",
+            "Microsoft.Insights/metricDefinitions/read",
             "Microsoft.Insights/metrics/read",
             "Microsoft.Insights/alertRules/read",
             "Microsoft.Insights/alertRules/write",
