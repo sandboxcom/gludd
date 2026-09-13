@@ -1025,7 +1025,7 @@ class AzureContainerAppGPUUtilizationAttestor:
                     interval="PT1M",
                     metricnames=_GPU_METRIC_NAME,
                     aggregation="Maximum",
-                    filter="revisionName eq '*' and podName eq '*'",
+                    filter="revisionName eq '*'",
                     metricnamespace=_GPU_METRIC_NAMESPACE,
                     validate_dimensions=True,
                 )

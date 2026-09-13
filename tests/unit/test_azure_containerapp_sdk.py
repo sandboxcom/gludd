@@ -765,7 +765,7 @@ class _MonitorClient:
 
 
 def test_gpu_attestor_requires_positive_exact_revision_metric_and_exact_sdk_query() -> None:
-    """Split all dimensions, then enforce revision identity on returned series."""
+    """Split only revisions, then enforce exact identity on returned series."""
     identity = _identity()
     now = datetime(2026, 9, 7, 12, 0, tzinfo=UTC)
     client = _MonitorClient([_metric_response(identity.revision_name, [0.0, 37.5])])
@@ -791,7 +791,7 @@ def test_gpu_attestor_requires_positive_exact_revision_metric_and_exact_sdk_quer
             "interval": "PT1M",
             "metricnames": "GpuUtilizationPercentage",
             "aggregation": "Maximum",
-            "filter": "revisionName eq '*' and podName eq '*'",
+            "filter": "revisionName eq '*'",
             "metricnamespace": "Microsoft.App/containerapps",
             "validate_dimensions": True,
         }
