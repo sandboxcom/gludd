@@ -736,6 +736,12 @@ The provider's own current
 [import changelog](https://github.com/Azure/terraform-provider-azapi/blob/main/CHANGELOG.md)
 confirms support for ID-only and ID-plus-API-version forms.
 
+The first adoption proof also showed that AzAPI normalizes the imported plan's
+`before_identity.type` and `after_identity.type` to the configured resource type,
+rather than the `null` emitted by a create plan. The auditor accepts only `null` or
+the exact pinned managed-environment type and API version; every other type, version,
+ID, missing field, resource address, action, or mutation channel still fails closed.
+
 ### S83.150 live-adapter research
 
 Research checked on 2026-09-04 before the adapter was implemented:

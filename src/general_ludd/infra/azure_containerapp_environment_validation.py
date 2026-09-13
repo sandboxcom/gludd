@@ -115,7 +115,7 @@ def _validate_resource_identity(
         set(identity) != {"id", "type"}
         or _string_member(identity, "id").casefold()
         != policy.environment_id.casefold()
-        or identity.get("type") is not None
+        or identity.get("type") not in (None, _ENVIRONMENT_API_TYPE)
     ):
         raise ValueError
 

@@ -612,11 +612,48 @@ def test_plan_audit_accepts_exact_opentofu_resource_identity_metadata() -> None:
     resources = cast(list[dict[str, object]], plan["resource_changes"])
     change = cast(dict[str, object], resources[0]["change"])
     change["actions"] = ["update"]
-    identity = {"id": policy.environment_id, "type": None}
+    identity = {
+        "id": policy.environment_id,
+        "type": "Microsoft.App/managedEnvironments@2025-07-01",
+    }
     change["before_identity"] = copy.deepcopy(identity)
     change["after_identity"] = copy.deepcopy(identity)
 
     assert audit_environment_plan(plan, policy, existed_before=True) is True
+
+
+@pytest.mark.parametrize(
+    "identity",
+    (
+        {"id": "/subscriptions/foreign", "type": None},
+        {
+            "id": "/subscriptions/foreign",
+            "type": "Microsoft.App/managedEnvironments@2025-07-01",
+        },
+        {
+            "id": "expected",
+            "type": "Microsoft.App/managedEnvironments@2024-03-01",
+        },
+        {"id": "expected", "type": "Microsoft.Network/virtualNetworks@2025-01-01"},
+        {"id": "expected"},
+    ),
+)
+def test_plan_audit_rejects_foreign_resource_identity_metadata(
+    identity: dict[str, object],
+) -> None:
+    policy = _policy()
+    plan = _provider_v2_plan_payload(policy)
+    resources = cast(list[dict[str, object]], plan["resource_changes"])
+    change = cast(dict[str, object], resources[0]["change"])
+    change["actions"] = ["update"]
+    candidate = copy.deepcopy(identity)
+    if candidate.get("id") == "expected":
+        candidate["id"] = policy.environment_id
+    change["before_identity"] = candidate
+    change["after_identity"] = copy.deepcopy(candidate)
+
+    with pytest.raises(AzureEnvironmentLifecycleError, match="plan"):
+        audit_environment_plan(plan, policy, existed_before=True)
 
 
 @pytest.mark.parametrize(
