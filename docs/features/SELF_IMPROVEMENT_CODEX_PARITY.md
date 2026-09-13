@@ -877,9 +877,20 @@ admission); an unsupported, missing, or failed probe receives `0` and remains
 on CPU. It does not infer Metal capability from PyTorch MPS. `n_ctx=0`
 continues to select the GGUF native context. The explicit constructor seam is
 available to later hardware policy, while the default remains gated by the
-runtime that will actually execute inference. On the measured 8 GiB host, the
-ordered catalog still prefers 3B Q4 models and treats 7B Q4 as the upper
-resource guidance rather than assuming accelerator capacity.
+runtime that will actually execute inference. A 2026-09-13 live CodeLlama 7B
+attempt then loaded its 4,084 MiB artifact on the measured 5.36 GiB Metal pool
+but failed during generation with `llama_decode` return code `-3`. The official
+[llama.cpp API contract](https://github.com/ggml-org/llama.cpp/blob/master/include/llama.h)
+defines decode results below `-1` as fatal, while practitioner report
+[#28166](https://github.com/ggml-org/llama.cpp/issues/28166) independently shows
+a Metal allocation failure putting the backend into an error state before a
+later `llama_decode -3`. That report is analogous evidence, not attribution of
+this run's exact native cause. Gludd therefore admits configured artifacts by
+their exact byte size rather than parameters parsed from a model name and
+reserves 30% of a unified Metal pool (15% of dedicated accelerator memory) for
+KV cache, decode workspaces, and runtime overhead. On this host CodeLlama 7B is
+now rejected before download or construction; smaller configured coding models
+remain eligible.
 
 The change is zero-downtime. Prompt planning and inference occur only in an
 unpromoted isolated worktree, with no daemon-state or database migration.

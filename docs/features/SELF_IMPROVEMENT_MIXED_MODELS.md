@@ -841,10 +841,29 @@ defines both `revisionName` and `podName` dimensions for
 `GpuUtilizationPercentage`, and the official
 [MetricsOperations filter contract](https://learn.microsoft.com/en-us/python/api/azure-mgmt-monitor/azure.mgmt.monitor.operations.metricsoperations?view=azure-python)
 requires dimensions not narrowed to a single value to be explicitly selected or
-rolled up. The exact query therefore binds the owner-verified revision and explicitly
-selects all pods instead of sending an incomplete one-dimension filter. The hermetic
-Azure profile remains green at 1,024 tests, 92% aggregate coverage, and at least 75%
-in every one of its 54 measured files. A live retry is still the acceptance boundary.
+rolled up. The exact query therefore initially bound the owner-verified revision and
+explicitly selected all pods instead of sending an incomplete one-dimension filter.
+
+The next paid canary again completed real A100 inference with 4,037 input and 246
+output tokens, but the Monitor service rejected that concrete-revision filter with
+HTTP 400 before returning metric data. This is consistent with the same SDK contract:
+`validate_dimensions=true` rejects an unrecognized filter value, while a freshly
+created revision may not yet exist in Monitor's dimension-value index. Gludd now asks
+Monitor to split both dimensions with `revisionName eq '*' and podName eq '*'`, then
+independently requires every returned data-bearing series to carry the exact
+owner-verified revision. Foreign, absent, or ambiguous revision metadata still fails
+closed, so the ingestion workaround cannot attest an earlier deployment. The app was
+destroyed in 19 seconds and independently verified absent; the zero-cost environment
+was retained. The hermetic Azure profile remains green locally, but another live retry
+is still the acceptance boundary.
+
+The same run also confirmed a local failure-classification defect. A fatal native
+decode error used the validation-retry marker and was therefore eligible to poison
+model-quality calibration. The owned child now reserves exit 2 for proposal validation
+and emits a content-free typed infrastructure marker with exit 3 for `OSError` or
+`RuntimeError`; the parent converts only that stable marker to `unavailable` and never
+persists it as model-quality evidence. Both local and Azure trials continue to consume
+the same parent-built request/contract envelope and common evaluator.
 
 #### Parent-owned per-ordinal proposal scope (2026-09-13)
 
