@@ -224,6 +224,18 @@ model-quality evidence. Persisted records carry canonical evidence, prediction,
 and attempt digests; loading rejects malformed, foreign-stratum, or tampered
 records.
 
+The live Azure compiler now requires one absolute capability-evidence path and
+passes that same path to both discovery/selection and the managed runtime. The
+selector and the eventual Container App identity share one digest over the exact
+model commit, container image digest, and workload profile, so a redeployed app
+learns from the intended model/runtime/GPU stratum without inheriting evidence
+from another shape. The store fails closed on malformed data, symlinks, non-regular
+files, and oversized input. It preserves corrupt bytes for operator recovery,
+writes through an unpredictable owner-private temporary file, fsyncs before an
+atomic replacement, and never follows a planted predictable temporary-file
+symlink. New and repaired evidence files are mode `0600`; Azure credentials remain
+outside this store and are never read by selection.
+
 Ranking uses a conservative beta-posterior lower bound for acceptance, then cost,
 latency, token estimate, and immutable identity as deterministic tie-breakers.
 `plan_bounded_candidate_trials` authorizes at most 16 explicit calls, labels each

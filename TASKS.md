@@ -53,6 +53,8 @@ S83.157 least-privilege autonomous-role evidence: three failing-first suites rej
 
 S83.157 retained-state evidence: the general planner exposes `always_destroy`, `zero_cost_only`, `balanced`, and `latency_first` postures over independently priced dependency-safe layers, and rejects missing/stale price or latency evidence, retained replicas, activation-capable public apps, and nonempty durable work. The autonomous candidate and bounded live proof share one planner; the latter can now retain only an empty verified Consumption environment after either success or preflight failure, while app/GPU teardown remains mandatory. The CLI preserves fixed safe failure detail and emits `AZURE_CONTAINERAPP_RETENTION_TRACE`. Failing-first contracts and the focused 111-test suite are green; the identical local/GHA Azure profile passes 869/869 at 92% aggregate branch coverage with all 44 files above 75%; Make contract, behavioral example, duplicate/help validation, YAML, Markdown, scoped Ruff, and strict mypy are green. Current Microsoft billing/storage guidance and Container Apps #1800 plus vLLM #48193/#48031 are documented in `docs/azure-idle-retention.md`; a retained live Azure retry and paid inference remain pending.
 
+S83.157 persisted-selection evidence: the public compiler now gives discovery and the managed runtime the same absolute capability-evidence store, and the selected Azure model/runtime/GPU digest is identical to the eventual Container App evidence identity. The store preserves malformed artifacts, rejects symlinks and non-regular inputs, uses unpredictable owner-private temporary files plus fsync and atomic replacement, and cannot follow a planted predictable temporary symlink into a credential artifact. The focused composed slice passes 259/259, the local/GHA Azure profile passes 973/973 at 92% aggregate branch coverage with all 52 measured files above 75%, and the store passes 23/23 at 92% branch coverage; Ruff, strict mypy, collection (113,592/113,593 with one intentional deselection), the Make contract, and its credential-free behavioral example are green. Exact-head gate and one accepted paid mixed-model code improvement remain pending.
+
 S83.157 exact changed-surface registration (from the active gate):
 
 - `infra/terraform/modules/azure-container-app-vllm/main.tf`
@@ -141,6 +143,7 @@ S83.157 exact changed-surface registration (from the active gate):
 - `src/general_ludd/self_improve/model_candidates.py`
 - `src/general_ludd/self_improve/runtime.py`
 - `src/general_ludd/self_improve/runtime_config.py`
+- `src/general_ludd/small_models/evidence_store.py`
 - `src/general_ludd/self_improve/azure_containerapp_bootstrap.py`
 - `src/general_ludd/self_improve/azure_model_selection_types.py`
 - `src/general_ludd/models/model_deployment_metadata.py`
@@ -191,6 +194,7 @@ S83.157 exact changed-surface registration (from the active gate):
 - `tests/unit/test_self_improve_managed_runtime_evaluation.py`
 - `tests/unit/test_self_improve_model_candidates.py`
 - `tests/unit/test_managed_self_improve_runtime.py`
+- `tests/unit/test_small_models_evidence_store.py`
 - `tests/unit/test_self_improve_azure_containerapp_bootstrap.py`
 - `tests/unit/test_azure_containerapp_bootstrap_credentials.py`
 - `tests/unit/test_azure_containerapp_bootstrap_planning.py`
