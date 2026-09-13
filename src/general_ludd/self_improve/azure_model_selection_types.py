@@ -12,7 +12,9 @@ from general_ludd.infra.azure_containerapp_gpu import (
 )
 from general_ludd.infra.azure_containerapp_topology import AzureProfileCapacity
 from general_ludd.models.model_deployment_metadata import ModelDeploymentMetadata
-from general_ludd.self_improve._candidate_prediction import stable_digest
+from general_ludd.self_improve.model_candidates import (
+    azure_containerapp_evidence_identity_digest,
+)
 
 _IMAGE_RE = re.compile(r"^[^@\s]+@sha256:[0-9a-f]{64}$")
 _QUERY_RE = re.compile(r"^[a-z][a-z0-9_-]{1,31}$")
@@ -223,15 +225,11 @@ def azure_model_deployment_identity_digest(
         )
     ):
         raise ValueError("workload_profile_type must be one bounded identifier")
-    return stable_digest(
-        {
-            "container_image": container_image,
-            "model_id": model_id,
-            "model_revision": model_revision,
-            "protocol": "gludd-azure-model-selection-v1",
-            "weight_bits": weight_bits,
-            "workload_profile_type": workload_profile_type,
-        }
+    return azure_containerapp_evidence_identity_digest(
+        image_digest=container_image.rsplit("@", 1)[1],
+        model_name=model_id,
+        model_revision=model_revision,
+        workload_profile_type=workload_profile_type,
     )
 
 

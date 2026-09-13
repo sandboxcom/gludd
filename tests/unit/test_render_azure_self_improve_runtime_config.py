@@ -79,12 +79,18 @@ def _arguments(
     output: Path,
     *authentication: str,
     selection: Path | None = None,
+    evidence: Path | None = None,
 ) -> list[str]:
     selected = selection or _selection(output.parent / "selection.json")
+    selected_evidence = evidence or output.parent / "evidence.json"
+    if evidence is None:
+        selected_evidence.write_text("[]", encoding="utf-8")
     return [
         *authentication,
         "--model-selection-file",
         str(selected),
+        "--evidence-file",
+        str(selected_evidence),
         "--subscription-id",
         SUBSCRIPTION,
         "--resource-group",
@@ -119,7 +125,11 @@ def test_file_auth_renderer_writes_exact_private_code_canary_config(
 
     payload = json.loads(output.read_text(encoding="utf-8"))
     azure = payload["azure_containerapp"]
-    assert set(payload) == {"azure_containerapp"}
+    assert set(payload) == {"azure_containerapp", "capability_evidence"}
+    assert payload["capability_evidence"] == {
+        "schema_version": 1,
+        "path": str((tmp_path / "evidence.json").resolve()),
+    }
     assert azure["auth_file"] == "/private/auth.json"
     assert "federated_token_file" not in azure
     assert azure["model_name"] == "vendor/task-selected-coder"
@@ -185,6 +195,27 @@ def test_renderer_refuses_existing_or_symlink_output(tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="new private output"):
             subject.main(_arguments(output, "--auth-file", "/private/auth.json"))
     assert existing.read_text(encoding="utf-8") == "owned"
+
+
+def test_renderer_refuses_symlink_evidence_without_touching_target(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "preserved.json"
+    target.write_text("[]", encoding="utf-8")
+    evidence = tmp_path / "evidence-link.json"
+    evidence.symlink_to(target)
+
+    with pytest.raises(ValueError, match="evidence"):
+        subject.main(
+            _arguments(
+                tmp_path / "runtime.json",
+                "--auth-file",
+                "/private/auth.json",
+                evidence=evidence,
+            )
+        )
+
+    assert target.read_text(encoding="utf-8") == "[]"
 
 
 def test_renderer_rejects_missing_mutable_or_unfitted_model_selection(
@@ -255,6 +286,9 @@ def test_make_target_runs_real_benchmark_with_one_temporary_config() -> None:
     assert "SELF_IMPROVE_MAX_ATTEMPTS=1" in recipe
     assert "SELF_IMPROVE_VALIDATE_ONLY=" in recipe
     assert "$(AZURE_SELF_IMPROVE_TASK_FILE)" in recipe
+    assert recipe.count(
+        '--evidence-file "$(AZURE_SELF_IMPROVE_EVIDENCE_FILE)"'
+    ) == 2
     assert '@set -eu; temporary_directory="$$(mktemp -d' in recipe
     assert (
         "AZURE_SELF_IMPROVE_TASK_FILE ?= config/self-improve/catalog-truth.json"

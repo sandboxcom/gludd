@@ -73,6 +73,42 @@ def _strict_label(value: object, field_name: str) -> str:
     return value
 
 
+def azure_containerapp_evidence_identity_digest(
+    *,
+    image_digest: str,
+    model_name: str,
+    model_revision: str,
+    workload_profile_type: str,
+) -> str:
+    """Bind the immutable model/runtime/GPU facts shared across app instances."""
+    if _CONTAINER_APP_IMAGE_DIGEST_RE.fullmatch(image_digest) is None:
+        raise ValueError("image_digest must be one immutable sha256 image digest")
+    if _REPOSITORY_RE.fullmatch(model_name) is None:
+        raise ValueError("model_name must be one canonical owner/repository pair")
+    if _COMMIT_RE.fullmatch(model_revision) is None:
+        raise ValueError("model_revision must be one immutable commit SHA")
+    if (
+        not isinstance(workload_profile_type, str)
+        or not workload_profile_type
+        or len(workload_profile_type) > 200
+        or any(
+            character.isspace() or ord(character) < 32
+            for character in workload_profile_type
+        )
+    ):
+        raise ValueError("workload_profile_type must be one bounded identifier")
+    return _stable_digest(
+        {
+            "image_digest": image_digest,
+            "model_name": model_name,
+            "model_revision": model_revision,
+            "protocol": "gludd-containerapp-candidate-evidence-v1",
+            "provider": ModelCandidateProvider.AZURE_CONTAINER_APP.value,
+            "workload_profile_type": workload_profile_type,
+        }
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class LocalGGUFCandidateIdentity:
     """Exact acquired GGUF identity without filesystem or credential material."""
@@ -298,15 +334,11 @@ class AzureContainerAppCandidateIdentity:
     @property
     def evidence_identity_digest(self) -> str:
         """Bind model/runtime/GPU truth while excluding ephemeral app coordinates."""
-        return _stable_digest(
-            {
-                "image_digest": self.image_digest,
-                "model_name": self.model_name,
-                "model_revision": self.model_revision,
-                "protocol": "gludd-containerapp-candidate-evidence-v1",
-                "provider": self.provider.value,
-                "workload_profile_type": self.workload_profile_type,
-            }
+        return azure_containerapp_evidence_identity_digest(
+            image_digest=self.image_digest,
+            model_name=self.model_name,
+            model_revision=self.model_revision,
+            workload_profile_type=self.workload_profile_type,
         )
 
 
@@ -722,4 +754,5 @@ __all__ = (
     "LocalGGUFCandidateIdentity",
     "ModelCandidateIdentity",
     "ModelCandidateProvider",
+    "azure_containerapp_evidence_identity_digest",
 )

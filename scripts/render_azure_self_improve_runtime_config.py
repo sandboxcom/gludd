@@ -7,6 +7,7 @@ import argparse
 import hmac
 import json
 import os
+import stat
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import cast
@@ -24,6 +25,7 @@ from general_ludd.self_improve.azure_model_selection import (
 )
 
 _MAX_SELECTION_BYTES = 65_536
+_MAX_EVIDENCE_BYTES = 67_108_864
 _SELECTION_KEYS = frozenset(
     {
         "container_image",
@@ -52,6 +54,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--azure-client-id")
     parser.add_argument("--azure-tenant-id")
     parser.add_argument("--model-selection-file", required=True, type=Path)
+    parser.add_argument("--evidence-file", required=True, type=Path)
     parser.add_argument("--subscription-id", required=True)
     parser.add_argument("--resource-group", required=True)
     parser.add_argument("--environment", required=True)
@@ -171,6 +174,26 @@ def _validated_model_selection(path: Path) -> Mapping[str, object]:
         raise ValueError("model selection artifact is invalid") from None
 
 
+def _validated_evidence_path(path: Path) -> str:
+    """Return one existing canonical non-symlink JSON-list evidence path."""
+    try:
+        metadata = path.lstat()
+        if (
+            path.is_symlink()
+            or not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_size > _MAX_EVIDENCE_BYTES
+        ):
+            raise ValueError
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, list) or any(
+            not isinstance(record, Mapping) for record in payload
+        ):
+            raise ValueError
+        return str(path.resolve(strict=True))
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+        raise ValueError("capability evidence must be a bounded regular JSON list") from None
+
+
 def build_runtime_config(args: argparse.Namespace) -> Mapping[str, object]:
     """Build one exact-schema coding canary configuration."""
     requested_cidr = cast(str, args.allowed_cidr)
@@ -225,7 +248,13 @@ def build_runtime_config(args: argparse.Namespace) -> Mapping[str, object]:
             "expected_next_demand_seconds": None,
         },
     }
-    return {"azure_containerapp": azure}
+    return {
+        "azure_containerapp": azure,
+        "capability_evidence": {
+            "schema_version": 1,
+            "path": _validated_evidence_path(args.evidence_file),
+        },
+    }
 
 
 def write_runtime_config(output: Path, config: Mapping[str, object]) -> None:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import stat
 from collections.abc import Callable, Mapping
 from functools import partial
 from pathlib import Path
@@ -20,7 +22,9 @@ from general_ludd.self_improve.managed_candidate_routing import (
 )
 from general_ludd.self_improve.managed_runner import (
     AttemptResult,
+    CapabilityEvidenceOutcomeAdapter,
     GeneratedProposal,
+    ManagedOutcomeAdapter,
     ManagedSelfImproveRunner,
     PlanBoundProposal,
     PromptPlan,
@@ -31,6 +35,9 @@ from general_ludd.self_improve.managed_runner import (
     _ProposalGenerator as _ManagedProposalGenerator,
 )
 from general_ludd.self_improve.managed_runtime_evaluation import ManagedAttemptEvaluator
+from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
+
+_MAX_CONFIGURED_EVIDENCE_BYTES = 67_108_864
 
 
 class _ConfiguredAzureBootstrapWiring(Protocol):
@@ -172,6 +179,58 @@ class _ProposalEvaluator(Protocol):
         merge: bool,
     ) -> AttemptResult:
         """Return one validated attempt result."""
+
+
+class _FixedEvidenceOutcomeAdapterFactory:
+    """Reuse one validated store for planning and concurrent candidate outcomes."""
+
+    def __init__(self, store: CapabilityEvidenceStore) -> None:
+        self._store = store
+
+    def __call__(self, _cache_root: Path) -> ManagedOutcomeAdapter:
+        return CapabilityEvidenceOutcomeAdapter(self._store)
+
+
+def _configured_capability_evidence_store(
+    self_improve_config: Mapping[str, object] | None,
+) -> CapabilityEvidenceStore | None:
+    """Load the exact runtime store selected by the Azure planning phase."""
+    if self_improve_config is None:
+        return None
+    if not isinstance(self_improve_config, Mapping):
+        raise ValueError("self_improve configuration must be a mapping")
+    raw = self_improve_config.get("capability_evidence")
+    if raw is None:
+        return None
+    if (
+        not isinstance(raw, Mapping)
+        or set(raw) != {"schema_version", "path"}
+        or raw.get("schema_version") != 1
+    ):
+        raise ValueError("capability evidence configuration is invalid")
+    configured_path = raw.get("path")
+    if not isinstance(configured_path, str) or not configured_path:
+        raise ValueError("capability evidence configuration is invalid")
+    path = Path(configured_path)
+    if not path.is_absolute():
+        raise ValueError("capability evidence path must be absolute")
+    try:
+        metadata = path.lstat()
+        if (
+            path.is_symlink()
+            or not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_size > _MAX_CONFIGURED_EVIDENCE_BYTES
+        ):
+            raise ValueError
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, list) or any(
+            not isinstance(record, Mapping) for record in payload
+        ):
+            raise ValueError
+        canonical = path.resolve(strict=True)
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+        raise ValueError("capability evidence store is invalid") from None
+    return CapabilityEvidenceStore(str(canonical))
 
 
 def _configure_live_candidate_wiring(
@@ -336,6 +395,18 @@ def build_managed_self_improve_runner(
     runner_factory = make_runner_factory or _runtime_api.MakeRunner
     operation_runner = root_runner or runner_factory(canonical_root)
     runtime_progress_sink = progress_sink or _runtime_api._runtime_progress
+    configured_evidence_store = _configured_capability_evidence_store(
+        self_improve_config
+    )
+    if configured_evidence_store is not None:
+        if outcome_adapter_factory is not None:
+            raise ValueError(
+                "configured capability evidence conflicts with explicit outcome adapter"
+            )
+        outcome_adapter_factory = cast(
+            _OutcomeAdapterFactory,
+            _FixedEvidenceOutcomeAdapterFactory(configured_evidence_store),
+        )
     live_wiring = _configure_live_candidate_wiring(
         _runtime_api,
         canonical_root,

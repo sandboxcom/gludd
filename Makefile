@@ -5955,6 +5955,7 @@ azure-self-improve-live-proof:
 		$(UV) run python scripts/render_azure_self_improve_runtime_config.py \
 			$(if $(filter file,$(AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE)),--auth-file "$(AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE)",--federated-token-file "$(AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE)" --azure-client-id "$(AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID)" --azure-tenant-id "$(AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID)") \
 			--model-selection-file "$$selection_file" \
+			--evidence-file "$(AZURE_SELF_IMPROVE_EVIDENCE_FILE)" \
 			--subscription-id "$(AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID)" \
 			--resource-group "$(AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP)" \
 			--environment "$(AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT)" \

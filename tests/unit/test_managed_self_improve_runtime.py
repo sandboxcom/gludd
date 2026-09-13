@@ -28,6 +28,7 @@ from general_ludd.self_improve.runtime import (
     build_managed_self_improve_runner,
     prepare_managed_self_improve_plan,
 )
+from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 
 
 def _task() -> TaskSpec:
@@ -464,6 +465,71 @@ def test_package_factory_fails_closed_for_repository_or_merge_authority(
 def test_package_factory_rejects_non_path_repository() -> None:
     with pytest.raises(ValueError, match=r"pathlib\.Path"):
         build_managed_self_improve_runner(cast(Path, "not-a-path"))
+
+
+def test_package_factory_uses_configured_capability_evidence_store(
+    tmp_path: Path,
+) -> None:
+    evidence_path = tmp_path / "azure-selection-evidence.json"
+    evidence_path.write_text("[]", encoding="utf-8")
+
+    runner = build_managed_self_improve_runner(
+        tmp_path,
+        root_runner=cast(object, object()),
+        self_improve_config={
+            "capability_evidence": {
+                "schema_version": 1,
+                "path": str(evidence_path),
+            }
+        },
+    )
+    adapter = runner.outcome_adapter_factory(tmp_path / "unused-cache")
+    store = cast(CapabilityEvidenceStore, adapter.planner_store)
+
+    store.register_evidence({"collection": "configured-runtime-proof"})
+
+    assert json.loads(evidence_path.read_text(encoding="utf-8"))[-1][
+        "collection"
+    ] == "configured-runtime-proof"
+
+
+def test_package_factory_rejects_symlink_or_ambiguous_configured_evidence(
+    tmp_path: Path,
+) -> None:
+    evidence_target = tmp_path / "preserved.json"
+    evidence_target.write_text("[]", encoding="utf-8")
+    evidence_link = tmp_path / "evidence-link.json"
+    evidence_link.symlink_to(evidence_target)
+
+    with pytest.raises(ValueError, match="capability evidence"):
+        build_managed_self_improve_runner(
+            tmp_path,
+            root_runner=cast(object, object()),
+            self_improve_config={
+                "capability_evidence": {
+                    "schema_version": 1,
+                    "path": str(evidence_link),
+                }
+            },
+        )
+
+    def explicit_factory(_cache_root: Path) -> ManagedOutcomeAdapter:
+        return cast(ManagedOutcomeAdapter, object())
+
+    with pytest.raises(ValueError, match="conflicts with explicit"):
+        build_managed_self_improve_runner(
+            tmp_path,
+            root_runner=cast(object, object()),
+            outcome_adapter_factory=explicit_factory,
+            self_improve_config={
+                "capability_evidence": {
+                    "schema_version": 1,
+                    "path": str(evidence_target),
+                }
+            },
+        )
+
+    assert evidence_target.read_text(encoding="utf-8") == "[]"
 
 
 def test_package_composition_root_is_exported_without_script_dependency() -> None:
