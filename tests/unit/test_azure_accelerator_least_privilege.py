@@ -32,7 +32,6 @@ EXPECTED_ACTIONS = frozenset(
         "Microsoft.App/locations/containerAppOperationStatuses/read",
         "Microsoft.App/locations/managedEnvironmentOperationResults/read",
         "Microsoft.App/locations/managedEnvironmentOperationStatuses/read",
-        "Microsoft.Insights/metricDefinitions/read",
         "Microsoft.Insights/metrics/read",
         "Microsoft.Resources/subscriptions/resourceGroups/read",
         "Microsoft.Resources/subscriptions/resourceGroups/write",
@@ -57,7 +56,7 @@ def test_both_role_formats_grant_only_owned_lifecycle_and_metrics_operations() -
 
     assert frozenset(cli["Actions"]) == EXPECTED_ACTIONS
     assert frozenset(permission["actions"]) == EXPECTED_ACTIONS
-    assert len(EXPECTED_ACTIONS) == 18
+    assert len(EXPECTED_ACTIONS) == 17
     assert cli["NotActions"] == []
     assert permission["notActions"] == []
     assert cli["DataActions"] == []
@@ -90,10 +89,7 @@ def test_role_has_no_secret_admin_provider_or_infrastructure_permissions() -> No
         action
         for action in actions
         if action.startswith("microsoft.insights/")
-    } == {
-        "microsoft.insights/metricdefinitions/read",
-        "microsoft.insights/metrics/read",
-    }
+    } == {"microsoft.insights/metrics/read"}
 
 
 def test_controller_identity_retains_exact_resource_group_scope() -> None:

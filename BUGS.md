@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-13 — (resolved locally; hosted proof pending) GPU attestation waited on an optional metric catalog
+
+- **What happened**: A live mixed canary completed Azure A100 inference and local inference concurrently, but the Azure response stayed quarantined for the full attestation bound because the new app's metric-definition catalog never listed `GpuUtilizationPercentage`. The code therefore never attempted the documented metric-value query.
+- **Root cause**: Gludd promoted schema discovery from a compatibility aid into a prerequisite even though Microsoft publishes the metric name, namespace, unit, aggregation, dimensions, and time grain and the stable SDK accepts them directly.
+- **Fix applied**: The attestor now queries the official constant contract directly, still requires a positive finite Percent sample for the exact owner-bound revision, and retains bounded retries for HTTP 400 and valid no-data responses. It never reads the optional catalog. The exact resource-group role drops `Microsoft.Insights/metricDefinitions/read`, leaving 17 actions and `Microsoft.Insights/metrics/read` as its sole Monitor permission.
+- **Evidence**: Failing-first tests proved both the catalog block and the unnecessary permission dependency. The focused SDK/role slice passes 65/65 and the wider IAM slice passes 104/104; the local/GHA Azure profile passes 1,030/1,030 at 92% aggregate branch coverage, all 54 files clear 75%, and the SDK attestor reaches 89%. Collection succeeds for 113,734/113,735 tests with one intentional deselection. A paid retry remains necessary for positive GPU evidence and an accepted change.
+- **Practitioner evidence**: Container Apps issues #1511 and #1763 report GPU capacity failures lasting minutes and intermittent 25-minute A100 startup delays with billing. `docs/features/SELF_IMPROVEMENT_MIXED_MODELS.md` links those reports and the official Monitor contracts.
+- **Lesson**: Do not make an eventually consistent discovery endpoint a gate for a separately documented, fail-closed value query. Minimize both latency and RBAC surface while preserving proof at the response boundary.
+
 ### 2026-09-11 — (resolved locally) `make -n clean` deleted the gate's live environment
 
 - **What happened**: The exact-head gate completed its early phases and 3,379 integration tests, then a Makefile audit dry-ran `clean`. The following unit shard reported that pytest was absent from the same `.venv`; rebuilding against the old shared uv cache also exposed incomplete `ninja` metadata.

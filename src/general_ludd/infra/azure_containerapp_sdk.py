@@ -57,13 +57,8 @@ class _MetricsReader(Protocol):
     def list(self, **kwargs: object) -> object: ...
 
 
-class _MetricDefinitionsReader(Protocol):
-    def list(self, **kwargs: object) -> object: ...
-
-
 class _MonitorClient(_ClosableClient, Protocol):
     metrics: _MetricsReader
-    metric_definitions: _MetricDefinitionsReader
 
 
 class AzureContainerAppsSDKReadError(AzureContainerAppARMError):
@@ -83,12 +78,6 @@ class AzureGPUMetricResponseReason(StrEnum):
     RESPONSE_SHAPE_INVALID = "response_shape_invalid"
     EVIDENCE_CONTRACT_INVALID = "evidence_contract_invalid"
     METRIC_QUERY_REJECTED = "metric_query_rejected"
-    MISSING_METRIC_DEFINITION = "missing_metric_definition"
-    AMBIGUOUS_METRIC_DEFINITION = "ambiguous_metric_definition"
-    METRIC_DEFINITION_UNIT_MISMATCH = "metric_definition_unit_mismatch"
-    METRIC_AGGREGATION_UNSUPPORTED = "metric_aggregation_unsupported"
-    METRIC_REVISION_DIMENSION_UNSUPPORTED = "metric_revision_dimension_unsupported"
-    METRIC_NAMESPACE_MISMATCH = "metric_namespace_mismatch"
 
 
 class AzureGPUUtilizationAttestationError(BackendInfrastructureError):
@@ -126,13 +115,6 @@ class AzureGPUUtilizationEvidence:
     maximum_percent: float
     positive_sample_count: int
     revision_name: str
-
-
-@dataclass(frozen=True, slots=True)
-class _GPUMetricQueryContract:
-    """Validated provider-advertised values allowed into one metric query."""
-
-    namespace: str
 
 
 def build_container_apps_sdk_client(
@@ -928,74 +910,6 @@ def _positive_metric_values(response: object, revision_name: str) -> tuple[float
     return tuple(samples)
 
 
-def _gpu_metric_query_contract(definitions: object) -> _GPUMetricQueryContract:
-    """Validate one exact Azure metric definition without forwarding its text."""
-    try:
-        records = _bounded_iterable(definitions, "GPU metric definitions")
-    except AzureContainerAppsSDKReadError:
-        raise AzureGPUUtilizationAttestationError(
-            BackendFailure.INVALID_RESPONSE,
-            AzureGPUMetricResponseReason.RESPONSE_SHAPE_INVALID,
-        ) from None
-    matches = tuple(
-        record
-        for record in records
-        if _member(_member(record, "name"), "value") == _GPU_METRIC_NAME
-    )
-    if not matches:
-        raise AzureGPUUtilizationAttestationError(
-            BackendFailure.INVALID_RESPONSE,
-            AzureGPUMetricResponseReason.MISSING_METRIC_DEFINITION,
-        )
-    if len(matches) != 1:
-        raise AzureGPUUtilizationAttestationError(
-            BackendFailure.INVALID_RESPONSE,
-            AzureGPUMetricResponseReason.AMBIGUOUS_METRIC_DEFINITION,
-        )
-    definition = matches[0]
-    if _enum_text(_member(definition, "unit")) != "Percent":
-        raise AzureGPUUtilizationAttestationError(
-            BackendFailure.INVALID_RESPONSE,
-            AzureGPUMetricResponseReason.METRIC_DEFINITION_UNIT_MISMATCH,
-        )
-    namespace = _member(definition, "namespace")
-    if (
-        not isinstance(namespace, str)
-        or namespace.casefold() != _GPU_METRIC_NAMESPACE.casefold()
-    ):
-        raise AzureGPUUtilizationAttestationError(
-            BackendFailure.INVALID_RESPONSE,
-            AzureGPUMetricResponseReason.METRIC_NAMESPACE_MISMATCH,
-        )
-    try:
-        aggregations = _bounded_iterable(
-            _member(definition, "supported_aggregation_types"),
-            "GPU metric aggregations",
-        )
-        dimensions = _bounded_iterable(
-            _member(definition, "dimensions"),
-            "GPU metric dimensions",
-        )
-    except AzureContainerAppsSDKReadError:
-        raise AzureGPUUtilizationAttestationError(
-            BackendFailure.INVALID_RESPONSE,
-            AzureGPUMetricResponseReason.RESPONSE_SHAPE_INVALID,
-        ) from None
-    if "Maximum" not in {_enum_text(value) for value in aggregations}:
-        raise AzureGPUUtilizationAttestationError(
-            BackendFailure.INVALID_RESPONSE,
-            AzureGPUMetricResponseReason.METRIC_AGGREGATION_UNSUPPORTED,
-        )
-    if "revisionName" not in {
-        _member(value, "value") for value in dimensions
-    }:
-        raise AzureGPUUtilizationAttestationError(
-            BackendFailure.INVALID_RESPONSE,
-            AzureGPUMetricResponseReason.METRIC_REVISION_DIMENSION_UNSUPPORTED,
-        )
-    return _GPUMetricQueryContract(namespace=namespace)
-
-
 class AzureContainerAppGPUUtilizationAttestor:
     """Poll one exact revision until Azure Monitor proves positive GPU use."""
 
@@ -1020,13 +934,8 @@ class AzureContainerAppGPUUtilizationAttestor:
         if (
             not callable(getattr(client, "close", None))
             or not callable(getattr(getattr(client, "metrics", None), "list", None))
-            or not callable(
-                getattr(getattr(client, "metric_definitions", None), "list", None)
-            )
         ):
-            raise ValueError(
-                "client must expose Azure Monitor metric and definition readers"
-            )
+            raise ValueError("client must expose an Azure Monitor metric reader")
         if not all(callable(callback) for callback in (progress_sink, now, sleep)):
             raise ValueError("GPU attestation callbacks must be callable")
         if (
@@ -1108,31 +1017,6 @@ class AzureContainerAppGPUUtilizationAttestor:
         while True:
             observed = self._timestamp()
             try:
-                definitions = self._client.metric_definitions.list(
-                    resource_uri=self._expected_resource_id,
-                )
-            except Exception as error:
-                raise AzureGPUUtilizationAttestationError(
-                    _gpu_monitor_failure(error),
-                    http_status=_status_code(error) or 0,
-                ) from None
-            try:
-                contract = _gpu_metric_query_contract(definitions)
-            except AzureGPUUtilizationAttestationError as error:
-                if (
-                    error.reason
-                    == AzureGPUMetricResponseReason.MISSING_METRIC_DEFINITION.value
-                    and observed < deadline
-                ):
-                    self._wait_for_poll("definition_pending")
-                    continue
-                if error.reason is not None:
-                    self._report_response_rejection(error.reason)
-                raise
-            break
-        while True:
-            observed = self._timestamp()
-            try:
                 response = self._client.metrics.list(
                     resource_uri=self._expected_resource_id,
                     timespan=(
@@ -1143,7 +1027,7 @@ class AzureContainerAppGPUUtilizationAttestor:
                     metricnames=_GPU_METRIC_NAME,
                     aggregation="Maximum",
                     filter="revisionName eq '*'",
-                    metricnamespace=contract.namespace,
+                    metricnamespace=_GPU_METRIC_NAMESPACE,
                     validate_dimensions=False,
                 )
             except Exception as error:

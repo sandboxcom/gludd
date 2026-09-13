@@ -5,7 +5,7 @@ Azure OpenAI, and Azure Container Apps discovery/inference, candidate-set
 assembly, content-free calibrated routing, and managed-runner selection are
 implemented behind explicit policy. Gludd now plans and owns the complete Azure
 Container Apps resource-group/environment/app lifecycle through the Microsoft SDK
-and OpenTofu. The 18-action least-privilege role and workload-identity path are
+and OpenTofu. The 17-action least-privilege role and workload-identity path are
 implemented. Paid canaries now prove concurrent local and Azure inference plus
 verified app teardown, but an accepted code improvement and positive Azure Monitor
 GPU-utilization evidence remain pending.
@@ -923,21 +923,53 @@ Make-owned terminal lines to `commit_lint_guard`, `commit_docstring_guard`, or
 `commit_lock`. Arbitrary model or provider output remains unclassified and is never
 forwarded.
 
-Gludd now discovers the resource's metric definition through Microsoft's official
-[MetricDefinitionsOperations API](https://learn.microsoft.com/en-us/python/api/azure-mgmt-monitor/azure.mgmt.monitor.operations.metricdefinitionsoperations?view=azure-python)
-before querying values. It locally verifies the exact name, namespace, Percent unit,
-Maximum aggregation, and `revisionName` dimension, polls boundedly when a fresh
-resource has no definition yet, and uses the advertised namespace casing rather than
-guessing. The runtime role adds only the corresponding documented read action,
-`Microsoft.Insights/metricDefinitions/read`; its other 17 actions and exact
-resource-group scope are unchanged. Microsoft's
+An earlier implementation discovered the resource's metric definition through
+Microsoft's official MetricDefinitions API before querying values. The runtime role
+therefore temporarily added `Microsoft.Insights/metricDefinitions/read`. Microsoft's
 [Monitor RBAC operation list](https://learn.microsoft.com/en-us/azure/role-based-access-control/permissions/monitor)
-distinguishes definition reads from metric-value reads. The long-lived
+distinguishes that catalog permission from metric-value reads. The long-lived
 [Microsoft Q&A dimension-delay report](https://learn.microsoft.com/en-us/answers/questions/5811384/not-able-to-select-the-failure-type-dimension-valu)
 remains relevant for the bounded pending state, but repeated service-side HTTP 400
 responses show that waiting alone is not a sufficient query strategy. Positive GPU
 telemetry and an accepted mixed-provider improvement remain required before this
 capability is described as complete.
+
+The next bounded mixed canary autonomously added the required A100 workload profile
+to the retained environment, created one paid app, and admitted the Azure and local
+candidates concurrently. Both consumed canonical envelope digest
+`9cd0ce0a39abb298d1d31425bde74241a77a352da2ee8da4b81cf3d6815c74b7`.
+Azure completed 4,894 input and 478 output tokens; local Qwen completed the same
+4,894 input and 778 output tokens. The local patch reached syntax evaluation and was
+rejected. Azure's response remained withheld because the app-scoped metric-definition
+catalog returned no GPU record for the entire bound, so the value query was never
+attempted. The paid app was destroyed in 19 seconds and independently verified absent;
+only the measured-zero-cost empty environment was retained for six hours.
+
+That result identifies catalog discovery as neither a safe prerequisite nor a
+necessary runtime permission for a metric Microsoft already publishes. The official
+[Container Apps supported-metrics table](https://learn.microsoft.com/en-us/azure/azure-monitor/reference/supported-metrics/microsoft-app-containerapps-metrics)
+fixes `GpuUtilizationPercentage` to the `Microsoft.App/containerapps` namespace with
+Percent values, Maximum aggregation, `revisionName`/`podName` dimensions, and PT1M
+samples. Microsoft's
+[MetricsOperations contract](https://learn.microsoft.com/en-us/python/api/azure-mgmt-monitor/azure.mgmt.monitor.operations.metricsoperations?view=azure-python)
+accepts that metric name and namespace directly. Gludd therefore skips the catalog,
+queries the official constant contract, and has removed
+`Microsoft.Insights/metricDefinitions/read` from its exact resource-group role. The
+17-action role retains only `Microsoft.Insights/metrics/read` for Monitor. The value
+response must independently match the documented metric name and Percent unit and
+contain a positive, finite, in-range sample for the exact owner-verified revision;
+HTTP 400, no data, foreign dimensions, and malformed responses continue to fail
+closed.
+
+This bounded fallback also accounts for practitioner evidence without normalizing
+Azure delays into success. Container Apps issue
+[#1511](https://github.com/microsoft/azure-container-apps/issues/1511) reports GPU
+capacity failures persisting for minutes and asks for better recovery signals, while
+issue [#1763](https://github.com/microsoft/azure-container-apps/issues/1763) reports
+intermittent 25-minute A100 startup delays with billing during the wait. Gludd keeps
+the deadline, progress heartbeats, cost cap, mandatory paid-app teardown, and censored
+infrastructure outcome; it does not wait indefinitely or treat model/container
+self-report as GPU evidence.
 
 The same run also confirmed a local failure-classification defect. A fatal native
 decode error used the validation-retry marker and was therefore eligible to poison

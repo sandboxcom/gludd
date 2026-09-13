@@ -755,46 +755,9 @@ class _Metrics:
         return self.responses.pop(0)
 
 
-def _metric_definition(
-    *,
-    metric_name: str = "GpuUtilizationPercentage",
-    namespace: str = "Microsoft.App/containerApps",
-    unit: str = "Percent",
-    aggregations: tuple[str, ...] = ("Average", "Maximum", "Minimum"),
-    dimensions: tuple[str, ...] = ("revisionName", "podName"),
-) -> object:
-    return SimpleNamespace(
-        name=SimpleNamespace(value=metric_name),
-        namespace=namespace,
-        unit=unit,
-        supported_aggregation_types=list(aggregations),
-        dimensions=[SimpleNamespace(value=value) for value in dimensions],
-    )
-
-
-class _MetricDefinitions:
-    def __init__(self, responses: list[object]) -> None:
-        self.responses = responses
-        self.calls: list[dict[str, object]] = []
-
-    def list(self, **kwargs: object) -> object:
-        self.calls.append(dict(kwargs))
-        return self.responses.pop(0)
-
-
 class _MonitorClient:
-    def __init__(
-        self,
-        responses: list[object],
-        *,
-        definition_responses: list[object] | None = None,
-    ) -> None:
+    def __init__(self, responses: list[object]) -> None:
         self.metrics = _Metrics(responses)
-        self.metric_definitions = _MetricDefinitions(
-            definition_responses
-            if definition_responses is not None
-            else [[_metric_definition()]]
-        )
         self.close_count = 0
 
     def close(self) -> None:
@@ -821,9 +784,6 @@ def test_gpu_attestor_requires_positive_exact_revision_metric_and_exact_sdk_quer
     assert evidence.metric_name == "GpuUtilizationPercentage"
     assert evidence.maximum_percent == 37.5
     assert evidence.positive_sample_count == 1
-    assert client.metric_definitions.calls == [
-        {"resource_uri": identity.resource_id}
-    ]
     assert client.metrics.calls == [
         {
             "resource_uri": identity.resource_id,
@@ -832,7 +792,7 @@ def test_gpu_attestor_requires_positive_exact_revision_metric_and_exact_sdk_quer
             "metricnames": "GpuUtilizationPercentage",
             "aggregation": "Maximum",
             "filter": "revisionName eq '*'",
-            "metricnamespace": "Microsoft.App/containerApps",
+            "metricnamespace": "Microsoft.App/containerapps",
             "validate_dimensions": False,
         }
     ]
@@ -841,14 +801,16 @@ def test_gpu_attestor_requires_positive_exact_revision_metric_and_exact_sdk_quer
     assert client.close_count == 1
 
 
-def test_gpu_attestor_polls_metric_definitions_before_querying_fresh_resource() -> None:
-    """Resolve the resource's advertised metric contract before querying values."""
+def test_gpu_attestor_keeps_polling_values_without_definition_discovery() -> None:
+    """Use the documented contract while the exact metric values are still pending."""
     identity = _identity()
     clock = [datetime(2026, 9, 7, 12, 0, tzinfo=UTC)]
     events: list[str] = []
     client = _MonitorClient(
-        [_metric_response(identity.revision_name, [9.0])],
-        definition_responses=[[], [_metric_definition()]],
+        [
+            _metric_response(identity.revision_name, [0.0]),
+            _metric_response(identity.revision_name, [9.0]),
+        ]
     )
 
     def sleep(seconds: float) -> None:
@@ -865,41 +827,73 @@ def test_gpu_attestor_polls_metric_definitions_before_querying_fresh_resource() 
     )
 
     assert attestor.attest(identity).maximum_percent == 9.0
-    assert len(client.metric_definitions.calls) == 2
+    assert len(client.metrics.calls) == 2
     assert events == [
-        "azure_containerapp_gpu_metric phase=definition_pending state=heartbeat "
-        "secret_output=false"
+        "azure_containerapp_gpu_metric phase=awaiting_positive_sample "
+        "state=heartbeat secret_output=false",
     ]
 
 
+def test_gpu_attestor_never_reads_optional_definition_catalog() -> None:
+    """A lagging or forbidden catalog cannot block a documented metric query."""
+    identity = _identity()
+    now = datetime(2026, 9, 7, 12, 0, tzinfo=UTC)
+    client = _MonitorClient([_metric_response(identity.revision_name, [17.5])])
+    definition_list = MagicMock(
+        side_effect=AssertionError("definition catalog must not be read")
+    )
+    client.metric_definitions = SimpleNamespace(list=definition_list)
+    attestor = AzureContainerAppGPUUtilizationAttestor(
+        client=client,
+        expected_resource_id=identity.resource_id,
+        now=lambda: now,
+        sleep=lambda _seconds: pytest.fail("documented metric query must not sleep"),
+        poll_timeout_seconds=20.0,
+        poll_interval_seconds=10.0,
+    )
+
+    assert attestor.attest(identity).maximum_percent == 17.5
+    assert client.metrics.calls[0]["metricnamespace"] == "Microsoft.App/containerapps"
+    definition_list.assert_not_called()
+
+
+def test_gpu_attestor_needs_only_the_least_privilege_metric_value_reader() -> None:
+    """The published query contract must not require definition-list permission."""
+    identity = _identity()
+    metrics = _Metrics([_metric_response(identity.revision_name, [22.0])])
+    close = MagicMock()
+    client = SimpleNamespace(metrics=metrics, close=close)
+    attestor = AzureContainerAppGPUUtilizationAttestor(
+        client=client,
+        expected_resource_id=identity.resource_id,
+        now=lambda: datetime(2026, 9, 7, 12, 0, tzinfo=UTC),
+        sleep=lambda _seconds: pytest.fail("positive evidence must not poll"),
+    )
+
+    assert attestor.attest(identity).maximum_percent == 22.0
+    attestor.close()
+    close.assert_called_once_with()
+
+
 @pytest.mark.parametrize(
-    ("definition", "reason"),
+    ("metric_name", "unit", "reason"),
     [
-        (
-            _metric_definition(unit="Bytes"),
-            "metric_definition_unit_mismatch",
-        ),
-        (
-            _metric_definition(aggregations=("Average",)),
-            "metric_aggregation_unsupported",
-        ),
-        (
-            _metric_definition(dimensions=("podName",)),
-            "metric_revision_dimension_unsupported",
-        ),
-        (
-            _metric_definition(namespace="Microsoft.Compute/virtualMachines"),
-            "metric_namespace_mismatch",
-        ),
+        ("CpuPercentage", "Percent", "metric_name_mismatch"),
+        ("GpuUtilizationPercentage", "Bytes", "metric_unit_mismatch"),
     ],
 )
-def test_gpu_attestor_rejects_incompatible_advertised_metric_contract(
-    definition: object,
+def test_gpu_attestor_rejects_incompatible_metric_value_contract(
+    metric_name: str,
+    unit: str,
     reason: str,
 ) -> None:
-    """Provider definitions are parsed locally and never trusted as query input blindly."""
+    """A value response cannot override the independently documented contract."""
     identity = _identity()
-    client = _MonitorClient([], definition_responses=[[definition]])
+    response = _metric_response(identity.revision_name, [10.0])
+    metric = response.value[0]
+    metric.name = SimpleNamespace(value=metric_name)
+    metric.unit = unit
+    client = _MonitorClient([response])
     attestor = AzureContainerAppGPUUtilizationAttestor(
         client=client,
         expected_resource_id=identity.resource_id,
@@ -910,7 +904,7 @@ def test_gpu_attestor_rejects_incompatible_advertised_metric_contract(
 
     assert captured.value.failure is BackendFailure.INVALID_RESPONSE
     assert captured.value.reason == reason
-    assert client.metrics.calls == []
+    assert len(client.metrics.calls) == 1
 
 
 def test_gpu_attestor_polls_content_free_until_a_positive_sample() -> None:

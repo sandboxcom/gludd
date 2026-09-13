@@ -323,7 +323,7 @@
     },
     {
       "path": "scripts/self_improve_local_proposal.py",
-      "line": 288,
+      "line": 291,
       "column": 13,
       "kind": "temp-artifact",
       "owner": "run_worker",
@@ -2071,6 +2071,17 @@
       "owned": true
     },
     {
+      "path": "src/general_ludd/self_improve/local_worker_request.py",
+      "line": 135,
+      "column": 9,
+      "kind": "temp-artifact",
+      "owner": "run_local_proposal_request",
+      "acquisition": "tempfile.TemporaryDirectory(prefix='gludd-self-improve-proposal-')",
+      "teardown": "context-manager-exit",
+      "source_hash": "9acbb35504ceefbb81bf7bb76911cc9461f7054511357946ab9936d24c8174f9",
+      "owned": true
+    },
+    {
       "path": "src/general_ludd/self_improve/managed_execution.py",
       "line": 150,
       "column": 44,
@@ -2094,24 +2105,13 @@
     },
     {
       "path": "src/general_ludd/self_improve/runtime.py",
-      "line": 376,
+      "line": 374,
       "column": 15,
       "kind": "process",
       "owner": "MakeRunner._run_observable_argv",
       "acquisition": "subprocess.Popen(argv, cwd=str(self.repo_root), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, shell=False, start_new_session=True, env=_clean_environment())",
       "teardown": "ownership-transfer:_terminate_process_group(proc); ownership-transfer:persisted-detached-pid",
       "source_hash": "48b1f11a5b044a1629f50c06daa21dbf3ff3272f20156e9cbca0329934358952",
-      "owned": true
-    },
-    {
-      "path": "src/general_ludd/self_improve/runtime.py",
-      "line": 477,
-      "column": 9,
-      "kind": "temp-artifact",
-      "owner": "_run_local_proposal_request",
-      "acquisition": "tempfile.TemporaryDirectory(prefix='gludd-self-improve-proposal-')",
-      "teardown": "context-manager-exit",
-      "source_hash": "9c387e7e31398d1cc17c16ef2789954d4aad833ebc582dc5a9100caef29fe489",
       "owned": true
     },
     {

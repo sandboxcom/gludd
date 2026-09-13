@@ -45,7 +45,6 @@ EXPECTED_ACTIONS: Final = frozenset(
         "Microsoft.App/locations/containerAppOperationStatuses/read",
         "Microsoft.App/locations/managedEnvironmentOperationResults/read",
         "Microsoft.App/locations/managedEnvironmentOperationStatuses/read",
-        "Microsoft.Insights/metricDefinitions/read",
         "Microsoft.Insights/metrics/read",
         "Microsoft.Resources/subscriptions/resourceGroups/read",
         "Microsoft.Resources/subscriptions/resourceGroups/write",
