@@ -22,6 +22,10 @@ from general_ludd.self_improve.codex_comparison import (
 from general_ludd.self_improve.managed_candidate_routing import (
     ManagedCandidateProposalEnvelope,
 )
+from general_ludd.self_improve.model_candidates import (
+    BackendFailure,
+    BackendInfrastructureError,
+)
 from general_ludd.self_improve.runtime import MakeResult, generate_local_proposal
 
 
@@ -185,6 +189,88 @@ def test_parent_surfaces_native_worker_failure_without_parsing_output(tmp_path: 
 
     with pytest.raises(RuntimeError, match=r"rc=139.*native signal 11"):
         generate_local_proposal(runner, model, "repair exactly")
+
+
+def test_parent_classifies_typed_local_backend_failure_as_infrastructure(
+    tmp_path: Path,
+) -> None:
+    """A native decode failure must never become negative model-quality evidence."""
+    model = tmp_path / "model.gguf"
+    model.write_bytes(b"gguf")
+
+    class InfrastructureFailureRunner:
+        def run_observable(
+            self,
+            target: str,
+            variables: dict[str, str],
+            *,
+            timeout: int,
+        ) -> MakeResult:
+            del target, variables, timeout
+            return MakeResult(
+                ("make", "worker"),
+                3,
+                "",
+                (
+                    "SELF_IMPROVE_LOCAL_PROPOSAL_INFRASTRUCTURE_ERROR "
+                    "failure=unavailable\nPRIVATE_MODEL=/secret/model.gguf"
+                ),
+                0.1,
+            )
+
+    with pytest.raises(BackendInfrastructureError) as raised:
+        generate_local_proposal(InfrastructureFailureRunner(), model, "prompt")
+
+    assert raised.value.failure is BackendFailure.UNAVAILABLE
+    assert "/secret/model.gguf" not in str(raised.value)
+
+
+def test_worker_censors_native_decode_failure_as_typed_infrastructure(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The child boundary publishes only a stable category for native failures."""
+    model = tmp_path / "model.gguf"
+    model.write_bytes(b"gguf")
+    exchange = tmp_path / "exchange"
+    exchange.mkdir()
+    prompt = exchange / "prompt.txt"
+    proposal = exchange / "proposal.json"
+    prompt.write_text("repair", encoding="utf-8")
+
+    class DecodeFailureGateway(_FakeGateway):
+        def propose(
+            self,
+            prompt: str,
+            *,
+            contract: ProposalContract | None = None,
+        ) -> ProposalManifest:
+            del prompt, contract
+            raise RuntimeError(
+                "llama_decode returned -3 model=/secret/model.gguf TOKEN=hunter2"
+            )
+
+    returncode = worker_module.main(
+        [
+            "--model-path",
+            str(model),
+            "--prompt-file",
+            str(prompt),
+            "--proposal-file",
+            str(proposal),
+        ],
+        gateway_factory=DecodeFailureGateway,
+    )
+
+    captured = capsys.readouterr()
+    assert returncode == 3
+    assert captured.err == (
+        "SELF_IMPROVE_LOCAL_PROPOSAL_INFRASTRUCTURE_ERROR failure=unavailable\n"
+    )
+    assert all(
+        secret not in captured.out + captured.err
+        for secret in ("/secret/model.gguf", "TOKEN", "hunter2", "llama_decode")
+    )
 
 
 @pytest.mark.parametrize(

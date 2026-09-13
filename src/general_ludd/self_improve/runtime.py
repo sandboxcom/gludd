@@ -156,6 +156,11 @@ from general_ludd.self_improve.model_candidate_planner import (
 from general_ludd.self_improve.model_candidate_planner import (
     plan_model_candidates as plan_model_candidates,
 )
+from general_ludd.self_improve.model_candidates import (
+    LOCAL_PROPOSAL_INFRASTRUCTURE_ERROR_MARKER,
+    BackendFailure,
+    BackendInfrastructureError,
+)
 from general_ludd.self_improve.model_lifecycle import (
     ModelAcquisitionError as ModelAcquisitionError,
 )
@@ -515,6 +520,12 @@ def _run_local_proposal_request(
         if result.returncode != 0:
             if result.returncode == 124:
                 raise TimeoutError("local proposal worker timed out")
+            if result.returncode == 3:
+                marker = LOCAL_PROPOSAL_INFRASTRUCTURE_ERROR_MARKER + " "
+                output = result.stdout.splitlines() + result.stderr.splitlines()
+                if any(line.startswith(marker) for line in output):
+                    raise BackendInfrastructureError(BackendFailure.UNAVAILABLE)
+                raise BackendInfrastructureError(BackendFailure.INTERNAL)
             protocol = (
                 contract.proposal_protocol
                 if contract is not None

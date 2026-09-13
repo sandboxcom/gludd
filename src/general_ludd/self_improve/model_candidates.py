@@ -453,6 +453,11 @@ class BackendInfrastructureError(RuntimeError):
         self.failure = failure
 
 
+LOCAL_PROPOSAL_INFRASTRUCTURE_ERROR_MARKER = (
+    "SELF_IMPROVE_LOCAL_PROPOSAL_INFRASTRUCTURE_ERROR"
+)
+
+
 class BackendPolicyError(RuntimeError):
     """Censored rejection raised before a candidate backend can observe input."""
 
@@ -740,6 +745,7 @@ class BoundedCandidateSession(Generic[_RequestT, _ResponseT]):
 
 
 __all__ = (
+    "LOCAL_PROPOSAL_INFRASTRUCTURE_ERROR_MARKER",
     "AzureContainerAppCandidateIdentity",
     "AzureFoundryAPIFamily",
     "AzureFoundryCandidateIdentity",

@@ -30,6 +30,9 @@ from general_ludd.self_improve.codex_comparison import (
 from general_ludd.self_improve.managed_candidate_routing import (
     ManagedCandidateProposalEnvelope,
 )
+from general_ludd.self_improve.model_candidates import (
+    LOCAL_PROPOSAL_INFRASTRUCTURE_ERROR_MARKER,
+)
 
 _MAX_PROMPT_BYTES = 262_144
 _MAX_CONTRACT_BYTES = 196_608
@@ -401,7 +404,14 @@ def main(
                 contract_path=contract_file,
                 gateway_factory=gateway_factory,
             )
-    except (OSError, RuntimeError, ValueError) as exc:
+    except (OSError, RuntimeError):
+        print(
+            f"{LOCAL_PROPOSAL_INFRASTRUCTURE_ERROR_MARKER} failure=unavailable",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 3
+    except ValueError as exc:
         print(
             f"SELF_IMPROVE_LOCAL_PROPOSAL_ERROR {str(exc)[:2000]}",
             file=sys.stderr,
