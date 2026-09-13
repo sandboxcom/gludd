@@ -789,6 +789,42 @@ class LiveManagedCandidateWiring:
             ),
         )
 
+    def _local_only_after_remote_infrastructure_failure(
+        self,
+        classification: CandidateTaskClassification,
+        expected_classification_digest: str,
+        local_session: BoundedCandidateSession[_RequestT, _ResponseT],
+        privacy_state: CandidatePrivacyState,
+        error: BackendInfrastructureError,
+    ) -> LiveManagedCandidateSet[_RequestT, _ResponseT]:
+        """Reauthorize and expose the local candidate after a typed cloud outage."""
+        local_source = self._local_source(local_session, privacy_state)
+        assembly = assemble_managed_candidates(
+            classification,
+            (local_source,),
+            expected_classification_digest=expected_classification_digest,
+            required_providers=(ModelCandidateProvider.LOCAL_GGUF,),
+            azure_enabled=False,
+        )
+        self._emit(
+            {
+                "event": "self_improve_remote_infrastructure_skipped",
+                "failure": error.failure.value,
+                "schema_version": 1,
+            }
+        )
+        self._emit(classification.event_payload())
+        for event in assembly.event_payloads():
+            self._emit(event)
+        return LiveManagedCandidateSet(
+            assembly,
+            local_session,
+            None,
+            None,
+            None,
+            None,
+        )
+
     def assemble(
         self,
         classification: CandidateTaskClassification,
@@ -866,31 +902,12 @@ class LiveManagedCandidateWiring:
                 or local_session is None
             ):
                 raise
-            local_source = self._local_source(local_session, privacy_state)
-            assembly = assemble_managed_candidates(
+            return self._local_only_after_remote_infrastructure_failure(
                 classification,
-                (local_source,),
-                expected_classification_digest=expected_classification_digest,
-                required_providers=(ModelCandidateProvider.LOCAL_GGUF,),
-                azure_enabled=False,
-            )
-            self._emit(
-                {
-                    "event": "self_improve_remote_infrastructure_skipped",
-                    "failure": error.failure.value,
-                    "schema_version": 1,
-                }
-            )
-            self._emit(classification.event_payload())
-            for event in assembly.event_payloads():
-                self._emit(event)
-            return LiveManagedCandidateSet(
-                assembly,
+                expected_classification_digest,
                 local_session,
-                None,
-                None,
-                None,
-                None,
+                privacy_state,
+                error,
             )
         except BaseException:
             discovered.close_safely()
