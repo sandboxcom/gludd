@@ -1434,6 +1434,7 @@ def test_managed_runner_routes_real_local_and_foundry_work_by_calibrated_outcome
     progress: list[str] = []
     generated: list[tuple[Path, str]] = []
     local_codecs: list[ManagedCandidateProposalCodec[GeneratedProposal] | None] = []
+    codec_budgets: list[int | None] = []
     store = CapabilityEvidenceStore(str(tmp_path / "candidate-evidence.json"))
     accept_local = False
 
@@ -1488,6 +1489,17 @@ def test_managed_runner_routes_real_local_and_foundry_work_by_calibrated_outcome
             '"type":"boolean"}},"required":["ok"],"type":"object"}'
         ),
     )
+
+    def codec_factory(
+        _prompt: object,
+        _task_spec: TaskSpec,
+        _reference_spec: CodexReference,
+        *,
+        max_output_tokens: int | None = None,
+    ) -> ManagedCandidateProposalCodec[GeneratedProposal]:
+        codec_budgets.append(max_output_tokens)
+        return codec
+
     runner = ManagedSelfImproveRunner(
         proposal_generator=cast(Callable[..., ProposalManifest], generate),
         attempt_evaluator=cast(Callable[..., AttemptResult], evaluate),
@@ -1496,7 +1508,7 @@ def test_managed_runner_routes_real_local_and_foundry_work_by_calibrated_outcome
             _mixed_policy(),
             azure_backend_factory=lambda _config: azure,
         ),
-        remote_proposal_codec_factory=lambda _prompt, _task, _reference: codec,
+        remote_proposal_codec_factory=codec_factory,
     )
     plan = _approved_plan(tmp_path, model_path)
     outcomes = CapabilityEvidenceOutcomeAdapter(store)
@@ -1528,6 +1540,7 @@ def test_managed_runner_routes_real_local_and_foundry_work_by_calibrated_outcome
     )
     assert generated == [(model_path, "bounded approved prompt")]
     assert local_codecs == [codec]
+    assert codec_budgets == [32]
     assert len(store.list_all()) == 2
     assert (
         "SELF_IMPROVE_CANDIDATE_LOCAL_BIND phase=started "
@@ -1567,6 +1580,7 @@ def test_managed_runner_routes_real_local_and_foundry_work_by_calibrated_outcome
     assert second.proposal == remote
     assert second.selected_candidate_provider is ModelCandidateProvider.AZURE_FOUNDRY
     assert azure.generate_calls == 2
+    assert codec_budgets == [32, 32]
     assert len(store.list_all()) == 4
     rendered = "\n".join(progress)
     assert "SELF_IMPROVE_CANDIDATE_ROUTING_EVENT" in rendered

@@ -179,6 +179,17 @@ reserved tokens, cost, and call count remain consumed even if infrastructure
 fails. That conservative accounting prevents retry storms from escaping an
 approval.
 
+For a managed local/cloud route, the approved plan's output-token ceiling is also
+serialized into the canonical proposal contract consumed by every worker. The
+local adapter forwards that exact value through the repository-bound generator,
+and llama.cpp uses it for both compact and shared-envelope completions instead of
+substituting its former fixed 4,096-token request. The parent rejects any mismatch
+before starting the owned worker. The ceiling is included in the envelope digest,
+the routing protocol stratum, and repair-seed context, so quality evidence gathered
+under one limit cannot be attributed to another. Contracts without the field keep
+their historical per-protocol ceiling only for backward-compatible local replay;
+new managed mixed-provider routes always bind the explicit approved value.
+
 `BoundedCandidateSession.authorize` exposes the same identity, provider-opt-in,
 and budget checks without consuming a reservation. Plan execution uses it to
 preflight the complete call set before any backend can observe a request.

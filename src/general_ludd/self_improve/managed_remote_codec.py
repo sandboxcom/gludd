@@ -252,6 +252,7 @@ def build_managed_remote_proposal_codec(
     reference: CodexReference,
     *,
     required_tests: tuple[str, ...] = (),
+    max_output_tokens: int | None = None,
 ) -> ManagedCandidateProposalCodec[GeneratedProposal] | None:
     """Prepare the exact local-equivalent remote transport and decoder."""
     if isinstance(prompt, str):
@@ -278,6 +279,7 @@ def build_managed_remote_proposal_codec(
         proposal_protocol=prompt.proposal_protocol,
         sampling_profile=prompt.sampling_profile,
         sampling_candidate_index=0,
+        max_output_tokens=max_output_tokens,
     )
     if prompt.proposal_protocol == COMPACT_PROPOSAL_PROTOCOL_V4:
         if not prompt.baseline_files or any(
@@ -309,10 +311,15 @@ def build_managed_remote_proposal_codec(
             protocol_digest=prompt.protocol_digest,
             expected_count=len(prompt.shards),
         )
+    routing_protocol_parts = [prompt.proposal_protocol]
+    if contract.max_output_tokens is not None:
+        routing_protocol_parts.append(
+            f"max-output-tokens={contract.max_output_tokens}"
+        )
     return ManagedCandidateProposalCodec(
         request_text=request,
         decoder=decoder,
-        protocol_digest=_routing_contract_digest(prompt.proposal_protocol),
+        protocol_digest=_routing_contract_digest(*routing_protocol_parts),
         sampling_digest=_routing_contract_digest(prompt.sampling_profile),
         request_contract_json=contract.to_json(),
         response_instruction=_managed_response_instruction(prompt.proposal_protocol),

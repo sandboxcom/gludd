@@ -115,6 +115,7 @@ class _RuntimeCompositionApi(Protocol):
         reference: CodexReference,
         *,
         proposal_codec: ManagedCandidateProposalCodec[GeneratedProposal] | None = None,
+        max_output_tokens: int | None = None,
         timeout_seconds: float = 300.0,
     ) -> ProposalManifest | GeneratedProposal:
         """Generate one plan-bound local proposal."""
@@ -293,6 +294,7 @@ def _build_managed_callbacks(
         reference: CodexReference,
         *,
         proposal_codec: ManagedCandidateProposalCodec[GeneratedProposal] | None = None,
+        max_output_tokens: int | None = None,
         timeout_seconds: float = 300.0,
     ) -> ProposalManifest | GeneratedProposal:
         if isinstance(prompt, PromptPlan):
@@ -301,6 +303,7 @@ def _build_managed_callbacks(
                 (operation_runner, model_path, prompt, task, reference),
                 {
                     "proposal_codec": proposal_codec,
+                    "max_output_tokens": max_output_tokens,
                     "timeout_seconds": timeout_seconds,
                 },
             )

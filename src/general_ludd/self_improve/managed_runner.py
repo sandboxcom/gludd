@@ -127,6 +127,9 @@ _MAX_SYNTAX_REPAIR_DRAFT_BYTES: Final = 4_096
 _MANAGED_CANDIDATE_EVALUATOR_DIGEST: Final = stable_digest(
     {"protocol": "gludd-managed-full-proposal-evaluator-v1"}
 )
+_CANDIDATE_PROTOCOL_BUILD_FAILED: Final = (
+    "SELF_IMPROVE_CANDIDATE_PROTOCOL phase=failed failure=construction"
+)
 
 
 def _is_safe_make_command(command: str) -> bool:
@@ -1236,6 +1239,7 @@ class _ProposalGenerator(Protocol):
         reference: CodexReference,
         *,
         proposal_codec: ManagedCandidateProposalCodec[GeneratedProposal] | None = None,
+        max_output_tokens: int | None = None,
         timeout_seconds: float = 300.0,
     ) -> ProposalManifest | GeneratedProposal: ...
 
@@ -1249,6 +1253,8 @@ class _RemoteProposalCodecFactory(Protocol):
         prompt: PromptPlan | str,
         task: TaskSpec,
         reference: CodexReference,
+        *,
+        max_output_tokens: int | None = None,
     ) -> ManagedCandidateProposalCodec[GeneratedProposal] | None: ...
 
 
@@ -1290,9 +1296,11 @@ class LocalProposalBackendAdapter:
         timeout_seconds: float,
     ) -> ProposalManifest | GeneratedProposal:
         """Forward the approved deadline when supported and type worker timeouts."""
-        del max_output_tokens
         arguments = (request.model_path, request.prompt, request.task, request.reference)
-        optional_keywords: dict[str, object] = {"timeout_seconds": timeout_seconds}
+        optional_keywords: dict[str, object] = {
+            "max_output_tokens": max_output_tokens,
+            "timeout_seconds": timeout_seconds,
+        }
         if request.proposal_codec is not None:
             optional_keywords["proposal_codec"] = request.proposal_codec
         try:
@@ -2391,12 +2399,14 @@ class ManagedSelfImproveRunner(_ManagedRunnerPolicySupport):
             codec = (
                 None
                 if codec_factory is None
-                else codec_factory(prompt, plan.task, plan.reference)
+                else invoke_with_supported_keywords(
+                    codec_factory,
+                    (prompt, plan.task, plan.reference),
+                    {"max_output_tokens": plan.required_output_tokens},
+                )
             )
         except BaseException:
-            self.progress_sink(
-                "SELF_IMPROVE_CANDIDATE_PROTOCOL phase=failed failure=construction"
-            )
+            self.progress_sink(_CANDIDATE_PROTOCOL_BUILD_FAILED)
             raise
         self.progress_sink(
             "SELF_IMPROVE_CANDIDATE_PROTOCOL phase=bound "

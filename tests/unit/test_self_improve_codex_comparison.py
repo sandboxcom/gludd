@@ -530,6 +530,28 @@ def test_proposal_contract_round_trips_only_trusted_immutable_fields() -> None:
     }
 
 
+def test_proposal_contract_round_trips_one_explicit_output_budget() -> None:
+    """Bind managed local decode to the same approved budget as remote decode."""
+    assert comparison_module.COMPACT_PROPOSAL_CONTRACT_TRANSPORT_PROTOCOL == (
+        "self-improve-local-proposal-contract-file-v3"
+    )
+    contract = replace(_contract(), max_output_tokens=257)
+
+    encoded = json.loads(contract.to_json())
+
+    assert encoded["max_output_tokens"] == 257
+    assert ProposalContract.from_json(contract.to_json()) == contract
+
+
+@pytest.mark.parametrize("budget", [False, 0, -1, 4097])
+def test_proposal_contract_rejects_invalid_explicit_output_budget(
+    budget: object,
+) -> None:
+    """Never admit an unbounded or protocol-incompatible local decode budget."""
+    with pytest.raises(ValueError, match="output token budget"):
+        replace(_contract(), max_output_tokens=cast(int, budget))
+
+
 def test_repair_sampling_profile_round_trips_without_changing_normal_v4_bytes() -> None:
     """Keep ordinary v4 requests byte-stable while carrying one trusted repair profile."""
     normal = replace(
@@ -724,6 +746,7 @@ def test_greedy_contract_rejects_nonzero_sampling_candidate() -> None:
         "sampling_context_sha256",
         "sampling_candidate_index",
         "repair_state_sha256",
+        "max_output_tokens",
     ],
 )
 def test_repair_seed_context_tampering_fails_closed(field: str) -> None:
@@ -739,6 +762,7 @@ def test_repair_seed_context_tampering_fails_closed(field: str) -> None:
         tests=("tests/unit/test_example.py",),
         make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
         proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+        max_output_tokens=257,
         sampling_profile=comparison_module.COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
     )
     value = json.loads(contract.to_json())
@@ -749,6 +773,8 @@ def test_repair_seed_context_tampering_fails_closed(field: str) -> None:
         value[field] = "b" * 64
     elif field == "sampling_candidate_index":
         value[field] = 1
+    elif field == "max_output_tokens":
+        value[field] = 258
     else:
         value[field] = "b" * 64
     tampered = ProposalContract.from_json(json.dumps(value))
@@ -1498,6 +1524,7 @@ def test_local_gateway_submits_the_exact_shared_envelope_artifacts(tmp_path: Pat
         tests=("tests/unit/test_example.py",),
         make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
         proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
+        max_output_tokens=257,
     )
     instruction = "return the exact approved structured envelope"
     schema_json = '{"additionalProperties":false,"type":"object"}'
@@ -1535,6 +1562,7 @@ def test_local_gateway_submits_the_exact_shared_envelope_artifacts(tmp_path: Pat
         "type": "json_object",
         "schema": json.loads(schema_json),
     }
+    assert calls[1]["max_tokens"] == 257
 
 
 def test_compact_gateway_uses_one_fast_canary_and_expands_trusted_contract(

@@ -669,6 +669,7 @@ def test_parent_runs_one_owned_worker_then_strictly_merges_all_shards(
         plan,
         task,
         reference,
+        max_output_tokens=257,
     )
 
     assert len(owned.calls) == 1
@@ -679,6 +680,7 @@ def test_parent_runs_one_owned_worker_then_strictly_merges_all_shards(
     assert all(contract.baseline_sha == reference.baseline_sha for contract in contracts)
     assert all(contract.task_id == task.task_id for contract in contracts)
     assert all(contract.tests == ("tests/unit/test_example.py",) for contract in contracts)
+    assert all(contract.max_output_tokens == 257 for contract in contracts)
     assert {edit.path for edit in merged.edits} == {"src/one.py", "src/two.py"}
     assert all(not path.exists() for path in owned.exchange_paths)
 
@@ -722,6 +724,7 @@ def test_parent_expands_v4_multifile_spans_and_cleans_owned_exchange(
         plan,
         task,
         reference,
+        max_output_tokens=257,
     )
     merged = generated.proposal
     public_manifest = runner_module.generate_local_proposal_plan(
@@ -737,6 +740,9 @@ def test_parent_expands_v4_multifile_spans_and_cleans_owned_exchange(
     assert {edit.path for edit in merged.edits} == {"src/one.py", "src/two.py"}
     assert all(edit.old_text == "before\n" for edit in merged.edits)
     assert all(edit.new_text == "after\n" for edit in merged.edits)
+    assert contracts[:2] and all(
+        contract.max_output_tokens == 257 for contract in contracts[:2]
+    )
     assert contracts and all(
         contract.proposal_protocol == "self-improve-compact-proposal-v4"
         for contract in contracts

@@ -73,6 +73,8 @@ S83.157 Monitor-ingestion evidence: the first post-attestation paid canary provi
 
 S83.157 exact-cache warning evidence: the live local-model cache diagnostic found five Gludd-owned, unleased candidates and sufficient reclaimable headroom without deleting anything. Its first real apply had refused on an official Hugging Face scan warning even though the selected revision was independently present in the scanner's valid inventory. A failing-first regression now follows the supported API contract: only `CorruptedCacheException` warnings for repositories the scanner skipped may coexist with an exact valid target; a warned target remains absent from the inventory and cannot produce a plan, while unknown warning types still fail closed. Repository, revision, filename, canonical snapshot, resolved blob, SDK strategy paths, immediate rescan, and verified absence remain mandatory. The exact 34-test deletion-adapter suite passes at 97% branch coverage, with scoped Ruff and strict mypy green; the real required-headroom diagnostic remains validate-only with `removed_count=0` until the active model plan protects every artifact needed by the next trial.
 
+S83.157 shared-output-budget evidence: live adaptive local trials selected Qwen2.5 Coder 1.5B, SmolLM2, StarCoder2 3B, Qwen2.5 Coder 3B, and Phi-3 Mini in response to persisted failures, but produced no accepted change; the Phi-3 attempt exposed that routing admitted the model with the plan estimate while the local gateway discarded that estimate and requested a fixed 4,096 output tokens, exhausting the native context. Failing-first contracts now serialize one optional, protocol-bounded `max_output_tokens` value into the same canonical envelope used by local and Azure workers, forward the approved value across callback-compatible runner seams, use it for both llama.cpp proposal paths, reject parent/envelope mismatches before process creation, bind it into repair-seed verification, and isolate learned routing evidence by budget. Historical contracts without the field retain byte-compatible protocol ceilings, while the changed contract transport rotates to v3. The local exchange was extracted behind the unchanged monkeypatchable runtime seam to restore both function and module complexity ceilings. The affected 446-test slice and 64-test integration repair replay pass with scoped Ruff and strict mypy green; canonical coverage passes 7,150 tests with 3 skips and 1 expected failure at 90% aggregate branch coverage, all 49 measured files clear 75%, and the new local exchange boundary is at 86%. A repaired live local trial, a positive Azure metric, and one accepted improvement remain pending.
+
 S83.157 exact changed-surface registration (from the active gate):
 
 Candidate-timeout and canonical-coverage surface:
@@ -92,6 +94,24 @@ Candidate-timeout and canonical-coverage surface:
 - `tests/unit/test_self_improve_managed_remote_codec.py`
 - `tests/unit/test_self_improve_multifile_fixture.py`
 - `tests/unit/test_owned_process_supervisor.py`
+
+Shared output-budget surface:
+
+- `docs/features/SELF_IMPROVEMENT_MIXED_MODELS.md`
+- `src/general_ludd/self_improve/codex_comparison.py`
+- `src/general_ludd/self_improve/local_worker_request.py`
+- `src/general_ludd/self_improve/managed_remote_codec.py`
+- `src/general_ludd/self_improve/managed_runner.py`
+- `src/general_ludd/self_improve/runtime.py`
+- `src/general_ludd/self_improve/runtime_builder.py`
+- `tests/unit/test_managed_self_improve_runner.py`
+- `tests/unit/test_self_improve_codex_comparison.py`
+- `tests/unit/test_self_improve_live_candidate_wiring.py`
+- `tests/unit/test_self_improve_local_worker.py`
+- `tests/unit/test_self_improve_local_worker_request.py`
+- `tests/unit/test_self_improve_managed_remote_codec.py`
+- `tests/unit/test_self_improve_retained_worker.py`
+- `tests/unit/test_self_improve_runner_model_lifecycle.py`
 
 - `infra/terraform/modules/azure-container-app-vllm/main.tf`
 - `infra/terraform/modules/azure-container-app-environment/main.tf`

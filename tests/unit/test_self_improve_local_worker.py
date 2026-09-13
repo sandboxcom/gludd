@@ -395,6 +395,7 @@ def test_worker_executes_one_exact_shared_envelope_call(tmp_path: Path) -> None:
         tests=("tests/unit/test_example.py",),
         make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
         proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
+        max_output_tokens=257,
     )
     envelope = ManagedCandidateProposalEnvelope(
         request_text=request,
@@ -440,6 +441,7 @@ def test_worker_executes_one_exact_shared_envelope_call(tmp_path: Path) -> None:
     )
 
     assert output.read_text(encoding="utf-8") == raw_response + "\n"
+    assert calls[0][1].max_output_tokens == 257
     assert calls == [
         (
             request,
@@ -452,7 +454,12 @@ def test_worker_executes_one_exact_shared_envelope_call(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "field",
-    ["sampling_seed", "sampling_context_sha256", "sampling_candidate_index"],
+    [
+        "sampling_seed",
+        "sampling_context_sha256",
+        "sampling_candidate_index",
+        "max_output_tokens",
+    ],
 )
 def test_worker_recomputes_repair_seed_context_before_model_construction(
     tmp_path: Path,
@@ -472,6 +479,7 @@ def test_worker_recomputes_repair_seed_context_before_model_construction(
         tests=("tests/unit/test_example.py",),
         make_commands=("make test-files TESTFILES=tests/unit/test_example.py",),
         proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
+        max_output_tokens=257,
         sampling_profile=COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
     )
     value = json.loads(contract.to_json())
@@ -480,6 +488,8 @@ def test_worker_recomputes_repair_seed_context_before_model_construction(
         value[field] = contract.sampling_seed + 1
     elif field == "sampling_context_sha256":
         value[field] = "b" * 64
+    elif field == "max_output_tokens":
+        value[field] = 258
     else:
         value[field] = 1
     contract_path = exchange / "contract.json"

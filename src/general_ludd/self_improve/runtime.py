@@ -16,7 +16,6 @@ import shlex
 import signal
 import subprocess
 import sys
-import tempfile
 import time
 import tokenize
 from collections.abc import Callable, Mapping
@@ -27,7 +26,6 @@ from typing import Final, Protocol, TextIO, cast, runtime_checkable
 
 from general_ludd.hardware.model_fit import unified_probe as unified_probe
 from general_ludd.planning.repo_map import RepoMapBuilder
-from general_ludd.self_improve._callback_compat import validated_timeout_seconds
 from general_ludd.self_improve.codex_comparison import (
     COMPACT_PROPOSAL_PROTOCOL_V3,
     COMPACT_PROPOSAL_PROTOCOL_V4,
@@ -86,9 +84,14 @@ from general_ludd.self_improve.live_candidate_wiring import (
 from general_ludd.self_improve.live_candidate_wiring import (
     build_live_managed_candidate_wiring as build_live_managed_candidate_wiring,
 )
+from general_ludd.self_improve.local_worker_request import (
+    _MAX_PROPOSAL_BYTES as _MAX_PROPOSAL_BYTES,
+)
+from general_ludd.self_improve.local_worker_request import (
+    run_local_proposal_request as _run_local_proposal_request,
+)
 from general_ludd.self_improve.managed_candidate_routing import (
     ManagedCandidateProposalCodec,
-    ManagedCandidateProposalEnvelope,
 )
 from general_ludd.self_improve.managed_remote_codec import (
     build_managed_remote_proposal_codec,
@@ -138,9 +141,6 @@ from general_ludd.self_improve.managed_runner import (
     _validate_approved_result_identity as _validate_approved_result_identity,
 )
 from general_ludd.self_improve.managed_runner import (
-    _write_atomic_temp as _write_atomic_temp,
-)
-from general_ludd.self_improve.managed_runner import (
     apply_proposal as apply_proposal,
 )
 from general_ludd.self_improve.managed_runtime_evaluation import (
@@ -155,11 +155,6 @@ from general_ludd.self_improve.model_candidate_planner import (
 )
 from general_ludd.self_improve.model_candidate_planner import (
     plan_model_candidates as plan_model_candidates,
-)
-from general_ludd.self_improve.model_candidates import (
-    LOCAL_PROPOSAL_INFRASTRUCTURE_ERROR_MARKER,
-    BackendFailure,
-    BackendInfrastructureError,
 )
 from general_ludd.self_improve.model_lifecycle import (
     ModelAcquisitionError as ModelAcquisitionError,
@@ -191,8 +186,6 @@ from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 from general_ludd.small_models.recommender import map_task_to_capabilities
 
 _MAX_CAPTURE_BYTES: Final = 2_097_152
-_MAX_TASK_BYTES: Final = 262_144
-_MAX_PROPOSAL_BYTES: Final = 1_310_720
 _MAX_REFERENCE_FILES: Final = 128
 _MAX_PROMPT_PATHS: Final = 32
 _MAX_PROMPT_SHARD_BYTES: Final = 16_384
@@ -457,110 +450,6 @@ class MakeRunner:
             flush=True,
         )
         return result
-
-
-def _run_local_proposal_request(
-    runner: _ObservableRunner,
-    model_path: Path,
-    request: str,
-    *,
-    contract: ProposalContract | None = None,
-    envelope: ManagedCandidateProposalEnvelope | None = None,
-    timeout_seconds: float = 300.0,
-) -> str:
-    """Run one bounded request through one isolated parent-owned Make worker."""
-    if not model_path.is_file():
-        raise FileNotFoundError(f"local GGUF is not readable: {model_path}")
-    if not request.strip() or len(request.encode("utf-8")) > _MAX_TASK_BYTES:
-        raise ValueError(f"proposal prompt must contain 1..{_MAX_TASK_BYTES} bytes")
-    if contract is not None and envelope is not None:
-        raise ValueError("proposal contract and envelope are mutually exclusive")
-    if envelope is not None and envelope.request_text != request:
-        raise ValueError("proposal envelope request does not match prompt bytes")
-    timeout = validated_timeout_seconds(timeout_seconds)
-
-    with tempfile.TemporaryDirectory(prefix="gludd-self-improve-proposal-") as raw_exchange:
-        exchange = Path(raw_exchange)
-        prompt_path = exchange / "prompt.txt"
-        proposal_path = exchange / "proposal.json"
-        contract_path = exchange / "contract.json"
-        envelope_path = exchange / "envelope.json"
-        temporary = _write_atomic_temp(prompt_path, request, 0o600, ".prompt-tmp")
-        os.replace(temporary, prompt_path)
-        if contract is not None:
-            contract_temporary = _write_atomic_temp(
-                contract_path,
-                contract.to_json(),
-                0o600,
-                ".contract-tmp",
-            )
-            os.replace(contract_temporary, contract_path)
-        if envelope is not None:
-            envelope_temporary = _write_atomic_temp(
-                envelope_path,
-                envelope.to_json(),
-                0o600,
-                ".envelope-tmp",
-            )
-            os.replace(envelope_temporary, envelope_path)
-        worker_variables = {
-            "SELF_IMPROVE_MODEL_PATH": str(model_path),
-            "SELF_IMPROVE_PROMPT_FILE": str(prompt_path),
-            "SELF_IMPROVE_PROPOSAL_FILE": str(proposal_path),
-        }
-        if contract is not None:
-            worker_variables["SELF_IMPROVE_CONTRACT_FILE"] = str(contract_path)
-        if envelope is not None:
-            worker_variables["SELF_IMPROVE_ENVELOPE_FILE"] = str(envelope_path)
-        result = runner.run_observable(
-            "self-improve-local-proposal",
-            worker_variables,
-            timeout=timeout,
-        )
-        if result.returncode != 0:
-            if result.returncode == 124:
-                raise TimeoutError("local proposal worker timed out")
-            if result.returncode == 3:
-                marker = LOCAL_PROPOSAL_INFRASTRUCTURE_ERROR_MARKER + " "
-                output = result.stdout.splitlines() + result.stderr.splitlines()
-                if any(line.startswith(marker) for line in output):
-                    raise BackendInfrastructureError(BackendFailure.UNAVAILABLE)
-                raise BackendInfrastructureError(BackendFailure.INTERNAL)
-            protocol = (
-                contract.proposal_protocol
-                if contract is not None
-                else (
-                    ProposalContract.from_json(envelope.request_contract_json).proposal_protocol
-                    if envelope is not None
-                    else None
-                )
-            )
-            marker = LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL.error_marker + " "
-            if any(line.startswith(marker) for line in result.stdout.splitlines()):
-                feedback = _validation_retry_feedback(
-                    result.stdout,
-                    proposal_protocol=protocol,
-                )
-                raise ValueError(feedback)
-            diagnostic = result.stderr.strip()[:300]
-            suffix = f" {diagnostic}" if diagnostic else ""
-            raise RuntimeError(
-                f"local proposal worker failed rc={result.returncode}{suffix}"
-            )
-        if (
-            proposal_path.is_symlink()
-            or not proposal_path.is_file()
-            or proposal_path.stat().st_size > _MAX_PROPOSAL_BYTES
-        ):
-            raise RuntimeError(
-                "local proposal worker did not publish one bounded regular file"
-            )
-        try:
-            return proposal_path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as exc:
-            raise RuntimeError(
-                f"local proposal output is not readable UTF-8: {exc}"
-            ) from exc
 
 
 def generate_local_proposal(
@@ -896,6 +785,7 @@ def _prepare_compact_repair_state(
     task: TaskSpec,
     reference: CodexReference,
     required_tests: tuple[str, ...],
+    max_output_tokens: int | None,
 ) -> _CompactRepairState:
     """Validate immutable shard identity and prepare inherited repair state."""
     path_groups = tuple(shard.focus_paths for shard in plan.shards)
@@ -919,6 +809,7 @@ def _prepare_compact_repair_state(
         tests=required_tests,
         make_commands=task.canonical_make_commands,
         proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
+        max_output_tokens=max_output_tokens,
     )
     failing = tuple(
         next_plan
@@ -943,6 +834,7 @@ def _repair_shard_contract(
     state: _CompactRepairState,
     shard: PromptShard,
     candidate_index: int,
+    max_output_tokens: int | None,
 ) -> tuple[str, ProposalContract, PromptPlan]:
     """Bind one repair request before entering the rejectable model boundary."""
     shard_plan = _one_shard_prompt_plan(state.active_plan, shard)
@@ -959,6 +851,7 @@ def _repair_shard_contract(
         repair_state_sha256=compact_v4_repair_shard_state_digest(
             tuple(state.latest[path] for path in state.original_paths if path in state.latest)
         ),
+        max_output_tokens=max_output_tokens,
     )
     return request, contract, shard_plan
 
@@ -1062,6 +955,7 @@ def _run_repair_candidate(
     required_tests: tuple[str, ...],
     state: _CompactRepairState,
     candidate_index: int,
+    max_output_tokens: int | None,
 ) -> _RepairCandidateOutcome:
     """Evaluate one candidate number across all currently failing shards."""
     next_plans: list[PromptPlan] = []
@@ -1077,6 +971,7 @@ def _run_repair_candidate(
             state,
             shard,
             candidate_index,
+            max_output_tokens,
         )
         last_contract = contract
         try:
@@ -1157,10 +1052,17 @@ def _generate_compact_v4_repair_plan_result(
     plan: PromptPlan,
     task: TaskSpec,
     reference: CodexReference,
+    max_output_tokens: int | None,
 ) -> GeneratedProposal:
     """Generate bounded repair shards independently and freeze each valid result."""
     required_tests = _required_prompt_tests(task, reference)
-    state = _prepare_compact_repair_state(plan, task, reference, required_tests)
+    state = _prepare_compact_repair_state(
+        plan,
+        task,
+        reference,
+        required_tests,
+        max_output_tokens,
+    )
     for candidate_index in range(COMPACT_V4_REPAIR_CANDIDATE_LIMIT):
         outcome = _run_repair_candidate(
             runner,
@@ -1171,6 +1073,7 @@ def _generate_compact_v4_repair_plan_result(
             required_tests,
             state,
             candidate_index,
+            max_output_tokens,
         )
         result = _finalize_repair_candidate(state, outcome, candidate_index)
         if result is not None:
@@ -1193,6 +1096,7 @@ def _generate_compact_v4_plan_result(
     task: TaskSpec,
     reference: CodexReference,
     required_tests: tuple[str, ...],
+    max_output_tokens: int | None,
 ) -> GeneratedProposal:
     """Decode one initial compact-v4 candidate against trusted snapshots."""
     if not plan.baseline_files:
@@ -1204,6 +1108,7 @@ def _generate_compact_v4_plan_result(
             plan,
             task,
             reference,
+            max_output_tokens,
         )
     path_groups = tuple(shard.focus_paths for shard in plan.shards)
     if any(len(paths) != 1 for paths in path_groups):
@@ -1222,6 +1127,7 @@ def _generate_compact_v4_plan_result(
         proposal_protocol=plan.proposal_protocol,
         sampling_profile=plan.sampling_profile,
         sampling_candidate_index=0,
+        max_output_tokens=max_output_tokens,
     )
     raw = _run_local_proposal_request(runner, model_path, request, contract=contract)
     spans = decode_compact_span_batch(
@@ -1254,6 +1160,7 @@ def _generate_legacy_plan_result(
     task: TaskSpec,
     reference: CodexReference,
     required_tests: tuple[str, ...],
+    max_output_tokens: int | None,
 ) -> GeneratedProposal:
     """Decode and merge legacy proposal shards."""
     request = encode_prompt_batch(
@@ -1268,6 +1175,7 @@ def _generate_legacy_plan_result(
         make_commands=task.canonical_make_commands,
         proposal_protocol=plan.proposal_protocol,
         sampling_profile=plan.sampling_profile,
+        max_output_tokens=max_output_tokens,
     )
     raw = _run_local_proposal_request(runner, model_path, request, contract=contract)
     proposals = decode_proposal_batch(
@@ -1298,6 +1206,7 @@ def _generate_local_proposal_plan_result(
     reference: CodexReference,
     *,
     proposal_codec: ManagedCandidateProposalCodec[GeneratedProposal] | None = None,
+    max_output_tokens: int | None = None,
     timeout_seconds: float = 300.0,
 ) -> GeneratedProposal:
     """Decode all shards and retain only validated compact-v4 repair material."""
@@ -1307,7 +1216,12 @@ def _generate_local_proposal_plan_result(
         if proposal_codec.request_contract_json is None:
             raise ValueError("managed local proposal envelope has no request contract")
         envelope = proposal_codec.worker_envelope
-        ProposalContract.from_json(envelope.request_contract_json)
+        contract = ProposalContract.from_json(envelope.request_contract_json)
+        if (
+            max_output_tokens is not None
+            and contract.max_output_tokens != max_output_tokens
+        ):
+            raise ValueError("managed local proposal output token budget mismatch")
         raw = _run_local_proposal_request(
             runner,
             model_path,
@@ -1328,6 +1242,7 @@ def _generate_local_proposal_plan_result(
             task,
             reference,
             required_tests,
+            max_output_tokens,
         )
     return _generate_legacy_plan_result(
         runner,
@@ -1336,6 +1251,7 @@ def _generate_local_proposal_plan_result(
         task,
         reference,
         required_tests,
+        max_output_tokens,
     )
 
 
@@ -1345,6 +1261,8 @@ def generate_local_proposal_plan(
     plan: PromptPlan,
     task: TaskSpec,
     reference: CodexReference,
+    *,
+    max_output_tokens: int | None = None,
 ) -> ProposalManifest:
     """Decode and merge a plan while preserving the legacy manifest-only API."""
     return _generate_local_proposal_plan_result(
@@ -1353,6 +1271,7 @@ def generate_local_proposal_plan(
         plan,
         task,
         reference,
+        max_output_tokens=max_output_tokens,
     ).proposal
 
 
@@ -2824,6 +2743,8 @@ def _managed_remote_proposal_codec(
     prompt: PromptPlan | str,
     task: TaskSpec,
     reference: CodexReference,
+    *,
+    max_output_tokens: int | None = None,
 ) -> ManagedCandidateProposalCodec[GeneratedProposal] | None:
     """Prepare the exact local-equivalent remote transport and decoder."""
     return build_managed_remote_proposal_codec(
@@ -2833,6 +2754,7 @@ def _managed_remote_proposal_codec(
         required_tests=(
             () if isinstance(prompt, str) else _required_prompt_tests(task, reference)
         ),
+        max_output_tokens=max_output_tokens,
     )
 
 

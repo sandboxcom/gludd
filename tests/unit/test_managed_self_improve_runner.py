@@ -118,10 +118,12 @@ def test_local_candidate_adapter_forwards_the_approved_timeout(tmp_path: Path) -
         _reference: CodexReference,
         *,
         proposal_codec: object | None = None,
+        max_output_tokens: int | None = None,
         timeout_seconds: float | None = None,
     ) -> ProposalManifest:
         observed.update(
             proposal_codec=proposal_codec,
+            max_output_tokens=max_output_tokens,
             timeout_seconds=timeout_seconds,
         )
         return _proposal()
@@ -147,7 +149,11 @@ def test_local_candidate_adapter_forwards_the_approved_timeout(tmp_path: Path) -
         max_output_tokens=64,
         timeout_seconds=30.0,
     ).task_id == "S83.200"
-    assert observed == {"proposal_codec": None, "timeout_seconds": 30.0}
+    assert observed == {
+        "proposal_codec": None,
+        "max_output_tokens": 64,
+        "timeout_seconds": 30.0,
+    }
 
 
 def test_local_candidate_adapter_preserves_typed_worker_timeout(tmp_path: Path) -> None:

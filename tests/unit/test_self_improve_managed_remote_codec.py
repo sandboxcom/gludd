@@ -112,6 +112,37 @@ def test_legacy_string_prompt_cannot_bypass_the_canonical_worker_envelope() -> N
     assert codec is None
 
 
+def test_managed_codec_binds_approved_output_budget_into_shared_envelope() -> None:
+    """Local and remote workers must consume one immutable output-token limit."""
+    plan = PromptPlan(
+        shards=(PromptShard(("src/general_ludd/example.py",), "bounded shard prompt"),),
+        source_bytes=0,
+        proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V3,
+    )
+
+    codec = build_managed_remote_proposal_codec(
+        plan,
+        _task(),
+        _reference(),
+        required_tests=("tests/unit/test_example.py",),
+        max_output_tokens=257,
+    )
+
+    assert codec is not None
+    assert codec.request_contract_json is not None
+    assert json.loads(codec.request_contract_json)["max_output_tokens"] == 257
+    next_budget = build_managed_remote_proposal_codec(
+        plan,
+        _task(),
+        _reference(),
+        required_tests=("tests/unit/test_example.py",),
+        max_output_tokens=258,
+    )
+    assert next_budget is not None
+    assert next_budget.protocol_digest != codec.protocol_digest
+    assert next_budget.envelope_digest != codec.envelope_digest
+
+
 def test_legacy_prompt_batch_uses_the_same_contract_as_local_generation() -> None:
     plan = PromptPlan(
         shards=(
@@ -120,7 +151,12 @@ def test_legacy_prompt_batch_uses_the_same_contract_as_local_generation() -> Non
         source_bytes=0,
         proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V3,
     )
-    codec = _managed_remote_proposal_codec(plan, _task(), _reference())
+    codec = _managed_remote_proposal_codec(
+        plan,
+        _task(),
+        _reference(),
+        max_output_tokens=257,
+    )
     response = _managed_response(
         encode_proposal_batch(
             (_proposal(),),
@@ -353,7 +389,12 @@ def test_local_and_remote_candidates_consume_one_canonical_codec_envelope(
         baseline_files=(("src/general_ludd/example.py", baseline),),
         proposal_protocol=COMPACT_PROPOSAL_PROTOCOL_V4,
     )
-    codec = _managed_remote_proposal_codec(plan, _task(), _reference())
+    codec = _managed_remote_proposal_codec(
+        plan,
+        _task(),
+        _reference(),
+        max_output_tokens=257,
+    )
     assert codec is not None
     response = _managed_response(
         encode_compact_span_batch(
@@ -394,11 +435,24 @@ def test_local_and_remote_candidates_consume_one_canonical_codec_envelope(
         _task(),
         _reference(),
         proposal_codec=codec,
+        max_output_tokens=257,
     )
 
     assert exchanges == [(codec.request_text, codec.worker_envelope.to_json())]
     assert local == codec.decoder(response)
     assert len(codec.envelope_digest) == 64
+
+    with pytest.raises(ValueError, match="output token budget mismatch"):
+        runtime_module._generate_local_proposal_plan_result(
+            MakeRunner(tmp_path),
+            model_path,
+            plan,
+            _task(),
+            _reference(),
+            proposal_codec=codec,
+            max_output_tokens=258,
+        )
+    assert exchanges == [(codec.request_text, codec.worker_envelope.to_json())]
 
 
 def test_compact_batch_schema_stays_bounded_across_maximum_shards() -> None:

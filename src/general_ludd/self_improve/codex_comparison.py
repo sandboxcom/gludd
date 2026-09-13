@@ -100,7 +100,7 @@ _PROPOSAL_JSON_SCHEMA: dict[str, object] = {
 COMPACT_PROPOSAL_PROTOCOL_V3 = "self-improve-compact-proposal-v3"
 COMPACT_PROPOSAL_PROTOCOL_V4 = "self-improve-compact-proposal-v4"
 COMPACT_PROPOSAL_CONTRACT_TRANSPORT_PROTOCOL = (
-    "self-improve-local-proposal-contract-file-v2"
+    "self-improve-local-proposal-contract-file-v3"
 )
 _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION = COMPACT_PROPOSAL_PROTOCOL_V3
 _COMPACT_PROPOSAL_PROTOCOL_VERSION = COMPACT_PROPOSAL_PROTOCOL_V4
@@ -1020,6 +1020,7 @@ class ProposalContract:
     sampling_context_sha256: str = ""
     sampling_candidate_index: int = 0
     repair_state_sha256: str = ""
+    max_output_tokens: int | None = None
 
     def __post_init__(self) -> None:
         """Reject malformed contract values before they reach local inference."""
@@ -1044,6 +1045,20 @@ class ProposalContract:
             _COMPACT_PROPOSAL_PROTOCOL_VERSION,
         }:
             raise ValueError("proposal contract compact protocol is unsupported")
+        output_token_ceiling = (
+            _COMPACT_PROPOSAL_TOKENS
+            if self.proposal_protocol == _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION
+            else _COMPACT_SPAN_PROPOSAL_TOKENS
+        )
+        if self.max_output_tokens is not None and (
+            isinstance(self.max_output_tokens, bool)
+            or not isinstance(self.max_output_tokens, int)
+            or not 1 <= self.max_output_tokens <= output_token_ceiling
+        ):
+            raise ValueError(
+                "proposal contract output token budget must be a positive integer "
+                f"no greater than {output_token_ceiling}"
+            )
         if not isinstance(self.sampling_profile, str) or self.sampling_profile not in {
             DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID,
             COMPACT_V4_SYNTAX_REPAIR_SAMPLING_PROFILE_ID,
@@ -1099,6 +1114,7 @@ class ProposalContract:
         sampling_profile: str = DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID,
         sampling_candidate_index: int = 0,
         repair_state_sha256: str = "",
+        max_output_tokens: int | None = None,
     ) -> ProposalContract:
         """Construct a contract whose repair seed commits to canonical request bytes."""
         if (
@@ -1122,6 +1138,7 @@ class ProposalContract:
             tests=tests,
             make_commands=make_commands,
             proposal_protocol=proposal_protocol,
+            max_output_tokens=max_output_tokens,
         )
         if sampling_profile == DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID:
             return base
@@ -1144,6 +1161,7 @@ class ProposalContract:
             sampling_profile=sampling_profile,
             sampling_candidate_index=sampling_candidate_index,
             repair_state_sha256=selected_repair_state_sha256,
+            max_output_tokens=base.max_output_tokens,
         )
         return cls(
             baseline_sha=base.baseline_sha,
@@ -1156,7 +1174,17 @@ class ProposalContract:
             sampling_context_sha256=context_sha256,
             sampling_candidate_index=sampling_candidate_index,
             repair_state_sha256=selected_repair_state_sha256,
+            max_output_tokens=base.max_output_tokens,
         )
+
+    @property
+    def proposal_output_token_budget(self) -> int:
+        """Return the explicit budget or the protocol's backward-compatible ceiling."""
+        if self.max_output_tokens is not None:
+            return self.max_output_tokens
+        if self.proposal_protocol == _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION:
+            return _COMPACT_PROPOSAL_TOKENS
+        return _COMPACT_SPAN_PROPOSAL_TOKENS
 
     def verify_sampling_context(self, request: str) -> int:
         """Recompute one transported repair context before local model creation."""
@@ -1172,6 +1200,7 @@ class ProposalContract:
             sampling_profile=self.sampling_profile,
             sampling_candidate_index=self.sampling_candidate_index,
             repair_state_sha256=self.repair_state_sha256,
+            max_output_tokens=self.max_output_tokens,
         )
         if (
             self.sampling_context_sha256 != context_sha256
@@ -1190,6 +1219,8 @@ class ProposalContract:
         }
         if self.proposal_protocol != _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION:
             value["proposal_protocol"] = self.proposal_protocol
+        if self.max_output_tokens is not None:
+            value["max_output_tokens"] = self.max_output_tokens
         if self.sampling_profile != DEFAULT_PROPOSAL_SAMPLING_PROFILE_ID:
             value["sampling_profile"] = self.sampling_profile
             value["sampling_seed"] = self.sampling_seed
@@ -1218,6 +1249,7 @@ class ProposalContract:
             "sampling_seed",
             "sampling_candidate_index",
             "repair_state_sha256",
+            "max_output_tokens",
         }
         if (
             not isinstance(value, dict)
@@ -1265,6 +1297,7 @@ class ProposalContract:
                 value.get("sampling_candidate_index", 0),
             ),
             repair_state_sha256=cast(str, value.get("repair_state_sha256", "")),
+            max_output_tokens=cast(int | None, value.get("max_output_tokens")),
         )
 
 
@@ -1510,6 +1543,7 @@ def _derive_repair_sampling_context(
     sampling_profile: str,
     sampling_candidate_index: int,
     repair_state_sha256: str,
+    max_output_tokens: int | None,
 ) -> tuple[str, int]:
     """Commit a finite llama seed to canonical immutable repair inputs."""
     if not isinstance(request, str):
@@ -1520,17 +1554,20 @@ def _derive_repair_sampling_context(
         or encode_prompt_batch(prompts, protocol_digest=protocol_digest) != request
     ):
         raise ValueError("repair sampling requires a canonical prompt batch")
+    contract_context: dict[str, object] = {
+        "baseline_sha": baseline_sha,
+        "make_commands": list(make_commands),
+        "proposal_protocol": proposal_protocol,
+        "repair_state_sha256": repair_state_sha256,
+        "sampling_profile": sampling_profile,
+        "task_id": task_id,
+        "tests": list(tests),
+    }
+    if max_output_tokens is not None:
+        contract_context["max_output_tokens"] = max_output_tokens
     canonical_context = json.dumps(
         {
-            "contract": {
-                "baseline_sha": baseline_sha,
-                "make_commands": list(make_commands),
-                "proposal_protocol": proposal_protocol,
-                "repair_state_sha256": repair_state_sha256,
-                "sampling_profile": sampling_profile,
-                "task_id": task_id,
-                "tests": list(tests),
-            },
+            "contract": contract_context,
             "prompt_batch_sha256": hashlib.sha256(request.encode("utf-8")).hexdigest(),
             "protocol": COMPACT_V4_REPAIR_SEED_DERIVATION_POLICY_ID,
         },
@@ -3358,6 +3395,7 @@ class LocalProposalGateway:
             contract.sampling_profile,
             sampling_seed=contract.sampling_seed,
         )
+        budget = contract.proposal_output_token_budget
         output = model.create_chat_completion(
             messages=[
                 {
@@ -3366,12 +3404,11 @@ class LocalProposalGateway:
                 },
                 {"role": "user", "content": _model_visible_compact_prompt(prompt)},
             ],
-            max_tokens=_COMPACT_PROPOSAL_TOKENS if legacy else _COMPACT_SPAN_PROPOSAL_TOKENS,
+            max_tokens=budget,
             response_format={"type": "json_object", "schema": schema},
             grammar=self._grammar_for_schema(schema),
             **sampling_arguments,
         )
-        budget = _COMPACT_PROPOSAL_TOKENS if legacy else _COMPACT_SPAN_PROPOSAL_TOKENS
         text = _completion_text(
             output,
             phase="proposal",
@@ -3443,8 +3480,7 @@ class LocalProposalGateway:
             raise ValueError("proposal envelope requires chat-completion support")
         chat_model = cast("_ChatLocalModel", model)
         self._run_structured_canary(chat_model, contract.proposal_protocol)
-        legacy = contract.proposal_protocol == _LEGACY_COMPACT_PROPOSAL_PROTOCOL_VERSION
-        budget = _COMPACT_PROPOSAL_TOKENS if legacy else _COMPACT_SPAN_PROPOSAL_TOKENS
+        budget = contract.proposal_output_token_budget
         output = chat_model.create_chat_completion(
             messages=[
                 {"role": "system", "content": response_instruction},
