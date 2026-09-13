@@ -790,7 +790,9 @@ def test_gpu_attestor_requires_positive_exact_revision_metric_and_exact_sdk_quer
             "interval": "PT1M",
             "metricnames": "GpuUtilizationPercentage",
             "aggregation": "Maximum",
-            "filter": f"revisionName eq '{identity.revision_name}'",
+            "filter": (
+                f"revisionName eq '{identity.revision_name}' and podName eq '*'"
+            ),
             "metricnamespace": "Microsoft.App/containerapps",
             "validate_dimensions": True,
         }
@@ -994,6 +996,7 @@ def test_gpu_attestor_classifies_monitor_failures_without_provider_text(
         attestor.attest(identity)
 
     assert captured.value.failure is expected
+    assert captured.value.http_status == status_code
     assert secret not in str(captured.value)
     assert secret not in repr(captured.value)
 

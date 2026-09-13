@@ -831,6 +831,21 @@ Missing, null, multiple, foreign-revision, nonfinite, and out-of-range evidence 
 fails closed. A paid retry remains necessary because this canary provided Azure
 inference and safe lifecycle evidence, not positive GPU proof or an accepted change.
 
+A later 4,037-input-token/246-output-token diagnostic canary proved that the next
+failure occurred before metric parsing: no response-invariant rejection event was
+emitted. Backend traces now preserve a validated Monitor HTTP status and one
+allowlisted attestation reason while continuing to discard provider-controlled text.
+The official
+[Container Apps metric table](https://learn.microsoft.com/en-us/azure/azure-monitor/reference/supported-metrics/microsoft-app-containerapps-metrics)
+defines both `revisionName` and `podName` dimensions for
+`GpuUtilizationPercentage`, and the official
+[MetricsOperations filter contract](https://learn.microsoft.com/en-us/python/api/azure-mgmt-monitor/azure.mgmt.monitor.operations.metricsoperations?view=azure-python)
+requires dimensions not narrowed to a single value to be explicitly selected or
+rolled up. The exact query therefore binds the owner-verified revision and explicitly
+selects all pods instead of sending an incomplete one-dimension filter. The hermetic
+Azure profile remains green at 1,024 tests, 92% aggregate coverage, and at least 75%
+in every one of its 54 measured files. A live retry is still the acceptance boundary.
+
 #### Parent-owned per-ordinal proposal scope (2026-09-13)
 
 The live rejection exposed a decoder/schema mismatch. The managed schema previously

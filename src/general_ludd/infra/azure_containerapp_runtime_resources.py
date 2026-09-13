@@ -186,6 +186,7 @@ class _GPUAttestedBackend:
         request_number: int,
         envelope_digest: str | None,
         reason: str | None = None,
+        http_status: int = 0,
     ) -> None:
         emit_failure(
             self._trace_sink,
@@ -196,6 +197,7 @@ class _GPUAttestedBackend:
                 request_number=request_number,
                 failure=failure,
                 reason=reason,
+                http_status=http_status,
             ),
         )
 
@@ -236,11 +238,17 @@ class _GPUAttestedBackend:
                 if isinstance(error, AzureGPUUtilizationAttestationError)
                 else None
             )
+            http_status = (
+                error.http_status
+                if isinstance(error, AzureGPUUtilizationAttestationError)
+                else 0
+            )
             self._attestation_failed(
                 error.failure,
                 request_number,
                 envelope_digest,
                 reason,
+                http_status,
             )
             raise BackendInfrastructureError(error.failure) from None
         except Exception:

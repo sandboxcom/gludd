@@ -1003,6 +1003,7 @@ def test_gpu_attestation_failure_blocks_response_and_remains_censored() -> None:
             raise AzureGPUUtilizationAttestationError(
                 BackendFailure.INVALID_RESPONSE,
                 AzureGPUMetricResponseReason.METRIC_UNIT_MISMATCH,
+                http_status=400,
             )
 
     backend = resources_module._GPUAttestedBackend(
@@ -1027,6 +1028,7 @@ def test_gpu_attestation_failure_blocks_response_and_remains_censored() -> None:
     ]
     assert traces[-1].failure is BackendFailure.INVALID_RESPONSE
     assert traces[-1].reason == "metric_unit_mismatch"
+    assert traces[-1].http_status == 400
     backend.close()
     backend.close()
     assert calls.count("backend.close") == 1

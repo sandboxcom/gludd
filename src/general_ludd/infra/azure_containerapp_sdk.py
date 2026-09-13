@@ -86,6 +86,8 @@ class AzureGPUUtilizationAttestationError(BackendInfrastructureError):
         self,
         failure: BackendFailure,
         reason: AzureGPUMetricResponseReason | None = None,
+        *,
+        http_status: int = 0,
     ) -> None:
         """Retain only the typed backend class and content-free invariant."""
         if reason is not None and (
@@ -93,8 +95,15 @@ class AzureGPUUtilizationAttestationError(BackendInfrastructureError):
             or failure is not BackendFailure.INVALID_RESPONSE
         ):
             raise ValueError("metric response reason requires invalid_response")
+        if (
+            isinstance(http_status, bool)
+            or not isinstance(http_status, int)
+            or (http_status != 0 and not 100 <= http_status <= 599)
+        ):
+            raise ValueError("http_status must be zero or a valid HTTP status")
         super().__init__(failure)
         self.reason = reason.value if reason is not None else None
+        self.http_status = http_status
 
 
 @dataclass(frozen=True, slots=True)
@@ -996,13 +1005,18 @@ class AzureContainerAppGPUUtilizationAttestor:
                     interval="PT1M",
                     metricnames=_GPU_METRIC_NAME,
                     aggregation="Maximum",
-                    filter=f"revisionName eq '{identity.revision_name}'",
+                    filter=(
+                        f"revisionName eq '{identity.revision_name}' "
+                        "and podName eq '*'"
+                    ),
                     metricnamespace=_GPU_METRIC_NAMESPACE,
                     validate_dimensions=True,
                 )
             except Exception as error:
+                http_status = _status_code(error) or 0
                 raise AzureGPUUtilizationAttestationError(
-                    _gpu_monitor_failure(error)
+                    _gpu_monitor_failure(error),
+                    http_status=http_status,
                 ) from None
             try:
                 samples = _positive_metric_values(response, identity.revision_name)
