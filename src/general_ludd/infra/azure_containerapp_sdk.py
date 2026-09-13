@@ -1027,7 +1027,7 @@ class AzureContainerAppGPUUtilizationAttestor:
                     aggregation="Maximum",
                     filter="revisionName eq '*'",
                     metricnamespace=_GPU_METRIC_NAMESPACE,
-                    validate_dimensions=True,
+                    validate_dimensions=False,
                 )
             except Exception as error:
                 http_status = _status_code(error) or 0
