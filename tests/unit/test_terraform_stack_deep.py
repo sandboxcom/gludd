@@ -355,7 +355,12 @@ class TestOutputDefinitions:
         parsed = _parse_output_blocks(outputs_tf)
         parsed.update(_parse_output_blocks(main_tf))
         if stack_name in LIFECYCLE_STACKS:
-            assert set(parsed) == {"environment_id", "cleanup_boundary"}
+            assert set(parsed) == {
+                "environment_id",
+                "cleanup_boundary",
+                "runtime_class",
+            }
+            assert '"control-plane"' in parsed["runtime_class"]
             return
         id_match = set(OUTPUT_ID_VARIANTS) & set(parsed)
         url_match = set(OUTPUT_URL_VARIANTS) & set(parsed)
