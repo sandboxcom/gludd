@@ -14,12 +14,11 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any, Final
 
-from general_ludd.infra.azure_idle_retention import (
+from ansible_collections.general_ludd.azure.plugins.module_utils.containerapp_retention import (
     AzureIdleRetentionPolicy,
     AzureProvisioningLatencyEvidence,
     AzureRetentionPreset,
-    container_apps_consumption_layers,
-    plan_azure_idle_retention,
+    plan_container_apps_idle_retention,
 )
 
 _PROTOCOL: Final = "gludd-azure-containerapp-observation-v1"
@@ -626,8 +625,10 @@ def plan_containerapp_idle_retention(request: object) -> dict[str, object]:
         else _integer(expected_raw, "expected_next_demand_seconds")
     )
     observed_at = _utc_timestamp(value.get("now"), "now")
-    layers = container_apps_consumption_layers(
-        observed_at=observed_at,
+    plan = plan_container_apps_idle_retention(
+        policy=policy,
+        scope_digest=_digest(value.get("scope_digest"), "scope_digest"),
+        now=observed_at,
         environment_latency=_latency_evidence(
             value.get("environment_latency"),
             "environment_latency",
@@ -657,12 +658,6 @@ def plan_containerapp_idle_retention(request: object) -> dict[str, object]:
             value.get("has_paid_logging"),
             "has_paid_logging",
         ),
-    )
-    plan = plan_azure_idle_retention(
-        layers,
-        policy=policy,
-        scope_digest=_digest(value.get("scope_digest"), "scope_digest"),
-        now=observed_at,
         runnable_todo_count=_integer(
             value.get("runnable_todo_count"),
             "runnable_todo_count",
