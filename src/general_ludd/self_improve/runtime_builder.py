@@ -48,19 +48,16 @@ class _ConfiguredAzureBootstrapWiring(Protocol):
     """Minimal configured Azure wiring exposed by the runtime composition API."""
 
     @property
-    def policy(self) -> LiveCandidateWiringPolicy:
-        """Return the immutable live-candidate policy."""
+    def policy(self) -> LiveCandidateWiringPolicy: ...
 
     @property
-    def bootstrap_factory(self) -> ContainerAppCandidateBootstrapFactory:
-        """Return the environment bootstrap factory."""
+    def bootstrap_factory(self) -> ContainerAppCandidateBootstrapFactory: ...
 
 
 class _RepositoryBindable(Protocol):
     """Repository binding exposed by the concrete managed service."""
 
-    def bind_repository(self, repo_root: Path) -> None:
-        """Bind the service to one canonical repository."""
+    def bind_repository(self, repo_root: Path) -> None: ...
 
 
 class _RuntimeCompositionApi(Protocol):

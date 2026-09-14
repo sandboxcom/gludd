@@ -1,10 +1,4 @@
-"""Approval-bound orchestration for managed local self-improvement attempts.
-
-This module owns the reusable state machine between an immutable human-approved
-plan and bounded local-model attempts.  Repository mutation and evaluation stay
-behind injected callables so daemon and worker integrations can supply their own
-execution boundary without importing the command-line script.
-"""
+"""Approval-bound orchestration for managed local self-improvement attempts."""
 
 from __future__ import annotations
 

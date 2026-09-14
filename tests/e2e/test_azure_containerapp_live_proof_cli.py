@@ -1721,6 +1721,8 @@ def test_azure_containerapp_coverage_has_one_local_and_hosted_contract() -> None
     assert "tests/unit/test_azure_containerapp_environment_terraform.py" in recipe
     assert "tests/unit/test_azure_idle_retention.py" in recipe
     assert "tests/unit/test_azure_containerapp_owned_lifecycle.py" in recipe
+    assert "tests/unit/test_azure_containerapp_gpu_backend.py" in recipe
+    assert "tests/unit/test_azure_containerapp_resource_owner.py" in recipe
     assert "tests/unit/test_azure_containerapp_runtime_resources.py" in recipe
     assert "tests/unit/test_azure_containerapp_sdk.py" in recipe
     assert "tests/unit/test_azure_containerapp_terraform_executor.py" in recipe
@@ -1763,6 +1765,8 @@ def test_azure_containerapp_coverage_has_one_local_and_hosted_contract() -> None
     assert "azure_containerapp_environment_state.py" in coverage_config
     assert "azure_containerapp_owned_candidate.py" in coverage_config
     assert "azure_containerapp_owned_lifecycle.py" in coverage_config
+    assert "azure_containerapp_gpu_backend.py" in coverage_config
+    assert "azure_containerapp_resource_owner.py" in coverage_config
     assert "azure_containerapp_runtime_resources.py" in coverage_config
     assert "azure_containerapp_sdk.py" in coverage_config
     assert "azure_containerapp_terraform_executor.py" in coverage_config
