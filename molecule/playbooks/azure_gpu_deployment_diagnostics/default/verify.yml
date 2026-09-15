@@ -1,0 +1,92 @@
+---
+- name: Verify Azure GPU diagnostic artifacts and decisions
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    artifact_dir: /tmp/gludd-azure-gpu-diagnostics-molecule
+  tasks:
+    - name: Load independent Molecule result artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact_dir }}/molecule-results.json"
+      register: result_bytes
+
+    - name: Parse result artifact
+      ansible.builtin.set_fact:
+        result: "{{ result_bytes.content | b64decode | from_json }}"
+
+    - name: Verify healthy deployment decision
+      ansible.builtin.assert:
+        that:
+          - result.healthy.status == 'ready'
+          - result.healthy.decision.action == 'use_deployment'
+          - result.healthy.replica_inventory.exact_replica_count == 1
+          - result.healthy.replica_inventory.ready_container_count == 1
+          - result.healthy.cleanup.verdict == 'zero_cost_retained'
+
+    - name: Verify quota-blocked decision
+      ansible.builtin.assert:
+        that:
+          - result.quota_blocked.status == 'blocked'
+          - result.quota_blocked.decision.reason_class == 'quota_exhausted'
+          - result.quota_blocked.decision.action == 'request_quota'
+
+    - name: Verify transient capacity uses the remaining retry budget
+      ansible.builtin.assert:
+        that:
+          - result.retry_same_profile.decision.action == 'retry_same_profile'
+          - result.retry_same_profile.decision.reason_class == 'capacity_unavailable'
+          - result.retry_same_profile.decision.retry_attempt == 1
+          - result.retry_same_profile.decision.retry_limit == 3
+          - result.retry_same_profile.decision.quality_evidence_action == 'censor_model_score'
+
+    - name: Verify image failure repairs deployment rather than changing profile
+      ansible.builtin.assert:
+        that:
+          - result.repair_deployment.decision.action == 'repair_deployment'
+          - result.repair_deployment.decision.reason_class == 'image_pull'
+          - result.repair_deployment.replica_inventory.summary_matches_exact == true
+          - result.repair_deployment.replica_inventory.restart_count == 1
+          - result.repair_deployment.decision.quality_evidence_action == 'censor_model_score'
+
+    - name: Verify summary mismatch triggers bounded profile failover
+      ansible.builtin.assert:
+        that:
+          - result.replica_summary_mismatch.replica_inventory.summary_replica_count == 1
+          - result.replica_summary_mismatch.replica_inventory.exact_replica_count == 0
+          - result.replica_summary_mismatch.replica_inventory.summary_matches_exact == false
+          - result.replica_summary_mismatch.decision.action == 'failover_profile'
+          - result.failover_profile == 'gpu-profile-fallback'
+          - result.replica_summary_mismatch.cleanup.verdict == 'zero_cost_retained'
+
+    - name: Verify cleanup risk overrides an otherwise bounded run
+      ansible.builtin.assert:
+        that:
+          - result.cleanup_required.cleanup.verdict == 'cleanup_required'
+          - result.cleanup_required.cleanup.cost_bearing == true
+          - result.cleanup_required.status == 'cleanup_required'
+
+    - name: Verify raw provider fields never enter diagnostic artifacts
+      ansible.builtin.assert:
+        that:
+          - result.raw_input_rejected == true
+          - result | to_json is not search('forbidden-sensitive-provider-content')
+          - result | to_json is not search('provider_message')
+
+    - name: Load role-generated sanitized evidence artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact_dir }}/azure_gpu_diagnostics.json"
+      register: evidence_bytes
+
+    - name: Verify role artifact contains only normalized evidence
+      ansible.builtin.assert:
+        that:
+          - evidence_bytes.content | b64decode is not search('provider_message')
+          - evidence_bytes.content | b64decode is not search('raw_message')
+          - evidence_bytes.content | b64decode is not search('credential')
+          - evidence_bytes.content | b64decode is not search('access_token')
+
+    - name: Remove scenario artifacts
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: absent
