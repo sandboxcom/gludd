@@ -320,6 +320,78 @@ def request_json(
         raise BackendInfrastructureError(_failure_for_exception(error)) from None
 
 
+def response_text(
+    response: object,
+    *,
+    maximum_bytes: int,
+    content_types: frozenset[str],
+) -> str:
+    """Decode one bounded UTF-8 response without retaining provider text."""
+    try:
+        typed_response = cast(_HTTPResponse, response)
+        status_code = typed_response.status_code
+        failure = _status_failure(status_code)
+        if failure is not None:
+            raise ContainerAppTransportResponseError(
+                failure,
+                ContainerAppResponseFailure.HTTP_STATUS,
+                http_status=(
+                    status_code
+                    if isinstance(status_code, int) and not isinstance(status_code, bool)
+                    else 0
+                ),
+            )
+        content_type = typed_response.headers.get("content-type", "")
+        if (
+            not isinstance(content_type, str)
+            or content_type.partition(";")[0].strip().casefold() not in content_types
+        ):
+            raise ContainerAppTransportResponseError(
+                BackendFailure.INVALID_RESPONSE,
+                ContainerAppResponseFailure.CONTENT_TYPE,
+            )
+        raw = typed_response.content
+        if not isinstance(raw, bytes) or len(raw) > maximum_bytes:
+            raise ContainerAppTransportResponseError(
+                BackendFailure.INVALID_RESPONSE,
+                ContainerAppResponseFailure.RESPONSE_BODY,
+            )
+        return raw.decode("utf-8")
+    except BackendInfrastructureError:
+        raise
+    except Exception:
+        raise ContainerAppTransportResponseError(
+            BackendFailure.INVALID_RESPONSE,
+            ContainerAppResponseFailure.RESPONSE_BODY,
+        ) from None
+
+
+def request_text(
+    operation: Callable[..., object],
+    path: str,
+    *,
+    timeout_seconds: float,
+    maximum_bytes: int,
+    content_types: frozenset[str],
+) -> str:
+    """Invoke one non-redirecting HTTP operation and decode bounded text."""
+    try:
+        response = operation(
+            path,
+            timeout=timeout_seconds,
+            follow_redirects=False,
+        )
+        return response_text(
+            response,
+            maximum_bytes=maximum_bytes,
+            content_types=content_types,
+        )
+    except BackendInfrastructureError:
+        raise
+    except Exception as error:
+        raise BackendInfrastructureError(_failure_for_exception(error)) from None
+
+
 def _validate_model_inventory(
     payload: object,
     identity: AzureContainerAppCandidateIdentity,
@@ -492,5 +564,7 @@ __all__ = (
     "new_httpx_client",
     "probe_model",
     "request_json",
+    "request_text",
+    "response_text",
     "validated_chat_response",
 )

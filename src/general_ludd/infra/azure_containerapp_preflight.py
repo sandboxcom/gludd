@@ -10,6 +10,7 @@ from general_ludd.infra.azure_containerapp_arm import (
     AzureContainerAppARMError,
 )
 from general_ludd.infra.azure_containerapp_gpu import (
+    AzureContainerAppGPUProfile,
     AzureContainerAppGPUUnavailable,
     GPUProfileSelection,
     ModelServingRequirement,
@@ -237,7 +238,10 @@ class AzureContainerAppReadOnlyPreflight:
         try:
             parsed = _parse_workload_profile_state(payload, workload_profile_name)
         except AzureContainerAppEvidenceError as exc:
-            if exc.reason != "workload_profile_state_missing":
+            if exc.reason not in {
+                "workload_profile_state_incomplete",
+                "workload_profile_state_missing",
+            }:
                 self._refuse(location, exc.reason, str(exc))
             _emit(
                 self._trace_sink,
@@ -309,6 +313,7 @@ class AzureContainerAppReadOnlyPreflight:
         workload_profile_name: str,
         location: str,
         requirement: ModelServingRequirement,
+        hardware_profiles: tuple[AzureContainerAppGPUProfile, ...] | None = None,
     ) -> AzureContainerAppPreflightResult:
         """Return immutable readiness evidence or fail closed before deployment."""
         _validate_path_inputs(
@@ -319,7 +324,10 @@ class AzureContainerAppReadOnlyPreflight:
             location,
         )
         try:
-            selection = select_smallest_sufficient_profile(requirement)
+            selection = select_smallest_sufficient_profile(
+                requirement,
+                hardware_profiles=hardware_profiles,
+            )
         except AzureContainerAppGPUUnavailable as exc:
             self._refuse(location, "profile_unavailable", str(exc))
 

@@ -204,18 +204,32 @@ def quota_for_profile(
     return None
 
 
+def _state_count(properties: Mapping[object, object], key: str, label: str) -> int:
+    value = properties.get(key)
+    if value is None:
+        raise ValueError(f"{label}_missing")
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{label}_type_invalid")
+    try:
+        return count(value)
+    except ValueError:
+        raise ValueError(f"{label}_out_of_range") from None
+
+
 def _parse_state_record(value: object) -> _WorkloadProfileState:
     if not isinstance(value, Mapping):
-        raise ValueError
+        raise ValueError("record_invalid")
     name = provider_name(value.get("name"), "workload profile state")
     properties = value.get("properties")
     if not isinstance(properties, Mapping):
-        raise ValueError
-    current = count(properties.get("currentCount"))
-    maximum = count(properties.get("maximumCount"))
-    minimum = count(properties.get("minimumCount"))
-    if minimum > maximum or current > maximum:
-        raise ValueError
+        raise ValueError("properties_invalid")
+    current = _state_count(properties, "currentCount", "current_count")
+    maximum = _state_count(properties, "maximumCount", "maximum_count")
+    minimum = _state_count(properties, "minimumCount", "minimum_count")
+    if minimum > maximum:
+        raise ValueError("minimum_exceeds_maximum")
+    if current > maximum:
+        raise ValueError("current_exceeds_maximum")
     return _WorkloadProfileState(name, current, maximum, minimum)
 
 
@@ -226,26 +240,51 @@ def parse_workload_profile_state(
     """Return one exact workload-profile state and the observed record count."""
     try:
         raw_states = _collection(payload, "workload profile state")
-        states = tuple(_parse_state_record(value) for value in raw_states)
+        matching_states = tuple(
+            value
+            for value in raw_states
+            if isinstance(value, Mapping)
+            and provider_name(value.get("name"), "workload profile state")
+            == expected_profile_name
+        )
     except AzureContainerAppPreflightError as exc:
         raise AzureContainerAppEvidenceError(
             "workload_profile_state_invalid", str(exc)
         ) from None
-    except ValueError:
+    if any(not isinstance(value, Mapping) for value in raw_states):
         raise AzureContainerAppEvidenceError(
             "workload_profile_state_invalid",
             "Azure Container Apps workload profile has invalid state",
-        ) from None
-    matched = next(
-        (state for state in states if state.name == expected_profile_name),
-        None,
-    )
-    if matched is None:
+        )
+    if not matching_states:
         raise AzureContainerAppEvidenceError(
             "workload_profile_state_missing",
             "Azure Container Apps workload profile state is missing",
         )
-    return matched, len(states)
+    if len(matching_states) != 1:
+        raise AzureContainerAppEvidenceError(
+            "workload_profile_state_invalid",
+            "Azure Container Apps workload profile has ambiguous state",
+        )
+    try:
+        matched = _parse_state_record(matching_states[0])
+    except AzureContainerAppPreflightError:
+        raise AzureContainerAppEvidenceError(
+            "workload_profile_state_invalid",
+            "Azure Container Apps workload profile has invalid state",
+        ) from None
+    except ValueError as exc:
+        detail = str(exc) or "record_invalid"
+        if detail.endswith("_missing"):
+            raise AzureContainerAppEvidenceError(
+                "workload_profile_state_incomplete",
+                "Azure Container Apps workload profile state is incomplete",
+            ) from None
+        raise AzureContainerAppEvidenceError(
+            "workload_profile_state_invalid",
+            f"Azure Container Apps workload profile has invalid state: {detail}",
+        ) from None
+    return matched, len(raw_states)
 
 
 __all__ = (

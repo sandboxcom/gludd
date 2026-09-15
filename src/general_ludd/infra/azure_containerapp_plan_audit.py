@@ -5,6 +5,10 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import cast
 
+from general_ludd.infra.azure_containerapp_gpu_canary import (
+    CUDAStartupCommandError,
+    validate_cuda_startup_command,
+)
 from general_ludd.infra.azure_containerapp_live_types import (
     AzureContainerAppLiveProofError,
     AzureContainerAppLiveProofFailure,
@@ -165,6 +169,12 @@ def audit_containerapp_plan(
         container = containers[0]
         if _member(container, "image") != policy.container_image:
             raise ValueError
+        stage = "cuda_startup_command"
+        try:
+            validate_cuda_startup_command(_member(container, "command"))
+        except CUDAStartupCommandError as error:
+            stage = error.reason
+            raise ValueError from None
         stage = "arguments"
         arguments = _member(container, "args")
         _required_argument(arguments, "--model", policy.model_name)

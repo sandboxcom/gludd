@@ -23,6 +23,21 @@ locals {
   selected_profile = local.gpu_profiles[var.gpu_type]
   gpu_profile_type = local.selected_profile.workload_profile_type
   name_suffix      = substr(lower(replace(var.deployment_name, "_", "-")), 0, 32)
+  cuda_startup_canary = <<-PY
+    import os
+    import sys
+
+    import torch
+
+    if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
+        raise SystemExit(70)
+    left = torch.full((64, 64), 2.0, device="cuda")
+    product = torch.mm(left, left)
+    torch.cuda.synchronize()
+    if product[0, 0].item() != 256.0:
+        raise SystemExit(71)
+    os.execvp("vllm", ["vllm", "serve", *sys.argv[1:]])
+  PY
   vllm_args = concat(
     ["--model", var.model_name, "--revision", var.model_revision, "--tokenizer-revision", var.model_revision],
     ["--served-model-name", var.model_name, "--host", "0.0.0.0", "--port", "8000", "--dtype", "half"],
@@ -83,9 +98,10 @@ resource "azapi_resource" "vllm" {
       template = {
         containers = [
           {
-            name  = "vllm-server"
-            image = var.container_image
-            args  = local.vllm_args
+            name    = "vllm-server"
+            image   = var.container_image
+            command = ["python3", "-c", local.cuda_startup_canary]
+            args    = local.vllm_args
             env = [
               {
                 name  = "HOME"

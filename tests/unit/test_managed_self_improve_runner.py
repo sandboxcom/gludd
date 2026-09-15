@@ -475,6 +475,7 @@ def test_managed_runner_derives_complex_task_shape_from_immutable_prompt_plan(
 ) -> None:
     """Bind model selection to trusted files and bytes, never objective wording."""
     observed: list[object] = []
+    observed_input_tokens: list[int | None] = []
     progress: list[str] = []
     manager = _LeaseManager(tmp_path)
     outcomes = _Outcomes()
@@ -493,7 +494,8 @@ def test_managed_runner_derives_complex_task_shape_from_immutable_prompt_plan(
         max_candidates: int,
         on_resolution_failure: object,
     ) -> tuple[PlannedModelCandidate, ...]:
-        del input_tokens, max_candidates, on_resolution_failure
+        del max_candidates, on_resolution_failure
+        observed_input_tokens.append(input_tokens)
         observed.append(task_shape)
         return (candidate,)
 
@@ -556,6 +558,11 @@ def test_managed_runner_derives_complex_task_shape_from_immutable_prompt_plan(
             len(source.encode()) + len(test_source.encode()),
         )
     ]
+    encoded_batch = comparison_module.encode_prompt_batch(
+        tuple(shard.prompt for shard in prompt.shards),
+        protocol_digest=prompt.protocol_digest,
+    )
+    assert observed_input_tokens == [(len(encoded_batch.encode("utf-8")) + 3) // 4]
     assert manager.acquired == ["qwen2.5-coder-1.5b"]
     assert progress[0] == (
         'SELF_IMPROVE_MODEL_PLAN candidates=["qwen2.5-coder-1.5b"] '
@@ -964,6 +971,22 @@ def test_compact_v4_attempt_identity_binds_model_capability_policy(
     )
 
     assert private_cli._attempt_identity_digest(prompt) != original
+
+
+def test_compact_v4_attempt_identity_binds_prompt_size_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A corrected envelope estimate must not inherit failures from the old estimate."""
+    prompt = _compact_v4_prompt()
+    original = managed_runner_module._attempt_identity_digest(prompt)
+
+    monkeypatch.setattr(
+        managed_runner_module,
+        "CANONICAL_BATCH_TOKEN_ESTIMATION_POLICY_ID",
+        "canonical-all-shard-byte-estimate-test-v2",
+    )
+
+    assert managed_runner_module._attempt_identity_digest(prompt) != original
 
 
 def test_compact_v4_attempt_identity_binds_syntax_repair_policy(

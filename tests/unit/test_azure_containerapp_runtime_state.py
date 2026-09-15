@@ -7,6 +7,7 @@ from general_ludd.infra.azure_containerapp_runtime_state import (
     _bounded_status_count,
     _environment_ready,
     _event_value,
+    _revision_progress,
     _revision_state,
     _with_ready_revision,
 )
@@ -33,6 +34,67 @@ def test_provider_controlled_state_is_reduced_to_fixed_safe_values() -> None:
             }
         }
     ).terminal is False
+
+
+def test_revision_capacity_reason_is_terminal_without_provider_text() -> None:
+    state = _revision_state(
+        {
+            "properties": {
+                "active": True,
+                "replicas": 0,
+                "healthState": "None",
+                "provisioningState": "Provisioned",
+                "runningState": "Unknown",
+                "reasonClasses": ["capacity_exhausted"],
+            }
+        }
+    )
+
+    assert state.terminal is True
+    assert state.reasons == ("capacity_exhausted",)
+    assert _revision_progress(state) == (
+        "azure_containerapp_revision_poll phase=readiness state=terminal "
+        "provisioning_state=Provisioned health_state=None "
+        "running_state=Unknown replicas=0 reason=capacity_exhausted"
+    )
+
+
+def test_revision_startup_timeout_reason_is_terminal_without_provider_text() -> None:
+    """A provider deployment deadline must stop polling with a fixed reason."""
+    state = _revision_state(
+        {
+            "properties": {
+                "active": True,
+                "replicas": 0,
+                "healthState": "None",
+                "provisioningState": "Provisioning",
+                "runningState": "Processing",
+                "reasonClasses": ["startup_timeout"],
+            }
+        }
+    )
+
+    assert state.terminal is True
+    assert state.reasons == ("startup_timeout",)
+    assert "reason=startup_timeout" in _revision_progress(state)
+
+
+def test_revision_progress_prefers_actionable_terminal_reason_over_initializing() -> None:
+    """Supplementary terminal evidence must not collapse to an opaque multiple."""
+    state = _revision_state(
+        {
+            "properties": {
+                "active": True,
+                "replicas": 1,
+                "healthState": "Unhealthy",
+                "provisioningState": "Failed",
+                "runningState": "Failed",
+                "reasonClasses": ["image_initializing", "startup_timeout"],
+            }
+        }
+    )
+
+    assert "reason=startup_timeout" in _revision_progress(state)
 
 
 def test_environment_and_count_normalizers_reject_ambiguous_values() -> None:

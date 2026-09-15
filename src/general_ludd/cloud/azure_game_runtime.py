@@ -83,6 +83,7 @@ def resolve_public_ipv4_cidr() -> str:
             "https://api4.ipify.org",
             params={"format": "json"},
             timeout=10.0,
+            trust_env=False,
         )
         response.raise_for_status()
         address = ipaddress.ip_address(str(response.json()["ip"]))

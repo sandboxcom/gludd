@@ -42,7 +42,11 @@ from general_ludd.infra.azure_containerapp_environment_lifecycle import (
 from general_ludd.infra.azure_containerapp_environment_make_runtime import (
     AzureContainerAppEnvironmentTerraformRuntime,
 )
-from general_ludd.infra.azure_containerapp_gpu import ModelServingRequirement
+from general_ludd.infra.azure_containerapp_gpu import (
+    T4_PROFILE,
+    ModelServingRequirement,
+)
+from general_ludd.infra.azure_containerapp_gpu_canary import CUDA_STARTUP_COMMAND
 from general_ludd.infra.azure_containerapp_live_proof import (
     AzureContainerAppLiveProofError,
     AzureContainerAppLiveProofPolicy,
@@ -96,7 +100,9 @@ from general_ludd.self_improve.azure_containerapp_backend import (
     build_azure_containerapp_candidate_backend,
 )
 from general_ludd.self_improve.azure_containerapp_bootstrap_planning import (
+    azure_bootstrap_legacy_owner_digests,
     azure_bootstrap_owner_digest,
+    azure_resource_group_owner_digest,
 )
 from general_ludd.self_improve.model_candidates import (
     AzureContainerAppCandidateIdentity,
@@ -284,6 +290,7 @@ def _policy(
             cast(str, args.acknowledgement) if bool(args.live) else None
         ),
         min_replicas=1,
+        gpu_profile=T4_PROFILE,
     )
 
 
@@ -361,6 +368,7 @@ def _hermetic_plan(policy: AzureContainerAppLiveProofPolicy) -> dict[str, object
                                     "containers": [
                                         {
                                             "image": policy.container_image,
+                                            "command": list(CUDA_STARTUP_COMMAND),
                                             "args": [
                                                 "--model",
                                                 policy.model_name,
@@ -441,12 +449,17 @@ def _default_live_resources(
         or environment_policy.location != policy.location
     ):
         raise ValueError("Azure environment policy does not match the approved deployment")
+    project_root = Path(cast(str, args.project_root)).resolve(strict=True)
     ensure_azure_resource_group(
         AzureResourceGroupBootstrapPolicy(
             subscription_id=policy.subscription_id,
             resource_group=policy.resource_group,
             location=policy.location,
-            owner_digest=environment_policy.owner_digest,
+            owner_digest=azure_resource_group_owner_digest(project_root, policy),
+            legacy_owner_digests=azure_bootstrap_legacy_owner_digests(
+                project_root,
+                policy,
+            ),
         ),
         credentials,
         trace_sink=lambda event: _trace(

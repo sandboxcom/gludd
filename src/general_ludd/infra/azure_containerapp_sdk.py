@@ -7,15 +7,18 @@ Azure Monitor metric query bound to the deployed Container App revision.
 
 from __future__ import annotations
 
+import json
 import math
 import re
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from threading import RLock
 from typing import Any, Protocol, cast
+from urllib.parse import urlsplit
 
 from general_ludd.infra.azure_containerapp_arm import (
     ENVIRONMENT_PREFLIGHT_API_VERSION,
@@ -31,11 +34,28 @@ from general_ludd.self_improve.model_candidates import (
 )
 
 _GPU_METRIC_NAME = "GpuUtilizationPercentage"
-_GPU_METRIC_NAMESPACE = "Microsoft.App/containerapps"
 _MAX_COLLECTION_ITEMS = 512
 _MAX_METRIC_POINTS = 10_000
 _MAX_TOKEN_CHARS = 8192
 _MAX_STATUS_DETAIL_CHARS = 4096
+_MAX_SYSTEM_EVENT_LINES = 300
+_MAX_SYSTEM_EVENT_LINE_CHARS = 65_536
+_MAX_SYSTEM_EVENT_NESTING = 4
+_SYSTEM_EVENT_DETAIL_FIELDS = frozenset(
+    {
+        "errorcode",
+        "log",
+        "log_s",
+        "message",
+        "reason",
+        "runningstatedetails",
+    }
+)
+_SYSTEM_EVENT_APP_FIELDS = frozenset({"containerappname", "containerappname_s"})
+_SYSTEM_EVENT_REVISION_FIELDS = frozenset({"revisionname", "revisionname_s"})
+_SYSTEM_EVENT_SEVERITY_FIELDS = frozenset(
+    {"loglevel", "loglevel_s", "type", "type_s"}
+)
 _REPLICA_RUNNING_STATES = frozenset(
     {"Running", "NotRunning", "Unknown"}
 )
@@ -77,6 +97,11 @@ class AzureGPUMetricResponseReason(StrEnum):
     SAMPLE_COUNT_EXCEEDED = "sample_count_exceeded"
     RESPONSE_SHAPE_INVALID = "response_shape_invalid"
     EVIDENCE_CONTRACT_INVALID = "evidence_contract_invalid"
+    METRIC_UNAVAILABLE = "metric_unavailable"
+    METRIC_NAMESPACE_REJECTED = "metric_namespace_rejected"
+    METRIC_FILTER_REJECTED = "metric_filter_rejected"
+    METRIC_INTERVAL_REJECTED = "metric_interval_rejected"
+    METRIC_AGGREGATION_REJECTED = "metric_aggregation_rejected"
     METRIC_QUERY_REJECTED = "metric_query_rejected"
 
 
@@ -239,6 +264,75 @@ def _gpu_monitor_failure(error: BaseException) -> BackendFailure:
     if status_code is not None and 400 <= status_code < 500:
         return BackendFailure.INVALID_RESPONSE
     return BackendFailure.TRANSPORT
+
+
+def _provider_error_fragments(value: object, *, depth: int = 0) -> tuple[str, ...]:
+    """Read only bounded Azure error fields for immediate local classification."""
+    if depth > 3:
+        return ()
+    if type(value) is str:
+        return (value[:_MAX_STATUS_DETAIL_CHARS],)
+    if isinstance(value, Mapping):
+        if len(value) > 32:
+            return ()
+        fragments: list[str] = []
+        for key in ("code", "message", "error", "details", "innererror", "target"):
+            if key in value:
+                fragments.extend(
+                    _provider_error_fragments(value[key], depth=depth + 1)
+                )
+        return tuple(fragments[:32])
+    if (
+        isinstance(value, Sequence)
+        and not isinstance(value, (str, bytes, bytearray))
+        and len(value) <= 16
+    ):
+        fragments = []
+        for item in value:
+            fragments.extend(_provider_error_fragments(item, depth=depth + 1))
+        return tuple(fragments[:32])
+    return ()
+
+
+def _gpu_bad_request_reason(
+    error: BaseException,
+) -> AzureGPUMetricResponseReason | None:
+    """Classify known Monitor validation text without retaining or emitting it."""
+    fragments: list[str] = []
+    provider_error = getattr(error, "error", None)
+    for value in (provider_error, error):
+        message = getattr(value, "message", None)
+        if isinstance(message, str):
+            fragments.append(message[:_MAX_STATUS_DETAIL_CHARS])
+    response = getattr(error, "response", None)
+    response_json = getattr(response, "json", None)
+    if callable(response_json):
+        with suppress(Exception):
+            fragments.extend(_provider_error_fragments(response_json()))
+    if not fragments:
+        try:
+            fragments.append(str(error)[:_MAX_STATUS_DETAIL_CHARS])
+        except Exception:
+            return None
+    detail = " ".join(fragments).casefold()
+    rejected = ("invalid", "not found", "not supported", "required", "failed")
+    if "failed to find metric configuration" in detail or (
+        "metric name" in detail and any(word in detail for word in rejected)
+    ):
+        return AzureGPUMetricResponseReason.METRIC_UNAVAILABLE
+    if "namespace" in detail and any(word in detail for word in rejected):
+        return AzureGPUMetricResponseReason.METRIC_NAMESPACE_REJECTED
+    if any(word in detail for word in ("dimension", "filter")) and any(
+        word in detail for word in rejected
+    ):
+        return AzureGPUMetricResponseReason.METRIC_FILTER_REJECTED
+    if any(word in detail for word in ("interval", "timespan", "time grain", "timegrain")) and any(
+        word in detail for word in rejected
+    ):
+        return AzureGPUMetricResponseReason.METRIC_INTERVAL_REJECTED
+    if "aggregation" in detail and any(word in detail for word in rejected):
+        return AzureGPUMetricResponseReason.METRIC_AGGREGATION_REJECTED
+    return None
 
 
 def _sdk_read(
@@ -404,6 +498,12 @@ def _container_document(value: object) -> dict[str, object]:
                 "containers": [
                     {
                         "image": _member(container, "image"),
+                        "command": list(
+                            _sequence(
+                                _member(container, "command", default=()),
+                                "Container App command",
+                            )
+                        ),
                         "args": list(
                             _sequence(
                                 _member(container, "args", default=()),
@@ -439,6 +539,9 @@ def _revision_document(value: object) -> dict[str, object]:
     properties = _member(value, "properties")
     if properties is None:
         properties = value
+    reason = _startup_reason_class(
+        _member(properties, "running_state_details", "runningStateDetails")
+    )
     return {
         "name": _member(value, "name"),
         "properties": {
@@ -453,6 +556,7 @@ def _revision_document(value: object) -> dict[str, object]:
             "runningState": _enum_text(
                 _member(properties, "running_state", "runningState")
             ),
+            "reasonClasses": [reason] if reason is not None else [],
         },
     }
 
@@ -469,6 +573,10 @@ def _startup_reason_class(value: object) -> str | None:
     normalized = value.casefold()
     checks = (
         (("workload profile full", "insufficient gpu", "no nodes available"), "capacity_exhausted"),
+        (
+            ("deployment progress deadline exceeded", "errorcode: [time-out]"),
+            "startup_timeout",
+        ),
         (("imagepullbackoff", "errimagepull", "failed to pull image"), "image_pull_failure"),
         (("crashloopbackoff", "containercrashing"), "container_crash"),
         (("startup probe",), "startup_probe_failure"),
@@ -481,6 +589,276 @@ def _startup_reason_class(value: object) -> str | None:
         if any(marker in normalized for marker in markers):
             return classification
     return None
+
+
+def _system_event_stream_url(
+    endpoint: object,
+    policy: AzureContainerAppLiveProofPolicy,
+) -> str:
+    """Derive the exact app event-stream URL from Azure's advertised origin."""
+    if not isinstance(endpoint, str) or len(endpoint) > 4096:
+        raise AzureContainerAppsSDKReadError(
+            "Azure SDK Container App event endpoint is incomplete or ambiguous"
+        )
+    parsed = urlsplit("")
+    try:
+        parsed = urlsplit(endpoint)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError:
+        hostname = None
+        port = None
+    if (
+        parsed.scheme != "https"
+        or hostname is None
+        or not hostname.casefold().endswith(".azurecontainerapps.dev")
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in {None, 443}
+    ):
+        raise AzureContainerAppsSDKReadError(
+            "Azure SDK Container App event endpoint is incomplete or ambiguous"
+        )
+    return (
+        f"https://{hostname.casefold()}/subscriptions/{policy.subscription_id}/"
+        f"resourceGroups/{policy.resource_group}/containerApps/{policy.app_name}/"
+        "eventstream"
+    )
+
+
+def _environment_system_event_stream_url(
+    endpoint: object,
+    policy: AzureContainerAppLiveProofPolicy,
+) -> str:
+    """Derive the exact managed-environment event stream from Azure's origin."""
+    app_url = _system_event_stream_url(endpoint, policy)
+    origin = app_url.split("/subscriptions/", maxsplit=1)[0]
+    return (
+        f"{origin}/subscriptions/{policy.subscription_id}/resourceGroups/"
+        f"{policy.resource_group}/managedEnvironments/{policy.environment_name}/"
+        "eventstream"
+    )
+
+
+def _system_event_line(line: object) -> object:
+    if isinstance(line, bytes):
+        try:
+            text = line.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+    elif isinstance(line, str):
+        text = line
+    else:
+        return None
+    if not text or len(text) > _MAX_SYSTEM_EVENT_LINE_CHARS:
+        return None
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return text
+
+
+def _system_event_fields(
+    value: object,
+    names: frozenset[str],
+    *,
+    depth: int = 0,
+) -> tuple[str, ...]:
+    """Extract only bounded, explicitly approved fields from a provider event."""
+    if depth > _MAX_SYSTEM_EVENT_NESTING:
+        return ()
+    if isinstance(value, Mapping):
+        if len(value) > _MAX_COLLECTION_ITEMS:
+            return ()
+        found: list[str] = []
+        for key, nested in value.items():
+            if isinstance(key, str) and key.casefold() in names:
+                if isinstance(nested, str) and len(nested) <= _MAX_STATUS_DETAIL_CHARS:
+                    found.append(nested)
+            elif isinstance(nested, (Mapping, list, tuple)):
+                found.extend(_system_event_fields(nested, names, depth=depth + 1))
+        return tuple(found)
+    if isinstance(value, (list, tuple)):
+        if len(value) > _MAX_COLLECTION_ITEMS:
+            return ()
+        return tuple(
+            field
+            for nested in value
+            for field in _system_event_fields(nested, names, depth=depth + 1)
+        )
+    return ()
+
+
+def _system_event_matches_app(value: object, app_name: str) -> bool:
+    app_values = _system_event_fields(value, _SYSTEM_EVENT_APP_FIELDS)
+    if app_values:
+        return all(observed.casefold() == app_name.casefold() for observed in app_values)
+    revision_values = _system_event_fields(value, _SYSTEM_EVENT_REVISION_FIELDS)
+    if revision_values:
+        prefix = f"{app_name}--".casefold()
+        return all(observed.casefold().startswith(prefix) for observed in revision_values)
+    details = _system_event_fields(value, _SYSTEM_EVENT_DETAIL_FIELDS)
+    if isinstance(value, str):
+        details = (value,)
+    return any(app_name.casefold() in detail.casefold() for detail in details)
+
+
+def _system_event_matches_revision(
+    value: object,
+    app_name: str,
+    revision_name: str,
+) -> bool:
+    """Require an event to identify one exact revision of the approved app."""
+    if not _system_event_matches_app(value, app_name):
+        return False
+    revision_values = _system_event_fields(value, _SYSTEM_EVENT_REVISION_FIELDS)
+    if revision_values:
+        return all(
+            observed.casefold() == revision_name.casefold()
+            for observed in revision_values
+        )
+    details = _system_event_fields(value, _SYSTEM_EVENT_DETAIL_FIELDS)
+    if isinstance(value, str):
+        details = (value,)
+    return any(revision_name.casefold() in detail.casefold() for detail in details)
+
+
+def _system_event_severity(value: object) -> str | None:
+    """Reduce the documented event severity field to a fixed vocabulary."""
+    observed = {
+        item.casefold()
+        for item in _system_event_fields(value, _SYSTEM_EVENT_SEVERITY_FIELDS)
+    }
+    if observed == {"error"}:
+        return "error"
+    if observed in ({"warning"}, {"warn"}):
+        return "warning"
+    return None
+
+
+def _system_event_reason(value: object) -> str | None:
+    if isinstance(value, str):
+        return _startup_reason_class(value)
+    for detail in _system_event_fields(value, _SYSTEM_EVENT_DETAIL_FIELDS):
+        reason = _startup_reason_class(detail)
+        if reason is not None:
+            return reason
+    return None
+
+
+def _system_event_reason_classes(
+    response: object,
+    *,
+    app_name: str | None = None,
+    revision_name: str | None = None,
+) -> dict[str, object]:
+    """Reduce bounded provider-controlled system events to fixed reason classes."""
+    if revision_name is not None and app_name is None:
+        raise ValueError("revision_name requires an approved app_name")
+    if (
+        getattr(response, "ok", None) is not True
+        or getattr(response, "status_code", None) != 200
+    ):
+        raise AzureContainerAppsSDKReadError(
+            "Azure SDK Container App event stream read failed"
+        )
+    iterator = getattr(response, "iter_lines", None)
+    if not callable(iterator):
+        raise AzureContainerAppsSDKReadError(
+            "Azure SDK Container App event stream response is incomplete"
+        )
+    reasons: set[str] = set()
+    event_count = 0
+    scoped_event_count = 0
+    classified_event_count = 0
+    error_event_count = 0
+    warning_event_count = 0
+    unclassified_error_count = 0
+    try:
+        for index, line in enumerate(iterator()):
+            if index >= _MAX_SYSTEM_EVENT_LINES:
+                raise AzureContainerAppsSDKReadError(
+                    "Azure SDK Container App event stream response is incomplete"
+                )
+            event = _system_event_line(line)
+            if event is None:
+                continue
+            event_count += 1
+            if revision_name is not None and app_name is not None:
+                matches_scope = _system_event_matches_revision(
+                    event,
+                    app_name,
+                    revision_name,
+                )
+            else:
+                matches_scope = app_name is None or _system_event_matches_app(
+                    event,
+                    app_name,
+                )
+            if not matches_scope:
+                continue
+            scoped_event_count += 1
+            severity = _system_event_severity(event)
+            if severity == "error":
+                error_event_count += 1
+            elif severity == "warning":
+                warning_event_count += 1
+            reason = _system_event_reason(event)
+            if reason is not None:
+                classified_event_count += 1
+                reasons.add(reason)
+            elif severity == "error":
+                unclassified_error_count += 1
+    except AzureContainerAppsSDKReadError:
+        raise
+    except Exception:
+        raise AzureContainerAppsSDKReadError(
+            "Azure SDK Container App event stream response is incomplete"
+        ) from None
+    return {
+        "reasonClasses": sorted(reasons),
+        "eventCount": event_count,
+        "scopedEventCount": scoped_event_count,
+        "classifiedEventCount": classified_event_count,
+        "errorEventCount": error_event_count,
+        "warningEventCount": warning_event_count,
+        "unclassifiedErrorCount": unclassified_error_count,
+    }
+
+
+def _read_system_event_stream(
+    url: str,
+    event_token: str,
+    params: Mapping[str, str | int],
+    *,
+    app_name: str | None = None,
+    revision_name: str | None = None,
+) -> dict[str, object]:
+    try:
+        import requests
+
+        response = requests.get(
+            url,
+            timeout=(5.0, 15.0),
+            stream=True,
+            allow_redirects=False,
+            params=dict(params),
+            headers={"Authorization": f"Bearer {event_token}"},
+        )
+    except Exception:
+        raise AzureContainerAppsSDKReadError(
+            "Azure SDK Container App event stream read failed"
+        ) from None
+    try:
+        return _system_event_reason_classes(
+            response,
+            app_name=app_name,
+            revision_name=revision_name,
+        )
+    finally:
+        close = getattr(response, "close", None)
+        if callable(close):
+            close()
 
 
 def _replica_status_document(value: object) -> dict[str, object]:
@@ -654,6 +1032,63 @@ class AzureContainerAppsSDKAppTransport(_SDKView):
         )
         return None if value is None else _container_document(value)
 
+    def get_system_event_reason_classes(
+        self,
+        bearer_token: str,
+        revision_name: str,
+    ) -> dict[str, object]:
+        """Read exact-revision events using Microsoft's app-token handshake."""
+        _validated_token(bearer_token)
+        prefix = f"{self._policy.app_name}--"
+        if (
+            not isinstance(revision_name, str)
+            or not revision_name.startswith(prefix)
+            or len(revision_name) > 64
+            or re.fullmatch(r"[a-z0-9][a-z0-9-]*", revision_name[len(prefix) :])
+            is None
+        ):
+            raise ValueError("revision_name must identify the approved app")
+        app = _sdk_read(
+            lambda: self._client.container_apps.get(
+                self._policy.resource_group,
+                self._policy.app_name,
+            )
+        )
+        properties = _member(app, "properties")
+        if properties is None:
+            properties = app
+        url = _system_event_stream_url(
+            _member(properties, "event_stream_endpoint", "eventStreamEndpoint"),
+            self._policy,
+        )
+        token_response = _sdk_read(
+            lambda: self._client.container_apps.get_auth_token(
+                self._policy.resource_group,
+                self._policy.app_name,
+            )
+        )
+        token_properties = _member(token_response, "properties")
+        if token_properties is None:
+            token_properties = token_response
+        event_token = _member(token_properties, "token")
+        if not isinstance(event_token, str):
+            raise AzureContainerAppsSDKReadError(
+                "Azure SDK Container App event token is incomplete"
+            )
+        _validated_token(event_token)
+        event_params: dict[str, str | int] = {
+            "follow": "false",
+            "output": "json",
+            "tailLines": _MAX_SYSTEM_EVENT_LINES,
+        }
+        return _read_system_event_stream(
+            url,
+            event_token,
+            event_params,
+            app_name=self._policy.app_name,
+            revision_name=revision_name,
+        )
+
     def get_active_revision_json(self, bearer_token: str) -> object | None:
         """Read one unambiguous active or sole revision during startup."""
         _validated_token(bearer_token)
@@ -769,6 +1204,58 @@ class AzureContainerAppsSDKLifecycleTransport(_SDKView):
         )
         return None if value is None else _environment_document(value)
 
+    def get_environment_system_event_reason_classes(
+        self,
+        bearer_token: str,
+        revision_name: str,
+    ) -> dict[str, object]:
+        """Read exact-revision events from the owned environment stream."""
+        _validated_token(bearer_token)
+        prefix = f"{self._policy.app_name}--"
+        if (
+            not isinstance(revision_name, str)
+            or not revision_name.startswith(prefix)
+            or len(revision_name) > 64
+            or re.fullmatch(r"[a-z0-9][a-z0-9-]*", revision_name[len(prefix) :])
+            is None
+        ):
+            raise ValueError("revision_name must identify the approved app")
+        environment = _sdk_read(
+            lambda: self._client.managed_environments.get(
+                self._policy.resource_group,
+                self._policy.environment_name,
+            )
+        )
+        properties = _member(environment, "properties")
+        if properties is None:
+            properties = environment
+        url = _environment_system_event_stream_url(
+            _member(properties, "event_stream_endpoint", "eventStreamEndpoint"),
+            self._policy,
+        )
+        token_response = _sdk_read(
+            lambda: self._client.managed_environments.get_auth_token(
+                self._policy.resource_group,
+                self._policy.environment_name,
+            )
+        )
+        token_properties = _member(token_response, "properties")
+        if token_properties is None:
+            token_properties = token_response
+        event_token = _member(token_properties, "token")
+        if not isinstance(event_token, str):
+            raise AzureContainerAppsSDKReadError(
+                "Azure SDK managed environment event token is incomplete"
+            )
+        _validated_token(event_token)
+        return _read_system_event_stream(
+            url,
+            event_token,
+            {"follow": "false", "tailLines": _MAX_SYSTEM_EVENT_LINES},
+            app_name=self._policy.app_name,
+            revision_name=revision_name,
+        )
+
     def list_environment_app_ids(self, bearer_token: str) -> tuple[str, ...]:
         _validated_token(bearer_token)
         values = _sdk_read(
@@ -880,7 +1367,8 @@ def _positive_metric_values(response: object, revision_name: str) -> tuple[float
         )
         if not points:
             continue
-        if _metric_revision(series) != revision_name:
+        observed_revision = _metric_revision(series)
+        if observed_revision is not None and observed_revision != revision_name:
             raise AzureGPUUtilizationAttestationError(
                 BackendFailure.INVALID_RESPONSE,
                 AzureGPUMetricResponseReason.REVISION_DIMENSION_MISMATCH,
@@ -911,7 +1399,7 @@ def _positive_metric_values(response: object, revision_name: str) -> tuple[float
 
 
 class AzureContainerAppGPUUtilizationAttestor:
-    """Poll one exact revision until Azure Monitor proves positive GPU use."""
+    """Poll one exact ephemeral app until Azure Monitor proves positive GPU use."""
 
     def __init__(
         self,
@@ -921,7 +1409,7 @@ class AzureContainerAppGPUUtilizationAttestor:
         progress_sink: Callable[[str], None] = lambda _message: None,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         sleep: Callable[[float], None] = time.sleep,
-        poll_timeout_seconds: float = 900.0,
+        poll_timeout_seconds: float = 300.0,
         poll_interval_seconds: float = 10.0,
         lookback: timedelta = timedelta(minutes=15),
     ) -> None:
@@ -984,7 +1472,12 @@ class AzureContainerAppGPUUtilizationAttestor:
                 BackendFailure.INTERNAL
             ) from None
 
-    def _wait_for_poll(self, phase: str, *, http_status: int = 0) -> None:
+    def _wait_for_poll(
+        self,
+        phase: str,
+        *,
+        http_status: int = 0,
+    ) -> None:
         """Emit one content-free heartbeat and wait one bounded interval."""
         status = f" http_status={http_status}" if http_status else ""
         try:
@@ -1026,16 +1519,24 @@ class AzureContainerAppGPUUtilizationAttestor:
                     interval="PT1M",
                     metricnames=_GPU_METRIC_NAME,
                     aggregation="Maximum",
-                    filter="revisionName eq '*'",
-                    metricnamespace=_GPU_METRIC_NAMESPACE,
-                    validate_dimensions=False,
                 )
             except Exception as error:
                 http_status = _status_code(error) or 0
                 failure = _gpu_monitor_failure(error)
                 if http_status == 400:
+                    reason = _gpu_bad_request_reason(error)
+                    if reason is not None:
+                        self._report_response_rejection(reason.value)
+                        raise AzureGPUUtilizationAttestationError(
+                            failure,
+                            reason,
+                            http_status=http_status,
+                        ) from None
                     if observed < deadline:
-                        self._wait_for_poll("query_pending", http_status=http_status)
+                        self._wait_for_poll(
+                            "query_pending",
+                            http_status=http_status,
+                        )
                         continue
                     raise AzureGPUUtilizationAttestationError(
                         failure,

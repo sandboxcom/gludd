@@ -18,7 +18,9 @@ from general_ludd.self_improve.azure_backend import (
     AzureCandidateResponse,
 )
 from general_ludd.self_improve.azure_containerapp_transport_types import (
+    ContainerAppGPUAttestationSource,
     ContainerAppTraceEvent,
+    VLLMRuntimeGPUEvidence,
 )
 from general_ludd.self_improve.model_candidates import (
     AzureContainerAppCandidateIdentity,
@@ -106,6 +108,58 @@ def test_evidence_validation_rejects_zero_and_foreign_revision() -> None:
     assert not _valid_gpu_evidence(replace(valid, maximum_percent=0.0), identity)
     assert not _valid_gpu_evidence(
         replace(valid, revision_name="app--foreign"), identity
+    )
+
+
+def test_backend_prefers_exact_cuda_vllm_evidence_without_monitor_delay() -> None:
+    """The exact endpoint counters release output without polling delayed Monitor."""
+    identity = _identity()
+    response = AzureCandidateResponse("patch", 10, 3, 13)
+    calls: list[str] = []
+    traces: list[Any] = []
+
+    class Backend:
+        candidate_identity = identity
+
+        def generate(self, *_args: object, **_kwargs: object) -> AzureCandidateResponse:
+            calls.append("generate")
+            return response
+
+        def attest_runtime_gpu(
+            self,
+            observed: AzureCandidateResponse,
+            *,
+            timeout_seconds: float,
+        ) -> VLLMRuntimeGPUEvidence:
+            assert observed is response
+            assert timeout_seconds == 30.0
+            calls.append("runtime")
+            return VLLMRuntimeGPUEvidence(
+                candidate_digest=identity.identity_digest,
+                prompt_tokens=10,
+                generation_tokens=3,
+                successful_requests=1,
+                estimated_flops_per_gpu=None,
+            )
+
+        def close(self) -> None:
+            calls.append("backend.close")
+
+    class Attestor:
+        def attest(self, _identity: AzureContainerAppCandidateIdentity) -> object:
+            raise AssertionError("Azure Monitor must not delay primary evidence")
+
+    backend = _GPUAttestedBackend(Backend(), cast(Any, Attestor()), traces.append)
+
+    assert backend.generate(_prompt(), max_output_tokens=64, timeout_seconds=30) is response
+    assert calls == ["generate", "runtime"]
+    assert traces[-1].event is ContainerAppTraceEvent.GPU_ATTESTATION_SUCCEEDED
+    assert traces[-1].gpu_attestation_source is (
+        ContainerAppGPUAttestationSource.STARTUP_CUDA_VLLM_METRICS
+    )
+    assert (traces[-1].gpu_prompt_tokens, traces[-1].gpu_generation_tokens) == (
+        10,
+        3,
     )
 
 

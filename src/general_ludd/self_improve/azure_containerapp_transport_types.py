@@ -12,6 +12,7 @@ class ContainerAppTraceEvent(StrEnum):
     """Content-free backend transitions for durable tracing."""
 
     DISCOVERY_STARTED = "azure_containerapp_discovery_started"
+    DISCOVERY_PENDING = "azure_containerapp_discovery_pending"
     DISCOVERY_SUCCEEDED = "azure_containerapp_discovery_succeeded"
     DISCOVERY_FAILED = "azure_containerapp_discovery_failed"
     IDENTITY_DRIFT = "azure_containerapp_identity_drift"
@@ -37,6 +38,24 @@ class ContainerAppResponseFailure(StrEnum):
     CHAT_CONTRACT = "chat_contract"
 
 
+class ContainerAppGPUAttestationSource(StrEnum):
+    """Fixed, content-free provenance for one accepted GPU proof."""
+
+    AZURE_MONITOR = "azure_monitor"
+    STARTUP_CUDA_VLLM_METRICS = "startup_cuda_vllm_metrics"
+
+
+@dataclass(frozen=True, slots=True)
+class VLLMRuntimeGPUEvidence:
+    """Exact-endpoint counters bound to one validated candidate response."""
+
+    candidate_digest: str
+    prompt_tokens: int
+    generation_tokens: int
+    successful_requests: int
+    estimated_flops_per_gpu: float | None
+
+
 @dataclass(frozen=True, slots=True)
 class ContainerAppBackendTrace:
     """Request-, response-, endpoint-, and credential-free trace evidence."""
@@ -54,6 +73,11 @@ class ContainerAppBackendTrace:
     total_tokens: int = 0
     gpu_maximum_percent: float = 0.0
     gpu_positive_sample_count: int = 0
+    gpu_attestation_source: ContainerAppGPUAttestationSource | None = None
+    gpu_prompt_tokens: int = 0
+    gpu_generation_tokens: int = 0
+    gpu_successful_requests: int = 0
+    gpu_estimated_flops_per_gpu: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +96,8 @@ class ContainerAppBackendAccounting:
 __all__ = (
     "ContainerAppBackendAccounting",
     "ContainerAppBackendTrace",
+    "ContainerAppGPUAttestationSource",
     "ContainerAppResponseFailure",
     "ContainerAppTraceEvent",
+    "VLLMRuntimeGPUEvidence",
 )

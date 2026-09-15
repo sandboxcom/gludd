@@ -28,6 +28,8 @@ _REPLICA_REASONS = frozenset(
         "readiness_probe_failure",
         "resource_exhausted",
         "startup_probe_failure",
+        "startup_timeout",
+        "system_error_unclassified",
     }
 )
 _TERMINAL_REPLICA_REASONS = frozenset(
@@ -37,7 +39,20 @@ _TERMINAL_REPLICA_REASONS = frozenset(
         "image_pull_failure",
         "resource_exhausted",
         "startup_probe_failure",
+        "startup_timeout",
     }
+)
+_REASON_PRIORITY = (
+    "capacity_exhausted",
+    "image_pull_failure",
+    "container_crash",
+    "resource_exhausted",
+    "startup_probe_failure",
+    "startup_timeout",
+    "readiness_probe_failure",
+    "image_initializing",
+    "identity_initializing",
+    "system_error_unclassified",
 )
 
 
@@ -86,12 +101,21 @@ class _RevisionState:
     health_state: str
     provisioning_state: str
     running_state: str
+    reasons: tuple[str, ...]
 
-    def ready(self, minimum_replicas: int) -> bool:
+    def ready(
+        self,
+        minimum_replicas: int,
+        *,
+        latest_ready_revision: bool = False,
+    ) -> bool:
         return bool(
             self.active
             and self.replicas >= minimum_replicas
-            and self.health_state == "Healthy"
+            and (
+                self.health_state == "Healthy"
+                or (latest_ready_revision and self.health_state == "None")
+            )
             and self.provisioning_state == "Provisioned"
             and self.running_state in {"Running", "Unknown"}
         )
@@ -102,6 +126,7 @@ class _RevisionState:
             self.health_state == "Unhealthy"
             or self.provisioning_state in {"Failed", "Deprovisioned"}
             or self.running_state in {"Stopped", "Degraded", "Failed"}
+            or _TERMINAL_REPLICA_REASONS.intersection(self.reasons)
         )
 
 
@@ -142,6 +167,25 @@ def _revision_state(document: object | None) -> _RevisionState:
                 {"Running", "Processing", "Stopped", "Degraded", "Failed", "Unknown"}
             ),
         ),
+        reasons=_safe_status_values(values.get("reasonClasses"), _REPLICA_REASONS),
+    )
+
+
+def _diagnostic_reason(reasons: tuple[str, ...]) -> str:
+    for reason in _REASON_PRIORITY:
+        if reason in reasons:
+            return reason
+    return "multiple" if reasons else "none"
+
+
+def _revision_progress(state: _RevisionState) -> str:
+    reason = _diagnostic_reason(state.reasons)
+    event_state = "terminal" if state.terminal else "heartbeat"
+    return (
+        "azure_containerapp_revision_poll phase=readiness "
+        f"state={event_state} provisioning_state={state.provisioning_state} "
+        f"health_state={state.health_state} running_state={state.running_state} "
+        f"replicas={state.replicas} reason={reason}"
     )
 
 
@@ -241,13 +285,7 @@ def _replica_status(document: object) -> _ReplicaStatus:
 
 
 def _replica_progress(status: _ReplicaStatus, minimum_replicas: int) -> str:
-    reason = (
-        status.reasons[0]
-        if len(status.reasons) == 1
-        else "multiple"
-        if status.reasons
-        else "none"
-    )
+    reason = _diagnostic_reason(status.reasons)
     state = (
         "terminal"
         if status.terminal

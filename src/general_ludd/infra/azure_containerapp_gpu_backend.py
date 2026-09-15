@@ -23,7 +23,9 @@ from general_ludd.self_improve.azure_containerapp_transport import (
     emit_trace,
 )
 from general_ludd.self_improve.azure_containerapp_transport_types import (
+    ContainerAppGPUAttestationSource,
     ContainerAppTraceEvent,
+    VLLMRuntimeGPUEvidence,
 )
 from general_ludd.self_improve.model_candidates import (
     AzureContainerAppCandidateIdentity,
@@ -75,6 +77,41 @@ def _valid_gpu_evidence(
     )
 
 
+def _valid_vllm_runtime_evidence(
+    evidence: object,
+    identity: AzureContainerAppCandidateIdentity,
+    response: AzureCandidateResponse,
+) -> bool:
+    """Bind exact-model vLLM counters to the one withheld response."""
+    flops = (
+        evidence.estimated_flops_per_gpu
+        if isinstance(evidence, VLLMRuntimeGPUEvidence)
+        else None
+    )
+    return (
+        isinstance(evidence, VLLMRuntimeGPUEvidence)
+        and evidence.candidate_digest == identity.identity_digest
+        and not isinstance(evidence.prompt_tokens, bool)
+        and isinstance(evidence.prompt_tokens, int)
+        and evidence.prompt_tokens == response.input_tokens
+        and not isinstance(evidence.generation_tokens, bool)
+        and isinstance(evidence.generation_tokens, int)
+        and evidence.generation_tokens == response.output_tokens
+        and not isinstance(evidence.successful_requests, bool)
+        and isinstance(evidence.successful_requests, int)
+        and 1 <= evidence.successful_requests <= 10_000
+        and (
+            flops is None
+            or (
+                not isinstance(flops, bool)
+                and isinstance(flops, (int, float))
+                and math.isfinite(flops)
+                and 0 <= flops <= 1e30
+            )
+        )
+    )
+
+
 class _GPUAttestedBackend:
     """Withhold one validated Container App response until GPU use is proven."""
 
@@ -111,6 +148,7 @@ class _GPUAttestedBackend:
         envelope_digest: str | None,
         reason: str | None = None,
         http_status: int = 0,
+        source: ContainerAppGPUAttestationSource | None = None,
     ) -> None:
         emit_failure(
             self._trace_sink,
@@ -122,6 +160,7 @@ class _GPUAttestedBackend:
                 failure=failure,
                 reason=reason,
                 http_status=http_status,
+                gpu_attestation_source=source,
             ),
         )
 
@@ -145,6 +184,12 @@ class _GPUAttestedBackend:
         envelope_digest = (
             request.envelope_digest if isinstance(request, AzureApprovedPrompt) else None
         )
+        runtime_attestor = getattr(self._delegate, "attest_runtime_gpu", None)
+        source = (
+            ContainerAppGPUAttestationSource.STARTUP_CUDA_VLLM_METRICS
+            if callable(runtime_attestor)
+            else ContainerAppGPUAttestationSource.AZURE_MONITOR
+        )
         emit_trace(
             self._trace_sink,
             ContainerAppBackendTrace(
@@ -152,8 +197,66 @@ class _GPUAttestedBackend:
                 candidate_digest=self._identity.identity_digest,
                 envelope_digest=envelope_digest,
                 request_number=request_number,
+                gpu_attestation_source=source,
             ),
         )
+        if callable(runtime_attestor):
+            try:
+                runtime_evidence = runtime_attestor(
+                    response,
+                    timeout_seconds=min(float(timeout_seconds), 120.0),
+                )
+            except BackendInfrastructureError as error:
+                self._attestation_failed(
+                    error.failure,
+                    request_number,
+                    envelope_digest,
+                    "runtime_evidence_unavailable",
+                    source=source,
+                )
+                raise BackendInfrastructureError(error.failure) from None
+            except Exception:
+                failure = BackendFailure.INTERNAL
+                self._attestation_failed(
+                    failure,
+                    request_number,
+                    envelope_digest,
+                    "runtime_evidence_internal",
+                    source=source,
+                )
+                raise BackendInfrastructureError(failure) from None
+            if not _valid_vllm_runtime_evidence(
+                runtime_evidence,
+                self._identity,
+                response,
+            ):
+                failure = BackendFailure.INVALID_RESPONSE
+                self._attestation_failed(
+                    failure,
+                    request_number,
+                    envelope_digest,
+                    "runtime_evidence_contract_invalid",
+                    source=source,
+                )
+                raise BackendInfrastructureError(failure)
+            flops = runtime_evidence.estimated_flops_per_gpu
+            emit_trace(
+                self._trace_sink,
+                ContainerAppBackendTrace(
+                    ContainerAppTraceEvent.GPU_ATTESTATION_SUCCEEDED,
+                    candidate_digest=self._identity.identity_digest,
+                    envelope_digest=envelope_digest,
+                    request_number=request_number,
+                    gpu_attestation_source=source,
+                    gpu_prompt_tokens=runtime_evidence.prompt_tokens,
+                    gpu_generation_tokens=runtime_evidence.generation_tokens,
+                    gpu_successful_requests=runtime_evidence.successful_requests,
+                    gpu_estimated_flops_per_gpu=(
+                        0.0 if flops is None else float(flops)
+                    ),
+                ),
+            )
+            return response
         try:
             evidence = self._attestor.attest(self._identity)
         except BackendInfrastructureError as error:
@@ -173,11 +276,17 @@ class _GPUAttestedBackend:
                 envelope_digest,
                 reason,
                 http_status,
+                source,
             )
             raise BackendInfrastructureError(error.failure) from None
         except Exception:
             failure = BackendFailure.INTERNAL
-            self._attestation_failed(failure, request_number, envelope_digest)
+            self._attestation_failed(
+                failure,
+                request_number,
+                envelope_digest,
+                source=source,
+            )
             raise BackendInfrastructureError(failure) from None
         if not _valid_gpu_evidence(evidence, self._identity):
             failure = BackendFailure.INVALID_RESPONSE
@@ -186,6 +295,7 @@ class _GPUAttestedBackend:
                 request_number,
                 envelope_digest,
                 AzureGPUMetricResponseReason.EVIDENCE_CONTRACT_INVALID.value,
+                source=source,
             )
             raise BackendInfrastructureError(failure)
         emit_trace(
@@ -197,6 +307,7 @@ class _GPUAttestedBackend:
                 request_number=request_number,
                 gpu_maximum_percent=float(evidence.maximum_percent),
                 gpu_positive_sample_count=evidence.positive_sample_count,
+                gpu_attestation_source=source,
             ),
         )
         return response
@@ -219,4 +330,5 @@ __all__ = (
     "_GPUAttestedBackend",
     "_GPUAttestor",
     "_valid_gpu_evidence",
+    "_valid_vllm_runtime_evidence",
 )

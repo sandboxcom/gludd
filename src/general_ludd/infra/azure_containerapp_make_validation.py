@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import cast
 from urllib.parse import urlsplit
 
+from general_ludd.infra.azure_containerapp_gpu_canary import (
+    validate_cuda_startup_command,
+)
 from general_ludd.infra.azure_containerapp_live_proof import (
     AzureContainerAppDeploymentEvidence,
     AzureContainerAppLiveProofPolicy,
@@ -250,6 +253,7 @@ def validate_app_document(
         container = containers[0]
         if member(container, "image") != policy.container_image:
             raise ValueError
+        validate_cuda_startup_command(member(container, "command"))
         arguments = member(container, "args")
         required_argument(arguments, "--model", policy.model_name)
         required_argument(arguments, "--revision", policy.model_revision)

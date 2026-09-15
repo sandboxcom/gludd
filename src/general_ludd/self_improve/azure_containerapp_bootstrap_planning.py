@@ -23,7 +23,9 @@ from general_ludd.self_improve.azure_containerapp_bootstrap_settings import (
 )
 
 _PROTOCOL = "gludd-configured-azure-containerapp-bootstrap-v1"
+_RESOURCE_GROUP_PROTOCOL = "gludd-owned-azure-resource-group-v1"
 _LEGACY_ENVIRONMENT_PROTOCOL = "gludd-owned-azure-containerapp-environment-v1"
+_LEGACY_DEFAULT_ENVIRONMENT = "gludd-gpu-environment"
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _MAX_LINKED_WORKTREES = 128
 _MAX_GITDIR_BYTES = 4_096
@@ -45,11 +47,13 @@ class _AzureOwnershipScope(Protocol):
 def _owner_digest(
     identity_root: Path,
     settings: _AzureOwnershipScope,
+    *,
+    environment_name: str | None = None,
 ) -> str:
     """Hash one explicit project identity using the stable ownership protocol."""
     encoded = json.dumps(
         {
-            "environment": settings.environment_name,
+            "environment": environment_name or settings.environment_name,
             "project_identity": hashlib.sha256(
                 str(identity_root).encode("utf-8", errors="surrogatepass")
             ).hexdigest(),
@@ -64,21 +68,46 @@ def _owner_digest(
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _project_identity_root(repo_root: Path) -> Path:
+    """Return one checkout-stable project identity root."""
+    common_directory = git_common_directory(str(repo_root))
+    return Path(common_directory).parent if common_directory is not None else repo_root
+
+
 def azure_bootstrap_owner_digest(
     repo_root: Path,
     settings: _AzureOwnershipScope,
 ) -> str:
     """Bind environment ownership to one canonical project and Azure scope."""
-    common_directory = git_common_directory(str(repo_root))
-    identity_root = (
-        Path(common_directory).parent if common_directory is not None else repo_root
-    )
-    return _owner_digest(identity_root, settings)
+    return _owner_digest(_project_identity_root(repo_root), settings)
+
+
+def azure_resource_group_owner_digest(
+    repo_root: Path,
+    settings: _AzureOwnershipScope,
+) -> str:
+    """Bind resource-group ownership without coupling it to a workload region."""
+    encoded = json.dumps(
+        {
+            "project_identity": hashlib.sha256(
+                str(_project_identity_root(repo_root)).encode(
+                    "utf-8", errors="surrogatepass"
+                )
+            ).hexdigest(),
+            "protocol": _RESOURCE_GROUP_PROTOCOL,
+            "resource_group": settings.resource_group,
+            "subscription_id": settings.subscription_id,
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("ascii")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _legacy_environment_owner_digest(
     identity_root: Path,
-    settings: AzureContainerAppBootstrapSettings,
+    settings: _AzureOwnershipScope,
     privacy_policy_digest: str,
 ) -> str:
     """Reproduce the retired standalone live-proof owner identity exactly."""
@@ -138,7 +167,7 @@ def _registered_project_roots(repo_root: Path) -> tuple[Path, ...]:
 
 def azure_bootstrap_legacy_owner_digests(
     repo_root: Path,
-    settings: AzureContainerAppBootstrapSettings,
+    settings: _AzureOwnershipScope,
     *,
     privacy_policy_digest: str | None = None,
 ) -> tuple[str, ...]:
@@ -148,9 +177,17 @@ def azure_bootstrap_legacy_owner_digests(
         or _DIGEST.fullmatch(privacy_policy_digest) is None
     ):
         raise ValueError("privacy_policy_digest must be a SHA-256 digest")
-    current = azure_bootstrap_owner_digest(repo_root, settings)
+    current = azure_resource_group_owner_digest(repo_root, settings)
     roots = _registered_project_roots(repo_root)
-    candidates = {_owner_digest(root, settings) for root in roots}
+    legacy_environment_names = {
+        settings.environment_name,
+        _LEGACY_DEFAULT_ENVIRONMENT,
+    }
+    candidates = {
+        _owner_digest(root, settings, environment_name=environment_name)
+        for root in roots
+        for environment_name in legacy_environment_names
+    }
     if privacy_policy_digest is not None:
         candidates.update(
             _legacy_environment_owner_digest(root, settings, privacy_policy_digest)
@@ -203,5 +240,6 @@ def plan_azure_bootstrap_topology(
 __all__ = (
     "azure_bootstrap_legacy_owner_digests",
     "azure_bootstrap_owner_digest",
+    "azure_resource_group_owner_digest",
     "plan_azure_bootstrap_topology",
 )

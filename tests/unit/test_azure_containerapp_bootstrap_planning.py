@@ -12,6 +12,7 @@ from general_ludd.infra.azure_containerapp_topology import AzureProfileCapacity
 from general_ludd.self_improve.azure_containerapp_bootstrap_planning import (
     azure_bootstrap_legacy_owner_digests,
     azure_bootstrap_owner_digest,
+    azure_resource_group_owner_digest,
     plan_azure_bootstrap_topology,
 )
 from general_ludd.self_improve.azure_containerapp_bootstrap_settings import (
@@ -37,6 +38,67 @@ def test_owner_digest_is_project_scoped_and_deterministic(tmp_path: Path) -> Non
     assert first == second
     assert first != other
     assert len(first) == 64
+
+
+def test_resource_group_owner_is_stable_across_regional_environments(
+    tmp_path: Path,
+) -> None:
+    """One project-owned group can safely contain environments in many regions."""
+    east = cast(
+        AzureContainerAppBootstrapSettings,
+        SimpleNamespace(
+            environment_name="gludd-gpu-environment",
+            location="eastus",
+            resource_group="gludd-gpu",
+            subscription_id="11111111-2222-3333-4444-555555555555",
+        ),
+    )
+    west = cast(
+        AzureContainerAppBootstrapSettings,
+        SimpleNamespace(
+            environment_name="gludd-gpu-environment-westus3",
+            location="westus3",
+            resource_group=east.resource_group,
+            subscription_id=east.subscription_id,
+        ),
+    )
+
+    assert azure_resource_group_owner_digest(
+        tmp_path, east
+    ) == azure_resource_group_owner_digest(tmp_path, west)
+    assert azure_bootstrap_owner_digest(tmp_path, east) != azure_bootstrap_owner_digest(
+        tmp_path, west
+    )
+
+
+def test_regional_failover_can_migrate_the_documented_legacy_environment_owner(
+    tmp_path: Path,
+) -> None:
+    """A region change recognizes only the former project-bound default identity."""
+    west = cast(
+        AzureContainerAppBootstrapSettings,
+        SimpleNamespace(
+            environment_name="gludd-gpu-environment-westus3",
+            location="westus3",
+            resource_group="gludd-gpu",
+            subscription_id="11111111-2222-3333-4444-555555555555",
+        ),
+    )
+    east = cast(
+        AzureContainerAppBootstrapSettings,
+        SimpleNamespace(
+            environment_name="gludd-gpu-environment",
+            location="eastus",
+            resource_group=west.resource_group,
+            subscription_id=west.subscription_id,
+        ),
+    )
+
+    legacy = azure_bootstrap_legacy_owner_digests(tmp_path, west)
+
+    assert azure_bootstrap_owner_digest(tmp_path, west) in legacy
+    assert azure_bootstrap_owner_digest(tmp_path, east) in legacy
+    assert azure_resource_group_owner_digest(tmp_path, west) not in legacy
 
 
 def test_owner_digest_is_stable_across_linked_worktrees(tmp_path: Path) -> None:
@@ -74,11 +136,13 @@ def test_owner_digest_is_stable_across_linked_worktrees(tmp_path: Path) -> None:
         settings,
         privacy_policy_digest="c" * 64,
     )
-    assert len(legacy) == 5
-    assert azure_bootstrap_owner_digest(linked, settings) not in legacy
+    assert len(legacy) == 6
+    assert azure_bootstrap_owner_digest(linked, settings) in legacy
+    assert azure_resource_group_owner_digest(linked, settings) not in legacy
     main_legacy = azure_bootstrap_legacy_owner_digests(main, settings)
-    assert len(main_legacy) == 2
-    assert azure_bootstrap_owner_digest(main, settings) not in main_legacy
+    assert len(main_legacy) == 3
+    assert azure_bootstrap_owner_digest(main, settings) in main_legacy
+    assert azure_resource_group_owner_digest(main, settings) not in main_legacy
 
 
 def test_legacy_owner_catalog_rejects_untrusted_policy_identity(tmp_path: Path) -> None:
@@ -161,7 +225,9 @@ def test_legacy_catalog_tolerates_missing_worktree_inventory(tmp_path: Path) -> 
         ),
     )
 
-    assert azure_bootstrap_legacy_owner_digests(main, settings) == ()
+    assert azure_bootstrap_legacy_owner_digests(main, settings) == (
+        azure_bootstrap_owner_digest(main, settings),
+    )
 
 
 def test_legacy_catalog_handles_a_non_git_project_root(tmp_path: Path) -> None:
@@ -175,7 +241,9 @@ def test_legacy_catalog_handles_a_non_git_project_root(tmp_path: Path) -> None:
         ),
     )
 
-    assert azure_bootstrap_legacy_owner_digests(tmp_path, settings) == ()
+    assert azure_bootstrap_legacy_owner_digests(tmp_path, settings) == (
+        azure_bootstrap_owner_digest(tmp_path, settings),
+    )
 
 
 def test_legacy_catalog_ignores_untrusted_linked_worktree_metadata(
@@ -227,7 +295,8 @@ def test_legacy_catalog_ignores_untrusted_linked_worktree_metadata(
         privacy_policy_digest="d" * 64,
     )
 
-    assert len(legacy) == 1
+    assert len(legacy) == 2
+    assert azure_bootstrap_owner_digest(main, settings) in legacy
     assert all(len(digest) == 64 for digest in legacy)
 
 

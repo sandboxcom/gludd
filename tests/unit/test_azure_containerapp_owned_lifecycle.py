@@ -15,6 +15,7 @@ from general_ludd.infra.azure_containerapp_environment_lifecycle import (
     EnvironmentLifecycleEvent,
     EnvironmentLifecycleTrace,
 )
+from general_ludd.infra.azure_containerapp_gpu_canary import CUDA_STARTUP_COMMAND
 from general_ludd.infra.azure_containerapp_live_proof import (
     LIVE_PROOF_ACKNOWLEDGEMENT,
     AzureContainerAppDeploymentEvidence,
@@ -222,6 +223,7 @@ def _app_plan(policy: AzureContainerAppLiveProofPolicy) -> dict[str, object]:
                                     "containers": [
                                         {
                                             "image": policy.container_image,
+                                            "command": list(CUDA_STARTUP_COMMAND),
                                             "args": [
                                                 "--model",
                                                 policy.model_name,

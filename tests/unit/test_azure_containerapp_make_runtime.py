@@ -14,6 +14,7 @@ from general_ludd.infra.azure_containerapp_compute_config import (
     build_containerapp_compute_config,
 )
 from general_ludd.infra.azure_containerapp_gpu import ModelServingRequirement
+from general_ludd.infra.azure_containerapp_gpu_canary import CUDA_STARTUP_COMMAND
 from general_ludd.infra.azure_containerapp_live_proof import (
     LIVE_PROOF_ACKNOWLEDGEMENT,
     AzureContainerAppLiveProofPolicy,
@@ -127,6 +128,30 @@ def test_compute_config_boundary_preserves_warm_replica_and_pinned_model() -> No
     assert config.deployment_profile["context_length"] == budget.max_total_tokens
 
 
+def test_compute_config_honors_explicit_sufficient_a100_challenge() -> None:
+    config = build_containerapp_compute_config(
+        _policy(
+            workload_profile_name="gpu-a100",
+            workload_profile_type="Consumption-GPU-NC24-A100",
+        ),
+        _requirement(),
+    )
+
+    assert config.gpu_type is GPUType.A100_80
+    assert config.azure_workload_profile_name == "gpu-a100"
+
+
+def test_compute_config_rejects_mismatched_profile_name_and_type() -> None:
+    with pytest.raises(AzureContainerAppMakeRuntimeError, match="sizing"):
+        build_containerapp_compute_config(
+            _policy(
+                workload_profile_name="gpu-t4",
+                workload_profile_type="Consumption-GPU-NC24-A100",
+            ),
+            _requirement(),
+        )
+
+
 def test_compute_config_rejects_call_budget_above_runtime_context_limit() -> None:
     budget = BackendCallBudget(1, 32_768, 1, 32_769, 500_000, 30.0)
 
@@ -225,6 +250,7 @@ def _app_document(policy: AzureContainerAppLiveProofPolicy) -> dict[str, object]
                 "containers": [
                     {
                         "image": policy.container_image,
+                        "command": list(CUDA_STARTUP_COMMAND),
                         "args": [
                             "--model",
                             policy.model_name,
@@ -530,6 +556,9 @@ def test_apply_rejects_mutated_terraform_outputs_before_endpoint_use(
         lambda document: document["properties"]["template"]["containers"][0].update(
             image="vllm/vllm-openai:latest"
         ),
+        lambda document: document["properties"]["template"]["containers"][0].update(
+            command=["python3", "-c", "import torch"]
+        ),
         lambda document: document["properties"]["template"]["scale"].update(
             minReplicas=1
         ),
@@ -755,6 +784,9 @@ def test_mapping_and_member_reject_non_objects_and_missing_members() -> None:
         ),
         lambda document: document["properties"]["template"]["containers"][0].update(
             args=["--model", MODEL]
+        ),
+        lambda document: document["properties"]["template"]["containers"][0].update(
+            command=["python3", "-c", "import torch"]
         ),
     ],
 )

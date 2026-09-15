@@ -9,7 +9,10 @@ import pytest
 from general_ludd.infra.azure_containerapp_arm import (
     ENVIRONMENT_PREFLIGHT_API_VERSION,
 )
-from general_ludd.infra.azure_containerapp_gpu import ModelServingRequirement
+from general_ludd.infra.azure_containerapp_gpu import (
+    A100_PROFILE,
+    ModelServingRequirement,
+)
 from general_ludd.infra.azure_containerapp_preflight import (
     AzureContainerAppPreflightError,
     AzureContainerAppPreflightResult,
@@ -168,6 +171,42 @@ def test_named_environment_preflight_uses_only_three_exact_resource_gets() -> No
     assert all("/locations/" not in path for path, _token in transport.calls)
 
 
+def test_explicit_sufficient_a100_challenge_is_not_reselected_as_t4() -> None:
+    """Preflight must verify the topology-selected profile, not resize it."""
+    environment = _environment_payload()
+    properties = environment["properties"]
+    assert isinstance(properties, dict)
+    properties["workloadProfiles"] = [
+        {
+            "name": A100_PROFILE.workload_profile_name,
+            "workloadProfileType": A100_PROFILE.workload_profile_type,
+            "minimumCount": 0,
+            "maximumCount": 1,
+        }
+    ]
+    states = _states_payload()
+    records = states["value"]
+    assert isinstance(records, list)
+    records[0]["name"] = A100_PROFILE.workload_profile_name
+    transport = _Transport(environment=environment, states=states)
+
+    result = AzureContainerAppReadOnlyPreflight(
+        _Credential(),
+        transport,
+    ).check(
+        subscription_id=SUBSCRIPTION_ID,
+        resource_group=RESOURCE_GROUP,
+        environment_name=ENVIRONMENT,
+        workload_profile_name=A100_PROFILE.workload_profile_name,
+        location="eastus",
+        requirement=_requirement(),
+        hardware_profiles=(A100_PROFILE,),
+    )
+
+    assert result.profile == A100_PROFILE
+    assert result.required_vram_mib == _requirement().required_vram_mib
+
+
 @pytest.mark.parametrize(
     ("field", "value", "reason"),
     [
@@ -278,7 +317,7 @@ def test_exact_named_gpu_profile_must_be_configured(
                 ]
             },
             "workload_profile_state_invalid",
-            "invalid state",
+            "current_exceeds_maximum",
         ),
         (
             {"value": [], "nextLink": "https://attacker.invalid/page"},
@@ -311,6 +350,112 @@ def test_missing_supplementary_profile_state_defers_to_deployment_capacity() -> 
     assert any(
         trace.phase == "supplementary_profile_state_unavailable"
         and trace.reason == "workload_profile_state_missing"
+        for trace in traces
+    )
+
+
+def test_unrelated_incomplete_profile_state_does_not_hide_selected_capacity() -> None:
+    states = _states_payload()
+    values = states["value"]
+    assert isinstance(values, list)
+    values.insert(
+        0,
+        {
+            "name": "Consumption",
+            "properties": {
+                "currentCount": None,
+                "maximumCount": None,
+                "minimumCount": None,
+            },
+        },
+    )
+    traces: list[PreflightTrace] = []
+
+    result = _check(_Transport(states=states), trace_sink=traces)
+
+    assert result.ready is True
+    assert result.quota_verified is True
+    assert result.quota_remaining == 1
+    assert any(
+        trace.phase == "workload_profile_state_discovered"
+        and trace.record_count == 2
+        for trace in traces
+    )
+
+
+def test_duplicate_selected_profile_states_fail_closed() -> None:
+    states = _states_payload()
+    values = states["value"]
+    assert isinstance(values, list)
+    values.append(values[0])
+    traces: list[PreflightTrace] = []
+
+    with pytest.raises(AzureContainerAppPreflightError, match="ambiguous state"):
+        _check(_Transport(states=states), trace_sink=traces)
+
+    assert traces[-1].reason == "workload_profile_state_invalid"
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "detail"),
+    [
+        ("currentCount", -1, "current_count_out_of_range"),
+        ("maximumCount", "1", "maximum_count_type_invalid"),
+    ],
+)
+def test_selected_profile_state_rejection_emits_fixed_invariant_detail(
+    field: str,
+    value: object,
+    detail: str,
+) -> None:
+    states = _states_payload()
+    values = states["value"]
+    assert isinstance(values, list)
+    record = values[0]
+    assert isinstance(record, dict)
+    properties = record["properties"]
+    assert isinstance(properties, dict)
+    properties[field] = value
+
+    with pytest.raises(AzureContainerAppPreflightError, match=detail):
+        _check(_Transport(states=states))
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["currentCount", "maximumCount", "minimumCount"],
+)
+def test_missing_selected_profile_counter_defers_to_other_capacity_evidence(
+    field: str,
+) -> None:
+    states = _states_payload()
+    values = states["value"]
+    assert isinstance(values, list)
+    record = values[0]
+    assert isinstance(record, dict)
+    properties = record["properties"]
+    assert isinstance(properties, dict)
+    properties[field] = None
+    usages = {
+        "value": [
+            {
+                "name": {"value": "ManagedEnvironmentConsumptionT4Gpus"},
+                "currentValue": 0,
+                "limit": 1,
+                "unit": "Count",
+            }
+        ]
+    }
+    traces: list[PreflightTrace] = []
+
+    result = _check(_Transport(states=states, usages=usages), trace_sink=traces)
+
+    assert result.ready is True
+    assert result.quota_verified is True
+    assert result.quota_remaining == 1
+    assert any(
+        trace.phase == "supplementary_profile_state_unavailable"
+        and trace.reason == "workload_profile_state_incomplete"
         for trace in traces
     )
 

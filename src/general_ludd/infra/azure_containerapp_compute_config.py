@@ -5,6 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from general_ludd.infra.azure_containerapp_gpu import (
+    A100_PROFILE,
+    T4_PROFILE,
+    AzureContainerAppGPUUnavailable,
     ModelServingRequirement,
     select_smallest_sufficient_profile,
 )
@@ -21,9 +24,9 @@ from general_ludd.infra.compute import (
     InferenceEngine,
 )
 
-_PROFILE_GPUS = {
-    "Consumption-GPU-NC8as-T4": GPUType.T4,
-    "Consumption-GPU-NC24-A100": GPUType.A100_80,
+_PROFILE_FACTS = {
+    T4_PROFILE.workload_profile_type: (T4_PROFILE, GPUType.T4),
+    A100_PROFILE.workload_profile_type: (A100_PROFILE, GPUType.A100_80),
 }
 _MIN_VLLM_CONTEXT_TOKENS = 512
 _MAX_VLLM_CONTEXT_TOKENS = 32_768
@@ -36,16 +39,22 @@ def build_containerapp_compute_config(
     config_factory: Callable[..., ComputeConfig] = ComputeConfig,
 ) -> ComputeConfig:
     """Build a pinned vLLM configuration or return only a safe failure phase."""
-    selection = select_smallest_sufficient_profile(requirement)
+    try:
+        profile, gpu_type = _PROFILE_FACTS[policy.workload_profile_type]
+    except KeyError:
+        raise AzureContainerAppMakeRuntimeError("sizing") from None
     if (
         requirement.model_id != policy.model_name
         or requirement.revision != policy.model_revision
-        or selection.profile.workload_profile_type != policy.workload_profile_type
+        or profile.workload_profile_name != policy.workload_profile_name
     ):
         raise AzureContainerAppMakeRuntimeError("sizing")
     try:
-        gpu_type = _PROFILE_GPUS[policy.workload_profile_type]
-    except KeyError:
+        select_smallest_sufficient_profile(
+            requirement,
+            hardware_profiles=(profile,),
+        )
+    except AzureContainerAppGPUUnavailable:
         raise AzureContainerAppMakeRuntimeError("sizing") from None
     context_length = max(
         _MIN_VLLM_CONTEXT_TOKENS,

@@ -11,6 +11,7 @@ import pytest
 
 from general_ludd.self_improve.azure_backend import (
     AzureApprovedPrompt,
+    AzureCandidateResponse,
     AzurePromptApprovalError,
 )
 from general_ludd.self_improve.azure_containerapp_backend import (
@@ -26,6 +27,7 @@ from general_ludd.self_improve.azure_containerapp_transport_types import (
     ContainerAppBackendTrace,
     ContainerAppResponseFailure,
     ContainerAppTraceEvent,
+    VLLMRuntimeGPUEvidence,
 )
 from general_ludd.self_improve.managed_candidate_routing import (
     ManagedCandidateProposalEnvelope,
@@ -130,6 +132,28 @@ class _Response:
         self.status_code = status_code
         self.headers = {"content-type": content_type}
         self.content = raw if raw is not None else json.dumps(payload).encode("utf-8")
+
+
+def _metrics(
+    *,
+    model: str = "Qwen/Qwen2.5-0.5B-Instruct",
+    prompt_tokens: int = 11,
+    generation_tokens: int = 7,
+    successful_requests: int = 1,
+) -> _Response:
+    payload = (
+        "# TYPE vllm:prompt_tokens_total counter\n"
+        f'vllm:prompt_tokens_total{{model_name="{model}"}} {prompt_tokens}.0\n'
+        "# TYPE vllm:generation_tokens_total counter\n"
+        f'vllm:generation_tokens_total{{model_name="{model}"}} '
+        f"{generation_tokens}.0\n"
+        "# TYPE vllm:request_success_total counter\n"
+        f'vllm:request_success_total{{finished_reason="stop",model_name="{model}"}} '
+        f"{successful_requests}.0\n"
+        "# TYPE vllm:estimated_flops_per_gpu_total counter\n"
+        f'vllm:estimated_flops_per_gpu_total{{model_name="{model}"}} 8192.0\n'
+    ).encode()
+    return _Response(raw=payload, content_type="text/plain; version=0.0.4")
 
 
 class _Client:
@@ -275,6 +299,31 @@ def test_discovery_binds_one_exact_model_without_fallback() -> None:
     assert all(trace.candidate_digest in {None, _identity().identity_digest} for trace in traces)
 
 
+def test_initial_discovery_retries_timeout_with_visible_bounded_progress() -> None:
+    client = _Client(gets=(TimeoutError(), _models()))
+    traces: list[ContainerAppBackendTrace] = []
+    now = [0.0]
+
+    backend = build_azure_containerapp_candidate_backend(
+        _identity(),
+        client=client,
+        discovery_timeout_seconds=60.0,
+        trace_sink=traces.append,
+        _monotonic=lambda: now[0],
+        _sleep=lambda seconds: now.__setitem__(0, now[0] + seconds),
+    )
+
+    assert backend.candidate_identity == _identity()
+    assert [trace.event for trace in traces] == [
+        ContainerAppTraceEvent.DISCOVERY_STARTED,
+        ContainerAppTraceEvent.DISCOVERY_FAILED,
+        ContainerAppTraceEvent.DISCOVERY_PENDING,
+        ContainerAppTraceEvent.DISCOVERY_STARTED,
+        ContainerAppTraceEvent.DISCOVERY_SUCCEEDED,
+    ]
+    assert [call["timeout"] for call in client.get_calls] == [30.0, 30.0]
+
+
 @pytest.mark.parametrize(
     ("response", "failure"),
     [
@@ -412,6 +461,39 @@ def test_generation_rediscovery_and_payload_are_exact_and_bounded(tmp_path: Path
         ContainerAppTraceEvent.REQUEST_STARTED,
         ContainerAppTraceEvent.RESPONSE_ACCEPTED,
     ]
+
+
+def test_runtime_gpu_evidence_binds_vllm_counters_to_the_exact_response() -> None:
+    client = _Client(gets=(_models(), _metrics()))
+    backend = _build(client)
+    response = AzureCandidateResponse("private", 11, 7, 18)
+
+    evidence = backend.attest_runtime_gpu(response, timeout_seconds=4.0)
+
+    assert evidence == VLLMRuntimeGPUEvidence(
+        candidate_digest=_identity().identity_digest,
+        prompt_tokens=11,
+        generation_tokens=7,
+        successful_requests=1,
+        estimated_flops_per_gpu=8192.0,
+    )
+    assert client.get_calls[-1] == {
+        "path": "/metrics",
+        "timeout": 4.0,
+        "follow_redirects": False,
+    }
+
+
+def test_runtime_gpu_evidence_rejects_foreign_metrics_without_retaining_them() -> None:
+    secret = "foreign-model-private-name"
+    backend = _build(_Client(gets=(_models(), _metrics(model=secret))))
+    response = AzureCandidateResponse("private", 11, 7, 18)
+
+    with pytest.raises(BackendInfrastructureError) as captured:
+        backend.attest_runtime_gpu(response, timeout_seconds=4.0)
+
+    assert captured.value.failure is BackendFailure.INVALID_RESPONSE
+    assert secret not in repr(captured.value)
 
 
 def test_generation_carries_approved_protocol_contract_without_rewriting_envelope(

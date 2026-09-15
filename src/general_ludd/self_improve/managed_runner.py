@@ -49,6 +49,7 @@ from general_ludd.self_improve.codex_comparison import (
     _safe_compact_scope_telemetry,
     build_retry_prompt,
     compact_v4_syntax_repair_sampling_identity,
+    encode_prompt_batch,
     local_proposal_attempt_identity_digest,
     safe_evaluation_retry_diagnosis,
 )
@@ -117,6 +118,9 @@ _LEGACY_PLAN_SCHEMA_VERSION: Final = 1
 _LEGACY_BOUND_PLAN_SCHEMA_VERSION: Final = 2
 _PLAN_SCHEMA_VERSION: Final = 3
 COMPACT_V4_SYNTAX_REPAIR_POLICY_ID: Final = "compact-v4-syntax-self-repair-v2"
+CANONICAL_BATCH_TOKEN_ESTIMATION_POLICY_ID: Final = (
+    "canonical-all-shard-byte-estimate-v1"
+)
 _MAX_SYNTAX_REPAIR_DRAFT_BYTES: Final = 4_096
 _MANAGED_CANDIDATE_EVALUATOR_DIGEST: Final = stable_digest(
     {"protocol": "gludd-managed-full-proposal-evaluator-v1"}
@@ -477,6 +481,7 @@ def _attempt_identity_digest(prompt: PromptPlan | str) -> str:
                     COMPACT_PROPOSAL_CONTRACT_TRANSPORT_PROTOCOL
                 ),
                 "model_candidate_policy": CODE_TASK_CAPABILITY_POLICY_ID,
+                "prompt_size_policy": CANONICAL_BATCH_TOKEN_ESTIMATION_POLICY_ID,
                 "syntax_repair_policy": COMPACT_V4_SYNTAX_REPAIR_POLICY_ID,
                 "syntax_repair_sampling": (
                     compact_v4_syntax_repair_sampling_identity()
@@ -3047,11 +3052,13 @@ def _validate_approved_result_identity(
 
 
 def _prompt_bytes(prompt: PromptPlan | str) -> int:
-    return (
-        prompt.max_prompt_bytes
-        if isinstance(prompt, PromptPlan)
-        else len(prompt.encode("utf-8"))
-    )
+    if isinstance(prompt, PromptPlan):
+        encoded = encode_prompt_batch(
+            tuple(shard.prompt for shard in prompt.shards),
+            protocol_digest=prompt.protocol_digest,
+        )
+        return len(encoded.encode("utf-8"))
+    return len(prompt.encode("utf-8"))
 
 
 def _stable_digest(value: object) -> str:

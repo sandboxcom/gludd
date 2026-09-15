@@ -8,6 +8,7 @@ from typing import Any, cast
 
 import pytest
 
+from general_ludd.infra.azure_containerapp_gpu_canary import CUDA_STARTUP_COMMAND
 from general_ludd.infra.azure_containerapp_live_proof import (
     LIVE_PROOF_ACKNOWLEDGEMENT,
     AzureContainerAppDeploymentEvidence,
@@ -143,6 +144,7 @@ def _plan(policy: AzureContainerAppLiveProofPolicy) -> dict[str, object]:
                                     "containers": [
                                         {
                                             "image": policy.container_image,
+                                            "command": list(CUDA_STARTUP_COMMAND),
                                             "args": [
                                                 "--model",
                                                 policy.model_name,
@@ -475,6 +477,22 @@ def test_dry_run_rejects_mutation_acknowledgement() -> None:
                 "image",
             ),
             "vllm/vllm-openai:latest",
+        ),
+        (
+            (
+                "resource_changes",
+                0,
+                "change",
+                "after",
+                "body",
+                "properties",
+                "template",
+                "containers",
+                0,
+                "command",
+                2,
+            ),
+            "import torch",
         ),
         (
             (

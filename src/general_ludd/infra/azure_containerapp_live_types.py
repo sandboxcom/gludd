@@ -12,6 +12,7 @@ from enum import StrEnum
 from typing import Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
+from general_ludd.infra.azure_containerapp_gpu import AzureContainerAppGPUProfile
 from general_ludd.infra.azure_containerapp_make_types import (
     LIVE_PROOF_RUNTIME_FAILURE_DETAILS,
 )
@@ -31,6 +32,12 @@ _FAILURE_DETAILS = frozenset(
         "change_count",
         "configuration",
         "container",
+        "cuda_startup_command",
+        "cuda_startup_command_executable",
+        "cuda_startup_command_indented",
+        "cuda_startup_command_mismatch",
+        "cuda_startup_command_shape",
+        "cuda_startup_command_wrapped",
         "cost_policy_action",
         "cost_policy_identity",
         "environment_binding",
@@ -144,6 +151,7 @@ class AzureContainerAppLiveProofPolicy:
     min_replicas: int = 0
     max_replicas: int = 1
     http_concurrent_requests: int = 1
+    gpu_profile: AzureContainerAppGPUProfile | None = None
 
     def __post_init__(self) -> None:
         """Reject broad, mutable, ambiguous, or unbounded deployment authority."""
@@ -220,6 +228,12 @@ class AzureContainerAppLiveProofPolicy:
             or not 1 <= self.http_concurrent_requests <= 100_000
         ):
             raise ValueError("http_concurrent_requests must be in 1..100000")
+        if self.gpu_profile is not None and (
+            not isinstance(self.gpu_profile, AzureContainerAppGPUProfile)
+            or self.gpu_profile.workload_profile_name != self.workload_profile_name
+            or self.gpu_profile.workload_profile_type != self.workload_profile_type
+        ):
+            raise ValueError("gpu_profile must match the selected workload profile")
         if (
             not isinstance(self.container_image, str)
             or self.container_image.count("@") != 1
@@ -292,6 +306,23 @@ class AzureContainerAppLiveProofPolicy:
             "min_replicas": self.min_replicas,
             "max_replicas": self.max_replicas,
             "http_concurrent_requests": self.http_concurrent_requests,
+            "gpu_profile": (
+                None
+                if self.gpu_profile is None
+                else {
+                    "cpu_cores": self.gpu_profile.cpu_cores,
+                    "gpu_vram_mib": self.gpu_profile.gpu_vram_mib,
+                    "memory_gib": self.gpu_profile.memory_gib,
+                    "name": self.gpu_profile.name,
+                    "usable_vram_mib": self.gpu_profile.usable_vram_mib,
+                    "workload_profile_name": (
+                        self.gpu_profile.workload_profile_name
+                    ),
+                    "workload_profile_type": (
+                        self.gpu_profile.workload_profile_type
+                    ),
+                }
+            ),
             "protocol": "gludd-azure-containerapp-live-proof-v1",
             "ttl_minutes": self.ttl_minutes,
             "workload_profile_name": self.workload_profile_name,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -16,6 +17,7 @@ from general_ludd.infra.azure_containerapp_arm import (
     ENVIRONMENT_PREFLIGHT_API_VERSION,
 )
 from general_ludd.infra.azure_containerapp_gpu import ModelServingRequirement
+from general_ludd.infra.azure_containerapp_gpu_canary import CUDA_STARTUP_COMMAND
 from general_ludd.infra.azure_containerapp_live_proof import (
     LIVE_PROOF_ACKNOWLEDGEMENT,
     AzureContainerAppLiveProofPolicy,
@@ -76,6 +78,58 @@ def _identity(policy: AzureContainerAppLiveProofPolicy | None = None) -> AzureCo
         model_revision=active.model_revision,
         workload_profile_type=active.workload_profile_type,
     )
+
+
+def test_sdk_app_normalization_preserves_exact_startup_command() -> None:
+    policy = _policy()
+    document = subject._container_document(
+        SimpleNamespace(
+            id=policy.expected_resource_id,
+            name=policy.app_name,
+            type="Microsoft.App/containerApps",
+            location="eastus",
+            properties=SimpleNamespace(
+                provisioning_state="Succeeded",
+                latest_ready_revision_name=f"{policy.app_name}--0000007",
+                workload_profile_name=policy.workload_profile_name,
+                environment_id=policy.environment_id,
+                configuration=SimpleNamespace(ingress=SimpleNamespace(fqdn="example")),
+                template=SimpleNamespace(
+                    containers=(
+                        SimpleNamespace(
+                            image=IMAGE,
+                            command=list(CUDA_STARTUP_COMMAND),
+                            args=["--model", policy.model_name],
+                        ),
+                    ),
+                    scale=SimpleNamespace(min_replicas=1, max_replicas=1, rules=()),
+                ),
+            ),
+        )
+    )
+
+    assert document["properties"]["template"]["containers"][0]["command"] == list(
+        CUDA_STARTUP_COMMAND
+    )
+
+
+def test_revision_normalization_classifies_details_without_exposing_provider_text() -> None:
+    provider_detail = "Workload Profile Full. tenant-secret=must-not-escape"
+
+    document = subject._revision_document(
+        SimpleNamespace(
+            name="gludd-vllm-sdk-proof--0000007",
+            active=True,
+            replicas=0,
+            health_state="None",
+            provisioning_state="Provisioned",
+            running_state="Unknown",
+            running_state_details=provider_detail,
+        )
+    )
+
+    assert document["properties"]["reasonClasses"] == ["capacity_exhausted"]
+    assert provider_detail not in repr(document)
 
 
 def test_sdk_client_builders_use_official_clients_without_hidden_retries() -> None:
@@ -252,6 +306,9 @@ def test_container_document_accepts_nested_sdk_properties_shape() -> None:
         properties=SimpleNamespace(
             provisioning_state="Succeeded",
             latest_ready_revision_name=f"{policy.app_name}--0000007",
+            event_stream_endpoint=(
+                "https://eastus.azurecontainerapps.dev/subscriptions/ignored"
+            ),
             workload_profile_name=policy.workload_profile_name,
             environment_id=policy.environment_id,
             configuration=SimpleNamespace(
@@ -273,7 +330,7 @@ def test_container_document_accepts_nested_sdk_properties_shape() -> None:
     )
     assert document["properties"]["workloadProfileName"] == "gpu-t4"
     assert document["properties"]["template"]["containers"] == [
-        {"image": IMAGE, "args": []}
+        {"image": IMAGE, "command": [], "args": []}
     ]
 
 
@@ -291,6 +348,9 @@ class _ManagedEnvironments:
             tags={"gludd-owner": "b" * 64},
             properties=SimpleNamespace(
                 provisioning_state="Succeeded",
+                event_stream_endpoint=(
+                    "https://eastus.azurecontainerapps.dev/subscriptions/ignored"
+                ),
                 workload_profiles=[
                     SimpleNamespace(
                         name="gpu-t4",
@@ -301,6 +361,16 @@ class _ManagedEnvironments:
                 ],
             ),
         )
+
+    def get_auth_token(
+        self,
+        resource_group_name: str,
+        environment_name: str,
+    ) -> object:
+        self.calls.append(
+            ("environment.get_auth_token", (resource_group_name, environment_name))
+        )
+        return SimpleNamespace(properties=SimpleNamespace(token="environment-event-token"))
 
     def list_workload_profile_states(
         self,
@@ -352,6 +422,9 @@ class _ContainerApps:
             location="East US",
             provisioning_state="Succeeded",
             latest_ready_revision_name=f"{policy.app_name}--0000007",
+            event_stream_endpoint=(
+                "https://eastus.azurecontainerapps.dev/subscriptions/ignored"
+            ),
             workload_profile_name=policy.workload_profile_name,
             environment_id=policy.environment_id,
             configuration=SimpleNamespace(ingress=SimpleNamespace(fqdn="gludd-vllm-sdk-proof.kindstone.eastus.azurecontainerapps.io")),
@@ -373,6 +446,16 @@ class _ContainerApps:
     def get(self, resource_group_name: str, container_app_name: str) -> object:
         self.calls.append(("app.get", (resource_group_name, container_app_name)))
         return self._app()
+
+    def get_auth_token(
+        self,
+        resource_group_name: str,
+        container_app_name: str,
+    ) -> object:
+        self.calls.append(
+            ("app.get_auth_token", (resource_group_name, container_app_name))
+        )
+        return SimpleNamespace(properties=SimpleNamespace(token="event-token"))
 
     def list_by_resource_group(self, resource_group_name: str) -> list[object]:
         self.calls.append(("apps.list", (resource_group_name,)))
@@ -538,6 +621,7 @@ def test_sdk_read_views_call_only_exact_microsoft_read_operations_and_normalize(
             "healthState": "Healthy",
             "provisioningState": "Provisioned",
             "runningState": "Running",
+            "reasonClasses": [],
         },
     }
     assert active_revision_document == {
@@ -548,6 +632,7 @@ def test_sdk_read_views_call_only_exact_microsoft_read_operations_and_normalize(
             "healthState": "None",
             "provisioningState": "Provisioning",
             "runningState": "Processing",
+            "reasonClasses": [],
         },
     }
     assert "provider-secret" not in repr(revision_document)
@@ -585,6 +670,378 @@ def test_sdk_read_views_call_only_exact_microsoft_read_operations_and_normalize(
     transports.lifecycle.close()
     transports.preflight.close()
     assert client.close_count == 1
+
+
+def test_sdk_system_events_classify_capacity_without_exposing_logs() -> None:
+    """The official token flow may retain reason classes, never provider text."""
+    policy = _policy()
+    client = _ContainerAppsClient()
+    transports = AzureContainerAppsSDKReadTransports(client=client, policy=policy)
+    revision_name = f"{policy.app_name}--0000007"
+    provider_line = json.dumps(
+        {
+            "RevisionName": revision_name,
+            "Type": "Error",
+            "Log": "Workload Profile Full; tenant-secret=hidden",
+        }
+    ).encode()
+    response = MagicMock(ok=True, status_code=200)
+    response.iter_lines.return_value = (provider_line,)
+
+    with patch("requests.get", return_value=response) as request:
+        document = transports.app.get_system_event_reason_classes(
+            "bounded-token",
+            revision_name,
+        )
+
+    assert document == {
+        "reasonClasses": ["capacity_exhausted"],
+        "eventCount": 1,
+        "scopedEventCount": 1,
+        "classifiedEventCount": 1,
+        "errorEventCount": 1,
+        "warningEventCount": 0,
+        "unclassifiedErrorCount": 0,
+    }
+    assert "tenant-secret" not in repr(document)
+    request.assert_called_once_with(
+        (
+            "https://eastus.azurecontainerapps.dev/subscriptions/"
+            f"{SUBSCRIPTION}/resourceGroups/{policy.resource_group}/"
+            f"containerApps/{policy.app_name}/eventstream"
+        ),
+        timeout=(5.0, 15.0),
+        stream=True,
+        allow_redirects=False,
+        params={"follow": "false", "output": "json", "tailLines": 300},
+        headers={"Authorization": "Bearer event-token"},
+    )
+    assert client.calls == [
+        ("app.get", (policy.resource_group, policy.app_name)),
+        ("app.get_auth_token", (policy.resource_group, policy.app_name)),
+    ]
+
+
+def test_sdk_environment_system_events_are_scoped_and_content_free() -> None:
+    """Platform events use the owned environment token and reject other apps."""
+    policy = _policy()
+    client = _ContainerAppsClient()
+    transports = AzureContainerAppsSDKReadTransports(client=client, policy=policy)
+    private_detail = "tenant-secret=must-not-escape"
+    response = MagicMock(ok=True, status_code=200)
+    response.iter_lines.return_value = (
+        json.dumps(
+            {
+                "ContainerAppName": "unrelated-app",
+                "RevisionName": "unrelated-app--0000007",
+                "Type": "Error",
+                "Log": "Error provisioning revision. ErrorCode: [ErrImagePull]",
+            }
+        ).encode(),
+        json.dumps(
+            {
+                "ContainerAppName": policy.app_name,
+                "RevisionName": f"{policy.app_name}--0000007",
+                "Type": "Error",
+                "Log": (
+                    "Error provisioning revision. ErrorCode: [ContainerCrashing]; "
+                    f"{private_detail}"
+                ),
+            }
+        ).encode(),
+    )
+
+    with patch("requests.get", return_value=response) as request:
+        document = transports.lifecycle.get_environment_system_event_reason_classes(
+            "bounded-token",
+            f"{policy.app_name}--0000007",
+        )
+
+    assert document == {
+        "reasonClasses": ["container_crash"],
+        "eventCount": 2,
+        "scopedEventCount": 1,
+        "classifiedEventCount": 1,
+        "errorEventCount": 1,
+        "warningEventCount": 0,
+        "unclassifiedErrorCount": 0,
+    }
+    assert private_detail not in repr(document)
+    request.assert_called_once_with(
+        (
+            "https://eastus.azurecontainerapps.dev/subscriptions/"
+            f"{SUBSCRIPTION}/resourceGroups/{policy.resource_group}/"
+            f"managedEnvironments/{policy.environment_name}/eventstream"
+        ),
+        timeout=(5.0, 15.0),
+        stream=True,
+        allow_redirects=False,
+        params={"follow": "false", "tailLines": 300},
+        headers={"Authorization": "Bearer environment-event-token"},
+    )
+    assert client.calls == [
+        ("environment.get", (policy.resource_group, policy.environment_name)),
+        (
+            "environment.get_auth_token",
+            (policy.resource_group, policy.environment_name),
+        ),
+    ]
+
+
+def test_sdk_system_events_reduce_large_structured_lines_by_approved_fields() -> None:
+    """Unrelated provider payload cannot hide a bounded typed startup reason."""
+    private_detail = "private-must-not-escape-" + ("x" * 5000)
+    response = SimpleNamespace(
+        ok=True,
+        status_code=200,
+        iter_lines=lambda: iter(
+            (
+                json.dumps(
+                    {
+                        "Log": "Error provisioning revision. ErrorCode: [Time-out]",
+                        "ProviderMetadata": private_detail,
+                    }
+                ),
+            )
+        ),
+    )
+
+    document = subject._system_event_reason_classes(response)
+
+    assert document == {
+        "reasonClasses": ["startup_timeout"],
+        "eventCount": 1,
+        "scopedEventCount": 1,
+        "classifiedEventCount": 1,
+        "errorEventCount": 0,
+        "warningEventCount": 0,
+        "unclassifiedErrorCount": 0,
+    }
+    assert private_detail not in repr(document)
+
+
+def test_sdk_system_events_classify_deployment_deadline_as_terminal_timeout() -> None:
+    """Azure's deadline event becomes a fixed class without leaking its payload."""
+    private_detail = "deployment-id=private-must-not-escape"
+    response = SimpleNamespace(
+        ok=True,
+        status_code=200,
+        iter_lines=lambda: iter(
+            (
+                "Deployment Progress Deadline Exceeded. "
+                f"ErrorCode: [Time-out]; {private_detail}",
+            )
+        ),
+    )
+
+    document = subject._system_event_reason_classes(response)
+
+    assert document == {
+        "reasonClasses": ["startup_timeout"],
+        "eventCount": 1,
+        "scopedEventCount": 1,
+        "classifiedEventCount": 1,
+        "errorEventCount": 0,
+        "warningEventCount": 0,
+        "unclassifiedErrorCount": 0,
+    }
+    assert private_detail not in repr(document)
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "http://eastus.azurecontainerapps.dev/events",
+        "https://azurecontainerapps.dev.attacker.invalid/events",
+        "https://user@eastus.azurecontainerapps.dev/events",
+        "https://eastus.azurecontainerapps.dev:444/events",
+    ],
+)
+def test_sdk_system_event_url_rejects_scope_escape(endpoint: str) -> None:
+    """Provider metadata cannot redirect the app token outside Azure's origin."""
+    with pytest.raises(
+        AzureContainerAppsSDKReadError,
+        match="event endpoint is incomplete or ambiguous",
+    ):
+        subject._system_event_stream_url(endpoint, _policy())
+
+
+def test_sdk_system_events_reject_redirect_response_and_censor_body() -> None:
+    """A redirect is not event evidence and its provider body must not escape."""
+    policy = _policy()
+    client = _ContainerAppsClient()
+    transports = AzureContainerAppsSDKReadTransports(client=client, policy=policy)
+    private_line = b'{"Log":"Workload Profile Full; secret=must-not-escape"}'
+    response = MagicMock(ok=True, status_code=302)
+    response.iter_lines.return_value = (private_line,)
+
+    with (
+        patch("requests.get", return_value=response) as request,
+        pytest.raises(
+            AzureContainerAppsSDKReadError,
+            match="event stream read failed",
+        ) as raised,
+    ):
+        transports.app.get_system_event_reason_classes(
+            "bounded-token",
+            f"{policy.app_name}--0000007",
+        )
+
+    assert "must-not-escape" not in str(raised.value)
+    assert request.call_args.kwargs["allow_redirects"] is False
+    response.close.assert_called_once_with()
+
+
+def test_sdk_system_events_reject_unbounded_line_count() -> None:
+    """The system-event reducer fails closed instead of consuming an endless feed."""
+    response = SimpleNamespace(
+        ok=True,
+        status_code=200,
+        iter_lines=lambda: iter(("container creating",) * 301),
+    )
+
+    with pytest.raises(
+        AzureContainerAppsSDKReadError,
+        match="event stream response is incomplete",
+    ):
+        subject._system_event_reason_classes(response)
+
+
+def test_sdk_system_events_bind_exact_revision_and_count_unknown_errors() -> None:
+    """Historical revisions cannot contaminate a terminal diagnostic decision."""
+    app_name = _policy().app_name
+    revision_name = f"{app_name}--0000007"
+    response = SimpleNamespace(
+        ok=True,
+        status_code=200,
+        iter_lines=lambda: iter(
+            (
+                json.dumps(
+                    {
+                        "ContainerAppName": app_name,
+                        "RevisionName": f"{app_name}--0000006",
+                        "Type": "Error",
+                        "Log": "ErrorCode: [ErrImagePull]",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ContainerAppName": app_name,
+                        "RevisionName": revision_name,
+                        "Type": "Info",
+                        "Log": "Creating a new revision",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ContainerAppName": app_name,
+                        "RevisionName": revision_name,
+                        "Type": "Error",
+                        "Log": "ErrorCode: [ContainerCrashing]",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ContainerAppName": app_name,
+                        "RevisionName": revision_name,
+                        "Type": "Warning",
+                        "Log": "bounded warning without a known reason",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "ContainerAppName": app_name,
+                        "RevisionName": revision_name,
+                        "Type": "Error",
+                        "Log": "unknown terminal provider condition",
+                    }
+                ),
+            )
+        ),
+    )
+
+    document = subject._system_event_reason_classes(
+        response,
+        app_name=app_name,
+        revision_name=revision_name,
+    )
+
+    assert document == {
+        "reasonClasses": ["container_crash"],
+        "eventCount": 5,
+        "scopedEventCount": 4,
+        "classifiedEventCount": 1,
+        "errorEventCount": 2,
+        "warningEventCount": 1,
+        "unclassifiedErrorCount": 1,
+    }
+
+
+def test_sdk_system_event_line_rejects_malformed_and_unbounded_records() -> None:
+    """Malformed stream records are skipped without retaining provider bytes."""
+    assert subject._system_event_line(b"\xff") is None
+    assert subject._system_event_line(object()) is None
+    assert subject._system_event_line("") is None
+    assert subject._system_event_line("x" * 65_537) is None
+    assert subject._system_event_line("not-json") == "not-json"
+
+
+def test_sdk_environment_event_scope_uses_only_bounded_identity_fields() -> None:
+    """Nested app/revision identity is accepted while foreign identity is denied."""
+    app_name = _policy().app_name
+    assert subject._system_event_matches_app(
+        {"wrapper": [{"ContainerAppName": app_name}]},
+        app_name,
+    )
+    assert not subject._system_event_matches_app(
+        {"ContainerAppName": "foreign-app"},
+        app_name,
+    )
+    assert subject._system_event_matches_app(
+        {"RevisionName": f"{app_name}--0000007"},
+        app_name,
+    )
+    assert not subject._system_event_matches_app(
+        {"RevisionName": "foreign-app--0000007"},
+        app_name,
+    )
+    assert subject._system_event_matches_app(
+        {"Log": f"revision for {app_name} entered provisioning"},
+        app_name,
+    )
+    assert subject._system_event_matches_app(
+        f"revision for {app_name} entered provisioning",
+        app_name,
+    )
+    assert not subject._system_event_matches_app(
+        {f"key-{index}": "ignored" for index in range(513)},
+        app_name,
+    )
+
+
+def test_sdk_system_events_reject_missing_or_broken_stream_iterators() -> None:
+    """Incomplete and interrupted event streams fail closed without provider text."""
+    missing = SimpleNamespace(ok=True, status_code=200)
+    with pytest.raises(
+        AzureContainerAppsSDKReadError,
+        match="event stream response is incomplete",
+    ):
+        subject._system_event_reason_classes(missing)
+
+    def broken_lines() -> object:
+        raise RuntimeError("provider-secret-must-not-escape")
+
+    interrupted = SimpleNamespace(
+        ok=True,
+        status_code=200,
+        iter_lines=broken_lines,
+    )
+    with pytest.raises(
+        AzureContainerAppsSDKReadError,
+        match="event stream response is incomplete",
+    ) as raised:
+        subject._system_event_reason_classes(interrupted)
+    assert "provider-secret" not in str(raised.value)
 
 
 def test_read_only_preflight_and_sdk_transport_share_one_supported_api_contract() -> None:
@@ -764,8 +1221,8 @@ class _MonitorClient:
         self.close_count += 1
 
 
-def test_gpu_attestor_requires_positive_exact_revision_metric_and_exact_sdk_query() -> None:
-    """Split revisions while enforcing exact identity independently of the service."""
+def test_gpu_attestor_requires_positive_exact_app_metric_and_unfiltered_sdk_query() -> None:
+    """Query one exact app without relying on Azure's lagging dimension index."""
     identity = _identity()
     now = datetime(2026, 9, 7, 12, 0, tzinfo=UTC)
     client = _MonitorClient([_metric_response(identity.revision_name, [0.0, 37.5])])
@@ -791,14 +1248,30 @@ def test_gpu_attestor_requires_positive_exact_revision_metric_and_exact_sdk_quer
             "interval": "PT1M",
             "metricnames": "GpuUtilizationPercentage",
             "aggregation": "Maximum",
-            "filter": "revisionName eq '*'",
-            "metricnamespace": "Microsoft.App/containerapps",
-            "validate_dimensions": False,
         }
     ]
     attestor.close()
     attestor.close()
     assert client.close_count == 1
+
+
+def test_gpu_attestor_accepts_dimensionless_series_from_exact_ephemeral_app() -> None:
+    """An unsplit metric stays bound by its exact owner-verified resource URI."""
+    identity = _identity()
+    response = _metric_response(identity.revision_name, [31.25])
+    response.value[0].timeseries[0].metadatavalues = []
+    client = _MonitorClient([response])
+    attestor = AzureContainerAppGPUUtilizationAttestor(
+        client=client,
+        expected_resource_id=identity.resource_id,
+        now=lambda: datetime(2026, 9, 7, 12, 0, tzinfo=UTC),
+        sleep=lambda _seconds: pytest.fail("positive aggregate evidence must not poll"),
+    )
+
+    evidence = attestor.attest(identity)
+
+    assert evidence.maximum_percent == 31.25
+    assert evidence.revision_name == identity.revision_name
 
 
 def test_gpu_attestor_keeps_polling_values_without_definition_discovery() -> None:
@@ -853,7 +1326,7 @@ def test_gpu_attestor_never_reads_optional_definition_catalog() -> None:
     )
 
     assert attestor.attest(identity).maximum_percent == 17.5
-    assert client.metrics.calls[0]["metricnamespace"] == "Microsoft.App/containerapps"
+    assert "metricnamespace" not in client.metrics.calls[0]
     definition_list.assert_not_called()
 
 
@@ -1145,40 +1618,6 @@ def test_gpu_attestor_polls_transient_bad_request_until_metric_index_is_ready() 
     assert secret not in "\n".join(events)
 
 
-def test_gpu_attestor_default_covers_documented_fifteen_minute_metric_lag() -> None:
-    """A fresh GPU metric index may become queryable after the old five-minute bound."""
-    identity = _identity()
-    clock = [datetime(2026, 9, 7, 12, 0, tzinfo=UTC)]
-    events: list[str] = []
-    secret = "provider-query-detail-must-not-escape"
-
-    class MetricIndexPending(RuntimeError):
-        status_code = 400
-
-    client = _MonitorClient([])
-    client.metrics.list = MagicMock(
-        side_effect=[MetricIndexPending(secret)] * 31
-        + [_metric_response(identity.revision_name, [18.75])]
-    )
-
-    def sleep(seconds: float) -> None:
-        clock[0] += timedelta(seconds=seconds)
-
-    attestor = AzureContainerAppGPUUtilizationAttestor(
-        client=client,
-        expected_resource_id=identity.resource_id,
-        progress_sink=events.append,
-        now=lambda: clock[0],
-        sleep=sleep,
-    )
-
-    assert attestor.attest(identity).maximum_percent == 18.75
-    assert client.metrics.list.call_count == 32
-    assert len(events) == 31
-    assert all("phase=query_pending" in event for event in events)
-    assert secret not in "\n".join(events)
-
-
 def test_gpu_attestor_reports_typed_rejection_when_bad_request_never_clears() -> None:
     """A malformed or unavailable metric query cannot poll or expose text forever."""
     identity = _identity()
@@ -1209,6 +1648,92 @@ def test_gpu_attestor_reports_typed_rejection_when_bad_request_never_clears() ->
     assert captured.value.reason == "metric_query_rejected"
     assert captured.value.http_status == 400
     assert "private" not in str(captured.value)
+
+
+def test_gpu_attestor_classifies_bad_request_without_provider_text() -> None:
+    """The first heartbeat explains a known Monitor rejection without leaking text."""
+    identity = _identity()
+    clock = [datetime(2026, 9, 7, 12, 0, tzinfo=UTC)]
+    events: list[str] = []
+    secret = "tenant-specific-provider-detail"
+
+    class MetricUnavailable(RuntimeError):
+        status_code = 400
+        error = SimpleNamespace(
+            message=(
+                "Failed to find metric configuration for provider and metric; "
+                + secret
+            )
+        )
+
+    client = _MonitorClient([])
+    client.metrics.list = MagicMock(side_effect=MetricUnavailable(secret))
+
+    attestor = AzureContainerAppGPUUtilizationAttestor(
+        client=client,
+        expected_resource_id=identity.resource_id,
+        progress_sink=events.append,
+        now=lambda: clock[0],
+        sleep=lambda _seconds: pytest.fail("known validation failures must not poll"),
+        poll_timeout_seconds=1.0,
+        poll_interval_seconds=1.0,
+    )
+
+    with pytest.raises(AzureGPUUtilizationAttestationError) as captured:
+        attestor.attest(identity)
+
+    assert captured.value.reason == "metric_unavailable"
+    assert events == [
+        "azure_containerapp_gpu_metric phase=response_rejected state=failed "
+        "reason=metric_unavailable secret_output=false"
+    ]
+    assert secret not in repr(captured.value)
+    assert secret not in "\n".join(events)
+
+
+def test_gpu_attestor_classifies_sdk_response_json_without_exposing_it() -> None:
+    """Azure Core can retain the useful Monitor detail only on response JSON."""
+    identity = _identity()
+    events: list[str] = []
+    secret = "tenant-specific-response-detail"
+
+    class ProviderResponse:
+        status_code = 400
+
+        @staticmethod
+        def json() -> object:
+            return {
+                "error": {
+                    "code": "BadRequest",
+                    "message": (
+                        "Failed to find metric configuration for provider and metric; "
+                        + secret
+                    ),
+                }
+            }
+
+    class MetricUnavailable(RuntimeError):
+        response = ProviderResponse()
+
+    client = _MonitorClient([])
+    client.metrics.list = MagicMock(side_effect=MetricUnavailable(secret))
+    attestor = AzureContainerAppGPUUtilizationAttestor(
+        client=client,
+        expected_resource_id=identity.resource_id,
+        progress_sink=events.append,
+        sleep=lambda _seconds: pytest.fail("known validation failures must not poll"),
+    )
+
+    with pytest.raises(AzureGPUUtilizationAttestationError) as captured:
+        attestor.attest(identity)
+
+    assert captured.value.reason == "metric_unavailable"
+    assert events == [
+        "azure_containerapp_gpu_metric phase=response_rejected state=failed "
+        "reason=metric_unavailable secret_output=false"
+    ]
+    assert secret not in repr(captured.value)
+    assert secret not in "\n".join(events)
 
 
 def test_gpu_attestor_reports_timeout_when_no_positive_sample_arrives() -> None:
