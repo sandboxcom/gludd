@@ -52,6 +52,18 @@ def test_model_and_image_provenance_are_immutable_and_forwarded() -> None:
     assert 'name  = "HF_HUB_DISABLE_TELEMETRY"' in main
 
 
+def test_ready_revision_requires_cuda_kernel_canary_before_vllm() -> None:
+    main = _read(MODULE / "main.tf")
+
+    assert "cuda_startup_canary = <<-PY" in main
+    assert "torch.cuda.is_available()" in main
+    assert "torch.cuda.device_count() != 1" in main
+    assert "torch.mm(left, left)" in main
+    assert "torch.cuda.synchronize()" in main
+    assert 'os.execvp("vllm", ["vllm", "serve", *sys.argv[1:]])' in main
+    assert 'command = ["python3", "-c", local.cuda_startup_canary]' in main
+
+
 def test_t4_and_a100_are_not_conflated_and_app_is_bounded() -> None:
     main = _read(MODULE / "main.tf")
     variables = _read(MODULE / "variables.tf")

@@ -26,11 +26,13 @@ EXPECTED_RUNTIME_ACTIONS = frozenset(
         "Microsoft.App/managedEnvironments/write",
         "Microsoft.App/managedEnvironments/delete",
         "Microsoft.App/managedEnvironments/join/action",
+        "Microsoft.App/managedEnvironments/getAuthToken/action",
         "Microsoft.App/managedEnvironments/usages/read",
         "Microsoft.App/managedEnvironments/workloadProfileStates/read",
         "Microsoft.App/containerApps/read",
         "Microsoft.App/containerApps/write",
         "Microsoft.App/containerApps/delete",
+        "Microsoft.App/containerApps/getAuthToken/action",
         "Microsoft.App/containerApps/revisions/read",
         "Microsoft.App/locations/containerAppOperationResults/read",
         "Microsoft.App/locations/containerAppOperationStatuses/read",
@@ -94,14 +96,15 @@ def test_role_arguments_materialize_the_checked_in_resource_group_scope() -> Non
     assert role["Name"] == ROLE_NAME
     assert role["AssignableScopes"] == [SCOPE]
     assert role["DataActions"] == []
-    assert len(role["Actions"]) == 17
+    assert len(role["Actions"]) == 19
     assert not any("CognitiveServices" in action for action in role["Actions"])
     assert OBSOLETE_PROVIDER_REGISTRATION not in role["Actions"]
     assert frozenset(role["Actions"]) == EXPECTED_RUNTIME_ACTIONS
     assert "{subscription_id}" not in arguments[4]
 
 
-def test_role_update_arguments_narrow_an_existing_role_with_the_same_definition() -> None:
+def test_role_update_arguments_preserve_legacy_scope_while_adding_actions() -> None:
+    """An action rollout must not implicitly orphan existing assignments."""
     create_arguments = subject.build_role_arguments(
         subscription_id=SUBSCRIPTION_ID,
         resource_group=RESOURCE_GROUP,
@@ -112,10 +115,11 @@ def test_role_update_arguments_narrow_an_existing_role_with_the_same_definition(
     )
 
     assert update_arguments[:4] == ROLE_UPDATE_ARGS_PREFIX
-    assert update_arguments[4:] == create_arguments[4:]
+    assert update_arguments[5:] == create_arguments[5:]
     role = json.loads(update_arguments[4])
     assert frozenset(role["Actions"]) == EXPECTED_RUNTIME_ACTIONS
-    assert role["AssignableScopes"] == [SCOPE]
+    assert role["AssignableScopes"] == [f"/subscriptions/{SUBSCRIPTION_ID}"]
+    assert json.loads(create_arguments[4])["AssignableScopes"] == [SCOPE]
 
 
 def test_auth_arguments_assign_the_accelerator_role_at_resource_group_scope() -> None:

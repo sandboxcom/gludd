@@ -114,6 +114,17 @@ instead of attempting another create:
 make --no-print-directory azure-accelerator-role-update-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus | xargs -0 az
 ```
 
+The runtime role includes the two narrow actions
+`Microsoft.App/containerApps/getAuthToken/action` and
+`Microsoft.App/managedEnvironments/getAuthToken/action` solely because Azure's
+current system-event APIs require official short-lived token handshakes. Gludd
+requests the exact owned app and environment system-event streams with
+`follow=false` and at most 300 lines, holds each token only in memory, filters
+environment events to the selected app, and reduces provider-controlled text to
+fixed startup reason classes and content-free counts. It never emits or persists
+a token or raw log line. These actions do not grant role, secret, registry,
+network, VM, resource-group deletion, or provider-registration authority.
+
 For a new installation, create one accelerator service principal and stream its
 one-time JSON directly into Gludd's durable, versioned credential store:
 
@@ -311,6 +322,15 @@ the original practitioner threads:
   investigation into 25-minute A100 startup delays and billing during the wait.
   The live proof consequently has bounded visible phase heartbeats, no hidden
   retry, a hard TTL/cost ceiling, and cleanup on every terminal path.
+- Container Apps report [#1705][aca-1705] records the same misleading state seen
+  by Gludd's 2026-09-15 live probes: revision metadata can report one desired
+  replica while `WorkLoad Profile Full` leaves the container list empty. Gludd
+  therefore reads the bounded system event before classifying the failure; it
+  does not infer model incompatibility from an empty replica.
+- Azure CLI extension report [#5645][azure-cli-5645] shows that log endpoint
+  response shapes have changed and previously caused an uncaught `KeyError`.
+  Gludd follows the current Azure CLI app-token/event-endpoint sequence but
+  validates and censors every boundary rather than relying on historical fields.
 - Microsoft's workload-profile announcement [#1646][aca-1646] says v2 is now
   the default environment type and includes a built-in Consumption profile.
   Gludd accepts that platform-owned entry during reads but never adds it to the
@@ -392,6 +412,7 @@ normative boundary.
 [azure-cli-30526]: https://github.com/Azure/azure-cli/issues/30526
 [azure-cli-31239]: https://github.com/Azure/azure-cli/issues/31239
 [aca-1511]: https://github.com/microsoft/azure-container-apps/issues/1511
+[aca-1705]: https://github.com/microsoft/azure-container-apps/issues/1705
 [aca-1646]: https://github.com/microsoft/azure-container-apps/issues/1646
 [aca-1682]: https://github.com/microsoft/azure-container-apps/issues/1682
 [aca-1763]: https://github.com/microsoft/azure-container-apps/issues/1763
@@ -406,6 +427,7 @@ normative boundary.
 [temporary-directory guidance]: https://github.com/systemd/systemd/blob/main/docs/TEMPORARY_DIRECTORIES.md
 [azure-app-credential]: https://learn.microsoft.com/en-us/cli/azure/ad/app/credential
 [azure-cli-11458]: https://github.com/Azure/azure-cli/issues/11458
+[azure-cli-5645]: https://github.com/Azure/azure-cli-extensions/issues/5645
 [azure-custom-role-scope]: https://learn.microsoft.com/en-us/azure/role-based-access-control/custom-roles
 [azure-role-definitions]: https://learn.microsoft.com/en-us/azure/role-based-access-control/role-definitions
 [azure-app-permissions]: https://learn.microsoft.com/en-us/azure/role-based-access-control/permissions/compute#microsoftapp

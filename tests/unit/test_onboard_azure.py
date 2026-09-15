@@ -28,11 +28,13 @@ REQUIRED_ACCELERATOR_ACTIONS = (
     "Microsoft.App/managedEnvironments/write",
     "Microsoft.App/managedEnvironments/delete",
     "Microsoft.App/managedEnvironments/join/action",
+    "Microsoft.App/managedEnvironments/getAuthToken/action",
     "Microsoft.App/managedEnvironments/usages/read",
     "Microsoft.App/managedEnvironments/workloadProfileStates/read",
     "Microsoft.App/containerApps/read",
     "Microsoft.App/containerApps/write",
     "Microsoft.App/containerApps/delete",
+    "Microsoft.App/containerApps/getAuthToken/action",
     "Microsoft.App/containerApps/revisions/read",
     "Microsoft.App/locations/containerAppOperationResults/read",
     "Microsoft.App/locations/containerAppOperationStatuses/read",
@@ -312,7 +314,7 @@ class TestTerraformModuleLeastPriv:
 
         assert policy["Name"] == ACCELERATOR_ROLE
         assert set(policy["Actions"]) == set(REQUIRED_ACCELERATOR_ACTIONS)
-        assert len(REQUIRED_ACCELERATOR_ACTIONS) == 17
+        assert len(REQUIRED_ACCELERATOR_ACTIONS) == 19
         for action in REQUIRED_ACCELERATOR_ACTIONS:
             assert action in main_tf
             assert action in policy["Actions"]

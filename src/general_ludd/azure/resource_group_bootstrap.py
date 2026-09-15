@@ -77,7 +77,6 @@ class AzureResourceGroupOwnershipState(StrEnum):
     OWNER_MISMATCH = "owner_mismatch"
     RESERVED_TAG_MISMATCH = "reserved_tag_mismatch"
     NAME_MISMATCH = "name_mismatch"
-    LOCATION_MISMATCH = "location_mismatch"
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,10 +206,15 @@ def _member(value: object, name: str) -> object:
     return getattr(value, name, None)
 
 
-def _normalized_location(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    return "".join(character for character in value.casefold() if character.isalnum())
+def _canonical_group_location(value: object) -> str:
+    """Preserve an existing group's immutable metadata location safely."""
+    raw = _member(value, "location")
+    if not isinstance(raw, str):
+        raise AzureResourceGroupBootstrapError("ownership")
+    canonical = "".join(character for character in raw.casefold() if character.isalnum())
+    if _LOCATION.fullmatch(canonical) is None:
+        raise AzureResourceGroupBootstrapError("ownership")
+    return canonical
 
 
 def _is_exact_owned_group(
@@ -226,8 +230,9 @@ def _ownership_state(
 ) -> AzureResourceGroupOwnershipState:
     if _member(value, "name") != policy.resource_group:
         return AzureResourceGroupOwnershipState.NAME_MISMATCH
-    if _normalized_location(_member(value, "location")) != policy.location:
-        return AzureResourceGroupOwnershipState.LOCATION_MISMATCH
+    # A resource group's location stores its own control-plane metadata. Azure
+    # explicitly permits resources in that group to use other regions, so the
+    # workload location must not become an ownership or adoption boundary.
     tags = _member(value, "tags")
     if not isinstance(tags, Mapping) or not (
         set(tags) & {"gludd-managed-by", "gludd-purpose", "gludd-owner-digest"}
@@ -343,6 +348,7 @@ def _ensure_with_client(
         for name, value in tags.items()
     ):
         raise AzureResourceGroupBootstrapError("ownership")
+    group_location = _canonical_group_location(existing)
     trace_sink(
         AzureResourceGroupBootstrapTrace(
             AzureResourceGroupBootstrapState.MIGRATION_STARTED,
@@ -353,7 +359,7 @@ def _ensure_with_client(
     )
     migrated = client.resource_groups.create_or_update(
         policy.resource_group,
-        {"location": policy.location, "tags": {**dict(tags), **policy.tags}},
+        {"location": group_location, "tags": {**dict(tags), **policy.tags}},
     )
     _require_exact_group(migrated, policy, observation)
     observed = client.resource_groups.get(policy.resource_group)

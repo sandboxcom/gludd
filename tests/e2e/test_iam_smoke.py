@@ -168,19 +168,14 @@ class TestAzureRoleAssignments:
         for forbidden in ('"Contributor"', '"Owner"', '"User Access Administrator"'):
             assert forbidden not in main_tf, f"Forbidden role {forbidden} in Azure module"
 
-    def test_scope_is_set_to_subscription(self, main_tf: str) -> None:
-        """Scope must be explicit — controls billing account."""
+    def test_scope_is_set_to_exact_resource_group(self, main_tf: str) -> None:
+        """Role definition and assignment stay inside Gludd's owned group."""
         assert 'scope' in main_tf, "Missing 'scope' on role assignments"
-        # The scope must reference var.subscription_id.
-        assert "subscription_id" in main_tf, (
-            "Must reference var.subscription_id for scope"
-        )
-        scope_matches = re.findall(
-            r'scope\s*=\s*"/subscriptions/\$\{(var\.\w+)\}"', main_tf,
-        )
-        assert len(scope_matches) >= 1, (
-            f"Expected scope=/subscriptions/${{var.subscription_id}}, found: {scope_matches}"
-        )
+        assert "resource_group_scope = azurerm_resource_group.gludd_rg.id" in main_tf
+        assert "scope       = local.resource_group_scope" in main_tf
+        assert "assignable_scopes = [local.resource_group_scope]" in main_tf
+        assert "scope                            = local.resource_group_scope" in main_tf
+        assert re.search(r'scope\s*=\s*"/subscriptions/', main_tf) is None
 
     def test_uses_managed_identity_not_service_principal(self, main_tf: str) -> None:
         """Should use user-assigned managed identity, not service principal."""

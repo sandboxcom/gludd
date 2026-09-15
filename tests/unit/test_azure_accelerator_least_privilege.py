@@ -22,11 +22,13 @@ EXPECTED_ACTIONS = frozenset(
         "Microsoft.App/managedEnvironments/write",
         "Microsoft.App/managedEnvironments/delete",
         "Microsoft.App/managedEnvironments/join/action",
+        "Microsoft.App/managedEnvironments/getAuthToken/action",
         "Microsoft.App/managedEnvironments/usages/read",
         "Microsoft.App/managedEnvironments/workloadProfileStates/read",
         "Microsoft.App/containerApps/read",
         "Microsoft.App/containerApps/write",
         "Microsoft.App/containerApps/delete",
+        "Microsoft.App/containerApps/getAuthToken/action",
         "Microsoft.App/containerApps/revisions/read",
         "Microsoft.App/locations/containerAppOperationResults/read",
         "Microsoft.App/locations/containerAppOperationStatuses/read",
@@ -56,7 +58,7 @@ def test_both_role_formats_grant_only_owned_lifecycle_and_metrics_operations() -
 
     assert frozenset(cli["Actions"]) == EXPECTED_ACTIONS
     assert frozenset(permission["actions"]) == EXPECTED_ACTIONS
-    assert len(EXPECTED_ACTIONS) == 17
+    assert len(EXPECTED_ACTIONS) == 19
     assert cli["NotActions"] == []
     assert permission["notActions"] == []
     assert cli["DataActions"] == []
@@ -114,6 +116,11 @@ def test_runtime_role_retains_only_owned_lifecycle_as_mutating_operations() -> N
         action
         for action in EXPECTED_ACTIONS
         if action.casefold().endswith(("/write", "/delete", "/action"))
+        and action
+        not in {
+            "Microsoft.App/containerApps/getAuthToken/action",
+            "Microsoft.App/managedEnvironments/getAuthToken/action",
+        }
     }
 
     assert mutating == {
@@ -123,4 +130,16 @@ def test_runtime_role_retains_only_owned_lifecycle_as_mutating_operations() -> N
         "Microsoft.App/containerApps/write",
         "Microsoft.App/containerApps/delete",
         "Microsoft.Resources/subscriptions/resourceGroups/write",
+    }
+    assert {
+        action
+        for action in EXPECTED_ACTIONS
+        if action
+        in {
+            "Microsoft.App/containerApps/getAuthToken/action",
+            "Microsoft.App/managedEnvironments/getAuthToken/action",
+        }
+    } == {
+        "Microsoft.App/containerApps/getAuthToken/action",
+        "Microsoft.App/managedEnvironments/getAuthToken/action",
     }

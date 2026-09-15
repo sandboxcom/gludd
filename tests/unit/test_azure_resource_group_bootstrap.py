@@ -180,6 +180,28 @@ def test_exact_owned_group_is_reused_without_any_write() -> None:
     assert client.closed == credential.closed == 1
 
 
+def test_owned_group_metadata_region_does_not_constrain_workload_region() -> None:
+    """Azure resource-group location stores metadata, not a resource boundary."""
+    policy = _policy(location="westus3")
+    groups = _Groups(
+        SimpleNamespace(
+            name=policy.resource_group,
+            location="East US",
+            tags=dict(policy.tags),
+        )
+    )
+
+    result = ensure_azure_resource_group(
+        policy,
+        _credentials(),
+        credential_builder=lambda _credentials: _Closable(),
+        client_builder=lambda _credential, _subscription: _Client(groups),
+    )
+
+    assert result.state is AzureResourceGroupBootstrapState.REUSED
+    assert groups.create_calls == []
+
+
 def test_operator_staged_group_reports_its_safe_ownership_state() -> None:
     policy = _policy()
     groups = _Groups(
@@ -307,6 +329,38 @@ def test_exact_legacy_owner_is_migrated_and_unrelated_tags_are_preserved() -> No
     ]
 
 
+def test_cross_region_legacy_migration_preserves_group_metadata_location() -> None:
+    """Migrating an owner tag never attempts to relocate the resource group."""
+    policy = AzureResourceGroupBootstrapPolicy(
+        subscription_id=SUBSCRIPTION_ID,
+        resource_group="gludd-models-eastus",
+        location="westus3",
+        owner_digest=OWNER_DIGEST,
+        legacy_owner_digests=(LEGACY_OWNER_DIGEST,),
+    )
+    groups = _Groups(
+        SimpleNamespace(
+            name=policy.resource_group,
+            location="eastus",
+            tags={
+                "gludd-managed-by": "general-ludd",
+                "gludd-purpose": "accelerator-boundary",
+                "gludd-owner-digest": LEGACY_OWNER_DIGEST,
+            },
+        )
+    )
+
+    result = ensure_azure_resource_group(
+        policy,
+        _credentials(),
+        credential_builder=lambda _credentials: _Closable(),
+        client_builder=lambda _credential, _subscription: _Client(groups),
+    )
+
+    assert result.state is AzureResourceGroupBootstrapState.MIGRATED
+    assert groups.create_calls[0][1]["location"] == "eastus"
+
+
 def test_untagged_group_reports_explicit_handoff_state_without_adoption() -> None:
     policy = _policy()
     groups = _Groups(
@@ -374,15 +428,6 @@ def test_post_create_readback_must_still_match_exact_ownership() -> None:
     "existing",
     [
         SimpleNamespace(name="foreign", location="eastus", tags={}),
-        SimpleNamespace(
-            name="gludd-models-eastus",
-            location="westus",
-            tags={
-                "gludd-managed-by": "general-ludd",
-                "gludd-purpose": "accelerator-boundary",
-                "gludd-owner-digest": OWNER_DIGEST,
-            },
-        ),
         SimpleNamespace(
             name="gludd-models-eastus",
             location="eastus",

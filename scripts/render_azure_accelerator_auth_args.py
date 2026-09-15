@@ -104,13 +104,27 @@ def build_role_update_arguments(
     resource_group: str,
     template_path: Path = ROLE_TEMPLATE_PATH,
 ) -> tuple[str, ...]:
-    """Build one Azure CLI argv that narrows an existing accelerator role."""
+    """Build one Azure CLI argv that updates actions without migrating scope."""
+    subscription_id = _validate_subscription(subscription_id)
     create_arguments = build_role_arguments(
         subscription_id=subscription_id,
         resource_group=resource_group,
         template_path=template_path,
     )
-    return (*create_arguments[:2], "update", *create_arguments[3:])
+    update_role = json.loads(create_arguments[4])
+    update_role["AssignableScopes"] = [f"/subscriptions/{subscription_id}"]
+    role_definition = json.dumps(
+        update_role,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return (
+        *create_arguments[:2],
+        "update",
+        create_arguments[3],
+        role_definition,
+        *create_arguments[5:],
+    )
 
 
 def build_auth_arguments(
