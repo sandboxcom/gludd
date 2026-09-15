@@ -921,7 +921,7 @@ class AzureContainerAppGPUUtilizationAttestor:
         progress_sink: Callable[[str], None] = lambda _message: None,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         sleep: Callable[[float], None] = time.sleep,
-        poll_timeout_seconds: float = 300.0,
+        poll_timeout_seconds: float = 900.0,
         poll_interval_seconds: float = 10.0,
         lookback: timedelta = timedelta(minutes=15),
     ) -> None:

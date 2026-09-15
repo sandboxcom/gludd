@@ -1145,6 +1145,40 @@ def test_gpu_attestor_polls_transient_bad_request_until_metric_index_is_ready() 
     assert secret not in "\n".join(events)
 
 
+def test_gpu_attestor_default_covers_documented_fifteen_minute_metric_lag() -> None:
+    """A fresh GPU metric index may become queryable after the old five-minute bound."""
+    identity = _identity()
+    clock = [datetime(2026, 9, 7, 12, 0, tzinfo=UTC)]
+    events: list[str] = []
+    secret = "provider-query-detail-must-not-escape"
+
+    class MetricIndexPending(RuntimeError):
+        status_code = 400
+
+    client = _MonitorClient([])
+    client.metrics.list = MagicMock(
+        side_effect=[MetricIndexPending(secret)] * 31
+        + [_metric_response(identity.revision_name, [18.75])]
+    )
+
+    def sleep(seconds: float) -> None:
+        clock[0] += timedelta(seconds=seconds)
+
+    attestor = AzureContainerAppGPUUtilizationAttestor(
+        client=client,
+        expected_resource_id=identity.resource_id,
+        progress_sink=events.append,
+        now=lambda: clock[0],
+        sleep=sleep,
+    )
+
+    assert attestor.attest(identity).maximum_percent == 18.75
+    assert client.metrics.list.call_count == 32
+    assert len(events) == 31
+    assert all("phase=query_pending" in event for event in events)
+    assert secret not in "\n".join(events)
+
+
 def test_gpu_attestor_reports_typed_rejection_when_bad_request_never_clears() -> None:
     """A malformed or unavailable metric query cannot poll or expose text forever."""
     identity = _identity()

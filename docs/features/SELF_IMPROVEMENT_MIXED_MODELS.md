@@ -961,6 +961,28 @@ contain a positive, finite, in-range sample for the exact owner-verified revisio
 HTTP 400, no data, foreign dimensions, and malformed responses continue to fail
 closed.
 
+A 2026-09-14 paid retry exercised that direct query against a real A100 deployment.
+Azure and local Qwen2.5-Coder 3B consumed the same canonical envelope digest
+`9cd0ce0a39abb298d1d31425bde74241a77a352da2ee8da4b81cf3d6815c74b7`
+concurrently. Azure returned 4,894 input and 478 output tokens; local returned the
+same 4,894 input and 534 output tokens before its syntax-invalid proposal was
+rejected. The direct Monitor query continued to return HTTP 400 for the complete
+five-minute bound, so Azure's response was correctly classified as an infrastructure
+failure and never entered model-quality calibration. OpenTofu destroyed the paid app
+in 19 seconds, the SDK independently verified absence, and the measured-zero-cost
+empty environment was retained.
+
+That run confirms the five-minute deadline is shorter than the service's documented
+eventual-consistency envelope. A long-lived
+[Microsoft Q&A dimension-delay report](https://learn.microsoft.com/en-us/answers/questions/5811384/not-able-to-select-the-failure-type-dimension-valu)
+reports 10--15 minutes before new metric dimensions become selectable, while the
+official [serverless GPU overview](https://learn.microsoft.com/en-us/azure/container-apps/gpu-serverless-overview)
+confirms per-second billing and scale-to-zero. The attestor therefore uses a bounded
+15-minute default, still fails closed at the deadline, and keeps mandatory teardown.
+At the policy's measured A100 rate of USD 3.50/hour, the full attestation window is
+USD 0.875, below the live proof's USD 5 cap. A positive exact-revision sample and one
+accepted improvement remain the live completion criteria.
+
 This bounded fallback also accounts for practitioner evidence without normalizing
 Azure delays into success. Container Apps issue
 [#1511](https://github.com/microsoft/azure-container-apps/issues/1511) reports GPU
