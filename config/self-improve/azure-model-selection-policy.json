@@ -58,5 +58,7 @@
   ],
   "max_hourly_cost_microusd": 4000000,
   "kv_cache_mib": 2048,
-  "runtime_overhead_mib": 3072
+  "runtime_overhead_mib": 3072,
+  "infrastructure_failure_threshold": 2,
+  "infrastructure_failure_ttl_seconds": 3600
 }

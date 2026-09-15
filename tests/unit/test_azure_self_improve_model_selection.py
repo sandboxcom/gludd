@@ -101,6 +101,37 @@ def _policy() -> AzureModelSelectionPolicy:
     )
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "match"),
+    (
+        ("search_query", "two words", "search_query"),
+        ("search_limit", True, "search_limit"),
+        ("allowed_publishers", (), "allowed_publishers"),
+        ("required_tags", ("code", "code"), "required_tags"),
+        ("blocked_tags", ("code",), "must not overlap"),
+        ("container_image", "registry.example/vllm:latest", "immutable"),
+        ("profile_capacities", (), "profile_capacities"),
+        ("minimum_context_tokens", 0, "minimum_context_tokens"),
+        ("infrastructure_failure_threshold", 0, "failure_threshold"),
+        ("infrastructure_failure_ttl_seconds", 86_401, "ttl_seconds"),
+    ),
+)
+def test_model_selection_policy_rejects_unbounded_or_ambiguous_inputs(
+    field: str,
+    value: object,
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        replace(_policy(), **{field: value})
+
+
+def test_model_selection_policy_rejects_duplicate_profile_identity() -> None:
+    profile = _policy().profile_capacities[0]
+
+    with pytest.raises(ValueError, match="profile_capacities"):
+        replace(_policy(), profile_capacities=(profile, profile))
+
+
 class _Registry:
     def __init__(self, models: tuple[ModelDeploymentMetadata, ...]) -> None:
         self.models = {model.model_id: model for model in models}
@@ -199,6 +230,49 @@ def test_discovery_uses_categorical_query_and_selects_cheapest_untested_fit() ->
     assert traces[-1]["event"] == "SELF_IMPROVE_AZURE_MODEL_SELECTED"
 
 
+def test_recent_profile_failure_uses_only_cost_approved_sufficient_alternative() -> None:
+    """Operational evidence can oversize explicitly without naming a model/GPU."""
+    model = _metadata(
+        "trusted/small-coder",
+        revision="a" * 40,
+        parameters=3_000_000_000,
+    )
+    traces: list[dict[str, object]] = []
+
+    selected = discover_and_select_azure_model(
+        _Registry((model,)),
+        classify_candidate_task("Implement a public Python feature."),
+        _policy(),
+        attempts=(),
+        unavailable_profile_types=frozenset({T4_PROFILE.workload_profile_type}),
+        trace_sink=traces.append,
+    )
+
+    assert selected.workload_profile_type == A100_PROFILE.workload_profile_type
+    assert selected.reason is AzureModelSelectionReason.OPERATIONAL_FAILOVER
+    assert selected.hourly_cost_microusd == 3_500_000
+    assert traces[-1]["reason"] == "operational_failover"
+
+
+def test_operational_failover_never_bypasses_hardware_or_cost_policy() -> None:
+    model = _metadata(
+        "trusted/small-coder",
+        revision="a" * 40,
+        parameters=3_000_000_000,
+    )
+
+    with pytest.raises(ValueError, match="no deployable Azure model"):
+        discover_and_select_azure_model(
+            _Registry((model,)),
+            classify_candidate_task("Implement a public Python feature."),
+            replace(_policy(), max_hourly_cost_microusd=1_000_000),
+            attempts=(),
+            unavailable_profile_types=frozenset(
+                {T4_PROFILE.workload_profile_type}
+            ),
+        )
+
+
 def test_discovery_queries_allowed_publishers_with_one_bounded_total_budget() -> None:
     first = _metadata(
         "trusted/first-coder",
@@ -232,21 +306,77 @@ def test_discovery_queries_allowed_publishers_with_one_bounded_total_budget() ->
             "query": "code",
             "tags": ["code", "vllm"],
             "sort": "downloads",
-            "limit": 3,
+            "limit": 5,
             "author": "trusted",
         },
         {
             "query": "code",
             "tags": ["code", "vllm"],
             "sort": "downloads",
-            "limit": 2,
+            "limit": 5,
             "author": "second",
         },
     ]
     assert traces[0]["publisher_query_count"] == 2
     assert traces[0]["discovered_count"] == 2
     assert traces[0]["hydrated_count"] == 2
-    assert traces[0]["schema_version"] == 3
+    assert traces[0]["rank_sampling"] == "publisher_spread"
+    assert traces[0]["schema_version"] == 4
+
+
+def test_discovery_samples_deep_publisher_ranks_with_bounded_hydration() -> None:
+    """Popularity must not hide cheaper models from hardware-aware selection."""
+    models_by_publisher = {
+        publisher: tuple(
+            _metadata(
+                f"{publisher}/coder-{rank}",
+                revision=f"{rank + offset:x}" * 40,
+                parameters=(70_000_000_000 if rank < 3 else 3_000_000_000),
+                downloads=10_000 - rank,
+            )
+            for rank in range(4)
+        )
+        for publisher, offset in (("trusted", 1), ("second", 5))
+    }
+
+    class _RankedRegistry(_Registry):
+        def __init__(self) -> None:
+            super().__init__(tuple(sum(models_by_publisher.values(), ())))
+
+        def search(self, **kwargs: object) -> list[ModelSearchResult]:
+            self.searches.append(dict(kwargs))
+            publisher = str(kwargs["author"])
+            limit = int(kwargs["limit"])
+            return [
+                ModelSearchResult(
+                    model_id=model.model_id,
+                    downloads=model.downloads,
+                )
+                for model in models_by_publisher[publisher][:limit]
+            ]
+
+    registry = _RankedRegistry()
+    traces: list[dict[str, object]] = []
+
+    selected = discover_and_select_azure_model(
+        registry,
+        classify_candidate_task("Implement a public Python feature."),
+        replace(
+            _policy(),
+            allowed_publishers=("trusted", "second"),
+            search_limit=4,
+        ),
+        attempts=(),
+        trace_sink=traces.append,
+    )
+
+    assert selected.model.parameter_count == 3_000_000_000
+    assert selected.workload_profile_type == T4_PROFILE.workload_profile_type
+    assert [search["limit"] for search in registry.searches] == [4, 4]
+    assert len(registry.hydrated) == 4
+    assert any(model_id.endswith("coder-3") for model_id in registry.hydrated)
+    assert traces[0]["discovered_count"] == 4
+    assert traces[0]["hydrated_count"] == 4
 
 
 def test_least_tested_challenger_rotates_then_empirical_quality_wins() -> None:
@@ -378,8 +508,9 @@ def test_discovery_rejects_untrusted_or_unfitted_candidates(
             "eligible_count": 0,
             "hydrated_count": 1,
             "publisher_query_count": 1,
+            "rank_sampling": "publisher_spread",
             "rejection_counts": {rejection: 1},
-            "schema_version": 3,
+            "schema_version": 4,
         }
     ]
 

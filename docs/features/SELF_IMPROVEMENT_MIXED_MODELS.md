@@ -5,7 +5,7 @@ Azure OpenAI, and Azure Container Apps discovery/inference, candidate-set
 assembly, content-free calibrated routing, and managed-runner selection are
 implemented behind explicit policy. Gludd now plans and owns the complete Azure
 Container Apps resource-group/environment/app lifecycle through the Microsoft SDK
-and OpenTofu. The 17-action least-privilege role and workload-identity path are
+and OpenTofu. The 19-action least-privilege role and workload-identity path are
 implemented. Paid canaries now prove concurrent local and Azure inference plus
 verified app teardown, but an accepted code improvement and positive Azure Monitor
 GPU-utilization evidence remain pending.
@@ -63,6 +63,55 @@ bounded visible startup supervision. AzAPI issues
 [#856](https://github.com/Azure/terraform-provider-azapi/issues/856) and
 [#875](https://github.com/Azure/terraform-provider-azapi/issues/875) justify pinned
 v2 export syntax and rejecting sensitive or broad response material in plans.
+
+Terminal readiness observation now uses the maintained Microsoft SDK for both
+system-event scopes. The app token reads only that app's stream; the managed
+environment token reads the environment stream and then accepts only records whose
+`ContainerAppName` matches the owned ephemeral app. The parser caps lines and nesting,
+retains no raw provider text, and emits only counts plus fixed reason classes derived
+from the documented `Log`, `Reason`, and related status fields. The two additional
+role actions are exactly `Microsoft.App/containerApps/getAuthToken/action` and
+`Microsoft.App/managedEnvironments/getAuthToken/action`; they do not grant log-store,
+secret, registry, network, VM, IAM, provider-registration, or resource-group-delete
+access. Microsoft's current
+[managed-environment token contract](https://learn.microsoft.com/en-us/rest/api/resource-manager/containerapps/managed-environments/get-auth-token?view=rest-resource-manager-containerapps-2026-01-01),
+[system-log schema](https://learn.microsoft.com/en-us/azure/azure-monitor/reference/tables/containerappsystemlogs),
+and [Azure CLI implementation](https://github.com/Azure/azure-cli/blob/dev/src/azure-cli/azure/cli/command_modules/containerapp/custom.py#L3243-L3283)
+define those boundaries.
+
+This diagnostic path also incorporates long-lived operator reports without treating
+them as normative service contracts. Container Apps issue
+[#1679](https://github.com/microsoft/azure-container-apps/issues/1679) records a
+platform `identity-service` sidecar image-pull failure that stalled activation;
+issue [#1780](https://github.com/microsoft/azure-container-apps/issues/1780) records
+a platform-sidecar overlay mount failure on an unhealthy node without automatic
+rescheduling; and issue
+[#783](https://github.com/microsoft/azure-container-apps/issues/783) records an
+environment-wide provisioning stall that environment recreation resolved for some
+operators. Consequently Gludd observes both scopes, distinguishes platform/container/
+capacity classes, and never recycles a retained environment from one app symptom
+without matching environment evidence.
+
+The first live run with both token actions dynamically selected the T4-fit candidate.
+It read 79 app events and 101 environment events, scoped 77 environment records to
+the reusable app name, and leaked none of their provider content. No fixed reason was
+present in that immediate sample; Azure then reported the revision
+`Failed`/`Unhealthy` with one desired replica and zero concrete replicas. Gludd
+withheld the Azure candidate, destroyed the paid app in 18 seconds, verified absence,
+and retained only the measured-zero-cost environment. In parallel, local
+Qwen2.5-Coder 1.5B generated a two-file proposal from the common envelope, but syntax
+preflight rejected it before tests or commit.
+
+The reader no longer treats those app-name counts as exact failure evidence. It binds
+every accepted record to the immutable terminal revision, emits fixed error/warning/
+unclassified-error counts, and performs at most four visible reads separated by
+five seconds to accommodate terminal-event publication lag. This follows Microsoft's
+[documented revision-provisioning messages](https://learn.microsoft.com/en-us/azure/container-apps/troubleshoot-container-start-failures)
+and the long-lived
+[#670 operator report](https://github.com/microsoft/azure-container-apps/issues/670),
+where the revision failed only after minutes with an operation-expired diagnosis.
+The 15-second diagnostic bound cannot delay mandatory teardown indefinitely, and a
+fresh paid canary remains necessary to prove the post-fix behavior.
 
 A 2026-09-10 live canary exposed version skew before the paid app mutation: the
 preflight caller used an unverified `2026-01-01` path while the official SDK
@@ -392,6 +441,55 @@ and single-resource metrics, and perform no resource-group deletion. It has no
 Cognitive Services, registry, network, secret, provider-registration, unrelated
 Compute, logging, billing, or IAM authority. The exact role and operator bootstrap
 are documented in `docs/azure-iam-setup.md`.
+
+### Azure serverless-GPU operational evidence
+
+The runtime treats Azure's advertised profile and quota as admission evidence, not
+as proof that a replica actually reached a GPU. Microsoft's current
+[serverless-GPU documentation](https://learn.microsoft.com/en-us/azure/container-apps/gpu-serverless-overview)
+requires a workload-profile environment and GPU quota, lists West US 3 for both T4
+and A100, documents one whole GPU per replica, and currently reports driver 570
+with a CUDA 12.x platform runtime. Gludd therefore requires all of those control
+plane facts and still withholds model output until its CUDA startup canary,
+OpenAI-compatible response validation, exact-revision runtime counters, and cleanup
+proof all succeed.
+
+Long-lived practitioner reports explain why the runtime cannot equate an accepted
+deployment with working compute:
+
+- [ACA issue #1511](https://github.com/microsoft/azure-container-apps/issues/1511)
+  records intermittent T4 executions that create a pod but never reach image pull,
+  then recover minutes later; the reporter could not reproduce the same symptom on
+  A100.
+- [ACA issue #1682](https://github.com/microsoft/azure-container-apps/issues/1682)
+  records West US 3 T4 nodes rejecting CUDA 12.8 while an older CUDA/PyTorch image
+  works. This conflicts with the newer platform-version documentation, so Gludd
+  must measure the deployed revision instead of assuming either account is
+  universally true.
+- [ACA issue #1705](https://github.com/microsoft/azure-container-apps/issues/1705)
+  shows a revision reporting one replica while replica details contain no
+  containers and the independent condition is `WorkLoad Profile Full`.
+- [ACA issue #1797](https://github.com/microsoft/azure-container-apps/issues/1797)
+  records unresolved operator concern about future A100 capacity. An A100 retry is
+  therefore an empirical alternative, never a hard-coded availability assumption.
+
+The September 15, 2026 bounded live sequence authenticated with the protected
+credential, discovered and selected an immutable public model, created a West US 3
+environment in 937 seconds, passed exact-profile quota preflight, and created the
+app in 18 seconds. Two subsequent trials reused the retained zero-cost environment
+and independently observed `Succeeded` app state plus a desired revision count of
+one, but no ready model response; every trial destroyed the app in about 19 seconds
+and independently verified absence. The later diagnostic retry additionally read
+the exact revision's replica inventory on every readiness poll. These are negative
+operational observations, not model-quality labels, and must never lower a model's
+learned coding score.
+
+The 937-second cold-environment measurement is why the `zero_cost_only` policy may
+retain a compatible managed environment while deleting every app and GPU replica.
+Retention remains conditional on zero active apps, zero minimum replicas, no paid
+logging/private endpoint/dedicated profile, an ownership match, and a bounded
+reconciliation deadline. A changed model, region, profile, owner, cost fact, or
+todo demand triggers a fresh plan; inactivity never authorizes paid compute.
 
 ### Runtime configuration file
 
@@ -972,26 +1070,35 @@ failure and never entered model-quality calibration. OpenTofu destroyed the paid
 in 19 seconds, the SDK independently verified absence, and the measured-zero-cost
 empty environment was retained.
 
-That run confirms the five-minute deadline is shorter than the service's documented
-eventual-consistency envelope. A long-lived
-[Microsoft Q&A dimension-delay report](https://learn.microsoft.com/en-us/answers/questions/5811384/not-able-to-select-the-failure-type-dimension-valu)
-reports 10--15 minutes before new metric dimensions become selectable, while the
-official [serverless GPU overview](https://learn.microsoft.com/en-us/azure/container-apps/gpu-serverless-overview)
-confirms per-second billing and scale-to-zero. The attestor therefore uses a bounded
-15-minute default, still fails closed at the deadline, and keeps mandatory teardown.
-At the policy's measured A100 rate of USD 3.50/hour, the full attestation window is
-USD 0.875, below the live proof's USD 5 cap. A positive exact-revision sample and one
-accepted improvement remain the live completion criteria.
+A second canary tested the documented eventual-consistency hypothesis for the full
+15-minute maximum reported by the long-lived
+[Microsoft Q&A dimension-delay report](https://learn.microsoft.com/en-us/answers/questions/5811384/not-able-to-select-the-failure-type-dimension-valu).
+Azure again completed 4,894 input and 478 output tokens, but every filtered Monitor
+request returned HTTP 400 through the 900-second deadline. The run withheld the
+response, excluded the infrastructure failure from quality calibration, destroyed
+the app in 19 seconds, independently verified absence, and retained only the
+zero-hourly-cost environment. The delay hypothesis is therefore falsified for this
+request shape; Gludd restores the shorter five-minute bound rather than spending an
+extra USD 0.583 per failed diagnosis.
 
-This bounded fallback also accounts for practitioner evidence without normalizing
-Azure delays into success. Container Apps issue
-[#1511](https://github.com/microsoft/azure-container-apps/issues/1511) reports GPU
-capacity failures persisting for minutes and asks for better recovery signals, while
-issue [#1763](https://github.com/microsoft/azure-container-apps/issues/1763) reports
-intermittent 25-minute A100 startup delays with billing during the wait. Gludd keeps
-the deadline, progress heartbeats, cost cap, mandatory paid-app teardown, and censored
-infrastructure outcome; it does not wait indefinitely or treat model/container
-self-report as GPU evidence.
+The official [Metrics List REST contract](https://learn.microsoft.com/en-us/rest/api/monitor/metrics/list?view=rest-monitor-2023-10-01)
+makes `$filter` optional. The next query is consequently scoped only by the exact,
+newly created Container App resource URI and the published metric name/namespace,
+avoiding dependence on Azure's dimension-value index. The owner verifies absence
+before creation and binds the one active revision. Returned revision metadata, when
+present, must still match; a foreign revision still fails closed. An unsplit series
+may omit dimension metadata because its Azure scope is already the exact ephemeral
+app. Metric name, Percent unit, finite range, positive sample, deadline, heartbeats,
+cost cap, and mandatory teardown remain unchanged.
+
+The same run exposed an independent local admission defect: the planner measured only
+the largest shard although both workers consume the encoded batch of every shard.
+That let Phi-3 Mini's 4,096-token context pass planning before the worker rejected the
+larger request. Planning now measures the canonical encoded batch, so local and Azure
+capacity decisions use the same envelope size. Container Apps issues
+[#1511](https://github.com/microsoft/azure-container-apps/issues/1511) and
+[#1763](https://github.com/microsoft/azure-container-apps/issues/1763) remain recorded
+as operational delay evidence, but neither is treated as proof of GPU execution.
 
 The same run also confirmed a local failure-classification defect. A fatal native
 decode error used the validation-retry marker and was therefore eligible to poison
@@ -1008,6 +1115,36 @@ passed all 27 task-targeted tests, and passed full isolated collection. Its prop
 was still rejected by the commit-quality guard, so the model received negative quality
 evidence rather than an accepted improvement. This proves real local work and common
 evaluation, but not yet a successful self-improvement outcome.
+
+#### Exact-profile operational evidence and failover (2026-09-15)
+
+A later retained-environment retry authenticated from the protected credential
+generation, reused the exact owned environment, and completed the Container App
+control-plane write. The exact active revision then became terminal
+`Failed`/`Unhealthy`: its summary requested one replica while the exact revision's
+replica inventory contained zero replicas. No model request or GPU attestation began.
+Gludd destroyed the paid app, independently verified absence, and retained only the
+measured-zero-cost empty environment. This is placement evidence, not a model-quality
+observation, and it matches the capacity-exhaustion class reported in the long-lived
+Container Apps issue [#1705](https://github.com/microsoft/azure-container-apps/issues/1705).
+
+Bootstrap now records only an exact, digest-bound operational tuple after resource
+cleanup: region, workload-profile type, immutable container-image digest, deployment
+identity digest, lifecycle phase, fixed failure class, and timestamp. Prompts, model
+names, image repositories, provider messages, credentials, and endpoints are excluded.
+Authentication, authorization, invalid responses, request-phase failures, stale or
+future observations, foreign images or regions, and tampered records cannot suppress a
+profile. Only repeated recent `rate_limited`, `timeout`, or `unavailable` startup or
+preflight evidence reaches the selector.
+
+The selector routes around such a profile only to another discovered profile that is
+still sufficient for the selected immutable model and remains within the same explicit
+hourly-cost policy. It does not hard-code T4, A100, a model name, or a region, and the
+operational record never enters empirical model calibration. The location is passed
+through the single `azure-self-improve-live-proof` workflow so the selection and
+bootstrap phases share one evidence scope. The identical credential-free local/GitHub
+Actions profile exercises these branches: 1,171 tests pass, aggregate coverage is 91%,
+and every one of 61 measured files exceeds the 75% individual floor.
 
 #### Parent-owned per-ordinal proposal scope (2026-09-13)
 

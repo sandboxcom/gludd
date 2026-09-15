@@ -38,7 +38,14 @@ from general_ludd.self_improve.model_candidates import ModelCandidateProvider
 
 
 class _ModelRegistry(Protocol):
-    def search(self, **kwargs: object) -> list[ModelSearchResult]: ...
+    def search(
+        self,
+        query: str = "",
+        tags: list[str] | None = None,
+        sort: str = "downloads",
+        limit: int = 20,
+        author: str | None = None,
+    ) -> list[ModelSearchResult]: ...
 
     def get_deployment_metadata(self, model_id: str) -> ModelDeploymentMetadata: ...
 
@@ -60,6 +67,7 @@ class _AzureModelRejection(StrEnum):
 def _admit(
     model: ModelDeploymentMetadata,
     policy: AzureModelSelectionPolicy,
+    unavailable_profile_types: frozenset[str],
 ) -> tuple[EligibleAzureModel | None, _AzureModelRejection | None]:
     publisher = model.model_id.split("/", 1)[0].casefold()
     if publisher not in {item.casefold() for item in policy.allowed_publishers}:
@@ -78,10 +86,18 @@ def _admit(
     if model.context_tokens < policy.minimum_context_tokens:
         return None, _AzureModelRejection.CONTEXT_TOO_SHORT
     try:
-        selected = select_smallest_sufficient_profile(
+        default_selection = select_smallest_sufficient_profile(
             model_requirement(model, policy),
             hardware_profiles=tuple(
                 capacity.profile for capacity in policy.profile_capacities
+            ),
+        )
+        selected = select_smallest_sufficient_profile(
+            model_requirement(model, policy),
+            hardware_profiles=tuple(
+                capacity.profile
+                for capacity in policy.profile_capacities
+                if capacity.workload_profile_type not in unavailable_profile_types
             ),
         )
     except AzureContainerAppGPUUnavailable:
@@ -100,14 +116,24 @@ def _admit(
             workload_profile_type=selected.profile.workload_profile_type,
             required_vram_mib=selected.required_vram_mib,
             hourly_cost_microusd=hourly,
-            identity_digest=model_selection_identity_digest(model, policy),
+            identity_digest=azure_model_deployment_identity_digest(
+                model_id=model.model_id,
+                model_revision=model.revision,
+                weight_bits=model.weight_bits,
+                container_image=policy.container_image,
+                workload_profile_type=selected.profile.workload_profile_type,
+            ),
+            operational_failover=(
+                selected.profile.workload_profile_type
+                != default_selection.profile.workload_profile_type
+            ),
         ),
         None,
     )
 
 
 def _emit(
-    sink: Callable[[Mapping[str, object]], None],
+    sink: Callable[[dict[str, object]], None],
     event: Mapping[str, object],
 ) -> None:
     try:
@@ -116,39 +142,91 @@ def _emit(
         raise RuntimeError("Azure model selection trace publication failed") from None
 
 
+def _spread_ranked_results(
+    results: Sequence[ModelSearchResult],
+    slots: int,
+) -> tuple[ModelSearchResult, ...]:
+    """Sample the full popularity range without exceeding a hydration budget."""
+    if slots <= 0 or not results:
+        return ()
+    if slots >= len(results):
+        return tuple(results)
+    if slots == 1:
+        return (results[0],)
+    last = len(results) - 1
+    return tuple(results[(index * last) // (slots - 1)] for index in range(slots))
+
+
+def _bounded_rank_sample(
+    publisher_results: Sequence[Sequence[ModelSearchResult]],
+    limit: int,
+) -> tuple[ModelSearchResult, ...]:
+    """Allocate a fixed hydration budget fairly across non-empty publishers."""
+    populated = tuple(tuple(results) for results in publisher_results if results)
+    if not populated:
+        return ()
+    base_quota, extra_slots = divmod(limit, len(populated))
+    sampled: list[ModelSearchResult] = []
+    sampled_ids: set[str] = set()
+    for index, results in enumerate(populated):
+        quota = base_quota + (1 if index < extra_slots else 0)
+        for result in _spread_ranked_results(results, quota):
+            if result.model_id not in sampled_ids:
+                sampled.append(result)
+                sampled_ids.add(result.model_id)
+    if len(sampled) < limit:
+        for rank in range(max(map(len, populated))):
+            for results in populated:
+                if rank >= len(results):
+                    continue
+                result = results[rank]
+                if result.model_id in sampled_ids:
+                    continue
+                sampled.append(result)
+                sampled_ids.add(result.model_id)
+                if len(sampled) == limit:
+                    return tuple(sampled)
+    return tuple(sampled[:limit])
+
+
 def _discover(
     registry: _ModelRegistry,
     policy: AzureModelSelectionPolicy,
-    sink: Callable[[Mapping[str, object]], None],
+    sink: Callable[[dict[str, object]], None],
+    unavailable_profile_types: frozenset[str],
 ) -> tuple[EligibleAzureModel, ...]:
-    base_quota, extra_slots = divmod(
-        policy.search_limit, len(policy.allowed_publishers)
-    )
-    results: list[ModelSearchResult] = []
+    publisher_results: list[tuple[ModelSearchResult, ...]] = []
     publisher_query_count = 0
-    for index, publisher in enumerate(policy.allowed_publishers):
-        publisher_limit = base_quota + (1 if index < extra_slots else 0)
-        if publisher_limit == 0:
-            continue
+    for publisher in policy.allowed_publishers[: policy.search_limit]:
         publisher_query_count += 1
-        results.extend(
-            registry.search(
-                query=policy.search_query,
-                tags=list(policy.required_tags),
-                sort="downloads",
-                limit=publisher_limit,
-                author=publisher,
+        ranked = registry.search(
+            query=policy.search_query,
+            tags=list(policy.required_tags),
+            sort="downloads",
+            limit=policy.search_limit,
+            author=publisher,
+        )
+        publisher_results.append(
+            tuple(
+                sorted(
+                    {
+                        result.model_id: result
+                        for result in ranked
+                    }.values(),
+                    key=lambda result: (-result.downloads, result.model_id),
+                )
             )
         )
-    results.sort(key=lambda result: (-result.downloads, result.model_id))
-    del results[policy.search_limit :]
+    results = _bounded_rank_sample(publisher_results, policy.search_limit)
     unique_ids = tuple(dict.fromkeys(result.model_id for result in results))
     admitted: list[EligibleAzureModel] = []
     rejection_counts: Counter[str] = Counter()
     for model_id in unique_ids:
         try:
             candidate, rejection = _admit(
-                registry.get_deployment_metadata(model_id), policy
+                registry.get_deployment_metadata(model_id),
+                policy,
+                unavailable_profile_types,
             )
         except ModelDeploymentMetadataUnavailable as error:
             candidate = None
@@ -169,8 +247,9 @@ def _discover(
             "eligible_count": len(admitted),
             "hydrated_count": len(unique_ids),
             "publisher_query_count": publisher_query_count,
+            "rank_sampling": "publisher_spread",
             "rejection_counts": dict(sorted(rejection_counts.items())),
-            "schema_version": 3,
+            "schema_version": 4,
         },
     )
     return tuple(admitted)
@@ -215,7 +294,11 @@ def _choose(
         )
         return (
             candidate,
-            AzureModelSelectionReason.LEAST_TESTED_CHALLENGER,
+            (
+                AzureModelSelectionReason.OPERATIONAL_FAILOVER
+                if candidate.operational_failover
+                else AzureModelSelectionReason.LEAST_TESTED_CHALLENGER
+            ),
             trials,
             accepted,
             0.5,
@@ -240,7 +323,11 @@ def _choose(
     )
     return (
         candidate,
-        AzureModelSelectionReason.EMPIRICAL_QUALITY,
+        (
+            AzureModelSelectionReason.OPERATIONAL_FAILOVER
+            if candidate.operational_failover
+            else AzureModelSelectionReason.EMPIRICAL_QUALITY
+        ),
         trials,
         accepted,
         posterior,
@@ -253,7 +340,8 @@ def discover_and_select_azure_model(
     policy: AzureModelSelectionPolicy,
     *,
     attempts: Sequence[CandidateAttempt],
-    trace_sink: Callable[[Mapping[str, object]], None] | None = None,
+    unavailable_profile_types: frozenset[str] = frozenset(),
+    trace_sink: Callable[[dict[str, object]], None] | None = None,
 ) -> SelectedAzureModel:
     """Discover eligible models and choose an empirical challenger or winner."""
     if not isinstance(classification, CandidateTaskClassification):
@@ -263,10 +351,15 @@ def discover_and_select_azure_model(
     observations = tuple(attempts)
     if not all(isinstance(attempt, CandidateAttempt) for attempt in observations):
         raise ValueError("attempts must contain CandidateAttempt values")
+    if not isinstance(unavailable_profile_types, frozenset) or any(
+        not isinstance(profile, str) or not profile
+        for profile in unavailable_profile_types
+    ):
+        raise ValueError("unavailable_profile_types must be a frozenset of identifiers")
     sink = trace_sink or (lambda _event: None)
     if not callable(sink):
         raise ValueError("trace_sink must be callable")
-    eligible = _discover(registry, policy, sink)
+    eligible = _discover(registry, policy, sink, unavailable_profile_types)
     if not eligible:
         raise ValueError("no deployable Azure model satisfies the active policy")
     candidate, reason, trials, accepted, posterior = _choose(

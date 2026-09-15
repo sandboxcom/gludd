@@ -15,6 +15,9 @@ from general_ludd.models.model_registry import (
     ModelRegistry,
     ModelSearchResult,
 )
+from general_ludd.self_improve.azure_infrastructure_evidence import (
+    load_recent_unavailable_profiles,
+)
 from general_ludd.self_improve.azure_model_selection import (
     AzureModelSelectionPolicy,
     discover_and_select_azure_model,
@@ -36,6 +39,8 @@ _POLICY_KEYS = frozenset(
         "allowed_publishers",
         "blocked_tags",
         "container_image",
+        "infrastructure_failure_threshold",
+        "infrastructure_failure_ttl_seconds",
         "kv_cache_mib",
         "max_hourly_cost_microusd",
         "minimum_context_tokens",
@@ -69,6 +74,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--task-file", required=True, type=Path)
     parser.add_argument("--policy-file", required=True, type=Path)
     parser.add_argument("--evidence-file", required=True, type=Path)
+    parser.add_argument("--location", required=True)
     parser.add_argument("--catalog-file", type=Path)
     parser.add_argument("--registry-cache-dir", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
@@ -138,6 +144,12 @@ def _load_policy(
         max_hourly_cost_microusd=cast(int, payload["max_hourly_cost_microusd"]),
         kv_cache_mib=cast(int, payload["kv_cache_mib"]),
         runtime_overhead_mib=cast(int, payload["runtime_overhead_mib"]),
+        infrastructure_failure_threshold=cast(
+            int, payload["infrastructure_failure_threshold"]
+        ),
+        infrastructure_failure_ttl_seconds=cast(
+            int, payload["infrastructure_failure_ttl_seconds"]
+        ),
     )
 
 
@@ -234,11 +246,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         registry = CatalogModelRegistry(args.catalog_file)
     evidence = CapabilityEvidenceStore(str(args.evidence_file))
+    unavailable_profile_types = load_recent_unavailable_profiles(
+        evidence,
+        location=args.location,
+        container_image=policy.container_image,
+        max_age_seconds=policy.infrastructure_failure_ttl_seconds,
+        minimum_failures=policy.infrastructure_failure_threshold,
+    )
+    _trace(
+        {
+            "event": "SELF_IMPROVE_AZURE_INFRASTRUCTURE_EVIDENCE_LOADED",
+            "schema_version": 1,
+            "unavailable_profile_count": len(unavailable_profile_types),
+        }
+    )
     selection = discover_and_select_azure_model(
         registry,
         classification,
         policy,
         attempts=load_calibration_attempts_for_task(evidence, classification),
+        unavailable_profile_types=unavailable_profile_types,
         trace_sink=_trace,
     )
     write_azure_model_selection(args.output, selection)

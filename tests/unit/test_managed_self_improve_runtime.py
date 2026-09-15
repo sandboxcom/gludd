@@ -469,9 +469,27 @@ def test_package_factory_rejects_non_path_repository() -> None:
 
 def test_package_factory_uses_configured_capability_evidence_store(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     evidence_path = tmp_path / "azure-selection-evidence.json"
     evidence_path.write_text("[]", encoding="utf-8")
+    bootstrap_stores: list[CapabilityEvidenceStore | None] = []
+
+    def build_bootstrap(
+        _repo_root: Path,
+        _self_improve_config: object,
+        *,
+        progress_sink: object,
+        operational_evidence_store: CapabilityEvidenceStore | None,
+    ) -> None:
+        del progress_sink
+        bootstrap_stores.append(operational_evidence_store)
+
+    monkeypatch.setattr(
+        runtime_module,
+        "build_azure_containerapp_bootstrap_wiring",
+        build_bootstrap,
+    )
 
     runner = build_managed_self_improve_runner(
         tmp_path,
@@ -485,6 +503,7 @@ def test_package_factory_uses_configured_capability_evidence_store(
     )
     adapter = runner.outcome_adapter_factory(tmp_path / "unused-cache")
     store = cast(CapabilityEvidenceStore, adapter.planner_store)
+    assert bootstrap_stores == [store]
 
     store.register_evidence({"collection": "configured-runtime-proof"})
 

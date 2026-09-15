@@ -89,6 +89,7 @@ class _RuntimeCompositionApi(Protocol):
         self_improve_config: Mapping[str, object],
         *,
         progress_sink: Callable[[str], None],
+        operational_evidence_store: CapabilityEvidenceStore | None = None,
     ) -> _ConfiguredAzureBootstrapWiring | None:
         """Build optional config-derived Azure environment wiring."""
 
@@ -247,14 +248,23 @@ def _configure_live_candidate_wiring(
     azure_backend_factory: AzureCandidateBackendFactory | None,
     containerapp_backend_factory: ContainerAppCandidateBackendFactory | None,
     containerapp_bootstrap_factory: ContainerAppCandidateBootstrapFactory | None,
+    operational_evidence_store: CapabilityEvidenceStore | None,
 ) -> LiveManagedCandidateWiring | None:
     """Combine explicit and config-derived live candidate wiring."""
     if self_improve_config is not None:
-        configured = runtime_api.build_azure_containerapp_bootstrap_wiring(
-            canonical_root,
-            self_improve_config,
-            progress_sink=progress_sink,
-        )
+        if operational_evidence_store is None:
+            configured = runtime_api.build_azure_containerapp_bootstrap_wiring(
+                canonical_root,
+                self_improve_config,
+                progress_sink=progress_sink,
+            )
+        else:
+            configured = runtime_api.build_azure_containerapp_bootstrap_wiring(
+                canonical_root,
+                self_improve_config,
+                progress_sink=progress_sink,
+                operational_evidence_store=operational_evidence_store,
+            )
         if configured is not None:
             if (
                 live_candidate_policy is not None
@@ -421,6 +431,7 @@ def build_managed_self_improve_runner(
         azure_backend_factory,
         containerapp_backend_factory,
         containerapp_bootstrap_factory,
+        configured_evidence_store,
     )
     managed_evaluator = cast(
         ManagedAttemptEvaluator[object],

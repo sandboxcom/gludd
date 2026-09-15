@@ -38,7 +38,12 @@ from general_ludd.self_improve.azure_containerapp_bootstrap_credentials import (
     release_once,
 )
 from general_ludd.self_improve.azure_containerapp_transport_types import (
+    ContainerAppGPUAttestationSource,
     ContainerAppResponseFailure,
+)
+from general_ludd.self_improve.azure_infrastructure_evidence import (
+    AzureInfrastructurePhase,
+    record_azure_infrastructure_failure,
 )
 from general_ludd.self_improve.live_candidate_wiring import (
     ContainerAppCandidateBackend,
@@ -47,6 +52,7 @@ from general_ludd.self_improve.model_candidates import (
     BackendFailure,
     BackendInfrastructureError,
 )
+from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 
 _RESOURCE_GROUP_FAILURES = {
     "authentication": BackendFailure.AUTHENTICATION,
@@ -58,6 +64,13 @@ _RESOURCE_GROUP_FAILURES = {
     "cleanup": BackendFailure.INTERNAL,
     "internal": BackendFailure.INTERNAL,
 }
+_PROFILE_OPERATIONAL_FAILURES = frozenset(
+    {
+        BackendFailure.RATE_LIMITED,
+        BackendFailure.TIMEOUT,
+        BackendFailure.UNAVAILABLE,
+    }
+)
 _OWNERSHIP_STATES = frozenset(
     {
         "exact_owned",
@@ -94,6 +107,7 @@ _PREFLIGHT_REASONS = frozenset(
         "workload_profile_disabled",
         "workload_profile_missing",
         "workload_profile_state_invalid",
+        "workload_profile_state_incomplete",
         "workload_profile_state_missing",
         "workload_profile_states_not_found",
         "workload_profile_states_read_failed",
@@ -254,6 +268,45 @@ def runtime_trace(
         gpu_positive_sample_count = 0
     else:
         gpu_maximum_percent = float(gpu_maximum_percent)
+    raw_gpu_attestation_source = getattr(event, "gpu_attestation_source", None)
+    gpu_attestation_source = (
+        raw_gpu_attestation_source.value
+        if isinstance(raw_gpu_attestation_source, ContainerAppGPUAttestationSource)
+        else None
+    )
+    gpu_runtime_counts = tuple(
+        getattr(event, name, 0)
+        for name in (
+            "gpu_prompt_tokens",
+            "gpu_generation_tokens",
+            "gpu_successful_requests",
+        )
+    )
+    gpu_estimated_flops_per_gpu = getattr(
+        event,
+        "gpu_estimated_flops_per_gpu",
+        0.0,
+    )
+    runtime_evidence_valid = (
+        gpu_attestation_source
+        == ContainerAppGPUAttestationSource.STARTUP_CUDA_VLLM_METRICS.value
+        and all(
+            not isinstance(value, bool) and isinstance(value, int)
+            for value in gpu_runtime_counts
+        )
+        and 1 <= gpu_runtime_counts[0] <= 100_000_000
+        and 1 <= gpu_runtime_counts[1] <= 100_000_000
+        and 1 <= gpu_runtime_counts[2] <= 10_000
+        and not isinstance(gpu_estimated_flops_per_gpu, bool)
+        and isinstance(gpu_estimated_flops_per_gpu, (int, float))
+        and math.isfinite(gpu_estimated_flops_per_gpu)
+        and 0 <= gpu_estimated_flops_per_gpu <= 1e30
+    )
+    if not runtime_evidence_valid:
+        gpu_runtime_counts = (0, 0, 0)
+        gpu_estimated_flops_per_gpu = 0.0
+    else:
+        gpu_estimated_flops_per_gpu = float(gpu_estimated_flops_per_gpu)
     event_source = getattr(event, "event_source", None)
     event_reason = getattr(event, "reason", None)
     preflight_reason = _safe_preflight_reason(event_reason)
@@ -333,6 +386,11 @@ def runtime_trace(
         f"total_tokens={token_counts[2]} "
         f"gpu_maximum_percent={gpu_maximum_percent} "
         f"gpu_positive_sample_count={gpu_positive_sample_count} "
+        f"gpu_attestation_source={gpu_attestation_source or 'none'} "
+        f"gpu_prompt_tokens={gpu_runtime_counts[0]} "
+        f"gpu_generation_tokens={gpu_runtime_counts[1]} "
+        f"gpu_successful_requests={gpu_runtime_counts[2]} "
+        f"gpu_estimated_flops_per_gpu={gpu_estimated_flops_per_gpu} "
         f"attestation_reason={attestation_reason or 'none'} "
         f"preflight_reason={preflight_reason or 'none'}{structured} "
         "secret_output=false"
@@ -357,7 +415,9 @@ class ConfiguredAzureContainerAppBootstrapFactory:
         progress_sink: Callable[[str], None],
         idle_retention_policy: AzureIdleRetentionPolicy,
         expected_next_demand_seconds: int | None,
+        resource_group_owner_digest: str,
         legacy_owner_digests: tuple[str, ...] = (),
+        operational_evidence_store: CapabilityEvidenceStore | None = None,
     ) -> None:
         """Initialize immutable lifecycle inputs for fresh candidate sessions."""
         self._app_policy = app_policy
@@ -374,7 +434,15 @@ class ConfiguredAzureContainerAppBootstrapFactory:
         self._progress_sink = progress_sink
         self._idle_retention_policy = idle_retention_policy
         self._expected_next_demand_seconds = expected_next_demand_seconds
+        self._resource_group_owner_digest = resource_group_owner_digest
         self._legacy_owner_digests = legacy_owner_digests
+        if operational_evidence_store is not None and not isinstance(
+            operational_evidence_store, CapabilityEvidenceStore
+        ):
+            raise ValueError(
+                "operational_evidence_store must be a CapabilityEvidenceStore"
+            )
+        self._operational_evidence_store = operational_evidence_store
         self._deployment_digest = owned_candidate_deployment_digest(
             app_policy,
             environment_policy,
@@ -386,6 +454,39 @@ class ConfiguredAzureContainerAppBootstrapFactory:
     def deployment_digest(self) -> str:
         """Return the immutable app-and-environment desired-state digest."""
         return self._deployment_digest
+
+    def _record_operational_failure(
+        self,
+        failure: BackendFailure,
+        phase: AzureInfrastructurePhase,
+    ) -> None:
+        """Persist only availability evidence that may safely change placement."""
+        if (
+            self._operational_evidence_store is None
+            or failure not in _PROFILE_OPERATIONAL_FAILURES
+        ):
+            return
+        try:
+            record_azure_infrastructure_failure(
+                self._operational_evidence_store,
+                location=self._app_policy.location,
+                workload_profile_type=self._app_policy.workload_profile_type,
+                container_image=self._app_policy.container_image,
+                deployment_identity_digest=self._deployment_digest,
+                phase=phase,
+                failure=failure,
+            )
+        except Exception:
+            self._progress_sink(
+                "SELF_IMPROVE_AZURE_BOOTSTRAP phase=operational_evidence_failed "
+                f"operation_digest={self._deployment_digest} secret_output=false"
+            )
+            raise BackendInfrastructureError(BackendFailure.INTERNAL) from None
+        self._progress_sink(
+            "SELF_IMPROVE_AZURE_BOOTSTRAP phase=operational_evidence_recorded "
+            f"operation_digest={self._deployment_digest} "
+            f"failure_class={failure.value} secret_output=false"
+        )
 
     def _ensure_resource_group(
         self,
@@ -399,7 +500,7 @@ class ConfiguredAzureContainerAppBootstrapFactory:
                     subscription_id=self._app_policy.subscription_id,
                     resource_group=self._app_policy.resource_group,
                     location=self._app_policy.location,
-                    owner_digest=self._environment_policy.owner_digest,
+                    owner_digest=self._resource_group_owner_digest,
                     legacy_owner_digests=self._legacy_owner_digests,
                 ),
                 credentials,
@@ -480,9 +581,17 @@ class ConfiguredAzureContainerAppBootstrapFactory:
                     f"{message} secret_output=false"
                 ),
             )
-        except BackendInfrastructureError:
+        except BackendInfrastructureError as exc:
             with suppress(Exception):
                 release()
+            self._record_operational_failure(
+                exc.failure,
+                (
+                    AzureInfrastructurePhase.PREFLIGHT
+                    if preflight_failure is not None
+                    else AzureInfrastructurePhase.CANDIDATE_STARTUP
+                ),
+            )
             raise
         except BaseException:
             with suppress(Exception):
@@ -508,9 +617,13 @@ class ConfiguredAzureContainerAppBootstrapFactory:
                 resources.close()
                 raise RuntimeError("Azure bootstrap configuration drift")
             return cast(ContainerAppCandidateBackend, owner())
-        except BackendInfrastructureError:
+        except BackendInfrastructureError as exc:
             with suppress(Exception):
                 resources.close()
+            self._record_operational_failure(
+                exc.failure,
+                AzureInfrastructurePhase.CANDIDATE_STARTUP,
+            )
             raise
         except OwnedCandidateLifecycleError as exc:
             with suppress(Exception):
@@ -521,6 +634,14 @@ class ConfiguredAzureContainerAppBootstrapFactory:
                 failure = preflight_failure or BackendFailure.UNAVAILABLE
             else:
                 failure = BackendFailure.INTERNAL
+            self._record_operational_failure(
+                failure,
+                (
+                    AzureInfrastructurePhase.PREFLIGHT
+                    if exc.operation == "preflight"
+                    else AzureInfrastructurePhase.CANDIDATE_STARTUP
+                ),
+            )
             raise BackendInfrastructureError(failure) from None
         except RuntimeError as exc:
             if str(exc) == "Azure bootstrap configuration drift":

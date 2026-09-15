@@ -62,14 +62,19 @@ from general_ludd.self_improve.azure_containerapp_bootstrap_credentials import (
 )
 from general_ludd.self_improve.azure_containerapp_transport_types import (
     ContainerAppBackendTrace,
+    ContainerAppGPUAttestationSource,
     ContainerAppResponseFailure,
     ContainerAppTraceEvent,
+)
+from general_ludd.self_improve.azure_infrastructure_evidence import (
+    load_recent_unavailable_profiles,
 )
 from general_ludd.self_improve.model_candidates import (
     BackendFailure,
     BackendInfrastructureError,
     ModelCandidateProvider,
 )
+from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 
 SUBSCRIPTION = "11111111-2222-3333-4444-555555555555"
 TENANT = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -185,8 +190,13 @@ def test_runtime_trace_surfaces_only_validated_gpu_attestation_evidence() -> Non
             ContainerAppTraceEvent.GPU_ATTESTATION_SUCCEEDED,
             candidate_digest="a" * 64,
             request_number=1,
-            gpu_maximum_percent=37.5,
-            gpu_positive_sample_count=2,
+            gpu_attestation_source=(
+                ContainerAppGPUAttestationSource.STARTUP_CUDA_VLLM_METRICS
+            ),
+            gpu_prompt_tokens=23,
+            gpu_generation_tokens=5,
+            gpu_successful_requests=1,
+            gpu_estimated_flops_per_gpu=8192.0,
         ),
     )
     bootstrap._runtime_trace(
@@ -194,15 +204,26 @@ def test_runtime_trace_surfaces_only_validated_gpu_attestation_evidence() -> Non
         "backend",
         SimpleNamespace(
             event=ContainerAppTraceEvent.GPU_ATTESTATION_SUCCEEDED,
-            gpu_maximum_percent=float("nan"),
-            gpu_positive_sample_count=True,
+            gpu_attestation_source="provider-private-source",
+            gpu_prompt_tokens=-1,
+            gpu_generation_tokens="PRIVATE_TOKEN_DETAIL",
+            gpu_successful_requests=True,
+            gpu_estimated_flops_per_gpu=float("nan"),
         ),
     )
 
-    assert "gpu_maximum_percent=37.5" in messages[0]
-    assert "gpu_positive_sample_count=2" in messages[0]
-    assert "gpu_maximum_percent=0.0" in messages[1]
-    assert "gpu_positive_sample_count=0" in messages[1]
+    assert "gpu_attestation_source=startup_cuda_vllm_metrics" in messages[0]
+    assert "gpu_prompt_tokens=23" in messages[0]
+    assert "gpu_generation_tokens=5" in messages[0]
+    assert "gpu_successful_requests=1" in messages[0]
+    assert "gpu_estimated_flops_per_gpu=8192.0" in messages[0]
+    assert "gpu_attestation_source=none" in messages[1]
+    assert "gpu_prompt_tokens=0" in messages[1]
+    assert "gpu_generation_tokens=0" in messages[1]
+    assert "gpu_successful_requests=0" in messages[1]
+    assert "gpu_estimated_flops_per_gpu=0.0" in messages[1]
+    assert "provider-private-source" not in messages[1]
+    assert "PRIVATE_TOKEN_DETAIL" not in messages[1]
     assert "secret_output=false" in messages[0]
 
 
@@ -465,6 +486,7 @@ def _build(
     resources_builder: Any = None,
     resource_group_bootstrapper: Any = None,
     owned_factory_type: Any = _OwnedFactory,
+    operational_evidence_store: CapabilityEvidenceStore | None = None,
 ) -> AzureContainerAppBootstrapWiring | None:
     provider = credential_provider or _CredentialProvider()
     group_bootstrapper = resource_group_bootstrapper or (
@@ -478,6 +500,7 @@ def _build(
         resources_builder=resources_builder,
         resource_group_bootstrapper=group_bootstrapper,
         owned_factory_type=owned_factory_type,
+        operational_evidence_store=operational_evidence_store,
         now=lambda: NOW,
     )
 
@@ -528,7 +551,8 @@ def test_same_scoped_credential_bootstraps_owned_group_before_runtime_resources(
     assert policy.subscription_id == SUBSCRIPTION
     assert policy.resource_group == "gludd-models-eastus"
     assert policy.location == "eastus"
-    assert policy.owner_digest == wiring.environment_policy.owner_digest
+    assert policy.owner_digest != wiring.environment_policy.owner_digest
+    assert wiring.environment_policy.owner_digest in policy.legacy_owner_digests
     assert credentials.subscription_id == SUBSCRIPTION
     assert any(
         "component=resource_group" in event
@@ -622,7 +646,13 @@ def test_config_derives_t4_topology_and_bootstraps_fresh_owned_sessions(
     assert wiring.app_policy.max_replicas == 2
     assert wiring.app_policy.min_replicas == 1
     assert wiring.app_policy.http_concurrent_requests == 2
-    assert wiring.environment_policy.profiles[0].profile_name == "gpu-t4"
+    assert [
+        (profile.profile_name, profile.workload_profile_type)
+        for profile in wiring.environment_policy.profiles
+    ] == [
+        ("gpu-a100", A100_PROFILE.workload_profile_type),
+        ("gpu-t4", T4_PROFILE.workload_profile_type),
+    ]
     assert wiring.environment_policy.expires_at_utc == "2026-09-07T12:30:00Z"
     assert wiring.idle_retention_policy.preset is AzureRetentionPreset.ZERO_COST_ONLY
     assert wiring.idle_retention_policy.max_retention_seconds == 21_600
@@ -694,6 +724,7 @@ def test_inventory_can_expose_only_the_selected_gpu_profile(tmp_path: Path) -> N
     assert [profile.workload_profile_type for profile in wiring.topology.profiles] == [
         A100_PROFILE.workload_profile_type
     ]
+    assert wiring.app_policy.gpu_profile == A100_PROFILE
 
 
 @pytest.mark.parametrize(
@@ -805,6 +836,7 @@ def test_preflight_refusal_is_classified_from_typed_trace(tmp_path: Path) -> Non
     """A known Azure refusal remains actionable after owned-lifecycle censorship."""
     provider = _CredentialProvider()
     resource_events: list[str] = []
+    evidence = CapabilityEvidenceStore(str(tmp_path / "evidence.json"))
 
     class RefusingOwnedFactory(_OwnedFactory):
         def __call__(self) -> _Backend:
@@ -826,6 +858,7 @@ def test_preflight_refusal_is_classified_from_typed_trace(tmp_path: Path) -> Non
         credential_provider=provider,
         resources_builder=resources,
         owned_factory_type=RefusingOwnedFactory,
+        operational_evidence_store=evidence,
     )
     assert isinstance(wiring, AzureContainerAppBootstrapWiring)
 
@@ -834,12 +867,14 @@ def test_preflight_refusal_is_classified_from_typed_trace(tmp_path: Path) -> Non
 
     assert caught.value.failure is BackendFailure.AUTHORIZATION
     assert resource_events == ["resources.close"]
+    assert evidence.list_all() == []
 
 
 def test_owned_apply_timeout_remains_typed_after_bootstrap_cleanup(tmp_path: Path) -> None:
     """A readiness timeout must remain retryable across the owned lifecycle."""
     provider = _CredentialProvider()
     resource_events: list[str] = []
+    evidence = CapabilityEvidenceStore(str(tmp_path / "evidence.json"))
 
     class TimedOutOwnedFactory(_OwnedFactory):
         def __call__(self) -> _Backend:
@@ -864,7 +899,9 @@ def test_owned_apply_timeout_remains_typed_after_bootstrap_cleanup(tmp_path: Pat
         credential_provider=provider,
         resources_builder=resources,
         owned_factory_type=TimedOutOwnedFactory,
+        operational_evidence_store=evidence,
     )
+    assert isinstance(wiring, AzureContainerAppBootstrapWiring)
 
     with pytest.raises(BackendInfrastructureError) as caught:
         wiring.bootstrap_factory()
@@ -873,6 +910,14 @@ def test_owned_apply_timeout_remains_typed_after_bootstrap_cleanup(tmp_path: Pat
     assert resource_events == ["resources.close"]
     assert provider.acquisitions == 1
     assert provider.releases == 1
+    assert load_recent_unavailable_profiles(
+        evidence,
+        location="eastus",
+        container_image=IMAGE,
+        max_age_seconds=86_400,
+        minimum_failures=1,
+        now_epoch=cast(float, evidence.list_all()[0]["registered_at"]),
+    ) == frozenset({"Consumption-GPU-NC8as-T4"})
 
 
 def test_credential_providers_enforce_exact_acquire_release_contracts(

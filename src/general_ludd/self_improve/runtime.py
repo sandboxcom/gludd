@@ -2781,6 +2781,7 @@ def build_azure_containerapp_bootstrap_wiring(
     self_improve_config: Mapping[str, object],
     *,
     progress_sink: Callable[[str], None],
+    operational_evidence_store: CapabilityEvidenceStore | None = None,
 ) -> _ConfiguredAzureBootstrapWiring | None:
     """Lazy import avoids package initialization cycles at the infra boundary."""
     from general_ludd.self_improve.azure_containerapp_bootstrap import (
@@ -2791,6 +2792,7 @@ def build_azure_containerapp_bootstrap_wiring(
         repo_root,
         self_improve_config,
         progress_sink=progress_sink,
+        operational_evidence_store=operational_evidence_store,
     )
 
 

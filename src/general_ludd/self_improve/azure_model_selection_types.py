@@ -27,6 +27,7 @@ class AzureModelSelectionReason(StrEnum):
 
     LEAST_TESTED_CHALLENGER = "least_tested_challenger"
     EMPIRICAL_QUALITY = "empirical_quality"
+    OPERATIONAL_FAILOVER = "operational_failover"
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +46,8 @@ class AzureModelSelectionPolicy:
     max_hourly_cost_microusd: int
     kv_cache_mib: int
     runtime_overhead_mib: int
+    infrastructure_failure_threshold: int = 2
+    infrastructure_failure_ttl_seconds: int = 3600
 
     def __post_init__(self) -> None:
         """Reject ambiguous discovery or effectively unbounded spend policy."""
@@ -101,6 +104,20 @@ class AzureModelSelectionPolicy:
                 or value > _MAX_COST_MICROUSD
             ):
                 raise ValueError(f"{name} is outside its hard bound")
+        if (
+            isinstance(self.infrastructure_failure_threshold, bool)
+            or not isinstance(self.infrastructure_failure_threshold, int)
+            or not 1 <= self.infrastructure_failure_threshold <= 100
+        ):
+            raise ValueError("infrastructure_failure_threshold is outside its hard bound")
+        if (
+            isinstance(self.infrastructure_failure_ttl_seconds, bool)
+            or not isinstance(self.infrastructure_failure_ttl_seconds, int)
+            or not 1 <= self.infrastructure_failure_ttl_seconds <= 86_400
+        ):
+            raise ValueError(
+                "infrastructure_failure_ttl_seconds is outside its hard bound"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +129,7 @@ class EligibleAzureModel:
     required_vram_mib: int
     hourly_cost_microusd: int
     identity_digest: str
+    operational_failover: bool = False
 
 
 @dataclass(frozen=True, slots=True)

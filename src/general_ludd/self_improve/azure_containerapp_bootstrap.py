@@ -53,6 +53,7 @@ from general_ludd.self_improve.azure_containerapp_bootstrap_credentials import (
 from general_ludd.self_improve.azure_containerapp_bootstrap_planning import (
     azure_bootstrap_legacy_owner_digests,
     azure_bootstrap_owner_digest,
+    azure_resource_group_owner_digest,
     plan_azure_bootstrap_topology,
 )
 from general_ludd.self_improve.azure_containerapp_bootstrap_runtime import (
@@ -74,6 +75,7 @@ from general_ludd.self_improve.model_candidates import (
     ModelCandidateProvider,
 )
 from general_ludd.self_improve.private_policy import load_self_improve_policy
+from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 
 
 class FileAzureCredentialProvider(_FileAzureCredentialProvider):
@@ -131,6 +133,7 @@ class _BootstrapPlan:
     topology: AzureRunnerTopologyPlan
     app_policy: AzureContainerAppLiveProofPolicy
     environment_policy: AzureEnvironmentLifecyclePolicy
+    resource_group_owner_digest: str
     legacy_owner_digests: tuple[str, ...]
     work_root: Path
     environment_work_root: Path
@@ -201,6 +204,16 @@ def _build_plan(
     call_budget = _call_budget(settings)
     topology = plan_azure_bootstrap_topology(settings, requirement, progress_sink)
     app_plan = topology.apps[0]
+    try:
+        gpu_profile = next(
+            capacity.profile
+            for capacity in settings.profile_capacities
+            if capacity.profile.workload_profile_name == app_plan.profile_name
+            and capacity.profile.workload_profile_type
+            == app_plan.workload_profile_type
+        )
+    except StopIteration:
+        raise ValueError("topology selected an unknown GPU profile") from None
     owner_digest = azure_bootstrap_owner_digest(canonical_root, settings)
     try:
         privacy_policy_digest = load_self_improve_policy(canonical_root).digest
@@ -230,17 +243,19 @@ def _build_plan(
         min_replicas=app_plan.min_replicas,
         max_replicas=app_plan.max_replicas,
         http_concurrent_requests=app_plan.per_replica_concurrency,
+        gpu_profile=gpu_profile,
     )
     environment_policy = AzureEnvironmentLifecyclePolicy(
         subscription_id=settings.subscription_id,
         resource_group=settings.resource_group,
         environment_name=settings.environment_name,
         location=settings.location,
-        profiles=(
+        profiles=tuple(
             AzureEnvironmentProfile(
-                app_plan.profile_name,
-                app_plan.workload_profile_type,
-            ),
+                capacity.profile.workload_profile_name,
+                capacity.profile.workload_profile_type,
+            )
+            for capacity in settings.profile_capacities
         ),
         owner_digest=owner_digest,
         plan_digest=topology.plan_digest,
@@ -253,6 +268,10 @@ def _build_plan(
         topology=topology,
         app_policy=app_policy,
         environment_policy=environment_policy,
+        resource_group_owner_digest=azure_resource_group_owner_digest(
+            canonical_root,
+            settings,
+        ),
         legacy_owner_digests=azure_bootstrap_legacy_owner_digests(
             canonical_root,
             settings,
@@ -296,6 +315,7 @@ def _build_factory(
     resources_builder: Callable[..., Any],
     owned_factory_type: type[Any],
     progress_sink: Callable[[str], None],
+    operational_evidence_store: CapabilityEvidenceStore | None,
 ) -> ConfiguredAzureContainerAppBootstrapFactory:
     provider = credential_provider or _default_credential_provider(settings)
     return ConfiguredAzureContainerAppBootstrapFactory(
@@ -311,7 +331,9 @@ def _build_factory(
         progress_sink=progress_sink,
         idle_retention_policy=settings.idle_retention_policy,
         expected_next_demand_seconds=settings.expected_next_demand_seconds,
+        resource_group_owner_digest=plan.resource_group_owner_digest,
         legacy_owner_digests=plan.legacy_owner_digests,
+        operational_evidence_store=operational_evidence_store,
     )
 
 
@@ -326,6 +348,7 @@ def build_azure_containerapp_bootstrap_wiring(
     ),
     resource_group_bootstrapper: Callable[..., object] = ensure_azure_resource_group,
     owned_factory_type: type[Any] = AzureContainerAppOwnedCandidateFactory,
+    operational_evidence_store: CapabilityEvidenceStore | None = None,
     now: Callable[[], datetime] = _utc_now,
 ) -> AzureContainerAppBootstrapWiring | None:
     """Validate global config and compose a lazy self-owned Azure candidate."""
@@ -347,6 +370,7 @@ def build_azure_containerapp_bootstrap_wiring(
         resources_builder,
         owned_factory_type,
         progress_sink,
+        operational_evidence_store,
     )
     policy = LiveCandidateWiringPolicy(
         local_budget=plan.call_budget,

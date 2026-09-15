@@ -289,6 +289,9 @@ def test_make_target_runs_real_benchmark_with_one_temporary_config() -> None:
     assert recipe.count(
         '--evidence-file "$(AZURE_SELF_IMPROVE_EVIDENCE_FILE)"'
     ) == 2
+    assert recipe.count(
+        '--location "$(AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION)"'
+    ) == 2
     assert '@set -eu; temporary_directory="$$(mktemp -d' in recipe
     assert (
         "AZURE_SELF_IMPROVE_TASK_FILE ?= config/self-improve/catalog-truth.json"

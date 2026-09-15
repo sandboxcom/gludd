@@ -20,6 +20,7 @@ from general_ludd.azure.accelerator_credentials import AzureAcceleratorCredentia
 from general_ludd.infra.azure_containerapp_environment_lifecycle import (
     AzureEnvironmentLifecyclePolicy,
 )
+from general_ludd.infra.azure_containerapp_gpu_canary import CUDA_STARTUP_COMMAND
 from general_ludd.infra.azure_containerapp_live_proof import (
     AzureContainerAppDeploymentEvidence,
     AzureContainerAppLiveProofError,
@@ -148,6 +149,7 @@ def _plan(policy: AzureContainerAppLiveProofPolicy) -> dict[str, object]:
                                     "containers": [
                                         {
                                             "image": policy.container_image,
+                                            "command": list(CUDA_STARTUP_COMMAND),
                                             "args": [
                                                 "--model",
                                                 policy.model_name,
@@ -857,7 +859,8 @@ def test_default_live_resources_bootstraps_owned_group_before_runtime_constructi
     assert group_policy.subscription_id == SUBSCRIPTION
     assert group_policy.resource_group == policy.resource_group
     assert group_policy.location == policy.location
-    assert group_policy.owner_digest == environment_policy.owner_digest
+    assert group_policy.owner_digest != environment_policy.owner_digest
+    assert environment_policy.owner_digest in group_policy.legacy_owner_digests
 
 
 def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
@@ -1260,6 +1263,7 @@ def test_default_live_resources_wire_preflight_polling_backend_and_cleanup(
             "workload_profile_name": policy.workload_profile_name,
             "location": policy.location,
             "requirement": requirement,
+            "hardware_profiles": (policy.gpu_profile,),
         }
     ]
     assert "repo_root" not in runtime_arguments
@@ -1732,6 +1736,9 @@ def test_azure_containerapp_coverage_has_one_local_and_hosted_contract() -> None
     assert "tests/unit/test_deployment_telemetry.py" in recipe
     assert "tests/unit/test_provider_auth.py" in recipe
     assert "tests/unit/test_self_improve_azure_containerapp_bootstrap.py" in recipe
+    assert "tests/unit/test_azure_infrastructure_evidence.py" in recipe
+    assert "tests/unit/test_azure_self_improve_model_selection.py" in recipe
+    assert "tests/unit/test_select_azure_self_improve_model.py" in recipe
     assert "COVERAGE_AGGREGATE_MIN=85" in recipe
     assert "COVERAGE_PER_FILE_MIN=75" in recipe
     entry = next(
@@ -1773,3 +1780,7 @@ def test_azure_containerapp_coverage_has_one_local_and_hosted_contract() -> None
     assert "azure_containerapp_topology.py" in coverage_config
     assert "azure_idle_retention.py" in coverage_config
     assert "self_improve/azure_containerapp_bootstrap.py" in coverage_config
+    assert "scripts/select_azure_self_improve_model.py" in coverage_config
+    assert "self_improve/azure_infrastructure_evidence.py" in coverage_config
+    assert "self_improve/azure_model_selection.py" in coverage_config
+    assert "self_improve/azure_model_selection_types.py" in coverage_config
