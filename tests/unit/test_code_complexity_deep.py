@@ -508,6 +508,7 @@ class TestMaintainabilityIndex:
             "azure_containerapp_runtime_readers.py",
             "azure_containerapp_runtime_resources.py",
             "azure_containerapp_runtime_state.py",
+            "azure_containerapp_terminal_events.py",
             "azure_containerapp_topology.py",
             "azure_containerapp_topology_types.py",
         }

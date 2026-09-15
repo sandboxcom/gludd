@@ -17,7 +17,74 @@ from general_ludd.infra.azure_containerapp_runtime_state import (
     _observed_revision_name,
     _safe_status_values,
 )
+from general_ludd.infra.azure_containerapp_sdk import AzureContainerAppsSDKReadError
+from general_ludd.infra.azure_containerapp_terminal_events import (
+    AzureTerminalEventReader,
+    _system_event_counts,
+)
 from general_ludd.self_improve.model_candidates import BackendInfrastructureError
+
+
+def test_terminal_event_reader_rejects_missing_exact_revision_identity() -> None:
+    """Diagnostic lookup stays fail-closed when Azure omits the revision name."""
+    progress: list[str] = []
+    reader = AzureTerminalEventReader(
+        app_transport=object(),
+        lifecycle_transport=object(),
+        progress_sink=progress.append,
+        sleep=lambda _seconds: None,
+    )
+
+    assert reader.read("bounded-token", None) == ()
+    assert progress == [
+        "azure_containerapp_system_event_poll phase=readiness "
+        "source=combined state=supplementary_unavailable "
+        "reason=revision_identity_missing"
+    ]
+
+
+def test_terminal_event_reader_preserves_bounded_unclassified_fallback() -> None:
+    """Retries remain visible and retain the fixed unclassified error reason."""
+    progress: list[str] = []
+    sleeps: list[float] = []
+
+    def unavailable(_token: str, _revision_name: str) -> object:
+        raise AzureContainerAppsSDKReadError("fixed read failure")
+
+    reader = AzureTerminalEventReader(
+        app_transport=SimpleNamespace(
+            get_system_event_reason_classes=lambda *_args: {
+                "reasonClasses": [],
+                "unclassifiedErrorCount": 1,
+            }
+        ),
+        lifecycle_transport=SimpleNamespace(
+            get_environment_system_event_reason_classes=unavailable
+        ),
+        progress_sink=progress.append,
+        sleep=sleeps.append,
+    )
+
+    assert reader.read("bounded-token", "gludd-vllm-managed-abc123--0000007") == (
+        "system_error_unclassified",
+    )
+    assert sleeps == [5.0, 5.0, 5.0]
+    assert sum("reason=sdk_read_failed" in message for message in progress) == 4
+
+
+def test_system_event_counts_discard_provider_controlled_values() -> None:
+    """Only non-boolean counters inside the documented bound are observable."""
+    assert _system_event_counts(
+        {
+            "eventCount": True,
+            "scopedEventCount": -1,
+            "classifiedEventCount": 301,
+            "errorEventCount": "2",
+            "warningEventCount": None,
+            "unclassifiedErrorCount": 300,
+        }
+    ) == (0, 0, 0, 0, 0, 300)
+    assert _system_event_counts([1, 2, 3]) == (0, 0, 0, 0, 0, 0)
 
 
 def test_reader_returns_immediate_absence_from_the_bound_app_transport() -> None:
