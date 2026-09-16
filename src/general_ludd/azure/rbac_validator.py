@@ -256,6 +256,7 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
             "Microsoft.Network/networkSecurityGroups/read",
             "Microsoft.Network/networkSecurityGroups/write",
             "Microsoft.Network/networkSecurityGroups/delete",
+            "Microsoft.Network/networkSecurityGroups/join/action",
             "Microsoft.Network/networkSecurityGroups/securityRules/read",
             "Microsoft.Network/networkSecurityGroups/securityRules/write",
             "Microsoft.Network/networkSecurityGroups/securityRules/delete",
