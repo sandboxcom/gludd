@@ -8,17 +8,17 @@ and HTTPS origin.  It probes only ``/v1/models`` and posts only to
 from __future__ import annotations
 
 import json
-import math
 import time
 from collections.abc import Callable
 from contextlib import suppress
-
-from prometheus_client.parser import text_string_to_metric_families
 
 from general_ludd.self_improve.azure_backend import (
     AzureApprovedPrompt,
     AzureCandidateResponse,
     AzurePromptApprovalError,
+)
+from general_ludd.self_improve.azure_containerapp_gpu_evidence import (
+    attest_vllm_runtime_gpu,
 )
 from general_ludd.self_improve.azure_containerapp_transport import (
     MAX_PROVIDER_TOKENS,
@@ -34,7 +34,6 @@ from general_ludd.self_improve.azure_containerapp_transport import (
     new_httpx_client,
     probe_model,
     request_json,
-    request_text,
     validated_chat_response,
 )
 from general_ludd.self_improve.azure_containerapp_transport_types import (
@@ -46,48 +45,8 @@ from general_ludd.self_improve.model_candidates import (
     BackendInfrastructureError,
 )
 
-_MAX_METRICS_BYTES = 8 * 1024 * 1024
-_MAX_METRIC_SAMPLES = 100_000
-_METRICS_CONTENT_TYPES = frozenset({"text/plain", "application/openmetrics-text"})
-_PROMPT_TOKENS = "vllm:prompt_tokens_total"
-_GENERATION_TOKENS = "vllm:generation_tokens_total"
-_SUCCESSFUL_REQUESTS = "vllm:request_success_total"
-_ESTIMATED_FLOPS = "vllm:estimated_flops_per_gpu_total"
-_REQUIRED_METRICS = frozenset(
-    {_PROMPT_TOKENS, _GENERATION_TOKENS, _SUCCESSFUL_REQUESTS}
-)
-_SELECTED_METRICS = _REQUIRED_METRICS | {_ESTIMATED_FLOPS}
 _DISCOVERY_ATTEMPT_SECONDS = 30.0
 _DISCOVERY_RETRY_SECONDS = 1.0
-
-
-def _vllm_metric_totals(payload: str, model_name: str) -> dict[str, float]:
-    """Parse only bounded exact-model counters through prometheus-client."""
-    totals: dict[str, float] = {}
-    sample_count = 0
-    for family in text_string_to_metric_families(payload):
-        for sample in family.samples:
-            sample_count += 1
-            if sample_count > _MAX_METRIC_SAMPLES:
-                raise ValueError
-            if sample.name not in _SELECTED_METRICS:
-                continue
-            if sample.labels.get("model_name") != model_name:
-                raise ValueError
-            value = float(sample.value)
-            if not math.isfinite(value) or value < 0 or value > 1e30:
-                raise ValueError
-            totals[sample.name] = totals.get(sample.name, 0.0) + value
-    if not _REQUIRED_METRICS.issubset(totals):
-        raise ValueError
-    return totals
-
-
-def _exact_counter(totals: dict[str, float], name: str, expected: int) -> int:
-    value = totals[name]
-    if not value.is_integer() or int(value) != expected:
-        raise ValueError
-    return int(value)
 
 
 def _probe_initial_model(
@@ -383,49 +342,12 @@ class AzureContainerAppCandidateBackend:
         """Bind exact vLLM counters to one response from the canary-gated revision."""
         if self._closed:
             raise BackendInfrastructureError(BackendFailure.UNAVAILABLE)
-        if not isinstance(response, AzureCandidateResponse) or (
-            isinstance(timeout_seconds, bool)
-            or not isinstance(timeout_seconds, (int, float))
-            or not 0.0 < float(timeout_seconds) <= 120.0
-        ):
-            raise ValueError("runtime GPU evidence limits are invalid")
-        try:
-            payload = request_text(
-                self._client.get,
-                "/metrics",
-                timeout_seconds=float(timeout_seconds),
-                maximum_bytes=_MAX_METRICS_BYTES,
-                content_types=_METRICS_CONTENT_TYPES,
-            )
-            totals = _vllm_metric_totals(payload, self._identity.model_name)
-            prompt_tokens = _exact_counter(
-                totals,
-                _PROMPT_TOKENS,
-                response.input_tokens,
-            )
-            generation_tokens = _exact_counter(
-                totals,
-                _GENERATION_TOKENS,
-                response.output_tokens,
-            )
-            successful = totals[_SUCCESSFUL_REQUESTS]
-            if (
-                not successful.is_integer()
-                or not 1 <= int(successful) <= 10_000
-            ):
-                raise ValueError
-            flops = totals.get(_ESTIMATED_FLOPS)
-            return VLLMRuntimeGPUEvidence(
-                candidate_digest=self._identity.identity_digest,
-                prompt_tokens=prompt_tokens,
-                generation_tokens=generation_tokens,
-                successful_requests=int(successful),
-                estimated_flops_per_gpu=flops,
-            )
-        except BackendInfrastructureError:
-            raise
-        except Exception:
-            raise BackendInfrastructureError(BackendFailure.INVALID_RESPONSE) from None
+        return attest_vllm_runtime_gpu(
+            self._client,
+            self._identity,
+            response,
+            timeout_seconds=timeout_seconds,
+        )
 
     def close(self) -> None:
         """Idempotently close the sole HTTP transport owned by this backend."""

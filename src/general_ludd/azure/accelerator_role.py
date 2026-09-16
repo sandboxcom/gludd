@@ -139,6 +139,18 @@ class AcceleratorRoleApplyResult:
     resource_group_created: bool = False
 
 
+@dataclass(slots=True)
+class _LiveApplyResources:
+    """Mutable ownership and diagnostic state for one live SDK apply."""
+
+    phase: Literal["resource_group", "role_definition"]
+    credential: object | None = None
+    client: Any = None
+    resource_client: Any = None
+    operation: AzureAcceleratorOperation = "credential"
+    resource_group_created: bool = False
+
+
 RoleTraceSink = Callable[[AcceleratorRoleTrace], None]
 
 
@@ -359,6 +371,138 @@ def _classify_sdk_failure(exc: Exception) -> AzureAcceleratorFailureClass:
     return "internal"
 
 
+def _validated_apply_result(
+    *,
+    resource_group_requested: bool,
+    assignment_requested: bool,
+    trace_sink: RoleTraceSink,
+) -> AcceleratorRoleApplyResult:
+    if resource_group_requested:
+        trace_sink(
+            AcceleratorRoleTrace(
+                phase="resource_group",
+                state="validated",
+                assignment_requested=assignment_requested,
+            )
+        )
+    trace_sink(
+        AcceleratorRoleTrace(
+            phase="role_definition",
+            state="validated",
+            assignment_requested=assignment_requested,
+        )
+    )
+    return AcceleratorRoleApplyResult(
+        state="validated",
+        action_count=len(EXPECTED_ACTIONS),
+        assignment_created=False,
+    )
+
+
+def _apply_resource_group(
+    resources: _LiveApplyResources,
+    *,
+    subscription_id: str,
+    resource_group: str,
+    resource_group_location: str,
+    assignment_requested: bool,
+    trace_sink: RoleTraceSink,
+) -> None:
+    resources.phase = "resource_group"
+    trace_sink(
+        AcceleratorRoleTrace(
+            phase="resource_group",
+            state="started",
+            assignment_requested=assignment_requested,
+        )
+    )
+    resources.operation = "resource-client"
+    resources.resource_client = _build_resource_management_client(
+        resources.credential,
+        subscription_id,
+    )
+    resources.operation = "check"
+    exists = resources.resource_client.resource_groups.check_existence(resource_group)
+    if not isinstance(exists, bool):
+        raise TypeError("invalid resource-group existence result")
+    if not exists:
+        resources.operation = "create"
+        resources.resource_client.resource_groups.create_or_update(
+            resource_group,
+            {
+                "location": resource_group_location,
+                "tags": dict(_RESOURCE_GROUP_TAGS),
+            },
+        )
+        resources.resource_group_created = True
+    trace_sink(
+        AcceleratorRoleTrace(
+            phase="resource_group",
+            state="applied",
+            assignment_requested=assignment_requested,
+        )
+    )
+
+
+def _apply_role_definition(
+    resources: _LiveApplyResources,
+    *,
+    subscription_id: str,
+    scope: str,
+    role: Mapping[str, object],
+    principal_object_id: str | None,
+    assignment_requested: bool,
+    trace_sink: RoleTraceSink,
+) -> None:
+    resources.phase = "role_definition"
+    trace_sink(
+        AcceleratorRoleTrace(
+            phase="role_definition",
+            state="started",
+            assignment_requested=assignment_requested,
+        )
+    )
+    resources.operation = "authorization-client"
+    resources.client = _build_authorization_client(
+        resources.credential,
+        subscription_id,
+    )
+    definition_scope = f"/subscriptions/{subscription_id}"
+    resources.operation = "role-definition"
+    resources.client.role_definitions.create_or_update(
+        scope=definition_scope,
+        role_definition_id=ROLE_DEFINITION_ID,
+        role_definition=_build_role_definition_model(role),
+    )
+    if principal_object_id is None:
+        return
+    resources.operation = "role-assignment"
+    definition_resource_id = (
+        f"{definition_scope}/providers/Microsoft.Authorization/"
+        f"roleDefinitions/{ROLE_DEFINITION_ID}"
+    )
+    resources.client.role_assignments.create(
+        scope=scope,
+        role_assignment_name=role_assignment_id(
+            principal_object_id=principal_object_id,
+            assignment_scope=scope,
+        ),
+        parameters=_build_role_assignment_model(
+            principal_object_id=principal_object_id,
+            role_definition_resource_id=definition_resource_id,
+        ),
+    )
+
+
+def _close_live_apply_resources(resources: _LiveApplyResources) -> bool:
+    closed = (
+        _close_sdk_object(resources.client),
+        _close_sdk_object(resources.resource_client),
+        _close_sdk_object(resources.credential),
+    )
+    return all(closed)
+
+
 def apply_accelerator_role(
     *,
     subscription_id: str,
@@ -384,125 +528,50 @@ def apply_accelerator_role(
         principal_object_id = _validate_principal_object_id(principal_object_id)
     assignment_requested = principal_object_id is not None
     if not live:
-        if resource_group_location is not None:
-            trace_sink(
-                AcceleratorRoleTrace(
-                    phase="resource_group",
-                    state="validated",
-                    assignment_requested=assignment_requested,
-                )
-            )
-        trace_sink(
-            AcceleratorRoleTrace(
-                phase="role_definition",
-                state="validated",
-                assignment_requested=assignment_requested,
-            )
-        )
-        return AcceleratorRoleApplyResult(
-            state="validated",
-            action_count=len(EXPECTED_ACTIONS),
-            assignment_created=False,
+        return _validated_apply_result(
+            resource_group_requested=resource_group_location is not None,
+            assignment_requested=assignment_requested,
+            trace_sink=trace_sink,
         )
 
-    credential: object | None = None
-    client: Any = None
-    resource_client: Any = None
-    failure_class: AzureAcceleratorFailureClass | None = None
-    active_phase: Literal["resource_group", "role_definition"] = (
-        "resource_group"
-        if resource_group_location is not None
-        else "role_definition"
+    resources = _LiveApplyResources(
+        phase="resource_group" if resource_group_location is not None else "role_definition"
     )
-    active_operation: AzureAcceleratorOperation = "credential"
-    resource_group_created = False
+    failure_class: AzureAcceleratorFailureClass | None = None
     try:
-        credential = _build_operator_credential(operator_auth, subscription_id)
+        resources.credential = _build_operator_credential(operator_auth, subscription_id)
         if resource_group_location is not None:
-            trace_sink(
-                AcceleratorRoleTrace(
-                    phase="resource_group",
-                    state="started",
-                    assignment_requested=assignment_requested,
-                )
-            )
-            active_operation = "resource-client"
-            resource_client = _build_resource_management_client(
-                credential,
-                subscription_id,
-            )
-            active_operation = "check"
-            exists = resource_client.resource_groups.check_existence(resource_group)
-            if not isinstance(exists, bool):
-                raise TypeError("invalid resource-group existence result")
-            if not exists:
-                active_operation = "create"
-                resource_client.resource_groups.create_or_update(
-                    resource_group,
-                    {
-                        "location": resource_group_location,
-                        "tags": dict(_RESOURCE_GROUP_TAGS),
-                    },
-                )
-                resource_group_created = True
-            trace_sink(
-                AcceleratorRoleTrace(
-                    phase="resource_group",
-                    state="applied",
-                    assignment_requested=assignment_requested,
-                )
-            )
-        active_phase = "role_definition"
-        trace_sink(
-            AcceleratorRoleTrace(
-                phase="role_definition",
-                state="started",
+            _apply_resource_group(
+                resources,
+                subscription_id=subscription_id,
+                resource_group=resource_group,
+                resource_group_location=resource_group_location,
                 assignment_requested=assignment_requested,
+                trace_sink=trace_sink,
             )
+        _apply_role_definition(
+            resources,
+            subscription_id=subscription_id,
+            scope=scope,
+            role=role,
+            principal_object_id=principal_object_id,
+            assignment_requested=assignment_requested,
+            trace_sink=trace_sink,
         )
-        active_operation = "authorization-client"
-        client = _build_authorization_client(credential, subscription_id)
-        definition_scope = f"/subscriptions/{subscription_id}"
-        active_operation = "role-definition"
-        client.role_definitions.create_or_update(
-            scope=definition_scope,
-            role_definition_id=ROLE_DEFINITION_ID,
-            role_definition=_build_role_definition_model(role),
-        )
-        if principal_object_id is not None:
-            active_operation = "role-assignment"
-            definition_resource_id = (
-                f"{definition_scope}/providers/Microsoft.Authorization/"
-                f"roleDefinitions/{ROLE_DEFINITION_ID}"
-            )
-            client.role_assignments.create(
-                scope=scope,
-                role_assignment_name=role_assignment_id(
-                    principal_object_id=principal_object_id,
-                    assignment_scope=scope,
-                ),
-                parameters=_build_role_assignment_model(
-                    principal_object_id=principal_object_id,
-                    role_definition_resource_id=definition_resource_id,
-                ),
-            )
     except Exception as exc:
         failure_class = _classify_sdk_failure(exc)
-    client_closed = _close_sdk_object(client)
-    resource_client_closed = _close_sdk_object(resource_client)
-    credential_closed = _close_sdk_object(credential)
-    cleanup_ok = client_closed and resource_client_closed and credential_closed
+    cleanup_ok = _close_live_apply_resources(resources)
     if failure_class is not None or not cleanup_ok:
         failure_class = failure_class or "cleanup"
         if failure_class == "cleanup":
-            active_operation = "cleanup"
+            resources.operation = "cleanup"
         trace_sink(
             AcceleratorRoleTrace(
-                phase=active_phase,
+                phase=resources.phase,
                 state="failed",
                 assignment_requested=assignment_requested,
                 failure_class=failure_class,
-                operation=active_operation,
+                operation=resources.operation,
             )
         )
         raise AzureAcceleratorRoleError(failure_class)
@@ -517,7 +586,7 @@ def apply_accelerator_role(
         state="applied",
         action_count=len(EXPECTED_ACTIONS),
         assignment_created=assignment_requested,
-        resource_group_created=resource_group_created,
+        resource_group_created=resources.resource_group_created,
     )
 
 

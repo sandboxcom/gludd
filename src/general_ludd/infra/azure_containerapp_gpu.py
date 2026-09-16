@@ -65,6 +65,18 @@ class AzureContainerAppGPUProfile:
         if self.usable_vram_mib > self.gpu_vram_mib:
             raise ValueError("usable_vram_mib cannot exceed gpu_vram_mib")
 
+    def payload(self) -> dict[str, int | str]:
+        """Return the canonical provider-inventory payload for this profile."""
+        return {
+            "cpu_cores": self.cpu_cores,
+            "gpu_vram_mib": self.gpu_vram_mib,
+            "memory_gib": self.memory_gib,
+            "name": self.name,
+            "usable_vram_mib": self.usable_vram_mib,
+            "workload_profile_name": self.workload_profile_name,
+            "workload_profile_type": self.workload_profile_type,
+        }
+
 
 T4_PROFILE = AzureContainerAppGPUProfile(
     name="T4",

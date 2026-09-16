@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any, cast
 
@@ -33,13 +33,13 @@ from general_ludd.infra.azure_containerapp_runtime_state import (
     _with_ready_revision,
 )
 from general_ludd.infra.azure_containerapp_sdk import AzureContainerAppsSDKReadError
+from general_ludd.infra.azure_containerapp_terminal_events import (
+    AzureTerminalEventReader,
+)
 from general_ludd.self_improve.model_candidates import (
     BackendFailure,
     BackendInfrastructureError,
 )
-
-_TERMINAL_EVENT_POLL_ATTEMPTS = 4
-_TERMINAL_EVENT_POLL_SECONDS = 5.0
 
 
 def _discard_preflight(_trace: PreflightTrace) -> None:
@@ -48,29 +48,6 @@ def _discard_preflight(_trace: PreflightTrace) -> None:
 
 def _discard_progress(_message: str) -> None:
     return None
-
-
-def _system_event_counts(document: object) -> tuple[int, int, int, int, int, int]:
-    if not isinstance(document, Mapping):
-        return 0, 0, 0, 0, 0, 0
-    values: list[int] = []
-    for name in (
-        "eventCount",
-        "scopedEventCount",
-        "classifiedEventCount",
-        "errorEventCount",
-        "warningEventCount",
-        "unclassifiedErrorCount",
-    ):
-        value = document.get(name)
-        values.append(
-            value
-            if isinstance(value, int)
-            and not isinstance(value, bool)
-            and 0 <= value <= 300
-            else 0
-        )
-    return values[0], values[1], values[2], values[3], values[4], values[5]
 
 
 @dataclass(slots=True)
@@ -188,82 +165,12 @@ class AzureContainerAppRuntimeReaders:
         token: str,
         revision_name: str | None,
     ) -> tuple[str, ...]:
-        if revision_name is None:
-            self.progress_sink(
-                "azure_containerapp_system_event_poll phase=readiness "
-                "source=combined state=supplementary_unavailable "
-                "reason=revision_identity_missing"
-            )
-            return ()
-        readers = (
-            (
-                "app",
-                getattr(self.app_transport, "get_system_event_reason_classes", None),
-            ),
-            (
-                "environment",
-                getattr(
-                    self.lifecycle_transport,
-                    "get_environment_system_event_reason_classes",
-                    None,
-                ),
-            ),
-        )
-        saw_reader = False
-        saw_unclassified_error = False
-        for attempt in range(1, _TERMINAL_EVENT_POLL_ATTEMPTS + 1):
-            merged: set[str] = set()
-            for source, reader in readers:
-                if not callable(reader):
-                    continue
-                saw_reader = True
-                try:
-                    document = reader(token, revision_name)
-                except AzureContainerAppsSDKReadError:
-                    self.progress_sink(
-                        "azure_containerapp_system_event_poll phase=readiness "
-                        f"source={source} state=supplementary_unavailable "
-                        f"attempt={attempt} reason=sdk_read_failed"
-                    )
-                    continue
-                event_reasons = _revision_state({"properties": document}).reasons
-                merged.update(event_reasons)
-                (
-                    event_count,
-                    scoped_count,
-                    classified_count,
-                    error_count,
-                    warning_count,
-                    unclassified_error_count,
-                ) = _system_event_counts(document)
-                saw_unclassified_error = bool(
-                    saw_unclassified_error or unclassified_error_count
-                )
-                reason_classes = ",".join(event_reasons) if event_reasons else "none"
-                self.progress_sink(
-                    "azure_containerapp_system_event_poll phase=readiness "
-                    f"source={source} state=available attempt={attempt} "
-                    f"event_count={event_count} scoped_event_count={scoped_count} "
-                    f"classified_event_count={classified_count} "
-                    f"error_event_count={error_count} "
-                    f"warning_event_count={warning_count} "
-                    f"unclassified_error_count={unclassified_error_count} "
-                    f"reason_classes={reason_classes}"
-                )
-            if merged:
-                return tuple(sorted(merged))
-            if not saw_reader:
-                return ()
-            if attempt < _TERMINAL_EVENT_POLL_ATTEMPTS:
-                self.progress_sink(
-                    "azure_containerapp_system_event_wait phase=readiness "
-                    f"state=heartbeat attempt={attempt} "
-                    f"delay_seconds={int(_TERMINAL_EVENT_POLL_SECONDS)}"
-                )
-                self.sleep(_TERMINAL_EVENT_POLL_SECONDS)
-        if saw_unclassified_error:
-            return ("system_error_unclassified",)
-        return ()
+        return AzureTerminalEventReader(
+            app_transport=self.app_transport,
+            lifecycle_transport=self.lifecycle_transport,
+            progress_sink=self.progress_sink,
+            sleep=self.sleep,
+        ).read(token, revision_name)
 
     def _replica_readiness(
         self,

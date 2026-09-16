@@ -526,6 +526,17 @@ class BackendCallBudget:
             raise ValueError("timeout_seconds must be in 0..3600")
         object.__setattr__(self, "timeout_seconds", float(self.timeout_seconds))
 
+    def payload(self) -> dict[str, float | int]:
+        """Return the canonical provider-neutral budget envelope."""
+        return {
+            "max_calls": self.max_calls,
+            "max_cost_microusd": self.max_cost_microusd,
+            "max_input_tokens": self.max_input_tokens,
+            "max_output_tokens": self.max_output_tokens,
+            "max_total_tokens": self.max_total_tokens,
+            "timeout_seconds": self.timeout_seconds,
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class BackendBudgetSnapshot:

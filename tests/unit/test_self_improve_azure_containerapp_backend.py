@@ -496,6 +496,77 @@ def test_runtime_gpu_evidence_rejects_foreign_metrics_without_retaining_them() -
     assert secret not in repr(captured.value)
 
 
+@pytest.mark.parametrize(
+    "metrics",
+    [
+        "vllm:prompt_tokens_total{model_name=\"Qwen/Qwen2.5-0.5B-Instruct\"} 11\n",
+        (
+            "vllm:prompt_tokens_total{model_name=\"Qwen/Qwen2.5-0.5B-Instruct\"} NaN\n"
+            "vllm:generation_tokens_total{model_name=\"Qwen/Qwen2.5-0.5B-Instruct\"} 7\n"
+            "vllm:request_success_total{model_name=\"Qwen/Qwen2.5-0.5B-Instruct\"} 1\n"
+        ),
+        (
+            "vllm:prompt_tokens_total{model_name=\"Qwen/Qwen2.5-0.5B-Instruct\"} 12\n"
+            "vllm:generation_tokens_total{model_name=\"Qwen/Qwen2.5-0.5B-Instruct\"} 7\n"
+            "vllm:request_success_total{model_name=\"Qwen/Qwen2.5-0.5B-Instruct\"} 1\n"
+        ),
+        (
+            "vllm:prompt_tokens_total{model_name=\"Qwen/Qwen2.5-0.5B-Instruct\"} 11\n"
+            "vllm:generation_tokens_total{model_name=\"Qwen/Qwen2.5-0.5B-Instruct\"} 7\n"
+            "vllm:request_success_total{model_name=\"Qwen/Qwen2.5-0.5B-Instruct\"} 0\n"
+        ),
+    ],
+)
+def test_runtime_gpu_evidence_rejects_malformed_or_unbound_counters(
+    metrics: str,
+) -> None:
+    backend = _build(
+        _Client(
+            gets=(
+                _models(),
+                _Response(raw=metrics.encode(), content_type="text/plain"),
+            )
+        )
+    )
+
+    with pytest.raises(BackendInfrastructureError) as captured:
+        backend.attest_runtime_gpu(
+            AzureCandidateResponse("private", 11, 7, 18),
+            timeout_seconds=4.0,
+        )
+
+    assert captured.value.failure is BackendFailure.INVALID_RESPONSE
+
+
+def test_runtime_gpu_evidence_ignores_unselected_metrics() -> None:
+    response = _metrics()
+    response.content += b'unrelated_counter{model_name="foreign-private"} 99\n'
+    backend = _build(_Client(gets=(_models(), response)))
+
+    evidence = backend.attest_runtime_gpu(
+        AzureCandidateResponse("private", 11, 7, 18),
+        timeout_seconds=4.0,
+    )
+
+    assert evidence.successful_requests == 1
+
+
+@pytest.mark.parametrize("timeout", [True, 0.0, 121.0])
+def test_runtime_gpu_evidence_rejects_invalid_limits_before_transport(
+    timeout: object,
+) -> None:
+    client = _Client(gets=(_models(), _metrics()))
+    backend = _build(client)
+
+    with pytest.raises(ValueError, match="runtime GPU evidence limits"):
+        backend.attest_runtime_gpu(
+            AzureCandidateResponse("private", 11, 7, 18),
+            timeout_seconds=cast(float, timeout),
+        )
+
+    assert len(client.get_calls) == 1
+
+
 def test_generation_carries_approved_protocol_contract_without_rewriting_envelope(
     tmp_path: Path,
 ) -> None:

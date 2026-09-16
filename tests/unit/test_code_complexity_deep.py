@@ -504,12 +504,18 @@ class TestMaintainabilityIndex:
             "azure_containerapp_environment_materializer.py",
             "azure_containerapp_environment_types.py",
             "azure_containerapp_environment_validation.py",
+            "azure_containerapp_failure_details.py",
+            "azure_containerapp_gpu_evidence.py",
             "azure_containerapp_owned_lifecycle.py",
             "azure_containerapp_runtime_readers.py",
             "azure_containerapp_runtime_resources.py",
             "azure_containerapp_runtime_state.py",
+            "azure_containerapp_terminal_events.py",
             "azure_containerapp_topology.py",
             "azure_containerapp_topology_types.py",
+            "azure_model_empirical_choice.py",
+            "azure_model_rank_sampling.py",
+            "runtime_evidence_config.py",
         }
         measured = {fm.path.name: fm.maintainability_index for fm in all_metrics if fm.path.name in lifecycle_files}
         assert measured.keys() == lifecycle_files

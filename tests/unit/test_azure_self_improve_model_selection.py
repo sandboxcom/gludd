@@ -29,6 +29,7 @@ from general_ludd.self_improve._candidate_attempt import (
     CandidateAttemptOutcome,
 )
 from general_ludd.self_improve._candidate_prediction import CandidatePrediction
+from general_ludd.self_improve.azure_model_rank_sampling import bounded_rank_sample
 from general_ludd.self_improve.azure_model_selection import (
     AzureModelSelectionPolicy,
     AzureModelSelectionReason,
@@ -50,6 +51,27 @@ IMAGE = "registry.example/vllm@sha256:" + "9" * 64
 def test_selector_preserves_policy_public_compatibility() -> None:
     """Existing selection integrations retain the established policy import."""
     assert AzureModelSelectionPolicy is SplitAzureModelSelectionPolicy
+
+
+def test_rank_sampling_handles_empty_zero_and_single_slot_budgets() -> None:
+    first = ModelSearchResult("trusted/first")
+    second = ModelSearchResult("trusted/second")
+
+    assert bounded_rank_sample(((),), 4) == ()
+    assert bounded_rank_sample(((first,),), 0) == ()
+    assert bounded_rank_sample(((first, second),), 1) == (first,)
+
+
+def test_rank_sampling_fills_uneven_publishers_without_duplicate_models() -> None:
+    first = ModelSearchResult("trusted/first")
+    second = ModelSearchResult("trusted/second")
+    third = ModelSearchResult("trusted/third")
+    fourth = ModelSearchResult("other/fourth")
+
+    assert bounded_rank_sample(
+        ((first, second, third), (first, fourth)),
+        5,
+    ) == (first, second, third, fourth)
 
 
 def _digest(value: str) -> str:

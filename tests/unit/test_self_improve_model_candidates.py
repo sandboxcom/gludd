@@ -72,6 +72,17 @@ def _budget(*, max_calls: int = 2) -> BackendCallBudget:
     )
 
 
+def test_backend_call_budget_exposes_one_canonical_payload() -> None:
+    assert _budget().payload() == {
+        "max_calls": 2,
+        "max_cost_microusd": 50_000,
+        "max_input_tokens": 2_000,
+        "max_output_tokens": 1_000,
+        "max_total_tokens": 4_000,
+        "timeout_seconds": 30.0,
+    }
+
+
 class _FakeBackend:
     def __init__(
         self,

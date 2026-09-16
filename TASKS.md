@@ -99,11 +99,23 @@ S83.157/S83.160 exact GPU attestation, image verification, and operational-evide
 - `scripts/verify_container_push.py`
 - `src/general_ludd/infra/azure_containerapp_gpu_backend.py`
 - `src/general_ludd/infra/azure_containerapp_gpu_canary.py`
+- `src/general_ludd/infra/azure_containerapp_failure_details.py`
+- `src/general_ludd/infra/azure_containerapp_terminal_events.py`
+- `src/general_ludd/self_improve/azure_containerapp_gpu_evidence.py`
 - `src/general_ludd/self_improve/azure_infrastructure_evidence.py`
+- `src/general_ludd/self_improve/azure_model_empirical_choice.py`
+- `src/general_ludd/self_improve/azure_model_rank_sampling.py`
+- `src/general_ludd/self_improve/runtime_evidence_config.py`
 - `tests/unit/test_azure_containerapp_gpu_backend.py`
 - `tests/unit/test_azure_containerapp_gpu_canary.py`
+- `tests/unit/test_azure_containerapp_gpu.py`
+- `tests/unit/test_azure_containerapp_failure_details.py`
+- `tests/unit/test_azure_containerapp_gpu_evidence.py`
+- `tests/unit/test_azure_containerapp_runtime_readers.py`
+- `tests/unit/test_azure_model_empirical_choice.py`
 - `tests/unit/test_azure_game_runtime.py`
 - `tests/unit/test_azure_infrastructure_evidence.py`
+- `tests/unit/test_self_improve_model_candidates.py`
 
 Candidate-timeout and canonical-coverage surface:
 

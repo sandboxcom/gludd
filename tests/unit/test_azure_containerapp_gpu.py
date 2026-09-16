@@ -20,6 +20,18 @@ from general_ludd.infra.azure_containerapp_gpu import (
 QWEN_REVISION = "7ae557604adf67be50417f59c2c2f167def9a775"
 
 
+def test_gpu_profile_exposes_one_canonical_payload() -> None:
+    assert T4_PROFILE.payload() == {
+        "cpu_cores": 8,
+        "gpu_vram_mib": 16_384,
+        "memory_gib": 56,
+        "name": "T4",
+        "usable_vram_mib": 14_745,
+        "workload_profile_name": "gpu-t4",
+        "workload_profile_type": "Consumption-GPU-NC8as-T4",
+    }
+
+
 def _requirement(**overrides: object) -> ModelServingRequirement:
     values: dict[str, object] = {
         "model_id": "Qwen/Qwen2.5-0.5B-Instruct",

@@ -22,6 +22,8 @@ from general_ludd.models.model_registry import (
     ModelSearchResult,
 )
 from general_ludd.self_improve._candidate_attempt import CandidateAttempt
+from general_ludd.self_improve.azure_model_empirical_choice import choose_azure_model
+from general_ludd.self_improve.azure_model_rank_sampling import bounded_rank_sample
 from general_ludd.self_improve.azure_model_selection_types import (
     AzureModelSelectionPolicy,
     AzureModelSelectionReason,
@@ -34,7 +36,6 @@ from general_ludd.self_improve.azure_model_selection_types import (
 from general_ludd.self_improve.candidate_classification import (
     CandidateTaskClassification,
 )
-from general_ludd.self_improve.model_candidates import ModelCandidateProvider
 
 
 class _ModelRegistry(Protocol):
@@ -142,53 +143,6 @@ def _emit(
         raise RuntimeError("Azure model selection trace publication failed") from None
 
 
-def _spread_ranked_results(
-    results: Sequence[ModelSearchResult],
-    slots: int,
-) -> tuple[ModelSearchResult, ...]:
-    """Sample the full popularity range without exceeding a hydration budget."""
-    if slots <= 0 or not results:
-        return ()
-    if slots >= len(results):
-        return tuple(results)
-    if slots == 1:
-        return (results[0],)
-    last = len(results) - 1
-    return tuple(results[(index * last) // (slots - 1)] for index in range(slots))
-
-
-def _bounded_rank_sample(
-    publisher_results: Sequence[Sequence[ModelSearchResult]],
-    limit: int,
-) -> tuple[ModelSearchResult, ...]:
-    """Allocate a fixed hydration budget fairly across non-empty publishers."""
-    populated = tuple(tuple(results) for results in publisher_results if results)
-    if not populated:
-        return ()
-    base_quota, extra_slots = divmod(limit, len(populated))
-    sampled: list[ModelSearchResult] = []
-    sampled_ids: set[str] = set()
-    for index, results in enumerate(populated):
-        quota = base_quota + (1 if index < extra_slots else 0)
-        for result in _spread_ranked_results(results, quota):
-            if result.model_id not in sampled_ids:
-                sampled.append(result)
-                sampled_ids.add(result.model_id)
-    if len(sampled) < limit:
-        for rank in range(max(map(len, populated))):
-            for results in populated:
-                if rank >= len(results):
-                    continue
-                result = results[rank]
-                if result.model_id in sampled_ids:
-                    continue
-                sampled.append(result)
-                sampled_ids.add(result.model_id)
-                if len(sampled) == limit:
-                    return tuple(sampled)
-    return tuple(sampled[:limit])
-
-
 def _discover(
     registry: _ModelRegistry,
     policy: AzureModelSelectionPolicy,
@@ -217,7 +171,7 @@ def _discover(
                 )
             )
         )
-    results = _bounded_rank_sample(publisher_results, policy.search_limit)
+    results = bounded_rank_sample(publisher_results, policy.search_limit)
     unique_ids = tuple(dict.fromkeys(result.model_id for result in results))
     admitted: list[EligibleAzureModel] = []
     rejection_counts: Counter[str] = Counter()
@@ -255,85 +209,6 @@ def _discover(
     return tuple(admitted)
 
 
-def _observations(
-    candidate: EligibleAzureModel,
-    classification: CandidateTaskClassification,
-    attempts: Sequence[CandidateAttempt],
-) -> tuple[int, int]:
-    matched = tuple(
-        attempt
-        for attempt in attempts
-        if attempt.is_evaluated
-        and attempt.prediction.provider is ModelCandidateProvider.AZURE_CONTAINER_APP
-        and attempt.prediction.task_type is classification.task_type
-        and attempt.prediction.task_kind == classification.task_kind
-        and attempt.prediction.candidate_identity_digest == candidate.identity_digest
-    )
-    return len(matched), sum(attempt.accepted for attempt in matched)
-
-
-def _choose(
-    candidates: tuple[EligibleAzureModel, ...],
-    classification: CandidateTaskClassification,
-    attempts: Sequence[CandidateAttempt],
-) -> tuple[EligibleAzureModel, AzureModelSelectionReason, int, int, float]:
-    scored = tuple(
-        (candidate, *_observations(candidate, classification, attempts))
-        for candidate in candidates
-    )
-    untested = tuple(item for item in scored if item[1] == 0)
-    if untested:
-        candidate, trials, accepted = min(
-            untested,
-            key=lambda item: (
-                item[0].hourly_cost_microusd,
-                item[0].model.storage_bytes,
-                -item[0].model.downloads,
-                item[0].identity_digest,
-            ),
-        )
-        return (
-            candidate,
-            (
-                AzureModelSelectionReason.OPERATIONAL_FAILOVER
-                if candidate.operational_failover
-                else AzureModelSelectionReason.LEAST_TESTED_CHALLENGER
-            ),
-            trials,
-            accepted,
-            0.5,
-        )
-    ranked = tuple(
-        (
-            candidate,
-            trials,
-            accepted,
-            (1.0 + accepted) / (2.0 + trials),
-        )
-        for candidate, trials, accepted in scored
-    )
-    candidate, trials, accepted, posterior = min(
-        ranked,
-        key=lambda item: (
-            -item[3],
-            item[0].hourly_cost_microusd,
-            item[0].model.storage_bytes,
-            item[0].identity_digest,
-        ),
-    )
-    return (
-        candidate,
-        (
-            AzureModelSelectionReason.OPERATIONAL_FAILOVER
-            if candidate.operational_failover
-            else AzureModelSelectionReason.EMPIRICAL_QUALITY
-        ),
-        trials,
-        accepted,
-        posterior,
-    )
-
-
 def discover_and_select_azure_model(
     registry: _ModelRegistry,
     classification: CandidateTaskClassification,
@@ -362,7 +237,7 @@ def discover_and_select_azure_model(
     eligible = _discover(registry, policy, sink, unavailable_profile_types)
     if not eligible:
         raise ValueError("no deployable Azure model satisfies the active policy")
-    candidate, reason, trials, accepted, posterior = _choose(
+    candidate, reason, trials, accepted, posterior = choose_azure_model(
         eligible,
         classification,
         observations,

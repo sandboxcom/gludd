@@ -118,16 +118,10 @@ _LEGACY_PLAN_SCHEMA_VERSION: Final = 1
 _LEGACY_BOUND_PLAN_SCHEMA_VERSION: Final = 2
 _PLAN_SCHEMA_VERSION: Final = 3
 COMPACT_V4_SYNTAX_REPAIR_POLICY_ID: Final = "compact-v4-syntax-self-repair-v2"
-CANONICAL_BATCH_TOKEN_ESTIMATION_POLICY_ID: Final = (
-    "canonical-all-shard-byte-estimate-v1"
-)
+CANONICAL_BATCH_TOKEN_ESTIMATION_POLICY_ID: Final = "canonical-all-shard-byte-estimate-v1"
 _MAX_SYNTAX_REPAIR_DRAFT_BYTES: Final = 4_096
-_MANAGED_CANDIDATE_EVALUATOR_DIGEST: Final = stable_digest(
-    {"protocol": "gludd-managed-full-proposal-evaluator-v1"}
-)
-_CANDIDATE_PROTOCOL_BUILD_FAILED: Final = (
-    "SELF_IMPROVE_CANDIDATE_PROTOCOL phase=failed failure=construction"
-)
+_MANAGED_CANDIDATE_EVALUATOR_DIGEST: Final = stable_digest({"protocol": "gludd-managed-full-proposal-evaluator-v1"})
+_CANDIDATE_PROTOCOL_BUILD_FAILED: Final = "SELF_IMPROVE_CANDIDATE_PROTOCOL phase=failed failure=construction"
 
 
 def _is_safe_make_command(command: str) -> bool:
@@ -2910,11 +2904,9 @@ def build_syntax_repair_prompt_plan(
 
 
 def _proposal_protocol(prompt: PromptPlan | str) -> str:
-    return (
-        prompt.proposal_protocol
-        if isinstance(prompt, PromptPlan)
-        else COMPACT_PROPOSAL_PROTOCOL_V3
-    )
+    if isinstance(prompt, PromptPlan):
+        return prompt.proposal_protocol
+    return COMPACT_PROPOSAL_PROTOCOL_V3
 
 
 def _validation_retry_feedback(

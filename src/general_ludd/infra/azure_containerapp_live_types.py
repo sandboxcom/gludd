@@ -12,10 +12,10 @@ from enum import StrEnum
 from typing import Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
-from general_ludd.infra.azure_containerapp_gpu import AzureContainerAppGPUProfile
-from general_ludd.infra.azure_containerapp_make_types import (
-    LIVE_PROOF_RUNTIME_FAILURE_DETAILS,
+from general_ludd.infra.azure_containerapp_failure_details import (
+    LIVE_PROOF_FAILURE_DETAILS,
 )
+from general_ludd.infra.azure_containerapp_gpu import AzureContainerAppGPUProfile
 from general_ludd.self_improve.model_candidates import (
     AzureContainerAppCandidateIdentity,
     BackendCallBudget,
@@ -26,34 +26,6 @@ _RESOURCE_GROUP_RE = re.compile(r"(?=.{1,90}\Z)[A-Za-z0-9_().-]+(?<!\.)")
 _RESOURCE_NAME_RE = re.compile(r"(?=.{1,64}\Z)[A-Za-z0-9_.-]+")
 _APP_NAME_RE = re.compile(r"(?=.{2,32}\Z)[a-z][a-z0-9-]*[a-z0-9]")
 _LOCATION_RE = re.compile(r"[a-z][a-z0-9]{1,31}")
-_FAILURE_DETAILS = frozenset(
-    {
-        "action",
-        "change_count",
-        "configuration",
-        "container",
-        "cuda_startup_command",
-        "cuda_startup_command_executable",
-        "cuda_startup_command_indented",
-        "cuda_startup_command_mismatch",
-        "cuda_startup_command_shape",
-        "cuda_startup_command_wrapped",
-        "cost_policy_action",
-        "cost_policy_identity",
-        "environment_binding",
-        "format",
-        "image",
-        "ingress",
-        "network_restriction",
-        "resource_identity",
-        "resource_scope",
-        "shape",
-        "arguments",
-        *LIVE_PROOF_RUNTIME_FAILURE_DETAILS,
-    }
-)
-
-
 class AzureContainerAppLiveProofFailure(StrEnum):
     """Fixed failure categories that cannot expose provider or project data."""
 
@@ -81,7 +53,7 @@ class AzureContainerAppLiveProofError(RuntimeError):
         """Initialize an error without retaining sensitive response content."""
         if not isinstance(failure, AzureContainerAppLiveProofFailure):
             raise ValueError("failure must be an AzureContainerAppLiveProofFailure")
-        if detail is not None and detail not in _FAILURE_DETAILS:
+        if detail is not None and detail not in LIVE_PROOF_FAILURE_DETAILS:
             raise ValueError("detail must be a fixed live-proof failure detail")
         super().__init__(f"Azure Container App live proof failed: {failure.value}")
         self.failure = failure
@@ -287,14 +259,7 @@ class AzureContainerAppLiveProofPolicy:
         payload = {
             "app_name": self.app_name,
             "allowed_cidr": self.allowed_cidr,
-            "call_budget": {
-                "max_calls": self.call_budget.max_calls,
-                "max_cost_microusd": self.call_budget.max_cost_microusd,
-                "max_input_tokens": self.call_budget.max_input_tokens,
-                "max_output_tokens": self.call_budget.max_output_tokens,
-                "max_total_tokens": self.call_budget.max_total_tokens,
-                "timeout_seconds": self.call_budget.timeout_seconds,
-            },
+            "call_budget": self.call_budget.payload(),
             "container_image": self.container_image,
             "environment_id": self.environment_id,
             "estimated_request_cost_microusd": self.estimated_request_cost_microusd,
@@ -307,21 +272,7 @@ class AzureContainerAppLiveProofPolicy:
             "max_replicas": self.max_replicas,
             "http_concurrent_requests": self.http_concurrent_requests,
             "gpu_profile": (
-                None
-                if self.gpu_profile is None
-                else {
-                    "cpu_cores": self.gpu_profile.cpu_cores,
-                    "gpu_vram_mib": self.gpu_profile.gpu_vram_mib,
-                    "memory_gib": self.gpu_profile.memory_gib,
-                    "name": self.gpu_profile.name,
-                    "usable_vram_mib": self.gpu_profile.usable_vram_mib,
-                    "workload_profile_name": (
-                        self.gpu_profile.workload_profile_name
-                    ),
-                    "workload_profile_type": (
-                        self.gpu_profile.workload_profile_type
-                    ),
-                }
+                None if self.gpu_profile is None else self.gpu_profile.payload()
             ),
             "protocol": "gludd-azure-containerapp-live-proof-v1",
             "ttl_minutes": self.ttl_minutes,
