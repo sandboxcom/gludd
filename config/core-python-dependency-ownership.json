@@ -123,6 +123,7 @@
         "src/general_ludd/algorithms/rsa.py",
         "src/general_ludd/algorithms/stream_aead.py",
         "src/general_ludd/auth/webauthn.py",
+        "src/general_ludd/models/freellmapi_catalog.py",
         "src/general_ludd/secrets/cosign.py",
         "src/general_ludd/secrets/payment_vault.py",
         "src/general_ludd/security/envelope_encryption.py",
