@@ -45,6 +45,11 @@ from general_ludd.self_improve.azure_infrastructure_evidence import (
     AzureInfrastructurePhase,
     record_azure_infrastructure_failure,
 )
+from general_ludd.self_improve.azure_operational_availability import (
+    AzureAvailabilityTerminal,
+    build_azure_availability_scope,
+    record_azure_availability_terminal,
+)
 from general_ludd.self_improve.live_candidate_wiring import (
     ContainerAppCandidateBackend,
 )
@@ -443,6 +448,12 @@ class ConfiguredAzureContainerAppBootstrapFactory:
                 "operational_evidence_store must be a CapabilityEvidenceStore"
             )
         self._operational_evidence_store = operational_evidence_store
+        self._availability_scope = build_azure_availability_scope(
+            location=app_policy.location,
+            resource_sku=app_policy.workload_profile_type,
+            container_image=app_policy.container_image,
+            requirement=requirement,
+        )
         self._deployment_digest = owned_candidate_deployment_digest(
             app_policy,
             environment_policy,
@@ -476,6 +487,13 @@ class ConfiguredAzureContainerAppBootstrapFactory:
                 phase=phase,
                 failure=failure,
             )
+            record_azure_availability_terminal(
+                self._operational_evidence_store,
+                scope=self._availability_scope,
+                deployment_identity_digest=self._deployment_digest,
+                phase=phase,
+                outcome=AzureAvailabilityTerminal(failure.value),
+            )
         except Exception:
             self._progress_sink(
                 "SELF_IMPROVE_AZURE_BOOTSTRAP phase=operational_evidence_failed "
@@ -486,6 +504,30 @@ class ConfiguredAzureContainerAppBootstrapFactory:
             "SELF_IMPROVE_AZURE_BOOTSTRAP phase=operational_evidence_recorded "
             f"operation_digest={self._deployment_digest} "
             f"failure_class={failure.value} secret_output=false"
+        )
+
+    def _record_operational_success(self) -> None:
+        """Persist a successful terminal startup so later failures can heal."""
+        if self._operational_evidence_store is None:
+            return
+        try:
+            record_azure_availability_terminal(
+                self._operational_evidence_store,
+                scope=self._availability_scope,
+                deployment_identity_digest=self._deployment_digest,
+                phase=AzureInfrastructurePhase.CANDIDATE_STARTUP,
+                outcome=AzureAvailabilityTerminal.AVAILABLE,
+            )
+        except Exception:
+            self._progress_sink(
+                "SELF_IMPROVE_AZURE_BOOTSTRAP phase=operational_evidence_failed "
+                f"operation_digest={self._deployment_digest} secret_output=false"
+            )
+            raise BackendInfrastructureError(BackendFailure.INTERNAL) from None
+        self._progress_sink(
+            "SELF_IMPROVE_AZURE_BOOTSTRAP phase=operational_evidence_recorded "
+            f"operation_digest={self._deployment_digest} "
+            "outcome=available secret_output=false"
         )
 
     def _ensure_resource_group(
@@ -616,7 +658,9 @@ class ConfiguredAzureContainerAppBootstrapFactory:
             if owner.deployment_digest != self._deployment_digest:
                 resources.close()
                 raise RuntimeError("Azure bootstrap configuration drift")
-            return cast(ContainerAppCandidateBackend, owner())
+            backend = cast(ContainerAppCandidateBackend, owner())
+            self._record_operational_success()
+            return backend
         except BackendInfrastructureError as exc:
             with suppress(Exception):
                 resources.close()

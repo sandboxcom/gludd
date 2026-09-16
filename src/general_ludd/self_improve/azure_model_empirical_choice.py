@@ -47,6 +47,7 @@ def choose_azure_model(
         candidate, trials, accepted = min(
             untested,
             key=lambda item: (
+                -item[0].operational_availability,
                 item[0].hourly_cost_microusd,
                 item[0].model.storage_bytes,
                 -item[0].model.downloads,
@@ -67,6 +68,7 @@ def choose_azure_model(
         ranked,
         key=lambda item: (
             -item[3],
+            -item[0].operational_availability,
             item[0].hourly_cost_microusd,
             item[0].model.storage_bytes,
             item[0].identity_digest,

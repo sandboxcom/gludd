@@ -1782,5 +1782,6 @@ def test_azure_containerapp_coverage_has_one_local_and_hosted_contract() -> None
     assert "self_improve/azure_containerapp_bootstrap.py" in coverage_config
     assert "scripts/select_azure_self_improve_model.py" in coverage_config
     assert "self_improve/azure_infrastructure_evidence.py" in coverage_config
+    assert "self_improve/azure_operational_availability.py" in coverage_config
     assert "self_improve/azure_model_selection.py" in coverage_config
     assert "self_improve/azure_model_selection_types.py" in coverage_config

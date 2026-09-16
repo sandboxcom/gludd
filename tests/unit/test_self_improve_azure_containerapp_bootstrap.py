@@ -69,6 +69,10 @@ from general_ludd.self_improve.azure_containerapp_transport_types import (
 from general_ludd.self_improve.azure_infrastructure_evidence import (
     load_recent_unavailable_profiles,
 )
+from general_ludd.self_improve.azure_operational_availability import (
+    build_azure_availability_scope,
+    load_azure_availability_index,
+)
 from general_ludd.self_improve.model_candidates import (
     BackendFailure,
     BackendInfrastructureError,
@@ -918,6 +922,86 @@ def test_owned_apply_timeout_remains_typed_after_bootstrap_cleanup(tmp_path: Pat
         minimum_failures=1,
         now_epoch=cast(float, evidence.list_all()[0]["registered_at"]),
     ) == frozenset({"Consumption-GPU-NC8as-T4"})
+    availability = load_azure_availability_index(
+        evidence,
+        max_age_seconds=86_400,
+        minimum_failures=1,
+        now_epoch=cast(float, evidence.list_all()[-1]["registered_at"]),
+    )
+    assessment = availability.assess(
+        build_azure_availability_scope(
+            location="eastus",
+            resource_sku="Consumption-GPU-NC8as-T4",
+            container_image=IMAGE,
+            requirement=wiring.requirement,
+        )
+    )
+    assert assessment.observed_outcomes == 1
+    assert assessment.feasible is False
+
+
+def test_successful_owned_startup_records_recovery_evidence(tmp_path: Path) -> None:
+    provider = _CredentialProvider()
+    evidence = CapabilityEvidenceStore(str(tmp_path / "evidence.json"))
+    resource_events: list[str] = []
+    wiring = _build(
+        tmp_path,
+        credential_provider=provider,
+        resources_builder=lambda **_kwargs: _Resources(
+            resource_events,
+            _Backend("unused"),
+        ),
+        operational_evidence_store=evidence,
+    )
+    assert isinstance(wiring, AzureContainerAppBootstrapWiring)
+
+    backend = wiring.bootstrap_factory()
+
+    availability = load_azure_availability_index(
+        evidence,
+        max_age_seconds=86_400,
+        minimum_failures=1,
+        now_epoch=cast(float, evidence.list_all()[-1]["registered_at"]),
+    )
+    assessment = availability.assess(
+        build_azure_availability_scope(
+            location="eastus",
+            resource_sku="Consumption-GPU-NC8as-T4",
+            container_image=IMAGE,
+            requirement=wiring.requirement,
+        )
+    )
+    assert assessment.successful_outcomes == 1
+    assert assessment.feasible is True
+    assert backend.name.startswith("backend-")
+
+
+def test_success_evidence_failure_releases_resources_before_exposing_backend(
+    tmp_path: Path,
+) -> None:
+    resource_events: list[str] = []
+
+    class FailingEvidenceStore(CapabilityEvidenceStore):
+        def register_evidence(self, evidence: Any) -> int:
+            del evidence
+            raise ValueError("private storage failure")
+
+    evidence = FailingEvidenceStore(str(tmp_path / "evidence.json"))
+    wiring = _build(
+        tmp_path,
+        resources_builder=lambda **_kwargs: _Resources(
+            resource_events,
+            _Backend("must-not-escape"),
+        ),
+        operational_evidence_store=evidence,
+    )
+    assert isinstance(wiring, AzureContainerAppBootstrapWiring)
+
+    with pytest.raises(BackendInfrastructureError) as caught:
+        wiring.bootstrap_factory()
+
+    assert caught.value.failure is BackendFailure.INTERNAL
+    assert resource_events == ["resources.close"]
 
 
 def test_credential_providers_enforce_exact_acquire_release_contracts(

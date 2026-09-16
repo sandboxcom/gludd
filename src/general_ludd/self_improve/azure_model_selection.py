@@ -33,6 +33,10 @@ from general_ludd.self_improve.azure_model_selection_types import (
     model_requirement,
     model_selection_identity_digest,
 )
+from general_ludd.self_improve.azure_operational_availability import (
+    AzureAvailabilityIndex,
+    build_azure_availability_scope,
+)
 from general_ludd.self_improve.candidate_classification import (
     CandidateTaskClassification,
 )
@@ -69,6 +73,8 @@ def _admit(
     model: ModelDeploymentMetadata,
     policy: AzureModelSelectionPolicy,
     unavailable_profile_types: frozenset[str],
+    availability_index: AzureAvailabilityIndex | None,
+    location: str | None,
 ) -> tuple[EligibleAzureModel | None, _AzureModelRejection | None]:
     publisher = model.model_id.split("/", 1)[0].casefold()
     if publisher not in {item.casefold() for item in policy.allowed_publishers}:
@@ -86,15 +92,16 @@ def _admit(
         return None, _AzureModelRejection.PIPELINE_UNSUPPORTED
     if model.context_tokens < policy.minimum_context_tokens:
         return None, _AzureModelRejection.CONTEXT_TOO_SHORT
+    requirement = model_requirement(model, policy)
     try:
         default_selection = select_smallest_sufficient_profile(
-            model_requirement(model, policy),
+            requirement,
             hardware_profiles=tuple(
                 capacity.profile for capacity in policy.profile_capacities
             ),
         )
-        selected = select_smallest_sufficient_profile(
-            model_requirement(model, policy),
+        legacy_selection = select_smallest_sufficient_profile(
+            requirement,
             hardware_profiles=tuple(
                 capacity.profile
                 for capacity in policy.profile_capacities
@@ -103,13 +110,63 @@ def _admit(
         )
     except AzureContainerAppGPUUnavailable:
         return None, _AzureModelRejection.HARDWARE_UNAVAILABLE
+    selected = legacy_selection
     hourly = next(
         capacity.hourly_cost_microusd_per_replica
         for capacity in policy.profile_capacities
-        if capacity.workload_profile_type
-        == selected.profile.workload_profile_type
+        if capacity.workload_profile_type == selected.profile.workload_profile_type
     )
-    if hourly > policy.max_hourly_cost_microusd:
+    availability_score = 0.5
+    availability_observations = 0
+    if availability_index is not None:
+        assert location is not None
+        placements = []
+        fitting_within_budget = False
+        for capacity in policy.profile_capacities:
+            if capacity.workload_profile_type in unavailable_profile_types:
+                continue
+            try:
+                placement = select_smallest_sufficient_profile(
+                    requirement,
+                    hardware_profiles=(capacity.profile,),
+                )
+            except AzureContainerAppGPUUnavailable:
+                continue
+            if (
+                capacity.hourly_cost_microusd_per_replica
+                > policy.max_hourly_cost_microusd
+            ):
+                continue
+            fitting_within_budget = True
+            scope = build_azure_availability_scope(
+                location=location,
+                resource_sku=capacity.workload_profile_type,
+                container_image=policy.container_image,
+                requirement=requirement,
+            )
+            assessment = availability_index.assess(scope)
+            if assessment.feasible:
+                placements.append((placement, capacity, assessment))
+        if not placements:
+            rejection = (
+                _AzureModelRejection.HARDWARE_UNAVAILABLE
+                if fitting_within_budget
+                else _AzureModelRejection.HOURLY_COST_EXCEEDED
+            )
+            return None, rejection
+        selected, selected_capacity, assessment = min(
+            placements,
+            key=lambda item: (
+                -item[2].availability_score,
+                item[0].profile.usable_vram_mib,
+                item[1].hourly_cost_microusd_per_replica,
+                item[0].profile.workload_profile_type,
+            ),
+        )
+        hourly = selected_capacity.hourly_cost_microusd_per_replica
+        availability_score = assessment.availability_score
+        availability_observations = assessment.observed_outcomes
+    elif hourly > policy.max_hourly_cost_microusd:
         return None, _AzureModelRejection.HOURLY_COST_EXCEEDED
     return (
         EligibleAzureModel(
@@ -128,6 +185,8 @@ def _admit(
                 selected.profile.workload_profile_type
                 != default_selection.profile.workload_profile_type
             ),
+            operational_availability=availability_score,
+            operational_observations=availability_observations,
         ),
         None,
     )
@@ -148,6 +207,8 @@ def _discover(
     policy: AzureModelSelectionPolicy,
     sink: Callable[[dict[str, object]], None],
     unavailable_profile_types: frozenset[str],
+    availability_index: AzureAvailabilityIndex | None,
+    location: str | None,
 ) -> tuple[EligibleAzureModel, ...]:
     publisher_results: list[tuple[ModelSearchResult, ...]] = []
     publisher_query_count = 0
@@ -181,6 +242,8 @@ def _discover(
                 registry.get_deployment_metadata(model_id),
                 policy,
                 unavailable_profile_types,
+                availability_index,
+                location,
             )
         except ModelDeploymentMetadataUnavailable as error:
             candidate = None
@@ -216,6 +279,8 @@ def discover_and_select_azure_model(
     *,
     attempts: Sequence[CandidateAttempt],
     unavailable_profile_types: frozenset[str] = frozenset(),
+    availability_index: AzureAvailabilityIndex | None = None,
+    location: str | None = None,
     trace_sink: Callable[[dict[str, object]], None] | None = None,
 ) -> SelectedAzureModel:
     """Discover eligible models and choose an empirical challenger or winner."""
@@ -231,10 +296,23 @@ def discover_and_select_azure_model(
         for profile in unavailable_profile_types
     ):
         raise ValueError("unavailable_profile_types must be a frozenset of identifiers")
+    if (availability_index is None) != (location is None):
+        raise ValueError("availability_index and location must be provided together")
+    if availability_index is not None and not isinstance(
+        availability_index, AzureAvailabilityIndex
+    ):
+        raise ValueError("availability_index must be an AzureAvailabilityIndex")
     sink = trace_sink or (lambda _event: None)
     if not callable(sink):
         raise ValueError("trace_sink must be callable")
-    eligible = _discover(registry, policy, sink, unavailable_profile_types)
+    eligible = _discover(
+        registry,
+        policy,
+        sink,
+        unavailable_profile_types,
+        availability_index,
+        location,
+    )
     if not eligible:
         raise ValueError("no deployable Azure model satisfies the active policy")
     candidate, reason, trials, accepted, posterior = choose_azure_model(
@@ -269,6 +347,7 @@ def discover_and_select_azure_model(
             "candidate_identity_digest": selected.identity_digest,
             "event": "SELF_IMPROVE_AZURE_MODEL_SELECTED",
             "evaluated_trials": selected.evaluated_trials,
+            "operational_observations": candidate.operational_observations,
             "reason": selected.reason.value,
             "schema_version": 1,
             "workload_profile_type": selected.workload_profile_type,
