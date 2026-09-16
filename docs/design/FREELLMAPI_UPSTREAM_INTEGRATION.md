@@ -570,6 +570,15 @@ long-term stability:
   a router-wide retry budget before its provider timeout. This motivates one
   Gludd-owned outer deadline, with the upstream timeout detail consumed only as a
   quirk hint and tested with that hint enabled and disabled.
+- [Issue #608][issue-608] demonstrates that a successful public `/v1/models`
+  response can coexist with a revoked credential that fails an authenticated
+  generation request. Gludd therefore treats catalog reachability, credential
+  validity, quota state, and model readiness as separate evidence and never
+  promotes a catalog seed without an exact, bounded generation probe.
+- [Issue #880][issue-880] reports more than 100 returned model rows but zero
+  models accepted by a consuming client because discovery metadata was not
+  sufficient to establish compatibility. Gludd consequently retains its own
+  capability/profile validation and records upstream rows only as trial seeds.
 - [Issue #584][issue-584] records a long-context NVIDIA NIM stream ending after a
   fixed inactivity interval. Gludd's existing transport tests first-byte and
   mid-stream deadlines independently; the artifact performs no stream I/O.
@@ -615,7 +624,9 @@ scans, lifecycle cleanup, full gate, and hosted CI evidence are green.
 [docker-workflow]: https://github.com/tashfeenahmed/freellmapi/blob/main/.github/workflows/docker.yml
 [dukpy]: https://pypi.org/project/dukpy/
 [issue-584]: https://github.com/tashfeenahmed/freellmapi/issues/584
+[issue-608]: https://github.com/tashfeenahmed/freellmapi/issues/608
 [issue-666]: https://github.com/tashfeenahmed/freellmapi/issues/666
+[issue-880]: https://github.com/tashfeenahmed/freellmapi/issues/880
 [jsrun]: https://imfing.github.io/jsrun/concepts/runtime/
 [license]: https://github.com/tashfeenahmed/freellmapi/blob/main/LICENSE
 [miniracer]: https://pypi.org/project/mini-racer/
