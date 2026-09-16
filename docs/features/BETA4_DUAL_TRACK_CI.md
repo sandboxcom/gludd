@@ -2290,6 +2290,19 @@ exact tag to have a release-task mapping. A canonical but unmapped future tag is
 therefore still rejected rather than silently borrowing another release's
 evidence.
 
+The stable release is bound to the exact ledger declarations S83.157 through
+S83.168. The checker rejects a missing or partial task set, even if every beta4
+task is complete, and reports only unchecked members of that exact set. S83.166
+is the terminal publish/promotion action, so it must be declared but is excluded
+from the pre-publication readiness cycle just as beta4's terminal release action
+is. Post-publication verification remains responsible for completing it.
+
+Those tasks treat self-improvement as the primary acceptance workload rather
+than the platform boundary. Accelerator inventory, model sizing, provider
+routing, compute lifecycle, execution, evidence, and generic evaluation belong
+to reusable Gludd capabilities; self-improvement supplies only its proposal,
+comparison, acceptance, promotion, and learning policy.
+
 Alpha, release-candidate, build-metadata, abbreviated, leading-zero, whitespace,
 path-shaped, and command-shaped values remain invalid. This preserves beta
 validation instead of broadening the accepted prerelease family while making the

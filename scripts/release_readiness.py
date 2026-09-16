@@ -40,11 +40,18 @@ from general_ludd.review import release_forecast
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_RELEASE_TAG = "v0.1.0-beta.4"
 STABLE_RELEASE_TAG = "v0.1.1"
+STABLE_RELEASE_TASK_IDS = frozenset(f"S83.{number}" for number in range(157, 169))
 RELEASE_TASK_PREFIXES = {
     DEFAULT_RELEASE_TAG: ("S86.",),
-    STABLE_RELEASE_TAG: ("S86.",),
+    STABLE_RELEASE_TAG: (),
 }
-RELEASE_ACTION_TASKS = {DEFAULT_RELEASE_TAG: frozenset({"S86.10"})}
+RELEASE_REQUIRED_TASKS = {
+    STABLE_RELEASE_TAG: STABLE_RELEASE_TASK_IDS,
+}
+RELEASE_ACTION_TASKS = {
+    DEFAULT_RELEASE_TAG: frozenset({"S86.10"}),
+    STABLE_RELEASE_TAG: frozenset({"S83.166"}),
+}
 _SEMVER_NUMBER = r"(?:0|[1-9][0-9]*)"
 _TAG = re.compile(
     rf"v{_SEMVER_NUMBER}\.{_SEMVER_NUMBER}\.{_SEMVER_NUMBER}"
@@ -531,11 +538,23 @@ def _incomplete_tasks(root: Path, tag: str = DEFAULT_RELEASE_TAG) -> list[str]:
     tasks_path = root / "TASKS.md"
     if not tasks_path.exists():
         raise RuntimeError("TASKS.md is missing")
-    _, unchecked = extract_tasks(tasks_path)
+    checked, unchecked = extract_tasks(tasks_path)
     ids: list[str] = []
     prefixes = RELEASE_TASK_PREFIXES.get(tag)
     if prefixes is None:
         raise RuntimeError(f"unsupported release task mapping for {tag}")
+    required_tasks = RELEASE_REQUIRED_TASKS.get(tag, frozenset())
+    declared_tasks: set[str] = set()
+    for task in (*checked, *unchecked):
+        raw_ids = task.get("ids", [])
+        if isinstance(raw_ids, list):
+            declared_tasks.update(
+                task_id for task_id in raw_ids if isinstance(task_id, str)
+            )
+    missing_tasks = required_tasks - declared_tasks
+    if missing_tasks:
+        missing = ", ".join(sorted(missing_tasks))
+        raise RuntimeError(f"{tag} milestone is incomplete; missing task(s): {missing}")
     release_actions = RELEASE_ACTION_TASKS.get(tag, frozenset())
     for task in unchecked:
         raw_ids = task.get("ids", [])
@@ -544,9 +563,10 @@ def _incomplete_tasks(root: Path, tag: str = DEFAULT_RELEASE_TAG) -> list[str]:
         for task_id in raw_ids:
             if not isinstance(task_id, str):
                 continue
-            if task_id not in release_actions and any(
+            matches_release = task_id in required_tasks or any(
                 task_id.startswith(prefix) for prefix in prefixes
-            ):
+            )
+            if task_id not in release_actions and matches_release:
                 ids.append(task_id)
     return sorted(set(ids))
 
