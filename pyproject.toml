@@ -55,6 +55,7 @@ dependencies = [
     "prompt_toolkit>=3.0.0",
     "pygments>=2.0.0",
     "croniter>=2.0.0",
+    "quickjs-ng==0.16.2.1",
 ]
 
 [project.optional-dependencies]
