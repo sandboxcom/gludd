@@ -2278,3 +2278,40 @@ application continues to observe and reject actual critical disk pressure. The
 only owned resources are pytest's monkeypatch rollback and its namespaced
 temporary directory. Rollback is the isolated test/documentation commit; it does
 not mutate the release tag, remote, database, or host filesystem policy.
+
+### Stable release-tag readiness (2026-09-16)
+
+The readiness checker now supports `v0.1.1` as the first stable release tag while
+retaining `v0.1.0-beta.4`. Syntax and release support remain separate fail-closed
+boundaries. The syntax boundary accepts only the complete forms
+`vMAJOR.MINOR.PATCH` and `vMAJOR.MINOR.PATCH-beta.N`; each numeric identifier is
+either `0` or begins with `1` through `9`. The support boundary then requires the
+exact tag to have a release-task mapping. A canonical but unmapped future tag is
+therefore still rejected rather than silently borrowing another release's
+evidence.
+
+Alpha, release-candidate, build-metadata, abbreviated, leading-zero, whitespace,
+path-shaped, and command-shaped values remain invalid. This preserves beta
+validation instead of broadening the accepted prerelease family while making the
+stable form available to the same exact-SHA, ledger, worktree, version, resource,
+and CI checks.
+
+Practitioner evidence reviewed 2026-09-16:
+
+- [GitHub Community discussion #26603](https://github.com/orgs/community/discussions/26603),
+  opened in 2021 with a 2024 follow-up, records that release events do not apply
+  tag filters and require an explicit validation step. Gludd therefore validates
+  the whole tag before collecting or acting on release evidence.
+- [SemVer issue #583](https://github.com/semver/semver/issues/583), opened in
+  2020, records the persistent ambiguity around numeric prerelease identifiers:
+  zero is valid, while multi-digit identifiers beginning with zero are not. The
+  checker encodes that distinction directly for core numbers and `beta.N`.
+- The authoritative [Semantic Versioning 2.0.0 specification](https://semver.org/)
+  supplies the same no-leading-zero rule. Gludd deliberately supports only its
+  stable form and the already-owned beta form, not every SemVer prerelease.
+
+This change is ZDD by construction: validation performs no deployment, tag, or
+branch mutation, and the stable tag must pass the existing immutable evidence
+path before publication. It starts no process, service, or cleanup task. Rollback
+is the isolated checker, test, and documentation commit; the previously supported
+beta tag and its task mapping remain unchanged.

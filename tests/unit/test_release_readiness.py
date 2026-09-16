@@ -231,6 +231,15 @@ def test_incomplete_tasks_uses_current_policy_and_excludes_release_action(tmp_pa
     assert rr._incomplete_tasks(tmp_path, tag=tag) == [pending_task]
 
 
+def test_incomplete_tasks_supports_v011_stable_release(tmp_path: Path) -> None:
+    (tmp_path / "TASKS.md").write_text(
+        "- [ ] S86.997 — finish stable release evidence\n",
+        encoding="utf-8",
+    )
+
+    assert rr._incomplete_tasks(tmp_path, tag="v0.1.1") == ["S86.997"]
+
+
 def test_incomplete_tasks_fails_closed_without_task_ledger(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match=r"TASKS\.md is missing"):
         rr._incomplete_tasks(tmp_path)
@@ -567,10 +576,59 @@ def test_readiness_main_validate_only_emits_current_release_eta(
     assert payload["estimate"]["p50_minutes"] > 0
 
 
+def test_readiness_main_accepts_supported_stable_release(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert rr.main(["--tag", "v0.1.1", "--validate-only"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["tag"] == "v0.1.1"
+    assert payload["validate_only"] is True
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        "v0.0.0",
+        "v1.2.3",
+        "v12.34.56",
+        "v0.1.0-beta.0",
+        "v0.1.0-beta.4",
+        "v12.34.56-beta.789",
+    ],
+)
+def test_release_tag_grammar_accepts_canonical_stable_and_beta_tags(tag: str) -> None:
+    assert rr._TAG.fullmatch(tag) is not None
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        "0.1.1",
+        "v0.1",
+        "v0.1.1.0",
+        "v00.1.1",
+        "v0.01.1",
+        "v0.1.01",
+        "v0.1.0-beta.04",
+        "v0.1.1-alpha.1",
+        "v0.1.1-rc.1",
+        "v0.1.1+build.1",
+        "v0.1.1;make release-cut",
+        "v0.1.1\n--human",
+        "v0.1.1/../../main",
+    ],
+)
+def test_release_tag_grammar_rejects_noncanonical_and_injection_shapes(
+    tag: str,
+) -> None:
+    assert rr._TAG.fullmatch(tag) is None
+
+
 @pytest.mark.parametrize(
     "argv",
     [
         ["--tag", "v0.1.0-beta.3", "--validate-only"],
+        ["--tag", "v1.2.3", "--validate-only"],
         ["--tag", rr.DEFAULT_RELEASE_TAG, "--observations", "broken", "--validate-only"],
         [
             "--tag",
@@ -652,6 +710,10 @@ def test_readiness_remediation_documentation_pins_safe_operator_boundaries() -> 
         "zero-downtime",
         "Rollback",
         "bounded",
+        "Stable release-tag readiness",
+        "v0.1.1",
+        "GitHub Community discussion #26603",
+        "SemVer issue #583",
     ):
         assert required in text
 
