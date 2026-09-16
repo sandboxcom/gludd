@@ -573,7 +573,8 @@
       "collection_import_paths": [],
       "collection_requirement_paths": [],
       "core_import_paths": [
-        "src/general_ludd/observability/metrics_exporter.py"
+        "src/general_ludd/observability/metrics_exporter.py",
+        "src/general_ludd/self_improve/azure_containerapp_gpu_evidence.py"
       ],
       "disposition": "retain-core",
       "import_roots": [
@@ -842,6 +843,7 @@
       "collection_requirement_paths": [],
       "core_import_paths": [
         "src/general_ludd/connectors/newrelic.py",
+        "src/general_ludd/infra/azure_containerapp_sdk.py",
         "src/general_ludd/issue_sources/redmine.py"
       ],
       "disposition": "retain-core",
