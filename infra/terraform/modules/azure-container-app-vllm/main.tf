@@ -20,9 +20,9 @@ locals {
     }
   }
 
-  selected_profile = local.gpu_profiles[var.gpu_type]
-  gpu_profile_type = local.selected_profile.workload_profile_type
-  name_suffix      = substr(lower(replace(var.deployment_name, "_", "-")), 0, 32)
+  selected_profile    = local.gpu_profiles[var.gpu_type]
+  gpu_profile_type    = local.selected_profile.workload_profile_type
+  name_suffix         = substr(lower(replace(var.deployment_name, "_", "-")), 0, 32)
   cuda_startup_canary = <<-PY
     import os
     import sys
