@@ -409,7 +409,7 @@ def _get_tree_age_seconds(worktree_path: str) -> float | None:
         if result.returncode == 0 and result.stdout.strip():
             commit_epoch = int(result.stdout.strip())
             return time.time() - commit_epoch
-    except (ValueError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+    except (OSError, ValueError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         pass
     try:
         mtime = os.path.getmtime(worktree_path)
@@ -476,6 +476,16 @@ def worktree_health_check(
         branch = wt.branch.removeprefix("refs/heads/")
 
         age_secs = _get_tree_age_seconds(path)
+        if age_secs is None and not os.path.isdir(path):
+            violations.append(
+                WorktreeHealthViolation(
+                    worktree_path=path,
+                    branch=branch,
+                    reason="Worktree path is missing — prune the stale Git registration",
+                    severity="warning",
+                )
+            )
+            continue
         merged = _branch_is_merged(repo_path, branch, target_branch) if branch else True
         remote_ok = _branch_on_remote(repo_path, branch, remote_name) if branch else True
 
