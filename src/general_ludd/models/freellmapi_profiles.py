@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from typing import Final
+from typing import Final, Protocol
 
 from general_ludd.models.auto_configurator import AutoConfigurator
 from general_ludd.models.freellmapi_candidates import FreeModelCandidateSeed
-from general_ludd.models.gateway import ModelProfile
+from general_ludd.models.gateway import ModelGateway, ModelProfile
 from general_ludd.models.provider_presets import get_provider_preset
+from general_ludd.models.provider_registry import ProviderRegistry
 
 FREELLMAPI_PROBE_PROFILE_PROTOCOL: Final = "gludd-freellmapi-probe-profile-v1"
 _MAX_CANDIDATES = 5_000
@@ -33,6 +34,14 @@ class FreeModelProbeProfile:
     def candidate_digest(self) -> str:
         """Return the authenticated candidate identity retained by this binding."""
         return self.candidate.candidate_digest
+
+
+class SecretsResolver(Protocol):
+    """Structural subset required by a dedicated native probe gateway."""
+
+    def resolve(self, alias_name: str) -> str | None:
+        """Resolve one reviewed credential or endpoint alias at call time."""
+        ...
 
 
 def _profile_id(candidate: FreeModelCandidateSeed) -> str:
@@ -117,8 +126,45 @@ def build_freellmapi_probe_profiles(
     )
 
 
+def build_freellmapi_probe_gateway(
+    binding: FreeModelProbeProfile,
+    *,
+    secrets_manager: SecretsResolver,
+) -> ModelGateway:
+    """Build an isolated one-profile gateway for an explicit Gludd trial.
+
+    The profile remains disabled, so role/default/cost-aware routing cannot
+    select it.  A caller may address its exact profile id through
+    :meth:`ModelGateway.call_model`; that path retains Gludd's payload, budget,
+    provider allowlist, health, metrics, and response controls.
+    """
+    if not isinstance(binding, FreeModelProbeProfile):
+        raise ValueError("binding must be a FreeModelProbeProfile")
+    candidate = binding.candidate
+    profile = binding.profile
+    if profile.enabled:
+        raise ValueError("FreeLLMAPI probe profile must remain disabled")
+    if profile.fallback_profiles:
+        raise ValueError("FreeLLMAPI probe profile must not define fallback routes")
+    if (
+        profile.provider != candidate.platform
+        or profile.model_name != candidate.model_id
+        or profile.model_profile_id != _profile_id(candidate)
+    ):
+        raise ValueError("FreeLLMAPI probe profile identity drifted")
+    if not callable(getattr(secrets_manager, "resolve", None)):
+        raise ValueError("secrets_manager must expose a resolve method")
+    return ModelGateway(
+        profiles=[profile],
+        provider_registry=ProviderRegistry.from_profiles([profile]),
+        secrets_manager=secrets_manager,
+    )
+
+
 __all__ = [
     "FREELLMAPI_PROBE_PROFILE_PROTOCOL",
     "FreeModelProbeProfile",
+    "SecretsResolver",
+    "build_freellmapi_probe_gateway",
     "build_freellmapi_probe_profiles",
 ]

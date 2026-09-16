@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import pytest
 
+from general_ludd.models.auto_configurator import AutoConfigurator
 from general_ludd.models.freellmapi_candidates import FreeModelCandidateSeed
 from general_ludd.models.freellmapi_catalog import CatalogLimits
 from general_ludd.models.freellmapi_profiles import (
     FREELLMAPI_PROBE_PROFILE_PROTOCOL,
     FreeModelProbeProfile,
+    build_freellmapi_probe_gateway,
     build_freellmapi_probe_profiles,
 )
 from general_ludd.models.gateway import ModelProfile
@@ -121,3 +123,77 @@ def test_provider_without_a_native_gludd_preset_fails_closed() -> None:
 
 def test_empty_candidate_batch_is_valid() -> None:
     assert build_freellmapi_probe_profiles(()) == ()
+
+
+class _Secrets:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def resolve(self, _alias_name: str) -> str | None:
+        self.calls += 1
+        return "test-secret"
+
+
+def test_dedicated_probe_gateway_owns_exactly_one_disabled_native_profile() -> None:
+    binding = build_freellmapi_probe_profiles((_seed(),))[0]
+    secrets = _Secrets()
+
+    gateway = build_freellmapi_probe_gateway(binding, secrets_manager=secrets)
+    try:
+        assert gateway.list_profiles() == [binding.profile]
+        assert gateway.is_available(binding.profile.model_profile_id) is False
+        assert secrets.calls == 0
+    finally:
+        gateway.close()
+
+
+def test_probe_gateway_rejects_profile_or_candidate_identity_drift() -> None:
+    original = build_freellmapi_probe_profiles((_seed(),))[0]
+    enabled = FreeModelProbeProfile(
+        candidate=original.candidate,
+        profile=original.profile.model_copy(update={"enabled": True}),
+    )
+    wrong_model = FreeModelProbeProfile(
+        candidate=_seed(model_id="different/model"),
+        profile=original.profile,
+    )
+
+    with pytest.raises(ValueError, match="disabled"):
+        build_freellmapi_probe_gateway(enabled, secrets_manager=_Secrets())
+    with pytest.raises(ValueError, match="identity"):
+        build_freellmapi_probe_gateway(wrong_model, secrets_manager=_Secrets())
+
+
+def test_probe_gateway_requires_a_structural_secret_resolver() -> None:
+    binding = build_freellmapi_probe_profiles((_seed(),))[0]
+
+    with pytest.raises(ValueError, match="secrets_manager"):
+        build_freellmapi_probe_gateway(binding, secrets_manager=object())  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("generated", [[], [{}, {}]])
+def test_native_profile_cardinality_drift_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    generated: list[dict[str, object]],
+) -> None:
+    monkeypatch.setattr(
+        AutoConfigurator,
+        "generate_profiles",
+        lambda *_args, **_kwargs: generated,
+    )
+
+    with pytest.raises(ValueError, match="one profile"):
+        build_freellmapi_probe_profiles((_seed(),))
+
+
+def test_probe_gateway_rejects_untyped_binding_and_fallback_routes() -> None:
+    binding = build_freellmapi_probe_profiles((_seed(),))[0]
+    fallback = FreeModelProbeProfile(
+        candidate=binding.candidate,
+        profile=binding.profile.model_copy(update={"fallback_profiles": ["other"]}),
+    )
+
+    with pytest.raises(ValueError, match="binding"):
+        build_freellmapi_probe_gateway(object(), secrets_manager=_Secrets())  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="fallback"):
+        build_freellmapi_probe_gateway(fallback, secrets_manager=_Secrets())
