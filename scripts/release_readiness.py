@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed beta release readiness preflight.
+"""Fail-closed release readiness preflight.
 
 The preflight intentionally composes the repository's existing guards instead
 of maintaining a second git/CI/task parser.  It emits one stable JSON object
@@ -39,9 +39,24 @@ from general_ludd.review import release_forecast
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_RELEASE_TAG = "v0.1.0-beta.4"
-RELEASE_TASK_PREFIXES = {DEFAULT_RELEASE_TAG: ("S86.",)}
-RELEASE_ACTION_TASKS = {DEFAULT_RELEASE_TAG: frozenset({"S86.10"})}
-_TAG = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+\Z")
+STABLE_RELEASE_TAG = "v0.1.1"
+STABLE_RELEASE_TASK_IDS = frozenset(f"S83.{number}" for number in range(157, 169))
+RELEASE_TASK_PREFIXES = {
+    DEFAULT_RELEASE_TAG: ("S86.",),
+    STABLE_RELEASE_TAG: (),
+}
+RELEASE_REQUIRED_TASKS = {
+    STABLE_RELEASE_TAG: STABLE_RELEASE_TASK_IDS,
+}
+RELEASE_ACTION_TASKS = {
+    DEFAULT_RELEASE_TAG: frozenset({"S86.10"}),
+    STABLE_RELEASE_TAG: frozenset({"S83.166"}),
+}
+_SEMVER_NUMBER = r"(?:0|[1-9][0-9]*)"
+_TAG = re.compile(
+    rf"v{_SEMVER_NUMBER}\.{_SEMVER_NUMBER}\.{_SEMVER_NUMBER}"
+    rf"(?:-beta\.{_SEMVER_NUMBER})?\Z"
+)
 RELEASE_POLICY_PREFLIGHT_COMMAND = (
     "make",
     "--no-print-directory",
@@ -155,7 +170,7 @@ class Readiness:
 
 @dataclass(frozen=True)
 class ReleaseStageEstimate:
-    """One calibrated stage in the beta release critical path."""
+    """One calibrated stage in the release critical path."""
 
     name: str
     baseline_minutes: float
@@ -523,11 +538,23 @@ def _incomplete_tasks(root: Path, tag: str = DEFAULT_RELEASE_TAG) -> list[str]:
     tasks_path = root / "TASKS.md"
     if not tasks_path.exists():
         raise RuntimeError("TASKS.md is missing")
-    _, unchecked = extract_tasks(tasks_path)
+    checked, unchecked = extract_tasks(tasks_path)
     ids: list[str] = []
     prefixes = RELEASE_TASK_PREFIXES.get(tag)
     if prefixes is None:
         raise RuntimeError(f"unsupported release task mapping for {tag}")
+    required_tasks = RELEASE_REQUIRED_TASKS.get(tag, frozenset())
+    declared_tasks: set[str] = set()
+    for task in (*checked, *unchecked):
+        raw_ids = task.get("ids", [])
+        if isinstance(raw_ids, list):
+            declared_tasks.update(
+                task_id for task_id in raw_ids if isinstance(task_id, str)
+            )
+    missing_tasks = required_tasks - declared_tasks
+    if missing_tasks:
+        missing = ", ".join(sorted(missing_tasks))
+        raise RuntimeError(f"{tag} milestone is incomplete; missing task(s): {missing}")
     release_actions = RELEASE_ACTION_TASKS.get(tag, frozenset())
     for task in unchecked:
         raw_ids = task.get("ids", [])
@@ -536,9 +563,10 @@ def _incomplete_tasks(root: Path, tag: str = DEFAULT_RELEASE_TAG) -> list[str]:
         for task_id in raw_ids:
             if not isinstance(task_id, str):
                 continue
-            if task_id not in release_actions and any(
+            matches_release = task_id in required_tasks or any(
                 task_id.startswith(prefix) for prefix in prefixes
-            ):
+            )
+            if task_id not in release_actions and matches_release:
                 ids.append(task_id)
     return sorted(set(ids))
 
@@ -767,11 +795,11 @@ def _forecast_blockers(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run the beta release preflight and emit one machine-readable result."""
+    """Run the release preflight and emit one machine-readable result."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gha-head-sha", default="", help="expected CI HEAD SHA")
     parser.add_argument("--root", default=str(ROOT), help="explicit repository worktree root")
-    parser.add_argument("--tag", default=DEFAULT_RELEASE_TAG, help="target prerelease tag")
+    parser.add_argument("--tag", default=DEFAULT_RELEASE_TAG, help="target release tag")
     parser.add_argument(
         "--validate-only",
         action="store_true",
@@ -805,7 +833,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(list(argv) if argv is not None else None)
     tag = cast(str, args.tag)
     if _TAG.fullmatch(tag) is None or tag not in RELEASE_TASK_PREFIXES:
-        parser.error("--tag must be a supported beta release tag")
+        parser.error(
+            "--tag must be a supported canonical stable or beta release tag"
+        )
     completed = {value for value in cast(str, args.completed_stages).split(",") if value}
     observations: dict[str, list[float]] = {}
     for entry in filter(None, cast(str, args.observations).split(",")):

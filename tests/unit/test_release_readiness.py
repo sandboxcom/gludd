@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 import subprocess
 import sys
@@ -133,6 +134,71 @@ def test_detached_worktree_detection_reuses_porcelain_parser(tmp_path: Path) -> 
     assert detached == [{"path": str(tmp_path / "detached"), "head": "detached"}]
 
 
+@pytest.mark.parametrize(
+    ("stdout", "stderr", "expected"),
+    [
+        ("", "denied", "denied"),
+        ("failed", "", "failed"),
+        ("", "", "git worktree failed"),
+    ],
+)
+def test_detached_worktree_detection_fails_closed_on_inventory_errors(
+    tmp_path: Path,
+    stdout: str,
+    stderr: str,
+    expected: str,
+) -> None:
+    def run(
+        argv: Sequence[str], cwd: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        return _completed(argv, stdout=stdout, stderr=stderr, returncode=1)
+
+    with pytest.raises(RuntimeError, match=expected):
+        rr._detached_worktrees(run, tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("stdout", "stderr", "expected"),
+    [
+        ("", "denied", "denied"),
+        ("failed", "", "failed"),
+        ("", "", "process inventory failed"),
+    ],
+)
+def test_process_inventory_fails_closed(
+    stdout: str,
+    stderr: str,
+    expected: str,
+) -> None:
+    def run(
+        argv: Sequence[str], cwd: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        return _completed(argv, stdout=stdout, stderr=stderr, returncode=1)
+
+    with pytest.raises(RuntimeError, match=expected):
+        rr._unmanaged_local_inference_processes(run)
+
+
+def test_process_inventory_accepts_binary_shape_and_ignores_malformed_lines() -> None:
+    process_table = (
+        "not a process row\n"
+        "  200   999 /usr/local/bin/llama-server --port 12001\n"
+    )
+
+    def run(
+        argv: Sequence[str], cwd: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        return _completed(argv, process_table)
+
+    assert rr._unmanaged_local_inference_processes(run) == [
+        {
+            "pid": 200,
+            "ppid": 999,
+            "command": "/usr/local/bin/llama-server --port 12001",
+        }
+    ]
+
+
 def test_assess_passes_when_all_release_evidence_is_present(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -231,9 +297,71 @@ def test_incomplete_tasks_uses_current_policy_and_excludes_release_action(tmp_pa
     assert rr._incomplete_tasks(tmp_path, tag=tag) == [pending_task]
 
 
+def test_incomplete_tasks_supports_v011_stable_release(tmp_path: Path) -> None:
+    lines = [
+        f"- [{' ' if task_id in {161, 166} else 'x'}] S83.{task_id} — v0.1.1 work\n"
+        for task_id in range(157, 169)
+    ]
+    lines.append("- [ ] S86.997 — unrelated beta4 task\n")
+    (tmp_path / "TASKS.md").write_text(
+        "".join(lines),
+        encoding="utf-8",
+    )
+
+    assert rr._incomplete_tasks(tmp_path, tag="v0.1.1") == ["S83.161"]
+
+
+def test_incomplete_tasks_fails_closed_when_v011_milestone_is_absent(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "TASKS.md").write_text(
+        "- [x] S86.1 — completed beta4 work\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match=r"v0\.1\.1 milestone is incomplete"):
+        rr._incomplete_tasks(tmp_path, tag="v0.1.1")
+
+
 def test_incomplete_tasks_fails_closed_without_task_ledger(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match=r"TASKS\.md is missing"):
         rr._incomplete_tasks(tmp_path)
+
+
+def test_incomplete_tasks_ignores_malformed_extractor_records(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "TASKS.md").write_text("ledger exists\n", encoding="utf-8")
+    validate_task_ledger = importlib.import_module("validate_task_ledger")
+    monkeypatch.setattr(
+        validate_task_ledger,
+        "extract_tasks",
+        lambda _: (
+            [{"ids": "not-a-list"}],
+            [{"ids": object()}, {"ids": [123, "S86.99"]}],
+        ),
+    )
+
+    assert rr._incomplete_tasks(tmp_path) == ["S86.99"]
+
+
+def test_tasks_tick_check_handles_missing_and_malformed_checker_output(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    assert rr._tasks_tick_check(tmp_path) == (False, "TASKS.md is missing")
+    (tmp_path / "TASKS.md").write_text("- [ ] OTHER.1 — pending\n", encoding="utf-8")
+    monkeypatch.setattr(
+        rr,
+        "check_tasks_ticks",
+        lambda _: {"passed": False, "violations": "not-a-list"},
+    )
+
+    assert rr._tasks_tick_check(tmp_path) == (
+        False,
+        "checked TASKS.md completion evidence is invalid",
+    )
 
 
 def test_tasks_tick_check_rejects_checked_pending_evidence(tmp_path: Path) -> None:
@@ -567,10 +695,59 @@ def test_readiness_main_validate_only_emits_current_release_eta(
     assert payload["estimate"]["p50_minutes"] > 0
 
 
+def test_readiness_main_accepts_supported_stable_release(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert rr.main(["--tag", "v0.1.1", "--validate-only"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["tag"] == "v0.1.1"
+    assert payload["validate_only"] is True
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        "v0.0.0",
+        "v1.2.3",
+        "v12.34.56",
+        "v0.1.0-beta.0",
+        "v0.1.0-beta.4",
+        "v12.34.56-beta.789",
+    ],
+)
+def test_release_tag_grammar_accepts_canonical_stable_and_beta_tags(tag: str) -> None:
+    assert rr._TAG.fullmatch(tag) is not None
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        "0.1.1",
+        "v0.1",
+        "v0.1.1.0",
+        "v00.1.1",
+        "v0.01.1",
+        "v0.1.01",
+        "v0.1.0-beta.04",
+        "v0.1.1-alpha.1",
+        "v0.1.1-rc.1",
+        "v0.1.1+build.1",
+        "v0.1.1;make release-cut",
+        "v0.1.1\n--human",
+        "v0.1.1/../../main",
+    ],
+)
+def test_release_tag_grammar_rejects_noncanonical_and_injection_shapes(
+    tag: str,
+) -> None:
+    assert rr._TAG.fullmatch(tag) is None
+
+
 @pytest.mark.parametrize(
     "argv",
     [
         ["--tag", "v0.1.0-beta.3", "--validate-only"],
+        ["--tag", "v1.2.3", "--validate-only"],
         ["--tag", rr.DEFAULT_RELEASE_TAG, "--observations", "broken", "--validate-only"],
         [
             "--tag",
@@ -652,6 +829,10 @@ def test_readiness_remediation_documentation_pins_safe_operator_boundaries() -> 
         "zero-downtime",
         "Rollback",
         "bounded",
+        "Stable release-tag readiness",
+        "v0.1.1",
+        "GitHub Community discussion #26603",
+        "SemVer issue #583",
     ):
         assert required in text
 

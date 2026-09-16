@@ -6,6 +6,20 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ---
 
+## Session 87 — v0.1.1 universal Gludd release (2026-09-16)
+
+The fail-closed v0.1.1 milestone is the exact task set S83.157–S83.168. It
+includes universal accelerator discovery, model right-sizing, Azure Container
+Apps and VM/VMSS execution, upstream-owned FreeLLMAPI integration, reusable
+Azure operational knowledge, cross-backend task proof, and guarded promotion.
+Self-improvement is the primary acceptance workload, not the owner of those
+general capabilities.
+
+- [x] S83.167 - **Restore the canonical v0.1.1 milestone boundary in release readiness** across `scripts/release_readiness.py`, `tests/unit/test_release_readiness.py`, `TASKS.md`, and `docs/features/BETA4_DUAL_TRACK_CI.md`: bind the stable release to exact tasks S83.157–S83.168, reject an absent or partial milestone, ignore unrelated completed beta4 work, exclude only the terminal S83.166 publish action from the pre-publication readiness cycle, retain beta4 compatibility, and document self-improvement as a consumer of universal Gludd capabilities. | evidence: failing-first stable-readiness regression selected unrelated S86.997 instead of S83.161/S83.166; commits `861fec648`, `b1be5d248`, and `ede2b0164`; focused release-readiness replay 68/68 GREEN under warnings-as-errors with 92% branch-aware aggregate coverage and each measured production file above 75%; writer-supervisor regression replay 20/20 GREEN with 98% branch-aware coverage; exact-head `make gate` at `ede2b0164` PASS with attestation state `c4e36663160c`, 93% aggregate coverage, and all 1,150 analyzed files at or above 75% | priority: critical | effort: XS | status: completed
+- [ ] S83.168 - **Prove universal task execution with multiple real workloads rather than self-improvement surrogates** across the chemistry/materials and embedded-systems domains, durable task scheduler, provider-neutral model gateway, accelerator-aware placement, safety/policy, provenance, validation, and local/Azure acceptance tests: add an explicit constrained molecule/material-design contract that generates and validates polymer candidates; add a board-qualified Arduino-class firmware contract that generates, compiles, statically checks, and simulator-tests firmware without physical-device access by default; run both through the same backend-neutral execution interface used by self-improvement; select local or Azure from capability, privacy, cost, and health evidence; reject unsafe, unverifiable, unsupported, or uncompiled results; never report a routing scaffold or plausible source text as completed work; and prove that neither domain imports self-improvement implementation. | priority: critical | effort: XL | status: pending
+
+---
+
 ## Session 86 — v0.1.0-beta4 completion (2026-08-20)
 
 Session 86 final release evidence: candidate `8f9eddfc9f9f8035e96754b9d35d47c4a26fe52c`; GHA run `33349948067` completed 23/23 jobs GREEN; canonical local producer completed 8/8 shards with zero failures, aggregate coverage at least 85%, and all 1,150 files at least 75%; exact dual-track verification passed all eight hosted shard pairs; the immutable full gate passed with attestation `e2579098f6cb3efb6e2eb829ae4fcbafa76017345bdf3c2575dde3e9047d84fd`; `make release-dry-run TAG=v0.1.0-beta.4` passed AC013/AC015/AC016/AC005. S86.10 is complete: master fast-forwarded to the exact tested development commit, and the immutable published prerelease passed artifact, completeness, and signed-bundle verification.

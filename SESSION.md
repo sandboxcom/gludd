@@ -1,10 +1,28 @@
-## PRIMARY OBJECTIVE: IN PROGRESS — v0.1.0-beta.4 candidate repair is dual tracked; release-cut remains blocked until local and hosted terminal attestations are green for one exact SHA. Candidate `f71a84dced1febed7c40fb8e5027d92194dee102` passed local unit-3b batches 1–36, including the repaired pre-tag version contract, then failed batch 37 because pytest's long durable `--basetemp` exhausted Darwin's AF_UNIX path budget in Firecracker socket tests; hosted run `32853679064` was cancelled immediately. Pytest basetemp now uses the runner's compact, owned per-batch socket root while coverage/attestations remain durable. Next: commit this owner repair, start both lanes on the replacement SHA, then run `make require-dual-track-green SHA=<full-sha>` before promotion.
+## PRIMARY OBJECTIVE: IN PROGRESS — reconcile the exact v0.1.1 milestone and keep self-improvement as one workload on Gludd's universal orchestration core. Candidate `861fec6489cb4eef0bb823ea1180e0188d2b2c44` passed 68 focused release-readiness tests with 92% aggregate coverage. Its full gate reached unit-3b batch 12 after all static, type, collection, enforcement, integration, and earlier unit phases passed; the sole failure was this operational record exceeding its 30-day freshness contract. Next: validate this refresh, commit it separately, rerun the exact-head gate, then merge the readiness and universal-boundary branches sequentially into `development`.
 
 ## Current Gate Status
 <!-- gate:begin -->
-- Candidates `e640d07daa473faf552108062919faebb7ae6c56`, `f3403750c184558a2fcb31715756f9da5a472ffa`, `46df20c76d1f66d11e36d863668d1e5616981f1b`, `fc57c087f3c51c398d034231fb56faaa156ef834`, `5d4ddc7fa338c416ffc8ab46d1a4386455d0d79b`, `84e7c25a6381dcb1fe9bd00cd6c5e571df62e63e`, `016ee5c97493f161d5709ab266015af8b70fd785`, `ef437dd51b7f350d701d6bfacc43b92f348fc74b`, `5758f849c205076db07ea4a169a27aa24b14a79d`, `012faf7a6d9e627006bb046b3ef42d8b4afb6e8c`, `6a6bf83b82a1d8d14c130e3080afc01ade9e7e6e`, `b63528a3dfe63ed9c65ed55c88aa50582df6caec`, `96f617335db06ce71c42bf61b2ef62fc1c37bc40`, and `f71a84dced1febed7c40fb8e5027d92194dee102` were invalidated by exact local or hosted failures.
-- Hosted runs `32827145131`, `32828457339`, `32830158475`, `32832065106`, `32833535093`, `32835393330`, `32838352396`, `32840654442`, `32843128782`, `32844962204`, `32846967040`, `32848939596`, `32851257635`, and `32853679064` are cancelled or otherwise non-authoritative for the replacement candidate.
+- Candidate `861fec6489cb4eef0bb823ea1180e0188d2b2c44`: focused readiness suite PASS (68 tests; 92% aggregate coverage; per-file floors satisfied).
+- Full gate: all non-test phases PASS; integration PASS (3,376 passed, 13 skipped); unit shards through unit-3b batch 11 PASS. Unit-3b batch 12 reported one failure because `SESSION.md` was 32 days old. Exact-head rerun pending this refresh commit.
 <!-- gate:end -->
+
+---
+
+## SESSION 86 — 2026-09-16 — HEAD `861fec648`: v0.1.1 readiness reconciliation and worktree consolidation
+
+### Current State
+
+- Physical worktrees reduced from 32 to 11 by pruning 21 missing registrations; branch refs and commit history were preserved.
+- Two independent deliverables are ready for sequential integration: v0.1.1 milestone/readiness reconciliation and the universal-core dependency boundary.
+- Unique Azure accelerator, FreeLLMAPI, private-policy, and runtime-reader tips remain protected for subsequent integration; one dirty audit worktree remains untouched.
+- Test collection baseline: 108,465 collected with zero collection errors and one intentional deselection.
+
+### Next Steps
+
+1. Validate and commit this operational-record refresh.
+2. Rerun `make gate` on the resulting exact SHA.
+3. Merge the readiness and universal-boundary branches sequentially into `development`.
+4. Remove only merged or ancestry-redundant worktree checkouts; preserve unique and dirty tips.
 
 ---
 

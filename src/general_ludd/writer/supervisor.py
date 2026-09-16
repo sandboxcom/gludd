@@ -91,6 +91,7 @@ class SupervisorRecoveryEvent(Event):
         backoff_s: float,
         **kwargs: Any,
     ) -> None:
+        """Create a recovery event for one completed restart attempt."""
         super().__init__(
             type="supervisor_recovery",
             payload={
@@ -115,6 +116,7 @@ class SupervisorFailureEscalatedEvent(Event):
         last_exit_code: int | None,
         **kwargs: Any,
     ) -> None:
+        """Create the terminal event emitted after retries are exhausted."""
         super().__init__(
             type="supervisor_failure_escalated",
             payload={
@@ -182,6 +184,7 @@ class WriterSupervisor:
         base_backoff: float = 1.0,
         max_backoff: float = 60.0,
     ) -> None:
+        """Configure writer lifecycle ownership, retry bounds, and events."""
         if max_retries < 0:
             raise ValueError("max_retries must be >= 0")
         if health_check_interval <= 0:
@@ -217,11 +220,19 @@ class WriterSupervisor:
     # ------------------------------------------------------------------ #
     @property
     def state(self) -> SupervisorState:
-        return self._state
+        """Return the lifecycle state after its observable effects complete."""
+        # State transitions can include an observable side effect while the
+        # state lock is held (for example publishing the permanent-failure
+        # event). Synchronize readers on the same lock so callers cannot see
+        # the terminal state before its required event has been emitted.
+        with self._state_lock:
+            return self._state
 
     @property
     def restart_count(self) -> int:
-        return self._restart_count
+        """Return the synchronized number of restart attempts."""
+        with self._state_lock:
+            return self._restart_count
 
     # ------------------------------------------------------------------ #
     # Public lifecycle
