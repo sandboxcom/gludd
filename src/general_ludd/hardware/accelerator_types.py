@@ -39,6 +39,7 @@ class AcceleratorLocation(enum.StrEnum):
 
     LOCAL = "local"
     SLURM = "slurm"
+    CLOUD = "cloud"
 
 
 class DiscoveryEvent(enum.StrEnum):
