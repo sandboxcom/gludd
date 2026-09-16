@@ -11,6 +11,9 @@ from general_ludd.models.freellmapi_candidates import FreeModelCandidateSeed
 from general_ludd.models.gateway import ModelGateway, ModelProfile
 from general_ludd.models.provider_presets import get_provider_preset
 from general_ludd.models.provider_registry import ProviderRegistry
+from general_ludd.self_improve.model_candidates import (
+    CatalogFreeTierCandidateIdentity,
+)
 
 FREELLMAPI_PROBE_PROFILE_PROTOCOL: Final = "gludd-freellmapi-probe-profile-v1"
 _MAX_CANDIDATES = 5_000
@@ -126,18 +129,9 @@ def build_freellmapi_probe_profiles(
     )
 
 
-def build_freellmapi_probe_gateway(
+def _validated_binding(
     binding: FreeModelProbeProfile,
-    *,
-    secrets_manager: SecretsResolver,
-) -> ModelGateway:
-    """Build an isolated one-profile gateway for an explicit Gludd trial.
-
-    The profile remains disabled, so role/default/cost-aware routing cannot
-    select it.  A caller may address its exact profile id through
-    :meth:`ModelGateway.call_model`; that path retains Gludd's payload, budget,
-    provider allowlist, health, metrics, and response controls.
-    """
+) -> tuple[FreeModelCandidateSeed, ModelProfile]:
     if not isinstance(binding, FreeModelProbeProfile):
         raise ValueError("binding must be a FreeModelProbeProfile")
     candidate = binding.candidate
@@ -152,6 +146,35 @@ def build_freellmapi_probe_gateway(
         or profile.model_profile_id != _profile_id(candidate)
     ):
         raise ValueError("FreeLLMAPI probe profile identity drifted")
+    return candidate, profile
+
+
+def catalog_free_tier_identity(
+    binding: FreeModelProbeProfile,
+) -> CatalogFreeTierCandidateIdentity:
+    """Bind one disabled native profile to exact signed-catalog evidence."""
+    candidate, _profile = _validated_binding(binding)
+    return CatalogFreeTierCandidateIdentity(
+        platform=candidate.platform,
+        model_id=candidate.model_id,
+        catalog_version=candidate.catalog_version,
+        catalog_payload_sha256=candidate.catalog_payload_sha256,
+    )
+
+
+def build_freellmapi_probe_gateway(
+    binding: FreeModelProbeProfile,
+    *,
+    secrets_manager: SecretsResolver,
+) -> ModelGateway:
+    """Build an isolated one-profile gateway for an explicit Gludd trial.
+
+    The profile remains disabled, so role/default/cost-aware routing cannot
+    select it.  A caller may address its exact profile id through
+    :meth:`ModelGateway.call_model`; that path retains Gludd's payload, budget,
+    provider allowlist, health, metrics, and response controls.
+    """
+    _candidate, profile = _validated_binding(binding)
     if not callable(getattr(secrets_manager, "resolve", None)):
         raise ValueError("secrets_manager must expose a resolve method")
     return ModelGateway(
@@ -167,4 +190,5 @@ __all__ = [
     "SecretsResolver",
     "build_freellmapi_probe_gateway",
     "build_freellmapi_probe_profiles",
+    "catalog_free_tier_identity",
 ]

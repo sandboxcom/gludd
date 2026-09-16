@@ -12,8 +12,13 @@ from general_ludd.models.freellmapi_profiles import (
     FreeModelProbeProfile,
     build_freellmapi_probe_gateway,
     build_freellmapi_probe_profiles,
+    catalog_free_tier_identity,
 )
 from general_ludd.models.gateway import ModelProfile
+from general_ludd.self_improve.model_candidates import (
+    CatalogFreeTierCandidateIdentity,
+    ModelCandidateProvider,
+)
 
 
 def _seed(
@@ -145,6 +150,38 @@ def test_dedicated_probe_gateway_owns_exactly_one_disabled_native_profile() -> N
         assert secrets.calls == 0
     finally:
         gateway.close()
+
+
+def test_probe_binding_becomes_exact_native_routing_identity() -> None:
+    binding = build_freellmapi_probe_profiles((_seed(),))[0]
+
+    identity = catalog_free_tier_identity(binding)
+
+    assert isinstance(identity, CatalogFreeTierCandidateIdentity)
+    assert identity.provider is ModelCandidateProvider.CATALOG_FREE_TIER
+    assert identity.platform == binding.candidate.platform
+    assert identity.model_id == binding.candidate.model_id
+    assert identity.catalog_version == binding.candidate.catalog_version
+    assert (
+        identity.catalog_payload_sha256
+        == binding.candidate.catalog_payload_sha256
+    )
+    assert identity.evidence_identity_digest == identity.identity_digest
+    assert "endpoint" not in repr(identity).casefold()
+    assert "credential" not in repr(identity).casefold()
+
+
+def test_routing_identity_rejects_profile_or_candidate_drift() -> None:
+    original = build_freellmapi_probe_profiles((_seed(),))[0]
+    wrong_model = FreeModelProbeProfile(
+        candidate=_seed(model_id="different/model"),
+        profile=original.profile,
+    )
+
+    with pytest.raises(ValueError, match="identity"):
+        catalog_free_tier_identity(wrong_model)
+    with pytest.raises(ValueError, match="binding"):
+        catalog_free_tier_identity(object())  # type: ignore[arg-type]
 
 
 def test_probe_gateway_rejects_profile_or_candidate_identity_drift() -> None:
