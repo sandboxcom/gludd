@@ -15,7 +15,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from general_ludd.ai_ml.policy import PolicyEngine
 from general_ludd.ai_ml.schemas import (
@@ -140,6 +140,7 @@ class CommandEvidence:
     bounded_termination: bool = False
 
 
+@runtime_checkable
 class FirmwareToolchain(Protocol):
     """Compiler/analyzer/simulator boundary used by the workload."""
 

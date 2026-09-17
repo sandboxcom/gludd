@@ -11,7 +11,7 @@ import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from general_ludd.scheduling.scheduler import WorkItem
 
@@ -24,6 +24,7 @@ class TaskStatus(StrEnum):
     FAILED = "failed"
 
 
+@runtime_checkable
 class ModelResponseProtocol(Protocol):
     """The normalized response surface supplied by ``ModelGateway``."""
 
@@ -31,6 +32,7 @@ class ModelResponseProtocol(Protocol):
     cost_estimate: float
 
 
+@runtime_checkable
 class ModelGatewayProtocol(Protocol):
     """Structural subset of ``ModelGateway`` needed by the executor."""
 
@@ -42,18 +44,21 @@ class ModelGatewayProtocol(Protocol):
     ) -> ModelResponseProtocol: ...
 
 
+@runtime_checkable
 class SchedulerProtocol(Protocol):
     """Structural subset of ``Scheduler`` used for work admission."""
 
     def plan(self, items: list[WorkItem]) -> list[list[str]]: ...
 
 
+@runtime_checkable
 class AcceleratorPlannerProtocol(Protocol):
     """Read-only accelerator discovery; execution never provisions hardware."""
 
     def discover_hardware(self) -> Sequence[object]: ...
 
 
+@runtime_checkable
 class ToolRunnerProtocol(Protocol):
     """Injected bounded tool surface available to capability adapters."""
 
@@ -164,6 +169,7 @@ class CandidateAssessment:
     evidence: Mapping[str, object] = field(default_factory=dict)
 
 
+@runtime_checkable
 class TaskAdapterProtocol(Protocol):
     """Capability-owned translation and validation boundary."""
 
