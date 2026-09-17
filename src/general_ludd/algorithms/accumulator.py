@@ -8,8 +8,13 @@ with public-key setup, witnesses, and non-membership proofs.
 from __future__ import annotations
 
 import hashlib
-import secrets
 from collections.abc import Callable
+
+from general_ludd.algorithms.rsa_accumulator import (
+    AccumulatorError,
+    RSAConfig,
+    RSAUniversalAccumulator,
+)
 
 # ---------------------------------------------------------------------------
 # Merkle tree
@@ -53,6 +58,7 @@ class MerkleTree:
         hash_leaf: Callable[[bytes], bytes] | None = None,
         hash_pair: Callable[[bytes, bytes], bytes] | None = None,
     ) -> None:
+        """Build a tree from immutable byte-string leaves and hash functions."""
         self._hash_leaf = hash_leaf or _leaf_hash
         self._hash_pair = hash_pair or _pair_hash
         self._leaves = list(leaves)
@@ -63,18 +69,22 @@ class MerkleTree:
 
     @property
     def root(self) -> bytes:
+        """Return the current Merkle root, or empty bytes for an empty tree."""
         return self._layers[-1][0] if self._layers else b""
 
     @property
     def leaves(self) -> list[bytes]:
+        """Return a defensive copy of the raw leaves."""
         return list(self._leaves)
 
     @property
     def leaf_hashes(self) -> list[bytes]:
+        """Return a defensive copy of the hashed leaves."""
         return list(self._leaf_hashes)
 
     @property
     def leaf_count(self) -> int:
+        """Return the number of leaves in the tree."""
         return len(self._leaves)
 
     # -- build ------------------------------------------------------------
@@ -173,8 +183,7 @@ class MerkleTree:
     # -- exclusion proof (by sorted-insertion adjacency) ------------------
 
     def exclusion_proof(self, target: bytes) -> tuple[int, bytes, bytes, bytes] | None:
-        """Return the insertion index and adjacent hashes that prove *target*
-        is NOT in the leaf-set.
+        """Return the insertion index and hashes proving target exclusion.
 
         Returns (index, left_hash, right_hash) where:
         - *index* is the sorted-insertion point
@@ -206,203 +215,22 @@ class MerkleTree:
     # -- batch exclusion check -------------------------------------------
 
     def exclude_batch(self, targets: list[bytes]) -> list[bool]:
-        """Return a boolean per target: True if DEFINITELY absent, False if
-        possibly present (inclusion not verified, but may be here)."""
+        """Return whether each target is definitely absent.
+
+        ``False`` means the target may be present but inclusion was not proved.
+        """
         present = set(self._leaf_hashes)
         return [self._hash_leaf(t) not in present for t in targets]
 
     # -- representation --------------------------------------------------
 
     def __len__(self) -> int:
+        """Return the number of leaves."""
         return len(self._leaves)
 
     def __repr__(self) -> str:
+        """Return a compact tree summary with a truncated root digest."""
         return f"MerkleTree(leaves={len(self._leaves)}, root={self.root.hex()[:12]}...)"
-
-
-# ---------------------------------------------------------------------------
-# RSA universal accumulator
-# ---------------------------------------------------------------------------
-
-
-class AccumulatorError(ValueError):
-    """Raised when accumulator verification fails."""
-
-
-def _is_probable_prime(n: int, rounds: int = 40) -> bool:
-    """Miller-Rabin primality test."""
-    if n < 2:
-        return False
-    if n in (2, 3):
-        return True
-    if n % 2 == 0:
-        return False
-    d = n - 1
-    s = 0
-    while d % 2 == 0:
-        d //= 2
-        s += 1
-    for _ in range(rounds):
-        a = secrets.randbelow(n - 3) + 2
-        x = pow(a, d, n)
-        if x == 1 or x == n - 1:
-            continue
-        for _ in range(s - 1):
-            x = pow(x, 2, n)
-            if x == n - 1:
-                break
-        else:
-            return False
-    return True
-
-
-def _random_prime(bits: int) -> int:
-    """Generate a random *bits*-length prime."""
-    while True:
-        n = secrets.randbits(bits)
-        n |= (1 << (bits - 1)) | 1
-        if _is_probable_prime(n):
-            return n
-
-
-class RSAConfig:
-    """RSA modulus N and generator G for the accumulator."""
-
-    def __init__(self, bits: int = 1024) -> None:
-        if bits < 64:
-            raise AccumulatorError("bits must be >= 64")
-        self.bits = bits
-        half = bits // 2
-        self._p = _random_prime(half)
-        self._q = _random_prime(bits - half)
-        self.N = self._p * self._q
-        self.G = secrets.randbelow(self.N - 2) + 2
-
-    @property
-    def p(self) -> int:
-        return self._p
-
-    @property
-    def q(self) -> int:
-        return self._q
-
-
-def _hash_to_prime(value: bytes, bits: int = 256) -> int:
-    """Hash *value* with SHA-256, convert to odd integer, and step to next
-    probable prime."""
-    h = hashlib.sha256(value).digest()
-    n = int.from_bytes(h, "big") % (1 << bits)
-    n |= 1
-    step = 0
-    while not _is_probable_prime(n, rounds=25):
-        n += 2
-        step += 1
-        if step > 10000:
-            raise AccumulatorError("failed to find prime for " + repr(value))
-    return n
-
-
-class RSAUniversalAccumulator:
-    """RSA-based universal set-membership accumulator.
-
-    Stores accumulated prime representatives of set elements.
-    Supports add, remove, membership witnesses, and non-membership proofs.
-    """
-
-    def __init__(
-        self,
-        config: RSAConfig,
-        initial_elements: list[bytes] | None = None,
-    ) -> None:
-        self.config = config
-        self._elements: set[int] = set()
-        for elem in initial_elements or []:
-            self._elements.add(_hash_to_prime(elem))
-        self.value = self._compute_value()
-
-    # -- core state -------------------------------------------------------
-
-    def _compute_value(self) -> int:
-        if not self._elements:
-            return self.config.G
-        product = 1
-        for p in self._elements:
-            product = (product * p) % ((self.config.p - 1) * (self.config.q - 1))
-        return pow(self.config.G, product, self.config.N)
-
-    def element_count(self) -> int:
-        return len(self._elements)
-
-    @property
-    def elements(self) -> set[int]:
-        return set(self._elements)
-
-    # -- add / remove -----------------------------------------------------
-
-    def add(self, element: bytes) -> None:
-        p = _hash_to_prime(element)
-        if p in self._elements:
-            return
-        self._elements.add(p)
-        self.value = pow(self.value, p, self.config.N)
-
-    def remove(self, element: bytes) -> None:
-        p = _hash_to_prime(element)
-        if p not in self._elements:
-            raise AccumulatorError("element not in accumulator")
-        if len(self._elements) == 1:
-            self._elements.discard(p)
-            self.value = self._compute_value()
-            return
-        self._elements.discard(p)
-        phi = (self.config.p - 1) * (self.config.q - 1)
-        d_inv = pow(p, -1, phi)
-        self.value = pow(self.value, d_inv, self.config.N)
-
-    # -- membership witness ------------------------------------------------
-
-    def witness(self, element: bytes) -> int:
-        """Return {G}^{∏_{q∈S\\{p}} q} mod N."""
-        p = _hash_to_prime(element)
-        if p not in self._elements:
-            raise AccumulatorError("element not in accumulator")
-        if len(self._elements) == 1:
-            return self.config.G
-        phi = (self.config.p - 1) * (self.config.q - 1)
-        d_inv = pow(p, -1, phi)
-        return pow(self.value, d_inv, self.config.N)
-
-    def verify_witness(self, element: bytes, witness: int) -> bool:
-        p = _hash_to_prime(element)
-        return pow(witness, p, self.config.N) == self.value
-
-    # -- non-membership proof ---------------------------------------------
-
-    def non_membership_proof(self, element: bytes) -> tuple[int, int] | None:
-        """Return (G^a, b) s.t. (G^a)^p * A^b == G mod N, proving
-        element (with prime repr p) is NOT in the accumulator."""
-        p = _hash_to_prime(element)
-        if p in self._elements:
-            return None
-        full_product = 1
-        for q in self._elements:
-            full_product *= q
-        a, b = _extended_gcd(p, full_product)
-        return (pow(self.config.G, a, self.config.N), b)
-
-    def verify_non_membership(self, element: bytes, proof: tuple[int, int]) -> bool:
-        g_a, b = proof
-        p = _hash_to_prime(element)
-        lhs = (pow(g_a, p, self.config.N) * pow(self.value, b, self.config.N)) % self.config.N
-        return lhs == self.config.G
-
-
-def _extended_gcd(a: int, b: int) -> tuple[int, int]:
-    """Return (x, y) such that a*x + b*y == gcd(a, b)."""
-    if b == 0:
-        return (1, 0)
-    x1, y1 = _extended_gcd(b, a % b)
-    return (y1, x1 - (a // b) * y1)
 
 
 # ---------------------------------------------------------------------------

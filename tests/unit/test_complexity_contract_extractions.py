@@ -98,3 +98,78 @@ def test_runtime_delegates_managed_runner_composition() -> None:
         vars(runtime)["_build_managed_runner_composition"]
         is runtime_builder.build_managed_self_improve_runner
     )
+
+
+def test_deploy_strategy_reexports_canonical_value_types() -> None:
+    """Azure deploy callers retain one set of planning value objects."""
+    from general_ludd.infra import deploy_strategy, deploy_strategy_types
+
+    for name in (
+        "CostEntry",
+        "DeployUrgency",
+        "ElasticTierController",
+        "ElasticTierDecision",
+        "ElasticWorkload",
+        "PhasedDeployPlan",
+        "ResourceTier",
+    ):
+        assert getattr(deploy_strategy, name) is getattr(deploy_strategy_types, name)
+
+
+def test_macos_security_uses_canonical_command_support() -> None:
+    """The connector keeps its injectable runner seam after extraction."""
+    from general_ludd.connectors import macos_security, macos_security_support
+
+    namespace = vars(macos_security)
+    assert namespace["_validate_arg"] is macos_security_support.validate_arg
+    assert namespace["_default_runner"] is macos_security_support.default_runner
+    assert namespace["_run"] is macos_security_support.run
+
+
+def test_accumulator_reexports_canonical_rsa_implementation() -> None:
+    """Existing algorithm imports resolve to the isolated RSA accumulator."""
+    from general_ludd.algorithms import accumulator, rsa_accumulator
+
+    assert accumulator.AccumulatorError is rsa_accumulator.AccumulatorError
+    assert accumulator.RSAConfig is rsa_accumulator.RSAConfig
+    assert accumulator.RSAUniversalAccumulator is rsa_accumulator.RSAUniversalAccumulator
+
+
+def test_pipeline_lanes_reexports_canonical_gate_lane() -> None:
+    """Pipeline callers keep the original GateLane import path."""
+    from general_ludd.pipeline import gate_lane, lanes
+
+    assert lanes.GateLane is gate_lane.GateLane
+
+
+def test_bug_registry_reexports_canonical_scanning_contracts() -> None:
+    """Bug seeds and scanning clients share one registry contract."""
+    from general_ludd.quality import bug_class_registry, bug_class_registry_core
+
+    namespace = vars(bug_class_registry)
+    assert bug_class_registry.BugClass is bug_class_registry_core.BugClass
+    assert namespace["_detect_ssrf_unvalidated_url"] is (
+        bug_class_registry_core.detect_ssrf_unvalidated_url
+    )
+    assert namespace["_detect_unvalidated_subprocess_argv"] is (
+        bug_class_registry_core.detect_unvalidated_subprocess_argv
+    )
+    assert bug_class_registry.sweep is bug_class_registry_core.sweep
+    assert bug_class_registry.verify_guards is bug_class_registry_core.verify_guards
+
+
+def test_azure_model_selection_uses_canonical_discovery_contracts() -> None:
+    """Azure discovery keeps one typed registry, rejection, and trace boundary."""
+    from general_ludd.self_improve import (
+        azure_model_selection,
+        azure_model_selection_contracts,
+    )
+
+    namespace = vars(azure_model_selection)
+    assert namespace["_AzureModelRejection"] is (
+        azure_model_selection_contracts.AzureModelRejection
+    )
+    assert namespace["_ModelRegistry"] is (
+        azure_model_selection_contracts.ModelRegistryProtocol
+    )
+    assert namespace["_emit"] is azure_model_selection_contracts.emit_selection_trace

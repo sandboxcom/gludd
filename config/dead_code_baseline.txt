@@ -298,7 +298,6 @@ src/general_ludd/connectors/linux_namespaces.py:LinuxNamespacesSource
 src/general_ludd/connectors/local_files.py:JsonlLogSource
 src/general_ludd/connectors/local_files.py:SyslogGrepSource
 src/general_ludd/connectors/mac_unified_log.py:MacUnifiedLogSource
-src/general_ludd/connectors/macos_security.py:MacOSSecuritySource
 src/general_ludd/connectors/monday.py:MondaySource
 src/general_ludd/connectors/mongodb_stats.py:MongoDbStatsSource
 src/general_ludd/connectors/mqtt.py:MqttSource
