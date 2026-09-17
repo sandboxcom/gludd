@@ -5175,6 +5175,7 @@ _gate-refresh-body:
 	else \
 		echo "=== GATE-REFRESH: PASSED ==="; \
 		echo "=== GATE: PASSED ===" >> "$$STATUS_WORK"; \
+		$(UV) run python scripts/gate_status_attestation.py sign "$$STATUS_WORK"; \
 		mv "$$STATUS_WORK" .gate-status; \
 		cat .gate-status; \
 	fi
@@ -5199,10 +5200,9 @@ git-commit: _gate-fresh-check _commit-lock-acquire _commit-lint-guard _commit-do
 	@echo "Running pre-commit collection check..."
 	@$(MAKE) --no-print-directory collect-check
 	@echo "Gate fresh and green. Running pre-commit directly on staged files..."
-	@STAGED_FILES="$$(git diff --cached --name-only -z)"; \
-	if [ -n "$$STAGED_FILES" ]; then \
-		printf '%s' "$$STAGED_FILES" | xargs -0 $(UV) run pre-commit run --files; \
-		printf '%s' "$$STAGED_FILES" | xargs -0 git add; \
+	@if ! git diff --cached --quiet; then \
+		git diff --cached --name-only -z | xargs -0 $(UV) run pre-commit run --files && \
+		git diff --cached --name-only -z | xargs -0 git add; \
 	fi
 	@$(MAKE) --no-print-directory check-gate-fresh
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
