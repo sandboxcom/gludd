@@ -384,3 +384,21 @@ need a default-deny option, consistent enforcement across product surfaces,
 project isolation, observable decisions, and an automated way to prove that
 protected canaries never reach any sink. Those requirements are made explicit
 and testable above.
+
+## Preparation-to-runner composition proof
+
+The focused
+`tests/e2e/test_self_improve_private_policy_preparation_e2e.py` suite covers a
+seam intentionally separate from the broader EventLoop and direct-runner
+acceptance cases. It prepares the immutable approval through
+`prepare_managed_self_improve_plan`, composes the repository-bound service
+through `build_managed_self_improve_runner`, and then observes the hermetic
+provider, evaluator, outcome-learning adapter, and bounded progress events.
+
+One default-private project proves an explicitly allowlisted public change can
+complete through that entire chain while a private sibling canary remains
+absent from prompts, events, logs, results, calibration, training, memory, and
+captured output. Focused failure cases prove malformed policy stops before
+repository access, policy drift after approval stops before provider or
+learning effects, and two repositories can assign opposite policies to the
+same relative path without sharing an authorization or provider call.

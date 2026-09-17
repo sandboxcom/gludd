@@ -83,9 +83,30 @@ PayloadDimension = Literal[
 PayloadSource = Literal["gateway", "provider", "cache"]
 
 
-def _default_provider_request_timeout() -> httpx.Timeout:
-    """Return the gateway-owned deadline for non-streaming provider clients."""
-    return httpx.Timeout(connect=10.0, read=60.0, write=60.0, pool=10.0)
+def _default_provider_request_timeout(timeout_seconds: float | None = None) -> httpx.Timeout:
+    """Return a caller-shortenable, gateway-owned provider deadline.
+
+    The scalar per-call value is applied component-wise so it can shorten any
+    of the gateway defaults, but can never widen them.  Keeping construction in
+    this helper also means callers cannot replace the structured timeout with an
+    arbitrary provider kwarg.
+    """
+    if timeout_seconds is None:
+        return httpx.Timeout(connect=10.0, read=60.0, write=60.0, pool=10.0)
+    if (
+        isinstance(timeout_seconds, bool)
+        or not isinstance(timeout_seconds, (int, float))
+        or not math.isfinite(timeout_seconds)
+        or timeout_seconds <= 0
+    ):
+        raise ValueError("timeout_seconds must be a finite positive number")
+    timeout = float(timeout_seconds)
+    return httpx.Timeout(
+        connect=min(10.0, timeout),
+        read=min(60.0, timeout),
+        write=min(60.0, timeout),
+        pool=min(10.0, timeout),
+    )
 
 
 def _positive_profile_limit(profile: object, field_name: str, default: int) -> int:
@@ -1678,12 +1699,14 @@ class ModelGateway:
         estimated_cost: float = 0.0,
         budget_remaining: float = float("inf"),
         requested_max_output_tokens: int | None = None,
+        timeout_seconds: float | None = None,
         cancellation_event: threading.Event | None = None,
         _skip_health_check: bool = False,
         _request_payload_budget: _RequestPayloadBudget | None = None,
         **kwargs: Any,
     ) -> ModelResponse:
         """Invoke one profile after enforcing cancellation, payload, and budget limits."""
+        provider_timeout = _default_provider_request_timeout(timeout_seconds)
         if cancellation_event is not None and cancellation_event.is_set():
             raise CallCancelledError(profile_id)
 
@@ -1770,6 +1793,7 @@ class ModelGateway:
                         request_payload_budget=request_payload_budget,
                         request_bytes=request_bytes,
                         input_tokens=input_tokens,
+                        provider_timeout=provider_timeout,
                         **kwargs,
                     )
             finally:
@@ -1783,6 +1807,7 @@ class ModelGateway:
             request_payload_budget=request_payload_budget,
             request_bytes=request_bytes,
             input_tokens=input_tokens,
+            provider_timeout=provider_timeout,
             **kwargs,
         )
 
@@ -2722,6 +2747,7 @@ class ModelGateway:
         request_payload_budget: _RequestPayloadBudget,
         request_bytes: int,
         input_tokens: int,
+        provider_timeout: httpx.Timeout,
         **kwargs: Any,
     ) -> ModelResponse:
         # Reserve all outbound dimensions atomically before provider lookup or
@@ -2849,7 +2875,7 @@ class ModelGateway:
         # request_timeout directly to httpx.Timeout, giving us a connect cap
         # (fast failure on unreachable hosts) + a generous read cap (slow
         # streaming is expected from large-context models).
-        init_kwargs["request_timeout"] = _default_provider_request_timeout()
+        init_kwargs["request_timeout"] = provider_timeout
 
         init_kwargs.update(kwargs)
 

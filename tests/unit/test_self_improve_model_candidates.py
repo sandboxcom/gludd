@@ -19,6 +19,7 @@ from general_ludd.self_improve.model_candidates import (
     BackendPolicyFailure,
     BoundedCandidateSession,
     CandidateBackend,
+    CatalogFreeTierCandidateIdentity,
     LocalGGUFCandidateIdentity,
     ModelCandidateProvider,
 )
@@ -61,6 +62,15 @@ def _azure_containerapp_identity() -> AzureContainerAppCandidateIdentity:
     )
 
 
+def _free_tier_identity() -> CatalogFreeTierCandidateIdentity:
+    return CatalogFreeTierCandidateIdentity(
+        platform="openrouter",
+        model_id="qwen/qwen3-coder:free",
+        catalog_version="2026.09.01",
+        catalog_payload_sha256="e" * 64,
+    )
+
+
 def _budget(*, max_calls: int = 2) -> BackendCallBudget:
     return BackendCallBudget(
         max_calls=max_calls,
@@ -86,7 +96,12 @@ def test_backend_call_budget_exposes_one_canonical_payload() -> None:
 class _FakeBackend:
     def __init__(
         self,
-        identity: LocalGGUFCandidateIdentity | AzureFoundryCandidateIdentity,
+        identity: (
+            LocalGGUFCandidateIdentity
+            | AzureFoundryCandidateIdentity
+            | AzureContainerAppCandidateIdentity
+            | CatalogFreeTierCandidateIdentity
+        ),
         *,
         failure: Exception | None = None,
     ) -> None:
@@ -157,6 +172,60 @@ def test_containerapp_identity_is_exact_immutable_and_secret_free() -> None:
     assert "credential" not in repr(identity).casefold()
     with pytest.raises(FrozenInstanceError):
         identity.__setattr__("revision_name", "mutated")
+
+
+def test_catalog_free_tier_identity_is_exact_frozen_and_secret_free() -> None:
+    identity = _free_tier_identity()
+
+    assert identity.provider is ModelCandidateProvider.CATALOG_FREE_TIER
+    assert identity.identity_digest == _free_tier_identity().identity_digest
+    assert identity.evidence_identity_digest == identity.identity_digest
+    assert len(identity.identity_digest) == 64
+    assert "endpoint" not in repr(identity).casefold()
+    assert "credential" not in repr(identity).casefold()
+    with pytest.raises(FrozenInstanceError):
+        identity.__setattr__("model_id", "mutated")
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda value: replace(value, platform="OpenRouter"),
+        lambda value: replace(value, platform="provider/escape"),
+        lambda value: replace(value, model_id=""),
+        lambda value: replace(value, model_id=" model"),
+        lambda value: replace(value, model_id="model\x00secret"),
+        lambda value: replace(value, catalog_version="latest snapshot"),
+        lambda value: replace(value, catalog_payload_sha256="not-a-digest"),
+    ],
+)
+def test_catalog_free_tier_identity_rejects_ambiguous_evidence(
+    mutation: Callable[
+        [CatalogFreeTierCandidateIdentity],
+        CatalogFreeTierCandidateIdentity,
+    ],
+) -> None:
+    with pytest.raises(ValueError):
+        mutation(_free_tier_identity())
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda value: replace(value, platform="groq"),
+        lambda value: replace(value, model_id="other/model:free"),
+        lambda value: replace(value, catalog_version="2026.09.02"),
+        lambda value: replace(value, catalog_payload_sha256="f" * 64),
+    ],
+)
+def test_catalog_free_tier_identity_digest_binds_every_admitted_field(
+    mutation: Callable[
+        [CatalogFreeTierCandidateIdentity],
+        CatalogFreeTierCandidateIdentity,
+    ],
+) -> None:
+    original = _free_tier_identity()
+    assert mutation(original).identity_digest != original.identity_digest
 
 
 @pytest.mark.parametrize(
@@ -501,6 +570,47 @@ def test_azure_requires_explicit_opt_in_before_backend_call() -> None:
     assert session.snapshot.calls_started == 0
 
 
+def test_catalog_free_tier_requires_explicit_external_opt_in() -> None:
+    backend = _FakeBackend(_free_tier_identity())
+    session = BoundedCandidateSession(
+        backend,
+        _budget(),
+        azure_enabled=False,
+        external_enabled=False,
+    )
+
+    with pytest.raises(BackendPolicyError) as captured:
+        session.generate(
+            "private source must not leave this boundary",
+            input_tokens=10,
+            max_output_tokens=10,
+            estimated_cost_microusd=0,
+        )
+
+    assert captured.value.failure is BackendPolicyFailure.EXTERNAL_OPT_IN_REQUIRED
+    assert backend.calls == []
+    assert session.snapshot.calls_started == 0
+
+
+def test_catalog_free_tier_opt_in_uses_existing_bounded_session() -> None:
+    backend = _FakeBackend(_free_tier_identity())
+    session = BoundedCandidateSession(
+        backend,
+        _budget(max_calls=1),
+        azure_enabled=False,
+        external_enabled=True,
+    )
+
+    assert session.generate(
+        "approved public task",
+        input_tokens=100,
+        max_output_tokens=50,
+        estimated_cost_microusd=0,
+    ) == "proposal:approved public task"
+    assert backend.calls == [("approved public task", 50, 30.0)]
+    assert session.snapshot.calls_started == 1
+
+
 def test_opted_in_azure_session_is_single_candidate_and_budget_bounded() -> None:
     backend = _FakeBackend(_azure_identity())
     session = BoundedCandidateSession(backend, _budget(max_calls=1), azure_enabled=True)
@@ -666,6 +776,13 @@ def test_session_rejects_non_boolean_opt_in_and_nonconforming_backend() -> None:
             _FakeBackend(_local_identity()),
             _budget(),
             azure_enabled=cast(Any, 1),
+        )
+    with pytest.raises(ValueError, match="external_enabled"):
+        BoundedCandidateSession(
+            _FakeBackend(_local_identity()),
+            _budget(),
+            azure_enabled=False,
+            external_enabled=cast(Any, 1),
         )
     with pytest.raises(ValueError, match="backend"):
         BoundedCandidateSession(cast(Any, object()), _budget(), azure_enabled=False)

@@ -709,7 +709,10 @@ def _classify_sdk_error(error: BaseException) -> BackendFailure:
     return BackendFailure.INTERNAL
 
 
-def _censored_sdk_error(error: BaseException) -> BackendInfrastructureError:
+def censor_candidate_backend_error(
+    error: BaseException,
+) -> BackendInfrastructureError:
+    """Reduce one provider exception to the shared content-free failure type."""
     if isinstance(error, BackendInfrastructureError):
         try:
             failure = error.failure
@@ -719,6 +722,10 @@ def _censored_sdk_error(error: BaseException) -> BackendInfrastructureError:
             failure = BackendFailure.INTERNAL
         return BackendInfrastructureError(failure)
     return BackendInfrastructureError(_classify_sdk_error(error))
+
+
+# Compatibility for the established Azure adapter's private call sites.
+_censored_sdk_error = censor_candidate_backend_error
 
 
 def _member(value: object, *names: str) -> object | None:
@@ -1310,8 +1317,18 @@ def build_azure_openai_candidate_backend(
     )
 
 
+# Provider-neutral names let every concrete candidate backend share the
+# established privacy capability, response, accounting, and denial contracts.
+# The Azure names remain aliases to the same classes for compatibility.
+ApprovedCandidatePrompt = AzureApprovedPrompt
+CandidateBackendAccounting = AzureBackendAccounting
+CandidatePromptApprovalError = AzurePromptApprovalError
+CandidateResponse = AzureCandidateResponse
+
+
 __all__ = (
     "AZURE_AI_TOKEN_SCOPE",
+    "ApprovedCandidatePrompt",
     "AzureApprovedPrompt",
     "AzureBackendAccounting",
     "AzureBackendTrace",
@@ -1323,5 +1340,9 @@ __all__ = (
     "AzurePromptApprovalError",
     "AzureSdkFactories",
     "AzureTraceEvent",
+    "CandidateBackendAccounting",
+    "CandidatePromptApprovalError",
+    "CandidateResponse",
     "build_azure_openai_candidate_backend",
+    "censor_candidate_backend_error",
 )

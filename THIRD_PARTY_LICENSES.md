@@ -2,6 +2,24 @@
 
 General Ludd bundles and depends on the following third-party software.
 
+## Vendored Source
+
+### FreeLLMAPI scoring subset
+
+- License: MIT
+- Homepage: https://github.com/tashfeenahmed/freellmapi
+- Pinned commit: `780a7d8d6dcbc818eb10ec17da210635b569ae22`
+- The pure scoring functions in
+  `src/general_ludd/self_improve/vendor/freellmapi/scoring_kernel.js` are an
+  allowlisted adaptation; Gludd does not embed the upstream service.
+
+### quickjs-ng
+
+- License: MIT
+- Homepage: https://github.com/genotrance/quickjs-ng
+- Used only as the optional bounded in-process JavaScript runtime for the
+  allowlisted FreeLLMAPI scoring subset.
+
 ## Redistributed Binaries
 
 ### OpenBao

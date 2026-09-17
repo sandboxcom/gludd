@@ -1315,3 +1315,127 @@ class TestRetryBackoffCumulativeCap:
                     f"sleep of {s}s issued after cap already at {running:.1f}s"
                 )
             running += s
+
+
+class TestPerCallProviderTimeout:
+    """A per-call deadline may narrow, but never widen, gateway-owned limits."""
+
+    @staticmethod
+    def _gateway(*, response_cache=None):
+        reg = ProviderRegistry()
+        reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
+        profile = ModelProfile(
+            model_profile_id="timeout_test",
+            enabled=True,
+            provider="openai",
+            provider_package="langchain-openai",
+            provider_class_hint="ChatOpenAI",
+            model_name="gpt-4",
+            cost_per_input_token=_GPT_4_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_GPT_4_OUTPUT_COST_PER_TOKEN,
+            run_budget_usd=100.0,
+        )
+        return (
+            ModelGateway(
+                profiles=[profile],
+                provider_registry=reg,
+                response_cache=response_cache,
+            ),
+            reg,
+        )
+
+    @staticmethod
+    def _call_and_capture(timeout_seconds: float) -> dict:
+        gateway, registry = TestPerCallProviderTimeout._gateway()
+        captured: dict = {}
+        with (
+            patch.object(registry, "is_installed", return_value=True),
+            patch.object(
+                registry,
+                "get_provider_class",
+                return_value=_capture_provider(captured),
+            ),
+        ):
+            gateway.call_model(
+                "timeout_test",
+                [{"role": "user", "content": "hi"}],
+                timeout_seconds=timeout_seconds,
+            )
+        return captured
+
+    def test_timeout_seconds_shortens_every_gateway_timeout_component(self):
+        captured = self._call_and_capture(5.0)
+
+        timeout = captured.pop("request_timeout")
+        assert timeout.connect == 5.0
+        assert timeout.read == 5.0
+        assert timeout.write == 5.0
+        assert timeout.pool == 5.0
+        assert "timeout_seconds" not in captured
+
+    def test_timeout_seconds_clamps_each_component_independently(self):
+        captured = self._call_and_capture(30.0)
+
+        timeout = captured["request_timeout"]
+        assert timeout.connect == 10.0
+        assert timeout.read == 30.0
+        assert timeout.write == 30.0
+        assert timeout.pool == 10.0
+
+    def test_timeout_seconds_cannot_widen_gateway_defaults(self):
+        captured = self._call_and_capture(120.0)
+
+        timeout = captured["request_timeout"]
+        assert timeout.connect == 10.0
+        assert timeout.read == 60.0
+        assert timeout.write == 60.0
+        assert timeout.pool == 10.0
+
+    @pytest.mark.parametrize(
+        "invalid_timeout",
+        [True, False, 0, -1, float("nan"), float("inf"), float("-inf"), "5"],
+    )
+    def test_invalid_timeout_rejected_before_cache_or_provider_effects(self, invalid_timeout):
+        response_cache = MagicMock()
+        gateway, registry = self._gateway(response_cache=response_cache)
+
+        with (
+            patch.object(registry, "is_installed", wraps=registry.is_installed) as is_installed,
+            pytest.raises(ValueError, match="timeout_seconds must be a finite positive number"),
+        ):
+            gateway.call_model(
+                "timeout_test",
+                [{"role": "user", "content": "hi"}],
+                timeout_seconds=invalid_timeout,
+            )
+
+        response_cache.get.assert_not_called()
+        is_installed.assert_not_called()
+
+    def test_timeout_seconds_is_excluded_from_cache_identity(self):
+        cache_key_inputs: list[dict] = []
+        gateway, registry = self._gateway()
+        captured: dict = {}
+
+        def capture_cache_key(*args, **kwargs):
+            cache_key_inputs.append(kwargs)
+            return "cache-key"
+
+        gateway._response_cache = MagicMock()
+        gateway._response_cache.get.return_value = None
+        with (
+            patch.object(registry, "is_installed", return_value=True),
+            patch.object(
+                registry,
+                "get_provider_class",
+                return_value=_capture_provider(captured),
+            ),
+            patch("general_ludd.models.gateway._make_cache_key", side_effect=capture_cache_key),
+        ):
+            gateway.call_model(
+                "timeout_test",
+                [{"role": "user", "content": "hi"}],
+                timeout_seconds=5.0,
+            )
+
+        assert cache_key_inputs == [{"model_name": "gpt-4"}]
