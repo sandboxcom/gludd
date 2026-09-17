@@ -1,9 +1,12 @@
 """Embedded-systems workload contracts."""
 
 from general_ludd.embedded.firmware import (
+    ArduinoFirmwareAdapter,
     ArduinoFirmwareWorkload,
+    ArduinoToolRunner,
     BoardProfile,
     CommandEvidence,
+    FirmwareCandidate,
     FirmwareRequest,
     FirmwareResult,
     FirmwareStatus,
@@ -14,9 +17,12 @@ from general_ludd.embedded.firmware import (
 )
 
 __all__ = [
+    "ArduinoFirmwareAdapter",
     "ArduinoFirmwareWorkload",
+    "ArduinoToolRunner",
     "BoardProfile",
     "CommandEvidence",
+    "FirmwareCandidate",
     "FirmwareRequest",
     "FirmwareResult",
     "FirmwareStatus",

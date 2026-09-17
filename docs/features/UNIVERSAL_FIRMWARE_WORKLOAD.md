@@ -7,6 +7,20 @@ runtime, not as a self-improvement feature. A model may propose a candidate,
 but the candidate is not complete until deterministic tools compile, statically
 analyze, and simulate it for the exact requested board.
 
+`ArduinoFirmwareAdapter` implements the same `TaskAdapterProtocol` as
+`PolymerDesignAdapter`. `UniversalTaskExecutor` therefore owns model-provider
+selection, accelerator eligibility, budget enforcement, durable scheduler
+admission, model invocation, and result status for both domains. The embedded
+package owns only board qualification, firmware schema and source checks, and
+the domain-specific acceptance evidence. Neither direction imports
+`self_improve`; self-improvement is another possible consumer of this runtime.
+
+`ArduinoToolRunner` is the narrow bridge from the universal allowlisted tool
+surface to a `FirmwareToolchain`. It always runs one bounded pipeline in this
+order: Arduino CLI compile, Cppcheck AVR analysis, then simavr. It stops on a
+failed compile or static check and returns immutable evidence rather than
+executing an arbitrary command supplied by a model.
+
 The first supported board family is AVR Arduino:
 
 | FQBN | MCU | Clock | Simulator |
@@ -25,7 +39,8 @@ A firmware task is complete only when all of these records are present and
 valid:
 
 1. The universal router supplies a healthy local or Azure endpoint decision
-   with capability, privacy, cost, classification, and decision identifiers.
+   with capability, privacy, cost, classification, accelerator, and health
+   evidence. Restricted work is eligible only for an offline local target.
 2. The model returns strict JSON containing complete Arduino C++ source for the
    exact FQBN. Markdown, prose, placeholders, board substitution, and unsafe
    host or upload operations are rejected.
@@ -36,6 +51,12 @@ valid:
    expected serial observable within a bounded run.
 6. Provenance binds the source digest, compile artifact digest, route decision,
    board profile, command arguments, and tool versions.
+
+The provider-neutral request uses capability `arduino-cpp`, allowlists only
+`arduino_toolchain`, and carries `board_fqbn`, `expected_serial`, and the
+default-false `physical_device_access` flag as typed metadata. Local Ollama,
+local vLLM, Azure-hosted vLLM, and Azure model endpoints can all implement the
+same injected gateway contract; no provider SDK appears in the embedded code.
 
 Failure, missing tools, an uncompiled candidate, missing artifact digest, static
 findings, simulator failure, or a missing observable always leaves
@@ -92,5 +113,18 @@ regulatory compliance.
 evidence, strict model-output parsing, privacy and physical-access refusal,
 compile/static/simulator fail-closed behavior, command construction, artifact
 hashing, bounded simulator termination, and the package dependency boundary.
+`tests/unit/test_universal_firmware_adapter.py` additionally executes the
+firmware capability end-to-end through `UniversalTaskExecutor`, proves
+evidence-based local/Azure selection with approved accelerators, exercises the
+shared policy and scheduler gates, and rejects missing, malformed, unsafe, or
+incomplete tool evidence. The polymer acceptance suite exercises the same
+executor and adapter method surface, providing a cross-domain architectural
+proof instead of a self-improvement surrogate.
+
+Deployment is additive and supports ZDD: ship the adapter and tool bridge dark,
+verify the board toolchain and provider targets, register `arduino-cpp` routing,
+then shift new tasks to it while existing workers drain. Rollback removes that
+registration; there is no schema migration or persistent firmware state to
+reverse.
 The focused branch-aware coverage configuration is
 `config/coverage_universal_firmware.ini`.

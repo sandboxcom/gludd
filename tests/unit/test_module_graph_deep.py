@@ -158,7 +158,6 @@ SECURITY_PACKAGES: frozenset[str] = frozenset(
 UTILITY_PACKAGES: frozenset[str] = frozenset(
     {
         "general_ludd.language",
-        "general_ludd.chemistry",
         "general_ludd.physics",
         "general_ludd.materials",
         "general_ludd.travel",
@@ -220,6 +219,7 @@ BUSINESS_PACKAGES: frozenset[str] = frozenset(
         "general_ludd.budget",
         "general_ludd.business",
         "general_ludd.code_intelligence",
+        "general_ludd.chemistry",
         "general_ludd.collections",
         "general_ludd.commands",
         "general_ludd.compaction",

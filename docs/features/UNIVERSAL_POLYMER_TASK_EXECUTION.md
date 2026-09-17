@@ -9,7 +9,10 @@ Self-improvement is therefore one possible consumer of the same runtime, not a
 dependency of it. Neither the universal executor nor the polymer adapter imports
 `self_improve`.
 
-The first constrained workload is polymer design. A successful result requires
+Polymer design is one constrained workload; Arduino firmware is a second,
+independent workload implementing the same adapter contract. This is the
+architectural proof that the executor is task-universal rather than a renamed
+self-improvement loop. A successful polymer result requires
 all of the following evidence:
 
 - a strict, structured polymer candidate rather than model prose or a scaffold;

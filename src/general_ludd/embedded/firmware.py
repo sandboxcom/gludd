@@ -11,15 +11,31 @@ import hashlib
 import json
 import re
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol
 
+from general_ludd.ai_ml.policy import PolicyEngine
+from general_ludd.ai_ml.schemas import (
+    Constraints,
+    DataClassification,
+    ExpertRequest,
+    ExpertTask,
+)
+from general_ludd.execution.universal_task import (
+    AdapterDecision,
+    CandidateAssessment,
+    ExecutionTarget,
+    ToolRunnerProtocol,
+    UniversalTaskRequest,
+)
+
 _SCHEMA_VERSION = "1.0"
 _LANGUAGE = "arduino-cpp"
 _CAPABILITY = "arduino-cpp"
+_TOOL_NAME = "arduino_toolchain"
 _HEALTHY_STATES = frozenset({"healthy", "ready"})
 _BACKENDS = frozenset({"local", "azure"})
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -419,6 +435,316 @@ class ArduinoFirmwareWorkload:
         return ""
 
 
+class ArduinoToolRunner:
+    """Expose a bounded firmware toolchain through the universal tool protocol."""
+
+    def __init__(self, toolchain: FirmwareToolchain) -> None:
+        """Bind one compiler/analyzer/simulator implementation."""
+        self._toolchain = toolchain
+
+    def run(
+        self,
+        tool_name: str,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        """Run the fixed compile, static-check, and simulation pipeline."""
+        if tool_name != _TOOL_NAME:
+            raise ValueError(f"unsupported firmware tool: {tool_name!r}")
+        source = payload.get("source")
+        board_fqbn = payload.get("board_fqbn")
+        if not isinstance(source, str) or not source.strip():
+            raise ValueError("firmware tool payload requires source text")
+        if not isinstance(board_fqbn, str) or not board_fqbn.strip():
+            raise ValueError("firmware tool payload requires board_fqbn")
+        board = supported_board(board_fqbn)
+        ArduinoFirmwareWorkload._validate_source(source)
+
+        compiled = self._toolchain.compile(source, board)
+        evidence: dict[str, object] = {"compile": asdict(compiled)}
+        if ArduinoFirmwareWorkload._check_evidence(
+            compiled,
+            "compile",
+            require_digest=True,
+        ):
+            return evidence
+
+        static = self._toolchain.static_check(source, board)
+        evidence["static_check"] = asdict(static)
+        if ArduinoFirmwareWorkload._check_evidence(static, "static_check"):
+            return evidence
+
+        simulated = self._toolchain.simulate(source, board, compiled)
+        evidence["simulate"] = asdict(simulated)
+        return evidence
+
+
+class ArduinoFirmwareAdapter:
+    """Run Arduino firmware through the provider-neutral universal executor."""
+
+    capability = _CAPABILITY
+    required_tool = _TOOL_NAME
+
+    def __init__(self, *, policy_engine: PolicyEngine) -> None:
+        """Bind the shared policy engine; routing and models stay injected."""
+        self._policy_engine = policy_engine
+        self._workload = ArduinoFirmwareWorkload()
+
+    def build_messages(
+        self,
+        request: UniversalTaskRequest,
+        target: ExecutionTarget,
+    ) -> list[dict[str, str]]:
+        """Translate a universal task into the board-qualified prompt contract."""
+        del target
+        return self._workload.build_messages(self._firmware_request(request))
+
+    def preflight(
+        self,
+        request: UniversalTaskRequest,
+        target: ExecutionTarget,
+    ) -> AdapterDecision:
+        """Enforce board, authority, tool, privacy, and shared policy gates."""
+        try:
+            firmware_request = self._firmware_request(request)
+        except ValueError as exc:
+            return AdapterDecision(False, (str(exc),))
+
+        reasons: list[str] = []
+        if target.provider not in _BACKENDS:
+            reasons.append("unsupported_model_backend")
+        if firmware_request.physical_device_access:
+            reasons.append("physical_device_access_requires_separate_authority")
+        if request.data_classification == "restricted" and target.provider != "local":
+            reasons.append("restricted_firmware_requires_local_backend")
+        if self.required_tool not in request.allowed_tools:
+            reasons.append("arduino_toolchain_not_allowed")
+        if reasons:
+            return AdapterDecision(
+                False,
+                tuple(reasons),
+                evidence={
+                    "safety": {
+                        "physical_device_access": firmware_request.physical_device_access,
+                        "target_provider": target.provider,
+                    }
+                },
+            )
+
+        deadline_s = request.metadata.get("deadline_s", 300)
+        if (
+            not isinstance(deadline_s, int)
+            or isinstance(deadline_s, bool)
+            or deadline_s <= 0
+        ):
+            return AdapterDecision(
+                False,
+                ("policy_refused:deadline_s must be a positive integer",),
+                evidence={"policy": {"allowed": False, "reason": "invalid_deadline_s"}},
+            )
+        try:
+            classification = DataClassification(request.data_classification)
+        except ValueError:
+            return AdapterDecision(False, ("unsupported_data_classification",))
+        policy_request = ExpertRequest(
+            request_id=request.task_id,
+            tenant_id=str(request.metadata.get("tenant_id", "universal-task")),
+            task=ExpertTask.SIMULATE,
+            query=request.instruction,
+            constraints=Constraints(
+                deadline_s=deadline_s,
+                budget_usd=request.budget_usd,
+                data_classification=classification,
+                offline=target.offline,
+                allowed_tools=tuple(sorted(request.allowed_tools)),
+            ),
+            requested_outputs=("verified_arduino_firmware",),
+        )
+        decision = self._policy_engine.check_request(policy_request)
+        return AdapterDecision(
+            decision.allowed,
+            tuple(f"policy_refused:{reason}" for reason in decision.refusal_reasons),
+            evidence={
+                "policy": {
+                    "allowed": decision.allowed,
+                    "decision_id": decision.decision_id,
+                    "ruleset_sha256": decision.ruleset_sha256,
+                    "target_offline": target.offline,
+                },
+                "safety": {
+                    "physical_device_access": False,
+                    "target_provider": target.provider,
+                },
+            },
+        )
+
+    def parse_candidate(self, content: str) -> FirmwareCandidate:
+        """Parse strict JSON while deferring requested-board matching to assessment."""
+        try:
+            payload = json.loads(content)
+        except (json.JSONDecodeError, TypeError) as exc:
+            raise ValueError("structured firmware candidate required") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("structured firmware candidate required")
+        board_fqbn = payload.get("board_fqbn")
+        if not isinstance(board_fqbn, str):
+            raise ValueError("structured firmware candidate required")
+        board = supported_board(board_fqbn)
+        return self._workload._decode_candidate(content, board)
+
+    def assess_candidate(
+        self,
+        request: UniversalTaskRequest,
+        candidate: object,
+        tool_runner: ToolRunnerProtocol | None,
+    ) -> CandidateAssessment:
+        """Require compiler, static-analysis, simulation, and provenance evidence."""
+        if not isinstance(candidate, FirmwareCandidate):
+            return CandidateAssessment(False, ("structured_candidate_required",))
+        try:
+            firmware_request = self._firmware_request(request)
+        except ValueError as exc:
+            return CandidateAssessment(False, (str(exc),))
+        if candidate.board_fqbn != firmware_request.board_fqbn:
+            return CandidateAssessment(False, ("candidate_board_mismatch",))
+        if self.required_tool not in request.allowed_tools:
+            return CandidateAssessment(False, ("arduino_toolchain_not_allowed",))
+        if tool_runner is None:
+            return CandidateAssessment(False, ("arduino_toolchain_unavailable",))
+
+        try:
+            raw_evidence = tool_runner.run(
+                self.required_tool,
+                {
+                    "source": candidate.source,
+                    "board_fqbn": candidate.board_fqbn,
+                    "expected_serial": firmware_request.expected_serial,
+                },
+            )
+        except Exception as exc:
+            return CandidateAssessment(
+                False,
+                (f"arduino_toolchain_failed:{type(exc).__name__}",),
+            )
+
+        required_stages = ("compile", "static_check", "simulate")
+        if not isinstance(raw_evidence, Mapping) or set(raw_evidence) != set(required_stages):
+            return CandidateAssessment(False, ("tool_evidence_incomplete",))
+        try:
+            evidence = tuple(
+                self._command_evidence(raw_evidence[stage]) for stage in required_stages
+            )
+        except (KeyError, TypeError, ValueError):
+            return CandidateAssessment(False, ("tool_evidence_invalid",))
+
+        for item, stage in zip(evidence, required_stages, strict=True):
+            problem = self._workload._check_evidence(
+                item,
+                stage,
+                require_digest=stage == "compile",
+            )
+            if problem:
+                return CandidateAssessment(False, (self._reason_code(problem),))
+        if firmware_request.expected_serial not in evidence[-1].stdout:
+            return CandidateAssessment(False, ("simulator_observable_missing",))
+
+        source_sha256 = hashlib.sha256(candidate.source.encode("utf-8")).hexdigest()
+        tool_records = [
+            {
+                "stage": item.stage,
+                "argv": list(item.argv),
+                "version": item.tool_version,
+                "bounded_termination": item.bounded_termination,
+            }
+            for item in evidence
+        ]
+        return CandidateAssessment(
+            True,
+            evidence={
+                "safety": {
+                    "physical_device_access": False,
+                    "source_checks": "passed",
+                },
+                "validation": {
+                    "status": "validated",
+                    "board_fqbn": candidate.board_fqbn,
+                    "compile": "passed",
+                    "static_check": "passed",
+                    "simulate": "passed",
+                    "expected_serial_observed": True,
+                },
+                "provenance": {
+                    "schema_version": _SCHEMA_VERSION,
+                    "source_sha256": source_sha256,
+                    "compile_artifact_sha256": evidence[0].artifact_sha256,
+                    "tools": tool_records,
+                },
+            },
+        )
+
+    @staticmethod
+    def _firmware_request(request: UniversalTaskRequest) -> FirmwareRequest:
+        board_fqbn = request.metadata.get("board_fqbn")
+        expected_serial = request.metadata.get("expected_serial")
+        physical_access = request.metadata.get("physical_device_access", False)
+        if not isinstance(board_fqbn, str) or not board_fqbn.strip():
+            raise ValueError("board_fqbn_required")
+        if not isinstance(expected_serial, str) or not expected_serial.strip():
+            raise ValueError("expected_serial_required")
+        if not isinstance(physical_access, bool):
+            raise ValueError("physical_device_access_must_be_boolean")
+        try:
+            supported_board(board_fqbn)
+        except ValueError as exc:
+            raise ValueError("unsupported_board_fqbn") from exc
+        return FirmwareRequest(
+            request_id=request.task_id,
+            objective=request.instruction,
+            board_fqbn=board_fqbn,
+            expected_serial=expected_serial,
+            physical_device_access=physical_access,
+            data_classification=request.data_classification,
+        )
+
+    @staticmethod
+    def _command_evidence(value: object) -> CommandEvidence:
+        if not isinstance(value, Mapping):
+            raise ValueError("command evidence must be a mapping")
+        argv = value.get("argv")
+        if not isinstance(argv, (list, tuple)) or not all(
+            isinstance(token, str) for token in argv
+        ):
+            raise ValueError("command evidence argv must be a string sequence")
+        exit_code = value.get("exit_code")
+        bounded = value.get("bounded_termination", False)
+        if not isinstance(exit_code, int) or isinstance(exit_code, bool):
+            raise ValueError("command evidence exit_code must be an integer")
+        if not isinstance(bounded, bool):
+            raise ValueError("command evidence bounded_termination must be boolean")
+        text_fields = {
+            name: value.get(name)
+            for name in ("stage", "stdout", "stderr", "tool_version")
+        }
+        if not all(isinstance(item, str) for item in text_fields.values()):
+            raise ValueError("command evidence text fields must be strings")
+        digest = value.get("artifact_sha256")
+        if digest is not None and not isinstance(digest, str):
+            raise ValueError("command evidence digest must be text")
+        return CommandEvidence(
+            stage=str(text_fields["stage"]),
+            argv=tuple(argv),
+            exit_code=exit_code,
+            stdout=str(text_fields["stdout"]),
+            stderr=str(text_fields["stderr"]),
+            tool_version=str(text_fields["tool_version"]),
+            artifact_sha256=digest,
+            bounded_termination=bounded,
+        )
+
+    @staticmethod
+    def _reason_code(reason: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "_", reason.lower()).strip("_")
+
+
 Runner = Callable[[tuple[str, ...], Path, float], CommandEvidence]
 
 
@@ -576,9 +902,12 @@ class SubprocessArduinoToolchain:
 
 
 __all__ = [
+    "ArduinoFirmwareAdapter",
     "ArduinoFirmwareWorkload",
+    "ArduinoToolRunner",
     "BoardProfile",
     "CommandEvidence",
+    "FirmwareCandidate",
     "FirmwareRequest",
     "FirmwareResult",
     "FirmwareStatus",
