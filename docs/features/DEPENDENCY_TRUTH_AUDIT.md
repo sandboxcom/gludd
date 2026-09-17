@@ -91,6 +91,17 @@ deferred until the opt-in engine is selected, preserves the content-free
 fallback when the native module is unavailable, and stays visible to deptry and
 the exact core-ownership inventory without a permanent DEP002 suppression.
 
+The `quickjs-ng==0.16.2.1` wheel follows the PEP 639 file form: its installed
+metadata declares `License-File: LICENSE` and places the MIT text under
+`.dist-info/licenses/`, but it publishes neither `License-Expression`, the
+legacy `License` field, nor a license classifier. The license gate therefore
+reads only safe relative paths declared by `License-File` through
+`importlib.metadata.Distribution`; absolute and parent-traversal paths are
+rejected. The resulting text is subjected to the same GPL/AGPL checks as field
+metadata, so this is verified package evidence rather than an allowlist or a
+missing-license suppression. A focused regression pins this behavior for the
+exact installed package.
+
 ## Practitioner evidence
 
 - A long-running [Poetry request to prune unused packages
@@ -110,6 +121,16 @@ the exact core-ownership inventory without a permanent DEP002 suppression.
   `importlib.import_module` support. Gludd uses those native capabilities and a
   statically auditable guarded import instead of adding a custom scanner or a
   Hindsight suppression.
+- The `quickjs-ng` [upstream project metadata](https://github.com/genotrance/quickjs-ng/blob/main/pyproject.toml)
+  contains no license declaration even though the repository carries an MIT
+  `LICENSE`; its issue tracker had no matching license-metadata report when
+  checked on 2026-09-17 (the sole open user report was source-build issue
+  [#11](https://github.com/genotrance/quickjs-ng/issues/11)). The long-lived
+  PyPA Hatch discussion
+  [#679](https://github.com/pypa/hatch/issues/679) documents the wider
+  practitioner confusion around wheels publishing `License-File` instead of
+  `License` or `License-Expression`. Gludd consequently implements the PEP 639
+  file path rather than inventing package-specific license metadata.
 
 The sources were revalidated on 2026-08-29. The upstream deptry reference still
 states that it derives dependency truth by comparing declared packages with
