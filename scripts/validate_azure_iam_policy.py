@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """validate_azure_iam_policy.py — Validate Azure IAM policy JSON files.
 
-Validates two formats:
+Validates the checked-in role contracts in two formats:
   1. azure-iam-policy.json — PascalCase CLI format
      (Name, Description, Actions, NotActions, AssignableScopes, DataActions, NotDataActions)
   2. azure-iam-policy-cli.json — REST API / Portal format
@@ -27,6 +27,7 @@ from typing import Any
 INFRA_DIR = Path(__file__).resolve().parent.parent / "config" / "infra"
 POLICY_FILE = INFRA_DIR / "azure-iam-policy.json"
 POLICY_CLI_FILE = INFRA_DIR / "azure-iam-policy-cli.json"
+GPU_WORKER_POLICY_FILE = INFRA_DIR / "azure-gpu-worker-iam-policy.json"
 OBSOLETE_PROVIDER_REGISTRATION = "Microsoft.Resources/subscriptions/providers/register/action"
 
 SECURITY_CRITICAL_FORBIDDEN_ACTIONS = {
@@ -266,7 +267,7 @@ def main() -> None:
     errors: list[str] = []
     warnings: list[str] = []
 
-    for policy_file in [POLICY_FILE, POLICY_CLI_FILE]:
+    for policy_file in [POLICY_FILE, POLICY_CLI_FILE, GPU_WORKER_POLICY_FILE]:
         if not policy_file.exists():
             print(f"MISSING: {policy_file}")
             sys.exit(1)

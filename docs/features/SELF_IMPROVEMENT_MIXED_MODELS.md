@@ -1146,6 +1146,42 @@ bootstrap phases share one evidence scope. The identical credential-free local/G
 Actions profile exercises these branches: 1,171 tests pass, aggregate coverage is 91%,
 and every one of 61 measured files exceeds the 75% individual floor.
 
+#### Versioned operational-availability learning and rollback
+
+The placement channel now records both successful and failed terminal startup
+outcomes in a second, strict schema. Each record binds a lowercase Azure region,
+provider-discovered resource SKU, immutable runtime-image digest, and a generic
+serving-topology digest derived from required VRAM. The scope and record protocols
+are independently versioned and digest-bound. Model names, revisions, prompts,
+endpoints, credentials, image repositories, and Azure response text are not stored.
+An unknown field, unsupported schema or scope version, invalid coordinate, future
+timestamp, or digest mismatch makes the owned collection unusable rather than
+silently relaxing placement policy.
+
+Only recent `available`, `rate_limited`, `timeout`, and `unavailable` startup or
+preflight terminals affect placement. Authentication, authorization, transport,
+invalid-response, internal, and request-phase outcomes remain excluded and can never
+become model-quality evidence. Consecutive failures can make only their exact scope
+infeasible; a later successful terminal resets that failure streak. A beta prior ranks
+the remaining exact scopes, while publisher, licence, required and blocked tags,
+context, immutable identity, and hourly cost are still hard gates evaluated outside
+that score. With no recent evidence, selection remains the smallest sufficient
+profile. The inventory is data-driven, so neither accelerator nor model names are
+configuration keys.
+
+The older failure-only profile records remain readable during migration. Once a
+versioned terminal record exists, the selector uses the strict channel as the source
+of placement truth so successful recovery can supersede a former failure streak.
+Rollback is zero-downtime: stop passing the optional evidence store or let its bounded
+TTL expire, and the neutral prior restores the existing smallest-sufficient plan on
+the next selection. Evidence loading performs no Azure mutation, selection creates a
+new mode-0600 artifact instead of replacing one, and a failed evidence write closes
+the owned runtime through the existing lifecycle exception path. The already cited
+long-lived Container Apps capacity report
+[#1705](https://github.com/microsoft/azure-container-apps/issues/1705) remains the
+practitioner basis for treating terminal zero-placement as infrastructure evidence,
+not as a service guarantee or model-quality result.
+
 #### Parent-owned per-ordinal proposal scope (2026-09-13)
 
 The live rejection exposed a decoder/schema mismatch. The managed schema previously

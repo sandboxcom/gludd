@@ -9,9 +9,18 @@ from pathlib import Path
 import pytest
 from scripts import select_azure_self_improve_model as subject
 
+from general_ludd.infra.azure_containerapp_gpu import ModelServingRequirement
 from general_ludd.self_improve.azure_infrastructure_evidence import (
     AzureInfrastructurePhase,
     record_azure_infrastructure_failure,
+)
+from general_ludd.self_improve.azure_model_selection import (
+    azure_model_deployment_identity_digest,
+)
+from general_ludd.self_improve.azure_operational_availability import (
+    AzureAvailabilityTerminal,
+    build_azure_availability_scope,
+    record_azure_availability_terminal,
 )
 from general_ludd.self_improve.model_candidates import BackendFailure
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
@@ -174,9 +183,179 @@ def test_cli_routes_around_repeated_exact_scope_infrastructure_failure(
     assert payload["model_id"] == "vendor/task-coder-small"
     assert payload["selection_reason"] == "operational_failover"
     assert payload["workload_profile_type"] == "provider/accelerator-large"
+    assert payload["selection_identity_digest"] == azure_model_deployment_identity_digest(
+        model_id="vendor/task-coder-small",
+        model_revision="b" * 40,
+        weight_bits=16,
+        container_image=IMAGE,
+        workload_profile_type="provider/accelerator-large",
+    )
     trace = capsys.readouterr().out
     assert "registry.example" not in trace
     assert "vendor/task-coder-small" not in trace
+
+
+def _record_availability(
+    store: CapabilityEvidenceStore,
+    *,
+    profile: str,
+    outcome: AzureAvailabilityTerminal,
+    observed_at: float,
+) -> None:
+    record_azure_availability_terminal(
+        store,
+        scope=build_azure_availability_scope(
+            location="westus3",
+            resource_sku=profile,
+            container_image=IMAGE,
+            requirement=ModelServingRequirement(
+                model_id="vendor/task-coder-small",
+                revision="b" * 40,
+                parameter_count=3_000_000_000,
+                weight_bits=16,
+                kv_cache_mib=2_048,
+                runtime_overhead_mib=3_072,
+            ),
+        ),
+        deployment_identity_digest="d" * 64,
+        phase=AzureInfrastructurePhase.CANDIDATE_STARTUP,
+        outcome=outcome,
+        clock=lambda: observed_at,
+    )
+
+
+def test_cli_prefers_recently_healthy_cost_approved_topology(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output = tmp_path / "selection.json"
+    arguments = _arguments(tmp_path, output)
+    evidence_path = Path(arguments[arguments.index("--evidence-file") + 1])
+    store = CapabilityEvidenceStore(str(evidence_path))
+    _record_availability(
+        store,
+        profile="provider/accelerator-small",
+        outcome=AzureAvailabilityTerminal.UNAVAILABLE,
+        observed_at=1_000.0,
+    )
+    _record_availability(
+        store,
+        profile="provider/accelerator-large",
+        outcome=AzureAvailabilityTerminal.AVAILABLE,
+        observed_at=1_001.0,
+    )
+
+    assert subject.main(arguments, now_epoch=1_002.0) == 0
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["model_id"] == "vendor/task-coder-small"
+    assert payload["selection_reason"] == "operational_failover"
+    assert payload["workload_profile_type"] == "provider/accelerator-large"
+    events = [
+        json.loads(line)
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("{")
+    ]
+    loaded = next(
+        event
+        for event in events
+        if event.get("event") == "SELF_IMPROVE_AZURE_AVAILABILITY_EVIDENCE_LOADED"
+    )
+    assert loaded["observed_scope_count"] == 2
+
+
+def test_availability_cannot_override_explicit_hourly_budget(tmp_path: Path) -> None:
+    output = tmp_path / "selection.json"
+    arguments = _arguments(tmp_path, output)
+    policy_path = Path(arguments[arguments.index("--policy-file") + 1])
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    policy["max_hourly_cost_microusd"] = 1_000_000
+    policy_path.write_text(json.dumps(policy), encoding="utf-8")
+    evidence_path = Path(arguments[arguments.index("--evidence-file") + 1])
+    store = CapabilityEvidenceStore(str(evidence_path))
+    for observed_at in (1_000.0, 1_001.0):
+        _record_availability(
+            store,
+            profile="provider/accelerator-small",
+            outcome=AzureAvailabilityTerminal.UNAVAILABLE,
+            observed_at=observed_at,
+        )
+    _record_availability(
+        store,
+        profile="provider/accelerator-large",
+        outcome=AzureAvailabilityTerminal.AVAILABLE,
+        observed_at=1_002.0,
+    )
+
+    with pytest.raises(ValueError, match="no deployable"):
+        subject.main(arguments, now_epoch=1_003.0)
+
+    assert not output.exists()
+
+
+def test_versioned_success_supersedes_legacy_failure_only_suppression(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output = tmp_path / "selection.json"
+    arguments = _arguments(tmp_path, output)
+    evidence_path = Path(arguments[arguments.index("--evidence-file") + 1])
+    store = CapabilityEvidenceStore(str(evidence_path))
+    for observed_at in (1_000.0, 1_001.0):
+        record_azure_infrastructure_failure(
+            store,
+            location="westus3",
+            workload_profile_type="provider/accelerator-small",
+            container_image=IMAGE,
+            deployment_identity_digest="a" * 64,
+            phase=AzureInfrastructurePhase.CANDIDATE_STARTUP,
+            failure=BackendFailure.UNAVAILABLE,
+            clock=lambda observed_at=observed_at: observed_at,
+        )
+    _record_availability(
+        store,
+        profile="provider/accelerator-small",
+        outcome=AzureAvailabilityTerminal.AVAILABLE,
+        observed_at=1_002.0,
+    )
+
+    assert subject.main(arguments, now_epoch=1_003.0) == 0
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["workload_profile_type"] == "provider/accelerator-small"
+    events = [
+        json.loads(line)
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("{")
+    ]
+    loaded = next(
+        event
+        for event in events
+        if event.get("event") == "SELF_IMPROVE_AZURE_AVAILABILITY_EVIDENCE_LOADED"
+    )
+    assert loaded["superseded_legacy_profile_evidence"] is True
+
+
+def test_availability_cannot_override_publisher_trust_policy(tmp_path: Path) -> None:
+    output = tmp_path / "selection.json"
+    arguments = _arguments(tmp_path, output)
+    policy_path = Path(arguments[arguments.index("--policy-file") + 1])
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    policy["allowed_publishers"] = ["untrusted"]
+    policy_path.write_text(json.dumps(policy), encoding="utf-8")
+    evidence_path = Path(arguments[arguments.index("--evidence-file") + 1])
+    store = CapabilityEvidenceStore(str(evidence_path))
+    _record_availability(
+        store,
+        profile="provider/accelerator-small",
+        outcome=AzureAvailabilityTerminal.AVAILABLE,
+        observed_at=1_000.0,
+    )
+
+    with pytest.raises(ValueError, match="no deployable"):
+        subject.main(arguments, now_epoch=1_001.0)
+
+    assert not output.exists()
 
 
 def test_cli_classifies_only_the_validated_task_objective(

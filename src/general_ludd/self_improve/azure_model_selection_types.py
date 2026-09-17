@@ -130,6 +130,8 @@ class EligibleAzureModel:
     hourly_cost_microusd: int
     identity_digest: str
     operational_failover: bool = False
+    operational_availability: float = 0.5
+    operational_observations: int = 0
 
 
 @dataclass(frozen=True, slots=True)

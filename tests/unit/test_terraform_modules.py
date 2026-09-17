@@ -27,6 +27,7 @@ MODULES_DIR = REPO_ROOT / "infra" / "terraform" / "modules"
 
 EXPECTED_MODULES = {
     "azure-container-app-vllm",
+    "azure-gpu-worker",
     "gpu-cost-watchdog",
     "llamacpp-server",
     "network",

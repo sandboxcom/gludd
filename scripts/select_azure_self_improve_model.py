@@ -23,6 +23,9 @@ from general_ludd.self_improve.azure_model_selection import (
     discover_and_select_azure_model,
     write_azure_model_selection,
 )
+from general_ludd.self_improve.azure_operational_availability import (
+    load_azure_availability_index,
+)
 from general_ludd.self_improve.candidate_classification import (
     CandidateTaskClassification,
     classify_candidate_task,
@@ -157,6 +160,7 @@ class CatalogModelRegistry:
     """Hermetic registry snapshot used only when explicitly requested."""
 
     def __init__(self, path: Path) -> None:
+        """Load one exact-schema immutable catalog snapshot."""
         payload = _load_object(path, "model catalog")
         if set(payload) != {"models", "schema_version"} or payload.get(
             "schema_version"
@@ -232,7 +236,11 @@ def _trace(event: Mapping[str, object]) -> None:
     print(json.dumps(dict(event), separators=(",", ":"), sort_keys=True), flush=True)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    now_epoch: float | None = None,
+) -> int:
     """Classify work, select one model, and write no raw task or model name to logs."""
     args = _parser().parse_args(argv)
     classification = classify_candidate_task(
@@ -252,6 +260,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         container_image=policy.container_image,
         max_age_seconds=policy.infrastructure_failure_ttl_seconds,
         minimum_failures=policy.infrastructure_failure_threshold,
+        now_epoch=now_epoch,
+    )
+    availability_index = load_azure_availability_index(
+        evidence,
+        max_age_seconds=policy.infrastructure_failure_ttl_seconds,
+        minimum_failures=policy.infrastructure_failure_threshold,
+        now_epoch=now_epoch,
+    )
+    if availability_index.observed_scope_count:
+        unavailable_profile_types = frozenset()
+    _trace(
+        {
+            "event": "SELF_IMPROVE_AZURE_AVAILABILITY_EVIDENCE_LOADED",
+            "observed_scope_count": availability_index.observed_scope_count,
+            "schema_version": 1,
+            "superseded_legacy_profile_evidence": bool(
+                availability_index.observed_scope_count
+            ),
+        }
     )
     _trace(
         {
@@ -266,6 +293,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         policy,
         attempts=load_calibration_attempts_for_task(evidence, classification),
         unavailable_profile_types=unavailable_profile_types,
+        availability_index=availability_index,
+        location=args.location,
         trace_sink=_trace,
     )
     write_azure_model_selection(args.output, selection)

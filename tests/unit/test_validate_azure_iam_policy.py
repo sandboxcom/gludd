@@ -266,6 +266,7 @@ class TestValidatorCommandPaths:
         output = capsys.readouterr().out
         assert "azure-iam-policy.json" in output
         assert "azure-iam-policy-cli.json" in output
+        assert "azure-gpu-worker-iam-policy.json" in output
         assert "0 errors, 0 warnings" in output
 
     def test_main_fails_closed_for_missing_and_malformed_policy_files(
