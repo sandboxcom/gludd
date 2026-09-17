@@ -8,7 +8,6 @@ faulting JavaScript engine therefore cannot change model selection.
 from __future__ import annotations
 
 import hashlib
-import importlib
 import json
 import math
 from collections.abc import Callable, Mapping, Sequence
@@ -165,8 +164,11 @@ class FreeLLMScoringKernel:
 
 
 def _default_context_factory() -> _QuickJSContext:
-    module = importlib.import_module("quickjs")
-    factory = getattr(module, "Context", None)
+    try:
+        import quickjs
+    except ImportError as exc:
+        raise ModuleNotFoundError("QuickJS context unavailable") from exc
+    factory = getattr(quickjs, "Context", None)
     if not callable(factory):
         raise RuntimeError("QuickJS context unavailable")
     return cast(_QuickJSContext, factory())

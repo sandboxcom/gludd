@@ -63,6 +63,34 @@ def test_hindsight_optional_dependency_is_statically_auditable() -> None:
     assert "class Hindsight" in stub.read_text(encoding="utf-8")
 
 
+def test_quickjs_runtime_dependency_is_statically_auditable() -> None:
+    """Keep the lazy QuickJS engine visible without a DEP002 suppression."""
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    deptry = project["tool"]["deptry"]
+    assert deptry["package_module_name_map"]["quickjs-ng"] == "quickjs"
+    assert "quickjs-ng" not in deptry["per_rule_ignores"]["DEP002"]
+
+    source = (
+        ROOT
+        / "src"
+        / "general_ludd"
+        / "self_improve"
+        / "freellmapi_scoring_kernel.py"
+    ).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    assert any(
+        isinstance(node, ast.Import)
+        and any(alias.name == "quickjs" for alias in node.names)
+        for node in ast.walk(tree)
+    )
+
+    evidence = (
+        ROOT / "docs" / "features" / "DEPENDENCY_TRUTH_AUDIT.md"
+    ).read_text(encoding="utf-8")
+    assert "quickjs-ng" in evidence
+    assert "lazy static import" in evidence
+
+
 def test_ansible_builder_module_entrypoint_is_explicitly_adjudicated() -> None:
     """Keep controller-only builder ownership narrow and documented."""
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))

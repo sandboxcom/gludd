@@ -84,6 +84,13 @@ a guarded static import, so the extra remains optional at runtime while its
 dependency truth is mechanically visible. This avoids turning a real adapter
 dependency into a permanent audit exception.
 
+`quickjs-ng` is likewise intentionally absent from the ignore list. The pinned
+FreeLLMAPI shadow-scoring engine maps that distribution to the `quickjs` module
+and uses a lazy static import inside its context factory. The import remains
+deferred until the opt-in engine is selected, preserves the content-free
+fallback when the native module is unavailable, and stays visible to deptry and
+the exact core-ownership inventory without a permanent DEP002 suppression.
+
 ## Practitioner evidence
 
 - A long-running [Poetry request to prune unused packages

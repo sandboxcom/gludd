@@ -830,17 +830,14 @@
     "quickjs-ng": {
       "collection_import_paths": [],
       "collection_requirement_paths": [],
-      "core_import_paths": [],
+      "core_import_paths": [
+        "src/general_ludd/self_improve/freellmapi_scoring_kernel.py"
+      ],
       "disposition": "retain-core",
       "import_roots": [
         "quickjs"
       ],
-      "runtime_evidence": [
-        {
-          "path": "src/general_ludd/self_improve/freellmapi_scoring_kernel.py",
-          "token": "importlib.import_module(\"quickjs\")"
-        }
-      ]
+      "runtime_evidence": []
     },
     "rapidfuzz": {
       "collection_import_paths": [],

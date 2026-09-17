@@ -342,6 +342,7 @@ known_first_party = ["ansible_collections"]
 "pyvmomi" = ["pyVim", "pyVmomi"]
 "pywavelets" = "pywt"
 "pywin32" = ["win32", "win32security"]
+"quickjs-ng" = "quickjs"
 "scapy" = "scapy"
 "scikit-image" = "skimage"
 "torch" = "torch"
