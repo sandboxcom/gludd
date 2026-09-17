@@ -89,6 +89,27 @@ def test_apply_refreshes_attestation_for_merged_tree_before_freshness_check() ->
     assert "Merged-tree gate refresh failed; aborting transaction" in recipe
 
 
+def test_apply_normalizes_hooks_and_can_abort_after_hook_mutation() -> None:
+    """Merge commits own hook normalization and remain transactionally reversible."""
+    recipe = _recipe()
+
+    hook_command = "pre-commit run detect-secrets --all-files"
+    refresh = "gate-refresh GATE_REFRESH_VALIDATE_ONLY=0"
+    hooks = "pre-commit run --files"
+    commit = "git commit -n"
+    for fragment in (
+        "git restore --worktree -- .",
+        hook_command,
+        "git add .secrets.baseline",
+        hooks,
+        commit,
+    ):
+        assert fragment in recipe
+    assert recipe.index(hook_command) < recipe.index(refresh)
+    assert recipe.index(refresh) < recipe.index(hooks)
+    assert recipe.index(hooks) < recipe.index(commit)
+
+
 def test_ancestry_only_forbids_master_source() -> None:
     result = _run_target("SOURCE=master", "MODE=ancestry-only", "APPLY=0")
 

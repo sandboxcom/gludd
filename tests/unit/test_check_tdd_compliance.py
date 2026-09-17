@@ -4,19 +4,28 @@ Unit tests for check_tdd_compliance.py — test-modification and unused-import c
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+from scripts.gate_status_attestation import repository_state_id, sign_status
 
 CHECKER = Path(__file__).resolve().parent.parent.parent / "scripts" / "check_tdd_compliance.py"
 
 
-def _run_checker(cwd: Path) -> subprocess.CompletedProcess:
+def _run_checker(
+    cwd: Path,
+    *,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, str(CHECKER), "--root", str(cwd)],
-        capture_output=True, text=True, cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        cwd=str(cwd),
+        env=env,
     )
 
 
@@ -45,7 +54,13 @@ def scratch_repo(tmp_path: Path):
 
     # Initial commit so we can diff against HEAD
     (repo / "README.md").write_text("# scratch\n")
-    subprocess.run(["git", "add", "README.md"], cwd=str(repo), capture_output=True, check=True)
+    (repo / ".gitignore").write_text(".gate-status\n")
+    subprocess.run(
+        ["git", "add", "README.md", ".gitignore"],
+        cwd=str(repo),
+        capture_output=True,
+        check=True,
+    )
     subprocess.run(["git", "commit", "-m", "init"], cwd=str(repo), capture_output=True, check=True)
 
     return repo
@@ -53,6 +68,89 @@ def scratch_repo(tmp_path: Path):
 
 def _stage_all(repo: Path):
     subprocess.run(["git", "add", "."], cwd=str(repo), capture_output=True, check=True)
+
+
+def _stage_uncommitted_merge_with_untested_source(repo: Path) -> None:
+    base_branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    subprocess.run(
+        ["git", "checkout", "-b", "feature"],
+        cwd=repo,
+        capture_output=True,
+        check=True,
+    )
+    source = repo / "src" / "general_ludd" / "merged_only.py"
+    source.write_text("def value():\n    return 1\n")
+    subprocess.run(
+        ["git", "add", str(source)],
+        cwd=repo,
+        capture_output=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "feature"],
+        cwd=repo,
+        capture_output=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "checkout", base_branch],
+        cwd=repo,
+        capture_output=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "merge", "--no-ff", "--no-commit", "feature"],
+        cwd=repo,
+        capture_output=True,
+        check=True,
+    )
+
+
+def _sign_gate_for_current_tree(repo: Path, key_path: Path) -> None:
+    key = b"m" * 32
+    key_path.write_text(f"{key.hex()}\n")
+    status = repo / ".gate-status"
+    status.write_text(
+        "=== GATE: PASSED ===\n"
+        "lint PASS 0\n"
+        "typecheck PASS 0\n"
+        "collect PASS 0\n"
+        "test PASS 0\n"
+        "smoke PASS\n"
+    )
+    sign_status(status, state_id=repository_state_id(repo), key=key)
+
+
+def test_uncommitted_merge_without_fresh_gate_does_not_bypass_tdd(
+    scratch_repo: Path,
+) -> None:
+    _stage_uncommitted_merge_with_untested_source(scratch_repo)
+
+    proc = _run_checker(scratch_repo)
+
+    assert proc.returncode == 1
+    assert "merged_only.py: missing test file" in proc.stdout
+
+
+def test_exact_staged_merge_with_fresh_signed_gate_is_accepted(
+    scratch_repo: Path,
+) -> None:
+    _stage_uncommitted_merge_with_untested_source(scratch_repo)
+    key_path = scratch_repo.parent / "gate.key"
+    _sign_gate_for_current_tree(scratch_repo, key_path)
+    env = dict(os.environ)
+    env["GLUDD_GATE_KEY_PATH"] = str(key_path)
+
+    proc = _run_checker(scratch_repo, env=env)
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "fresh signed gate evidence" in proc.stdout
 
 
 # ---------------------------------------------------------------------------

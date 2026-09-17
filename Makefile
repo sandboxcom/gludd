@@ -5669,7 +5669,7 @@ development-merge-forward:
 	if [ "$$CURRENT_BRANCH" != "development" ]; then echo "APPLY=1 requires current branch development (found: $$CURRENT_BRANCH)"; exit 2; fi; \
 	if [ -n "$$(git status --porcelain)" ]; then echo "APPLY=1 requires a clean development worktree"; exit 2; fi; \
 	MERGE_STARTED=1; \
-	abort_merge() { if [ "$$MERGE_STARTED" -eq 1 ]; then git merge --abort >/dev/null 2>&1 || true; fi; }; \
+	abort_merge() { if [ "$$MERGE_STARTED" -eq 1 ]; then git restore --worktree -- . >/dev/null 2>&1 || true; git merge --abort >/dev/null 2>&1 || true; fi; }; \
 	trap abort_merge EXIT HUP INT TERM; \
 	if [ "$$MODE_VALUE" = content ]; then \
 		if ! git merge --no-ff --no-commit -X ours "$$SOURCE_SHA"; then \
@@ -5687,11 +5687,17 @@ development-merge-forward:
 	fi; \
 	UNMERGED="$$(git diff --name-only --diff-filter=U)"; \
 	if [ -n "$$UNMERGED" ]; then echo "Structural conflict remains; aborting transaction"; echo "$$UNMERGED"; exit 1; fi; \
+	if ! $(UV) run pre-commit run detect-secrets --all-files; then \
+		if git diff --quiet -- .secrets.baseline; then echo "Secret scan failed without a baseline metadata update; aborting transaction"; exit 1; fi; \
+		git add .secrets.baseline; \
+		if ! $(UV) run pre-commit run detect-secrets --all-files; then echo "Secret scan still fails after baseline metadata refresh; aborting transaction"; exit 1; fi; \
+	fi; \
 	if ! $(MAKE) --no-print-directory collect-check; then echo "Collection check failed; aborting transaction"; exit 1; fi; \
 	if ! $(MAKE) --no-print-directory _commit-lint-guard; then echo "Lint guard failed; aborting transaction"; exit 1; fi; \
 	if ! $(MAKE) --no-print-directory gate-refresh GATE_REFRESH_VALIDATE_ONLY=0; then echo "Merged-tree gate refresh failed; aborting transaction"; exit 1; fi; \
+	if ! git diff --cached --name-only -z | xargs -0 $(UV) run pre-commit run --files; then echo "Merged-tree pre-commit checks failed; aborting transaction"; exit 1; fi; \
 	if ! $(MAKE) --no-print-directory _gate-fresh-check; then echo "Gate freshness check failed; aborting transaction"; exit 1; fi; \
-	if ! git commit -m "merge-forward: MODE=$$MODE_VALUE SOURCE=$$SOURCE_VALUE SHA=$$SOURCE_SHA into development"; then echo "Merge commit failed; aborting transaction"; exit 1; fi; \
+	if ! git commit -n -m "merge-forward: MODE=$$MODE_VALUE SOURCE=$$SOURCE_VALUE SHA=$$SOURCE_SHA into development"; then echo "Merge commit failed; aborting transaction"; exit 1; fi; \
 	MERGE_STARTED=0; trap - EXIT HUP INT TERM; \
 	echo "MERGE_FORWARD_APPLIED source=$$SOURCE_VALUE mode=$$MODE_VALUE sha=$$SOURCE_SHA"
 
