@@ -146,8 +146,11 @@ class FreeLLMAPICatalog:
         )
 
 
-class _SchemaError(ValueError):
-    """Internal marker for untrusted schema failures."""
+class CatalogSchemaError(ValueError):
+    """Mark an untrusted FreeLLMAPI catalog schema failure."""
+
+
+_SchemaError = CatalogSchemaError
 
 
 class _DuplicateKey(ValueError):
@@ -506,6 +509,7 @@ __all__ = (
     "CatalogModel",
     "CatalogQuirk",
     "CatalogQuirkTarget",
+    "CatalogSchemaError",
     "CatalogTier",
     "FreeLLMAPICatalog",
     "admit_freellmapi_catalog",
