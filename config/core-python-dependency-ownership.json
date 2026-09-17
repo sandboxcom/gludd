@@ -628,6 +628,7 @@
         "src/general_ludd/ansible/isolation.py",
         "src/general_ludd/ansible/network_policy.py",
         "src/general_ludd/chemistry/entities.py",
+        "src/general_ludd/chemistry/polymer_design.py",
         "src/general_ludd/chemistry/schemas.py",
         "src/general_ludd/code_intelligence/complexity_scorer.py",
         "src/general_ludd/compaction/arena.py",
