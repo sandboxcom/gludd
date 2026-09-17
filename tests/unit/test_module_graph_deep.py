@@ -228,6 +228,7 @@ BUSINESS_PACKAGES: frozenset[str] = frozenset(
         "general_ludd.dependency",
         "general_ludd.dispatch",
         "general_ludd.dogfood",
+        "general_ludd.embedded",
         "general_ludd.entity",
         "general_ludd.eval",
         "general_ludd.event_loop",
