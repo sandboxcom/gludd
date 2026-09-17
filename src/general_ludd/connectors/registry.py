@@ -351,12 +351,15 @@ _CONNECTOR_INFRASTRUCTURE_MODULE_NAMES = frozenset(
         "_protocols",
         "_util",
         "base",
+        "baseten_contracts",
         "cursor_adapter",
         "exc_sanitizer",
         "ingest",
         "ingest_formats",
+        "macos_security_support",
         "normalize",
         "registry",
+        "windows_defender_support",
     }
 )
 
