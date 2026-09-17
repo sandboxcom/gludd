@@ -5,10 +5,8 @@ from __future__ import annotations
 import json
 import os
 from collections import Counter
-from collections.abc import Callable, Mapping, Sequence
-from enum import StrEnum
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Protocol
 
 from general_ludd.infra.azure_containerapp_gpu import (
     AzureContainerAppGPUUnavailable,
@@ -17,13 +15,19 @@ from general_ludd.infra.azure_containerapp_gpu import (
 from general_ludd.models.model_deployment_metadata import (
     ModelDeploymentMetadataUnavailable,
 )
-from general_ludd.models.model_registry import (
-    ModelDeploymentMetadata,
-    ModelSearchResult,
-)
+from general_ludd.models.model_registry import ModelDeploymentMetadata, ModelSearchResult
 from general_ludd.self_improve._candidate_attempt import CandidateAttempt
 from general_ludd.self_improve.azure_model_empirical_choice import choose_azure_model
 from general_ludd.self_improve.azure_model_rank_sampling import bounded_rank_sample
+from general_ludd.self_improve.azure_model_selection_contracts import (
+    AzureModelRejection as _AzureModelRejection,
+)
+from general_ludd.self_improve.azure_model_selection_contracts import (
+    ModelRegistryProtocol as _ModelRegistry,
+)
+from general_ludd.self_improve.azure_model_selection_contracts import (
+    emit_selection_trace as _emit,
+)
 from general_ludd.self_improve.azure_model_selection_types import (
     AzureModelSelectionPolicy,
     AzureModelSelectionReason,
@@ -40,33 +44,6 @@ from general_ludd.self_improve.azure_operational_availability import (
 from general_ludd.self_improve.candidate_classification import (
     CandidateTaskClassification,
 )
-
-
-class _ModelRegistry(Protocol):
-    def search(
-        self,
-        query: str = "",
-        tags: list[str] | None = None,
-        sort: str = "downloads",
-        limit: int = 20,
-        author: str | None = None,
-    ) -> list[ModelSearchResult]: ...
-
-    def get_deployment_metadata(self, model_id: str) -> ModelDeploymentMetadata: ...
-
-
-class _AzureModelRejection(StrEnum):
-    """Secret-free reason one discovered model was not deployable."""
-
-    PUBLISHER_NOT_ALLOWED = "publisher_not_allowed"
-    LICENSE_NOT_ALLOWED = "license_not_allowed"
-    REQUIRED_TAG_MISSING = "required_tag_missing"
-    BLOCKED_TAG = "blocked_tag"
-    PIPELINE_UNSUPPORTED = "pipeline_unsupported"
-    CONTEXT_TOO_SHORT = "context_too_short"
-    HARDWARE_UNAVAILABLE = "hardware_unavailable"
-    HOURLY_COST_EXCEEDED = "hourly_cost_exceeded"
-    METADATA_UNAVAILABLE = "metadata_unavailable"
 
 
 def _admit(
@@ -190,16 +167,6 @@ def _admit(
         ),
         None,
     )
-
-
-def _emit(
-    sink: Callable[[dict[str, object]], None],
-    event: Mapping[str, object],
-) -> None:
-    try:
-        sink(dict(event))
-    except Exception:
-        raise RuntimeError("Azure model selection trace publication failed") from None
 
 
 def _discover(

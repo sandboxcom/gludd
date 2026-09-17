@@ -12,8 +12,6 @@ import json
 import math
 from collections.abc import Callable
 from contextlib import suppress
-from dataclasses import dataclass
-from enum import StrEnum
 from typing import Final
 
 from general_ludd.models.freellmapi_profiles import (
@@ -30,6 +28,10 @@ from general_ludd.self_improve.azure_backend import (
     CandidateResponse,
     censor_candidate_backend_error,
 )
+from general_ludd.self_improve.freellmapi_backend_types import (
+    FreeLLMAPIBackendTrace,
+    FreeLLMAPITraceEvent,
+)
 from general_ludd.self_improve.model_candidates import (
     BackendFailure,
     BackendInfrastructureError,
@@ -40,29 +42,6 @@ from general_ludd.self_improve.model_candidates import (
 
 _MAX_PROVIDER_TOKENS: Final = 100_000_000
 _MAX_TIMEOUT_SECONDS: Final = 3_600.0
-
-class FreeLLMAPITraceEvent(StrEnum):
-    """Content-free transitions for one explicitly admitted catalog trial."""
-
-    IDENTITY_DRIFT = "freellmapi_identity_drift"
-    APPROVAL_BLOCKED = "freellmapi_approval_blocked"
-    REQUEST_STARTED = "freellmapi_request_started"
-    RESPONSE_ACCEPTED = "freellmapi_response_accepted"
-    REQUEST_FAILED = "freellmapi_request_failed"
-
-
-@dataclass(frozen=True, slots=True)
-class FreeLLMAPIBackendTrace:
-    """One content-free native-gateway backend transition."""
-
-    event: FreeLLMAPITraceEvent
-    candidate_digest: str
-    envelope_digest: str | None = None
-    request_number: int = 0
-    failure: BackendFailure | None = None
-    input_tokens: int = 0
-    output_tokens: int = 0
-    total_tokens: int = 0
 
 
 def _discard_trace(_trace: FreeLLMAPIBackendTrace) -> None:
