@@ -311,6 +311,27 @@ def test_incomplete_tasks_supports_v011_stable_release(tmp_path: Path) -> None:
     assert rr._incomplete_tasks(tmp_path, tag="v0.1.1") == ["S83.161"]
 
 
+def test_repository_v011_milestone_ids_are_present_exactly_once_in_order() -> None:
+    task_lines = [
+        line
+        for line in (ROOT / "TASKS.md").read_text(encoding="utf-8").splitlines()
+        if line.startswith("- [")
+    ]
+    milestone_ids = [f"S83.{task_id}" for task_id in range(157, 169)]
+    positions: list[int] = []
+
+    for task_id in milestone_ids:
+        matches = [
+            index
+            for index, line in enumerate(task_lines)
+            if f"] {task_id} " in line
+        ]
+        assert len(matches) == 1, f"expected exactly one {task_id} task, got {matches}"
+        positions.append(matches[0])
+
+    assert positions == sorted(positions)
+
+
 def test_incomplete_tasks_fails_closed_when_v011_milestone_is_absent(
     tmp_path: Path,
 ) -> None:
