@@ -7,4 +7,3 @@
     - name: Confirm no host preparation is required
       ansible.builtin.debug:
         msg: No host mutation is required for the execution-environment bootstrap plan
-

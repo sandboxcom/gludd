@@ -122,4 +122,3 @@ def test_state_rejects_symlink_and_wrong_api_version(tmp_path: Path) -> None:
     )
     with pytest.raises(AzureContainerAppMakeRuntimeError, match="state-ownership"):
         state_tracks_environment(state_path, policy)
-
