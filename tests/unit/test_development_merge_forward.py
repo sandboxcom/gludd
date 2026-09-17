@@ -78,6 +78,17 @@ def test_target_has_transactional_apply_guards() -> None:
         assert fragment in recipe
 
 
+def test_apply_refreshes_attestation_for_merged_tree_before_freshness_check() -> None:
+    """A pre-merge attestation cannot authorize the staged merge result."""
+    recipe = _recipe()
+
+    refresh = "gate-refresh GATE_REFRESH_VALIDATE_ONLY=0"
+    freshness = "_gate-fresh-check"
+    assert refresh in recipe
+    assert recipe.index(refresh) < recipe.index(freshness)
+    assert "Merged-tree gate refresh failed; aborting transaction" in recipe
+
+
 def test_ancestry_only_forbids_master_source() -> None:
     result = _run_target("SOURCE=master", "MODE=ancestry-only", "APPLY=0")
 
