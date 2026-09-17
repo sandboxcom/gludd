@@ -68,6 +68,15 @@ re-export may remain temporarily in `self_improve`, but the implementation and
 tests have one core owner. Feature-specific names, defaults, and policy stay in
 the adapter.
 
+The FreeLLMAPI profile integration exercised this rule during the v0.1.1 gate.
+The reusable profile builder under `models/` still imported its signed-catalog
+identity from `self_improve.model_candidates`; the boundary test rejected that
+reverse dependency. `models.candidate_identity` now owns the provider enum,
+canonical identity digest, and signed-catalog identity. Self-improvement keeps a
+compatibility re-export and consumes the same type through its bounded session,
+while profile construction, chemistry, firmware, and future capabilities can
+use the model identity without importing or enabling self-improvement.
+
 The current event-loop self-improvement phase is transitional coupling. It will
 become a registered periodic capability hook; persistence will consume a
 core-owned task proposal and approval protocol. Until that extraction lands,

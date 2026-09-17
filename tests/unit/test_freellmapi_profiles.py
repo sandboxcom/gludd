@@ -5,6 +5,10 @@ from __future__ import annotations
 import pytest
 
 from general_ludd.models.auto_configurator import AutoConfigurator
+from general_ludd.models.candidate_identity import (
+    CatalogFreeTierCandidateIdentity,
+    ModelCandidateProvider,
+)
 from general_ludd.models.freellmapi_candidates import FreeModelCandidateSeed
 from general_ludd.models.freellmapi_catalog import CatalogLimits
 from general_ludd.models.freellmapi_profiles import (
@@ -15,10 +19,6 @@ from general_ludd.models.freellmapi_profiles import (
     catalog_free_tier_identity,
 )
 from general_ludd.models.gateway import ModelProfile
-from general_ludd.self_improve.model_candidates import (
-    CatalogFreeTierCandidateIdentity,
-    ModelCandidateProvider,
-)
 
 
 def _seed(

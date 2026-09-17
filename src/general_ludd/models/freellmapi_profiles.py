@@ -7,13 +7,11 @@ from dataclasses import dataclass, field
 from typing import Final, Protocol
 
 from general_ludd.models.auto_configurator import AutoConfigurator
+from general_ludd.models.candidate_identity import CatalogFreeTierCandidateIdentity
 from general_ludd.models.freellmapi_candidates import FreeModelCandidateSeed
 from general_ludd.models.gateway import ModelGateway, ModelProfile
 from general_ludd.models.provider_presets import get_provider_preset
 from general_ludd.models.provider_registry import ProviderRegistry
-from general_ludd.self_improve.model_candidates import (
-    CatalogFreeTierCandidateIdentity,
-)
 
 FREELLMAPI_PROBE_PROFILE_PROTOCOL: Final = "gludd-freellmapi-probe-profile-v1"
 _MAX_CANDIDATES = 5_000
