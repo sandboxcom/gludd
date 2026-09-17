@@ -1,0 +1,17 @@
+---
+- name: Prepare - clear stale accelerator discovery evidence
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    accelerator_artifacts:
+      - >-
+        {{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/accelerator-facts.json
+      - >-
+        {{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/accelerator-requests.json
+  tasks:
+    - name: Remove stale scenario-owned evidence
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ accelerator_artifacts }}"

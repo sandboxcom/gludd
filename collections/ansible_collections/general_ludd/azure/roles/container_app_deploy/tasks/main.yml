@@ -1,33 +1,136 @@
 ---
-- name: Validate container_app_deploy parameters
+- name: Validate Container App lifecycle inputs
   ansible.builtin.assert:
     that:
-      - role_enabled | bool
-    fail_msg: "container_app_deploy requires role_enabled=true."
+      - containerapp_role_enabled | bool
+      - containerapp_state in ['observe', 'planned', 'present', 'absent']
+      - containerapp_subscription_id | length == 36
+      - containerapp_resource_group | length > 0
+      - containerapp_environment_name | length > 0
+      - containerapp_app_name | length > 0
+      - containerapp_workload_profile_name | length > 0
+      - containerapp_workload_profile_type | length > 0
+      - containerapp_owner_digest is match('^[0-9a-f]{64}$')
+      - containerapp_required_profile_headroom | int >= 0
+      - containerapp_idle_retention is mapping
+      - containerapp_parallelism | int >= 1
+      - containerapp_parallelism | int <= 4
+      - containerapp_iac_binary_path is match('^/')
+      - containerapp_poll_seconds | int >= 1
+      - >-
+        containerapp_async_timeout_seconds | int
+        >= containerapp_poll_seconds | int
+    fail_msg: >-
+      container_app_deploy received an invalid bounded lifecycle contract.
 
-- name: Resolve urgency parameter
+- name: Derive exact approved Azure resource identities
   ansible.builtin.set_fact:
-    deploy_urgency: "{{ urgency | default('normal') }}"
-    deploy_fallback_to_vm: "{{ fallback_to_vm | default(false) | bool }}"
+    _cad_environment_id: >-
+      /subscriptions/{{ containerapp_subscription_id
+      }}/resourceGroups/{{ containerapp_resource_group
+      }}/providers/Microsoft.App/managedEnvironments/{{ containerapp_environment_name }}
+    _cad_app_id: >-
+      /subscriptions/{{ containerapp_subscription_id
+      }}/resourceGroups/{{ containerapp_resource_group
+      }}/providers/Microsoft.App/containerApps/{{ containerapp_app_name }}
 
-- name: Build phased deploy plan via DeployStrategist
+- name: Build immutable observation contract
   ansible.builtin.set_fact:
-    phased_deploy_plan: "{{ lookup('general_ludd.azure.deploy_strategist',
-          urgency=deploy_urgency,
-          gpu_type=gpu_type,
-          model_name=model_name,
-          fallback_to_vm=deploy_fallback_to_vm) | default({}) }}"
+    _cad_contract:
+      subscription_id: "{{ containerapp_subscription_id }}"
+      resource_group: "{{ containerapp_resource_group }}"
+      environment_name: "{{ containerapp_environment_name }}"
+      environment_id: "{{ _cad_environment_id }}"
+      app_name: "{{ containerapp_app_name }}"
+      app_id: "{{ _cad_app_id }}"
+      workload_profile_name: "{{ containerapp_workload_profile_name }}"
+      workload_profile_type: "{{ containerapp_workload_profile_type }}"
+      revision_name: "{{ containerapp_revision_name }}"
+      owner_digest: "{{ containerapp_owner_digest }}"
+      required_profile_headroom: "{{ containerapp_required_profile_headroom }}"
 
-- name: Write container app deploy verdict
-  ansible.builtin.copy:
-    content: "{{ {'role': 'container_app_deploy', 'model_name': model_name, 'gpu_type': gpu_type, 'region': region, 'urgency': deploy_urgency, 'fallback_to_vm': deploy_fallback_to_vm, 'phased_deploy_plan': phased_deploy_plan, 'status': 'ok', 'output_dir': output_path} | to_nice_json }}"
-    dest: "{{ output_path }}/container_app_deploy.json"
-    mode: "0644"
+- name: Gather bounded pre-transition Azure information
+  ansible.builtin.include_tasks: observe.yml
 
-- name: Register container_app_deploy verdict
+- name: Select the Terraform-only lifecycle transition
   ansible.builtin.set_fact:
-    azure_container_app_deploy:
-      role: container_app_deploy
-      urgency: "{{ deploy_urgency }}"
-      phased_deploy_plan: "{{ phased_deploy_plan }}"
-      output: "{{ output_path }}/container_app_deploy.json"
+    _cad_decision: >-
+      {{ _cad_observation
+         | general_ludd.azure.containerapp_lifecycle_decision({
+             'state': containerapp_state,
+             'plan_audited': containerapp_plan_audited,
+             'terraform_plan_sha256': containerapp_terraform_plan_sha256,
+             'operation_digest': containerapp_operation_digest
+           }) }}
+
+- name: Select the bounded idle-retention strategy
+  ansible.builtin.set_fact:
+    _cad_retention: >-
+      {{ containerapp_idle_retention
+         | general_ludd.azure.containerapp_idle_retention }}
+  when: containerapp_idle_retention | length > 0
+
+- name: Verify the immutable audited Terraform plan
+  ansible.builtin.stat:
+    path: "{{ containerapp_terraform_plan_file }}"
+    checksum_algorithm: sha256
+  register: _cad_plan_file
+  when: _cad_decision.action == 'apply'
+
+- name: Refuse a missing or substituted Terraform plan
+  ansible.builtin.assert:
+    that:
+      - containerapp_terraform_project_path | length > 0
+      - containerapp_terraform_plan_file | length > 0
+      - _cad_plan_file.stat.isreg | default(false) | bool
+      - _cad_plan_file.stat.checksum == containerapp_terraform_plan_sha256
+    fail_msg: >-
+      The audited Terraform plan is absent or its sha256 digest drifted.
+  when: _cad_decision.action == 'apply'
+
+- name: Refuse teardown without the exact Terraform state boundary
+  ansible.builtin.assert:
+    that:
+      - containerapp_terraform_project_path | length > 0
+      - containerapp_terraform_state_file | length > 0
+      - containerapp_operation_digest is match('^[0-9a-f]{64}$')
+    fail_msg: >-
+      Owned teardown requires the exact Terraform project and state boundary.
+  when: _cad_decision.action == 'destroy'
+
+- name: Apply the audited plan or destroy the owned stack with OpenTofu
+  cloud.terraform.terraform:
+    binary_path: "{{ containerapp_iac_binary_path }}"
+    project_path: "{{ containerapp_terraform_project_path }}"
+    state: "{{ 'absent' if _cad_decision.action == 'destroy' else 'present' }}"
+    plan_file: >-
+      {{ containerapp_terraform_plan_file
+         if _cad_decision.action == 'apply' else omit }}
+    state_file: "{{ containerapp_terraform_state_file }}"
+    check_destroy: true
+    force_init: false
+    init_reconfigure: false
+    lock: true
+    lock_timeout: "{{ containerapp_async_timeout_seconds }}"
+    no_color: true
+    overwrite_init: false
+    parallelism: "{{ containerapp_parallelism }}"
+  async: "{{ containerapp_async_timeout_seconds }}"
+  poll: "{{ containerapp_poll_seconds }}"
+  register: _cad_terraform
+  when: _cad_decision.requires_terraform | bool
+
+- name: Gather bounded post-transition Azure information
+  ansible.builtin.include_tasks: observe.yml
+  when: _cad_decision.requires_terraform | bool
+
+- name: Publish the sanitized namespaced Container App fact
+  ansible.builtin.set_fact:
+    gludd_azure_containerapp:
+      protocol: gludd-azure-containerapp-role-v1
+      desired_state: "{{ containerapp_state }}"
+      operation_digest: "{{ containerapp_operation_digest }}"
+      decision: "{{ _cad_decision }}"
+      retention: "{{ _cad_retention | default(None) }}"
+      observation: "{{ _cad_observation }}"
+      terraform_changed: "{{ _cad_terraform.changed | default(false) | bool }}"

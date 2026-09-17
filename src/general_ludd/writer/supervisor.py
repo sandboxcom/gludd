@@ -50,7 +50,7 @@ import enum
 import logging
 import threading
 from collections.abc import Callable
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from general_ludd.events.bus import EventBus
 from general_ludd.events.types import Event
@@ -65,9 +65,7 @@ __all__ = [
 ]
 
 
-# --------------------------------------------------------------------------- #
 # State + event types
-# --------------------------------------------------------------------------- #
 class SupervisorState(enum.StrEnum):
     """Lifecycle states of ``WriterSupervisor``."""
 
@@ -127,9 +125,7 @@ class SupervisorFailureEscalatedEvent(Event):
         )
 
 
-# --------------------------------------------------------------------------- #
 # Writer process protocol (structural typing — no runtime coupling)
-# --------------------------------------------------------------------------- #
 class _WriterLike(Protocol):
     """The subset of ``WriterProcess`` the supervisor depends on.
 
@@ -149,9 +145,7 @@ class _WriterLike(Protocol):
     def pid(self) -> int | None: ...
 
 
-# --------------------------------------------------------------------------- #
 # WriterSupervisor
-# --------------------------------------------------------------------------- #
 class WriterSupervisor:
     """Owns writer start / restart / health with bounded retry + backoff.
 
@@ -215,9 +209,7 @@ class WriterSupervisor:
         # The health-check thread is created lazily by start().
         self._health_thread: threading.Thread | None = None
 
-    # ------------------------------------------------------------------ #
     # Public properties
-    # ------------------------------------------------------------------ #
     @property
     def state(self) -> SupervisorState:
         """Return the lifecycle state after its observable effects complete."""
@@ -234,9 +226,7 @@ class WriterSupervisor:
         with self._state_lock:
             return self._restart_count
 
-    # ------------------------------------------------------------------ #
     # Public lifecycle
-    # ------------------------------------------------------------------ #
     def start(self) -> bool:
         """Start the writer and spawn the health-check thread.
 
@@ -305,9 +295,7 @@ class WriterSupervisor:
             thread.join(timeout=5.0)
         return True
 
-    # ------------------------------------------------------------------ #
     # Internals
-    # ------------------------------------------------------------------ #
     def _next_backoff(self, attempt: int) -> float:
         """Exponential backoff for restart ``attempt`` (0-indexed), capped.
 
@@ -315,16 +303,10 @@ class WriterSupervisor:
         wall-clock waiting. ``attempt`` is the restart index (0 = first
         restart, 1 = second, ...).
         """
-        if attempt < 0:
-            attempt = 0
-        # 2**attempt * base_backoff, capped at max_backoff. We avoid float
-        # overflow by capping early: once 2**attempt would exceed
-        # max_backoff/base_backoff we just return max_backoff.
+        # Clamp negative attempts before exponentiation, then cap the backoff.
         if self._base_backoff <= 0:
             return 0.0
-        scaled = self._base_backoff * (2 ** attempt)
-        result: float = min(scaled, self._max_backoff)
-        return result
+        return cast(float, min(self._base_backoff * (2 ** max(attempt, 0)), self._max_backoff))
 
     def _health_check_loop(self) -> None:
         """Poll ``is_alive()`` on the configured interval; recover on death.
@@ -345,7 +327,6 @@ class WriterSupervisor:
             if writer is None:
                 continue
 
-            alive = False
             try:
                 alive = writer.is_alive()
             except Exception:
@@ -379,14 +360,10 @@ class WriterSupervisor:
         # Test-fake shape.
         exit_code = getattr(writer, "exit_code", None)
         if exit_code is not None:
-            code: int | None = exit_code
-            return code
+            return cast(int, exit_code)
         # Real WriterProcess shape.
         proc = getattr(writer, "_proc", None)
-        if proc is not None:
-            rc: int | None = getattr(proc, "returncode", None)
-            return rc
-        return None
+        return cast(int | None, getattr(proc, "returncode", None)) if proc is not None else None
 
     def _recover(self, exit_code: int | None) -> bool:
         """Restart the writer with bounded retry + exponential backoff.

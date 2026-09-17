@@ -43,10 +43,11 @@ def test_ansible_controller_is_optional_and_available_to_tests() -> None:
     controller = "\n".join(optional["ansible-controller"])
     dev_extra = "\n".join(optional["dev"])
     dev_group = "\n".join(project["dependency-groups"]["dev"])
-    for dependency in ("ansible-core", "ansible-runner"):
+    for dependency in ("ansible-core", "ansible-runner", "ansible-builder"):
         assert dependency in controller
         assert dependency in dev_extra
         assert dependency in dev_group
+    assert "ansible-builder>=3.1.1,<3.2" in controller
     assert "ansible-builder>=3.1.1,<3.2" in dev_extra
     assert "ansible-builder>=3.1.1,<3.2" in dev_group
 
@@ -109,7 +110,12 @@ def test_execution_environment_definition_uses_locked_inputs() -> None:
             "src": f"../../dist/collections/general_ludd-{name}-{version}.tar.gz",
             "dest": "collections",
         }
-        for name, version in (("agent", "0.2.0"), ("language", "0.1.0"), ("networking", "0.2.0"))
+        for name, version in (
+            ("agent", "0.2.0"),
+            ("azure", "0.2.0"),
+            ("language", "0.1.0"),
+            ("networking", "0.2.0"),
+        )
     ]
     assert ee["options"]["package_manager_path"] == "/usr/bin/dnf"
 
@@ -162,6 +168,17 @@ def test_enabled_container_isolation_passes_digest_to_runner() -> None:
     kwargs = config.to_runner_kwargs()
     assert kwargs["container_image"] == SHA256_IMAGE
     assert kwargs["process_isolation"] is True
+
+
+def test_enabled_container_isolation_accepts_immutable_local_image_id() -> None:
+    image_id = f"sha256:{'a' * 64}"
+    config = ProcessIsolationConfig(
+        enabled=True,
+        executable="podman",
+        container_image=image_id,
+    )
+
+    assert config.to_runner_kwargs()["container_image"] == image_id
 
 
 def test_in_process_controller_requires_explicit_test_mode() -> None:

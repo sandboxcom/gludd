@@ -1,0 +1,91 @@
+---
+- name: Discover an existing Podman installation
+  ansible.builtin.command:
+    argv:
+      - "{{ execution_environment_bootstrap_podman_executable }}"
+      - version
+      - --format
+      - json
+  register: _execution_environment_bootstrap_podman_probe
+  changed_when: false
+  failed_when: false
+  environment: "{{ _execution_environment_bootstrap_tool_environment }}"
+
+- name: Require explicit authority before installing Podman
+  ansible.builtin.assert:
+    that:
+      - execution_environment_bootstrap_install_podman | bool
+    fail_msg: >-
+      Podman is unavailable and execution_environment_bootstrap_install_podman
+      is false; Gludd will not mutate the controller host without that grant.
+  when: _execution_environment_bootstrap_podman_probe.rc != 0
+
+- name: Install Podman from the Linux distribution package manager
+  ansible.builtin.package:
+    name: podman
+    state: present
+  become: true
+  when:
+    - _execution_environment_bootstrap_podman_probe.rc != 0
+    - ansible_facts['system'] == 'Linux'
+
+- name: Download the checksum-pinned official Podman macOS installer
+  ansible.builtin.get_url:
+    url: "{{ execution_environment_bootstrap_podman_macos_url }}"
+    dest: "{{ execution_environment_bootstrap_podman_macos_package }}"
+    checksum: "{{ execution_environment_bootstrap_podman_macos_checksum }}"
+    mode: "0600"
+  when:
+    - _execution_environment_bootstrap_podman_probe.rc != 0
+    - ansible_facts['system'] == 'Darwin'
+
+- name: Install the verified Podman macOS package
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/installer
+      - -pkg
+      - "{{ execution_environment_bootstrap_podman_macos_package }}"
+      - -target
+      - /
+  become: true
+  changed_when: true
+  when:
+    - _execution_environment_bootstrap_podman_probe.rc != 0
+    - ansible_facts['system'] == 'Darwin'
+
+- name: Remove the downloaded Podman installer after successful installation
+  ansible.builtin.file:
+    path: "{{ execution_environment_bootstrap_podman_macos_package }}"
+    state: absent
+  become: true
+  when:
+    - _execution_environment_bootstrap_podman_probe.rc != 0
+    - ansible_facts['system'] == 'Darwin'
+
+- name: Verify the bootstrapped Podman runtime
+  ansible.builtin.command:
+    argv:
+      - "{{ execution_environment_bootstrap_podman_executable }}"
+      - version
+      - --format
+      - json
+  register: _execution_environment_bootstrap_podman_version
+  changed_when: false
+  environment: "{{ _execution_environment_bootstrap_tool_environment }}"
+
+- name: Verify Ansible Builder is in Gludd's managed controller environment
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - -m
+      - ansible_builder
+      - --version
+  register: _execution_environment_bootstrap_builder_version
+  changed_when: false
+  environment: "{{ _execution_environment_bootstrap_tool_environment }}"
+
+- name: Report verified bootstrap toolchain
+  ansible.builtin.debug:
+    msg: >-
+      ANSIBLE_EE_TOOLCHAIN_READY podman={{ _execution_environment_bootstrap_podman_version.stdout | trim }}
+      ansible_builder={{ _execution_environment_bootstrap_builder_version.stdout | trim }}

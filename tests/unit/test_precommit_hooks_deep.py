@@ -38,6 +38,7 @@ class _HookConfig(TypedDict, total=False):
 
     id: str
     entry: str
+    exclude: str
     stages: list[str]
 
 
@@ -256,3 +257,15 @@ class TestConfigStructure:
     def test_every_hook_has_id(self, config: _PreCommitConfig) -> None:
         for entry in _all_hooks(config):
             assert "id" in entry["hook"], f"hook missing 'id' in repo {entry['repo']['repo']!r}"
+
+    def test_byte_immutable_catalog_fixture_is_not_rewritten(
+        self,
+        config: _PreCommitConfig,
+    ) -> None:
+        hook = next(
+            entry["hook"]
+            for entry in _all_hooks(config)
+            if entry["hook"]["id"] == "end-of-file-fixer"
+        )
+
+        assert hook.get("exclude") == r"^config/self-improve/catalog-truth\.json$"

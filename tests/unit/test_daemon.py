@@ -284,6 +284,18 @@ def _lifespan_patches(mock_loop):
     stack.enter_context(_patch("general_ludd.daemon._init_project_workspaces", return_value={}))
     stack.enter_context(_patch("general_ludd.models.timeout_detector.ModelHealthTracker", return_value=_MagicMock()))
     stack.enter_context(_patch("general_ludd.daemon.ModelHealthTracker", return_value=_MagicMock()))
+    # These lifecycle unit tests deliberately replace app.state owners while
+    # the lifespan is running.  Keep their setup hermetic: constructing the
+    # real diskcache-backed owners here would open SQLite handles that become
+    # unreachable when a test installs its shutdown doubles.
+    for cache_factory in (
+        "general_ludd.retrieval.indexer.open_safe_diskcache",
+        "general_ludd.retrieval.research_index.open_safe_diskcache",
+        "general_ludd.retrieval.searx_client.open_safe_diskcache",
+        "general_ludd.retrieval.searcher.open_safe_diskcache",
+        "general_ludd.memory.local.open_safe_diskcache",
+    ):
+        stack.enter_context(_patch(cache_factory, return_value=_MagicMock()))
     # The lifespan shutdown path does `await task`, plus task.cancel() and
     # task.add_done_callback(). A completed asyncio.Future supports all three
     # and is directly awaitable; a bare AsyncMock instance is NOT awaitable

@@ -71,7 +71,7 @@ from check_version_bump_atomicity import (
 )
 from generate_release_notes import COMMIT_CATEGORIES, categorize_commits, find_prev_tag, format_notes
 from validate_release_checksums import parse_checksums
-from verify_container_push import try_crane, try_docker, try_skopeo
+from verify_container_push import image_digest_from_output, try_crane, try_docker, try_skopeo
 
 
 class TestCheckTagImmutability:
@@ -312,6 +312,23 @@ class TestCheckSbomFreshness:
 class TestVerifyContainerPush:
     """AC008: container-push-verification."""
 
+    def test_image_digest_from_nested_descriptor(self):
+        digest = "sha256:" + ("a" * 64)
+
+        assert image_digest_from_output('{"Manifest":{"Digest":"' + digest + '"}}') == digest
+
+    @pytest.mark.parametrize(
+        "output",
+        [
+            '{"Digest":"sha256:abc"}',
+            '{"Digest":"sha256:' + ("g" * 64) + '"}',
+            '{"mediaType":"application/vnd.oci.image.manifest.v1+json"}',
+            "not-json",
+        ],
+    )
+    def test_image_digest_from_output_rejects_missing_or_noncanonical_digest(self, output):
+        assert image_digest_from_output(output) is None
+
     def test_try_skopeo_unavailable(self, monkeypatch):
         def raise_fnf(*args, **kwargs):
             raise FileNotFoundError("skopeo not found")
@@ -378,13 +395,29 @@ class TestVerifyContainerPush:
         assert "unavailable" in output
 
     def test_try_docker_success(self, monkeypatch):
+        digest = "sha256:" + ("b" * 64)
+
         def mock_run(*args, **kwargs):
-            result = subprocess.CompletedProcess(args, returncode=0, stdout='{"schemaVersion":2}')
+            assert args[0] == [
+                "docker",
+                "buildx",
+                "imagetools",
+                "inspect",
+                "--format",
+                "{{json .Manifest}}",
+                "registry.example.com/image:tag",
+            ]
+            result = subprocess.CompletedProcess(
+                args,
+                returncode=0,
+                stdout='{"digest":"' + digest + '"}',
+            )
             return result
 
         monkeypatch.setattr(subprocess, "run", mock_run)
-        ok, _output = try_docker("registry.example.com/image:tag")
+        ok, output = try_docker("registry.example.com/image:tag")
         assert ok is True
+        assert image_digest_from_output(output) == digest
 
 
 class TestCheckRollbackProcedure:

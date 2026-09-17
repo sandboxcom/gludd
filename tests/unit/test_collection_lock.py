@@ -62,6 +62,15 @@ def test_collect_check_uses_project_collection_lock() -> None:
     assert "scripts/collection_lock.py --run" in target
 
 
+def test_collect_check_confines_ansible_temp_to_owned_observed_root() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    target = makefile.split("collect-check:", 1)[1].split("\n\n", 1)[0]
+
+    assert 'ANSIBLE_TMP="$(OBSERVED_ROOT)/ansible-local-' in target
+    assert 'ANSIBLE_LOCAL_TEMP="$$ANSIBLE_TMP"' in target
+    assert "trap 'rm -rf -- \"$$ANSIBLE_TMP\"'" in target
+
+
 def test_gate_refresh_uses_singleton_project_resource_lock() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     target = makefile.split("gate-refresh:", 1)[1].split("\n\n", 1)[0]

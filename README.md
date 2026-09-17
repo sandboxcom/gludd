@@ -173,7 +173,7 @@ when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is
 |---|---|---|
 | S53.7-S53.11 — Prompt profiles, config audit, README config guide, 54-playbook docs, template docs | ~ 100% | **PARTIAL** *(file-refs only)*: 6 config files documented, README Configuration Guide section; commits 68da61a1, 0a912a72, 704ed529, d145ccaf |
 | S53.1-S53.3, S53.12-S53.15 — Binary fixes, smoke tests, functional tests, bundled resources, cross-platform specs | ✓ 100% | **PASS** *(file-refs only)*: macOS crash fix, smoke tests on all platforms, 21 verified assets; commits bd92fd8a..10f03137 |
-| S53.44-S53.45 — Stop-prevention codification (5 gaps, 3-layer) + CI check cooldown (machine-enforced) | ~ 100% | **PARTIAL** *(file-refs only)*: 5 anti-pattern gaps fixed, CI check cooldown 600s; commits 05d18f6f, b3878d2c, 6992be7d, ad09cc0a |
+| S53.44-S53.45 — Stop-prevention codification (5 gaps, 3-layer) + CI check cooldown (machine-enforced) | ✓ 100% | **PASS** *(file-refs only)*: 5 anti-pattern gaps fixed, CI check cooldown 600s; commits 05d18f6f, b3878d2c, 6992be7d, ad09cc0a |
 | S53.31-S53.32 — Agentic memory: embedding store, consolidation cascade, hybrid search (97 tests) | ✓ 100% | **PASS** *(file-refs only)*: Procedural + semantic + hybrid search + embedding; commit 97432526 |
 | S53.33-S53.34 — PaaS IAM least-privilege roles (AWS/GCP/Azure) + OPA policies for Terraform/IAM (32 tests) | ✗ 100% | **PENDING** *(file-refs only)*: 3 provider IAM files, 4 OPA policy files; commit b4612d1a |
 

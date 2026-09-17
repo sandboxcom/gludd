@@ -2,7 +2,7 @@
 and GitHub reference roles.
 
 Verifies JSON validity, required fields, RBAC action format, forbidden suffix
-patterns, security-critical denials, subscription scopes, no duplicates,
+patterns, security-critical exclusions, resource-group scopes, no duplicates,
 REST API / Portal format, GitHub reference role structure, cross-validation
 against real-world production Azure roles, and secret-key false positive checks.
 """
@@ -20,9 +20,27 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 INFRA_DIR = REPO_ROOT / "config" / "infra"
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 
+OBSOLETE_PROVIDER_REGISTRATION = "Microsoft.Resources/subscriptions/providers/register/action"
+REQUIRED_PROVIDER_REGISTRATIONS = frozenset(
+    {
+        "Microsoft.App/register/action",
+        "Microsoft.Compute/register/action",
+        "Microsoft.ContainerRegistry/register/action",
+        "Microsoft.Insights/register/action",
+        "Microsoft.Network/register/action",
+        "Microsoft.OperationalInsights/register/action",
+    }
+)
+
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-from validate_azure_iam_policy import _check_field_order, validate_action_format, validate_rest_format  # noqa: E402
+import validate_azure_iam_policy as validator_subject  # noqa: E402
+from validate_azure_iam_policy import (  # noqa: E402
+    _check_field_order,
+    validate_action_format,
+    validate_cli_format,
+    validate_rest_format,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -139,12 +157,11 @@ class TestPolicyCLIStructure:
         scopes = policy_cli["properties"].get("assignableScopes")
         assert isinstance(scopes, list) and len(scopes) > 0
 
-    def test_has_subscription_level_scope(self, policy_cli: dict) -> None:
+    def test_has_resource_group_scope(self, policy_cli: dict) -> None:
         scopes = policy_cli["properties"].get("assignableScopes", [])
-        has_sub = any(
-            "{subscription_id}" in s or re.match(r"^/subscriptions/[0-9a-f-]+", s) or s == "/" for s in scopes
-        )
-        assert has_sub, f"No subscription-level scope found in: {scopes}"
+        assert scopes == [
+            "/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -182,6 +199,124 @@ class TestActionFormat:
         assert not bad, f"CLI-format actions with invalid RBAC format: {bad}"
 
 
+class TestProviderRegistrationActions:
+    """Runtime roles must not register providers; the catalog tracks valid operations."""
+
+    def test_policies_use_supported_provider_registration_actions(
+        self,
+        policy: dict,
+        policy_cli: dict,
+    ) -> None:
+        action_sets = (
+            frozenset(policy["Actions"]),
+            frozenset(policy_cli["properties"]["permissions"][0]["actions"]),
+        )
+
+        for actions in action_sets:
+            assert OBSOLETE_PROVIDER_REGISTRATION not in actions
+            assert actions.isdisjoint(REQUIRED_PROVIDER_REGISTRATIONS)
+
+    def test_validator_catalog_tracks_supported_registration_actions(self) -> None:
+        from general_ludd.azure.rbac_validator import all_known_actions
+
+        known = all_known_actions()
+        assert OBSOLETE_PROVIDER_REGISTRATION not in known
+        assert known >= REQUIRED_PROVIDER_REGISTRATIONS
+
+
+class TestValidatorCommandPaths:
+    """The credential-free validator catches this defect before Azure does."""
+
+    def test_cli_validator_reports_registration_and_structural_issues(self) -> None:
+        errors, warnings, actions = validate_cli_format(
+            {
+                "Description": "short",
+                "Actions": [
+                    "Microsoft.Compute/virtualMachines/read",
+                    "Microsoft.Compute/virtualMachines/read",
+                    "Microsoft.Compute/virtualMachines/runCommand/action",
+                    OBSOLETE_PROVIDER_REGISTRATION,
+                    "Microsoft.KeyVault/vaults/keys/read",
+                ],
+                "NotActions": [],
+                "AssignableScopes": ["/resourceGroups/not-subscription-scoped"],
+            }
+        )
+
+        assert actions[-2:] == [
+            OBSOLETE_PROVIDER_REGISTRATION,
+            "Microsoft.KeyVault/vaults/keys/read",
+        ]
+        assert any("Missing required fields: Name" in error for error in errors)
+        assert any("is not supported" in error for error in errors)
+        assert any("security-critical operations" in error for error in errors)
+        assert any("Duplicate action" in warning for warning in warnings)
+        assert any("subscription-level scope" in warning for warning in warnings)
+        assert any("Description is too short" in warning for warning in warnings)
+        assert any("may need /action" in warning for warning in warnings)
+
+    def test_main_accepts_both_checked_in_policy_formats(
+        self,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        with pytest.raises(SystemExit) as exit_info:
+            validator_subject.main()
+
+        assert exit_info.value.code == 0
+        output = capsys.readouterr().out
+        assert "azure-iam-policy.json" in output
+        assert "azure-iam-policy-cli.json" in output
+        assert "0 errors, 0 warnings" in output
+
+    def test_main_fails_closed_for_missing_and_malformed_policy_files(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        missing = tmp_path / "missing.json"
+        monkeypatch.setattr(validator_subject, "POLICY_FILE", missing)
+        with pytest.raises(SystemExit) as missing_exit:
+            validator_subject.main()
+        assert missing_exit.value.code == 1
+        assert "MISSING:" in capsys.readouterr().out
+
+        malformed = tmp_path / "malformed.json"
+        malformed.write_text("{", encoding="utf-8")
+        monkeypatch.setattr(validator_subject, "POLICY_FILE", malformed)
+        with pytest.raises(SystemExit) as malformed_exit:
+            validator_subject.main()
+        assert malformed_exit.value.code == 1
+        assert "INVALID JSON" in capsys.readouterr().out
+
+    def test_main_surfaces_invalid_action_and_unknown_action_warning(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        invalid_role = json.loads((INFRA_DIR / "azure-iam-policy.json").read_text())
+        invalid_role["Actions"].extend(
+            [
+                OBSOLETE_PROVIDER_REGISTRATION,
+                "Microsoft.FutureCompute/widgets/read",
+            ]
+        )
+        policy_path = tmp_path / "invalid-role.json"
+        policy_path.write_text(json.dumps(invalid_role), encoding="utf-8")
+        monkeypatch.setattr(validator_subject, "POLICY_FILE", policy_path)
+        monkeypatch.setattr(validator_subject, "POLICY_CLI_FILE", policy_path)
+
+        with pytest.raises(SystemExit) as exit_info:
+            validator_subject.main()
+
+        assert exit_info.value.code == 1
+        output = capsys.readouterr().out
+        assert "FAIL:" in output
+        assert "is not supported" in output
+        assert "UNKNOWN: 'Microsoft.FutureCompute/widgets/read'" in output
+
+
 # ---------------------------------------------------------------------------
 # No duplicate actions
 # ---------------------------------------------------------------------------
@@ -206,12 +341,12 @@ class TestNoDuplicateActions:
 
 
 # ---------------------------------------------------------------------------
-# Security-critical denials in NotActions
+# Security-critical operations excluded from Actions
 # ---------------------------------------------------------------------------
 
 
-class TestSecurityCriticalDenials:
-    """All 8 security-critical actions must be denied in NotActions."""
+class TestSecurityCriticalExclusions:
+    """An explicit allowlist must omit all security-critical operations."""
 
     REQUIRED_DENIALS = frozenset(
         {
@@ -226,15 +361,16 @@ class TestSecurityCriticalDenials:
         }
     )
 
-    def test_all_8_security_denials_present(self, policy: dict) -> None:
-        denied = frozenset(policy.get("NotActions", []))
-        missing = self.REQUIRED_DENIALS - denied
-        assert not missing, f"NotActions missing security-critical denials: {sorted(missing)}"
+    def test_all_8_security_operations_absent(self, policy: dict) -> None:
+        granted = self.REQUIRED_DENIALS & frozenset(policy.get("Actions", []))
+        assert not granted, f"Actions grant security-critical operations: {sorted(granted)}"
+        assert policy.get("NotActions") == []
 
-    def test_all_8_security_denials_present_cli(self, policy_cli: dict) -> None:
-        denied = frozenset(policy_cli["properties"]["permissions"][0].get("notActions", []))
-        missing = self.REQUIRED_DENIALS - denied
-        assert not missing, f"CLI notActions missing security-critical denials: {sorted(missing)}"
+    def test_all_8_security_operations_absent_cli(self, policy_cli: dict) -> None:
+        permission = policy_cli["properties"]["permissions"][0]
+        granted = self.REQUIRED_DENIALS & frozenset(permission.get("actions", []))
+        assert not granted, f"REST actions grant security-critical operations: {sorted(granted)}"
+        assert permission.get("notActions") == []
 
 
 # ---------------------------------------------------------------------------
@@ -258,14 +394,13 @@ class TestDataActionsEmpty:
 
 
 class TestAssignableScopes:
-    """AssignableScopes must contain at least one subscription-level entry."""
+    """AssignableScopes must constrain the role to one resource group."""
 
-    def test_has_subscription_level_scope(self, policy: dict) -> None:
+    def test_has_resource_group_scope(self, policy: dict) -> None:
         scopes = policy.get("AssignableScopes", [])
-        has_sub = any(
-            "{subscription_id}" in s or re.match(r"^/subscriptions/[0-9a-f-]+", s) or s == "/" for s in scopes
-        )
-        assert has_sub, f"No subscription-level scope found in: {scopes}"
+        assert scopes == [
+            "/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -319,6 +454,13 @@ class TestValidateActionFormatFunction:
     def test_missing_module_is_rejected(self) -> None:
         errors = validate_action_format("read")
         assert len(errors) > 0
+
+    def test_obsolete_generic_provider_registration_is_rejected(self) -> None:
+        errors = validate_action_format(OBSOLETE_PROVIDER_REGISTRATION)
+        assert errors == [
+            "Action 'Microsoft.Resources/subscriptions/providers/register/action' is not "
+            "supported; use provider-owned <namespace>/register/action operations"
+        ]
 
     def test_actual_policy_actions_all_pass(self, all_actions: list[str]) -> None:
         for action in all_actions:
@@ -523,7 +665,7 @@ class TestValidateRestFormatFunction:
         errors, _warnings, _all_actions = validate_rest_format(policy_cli)
         assert errors == [], f"Actual -cli.json has validation errors: {errors}"
 
-    def test_security_denials_missing_is_error(self) -> None:
+    def test_security_critical_grant_is_error(self) -> None:
         doc = {
             "properties": {
                 "roleName": "Test",
@@ -531,7 +673,10 @@ class TestValidateRestFormatFunction:
                 "assignableScopes": ["/subscriptions/{subscription_id}"],
                 "permissions": [
                     {
-                        "actions": ["Microsoft.Compute/virtualMachines/read"],
+                        "actions": [
+                            "Microsoft.Compute/virtualMachines/read",
+                            "Microsoft.Compute/virtualMachines/runCommand/action",
+                        ],
                         "notActions": [],
                         "dataActions": [],
                         "notDataActions": [],
@@ -540,7 +685,7 @@ class TestValidateRestFormatFunction:
             }
         }
         errors, _, _ = validate_rest_format(doc)
-        assert any("security-critical" in e.lower() for e in errors)
+        assert any("security-critical operations" in e.lower() for e in errors)
 
 
 # ---------------------------------------------------------------------------

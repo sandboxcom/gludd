@@ -1,0 +1,48 @@
+---
+- name: Create the exact Gludd-owned candidate context directory
+  ansible.builtin.file:
+    path: "{{ _execution_environment_bootstrap_candidate_context }}"
+    state: directory
+    mode: "0700"
+
+- name: Start the canonical Ansible Builder driver asynchronously
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - "{{ execution_environment_bootstrap_project_root }}/scripts/ansible_runtime_artifacts.py"
+      - build
+      - --runtime
+      - "{{ execution_environment_bootstrap_container_runtime }}"
+      - --image
+      - "{{ _execution_environment_bootstrap_candidate_image }}"
+      - --context
+      - "{{ _execution_environment_bootstrap_candidate_context }}"
+    chdir: "{{ execution_environment_bootstrap_project_root }}"
+  environment: "{{ _execution_environment_bootstrap_tool_environment }}"
+  async: "{{ execution_environment_bootstrap_build_timeout_seconds | int }}"
+  poll: 0
+  register: _execution_environment_bootstrap_build_job
+  changed_when: true
+
+- name: ANSIBLE_EE_BUILD_HEARTBEAT wait for candidate image
+  ansible.builtin.async_status:
+    jid: "{{ _execution_environment_bootstrap_build_job.ansible_job_id }}"
+  register: _execution_environment_bootstrap_build_status
+  until: _execution_environment_bootstrap_build_status.finished
+  retries: >-
+    {{ (execution_environment_bootstrap_build_timeout_seconds | int /
+        execution_environment_bootstrap_poll_seconds | int) | round(0, 'ceil') | int }}
+  delay: "{{ execution_environment_bootstrap_poll_seconds | int }}"
+
+- name: Surface the canonical builder output
+  ansible.builtin.debug:
+    var: _execution_environment_bootstrap_build_status.stdout_lines
+
+- name: Fail closed when Ansible Builder did not produce the candidate
+  ansible.builtin.assert:
+    that:
+      - _execution_environment_bootstrap_build_status.rc == 0
+    fail_msg: >-
+      Ansible Builder failed for candidate
+      {{ _execution_environment_bootstrap_candidate_image }}:
+      {{ _execution_environment_bootstrap_build_status.stderr | default('no stderr') }}

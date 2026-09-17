@@ -135,16 +135,9 @@ class Quadtree:
         ne, nw, se, sw = self._child_nodes()
         x_mid = (self._bbox[0] + self._bbox[2]) / 2
         y_mid = (self._bbox[1] + self._bbox[3]) / 2
-        if point[0] >= x_mid:
-            if point[1] >= y_mid:
-                ne.insert(point, data)
-            else:
-                se.insert(point, data)
-        else:
-            if point[1] >= y_mid:
-                nw.insert(point, data)
-            else:
-                sw.insert(point, data)
+        children = (sw, se, nw, ne)
+        child_index = int(point[0] >= x_mid) + 2 * int(point[1] >= y_mid)
+        children[child_index].insert(point, data)
 
     def query_range(self, bbox: tuple[float, float, float, float]) -> list[tuple[Point2D, Any]]:
         """Execute ``query_range``."""
@@ -270,13 +263,7 @@ class Octree:
         x_mid = (self._bbox[0] + self._bbox[3]) / 2
         y_mid = (self._bbox[1] + self._bbox[4]) / 2
         z_mid = (self._bbox[2] + self._bbox[5]) / 2
-        idx = 0
-        if point[0] >= x_mid:
-            idx += 1
-        if point[1] >= y_mid:
-            idx += 2
-        if point[2] >= z_mid:
-            idx += 4
+        idx = int(point[0] >= x_mid) + 2 * int(point[1] >= y_mid) + 4 * int(point[2] >= z_mid)
         self._children[idx].insert(point, data)
 
     def query_range(self, bbox: tuple[float, float, float, float, float, float]) -> list[tuple[Point3D, Any]]:

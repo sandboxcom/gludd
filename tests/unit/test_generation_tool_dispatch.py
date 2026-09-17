@@ -269,6 +269,106 @@ class TestDaemonGenerationDispatchesStructuredCalls:
 
         dispatcher.dispatch_all.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    async def test_tool_requiring_generation_runs_phase_two_and_persists_output(
+        self,
+    ) -> None:
+        runner = _make_runner()
+        gateway = MagicMock(name="ModelGateway")
+        variable_repo = AsyncMock()
+        variable_repo.load_vars_for_project.return_value = {}
+        phase_two = AsyncMock(return_value="tool-refined output")
+
+        loop = EventLoop(
+            worker_base_url="http://worker:8000",
+            config={},
+            runner=runner,
+            model_gateway=gateway,
+            mcp_client=MagicMock(),
+            variable_repo=variable_repo,
+        )
+
+        with (
+            patch("general_ludd.event_loop.loop.asyncio.to_thread", _passthrough_to_thread()),
+            patch(
+                "general_ludd.event_loop.loop.invoke_model_for_generation",
+                return_value=("initial analysis", None),
+            ),
+            patch("general_ludd.execution.tool_loop.ToolCallLoop") as loop_type,
+        ):
+            loop_type.return_value.run_with_tools = phase_two
+            await loop._dispatch_execute_job(_todo("code"))
+
+        phase_two.assert_awaited_once()
+        variable_repo.set_var.assert_any_await(
+            namespace="tool_results",
+            key="tool_loop_result:EXEC-TODO-GENTOOL",
+            value="tool-refined output",
+        )
+        runner.run_playbook.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_langgraph_phase_two_receives_bounded_runtime_context(self) -> None:
+        runner = _make_runner()
+        gateway = MagicMock(name="ModelGateway")
+        detector = MagicMock()
+        phase_two = AsyncMock(return_value=None)
+        loop = EventLoop(
+            worker_base_url="http://worker:8000",
+            config={
+                "use_langgraph_tool_loop": True,
+                "tool_loop": {"max_total_tokens": 321},
+            },
+            runner=runner,
+            model_gateway=gateway,
+            mcp_client=MagicMock(),
+            daemon_state={"_adversarial_detector": detector},
+        )
+
+        with (
+            patch("general_ludd.event_loop.loop.asyncio.to_thread", _passthrough_to_thread()),
+            patch(
+                "general_ludd.event_loop.loop.invoke_model_for_generation",
+                return_value=(None, None),
+            ),
+            patch(
+                "general_ludd.execution.langgraph_agent.LangGraphAgentLoop"
+            ) as loop_type,
+        ):
+            loop_type.return_value.run_with_tools = phase_two
+            await loop._dispatch_execute_job(_todo("analysis"))
+
+        assert loop_type.call_args.kwargs["adversarial_detector"] is detector
+        assert loop_type.call_args.kwargs["max_total_tokens"] == 321
+        phase_two.assert_awaited_once()
+        runner.run_playbook.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_phase_two_failure_is_additive_and_playbook_still_runs(self) -> None:
+        runner = _make_runner()
+        loop = EventLoop(
+            worker_base_url="http://worker:8000",
+            config={},
+            runner=runner,
+            model_gateway=MagicMock(),
+            mcp_client=MagicMock(),
+        )
+
+        with (
+            patch("general_ludd.event_loop.loop.asyncio.to_thread", _passthrough_to_thread()),
+            patch(
+                "general_ludd.event_loop.loop.invoke_model_for_generation",
+                return_value=("initial analysis", None),
+            ),
+            patch("general_ludd.execution.tool_loop.ToolCallLoop") as loop_type,
+        ):
+            loop_type.return_value.run_with_tools = AsyncMock(
+                side_effect=RuntimeError("phase two unavailable")
+            )
+            await loop._dispatch_execute_job(_todo("code"))
+
+        runner.run_playbook.assert_called_once()
+
 
 # --------------------------------------------------------------------------- #
 # Worker path: /jobs/execute dispatches STRUCTURED tool_calls

@@ -18,7 +18,8 @@ import logging
 import multiprocessing
 import os
 import sys
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,11 @@ _DEFAULT_PLAYBOOK_TIMEOUT = 300.0
 # rc returned when a run is killed for exceeding its wall-clock bound (matches
 # the shell convention for "command timed out").
 _TIMEOUT_RC = 124
+# Conventional interactive-cancellation return code. Keeping cancellation
+# distinct from timeout lets the lease owner acknowledge the correct terminal
+# cause after the process tree is reaped.
+_CANCELLED_RC = 130
+_CANCEL_POLL_SECONDS = 0.25
 
 
 def _json_safe(obj: Any) -> Any:
@@ -383,6 +389,10 @@ class CoreAnsibleRunner:
             shutil.rmtree(self._private_data_dir, ignore_errors=True)
             self._private_data_dir = ""
 
+    def set_process_isolation(self, config: Any | None) -> None:
+        """Switch subsequent playbook runs to a verified isolation boundary."""
+        self._process_isolation = config
+
     def run_playbook(
         self,
         playbook_path: str,
@@ -396,6 +406,7 @@ class CoreAnsibleRunner:
         become: bool = False,
         timeout: float | None = None,
         extra_env: dict[str, str] | None = None,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> AnsibleResult:
         """Run one playbook with network-policy scanning, unsafe-wrapping, and a timeout bound."""
         if not _HAS_ANSIBLE_CORE:
@@ -444,6 +455,11 @@ class CoreAnsibleRunner:
         # actual confinement via ansible-runner.
         iso = self._process_isolation
         if iso is not None and getattr(iso, "enabled", False):
+            # Process-isolated execution still belongs to Gludd.  Give the
+            # ansible-runner backend the same absolute deadline as the native
+            # child-process path instead of relying on a caller, HTTP proxy, or
+            # external watchdog to tear down a stalled container.
+            isolation_timeout = _env_default_timeout() if timeout is None else timeout
             return self._execute_with_runner(
                 playbook_path=playbook_path,
                 inventory=inventory,
@@ -455,6 +471,8 @@ class CoreAnsibleRunner:
                 connection=connection,
                 become=become,
                 extra_env=extra_env,
+                timeout=isolation_timeout,
+                cancel_requested=cancel_requested,
             )
 
         # HIGH (no timeout): bound the run in a killable child process. An
@@ -469,7 +487,7 @@ class CoreAnsibleRunner:
         # standard bounded-worker default.
         if timeout is None:
             env_to = os.environ.get("GLUDD_PLAYBOOK_TIMEOUT", "")
-            if not env_to:
+            if not env_to and cancel_requested is None:
                 return self._execute_with_core(
                     playbook_path=playbook_path,
                     inventory=inventory,
@@ -484,10 +502,14 @@ class CoreAnsibleRunner:
                 )
             bound = _env_default_timeout()
         else:
-            bound = timeout
+            # An owner-provided cancellation callback must always supervise a
+            # killable child, even when a caller attempts to disable the normal
+            # wall-clock bound with zero or a negative value.
+            bound = _env_default_timeout() if cancel_requested is not None and timeout <= 0 else timeout
 
         return self._run_with_timeout(
             timeout=bound,
+            cancel_requested=cancel_requested,
             playbook_path=playbook_path,
             inventory=inventory,
             extravars=safe_extravars,
@@ -503,14 +525,16 @@ class CoreAnsibleRunner:
     def _run_with_timeout(
         self,
         timeout: float,
+        *,
+        cancel_requested: Callable[[], bool] | None = None,
         **exec_kwargs: Any,
     ) -> AnsibleResult:
         """Run ``_execute_with_core`` in a thread-safe child bounded by timeout.
 
-        The child puts its serialized AnsibleResult on a queue. The parent joins
-        with a deadline; on expiry it terminate()s then kill()s the child and
-        returns a failed result with rc 124. A non-positive timeout means "no
-        bound" and runs inline.
+        The child puts its serialized AnsibleResult on a queue. The parent polls
+        with a deadline and optional owner callback; timeout or cancellation
+        terminates and reaps the process group before returning. A non-positive
+        timeout means "no bound" only for direct callers without cancellation.
         """
         if timeout is None or timeout <= 0:
             return self._execute_with_core(**exec_kwargs)
@@ -582,18 +606,49 @@ class CoreAnsibleRunner:
             logger.debug("managed-process registration failed", exc_info=True)
 
         try:
-            proc.join(timeout)
+            deadline = time.monotonic() + timeout
+            while proc.is_alive():
+                if cancel_requested is not None:
+                    try:
+                        should_cancel = bool(cancel_requested())
+                    except Exception as exc:
+                        self._terminate_tree(proc)
+                        logger.error(
+                            "ANSIBLE_EXECUTION_CANCEL_CHECK_FAILED callback=%s",
+                            type(exc).__name__,
+                        )
+                        return AnsibleResult(
+                            status="failed",
+                            rc=1,
+                            error=(
+                                "playbook cancellation callback failed: "
+                                f"{type(exc).__name__}"
+                            ),
+                        )
+                    if should_cancel:
+                        self._terminate_tree(proc)
+                        logger.info("ANSIBLE_EXECUTION_CANCELLED backend=native")
+                        return AnsibleResult(
+                            status="cancelled",
+                            rc=_CANCELLED_RC,
+                            error="playbook cancelled by owner",
+                        )
 
-            if proc.is_alive():
-                # Deadline blown — kill the child and (best-effort) its worker
-                # tree, then hard-kill if it ignores SIGTERM.
-                self._terminate_tree(proc)
-                logger.error("Playbook exceeded wall-clock timeout of %.1fs; killed", timeout)
-                return AnsibleResult(
-                    status="failed",
-                    rc=_TIMEOUT_RC,
-                    error=f"playbook timed out after {timeout:.1f}s",
-                )
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    # Deadline blown — kill the child and (best-effort) its
+                    # worker tree, then hard-kill if it ignores SIGTERM.
+                    self._terminate_tree(proc)
+                    logger.error(
+                        "Playbook exceeded wall-clock timeout of %.1fs; killed",
+                        timeout,
+                    )
+                    return AnsibleResult(
+                        status="failed",
+                        rc=_TIMEOUT_RC,
+                        error=f"playbook timed out after {timeout:.1f}s",
+                    )
+                proc.join(min(_CANCEL_POLL_SECONDS, remaining))
 
             try:
                 kind, payload = queue.get_nowait()
@@ -627,7 +682,7 @@ class CoreAnsibleRunner:
 
     @staticmethod
     def _terminate_tree(proc: Any) -> None:
-        """Kill a timed-out child and the process group it leads.
+        """Kill a timed-out or cancelled child and the process group it leads.
 
         The child called ``os.setsid()``, so its PID is its process-group id and
         every ansible worker it forked shares that group. We SIGTERM the group,
@@ -720,6 +775,8 @@ class CoreAnsibleRunner:
         connection: str = "local",
         become: bool = False,
         extra_env: dict[str, str] | None = None,
+        timeout: float | None = None,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> AnsibleResult:
         """Execute playbook via the ansible-runner subprocess backend.
 
@@ -762,6 +819,13 @@ class CoreAnsibleRunner:
             "playbook": playbook_path,
             **iso.to_runner_kwargs(),
         }
+        if timeout is not None and timeout > 0:
+            # ``job_timeout`` is enforced inside ansible-runner's own event
+            # loop.  On expiry it kills the owned isolation container and the
+            # Ansible process group before returning status="timeout".
+            runner_kwargs["settings"] = {"job_timeout": timeout}
+        if cancel_requested is not None:
+            runner_kwargs["cancel_callback"] = cancel_requested
         if inventory:
             runner_kwargs["inventory"] = inventory
         if extravars:
@@ -827,6 +891,15 @@ class CoreAnsibleRunner:
                 rc=0,
                 stats=stats,
                 events=events,
+            )
+        if status in {"canceled", "cancelled"}:
+            logger.info("ANSIBLE_EXECUTION_CANCELLED backend=ansible-runner")
+            return AnsibleResult(
+                status="cancelled",
+                rc=_CANCELLED_RC,
+                stats=stats,
+                events=events,
+                error="playbook cancelled by owner",
             )
         return AnsibleResult(
             status="failed",

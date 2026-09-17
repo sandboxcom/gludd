@@ -118,6 +118,37 @@ jobs:
         run: |
           echo "=== CI PHASE: install ==="
           uv sync --python ${{ matrix.python-version }}
+      - name: Azure Container App proof contract (hermetic)
+        run: |
+          make azure-containerapp-live-proof \
+            AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE=file \
+            AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE=/tmp/gludd-contract-absent.json \
+            AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE= \
+            AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID= \
+            AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID= \
+            AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP=gludd-models-eastus \
+            AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT=gludd-gpu-environment \
+            AZURE_CONTAINERAPP_LIVE_PROOF_WORKLOAD_PROFILE_NAME=gpu-t4 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION=eastus \
+            AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR=203.0.113.7/32 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD=5 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES=60 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_LIVE=0 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT=dry-run \
+            AZURE_CONTAINERAPP_LIVE_PROOF_PROJECT_ROOT=. \
+            AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH=src/general_ludd/__init__.py \
+            AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET=always_destroy \
+            AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS=21600
+        env:
+          GLUDD_AUTH_PSK: ""
+      - name: Azure Container App coverage (hermetic)
+        if: matrix.python-version == '3.11'
+        run: |
+          echo "=== CI PHASE: azure-containerapp-coverage ==="
+          make test-azure-containerapp-coverage
+        env:
+          GLUDD_AUTH_PSK: ""
       - name: Lint
         run: |
           echo "=== CI PHASE: lint ==="
@@ -396,9 +427,9 @@ jobs:
           # every shard's paths and exclusions.  Keeping duplicate testpaths or
           # exclude data here lets hosted and local release plans drift even
           # when their shard labels match.  The only workflow-local addition is
-          # the isolated fresh-process suite owned by unit-1a1.
+          # the isolated fresh-process suites owned by unit-1a1.
           - shard: unit-1a1
-            isolated_testpaths: "tests/unit/test_all_plugins_runtime.py"
+            isolated_testpaths: "tests/unit/test_all_plugins_runtime.py tests/unit/test_makefile_audit_deep.py"
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
         with:
@@ -444,11 +475,11 @@ jobs:
         run: |
           echo "=== CI PHASE: install ==="
           uv sync --python ${{ matrix.python-version }}
-      - name: Run isolated Node plugin syntax in fresh process
+      - name: Run isolated subprocess suites in fresh process
         if: matrix.shard == 'unit-1a1'
         timeout-minutes: 5
         run: |
-          echo "=== CI PHASE: isolated-node-plugin-syntax ==="
+          echo "=== CI PHASE: isolated-subprocess-suites ==="
           uv run python -m pytest ${{ matrix.isolated_testpaths }} -q -W error
       - name: Test (shard ${{ matrix.shard }}, Python ${{ matrix.python-version }})
         id: test-run
@@ -1493,6 +1524,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "=== CI PHASE: ansible-ee-smoke ==="
+          docker run --rm --network=none "${EE_TAG}" /usr/local/bin/tofu version
           docker run --rm --network=none "${EE_TAG}"             /usr/bin/python3.11 -c "import ansible, ansible_runner; print('ANSIBLE_EE_SMOKE_PASS')"
       - name: Log in to GHCR
         if: startsWith(github.ref, 'refs/tags/v')

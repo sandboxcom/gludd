@@ -1,0 +1,376 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "detail": "model cache has no safe reclaim candidate",
+        "forbidden_substrings": [
+          "proposal_error",
+          "next_attempt_empty"
+        ],
+        "source": "acquisition_trace",
+        "type": "acquisition_refused"
+      },
+      "id": "eviction-refused-phantom-proposal",
+      "input": {
+        "events": [
+          {
+            "cause": null,
+            "phase": "eviction_planned"
+          },
+          {
+            "cause": "no_safe_reclaim",
+            "phase": "eviction_refused"
+          },
+          {
+            "cause": null,
+            "phase": "proposal_error"
+          },
+          {
+            "cause": null,
+            "phase": "next_attempt_empty"
+          }
+        ]
+      },
+      "kind": "acquisition_trace"
+    },
+    {
+      "expected": {
+        "detail": "replace requires distinct non-empty old_text",
+        "forbidden_substrings": [],
+        "source": "worker_tail",
+        "type": "edit_replace_contract"
+      },
+      "id": "no-op-replace",
+      "input": {
+        "focus_path": "src/general_ludd/self_improve/example.py",
+        "model_output": "{\"e\":[{\"a\":\"same model text\",\"z\":\"same model text\"}]}"
+      },
+      "kind": "compact_decode"
+    },
+    {
+      "expected": {
+        "detail": "compact span coordinates must be integers, not booleans",
+        "forbidden_substrings": [],
+        "source": "worker_tail",
+        "type": "edit_span_coordinate"
+      },
+      "id": "compact-v4-boolean-coordinate",
+      "input": {
+        "focus_path": "src/general_ludd/self_improve/example.py",
+        "model_output": "{\"e\":[{\"n\":1,\"s\":true,\"z\":\"changed\\n\"}]}"
+      },
+      "kind": "compact_span_decode"
+    },
+    {
+      "expected": {
+        "detail": "compact span must consume only explicitly shown baseline lines",
+        "forbidden_substrings": [],
+        "source": "parent_validation",
+        "type": "edit_span_scope"
+      },
+      "id": "compact-v4-hidden-line",
+      "input": {
+        "baseline": "shown\nhidden\n",
+        "editable_ranges": [
+          [
+            1,
+            2
+          ]
+        ],
+        "focus_path": "src/general_ludd/self_improve/example.py",
+        "model_output": "{\"e\":[{\"n\":1,\"s\":2,\"z\":\"changed\\n\"}]}"
+      },
+      "kind": "compact_span_parent"
+    },
+    {
+      "expected": {
+        "detail": "compact proposal must contain exactly e",
+        "forbidden_substrings": [],
+        "source": "worker_tail",
+        "type": "proposal_root_contract"
+      },
+      "id": "multiline-redundant-metadata",
+      "input": {
+        "focus_path": "src/general_ludd/self_improve/example.py",
+        "model_output": "{\n  \"schema_version\": 1,\n  \"task_id\": \"S83.134\",\n  \"e\": [{\"a\": \"old\", \"z\": \"new\"}]\n}"
+      },
+      "kind": "compact_decode"
+    },
+    {
+      "expected": {
+        "detail": "local model exhausted the proposal token budget before completion",
+        "forbidden_substrings": [],
+        "source": "worker_tail",
+        "type": "decode_budget"
+      },
+      "id": "token-exhaustion",
+      "input": {
+        "budget": 1536,
+        "phase": "proposal",
+        "require_stop": true,
+        "worker_response": {
+          "choices": [
+            {
+              "finish_reason": "length",
+              "text": "{\"e\":["
+            }
+          ],
+          "usage": {
+            "completion_tokens": 1536,
+            "prompt_tokens": 1100,
+            "total_tokens": 2636
+          }
+        }
+      },
+      "kind": "completion_decode"
+    },
+    {
+      "expected": {
+        "detail": "local model exhausted the proposal token budget before completion",
+        "forbidden_substrings": [
+          "qwen2.5-coder-1.5b",
+          "TOKEN",
+          "private-output"
+        ],
+        "source": "worker_tail",
+        "type": "decode_budget"
+      },
+      "id": "compact-v4-qwen-length-1024",
+      "input": {
+        "budget": 1024,
+        "phase": "proposal",
+        "require_stop": true,
+        "worker_response": {
+          "choices": [
+            {
+              "finish_reason": "length",
+              "text": "{\"e\":[{\"s\":1,\"n\":1,\"z\":\"private-output TOKEN=qwen2.5-coder-1.5b"
+            }
+          ],
+          "usage": {
+            "completion_tokens": 1024,
+            "prompt_tokens": 2333,
+            "total_tokens": 3357
+          }
+        }
+      },
+      "kind": "completion_decode"
+    },
+    {
+      "expected": {
+        "detail": "local model exhausted the proposal token budget before completion",
+        "forbidden_substrings": [
+          "smollm2-1.7b",
+          "PASSWORD",
+          "private-output"
+        ],
+        "source": "worker_tail",
+        "type": "decode_budget"
+      },
+      "id": "compact-v4-smollm-length-1024",
+      "input": {
+        "budget": 1024,
+        "phase": "proposal",
+        "require_stop": true,
+        "worker_response": {
+          "choices": [
+            {
+              "finish_reason": "length",
+              "text": "{\"e\":[{\"s\":1,\"n\":1,\"z\":\"private-output PASSWORD=smollm2-1.7b"
+            }
+          ],
+          "usage": {
+            "completion_tokens": 1024,
+            "prompt_tokens": 2803,
+            "total_tokens": 3827
+          }
+        }
+      },
+      "kind": "completion_decode"
+    },
+    {
+      "expected": {
+        "detail": "compact proposal edits must contain 1..4 entries telemetry=received_edits=>4 max_edits=4",
+        "forbidden_substrings": [
+          "PRIVATE_SOURCE",
+          "3217",
+          "2142",
+          "5359"
+        ],
+        "source": "worker_tail",
+        "type": "edit_span_count"
+      },
+      "id": "compact-v4-qwen-stop-3217-overgeneration",
+      "input": {
+        "focus_path": "src/general_ludd/self_improve/example.py",
+        "worker_response": {
+          "choices": [
+            {
+              "finish_reason": "stop",
+              "text": "{\"e\":[{\"n\":1,\"s\":9,\"z\":\"PRIVATE_SOURCE=fifth\\n\"},{\"n\":1,\"s\":7,\"z\":\"fourth\\n\"},{\"n\":1,\"s\":5,\"z\":\"third\\n\"},{\"n\":1,\"s\":3,\"z\":\"second\\n\"},{\"n\":1,\"s\":1,\"z\":\"first\\n\"}]}"
+            }
+          ],
+          "usage": {
+            "completion_tokens": 3217,
+            "prompt_tokens": 2142,
+            "total_tokens": 5359
+          }
+        }
+      },
+      "kind": "compact_span_completion"
+    },
+    {
+      "expected": {
+        "detail": "compact span changed lines exceed 96 telemetry=received_changed_lines=>96 max_changed_lines=96",
+        "forbidden_substrings": [
+          "src/general_ludd/local_model/_local_model_configs.py",
+          "tests/unit/test_e2e_model_configs.py"
+        ],
+        "source": "parent_validation",
+        "type": "edit_line_budget"
+      },
+      "id": "compact-v4-qwen3b-total-360-lines",
+      "input": {
+        "baseline_line_counts": [
+          180,
+          180
+        ],
+        "focus_paths": [
+          "src/general_ludd/local_model/_local_model_configs.py",
+          "tests/unit/test_e2e_model_configs.py"
+        ],
+        "model_outputs": [
+          "{\"e\":[{\"n\":60,\"s\":1,\"z\":\"\"},{\"n\":60,\"s\":61,\"z\":\"\"},{\"n\":60,\"s\":121,\"z\":\"\"}]}",
+          "{\"e\":[{\"n\":60,\"s\":1,\"z\":\"\"},{\"n\":60,\"s\":61,\"z\":\"\"},{\"n\":60,\"s\":121,\"z\":\"\"}]}"
+        ]
+      },
+      "kind": "compact_span_batch_parent"
+    },
+    {
+      "expected": {
+        "detail": "proposal shard edits must cover the exact focus paths",
+        "forbidden_substrings": [],
+        "source": "worker_tail",
+        "type": "proposal_scope"
+      },
+      "id": "worker-success-parent-merge-rejection",
+      "input": {
+        "expected_path": "src/general_ludd/self_improve/parent_expected.py",
+        "protocol_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "worker_path": "src/general_ludd/self_improve/worker_selected.py"
+      },
+      "kind": "parent_merge"
+    },
+    {
+      "expected": {
+        "detail": "replace requires distinct non-empty old_text",
+        "forbidden_substrings": [
+          "llama_model_loader",
+          "ggml_metal_init",
+          "llama_perf_context_print",
+          "command buffers"
+        ],
+        "source": "proposal_error",
+        "type": "edit_replace_contract"
+      },
+      "id": "raw-native-log-leakage",
+      "input": {
+        "error": "llama_model_loader: loaded tensor metadata\nggml_metal_init: allocating command buffers\nSELF_IMPROVE_LOCAL_PROPOSAL_ERROR replace requires distinct non-empty old_text\nllama_perf_context_print: prompt eval time recorded"
+      },
+      "kind": "retry_feedback"
+    },
+    {
+      "expected": {
+        "detail": "replace old_text must occur exactly once in trusted baseline",
+        "forbidden_substrings": [
+          "SELF_IMPROVE_PARENT_PROPOSAL_ERROR"
+        ],
+        "source": "parent_validation",
+        "type": "edit_replace_precondition"
+      },
+      "id": "replace-precondition-mismatch",
+      "input": {
+        "error": "SELF_IMPROVE_PARENT_PROPOSAL_ERROR replace old_text must occur exactly once in trusted baseline"
+      },
+      "kind": "retry_feedback"
+    },
+    {
+      "expected": {
+        "detail": "empty model plan reused a legacy outcome without rotating the attempt identity",
+        "forbidden_substrings": [
+          "proposal_validation",
+          "attempt_started",
+          "outcome_recorded"
+        ],
+        "source": "acquisition_trace",
+        "type": "acquisition_trace_invalid"
+      },
+      "id": "legacy-outcome-unchanged-identity-empty-plan",
+      "input": {
+        "events": [
+          {
+            "cause": "proposal_validation",
+            "phase": "legacy_outcome_observed"
+          },
+          {
+            "cause": null,
+            "phase": "protocol_identity_unchanged"
+          },
+          {
+            "cause": null,
+            "phase": "candidates_empty"
+          }
+        ]
+      },
+      "kind": "acquisition_trace"
+    },
+    {
+      "expected": {
+        "detail": "compact insertion must use s from the first shown line through one past the last shown line of one contiguous section telemetry=path_sha256=9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 received_s=4 received_n=0 sections=[1,3),[5,7) boundaries=[1,3],[5,7]",
+        "forbidden_substrings": [
+          "MODEL_SECRET",
+          "test"
+        ],
+        "source": "parent_validation",
+        "type": "edit_span_scope"
+      },
+      "id": "compact-v4-hidden-gap-insertion",
+      "input": {
+        "baseline": "shown-a\nshown-b\nhidden-c\nhidden-d\nshown-e\nshown-f\n",
+        "editable_ranges": [
+          [
+            1,
+            3
+          ],
+          [
+            5,
+            7
+          ]
+        ],
+        "focus_path": "test",
+        "model_output": "{\"e\":[{\"n\":0,\"s\":4,\"z\":\"MODEL_SECRET=do-not-copy\\n\"}]}"
+      },
+      "kind": "compact_span_parent"
+    },
+    {
+      "expected": {
+        "detail": "compact-v4 proposal is not one complete JSON object",
+        "forbidden_substrings": [
+          "TOKEN",
+          "PASSWORD",
+          "hunter2"
+        ],
+        "source": "worker_tail",
+        "type": "proposal_json_contract"
+      },
+      "id": "compact-v4-prefaced-json-object",
+      "input": {
+        "focus_path": "src/general_ludd/self_improve/example.py",
+        "model_output": "Reasoning TOKEN=do-not-publish\n{\"e\":[{\"n\":1,\"s\":1,\"z\":\"PASSWORD=hunter2\"}]}"
+      },
+      "kind": "compact_span_decode"
+    }
+  ],
+  "protocol": "self-improve-failure-corpus-v6",
+  "schema_version": 6
+}

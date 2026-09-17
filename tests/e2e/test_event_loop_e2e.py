@@ -33,6 +33,7 @@ from general_ludd.db.repository import TodoRepository
 from general_ludd.event_loop.lease import (
     acquire_lease,
     acquire_leases_batch,
+    confirm_lease_termination,
     reclaim_expired_leases,
     release_lease,
 )
@@ -189,11 +190,11 @@ class TestLeaseE2E:
         assert lease.expires_at > datetime.now(UTC)
 
     @pytest.mark.asyncio
-    async def test_acquire_lease_upserts_existing(self, db_session: AsyncSession):
+    async def test_acquire_lease_renews_exact_holder(self, db_session: AsyncSession):
         await acquire_lease(db_session, "core:todo-2", "worker-a", ttl_seconds=300)
         await db_session.commit()
-        lease = await acquire_lease(db_session, "core:todo-2", "worker-b", ttl_seconds=600)
-        assert lease.holder_id == "worker-b"
+        lease = await acquire_lease(db_session, "core:todo-2", "worker-a", ttl_seconds=600)
+        assert lease.holder_id == "worker-a"
 
     @pytest.mark.asyncio
     async def test_acquire_leases_batch(self, db_session: AsyncSession):
@@ -224,11 +225,20 @@ class TestLeaseE2E:
         lease = BucketLeaseModel(
             bucket_key="core:todo-expired",
             holder_id="worker-dead",
+            todo_version=todo.version,
             expires_at=datetime.now(UTC) - timedelta(seconds=10),
         )
         session.add(lease)
         await session.commit()
 
+        reclaimed = await reclaim_expired_leases(session)
+        assert reclaimed == 0
+        assert await confirm_lease_termination(
+            session,
+            bucket_key="core:todo-expired",
+            holder_id="worker-dead",
+            todo_version=todo.version,
+        )
         reclaimed = await reclaim_expired_leases(session)
         assert reclaimed == 1
 

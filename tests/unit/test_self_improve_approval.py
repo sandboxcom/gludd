@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock
 
 import pytest
@@ -19,7 +20,20 @@ def _make_todo(
     title: str = "test task",
     status: TodoStatus = TodoStatus.APPROVAL_REQUIRED,
 ) -> Todo:
-    todo = Todo(todo_id=todo_id, title=title, resource_profile="low_resource")
+    todo = Todo(
+        todo_id=todo_id,
+        title=title,
+        resource_profile="low_resource",
+        plan_artifact=json.dumps(
+            {
+                "capability_required": "config_write",
+                "change_content": "enabled: true\n",
+                "kind": "config",
+                "reason": "unit test",
+                "target_paths": ["config/test.yml"],
+            }
+        ),
+    )
     todo.status = status
     return todo
 
@@ -65,7 +79,8 @@ class TestApprove:
         mgr = SelfImproveApprovalManager()
         todo = _make_todo("t1", status=TodoStatus.APPROVAL_REQUIRED)
         result = mgr.approve(todo)
-        assert result.status == TodoStatus.QUEUED
+        assert result.status == TodoStatus.APPROVED
+        assert result.approved_artifact_digest is not None
         assert result is todo
 
     def test_approve_non_pending_raises(self) -> None:
@@ -135,10 +150,24 @@ class TestApproveById:
         row = FakeRow()
         row.status = "approval_required"
         row.work_type = "self_improve"
+        row.todo_id = "t1"
+        row.project_id = None
+        row.approval_policy = "none"
+        row.plan_artifact = _make_todo().plan_artifact
         row.version = 1
+
+        digested = FakeRow()
+        digested.status = row.status
+        digested.work_type = row.work_type
+        digested.todo_id = row.todo_id
+        digested.project_id = row.project_id
+        digested.approval_policy = row.approval_policy
+        digested.plan_artifact = row.plan_artifact
+        digested.version = 2
 
         store = AsyncMock()
         store.get_by_id.return_value = row
+        store.update.return_value = digested
         store.transition.return_value = row
 
         async def _run() -> None:

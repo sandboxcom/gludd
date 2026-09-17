@@ -116,9 +116,9 @@ try {{
     const messages = [];
     const durations = [];
     for (const c of calls) {{
-        const startedAt = Date.now();
+        const startedAt = performance.now();
         const r = await hook(c.input || {{}}, c.output || {{}});
-        durations.push(Date.now() - startedAt);
+        durations.push(performance.now() - startedAt);
         results.push(r ? r.permissionDecision : null);
         messages.push(r ? r.message : null);
     }}
@@ -305,7 +305,9 @@ class TestAntiGrindRuntime:
                 {"tool": "edit", "input": {"tool": "edit"}, "output": {}},
             ],
             extra_env={"GLUDD_MESSAGE_BOUNDARY_MS": "20"},
-            pending_items=100_000,
+            # Keep the dispatch preflight decisively above the 20 ms boundary
+            # even on fast runners; the assertion must exercise a real crossing.
+            pending_items=250_000,
         )
         assert result["durations"][1] > 20, result
         assert result["results"] == [None, None, None], result

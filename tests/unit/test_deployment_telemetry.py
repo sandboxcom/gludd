@@ -24,6 +24,14 @@ def _azure_container_app_config() -> ComputeConfig:
         region="eastus",
         deploy_type="containerapp",
         spot=False,
+        max_cost_usd=1.0,
+        timeout_minutes=15.0,
+        container_image="ghcr.io/general-ludd/vllm@sha256:" + "b" * 64,
+        model_revision="a" * 40,
+        azure_subscription_id="11111111-2222-3333-4444-555555555555",
+        azure_resource_group="gludd-models-test",
+        azure_containerapp_environment="gludd-models-env",
+        azure_workload_profile_name="gpu-a100",
     )
 
 

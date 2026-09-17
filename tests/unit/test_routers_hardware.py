@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -107,3 +109,24 @@ class TestHardwareRouter:
         client = TestClient(app)
         resp = client.get("/admin/hardware/model-fit?model=" + "a" * 65)
         assert resp.status_code == 422
+
+    def test_accelerator_inventory_is_discovered_lazily_and_cached(self, app):
+        accelerator_inventory = MagicMock()
+        accelerator_inventory.to_dict.return_value = {
+            "schema_version": 1,
+            "total_count": 1,
+            "available_count": 1,
+            "resources": [],
+        }
+        discovery = MagicMock()
+        discovery.discover_local.return_value = accelerator_inventory
+        app.state._accelerator_discovery = discovery
+        register(app, {})
+
+        with TestClient(app) as client:
+            first = client.get("/admin/hardware/accelerators")
+            second = client.get("/admin/hardware/accelerators")
+
+        assert first.status_code == 200
+        assert second.json()["schema_version"] == 1
+        discovery.discover_local.assert_called_once()

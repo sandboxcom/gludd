@@ -757,13 +757,16 @@ class TestShardCoverageInvariant:
             if entry.get("shard") == "unit-1a1"
         )
         isolated = str(unit_1a1.get("isolated_testpaths", "")).split()
-        assert isolated == ["tests/unit/test_all_plugins_runtime.py"]
+        assert isolated == [
+            "tests/unit/test_all_plugins_runtime.py",
+            "tests/unit/test_makefile_audit_deep.py",
+        ]
 
         isolated_steps = [
             step
             for step in ts_job.get("steps", [])
             if isinstance(step, dict)
-            and step.get("name") == "Run isolated Node plugin syntax in fresh process"
+            and step.get("name") == "Run isolated subprocess suites in fresh process"
         ]
         assert len(isolated_steps) == 1
         step = isolated_steps[0]

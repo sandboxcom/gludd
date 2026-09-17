@@ -40,9 +40,15 @@ _T = TypeVar("_T")
 
 @runtime_checkable
 class DeploymentController(Protocol):
-    def deploy(self, config: ComputeConfig) -> Awaitable[ComputeInstance]: ...
+    """Provision and release one model-serving compute instance."""
 
-    def destroy(self, instance_id: str) -> Awaitable[None]: ...
+    def deploy(self, config: ComputeConfig) -> Awaitable[ComputeInstance]:
+        """Provision one instance for the validated compute configuration."""
+        ...
+
+    def destroy(self, instance_id: str) -> Awaitable[None]:
+        """Release the exact previously provisioned instance."""
+        ...
 
 
 def _run_async(operation: Awaitable[_T]) -> _T:
@@ -70,6 +76,30 @@ def _default_readiness_probe(endpoint: str) -> bool:
     return response.status_code == 200
 
 
+def resolve_public_ipv4_cidr() -> str:
+    """Discover one globally routable caller IPv4 as a canonical /32 CIDR."""
+    try:
+        response = httpx.get(
+            "https://api4.ipify.org",
+            params={"format": "json"},
+            timeout=10.0,
+            trust_env=False,
+        )
+        response.raise_for_status()
+        address = ipaddress.ip_address(str(response.json()["ip"]))
+    except (httpx.HTTPError, KeyError, TypeError, ValueError) as error:
+        raise RuntimeError(
+            "Unable to discover the E2E runner public IPv4 before Azure spend; "
+            "set the allowed CIDR explicitly"
+        ) from error
+    if not isinstance(address, ipaddress.IPv4Address) or not address.is_global:
+        raise RuntimeError(
+            "Public-IP discovery returned a non-global IPv4; "
+            "set the allowed CIDR explicitly"
+        )
+    return f"{address}/32"
+
+
 def _print_event(event: Event) -> None:
     name = str(event.payload.get("name", "azure_game_event"))
     detail = event.payload.get("message")
@@ -94,6 +124,7 @@ class AzureGameRuntime:
         event_reporter: Callable[[Event], object] | None = _print_event,
         preflight: Callable[[], object] | None = None,
     ) -> None:
+        """Initialize a single-owner Azure inference session."""
         self._environment = dict(os.environ if environment is None else environment)
         self._event_bus = event_bus or EventBus()
         self._gateway_factory = gateway_factory
@@ -114,10 +145,12 @@ class AzureGameRuntime:
 
     @property
     def owns_endpoint(self) -> bool:
+        """Return whether this runtime must release the current endpoint."""
         return self._owns_endpoint
 
     @property
     def endpoint_url(self) -> str:
+        """Return the discovered or provisioned inference endpoint."""
         return self._endpoint_url
 
     def _value(self, name: str, default: str = "") -> str:
@@ -155,24 +188,7 @@ class AzureGameRuntime:
         explicit = self._value("AZURE_ALLOWED_CIDR")
         if explicit:
             return explicit
-        try:
-            response = httpx.get(
-                "https://api4.ipify.org",
-                params={"format": "json"},
-                timeout=10.0,
-            )
-            response.raise_for_status()
-            address = ipaddress.ip_address(str(response.json()["ip"]))
-        except (httpx.HTTPError, KeyError, TypeError, ValueError) as error:
-            raise RuntimeError(
-                "Unable to discover the E2E runner public IPv4 before Azure spend; "
-                "set AZURE_ALLOWED_CIDR explicitly"
-            ) from error
-        if not isinstance(address, ipaddress.IPv4Address) or not address.is_global:
-            raise RuntimeError(
-                "Public-IP discovery returned a non-global IPv4; set AZURE_ALLOWED_CIDR explicitly"
-            )
-        return f"{address}/32"
+        return resolve_public_ipv4_cidr()
 
     def _compute_config(self) -> ComputeConfig:
         gpu_name = self._value("AZURE_GPU_TYPE", "a100_80").lower().replace("-", "_")
@@ -318,9 +334,11 @@ class AzureGameRuntime:
             self._reporter_subscription = None
 
     def __enter__(self) -> object:
+        """Start and return the owned inference gateway."""
         return self.start()
 
     def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        """Release every resource owned by this context."""
         self.close()
 
 

@@ -67,6 +67,15 @@ HEAD 2224567890123456789012345678abcdef012345
 branch refs/heads/agent-2
 """
 
+_WT_PORCELAIN_WITH_DETACHED = f"""worktree {_REPO}
+HEAD abc123def4567890123456789012345678abcdef
+branch refs/heads/development
+
+worktree /tmp/gludd-worktrees/detached-agent
+HEAD def4567890123456789012345678abcdef012345
+detached
+"""
+
 
 class TestWorktreeCreate:
     """worktree_create(repo_path, branch, base_branch=None, worktree_root=...) → WorktreeResult"""
@@ -118,6 +127,12 @@ class TestWorktreeCreate:
         result = worktree_create("/tmp/gludd-worktrees", "-evil", base_branch=None)
         assert result.success is False
         assert "-" in result.message
+
+    def test_rejects_branch_path_escape_via_fn(self) -> None:
+        result = worktree_create("/tmp/gludd-worktrees", "../escape", base_branch=None)
+
+        assert result.success is False
+        assert "escapes worktree root" in result.message
 
     @patch("general_ludd.git_automation.worktree._run_git")
     def test_creates_worktree_via_git(self, mock_run: MagicMock):
@@ -218,6 +233,12 @@ class TestWorktreeCleanup:
         assert result["success"] is False
         assert "-" in result.get("error", "")
 
+    def test_rejects_cleanup_branch_path_escape(self) -> None:
+        result = worktree_cleanup("/tmp/test", "../escape")
+
+        assert result["success"] is False
+        assert "escapes worktree root" in result["error"]
+
 
 class TestWorktreeList:
     """worktree_list(repo_path) → list[WorktreeInfo]"""
@@ -273,6 +294,26 @@ class TestWorktreeHealth:
         violations = worktree_health_check(repo_path=_REPO)
         assert isinstance(violations, list)
 
+    @patch("general_ludd.git_automation.worktree.os.path.isdir", return_value=False)
+    @patch("general_ludd.git_automation.worktree._run_git")
+    def test_flags_missing_registered_worktree_without_crashing(
+        self,
+        mock_run: MagicMock,
+        _mock_isdir: MagicMock,
+    ) -> None:
+        mock_run.side_effect = [
+            _git_success(_WT_PORCELAIN_WITH_AGENT),
+            FileNotFoundError("registered worktree path is gone"),
+        ]
+
+        violations = worktree_health_check(repo_path=_REPO)
+
+        assert len(violations) == 1
+        assert violations[0].worktree_path == "/tmp/gludd-worktrees/agent-fix"
+        assert violations[0].severity == "warning"
+        assert "missing" in violations[0].reason.lower()
+        assert "prune" in violations[0].reason.lower()
+
     @patch("general_ludd.git_automation.worktree._run_git")
     def test_flags_stale_unmerged_worktree(self, mock_run: MagicMock):
         two_days_age = 48 * 3600
@@ -304,6 +345,59 @@ class TestWorktreeHealth:
                 remote_name="sandboxcom",
             )
         assert len(violations) == 0
+
+    @patch("general_ludd.git_automation.worktree._run_git")
+    def test_flags_branch_missing_from_remote(self, mock_run: MagicMock) -> None:
+        mock_run.side_effect = [
+            _git_success(_WT_PORCELAIN_WITH_AGENT),
+            _git_success(),
+            _git_success(""),
+        ]
+        with patch("general_ludd.git_automation.worktree._get_tree_age_seconds", return_value=3600):
+            violations = worktree_health_check(
+                _REPO,
+                max_age_hours=24,
+                remote_name="sandboxcom",
+            )
+
+        assert len(violations) == 1
+        assert violations[0].severity == "warning"
+        assert "does not exist on remote" in violations[0].reason
+
+    @patch("general_ludd.git_automation.worktree._run_git")
+    def test_flags_stale_merged_worktree_for_cleanup(self, mock_run: MagicMock) -> None:
+        mock_run.side_effect = [
+            _git_success(_WT_PORCELAIN_WITH_AGENT),
+            _git_success(),
+            _git_success("abc123\trefs/heads/agent-fix"),
+        ]
+        with patch(
+            "general_ludd.git_automation.worktree._get_tree_age_seconds",
+            return_value=48 * 3600,
+        ):
+            violations = worktree_health_check(
+                _REPO,
+                max_age_hours=24,
+                remote_name="sandboxcom",
+            )
+
+        assert len(violations) == 1
+        assert violations[0].severity == "warning"
+        assert "already merged" in violations[0].reason
+        assert "cleanup needed" in violations[0].reason
+
+    @patch("general_ludd.git_automation.worktree._run_git")
+    def test_detached_worktree_needs_no_branch_or_remote_probe(self, mock_run: MagicMock) -> None:
+        mock_run.side_effect = [_git_success(_WT_PORCELAIN_WITH_DETACHED)]
+        with patch("general_ludd.git_automation.worktree._get_tree_age_seconds", return_value=3600):
+            violations = worktree_health_check(
+                _REPO,
+                max_age_hours=24,
+                remote_name="sandboxcom",
+            )
+
+        assert violations == []
+        assert mock_run.call_count == 1
 
 
 class TestWorktreeMergeAll:

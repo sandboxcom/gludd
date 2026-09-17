@@ -13,10 +13,12 @@ Architecture references:
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import sys
 import textwrap
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -319,3 +321,115 @@ class TestSelfImproveApplyEndpoint:
         finally:
             await client.aclose()
             await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_released_non_config_plan_keeps_approved_project_identity(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The apply POST cannot substitute another project's worktree."""
+        from httpx import ASGITransport, AsyncClient
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        import general_ludd.reload.self_improve as reload_self_improve
+        from general_ludd.daemon import create_daemon_app
+        from general_ludd.db.models import Base, ProjectModel
+        from general_ludd.db.repository import TodoRepository
+
+        approved_root = tmp_path / "approved-project"
+        approved_worktree = approved_root / "repo" / "worktrees" / "approved"
+        approved_worktree.mkdir(parents=True)
+        attacker_root = tmp_path / "attacker-project"
+        attacker_worktree = attacker_root / "repo" / "worktrees" / "attacker"
+        attacker_worktree.mkdir(parents=True)
+        engine = create_async_engine("sqlite+aiosqlite://", echo=False)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            session.add(
+                ProjectModel(
+                    project_id="approved-project",
+                    name="Approved project",
+                    workspace_path=str(approved_root),
+                )
+            )
+            await session.commit()
+
+        validated_paths: list[str] = []
+
+        class Workflow:
+            def validate_improvement(self, worktree_path: str) -> SimpleNamespace:
+                validated_paths.append(worktree_path)
+                return SimpleNamespace(success=True)
+
+            def apply_improvement(
+                self,
+                _approval_id: str,
+                _validation: object,
+            ) -> SimpleNamespace:
+                return SimpleNamespace(applied=True, reload_needed=True)
+
+            def reload_if_needed(self, _result: object) -> SimpleNamespace:
+                return SimpleNamespace(status="reloaded")
+
+        project_lookups: list[str] = []
+
+        def get_project(project_id: str) -> SimpleNamespace | None:
+            project_lookups.append(project_id)
+            roots = {
+                "approved-project": approved_root,
+                "attacker-project": attacker_root,
+            }
+            root = roots.get(project_id)
+            return None if root is None else SimpleNamespace(workspace_path=str(root))
+
+        monkeypatch.setattr(reload_self_improve, "SelfImprovementWorkflow", Workflow)
+        app = create_daemon_app(tick_interval=1.0)
+        app.state._session_factory = factory
+        app.state._project_manager = SimpleNamespace(get_project=get_project)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/admin/self-improve/apply",
+                json={
+                    "kind": "code",
+                    "project_id": "approved-project",
+                    "worktree_path": str(approved_worktree),
+                    "title": "approved title",
+                    "description": "approved description",
+                },
+            )
+            assert response.status_code == 200
+            approval_id = response.json()["approval_id"]
+            async with factory() as session:
+                todo = await TodoRepository(session).get_by_id(approval_id)
+                assert todo is not None
+                assert todo.project_id == "approved-project"
+                assert todo.plan_artifact == json.dumps(
+                    json.loads(todo.plan_artifact or ""),
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+
+            response = await client.post(
+                f"/admin/self-improve/approvals/{approval_id}/approve"
+            )
+            assert response.status_code == 200
+            response = await client.post(
+                "/admin/self-improve/apply",
+                json={
+                    "kind": "code",
+                    "approval_id": approval_id,
+                    "project_id": "attacker-project",
+                    "worktree_path": str(attacker_worktree),
+                },
+            )
+
+        assert response.status_code == 200
+        assert validated_paths == [str(approved_worktree.resolve())]
+        assert project_lookups == ["approved-project", "approved-project"]
+        await engine.dispose()

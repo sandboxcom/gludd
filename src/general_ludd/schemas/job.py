@@ -94,6 +94,7 @@ JOB_INGRESS_LIMITS = JobIngressLimits.from_environment()
 _JOB_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
 _QUEUE_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
 _PLAYBOOK_SEGMENT_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
+_SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 
 
 def _validate_payload_bounds(payload: dict[str, object], limits: JobIngressLimits) -> None:
@@ -221,6 +222,7 @@ class JobSpec(BaseModel):
     candidate_todos: list[str] = Field(default_factory=list)
     artifact_summaries: list[str] = Field(default_factory=list)
     plan_artifact: str | None = None
+    repository_binding_digest: str | None = None
     prompt_text: str | None = None
     skill_body: str | None = None
     ansible_roles_path: str | None = None
@@ -287,6 +289,17 @@ class JobSpec(BaseModel):
         if _QUEUE_PATTERN.fullmatch(cleaned) is None:
             raise ValueError("queue must be an identifier-like slug")
         return cleaned
+
+    @field_validator("repository_binding_digest", mode="before")
+    @classmethod
+    def _validate_repository_binding_digest(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        if type(value) is not str or _SHA256_PATTERN.fullmatch(value) is None:
+            raise ValueError(
+                "repository_binding_digest must be a lowercase SHA-256 digest"
+            )
+        return value
 
     # ── D-09: ownership ──
 

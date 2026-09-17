@@ -14,6 +14,7 @@ Scenarios:
 from __future__ import annotations
 
 import asyncio
+import threading
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -31,9 +32,12 @@ from general_ludd.controllers.floor import FloorController
 from general_ludd.db.models import Base, BucketLeaseModel, ProjectModel, TodoModel
 from general_ludd.db.repository import TodoRepository
 from general_ludd.event_loop.lease import (
+    LeaseBusyError,
     acquire_lease,
+    confirm_lease_termination,
     reclaim_expired_leases,
     release_lease,
+    request_lease_cancellation,
 )
 from general_ludd.event_loop.loop import PHASE_ORDER, EventLoop
 from general_ludd.schemas.todo import TodoStatus
@@ -148,19 +152,17 @@ class TestTodoLifecycleWorkflow:
         assert metrics["phases_completed"] == len(PHASE_ORDER)
 
     @pytest.mark.asyncio
-    async def test_claimed_todo_has_acquired_lease(self, session_factory, loop_for_pipeline):
+    async def test_completed_dispatch_releases_acquired_lease(self, session_factory, loop_for_pipeline):
         await _seed_todo(session_factory, todo_id="TODO-LEASE-1")
         await loop_for_pipeline.tick()
+        assert "TODO-LEASE-1" in loop_for_pipeline._tick_state[
+            "execution_lease_todo_ids"
+        ]
         async with session_factory() as session:
             stmt = select(BucketLeaseModel).where(BucketLeaseModel.bucket_key == "core:TODO-LEASE-1")
             result = await session.execute(stmt)
             lease = result.scalar_one_or_none()
-            assert lease is not None
-            assert "tick-" in lease.holder_id
-            expires_at = lease.expires_at
-            if expires_at.tzinfo is None:  # SQLite drops timezone metadata on round-trip
-                expires_at = expires_at.replace(tzinfo=UTC)
-            assert expires_at > datetime.now(UTC)
+            assert lease is None
 
     @pytest.mark.asyncio
     async def test_todo_starts_active_after_claim(self, session_factory, loop_for_pipeline):
@@ -188,6 +190,105 @@ class TestTodoLifecycleWorkflow:
             completed = await repo.get_by_id("TODO-COMPLETE-1")
             assert completed.status == TodoStatus.COMPLETE.value
 
+    @pytest.mark.asyncio
+    async def test_database_cancel_reaps_runner_then_atomically_requeues(
+        self,
+        session_factory,
+    ) -> None:
+        runner_started = threading.Event()
+        runner_stopped = threading.Event()
+        poll_wait = threading.Event()
+        runner = MagicMock()
+        runner.prepare_job_dirs.return_value = {"root": "/tmp/e2e-workflows"}
+        runner.write_vars.return_value = "/tmp/e2e-workflows/env/extravars"
+
+        def _run_playbook(**kwargs):
+            callback = kwargs["cancel_requested"]
+            runner_started.set()
+            for _ in range(1_000):
+                if callback():
+                    break
+                poll_wait.wait(0.005)
+            assert callback() is True
+            runner_stopped.set()
+            return {"status": "cancelled", "rc": 130}
+
+        runner.run_playbook.side_effect = _run_playbook
+        task_return_repo = AsyncMock()
+        task_return_repo.claim_unreviewed.return_value = []
+        event_bus = MagicMock()
+        loop = EventLoop(
+            session=session_factory,
+            runner=runner,
+            task_return_repo=task_return_repo,
+            config={
+                "repo_root": "/tmp",
+                "event_loop": {
+                    "execution_lease_ttl_seconds": 2,
+                    "execution_lease_heartbeat_interval_seconds": 0.01,
+                },
+            },
+            project_manager=_pipeline_project_manager(),
+            event_bus=event_bus,
+        )
+        await _seed_todo(
+            session_factory,
+            todo_id="TODO-CANCEL-1",
+            work_type="maintenance",
+        )
+        tick_task = asyncio.create_task(loop.tick())
+
+        async def _wait_for_runner() -> None:
+            while not runner_started.is_set():
+                await asyncio.sleep(0.001)
+
+        await asyncio.wait_for(_wait_for_runner(), timeout=2.0)
+        async with session_factory() as session:
+            lease = (
+                await session.execute(
+                    select(BucketLeaseModel).where(
+                        BucketLeaseModel.bucket_key == "core:TODO-CANCEL-1"
+                    )
+                )
+            ).scalar_one()
+            assert lease.todo_version is not None
+            assert await request_lease_cancellation(
+                session,
+                bucket_key=lease.bucket_key,
+                holder_id=loop._lease_owner_id,
+                todo_version=lease.todo_version,
+            )
+            await session.commit()
+
+        await asyncio.wait_for(tick_task, timeout=5.0)
+
+        assert runner_stopped.is_set()
+        async with session_factory() as session:
+            todo = (
+                await session.execute(
+                    select(TodoModel).where(TodoModel.todo_id == "TODO-CANCEL-1")
+                )
+            ).scalar_one()
+            remaining_lease = (
+                await session.execute(
+                    select(BucketLeaseModel).where(
+                        BucketLeaseModel.bucket_key == "core:TODO-CANCEL-1"
+                    )
+                )
+            ).scalar_one_or_none()
+        assert todo.status == TodoStatus.QUEUED.value
+        assert remaining_lease is None
+        event_names = {
+            call.args[0].name
+            for call in event_bus.publish.call_args_list
+            if call.args
+        }
+        assert {
+            "execution_lease_heartbeat",
+            "execution_lease_cancellation_requested",
+            "execution_lease_termination_confirmed",
+        } <= event_names
+
 
 # ── 2. Lease Acquisition ─────────────────────────────────────────────────────
 
@@ -203,12 +304,16 @@ class TestLeaseAcquisitionWorkflow:
         assert b.holder_id == "worker-b"
 
     @pytest.mark.asyncio
-    async def test_lease_upsert_replaces_holder(self, db_session: AsyncSession):
+    async def test_competing_lease_holder_is_rejected(self, db_session: AsyncSession):
         await acquire_lease(db_session, "core:race-1", "worker-x", ttl_seconds=300)
         await db_session.commit()
-        second = await acquire_lease(db_session, "core:race-1", "worker-y", ttl_seconds=600)
-        assert second.holder_id == "worker-y"
-        assert second.bucket_key == "core:race-1"
+        with pytest.raises(LeaseBusyError, match="already owned"):
+            await acquire_lease(
+                db_session,
+                "core:race-1",
+                "worker-y",
+                ttl_seconds=600,
+            )
 
     @pytest.mark.asyncio
     async def test_expired_lease_reclaimed_and_todo_requeued(self, db_session: AsyncSession):
@@ -226,10 +331,19 @@ class TestLeaseAcquisitionWorkflow:
         lease = BucketLeaseModel(
             bucket_key="core:todo-exp-1",
             holder_id="dead-worker",
+            todo_version=todo.version,
             expires_at=datetime.now(UTC) - timedelta(seconds=10),
         )
         db_session.add(lease)
         await db_session.commit()
+        reclaimed = await reclaim_expired_leases(db_session)
+        assert reclaimed == 0
+        assert await confirm_lease_termination(
+            db_session,
+            bucket_key="core:todo-exp-1",
+            holder_id="dead-worker",
+            todo_version=todo.version,
+        )
         reclaimed = await reclaim_expired_leases(db_session)
         assert reclaimed == 1
         stmt = select(TodoModel).where(TodoModel.todo_id == "todo-exp-1")
@@ -272,7 +386,7 @@ class TestLeaseAcquisitionWorkflow:
 
 class TestStuckTodoDetection:
     @pytest.mark.asyncio
-    async def test_active_todo_with_expired_lease_is_reaped(self, session_factory):
+    async def test_unfenced_active_todo_is_not_requeued(self, session_factory):
 
         async with session_factory() as session:
             repo = TodoRepository(session)
@@ -318,20 +432,21 @@ class TestStuckTodoDetection:
             repo = TodoRepository(session)
             recovered = await repo.get_by_id("TODO-STUCK-1")
             assert recovered is not None
-            # Reap requeues the stale ACTIVE row; the deliberate deferral
-            # (loop.py: stale-requeued todos are never reclaimed in the same
-            # tick — the old runner may still be finishing) leaves it QUEUED.
-            assert recovered.status == TodoStatus.QUEUED.value
-            assert recovered.version >= 3
+            assert recovered.status == TodoStatus.ACTIVE.value
+            assert recovered.version >= 1
+        assert loop._tick_state["unfenced_stuck_todo_ids"] == {"TODO-STUCK-1"}
 
-        # A second tick claims the recovered todo for its next attempt.
+        # A second tick still cannot infer that the missing owner stopped.
         await loop.tick()
         async with session_factory() as session:
             repo = TodoRepository(session)
             recovered = await repo.get_by_id("TODO-STUCK-1")
             assert recovered is not None
             assert recovered.status == TodoStatus.ACTIVE.value
-        assert any(todo.todo_id == "TODO-STUCK-1" for todo in loop._tick_state["claimed_todos"])
+        assert not any(
+            todo.todo_id == "TODO-STUCK-1"
+            for todo in loop._tick_state["claimed_todos"]
+        )
 
     @pytest.mark.asyncio
     async def test_active_todo_with_live_lease_not_reaped(self, session_factory):

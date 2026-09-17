@@ -319,7 +319,15 @@ class TestCyclomaticComplexity:
         """Top 20 files by complexity — regression guard (tighten toward 120)."""
         by_cc = sorted(all_metrics, key=operator.attrgetter("total_complexity"), reverse=True)[:20]
         for fm in by_cc:
-            assert fm.total_complexity < 870, f"{fm.path.name}: total_complexity={fm.total_complexity} exceeds 870"
+            highest = sorted(
+                fm.functions,
+                key=operator.attrgetter("complexity"),
+                reverse=True,
+            )[:10]
+            assert fm.total_complexity < 870, (
+                f"{fm.path}: total_complexity={fm.total_complexity} exceeds 870; "
+                f"highest={highest}"
+            )
 
     def test_median_complexity_below_50(self, all_metrics: list[_FileMetrics]) -> None:
         """Median file complexity — regression guard (tighten toward 15)."""
@@ -464,12 +472,17 @@ class TestMaintainabilityIndex:
 
     def test_files_mi_below_20_counted(self, all_metrics: list[_FileMetrics]) -> None:
         """Count files with MI < 20 — increase is a regression."""
-        violations: list[str] = []
+        violations: list[tuple[float, Path]] = []
         for fm in all_metrics:
             if fm.maintainability_index < 20.0:
-                violations.append(f"{fm.path.name}: MI={fm.maintainability_index:.1f}")
-        assert len(violations) <= 220, f"{len(violations)} file(s) below MI 20 (was 211 on CI 3.11):\n" + "\n".join(
-            violations[:20]
+                violations.append((fm.maintainability_index, fm.path))
+        nearest = sorted(violations, reverse=True)[:20]
+        evidence = "\n".join(
+            f"{path}: MI={score:.1f}" for score, path in nearest
+        )
+        assert len(violations) <= 220, (
+            f"{len(violations)} file(s) below MI 20 (was 211 on CI 3.11); "
+            f"nearest floor:\n{evidence}"
         )
 
     def test_median_mi_above_25(self, all_metrics: list[_FileMetrics]) -> None:
@@ -479,6 +492,35 @@ class TestMaintainabilityIndex:
             return
         med = statistics.median(mis)
         assert med >= 25.0, f"Median MI={med:.1f} below 25"
+
+    def test_azure_containerapp_lifecycle_files_stay_above_20(
+        self, all_metrics: list[_FileMetrics]
+    ) -> None:
+        """Keep every newly introduced Azure lifecycle module maintainable."""
+        lifecycle_files = {
+            "azure_containerapp_arm.py",
+            "azure_containerapp_environment_lifecycle.py",
+            "azure_containerapp_environment_make_runtime.py",
+            "azure_containerapp_environment_materializer.py",
+            "azure_containerapp_environment_types.py",
+            "azure_containerapp_environment_validation.py",
+            "azure_containerapp_failure_details.py",
+            "azure_containerapp_gpu_evidence.py",
+            "azure_containerapp_owned_lifecycle.py",
+            "azure_containerapp_runtime_readers.py",
+            "azure_containerapp_runtime_resources.py",
+            "azure_containerapp_runtime_state.py",
+            "azure_containerapp_terminal_events.py",
+            "azure_containerapp_topology.py",
+            "azure_containerapp_topology_types.py",
+            "azure_model_empirical_choice.py",
+            "azure_model_rank_sampling.py",
+            "runtime_evidence_config.py",
+        }
+        measured = {fm.path.name: fm.maintainability_index for fm in all_metrics if fm.path.name in lifecycle_files}
+        assert measured.keys() == lifecycle_files
+        below_floor = {name: round(score, 1) for name, score in measured.items() if score < 20.0}
+        assert not below_floor, f"Azure lifecycle files below MI 20: {below_floor}"
 
 
 class TestNestingDepth:

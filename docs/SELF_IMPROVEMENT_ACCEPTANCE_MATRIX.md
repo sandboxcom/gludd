@@ -1,0 +1,569 @@
+# Local-Model Self-Improvement Acceptance Matrix
+
+Status: reproducible acceptance contract with ten immutable reference rows
+admitted. This status does not claim that live local-model inference passes.
+
+## Purpose
+
+This matrix determines whether Gludd's managed local-model self-improvement
+path can produce a promotable repository change for representative existing
+task shapes. It is an acceptance test for the complete application lifecycle,
+not a general model leaderboard and not evidence that one model can perform
+unseen work.
+
+Every decision is an objective predicate over immutable inputs and captured
+evidence. There is no human quality rating, weighted model score, or preference
+between models. A row passes only when every required predicate passes. Numeric
+measurements remain visible for regression analysis but never compensate for a
+failed correctness or lifecycle gate.
+
+The normative implementation contracts are:
+
+- [Self-Improvement Codex Parity](features/SELF_IMPROVEMENT_CODEX_PARITY.md),
+  including the proposal protocol, Codex comparison, resource bounds, and
+  cleanup;
+- [Self-Improvement Model Acquisition](features/SELF_IMPROVEMENT_MODEL_ACQUISITION.md),
+  including authentication, immutable acquisition, cache-hit, and worker
+  ownership behavior;
+- `TaskType` in `src/general_ludd/schemas/benchmark.py`;
+- `DEFAULT_TASK_CONTRACTS` in
+  `src/general_ludd/routing_roles/small_model_policy.py`; and
+- the deterministic task-shape selection in
+  `src/general_ludd/self_improve/task_diversity.py`.
+
+## Fixed identity and replay policy
+
+An acceptance result is comparable only when all identity fields below match.
+Any mismatch starts a new result stratum; it must not overwrite, merge with, or
+exclude evidence from the earlier identity.
+
+### Fixture identity
+
+Each tracked task fixture is canonical JSON serialized with sorted keys, ASCII
+escaping, compact separators, and one final newline. It remains the existing
+strict `TaskSpec` shape: `canonical_make_commands`, `objective`,
+`reference_elapsed_seconds`, and `task_id`, with no parallel fixture schema.
+Its raw-byte SHA-256 is the matrix row's `fixture_digest`.
+
+The canonical matrix manifest separately binds that task to its expected
+existing `TaskType`, `task_kind`, role, acceptance checks, 40-character
+baseline and independent reference SHAs, allowed changed paths, and required
+test paths. Before a model call, `validate_reference_boundaries` resolves the
+reference through the existing `build_reference` implementation and verifies
+that it is a direct child of the baseline, has the exact changed/test sets, and
+contains a non-empty patch. The immutable commits provide baseline file and
+patch identity; changed-line and patch-equivalence facts are derived from those
+Git objects rather than copied into a second JSON schema.
+
+Before inference, `infer_task_type(task_text)` and
+`map_task_to_capabilities(task_text)[0]` must equal the manifest values. An
+unknown type, unknown contract, empty capability mapping, changed fixture
+digest, missing reference, or mutable Git ref makes the row `invalid_input`.
+It is not charged as a model failure.
+
+### Model, runtime, and protocol identity
+
+The result envelope records the model profile ID, exact repository, immutable
+40-character revision, GGUF filename, GGUF SHA-256, quantization, and the
+ownership-manifest digest. It also records:
+
+- Gludd commit SHA and dirty-tree count;
+- Python, `llama-cpp-python`, and vendored llama.cpp identities;
+- OS, architecture, backend, accelerator model, offload layers, context size,
+  thread/batch settings, and available memory at admission;
+- prompt-plan digest and the complete managed attempt-protocol digest;
+- compact schema and decoder versions, canary version, token limits, and finish
+  policy; and
+- deterministic generation values: temperature `0.0`, seed `0`, 32 canary
+  tokens, and 1,536 proposal tokens per shard.
+
+The complete attempt-protocol digest, not the prompt digest alone, is the
+selection and outcome key. A schema, system prompt, chat template, canary,
+sampling value, token bound, operation inference, path rule, decoder, or
+acquisition/outcome-attribution change therefore invalidates reuse of an
+earlier failure without deleting its audit record. The digested lifecycle
+contract states that acquisition refusal and plan exhaustion are terminal
+pre-outcome states, so evidence written under the former phantom-failure
+semantics is retained for audit but cannot exclude a current candidate.
+
+A fixed seed is necessary but does not promise byte-identical output across
+CPU, Metal, CUDA, Vulkan, different offload settings, or runtime revisions.
+Those are separate runtime strata. Within one exact stratum, replay compares
+the binary acceptance tuple, finish reason, token counts, and proposal digest.
+A different valid proposal may still pass; prose similarity is never judged.
+
+## Representative task-shape matrix
+
+The base matrix has exactly one row for every existing `TaskType`, matching the
+ten-case bound used by `select_representative_evidence`. A fixture may use only
+an existing default task contract. Fixture authors choose task text that maps
+to the declared pair and pin that mapping in the fixture digest.
+
+| Case | Existing task shape | Fixture boundary | Contract checks |
+| --- | --- | --- | --- |
+| `AM-BUG-01` | `bug_fix` x `coding` / coder | One Python defect, one source path, one regression-test path | `syntax_valid`, `import_ok`, `run_without_crash` |
+| `AM-FEATURE-01` | `feature` x `coding` / coder | One bounded behavior, at most two source paths and one test path | `syntax_valid`, `import_ok`, `run_without_crash` |
+| `AM-REFACTOR-01` | `refactor` x `format_normalization` / editor | One behavior-preserving normalization and one invariant test | `idempotent`, `schema_valid`, `semantic_equivalence` |
+| `AM-TEST-01` | `test_write` x `bounded_enumeration` / enumerator | Enumerate a finite branch table and add only the missing parameter cases | `coverage_bounded`, `no_duplicates`, `schema_valid` |
+| `AM-REVIEW-01` | `code_review` x `failure_classification` / reviewer | Classify one fixture diff and encode the proven defect in a regression test | `evidence_cited`, `label_in_taxonomy`, `schema_valid` |
+| `AM-DOC-01` | `documentation` x `documentation_draft` / editor | One feature document, exact source citations, no runtime file | `facts_traceable`, `links_valid`, `schema_valid` |
+| `AM-DEBUG-01` | `debugging` x `context_compaction` / compactor | One captured failure trace, bounded diagnosis artifact, and minimal fix | `facts_preserved`, `token_budget_met`, `schema_valid` |
+| `AM-OPT-01` | `optimization` x `coding` / coder | One deterministic counter or timing fixture; behavior must remain equal | `syntax_valid`, `import_ok`, `run_without_crash` |
+| `AM-SEC-01` | `security_fix` x `coding` / coder | One synthetic exploit regression with no credential, network, or security-decision authority | `syntax_valid`, `import_ok`, `run_without_crash` |
+| `AM-INTEGRATION-01` | `integration` x `schema_extraction` / editor | Four to six paths across two prompt shards and one end-to-end contract test | `all_required_fields`, `schema_valid`, `source_traceable` |
+
+`game_logic` remains an existing contract but is not selected by the current
+`map_task_to_capabilities` mapper. The base matrix must not fabricate evidence
+for an unreachable pair. It can replace a row only after the existing mapper
+and policy expose that contract through the same versioned route.
+
+Nine cases use at most three total focus paths and therefore one shard. The
+integration case deliberately uses two disjoint shards to exercise retained
+worker/model reuse and strict merge behavior. Every case remains within the
+global proposal limits; the matrix does not multiply task size, model size,
+backend, and cache state into an unbounded Cartesian product.
+
+### Executable manifest and admitted references
+
+The canonical executable source is
+`config/self-improve/acceptance-matrix.json`. It contains exactly one ordered
+task contract for every existing `TaskType`, and each objective must reproduce
+both its declared `TaskType` and the first declared capability/role mapping.
+The loader rejects unknown fields, non-canonical JSON, changed contract checks,
+unsafe paths, duplicate task IDs, and any plan above twenty candidate attempts.
+
+A row is runnable only after the same exact task has an independently produced
+baseline/reference pair and tracked fixture digest. All ten matrix rows now have
+distinct, direct-parent reference pairs. The earlier catalog-truth and
+multi-file fixtures remain useful standalone lifecycle sentinels, documented in
+[SELF_IMPROVEMENT_CATALOG_TRUTH_FIXTURE.md](features/SELF_IMPROVEMENT_CATALOG_TRUTH_FIXTURE.md)
+and
+[SELF_IMPROVEMENT_MULTIFILE_FIXTURE.md](features/SELF_IMPROVEMENT_MULTIFILE_FIXTURE.md),
+but are not relabelled or reused as matrix evidence.
+
+`reference_elapsed_seconds` is the positive difference between the reference
+commit's committer Unix timestamp and its direct parent's committer Unix
+timestamp. This durable value is a conservative end-to-end upper bound that
+includes all work between commits. It is not an inference-only benchmark and is
+not presented as one. A zero/negative delta, non-parent pair, unavailable commit,
+or path/test mismatch fails closed.
+
+| Case | Baseline -> independent reference | Changed lines | Upper bound (s) | Fixture SHA-256 |
+| --- | --- | ---: | ---: | --- |
+| `AM-BUG-01` | `0af495b60a60c05b2ea6a011fd5b4beb6272b846` -> `e4c9b68aea0ff59cab77a06747471e248e9e0601` | 29 | 278 | `eae86c84f15beea98a2c4ea5a9dc19c5fb0e04b3341ea7c6625befc55c0a0f12` |
+| `AM-FEATURE-01` | `e4c9b68aea0ff59cab77a06747471e248e9e0601` -> `21a4759880a549eae1ba14f3332c967937690843` | 93 | 578 | `54012f6ddf78b49af71fb7396355f0dce11acf61c803f78d82423e68b476bec1` |
+| `AM-REFACTOR-01` | `58a36457ab6333e885b7203011b15ffc1c6af48c` -> `2bb39446d770c7e00be1e0eb18da384221f47236` | 189 | 157 | `a64fce9d61d29e4c42a469cea0e26ff2e9d7cb73387a51aef0ece53757862c03` |
+| `AM-TEST-01` | `459899671737a199628ac317a3626fab5ef64935` -> `0af495b60a60c05b2ea6a011fd5b4beb6272b846` | 117 | 312 | `70e47909434e2676c4aaa88a3765617619d92f725104ce864165aadb37ed89ca` |
+| `AM-REVIEW-01` | `ad09bd07d64d834a6e4d46c7d4e493d1c3229910` -> `a55a96a619135aeb21e63ab5ef2d863cbc8ce1db` | 55 | 1,345 | `e637425572916545f0ad1361e9962dc5d41d715f4e777c67eccbb9aea3aed09c` |
+| `AM-DOC-01` | `2bb39446d770c7e00be1e0eb18da384221f47236` -> `ab45aae30f989a02b1c2cb98da49d8bbcfd208d1` | 437 | 603 | `a6d4288f97582e24b20628d5281b87ce5dbd346f3cec187b82b0e8afb086632c` |
+| `AM-DEBUG-01` | `ab45aae30f989a02b1c2cb98da49d8bbcfd208d1` -> `85c1b6a69b1b224ce5004bf995ad32ce3549b799` | 263 | 655 | `59bc0f3e8ddb1a5d291afa79aa226b852bb6d394ac96f328128d0972b3d86c8c` |
+| `AM-OPT-01` | `21a4759880a549eae1ba14f3332c967937690843` -> `ad09bd07d64d834a6e4d46c7d4e493d1c3229910` | 89 | 385 | `aadc4f22c3a85460d34f77edb3856d72bdc9f9f05e1d1446c3f237827483e899` |
+| `AM-SEC-01` | `85c1b6a69b1b224ce5004bf995ad32ce3549b799` -> `5d46410bf204f285b5c7b5e90823d2fc0598e2ee` | 59 | 1,245 | `3ca088a1bd3a259720fca019da53ffe05dfd051aba96187262dd9751e138ab00` |
+| `AM-INTEGRATION-01` | `5d46410bf204f285b5c7b5e90823d2fc0598e2ee` -> `8c10bb7fb59975a5037d99eec85cf34d7c19173e` | 739 | 909 | `1a4d8711377ce958ba141091323665b03139caa9d71cc5d91db88817ee29b304` |
+
+The safe validate-only invocation is:
+
+```console
+make test-self-improve-acceptance-matrix SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE=config/self-improve/acceptance-matrix.json SELF_IMPROVE_ACCEPTANCE_MATRIX_MODEL_PATH= SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE=0
+```
+
+This command resolves all ten immutable references and emits an observable
+validate-only result for all eleven ordered steps without loading a model. A
+failed boundary or child workflow returns non-zero. Live mode is a separate
+explicit command:
+
+```console
+make test-self-improve-acceptance-matrix SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE=config/self-improve/acceptance-matrix.json SELF_IMPROVE_ACCEPTANCE_MATRIX_MODEL_PATH=/tmp/gludd-acceptance-model.gguf SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE=1
+```
+
+An incomplete matrix blocks that command before inference. With every row now
+admitted, execution remains serial and observable through per-case start/end
+events plus the existing runner heartbeat. The cold/warm sentinel is the same
+`AM-BUG-01` task object replayed twice at one attempt each; the other nine rows
+allow at most two attempts each, so the complete plan cannot exceed twenty.
+Research rationale remains in
+[Evaluation practice and practitioner evidence](#evaluation-practice-and-practitioner-evidence);
+this executable contract does not duplicate a separate forum survey.
+
+## Author an independent reference fixture
+
+Use this procedure to turn one `ineligible` row into auditable reference
+evidence. It deliberately separates the independent reference commit from the
+later fixture-admission commit. For `AM-DOC-01`, the reference commit may change
+only this document and
+`tests/unit/test_self_improve_acceptance_matrix.py`, exactly as declared by the
+row's `allowed_changed_paths`.
+
+The mechanically enforced source anchors are the
+[canonical matrix manifest](../config/self-improve/acceptance-matrix.json), the
+[executable matrix runner](../tests/unit/self_improve_acceptance_matrix_runner.py),
+and the [matrix Make target](../Makefile). The relevant symbols have distinct
+responsibilities:
+
+| Concern | Enforcing source |
+| --- | --- |
+| Parsed row identity | `MatrixCase` carries the task, path, fixture, baseline, and reference identities |
+| Fixture admission | `_validate_evidence` verifies the tracked fixture bytes, `fixture_digest`, exact task identity, positive elapsed bound, and distinct full Git identities |
+| Reference admission | `validate_reference_boundaries` verifies reachability, direct parentage, exact changed/test paths, and a non-empty patch through `build_reference` |
+| Whole-manifest admission | `load_manifest` requires canonical JSON, every task shape, the serial attempt bound, and unique baseline/reference pairs |
+| Replay | `execute_matrix` emits the ordered events and invokes only the existing `test-self-improve` Make seam |
+| Tracked manifest bytes | `EXPECTED_MATRIX_SHA256` in the Make target rejects an unreviewed manifest-byte change before the runner starts |
+
+### 1. Freeze the task and immutable baseline
+
+Copy the row's exact task object and acceptance boundary before implementation.
+Select a clean, reachable, 40-character commit SHA that does not contain the
+reference change. Record it as `baseline_ref`, then create a namespaced isolated
+worktree from that exact commit:
+
+```console
+make agent-worktree-base BRANCH=acceptance-am-doc-reference BASE=<40-character-baseline-sha>
+```
+
+The branch name is an example; the `BASE` value is not. Do not substitute
+`development`, a tag, or another mutable name in the fixture. In that worktree,
+write the contract test first and capture its expected failure before editing
+the document. For this row, the focused warning-free test is:
+
+```console
+make test-files TESTFILES=tests/unit/test_self_improve_acceptance_matrix.py PYTEST_ARGS='-q -W error'
+```
+
+Reference independence invariant: the reference author receives the frozen
+task, baseline, and allowed paths, but must not inspect a local-model proposal.
+Seal and commit the reference before any local-model inference for that row.
+This prevents the reference from becoming a rewrite or rating of the candidate.
+Run the focused test again, run the row's canonical Markdown command, and make
+one atomic reference commit through the guarded Make seam:
+
+```console
+make lint-markdown MARKDOWN_FILES=docs/SELF_IMPROVEMENT_ACCEPTANCE_MATRIX.md
+make ship-commit-files FILES='docs/SELF_IMPROVEMENT_ACCEPTANCE_MATRIX.md tests/unit/test_self_improve_acceptance_matrix.py' MSG='docs(self-improve): document acceptance fixture replay'
+make worktree-state
+```
+
+The full committed hash reported by repository state is `reference_ref`; it
+must differ from `baseline_ref`, and its sole parent must be `baseline_ref`.
+Run `make git-show-commit C=<40-character-sha>` for each identity, read the two
+immutable `committer_unix` values, and subtract baseline from reference. The
+exact positive delta is `reference_elapsed_seconds`; a
+zero or negative result is missing evidence and cannot be replaced with an
+estimate.
+Preserve the commit on a reachable integration branch before removing the
+reference branch. Never reuse the pair for another matrix row: `load_manifest`
+rejects duplicate eligible pairs.
+
+### 2. Canonicalize the fixture and admit the row
+
+Create the row's separate tracked task fixture under `config/self-improve/` in a
+follow-up fixture-admission change. Its only fields remain
+`canonical_make_commands`, `objective`, `reference_elapsed_seconds`, and
+`task_id`, and their values must equal the task object in the matrix, including
+the committer-time delta derived above.
+Serialize the object exactly as the runner does:
+
+```python
+json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True) + "\n"
+```
+
+Read those exact UTF-8 bytes as `fixture_bytes`; the manifest value is:
+
+```python
+hashlib.sha256(fixture_bytes).hexdigest()
+```
+
+Update only that row's evidence fields: set `eligibility` to `eligible`, set
+`ineligible_reason` to null, and fill `fixture_path`, `fixture_digest`,
+`baseline_ref`, and `reference_ref`. Keep the exact task text, type, capability,
+role, checks, allowed paths, required tests, and attempt bound unchanged. Then
+serialize the entire manifest with the same canonical `json.dumps` settings and
+one final newline. Compute its SHA-256 over the resulting bytes and update
+`EXPECTED_MATRIX_SHA256` in the matrix Make target in the same admission change.
+
+`_validate_evidence` re-hashes the tracked fixture and compares its parsed task
+identity; `load_manifest` checks the full row and matrix invariants. Before
+execution, `validate_reference_boundaries` proves direct parentage and compares
+the Git-derived changed and test sets to the manifest. A placeholder digest,
+mutable ref, mismatched task, reused pair, non-canonical encoding, non-positive
+elapsed bound, path drift, or partial evidence tuple remains a hard
+`MatrixContractError`, not an eligible row.
+
+### 3. Validate, replay live, and clean up
+
+First run the pinned validate-only entry point with every documented variable
+set explicitly:
+
+```console
+make test-self-improve-acceptance-matrix SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE=config/self-improve/acceptance-matrix.json SELF_IMPROVE_ACCEPTANCE_MATRIX_MODEL_PATH= SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE=0
+```
+
+If any future edit makes a row ineligible, the aggregate result remains
+non-zero and names every blocked step; that is correct readiness evidence, not a
+model failure. Run live inference only while all ten rows pass admission, using
+the exact immutable fixture/reference identities and an admitted local model:
+
+```console
+make test-self-improve-acceptance-matrix SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE=config/self-improve/acceptance-matrix.json SELF_IMPROVE_ACCEPTANCE_MATRIX_MODEL_PATH=/tmp/gludd-acceptance-model.gguf SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE=1
+```
+
+This authoring guide does not claim a live pass. A pass exists only when the
+observable eleven-step summary and every acceptance predicate are green for the
+recorded identity.
+
+After the reference commit is reachable from the integrating branch, clean up
+its isolated worktree from the main checkout:
+
+```console
+make agent-cleanup BRANCH=acceptance-am-doc-reference
+```
+
+Do not clean an unintegrated reference: deleting its only branch would make its
+recorded SHA unsafe to reproduce. Matrix replay itself uses bounded temporary
+task files in `execute_matrix`; normal exit and exceptions close that temporary
+directory, while the managed candidate runner owns its candidate worktree,
+worker, exchange directory, and lease cleanup.
+
+## Execution plan and bounds
+
+Run cases in case-ID order. Select at most two candidates per case and stop the
+case after the first full pass. Thus the base matrix admits at most ten cases
+and twenty candidate attempts. Run live inference serially; unit-level fault
+injection may run separately without loading a model.
+
+`AM-BUG-01` is the lifecycle sentinel:
+
+1. Its first eligible attempt is a cold-cache trial.
+2. Its exact replay is a warm-cache trial using the admitted artifact.
+3. The replay must retain the same fixture, model, runtime, hardware, prompt,
+   and full attempt-protocol identities.
+4. All later cases use normal managed-cache policy; cache state is recorded
+   but not manipulated to manufacture a hit or miss.
+
+Cold and warm latency are separate strata. Cold transfer time must never be
+compared to a warm cache-hit time as model inference performance.
+
+Current hard ceilings are:
+
+- 32 prompt shards, 262,144 total request bytes, 16,384 bytes per retry shard,
+  and no more than three focus paths per base shard;
+- 16 compact edits per shard, 32 merged edits, 64 tests, 32 Make commands, and
+  1 MiB of merged edit text;
+- one owned worker, one lazily constructed `Llama` instance, sequential shards,
+  no llama.cpp server, and no auxiliary cleanup process;
+- one 32-token same-instance canary and 1,536 proposal tokens per managed
+  shard;
+- a 300-second deadline for the complete candidate inference attempt;
+- a 600-second deadline for each cold Hub operation, with a visible heartbeat
+  at least every 15 seconds;
+- an 8 GiB managed cache quota and 2 GiB filesystem free-space reserve; and
+- one isolated candidate worktree and one atomic commit per accepted attempt.
+
+Resource admission runs before every case. Insufficient memory, context, disk
+reserve, quota, or immutable artifact identity is a fail-closed lifecycle
+result, never permission to widen limits or start an external server.
+
+## Objective evidence and pass predicates
+
+One canonical result envelope contains the identities above and the following
+measurements. Durations use one monotonic clock and are non-negative seconds;
+bytes and token counts are non-negative integers.
+
+| Category | Required measurements | Pass predicate |
+| --- | --- | --- |
+| Proposal success | canary finish, proposal finish, output tokens, shard count, schema/manifest validation | Canary and every proposal finish with `stop`; all strict decoders pass; no partial shard is published |
+| Functional quality | named task tests, full required tests, warnings, Ruff, mypy, docstrings, Markdown | Every required check passes and warnings equal zero |
+| Coverage | aggregate branch coverage, minimum individual-file coverage | Aggregate is at least 85%; every measured repository file is at least 75% |
+| Codex scope | changed-file intersection, candidate/reference file counts, required reference tests | Changed-file precision and recall both equal 1.0; every reference test file is proposed |
+| Diff economy | candidate and reference changed lines | Candidate lines are no more than 1.5 times the non-zero reference count |
+| Patch identity | candidate and reference stable patch IDs | Record exact equality; require it only when the fixture declares `exact_patch_required=true` |
+| Latency | resolution, transfer, readiness, canary, proposal, apply, validation, cleanup, total | No phase exceeds its hard deadline; candidate evaluation is no more than 2.0 times the non-zero Codex reference elapsed time |
+| Download | auth mode, resolved revision, bytes, digest, worker start/end | Immutable identity and digest validate; each started worker has one terminal event and is joined |
+| Warm cache | Hub/auth calls, acquisition children, manifest/digest validation | Zero Hub calls, zero auth selection, zero acquisition child, and one validated cache-hit lease |
+| Cache pressure | accounted bytes, actual free bytes, quota, reserve, eviction identities | Quota and reserve hold; only exact owned, unleased identities can be reclaimed |
+| Cleanup | child/process-group count, leases, exchange dirs, candidate worktrees, worktree status | Zero owned children, leases, exchange dirs, and rejected worktrees remain; accepted worktree is clean after its single commit |
+| Git | baseline, candidate commit count, dirty count, patch ID | Exact baseline, exactly one candidate commit, zero dirty paths, all Git operations through Make |
+
+A persistent, admitted model artifact is cache state, not a leaked resource.
+Cleanup must release its lease and worker but must not delete it merely to make
+the post-run filesystem look empty.
+
+### Codex reference without subjective scoring
+
+The Codex reference is produced independently from the same fixture and exact
+baseline before the local proposal is exposed. The matrix consumes only
+reference facts: file/test sets, changed lines, elapsed seconds, test and gate
+results, and stable patch ID.
+
+Case acceptance is the conjunction of the pass predicates above and an empty
+`compare_with_codex` blocker set. The existing numeric `score` may be retained
+for backward-compatible storage, but this matrix neither displays nor ranks by
+it. A model cannot offset a warning, missing file, failed test, coverage miss,
+leak, extra commit, bloated diff, or excessive elapsed time with a stronger
+result elsewhere.
+
+If the local patch is not patch-equivalent but every declared binary predicate
+passes, the result is reported exactly as configured by the fixture. There is
+no ad hoc semantic-review vote. A fixture requiring exact behavior must encode
+that behavior in tests or set `exact_patch_required` before either agent runs.
+
+## Failure attribution
+
+Use the first terminal phase below as the single primary failure class. Preserve
+all later observable facts as secondary fields, but do not blame a model for a
+phase it never reached.
+
+1. `input_admission`: fixture, mapping, Git SHA, reference, or protocol identity
+   is invalid.
+2. `artifact_acquisition`: authentication policy, immutable resolution,
+   transfer, digest, quota, or reserve fails.
+3. `runtime_admission`: hardware fit, context fit, or worker start fails.
+4. `structured_canary`: chat or grammar capability does not return the exact
+   bounded canary.
+5. `proposal_generation`: timeout, native exit, non-`stop` finish, invalid
+   compact JSON, or strict expansion fails.
+6. `transactional_apply`: exact old text, path, or isolated write fails.
+7. `candidate_validation`: tests, warnings, static checks, coverage, or
+   task-specific assertion fails.
+8. `codex_parity`: exact scope, reference-test, diff, elapsed, or required patch
+   predicate fails.
+9. `lifecycle_cleanup`: a lease, worker, process group, exchange directory, or
+   rejected worktree remains.
+10. `evidence_commit`: the canonical result cannot be durably written and
+    re-read with the same digest.
+
+`input_admission` and missing external prerequisites invalidate the case. Phases
+3 through 8 are model/runtime evidence for the exact identity. Phase 9 is an
+application lifecycle defect and must not be hidden by relabeling it as poor
+model output. An `artifact_acquisition` refusal terminates with its typed,
+secret-safe cache cause; it neither writes a failed model-capability outcome nor
+enters proposal-validation retry, because no proposal was generated. An empty
+or consumed bounded candidate plan terminates as `model_plan_exhausted` before
+another attempt marker, acquisition, proposal retry, or outcome record.
+
+## Result states and aggregation
+
+Allowed case states are `invalid_input`, `ineligible`, `failed`, and `passed`.
+A matrix run is `passed` only when all ten valid cases pass and the lifecycle
+sentinel passes cold and warm predicates. Report raw counts and case IDs only;
+do not average task types or rank candidates.
+
+Model evidence remains scoped to the exact tuple:
+
+`(model identity, runtime identity, TaskType, task_kind, fixture digest, full
+attempt-protocol digest)`.
+
+Historical failure is eligible for planner exclusion only on that exact tuple.
+A newer protocol, changed fixture, backend, quantization, or revision must not
+inherit it. A success on one row must not authorize a different task shape.
+
+## Historical evidence and verification status
+
+The historical measurements below are mechanically present in
+[Self-Improvement Codex Parity](features/SELF_IMPROVEMENT_CODEX_PARITY.md). They
+explain the matrix design but are not current matrix passes because their
+prompt or output protocols differ from this document's baseline.
+
+| Recorded historical observation | Evidence status | Matrix treatment |
+| --- | --- | --- |
+| Qwen2.5-Coder 0.5B and DeepSeek-Coder 1.3B consumed 4,096 tokens in 176.62 and 154.80 seconds without a complete proposal | Repository-documented | Historical `proposal_generation` evidence; obsolete after compact protocol and token-bound changes |
+| Qwen2.5-Coder 1.5B returned `stop` at 1,142 tokens in 47.31 seconds and SmolLM2 1.7B returned `stop` at 135 tokens in 14.62 seconds, but each supplied a contradictory operation label | Repository-documented | Historical strict-decoder evidence; obsolete after operation became parent-inferred |
+| StarCoder2 3B, Qwen2.5-Coder 3B, and CodeLlama 7B each timed out on a measured 52,017-byte eight-file prompt | Repository-documented | Historical input-boundary evidence; obsolete after deterministic prompt sharding |
+| Qwen2.5 0.5B twice exhausted the older 4,096-token small-fixture budget at about 126-128 seconds; the mechanical route produced the exact one-file, two-line reference patch | Repository-documented | Retain as routing evidence for that old fixture and protocol only |
+
+Terminal scrollback, chat recollection, mutable cache contents, and a model name
+without immutable revision/runtime/protocol evidence are `unverified`. They may
+motivate a new run but cannot populate a result row, exclude a candidate, or
+support a capability claim.
+
+## Zero-downtime operation and rollback
+
+The matrix runs only in exact-SHA isolated worktrees. It does not stop or
+reconfigure the Gludd daemon, mutate development or master, deploy, tag, or
+promote. Model acquisition admits a new immutable artifact before selection;
+a current leased artifact remains usable while another is evaluated.
+
+On any failure:
+
+- stop at the first failed Make command;
+- terminate and join only the owned process group;
+- release the exact lease and remove the exchange directory;
+- discard the rejected candidate worktree through the repository Make seam;
+- retain validated cache artifacts and immutable evidence records; and
+- leave the previously selected model and deployed application untouched.
+
+Protocol rollback restores the prior code and naturally selects only evidence
+with the prior full attempt identity. Fixture rollback restores the prior
+tracked manifest SHA. Neither action rewrites outcome history or requires a
+database migration. Cache rollback does not delete a valid artifact; quota
+reclamation remains the sole lifecycle owner for safe eviction.
+
+Before and after the matrix, capture project process ownership, disk free bytes,
+cache bytes, active leases, worktree state, and the exact Git SHA. A post-run
+cleanup failure blocks the matrix even when every candidate test passed.
+
+## Evaluation practice and practitioner evidence
+
+Official evaluation practice:
+
+- The [lm-evaluation-harness configuration guide](https://github.com/EleutherAI/lm-evaluation-harness/blob/main/docs/config_files.md)
+  exposes model/task settings, exact sample selection, generation arguments,
+  cache settings, output paths, and separate random seeds, and recommends
+  versioning configs with results. Gludd likewise digests the complete fixture
+  and protocol rather than recording only a model name.
+- The [lm-evaluation-harness model guide](https://github.com/EleutherAI/lm-evaluation-harness/blob/main/docs/model_guide.md#chat-templating)
+  records the selected chat template for reproducibility and separates caches
+  by tokenizer/template identity. Gludd includes its system/schema protocol in
+  the attempt identity for the same reason.
+- The [llama.cpp server benchmark guide](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/bench/README.md#metrics)
+  records prompt/completion tokens, throughput, and `stop` versus `length`
+  completion rates. Gludd records those raw measures but runs its owned Python
+  worker rather than introducing a server.
+- The [Hugging Face cache API reference](https://huggingface.co/docs/huggingface_hub/en/package_reference/cache)
+  specifies that repository scan corruption is captured as warnings and that
+  `delete_revisions` produces a previewable strategy. The
+  [official cache layout](https://huggingface.co/docs/huggingface_hub/en/guides/manage-cache)
+  reserves top-level repository directories and `.locks`. Gludd therefore
+  accepts only the exact scanner warning for its canonical, non-symlink
+  `.gludd` control directory; every other warning still refuses deletion.
+
+Long-lived practitioner reports are design inputs, not proof that Gludd has the
+same defect:
+
+- [lm-evaluation-harness issue 475](https://github.com/EleutherAI/lm-evaluation-harness/issues/475)
+  (opened May 2023) traces materially different benchmark results to prompt and
+  likelihood semantics. This supports exact fixture and protocol identity.
+- [lm-evaluation-harness issue 1098](https://github.com/EleutherAI/lm-evaluation-harness/issues/1098)
+  (opened December 2023) records the long design discussion around chat-template
+  placement, tokenization, system prompts, and reproducibility. This supports
+  storing the complete rendered protocol rather than a boolean template flag.
+- [llama.cpp discussion 4020](https://github.com/ggml-org/llama.cpp/discussions/4020)
+  (opened November 2023) reports that the same seed can produce different output
+  when GPU offload or hardware changes. This is why hardware/backend identity
+  defines a result stratum and byte equality is not a cross-platform gate.
+- [llama.cpp issue 7381](https://github.com/ggml-org/llama.cpp/issues/7381)
+  (opened May 2024) reported a server path ignoring request seed values. Gludd
+  records the effective seed inside its full attempt protocol and avoids using
+  an unowned external server for acceptance.
+- [huggingface_hub issue 1738](https://github.com/huggingface/huggingface_hub/issues/1738)
+  (opened August 2023) contains a long-running practitioner discussion about
+  colocating tool metadata under a reserved cache subdirectory without
+  confusing repository content. [Issue 2218](https://github.com/huggingface/huggingface_hub/issues/2218)
+  (opened April 2024) records another cache-layout mismatch where a consumer's
+  directory naming differed from the scanner's accepted layout. These reports
+  support pinning Gludd's one allowed metadata diagnostic exactly rather than
+  ignoring arbitrary cache warnings.
+
+## Completion checklist
+
+A matrix claim is valid only when its evidence bundle contains:
+
+- all ten canonical case envelopes plus the cold/warm lifecycle sentinel;
+- exact fixture, baseline, reference, model, runtime, hardware, and protocol
+  identities;
+- every binary pass predicate and raw non-negative measurement;
+- no warnings, incomplete output, missing coverage, or cleanup exception;
+- one atomic commit and clean worktree for every accepted candidate;
+- the repository-wide 85% aggregate and 75% per-file coverage evidence; and
+- a final digest re-read proving the result bundle was durably written.
+
+Anything less is an incomplete run, not a partial capability claim.

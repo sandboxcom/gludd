@@ -1,0 +1,27 @@
+---
+- name: Verify - plan exact teardown without touching host resources
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  tasks:
+    - name: Exercise the absent lifecycle through the collection role
+      ansible.builtin.include_role:
+        name: general_ludd.agent.execution_environment_bootstrap
+      vars:
+        execution_environment_bootstrap_project_root: >-
+          {{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}
+        execution_environment_bootstrap_state_root: >-
+          /tmp/gludd/role-execution-environment-bootstrap
+        execution_environment_bootstrap_machine_name: gludd-ee-molecule
+        execution_environment_bootstrap_state: absent
+        execution_environment_bootstrap_validate_only: true
+
+    - name: Verify the immutable absent plan
+      ansible.builtin.assert:
+        that:
+          - gludd_execution_environment.state == 'planned'
+          - gludd_execution_environment.requested_state == 'absent'
+          - gludd_execution_environment.owner == 'gludd'
+          - gludd_execution_environment.machine == 'gludd-ee-molecule'
+          - not gludd_execution_environment.verified
+        success_msg: ANSIBLE_EE_MOLECULE_ABSENT_PLAN_OK

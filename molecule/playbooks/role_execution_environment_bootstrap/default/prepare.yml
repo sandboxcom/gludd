@@ -1,0 +1,10 @@
+---
+- name: Prepare - validate the non-mutating execution-environment scenario
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Confirm no host preparation is required
+      ansible.builtin.debug:
+        msg: No host mutation is required for the execution-environment bootstrap plan
+

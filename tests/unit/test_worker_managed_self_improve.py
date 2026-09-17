@@ -1,0 +1,711 @@
+"""Worker endpoint contracts for approval-bound managed self-improvement."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import threading
+import time
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+import general_ludd.projects.workspace as workspace_module
+import general_ludd.self_improve as self_improve_package
+import general_ludd.worker.app as worker_app
+from general_ludd.models.gateway import ModelProfile
+from general_ludd.projects.repository_binding import (
+    ProjectRepositoryBinding,
+    ProjectRepositoryRegistry,
+)
+from general_ludd.self_improve.codex_comparison import (
+    CandidateEvidence,
+    CodexReference,
+    ComparisonResult,
+    ProposalManifest,
+)
+from general_ludd.self_improve.managed_runner import (
+    ApprovedSelfImprovePlan,
+    AttemptResult,
+    ManagedRunResult,
+    TaskSpec,
+)
+from general_ludd.self_improve.result_artifact import (
+    ManagedSelfImproveResultArtifact,
+)
+
+
+class _Runner:
+    def __init__(self, result: ManagedRunResult, *, delay: float = 0.0) -> None:
+        self.result = result
+        self.delay = delay
+        self.plans: list[ApprovedSelfImprovePlan] = []
+        self._counter_lock = threading.Lock()
+        self.active = 0
+        self.max_active = 0
+
+    def run(self, plan: ApprovedSelfImprovePlan) -> ManagedRunResult:
+        with self._counter_lock:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+        try:
+            self.plans.append(plan)
+            if self.delay:
+                time.sleep(self.delay)
+            return self.result
+        finally:
+            with self._counter_lock:
+                self.active -= 1
+
+
+class _Factory:
+    def __init__(self, runner: Any) -> None:
+        self.runner = runner
+        self.roots: list[Path] = []
+
+    def __call__(self, repo_root: Path) -> Any:
+        self.roots.append(repo_root)
+        return self.runner
+
+
+class _FailingRunner:
+    def run(self, _plan: ApprovedSelfImprovePlan) -> ManagedRunResult:
+        raise RuntimeError("secret-token")
+
+
+def _plan(
+    repo_root: Path,
+    *,
+    project_id: str = "project-worker",
+    repository_binding_digest: str = "",
+) -> ApprovedSelfImprovePlan:
+    return ApprovedSelfImprovePlan.approve(
+        approval_id="approval-worker",
+        todo_id="TODO-WORKER-SI",
+        project_id=project_id,
+        repo_root=repo_root,
+        repository_binding_digest=repository_binding_digest,
+        task=TaskSpec(
+            task_id="S83.301",
+            objective="Exercise the worker-managed runtime boundary.",
+            canonical_make_commands=(
+                "make test-files TESTFILES=tests/unit/test_worker_managed_self_improve.py",
+            ),
+        ),
+        reference=CodexReference(
+            baseline_sha="a" * 40,
+            reference_sha="b" * 40,
+            changed_files=frozenset({"src/general_ludd/worker/app.py"}),
+            test_files=frozenset({"tests/unit/test_worker_managed_self_improve.py"}),
+            changed_lines=1,
+            elapsed_seconds=0.1,
+        ),
+        prompt="Return one bounded worker endpoint improvement.",
+        required_output_tokens=512,
+        max_attempts=1,
+    )
+
+
+def _managed_result(
+    plan: ApprovedSelfImprovePlan,
+    *,
+    accepted: bool = True,
+) -> ManagedRunResult:
+    proposal = ProposalManifest.from_json(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "baseline_sha": plan.reference.baseline_sha,
+                "task_id": plan.task.task_id,
+                "edits": [
+                    {
+                        "operation": "replace",
+                        "path": "src/general_ludd/worker/app.py",
+                        "old_text": "before",
+                        "new_text": "after",
+                    }
+                ],
+                "tests": ["tests/unit/test_worker_managed_self_improve.py"],
+                "make_commands": list(plan.task.canonical_make_commands),
+                "commit_message": "feat: improve worker runtime",
+            }
+        )
+    )
+    evidence = CandidateEvidence(
+        changed_files=frozenset({"src/general_ludd/worker/app.py"}),
+        tests_passed=accepted,
+        warnings=0,
+        coverage_aggregate=93.0,
+        coverage_min_file=86.0,
+        ruff_passed=True,
+        mypy_passed=True,
+        docstrings_passed=True,
+        markdown_passed=True,
+        cleanup_passed=True,
+        commit_count=1,
+        worktree_clean=True,
+        elapsed_seconds=0.1,
+        changed_lines=2,
+    )
+    comparison = ComparisonResult(
+        accepted=accepted,
+        score=100.0 if accepted else 50.0,
+        blockers=() if accepted else ("tests",),
+        changed_file_precision=1.0,
+        changed_file_recall=1.0,
+    )
+    return ManagedRunResult(
+        final_result=AttemptResult(
+            comparison=comparison,
+            evidence=evidence,
+            patch_equivalence="worker-patch-identity",
+            proposal=proposal,
+            diagnostics="" if accepted else "tests failed",
+            attempt_identity_digest=plan.attempt_identity_digest,
+        ),
+        attempts=1,
+        plan_identity_digest=plan.identity_digest,
+        attempted_model_ids=("qwen-test",),
+        outcome_record_ids=("outcome-1",),
+    )
+
+
+def _payload(plan: ApprovedSelfImprovePlan, *, job_id: str = "JOB-WORKER-SI") -> dict[str, object]:
+    payload: dict[str, object] = {
+        "job_id": job_id,
+        "todo_id": plan.todo_id,
+        "project_id": plan.project_id,
+        "playbook": "not-registered.yml",
+        "queue": "self_update",
+        "work_type": "self_improve",
+        "plan_artifact": plan.to_json(),
+    }
+    if plan.repository_binding_digest:
+        payload["repository_binding_digest"] = plan.repository_binding_digest
+    return payload
+
+
+def _build_app(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    repo_root: Path,
+    factory: Any,
+    resolver: Any | None = None,
+) -> Any:
+    monkeypatch.setenv("GLUDD_PSK_DISABLE", "1")
+    monkeypatch.setattr(
+        worker_app,
+        "get_playbook_registry",
+        lambda: (_ for _ in ()).throw(AssertionError("generic playbook path was used")),
+    )
+    return worker_app.create_app(
+        gateway=None,
+        dispatcher=None,
+        self_improve_runner_factory=factory,
+        self_improve_repo_resolver=resolver or (lambda _project_id: repo_root),
+    )
+
+
+def test_default_repository_resolver_uses_canonical_project_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Workspace:
+        def __init__(self, project_id: str) -> None:
+            assert project_id == "project-worker"
+            self.repo_dir = tmp_path
+
+    monkeypatch.setattr(workspace_module, "ProjectWorkspace", _Workspace)
+
+    assert worker_app.resolve_worker_self_improve_repo_root("project-worker") == (
+        tmp_path.resolve()
+    )
+    with pytest.raises(ValueError, match="non-empty"):
+        worker_app.resolve_worker_self_improve_repo_root("")
+
+    invalid_project_id: Any = 1
+    with pytest.raises(ValueError, match="non-empty"):
+        worker_app.resolve_worker_self_improve_repo_root(invalid_project_id)
+
+
+def test_default_repository_resolver_rejects_non_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_file = tmp_path / "repo-file"
+    repo_file.write_text("not a repository", encoding="utf-8")
+
+    class _Workspace:
+        def __init__(self, project_id: str) -> None:
+            assert project_id == "project-worker"
+            self.repo_dir = repo_file
+
+    monkeypatch.setattr(workspace_module, "ProjectWorkspace", _Workspace)
+
+    with pytest.raises(ValueError, match="not a directory"):
+        worker_app.resolve_worker_self_improve_repo_root("project-worker")
+
+
+def test_default_runner_factory_delegates_to_installed_composition_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from general_ludd.config import loader as config_loader
+
+    sentinel: Any = _Runner(_managed_result(_plan(tmp_path)))
+    calls: list[tuple[Path, object]] = []
+    configured = {"azure_containerapp": {"schema_version": 1, "enabled": False}}
+
+    def build(repo_root: Path, *, self_improve_config: object) -> Any:
+        calls.append((repo_root, self_improve_config))
+        return sentinel
+
+    monkeypatch.setattr(
+        self_improve_package,
+        "build_managed_self_improve_runner",
+        build,
+    )
+    monkeypatch.setattr(
+        config_loader,
+        "load_user_config",
+        lambda: SimpleNamespace(self_improve=configured),
+    )
+
+    assert worker_app.build_worker_self_improve_runner(tmp_path) is sentinel
+    assert calls == [(tmp_path, configured)]
+
+
+def test_default_worker_app_installs_owned_process_executor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sentinel = object()
+    monkeypatch.setenv("GLUDD_PSK_DISABLE", "1")
+    monkeypatch.setattr(
+        worker_app,
+        "build_worker_self_improve_executor",
+        lambda: sentinel,
+    )
+
+    app = worker_app.create_app(gateway=None, dispatcher=None)
+
+    assert app.state.self_improve_executor is sentinel
+
+
+def test_gateway_adds_distinct_auto_profiles_and_scopes_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from general_ludd.config import loader as config_loader
+    from general_ludd.models import auto_configurator, provider_registry
+    from general_ludd.secrets import config as secrets_config
+    from general_ludd.secrets import env as secrets_env
+    from general_ludd.secrets import manager as secrets_manager
+
+    explicit = ModelProfile(model_profile_id="explicit", model_name="model-a")
+    duplicate = ModelProfile(model_profile_id="explicit", model_name="model-b")
+    discovered = ModelProfile(model_profile_id="discovered", model_name="model-c")
+    permission = object()
+    scoped_secrets = MagicMock(name="scoped-secrets")
+    registry = MagicMock(name="provider-registry")
+
+    monkeypatch.setattr(
+        config_loader,
+        "load_user_config",
+        lambda: SimpleNamespace(model_profiles={"explicit": explicit}),
+    )
+    monkeypatch.setattr(
+        auto_configurator.AutoConfigurator,
+        "auto_configure_profiles",
+        lambda _self: [duplicate, discovered],
+    )
+    monkeypatch.setattr(
+        provider_registry.ProviderRegistry,
+        "from_profiles",
+        staticmethod(lambda _profiles: registry),
+    )
+    monkeypatch.setattr(secrets_env, "EnvSecretsManager", MagicMock)
+    monkeypatch.setattr(secrets_config, "OpenBaoConfig", MagicMock)
+    monkeypatch.setattr(
+        secrets_manager,
+        "SecretsManager",
+        lambda *, config, permission_spec: scoped_secrets,
+    )
+
+    gateway = worker_app.build_gateway_from_config(permission_spec=permission)
+
+    assert gateway is not None
+    assert set(gateway._profiles) == {"explicit", "discovered"}
+    assert gateway._secrets is scoped_secrets
+
+
+def test_gateway_scoped_secret_failure_falls_back_to_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from general_ludd.config import loader as config_loader
+    from general_ludd.models import auto_configurator, provider_registry
+    from general_ludd.secrets import env as secrets_env
+    from general_ludd.secrets import manager as secrets_manager
+
+    profile = ModelProfile(model_profile_id="explicit", model_name="model-a")
+    environment_secrets = MagicMock(name="environment-secrets")
+
+    monkeypatch.setattr(
+        config_loader,
+        "load_user_config",
+        lambda: SimpleNamespace(model_profiles={"explicit": profile}),
+    )
+    monkeypatch.setattr(
+        auto_configurator.AutoConfigurator,
+        "auto_configure_profiles",
+        lambda _self: [],
+    )
+    monkeypatch.setattr(
+        provider_registry.ProviderRegistry,
+        "from_profiles",
+        staticmethod(lambda _profiles: MagicMock()),
+    )
+    monkeypatch.setattr(
+        secrets_env,
+        "EnvSecretsManager",
+        lambda: environment_secrets,
+    )
+    monkeypatch.setattr(
+        secrets_manager,
+        "SecretsManager",
+        MagicMock(side_effect=RuntimeError("unavailable")),
+    )
+
+    gateway = worker_app.build_gateway_from_config(permission_spec=object())
+
+    assert gateway is not None
+    assert gateway._secrets is environment_secrets
+
+
+def test_compaction_config_enabled_uses_configured_level(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from general_ludd.compaction import aggressive
+    from general_ludd.config import loader as config_loader
+
+    level = object()
+    monkeypatch.setattr(
+        config_loader,
+        "load_user_config",
+        lambda: SimpleNamespace(compaction=SimpleNamespace(enabled=True, level=2)),
+    )
+    monkeypatch.setattr(aggressive, "level_at", lambda index: level if index == 2 else None)
+
+    assert worker_app._resolve_compaction_config() == (True, level)
+
+
+@pytest.mark.asyncio
+async def test_self_improve_executes_approved_plan_without_playbook_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = _plan(tmp_path)
+    managed = _managed_result(plan)
+    runner = _Runner(managed)
+    factory = _Factory(runner)
+    app = _build_app(monkeypatch, repo_root=tmp_path, factory=factory)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/jobs/execute", json=_payload(plan))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "created"
+    assert body["exit_code"] == 0
+    artifact = ManagedSelfImproveResultArtifact.from_json(body["result_summary"])
+    assert artifact.to_json() == body["result_summary"]
+    assert artifact.plan_identity_digest == plan.identity_digest
+    assert artifact.attempt_identity_digest == plan.attempt_identity_digest
+    assert artifact.proposal == managed.final_result.proposal
+    assert artifact.evidence == managed.final_result.evidence
+    assert artifact.comparison == managed.final_result.comparison
+    assert "managed self-improvement accepted" not in body["result_summary"]
+    assert body["events"] == [{
+        "event": "self_improve_completed",
+        "accepted": True,
+        "attempts": 1,
+        "plan_identity_digest": plan.identity_digest,
+        "attempt_identity_digest": plan.attempt_identity_digest,
+        "attempted_model_ids": ["qwen-test"],
+        "outcome_record_ids": ["outcome-1"],
+    }]
+    assert factory.roots == [tmp_path.resolve()]
+    assert runner.plans == [ApprovedSelfImprovePlan.from_json(plan.to_json())]
+
+
+@pytest.mark.asyncio
+async def test_worker_managed_execution_uses_owned_process_executor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = _plan(tmp_path)
+    executor = AsyncMock()
+    executor.run_async.return_value = _managed_result(plan)
+    runner = _FailingRunner()
+    app = _build_app(
+        monkeypatch,
+        repo_root=tmp_path,
+        factory=_Factory(runner),
+    )
+    app.state.self_improve_executor = executor
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.post("/jobs/execute", json=_payload(plan))
+
+    assert response.status_code == 200
+    assert response.json()["exit_code"] == 0
+    executor.run_async.assert_awaited_once_with(tmp_path.resolve(), plan)
+
+
+@pytest.mark.asyncio
+async def test_worker_registry_rebinds_cross_host_plan_without_transporting_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binding = ProjectRepositoryBinding.for_project(
+        project_id="project-worker",
+        workspace_path="projects/worker",
+        repo_url="https://example.com/org/worker.git",
+    )
+    controller_repo = tmp_path / "controller" / "repository"
+    controller_repo.mkdir(parents=True)
+    worker_base = tmp_path / "worker-host"
+    worker_repo = worker_base / binding.workspace_key / "repo"
+    worker_repo.mkdir(parents=True)
+    (worker_repo / ".git").mkdir()
+    plan = _plan(
+        controller_repo,
+        repository_binding_digest=binding.digest,
+    )
+    runner = _Runner(_managed_result(plan))
+    factory = _Factory(runner)
+    registry = ProjectRepositoryRegistry((binding,), base_dir=worker_base)
+    monkeypatch.setenv("GLUDD_PSK_DISABLE", "1")
+    app = worker_app.create_app(
+        gateway=None,
+        dispatcher=None,
+        self_improve_runner_factory=factory,
+        self_improve_repository_registry=registry,
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/jobs/execute", json=_payload(plan))
+
+    assert response.status_code == 200
+    assert str(controller_repo.resolve()) not in plan.to_json()
+    assert factory.roots == [worker_repo.resolve()]
+    assert runner.plans[0].repo_root == worker_repo.resolve()
+    assert runner.plans[0].identity_digest == plan.identity_digest
+
+
+@pytest.mark.asyncio
+async def test_worker_rejects_stale_repository_binding_before_runner_construction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binding = ProjectRepositoryBinding.for_project(
+        project_id="project-worker",
+        workspace_path="projects/worker",
+        repo_url="https://example.com/org/worker.git",
+    )
+    worker_repo = tmp_path / binding.workspace_key / "repo"
+    worker_repo.mkdir(parents=True)
+    (worker_repo / ".git").mkdir()
+    plan = _plan(tmp_path / "controller", repository_binding_digest=binding.digest)
+    factory = _Factory(_Runner(_managed_result(plan)))
+    registry = ProjectRepositoryRegistry((binding,), base_dir=tmp_path)
+    monkeypatch.setenv("GLUDD_PSK_DISABLE", "1")
+    app = worker_app.create_app(
+        gateway=None,
+        dispatcher=None,
+        self_improve_runner_factory=factory,
+        self_improve_repository_registry=registry,
+    )
+    payload = _payload(plan)
+    payload["repository_binding_digest"] = "0" * 64
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/jobs/execute", json=payload)
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["reason"] == "self_improve_repository_binding_stale"
+    assert factory.roots == []
+
+
+@pytest.mark.asyncio
+async def test_self_improve_rejection_is_a_typed_failed_task_return(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = _plan(tmp_path)
+    managed = _managed_result(plan, accepted=False)
+    runner = _Runner(managed)
+    app = _build_app(monkeypatch, repo_root=tmp_path, factory=_Factory(runner))
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/jobs/execute", json=_payload(plan))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["exit_code"] == 1
+    artifact = ManagedSelfImproveResultArtifact.from_json(body["result_summary"])
+    assert artifact.to_json() == body["result_summary"]
+    assert artifact.accepted is False
+    assert artifact.plan_identity_digest == plan.identity_digest
+    assert artifact.proposal == managed.final_result.proposal
+    assert artifact.evidence == managed.final_result.evidence
+    assert artifact.comparison.blockers == ("tests",)
+    assert body["events"][0]["accepted"] is False
+    assert "managed self-improvement rejected" not in body["result_summary"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("payload_change", "reason"),
+    [
+        ({"plan_artifact": None}, "self_improve_plan_required"),
+        ({"plan_artifact": "not-json"}, "invalid_self_improve_plan"),
+        ({"project_id": None}, "self_improve_project_required"),
+        ({"project_id": "wrong-project"}, "self_improve_identity_mismatch"),
+        ({"todo_id": "wrong-todo"}, "self_improve_identity_mismatch"),
+    ],
+)
+async def test_self_improve_fails_closed_for_missing_malformed_or_mismatched_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    payload_change: dict[str, object],
+    reason: str,
+) -> None:
+    plan = _plan(tmp_path)
+    factory = _Factory(_Runner(_managed_result(plan)))
+    app = _build_app(monkeypatch, repo_root=tmp_path, factory=factory)
+    payload = _payload(plan)
+    payload.update(payload_change)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/jobs/execute", json=payload)
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["reason"] == reason
+    assert factory.roots == []
+
+
+@pytest.mark.asyncio
+async def test_self_improve_fails_closed_when_repository_mapping_is_absent_or_mismatched(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = _plan(tmp_path)
+    factory = _Factory(_Runner(_managed_result(plan)))
+
+    def missing(_project_id: str) -> Path:
+        raise LookupError("not configured")
+
+    missing_app = _build_app(
+        monkeypatch,
+        repo_root=tmp_path,
+        factory=factory,
+        resolver=missing,
+    )
+    other = tmp_path / "other"
+    other.mkdir()
+    repo_file = tmp_path / "repo-file"
+    repo_file.write_text("not a repository", encoding="utf-8")
+    mismatch_app = _build_app(
+        monkeypatch,
+        repo_root=tmp_path,
+        factory=factory,
+        resolver=lambda _project_id: other,
+    )
+    wrong_type_app = _build_app(
+        monkeypatch,
+        repo_root=tmp_path,
+        factory=factory,
+        resolver=lambda _project_id: "not-a-path",
+    )
+    file_app = _build_app(
+        monkeypatch,
+        repo_root=tmp_path,
+        factory=factory,
+        resolver=lambda _project_id: repo_file,
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=missing_app), base_url="http://test") as client:
+        missing_response = await client.post("/jobs/execute", json=_payload(plan))
+    async with AsyncClient(transport=ASGITransport(app=mismatch_app), base_url="http://test") as client:
+        mismatch_response = await client.post("/jobs/execute", json=_payload(plan))
+    async with AsyncClient(transport=ASGITransport(app=wrong_type_app), base_url="http://test") as client:
+        wrong_type_response = await client.post("/jobs/execute", json=_payload(plan))
+    async with AsyncClient(transport=ASGITransport(app=file_app), base_url="http://test") as client:
+        file_response = await client.post("/jobs/execute", json=_payload(plan))
+
+    assert missing_response.status_code == 400
+    assert missing_response.json()["detail"]["reason"] == "self_improve_repository_unavailable"
+    assert mismatch_response.status_code == 400
+    assert mismatch_response.json()["detail"]["reason"] == "self_improve_identity_mismatch"
+    assert wrong_type_response.status_code == 400
+    assert wrong_type_response.json()["detail"]["reason"] == "self_improve_repository_unavailable"
+    assert file_response.status_code == 400
+    assert file_response.json()["detail"]["reason"] == "self_improve_repository_unavailable"
+    assert factory.roots == []
+
+
+@pytest.mark.asyncio
+async def test_self_improve_model_execution_is_serialized_per_worker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = _plan(tmp_path)
+    runner = _Runner(
+        _managed_result(plan),
+        delay=0.05,
+    )
+    app = _build_app(monkeypatch, repo_root=tmp_path, factory=_Factory(runner))
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        first, second = await asyncio.gather(
+            client.post("/jobs/execute", json=_payload(plan, job_id="JOB-WORKER-SI-1")),
+            client.post("/jobs/execute", json=_payload(plan, job_id="JOB-WORKER-SI-2")),
+        )
+
+    assert first.status_code == second.status_code == 200
+    assert runner.max_active == 1
+
+
+@pytest.mark.asyncio
+async def test_self_improve_runtime_exception_is_secret_safe_failed_return(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = _plan(tmp_path)
+    app = _build_app(
+        monkeypatch,
+        repo_root=tmp_path,
+        factory=_Factory(_FailingRunner()),
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/jobs/execute", json=_payload(plan))
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["exit_code"] == 1
+    assert json.loads(body["result_summary"]) == {
+        "accepted": False,
+        "kind": "managed_self_improve",
+        "reason": "managed_execution_failed",
+    }
+    assert "secret-token" not in response.text
+    assert body["events"] == [
+        {"event": "self_improve_failed", "reason": "managed_execution_failed"}
+    ]

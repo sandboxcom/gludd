@@ -11,12 +11,15 @@ class TestEventLoopE2E:
     def test_phase_order_completeness(self):
         expected = [
             "load_config_snapshot",
-            "claim_unreviewed_task_returns",
-            "dispatch_return_review_jobs",
             "evaluate_pid_controllers",
             "refill_task_buckets",
             "run_scheduler",
+            "self_improve",
+            "poll_issue_sources",
             "sdlc_gate",
+            "reconcile_compute_demand",
+            "claim_unreviewed_task_returns",
+            "dispatch_return_review_jobs",
             "claim_runnable_todos",
             "evaluate_rules",
             "dispatch_execute_jobs",
@@ -27,8 +30,6 @@ class TestEventLoopE2E:
             "flush_spend_ledger",
             "remediate_blocked_tasks",
             "consolidate_memory",
-            "self_improve",
-            "poll_issue_sources",
             "service_discovery",
             "reap_expired_sts_tokens",
             "purge_old_task_decisions",
@@ -106,12 +107,17 @@ class TestEventLoopE2E:
                         expires_at=datetime.now(UTC) - timedelta(seconds=10),
                     )
                 )
-                await acquire_lease(session, "core", "worker-new", ttl_seconds=300)
                 await session.commit()
 
                 reclaimed = await reclaim_expired_leases(session)
                 assert isinstance(reclaimed, int)
                 assert reclaimed == 1
+                await acquire_lease(
+                    session,
+                    "core",
+                    "worker-new",
+                    ttl_seconds=300,
+                )
 
                 remaining = (
                     (await session.execute(select(BucketLeaseModel))).scalars().all()

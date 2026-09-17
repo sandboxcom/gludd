@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
 
+@runtime_checkable
 class _Reloader(Protocol):
     """Structural type for HotReloader's reload_changed_modules."""
 
@@ -20,6 +21,7 @@ class _Reloader(Protocol):
     ) -> Any: ...
 
 
+@runtime_checkable
 class _EventBus(Protocol):
     """Structural type for the daemon event bus."""
 
@@ -43,6 +45,7 @@ class SelfApply:
         role: str | None = None,
         event_bus: _EventBus | None = None,
     ) -> dict[str, Any]:
+        """Commit a self-change, hot-reload it, and publish bounded evidence."""
         from general_ludd.events.types import SelfUpdateAppliedEvent
         from general_ludd.git_automation.repo import GitAutomation
 
@@ -100,6 +103,7 @@ class ExternalApply:
         message: str,
         event_bus: _EventBus | None = None,
     ) -> dict[str, Any]:
+        """Commit an external-project change without reloading Gludd."""
         from general_ludd.git_automation.repo import GitAutomation
 
         git = GitAutomation(repo_path=workspace_repo_dir)

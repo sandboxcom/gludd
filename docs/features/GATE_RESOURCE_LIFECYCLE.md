@@ -89,6 +89,33 @@ selects ignored build outputs, so Git-tracked inputs such as
 pathspecs as restricting the affected paths:
 [git-clean documentation](https://git-scm.com/docs/git-clean.html).
 
+#### Dry-run deletion incident and prevention
+
+An exact-head gate exposed a GNU Make recursion trap: the historical `clean`
+recipe put `$(MAKE)` validation and destructive cleanup in one shell recipe
+line. GNU Make intentionally executes any recipe line containing `$(MAKE)` even
+under `-n`, so the Makefile audit's `make -n clean` invocation deleted the
+gate's live `.venv` and caches. The failure was therefore repository-owned—not
+macOS cleanup—and the next unit shard could no longer import pytest.
+
+The recipe now runs the validation test directly through the repository's
+locked Python environment and contains no recursive-Make marker. A structural
+test rejects any future `$(MAKE)` in the `clean` recipe, while a behavioral test
+runs the real dry-run against a sentinel `.venv` and proves its bytes survive.
+Actual cleanup remains available only through the explicit
+`CLEAN_VALIDATE_ONLY=0` contract; cache-pressure reclamation remains separately
+bounded, observable, and lease-aware rather than being disabled. The damaged
+shared uv cache was preserved for diagnosis and a new versioned cache root was
+selected, avoiding an unreviewed deletion while restoring deterministic builds.
+
+This behavior follows GNU Make's documented special handling of recursive
+recipe lines in [How the `MAKE` Variable Works](https://www.gnu.org/software/make/manual/html_node/MAKE-Variable.html).
+Long-lived practitioner reports show the same surprising behavior in
+[recursive dry runs](https://stackoverflow.com/questions/72302726/gnu-make-recursive-dry-run-runs-commands),
+[recipes calling recipes](https://stackoverflow.com/questions/73359439/makefile-calling-a-recipe-within-another-recipe-will-not-run-dry-it),
+and the common recommendation to use `$(MAKE)` precisely because GNU Make runs
+it despite `-n` in [recursive Make guidance](https://stackoverflow.com/questions/50510278/makefile-why-always-use-make-instead-of-make).
+
 ### Adaptive shard termination
 
 The adaptive runner returns a result containing the child return code, captured
@@ -165,6 +192,39 @@ The long-lived practitioner report
 shows the same standalone node-down line in a real hang. Matching those
 boundaries, instead of a phrase anywhere in output, preserves real crash
 detection without treating user-controlled output as controller state.
+
+### Parallel-shard terminal deadline
+
+On 2026-09-10, a foreground `unit-3a unit-3b` replica demonstrated a
+controller-level stall that the 180-second per-test timeout could not own.
+`unit-3a` reached a durable result, while the `unit-3b` pytest controller and
+its xdist worker remained live and the wrapper emitted heartbeats indefinitely.
+No JUnit document was finalized. Recovery required the existing
+namespace-checked process-tree boundary, which found and reaped the worker,
+pytest controller, and uv child without touching another checkout.
+
+The foreground and background parallel-shard entry points now pass the same
+strictly positive `MAX_RUNTIME_SECONDS` constraint to their supervisor. The
+default is 3,600 seconds. The supervisor measures one monotonic run deadline,
+adds elapsed and limit fields to every heartbeat, and assigns exit code 124 to
+each still-pending shard when the deadline expires. Before cleanup it persists a
+bounded per-shard summary and emits `SHARD-TIMEOUT` with only the shard name,
+elapsed time, configured limit, and owned summary path. Its unconditional final
+cleanup then interrupts and, after the existing ten-second grace period, kills
+only the process groups it created. A completed peer retains its actual result;
+timed-out work is never reported as passed or retried automatically.
+
+This outer deadline is intentionally independent of a test-function alarm.
+Practitioners have documented xdist controllers waiting forever on dead worker
+pipes after tests stop producing events in
+[pytest-xdist issue 1313](https://github.com/pytest-dev/pytest-xdist/issues/1313),
+and the open request for master-side worker timeouts dates to 2017 in
+[pytest-xdist issue 220](https://github.com/pytest-dev/pytest-xdist/issues/220).
+The pytest-timeout maintainer also recommends an owning wrapper when a timed-out
+pytest process can leave child processes behind:
+[pytest-timeout issue 159](https://github.com/pytest-dev/pytest-timeout/issues/159).
+These reports do not prove the exact local root cause; they establish that an
+individual-test timeout is not a complete suite/process-lifecycle boundary.
 
 ### Hermetic gate validation state
 

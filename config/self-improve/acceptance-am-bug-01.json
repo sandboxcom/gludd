@@ -1,0 +1,1 @@
+{"canonical_make_commands":["make test-files TESTFILES=tests/unit/test_self_improve_task_diversity.py PYTEST_ARGS=-q"],"objective":"Fix a defect in task-type routing by applying a minimal code change that resolves incorrect behavior while preserving existing functionality and add one regression test.","reference_elapsed_seconds":278,"task_id":"S83.200"}

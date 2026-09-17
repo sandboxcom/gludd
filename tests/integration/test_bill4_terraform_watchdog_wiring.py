@@ -20,6 +20,7 @@ from general_ludd.infra.terraform import TerraformGenerator
 STACKS_DIR = Path("infra/terraform/stacks")
 WATCHDOG_SOURCE = '"../../modules/gpu-cost-watchdog"'
 MODULE_REF = 'module "gpu_cost_watchdog"'
+CONTROL_PLANE_ONLY_STACKS = frozenset({"azure-container-app-environment"})
 
 
 @pytest.fixture(autouse=True)
@@ -59,6 +60,14 @@ def _collect_stack_main_files() -> list[Path]:
     stacks = sorted(STACKS_DIR.glob("*/main.tf"))
     assert len(stacks) >= 16, f"expected >=16 stacks, found {len(stacks)}"
     return stacks
+
+
+def _collect_compute_stack_main_files() -> list[Path]:
+    return [
+        stack
+        for stack in _collect_stack_main_files()
+        if stack.parent.name not in CONTROL_PLANE_ONLY_STACKS
+    ]
 
 
 class TestTerraformWatchdogWiring:
@@ -124,9 +133,9 @@ class TestTerraformWatchdogWiring:
         assert "timeout_minutes" in tfvars
 
     def test_all_stacks_have_watchdog_module(self):
-        """Every stack main.tf references the gpu_cost_watchdog module."""
+        """Every paid compute stack references the gpu_cost_watchdog module."""
         missing: list[str] = []
-        for stack_main in _collect_stack_main_files():
+        for stack_main in _collect_compute_stack_main_files():
             content = _read_file(stack_main)
             if MODULE_REF not in content:
                 missing.append(stack_main.parent.name)
@@ -165,13 +174,24 @@ class TestTerraformWatchdogWiring:
                 resp = client.get("/healthz")
                 assert resp.status_code == 200
 
-    def test_exact_18_stacks_exist(self):
-        """There are exactly 18 stacks (9 pairs)."""
-        stacks = sorted(STACKS_DIR.glob("*/main.tf"))
-        assert len(stacks) == 18, (
-            f"Expected 18 stacks, found {len(stacks)}: "
-            + ", ".join(s.parent.name for s in stacks)
+    def test_exact_18_compute_stacks_and_one_control_plane_stack_exist(self):
+        """Track 18 paid runners separately from one zero-replica control plane."""
+        stacks = _collect_stack_main_files()
+        compute_stacks = _collect_compute_stack_main_files()
+
+        assert len(compute_stacks) == 18
+        assert {stack.parent.name for stack in stacks} - {
+            stack.parent.name for stack in compute_stacks
+        } == CONTROL_PLANE_ONLY_STACKS
+
+    def test_environment_control_plane_has_no_compute_watchdog(self):
+        """The environment stack cannot fabricate a paid runner watchdog."""
+        source = _read_file(
+            STACKS_DIR / "azure-container-app-environment" / "main.tf"
         )
+
+        assert MODULE_REF not in source
+        assert WATCHDOG_SOURCE not in source
 
     def test_kubernetes_stacks_have_watchdog(self):
         """Kubernetes stacks include the gpu_cost_watchdog module."""

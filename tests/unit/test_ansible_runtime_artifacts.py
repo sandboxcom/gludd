@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +20,65 @@ PINNED_IMAGE = "registry.example/gludd-ee:beta4@sha256:" + "b" * 64
 
 def test_tracked_runtime_artifacts_validate() -> None:
     assert artifacts.validate_files() == []
+
+
+def test_runtime_stages_azure_orchestration_and_pinned_opentofu() -> None:
+    requirements = yaml.safe_load(
+        (artifacts.CONFIG_ROOT / "requirements.yml").read_text(encoding="utf-8")
+    )["collections"]
+    collection_versions = {
+        item["name"]: item.get("version")
+        for item in requirements
+        if item.get("type") != "file"
+    }
+    local_artifacts = {
+        item["name"] for item in requirements if item.get("type") == "file"
+    }
+    definition = yaml.safe_load(artifacts.DEFINITION.read_text(encoding="utf-8"))
+    build_steps = "\n".join(definition["additional_build_steps"]["append_final"])
+
+    assert collection_versions == {
+        "azure.azcollection": "3.21.0",
+        "cloud.terraform": "4.0.0",
+    }
+    assert "collections/general_ludd-azure-0.2.0.tar.gz" in local_artifacts
+    assert len(artifacts.COLLECTION_ARTIFACTS) == 4
+    assert any(source.name == "azure" for source, _artifact in artifacts.COLLECTION_ARTIFACTS)
+    assert "tofu_1.12.6_linux_amd64.zip" in build_steps
+    assert "tofu_1.12.6_linux_arm64.zip" in build_steps
+    assert "5dc43da4f750f33873dc25e94587128709e819e544b7be9016b255316153c3a8" in build_steps
+    assert "e573979ba68a17fe7b881752051a694a7efcd970e39521f6a25775197861ed4d" in build_steps
+    assert "sha256sum --check --strict" in build_steps
+    assert "github.com/opentofu/opentofu/releases/download/v1.12.6" in build_steps
+    assert "/usr/local/bin/tofu" in build_steps
+    assert "releases.hashicorp.com" not in build_steps
+    assert "/usr/local/bin/terraform" not in build_steps
+    workflow = (artifacts.ROOT / ".github" / "workflows" / "build.yml").read_text(
+        encoding="utf-8"
+    )
+    assert '"${EE_TAG}" /usr/local/bin/tofu version' in workflow
+
+
+def test_runtime_validation_rejects_hashicorp_terraform_binary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definition = yaml.safe_load(artifacts.DEFINITION.read_text(encoding="utf-8"))
+    definition["additional_build_steps"]["append_final"].append(
+        "RUN curl https://releases.hashicorp.com && "
+        "install terraform /usr/local/bin/terraform"
+    )
+    incompatible = tmp_path / "execution-environment.yml"
+    incompatible.write_text(yaml.safe_dump(definition), encoding="utf-8")
+    inputs = dict(artifacts.INPUTS)
+    inputs["definition"] = incompatible
+    monkeypatch.setattr(artifacts, "DEFINITION", incompatible)
+    monkeypatch.setattr(artifacts, "INPUTS", inputs)
+
+    assert (
+        "execution environment must not install HashiCorp Terraform"
+        in artifacts.validate_files()
+    )
 
 
 def test_validate_reports_missing_artifact(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -173,6 +233,11 @@ def test_build_reports_missing_tools(
     message: str,
 ) -> None:
     monkeypatch.setattr(artifacts, "validate_files", lambda: [])
+    monkeypatch.setattr(
+        artifacts,
+        "find_spec",
+        lambda _name: object() if "ansible-builder" in available else None,
+    )
     monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}" if name in available else None)
     assert artifacts.build_environment("podman", "gludd-ee:beta4", tmp_path / "context", False) == expected
     assert message in capsys.readouterr().err
@@ -181,6 +246,7 @@ def test_build_reports_missing_tools(
 def test_build_streams_ansible_builder_with_bounded_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[list[str], Path | None]] = []
     monkeypatch.setattr(artifacts, "validate_files", lambda: [])
+    monkeypatch.setattr(artifacts, "find_spec", lambda _name: object())
     monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}")
     collection_artifacts = tuple(
         (tmp_path / f"source-{index}", tmp_path / "dist" / f"collection-{index}.tar.gz")
@@ -204,7 +270,7 @@ def test_build_streams_ansible_builder_with_bounded_context(tmp_path: Path, monk
         ["ansible-galaxy", "collection", "build"],
         ["ansible-galaxy", "collection", "build"],
     ]
-    assert calls[3][0][:2] == ["ansible-builder", "build"]
+    assert calls[3][0][:4] == [sys.executable, "-m", "ansible_builder", "build"]
     assert calls[3][1] == artifacts.ROOT
     assert context.is_dir()
 
@@ -266,7 +332,29 @@ def test_verify_inspects_and_smokes_without_network(monkeypatch: pytest.MonkeyPa
     assert artifacts.verify_environment("podman", PINNED_IMAGE, False) == 0
     assert calls[0] == ["podman", "image", "inspect", PINNED_IMAGE]
     assert "--network=none" in calls[1]
-    assert "ansible_runner" in calls[1][-1]
+    assert calls[1][-2:] == ["/usr/local/bin/tofu", "version"]
+    assert "--network=none" in calls[2]
+    assert "ansible_runner" in calls[2][-1]
+
+
+def test_verify_stops_when_opentofu_smoke_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+    return_codes = iter((0, 23))
+    monkeypatch.setattr(artifacts, "validate_files", lambda: [])
+    monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}")
+
+    def fake_run(command: list[str], *, check: bool = False) -> SimpleNamespace:
+        assert check is False
+        calls.append(command)
+        return SimpleNamespace(returncode=next(return_codes))
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert artifacts.verify_environment("podman", PINNED_IMAGE, False) == 23
+    assert len(calls) == 2
+    assert calls[-1][-2:] == ["/usr/local/bin/tofu", "version"]
 
 
 def test_cli_validate_and_validate_only_modes(monkeypatch: pytest.MonkeyPatch) -> None:

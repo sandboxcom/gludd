@@ -1,3 +1,5 @@
+"""Parse, compare, and match Semantic Versioning 2.0 values."""
+
 from __future__ import annotations
 
 import re
@@ -47,6 +49,8 @@ def _parse_partial(partial: str) -> SemVer:
 @total_ordering
 @dataclass(frozen=True, slots=True)
 class SemVer:
+    """Represent a parsed Semantic Versioning 2.0 value."""
+
     major: int
     minor: int
     patch: int
@@ -54,6 +58,7 @@ class SemVer:
     build: tuple[str, ...] = field(default_factory=tuple)
 
     def __str__(self) -> str:
+        """Render the canonical Semantic Versioning string."""
         base = f"{self.major}.{self.minor}.{self.patch}"
         if self.prerelease:
             base += "-" + ".".join(str(p) for p in self.prerelease)
@@ -63,47 +68,36 @@ class SemVer:
 
     @property
     def is_prerelease(self) -> bool:
+        """Return whether the version has prerelease identifiers."""
         return len(self.prerelease) > 0
 
     @property
     def is_stable(self) -> bool:
+        """Return whether the version is stable and has a nonzero major."""
         return self.major > 0 and not self.is_prerelease
 
     def __eq__(self, other: object) -> bool:
+        """Compare versions using SemVer precedence fields."""
         if not isinstance(other, SemVer):
             return NotImplemented
-        return (
-            self.major == other.major
-            and self.minor == other.minor
-            and self.patch == other.patch
-            and self.prerelease == other.prerelease
-        )
+        left = self.major, self.minor, self.patch, self.prerelease
+        right = other.major, other.minor, other.patch, other.prerelease
+        return left == right
 
     def __lt__(self, other: SemVer) -> bool:
-        if (self.major, self.minor, self.patch) != (
-            other.major,
-            other.minor,
-            other.patch,
-        ):
-            return (self.major, self.minor, self.patch) < (
-                other.major,
-                other.minor,
-                other.patch,
-            )
-
-        if not self.prerelease and other.prerelease:
-            return False
-        if self.prerelease and not other.prerelease:
-            return True
-        if not self.prerelease and not other.prerelease:
-            return False
+        """Order this version before another by SemVer precedence."""
+        left_core = self.major, self.minor, self.patch
+        right_core = other.major, other.minor, other.patch
+        if left_core != right_core:
+            return left_core < right_core
+        if not self.prerelease or not other.prerelease:
+            return bool(self.prerelease) and not other.prerelease
 
         return self._cmp_prerelease(other) < 0
 
     def _cmp_prerelease(self, other: SemVer) -> int:
         a, b = self.prerelease, other.prerelease
-        for i in range(min(len(a), len(b))):
-            ai, bi = a[i], b[i]
+        for ai, bi in zip(a, b, strict=False):
             if ai == bi:
                 continue
             if isinstance(ai, int) and isinstance(bi, int):
@@ -113,38 +107,36 @@ class SemVer:
             if isinstance(bi, int):
                 return 1
             return -1 if ai < bi else 1
-        if len(a) < len(b):
-            return -1
-        if len(a) > len(b):
-            return 1
-        return 0
+        return (len(a) > len(b)) - (len(a) < len(b))
 
     def __hash__(self) -> int:
+        """Hash the SemVer precedence fields."""
         return hash((self.major, self.minor, self.patch, self.prerelease))
 
     def bump_major(self) -> SemVer:
+        """Return the next major version."""
         return SemVer(self.major + 1, 0, 0)
 
     def bump_minor(self) -> SemVer:
+        """Return the next minor version."""
         return SemVer(self.major, self.minor + 1, 0)
 
     def bump_patch(self) -> SemVer:
+        """Return the next patch version."""
         return SemVer(self.major, self.minor, self.patch + 1)
 
     def with_prerelease(self, ident: str) -> SemVer:
-        parts = [p for p in ident.split(".")]
-        parsed: list[str | int] = []
-        for p in parts:
-            parsed.append(int(p) if p.isdigit() else p)
+        """Return a copy with parsed prerelease identifiers."""
         return SemVer(
             self.major,
             self.minor,
             self.patch,
-            prerelease=tuple(parsed),
+            prerelease=tuple(int(part) if part.isdigit() else part for part in ident.split(".")),
             build=self.build,
         )
 
     def with_build(self, ident: str) -> SemVer:
+        """Return a copy with build metadata identifiers."""
         return SemVer(
             self.major,
             self.minor,
@@ -154,10 +146,12 @@ class SemVer:
         )
 
     def satisfies(self, spec: str) -> bool:
+        """Return whether this version satisfies a range specification."""
         return Satisfier.satisfies(self, spec)
 
 
 def parse(version: str) -> SemVer:
+    """Parse a complete Semantic Versioning 2.0 string."""
     m = _SEMVER_RE.match(version)
     if not m:
         raise ValueError(f"invalid semver: {version!r}")
@@ -166,39 +160,34 @@ def parse(version: str) -> SemVer:
     minor = int(m.group("minor"))
     patch = int(m.group("patch"))
 
-    pre_str = m.group("prerelease")
-    prerelease: tuple[str | int, ...] = ()
-    if pre_str:
-        parts: list[str | int] = []
-        for p in pre_str.split("."):
-            parts.append(int(p) if p.isdigit() else p)
-        prerelease = tuple(parts)
-
+    prerelease_text = m.group("prerelease")
+    prerelease = (
+        tuple(int(part) if part.isdigit() else part for part in prerelease_text.split("."))
+        if prerelease_text
+        else ()
+    )
     build_str = m.group("build")
-    build: tuple[str, ...] = ()
-    if build_str:
-        build = tuple(build_str.split("."))
-
+    build = tuple(build_str.split(".")) if build_str else ()
     return SemVer(major, minor, patch, prerelease, build)
 
 
 def coerce(version: str) -> SemVer:
+    """Coerce an arbitrary string containing version digits to SemVer."""
     m = _SEMVER_RE.match(version)
     if m:
         return parse(version)
     digits = re.findall(r"\d+", version)
-    if len(digits) >= 3:
-        return parse(".".join(digits[:3]))
-    if len(digits) == 2:
-        return parse(".".join(digits) + ".0")
-    if len(digits) == 1:
-        return parse(digits[0] + ".0.0")
-    raise ValueError(f"cannot coerce to semver: {version!r}")
+    if not digits:
+        raise ValueError(f"cannot coerce to semver: {version!r}")
+    return parse(".".join([*digits, "0", "0"][:3]))
 
 
 class Satisfier:
+    """Evaluate Semantic Versioning range specifications."""
+
     @staticmethod
     def satisfies(version: SemVer, spec: str) -> bool:
+        """Return whether a version satisfies a range specification."""
         trimmed = spec.strip()
         if not trimmed:
             return True
@@ -310,6 +299,7 @@ class Satisfier:
 
 
 def max_satisfying(versions: list[str], spec: str) -> str | None:
+    """Return the greatest valid version satisfying a specification."""
     parsed: list[SemVer] = []
     for v in versions:
         try:
@@ -327,6 +317,7 @@ def max_satisfying(versions: list[str], spec: str) -> str | None:
 
 
 def sort_versions(versions: list[str]) -> list[str]:
+    """Return version strings sorted by Semantic Versioning precedence."""
     parsed = [(parse(v), v) for v in versions]
     parsed.sort(key=lambda x: x[0])
     return [v for _, v in parsed]

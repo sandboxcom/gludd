@@ -26,6 +26,8 @@ TransactionId = str
 
 
 class CoordinatorState(enum.StrEnum):
+    """Represent coordinator states for two- and three-phase commit."""
+
     INIT = "init"
     PREPARING = "preparing"
     PRE_COMMITTING = "pre_committing"
@@ -36,6 +38,8 @@ class CoordinatorState(enum.StrEnum):
 
 
 class ParticipantState(enum.StrEnum):
+    """Represent participant states for two- and three-phase commit."""
+
     INIT = "init"
     PREPARED = "prepared"
     PRE_COMMITTED = "pre_committed"
@@ -45,11 +49,15 @@ class ParticipantState(enum.StrEnum):
 
 
 class Vote(enum.StrEnum):
+    """Represent a participant's prepare vote."""
+
     YES = "yes"
     NO = "no"
 
 
 class Protocol(enum.StrEnum):
+    """Select the distributed commit protocol."""
+
     TWO_PC = "two_pc"
     THREE_PC = "three_pc"
 
@@ -59,12 +67,16 @@ class Protocol(enum.StrEnum):
 
 @dataclass
 class PrepareRequest:
+    """Request a participant's vote for a transaction."""
+
     transaction_id: TransactionId
     coordinator_id: str
 
 
 @dataclass
 class PrepareResponse:
+    """Carry a participant's prepare vote."""
+
     transaction_id: TransactionId
     participant_id: ParticipantId
     vote: Vote
@@ -72,21 +84,29 @@ class PrepareResponse:
 
 @dataclass
 class CommitRequest:
+    """Request transaction commit."""
+
     transaction_id: TransactionId
 
 
 @dataclass
 class AbortRequest:
+    """Request transaction rollback."""
+
     transaction_id: TransactionId
 
 
 @dataclass
 class PreCommitRequest:
+    """Request the three-phase pre-commit transition."""
+
     transaction_id: TransactionId
 
 
 @dataclass
 class PreCommitResponse:
+    """Carry a participant's pre-commit acknowledgement."""
+
     transaction_id: TransactionId
     participant_id: ParticipantId
     ack: bool
@@ -94,6 +114,8 @@ class PreCommitResponse:
 
 @dataclass
 class AckResponse:
+    """Acknowledge a commit or abort request."""
+
     transaction_id: TransactionId
     participant_id: ParticipantId
 
@@ -103,6 +125,8 @@ class AckResponse:
 
 @dataclass
 class TwoPCConfig:
+    """Configure commit protocol selection and phase timeouts."""
+
     prepare_timeout: float = 5.0
     commit_timeout: float = 5.0
     pre_commit_timeout: float = 5.0
@@ -114,6 +138,8 @@ class TwoPCConfig:
 
 @dataclass
 class Participant:
+    """Model one participant in a distributed transaction."""
+
     participant_id: ParticipantId
     state: ParticipantState = ParticipantState.INIT
     current_transaction_id: TransactionId | None = None
@@ -126,53 +152,35 @@ class Participant:
     _on_pre_commit: Callable[[Participant], bool] | None = None
 
     def handle_prepare(self, req: PrepareRequest) -> PrepareResponse:
+        """Process a prepare request and return this participant's vote."""
         if self._lag_seconds > 0:
             time_mod.sleep(self._lag_seconds)
 
-        if self._prepare_should_fail:
-            self.state = ParticipantState.FAILED
-            return PrepareResponse(
-                transaction_id=req.transaction_id,
-                participant_id=self.participant_id,
-                vote=Vote.NO,
-            )
-
-        if self._on_prepare is not None:
+        vote = Vote.NO if self._prepare_should_fail else Vote.YES
+        if vote == Vote.YES and self._on_prepare is not None:
             vote = self._on_prepare(self)
-            if vote == Vote.NO:
-                self.state = ParticipantState.FAILED
-                return PrepareResponse(
-                    transaction_id=req.transaction_id,
-                    participant_id=self.participant_id,
-                    vote=Vote.NO,
-                )
-            self.state = ParticipantState.PREPARED
-        else:
-            self.state = ParticipantState.PREPARED
-
-        self.current_transaction_id = req.transaction_id
+        self.state = ParticipantState.PREPARED if vote == Vote.YES else ParticipantState.FAILED
+        if vote == Vote.YES:
+            self.current_transaction_id = req.transaction_id
         return PrepareResponse(
             transaction_id=req.transaction_id,
             participant_id=self.participant_id,
-            vote=Vote.YES,
+            vote=vote,
         )
 
     def handle_commit(self, req: CommitRequest) -> AckResponse:
-        if self._commit_should_fail:
-            return AckResponse(
-                transaction_id=req.transaction_id,
-                participant_id=self.participant_id,
-            )
-
-        self.state = ParticipantState.COMMITTED
-        if self._on_commit is not None:
-            self._on_commit(req.transaction_id)
+        """Commit a prepared transaction and acknowledge the request."""
+        if not self._commit_should_fail:
+            self.state = ParticipantState.COMMITTED
+            if self._on_commit is not None:
+                self._on_commit(req.transaction_id)
         return AckResponse(
             transaction_id=req.transaction_id,
             participant_id=self.participant_id,
         )
 
     def handle_abort(self, req: AbortRequest) -> AckResponse:
+        """Abort a transaction and acknowledge the request."""
         self.state = ParticipantState.ABORTED
         if self._on_abort is not None:
             self._on_abort(req.transaction_id)
@@ -182,30 +190,26 @@ class Participant:
         )
 
     def handle_pre_commit(self, req: PreCommitRequest) -> PreCommitResponse:
-        if self._on_pre_commit is not None:
-            ack = self._on_pre_commit(self)
-            if not ack:
-                self.state = ParticipantState.ABORTED
-                return PreCommitResponse(
-                    transaction_id=req.transaction_id,
-                    participant_id=self.participant_id,
-                    ack=False,
-                )
-        self.state = ParticipantState.PRE_COMMITTED
+        """Process the three-phase pre-commit transition."""
+        ack = self._on_pre_commit(self) if self._on_pre_commit is not None else True
+        self.state = ParticipantState.PRE_COMMITTED if ack else ParticipantState.ABORTED
         return PreCommitResponse(
             transaction_id=req.transaction_id,
             participant_id=self.participant_id,
-            ack=True,
+            ack=ack,
         )
 
     def reset(self) -> None:
+        """Restore the participant to its initial state."""
         self.state = ParticipantState.INIT
         self.current_transaction_id = None
 
     def sim_crash(self) -> None:
+        """Simulate participant failure."""
         self.state = ParticipantState.FAILED
 
     def sim_recover(self) -> ParticipantState:
+        """Recover participant state from retained transaction context."""
         if self.state == ParticipantState.FAILED:
             self.state = ParticipantState.INIT
         if self.current_transaction_id is not None:
@@ -218,6 +222,8 @@ class Participant:
 
 @dataclass
 class Coordinator:
+    """Coordinate participants through two- or three-phase commit."""
+
     coordinator_id: str
     participants: dict[ParticipantId, Participant] = field(default_factory=dict)
     config: TwoPCConfig = field(default_factory=TwoPCConfig)
@@ -230,6 +236,7 @@ class Coordinator:
     _skip_prepare_to: ParticipantId | None = None
 
     def register_participant(self, participant: Participant) -> None:
+        """Register or replace a participant by identifier."""
         self.participants[participant.participant_id] = participant
 
     def _broadcast_prepare(self, transaction_id: TransactionId) -> dict[ParticipantId, Vote]:
@@ -241,15 +248,10 @@ class Coordinator:
 
         start = self._clock()
         for pid, participant in list(self.participants.items()):
-            if self._skip_prepare_to == pid:
+            if self._skip_prepare_to == pid or self._clock() - start > self.config.prepare_timeout:
                 votes[pid] = Vote.NO
                 continue
-            elapsed = self._clock() - start
-            if elapsed > self.config.prepare_timeout:
-                votes[pid] = Vote.NO
-                continue
-            response = participant.handle_prepare(req)
-            votes[pid] = response.vote
+            votes[pid] = participant.handle_prepare(req).vote
 
         return votes
 
@@ -257,6 +259,7 @@ class Coordinator:
         return len(votes) == total_expected and all(v == Vote.YES for v in votes.values())
 
     def execute_transaction(self, transaction_id: TransactionId) -> CoordinatorState:
+        """Execute the configured commit protocol for a transaction."""
         self.reset()
 
         expected_count = len(self.participants)
@@ -344,6 +347,7 @@ class Coordinator:
         return self.state
 
     def recover(self) -> CoordinatorState:
+        """Recover a transaction from the participants' durable states."""
         txid = self.current_transaction_id
         if txid is None:
             self.state = CoordinatorState.INIT
@@ -353,7 +357,7 @@ class Coordinator:
 
         if any(s == ParticipantState.COMMITTED for s in participant_states):
             for p in self.participants.values():
-                if p.state == ParticipantState.PREPARED or p.state == ParticipantState.PRE_COMMITTED:
+                if p.state in (ParticipantState.PREPARED, ParticipantState.PRE_COMMITTED):
                     p.handle_commit(CommitRequest(transaction_id=txid))
             self.state = CoordinatorState.COMMITTED
 
@@ -392,10 +396,12 @@ class Coordinator:
         return self.state
 
     def reset(self) -> None:
+        """Reset the coordinator and every registered participant."""
         self.state = CoordinatorState.INIT
         self.current_transaction_id = None
         for p in self.participants.values():
             p.reset()
 
     def sim_crash(self) -> None:
+        """Simulate a coordinator crash during preparation."""
         self.state = CoordinatorState.PREPARING

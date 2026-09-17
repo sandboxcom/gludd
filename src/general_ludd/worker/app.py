@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import shutil
 import time
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Protocol
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -20,18 +22,47 @@ from general_ludd.models.job_invocation import (
     is_generation_work_type,
 )
 from general_ludd.observability.timing import default_tracker
+from general_ludd.projects.repository_binding import (
+    ProjectRepositoryBindingStale,
+    ProjectRepositoryRegistry,
+    ProjectRepositoryUnavailable,
+)
 from general_ludd.schemas.job import JobSpec
+
+if TYPE_CHECKING:
+    from general_ludd.self_improve.managed_runner import (
+        ApprovedSelfImprovePlan,
+        ManagedRunResult,
+    )
 
 __all__ = [
     "_GENERATION_WORK_TYPES",
+    "build_worker_self_improve_executor",
+    "build_worker_self_improve_runner",
     "create_app",
     "invoke_model_for_generation",
     "is_generation_work_type",
+    "resolve_worker_self_improve_repo_root",
 ]
 
 logger = logging.getLogger(__name__)
 
 _runner: AnsibleRunnerAdapter | None = None
+
+
+class _ManagedSelfImproveService(Protocol):
+    def run(self, plan: ApprovedSelfImprovePlan) -> ManagedRunResult:
+        """Execute one approval-bound plan."""
+
+
+class _ManagedSelfImproveFactory(Protocol):
+    def __call__(self, repo_root: Path) -> _ManagedSelfImproveService:
+        """Build one repository-bound managed service."""
+
+
+class _SelfImproveRepoResolver(Protocol):
+    def __call__(self, project_id: str) -> Path:
+        """Resolve one trusted project identity to its canonical repository."""
 
 
 def get_runner() -> AnsibleRunnerAdapter:
@@ -43,6 +74,51 @@ def get_runner() -> AnsibleRunnerAdapter:
 
 def get_playbook_registry() -> set[str]:
     return set(get_runner().list_playbooks())
+
+
+def build_worker_self_improve_runner(repo_root: Path) -> _ManagedSelfImproveService:
+    """Build the installed approval-bound runtime for one canonical repository."""
+    from general_ludd.config.loader import load_user_config
+    from general_ludd.self_improve import build_managed_self_improve_runner
+
+    return build_managed_self_improve_runner(
+        repo_root,
+        self_improve_config=load_user_config().self_improve,
+    )
+
+
+def _log_owned_self_improve_event(event: str) -> None:
+    """Expose content-free child lifecycle events through worker logs."""
+    logger.info("managed_self_improve_supervisor %s", event)
+
+
+def build_worker_self_improve_executor() -> Any:
+    """Build the worker's application-owned managed execution boundary."""
+    from general_ludd.config.loader import load_user_config
+    from general_ludd.self_improve.managed_execution import (
+        ConfiguredManagedRunnerFactory,
+        ManagedSelfImproveProcessExecutor,
+        managed_execution_timeout_seconds,
+    )
+
+    config = dict(load_user_config().self_improve)
+    return ManagedSelfImproveProcessExecutor(
+        runner_factory=ConfiguredManagedRunnerFactory(config),
+        timeout_seconds=managed_execution_timeout_seconds(config),
+        event_sink=_log_owned_self_improve_event,
+    )
+
+
+def resolve_worker_self_improve_repo_root(project_id: str) -> Path:
+    """Resolve a project through the worker's shared workspace convention."""
+    if not isinstance(project_id, str) or not project_id.strip():
+        raise ValueError("project_id must be non-empty text")
+    from general_ludd.projects.workspace import ProjectWorkspace
+
+    repo_root = ProjectWorkspace(project_id=project_id).repo_dir.resolve(strict=True)
+    if not repo_root.is_dir():
+        raise ValueError("project repository is not a directory")
+    return repo_root
 
 
 def build_gateway_from_config(permission_spec: Any = None) -> ModelGateway | None:
@@ -231,6 +307,10 @@ def create_app(
     gateway: ModelGateway | None = _UNSET,
     dispatcher: Any = _UNSET,
     permission_spec: Any = None,
+    self_improve_runner_factory: _ManagedSelfImproveFactory | None = None,
+    self_improve_executor: Any | None = None,
+    self_improve_repo_resolver: _SelfImproveRepoResolver | None = None,
+    self_improve_repository_registry: ProjectRepositoryRegistry | None = None,
 ) -> FastAPI:
     """Create the worker FastAPI app with PSK auth and gateway/dispatcher wiring."""
     application = FastAPI(
@@ -247,6 +327,28 @@ def create_app(
     if dispatcher is _UNSET:
         dispatcher = build_dispatcher_from_config()
     application.state.dispatcher = dispatcher
+    uses_default_self_improve_factory = self_improve_runner_factory is None
+    application.state.self_improve_runner_factory = (
+        build_worker_self_improve_runner
+        if uses_default_self_improve_factory
+        else self_improve_runner_factory
+    )
+    application.state.self_improve_executor = (
+        build_worker_self_improve_executor()
+        if self_improve_executor is None and uses_default_self_improve_factory
+        else self_improve_executor
+    )
+    application.state.self_improve_repo_resolver = (
+        resolve_worker_self_improve_repo_root
+        if self_improve_repo_resolver is None
+        else self_improve_repo_resolver
+    )
+    application.state.self_improve_repository_registry = (
+        ProjectRepositoryRegistry.from_environment()
+        if self_improve_repository_registry is None
+        else self_improve_repository_registry
+    )
+    application.state.self_improve_model_lock = asyncio.Lock()
 
     async def _shutdown_owned_model_resources() -> None:
         from general_ludd.models.job_invocation import drain_background_tasks
@@ -331,6 +433,191 @@ def create_app(
 
     @application.post("/jobs/execute")
     async def execute_job(job: JobSpec) -> dict[str, Any]:
+        if job.work_type == "self_improve":
+            from general_ludd.self_improve import (
+                ApprovedSelfImprovePlan,
+                ManagedSelfImproveResultArtifact,
+            )
+
+            def reject(
+                reason: str,
+                description: str,
+                *,
+                status_code: int = 400,
+            ) -> HTTPException:
+                return HTTPException(
+                    status_code=status_code,
+                    detail={"reason": reason, "description": description},
+                )
+
+            if not job.plan_artifact:
+                raise reject(
+                    "self_improve_plan_required",
+                    "managed self-improvement requires an approved plan artifact",
+                )
+            if not job.project_id:
+                raise reject(
+                    "self_improve_project_required",
+                    "managed self-improvement requires a project identity",
+                )
+            try:
+                plan = ApprovedSelfImprovePlan.from_json(job.plan_artifact)
+            except (TypeError, ValueError):
+                raise reject(
+                    "invalid_self_improve_plan",
+                    "managed self-improvement plan validation failed",
+                ) from None
+            if plan.project_id != job.project_id or plan.todo_id != job.todo_id:
+                raise reject(
+                    "self_improve_identity_mismatch",
+                    "approved plan identity does not match the dispatched job",
+                )
+            if plan.repository_binding_digest:
+                if job.repository_binding_digest != plan.repository_binding_digest:
+                    raise reject(
+                        "self_improve_repository_binding_stale",
+                        "managed self-improvement repository binding is stale",
+                        status_code=409,
+                    )
+                try:
+                    canonical_root = (
+                        application.state.self_improve_repository_registry.resolve(
+                            job.project_id,
+                            plan.repository_binding_digest,
+                        )
+                    )
+                    plan = plan.bind_execution_repository(
+                        canonical_root,
+                        repository_binding_digest=plan.repository_binding_digest,
+                    )
+                except ProjectRepositoryBindingStale:
+                    raise reject(
+                        "self_improve_repository_binding_stale",
+                        "managed self-improvement repository binding is stale",
+                        status_code=409,
+                    ) from None
+                except ProjectRepositoryUnavailable:
+                    raise reject(
+                        "self_improve_repository_unavailable",
+                        "managed self-improvement repository mapping is unavailable",
+                    ) from None
+                except (OSError, TypeError, ValueError, LookupError):
+                    raise reject(
+                        "self_improve_repository_unavailable",
+                        "managed self-improvement repository mapping is unavailable",
+                    ) from None
+            else:
+                if job.repository_binding_digest is not None:
+                    raise reject(
+                        "self_improve_repository_binding_stale",
+                        "managed self-improvement repository binding is stale",
+                        status_code=409,
+                    )
+                try:
+                    resolved_root = application.state.self_improve_repo_resolver(
+                        job.project_id
+                    )
+                    if not isinstance(resolved_root, Path):
+                        raise TypeError("repository resolver must return pathlib.Path")
+                    canonical_root = resolved_root.resolve(strict=True)
+                    if not canonical_root.is_dir():
+                        raise ValueError("resolved repository is not a directory")
+                except (OSError, TypeError, ValueError, LookupError):
+                    raise reject(
+                        "self_improve_repository_unavailable",
+                        "managed self-improvement repository mapping is unavailable",
+                    ) from None
+                if plan.repo_root != canonical_root:
+                    raise reject(
+                        "self_improve_identity_mismatch",
+                        "approved plan repository does not match the configured project",
+                    )
+
+            try:
+                async with application.state.self_improve_model_lock:
+                    managed_executor = application.state.self_improve_executor
+                    if managed_executor is not None:
+                        managed_result = await managed_executor.run_async(
+                            canonical_root,
+                            plan,
+                        )
+                    else:
+                        managed_runner = application.state.self_improve_runner_factory(
+                            canonical_root
+                        )
+                        managed_result = await asyncio.to_thread(managed_runner.run, plan)
+                result_artifact = ManagedSelfImproveResultArtifact.from_run_result(
+                    managed_result
+                )
+                result_summary = result_artifact.to_json()
+            except Exception as exc:
+                logger.error(
+                    "Managed self-improvement failed for job_id=%s error_type=%s",
+                    job.job_id,
+                    type(exc).__name__,
+                )
+                return {
+                    "status": "created",
+                    "return_id": f"RET-{job.job_id}",
+                    "todo_id": job.todo_id,
+                    "job_id": job.job_id,
+                    "playbook": job.playbook,
+                    "model_response": None,
+                    "tool_calls_detected": [],
+                    "tool_dispatch_results": [],
+                    "exit_code": 1,
+                    "result_summary": json.dumps(
+                        {
+                            "accepted": False,
+                            "kind": "managed_self_improve",
+                            "reason": "managed_execution_failed",
+                        },
+                        ensure_ascii=True,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
+                    "artifacts": [],
+                    "events": [
+                        {
+                            "event": "self_improve_failed",
+                            "reason": "managed_execution_failed",
+                        }
+                    ],
+                }
+
+            accepted = result_artifact.accepted
+            attempts = result_artifact.attempts
+            return {
+                "status": "created",
+                "return_id": f"RET-{job.job_id}",
+                "todo_id": job.todo_id,
+                "job_id": job.job_id,
+                "playbook": job.playbook,
+                "model_response": None,
+                "tool_calls_detected": [],
+                "tool_dispatch_results": [],
+                "exit_code": 0 if accepted else 1,
+                "result_summary": result_summary,
+                "artifacts": [],
+                "events": [
+                    {
+                        "event": "self_improve_completed",
+                        "accepted": accepted,
+                        "attempts": attempts,
+                        "plan_identity_digest": result_artifact.plan_identity_digest,
+                        "attempt_identity_digest": (
+                            result_artifact.attempt_identity_digest
+                        ),
+                        "attempted_model_ids": list(
+                            result_artifact.attempted_model_ids
+                        ),
+                        "outcome_record_ids": list(
+                            result_artifact.outcome_record_ids
+                        ),
+                    }
+                ],
+            }
+
         registry = get_playbook_registry()
         if job.playbook not in registry:
             raise HTTPException(

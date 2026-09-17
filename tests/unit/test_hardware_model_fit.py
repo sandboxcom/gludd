@@ -347,6 +347,7 @@ class TestUnifiedProbe:
             mock.patch.object(survey, "probe_gpu_nvidia", return_value=[]),
             mock.patch.object(survey, "probe_gpu_metal", return_value=[]),
             mock.patch.object(survey, "probe_gpu_rocm", return_value=[]),
+            mock.patch.object(survey, "probe_gpu_xpu", return_value=[]),
             mock.patch.object(survey, "probe_ram", return_value=16.0),
             mock.patch.object(survey, "probe_disk", return_value=100.0),
             mock.patch.object(survey, "probe_cpu", return_value=4),
@@ -361,9 +362,26 @@ class TestUnifiedProbe:
             mock_survey.probe_gpu_nvidia.return_value = []
             mock_survey.probe_gpu_metal.return_value = []
             mock_survey.probe_gpu_rocm.return_value = []
+            mock_survey.probe_gpu_xpu.return_value = []
             mock_survey.probe_ram.return_value = 32.0
             mock_survey.probe_disk.return_value = 200.0
             mock_survey.probe_cpu.return_value = 8
             mock_cls.return_value = mock_survey
             inv = unified_probe()
         assert inv.total_ram_gb == 32.0
+
+    def test_falls_back_to_intel_xpu(self) -> None:
+        survey = HardwareSurvey()
+        gpu = GpuInfo(name="Intel Arc", vram_gb=16.0, backend="xpu")
+        with (
+            mock.patch.object(survey, "probe_gpu_nvidia", return_value=[]),
+            mock.patch.object(survey, "probe_gpu_metal", return_value=[]),
+            mock.patch.object(survey, "probe_gpu_rocm", return_value=[]),
+            mock.patch.object(survey, "probe_gpu_xpu", return_value=[gpu]),
+            mock.patch.object(survey, "probe_ram", return_value=32.0),
+            mock.patch.object(survey, "probe_disk", return_value=100.0),
+            mock.patch.object(survey, "probe_cpu", return_value=8),
+        ):
+            inventory = unified_probe(survey=survey)
+        assert inventory.gpus == [gpu]
+        assert can_run_model(inventory, "code-model-7b").backend == "xpu"

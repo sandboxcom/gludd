@@ -1,0 +1,9 @@
+{
+  "task_id": "S83.133",
+  "objective": "Remove the trailing whitespace from line 3 of docs/features/ANSIBLE_MULTIPROCESSING_CONTEXT.md without changing any other content.",
+  "canonical_make_commands": [
+    "make test-files TESTFILES=tests/unit/test_markdown_docs_deep.py PYTEST_ARGS=-q",
+    "make lint-markdown MARKDOWN_FILES=docs/features/ANSIBLE_MULTIPROCESSING_CONTEXT.md"
+  ],
+  "reference_elapsed_seconds": 300.0
+}

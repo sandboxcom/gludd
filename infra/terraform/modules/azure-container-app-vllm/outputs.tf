@@ -1,19 +1,24 @@
 output "instance_id" {
-  description = "Azure resource id of the vLLM Container App."
-  value       = azurerm_container_app.vllm.id
+  description = "Azure resource ID of the sole Terraform-owned Container App."
+  value       = azapi_resource.vllm.id
 }
 
 output "base_url" {
   description = "Root HTTPS URL for the vLLM service; clients append OpenAI API paths."
-  value       = "https://${azurerm_container_app.vllm.latest_revision_fqdn}"
+  value       = "https://${azapi_resource.vllm.output.properties.configuration.ingress.fqdn}"
 }
 
-output "resource_group_name" {
-  description = "Resource group deleted during deterministic teardown."
-  value       = azurerm_resource_group.gludd.name
+output "cleanup_boundary" {
+  description = "Only the Container App is destroyed; it resides in an existing resource group; never deleted by this stack."
+  value       = azapi_resource.vllm.id
 }
 
 output "workload_profile_type" {
-  description = "Azure GPU workload profile selected from gpu_type."
+  description = "Azure GPU profile independently selected by Gludd's sizing proof."
   value       = local.gpu_profile_type
+}
+
+output "revision_name" {
+  description = "Azure-generated ready revision bound to the live candidate identity."
+  value       = azapi_resource.vllm.output.properties.latestReadyRevisionName
 }

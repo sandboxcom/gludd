@@ -16,7 +16,7 @@ deny_azure_missing_scope contains msg if {
 	input.provider == "azure"
 	assignment := input.role_assignments[_]
 	object.get(assignment, "scope", "") == ""
-	msg := "Azure role assignment is missing an explicit subscription scope"
+	msg := "Azure role assignment is missing an explicit resource-group scope"
 }
 
 deny_gcp_set_metadata contains msg if {
@@ -56,38 +56,27 @@ deny_azure_invalid_scope contains msg if {
 	input.provider == "azure"
 	scopes := object.get(input, "AssignableScopes", [])
 	some scope in scopes
-	not startswith(scope, "/subscriptions/")
-	msg := sprintf("Azure custom role scope is not a subscription scope: %s", [scope])
+	not regex.match("^/subscriptions/[^/]+/resourceGroups/[^/]+$", scope)
+	msg := sprintf("Azure custom role scope is not a resource-group scope: %s", [scope])
 }
 
-deny_azure_missing_runcommand_notaction contains msg if {
+azure_forbidden_actions := {
+	"Microsoft.App/containerApps/listSecrets/action",
+	"Microsoft.Authorization/roleAssignments/write",
+	"Microsoft.Authorization/roleAssignments/delete",
+	"Microsoft.Authorization/roleDefinitions/write",
+	"Microsoft.Authorization/roleDefinitions/delete",
+	"Microsoft.Compute/virtualMachines/runCommand/action",
+	"Microsoft.Compute/virtualMachines/runCommands/read",
+	"Microsoft.Compute/virtualMachines/runCommands/write",
+	"Microsoft.Compute/virtualMachines/runCommands/delete",
+}
+
+deny_azure_forbidden_action contains msg if {
 	input.provider == "azure"
-	not has_notaction_runcommand
-	msg := "Azure custom role does not deny runCommand in NotActions"
-}
-
-has_notaction_runcommand if {
-	input.NotActions[_] == "Microsoft.Compute/virtualMachines/runCommand/action"
-}
-
-deny_azure_missing_roleassign_notactions contains msg if {
-	input.provider == "azure"
-	not has_notaction_roleassign_write
-	msg := "Azure custom role does not deny roleAssignment write in NotActions"
-}
-
-deny_azure_missing_roleassign_notactions contains msg if {
-	input.provider == "azure"
-	not has_notaction_roleassign_delete
-	msg := "Azure custom role does not deny roleAssignment delete in NotActions"
-}
-
-has_notaction_roleassign_write if {
-	input.NotActions[_] == "Microsoft.Authorization/roleAssignments/write"
-}
-
-has_notaction_roleassign_delete if {
-	input.NotActions[_] == "Microsoft.Authorization/roleAssignments/delete"
+	action := input.Actions[_]
+	action in azure_forbidden_actions
+	msg := sprintf("Azure custom role grants forbidden action: %s", [action])
 }
 
 deny_azure_list_action_suffix contains msg if {
@@ -123,8 +112,7 @@ azure_custom_role_valid if {
 	count(deny_azure_missing_metadata) == 0
 	count(deny_azure_missing_assignable_scopes) == 0
 	count(deny_azure_invalid_scope) == 0
-	count(deny_azure_missing_runcommand_notaction) == 0
-	count(deny_azure_missing_roleassign_notactions) == 0
+	count(deny_azure_forbidden_action) == 0
 	count(deny_azure_list_action_suffix) == 0
 	count(deny_azure_data_plane_access) == 0
 	count(deny) == 0

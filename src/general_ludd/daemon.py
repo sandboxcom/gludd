@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import copy
 import logging
 import os
 import sys
@@ -127,6 +128,11 @@ from general_ludd.security.sandboxes.vm.pool import (
 from general_ludd.security.sandboxes.vm.pool import (
     VMSandboxPool as _dc_VMSandboxPool,
 )
+from general_ludd.self_improve.managed_execution import (
+    ConfiguredManagedRunnerFactory,
+    ManagedSelfImproveProcessExecutor,
+    managed_execution_timeout_seconds,
+)
 from general_ludd.skills.loader import discover_skills
 from general_ludd.skills.registry import SkillRegistry
 from general_ludd.sts.dashboard import (
@@ -241,6 +247,18 @@ def _compaction_config_dict(uc: Any) -> dict[str, Any]:
     if callable(dump):
         return dict(dump())
     return {}
+
+
+def _build_self_improve_runner_factory(
+    config: dict[str, Any],
+) -> Callable[[Path], Any]:
+    """Snapshot global self-improvement config for every repository runner."""
+    return ConfiguredManagedRunnerFactory(copy.deepcopy(config))
+
+
+def _log_owned_self_improve_event(event: str) -> None:
+    """Expose content-free managed child lifecycle events through daemon logs."""
+    logger.info("managed_self_improve_supervisor %s", event)
 
 
 def _remediation_tick_settings(uc: Any) -> tuple[int, int]:
@@ -726,12 +744,46 @@ def _init_project_workspaces(project_manager: Any) -> dict[str, Any]:
     workspaces: dict[str, Any] = {}
     if project_manager is not None:
         try:
-            for p in project_manager.list_active():
-                pid = getattr(p, "project_id", str(p))
-                workspaces[pid] = ProjectWorkspace(project_id=pid)
-                workspaces[pid].ensure_dirs()
+            projects = project_manager.list_active()
         except Exception as exc:
             logger.warning("Failed to initialize project workspaces: %s", exc)
+            return workspaces
+        from general_ludd.projects.repository_binding import (
+            ProjectRepositoryBinding,
+        )
+        from general_ludd.projects.workspace import (
+            confine_workspace_path,
+            default_workspace_base,
+        )
+
+        for project in projects:
+            pid = getattr(project, "project_id", str(project))
+            try:
+                binding = ProjectRepositoryBinding.for_project(
+                    project_id=pid,
+                    workspace_path=(
+                        getattr(project, "workspace_path", "") or pid
+                    ),
+                    repo_url=getattr(project, "repo_url", "") or "",
+                )
+                workspace_base = default_workspace_base()
+                workspace_root = confine_workspace_path(
+                    workspace_base,
+                    binding.workspace_key,
+                )
+                workspace = ProjectWorkspace(
+                    project_id=pid,
+                    base_dir=workspace_base,
+                    workspace_path=workspace_root,
+                )
+                workspace.ensure_dirs()
+                workspaces[pid] = workspace
+            except (OSError, RuntimeError, TypeError, ValueError) as exc:
+                logger.warning(
+                    "Failed to initialize project workspace %s: %s",
+                    pid,
+                    exc,
+                )
     return workspaces
 
 
@@ -2230,6 +2282,16 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 searx_model_discoverer.index_size,
             )
 
+        self_improve_config = dict(getattr(uc, "self_improve", {}) if uc else {})
+        self_improve_runner_factory = _build_self_improve_runner_factory(
+            self_improve_config
+        )
+        self_improve_executor = ManagedSelfImproveProcessExecutor(
+            runner_factory=self_improve_runner_factory,
+            timeout_seconds=managed_execution_timeout_seconds(self_improve_config),
+            event_sink=_log_owned_self_improve_event,
+        )
+
         event_loop = EventLoop(
             worker_base_url="http://localhost:8000",
             runner=runner,
@@ -2252,7 +2314,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "rules": startup_config.get("rules", []),
                 "queues": getattr(uc, "queues", []) if uc else [],
                 "budget": getattr(uc, "budget", {}) if uc else {},
-                "self_improve": getattr(uc, "self_improve", {}) if uc else {},
+                "self_improve": self_improve_config,
                 # #56: reachable SLM context-compaction on the generation path.
                 # Serialized to a plain dict so the EventLoop config stays a
                 # dict[str, Any]. Default OFF (compaction.enabled = False).
@@ -2296,6 +2358,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             consensus_reviewer=consensus_reviewer,
             langgraph_reviewer=langgraph_reviewer,
             self_improve_interval=self_improve_interval,
+            self_improve_runner_factory=self_improve_runner_factory,
+            self_improve_executor=self_improve_executor,
             # H3: spend_limiter passed via constructor so _spend_limiter is set
             # before the run_forever task is scheduled — the first tick can never
             # bypass the operator spend cap.
@@ -3257,11 +3321,24 @@ def create_daemon_app(
 
     app.state.plan_critique = PlanCritique()
 
+    from general_ludd.hardware.accelerator_discovery import HardwareDiscovery
     from general_ludd.hardware.probe import probe_hardware
     from general_ludd.hardware.survey import HardwareSurvey
 
     app.state._hardware = probe_hardware()
-    app.state._hardware_inventory = HardwareSurvey().survey()
+    hardware_survey = HardwareSurvey()
+    app.state._hardware_inventory = hardware_survey.survey()
+    app.state._accelerator_inventory = None
+    app.state._accelerator_discovery = HardwareDiscovery(
+        survey=hardware_survey,
+        surveyed_gpus=app.state._hardware_inventory.gpus,
+        trace_sink=lambda trace: logger.info(
+            "accelerator discovery event=%s source=%s count=%d",
+            trace.event.value,
+            trace.source,
+            trace.discovered_count,
+        ),
+    )
     logger.info(
         "Hardware inventory surveyed: GPU=%d RAM=%.1fGB Disk=%.1fGB",
         app.state._hardware_inventory.gpu_count,

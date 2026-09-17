@@ -105,6 +105,17 @@ def _to_float(value: Any) -> float | None:
     return None
 
 
+def _consume_first(
+    obj: dict[str, Any], keys: tuple[str, ...], consumed: set[str]
+) -> str:
+    """Return and mark the first present canonical-field candidate."""
+    for key in keys:
+        if key in obj:
+            consumed.add(key)
+            return str(obj[key])
+    return ""
+
+
 class JsonlLogSource:
     """Read line-delimited JSON logs and normalize them.
 
@@ -117,6 +128,7 @@ class JsonlLogSource:
     KIND = "logs"
 
     def __init__(self, config: dict[str, Any]) -> None:
+        """Configure confined JSONL paths and the observable source name."""
         root = config.get("root")
         if not root:
             raise ValueError("JsonlLogSource requires a 'root' (allowed base dir)")
@@ -135,8 +147,6 @@ class JsonlLogSource:
         self.name = str(config.get("name") or "jsonl_log_source")
         self.last_malformed_count = 0
 
-    # -- observability surface ------------------------------------------- #
-
     def health(self) -> dict[str, Any]:
         """Report reachability of configured files. Never raises."""
         try:
@@ -151,8 +161,6 @@ class JsonlLogSource:
             }
         except Exception as exc:  # pragma: no cover - defensive: health never raises
             return {"healthy": False, "name": self.name, "kind": self.KIND, "error": sanitize_exc_for_health(exc)}
-
-    # -- query ----------------------------------------------------------- #
 
     def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
         """Read, normalize, and filter records.
@@ -210,28 +218,9 @@ class JsonlLogSource:
 
     def _normalize(self, obj: dict[str, Any]) -> dict[str, Any]:
         consumed: set[str] = set()
-
-        ts = ""
-        for key in _TS_KEYS:
-            if key in obj:
-                ts = str(obj[key])
-                consumed.add(key)
-                break
-
-        level = ""
-        for key in _LEVEL_KEYS:
-            if key in obj:
-                level = str(obj[key])
-                consumed.add(key)
-                break
-
-        message = ""
-        for key in _MESSAGE_KEYS:
-            if key in obj:
-                message = str(obj[key])
-                consumed.add(key)
-                break
-
+        ts = _consume_first(obj, _TS_KEYS, consumed)
+        level = _consume_first(obj, _LEVEL_KEYS, consumed)
+        message = _consume_first(obj, _MESSAGE_KEYS, consumed)
         labels = {k: v for k, v in obj.items() if k not in consumed}
         value = _to_float(obj.get("value"))
 
@@ -258,6 +247,7 @@ class SyslogGrepSource:
     KIND = "logs"
 
     def __init__(self, config: dict[str, Any]) -> None:
+        """Configure one confined syslog path and observable source name."""
         root = config.get("root")
         if not root:
             raise ValueError("SyslogGrepSource requires a 'root' (allowed base dir)")
@@ -265,8 +255,6 @@ class SyslogGrepSource:
         path = str(config.get("path") or "/var/log/syslog")
         self._path = _confine(path, self._root)
         self.name = str(config.get("name") or "syslog_grep_source")
-
-    # -- observability surface ------------------------------------------- #
 
     def health(self) -> dict[str, Any]:
         """Report reachability of the syslog file. Never raises."""
@@ -280,8 +268,6 @@ class SyslogGrepSource:
             }
         except Exception as exc:  # pragma: no cover - defensive: health never raises
             return {"healthy": False, "name": self.name, "kind": self.KIND, "error": sanitize_exc_for_health(exc)}
-
-    # -- query ----------------------------------------------------------- #
 
     def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
         """Scan the file with a regex.

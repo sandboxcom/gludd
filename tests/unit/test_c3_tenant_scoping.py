@@ -235,6 +235,7 @@ _TODOS_TABLE = text("""
         artifacts TEXT NOT NULL DEFAULT '[]',
         evidence_refs TEXT NOT NULL DEFAULT '[]',
         plan_artifact TEXT,
+        approved_artifact_digest VARCHAR(64),
         confidence FLOAT,
         manual_hold_reason TEXT,
         approval_policy VARCHAR(32) NOT NULL DEFAULT 'none',

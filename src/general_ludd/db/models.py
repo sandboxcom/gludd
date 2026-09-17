@@ -264,6 +264,7 @@ class TodoModel(Base):
     artifacts: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     evidence_refs: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     plan_artifact: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approved_artifact_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     manual_hold_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     approval_policy: Mapped[str] = mapped_column(String(32), nullable=False, default="none")
@@ -454,6 +455,62 @@ class TaskDecisionModel(Base):
     )
 
 
+class ManagedSelfImprovePromotionModel(Base):
+    """Durable fenced receipt for one managed self-improvement artifact."""
+
+    __tablename__ = "managed_self_improve_promotions"
+
+    artifact_digest: Mapped[str] = mapped_column(String(64), primary_key=True)
+    plan_identity_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    attempt_identity_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    todo_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    project_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    return_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    repo_root: Mapped[str] = mapped_column(String(1024), nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", index=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    fencing_token: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    worktree_branch: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    development_commit: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    marker: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(4096), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, default=_utcnow, onupdate=_utcnow
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "state IN ('pending', 'promoting', 'completed')",
+            name="ck_managed_self_improve_promotions_state",
+        ),
+        CheckConstraint(
+            "fencing_token >= 0",
+            name="ck_managed_self_improve_promotions_fencing_token",
+        ),
+        CheckConstraint(
+            "((state = 'completed' AND development_commit IS NOT NULL "
+            "AND marker IS NOT NULL AND completed_at IS NOT NULL "
+            "AND lease_owner IS NULL AND lease_expires_at IS NULL) OR "
+            "(state <> 'completed' AND development_commit IS NULL "
+            "AND marker IS NULL AND completed_at IS NULL))",
+            name="ck_managed_self_improve_promotions_receipt_state",
+        ),
+        Index(
+            "ix_managed_self_improve_promotions_lease",
+            "state",
+            "lease_expires_at",
+        ),
+        Index(
+            "ix_managed_self_improve_promotions_project_todo",
+            "project_id",
+            "todo_id",
+        ),
+    )
+
+
 class QueueModel(Base):
     """Persist queue admission, capacity, retry, and allowed-profile policy."""
 
@@ -593,7 +650,7 @@ class VariableValueModel(Base):
 
 
 class BucketLeaseModel(Base):
-    """Persist expiring resource-bucket ownership unique per key and holder."""
+    """Persist one fenced, renewable execution attempt per resource bucket."""
 
     __tablename__ = "bucket_leases"
 
@@ -606,11 +663,24 @@ class BucketLeaseModel(Base):
         index=True,
     )
     holder_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    todo_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     expires_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, index=True)
+    heartbeat_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, default=_utcnow
+    )
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(
+        UTCDateTime(), nullable=True
+    )
+    termination_confirmed_at: Mapped[datetime | None] = mapped_column(
+        UTCDateTime(), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, default=_utcnow, onupdate=_utcnow
+    )
 
     __table_args__ = (
-        UniqueConstraint("bucket_key", "holder_id", name="uq_bucket_lease"),
+        UniqueConstraint("bucket_key", name="uq_bucket_lease_bucket_key"),
         Index("ix_bucket_leases_key_expires", "bucket_key", "expires_at"),
     )
 

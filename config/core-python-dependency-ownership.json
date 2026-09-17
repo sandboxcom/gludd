@@ -252,6 +252,7 @@
       "collection_import_paths": [],
       "collection_requirement_paths": [],
       "core_import_paths": [
+        "src/general_ludd/azure/accelerator_credential_store.py",
         "src/general_ludd/security/sandboxes/vm/image_builder.py"
       ],
       "disposition": "retain-core",
@@ -348,6 +349,7 @@
         "src/general_ludd/daemon.py",
         "src/general_ludd/events/hooks.py",
         "src/general_ludd/filestore/bootstrap.py",
+        "src/general_ludd/infra/azure_containerapp_arm.py",
         "src/general_ludd/infra/local_inference.py",
         "src/general_ludd/infra/model_search.py",
         "src/general_ludd/infra/slurm.py",
@@ -371,6 +373,7 @@
         "src/general_ludd/routers/ornith.py",
         "src/general_ludd/searx/server.py",
         "src/general_ludd/security/url_fetch.py",
+        "src/general_ludd/self_improve/azure_containerapp_transport.py",
         "src/general_ludd/skills/fetcher.py",
         "src/general_ludd/smoke.py",
         "src/general_ludd/tui/keybindings.py",
@@ -390,6 +393,8 @@
       "core_import_paths": [
         "src/general_ludd/cloud/model_sources.py",
         "src/general_ludd/models/model_registry.py",
+        "src/general_ludd/self_improve/hf_cache_delete.py",
+        "src/general_ludd/self_improve/model_lifecycle.py",
         "src/general_ludd/small_models/download.py",
         "src/general_ludd/small_models/model_hash_db.py"
       ],
@@ -530,11 +535,24 @@
       "core_import_paths": [
         "src/general_ludd/models/gateway.py",
         "src/general_ludd/models/timeout_detector.py",
+        "src/general_ludd/self_improve/azure_backend.py",
         "src/general_ludd/skills/embeddings.py"
       ],
       "disposition": "retain-core",
       "import_roots": [
         "openai"
+      ],
+      "runtime_evidence": []
+    },
+    "pathspec": {
+      "collection_import_paths": [],
+      "collection_requirement_paths": [],
+      "core_import_paths": [
+        "src/general_ludd/self_improve/private_policy.py"
+      ],
+      "disposition": "retain-core",
+      "import_roots": [
+        "pathspec"
       ],
       "runtime_evidence": []
     },
@@ -554,7 +572,8 @@
       "collection_import_paths": [],
       "collection_requirement_paths": [],
       "core_import_paths": [
-        "src/general_ludd/observability/metrics_exporter.py"
+        "src/general_ludd/observability/metrics_exporter.py",
+        "src/general_ludd/self_improve/azure_containerapp_gpu_evidence.py"
       ],
       "disposition": "retain-core",
       "import_roots": [
@@ -587,7 +606,8 @@
         "src/general_ludd/hardware/survey.py",
         "src/general_ludd/health/local_model_check.py",
         "src/general_ludd/process/registry.py",
-        "src/general_ludd/routers/processes.py"
+        "src/general_ludd/routers/processes.py",
+        "src/general_ludd/self_improve/model_lifecycle.py"
       ],
       "disposition": "retain-core",
       "import_roots": [
@@ -617,7 +637,7 @@
       "collection_requirement_paths": [],
       "core_import_paths": [
         "src/general_ludd/account/ephemeral.py",
-        "src/general_ludd/agents/behavior.py",
+        "src/general_ludd/agents/behavior_contracts.py",
         "src/general_ludd/agents/context.py",
         "src/general_ludd/agents/hibernation.py",
         "src/general_ludd/agents/researcher.py",
@@ -637,6 +657,7 @@
         "src/general_ludd/config/binary_paths.py",
         "src/general_ludd/config/model_routing.py",
         "src/general_ludd/config/user_config.py",
+        "src/general_ludd/controllers/pause_contracts.py",
         "src/general_ludd/controllers/pause_controller.py",
         "src/general_ludd/daemon.py",
         "src/general_ludd/dogfood/runner.py",
@@ -683,14 +704,12 @@
         "src/general_ludd/routers/game.py",
         "src/general_ludd/routers/generate.py",
         "src/general_ludd/routers/git_history.py",
-        "src/general_ludd/routers/human_todos.py",
         "src/general_ludd/routers/make.py",
         "src/general_ludd/routers/memory.py",
         "src/general_ludd/routers/messages.py",
         "src/general_ludd/routers/models.py",
         "src/general_ludd/routers/observe.py",
         "src/general_ludd/routers/ornith.py",
-        "src/general_ludd/routers/pause.py",
         "src/general_ludd/routers/processes.py",
         "src/general_ludd/routers/projects.py",
         "src/general_ludd/routers/reload.py",
@@ -709,6 +728,7 @@
         "src/general_ludd/runtime/profile.py",
         "src/general_ludd/schemas/benchmark.py",
         "src/general_ludd/schemas/deployment.py",
+        "src/general_ludd/schemas/human_todo.py",
         "src/general_ludd/schemas/job.py",
         "src/general_ludd/schemas/quality_gate.py",
         "src/general_ludd/schemas/queue.py",
@@ -823,6 +843,7 @@
       "collection_requirement_paths": [],
       "core_import_paths": [
         "src/general_ludd/connectors/newrelic.py",
+        "src/general_ludd/infra/azure_containerapp_sdk.py",
         "src/general_ludd/issue_sources/redmine.py"
       ],
       "disposition": "retain-core",
@@ -868,10 +889,14 @@
         "src/general_ludd/db/deployment_repository.py",
         "src/general_ludd/db/migrations.py",
         "src/general_ludd/db/models.py",
+        "src/general_ludd/db/promotion_repository.py",
+        "src/general_ludd/db/promotion_repository_support.py",
         "src/general_ludd/db/repository.py",
         "src/general_ludd/db/session.py",
         "src/general_ludd/db/task_decisions_retention.py",
+        "src/general_ludd/event_loop/execution_supervision.py",
         "src/general_ludd/event_loop/lease.py",
+        "src/general_ludd/event_loop/lease_cancellation.py",
         "src/general_ludd/event_loop/loop.py",
         "src/general_ludd/event_loop/loop_handlers.py",
         "src/general_ludd/infra/deployment.py",
@@ -898,6 +923,7 @@
         "src/general_ludd/scoring/task_embeddings.py",
         "src/general_ludd/security/sandboxes/attestation.py",
         "src/general_ludd/security/vacuum_schedule.py",
+        "src/general_ludd/self_improve/promotion.py",
         "src/general_ludd/sts/audit.py",
         "src/general_ludd/sts/dashboard.py",
         "src/general_ludd/sts/store.py",

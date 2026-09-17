@@ -7,6 +7,7 @@ import json
 import os
 import tempfile
 import time
+from typing import cast
 
 import pytest
 
@@ -15,7 +16,7 @@ from general_ludd.routing_roles.small_model_policy import (
     ModelIdentity,
     TaskImpact,
 )
-from general_ludd.schemas.benchmark import TaskRole
+from general_ludd.schemas.benchmark import TaskRole, TaskType
 
 
 def _digest(value: str) -> str:
@@ -116,7 +117,7 @@ def test_new_store_creates_empty_file() -> None:
         os.unlink(path)
 
 
-def test_store_handles_corrupt_file() -> None:
+def test_store_rejects_corrupt_file_without_overwriting_it() -> None:
     from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
@@ -124,12 +125,78 @@ def test_store_handles_corrupt_file() -> None:
         path = f.name
 
     try:
-        store = CapabilityEvidenceStore(path)
-        assert store.list_all() == []
-        store.register_evidence(_evidence())
-        assert len(store.list_all()) == 1
+        with pytest.raises(ValueError, match="valid JSON list"):
+            CapabilityEvidenceStore(path)
+        with open(path, "rb") as stream:
+            assert stream.read() == b"not json at all"
     finally:
         os.unlink(path)
+
+
+@pytest.mark.parametrize("payload", ({}, ["not-a-record"]))
+def test_store_rejects_non_record_collections_without_overwriting_them(
+    payload: object,
+) -> None:
+    from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
+
+    encoded = json.dumps(payload).encode("utf-8")
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as stream:
+        stream.write(encoded)
+        path = stream.name
+
+    try:
+        with pytest.raises(ValueError, match="valid JSON list"):
+            CapabilityEvidenceStore(path)
+        with open(path, "rb") as stream:
+            assert stream.read() == encoded
+    finally:
+        os.unlink(path)
+
+
+def test_store_rejects_symlink_without_touching_its_target() -> None:
+    from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
+
+    with tempfile.TemporaryDirectory() as directory:
+        target = os.path.join(directory, "required-artifact.json")
+        link = os.path.join(directory, "evidence.json")
+        with open(target, "w", encoding="utf-8") as stream:
+            stream.write('{"credential":"must-survive"}')
+        os.symlink(target, link)
+
+        with pytest.raises(ValueError, match="regular non-symlink"):
+            CapabilityEvidenceStore(link)
+
+        with open(target, encoding="utf-8") as stream:
+            assert stream.read() == '{"credential":"must-survive"}'
+
+
+def test_store_atomic_write_never_follows_predictable_temp_symlink() -> None:
+    from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, "evidence.json")
+        store = CapabilityEvidenceStore(path)
+        protected = os.path.join(directory, "required-artifact.json")
+        with open(protected, "w", encoding="utf-8") as stream:
+            stream.write('{"credential":"must-survive"}')
+        os.symlink(protected, path + ".tmp")
+
+        store.register_evidence(_evidence())
+
+        with open(protected, encoding="utf-8") as stream:
+            assert stream.read() == '{"credential":"must-survive"}'
+        assert len(store.list_all()) == 1
+
+
+def test_store_creates_private_evidence_file() -> None:
+    from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, "evidence.json")
+
+        CapabilityEvidenceStore(path)
+
+        assert os.stat(path).st_mode & 0o777 == 0o600
 
 
 # ---------------- register_evidence ----------------
@@ -226,6 +293,82 @@ def test_query_by_model_validates_identifier() -> None:
         store = CapabilityEvidenceStore(path)
         with pytest.raises(ValueError):
             store.query_by_model("")
+    finally:
+        os.unlink(path)
+
+
+def test_task_queries_validate_shape_and_exclude_legacy_records() -> None:
+    from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
+
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as stream:
+        path = stream.name
+
+    try:
+        store = CapabilityEvidenceStore(path)
+        current = {
+            "model_profile_id": "model-a",
+            "task_kind": "context_compaction",
+            "task_type": TaskType.BUG_FIX.value,
+        }
+        store.register_evidence(current)
+        store.register_evidence({key: value for key, value in current.items() if key != "task_type"})
+
+        assert len(store.query_by_task_kind("context_compaction")) == 2
+        assert store.query_by_task_shape(TaskType.BUG_FIX, "context_compaction") == [
+            {**current, "registered_at": store.list_all()[0]["registered_at"]}
+        ]
+        assert len(
+            store.query_by_task_shape(
+                TaskType.BUG_FIX,
+                "context_compaction",
+                model_profile_id="model-a",
+            )
+        ) == 1
+        with pytest.raises(ValueError, match="task_kind"):
+            store.query_by_task_kind("not a task")
+        with pytest.raises(ValueError, match="TaskType"):
+            store.query_by_task_shape(
+                cast(TaskType, "bug_fix"),
+                "context_compaction",
+            )
+        with pytest.raises(ValueError, match="default task contract"):
+            store.query_by_task_shape(TaskType.BUG_FIX, "unknown_kind")
+        with pytest.raises(ValueError, match="model_profile_id"):
+            store.query_by_task_shape(
+                TaskType.BUG_FIX,
+                "context_compaction",
+                model_profile_id="not valid",
+            )
+    finally:
+        os.unlink(path)
+
+
+def test_loading_identity_ignores_foreign_and_malformed_records() -> None:
+    from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
+
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as stream:
+        path = stream.name
+
+    try:
+        store = CapabilityEvidenceStore(path)
+        evidence = _evidence()
+        store.register_evidence(evidence)
+        store.register_evidence(
+            {
+                "model_profile_id": evidence.model_profile_id,
+                "model_identity_digest": evidence.model_identity_digest,
+            }
+        )
+
+        loaded = store.load_evidence_for_identity(
+            evidence.model_profile_id,
+            evidence.model_identity_digest,
+        )
+        assert loaded == [evidence]
+        assert store.load_evidence_for_identity(
+            evidence.model_profile_id,
+            _digest("different-identity"),
+        ) == []
     finally:
         os.unlink(path)
 

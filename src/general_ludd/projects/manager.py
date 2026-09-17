@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
@@ -21,6 +22,16 @@ logger = logging.getLogger(__name__)
 
 _VALID_RELATION_TYPES = frozenset({"parent", "child", "sibling", "external"})
 _VALID_LOCATION_KINDS = frozenset({"gludd_project_name", "directory", "url"})
+
+
+def _stable_config_project_id(project: dict[str, Any]) -> str:
+    """Derive a restart-stable identity for a project lacking an explicit id."""
+    explicit = project.get("project_id")
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip()
+    name = str(project.get("name", "unnamed")).strip() or "unnamed"
+    identity = f"configured-project:{name}"
+    return f"proj-{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:8]}"
 
 
 def _normalize_repo_url(url: str) -> str:
@@ -227,6 +238,7 @@ class ProjectManager:
         workspace_path: str = "",
         repo_url: str = "",
         dispatch_mode: str = "active",
+        project_id: str | None = None,
         **config: Any,
     ) -> ProjectWeight:
         """Register a project when its weight fits the remaining budget.
@@ -241,11 +253,15 @@ class ProjectManager:
             raise ProjectAllocationError(
                 f"Cannot allocate {weight}% to '{name}': only {available}% available (current total: {total}%)"
             )
-        project_id = f"proj-{uuid.uuid4().hex[:8]}"
+        selected_project_id = project_id or f"proj-{uuid.uuid4().hex[:8]}"
+        if selected_project_id in self._projects:
+            raise ProjectAllocationError(
+                f"Project '{selected_project_id}' is already registered"
+            )
         import time
 
         project = ProjectWeight(
-            project_id=project_id,
+            project_id=selected_project_id,
             name=name,
             weight=weight,
             description=description,
@@ -255,8 +271,8 @@ class ProjectManager:
             dispatch_mode=dispatch_mode,
             created_at=time.time(),
         )
-        self._projects[project_id] = project
-        logger.info("Added project %s (%s) at %.1f%% mode=%s", name, project_id, weight, dispatch_mode)
+        self._projects[selected_project_id] = project
+        logger.info("Added project %s (%s) at %.1f%% mode=%s", name, selected_project_id, weight, dispatch_mode)
         return project
 
     def remove_project(self, project_id: str) -> None:
@@ -560,6 +576,7 @@ def seed_from_config(config: dict[str, Any]) -> ProjectManager:
                 workspace_path=pcfg.get("workspace_path", ""),
                 repo_url=pcfg.get("repo_url", ""),
                 dispatch_mode=pcfg.get("dispatch_mode", "active"),
+                project_id=_stable_config_project_id(pcfg),
             )
         except ProjectAllocationError:
             logger.warning("Skipping project '%s': allocation would exceed 100%%", pcfg.get("name", "?"))

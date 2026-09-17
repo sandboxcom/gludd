@@ -29,6 +29,15 @@ def _read_makefile() -> str:
     return MAKEFILE.read_text()
 
 
+def test_test_files_namespaces_ansible_local_temp() -> None:
+    """The focused test runner must not write Ansible state under user home."""
+    content = _read_makefile()
+    recipe = content.split("\ntest-files:\n", 1)[1].split("\n\n", 1)[0]
+
+    assert 'mkdir -p "$$BT/ansible-local"' in recipe
+    assert 'ANSIBLE_LOCAL_TEMP="$$BT/ansible-local"' in recipe
+
+
 def _extract_target_defs(content: str) -> dict[str, int]:
     """Return {target_name: line_number} for every defined target at column 0.
 

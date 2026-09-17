@@ -20,14 +20,16 @@ Checks:
 import json
 import re
 import sys
+from collections.abc import Callable
 from pathlib import Path
-
+from typing import Any
 
 INFRA_DIR = Path(__file__).resolve().parent.parent / "config" / "infra"
 POLICY_FILE = INFRA_DIR / "azure-iam-policy.json"
 POLICY_CLI_FILE = INFRA_DIR / "azure-iam-policy-cli.json"
+OBSOLETE_PROVIDER_REGISTRATION = "Microsoft.Resources/subscriptions/providers/register/action"
 
-SECURITY_CRITICAL_DENIED_ACTIONS = {
+SECURITY_CRITICAL_FORBIDDEN_ACTIONS = {
     "Microsoft.Compute/virtualMachines/runCommand/action",
     "Microsoft.Compute/virtualMachines/runCommands/read",
     "Microsoft.Compute/virtualMachines/runCommands/write",
@@ -61,6 +63,7 @@ _RE_SECRET_PATTERNS = {re.compile(pat, re.IGNORECASE): msg for pat, msg in SECRE
 # Lazily import PROVIDER_OPERATIONS from rbac_validator — handle case
 # where the module path may not be on sys.path yet.
 _ALL_KNOWN_ACTIONS: frozenset[str] | None = None
+PolicyValidator = Callable[[dict[str, Any]], tuple[list[str], list[str], list[str]]]
 
 
 def _load_known_actions() -> frozenset[str]:
@@ -70,7 +73,7 @@ def _load_known_actions() -> frozenset[str]:
         return _ALL_KNOWN_ACTIONS
 
     try:
-        from general_ludd.azure.rbac_validator import all_known_actions  # noqa: PLC0415
+        from general_ludd.azure.rbac_validator import all_known_actions
 
         _ALL_KNOWN_ACTIONS = all_known_actions()
     except ImportError:
@@ -82,6 +85,11 @@ def validate_action_format(action: str) -> list[str]:
     errors: list[str] = []
     if not CLI_ACTION_PATTERN.match(action):
         errors.append(f"Action '{action}' does not match Azure RBAC format")
+    if action.casefold() == OBSOLETE_PROVIDER_REGISTRATION.casefold():
+        errors.append(
+            f"Action '{action}' is not supported; use provider-owned "
+            "<namespace>/register/action operations"
+        )
     for pattern, explanation in FORBIDDEN_SUFFIX_PATTERNS:
         if re.search(pattern, action, re.IGNORECASE):
             errors.append(f"Action '{action}': {explanation}")
@@ -102,7 +110,7 @@ def check_secret_action_warnings(action: str) -> list[str]:
     return warnings
 
 
-def validate_cli_format(policy: dict) -> tuple[list[str], list[str], list[str]]:
+def validate_cli_format(policy: dict[str, Any]) -> tuple[list[str], list[str], list[str]]:
     """Validate the PascalCase CLI format (azure-iam-policy.json).
 
     Returns (errors, warnings, all_actions_list).
@@ -136,10 +144,14 @@ def validate_cli_format(policy: dict) -> tuple[list[str], list[str], list[str]]:
         errors.extend(validate_action_format(action))
         warnings.extend(check_secret_action_warnings(action))
 
-    denied = set(policy.get("NotActions", []))
-    missing_denials = SECURITY_CRITICAL_DENIED_ACTIONS - denied
-    if missing_denials:
-        errors.append(f"NotActions missing security-critical denials: {', '.join(sorted(missing_denials))}")
+    forbidden_grants = SECURITY_CRITICAL_FORBIDDEN_ACTIONS & set(
+        policy.get("Actions", [])
+    )
+    if forbidden_grants:
+        errors.append(
+            "Actions grant security-critical operations: "
+            f"{', '.join(sorted(forbidden_grants))}"
+        )
 
     description = policy.get("Description", "")
     if len(description) < 20:
@@ -148,7 +160,7 @@ def validate_cli_format(policy: dict) -> tuple[list[str], list[str], list[str]]:
     return errors, warnings, all_actions
 
 
-def validate_rest_format(policy: dict) -> tuple[list[str], list[str], list[str]]:
+def validate_rest_format(policy: dict[str, Any]) -> tuple[list[str], list[str], list[str]]:
     """Validate the REST API / Portal format (azure-iam-policy-cli.json).
 
     Expected shape: {"properties": {"roleName": ..., "permissions": [{"actions": [...], ...}]}}
@@ -206,18 +218,17 @@ def validate_rest_format(policy: dict) -> tuple[list[str], list[str], list[str]]
         errors.extend(validate_action_format(action))
         warnings.extend(check_secret_action_warnings(action))
 
-    denied = set(not_actions)
-    missing_denials = SECURITY_CRITICAL_DENIED_ACTIONS - denied
-    if missing_denials:
+    forbidden_grants = SECURITY_CRITICAL_FORBIDDEN_ACTIONS & set(actions)
+    if forbidden_grants:
         errors.append(
-            f"properties.permissions[0].notActions missing security-critical denials: "
-            f"{', '.join(sorted(missing_denials))}"
+            "properties.permissions[0].actions grant security-critical operations: "
+            f"{', '.join(sorted(forbidden_grants))}"
         )
 
     return errors, warnings, all_actions
 
 
-def _check_field_order(policy: dict, label: str) -> list[str]:
+def _check_field_order(policy: dict[str, Any], label: str) -> list[str]:
     """Check structural field ordering against real-world GitHub reference patterns.
 
     Returns WARNING messages only — field ordering is advisory.
@@ -245,7 +256,7 @@ def _check_field_order(policy: dict, label: str) -> list[str]:
     return warnings
 
 
-def _auto_detect_format(policy: dict) -> tuple[str, callable]:
+def _auto_detect_format(policy: dict[str, Any]) -> tuple[str, PolicyValidator]:
     if "properties" in policy and isinstance(policy.get("properties"), dict):
         return "REST API / Portal (auto-detected)", validate_rest_format
     return "CLI (PascalCase) (auto-detected)", validate_cli_format
@@ -262,8 +273,8 @@ def main() -> None:
 
         try:
             policy = json.loads(policy_file.read_text())
-        except json.JSONDecodeError as e:
-            print(f"INVALID JSON ({policy_file.name}): {e}")
+        except json.JSONDecodeError as exc:
+            print(f"INVALID JSON ({policy_file.name}): {exc}")
             sys.exit(1)
 
         label, validator = _auto_detect_format(policy)
@@ -274,10 +285,10 @@ def main() -> None:
         file_warnings.extend(structural_warnings)
 
         # Prefix errors/warnings with the file label and file name
-        for e in file_errors:
-            errors.append(f"[{label}] {e}")
-        for w in file_warnings:
-            warnings.append(f"[{label}] {w}")
+        for error in file_errors:
+            errors.append(f"[{label}] {error}")
+        for warning in file_warnings:
+            warnings.append(f"[{label}] {warning}")
 
         # Cross-reference against known Azure actions (warn only — Azure adds new actions)
         known = _load_known_actions()
@@ -290,15 +301,15 @@ def main() -> None:
         print(f"PASS: {policy_file.name} ({label}) — {action_count} actions parsed")
 
     if errors:
-        for e in errors:
-            print(f"FAIL: {e}")
-        for w in warnings:
-            print(f"WARN: {w}")
+        for error in errors:
+            print(f"FAIL: {error}")
+        for warning in warnings:
+            print(f"WARN: {warning}")
         print(f"\n{len(errors)} error(s), {len(warnings)} warning(s)")
         sys.exit(1)
 
-    for w in warnings:
-        print(f"WARN: {w}")
+    for warning in warnings:
+        print(f"WARN: {warning}")
 
     print(f"\nPASS: All Azure IAM policy files valid — {len(errors)} errors, {len(warnings)} warnings")
     sys.exit(0)

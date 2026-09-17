@@ -117,3 +117,10 @@ DNS destinations, rebinding/private answers, redirect revalidation, metadata
 redirects, credential-bearing URLs, response-size limits, and whole-operation
 timeouts. Bandit B310 is also rerun after call-site migrations; suppressions are
 not an accepted remediation.
+
+Webhook retry, body, header, and timeout unit tests explicitly replace DNS
+pinning with a deterministic public-host result. Those tests do not own DNS
+behavior, and must not depend on ambient resolver or network availability in a
+developer shell or GitHub-hosted runner. The separate webhook rebinding and SSRF
+suites retain the real boundary contract: delivery calls `resolve_and_pin`,
+private or unresolved answers fail closed, and redirects remain disabled.

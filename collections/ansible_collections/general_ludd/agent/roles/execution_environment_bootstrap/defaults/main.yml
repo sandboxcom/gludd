@@ -1,0 +1,35 @@
+---
+# Gludd owns only resources carrying this exact, bounded namespace.
+execution_environment_bootstrap_state: present
+execution_environment_bootstrap_validate_only: false
+execution_environment_bootstrap_install_podman: true
+execution_environment_bootstrap_machine_name: >-
+  gludd-ee-{{ (execution_environment_bootstrap_project_root | hash('sha256'))[:12] }}
+execution_environment_bootstrap_machine_cpus: 2
+execution_environment_bootstrap_machine_memory_mb: 4096
+execution_environment_bootstrap_machine_disk_gb: 32
+execution_environment_bootstrap_machine_start_timeout_seconds: 900
+execution_environment_bootstrap_build_timeout_seconds: 7200
+execution_environment_bootstrap_poll_seconds: 5
+execution_environment_bootstrap_container_runtime: podman
+execution_environment_bootstrap_podman_executable: podman
+execution_environment_bootstrap_candidate_python_executable: /usr/bin/python3.11
+execution_environment_bootstrap_podman_version: 5.8.2
+execution_environment_bootstrap_podman_macos_url: >-
+  https://github.com/containers/podman/releases/download/v5.8.2/podman-installer-macos-universal.pkg
+execution_environment_bootstrap_podman_macos_checksum: >-
+  sha256:17992d3fc5a9dc7bd6f591d1c5f5dcf13e064cc2e672e9cd456d4a5707ff97e1
+execution_environment_bootstrap_podman_macos_package: >-
+  /var/tmp/gludd-podman-5.8.2-universal.pkg
+execution_environment_bootstrap_project_root: ""
+execution_environment_bootstrap_state_root: >-
+  {{ ansible_facts['env']['HOME'] }}/.local/state/gludd/{{ execution_environment_bootstrap_machine_name }}/ansible-ee
+execution_environment_bootstrap_context_dir: >-
+  {{ execution_environment_bootstrap_state_root }}/{{ execution_environment_bootstrap_machine_name }}/contexts
+execution_environment_bootstrap_image: >-
+  localhost/{{ execution_environment_bootstrap_machine_name }}-awx-ee:0.1.0-beta.4
+execution_environment_bootstrap_remove_image_on_absent: true
+execution_environment_bootstrap_cleanup_on_failure: true
+# Keep a verified runner available by default. Set state=absent when the work
+# queue drains, or ephemeral=true for one-build jobs.
+execution_environment_bootstrap_ephemeral: false

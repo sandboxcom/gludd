@@ -1,0 +1,1 @@
+{"canonical_make_commands":["make test-files TESTFILES=tests/unit/test_self_improve_codex_runner.py PYTEST_ARGS=-q"],"objective":"Debug a problem: reproduce one captured failure, compact its execution trace into a bounded diagnosis artifact, inspect state, test hypotheses about the cause, and apply one minimal fix.","reference_elapsed_seconds":655,"task_id":"S83.206"}

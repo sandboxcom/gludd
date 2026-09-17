@@ -36,7 +36,9 @@ from general_ludd.db.repository import (
     TodoRepository,
 )
 from general_ludd.event_loop.lease import (
+    LeaseBusyError,
     acquire_lease,
+    confirm_lease_termination,
     reclaim_expired_leases,
     release_lease,
 )
@@ -375,17 +377,12 @@ class TestQueueLeaseAcquireReclaim:
     async def test_release_lease_scoped_by_holder(
         self, async_session: AsyncSession
     ):
-        """When holder_id is supplied, only that holder's lease is dropped —
-        a different holder's lease on the same bucket survives."""
+        """A wrong holder cannot drop the exact owner's single lease."""
         await acquire_lease(
             async_session, bucket_key="core:TODO-1", holder_id="tick-A"
         )
-        await acquire_lease(
-            async_session, bucket_key="core:TODO-1", holder_id="tick-B"
-        )
-        n = await release_lease(async_session, "core:TODO-1", holder_id="tick-A")
-        assert n == 1
-        # tick-B's lease still present.
+        n = await release_lease(async_session, "core:TODO-1", holder_id="tick-B")
+        assert n == 0
         from sqlalchemy import select
 
         from general_ludd.db.models import BucketLeaseModel
@@ -397,7 +394,12 @@ class TestQueueLeaseAcquireReclaim:
                 )
             )
         ).scalars().all()
-        assert {r.holder_id for r in remaining} == {"tick-B"}
+        assert {r.holder_id for r in remaining} == {"tick-A"}
+        assert await release_lease(
+            async_session,
+            "core:TODO-1",
+            holder_id="tick-A",
+        ) == 1
 
     async def test_reclaim_expired_leases_noop_when_none_expired(
         self, async_session: AsyncSession
@@ -415,10 +417,7 @@ class TestQueueLeaseAcquireReclaim:
     async def test_queue_reclaim_requeues_expired_leases(
         self, async_session: AsyncSession
     ):
-        """The H15 invariant: an expired lease whose holder crashed must be
-        deleted AND its associated ACTIVE todo reset to QUEUED so
-        claim_runnable can re-dispatch it. Without the requeue, the todo
-        strands ACTIVE forever."""
+        """An expired ACTIVE todo requeues only after exact termination proof."""
         # Seed a todo in ACTIVE (claimed) state.
         todo_repo = TodoRepository(async_session)
         todo = await todo_repo.create(
@@ -430,11 +429,20 @@ class TestQueueLeaseAcquireReclaim:
             bucket_key=f"core:{todo.todo_id}",
             holder_id="tick-crashed",
             ttl_seconds=1,
+            todo_version=todo.version,
         )
         await async_session.commit()
         import asyncio
 
         await asyncio.sleep(1.1)
+        reclaimed = await reclaim_expired_leases(async_session)
+        assert reclaimed == 0
+        assert await confirm_lease_termination(
+            async_session,
+            bucket_key=f"core:{todo.todo_id}",
+            holder_id="tick-crashed",
+            todo_version=todo.version,
+        )
         reclaimed = await reclaim_expired_leases(async_session)
         assert reclaimed == 1
         # The todo must be back in QUEUED.
@@ -442,39 +450,31 @@ class TestQueueLeaseAcquireReclaim:
         assert refreshed is not None
         assert refreshed.status == TodoStatus.QUEUED.value
 
-    async def test_reclaim_skips_requeue_when_live_lease_exists(
+    async def test_competing_holder_cannot_replace_live_lease(
         self, async_session: AsyncSession
     ):
-        """F1 defense-in-depth: if BOTH an expired lease (crashed tick) AND
-        a live lease (the tick that legitimately re-claimed the todo) exist
-        for the same bucket, reclaim must delete the expired one but NOT
-        requeue — otherwise the live holder's work is duplicated."""
+        """The single-owner mutex rejects a recovery worker while work is live."""
         todo_repo = TodoRepository(async_session)
         todo = await todo_repo.create(
             _todo_data("double-claimed", status=TodoStatus.ACTIVE)
         )
         bucket = f"core:{todo.todo_id}"
-        # Expired lease from the crashed tick.
         await acquire_lease(
             async_session,
             bucket_key=bucket,
-            holder_id="tick-crashed",
-            ttl_seconds=1,
-        )
-        # Live lease from the recovery tick.
-        await acquire_lease(
-            async_session,
-            bucket_key=bucket,
-            holder_id="tick-recovery",
+            holder_id="tick-owner",
             ttl_seconds=3600,
+            todo_version=todo.version,
         )
         await async_session.commit()
-        import asyncio
-
-        await asyncio.sleep(1.1)
-        reclaimed = await reclaim_expired_leases(async_session)
-        assert reclaimed == 1  # only the expired lease was deleted
-        # The todo STAYS ACTIVE because a live lease still covers it.
+        with pytest.raises(LeaseBusyError, match="already owned"):
+            await acquire_lease(
+                async_session,
+                bucket_key=bucket,
+                holder_id="tick-recovery",
+                ttl_seconds=3600,
+                todo_version=todo.version,
+            )
         refreshed = await todo_repo.get_by_id(todo.todo_id)
         assert refreshed is not None
         assert refreshed.status == TodoStatus.ACTIVE.value

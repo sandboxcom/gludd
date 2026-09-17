@@ -9,9 +9,9 @@ contract and its behavioral example is `make deps-audit`.
 
 The first authoritative replay reported 109 findings while the old target still
 returned success. Configuring PEP 621 development groups and import-name
-mappings reduced that to nine intentional dynamic/entrypoint cases. Those cases
-are explicitly adjudicated in `[tool.deptry.per_rule_ignores]`, after which the
-audit reports zero findings.
+mappings reduced that to a narrow set of intentional dynamic/entrypoint cases.
+Those cases are explicitly adjudicated in `[tool.deptry.per_rule_ignores]`, after
+which the audit reports zero findings.
 
 ## Dependency model
 
@@ -65,6 +65,9 @@ The narrow DEP002 list is not a blanket rule suppression:
 
 - Gunicorn, uvicorn-worker, vLLM, and llama-cpp are executed through process or
   module entrypoints.
+- `ansible-builder` is controller-only build tooling. The artifact builder uses
+  the managed interpreter's `python -m ansible_builder` entrypoint, avoiding a
+  host wrapper while keeping Ansible imports outside Gludd's core runtime.
 - aiosqlite is selected through the SQLAlchemy URL scheme.
 - boto3, msgpack, OpenTelemetry, Torch, and langchain-openai are loaded with
   guarded `importlib` calls.

@@ -27,10 +27,115 @@ NODE_DEPS_NPM_CACHE ?= /tmp/gludd-npm-cache-public-v1
 NODE_DEPS_NPM_REGISTRY ?= https://registry.npmjs.org
 NODE_DEPS_NPM_UPDATE_NOTIFIER ?= false
 NODE_DEPS_AUDIT_LEVEL ?= moderate
+GLUDD_UV_CACHE_DIR ?= /tmp/gludd-uv-cache-public-v2
+override UV_CACHE_DIR := $(GLUDD_UV_CACHE_DIR)
+export UV_CACHE_DIR
 RELEASE_READINESS_VALIDATE_ONLY ?= 0
 RELEASE_COMPLETED_STAGES ?=
 RELEASE_OBSERVATIONS ?=
 RELEASE_FAILURE_LEDGER ?= docs/releases/beta-release-failures.json
+SELF_IMPROVE_MODEL_PATH ?=
+SELF_IMPROVE_PROMPT_FILE ?=
+SELF_IMPROVE_PROPOSAL_FILE ?=
+SELF_IMPROVE_CONTRACT_FILE ?=
+SELF_IMPROVE_ENVELOPE_FILE ?=
+SELF_IMPROVE_WORKER_VALIDATE_ONLY ?= 0
+SELF_IMPROVE_BASELINE_REF ?=
+SELF_IMPROVE_REFERENCE_REF ?=
+SELF_IMPROVE_TASK_FILE ?=
+SELF_IMPROVE_MAX_ATTEMPTS ?= 2
+SELF_IMPROVE_VALIDATE_ONLY ?= 0
+SELF_IMPROVE_CONFIG_FILE ?=
+AZURE_SELF_IMPROVE_MODEL_POLICY ?= config/self-improve/azure-model-selection-policy.json
+AZURE_SELF_IMPROVE_MODEL_CATALOG ?= config/self-improve/azure-model-catalog-ci.json
+AZURE_SELF_IMPROVE_EVIDENCE_FILE ?= .gludd/capability-evidence.json
+AZURE_SELF_IMPROVE_REGISTRY_CACHE ?= .gludd/model-registry-cache
+AZURE_SELF_IMPROVE_TASK_FILE ?= config/self-improve/catalog-truth.json
+SELF_IMPROVE_CATALOG_LIVE ?= 0
+SELF_IMPROVE_MULTIFILE_LIVE ?= 0
+SELF_IMPROVE_FAILURE_CORPUS_FILE ?= config/self-improve/failure-corpus.json
+SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE ?= config/self-improve/acceptance-matrix.json
+SELF_IMPROVE_ACCEPTANCE_MATRIX_MODEL_PATH ?=
+SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE ?= 0
+AZURE_SELF_IMPROVE_SUBSCRIPTION_ID ?=
+AZURE_SELF_IMPROVE_RESOURCE_GROUP ?=
+AZURE_SELF_IMPROVE_ACCOUNT ?=
+AZURE_SELF_IMPROVE_SP_NAME ?=
+ifneq (,$(findstring $$,$(value AZURE_SELF_IMPROVE_SUBSCRIPTION_ID)))
+$(error AZURE_SELF_IMPROVE_SUBSCRIPTION_ID contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value AZURE_SELF_IMPROVE_RESOURCE_GROUP)))
+$(error AZURE_SELF_IMPROVE_RESOURCE_GROUP contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value AZURE_SELF_IMPROVE_ACCOUNT)))
+$(error AZURE_SELF_IMPROVE_ACCOUNT contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value AZURE_SELF_IMPROVE_SP_NAME)))
+$(error AZURE_SELF_IMPROVE_SP_NAME contains forbidden input)
+endif
+override _GLUDD_AZURE_SELF_IMPROVE_SUBSCRIPTION_ID_RAW := $(value AZURE_SELF_IMPROVE_SUBSCRIPTION_ID)
+override _GLUDD_AZURE_SELF_IMPROVE_RESOURCE_GROUP_RAW := $(value AZURE_SELF_IMPROVE_RESOURCE_GROUP)
+override _GLUDD_AZURE_SELF_IMPROVE_ACCOUNT_RAW := $(value AZURE_SELF_IMPROVE_ACCOUNT)
+override _GLUDD_AZURE_SELF_IMPROVE_SP_NAME_RAW := $(value AZURE_SELF_IMPROVE_SP_NAME)
+export _GLUDD_AZURE_SELF_IMPROVE_SUBSCRIPTION_ID_RAW
+export _GLUDD_AZURE_SELF_IMPROVE_RESOURCE_GROUP_RAW
+export _GLUDD_AZURE_SELF_IMPROVE_ACCOUNT_RAW
+export _GLUDD_AZURE_SELF_IMPROVE_SP_NAME_RAW
+ifneq (,$(findstring $$,$(value AZURE_ACCELERATOR_SUBSCRIPTION_ID)))
+$(error AZURE_ACCELERATOR_SUBSCRIPTION_ID contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value AZURE_ACCELERATOR_RESOURCE_GROUP)))
+$(error AZURE_ACCELERATOR_RESOURCE_GROUP contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value AZURE_ACCELERATOR_SP_NAME)))
+$(error AZURE_ACCELERATOR_SP_NAME contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value AZURE_ACCELERATOR_OPERATOR_AUTH)))
+$(error AZURE_ACCELERATOR_OPERATOR_AUTH contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value AZURE_ACCELERATOR_PRINCIPAL_OBJECT_ID)))
+$(error AZURE_ACCELERATOR_PRINCIPAL_OBJECT_ID contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value AZURE_ACCELERATOR_ROLE_APPLY_LIVE)))
+$(error AZURE_ACCELERATOR_ROLE_APPLY_LIVE contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value AZURE_ACCELERATOR_LOCATION)))
+$(error AZURE_ACCELERATOR_LOCATION contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value AZURE_CONTAINERAPP_ENVIRONMENT)))
+$(error AZURE_CONTAINERAPP_ENVIRONMENT contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME)))
+$(error AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE)))
+$(error AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value AZURE_CONTAINERAPP_LOCATION)))
+$(error AZURE_CONTAINERAPP_LOCATION contains forbidden input)
+endif
+override _GLUDD_AZURE_ACCELERATOR_SUBSCRIPTION_ID_RAW := $(value AZURE_ACCELERATOR_SUBSCRIPTION_ID)
+override _GLUDD_AZURE_ACCELERATOR_RESOURCE_GROUP_RAW := $(value AZURE_ACCELERATOR_RESOURCE_GROUP)
+override _GLUDD_AZURE_ACCELERATOR_SP_NAME_RAW := $(value AZURE_ACCELERATOR_SP_NAME)
+override _GLUDD_AZURE_ACCELERATOR_OPERATOR_AUTH_RAW := $(value AZURE_ACCELERATOR_OPERATOR_AUTH)
+override _GLUDD_AZURE_ACCELERATOR_PRINCIPAL_OBJECT_ID_RAW := $(value AZURE_ACCELERATOR_PRINCIPAL_OBJECT_ID)
+override _GLUDD_AZURE_ACCELERATOR_ROLE_APPLY_LIVE_RAW := $(value AZURE_ACCELERATOR_ROLE_APPLY_LIVE)
+override _GLUDD_AZURE_ACCELERATOR_LOCATION_RAW := $(value AZURE_ACCELERATOR_LOCATION)
+override _GLUDD_AZURE_CONTAINERAPP_ENVIRONMENT_RAW := $(value AZURE_CONTAINERAPP_ENVIRONMENT)
+override _GLUDD_AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME_RAW := $(value AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME)
+override _GLUDD_AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE_RAW := $(value AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE)
+override _GLUDD_AZURE_CONTAINERAPP_LOCATION_RAW := $(value AZURE_CONTAINERAPP_LOCATION)
+export _GLUDD_AZURE_ACCELERATOR_SUBSCRIPTION_ID_RAW
+export _GLUDD_AZURE_ACCELERATOR_RESOURCE_GROUP_RAW
+export _GLUDD_AZURE_ACCELERATOR_SP_NAME_RAW
+export _GLUDD_AZURE_ACCELERATOR_OPERATOR_AUTH_RAW
+export _GLUDD_AZURE_ACCELERATOR_PRINCIPAL_OBJECT_ID_RAW
+export _GLUDD_AZURE_ACCELERATOR_ROLE_APPLY_LIVE_RAW
+export _GLUDD_AZURE_ACCELERATOR_LOCATION_RAW
+export _GLUDD_AZURE_CONTAINERAPP_ENVIRONMENT_RAW
+export _GLUDD_AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME_RAW
+export _GLUDD_AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE_RAW
+export _GLUDD_AZURE_CONTAINERAPP_LOCATION_RAW
 RECONCILE_QUIET_PROGRESS ?= 0
 MARKDOWN_FILES ?=
 MARKDOWNLINT_CONFIG ?= config/markdownlint-cli2.jsonc
@@ -43,6 +148,15 @@ COVERAGE_CONFIG ?= config/coverage_gate_runtime.ini
 COVERAGE_REPORT ?= .gate-logs/coverage-files.json
 COVERAGE_AGGREGATE_MIN ?= 85
 COVERAGE_PER_FILE_MIN ?= 75
+OBSERVED_ROOT ?= .gate-logs/observed
+OBSERVED_HEARTBEAT_SECS ?= 30
+OBSERVED_STALE_SECS ?= 90
+OBSERVED_QUIET_SECS ?= 900
+OBSERVED_MAX_SECS ?= 3600
+OBSERVED_TAIL_LINES ?= 80
+OBSERVED_RETAIN_RUNS ?= 20
+OBSERVED_LABEL ?=
+RUN_ID ?=
 CLEAN_VALIDATE_ONLY ?= 0
 CLEAN_WORKTREE_VENVS_VALIDATE_ONLY ?= 0
 DISK_MIN_FREE_GIB ?= 8
@@ -87,8 +201,8 @@ _NO_UV_SYNC_GOALS := \
     check-disk check-disk-classification disk disk-check disk-guard cache-disk cache-clean disk-user-caches audit-home-tmp \
     cache-resource-inventory cache-resource-remove tmp-gludd-usage tmp-gludd-worktree-usage \
     tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
-    clean clean-artifacts clean-worktree-venvs clean-worktree-caches active-work-status ps agent-worktree agent-worktree-base \
-    development-merge-forward development-merge-forward-batch
+    clean clean-artifacts clean-worktree-venvs clean-worktree-caches active-work-status ps agent-worktree agent-worktree-base azure-self-improve-auth-args \
+    development-merge-forward development-merge-forward-batch uv-cache-path
 ifneq (,$(filter $(_NO_UV_SYNC_GOALS),$(MAKECMDGOALS)))
 override UV := echo
 else
@@ -112,7 +226,7 @@ endif
 PYTEST_VERBOSITY ?= -v
 
 .PHONY: \
-        init sync relock node-deps-sync node-deps-relock node-deps-audit install-pip lint lint-files lint-markdown lint-docstrings lint-fix test test-unit test-unit-shards test-ci-dual-track-local test-specific test-specific-pyver test-files test-count test-integration test-e2e \
+        init sync uv-cache-path migrate-up relock node-deps-sync node-deps-relock node-deps-audit install-pip lint lint-files lint-markdown lint-docstrings lint-fix test test-unit test-unit-shards test-ci-dual-track-local test-specific test-specific-pyver test-files test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
          test-games test-multi-model-pipeline test-local-model-pipeline test-project-type-pipeline game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
         typecheck _precommit-mypy setup-dirs setup-venv clean healthcheck \
@@ -126,7 +240,7 @@ PYTEST_VERBOSITY ?= -v
         feature-start feature-done test-and-commit preflight \
         agent-worktree agent-worktree-base agent-merge agent-cleanup agent-worktree-list \
         agent-worktree-dev agent-merge-dev \
-        test-self-improve test-self-improve-all \
+        self-improve-local-proposal azure-self-improve-auth-args azure-self-improve-live-proof azure-accelerator-role-apply azure-accelerator-role-args azure-accelerator-role-update-args azure-accelerator-auth-args azure-accelerator-auth-store azure-containerapp-environment-bootstrap-args azure-accelerator-auth-check azure-containerapp-preflight azure-containerapp-terraform-phase azure-containerapp-live-proof test-azure-containerapp-coverage test-self-improve test-self-improve-all test-self-improve-acceptance-matrix test-self-improve-private-policy \
           development-push development-merge-forward development-merge-forward-batch development-merge-to-master development-start development-status require-sandboxcom-ssh-key workstream-register workstream-unregister wt-prune-safe \
         git-commit-no-verify git-amend-msg \
 _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
@@ -142,7 +256,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         container-build container-run container-push \
          file-executable build-executable deb-package deb-install-deps rpm-package macos-dmg windows-installer release-artifacts dist-clean bundle-binaries bundle-ripgrep \
         sast sast-summary sbom pip-audit security security-backlog-gate \
-        audit-messages qa validate collect-check pre-commit-check coverage-files gate gate-refresh gate-lite smoke install-hooks install-workflow-hook feature-spec-inventory check-generated-artifact-hygiene \
+        audit-messages qa validate collect-check pre-commit-check coverage-files observed-status observed-tail gate gate-refresh gate-lite smoke install-hooks install-workflow-hook feature-spec-inventory check-generated-artifact-hygiene \
         status-snapshot audit-evidence deps-audit dogfood-features ruff-audit check-make-help \
         skill-install skill-list bootstrap-skills scan-tool-usage \
          scan-secrets scan-secrets-baseline clean-untracked clean-hooks clean-plugins \
@@ -187,7 +301,7 @@ log-agent-result disk-guard disk-check check-disk check-disk-classification chec
 git-tag-delete git-tag-move release-deploy append-text write-text-b64 replace-text-b64 mkdir-p replace-lines _no-raw-git-guard _no-bypass-guard _pre-commit-stage-guard _merge-strategy-guard _stash-leak-guard \
           _force-push-audit _recursive-merge-guard _commit-msg-audit \
           check-spec-enforcement-coverage check-structural-test-fragility lint-specs triage-failures audit-spec-completeness \
-          git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke mac-unified-memory-smoke gpu-hardware-smoke check-no-prompt-prone-edit-tools add-target edit-target edit-makefile-target validate-makefile \
+          git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke local-accelerator-inventory mac-unified-memory-smoke gpu-hardware-smoke check-no-prompt-prone-edit-tools add-target edit-target edit-makefile-target validate-makefile \
          build-llamacpp-tools
 
 help:
@@ -196,9 +310,12 @@ help:
 	@echo "  --- Setup ---"
 	@echo "  init                  Set up project (dirs + deps)"
 	@echo "  sync                  Sync uv dependencies"
+	@echo "  uv-cache-path         Print the sandbox-writable Gludd uv cache path"
+	@echo "  migrate-up            Upgrade an explicit database URL to a revision (MIGRATE_DATABASE_URL, MIGRATE_REVISION)"
 	@echo "  sync-llama-cpp        Sync locked local-inference extra (SYNC_LLAMA_CPP_VALIDATE_ONLY=0|1)"
 	@echo "  test-local-model-inference  Locked optional-runtime smoke (LOCAL_MODEL_INFERENCE_MODEL_PATH, LOCAL_MODEL_INFERENCE_VALIDATE_ONLY=0|1)"
 	@echo "  clean-e2e-small-model       Remove only the reproducible /tmp GGUF materialization (E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY=0|1)"
+	@echo "  clean-hf-cache             Diagnose/reclaim Gludd-owned unleased models (CLEAN_HF_CACHE_ROOT, CLEAN_HF_CACHE_REQUIRED_BYTES, CLEAN_HF_CACHE_VALIDATE_ONLY=0|1)"
 	@echo "  validate-ansible-runtime-boundary  Validate split core/controller/managed-host artifacts"
 	@echo "  build-ansible-execution-environment  Build the locked controller EE (ANSIBLE_EE_*)"
 	@echo "  verify-ansible-execution-environment Verify one digest-addressed controller EE (ANSIBLE_EE_*)"
@@ -242,7 +359,10 @@ help:
 	@echo "  gate-refresh          Refresh fast phases; stream fallback test node IDs (GATE_REFRESH_VALIDATE_ONLY=0|1)"
 	@echo "  gate-lite             Local validation (lint+typecheck+collect+smoke+unit@2w); no OOM"
 	@echo "  gate-audit            Gate + coverage audit (85% per-file threshold)"
-	@echo "  coverage-files        Targeted branch coverage (COVERAGE_TESTFILES, COVERAGE_CONFIG, COVERAGE_REPORT, COVERAGE_AGGREGATE_MIN, COVERAGE_PER_FILE_MIN)"
+	@echo "  coverage-files        Observable targeted coverage (COVERAGE_* plus OBSERVED_ROOT, OBSERVED_HEARTBEAT_SECS, OBSERVED_QUIET_SECS, OBSERVED_MAX_SECS, OBSERVED_RETAIN_RUNS)"
+	@echo "  observed-status       Print current/exact retained command status (OBSERVED_LABEL, RUN_ID, OBSERVED_ROOT, OBSERVED_STALE_SECS)"
+	@echo "  observed-tail         Print bounded current/exact retained log tail (OBSERVED_LABEL, RUN_ID, OBSERVED_ROOT, OBSERVED_TAIL_LINES)"
+	@echo "  run-watched           Observe one bounded command (CMD, OBSERVED_LABEL, RUN_ID, STALL_SECS, MAX_SECS, LOG, OBSERVED_ROOT, OBSERVED_HEARTBEAT_SECS, OBSERVED_RETAIN_RUNS)"
 	@echo "  gate-async            Launch gate detached (non-blocking); writes .gate-status"
 	@echo "  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)"
 	@echo "  gate-tail             Print a bounded latest gate-log snapshot (GATE_TAIL_LINES=80)"
@@ -251,8 +371,8 @@ help:
 	@echo "  collect-check         Fast collection-error gate"
 	@echo "  pre-commit-check      Fast lint + collection + typecheck commit preflight"
 	@echo "  test-nodeids          Print bounded pytest node-id slice (START/LIMIT/TESTPATH)"
-	@echo "  test-xdist-trace      Run pytest with durable xdist worker/node/resource trace"
-	@echo "  test-xdist-trace-summary  Summarize /tmp/gludd-xdist-progress.log unfinished tests"
+	@echo "  test-xdist-trace      Run pytest with durable xdist worker/node/resource trace (LOG, TESTPATH, PYTEST_ARGS, RUN_ID)"
+	@echo "  test-xdist-trace-summary  Summarize one durable trace/run (LOG, RUN_ID)"
 	@echo "  preflight             Preflight quality gate (coverage, lint, mypy, templates, etc.)"
 	@echo "  check-make-help       Verify every public Makefile target is listed by make help"
 	@echo "  codemod-lean-enforcement-plugins Extract bulky enforcement implementations from counted plugin entrypoints"
@@ -325,6 +445,7 @@ help:
 	@echo "  test-count            Count collected tests"
 	@echo "  test-failures         Show bounded cached failures (TEST_FAILURES_CACHE, TEST_FAILURES_LIMIT)"
 	@echo   provider-smoke        Run gludd smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json
+	@echo "  local-accelerator-inventory  Discover local GPU/TPU resources without provisioning"
 	@echo "  mac-unified-memory-smoke  Local Apple unified-memory smoke (LIVE=1 BACKEND=mps ARGS=...)"
 	@echo "  gpu-hardware-smoke        Local AMD/NVIDIA GPU smoke (LIVE=1 BACKEND=cuda|rocm ARGS=...)"
 	@echo "  provider-harness      Validate Azure/RunPod credentials, billing bounds, and optional Gludd telemetry"
@@ -367,6 +488,7 @@ help:
 	@echo "  git-diff              Show diff stats"
 	@echo "  git-staged            Show staged changes"
 	@echo "  git-log               Show recent commits"
+	@echo "  git-show-commit C=<sha>  Show hash, parents, committer time, subject, and files"
 	@echo "  git-patch-equivalence PATCH_UPSTREAM=<ref> PATCH_HEAD=<ref> PATCH_LIMIT=<n>  Compare patch identity"
 	@echo "  branches-unmerged-development  List every local branch tip not reachable from development"
 	@echo "  branch-reconciliation-inventory RECONCILE_TARGET=<ref> RECONCILE_LIMIT=<n> RECONCILE_AFTER=<ref|empty>  Page bounded local branch reconciliation state as JSON"
@@ -398,8 +520,28 @@ help:
 	@echo "  agent-merge BRANCH=<name>     Merge a subagent worktree branch into master (--no-ff)"
 	@echo "  agent-cleanup BRANCH=<name>   Remove a subagent worktree + branch after merge"
 	@echo "  agent-worktree-list           List active git worktrees"
-	@echo "  test-self-improve TARGET=<name>  E2E: run self-improvement on one target in isolated worktree"
-	@echo "  test-self-improve-all            E2E: run self-improvement on ALL targets in isolated worktree"
+	@echo "  self-improve-local-proposal  Owned local GGUF proposal worker (SELF_IMPROVE_MODEL_PATH/PROMPT_FILE/PROPOSAL_FILE)"
+	@echo "  azure-self-improve-auth-args  Emit validated NUL arguments for one least-privilege Azure SP command"
+	@echo "  azure-self-improve-live-proof  Discover, select, deploy, evaluate, and tear down one bounded Azure candidate"
+	@echo "  azure-accelerator-role-apply Apply/validate the exact GPU role through Microsoft SDKs (AZURE_ACCELERATOR_*)"
+	@echo "  azure-accelerator-role-args  Deprecated compatibility argv for Azure CLI role creation"
+	@echo "  azure-accelerator-role-update-args  Emit validated NUL arguments to narrow an existing GPU role"
+	@echo "  azure-accelerator-auth-args  Emit validated NUL arguments for its Azure SP credential command"
+	@echo "  azure-containerapp-environment-bootstrap-args  Emit one operator-owned shared GPU environment deployment"
+	@echo "  azure-accelerator-auth-check Secret-safe validation of Azure CLI --json-auth output"
+	@echo "  azure-accelerator-auth-store Preserve stdin/source JSON as immutable protected generations"
+	@echo "  azure-containerapp-preflight Traced read-only named-environment GPU sizing and quota proof"
+	@echo "  azure-containerapp-terraform-phase  Owned app-only Terraform phase (AZURE_CONTAINERAPP_TF_*)"
+	@echo "  azure-containerapp-live-proof  Hermetic/live bounded deploy-infer-destroy proof (AZURE_CONTAINERAPP_LIVE_PROOF_*)"
+	@echo "  test-azure-containerapp-coverage  Hermetic Azure Container Apps tests with 85/75 coverage gates"
+	@echo "  test-self-improve TARGET=<name>  Compare an auto-managed local model with Codex (optional SELF_IMPROVE_MODEL_PATH override)"
+	@echo "  test-self-improve-catalog-truth  Replay pinned catalog fixture (SELF_IMPROVE_CATALOG_LIVE=0|1)"
+	@echo "  test-self-improve-multifile      Replay pinned multi-file fixture (SELF_IMPROVE_MULTIFILE_LIVE=0|1)"
+	@echo "  test-self-improve-failure-corpus Replay typed local failures offline (SELF_IMPROVE_FAILURE_CORPUS_FILE)"
+	@echo "  test-self-improve-acceptance-matrix Validate/run the serial ten-shape contract (SELF_IMPROVE_ACCEPTANCE_MATRIX_*)"
+	@echo "  test-self-improve-private-policy  Run hermetic fake-local/fake-Azure project privacy E2E coverage"
+	@echo "  test-self-improve-all            Deprecated alias for one explicit Codex-reference benchmark"
+	@echo "  self-improve-promotion-marker    Verify an exact promotion marker on development (SELF_IMPROVE_PROMOTION_* variables)"
 	@echo "  git-index                    Index git log into SQLite (.gludd/git_history.db)"
 	@echo "  git-search Q='...'           Search indexed git history"
 	@echo "  git-stats                    Show git history index statistics"
@@ -514,6 +656,7 @@ help:
 	@echo "  ci-greenness           CI reliability ratio (green / total completed)"
 	@echo "  ci-trigger-committed-head [REF=<b>]  Idempotently signal + return exact-SHA GHA run URL"
 	@echo "  ci-record-verdict      Record a known CI verdict directly, bypassing cooldown (VERDICT=success|failure|pending, SHA=<sha>)"
+	@echo "  deploy-and-forget      Single guarded push + cooldown record (BRANCH, DEPLOY_AND_FORGET_VALIDATE_ONLY=0|1)"
 	@echo ""
 	@echo "  --- Git Remote ---"
 	@echo "  git-remote-sandboxcom Configure sandboxcom GitHub remote with SSH key"
@@ -688,6 +831,14 @@ init: setup-dirs
 
 sync:
 	@$(UV) sync --locked
+
+uv-cache-path:
+	@printf '%s\n' "$$UV_CACHE_DIR"
+
+migrate-up:
+	@test -n "$(strip $(MIGRATE_DATABASE_URL))" || { echo "MIGRATE_DATABASE_URL is required"; exit 2; }
+	@test -n "$(strip $(MIGRATE_REVISION))" || { echo "MIGRATE_REVISION is required"; exit 2; }
+	@DATABASE_URL="$(MIGRATE_DATABASE_URL)" $(UV) run alembic upgrade "$(MIGRATE_REVISION)"
 
 sync-local-inference:
 	@$(UV) sync --locked --extra local-inference
@@ -930,37 +1081,40 @@ test-specific-pyver:
 
 test-files:
 	@if [ -z "$(TESTFILES)" ]; then echo "Usage: make test-files TESTFILES='tests/unit/test_a.py tests/unit/test_b.py'"; exit 1; fi
-	@BT="/tmp/gludd-testfiles-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILES) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
+	@BT="/tmp/gludd-testfiles-$${ID:-$$$$}"; rm -rf "$$BT"; mkdir -p "$$BT/ansible-local"; ANSIBLE_LOCAL_TEMP="$$BT/ansible-local" $(UV) run python -m pytest $(TESTFILES) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
 
 coverage-files:
-	@if [ -z "$(COVERAGE_TESTFILES)" ]; then echo "Usage: make coverage-files COVERAGE_TESTFILES='tests/unit/test_a.py' COVERAGE_CONFIG=config/coverage.ini COVERAGE_REPORT=.gate-logs/coverage-files.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75"; exit 2; fi
+	@if [ -z "$(COVERAGE_TESTFILES)" ]; then echo "Usage: make coverage-files COVERAGE_TESTFILES='tests/unit/test_a.py' COVERAGE_CONFIG=config/coverage.ini COVERAGE_REPORT=.gate-logs/coverage-files.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 OBSERVED_QUIET_SECS=900 OBSERVED_MAX_SECS=3600 OBSERVED_RETAIN_RUNS=20"; exit 2; fi
 	@test -f "$(COVERAGE_CONFIG)" || { echo "coverage-files: missing config $(COVERAGE_CONFIG)"; exit 2; }
 	@mkdir -p "$$(dirname "$(COVERAGE_REPORT)")"
 	@BT="/tmp/gludd-coverage-files-$${ID:-$$$$}"; \
 		COVERAGE_RC="$$(cd "$$(dirname "$(COVERAGE_CONFIG)")" && pwd)/$$(basename "$(COVERAGE_CONFIG)")"; \
-		DATA_FILE="$(CURDIR)/.gate-logs/coverage-files-data"; \
-		rm -rf "$$BT"; \
-		echo "=== COVERAGE FILES: execute aggregate>=$(COVERAGE_AGGREGATE_MIN)% per-file>=$(COVERAGE_PER_FILE_MIN)% ==="; \
-		COVERAGE_FILE="$$DATA_FILE" $(UV) run coverage erase --rcfile="$$COVERAGE_RC"; \
-		COVERAGE_FILE="$$DATA_FILE" $(UV) run coverage run --rcfile="$$COVERAGE_RC" \
-			-m pytest $(COVERAGE_TESTFILES) -v --basetemp="$$BT"; \
-		RC=$$?; \
-		if [ "$$RC" -eq 0 ]; then \
-			COVERAGE_FILE="$$DATA_FILE" $(UV) run coverage combine --rcfile="$$COVERAGE_RC"; \
-			COVERAGE_FILE="$$DATA_FILE" $(UV) run coverage report --rcfile="$$COVERAGE_RC" --fail-under="$(COVERAGE_AGGREGATE_MIN)"; \
-			RC=$$?; \
-		fi; \
-		if [ "$$RC" -eq 0 ]; then \
-			COVERAGE_FILE="$$DATA_FILE" $(UV) run coverage json --rcfile="$$COVERAGE_RC" -o "$(COVERAGE_REPORT)"; \
-			RC=$$?; \
-		fi; \
-		if [ "$$RC" -eq 0 ]; then \
+		DATA_FILE="$(CURDIR)/.gate-logs/coverage-files-data-$${ID:-$$$$}"; \
+		REPORT_WORK="$(COVERAGE_REPORT).tmp.$${ID:-$$$$}"; \
+		rm -rf "$$BT"; rm -f "$$REPORT_WORK"; \
+		cleanup() { RC=$$?; trap - EXIT INT TERM; rm -rf "$$BT"; rm -f "$$REPORT_WORK" "$$DATA_FILE" "$$DATA_FILE".*; exit $$RC; }; \
+		trap cleanup EXIT INT TERM; \
+		export GLUDD_COVERAGE_RC="$$COVERAGE_RC" GLUDD_COVERAGE_DATA="$$DATA_FILE" GLUDD_COVERAGE_BT="$$BT" GLUDD_COVERAGE_REPORT_WORK="$$REPORT_WORK"; \
+		$(UV) run python scripts/stream_command.py --root "$(OBSERVED_ROOT)" --label coverage-files \
+			--heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" --quiet-secs "$(OBSERVED_QUIET_SECS)" \
+			--max-secs "$(OBSERVED_MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)" --pytest-trace -- /bin/sh -c 'set -e; \
+			echo "=== COVERAGE FILES: execute aggregate>=$(COVERAGE_AGGREGATE_MIN)% per-file>=$(COVERAGE_PER_FILE_MIN)% ==="; \
+			COVERAGE_FILE="$$GLUDD_COVERAGE_DATA" $(UV) run coverage erase --rcfile="$$GLUDD_COVERAGE_RC"; \
+			COVERAGE_FILE="$$GLUDD_COVERAGE_DATA" $(UV) run coverage run --rcfile="$$GLUDD_COVERAGE_RC" -m pytest $(COVERAGE_TESTFILES) -v -W error --basetemp="$$GLUDD_COVERAGE_BT" -p scripts.xdist_trace_plugin; \
+			COVERAGE_FILE="$$GLUDD_COVERAGE_DATA" $(UV) run coverage combine --rcfile="$$GLUDD_COVERAGE_RC"; \
+			COVERAGE_FILE="$$GLUDD_COVERAGE_DATA" $(UV) run coverage report --rcfile="$$GLUDD_COVERAGE_RC" --fail-under="$(COVERAGE_AGGREGATE_MIN)"; \
+			COVERAGE_FILE="$$GLUDD_COVERAGE_DATA" $(UV) run coverage json --rcfile="$$GLUDD_COVERAGE_RC" -o "$$GLUDD_COVERAGE_REPORT_WORK"; \
 			echo "=== COVERAGE FILES: verify every measured file >=$(COVERAGE_PER_FILE_MIN)% ==="; \
-			$(UV) run python scripts/audit_coverage.py --json-file="$(COVERAGE_REPORT)" --threshold="$(COVERAGE_AGGREGATE_MIN)" --per-file-threshold="$(COVERAGE_PER_FILE_MIN)" --source=.; \
-			RC=$$?; \
-		fi; \
-		rm -rf "$$BT"; \
-		exit "$$RC"
+			$(UV) run python scripts/audit_coverage.py --json-file="$$GLUDD_COVERAGE_REPORT_WORK" --threshold="$(COVERAGE_AGGREGATE_MIN)" --per-file-threshold="$(COVERAGE_PER_FILE_MIN)" --source=.; \
+			mv "$$GLUDD_COVERAGE_REPORT_WORK" "$(COVERAGE_REPORT)"'
+
+observed-status:
+	@if [ -z "$(OBSERVED_LABEL)" ]; then echo "Usage: make observed-status OBSERVED_LABEL=coverage-files [RUN_ID=exact-run] OBSERVED_ROOT=.gate-logs/observed OBSERVED_STALE_SECS=90"; exit 2; fi
+	@$(UV) run python scripts/stream_command.py --status --root "$(OBSERVED_ROOT)" --label "$(OBSERVED_LABEL)" $(if $(RUN_ID),--run-id "$(RUN_ID)",) --stale-secs "$(OBSERVED_STALE_SECS)"
+
+observed-tail:
+	@if [ -z "$(OBSERVED_LABEL)" ]; then echo "Usage: make observed-tail OBSERVED_LABEL=coverage-files [RUN_ID=exact-run] OBSERVED_ROOT=.gate-logs/observed OBSERVED_TAIL_LINES=80"; exit 2; fi
+	@$(UV) run python scripts/stream_command.py --tail "$(OBSERVED_TAIL_LINES)" --root "$(OBSERVED_ROOT)" --label "$(OBSERVED_LABEL)" $(if $(RUN_ID),--run-id "$(RUN_ID)",)
 
 _ci-replica-clean-tree:
 	@if python3 scripts/worktree_state_guard.py --assert-clean --claim-token >/tmp/gludd-ci-replica-clean-tree.txt 2>&1; then \
@@ -1023,14 +1177,14 @@ test-unit-shards:
 	@/Library/Developer/CommandLineTools/usr/bin/make --no-print-directory test-ci-shard SHARD="$(SHARD)" PYTEST_ARGS="$(PYTEST_ARGS)"
 
 test-ci-shards-parallel: _ci-replica-clean-tree
-	@if [ -n "$(filter-out $@,$(MAKECMDGOALS))" ]; then echo "ERROR: quote SHARDS with spaces: make $@ SHARDS='unit-2 unit-3' [WORKERS_PER_SHARD=1]"; exit 2; fi
-	@if [ -z "$(SHARDS)" ]; then echo "Usage: make test-ci-shards-parallel SHARDS='unit-2 unit-3' [WORKERS_PER_SHARD=1]"; exit 1; fi
-	@$(UV) run python scripts/run_ci_shards_parallel.py --shards "$(SHARDS)" --pytest-args="$(PYTEST_ARGS)" --workers-per-shard "$(or $(WORKERS_PER_SHARD),1)"
+	@if [ -n "$(filter-out $@,$(MAKECMDGOALS))" ]; then echo "ERROR: quote SHARDS with spaces: make $@ SHARDS='unit-2 unit-3' [WORKERS_PER_SHARD=1] [MAX_RUNTIME_SECONDS=3600]"; exit 2; fi
+	@if [ -z "$(SHARDS)" ]; then echo "Usage: make test-ci-shards-parallel SHARDS='unit-2 unit-3' [WORKERS_PER_SHARD=1] [MAX_RUNTIME_SECONDS=3600]"; exit 1; fi
+	@$(UV) run python scripts/run_ci_shards_parallel.py --shards "$(SHARDS)" --pytest-args="$(PYTEST_ARGS)" --workers-per-shard "$(or $(WORKERS_PER_SHARD),1)" --max-runtime-seconds "$(or $(MAX_RUNTIME_SECONDS),3600)"
 
 test-ci-shards-parallel-bg: _ci-replica-clean-tree
-	@if [ -n "$(filter-out $@,$(MAKECMDGOALS))" ]; then echo "ERROR: quote SHARDS with spaces: make $@ SHARDS='unit-2 unit-3' [WORKERS_PER_SHARD=1]"; exit 2; fi
-	@if [ -z "$(SHARDS)" ]; then echo "Usage: make test-ci-shards-parallel-bg SHARDS='unit-2 unit-3' [WORKERS_PER_SHARD=1]"; exit 1; fi
-	@$(UV) run python scripts/start_ci_shards_parallel_bg.py --shards "$(SHARDS)" --pytest-args="$(PYTEST_ARGS)" --workers-per-shard "$(or $(WORKERS_PER_SHARD),1)"
+	@if [ -n "$(filter-out $@,$(MAKECMDGOALS))" ]; then echo "ERROR: quote SHARDS with spaces: make $@ SHARDS='unit-2 unit-3' [WORKERS_PER_SHARD=1] [MAX_RUNTIME_SECONDS=3600]"; exit 2; fi
+	@if [ -z "$(SHARDS)" ]; then echo "Usage: make test-ci-shards-parallel-bg SHARDS='unit-2 unit-3' [WORKERS_PER_SHARD=1] [MAX_RUNTIME_SECONDS=3600]"; exit 1; fi
+	@$(UV) run python scripts/start_ci_shards_parallel_bg.py --shards "$(SHARDS)" --pytest-args="$(PYTEST_ARGS)" --workers-per-shard "$(or $(WORKERS_PER_SHARD),1)" --max-runtime-seconds "$(or $(MAX_RUNTIME_SECONDS),3600)"
 
 test-ci-shards-parallel-status:
 	@$(UV) run python scripts/ci_shards_parallel_status.py --lines "$(or $(LINES),80)"
@@ -1061,15 +1215,20 @@ task:
 	@EXIT=$$?; if [ $$EXIT -eq 124 ]; then echo "TASK TIMEOUT: $(CMD) exceeded $(GLUDD_TASK_TIMEOUT)s"; fi; exit $$EXIT
 
 test-count:
-	@$(UV) run python -m pytest tests/ --co -q 2>&1 | tail -3
+	@$(UV) run python scripts/stream_command.py --root "$(OBSERVED_ROOT)" --label test-count \
+		--heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" --quiet-secs "$(OBSERVED_QUIET_SECS)" \
+		--max-secs "$(OBSERVED_MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)" --quiet --pytest-trace -- \
+		$(UV) run python -m pytest tests/ --co -q -p scripts.xdist_trace_plugin; RC=$$?; \
+		$(UV) run python scripts/stream_command.py --tail 3 --root "$(OBSERVED_ROOT)" --label test-count || TAIL_RC=$$?; \
+		if [ "$$RC" -ne 0 ]; then exit "$$RC"; fi; exit "$${TAIL_RC:-0}"
 test-nodeids:
 	@$(UV) run python scripts/collect_nodeids.py --start $(or $(START),1) --limit $(or $(LIMIT),120) $(or $(TESTPATH),tests/)
 
 test-xdist-trace:
-	@$(UV) run python scripts/run_xdist_trace.py --log "$(or $(LOG),/tmp/gludd-xdist-progress.log)" --basetemp "/tmp/gludd-xdist-trace-$${ID:-$$$$}" -- $(or $(TESTPATH),tests/) $(_XD) -q --max-worker-restart=0 -p scripts.xdist_trace_plugin $(PYTEST_ARGS)
+	@GLUDD_XDIST_TRACE_RUN_ID="$(or $(RUN_ID),xdist-$${ID:-$$$$})" $(UV) run python scripts/run_xdist_trace.py --log "$(or $(LOG),/tmp/gludd-xdist-progress.log)" --basetemp "/tmp/gludd-xdist-trace-$${ID:-$$$$}" -- $(or $(TESTPATH),tests/) $(_XD) -q --max-worker-restart=0 -p scripts.xdist_trace_plugin $(PYTEST_ARGS)
 
 test-xdist-trace-summary:
-	@$(UV) run python scripts/summarize_xdist_trace.py $(or $(LOG),/tmp/gludd-xdist-progress.log)
+	@$(UV) run python scripts/summarize_xdist_trace.py $(if $(RUN_ID),--run-id "$(RUN_ID)",) $(or $(LOG),/tmp/gludd-xdist-progress.log)
 
 test-count-e2e:
 	@find tests/e2e -name 'test_*.py' | wc -l | xargs echo "e2e test files:"
@@ -1085,11 +1244,17 @@ check-makefile-structure:
 	@$(UV) run python -m pytest tests/unit/test_makefile_syntax.py -q -n 0
 
 collect-check:
-	@$(UV) run python scripts/collection_lock.py --run $(UV) run python -m pytest tests/ --co -q > /tmp/gludd-collect-output.txt 2>&1; EXIT=$$?; \
-	if [ $$EXIT -ne 0 ]; then \
-		echo "COLLECTION ERRORS DETECTED"; \
-		grep -E "ERROR|error" /tmp/gludd-collect-output.txt | grep -vE '^\s+<(Function|Coroutine|Class)' | head -20; \
-		exit 1; \
+	@ANSIBLE_TMP="$(OBSERVED_ROOT)/ansible-local-$${PPID}-$$$$"; \
+	mkdir -p "$$ANSIBLE_TMP"; \
+	trap 'rm -rf -- "$$ANSIBLE_TMP"' EXIT INT TERM; \
+	ANSIBLE_LOCAL_TEMP="$$ANSIBLE_TMP" $(UV) run python scripts/stream_command.py --root "$(OBSERVED_ROOT)" --label collect-check \
+		--heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" --quiet-secs "$(OBSERVED_QUIET_SECS)" \
+		--max-secs "$(OBSERVED_MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)" --quiet --pytest-trace -- \
+		$(UV) run python scripts/collection_lock.py --run $(UV) run python -m pytest tests/ --co -q -p scripts.xdist_trace_plugin; RC=$$?; \
+	if [ "$$RC" -ne 0 ]; then \
+		echo "COLLECTION ERRORS DETECTED (rc=$$RC; bounded tail follows)"; \
+		$(UV) run python scripts/stream_command.py --tail "$(OBSERVED_TAIL_LINES)" --root "$(OBSERVED_ROOT)" --label collect-check || true; \
+		exit "$$RC"; \
 	fi; \
 	echo "Collection OK"
 
@@ -1574,6 +1739,10 @@ gate: _gate-run-lock-acquire check-generated-artifact-hygiene _dead-code-baselin
 	else \
 		echo "FAIL $$($(UV) run ruff check src tests --output-format concise 2>&1 | grep -c .)" >> .gate-status.next && touch .gate-failed; \
 	fi
+	@echo "=== GATE PHASE: verify-feature-claims ==="
+	@printf "verify-feature-claims " >> .gate-status.next
+	@mkdir -p .gate-logs
+	@$(MAKE) --no-print-directory verify-feature-claims > .gate-logs/verify-feature-claims.log 2>&1 && echo "PASS" >> .gate-status.next || (echo "FAIL" >> .gate-status.next && touch .gate-failed && tail -30 .gate-logs/verify-feature-claims.log)
 	@echo "=== GATE PHASE: dead-code ==="
 	@printf "dead-code " >> .gate-status.next
 	@$(MAKE) --no-print-directory check-dead-code-quiet > /dev/null 2>&1 && echo "PASS 0" >> .gate-status.next || (echo "FAIL" >> .gate-status.next && touch .gate-failed)
@@ -1898,14 +2067,10 @@ kill-all-stale:
 ship-async:
 	@bash scripts/ship_async.sh $(REF) $(TARGET)
 
-# STALL WATCHDOG — run a long command under active no-progress + max-runtime
-# supervision so a hang can NEVER sit silently forever. Streams the command's
-# output to LOG; every 10s it checks (a) how long since LOG last grew (idle) and
-# (b) total elapsed. If idle >= STALL_SECS (no progress = stalled) or elapsed >=
-# MAX_SECS, it kills the whole process tree and exits non-zero (124) with a clear
-# RESULT= line — so the supervising task COMPLETES (and notifies) instead of
-# leaving anyone waiting on a dead run. Emits a heartbeat each cycle.
-#   Usage: make run-watched CMD='make ci-repro-linux PYV=3.11' STALL_SECS=180 MAX_SECS=3600
+# STALL WATCHDOG — use the same atomic observed-command state, heartbeat, owned
+# process-group cleanup, and RESULT=STALLED-compatible rc=124 semantics as
+# coverage and collection. No independent shell watchdog state machine remains.
+#   Usage: make run-watched CMD='make ci-repro-linux PYV=3.11' RUN_ID=ci-repro-311 STALL_SECS=180 MAX_SECS=3600
 BASE ?=
 BRANCHES ?=
 MERGE_STRATEGY ?= stop-on-conflict
@@ -1917,30 +2082,10 @@ gated-merge:
 STALL_SECS ?= 180
 MAX_SECS ?= 3600
 run-watched:
-	@if [ -z "$(CMD)" ]; then echo "Usage: make run-watched CMD='<command>' [STALL_SECS=180] [MAX_SECS=3600] [LOG=/tmp/gludd-watched.log]"; exit 1; fi
-	@LOGF="$${LOG:-/tmp/gludd-watched.log}"; : > "$$LOGF"; \
-	echo "[watchdog] CMD: $(CMD)"; \
-	echo "[watchdog] stall>$(STALL_SECS)s or total>$(MAX_SECS)s -> kill tree + RESULT; log=$$LOGF"; \
-	set -m; $(CMD) > "$$LOGF" 2>&1 & CMDPID=$$!; \
-	START=$$(date +%s); \
-	while kill -0 $$CMDPID 2>/dev/null; do \
-		sleep 10; \
-		NOW=$$(date +%s); \
-		MT=$$(stat -f %m "$$LOGF" 2>/dev/null || stat -c %Y "$$LOGF" 2>/dev/null || echo $$NOW); \
-		IDLE=$$((NOW - MT)); ELAPSED=$$((NOW - START)); \
-		echo "[watchdog $$(date +%H:%M:%S)] elapsed=$${ELAPSED}s idle=$${IDLE}s (last log line: $$(tail -1 "$$LOGF" 2>/dev/null | cut -c1-70))"; \
-		if [ "$$IDLE" -ge "$(STALL_SECS)" ]; then \
-			echo "[watchdog] STALL: no output for $${IDLE}s — killing tree"; \
-			kill -TERM -$$CMDPID 2>/dev/null || kill -TERM $$CMDPID 2>/dev/null; sleep 2; kill -KILL -$$CMDPID 2>/dev/null || kill -KILL $$CMDPID 2>/dev/null; pkill -9 -f gludd-gate-basetemp 2>/dev/null; \
-			echo "[watchdog] RESULT=STALLED idle=$${IDLE}s elapsed=$${ELAPSED}s"; exit 124; \
-		fi; \
-		if [ "$$ELAPSED" -ge "$(MAX_SECS)" ]; then \
-			echo "[watchdog] TIMEOUT: ran $${ELAPSED}s — killing tree"; \
-			kill -TERM -$$CMDPID 2>/dev/null || kill -TERM $$CMDPID 2>/dev/null; sleep 2; kill -KILL -$$CMDPID 2>/dev/null || kill -KILL $$CMDPID 2>/dev/null; pkill -9 -f gludd-gate-basetemp 2>/dev/null; \
-			echo "[watchdog] RESULT=TIMEOUT elapsed=$${ELAPSED}s"; exit 124; \
-		fi; \
-	done; \
-	wait $$CMDPID; RC=$$?; echo "[watchdog] RESULT=EXIT rc=$$RC elapsed=$$(($$(date +%s)-START))s"; exit $$RC
+	@if [ -z "$(CMD)" ]; then echo "Usage: make run-watched CMD='<command>' [OBSERVED_LABEL=run-watched] [RUN_ID=name] [STALL_SECS=180] [MAX_SECS=3600] [LOG=.gate-logs/observed/run-watched/name.log] [OBSERVED_RETAIN_RUNS=20]"; exit 1; fi
+	@$(UV) run python scripts/stream_command.py --root "$(OBSERVED_ROOT)" --label "$(if $(strip $(OBSERVED_LABEL)),$(OBSERVED_LABEL),run-watched)" \
+		$(if $(RUN_ID),--run-id "$(RUN_ID)",) $(if $(LOG),--log "$(LOG)",) --heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" \
+		--quiet-secs "$(STALL_SECS)" --max-secs "$(MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)" -- $(CMD)
 
 test-integration:
 	@BT=$$(mktemp -d /tmp/gludd-test-integration-XXXXXX); \
@@ -3094,11 +3239,11 @@ git-patch-equivalence:
 	echo "patch-equivalent=$$PATCH_EQ unique=$$UNIQUE upstream=$$PATCH_UPSTREAM head=$$PATCH_HEAD"; \
 	if [ "$$PATCH_LIMIT" -gt 0 ]; then git cherry -v "$$PATCH_UPSTREAM" "$$PATCH_HEAD" | sed -n "1,$${PATCH_LIMIT}p"; fi
 
-# Read-only: show a commit's parent SHA + the files it touched (rebase planning).
+# Read-only: show a commit's hash, parents, committer time, subject, and files.
 # Usage: make git-show-commit C=<sha>
 git-show-commit:
 	@[ -n "$(C)" ] || { echo "Usage: make git-show-commit C=<sha>"; exit 1; }
-	@echo "--- $(C) summary ---"; git log -1 --format='%H%nparent: %P%n%s' $(C)
+	@echo "--- $(C) summary ---"; git log -1 --format='%H%nparent: %P%ncommitter_unix: %ct%n%s' $(C)
 	@echo "--- files touched ---"; git show --stat --oneline $(C) | tail -n +2
 
 # Recreate a branch at BASE by cherry-picking a commit RANGE onto it. Used to
@@ -3338,6 +3483,9 @@ provider-smoke:
 	@test -n "$(SMOKE_TEST)" || { echo Usage: make provider-smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json; exit 1; }
 	@$(UV) run gludd smoke "$(PROVIDER)" "$(SMOKE_TEST)" $(ARGS)
 
+local-accelerator-inventory:
+	@$(UV) run python scripts/discover_accelerators.py
+
 # Local hardware smoke targets are dry-run by default; LIVE=1 opts into bounded
 # inference on the attached device. BACKEND and ARGS are forwarded verbatim.
 mac-unified-memory-smoke:
@@ -3559,6 +3707,7 @@ git-push-sandboxcom: check-clean-tree _test-disabled-guard _push-rate-guard _sta
 push-dev: check-clean-tree ci-busy-check _push-rate-guard _stash-before-push-guard _ci-restart-cap _pull-before-push-guard
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push sandboxcom development
 	@echo "Pushed development to sandboxcom/gludd"
+	@$(MAKE) --no-print-directory _record-push-verdict
 	@$(PYTHON) scripts/ci_check_cooldown.py deploy
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
@@ -3575,6 +3724,7 @@ git-push-sandboxcom-nv: check-clean-tree _push-rate-guard _stash-before-push-gua
 	@BRANCH=$$(git branch --show-current); \
 	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom HEAD:$$BRANCH
 	@echo "Pushed $$(git branch --show-current) to sandboxcom/gludd (--no-verify)"
+	@$(MAKE) --no-print-directory _record-push-verdict
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
 # Push only the committed HEAD for the current branch. This is for CI candidate
@@ -3784,15 +3934,22 @@ ci-diagnose:
 	@$(PYTHON) scripts/ci_diagnose.py $(or $(BRANCH),master)
 
 # deploy-and-forget: push + record timestamp + print checkback time. This is
-# the fire-and-forget deployment pattern. Supports BRANCH= for development pushes.
+# the fire-and-forget deployment pattern. Supports BRANCH= and a hermetic
+# DEPLOY_AND_FORGET_VALIDATE_ONLY=1 routing check for local/GHA validation.
 # After running this, RESUME REAL WORK — do not poll CI.
-deploy-and-forget: ci-busy-check
-	@if [ "$(BRANCH)" = "development" ] || [ "$(BRANCH)" = "dev" ]; then \
-		$(MAKE) --no-print-directory push-dev; \
+deploy-and-forget:
+	@if [ "$(DEPLOY_AND_FORGET_VALIDATE_ONLY)" = "1" ]; then \
+		if [ "$(BRANCH)" = "development" ] || [ "$(BRANCH)" = "dev" ]; then ROUTE=development; else ROUTE=current-branch; fi; \
+		echo "DEPLOY-AND-FORGET-VALID: branch=$(BRANCH) route=$$ROUTE; no network, push, or state mutation"; \
 	else \
-		$(MAKE) --no-print-directory batch-push COMMIT_THRESHOLD=1 || $(MAKE) --no-print-directory git-push-sandboxcom; \
+		$(MAKE) --no-print-directory ci-busy-check BRANCH="$(BRANCH)" || exit $$?; \
+		if [ "$(BRANCH)" = "development" ] || [ "$(BRANCH)" = "dev" ]; then \
+			$(MAKE) --no-print-directory push-dev || exit $$?; \
+		else \
+			$(MAKE) --no-print-directory git-push-sandboxcom || exit $$?; \
+			$(PYTHON) scripts/ci_check_cooldown.py deploy; \
+		fi; \
 	fi
-	@$(PYTHON) scripts/ci_check_cooldown.py deploy
 
 # ci-cooldown-status: show how long until the next ci-verdict-safe is allowed.
 # Read-only. Use this to decide whether to dispatch real work or check CI.
@@ -5592,15 +5749,294 @@ clean-stale-worktrees:
 agent-worktree-list:
 	@git worktree list
 
-# Self-improvement E2E — runs in isolated worktree, tests gludd improving itself
-# Usage: make test-self-improve TARGET=azure_iam_validator
-test-self-improve:
-	@$(UV) run python scripts/run_self_improve_e2e.py --target $(TARGET) --worktree
+# Stdout is a NUL-delimited argv stream for exactly one Azure CLI process.
+# The named custom role must already exist; this target never calls Azure and
+# never receives, writes, or logs the credential returned by Azure CLI.
+azure-self-improve-auth-args:
+	@# Inputs: AZURE_SELF_IMPROVE_SUBSCRIPTION_ID AZURE_SELF_IMPROVE_RESOURCE_GROUP AZURE_SELF_IMPROVE_ACCOUNT AZURE_SELF_IMPROVE_SP_NAME
+	@$(SYSTEM_PYTHON) scripts/render_azure_self_improve_auth_args.py
 
-# Self-improvement E2E — runs ALL targets, merges successful improvements
-# Usage: make test-self-improve-all
+# Canonical operator-owned role application through supported Microsoft SDKs.
+# LIVE=0 validates locally and constructs no credential or Azure client.
+azure-accelerator-role-apply:
+	@# Inputs: AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_ACCELERATOR_RESOURCE_GROUP AZURE_ACCELERATOR_LOCATION AZURE_ACCELERATOR_OPERATOR_AUTH AZURE_ACCELERATOR_PRINCIPAL_OBJECT_ID AZURE_ACCELERATOR_ROLE_APPLY_LIVE
+	@$(UV) run $(if $(filter 1,$(AZURE_ACCELERATOR_ROLE_APPLY_LIVE)),--extra azure,) python -m general_ludd.azure.accelerator_role
+
+# Deprecated compatibility: stdout is one NUL-delimited Azure CLI argv.
+azure-accelerator-role-args:
+	@# Inputs: AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_ACCELERATOR_RESOURCE_GROUP
+	@$(UV) run python scripts/render_azure_accelerator_auth_args.py role
+
+# Stdout is one NUL-delimited argv that updates an existing Azure role definition.
+azure-accelerator-role-update-args:
+	@# Inputs: AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_ACCELERATOR_RESOURCE_GROUP
+	@$(UV) run python scripts/render_azure_accelerator_auth_args.py role-update
+
+# Stdout is one NUL-delimited argv for the Entra principal/assignment API.
+azure-accelerator-auth-args:
+	@# Inputs: AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_ACCELERATOR_RESOURCE_GROUP AZURE_ACCELERATOR_SP_NAME
+	@$(UV) run python scripts/render_azure_accelerator_auth_args.py auth
+
+# Atomically ingest Azure CLI JSON; old and failed generations are never pruned.
+azure-accelerator-auth-store:
+	@# Inputs: AZURE_ACCELERATOR_AUTH_FILE AZURE_ACCELERATOR_AUTH_SOURCE_FILE AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_ACCELERATOR_AUTH_STORE_VALIDATE_ONLY
+	@[ -n "$(AZURE_ACCELERATOR_SUBSCRIPTION_ID)" ] || { echo "AZURE_ACCELERATOR_SUBSCRIPTION_ID is required" >&2; exit 2; }
+	@case "$(AZURE_ACCELERATOR_AUTH_STORE_VALIDATE_ONLY)" in 0|1) ;; *) echo "AZURE_ACCELERATOR_AUTH_STORE_VALIDATE_ONLY must be 0 or 1" >&2; exit 2 ;; esac
+	@$(UV) run python scripts/store_azure_accelerator_credentials.py \
+		$(if $(strip $(AZURE_ACCELERATOR_AUTH_FILE)),--auth-file "$(AZURE_ACCELERATOR_AUTH_FILE)",) \
+		$(if $(strip $(AZURE_ACCELERATOR_AUTH_SOURCE_FILE)),--source-file "$(AZURE_ACCELERATOR_AUTH_SOURCE_FILE)",) \
+		--subscription-id "$(AZURE_ACCELERATOR_SUBSCRIPTION_ID)" \
+		$(if $(filter 1,$(AZURE_ACCELERATOR_AUTH_STORE_VALIDATE_ONLY)),--validate-only,)
+
+# Stdout is one NUL-delimited argv for an operator-owned ARM group deployment.
+# The Gludd service principal intentionally cannot execute this bootstrap.
+azure-containerapp-environment-bootstrap-args:
+	@# Inputs: AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_ACCELERATOR_RESOURCE_GROUP AZURE_CONTAINERAPP_ENVIRONMENT AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE AZURE_CONTAINERAPP_LOCATION
+	@$(UV) run python scripts/render_azure_accelerator_auth_args.py environment-bootstrap
+
+# Validate Azure CLI --json-auth output without sourcing or rendering secrets.
+azure-accelerator-auth-check:
+	@# Inputs: AZURE_ACCELERATOR_AUTH_FILE AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_ACCELERATOR_AUTH_VALIDATE_ONLY
+	@[ -n "$(AZURE_ACCELERATOR_AUTH_FILE)" ] || { echo "AZURE_ACCELERATOR_AUTH_FILE is required" >&2; exit 2; }
+	@[ -n "$(AZURE_ACCELERATOR_SUBSCRIPTION_ID)" ] || { echo "AZURE_ACCELERATOR_SUBSCRIPTION_ID is required" >&2; exit 2; }
+	@case "$(AZURE_ACCELERATOR_AUTH_VALIDATE_ONLY)" in 0|1) ;; *) echo "AZURE_ACCELERATOR_AUTH_VALIDATE_ONLY must be 0 or 1" >&2; exit 2 ;; esac
+	@$(UV) run python scripts/validate_azure_accelerator_credentials.py --auth-file "$(AZURE_ACCELERATOR_AUTH_FILE)" --subscription-id "$(AZURE_ACCELERATOR_SUBSCRIPTION_ID)" $(if $(filter 1,$(AZURE_ACCELERATOR_AUTH_VALIDATE_ONLY)),--validate-only,)
+
+# Verify one existing Container Apps GPU profile and its quota without mutation.
+azure-containerapp-preflight:
+	@# Inputs: AZURE_ACCELERATOR_AUTH_FILE AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_CONTAINERAPP_RESOURCE_GROUP AZURE_CONTAINERAPP_ENVIRONMENT AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME AZURE_CONTAINERAPP_LOCATION AZURE_CONTAINERAPP_MODEL_ID AZURE_CONTAINERAPP_MODEL_REVISION AZURE_CONTAINERAPP_PARAMETER_COUNT AZURE_CONTAINERAPP_WEIGHT_BITS AZURE_CONTAINERAPP_KV_CACHE_MIB AZURE_CONTAINERAPP_RUNTIME_OVERHEAD_MIB AZURE_CONTAINERAPP_PREFLIGHT_LIVE
+	@[ -n "$(AZURE_ACCELERATOR_AUTH_FILE)" ] || { echo "AZURE_ACCELERATOR_AUTH_FILE is required" >&2; exit 2; }
+	@[ -n "$(AZURE_ACCELERATOR_SUBSCRIPTION_ID)" ] || { echo "AZURE_ACCELERATOR_SUBSCRIPTION_ID is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_RESOURCE_GROUP)" ] || { echo "AZURE_CONTAINERAPP_RESOURCE_GROUP is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_ENVIRONMENT)" ] || { echo "AZURE_CONTAINERAPP_ENVIRONMENT is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME)" ] || { echo "AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LOCATION)" ] || { echo "AZURE_CONTAINERAPP_LOCATION is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_MODEL_ID)" ] || { echo "AZURE_CONTAINERAPP_MODEL_ID is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_MODEL_REVISION)" ] || { echo "AZURE_CONTAINERAPP_MODEL_REVISION is required" >&2; exit 2; }
+	@$(UV) run $(if $(filter 1,$(AZURE_CONTAINERAPP_PREFLIGHT_LIVE)),--extra azure,) python scripts/azure_containerapp_preflight.py \
+		--auth-file "$(AZURE_ACCELERATOR_AUTH_FILE)" \
+		--subscription-id "$(AZURE_ACCELERATOR_SUBSCRIPTION_ID)" \
+		--resource-group "$(AZURE_CONTAINERAPP_RESOURCE_GROUP)" \
+		--environment "$(AZURE_CONTAINERAPP_ENVIRONMENT)" \
+		--workload-profile-name "$(AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME)" \
+		--location "$(AZURE_CONTAINERAPP_LOCATION)" \
+		--model-id "$(AZURE_CONTAINERAPP_MODEL_ID)" \
+		--model-revision "$(AZURE_CONTAINERAPP_MODEL_REVISION)" \
+		--parameter-count "$(AZURE_CONTAINERAPP_PARAMETER_COUNT)" \
+		--weight-bits "$(AZURE_CONTAINERAPP_WEIGHT_BITS)" \
+		--kv-cache-mib "$(AZURE_CONTAINERAPP_KV_CACHE_MIB)" \
+		--runtime-overhead-mib "$(AZURE_CONTAINERAPP_RUNTIME_OVERHEAD_MIB)" \
+		--live "$(AZURE_CONTAINERAPP_PREFLIGHT_LIVE)"
+
+# Execute one Terraform phase only inside an ownership-marked live-proof root.
+azure-containerapp-terraform-phase: tf-cache-setup
+	@# Inputs: AZURE_CONTAINERAPP_TF_PHASE AZURE_CONTAINERAPP_TF_DIR AZURE_CONTAINERAPP_TF_PLAN_FILE AZURE_CONTAINERAPP_TF_JSON_FILE AZURE_CONTAINERAPP_TF_VALIDATE_ONLY
+	@case "$(AZURE_CONTAINERAPP_TF_VALIDATE_ONLY)" in 0|1) ;; *) echo "AZURE_CONTAINERAPP_TF_VALIDATE_ONLY must be 0 or 1" >&2; exit 2;; esac
+	@if [ "$(AZURE_CONTAINERAPP_TF_VALIDATE_ONLY)" = "1" ]; then \
+		echo "AZURE_CONTAINERAPP_TERRAFORM_PHASE_PLAN phase=$(AZURE_CONTAINERAPP_TF_PHASE) secret_output=false"; \
+	else \
+		TF_PLUGIN_CACHE_DIR="$(TF_PLUGIN_CACHE)" $(UV) run python scripts/azure_containerapp_terraform_phase.py \
+			--phase "$(AZURE_CONTAINERAPP_TF_PHASE)" \
+			--terraform-dir "$(AZURE_CONTAINERAPP_TF_DIR)" \
+			--plan-file "$(AZURE_CONTAINERAPP_TF_PLAN_FILE)" \
+			--json-file "$(AZURE_CONTAINERAPP_TF_JSON_FILE)"; \
+	fi
+
+# Hermetic by default; live mode accepts one explicit private auth contract.
+azure-containerapp-live-proof:
+	@# Inputs: AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT AZURE_CONTAINERAPP_LIVE_PROOF_WORKLOAD_PROFILE_NAME AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES AZURE_CONTAINERAPP_LIVE_PROOF_LIVE AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT AZURE_CONTAINERAPP_LIVE_PROOF_PROJECT_ROOT AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS
+	@case "$(AZURE_CONTAINERAPP_LIVE_PROOF_LIVE)" in 0|1) ;; *) echo "AZURE_CONTAINERAPP_LIVE_PROOF_LIVE must be 0 or 1" >&2; exit 2;; esac
+	@case "$(AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE)" in \
+		file) [ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE is required for file auth" >&2; exit 2; } ;; \
+		workload_identity) \
+			[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE is required for workload identity" >&2; exit 2; }; \
+			[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID is required for workload identity" >&2; exit 2; }; \
+			[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID is required for workload identity" >&2; exit 2; } ;; \
+		*) echo "AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE must be file or workload_identity" >&2; exit 2 ;; \
+	 esac
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_WORKLOAD_PROFILE_NAME)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_WORKLOAD_PROFILE_NAME is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_PROJECT_ROOT)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_PROJECT_ROOT is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH is required" >&2; exit 2; }
+	@case "$(AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET)" in always_destroy|zero_cost_only|balanced|latency_first) ;; *) echo "AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET must be always_destroy, zero_cost_only, balanced, or latency_first" >&2; exit 2;; esac
+	@case "$(AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS)" in ''|*[!0-9]*|0) echo "AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS must be a positive integer" >&2; exit 2;; esac
+	@$(UV) run $(if $(filter 1,$(AZURE_CONTAINERAPP_LIVE_PROOF_LIVE)),--extra azure,) python scripts/azure_containerapp_live_proof.py \
+		$(if $(filter file,$(AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE)),--auth-file "$(AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE)",--federated-token-file "$(AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE)" --azure-client-id "$(AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID)" --azure-tenant-id "$(AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID)") \
+		--subscription-id "$(AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID)" \
+		--resource-group "$(AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP)" \
+		--environment "$(AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT)" \
+		--workload-profile-name "$(AZURE_CONTAINERAPP_LIVE_PROOF_WORKLOAD_PROFILE_NAME)" \
+		--location "$(AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION)" \
+		--allowed-cidr "$(AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR)" \
+		--max-cost-usd "$(AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD)" \
+		--ttl-minutes "$(AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES)" \
+		--live "$(AZURE_CONTAINERAPP_LIVE_PROOF_LIVE)" \
+		--acknowledgement "$(AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT)" \
+		--project-root "$(AZURE_CONTAINERAPP_LIVE_PROOF_PROJECT_ROOT)" \
+		--source-path "$(AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH)" \
+		--idle-retention-preset "$(AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET)" \
+		--idle-retention-seconds "$(AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS)"
+
+# One credential-free local/GHA contract for every Azure Container Apps boundary.
+test-azure-containerapp-coverage:
+	@$(MAKE) --no-print-directory coverage-files \
+		COVERAGE_TESTFILES='tests/unit/test_ansible_runtime_artifacts.py tests/unit/test_azure_accelerator_credentials.py tests/unit/test_azure_accelerator_openbao.py tests/unit/test_azure_accelerator_role.py tests/unit/test_azure_resource_group_bootstrap.py tests/unit/test_azure_containerapp_ansible_orchestration.py tests/unit/test_azure_containerapp_retention_module_utils.py tests/unit/test_azure_containerapp_arm.py tests/unit/test_azure_containerapp_bootstrap_planning.py tests/unit/test_azure_containerapp_environment_document.py tests/unit/test_azure_containerapp_environment_lifecycle.py tests/unit/test_azure_containerapp_environment_operations.py tests/unit/test_azure_containerapp_environment_retention.py tests/unit/test_azure_containerapp_environment_make_runtime.py tests/unit/test_azure_containerapp_environment_runtime_types.py tests/unit/test_azure_containerapp_environment_state.py tests/unit/test_azure_containerapp_environment_preflight.py tests/unit/test_azure_containerapp_environment_terraform.py tests/unit/test_azure_containerapp_gpu.py tests/unit/test_azure_containerapp_gpu_backend.py tests/unit/test_azure_idle_retention.py tests/unit/test_azure_containerapp_live_proof.py tests/unit/test_azure_containerapp_make_runtime.py tests/unit/test_azure_containerapp_owned_lifecycle.py tests/unit/test_azure_containerapp_preflight.py tests/unit/test_azure_containerapp_preflight_cli.py tests/unit/test_azure_containerapp_runtime_factories.py tests/unit/test_azure_containerapp_runtime_readers.py tests/unit/test_azure_containerapp_resource_owner.py tests/unit/test_azure_containerapp_runtime_resources.py tests/unit/test_azure_containerapp_runtime_state.py tests/unit/test_azure_containerapp_sdk.py tests/unit/test_azure_containerapp_terraform_executor.py tests/unit/test_azure_containerapp_terraform_phase.py tests/unit/test_azure_containerapp_topology.py tests/unit/test_azure_containerapp_tfvars.py tests/unit/test_azure_infrastructure_evidence.py tests/unit/test_azure_self_improve_model_selection.py tests/unit/test_deployment_telemetry.py tests/unit/test_provider_auth.py tests/unit/test_select_azure_self_improve_model.py tests/unit/test_self_improve_azure_containerapp_backend.py tests/unit/test_self_improve_azure_containerapp_bootstrap.py tests/unit/test_self_improve_runtime_config.py tests/e2e/test_azure_containerapp_live_proof_cli.py tests/e2e/test_azure_containerapp_gha_oidc.py' \
+		COVERAGE_CONFIG=config/coverage_azure_containerapp.ini \
+		COVERAGE_REPORT=.gate-logs/coverage-azure-containerapp.json \
+		COVERAGE_AGGREGATE_MIN=85 \
+		COVERAGE_PER_FILE_MIN=75 \
+		OBSERVED_ROOT=.gate-logs/observed \
+		OBSERVED_HEARTBEAT_SECS=1 \
+		OBSERVED_QUIET_SECS=60 \
+		OBSERVED_MAX_SECS=300 \
+		OBSERVED_RETAIN_RUNS=20
+
+# Isolated inference worker: the parent owns its process group and exchange files.
+self-improve-local-proposal:
+	@if [ -n "$(SELF_IMPROVE_CONTRACT_FILE)" ] && [ -n "$(SELF_IMPROVE_ENVELOPE_FILE)" ]; then \
+		echo "SELF_IMPROVE_CONTRACT_FILE and SELF_IMPROVE_ENVELOPE_FILE are mutually exclusive"; exit 2; \
+	elif [ "$(SELF_IMPROVE_WORKER_VALIDATE_ONLY)" = "1" ]; then \
+		echo "SELF_IMPROVE_LOCAL_PROPOSAL_PLAN model=$(SELF_IMPROVE_MODEL_PATH) prompt=$(SELF_IMPROVE_PROMPT_FILE) proposal=$(SELF_IMPROVE_PROPOSAL_FILE) contract=$(SELF_IMPROVE_CONTRACT_FILE) envelope=$(SELF_IMPROVE_ENVELOPE_FILE)"; \
+	else \
+		[ -n "$(SELF_IMPROVE_MODEL_PATH)" ] || { echo "SELF_IMPROVE_MODEL_PATH is required"; exit 2; }; \
+		[ -n "$(SELF_IMPROVE_PROMPT_FILE)" ] || { echo "SELF_IMPROVE_PROMPT_FILE is required"; exit 2; }; \
+		[ -n "$(SELF_IMPROVE_PROPOSAL_FILE)" ] || { echo "SELF_IMPROVE_PROPOSAL_FILE is required"; exit 2; }; \
+		if [ -n "$(SELF_IMPROVE_ENVELOPE_FILE)" ]; then \
+			$(UV) run --extra local-inference python scripts/self_improve_local_proposal.py --model-path "$(SELF_IMPROVE_MODEL_PATH)" --prompt-file "$(SELF_IMPROVE_PROMPT_FILE)" --proposal-file "$(SELF_IMPROVE_PROPOSAL_FILE)" --envelope-file "$(SELF_IMPROVE_ENVELOPE_FILE)"; \
+		elif [ -n "$(SELF_IMPROVE_CONTRACT_FILE)" ]; then \
+			$(UV) run --extra local-inference python scripts/self_improve_local_proposal.py --model-path "$(SELF_IMPROVE_MODEL_PATH)" --prompt-file "$(SELF_IMPROVE_PROMPT_FILE)" --proposal-file "$(SELF_IMPROVE_PROPOSAL_FILE)" --contract-file "$(SELF_IMPROVE_CONTRACT_FILE)"; \
+		else \
+			$(UV) run --extra local-inference python scripts/self_improve_local_proposal.py --model-path "$(SELF_IMPROVE_MODEL_PATH)" --prompt-file "$(SELF_IMPROVE_PROMPT_FILE)" --proposal-file "$(SELF_IMPROVE_PROPOSAL_FILE)"; \
+		fi; \
+	fi
+
+# Local self-improvement benchmark — compares every proposed edit with Codex.
+# Usage: make azure-self-improve-live-proof TARGET=development SELF_IMPROVE_BASELINE_REF=<sha> SELF_IMPROVE_REFERENCE_REF=<sha> AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE=file AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE=/private/auth.json AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID=<uuid> AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP=gludd-models-eastus AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT=gludd-gpu-environment AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION=eastus AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR=auto AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD=5 AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES=60 AZURE_CONTAINERAPP_LIVE_PROOF_LIVE=0 AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT=DEPLOY_ONE_CONTAINER_APP_AND_DESTROY AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET=always_destroy AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS=21600 AZURE_SELF_IMPROVE_MODEL_POLICY=config/self-improve/azure-model-selection-policy.json AZURE_SELF_IMPROVE_MODEL_CATALOG=config/self-improve/azure-model-catalog-ci.json AZURE_SELF_IMPROVE_EVIDENCE_FILE=/tmp/gludd-self-improve-evidence.json AZURE_SELF_IMPROVE_REGISTRY_CACHE=/tmp/gludd-self-improve-model-cache AZURE_SELF_IMPROVE_TASK_FILE=config/self-improve/catalog-truth.json
+azure-self-improve-live-proof:
+	@# Inputs: TARGET SELF_IMPROVE_MODEL_PATH SELF_IMPROVE_BASELINE_REF SELF_IMPROVE_REFERENCE_REF AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES AZURE_CONTAINERAPP_LIVE_PROOF_LIVE AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS AZURE_SELF_IMPROVE_MODEL_POLICY AZURE_SELF_IMPROVE_MODEL_CATALOG AZURE_SELF_IMPROVE_EVIDENCE_FILE AZURE_SELF_IMPROVE_REGISTRY_CACHE AZURE_SELF_IMPROVE_TASK_FILE
+	@case "$(AZURE_CONTAINERAPP_LIVE_PROOF_LIVE)" in 0|1) ;; *) echo "AZURE_CONTAINERAPP_LIVE_PROOF_LIVE must be 0 or 1" >&2; exit 2;; esac
+	@case "$(AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE)" in \
+		file) [ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE is required for file auth" >&2; exit 2; } ;; \
+		workload_identity) \
+			[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE is required for workload identity" >&2; exit 2; }; \
+			[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID is required for workload identity" >&2; exit 2; }; \
+			[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID is required for workload identity" >&2; exit 2; } ;; \
+		*) echo "AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE must be file or workload_identity" >&2; exit 2 ;; \
+	esac
+	@[ -n "$(SELF_IMPROVE_BASELINE_REF)" ] || { echo "SELF_IMPROVE_BASELINE_REF is required" >&2; exit 2; }
+	@[ -n "$(SELF_IMPROVE_REFERENCE_REF)" ] || { echo "SELF_IMPROVE_REFERENCE_REF is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD is required" >&2; exit 2; }
+	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES is required" >&2; exit 2; }
+	@set -eu; temporary_directory="$$(mktemp -d "$${TMPDIR:-/tmp}/gludd-azure-self-improve.XXXXXX")"; \
+		trap 'rm -rf "$$temporary_directory"' EXIT INT TERM; \
+		selection_file="$$temporary_directory/model-selection.json"; \
+		runtime_file="$$temporary_directory/runtime.json"; \
+		echo "AZURE_SELF_IMPROVE_PHASE phase=model_selection secret_output=false"; \
+		$(UV) run $(if $(filter 1,$(AZURE_CONTAINERAPP_LIVE_PROOF_LIVE)),--extra azure,) python scripts/select_azure_self_improve_model.py \
+			--task-file "$(AZURE_SELF_IMPROVE_TASK_FILE)" \
+			--policy-file "$(AZURE_SELF_IMPROVE_MODEL_POLICY)" \
+			--evidence-file "$(AZURE_SELF_IMPROVE_EVIDENCE_FILE)" \
+			--location "$(AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION)" \
+			$(if $(filter 0,$(AZURE_CONTAINERAPP_LIVE_PROOF_LIVE)),--catalog-file "$(AZURE_SELF_IMPROVE_MODEL_CATALOG)",) \
+			--registry-cache-dir "$(AZURE_SELF_IMPROVE_REGISTRY_CACHE)" \
+			--output "$$selection_file"; \
+		echo "AZURE_SELF_IMPROVE_PHASE phase=runtime_compile secret_output=false"; \
+		$(UV) run python scripts/render_azure_self_improve_runtime_config.py \
+			$(if $(filter file,$(AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE)),--auth-file "$(AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE)",--federated-token-file "$(AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE)" --azure-client-id "$(AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID)" --azure-tenant-id "$(AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID)") \
+			--model-selection-file "$$selection_file" \
+			--evidence-file "$(AZURE_SELF_IMPROVE_EVIDENCE_FILE)" \
+			--subscription-id "$(AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID)" \
+			--resource-group "$(AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP)" \
+			--environment "$(AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT)" \
+			--location "$(AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION)" \
+			--allowed-cidr "$(AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR)" \
+			--max-cost-usd "$(AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD)" \
+			--ttl-minutes "$(AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES)" \
+			--acknowledgement "$(AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT)" \
+			--idle-retention-preset "$(AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET)" \
+			--idle-retention-seconds "$(AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS)" \
+			--output "$$runtime_file"; \
+		echo "AZURE_SELF_IMPROVE_PHASE phase=mixed_candidate_evaluation secret_output=false"; \
+		$(MAKE) --no-print-directory test-self-improve TARGET="$(TARGET)" SELF_IMPROVE_MODEL_PATH="$(SELF_IMPROVE_MODEL_PATH)" SELF_IMPROVE_CONFIG_FILE="$$runtime_file" SELF_IMPROVE_BASELINE_REF="$(SELF_IMPROVE_BASELINE_REF)" SELF_IMPROVE_REFERENCE_REF="$(SELF_IMPROVE_REFERENCE_REF)" SELF_IMPROVE_TASK_FILE="$(AZURE_SELF_IMPROVE_TASK_FILE)" SELF_IMPROVE_MAX_ATTEMPTS=1 SELF_IMPROVE_VALIDATE_ONLY=$(if $(filter 1,$(AZURE_CONTAINERAPP_LIVE_PROOF_LIVE)),0,1)
+
+# Usage: make test-self-improve TARGET=name [SELF_IMPROVE_MODEL_PATH=optional override] [SELF_IMPROVE_CONFIG_FILE=optional.json] SELF_IMPROVE_BASELINE_REF=<sha> SELF_IMPROVE_REFERENCE_REF=<sha> SELF_IMPROVE_TASK_FILE=task.json SELF_IMPROVE_VALIDATE_ONLY=0
+test-self-improve:
+	@[ -n "$(TARGET)" ] || { echo "TARGET is required"; exit 2; }
+	@[ -n "$(SELF_IMPROVE_BASELINE_REF)" ] || { echo "SELF_IMPROVE_BASELINE_REF is required"; exit 2; }
+	@[ -n "$(SELF_IMPROVE_REFERENCE_REF)" ] || { echo "SELF_IMPROVE_REFERENCE_REF is required"; exit 2; }
+	@[ -n "$(SELF_IMPROVE_TASK_FILE)" ] || { echo "SELF_IMPROVE_TASK_FILE is required"; exit 2; }
+	@$(UV) run $(if $(strip $(SELF_IMPROVE_CONFIG_FILE)),--extra azure,) python scripts/run_self_improve_e2e.py --target "$(TARGET)" --local-model-path "$(SELF_IMPROVE_MODEL_PATH)" --self-improve-config-file "$(SELF_IMPROVE_CONFIG_FILE)" --baseline-ref "$(SELF_IMPROVE_BASELINE_REF)" --reference-ref "$(SELF_IMPROVE_REFERENCE_REF)" --task-file "$(SELF_IMPROVE_TASK_FILE)" --max-attempts "$(SELF_IMPROVE_MAX_ATTEMPTS)" $(if $(filter 1,$(SELF_IMPROVE_VALIDATE_ONLY)),--validate-only,)
+
+# Canonical ten-shape contract; validate-only is safe, live inference is explicit.
+test-self-improve-acceptance-matrix:
+	@case "$(SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE)" in 0|1) ;; *) echo "SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE must be 0 or 1"; exit 2;; esac
+	@EXPECTED_MATRIX_SHA256="5a5dfc0b40308a8b39039dd28e923d59bd9b8855eb5d679bd25fb68ba4b19a25"; \
+		ACTUAL_MATRIX_SHA256="$$($(PYTHON) -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "$(SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE)")"; \
+		[ "$$ACTUAL_MATRIX_SHA256" = "$$EXPECTED_MATRIX_SHA256" ] || { echo "acceptance matrix drift: expected=$$EXPECTED_MATRIX_SHA256 actual=$$ACTUAL_MATRIX_SHA256"; exit 2; }
+	@$(UV) run python -m tests.unit.self_improve_acceptance_matrix_runner --manifest "$(SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE)" --model-path "$(SELF_IMPROVE_ACCEPTANCE_MATRIX_MODEL_PATH)" $(if $(filter 1,$(SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE)),--live,)
+
+# Hermetic provider-neutral policy boundary; no model downloads or cloud credentials.
+test-self-improve-private-policy:
+	@$(UV) run python -m pytest tests/e2e/test_self_improve_private_policy_e2e.py -W error
+
+# Reproducible catalog-truth sentinel: safe plan by default; live inference is explicit.
+test-self-improve-catalog-truth:
+	@case "$(SELF_IMPROVE_CATALOG_LIVE)" in 0|1) ;; *) echo "SELF_IMPROVE_CATALOG_LIVE must be 0 or 1"; exit 2;; esac
+	@ACTUAL_FIXTURE_SHA256="$$($(PYTHON) -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "config/self-improve/catalog-truth.json")"; \
+		[ "$$ACTUAL_FIXTURE_SHA256" = "67e59f242aba0ade9b5992354daf5f0ec2392df3627ef0c929596011cfe5c30e" ] || { echo "catalog-truth fixture drift: expected=67e59f242aba0ade9b5992354daf5f0ec2392df3627ef0c929596011cfe5c30e actual=$$ACTUAL_FIXTURE_SHA256"; exit 2; }
+	@$(MAKE) --no-print-directory test-self-improve TARGET=catalog-truth SELF_IMPROVE_MODEL_PATH= SELF_IMPROVE_BASELINE_REF=eac05dc88c03f14fbd7dd5f4c6d72943609d9e26 SELF_IMPROVE_REFERENCE_REF=80b381bd87f32487d784964ce93566e3b016b191 SELF_IMPROVE_TASK_FILE=config/self-improve/catalog-truth.json SELF_IMPROVE_MAX_ATTEMPTS=2 SELF_IMPROVE_VALIDATE_ONLY="$(if $(filter 1,$(SELF_IMPROVE_CATALOG_LIVE)),0,1)"
+
+# Fast deterministic replay of typed failures; never loads or downloads a model.
+test-self-improve-failure-corpus:
+	@[ -n "$(SELF_IMPROVE_FAILURE_CORPUS_FILE)" ] || { echo "SELF_IMPROVE_FAILURE_CORPUS_FILE is required"; exit 2; }
+	@$(UV) run python -m scripts.replay_self_improve_failure_corpus --corpus "$(SELF_IMPROVE_FAILURE_CORPUS_FILE)"
+
+# Reproducible multi-file context/lifecycle sentinel; safe plan by default.
+test-self-improve-multifile:
+	@case "$(SELF_IMPROVE_MULTIFILE_LIVE)" in 0|1) ;; *) echo "SELF_IMPROVE_MULTIFILE_LIVE must be 0 or 1"; exit 2;; esac
+	@EXPECTED_FIXTURE_SHA256_OCTETS="76 3f c9 c6 bc ea 10 30 35 a1 48 a1 aa 5e df d4 15 cc 9e 81 06 15 f5 17 cd 1e 36 0a 05 ce 7c 4d"; \
+		EXPECTED_FIXTURE_SHA256="$$(printf '%s' "$$EXPECTED_FIXTURE_SHA256_OCTETS" | tr -d ' ')"; \
+		ACTUAL_FIXTURE_SHA256="$$($(PYTHON) -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "config/self-improve/context-budget-lifecycle.json")"; \
+		[ "$$ACTUAL_FIXTURE_SHA256" = "$$EXPECTED_FIXTURE_SHA256" ] || { echo "multifile fixture drift: expected=$$EXPECTED_FIXTURE_SHA256 actual=$$ACTUAL_FIXTURE_SHA256"; exit 2; }
+	@$(MAKE) --no-print-directory test-self-improve TARGET=multifile-context-lifecycle SELF_IMPROVE_MODEL_PATH= SELF_IMPROVE_BASELINE_REF=80b381bd87f32487d784964ce93566e3b016b191 SELF_IMPROVE_REFERENCE_REF=6463324cfcf6db9b9a2f9ec203e0bd3862a1e80e SELF_IMPROVE_TASK_FILE=config/self-improve/context-budget-lifecycle.json SELF_IMPROVE_MAX_ATTEMPTS=2 SELF_IMPROVE_VALIDATE_ONLY="$(if $(filter 1,$(SELF_IMPROVE_MULTIFILE_LIVE)),0,1)"
+
+# Verify an immutable managed-promotion marker only on development history.
+# Usage: make self-improve-promotion-marker SELF_IMPROVE_PROMOTION_ARTIFACT_DIGEST=<sha256> SELF_IMPROVE_PROMOTION_PLAN_DIGEST=<sha256> SELF_IMPROVE_PROMOTION_ATTEMPT_DIGEST=<sha256> SELF_IMPROVE_PROMOTION_VALIDATE_ONLY=0|1
+self-improve-promotion-marker:
+	@ARTIFACT="$(SELF_IMPROVE_PROMOTION_ARTIFACT_DIGEST)"; \
+	PLAN="$(SELF_IMPROVE_PROMOTION_PLAN_DIGEST)"; \
+	ATTEMPT="$(SELF_IMPROVE_PROMOTION_ATTEMPT_DIGEST)"; \
+	VALIDATE_ONLY="$(SELF_IMPROVE_PROMOTION_VALIDATE_ONLY)"; \
+	for VALUE in "$$ARTIFACT" "$$PLAN" "$$ATTEMPT"; do \
+		case "$$VALUE" in *[!0-9a-f]*|'') echo "promotion digests must be lowercase hexadecimal"; exit 2;; esac; \
+		[ "$${#VALUE}" -eq 64 ] || { echo "promotion digests must contain 64 characters"; exit 2; }; \
+	done; \
+	case "$$VALIDATE_ONLY" in 0|1) ;; *) echo "SELF_IMPROVE_PROMOTION_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac; \
+	if [ "$$VALIDATE_ONLY" = 1 ]; then echo "PROMOTION_MARKER_VALIDATE_ONLY=ok branch=development"; exit 0; fi; \
+	git rev-parse --verify development^{commit} >/dev/null 2>&1 || { echo "development branch is unavailable"; exit 2; }; \
+	COMMIT=$$(git log development --fixed-strings --grep="Gludd-Self-Improve-Artifact=$$ARTIFACT" --format='%H' -n 1); \
+	if [ -z "$$COMMIT" ]; then echo "PROMOTION_ABSENT"; exit 3; fi; \
+	BODY=$$(git show -s --format='%B' "$$COMMIT"); \
+	printf '%s\n' "$$BODY" | grep -Fq "Gludd-Self-Improve-Artifact=$$ARTIFACT" || { echo "artifact marker mismatch"; exit 2; }; \
+	printf '%s\n' "$$BODY" | grep -Fq "Gludd-Self-Improve-Plan=$$PLAN" || { echo "plan marker mismatch"; exit 2; }; \
+	printf '%s\n' "$$BODY" | grep -Fq "Gludd-Self-Improve-Attempt=$$ATTEMPT" || { echo "attempt marker mismatch"; exit 2; }; \
+	echo "PROMOTION_COMMIT=$$COMMIT"
+
+# Compatibility alias retains one explicit reference boundary; it never fans out.
 test-self-improve-all:
-	@$(UV) run python scripts/run_self_improve_e2e.py --all --worktree
+	@$(MAKE) --no-print-directory test-self-improve TARGET="$(TARGET)" SELF_IMPROVE_MODEL_PATH="$(SELF_IMPROVE_MODEL_PATH)" SELF_IMPROVE_BASELINE_REF="$(SELF_IMPROVE_BASELINE_REF)" SELF_IMPROVE_REFERENCE_REF="$(SELF_IMPROVE_REFERENCE_REF)" SELF_IMPROVE_TASK_FILE="$(SELF_IMPROVE_TASK_FILE)" SELF_IMPROVE_MAX_ATTEMPTS="$(SELF_IMPROVE_MAX_ATTEMPTS)" SELF_IMPROVE_VALIDATE_ONLY="$(SELF_IMPROVE_VALIDATE_ONLY)"
 
 # --- Development-branch workflow targets ---
 # Feature work merges into `development` (not master). `development` merges into
@@ -5788,7 +6224,7 @@ test-and-commit: _commit-lock-acquire
 
 clean:
 	@if [ "$(CLEAN_VALIDATE_ONLY)" = "1" ]; then \
-		$(MAKE) --no-print-directory test-specific TESTFILE=tests/unit/test_packaging_templates_committed.py::test_clean_preserves_tracked_distribution_templates PYTEST_ARGS='-q -n 0'; \
+		$(UV) run python -m pytest tests/unit/test_packaging_templates_committed.py::test_clean_preserves_tracked_distribution_templates -q -n 0; \
 	elif [ "$(CLEAN_VALIDATE_ONLY)" = "0" ]; then \
 		rm -rf .venv build *.egg-info src/*.egg-info .pytest_cache .mypy_cache .coverage coverage.xml htmlcov .ruff_cache; \
 		git clean -fdX -- dist; \
@@ -5823,7 +6259,7 @@ test-zai-identity:
 CONTAINER_RUNTIME := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 CONTAINER_IMAGE := gl-agent:latest
 
-VERSION = $(shell $(UV) run python -c "from general_ludd import __version__; print(__version__)")
+VERSION = $(shell UV_CACHE_DIR="$(GLUDD_UV_CACHE_DIR)" $(UV) run python -c "from general_ludd import __version__; print(__version__)")
 PLATFORM = $(shell uname -s)-$(shell uname -m)
 TARBALL_NAME = general-ludd-agent-$(VERSION)-$(PLATFORM)
 TARBALL_DIR = dist/$(TARBALL_NAME)
@@ -6227,13 +6663,15 @@ _stash-before-push-guard:
 	fi
 	@echo "_stash-before-push-guard: PASS"
 
-# AA023 — _ci-restart-cap: limits CI restarts to 3 per session.
+# AA023 — check-only limit of 3 CI restarts per session.
 # Agent pushed incremental fixes 7+ times, each triggering a new CI run.
 # State file /tmp/gludd-ci-restart-count records restart count; resets
 # when CI reports GREEN. After 3rd restart, pushes are BLOCKED until
-# CI goes GREEN or RED. FORCE=1 bypasses.
+# CI goes GREEN or RED. Successful pushes increment in _record-push-verdict;
+# rejected preflight attempts never consume the budget. FORCE=1 bypasses.
 _ci-restart-cap:
-	@CI_RESTART_COUNT=$$(cat /tmp/gludd-ci-restart-count 2>/dev/null || echo 0); \
+	@CI_RESTART_FILE="$${GLUDD_CI_RESTART_COUNT_FILE:-/tmp/gludd-ci-restart-count}"; \
+	CI_RESTART_COUNT=$$(cat "$$CI_RESTART_FILE" 2>/dev/null || echo 0); \
 	if [ "$$CI_RESTART_COUNT" -ge 3 ]; then \
 		if [ "$$FORCE" = "1" ]; then \
 			echo "CI-RESTART-CAP: $$CI_RESTART_COUNT restarts (at limit) but FORCE=1 active."; \
@@ -6241,14 +6679,9 @@ _ci-restart-cap:
 			echo "BLOCKED: $$CI_RESTART_COUNT CI restarts this session. Max is 3."; \
 			echo "Wait for CI to report GREEN or RED, then fix ALL failures in ONE commit."; \
 			echo "Use FORCE=1 to bypass (emergency only). See AA023."; \
-			echo '{"last_push_blocked":true,"block_reason":"_ci-restart-cap:limit","restart_count":'$$CI_RESTART_COUNT',"max_allowed":3,"epoch":'$$(date +%s)'}' > /tmp/gludd-push-state.json; \
+			$(PYTHON) scripts/ci_check_cooldown.py record-restart-block "$$CI_RESTART_COUNT" || exit $$?; \
 			exit 1; \
 		fi; \
-	else \
-		CI_NEW=$$((CI_RESTART_COUNT + 1)); \
-		echo "$$CI_NEW" > /tmp/gludd-ci-restart-count; \
-		echo "CI-RESTART-CAP: restart $$CI_NEW/3 recorded."; \
-		echo '{"last_push_blocked":false,"ci_restart_count":'$$CI_NEW',"max_allowed":3,"epoch":'$$(date +%s)'}' > /tmp/gludd-push-state.json; \
 	fi
 	@echo "_ci-restart-cap: PASS"
 
@@ -6335,7 +6768,7 @@ _ci-verdict-history-guard:
 		LAST_CHECKED=$$(cat "$$STATE_FILE" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('last_checked_sha',''))" 2>/dev/null || echo ""); \
 		if [ "$$LAST_SHA" != "$$LAST_CHECKED" ] && [ "$$LAST_SHA" != "$$CUR_SHA" ] && [ -n "$$LAST_SHA" ] && [ "$$FORCE" != "1" ]; then \
 			echo "BLOCKED: previous push SHA $$LAST_SHA was never CI-verified."; \
-			echo "Run 'make ci-verdict-safe BRANCH=$$(git branch --show-current)' and record the verdict before pushing again. See AA032."; \
+			echo "Run 'make ci-verdict-safe SHA=$$LAST_SHA' and record the verdict before pushing again. See AA032."; \
 			exit 1; \
 		fi; \
 	fi
@@ -6346,10 +6779,7 @@ _ci-verdict-history-guard:
 # every FAILED push attempt (pre-push hook rejections, rate-limit blocks),
 # forcing a fresh 10-minute cooldown verdict for a push that never happened.
 _record-push-verdict:
-	@CUR_SHA=$$(git rev-parse HEAD); \
-	STATE_FILE=/tmp/gludd-ci-verdict-history.json; \
-	echo "{\"last_push_sha\": \"$$CUR_SHA\", \"last_checked_sha\": \"\", \"ts\": $$(date +%s)}" > "$$STATE_FILE"; \
-	echo "recorded push verdict history for $$CUR_SHA"
+	@$(PYTHON) scripts/ci_check_cooldown.py record-push
 
 # AA034 — _pre-commit-stash-audit: detects pre-commit auto-fix stash conflicts.
 # Pre-commit hooks auto-fix files (trailing whitespace, eof) via stash/unstash.
@@ -7795,16 +8225,16 @@ gate-cleanup:
 	@rm -f .gate-logs/coverage-branch.json .gate-logs/coverage-data-*.json .gate-logs/coverage-data-*.json.progress.json
 	@echo "[gate-cleanup] done"
 
+CLEAN_HF_CACHE_ROOT ?= $(GLUDD_SELF_IMPROVE_MODEL_CACHE)
+CLEAN_HF_CACHE_REQUIRED_BYTES ?= 0
+CLEAN_HF_CACHE_VALIDATE_ONLY ?= 1
+
 .PHONY: clean-hf-cache
-clean-hf-cache:
-	@echo "=== Cleaning HuggingFace model cache ==="
-	@du -sh ~/.cache/huggingface/hub/models--*/ 2>/dev/null | sort -h | tail -10 || echo "  No HF hub cache found"
-	@rm -rf ~/.cache/huggingface/hub/models--bartowski--Qwen2.5-0.5B-Instruct-GGUF 2>/dev/null || true
-	@rm -rf ~/.cache/huggingface/hub/models--bartowski--Qwen2.5-1.5B-Instruct-GGUF 2>/dev/null || true
-	@rm -rf ~/.cache/huggingface/hub/models--bartowski--DeepSeek-Coder-1.3B-Base-GGUF 2>/dev/null || true
-	@rm -rf ~/.cache/huggingface/hub/models--bartowski--Llama-3.2-1B-Instruct-GGUF 2>/dev/null || true
-	@rm -rf ~/.cache/huggingface/hub/models--bartowski--Phi-3-mini-4k-instruct-GGUF 2>/dev/null || true
-	@echo "=== HF cache cleaned ==="
+clean-hf-cache: ## Diagnose or reclaim only Gludd-owned unleased model artifacts
+	@$(UV) run python scripts/clean_hf_cache.py \
+		--cache-root "$(CLEAN_HF_CACHE_ROOT)" \
+		--required-bytes "$(CLEAN_HF_CACHE_REQUIRED_BYTES)" \
+		--validate-only "$(CLEAN_HF_CACHE_VALIDATE_ONLY)"
 
 # ---------------------------------------------------------------------------
 # Coverage audit: per-file coverage check with configurable threshold.
@@ -8205,7 +8635,7 @@ tf-init: tf-cache-setup
 # removes test-generated tfvars carrying its marker; operator files and state
 # are preserved. Validate-only proves routing without downloading providers.
 tf-init-local: tf-cache-setup
-	@case "$(STACK)" in stacks/azure-vllm|stacks/azure-llamacpp) ;; *) echo "Usage: make tf-init-local STACK=stacks/azure-vllm|stacks/azure-llamacpp TF_INIT_LOCAL_VALIDATE_ONLY=0|1"; exit 2;; esac
+	@case "$(STACK)" in stacks/azure-vllm|stacks/azure-llamacpp|stacks/azure-container-app-vllm|stacks/azure-container-app-environment) ;; *) echo "Usage: make tf-init-local STACK=stacks/azure-vllm|stacks/azure-llamacpp|stacks/azure-container-app-vllm|stacks/azure-container-app-environment TF_INIT_LOCAL_VALIDATE_ONLY=0|1"; exit 2;; esac
 	@$(UV) run python scripts/clean_terraform_test_artifacts.py "$(TF_ROOT)/$(STACK)"
 	@if [ "$(TF_INIT_LOCAL_VALIDATE_ONLY)" = "1" ]; then echo "tf-init-local validate-only stack=$(STACK)"; exit 0; fi; \
 		RESOURCE_ROOT="$$( $(UV) run python scripts/resource_arbiter.py root )"; \
@@ -8214,7 +8644,9 @@ tf-init-local: tf-cache-setup
 		TF_LOCAL_DATA_DIR="$$(mktemp -d "$$TF_LOCAL_PARENT/$(subst /,-,$(STACK)).XXXXXX")"; \
 		cleanup_tf_local() { rm -rf "$$TF_LOCAL_DATA_DIR"; }; \
 		trap cleanup_tf_local EXIT INT TERM; \
-		cd "$(TF_ROOT)/$(STACK)" && TF_PLUGIN_CACHE_DIR="$(TF_PLUGIN_CACHE)" TF_DATA_DIR="$$TF_LOCAL_DATA_DIR" terraform init -backend=false
+		cd "$(TF_ROOT)/$(STACK)" && \
+		TF_PLUGIN_CACHE_DIR="$(TF_PLUGIN_CACHE)" TF_DATA_DIR="$$TF_LOCAL_DATA_DIR" terraform init -backend=false && \
+		TF_PLUGIN_CACHE_DIR="$(TF_PLUGIN_CACHE)" TF_DATA_DIR="$$TF_LOCAL_DATA_DIR" terraform validate
 
 # Validates a single stack against the shared cache.
 #   make tf-validate STACK=stacks/aws-vllm

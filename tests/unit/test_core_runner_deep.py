@@ -976,6 +976,39 @@ class TestExecuteWithRunner:
         finally:
             mod.ansible_runner = orig_runner
 
+    def test_runner_passes_owned_job_deadline_to_ansible_runner(self, tmp_path):
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
+
+        iso = MagicMock()
+        iso.enabled = True
+        iso.to_runner_kwargs.return_value = {"container_image": "test"}
+        runner = CoreAnsibleRunner(process_isolation=iso)
+
+        mock_result = MagicMock()
+        mock_result.rc = 0
+        mock_result.status = "successful"
+        mock_result.stats = {}
+        mock_result.events = []
+
+        import general_ludd.ansible.core_runner as mod
+
+        orig_runner = mod.ansible_runner
+        mock_runner_mod = MagicMock()
+        mock_runner_mod.run.return_value = mock_result
+        mod.ansible_runner = mock_runner_mod
+        try:
+            result = runner._execute_with_runner(
+                playbook_path=str(tmp_path / "p.yml"),
+                timeout=23.0,
+            )
+        finally:
+            mod.ansible_runner = orig_runner
+
+        assert result.status == "successful"
+        assert mock_runner_mod.run.call_args.kwargs["settings"] == {
+            "job_timeout": 23.0,
+        }
+
 
 # ── _timeout_child_entry ────────────────────────────────────────────────────
 
