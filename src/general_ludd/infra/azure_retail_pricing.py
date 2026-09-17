@@ -252,6 +252,234 @@ class _CacheEntry:
 _FetchJSON = Callable[[str, float], Mapping[str, object]]
 
 
+def _parse_effective_date(raw: object) -> datetime:
+    if not isinstance(raw, str) or not raw:
+        raise AzureRetailPricingError(
+            f"invalid Azure meter effectiveStartDate: {raw!r}"
+        )
+    normalized = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise AzureRetailPricingError(
+            f"invalid Azure meter effectiveStartDate: {raw!r}"
+        ) from exc
+    if parsed.tzinfo is None:
+        raise AzureRetailPricingError(
+            f"invalid Azure meter effectiveStartDate: {raw!r}"
+        )
+    return parsed.astimezone(UTC)
+
+
+def _safe_next_page(url: str) -> bool:
+    parsed = urlparse(url)
+    return (
+        parsed.scheme == "https"
+        and parsed.hostname == _API_HOST
+        and parsed.path == "/api/retail/prices"
+        and parsed.username is None
+        and parsed.password is None
+    )
+
+
+def _positive_price(raw_price: object, identity: str) -> float:
+    if isinstance(raw_price, bool) or not isinstance(raw_price, int | float | str):
+        raise AzureRetailPricingError(
+            f"invalid retail price for {identity}: {raw_price!r}"
+        )
+    try:
+        retail_price = float(raw_price)
+    except (TypeError, ValueError) as exc:
+        raise AzureRetailPricingError(
+            f"invalid retail price for {identity}: {raw_price!r}"
+        ) from exc
+    if not math.isfinite(retail_price) or retail_price <= 0:
+        raise AzureRetailPricingError(
+            f"invalid retail price for {identity}: {raw_price!r}"
+        )
+    return retail_price
+
+
+def _latest_unique_meter(
+    candidates: list[AzureRetailMeter],
+    identity: str,
+) -> AzureRetailMeter:
+    latest_date = max(candidate.effective_start_date for candidate in candidates)
+    latest = [
+        candidate
+        for candidate in candidates
+        if candidate.effective_start_date == latest_date
+    ]
+    if len(latest) != 1:
+        meter_ids = ", ".join(sorted(candidate.meter_id for candidate in latest))
+        raise AzureRetailPricingError(
+            f"ambiguous Azure retail meter for {identity} at "
+            f"{latest_date.isoformat()}: {meter_ids}"
+        )
+    return latest[0]
+
+
+def _is_virtual_machine_arm_sku_meter(
+    item: Mapping[str, object],
+    *,
+    region: str,
+    arm_sku_name: str,
+) -> bool:
+    identity = " ".join(
+        str(item.get(field) or "")
+        for field in ("productName", "skuName", "meterName")
+    ).casefold()
+    excluded = ("windows", "spot", "low priority", "reservation")
+    return (
+        item.get("armRegionName") == region
+        and item.get("armSkuName") == arm_sku_name
+        and item.get("serviceName") == "Virtual Machines"
+        and item.get("type") == _PRICE_TYPE
+        and item.get("currencyCode") == "USD"
+        and item.get("unitOfMeasure") == "1 Hour"
+        and item.get("isPrimaryMeterRegion") is True
+        and not any(token in identity for token in excluded)
+    )
+
+
+def _select_virtual_machine_arm_sku_meter(
+    raw_items: list[Mapping[str, object]],
+    *,
+    region: str,
+    arm_sku_name: str,
+    fetched_at: datetime,
+) -> AzureRetailMeter:
+    if fetched_at.tzinfo is None:
+        raise AzureRetailPricingError("pricing clock must return a timezone-aware time")
+    identity = f"{region}/{arm_sku_name}"
+    candidates: list[AzureRetailMeter] = []
+    for item in raw_items:
+        if not _is_virtual_machine_arm_sku_meter(
+            item,
+            region=region,
+            arm_sku_name=arm_sku_name,
+        ):
+            continue
+        effective = _parse_effective_date(item.get("effectiveStartDate"))
+        if effective > fetched_at:
+            continue
+        meter_id = str(item.get("meterId") or "")
+        meter_name = str(item.get("meterName") or "")
+        if not meter_id or not meter_name:
+            raise AzureRetailPricingError(f"incomplete meter identity for {identity}")
+        candidates.append(
+            AzureRetailMeter(
+                region=region,
+                sku_name=arm_sku_name,
+                price_type=_PRICE_TYPE,
+                meter_id=meter_id,
+                meter_name=meter_name,
+                retail_price=_positive_price(item.get("retailPrice"), identity),
+                unit_of_measure="1 Hour",
+                effective_start_date=effective,
+                fetched_at=fetched_at.astimezone(UTC),
+            )
+        )
+    if not candidates:
+        raise AzureRetailPricingError(
+            "no exact current Azure on-demand Linux VM meter for "
+            f"region={region!r}, arm_sku_name={arm_sku_name!r}"
+        )
+    return _latest_unique_meter(candidates, identity)
+
+
+def _fetch_virtual_machine_arm_sku_meter(
+    *,
+    fetch_json: _FetchJSON,
+    timeout_seconds: float,
+    max_pages: int,
+    now: Callable[[], datetime],
+    region: str,
+    arm_sku_name: str,
+) -> AzureRetailMeter:
+    query = urlencode(
+        {
+            "api-version": _API_VERSION,
+            "currencyCode": "'USD'",
+            "$filter": " and ".join(
+                (
+                    f"armRegionName eq '{region}'",
+                    "serviceName eq 'Virtual Machines'",
+                    f"priceType eq '{_PRICE_TYPE}'",
+                    f"armSkuName eq '{arm_sku_name}'",
+                )
+            ),
+        }
+    )
+    url: str | None = f"{_API_ENDPOINT}?{query}"
+    raw_items: list[Mapping[str, object]] = []
+    for _page_number in range(max_pages):
+        if url is None:
+            break
+        try:
+            payload = fetch_json(url, timeout_seconds)
+        except Exception as exc:
+            raise AzureRetailPricingError(
+                "unable to obtain a fresh Azure retail price for "
+                f"{region}/{arm_sku_name}: {type(exc).__name__}"
+            ) from exc
+        items = payload.get("Items")
+        if not isinstance(items, list):
+            raise AzureRetailPricingError(
+                "Azure Retail Prices response has no Items list"
+            )
+        raw_items.extend(item for item in items if isinstance(item, Mapping))
+        raw_next = payload.get("NextPageLink")
+        if raw_next in (None, ""):
+            url = None
+            break
+        if not isinstance(raw_next, str) or not _safe_next_page(raw_next):
+            raise AzureRetailPricingError(
+                "Azure Retail Prices response contained an unsafe NextPageLink"
+            )
+        url = raw_next
+    else:
+        raise AzureRetailPricingError(
+            f"Azure Retail Prices response exceeded {max_pages} pages"
+        )
+    return _select_virtual_machine_arm_sku_meter(
+        raw_items,
+        region=region,
+        arm_sku_name=arm_sku_name,
+        fetched_at=now(),
+    )
+
+
+def _observed_meter_summary(
+    raw_items: list[Mapping[str, object]],
+    selector: AzureRetailMeterSelector,
+) -> str:
+    ordered_items = sorted(
+        raw_items,
+        key=lambda item: (
+            item.get("productName") != selector.product_name,
+            str(item.get("productName") or ""),
+            str(item.get("meterName") or ""),
+        ),
+    )
+    observed = list(
+        dict.fromkeys(
+            "/".join(
+                str(item.get(field) or "")
+                for field in (
+                    "productName",
+                    "armSkuName",
+                    "skuName",
+                    "meterName",
+                    "unitOfMeasure",
+                )
+            )
+            for item in ordered_items
+        )
+    )[:8]
+    return "; ".join(observed) if observed else "none"
+
+
 class AzureContainerAppsRetailPricing:
     """Resolve exact public retail meters and estimate one active replica.
 
@@ -401,7 +629,11 @@ class AzureContainerAppsRetailPricing:
                 and current_tick - cached.cached_at < self._cache_ttl_seconds
             ):
                 return cached.meter
-            meter = self._fetch_virtual_machine_arm_sku_meter(
+            meter = _fetch_virtual_machine_arm_sku_meter(
+                fetch_json=self._fetch_json,
+                timeout_seconds=self._timeout_seconds,
+                max_pages=self._max_pages,
+                now=self._now,
                 region=region,
                 arm_sku_name=arm_sku_name,
             )
@@ -544,164 +776,6 @@ class AzureContainerAppsRetailPricing:
             require_product_name=require_product_name,
         )
 
-    def _fetch_virtual_machine_arm_sku_meter(
-        self,
-        *,
-        region: str,
-        arm_sku_name: str,
-    ) -> AzureRetailMeter:
-        query = urlencode(
-            {
-                "api-version": _API_VERSION,
-                "currencyCode": "'USD'",
-                "$filter": " and ".join(
-                    (
-                        f"armRegionName eq '{region}'",
-                        "serviceName eq 'Virtual Machines'",
-                        f"priceType eq '{_PRICE_TYPE}'",
-                        f"armSkuName eq '{arm_sku_name}'",
-                    )
-                ),
-            }
-        )
-        url: str | None = f"{_API_ENDPOINT}?{query}"
-        raw_items: list[Mapping[str, object]] = []
-        for _page_number in range(self._max_pages):
-            if url is None:
-                break
-            try:
-                payload = self._fetch_json(url, self._timeout_seconds)
-            except Exception as exc:
-                raise AzureRetailPricingError(
-                    "unable to obtain a fresh Azure retail price for "
-                    f"{region}/{arm_sku_name}: {type(exc).__name__}"
-                ) from exc
-            items = payload.get("Items")
-            if not isinstance(items, list):
-                raise AzureRetailPricingError(
-                    "Azure Retail Prices response has no Items list"
-                )
-            raw_items.extend(
-                item for item in items if isinstance(item, Mapping)
-            )
-            raw_next = payload.get("NextPageLink")
-            if raw_next in (None, ""):
-                url = None
-                break
-            if not isinstance(raw_next, str) or not self._safe_next_page(raw_next):
-                raise AzureRetailPricingError(
-                    "Azure Retail Prices response contained an unsafe NextPageLink"
-                )
-            url = raw_next
-        else:
-            raise AzureRetailPricingError(
-                f"Azure Retail Prices response exceeded {self._max_pages} pages"
-            )
-        return self._select_virtual_machine_arm_sku_meter(
-            raw_items,
-            region=region,
-            arm_sku_name=arm_sku_name,
-        )
-
-    def _select_virtual_machine_arm_sku_meter(
-        self,
-        raw_items: list[Mapping[str, object]],
-        *,
-        region: str,
-        arm_sku_name: str,
-    ) -> AzureRetailMeter:
-        fetched_at = self._now()
-        if fetched_at.tzinfo is None:
-            raise AzureRetailPricingError("pricing clock must return a timezone-aware time")
-        candidates: list[AzureRetailMeter] = []
-        for item in raw_items:
-            if not self._is_virtual_machine_arm_sku_meter(
-                item,
-                region=region,
-                arm_sku_name=arm_sku_name,
-            ):
-                continue
-            effective = self._parse_effective_date(item.get("effectiveStartDate"))
-            if effective > fetched_at:
-                continue
-            raw_price = item.get("retailPrice")
-            if isinstance(raw_price, bool) or not isinstance(
-                raw_price, int | float | str
-            ):
-                raise AzureRetailPricingError(
-                    f"invalid retail price for {region}/{arm_sku_name}: {raw_price!r}"
-                )
-            try:
-                retail_price = float(raw_price)
-            except (TypeError, ValueError) as exc:
-                raise AzureRetailPricingError(
-                    f"invalid retail price for {region}/{arm_sku_name}: {raw_price!r}"
-                ) from exc
-            if not math.isfinite(retail_price) or retail_price <= 0:
-                raise AzureRetailPricingError(
-                    f"invalid retail price for {region}/{arm_sku_name}: {raw_price!r}"
-                )
-            meter_id = str(item.get("meterId") or "")
-            meter_name = str(item.get("meterName") or "")
-            if not meter_id or not meter_name:
-                raise AzureRetailPricingError(
-                    f"incomplete meter identity for {region}/{arm_sku_name}"
-                )
-            candidates.append(
-                AzureRetailMeter(
-                    region=region,
-                    sku_name=arm_sku_name,
-                    price_type=_PRICE_TYPE,
-                    meter_id=meter_id,
-                    meter_name=meter_name,
-                    retail_price=retail_price,
-                    unit_of_measure="1 Hour",
-                    effective_start_date=effective,
-                    fetched_at=fetched_at.astimezone(UTC),
-                )
-            )
-        if not candidates:
-            raise AzureRetailPricingError(
-                "no exact current Azure on-demand Linux VM meter for "
-                f"region={region!r}, arm_sku_name={arm_sku_name!r}"
-            )
-        latest_date = max(candidate.effective_start_date for candidate in candidates)
-        latest = [
-            candidate
-            for candidate in candidates
-            if candidate.effective_start_date == latest_date
-        ]
-        if len(latest) != 1:
-            meter_ids = ", ".join(sorted(candidate.meter_id for candidate in latest))
-            raise AzureRetailPricingError(
-                "ambiguous Azure retail meter for "
-                f"{region}/{arm_sku_name} at {latest_date.isoformat()}: {meter_ids}"
-            )
-        return latest[0]
-
-    @staticmethod
-    def _is_virtual_machine_arm_sku_meter(
-        item: Mapping[str, object],
-        *,
-        region: str,
-        arm_sku_name: str,
-    ) -> bool:
-        identity = " ".join(
-            str(item.get(field) or "")
-            for field in ("productName", "skuName", "meterName")
-        ).casefold()
-        excluded = ("windows", "spot", "low priority", "reservation")
-        return (
-            item.get("armRegionName") == region
-            and item.get("armSkuName") == arm_sku_name
-            and item.get("serviceName") == "Virtual Machines"
-            and item.get("type") == _PRICE_TYPE
-            and item.get("currencyCode") == "USD"
-            and item.get("unitOfMeasure") == "1 Hour"
-            and item.get("isPrimaryMeterRegion") is True
-            and not any(token in identity for token in excluded)
-        )
-
     def _select_effective_meter(
         self,
         raw_items: list[Mapping[str, object]],
@@ -729,23 +803,8 @@ class AzureContainerAppsRetailPricing:
             if effective > fetched_at:
                 continue
             raw_price = item.get("retailPrice")
-            if isinstance(raw_price, bool) or not isinstance(raw_price, (int, float, str)):
-                raise AzureRetailPricingError(
-                    "invalid retail price for "
-                    f"{region}/{selector.sku_name}/{selector.meter_name}: {raw_price!r}"
-                )
-            try:
-                retail_price = float(raw_price)
-            except (TypeError, ValueError) as exc:
-                raise AzureRetailPricingError(
-                    "invalid retail price for "
-                    f"{region}/{selector.sku_name}/{selector.meter_name}: {raw_price!r}"
-                ) from exc
-            if not math.isfinite(retail_price) or retail_price <= 0:
-                raise AzureRetailPricingError(
-                    "invalid retail price for "
-                    f"{region}/{selector.sku_name}/{selector.meter_name}: {raw_price!r}"
-                )
+            identity = f"{region}/{selector.sku_name}/{selector.meter_name}"
+            retail_price = _positive_price(raw_price, identity)
             meter_id = str(item.get("meterId") or "")
             resolved_meter_name = str(item.get("meterName") or "")
             if not meter_id or not resolved_meter_name:
@@ -768,30 +827,7 @@ class AzureContainerAppsRetailPricing:
             )
 
         if not candidates:
-            ordered_items = sorted(
-                raw_items,
-                key=lambda item: (
-                    item.get("productName") != selector.product_name,
-                    str(item.get("productName") or ""),
-                    str(item.get("meterName") or ""),
-                ),
-            )
-            observed = list(
-                dict.fromkeys(
-                    "/".join(
-                        str(item.get(field) or "")
-                        for field in (
-                            "productName",
-                            "armSkuName",
-                            "skuName",
-                            "meterName",
-                            "unitOfMeasure",
-                        )
-                    )
-                    for item in ordered_items
-                )
-            )[:8]
-            observed_summary = "; ".join(observed) if observed else "none"
+            observed_summary = _observed_meter_summary(raw_items, selector)
             raise AzureRetailPricingError(
                 "no exact current Azure retail meter for "
                 f"region={region!r}, service={selector.service_name!r}, "
@@ -800,20 +836,10 @@ class AzureContainerAppsRetailPricing:
                 f"observed={observed_summary}"
             )
 
-        latest_date = max(candidate.effective_start_date for candidate in candidates)
-        latest = [
-            candidate
-            for candidate in candidates
-            if candidate.effective_start_date == latest_date
-        ]
-        if len(latest) != 1:
-            meter_ids = ", ".join(sorted(candidate.meter_id for candidate in latest))
-            raise AzureRetailPricingError(
-                "ambiguous Azure retail meter for "
-                f"{region}/{selector.sku_name}/{selector.meter_name} at "
-                f"{latest_date.isoformat()}: {meter_ids}"
-            )
-        return latest[0]
+        return _latest_unique_meter(
+            candidates,
+            f"{region}/{selector.sku_name}/{selector.meter_name}",
+        )
 
     @staticmethod
     def _has_exact_identity(
@@ -845,33 +871,11 @@ class AzureContainerAppsRetailPricing:
 
     @staticmethod
     def _parse_effective_date(raw: object) -> datetime:
-        if not isinstance(raw, str) or not raw:
-            raise AzureRetailPricingError(
-                f"invalid Azure meter effectiveStartDate: {raw!r}"
-            )
-        normalized = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
-        try:
-            parsed = datetime.fromisoformat(normalized)
-        except ValueError as exc:
-            raise AzureRetailPricingError(
-                f"invalid Azure meter effectiveStartDate: {raw!r}"
-            ) from exc
-        if parsed.tzinfo is None:
-            raise AzureRetailPricingError(
-                f"invalid Azure meter effectiveStartDate: {raw!r}"
-            )
-        return parsed.astimezone(UTC)
+        return _parse_effective_date(raw)
 
     @staticmethod
     def _safe_next_page(url: str) -> bool:
-        parsed = urlparse(url)
-        return (
-            parsed.scheme == "https"
-            and parsed.hostname == _API_HOST
-            and parsed.path == "/api/retail/prices"
-            and parsed.username is None
-            and parsed.password is None
-        )
+        return _safe_next_page(url)
 
     @staticmethod
     def _validate_region(region: str) -> None:

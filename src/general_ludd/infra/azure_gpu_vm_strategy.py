@@ -455,6 +455,189 @@ def _assessment_reason(
     return None
 
 
+@dataclass(frozen=True, slots=True)
+class _GpuSkuFacts:
+    arm_sku_name: str
+    zones: tuple[str, ...]
+    gpu_count: int
+    gpu_memory_gib: float
+    backend: str
+    vendor: str
+    family: str
+    family_remaining: int
+    regional_remaining: int
+    available_hosts: int
+    interconnect: str | None
+    interconnect_group_size: int
+
+
+def _gpu_sku_facts(
+    sku: _AzureResourceSku,
+    usages: tuple[_AzureUsage, ...],
+    region: str,
+) -> _GpuSkuFacts | None:
+    capabilities = _capability_map(sku)
+    if _capability_value(capabilities, "GPUs", "GpuCount") is None:
+        return None
+    if _normalized(getattr(sku, "resource_type", None)) != "virtualmachines":
+        raise ValueError("not_virtual_machine")
+    arm_sku_name = _text(getattr(sku, "name", None), "arm_sku_name")
+    zones = _apply_restrictions(sku, region, _region_zones(sku, region))
+    gpu_count = _positive_int_capability(
+        capabilities, "invalid_gpu_count", "GPUs", "GpuCount"
+    )
+    gpu_memory_gib = _positive_float_capability(
+        capabilities,
+        "invalid_gpu_memory",
+        "GpuMemoryGB",
+        "GpuVramGB",
+        "MemoryPerGpuInGB",
+    )
+    vcpus = _positive_int_capability(
+        capabilities, "invalid_vcpu_count", "vCPUs", "vCpuCount"
+    )
+    backend = _capability_value(capabilities, "GpuBackend")
+    vendor = _capability_value(capabilities, "GpuVendor")
+    if backend is None:
+        raise ValueError("missing_gpu_backend")
+    if vendor is None:
+        raise ValueError("missing_gpu_vendor")
+    family = _text(getattr(sku, "family", None), "quota_family")
+    family_remaining = _quota_remaining(usages, {family})
+    regional_remaining = _quota_remaining(usages, set(_REGIONAL_QUOTA_NAMES))
+    if family_remaining is None:
+        raise ValueError("missing_family_quota")
+    if regional_remaining is None:
+        raise ValueError("missing_regional_quota")
+    if family_remaining < vcpus:
+        raise ValueError("insufficient_family_quota")
+    if regional_remaining < vcpus:
+        raise ValueError("insufficient_regional_quota")
+    available_hosts = min(
+        family_remaining // vcpus,
+        regional_remaining // vcpus,
+        _MAX_HOSTS,
+        _MAX_DEVICES // gpu_count,
+    )
+    if available_hosts <= 0:
+        raise ValueError("insufficient_quota")
+    interconnect = _capability_value(capabilities, "IntraHostGpuInterconnect")
+    group_size = 1
+    if interconnect is not None:
+        group_size = _positive_int_capability(
+            capabilities,
+            "invalid_interconnect_group",
+            "IntraHostGpuInterconnectGroupSize",
+        )
+        if group_size > gpu_count:
+            raise ValueError("invalid_interconnect_group")
+    return _GpuSkuFacts(
+        arm_sku_name,
+        zones,
+        gpu_count,
+        gpu_memory_gib,
+        backend,
+        vendor,
+        family,
+        family_remaining,
+        regional_remaining,
+        available_hosts,
+        interconnect,
+        group_size,
+    )
+
+
+def _validated_hourly_price(
+    meter: AzureRetailMeter,
+    *,
+    region: str,
+    arm_sku_name: str,
+    now: datetime,
+    max_age_seconds: float,
+) -> tuple[int, datetime]:
+    if (
+        meter.region != region
+        or meter.sku_name != arm_sku_name
+        or meter.price_type != "Consumption"
+        or meter.unit_of_measure != "1 Hour"
+        or not math.isfinite(meter.retail_price)
+        or meter.retail_price <= 0
+    ):
+        raise ValueError("invalid_price")
+    price_time = _aware_utc(meter.fetched_at, "price_fetched_at")
+    price_age = (now - price_time).total_seconds()
+    if price_age < 0:
+        raise ValueError("invalid_price_timestamp")
+    if price_age > max_age_seconds:
+        raise ValueError("stale_price")
+    hourly_microusd = round(meter.retail_price * 1_000_000)
+    if not 0 < hourly_microusd <= _MAX_MICROUSD:
+        raise ValueError("invalid_price")
+    return hourly_microusd, price_time
+
+
+def _gpu_topology(facts: _GpuSkuFacts, region: str, hourly_microusd: int) -> AcceleratorTopology:
+    available_devices = facts.available_hosts * facts.gpu_count
+    resource = AcceleratorResource(
+        kind=AcceleratorKind.GPU,
+        location=AcceleratorLocation.CLOUD,
+        backend=facts.backend,
+        model=facts.arm_sku_name,
+        vendor=facts.vendor,
+        resource_key=f"azure:{region}:{facts.arm_sku_name}",
+        total_count=available_devices,
+        available_count=available_devices,
+        memory_gb=facts.gpu_memory_gib,
+        source="azure_compute_resource_skus",
+    )
+    return AcceleratorTopology(
+        resource=resource,
+        provider="azure",
+        region=region,
+        zone=facts.zones[0] if len(facts.zones) == 1 else None,
+        host_count=facts.available_hosts,
+        devices_per_host=facts.gpu_count,
+        max_devices_per_workload=facts.gpu_count,
+        intra_host_interconnect=facts.interconnect,
+        intra_host_interconnect_group_size=facts.interconnect_group_size,
+        cross_host_interconnect=None,
+        partitioning=PartitioningMode.WHOLE_DEVICE,
+        memory_isolated=True,
+        cost=AcceleratorCost(hourly_microusd, facts.gpu_count),
+        facts_attested=True,
+    )
+
+
+_CANDIDATE_REASONS = frozenset(
+    {
+        "capacity_unavailable",
+        "duplicate_capability",
+        "insufficient_family_quota",
+        "insufficient_quota",
+        "insufficient_regional_quota",
+        "invalid_capacity_timestamp",
+        "invalid_gpu_count",
+        "invalid_gpu_memory",
+        "invalid_interconnect_group",
+        "invalid_price",
+        "invalid_price_timestamp",
+        "invalid_vcpu_count",
+        "location_restricted",
+        "missing_capacity_evidence",
+        "missing_family_quota",
+        "missing_gpu_backend",
+        "missing_gpu_vendor",
+        "missing_regional_quota",
+        "not_virtual_machine",
+        "price_unavailable",
+        "region_not_offered",
+        "stale_capacity_evidence",
+        "stale_price",
+        "zones_restricted",
+    }
+)
+
+
 class AzureGpuVmInventory:
     """Normalize current Azure SDK inventory without creating resources."""
 
@@ -505,9 +688,51 @@ class AzureGpuVmInventory:
         now = _aware_utc(self._clock(), "clock")
         sink = trace_sink or (lambda _trace: None)
         sink(AzureStrategyTrace(AzureStrategyEvent.INVENTORY_STARTED, 0))
+        skus, usages = self._load_inventory(normalized_region, sink)
+        accepted, reasons, rejected = self._evaluate_skus(
+            skus=skus,
+            usages=usages,
+            region=normalized_region,
+            runtime_version_digest=runtime_version_digest,
+            topology_digest=topology_digest,
+            now=now,
+            sink=sink,
+        )
+        if not accepted:
+            sink(
+                AzureStrategyTrace(
+                    AzureStrategyEvent.INVENTORY_COMPLETED,
+                    len(skus),
+                    rejected_count=rejected,
+                    reason_code=min(reasons or ["empty_gpu_inventory"]),
+                )
+            )
+            raise AzureGpuVmInventoryError(reasons)
+        sink(
+            AzureStrategyTrace(
+                AzureStrategyEvent.INVENTORY_COMPLETED,
+                len(skus),
+                accepted_count=len(accepted),
+                rejected_count=rejected,
+            )
+        )
+        return AzureGpuVmInventorySnapshot(
+            region=normalized_region,
+            observed_at=now,
+            candidates=tuple(accepted),
+            rejected_count=rejected,
+            rejection_reasons=tuple(sorted(set(reasons))),
+        )
+
+    def _load_inventory(
+        self,
+        region: str,
+        sink: Callable[[AzureStrategyTrace], None],
+    ) -> tuple[tuple[_AzureResourceSku, ...], tuple[_AzureUsage, ...]]:
+        """Read one bounded SDK inventory snapshot."""
         try:
             skus = tuple(self._compute.resource_skus.list())
-            usages = tuple(self._compute.usage.list(normalized_region))
+            usages = tuple(self._compute.usage.list(region))
         except Exception:
             sink(
                 AzureStrategyTrace(
@@ -519,6 +744,20 @@ class AzureGpuVmInventory:
             raise AzureGpuVmInventoryError(("sdk_inventory_unavailable",)) from None
         if len(skus) > _MAX_DEVICES:
             raise AzureGpuVmInventoryError(("inventory_too_large",))
+        return skus, usages
+
+    def _evaluate_skus(
+        self,
+        *,
+        skus: tuple[_AzureResourceSku, ...],
+        usages: tuple[_AzureUsage, ...],
+        region: str,
+        runtime_version_digest: str,
+        topology_digest: str,
+        now: datetime,
+        sink: Callable[[AzureStrategyTrace], None],
+    ) -> tuple[list[AzureGpuVmCandidate], list[str], int]:
+        """Normalize each SKU and emit one censored eligibility event."""
         accepted: list[AzureGpuVmCandidate] = []
         reasons: list[str] = []
         rejected = 0
@@ -526,7 +765,7 @@ class AzureGpuVmInventory:
             candidate, reason = self._candidate(
                 sku=sku,
                 usages=usages,
-                region=normalized_region,
+                region=region,
                 runtime_version_digest=runtime_version_digest,
                 topology_digest=topology_digest,
                 now=now,
@@ -563,31 +802,7 @@ class AzureGpuVmInventory:
                 item.arm_sku_name,
             )
         )
-        if not accepted:
-            sink(
-                AzureStrategyTrace(
-                    AzureStrategyEvent.INVENTORY_COMPLETED,
-                    len(skus),
-                    rejected_count=rejected,
-                    reason_code=min(reasons or ["empty_gpu_inventory"]),
-                )
-            )
-            raise AzureGpuVmInventoryError(reasons)
-        sink(
-            AzureStrategyTrace(
-                AzureStrategyEvent.INVENTORY_COMPLETED,
-                len(skus),
-                accepted_count=len(accepted),
-                rejected_count=rejected,
-            )
-        )
-        return AzureGpuVmInventorySnapshot(
-            region=normalized_region,
-            observed_at=now,
-            candidates=tuple(accepted),
-            rejected_count=rejected,
-            rejection_reasons=tuple(sorted(set(reasons))),
-        )
+        return accepted, reasons, rejected
 
     def _candidate(
         self,
@@ -600,54 +815,12 @@ class AzureGpuVmInventory:
         now: datetime,
     ) -> tuple[AzureGpuVmCandidate | None, str | None]:
         try:
-            capabilities = _capability_map(sku)
-            if _capability_value(capabilities, "GPUs", "GpuCount") is None:
+            facts = _gpu_sku_facts(sku, usages, region)
+            if facts is None:
                 return None, "not_gpu_sku"
-            if _normalized(getattr(sku, "resource_type", None)) != "virtualmachines":
-                return None, "not_virtual_machine"
-            arm_sku_name = _text(getattr(sku, "name", None), "arm_sku_name")
-            zones = _apply_restrictions(sku, region, _region_zones(sku, region))
-            gpu_count = _positive_int_capability(
-                capabilities, "invalid_gpu_count", "GPUs", "GpuCount"
-            )
-            gpu_memory_gib = _positive_float_capability(
-                capabilities,
-                "invalid_gpu_memory",
-                "GpuMemoryGB",
-                "GpuVramGB",
-                "MemoryPerGpuInGB",
-            )
-            vcpus = _positive_int_capability(
-                capabilities, "invalid_vcpu_count", "vCPUs", "vCpuCount"
-            )
-            backend = _capability_value(capabilities, "GpuBackend")
-            if backend is None:
-                raise ValueError("missing_gpu_backend")
-            vendor = _capability_value(capabilities, "GpuVendor")
-            if vendor is None:
-                raise ValueError("missing_gpu_vendor")
-            family = _text(getattr(sku, "family", None), "quota_family")
-            family_remaining = _quota_remaining(usages, {family})
-            if family_remaining is None:
-                raise ValueError("missing_family_quota")
-            regional_remaining = _quota_remaining(usages, set(_REGIONAL_QUOTA_NAMES))
-            if regional_remaining is None:
-                raise ValueError("missing_regional_quota")
-            if family_remaining < vcpus:
-                raise ValueError("insufficient_family_quota")
-            if regional_remaining < vcpus:
-                raise ValueError("insufficient_regional_quota")
-            available_hosts = min(
-                family_remaining // vcpus,
-                regional_remaining // vcpus,
-                _MAX_HOSTS,
-                _MAX_DEVICES // gpu_count,
-            )
-            if available_hosts <= 0:
-                raise ValueError("insufficient_quota")
             scope = AzureAvailabilityScope(
                 location=region,
-                resource_sku=arm_sku_name,
+                resource_sku=facts.arm_sku_name,
                 runtime_version_digest=runtime_version_digest,
                 topology_digest=topology_digest,
             )
@@ -662,79 +835,27 @@ class AzureGpuVmInventory:
             try:
                 meter = self._pricing.resolve_virtual_machine_arm_sku_meter(
                     region=region,
-                    arm_sku_name=arm_sku_name,
+                    arm_sku_name=facts.arm_sku_name,
                 )
             except Exception:
                 raise ValueError("price_unavailable") from None
-            if (
-                meter.region != region
-                or meter.sku_name != arm_sku_name
-                or meter.price_type != "Consumption"
-                or meter.unit_of_measure != "1 Hour"
-                or not math.isfinite(meter.retail_price)
-                or meter.retail_price <= 0
-            ):
-                raise ValueError("invalid_price")
-            price_time = _aware_utc(meter.fetched_at, "price_fetched_at")
-            price_age = (now - price_time).total_seconds()
-            if price_age < 0:
-                raise ValueError("invalid_price_timestamp")
-            if price_age > self._max_price_age_seconds:
-                raise ValueError("stale_price")
-            hourly_microusd = round(meter.retail_price * 1_000_000)
-            if not 0 < hourly_microusd <= _MAX_MICROUSD:
-                raise ValueError("invalid_price")
-            interconnect = _capability_value(
-                capabilities, "IntraHostGpuInterconnect"
-            )
-            if interconnect is None:
-                group_size = 1
-            else:
-                group_size = _positive_int_capability(
-                    capabilities,
-                    "invalid_interconnect_group",
-                    "IntraHostGpuInterconnectGroupSize",
-                )
-                if group_size > gpu_count:
-                    raise ValueError("invalid_interconnect_group")
-            available_devices = available_hosts * gpu_count
-            resource = AcceleratorResource(
-                kind=AcceleratorKind.GPU,
-                location=AcceleratorLocation.CLOUD,
-                backend=_text(backend, "gpu_backend"),
-                model=arm_sku_name,
-                vendor=_text(vendor, "gpu_vendor"),
-                resource_key=f"azure:{region}:{arm_sku_name}",
-                total_count=available_devices,
-                available_count=available_devices,
-                memory_gb=gpu_memory_gib,
-                source="azure_compute_resource_skus",
-            )
-            topology = AcceleratorTopology(
-                resource=resource,
-                provider="azure",
+            hourly_microusd, price_time = _validated_hourly_price(
+                meter,
                 region=region,
-                zone=zones[0] if len(zones) == 1 else None,
-                host_count=available_hosts,
-                devices_per_host=gpu_count,
-                max_devices_per_workload=gpu_count,
-                intra_host_interconnect=interconnect,
-                intra_host_interconnect_group_size=group_size,
-                cross_host_interconnect=None,
-                partitioning=PartitioningMode.WHOLE_DEVICE,
-                memory_isolated=True,
-                cost=AcceleratorCost(hourly_microusd, gpu_count),
-                facts_attested=True,
+                arm_sku_name=facts.arm_sku_name,
+                now=now,
+                max_age_seconds=self._max_price_age_seconds,
             )
+            topology = _gpu_topology(facts, region, hourly_microusd)
             return (
                 AzureGpuVmCandidate(
-                    arm_sku_name=arm_sku_name,
+                    arm_sku_name=facts.arm_sku_name,
                     region=region,
-                    zones=zones,
-                    quota_family=family,
-                    family_quota_remaining=family_remaining,
-                    regional_quota_remaining=regional_remaining,
-                    available_hosts=available_hosts,
+                    zones=facts.zones,
+                    quota_family=facts.family,
+                    family_quota_remaining=facts.family_remaining,
+                    regional_quota_remaining=facts.regional_remaining,
+                    available_hosts=facts.available_hosts,
                     price_meter_id=meter.meter_id,
                     price_fetched_at=price_time,
                     observed_at=now,
@@ -745,33 +866,7 @@ class AzureGpuVmInventory:
             )
         except ValueError as exc:
             reason = str(exc)
-            allowed = {
-                "capacity_unavailable",
-                "duplicate_capability",
-                "insufficient_family_quota",
-                "insufficient_quota",
-                "insufficient_regional_quota",
-                "invalid_capacity_timestamp",
-                "invalid_gpu_count",
-                "invalid_gpu_memory",
-                "invalid_interconnect_group",
-                "invalid_price",
-                "invalid_price_timestamp",
-                "invalid_vcpu_count",
-                "location_restricted",
-                "missing_capacity_evidence",
-                "missing_family_quota",
-                "missing_gpu_backend",
-                "missing_gpu_vendor",
-                "missing_regional_quota",
-                "not_virtual_machine",
-                "price_unavailable",
-                "region_not_offered",
-                "stale_capacity_evidence",
-                "stale_price",
-                "zones_restricted",
-            }
-            return None, reason if reason in allowed else "invalid_sku_evidence"
+            return None, reason if reason in _CANDIDATE_REASONS else "invalid_sku_evidence"
 
 
 @dataclass(frozen=True, slots=True)
@@ -990,6 +1085,135 @@ def _feasible_rank(candidate: _FeasibleOption) -> tuple[object, ...]:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _StrategyInputs:
+    work_units: float
+    now: datetime
+    price_horizon: float
+    capacity_horizon: float
+    infrastructure_horizon: float
+
+
+def _validated_strategy_inputs(
+    *,
+    demand: object,
+    options: object,
+    constraints: object,
+    work_units: object,
+    now: object,
+    max_price_age_seconds: object,
+    max_capacity_age_seconds: object,
+    max_infrastructure_age_seconds: object,
+    trace_sink: object,
+) -> _StrategyInputs:
+    if not isinstance(demand, ModelRunnerDemand):
+        raise ValueError("demand must be ModelRunnerDemand")
+    if not isinstance(options, tuple) or any(
+        not isinstance(option, AzureExecutionOption) for option in options
+    ):
+        raise ValueError("options must be an AzureExecutionOption tuple")
+    if not isinstance(constraints, TopologyConstraints):
+        raise ValueError("constraints must be TopologyConstraints")
+    checked_work = _finite_nonnegative(work_units, "work_units")
+    if checked_work == 0:
+        raise ValueError("work_units must be positive")
+    if not isinstance(now, datetime):
+        raise ValueError("now must be timezone-aware")
+    checked_now = _aware_utc(now, "now")
+    horizons = (
+        _finite_nonnegative(max_price_age_seconds, "max_price_age_seconds"),
+        _finite_nonnegative(max_capacity_age_seconds, "max_capacity_age_seconds"),
+        _finite_nonnegative(
+            max_infrastructure_age_seconds,
+            "max_infrastructure_age_seconds",
+        ),
+    )
+    if 0 in horizons:
+        raise ValueError("evidence horizons must be positive")
+    if trace_sink is not None and not callable(trace_sink):
+        raise ValueError("trace_sink must be callable")
+    return _StrategyInputs(checked_work, checked_now, *horizons)
+
+
+def _evaluate_strategy_options(
+    *,
+    demand: ModelRunnerDemand,
+    options: tuple[AzureExecutionOption, ...],
+    constraints: TopologyConstraints,
+    inputs: _StrategyInputs,
+    sink: Callable[[AzureStrategyTrace], None],
+) -> tuple[list[_FeasibleOption], set[str], int]:
+    feasible: list[_FeasibleOption] = []
+    all_reasons: set[str] = set()
+    rejected = 0
+    for option in options:
+        candidate, reasons = _feasible_option(
+            option=option,
+            demand=demand,
+            constraints=constraints,
+            work_units=inputs.work_units,
+            now=inputs.now,
+            max_price_age_seconds=inputs.price_horizon,
+            max_capacity_age_seconds=inputs.capacity_horizon,
+            max_infrastructure_age_seconds=inputs.infrastructure_horizon,
+        )
+        if candidate is not None:
+            feasible.append(candidate)
+            continue
+        rejected += 1
+        all_reasons.update(reasons)
+        sink(
+            AzureStrategyTrace(
+                AzureStrategyEvent.STRATEGY_OPTION_REJECTED,
+                len(options),
+                accepted_count=len(feasible),
+                rejected_count=rejected,
+                reason_code=min(reasons or {"option_ineligible"}),
+                strategy=option.strategy,
+            )
+        )
+    return feasible, all_reasons, rejected
+
+
+def _preferred_strategy(
+    feasible: list[_FeasibleOption],
+    reasons: set[str],
+) -> tuple[_FeasibleOption | None, str]:
+    single_vms = sorted(
+        (
+            candidate
+            for candidate in feasible
+            if candidate.option.strategy is AzureExecutionStrategy.SINGLE_VM
+        ),
+        key=_feasible_rank,
+    )
+    container_apps = sorted(
+        (
+            candidate
+            for candidate in feasible
+            if candidate.option.strategy is AzureExecutionStrategy.CONTAINER_APPS
+        ),
+        key=_feasible_rank,
+    )
+    if not single_vms:
+        if container_apps:
+            reasons.add("container_apps_requires_vm_comparator")
+        return None, ""
+    selected = single_vms[0]
+    if not container_apps:
+        return selected, "single_vm_safe_default"
+    container = container_apps[0]
+    cost_wins = container.projected_cost_microusd <= selected.projected_cost_microusd
+    time_wins = container.completion_seconds <= selected.completion_seconds
+    strict_win = (
+        container.projected_cost_microusd < selected.projected_cost_microusd
+        or container.completion_seconds < selected.completion_seconds
+    )
+    if cost_wins and time_wins and strict_win:
+        return container, "container_apps_measured_win"
+    return selected, "single_vm_safe_default"
+
+
 def select_azure_execution_strategy(
     *,
     demand: ModelRunnerDemand,
@@ -1009,104 +1233,27 @@ def select_azure_execution_strategy(
     influence the eligible set, and its numerical score is never used as model
     quality or as a ranking feature.
     """
-    if not isinstance(demand, ModelRunnerDemand):
-        raise ValueError("demand must be ModelRunnerDemand")
-    if not isinstance(options, tuple) or any(
-        not isinstance(option, AzureExecutionOption) for option in options
-    ):
-        raise ValueError("options must be an AzureExecutionOption tuple")
-    if not isinstance(constraints, TopologyConstraints):
-        raise ValueError("constraints must be TopologyConstraints")
-    checked_work = _finite_nonnegative(work_units, "work_units")
-    if checked_work == 0:
-        raise ValueError("work_units must be positive")
-    checked_now = _aware_utc(now, "now")
-    price_horizon = _finite_nonnegative(
-        max_price_age_seconds, "max_price_age_seconds"
+    inputs = _validated_strategy_inputs(
+        demand=demand,
+        options=options,
+        constraints=constraints,
+        work_units=work_units,
+        now=now,
+        max_price_age_seconds=max_price_age_seconds,
+        max_capacity_age_seconds=max_capacity_age_seconds,
+        max_infrastructure_age_seconds=max_infrastructure_age_seconds,
+        trace_sink=trace_sink,
     )
-    capacity_horizon = _finite_nonnegative(
-        max_capacity_age_seconds, "max_capacity_age_seconds"
-    )
-    infrastructure_horizon = _finite_nonnegative(
-        max_infrastructure_age_seconds, "max_infrastructure_age_seconds"
-    )
-    if (
-        price_horizon == 0
-        or capacity_horizon == 0
-        or infrastructure_horizon == 0
-    ):
-        raise ValueError("evidence horizons must be positive")
-    if trace_sink is not None and not callable(trace_sink):
-        raise ValueError("trace_sink must be callable")
     sink = trace_sink or (lambda _trace: None)
     sink(AzureStrategyTrace(AzureStrategyEvent.STRATEGY_STARTED, len(options)))
-    feasible: list[_FeasibleOption] = []
-    all_reasons: set[str] = set()
-    rejected = 0
-    for option in options:
-        candidate, reasons = _feasible_option(
-            option=option,
-            demand=demand,
-            constraints=constraints,
-            work_units=checked_work,
-            now=checked_now,
-            max_price_age_seconds=price_horizon,
-            max_capacity_age_seconds=capacity_horizon,
-            max_infrastructure_age_seconds=infrastructure_horizon,
-        )
-        if candidate is not None:
-            feasible.append(candidate)
-            continue
-        rejected += 1
-        all_reasons.update(reasons)
-        sink(
-            AzureStrategyTrace(
-                AzureStrategyEvent.STRATEGY_OPTION_REJECTED,
-                len(options),
-                accepted_count=len(feasible),
-                rejected_count=rejected,
-                reason_code=min(reasons or {"option_ineligible"}),
-                strategy=option.strategy,
-            )
-        )
-    single_vms = sorted(
-        (
-            candidate
-            for candidate in feasible
-            if candidate.option.strategy is AzureExecutionStrategy.SINGLE_VM
-        ),
-        key=_feasible_rank,
+    feasible, all_reasons, rejected = _evaluate_strategy_options(
+        demand=demand,
+        options=options,
+        constraints=constraints,
+        inputs=inputs,
+        sink=sink,
     )
-    container_apps = sorted(
-        (
-            candidate
-            for candidate in feasible
-            if candidate.option.strategy is AzureExecutionStrategy.CONTAINER_APPS
-        ),
-        key=_feasible_rank,
-    )
-    selected: _FeasibleOption | None = None
-    reason_code = ""
-    if single_vms:
-        selected = single_vms[0]
-        reason_code = "single_vm_safe_default"
-        if container_apps:
-            container = container_apps[0]
-            cost_wins = (
-                container.projected_cost_microusd
-                <= selected.projected_cost_microusd
-            )
-            time_wins = container.completion_seconds <= selected.completion_seconds
-            strict_win = (
-                container.projected_cost_microusd
-                < selected.projected_cost_microusd
-                or container.completion_seconds < selected.completion_seconds
-            )
-            if cost_wins and time_wins and strict_win:
-                selected = container
-                reason_code = "container_apps_measured_win"
-    elif container_apps:
-        all_reasons.add("container_apps_requires_vm_comparator")
+    selected, reason_code = _preferred_strategy(feasible, all_reasons)
     if selected is None:
         sink(
             AzureStrategyTrace(

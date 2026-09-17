@@ -839,20 +839,14 @@ def _candidate_rank(candidate: _Candidate) -> tuple[object, ...]:
     )
 
 
-def plan_model_runner_topology(
-    *,
-    demand: ModelRunnerDemand,
-    pools: tuple[AcceleratorTopology, ...],
-    runners: tuple[RunnerCapabilities, ...],
-    constraints: TopologyConstraints,
-    trace_sink: Callable[[TopologyTrace], None] | None = None,
-) -> TopologyPlan:
-    """Choose the least-cost right-sized attested topology or fail closed.
-
-    The function is side-effect free except for bounded progress delivery.  A
-    returned plan is desired state only, which lets callers create a replacement,
-    attest it, switch traffic, and then retire the prior deployment (ZDD).
-    """
+def _validate_planning_inputs(
+    demand: object,
+    pools: object,
+    runners: object,
+    constraints: object,
+    trace_sink: object,
+) -> None:
+    """Reject malformed topology-planning inputs before emitting progress."""
     if not isinstance(demand, ModelRunnerDemand):
         raise ValueError("demand must be ModelRunnerDemand")
     if not isinstance(pools, tuple) or any(
@@ -867,6 +861,23 @@ def plan_model_runner_topology(
         raise ValueError("constraints must be TopologyConstraints")
     if trace_sink is not None and not callable(trace_sink):
         raise ValueError("trace_sink must be callable")
+
+
+def plan_model_runner_topology(
+    *,
+    demand: ModelRunnerDemand,
+    pools: tuple[AcceleratorTopology, ...],
+    runners: tuple[RunnerCapabilities, ...],
+    constraints: TopologyConstraints,
+    trace_sink: Callable[[TopologyTrace], None] | None = None,
+) -> TopologyPlan:
+    """Choose the least-cost right-sized attested topology or fail closed.
+
+    The function is side-effect free except for bounded progress delivery.  A
+    returned plan is desired state only, which lets callers create a replacement,
+    attest it, switch traffic, and then retire the prior deployment (ZDD).
+    """
+    _validate_planning_inputs(demand, pools, runners, constraints, trace_sink)
 
     sink = trace_sink or (lambda _trace: None)
     candidate_count = len(pools) * len(runners)
