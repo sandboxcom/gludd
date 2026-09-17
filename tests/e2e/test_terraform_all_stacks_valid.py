@@ -1,4 +1,4 @@
-"""E2E: Validate ALL 18 terraform stacks (9 vllm + 9 llamacpp, incl 2 qemu).
+"""E2E: Validate all 19 Terraform roots (18 model stacks + shared Azure environment).
 
 Iterates every stack under ``infra/terraform/stacks/``, auto-generates
 terraform.tfvars from declared variables, runs ``terraform/opentofu init``
@@ -202,11 +202,11 @@ def _run_infra(
 
 
 class TestStackEnumeration:
-    """Verify the stack directory contains the expected 18 stacks."""
+    """Verify the stack directory contains the expected 19 Terraform roots."""
 
-    def test_exactly_18_stacks(self) -> None:
-        assert len(ALL_STACK_NAMES) == 18, (
-            f"Expected 18 stacks, found {len(ALL_STACK_NAMES)}: {ALL_STACK_NAMES}"
+    def test_exactly_19_stacks(self) -> None:
+        assert len(ALL_STACK_NAMES) == 19, (
+            f"Expected 19 stacks, found {len(ALL_STACK_NAMES)}: {ALL_STACK_NAMES}"
         )
 
     def test_9_vllm_stacks(self) -> None:
@@ -287,7 +287,7 @@ class TestTfvarsGeneration:
 
 @pytest.mark.skipif(_infra_binary() is None, reason="terraform/tofu not on PATH")
 class TestAllStacksInitValidate:
-    """Run init + validate on isolated copies of all 18 stacks.
+    """Run init + validate on isolated copies of all 19 Terraform roots.
 
     Auto.tfvars provides synthetic values for required variables.
     Stacks whose init fails (network, credentials, unsupported provider)
@@ -508,7 +508,17 @@ class TestDeploymentManagerPlan:
             model_name="Qwen/Qwen2.5-0.5B-Instruct",
             region="eastus",
             deploy_type="containerapp",
+            max_cost_usd=1.0,
+            timeout_minutes=15.0,
             allowed_cidr="198.51.100.10/32",
+            container_image=(
+                "ghcr.io/general-ludd/vllm@sha256:" + "b" * 64
+            ),
+            model_revision="a" * 40,
+            azure_subscription_id="11111111-2222-3333-4444-555555555555",
+            azure_resource_group="gludd-models-test",
+            azure_containerapp_environment="gludd-models-env",
+            azure_workload_profile_name="gpu-a100",
         )
         dm = DeploymentManager(working_dir=str(tmp_path), binary_paths=self._resolver)
 
