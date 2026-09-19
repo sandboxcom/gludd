@@ -293,11 +293,6 @@ def worktree_cleanup(
     except ValueError as exc:
         return {"success": False, "branch": branch, "branch_removed": False, "cleaned": False, "error": str(exc)}
 
-    root = (
-        project_state(project_root=repo_path).directory("worktrees")
-        if worktree_root is None
-        else secure_directory(worktree_root)
-    )
     branch_path = Path(branch)
     if branch_path.is_absolute() or ".." in branch_path.parts:
         return {
@@ -307,6 +302,11 @@ def worktree_cleanup(
             "cleaned": False,
             "error": f"refusing branch path that escapes worktree root: {branch!r}",
         }
+    root = (
+        project_state(project_root=repo_path).directory("worktrees")
+        if worktree_root is None
+        else secure_directory(worktree_root)
+    )
     worktree_path = str(root.joinpath(*branch_path.parts))
     cleaned = False
 
