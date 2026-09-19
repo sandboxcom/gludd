@@ -76,6 +76,32 @@ or over-replica evidence yields a stable refusal instead of silently reducing
 the requested task. This same path applies to chemistry, firmware, games,
 self-improvement, and every other task collection.
 
+## Universal model service selection
+
+`general_ludd.hardware.model_service_selection` joins demand derivation to
+topology planning without moving either concern into a task-specific subsystem.
+It evaluates every immutable model-variant and runner-sizing pair, requires a
+unique matching runner-capability identity, and asks the topology planner for
+the best feasible accelerator placement. The resulting
+`ModelServiceSelection` records both the fully derived demand and the exact
+desired topology.
+
+Selection orders candidates by hourly cost, total device count, highest quality
+at an otherwise equal cost, and stable evidence identities. Quantization is
+therefore selected from measured artifact evidence rather than a GPU-name
+lookup. A smaller quantization wins only when it still satisfies the caller's
+quality, context, output, latency, and runner requirements and produces the
+least-cost feasible topology. There is no hidden quality, context, output, or
+availability downgrade.
+
+Empty, oversized, or duplicate inventories fail closed. Missing runner
+capabilities, demand-derivation refusals, and topology-planning refusals are
+returned as bounded stable reason codes; the selector never substitutes an
+unattested runner or accelerator. The same selector covers GPU, TPU,
+runner-managed, and opaque future-accelerator resources, so chemistry design,
+firmware generation, game generation, self-improvement, and other task graphs
+all consume one model-service path.
+
 ## Right-sizing rules
 
 Required replicated memory is calculated as:
@@ -208,7 +234,10 @@ Azure or other cloud credentials. It exercises one-device Container Apps
 placement, multi-GPU VM tensor parallelism, Slurm multi-host pipeline parallelism,
 TPU and Ollama-style runner-managed distribution, an opaque future FPGA kind,
 partitions, sharing, indivisible billing, deterministic choice, safe traces, and
-all fail-closed branches.
+all fail-closed branches. The focused model-service selection suite additionally
+proves least-cost sufficient quantization, stable quality tie-breaking, matching
+runner evidence, future-accelerator routing, immutable serialization, bounded
+inventories, and preservation of every refusal reason at 100% branch coverage.
 
 Provider integration tests are a separate layer. They must use credentials from
 the CI secret store or workload identity, create uniquely leased resources within
