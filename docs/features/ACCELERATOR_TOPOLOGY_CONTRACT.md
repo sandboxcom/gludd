@@ -102,6 +102,45 @@ runner-managed, and opaque future-accelerator resources, so chemistry design,
 firmware generation, game generation, self-improvement, and other task graphs
 all consume one model-service path.
 
+## Runner launch rendering
+
+`general_ludd.hardware.model_runner_launch` turns the selected service into a
+tokenized command, environment, request options, replica count, and devices per
+replica. It never constructs a shell string, chooses credentials, or invents a
+device-visibility mechanism. The provider lifecycle adapter owns allocation and
+visibility because CUDA, ROCm, Apple, TPU, Slurm, and future runtimes expose
+devices differently.
+
+Every `RunnerLaunchProfile` binds selected values to positional arguments,
+named arguments, environment variables, or request options. Profiles are
+immutable, versioned by `source_revision`, and must be explicitly attested for
+the exact installed runner. Binding names are unique and validated. A profile
+with a different runner identity or distribution mode, an unavailable selected
+value, mutable input, or missing attestation is rejected before a process can
+start. Custom profiles use the same bindings, allowing an unknown compatible
+runner to consume model, architecture, quantization, context, output, batch,
+device-count, parallelism, and device-kind values without adding a core branch.
+
+The built-in profiles encode only currently documented controls:
+
+- vLLM receives the selected model positionally plus `--max-model-len`,
+  `--max-num-seqs`, `--tensor-parallel-size`, and
+  `--pipeline-parallel-size`; the output budget is an OpenAI-compatible
+  `max_tokens` request option.
+- llama.cpp receives `--model`, `--ctx-size`, `--parallel`, and `--n-predict`,
+  with all model layers selected for runner-managed layer splitting. The
+  provider adapter limits the visible devices to the planned count.
+- Ollama receives `OLLAMA_CONTEXT_LENGTH` and `OLLAMA_NUM_PARALLEL` at server
+  launch plus explicit `model`, `num_ctx`, and `num_predict` request options.
+  Multi-device placement remains runner-managed and must be verified after
+  model load.
+
+The planner's data-parallel replicas are independent replacement units, so the
+launch plan records `replica_count` instead of silently passing a second
+data-parallel dimension into one runner process. A lifecycle controller can
+create those replicas as a new generation, prove each one, shift traffic, and
+retain the prior generation for rollback.
+
 ## Right-sizing rules
 
 Required replicated memory is calculated as:
@@ -238,6 +277,9 @@ all fail-closed branches. The focused model-service selection suite additionally
 proves least-cost sufficient quantization, stable quality tie-breaking, matching
 runner evidence, future-accelerator routing, immutable serialization, bounded
 inventories, and preservation of every refusal reason at 100% branch coverage.
+The focused launch-rendering suite covers vLLM, llama.cpp, Ollama, a declarative
+future runner, all output channels, immutable serialization, and every
+fail-closed validation branch at 100% branch coverage.
 
 Provider integration tests are a separate layer. They must use credentials from
 the CI secret store or workload identity, create uniquely leased resources within
@@ -268,9 +310,21 @@ live provider and runner version because service limits change.
 - [vLLM data-parallel deployment](https://docs.vllm.ai/en/stable/serving/data_parallel_deployment/)
   shows that data- and tensor-parallel dimensions multiply the required device
   count and describes per-rank concurrency.
+- [vLLM serve CLI](https://docs.vllm.ai/en/stable/cli/serve/)
+  documents the context, sequence, tensor-parallel, and pipeline-parallel
+  arguments emitted by the attested vLLM launch profile.
+- [llama.cpp server README](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)
+  documents model, context, output, parallel-slot, GPU-layer, and split-mode
+  arguments; installed-version attestation is still required because `master`
+  changes over time.
 - [Ollama FAQ](https://docs.ollama.com/faq)
   documents runner-managed spreading when a model does not fit on one GPU and
-  memory-dependent concurrent model loading.
+  memory-dependent concurrent model loading, server context and parallelism
+  variables, and the multiplicative memory effect of parallel contexts.
+- [Ollama generate API](https://docs.ollama.com/api/generate)
+  and [context-length guide](https://docs.ollama.com/context-length) document
+  request options and the need to verify context allocation and device
+  offloading after load.
 - [Google Cloud TPU system architecture](https://docs.cloud.google.com/tpu/docs/system-architecture-tpu-vm)
   describes version-specific chip slices, two- and three-dimensional topologies,
   and single- and multi-host TPU VM arrangements.
