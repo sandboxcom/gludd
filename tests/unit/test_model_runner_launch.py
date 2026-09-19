@@ -36,6 +36,7 @@ def test_focused_coverage_profile_measures_launch_contract() -> None:
     profile = Path("config/coverage_model_runner_launch.ini").read_text()
 
     assert "*/src/general_ludd/hardware/model_runner_launch.py" in profile
+    assert "*/src/general_ludd/hardware/model_runner_launch_contracts.py" in profile
 
 
 def _selection(

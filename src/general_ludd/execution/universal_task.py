@@ -1,9 +1,4 @@
-"""Provider-neutral execution for capability adapters.
-
-The core selects an evidenced target, admits the work through the shared
-scheduler, invokes an injected model gateway, and accepts a result only after
-the capability adapter returns a structured, gated assessment.
-"""
+"""Provider-neutral routing, scheduling, invocation, and result gating."""
 
 from __future__ import annotations
 
@@ -114,11 +109,7 @@ class UniversalTaskExecutor:
             eligible,
             key=lambda target: (target.estimated_cost_usd, target.profile_id),
         )
-        return RouteDecision(
-            selected.profile_id,
-            selected.provider,
-            tuple(evaluations),
-        )
+        return RouteDecision(selected.profile_id, selected.provider, tuple(evaluations))
 
     def execute(
         self,
@@ -371,18 +362,9 @@ class UniversalTaskExecutor:
 
 
 __all__ = [
-    "AdapterDecision",
-    "CandidateAssessment",
-    "ExecutionTarget",
-    "ModelResponseProtocol",
-    "ModelServicePlanProtocol",
-    "ModelServicePlannerProtocol",
-    "RouteDecision",
-    "TargetEvaluation",
-    "TaskAdapterProtocol",
-    "TaskStatus",
-    "ToolRunnerProtocol",
-    "UniversalTaskExecutor",
-    "UniversalTaskRequest",
+    "AdapterDecision", "CandidateAssessment", "ExecutionTarget",
+    "ModelResponseProtocol", "ModelServicePlanProtocol", "ModelServicePlannerProtocol",
+    "RouteDecision", "TargetEvaluation", "TaskAdapterProtocol", "TaskStatus",
+    "ToolRunnerProtocol", "UniversalTaskExecutor", "UniversalTaskRequest",
     "UniversalTaskResult",
 ]
