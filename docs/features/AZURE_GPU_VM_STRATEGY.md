@@ -141,23 +141,31 @@ The credential-free unit and integration suites use SDK-shaped fakes and an
 arbitrary future SKU. They prove restriction and zone normalization, both quota
 tiers, exact-price freshness, capacity freshness, content-free traces, hard-policy
 precedence, single-GPU Container Apps wins, host-local multi-GPU VM selection, and
-VMSS deferral. The same tests run locally and in ordinary GitHub Actions without an
-Azure secret; a later opt-in protected workflow can supply live read-only evidence.
+VMSS lifecycle admission. A VMSS option is refused until provisioning, bootstrap,
+replica, HA, RDMA topology, rich health, telemetry, work-dispatch, and teardown
+evidence are all independently attested. If one VM remains feasible, VMSS must
+Pareto-win on measured projected cost and completion time; if only VMSS satisfies
+the topology, the fully attested option can run directly. The same tests run
+locally and in ordinary GitHub Actions without an Azure secret; an opt-in protected
+workflow supplies live read-only evidence.
 
 ## ZDD and rollback
 
 Discovery and selection are side-effect free, so failure leaves the serving path
-unchanged. A later provisioning tranche must create a uniquely owned replacement,
-attest driver/runtime/topology and health, register it without traffic, switch
-traffic only after readiness, drain the prior worker, and then destroy only the
-prior owned resources. Allocation, attestation, price, policy, or routing failure
-must destroy the replacement and retain the old endpoint.
+unchanged. The separate `azure-gpu-vmss-worker` OpenTofu module creates a uniquely
+owned private Uniform scale set with explicit NAT egress, surge rolling upgrades,
+rich application health, automatic repair, and an exact-scope deployment role.
+Gludd's Ansible phase must attest driver/runtime/topology and health, register the
+replacement without traffic, switch traffic only after readiness, drain the prior
+worker, and then destroy only prior owned resources. Allocation, attestation,
+price, policy, or routing failure destroys the replacement and retains the old
+endpoint.
 
-Rollback is immediate and non-destructive: remove the new strategy option or stop
-supplying fresh exact-scope evidence. The next selection refuses it; no Azure
-resource is changed by this module. Expired capacity or price evidence has the same
-effect. VMSS stays unreachable until a later tested tranche explicitly consumes
-all three attestations.
+Rollback is immediate and non-destructive at selection time: remove the new
+strategy option or stop supplying fresh exact-scope evidence. The next selection
+refuses it; no Azure resource is changed by this module. Expired capacity or price
+evidence has the same effect. The lifecycle supervisor separately drains and
+destroys only lease-tagged VMSS resources, then requires final Azure absence.
 
 ## Source evidence and operator reports
 

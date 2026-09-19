@@ -991,6 +991,20 @@ def _constraints(max_cost: int = 100_000_000) -> TopologyConstraints:
     )
 
 
+def _complete_vmss_evidence() -> AzureVmssEvidence:
+    return AzureVmssEvidence(
+        replica_semantics_attested=True,
+        high_availability_attested=True,
+        rdma_topology_attested=True,
+        provisioning_contract_attested=True,
+        bootstrap_attested=True,
+        application_health_attested=True,
+        telemetry_attested=True,
+        work_dispatch_attested=True,
+        teardown_attested=True,
+    )
+
+
 def test_container_apps_requires_attested_single_gpu_pareto_win() -> None:
     container = _option(
         AzureExecutionStrategy.CONTAINER_APPS,
@@ -1197,17 +1211,13 @@ def test_budget_remains_a_hard_gate() -> None:
     assert "hourly_budget_exceeded" in exc_info.value.reason_codes
 
 
-def test_vmss_is_deferred_until_all_replica_ha_and_rdma_evidence() -> None:
+def test_vmss_requires_every_lifecycle_attestation() -> None:
     incomplete = AzureVmssEvidence(
         replica_semantics_attested=True,
         high_availability_attested=False,
         rdma_topology_attested=True,
     )
-    complete = AzureVmssEvidence(
-        replica_semantics_attested=True,
-        high_availability_attested=True,
-        rdma_topology_attested=True,
-    )
+    complete = _complete_vmss_evidence()
     assert incomplete.eligible is False
     assert complete.eligible is True
 
@@ -1402,23 +1412,51 @@ def test_container_apps_rejects_non_single_whole_gpu_topology() -> None:
     assert "container_apps_not_single_whole_gpu" in exc_info.value.reason_codes
 
 
-def test_vmss_with_complete_evidence_remains_deferred_in_tranche_one() -> None:
+def test_vmss_with_complete_evidence_is_a_real_execution_strategy() -> None:
     vmss = _option(
         AzureExecutionStrategy.VMSS,
         topology=_topology(key="vmss", devices=1, hourly_microusd=1),
         startup=1,
         throughput=100,
-        vmss_evidence=AzureVmssEvidence(True, True, True),
+        vmss_evidence=_complete_vmss_evidence(),
     )
-    with pytest.raises(AzureStrategySelectionError) as exc_info:
-        select_azure_execution_strategy(
-            demand=_demand(),
-            options=(vmss,),
-            constraints=_constraints(),
-            work_units=1,
-            now=_NOW,
-        )
-    assert exc_info.value.reason_codes == ("vmss_tranche_deferred",)
+    decision = select_azure_execution_strategy(
+        demand=_demand(),
+        options=(vmss,),
+        constraints=_constraints(),
+        work_units=1,
+        now=_NOW,
+    )
+
+    assert decision.strategy is AzureExecutionStrategy.VMSS
+    assert decision.reason_code == "vmss_required_topology"
+
+
+def test_vmss_must_pareto_beat_a_feasible_single_vm() -> None:
+    vmss = _option(
+        AzureExecutionStrategy.VMSS,
+        topology=_topology(key="vmss", devices=1, hourly_microusd=1_000_000),
+        startup=10,
+        throughput=100,
+        vmss_evidence=_complete_vmss_evidence(),
+    )
+    vm = _option(
+        AzureExecutionStrategy.SINGLE_VM,
+        topology=_topology(key="vm", devices=1, hourly_microusd=10_000_000),
+        startup=100,
+        throughput=10,
+    )
+
+    decision = select_azure_execution_strategy(
+        demand=_demand(),
+        options=(vm, vmss),
+        constraints=_constraints(),
+        work_units=10_000,
+        now=_NOW,
+    )
+
+    assert decision.strategy is AzureExecutionStrategy.VMSS
+    assert decision.reason_code == "vmss_measured_win"
 
 
 def test_container_apps_alone_cannot_claim_a_comparative_win() -> None:

@@ -871,11 +871,17 @@ class AzureGpuVmInventory:
 
 @dataclass(frozen=True, slots=True)
 class AzureVmssEvidence:
-    """Independent evidence required before a later VMSS strategy can qualify."""
+    """Independent evidence required before a VMSS strategy can qualify."""
 
     replica_semantics_attested: bool
     high_availability_attested: bool
     rdma_topology_attested: bool
+    provisioning_contract_attested: bool = False
+    bootstrap_attested: bool = False
+    application_health_attested: bool = False
+    telemetry_attested: bool = False
+    work_dispatch_attested: bool = False
+    teardown_attested: bool = False
 
     def __post_init__(self) -> None:
         """Require explicit booleans for every VMSS prerequisite."""
@@ -883,6 +889,12 @@ class AzureVmssEvidence:
             "replica_semantics_attested",
             "high_availability_attested",
             "rdma_topology_attested",
+            "provisioning_contract_attested",
+            "bootstrap_attested",
+            "application_health_attested",
+            "telemetry_attested",
+            "work_dispatch_attested",
+            "teardown_attested",
         ):
             if not isinstance(getattr(self, field_name), bool):
                 raise ValueError(f"{field_name} must be a bool")
@@ -894,6 +906,12 @@ class AzureVmssEvidence:
             self.replica_semantics_attested
             and self.high_availability_attested
             and self.rdma_topology_attested
+            and self.provisioning_contract_attested
+            and self.bootstrap_attested
+            and self.application_health_attested
+            and self.telemetry_attested
+            and self.work_dispatch_attested
+            and self.teardown_attested
         )
 
 
@@ -1017,11 +1035,10 @@ def _option_hard_rejections(
         or option.topology.max_devices_per_workload != 1
     ):
         reasons.add("container_apps_not_single_whole_gpu")
-    if option.strategy is AzureExecutionStrategy.VMSS:
-        if option.vmss_evidence is None or not option.vmss_evidence.eligible:
-            reasons.add("vmss_evidence_missing")
-        else:
-            reasons.add("vmss_tranche_deferred")
+    if option.strategy is AzureExecutionStrategy.VMSS and (
+        option.vmss_evidence is None or not option.vmss_evidence.eligible
+    ):
+        reasons.add("vmss_evidence_missing")
     return reasons
 
 
@@ -1083,6 +1100,19 @@ def _feasible_rank(candidate: _FeasibleOption) -> tuple[object, ...]:
         candidate.plan.total_devices,
         candidate.plan.resource_key,
     )
+
+
+def _measured_pareto_win(
+    challenger: _FeasibleOption,
+    baseline: _FeasibleOption,
+) -> bool:
+    cost_wins = challenger.projected_cost_microusd <= baseline.projected_cost_microusd
+    time_wins = challenger.completion_seconds <= baseline.completion_seconds
+    strict_win = (
+        challenger.projected_cost_microusd < baseline.projected_cost_microusd
+        or challenger.completion_seconds < baseline.completion_seconds
+    )
+    return cost_wins and time_wins and strict_win
 
 
 @dataclass(frozen=True, slots=True)
@@ -1195,23 +1225,35 @@ def _preferred_strategy(
         ),
         key=_feasible_rank,
     )
-    if not single_vms:
+    scale_sets = sorted(
+        (
+            candidate
+            for candidate in feasible
+            if candidate.option.strategy is AzureExecutionStrategy.VMSS
+        ),
+        key=_feasible_rank,
+    )
+
+    selected: _FeasibleOption | None = None
+    reason_code = ""
+    if single_vms:
+        selected = single_vms[0]
+        reason_code = "single_vm_safe_default"
+        if scale_sets and _measured_pareto_win(scale_sets[0], selected):
+            selected = scale_sets[0]
+            reason_code = "vmss_measured_win"
+    elif scale_sets:
+        selected = scale_sets[0]
+        reason_code = "vmss_required_topology"
+
+    if selected is None:
         if container_apps:
             reasons.add("container_apps_requires_vm_comparator")
         return None, ""
-    selected = single_vms[0]
-    if not container_apps:
-        return selected, "single_vm_safe_default"
-    container = container_apps[0]
-    cost_wins = container.projected_cost_microusd <= selected.projected_cost_microusd
-    time_wins = container.completion_seconds <= selected.completion_seconds
-    strict_win = (
-        container.projected_cost_microusd < selected.projected_cost_microusd
-        or container.completion_seconds < selected.completion_seconds
-    )
-    if cost_wins and time_wins and strict_win:
+    if container_apps and _measured_pareto_win(container_apps[0], selected):
+        container = container_apps[0]
         return container, "container_apps_measured_win"
-    return selected, "single_vm_safe_default"
+    return selected, reason_code
 
 
 def select_azure_execution_strategy(
@@ -1226,12 +1268,14 @@ def select_azure_execution_strategy(
     max_infrastructure_age_seconds: float = 3600,
     trace_sink: Callable[[AzureStrategyTrace], None] | None = None,
 ) -> AzureStrategyDecision:
-    """Choose Container Apps only for a measured win, otherwise one VM.
+    """Choose among attested VM, VMSS, and Container Apps execution surfaces.
 
     Availability is an infrastructure admission signal only.  Privacy,
     approval, immutable identity, topology, and budget gates run before it can
     influence the eligible set, and its numerical score is never used as model
-    quality or as a ranking feature.
+    quality or as a ranking feature. VMSS and Container Apps displace a feasible
+    single VM only on measured cost-and-time Pareto evidence; an independently
+    attested VMSS remains valid when it is the only feasible topology.
     """
     inputs = _validated_strategy_inputs(
         demand=demand,
