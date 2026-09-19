@@ -52,6 +52,30 @@ The planner accepts the discovery object through a structural protocol. This
 keeps discovery ownership in S83.159 rather than copying that type into a second
 abstraction.
 
+## Universal demand derivation
+
+`general_ludd.hardware.model_service_rightsizing` supplies the upstream bridge
+from an ordinary task graph to `ModelRunnerDemand`. It is not part of the
+self-improvement subsystem. The bridge consumes three immutable records:
+
+- `ModelVariantEvidence` identifies an exact model variant, architecture,
+  quantization, memory requirements, context ceiling, legal device kinds,
+  legal runner identities, quality evidence, and tensor-sharding divisor.
+- `InferenceWorkloadDemand` states input and output budgets, concurrent
+  sequences, minimum measured quality, maximum p95 latency, and whether an
+  isolated shared accelerator is acceptable.
+- `RunnerSizingEvidence` states an observed runner's per-replica batch,
+  context, output, replica, and p95 latency limits.
+
+The derivation computes full context as input plus output, chooses no larger a
+per-replica batch than either demand or the attested runner limit, and computes
+the minimum replica count with ceiling division. It then produces the exact
+memory and parallelism demand consumed by the topology planner. Unknown,
+unattested, over-context, over-output, under-quality, over-latency, unsupported,
+or over-replica evidence yields a stable refusal instead of silently reducing
+the requested task. This same path applies to chemistry, firmware, games,
+self-improvement, and every other task collection.
+
 ## Right-sizing rules
 
 Required replicated memory is calculated as:
