@@ -17,6 +17,8 @@ from general_ludd.execution.universal_task_types import (
     ExecutionTarget,
     ModelGatewayProtocol,
     ModelResponseProtocol,
+    ModelServicePlannerProtocol,
+    ModelServicePlanProtocol,
     RouteDecision,
     SchedulerProtocol,
     TargetEvaluation,
@@ -40,6 +42,7 @@ class UniversalTaskExecutor:
         accelerator_planner: AcceleratorPlannerProtocol,
         target_source: Callable[[], Sequence[ExecutionTarget]],
         tool_runner: ToolRunnerProtocol | None = None,
+        model_service_planner: ModelServicePlannerProtocol | None = None,
     ) -> None:
         """Bind injected scheduling, routing, model, and tool dependencies."""
         self._gateway = gateway
@@ -47,6 +50,7 @@ class UniversalTaskExecutor:
         self._accelerator_planner = accelerator_planner
         self._target_source = target_source
         self._tool_runner = tool_runner
+        self._model_service_planner = model_service_planner
 
     def route(self, request: UniversalTaskRequest) -> RouteDecision:
         """Select the cheapest eligible target from current evidence."""
@@ -142,7 +146,49 @@ class UniversalTaskExecutor:
 
         target_by_profile = {target.profile_id: target for target in targets}
         target = target_by_profile[route.selected_profile_id]
-        if not self._scheduled(request, target):
+        service_plan: ModelServicePlanProtocol | None = None
+        service_payload: dict[str, object] | None = None
+        if request.model_workload is not None:
+            if self._model_service_planner is None:
+                return self._result(
+                    request,
+                    TaskStatus.REFUSED,
+                    route,
+                    reasons=("model_service_planner_unavailable",),
+                )
+            try:
+                service_plan = self._model_service_planner.plan(request, target)
+            except ValueError as exc:
+                return self._result(
+                    request,
+                    TaskStatus.REFUSED,
+                    route,
+                    reasons=self._model_service_refusal_reasons(exc),
+                )
+            except Exception as exc:
+                return self._result(
+                    request,
+                    TaskStatus.FAILED,
+                    route,
+                    reasons=(f"model_service_planner_failed:{type(exc).__name__}",),
+                )
+            if not self._valid_model_service_plan(service_plan):
+                return self._result(
+                    request,
+                    TaskStatus.REFUSED,
+                    route,
+                    reasons=("invalid_model_service_plan",),
+                )
+            try:
+                service_payload = dict(service_plan.to_dict())
+            except (TypeError, ValueError):
+                return self._result(
+                    request,
+                    TaskStatus.REFUSED,
+                    route,
+                    reasons=("invalid_model_service_plan",),
+                )
+        if not self._scheduled(request, target, service_plan):
             return self._result(
                 request,
                 TaskStatus.FAILED,
@@ -151,7 +197,10 @@ class UniversalTaskExecutor:
             )
 
         preflight = adapter.preflight(request, target)
-        evidence = dict(preflight.evidence)
+        evidence: dict[str, object] = {}
+        if service_payload is not None:
+            evidence["model_service"] = service_payload
+        evidence.update(preflight.evidence)
         if not preflight.accepted:
             return self._result(
                 request,
@@ -160,17 +209,35 @@ class UniversalTaskExecutor:
                 reasons=preflight.reasons,
                 evidence=evidence,
             )
-        return self._invoke_and_assess(request, adapter, target, route, evidence)
+        return self._invoke_and_assess(
+            request,
+            adapter,
+            target,
+            route,
+            evidence,
+            service_payload,
+        )
 
     def _scheduled(
         self,
         request: UniversalTaskRequest,
         target: ExecutionTarget,
+        service_plan: ModelServicePlanProtocol | None,
     ) -> bool:
         """Admit one target-bound task through the shared scheduler."""
+        resources = request.resources | frozenset(
+            {f"accelerator:{target.accelerator_sku}"}
+        )
+        if service_plan is not None:
+            resources |= frozenset(
+                {
+                    f"accelerator-resource:{service_plan.resource_key}",
+                    f"model-runner:{service_plan.runner_id}",
+                }
+            )
         item = WorkItem(
             id=request.task_id,
-            resources=request.resources | frozenset({f"accelerator:{target.accelerator_sku}"}),
+            resources=resources,
         )
         batches = self._scheduler.plan([item])
         return bool(batches and request.task_id in batches[0])
@@ -182,14 +249,20 @@ class UniversalTaskExecutor:
         target: ExecutionTarget,
         route: RouteDecision,
         evidence: dict[str, object],
+        service_payload: dict[str, object] | None,
     ) -> UniversalTaskResult:
         """Invoke the selected model and accept only a validated candidate."""
         try:
+            call_options: dict[str, object] = {
+                "estimated_cost": target.estimated_cost_usd,
+                "budget_remaining": request.budget_usd,
+            }
+            if service_payload is not None:
+                call_options["model_service_plan"] = service_payload
             response = self._gateway.call_model(
                 target.profile_id,
                 adapter.build_messages(request, target),
-                estimated_cost=target.estimated_cost_usd,
-                budget_remaining=request.budget_usd,
+                **call_options,
             )
         except Exception as exc:
             return self._result(
@@ -253,6 +326,31 @@ class UniversalTaskExecutor:
         )
 
     @staticmethod
+    def _valid_model_service_plan(plan: object) -> bool:
+        """Validate structural desired state before scheduling or invocation."""
+        if not isinstance(plan, ModelServicePlanProtocol):
+            return False
+        if not plan.resource_key or not plan.runner_id:
+            return False
+        for value in (plan.replica_count, plan.devices_per_replica):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                return False
+        return True
+
+    @staticmethod
+    def _model_service_refusal_reasons(error: ValueError) -> tuple[str, ...]:
+        """Normalize typed planner reasons without exposing exception content."""
+        raw_reasons = getattr(error, "reason_codes", ())
+        if not isinstance(raw_reasons, tuple):
+            raw_reasons = ()
+        safe = tuple(
+            f"model_service:{reason}"
+            for reason in raw_reasons
+            if isinstance(reason, str) and reason and len(reason) <= 128
+        )
+        return safe or ("model_service_plan_refused",)
+
+    @staticmethod
     def _result(
         request: UniversalTaskRequest,
         status: TaskStatus,
@@ -277,6 +375,8 @@ __all__ = [
     "CandidateAssessment",
     "ExecutionTarget",
     "ModelResponseProtocol",
+    "ModelServicePlanProtocol",
+    "ModelServicePlannerProtocol",
     "RouteDecision",
     "TargetEvaluation",
     "TaskAdapterProtocol",

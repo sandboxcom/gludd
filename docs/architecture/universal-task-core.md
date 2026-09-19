@@ -41,6 +41,23 @@ order to register it. They must pass only core-owned protocols or callables into
 the runtime. This is a composition-root exception, not permission to place
 generic behavior in the capability.
 
+Model-service planning follows that same boundary. A universal task can attach
+typed workload demand, and an execution target can name an attested runner. The
+core-owned `ModelServicePlannerProtocol` returns credential-free selection and
+launch desired state. The executor validates that state, reserves both the
+selected resource and runner through the shared scheduler, and supplies the
+same serialized plan to the model gateway and result evidence. Capability
+adapters do not choose provider SKUs, quantization flags, or runner-specific
+parallelism.
+
+The concrete core bridge in `execution.model_service_planner` consumes an
+immutable evidence snapshot and composes the provider-neutral hardware
+selection and launch-rendering contracts. Its acceptance matrix runs chemistry,
+embedded firmware, and self-improvement capability names through the identical
+executor path. A typed workload fails closed when the bridge is absent or when
+selection, topology, or launch evidence is insufficient. Legacy tasks without a
+typed workload retain their existing gateway path during migration.
+
 ## Layer ownership
 
 The following remains owned by `self_improve` because it expresses that
@@ -57,6 +74,8 @@ or importing self-improvement:
 
 - provider discovery, health, credentials, and invocation;
 - model inventory, lifecycle, selection, scoring, and fallback;
+- model workload sizing, accelerator topology selection, and runner launch
+  desired state;
 - task classification, capability matching, and resource routing;
 - scheduling, leases, retries, cancellation, and concurrency limits;
 - candidate execution, calibration, artifacts, evidence, and result storage;

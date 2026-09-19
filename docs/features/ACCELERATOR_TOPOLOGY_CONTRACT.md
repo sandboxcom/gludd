@@ -141,6 +141,31 @@ data-parallel dimension into one runner process. A lifecycle controller can
 create those replicas as a new generation, prove each one, shift traffic, and
 retain the prior generation for rollback.
 
+## Universal task-graph wiring
+
+`general_ludd.execution.model_service_planner` is the bridge into Gludd's
+existing universal task executor. A `UniversalTaskRequest` may carry a typed
+`InferenceWorkloadDemand`; an `ExecutionTarget` names the attested runner
+identity. The bridge takes one caller-owned immutable evidence snapshot,
+filters it to the routed provider and runner, selects the model service, and
+renders its launch state. It returns both records as one
+`UniversalModelServicePlan`.
+
+The executor refuses a typed workload when no planner is installed, preserves
+bounded selection and launch refusal codes, and validates the structural plan
+before scheduling. Scheduling reserves the routed accelerator class, exact
+selected resource, and runner identity. The same credential-free plan is then
+included in gateway invocation options and result evidence, preventing the
+scheduler, deployer, and auditor from acting on different inferred settings.
+Tasks without typed workload demand continue through the existing gateway path.
+
+This is a core execution extension point. Chemistry, firmware, and
+self-improvement acceptance cases use the same planner protocol and executor;
+no universal execution or hardware module imports `self_improve`. Capability
+adapters continue to own prompts, candidate parsing, tools, validation, and
+domain policy, while model sizing and accelerator placement remain shared
+services.
+
 ## Right-sizing rules
 
 Required replicated memory is calculated as:
@@ -279,7 +304,11 @@ runner evidence, future-accelerator routing, immutable serialization, bounded
 inventories, and preservation of every refusal reason at 100% branch coverage.
 The focused launch-rendering suite covers vLLM, llama.cpp, Ollama, a declarative
 future runner, all output channels, immutable serialization, and every
-fail-closed validation branch at 100% branch coverage.
+fail-closed validation branch at 100% branch coverage. The universal bridge
+suite proves task-to-selection-to-launch composition, provider and runner
+filtering, immutable snapshots, and all refusal branches at 100% branch
+coverage; the combined executor, chemistry, firmware, and boundary replay runs
+85 warning-strict cases, with the executor at 100% branch coverage.
 
 Provider integration tests are a separate layer. They must use credentials from
 the CI secret store or workload identity, create uniquely leased resources within

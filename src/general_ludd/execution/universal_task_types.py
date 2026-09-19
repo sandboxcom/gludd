@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
+from general_ludd.hardware.model_service_rightsizing import InferenceWorkloadDemand
 from general_ludd.scheduling.scheduler import WorkItem
 
 
@@ -84,6 +85,7 @@ class UniversalTaskRequest:
     allowed_tools: frozenset[str] = field(default_factory=frozenset)
     resources: frozenset[str] = field(default_factory=frozenset)
     metadata: Mapping[str, object] = field(default_factory=dict)
+    model_workload: InferenceWorkloadDemand | None = None
 
     def __post_init__(self) -> None:
         """Reject incomplete identities and unusable budget constraints."""
@@ -92,6 +94,11 @@ class UniversalTaskRequest:
                 raise ValueError(f"{name} must be non-empty")
         if not math.isfinite(self.budget_usd) or self.budget_usd < 0:
             raise ValueError("budget_usd must be finite and non-negative")
+        if self.model_workload is not None and not isinstance(
+            self.model_workload,
+            InferenceWorkloadDemand,
+        ):
+            raise ValueError("model_workload must be InferenceWorkloadDemand")
 
 
 @dataclass(frozen=True)
@@ -110,6 +117,7 @@ class ExecutionTarget:
     cost_evidence: str
     privacy_evidence: str
     offline: bool
+    model_runner_id: str | None = None
 
     def __post_init__(self) -> None:
         """Require complete routing evidence and a finite cost claim."""
@@ -130,6 +138,38 @@ class ExecutionTarget:
             raise ValueError("allowed_data_classifications must be non-empty")
         if not math.isfinite(self.estimated_cost_usd) or self.estimated_cost_usd < 0:
             raise ValueError("estimated_cost_usd must be finite and non-negative")
+        if self.model_runner_id is not None and (
+            not isinstance(self.model_runner_id, str)
+            or not self.model_runner_id.strip()
+        ):
+            raise ValueError("model_runner_id must be non-empty text when provided")
+
+
+@runtime_checkable
+class ModelServicePlanProtocol(Protocol):
+    """Structural desired-state surface consumed by the task graph."""
+
+    resource_key: str
+    runner_id: str
+    replica_count: int
+    devices_per_replica: int
+
+    def to_dict(self) -> Mapping[str, object]:
+        """Return credential-free model-service desired state."""
+        ...
+
+
+@runtime_checkable
+class ModelServicePlannerProtocol(Protocol):
+    """Task-to-model-service planning boundary for any capability."""
+
+    def plan(
+        self,
+        request: UniversalTaskRequest,
+        target: ExecutionTarget,
+    ) -> ModelServicePlanProtocol:
+        """Produce one immutable desired service or raise a typed refusal."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -225,6 +265,8 @@ __all__ = [
     "ExecutionTarget",
     "ModelGatewayProtocol",
     "ModelResponseProtocol",
+    "ModelServicePlanProtocol",
+    "ModelServicePlannerProtocol",
     "RouteDecision",
     "SchedulerProtocol",
     "TargetEvaluation",
