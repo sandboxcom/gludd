@@ -33,14 +33,14 @@ from general_ludd.hardware.accelerator_types import (
     AcceleratorLocation,
     AcceleratorResource,
 )
-from general_ludd.infra.azure_retail_pricing import (
-    AzureContainerAppsRetailPricing,
-    AzureRetailMeter,
-)
-from general_ludd.self_improve.azure_operational_availability import (
+from general_ludd.infra.azure_operational_availability import (
     AzureAvailabilityAssessment,
     AzureAvailabilityIndex,
     AzureAvailabilityScope,
+)
+from general_ludd.infra.azure_retail_pricing import (
+    AzureContainerAppsRetailPricing,
+    AzureRetailMeter,
 )
 
 _MAX_TEXT = 512

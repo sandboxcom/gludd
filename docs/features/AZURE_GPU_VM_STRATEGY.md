@@ -8,6 +8,15 @@ Apps placement and one host-local VM placement. It does not create a resource
 group, VM, scale set, disk, network, quota request, or role assignment. OpenTofu and
 the Ansible worker lifecycle remain the owners of later mutation tranches.
 
+The immutable availability scope, assessment, and index contracts live in
+`general_ludd.infra.azure_operational_availability`. They are infrastructure
+evidence consumed by chemistry, firmware, self-improvement, and any other
+universal workload. The legacy
+`general_ludd.self_improve.azure_operational_availability` module retains the
+self-improvement evidence-store adapter and re-exports the exact contract objects
+for compatibility; generic infrastructure never imports the self-improvement
+package.
+
 The production adapter invokes only these maintained SDK operations:
 
 - `ComputeManagementClient.resource_skus.list()` for subscription-visible offers,
@@ -68,6 +77,57 @@ semantics, high-availability behavior, and RDMA topology must each be independen
 attested before that object becomes eligible; tranche 1 still refuses VMSS
 selection after those flags are present. This prevents replica count from being
 mistaken for host-local model parallelism.
+
+## VMSS implementation constraints
+
+The mutation tranche must choose orchestration mode from measured topology rather
+than a global preference. Microsoft recommends Flexible orchestration for general
+availability, mixed VM types, and ordinary VM APIs, but its orchestration-mode
+matrix says Flexible does not support InfiniBand while Uniform supports it only in
+one placement group. ND multi-host GPU Direct RDMA therefore requires explicit
+Uniform/single-placement-group evidence; ordinary inference replicas should prefer
+Flexible when the selected SKU and network needs allow it. Orchestration mode is
+immutable after creation:
+[VMSS orchestration modes](https://learn.microsoft.com/en-us/azure/virtual-machine-scale-sets/virtual-machine-scale-sets-orchestration-modes),
+[ND family topology](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family),
+and [InfiniBand-enabled N-series guidance](https://learn.microsoft.com/en-us/azure/virtual-machines/overview-hb-hc).
+
+Every scale set must report the runner's local readiness endpoint through Azure's
+Application Health extension before it can receive work. Rolling upgrades and
+automatic instance repairs depend on that signal; ARM provisioning success alone
+is not readiness. Accelerated networking is enabled only when discovered SKU
+capabilities attest it, and Flexible scale sets require explicit outbound
+connectivity:
+[Application Health extension](https://learn.microsoft.com/en-us/azure/virtual-machine-scale-sets/virtual-machine-scale-sets-health-extension),
+[automatic instance repairs](https://learn.microsoft.com/en-us/azure/virtual-machine-scale-sets/virtual-machine-scale-sets-automatic-instance-repairs),
+and [VMSS networking](https://learn.microsoft.com/en-us/azure/virtual-machine-scale-sets/virtual-machine-scale-sets-networking).
+
+Driver installation remains an observable Ansible phase with immutable image,
+vendor, driver, and runtime compatibility evidence. Microsoft's Linux extension
+guidance says installation may reboot the VM, requires outbound access, does not
+automatically update installed drivers, and cannot be used with Secure Boot. Gludd
+must therefore reject an incompatible image/security posture before provisioning
+and independently attest the device after configuration:
+[NVIDIA GPU Driver Extension for Linux](https://learn.microsoft.com/en-us/azure/virtual-machines/extensions/hpccompute-gpu-linux).
+
+Long-lived practitioner reports add two regression cases to that normative model:
+
+- VMSS Custom Script Extension provisioning can remain at `Plugin enabled` until
+  timeout when scripts block, outbound dependencies are unreachable, extension
+  state is stale, scale-out reruns differ, or the GPU driver cannot attach. Gludd
+  therefore bounds bootstrap, records per-instance extension/Ansible phases, and
+  never equates extension installation with runner readiness:
+  [VMSS CSE timeout report](https://learn.microsoft.com/en-us/answers/questions/5692668/how-to-fix-provisioning-of-vm-extension-vmsscse-ha).
+- An NVv4 operator selected the NVIDIA extension for an AMD MI25-backed SKU and
+  repeatedly failed installation. Gludd derives vendor from live SKU evidence and
+  refuses a mismatched driver role before mutation:
+  [NV8as v4 driver mismatch report](https://learn.microsoft.com/en-us/answers/questions/2338751/new-azure-vm-using-standard-nv8as-v4-%288-vcpus-28-g).
+
+Container Apps remains the single-whole-GPU alternative: Microsoft's current
+serverless GPU contract permits neither multi-GPU nor fractional GPU replicas and
+only the first container receives the device. Multi-device model parallelism must
+therefore route to an attested VM or VMSS host topology:
+[Container Apps serverless GPU limits](https://learn.microsoft.com/en-us/azure/container-apps/gpu-serverless-overview).
 
 ## Observability and privacy
 
