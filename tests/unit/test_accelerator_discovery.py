@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
 from general_ludd.hardware.accelerator_discovery import (
+    AcceleratorInventory,
     AcceleratorKind,
     AcceleratorLocation,
     AcceleratorResource,
@@ -34,6 +36,47 @@ def test_discovery_preserves_split_module_public_compatibility() -> None:
     """Existing integrations keep stable imports after internal decomposition."""
     assert AcceleratorKind is SplitAcceleratorKind
     assert parse_slurm_nodes is split_parse_slurm_nodes
+
+
+def test_discovery_coverage_profile_measures_the_split_inventory_contract() -> None:
+    """The focused coverage gate must include the type module it exercises."""
+    profile = Path("config/coverage_accelerator_discovery.ini").read_text()
+
+    assert "*/src/general_ludd/hardware/accelerator_types.py" in profile
+
+
+def test_inventory_preserves_future_accelerator_kind_as_data() -> None:
+    """Unknown hardware kinds remain routable without a central enum change."""
+    resource = AcceleratorResource(
+        kind="fpga",
+        location=AcceleratorLocation.CLOUD,
+        backend="opencl",
+        model="provider-observed-model",
+        vendor="provider-observed-vendor",
+        resource_key="cloud:future:0",
+        total_count=1,
+        available_count=1,
+        memory_gb=32.0,
+        source="provider-inventory",
+    )
+
+    assert resource.kind == "fpga"
+    assert AcceleratorInventory((resource,)).to_dict()["resources"] == [
+        {
+            "kind": "fpga",
+            "location": "cloud",
+            "backend": "opencl",
+            "model": "provider-observed-model",
+            "vendor": "provider-observed-vendor",
+            "resource_key": "cloud:future:0",
+            "total_count": 1,
+            "available_count": 1,
+            "memory_gb": 32.0,
+            "source": "provider-inventory",
+            "node": None,
+            "partitions": [],
+        }
+    ]
 
 
 class _Slurm:
@@ -394,7 +437,7 @@ def test_discovery_trace_rejects_invalid_boundaries(
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [
-        ({"kind": "gpu"}, "kind"),
+        ({"kind": "GPU"}, "normalized"),
         ({"location": "local"}, "location"),
         ({"backend": "bad\nbackend"}, "control"),
         ({"total_count": True}, "integer"),

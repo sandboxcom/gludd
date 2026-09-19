@@ -41,6 +41,13 @@ future accelerator kind therefore use the same path. Vendor and model are facts,
 not branches in the planner. Platform-specific adapters may discover hundreds of
 models without expanding a central enumeration.
 
+The canonical `AcceleratorResource` preserves compatibility constants for the
+built-in GPU and TPU probes, but it also accepts any bounded, normalized
+lowercase kind reported by a future adapter. Inventory serialization preserves
+that value verbatim. This prevents the discovery layer from contradicting the
+planner by requiring a core enum release before an FPGA, NPU, or other new
+accelerator can be represented and routed.
+
 The planner accepts the discovery object through a structural protocol. This
 keeps discovery ownership in S83.159 rather than copying that type into a second
 abstraction.

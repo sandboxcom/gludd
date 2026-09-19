@@ -75,7 +75,7 @@ class DiscoveryTrace:
 class AcceleratorResource:
     """A normalized local device or scheduler resource pool."""
 
-    kind: AcceleratorKind
+    kind: AcceleratorKind | str
     location: AcceleratorLocation
     backend: str
     model: str
@@ -90,8 +90,12 @@ class AcceleratorResource:
 
     def __post_init__(self) -> None:
         """Validate one normalized accelerator resource."""
-        if not isinstance(self.kind, AcceleratorKind):
-            raise ValueError("kind must be an AcceleratorKind")
+        if isinstance(self.kind, AcceleratorKind):
+            kind = self.kind.value
+        else:
+            kind = _require_text(self.kind, "kind")
+            if kind != kind.strip().casefold():
+                raise ValueError("kind must be normalized lowercase text")
         if not isinstance(self.location, AcceleratorLocation):
             raise ValueError("location must be an AcceleratorLocation")
         for field_name in ("backend", "model", "vendor", "resource_key", "source"):
@@ -153,7 +157,11 @@ class AcceleratorInventory:
             "available_count": self.available_count,
             "resources": [
                 {
-                    "kind": resource.kind.value,
+                    "kind": (
+                        resource.kind.value
+                        if isinstance(resource.kind, AcceleratorKind)
+                        else resource.kind
+                    ),
                     "location": resource.location.value,
                     "backend": resource.backend,
                     "model": resource.model,
