@@ -197,6 +197,47 @@ class TestDispatchLane:
         lane = DispatchLane(_cfg(), state, asyncio.Lock(), fake_dispatch)
         assert await lane.step() == []
 
+    @pytest.mark.asyncio
+    async def test_floor_backfill_recovers_from_an_underfilled_saturation_plan(
+        self,
+    ) -> None:
+        state = LaneState(pending=deque(["a", "b", "c"]))
+
+        class UnderfilledSaturation:
+            def plan_backfill(self, **_kwargs: object) -> list[object]:
+                return []
+
+        async def fake_dispatch(_uid: str) -> None:
+            return None
+
+        lane = DispatchLane(
+            _cfg(floor=2, target=2),
+            state,
+            asyncio.Lock(),
+            fake_dispatch,
+            saturation=cast(Any, UnderfilledSaturation()),
+        )
+
+        assert await lane.step() == ["a", "b"]
+        assert state.running == {"a", "b"}
+
+    @pytest.mark.asyncio
+    async def test_run_propagates_cancellation(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        async def fake_dispatch(_uid: str) -> None:
+            return None
+
+        async def cancelled_step() -> list[str]:
+            raise asyncio.CancelledError
+
+        lane = DispatchLane(_cfg(), LaneState(), asyncio.Lock(), fake_dispatch)
+        monkeypatch.setattr(lane, "step", cancelled_step)
+
+        with pytest.raises(asyncio.CancelledError):
+            await lane.run()
+
 
 # --------------------------------------------------------------------------- #
 # DispatchLane — PID-driven targeting (uses gludd's existing LoadController)    #
@@ -456,6 +497,37 @@ class TestIntegrateLane:
 
         lane = IntegrateLane(_cfg(), state, asyncio.Lock(), merge)
         assert await lane.step() is None
+
+    @pytest.mark.asyncio
+    async def test_non_clobber_failure_is_requeued_for_retry(self) -> None:
+        unit = CompletedUnit("u1", "/wt/u1")
+        state = LaneState(running={"u1"}, completed_awaiting_merge=deque([unit]))
+
+        async def merge(u: CompletedUnit) -> MergeOutcome:
+            return MergeOutcome(unit_id=u.unit_id, merged=False, detail="retry")
+
+        lane = IntegrateLane(_cfg(), state, asyncio.Lock(), merge)
+
+        outcome = await lane.step()
+        assert outcome is not None and not outcome.merged
+        assert list(state.completed_awaiting_merge) == [unit]
+
+    @pytest.mark.asyncio
+    async def test_run_propagates_cancellation(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        async def merge(u: CompletedUnit) -> MergeOutcome:
+            return MergeOutcome(unit_id=u.unit_id, merged=True)
+
+        async def cancelled_step() -> MergeOutcome | None:
+            raise asyncio.CancelledError
+
+        lane = IntegrateLane(_cfg(), LaneState(), asyncio.Lock(), merge)
+        monkeypatch.setattr(lane, "step", cancelled_step)
+
+        with pytest.raises(asyncio.CancelledError):
+            await lane.run()
 
 
 # --------------------------------------------------------------------------- #

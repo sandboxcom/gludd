@@ -61,6 +61,11 @@ SECRET = "private-provider-payload"
 NOW = datetime(2026, 9, 8, 12, 0, tzinfo=UTC)
 
 
+def test_owned_lifecycle_error_requires_typed_backend_failure() -> None:
+    with pytest.raises(ValueError, match="typed BackendFailure"):
+        OwnedCandidateLifecycleError("backend", failure=cast(Any, "invalid"))
+
+
 def _app_policy(*, live: bool = True, **overrides: object) -> AzureContainerAppLiveProofPolicy:
     values: dict[str, object] = {
         "subscription_id": SUBSCRIPTION,

@@ -6,6 +6,7 @@ import json
 import os
 import stat
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -15,6 +16,7 @@ from general_ludd.azure.accelerator_credential_store import (
     AzureCredentialArtifactError,
     AzureCredentialArtifactState,
     default_azure_accelerator_credential_home,
+    durable_azure_accelerator_credential_path,
     load_preserved_azure_accelerator_credentials,
 )
 
@@ -59,6 +61,53 @@ def test_default_home_is_persistent_xdg_data_not_runtime_or_temp(
     assert default_azure_accelerator_credential_home() == (
         data_home / "general-ludd" / "credentials"
     )
+
+
+def test_default_home_honors_explicit_operator_override(tmp_path: Path) -> None:
+    override = tmp_path / "operator-credentials"
+
+    assert default_azure_accelerator_credential_home(
+        {"GLUDD_CREDENTIAL_HOME": str(override)}
+    ) == override
+
+
+def test_durable_path_uses_default_home_and_rejects_invalid_artifact_names(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "credentials"
+    monkeypatch.setattr(
+        store_module,
+        "default_azure_accelerator_credential_home",
+        lambda: root,
+    )
+    monkeypatch.setattr(store_module, "_reject_unsafe_root", lambda _root: None)
+
+    assert durable_azure_accelerator_credential_path() == (
+        root / "azure-accelerator-auth.json"
+    )
+    with pytest.raises(AzureCredentialArtifactError, match="name is invalid"):
+        durable_azure_accelerator_credential_path(root / "credentials.txt")
+
+
+def test_store_rejects_root_anchor_and_invalid_constructor_callbacks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(AzureCredentialArtifactError, match="durable credential root"):
+        AzureAcceleratorCredentialStore(root=Path("/"))
+
+    monkeypatch.setattr(store_module, "_reject_unsafe_root", lambda _root: None)
+    with pytest.raises(AzureCredentialArtifactError, match="name is invalid"):
+        AzureAcceleratorCredentialStore(
+            root=tmp_path / "credentials",
+            current_name="invalid.json",
+        )
+    with pytest.raises(AzureCredentialArtifactError, match="trace sink"):
+        AzureAcceleratorCredentialStore(
+            root=tmp_path / "credentials",
+            trace_sink=cast(Any, None),
+        )
 
 
 @pytest.mark.parametrize("unsafe_name", ["tmp", "var-tmp", "run", "worktree"])

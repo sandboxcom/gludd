@@ -191,3 +191,114 @@ def test_backend_censors_malformed_attestation_and_never_releases_output() -> No
 
     assert captured.value.failure is BackendFailure.INVALID_RESPONSE
     assert "provider-private-output" not in str(captured.value)
+
+
+def test_backend_rejects_incomplete_delegate_identity_and_callbacks() -> None:
+    class WrongIdentityBackend:
+        candidate_identity = object()
+
+        def generate(self, *_args: object, **_kwargs: object) -> object:
+            return object()
+
+        def close(self) -> None:
+            return None
+
+    class ValidBackend(WrongIdentityBackend):
+        candidate_identity = _identity()
+
+    class Attestor:
+        def attest(self, _identity: AzureContainerAppCandidateIdentity) -> object:
+            return object()
+
+    with pytest.raises(ValueError, match="closable"):
+        _GPUAttestedBackend(cast(Any, object()), cast(Any, Attestor()), lambda _: None)
+    with pytest.raises(ValueError, match="identity"):
+        _GPUAttestedBackend(
+            cast(Any, WrongIdentityBackend()),
+            cast(Any, Attestor()),
+            lambda _: None,
+        )
+    with pytest.raises(ValueError, match="callbacks"):
+        _GPUAttestedBackend(
+            cast(Any, ValidBackend()),
+            cast(Any, object()),
+            lambda _: None,
+        )
+
+
+@pytest.mark.parametrize(
+    ("runtime_error", "expected_failure", "expected_reason"),
+    (
+        (
+            BackendInfrastructureError(BackendFailure.UNAVAILABLE),
+            BackendFailure.UNAVAILABLE,
+            "runtime_evidence_unavailable",
+        ),
+        (
+            RuntimeError("private runtime failure"),
+            BackendFailure.INTERNAL,
+            "runtime_evidence_internal",
+        ),
+    ),
+)
+def test_runtime_attestation_failures_are_typed_and_censored(
+    runtime_error: Exception,
+    expected_failure: BackendFailure,
+    expected_reason: str,
+) -> None:
+    identity = _identity()
+    traces: list[Any] = []
+
+    class Backend:
+        candidate_identity = identity
+
+        def generate(self, *_args: object, **_kwargs: object) -> AzureCandidateResponse:
+            return AzureCandidateResponse("private-response", 2, 1, 3)
+
+        def attest_runtime_gpu(self, *_args: object, **_kwargs: object) -> object:
+            raise runtime_error
+
+        def close(self) -> None:
+            return None
+
+    class Attestor:
+        def attest(self, _identity: AzureContainerAppCandidateIdentity) -> object:
+            raise AssertionError("Monitor fallback must not run")
+
+    backend = _GPUAttestedBackend(Backend(), cast(Any, Attestor()), traces.append)
+    with pytest.raises(BackendInfrastructureError) as captured:
+        backend.generate(_prompt(), max_output_tokens=8, timeout_seconds=30)
+
+    assert captured.value.failure is expected_failure
+    assert traces[-1].event is ContainerAppTraceEvent.GPU_ATTESTATION_FAILED
+    assert traces[-1].reason == expected_reason
+    assert "private" not in str(captured.value)
+
+
+def test_invalid_runtime_evidence_never_releases_provider_output() -> None:
+    identity = _identity()
+    traces: list[Any] = []
+
+    class Backend:
+        candidate_identity = identity
+
+        def generate(self, *_args: object, **_kwargs: object) -> AzureCandidateResponse:
+            return AzureCandidateResponse("private-response", 2, 1, 3)
+
+        def attest_runtime_gpu(self, *_args: object, **_kwargs: object) -> object:
+            return object()
+
+        def close(self) -> None:
+            return None
+
+    class Attestor:
+        def attest(self, _identity: AzureContainerAppCandidateIdentity) -> object:
+            raise AssertionError("Monitor fallback must not run")
+
+    backend = _GPUAttestedBackend(Backend(), cast(Any, Attestor()), traces.append)
+    with pytest.raises(BackendInfrastructureError) as captured:
+        backend.generate(_prompt(), max_output_tokens=8, timeout_seconds=30)
+
+    assert captured.value.failure is BackendFailure.INVALID_RESPONSE
+    assert traces[-1].reason == "runtime_evidence_contract_invalid"
+    assert "private-response" not in str(captured.value)
