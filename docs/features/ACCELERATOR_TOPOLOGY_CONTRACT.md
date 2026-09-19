@@ -310,6 +310,21 @@ filtering, immutable snapshots, and all refusal branches at 100% branch
 coverage; the combined executor, chemistry, firmware, and boundary replay runs
 85 warning-strict cases, with the executor at 100% branch coverage.
 
+The hermetic integration matrix uses the canonical `AcceleratorResource`, not
+a planner-only stand-in. Its 11 warning-strict cases cover local Apple MPS,
+local Intel XPU, Azure Container Apps' one-device replica boundary, multi-GPU
+Azure NVIDIA and AMD VM shapes, an isolated hardware partition, a GCP TPU
+slice, an opaque future FPGA, and multi-host Slurm. It also proves that reduced
+current availability rejects a formerly feasible plan and that an oversized
+Container Apps model is never presented as a multi-GPU replica.
+
+The task E2E suite runs chemistry design, embedded firmware, and
+self-improvement through the same real selection, topology, launch, scheduler,
+gateway, and domain-gate path. All three cases select two model-parallel devices
+per replica and two data-parallel replicas from canonical Azure inventory, and
+the exact same desired state reaches scheduling, invocation, and result
+evidence.
+
 Provider integration tests are a separate layer. They must use credentials from
 the CI secret store or workload identity, create uniquely leased resources within
 explicit cost and scope limits, attest the resulting live topology, exercise a

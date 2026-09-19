@@ -58,6 +58,12 @@ executor path. A typed workload fails closed when the bridge is absent or when
 selection, topology, or launch evidence is insufficient. Legacy tasks without a
 typed workload retain their existing gateway path during migration.
 
+Hermetic E2E coverage now carries all three capability families through actual
+model selection, multi-device topology planning, vLLM launch rendering,
+scheduler admission, gateway invocation, and the capability-owned result gate.
+That is the executable proof that self-improvement is one consumer of the
+universal path rather than its owner.
+
 ## Layer ownership
 
 The following remains owned by `self_improve` because it expresses that
