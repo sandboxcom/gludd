@@ -1,0 +1,41 @@
+---
+- name: Validate retired model worker identity
+  ansible.builtin.assert:
+    that:
+      - gludd_model_worker_retire_service is match('^gludd-model-worker-[0-9a-f]{12}[.]service$')
+      - gludd_model_worker_retire_service != ((gludd_model_worker_candidate_name | default('')) ~ '.service')
+    fail_msg: >-
+      retire.yml requires one exact prior Gludd model-worker unit and refuses
+      the current candidate.
+
+- name: Stop retired model worker service
+  become: true
+  ansible.builtin.systemd_service:
+    name: "{{ gludd_model_worker_retire_service }}"
+    enabled: false
+    state: stopped
+
+- name: Remove retired model worker unit
+  become: true
+  ansible.builtin.file:
+    path: "{{ gludd_model_worker_unit_dir }}/{{ gludd_model_worker_retire_service }}"
+    state: absent
+
+- name: Remove retired model worker environment
+  become: true
+  ansible.builtin.file:
+    path: >-
+      {{ gludd_model_worker_state_dir }}/{{ gludd_model_worker_retire_service | regex_replace('[.]service$', '.env') }}
+    state: absent
+
+- name: Remove retired model worker attestation
+  become: true
+  ansible.builtin.file:
+    path: >-
+      {{ gludd_model_worker_state_dir }}/attestations/{{ gludd_model_worker_retire_service | regex_replace('[.]service$', '.json') }}
+    state: absent
+
+- name: Reload service manager after retirement
+  become: true
+  ansible.builtin.systemd_service:
+    daemon_reload: true

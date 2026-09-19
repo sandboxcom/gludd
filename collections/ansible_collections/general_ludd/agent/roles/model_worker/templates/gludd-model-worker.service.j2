@@ -1,0 +1,31 @@
+[Unit]
+Description=Gludd attested model worker {{ gludd_model_worker_release_id[:12] }}
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User={{ gludd_model_worker_service_user }}
+Group={{ gludd_model_worker_service_group }}
+WorkingDirectory={{ gludd_model_worker_working_dir }}
+EnvironmentFile={{ gludd_model_worker_candidate_environment }}
+ExecStart={% for argument in gludd_model_worker_plan.command %}{{ argument | replace('%', '%%') | quote }}{% if not loop.last %} {% endif %}{% endfor %}
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=120
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths={{ gludd_model_worker_working_dir }} {{ gludd_model_worker_state_dir }} {{ gludd_model_worker_log_dir }}
+StandardOutput=append:{{ gludd_model_worker_log_dir }}/{{ gludd_model_worker_candidate_name }}.log
+StandardError=inherit
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,27 @@
+---
+galaxy_info:
+  role_name: model_worker
+  author: general_ludd
+  description: >-
+    Launches attested provider-neutral vLLM, Ollama, and llama.cpp model workers
+    from Gludd's immutable universal runner plan.
+  license: MIT
+  min_ansible_version: "2.18"
+  platforms:
+    - name: EL
+      versions:
+        - "9"
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bookworm
+  galaxy_tags:
+    - agent
+    - accelerator
+    - inference
+    - model
+    - systemd
+dependencies: []

@@ -1,0 +1,15 @@
+---
+gludd_model_worker_plan: {}
+gludd_model_worker_attestation: {}
+gludd_model_worker_expected_topology_digest: ""
+gludd_model_worker_release_id: ""
+gludd_model_worker_health_url: "http://127.0.0.1:8000/healthz"
+gludd_model_worker_health_retries: 90
+gludd_model_worker_health_delay: 2
+gludd_model_worker_service_user: "gludd"
+gludd_model_worker_service_group: "gludd"
+gludd_model_worker_working_dir: "/var/lib/gludd/model-workers"
+gludd_model_worker_state_dir: "/var/lib/gludd/model-workers/state"
+gludd_model_worker_log_dir: "/var/log/gludd/model-workers"
+gludd_model_worker_unit_dir: "/etc/systemd/system"
+gludd_model_worker_retire_service: ""

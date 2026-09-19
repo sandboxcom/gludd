@@ -1,0 +1,153 @@
+---
+- name: Converge - exercise the universal attested model worker
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    live_model_worker: "{{ lookup('env', 'MOLECULE_LIVE_MODEL_WORKER') == '1' }}"
+    scenario_root: >-
+      {{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/worker-runtime
+    scenario_working_dir: "{{ scenario_root }}/work"
+    fixture_release_id: >-
+      {{ ('model-worker-' ~ lookup('env', 'MOLECULE_PROJECT_DIRECTORY')) | hash('sha256') }}
+    fixture_topology_digest: >-
+      {{ ('two-device-topology-' ~ lookup('env', 'MOLECULE_PROJECT_DIRECTORY')) | hash('sha256') }}
+    model_worker_base_plan:
+      schema_version: 1
+      runner_id: vllm
+      adapter_id: openai-compatible
+      source_revision: molecule-fixture-v1
+      command:
+        - /usr/bin/python3
+        - -m
+        - http.server
+        - "18080"
+        - --bind
+        - 127.0.0.1
+        - --directory
+        - "{{ scenario_working_dir }}"
+      environment:
+        GLUDD_FIXTURE_MODE: "1"
+      request_options:
+        timeout_seconds: 30
+      replica_count: 1
+      devices_per_replica: 2
+    model_worker_attestation:
+      schema_version: 1
+      facts_attested: true
+      driver_ready: true
+      runtime_ready: true
+      device_count: 2
+      source_revision: molecule-fixture-v1
+      topology_digest: "{{ fixture_topology_digest }}"
+  tasks:
+    - name: Prove credential-shaped environment names fail closed
+      block:
+        - name: Invoke model worker with a forbidden environment name
+          ansible.builtin.include_role:
+            name: general_ludd.agent.model_worker
+          vars:
+            gludd_model_worker_plan: >-
+              {{ model_worker_base_plan | combine({'environment': {'API_TOKEN': 'fixture-only'}}) }}
+            gludd_model_worker_attestation: "{{ model_worker_attestation }}"
+            gludd_model_worker_release_id: "{{ fixture_release_id }}"
+            gludd_model_worker_expected_topology_digest: "{{ fixture_topology_digest }}"
+
+        - name: Reject an unexpectedly accepted credential name
+          ansible.builtin.fail:
+            msg: model_worker unexpectedly accepted API_TOKEN
+      rescue:
+        - name: Verify the credential guard caused the failure
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'Reject credentials in runner desired state'
+
+        - name: Record credential guard evidence
+          ansible.builtin.set_fact:
+            credential_guard_triggered: true
+          changed_when: false
+
+    - name: Prove mismatched topology evidence fails closed
+      block:
+        - name: Invoke model worker with mismatched topology evidence
+          ansible.builtin.include_role:
+            name: general_ludd.agent.model_worker
+          vars:
+            gludd_model_worker_plan: "{{ model_worker_base_plan }}"
+            gludd_model_worker_attestation: >-
+              {{ model_worker_attestation | combine({'topology_digest': 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'}) }}
+            gludd_model_worker_release_id: "{{ fixture_release_id }}"
+            gludd_model_worker_expected_topology_digest: "{{ fixture_topology_digest }}"
+
+        - name: Reject unexpectedly accepted topology evidence
+          ansible.builtin.fail:
+            msg: model_worker unexpectedly accepted mismatched topology evidence
+      rescue:
+        - name: Verify the topology guard caused the failure
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'Validate live accelerator and runtime attestation'
+
+        - name: Record topology guard evidence
+          ansible.builtin.set_fact:
+            topology_guard_triggered: true
+          changed_when: false
+
+    - name: Prepare the opt-in live fixture endpoint
+      when: live_model_worker | bool
+      become: true
+      block:
+        - name: Create the fixture working directory
+          ansible.builtin.file:
+            path: "{{ scenario_working_dir }}"
+            state: directory
+            owner: root
+            group: root
+            mode: "0750"
+
+        - name: Create the fixture health document
+          ansible.builtin.copy:
+            dest: "{{ scenario_working_dir }}/healthz"
+            content: healthy
+            owner: root
+            group: root
+            mode: "0640"
+
+    - name: Launch the opt-in live candidate
+      when: live_model_worker | bool
+      ansible.builtin.include_role:
+        name: general_ludd.agent.model_worker
+      vars:
+        gludd_model_worker_plan: "{{ model_worker_base_plan }}"
+        gludd_model_worker_attestation: "{{ model_worker_attestation }}"
+        gludd_model_worker_release_id: "{{ fixture_release_id }}"
+        gludd_model_worker_expected_topology_digest: "{{ fixture_topology_digest }}"
+        gludd_model_worker_health_url: http://127.0.0.1:18080/healthz
+        gludd_model_worker_health_retries: 15
+        gludd_model_worker_health_delay: 1
+        gludd_model_worker_service_user: root
+        gludd_model_worker_service_group: root
+        gludd_model_worker_working_dir: "{{ scenario_working_dir }}"
+        gludd_model_worker_state_dir: "{{ scenario_root }}/state"
+        gludd_model_worker_log_dir: "{{ scenario_root }}/logs"
+
+    - name: Validate guard and candidate evidence
+      ansible.builtin.assert:
+        that:
+          - credential_guard_triggered | default(false) | bool
+          - topology_guard_triggered | default(false) | bool
+          - not live_model_worker | bool or gludd_model_worker_candidate.schema_version | int == 1
+          - not live_model_worker | bool or gludd_model_worker_candidate.devices_per_replica | int == 2
+
+    - name: Persist lifecycle evidence for verification
+      ansible.builtin.copy:
+        dest: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/model-worker-evidence.json"
+        mode: "0600"
+        content: >-
+          {{ {
+              'credential_guard_triggered': credential_guard_triggered | default(false),
+              'topology_guard_triggered': topology_guard_triggered | default(false),
+              'live_model_worker': live_model_worker,
+              'candidate': gludd_model_worker_candidate | default({}),
+              'scenario_root': scenario_root
+            } | to_nice_json }}

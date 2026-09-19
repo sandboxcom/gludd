@@ -1,0 +1,32 @@
+---
+- name: Prepare - validate the optional live model worker host
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    live_model_worker: "{{ lookup('env', 'MOLECULE_LIVE_MODEL_WORKER') == '1' }}"
+  tasks:
+    - name: Inspect live model worker prerequisites
+      when: live_model_worker | bool
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /run/systemd/system
+        - /usr/bin/python3
+      register: live_model_worker_prerequisites
+
+    - name: Require systemd and the fixture runtime in live mode
+      when: live_model_worker | bool
+      ansible.builtin.assert:
+        that:
+          - live_model_worker_prerequisites.results | map(attribute='stat.exists') | select('equalto', false) | list | length == 0
+        fail_msg: >-
+          MOLECULE_LIVE_MODEL_WORKER=1 requires a Linux systemd host with
+          /usr/bin/python3; omit the flag for portable fail-closed coverage.
+
+    - name: Confirm portable guardrail mode
+      when: not live_model_worker | bool
+      ansible.builtin.debug:
+        msg: >-
+          Running portable model_worker guardrail and idempotence coverage;
+          set MOLECULE_LIVE_MODEL_WORKER=1 on a systemd host for service ZDD.

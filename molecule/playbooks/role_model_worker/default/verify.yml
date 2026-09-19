@@ -1,0 +1,59 @@
+---
+- name: Verify - validate and retire the universal model worker candidate
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Load lifecycle evidence
+      ansible.builtin.slurp:
+        src: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/model-worker-evidence.json"
+      register: model_worker_evidence_raw
+
+    - name: Decode lifecycle evidence
+      ansible.builtin.set_fact:
+        model_worker_evidence: >-
+          {{ model_worker_evidence_raw.content | b64decode | from_json }}
+      changed_when: false
+
+    - name: Verify fail-closed guardrails ran in every mode
+      ansible.builtin.assert:
+        that:
+          - model_worker_evidence.credential_guard_triggered | bool
+          - model_worker_evidence.topology_guard_triggered | bool
+
+    - name: Verify the opt-in live candidate is healthy
+      when: model_worker_evidence.live_model_worker | bool
+      ansible.builtin.uri:
+        url: "{{ model_worker_evidence.candidate.health_url }}"
+        method: GET
+        status_code: 200
+        return_content: false
+
+    - name: Retire the opt-in live candidate through the role
+      when: model_worker_evidence.live_model_worker | bool
+      ansible.builtin.include_role:
+        name: general_ludd.agent.model_worker
+        tasks_from: retire.yml
+      vars:
+        gludd_model_worker_retire_service: >-
+          {{ model_worker_evidence.candidate.service_name }}
+        gludd_model_worker_state_dir: >-
+          {{ model_worker_evidence.scenario_root }}/state
+
+    - name: Inspect retired candidate artifacts
+      when: model_worker_evidence.live_model_worker | bool
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "/etc/systemd/system/{{ model_worker_evidence.candidate.service_name }}"
+        - >-
+          {{ model_worker_evidence.scenario_root }}/state/{{ model_worker_evidence.candidate.service_name | regex_replace('[.]service$', '.env') }}
+        - "{{ model_worker_evidence.candidate.attestation_path }}"
+      register: retired_candidate_artifacts
+
+    - name: Verify candidate artifacts were fully retired
+      when: model_worker_evidence.live_model_worker | bool
+      ansible.builtin.assert:
+        that:
+          - retired_candidate_artifacts.results | selectattr('stat.exists') | list | length == 0
+        fail_msg: candidate artifacts were not fully retired

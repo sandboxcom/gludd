@@ -1,0 +1,175 @@
+---
+- name: Validate universal model worker inputs
+  ansible.builtin.assert:
+    that:
+      - gludd_model_worker_plan is mapping
+      - gludd_model_worker_plan.schema_version | int == 1
+      - gludd_model_worker_plan.runner_id | length > 0
+      - gludd_model_worker_plan.adapter_id | length > 0
+      - gludd_model_worker_plan.source_revision | length > 0
+      - gludd_model_worker_plan.command is sequence
+      - gludd_model_worker_plan.command is not string
+      - gludd_model_worker_plan.command | length > 0
+      - gludd_model_worker_plan.command | length <= 256
+      - gludd_model_worker_plan.environment is mapping
+      - gludd_model_worker_plan.request_options is mapping
+      - gludd_model_worker_plan.replica_count | int > 0
+      - gludd_model_worker_plan.devices_per_replica | int > 0
+      - gludd_model_worker_release_id is match('^[0-9a-f]{64}$')
+      - gludd_model_worker_expected_topology_digest is match('^[0-9a-f]{64}$')
+      - gludd_model_worker_health_retries | int > 0
+      - gludd_model_worker_health_delay | int > 0
+      - gludd_model_worker_health_url is match('^http://127[.]0[.]0[.]1:[0-9]{4,5}/[A-Za-z0-9/_-]+$')
+    fail_msg: >-
+      model_worker requires one bounded schema-v1 RunnerLaunchPlan, immutable
+      release and topology digests, and a loopback health endpoint.
+
+- name: Find forbidden runner environment names
+  ansible.builtin.set_fact:
+    gludd_model_worker_forbidden_environment_names: >-
+      {{ gludd_model_worker_plan.environment.keys()
+         | select('search', '(?i)(api.?key|token|secret|password|credential|private.?key)')
+         | list }}
+  changed_when: false
+  no_log: true
+
+- name: Reject credentials in runner desired state
+  ansible.builtin.assert:
+    that:
+      - gludd_model_worker_forbidden_environment_names | length == 0
+    fail_msg: >-
+      Runner environment names may not carry credentials; use the separately
+      delegated in-memory credential channel.
+  no_log: true
+
+- name: Validate live accelerator and runtime attestation
+  ansible.builtin.assert:
+    that:
+      - gludd_model_worker_attestation is mapping
+      - gludd_model_worker_attestation.schema_version | int == 1
+      - gludd_model_worker_attestation.facts_attested | bool
+      - gludd_model_worker_attestation.driver_ready | bool
+      - gludd_model_worker_attestation.runtime_ready | bool
+      - gludd_model_worker_attestation.device_count | int >= gludd_model_worker_plan.devices_per_replica | int
+      - gludd_model_worker_attestation.source_revision == gludd_model_worker_plan.source_revision
+      - gludd_model_worker_attestation.topology_digest == gludd_model_worker_expected_topology_digest
+    fail_msg: >-
+      Live driver, runtime, device-count, source-revision, and topology evidence
+      must match the selected runner plan before any candidate service starts.
+
+- name: Resolve attested runner executable
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/env
+      - which
+      - "{{ gludd_model_worker_plan.command | first }}"
+  register: gludd_model_worker_executable
+  changed_when: false
+
+- name: Resolve model worker service identity
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ gludd_model_worker_service_user }}"
+
+- name: Derive candidate service paths
+  ansible.builtin.set_fact:
+    gludd_model_worker_candidate_name: >-
+      gludd-model-worker-{{ gludd_model_worker_release_id[:12] }}
+    gludd_model_worker_candidate_environment: >-
+      {{ gludd_model_worker_state_dir }}/gludd-model-worker-{{ gludd_model_worker_release_id[:12] }}.env
+    gludd_model_worker_candidate_attestation: >-
+      {{ gludd_model_worker_state_dir }}/attestations/gludd-model-worker-{{ gludd_model_worker_release_id[:12] }}.json
+  changed_when: false
+
+- name: Create bounded model worker directories
+  become: true
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ gludd_model_worker_service_user }}"
+    group: "{{ gludd_model_worker_service_group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ gludd_model_worker_working_dir }}"
+      mode: "0750"
+    - path: "{{ gludd_model_worker_state_dir }}"
+      mode: "0750"
+    - path: "{{ gludd_model_worker_state_dir }}/attestations"
+      mode: "0750"
+    - path: "{{ gludd_model_worker_log_dir }}"
+      mode: "0750"
+
+- name: Render content-free candidate environment
+  become: true
+  ansible.builtin.template:
+    src: gludd-model-worker.env.j2
+    dest: "{{ gludd_model_worker_candidate_environment }}"
+    owner: "{{ gludd_model_worker_service_user }}"
+    group: "{{ gludd_model_worker_service_group }}"
+    mode: "0600"
+  no_log: true
+
+- name: Render candidate model worker unit
+  become: true
+  ansible.builtin.template:
+    src: gludd-model-worker.service.j2
+    dest: >-
+      {{ gludd_model_worker_unit_dir }}/{{ gludd_model_worker_candidate_name }}.service
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Start candidate model worker service
+  become: true
+  ansible.builtin.systemd_service:
+    name: "{{ gludd_model_worker_candidate_name }}.service"
+    daemon_reload: true
+    enabled: true
+    state: started
+
+- name: Wait for candidate model worker health
+  ansible.builtin.uri:
+    url: "{{ gludd_model_worker_health_url }}"
+    method: GET
+    status_code: 200
+    return_content: false
+    timeout: 5
+  register: gludd_model_worker_health
+  until: gludd_model_worker_health.status == 200
+  retries: "{{ gludd_model_worker_health_retries }}"
+  delay: "{{ gludd_model_worker_health_delay }}"
+  changed_when: false
+
+- name: Record content-free candidate attestation
+  become: true
+  ansible.builtin.copy:
+    dest: "{{ gludd_model_worker_candidate_attestation }}"
+    owner: "{{ gludd_model_worker_service_user }}"
+    group: "{{ gludd_model_worker_service_group }}"
+    mode: "0640"
+    content: >-
+      {{ {
+          'schema_version': 1,
+          'release_id': gludd_model_worker_release_id,
+          'runner_id': gludd_model_worker_plan.runner_id,
+          'adapter_id': gludd_model_worker_plan.adapter_id,
+          'source_revision': gludd_model_worker_plan.source_revision,
+          'topology_digest': gludd_model_worker_expected_topology_digest,
+          'devices_per_replica': gludd_model_worker_plan.devices_per_replica,
+          'service_name': gludd_model_worker_candidate_name
+        } | to_nice_json }}
+
+- name: Publish model worker candidate fact
+  ansible.builtin.set_fact:
+    gludd_model_worker_candidate:
+      schema_version: 1
+      release_id: "{{ gludd_model_worker_release_id }}"
+      runner_id: "{{ gludd_model_worker_plan.runner_id }}"
+      adapter_id: "{{ gludd_model_worker_plan.adapter_id }}"
+      source_revision: "{{ gludd_model_worker_plan.source_revision }}"
+      topology_digest: "{{ gludd_model_worker_expected_topology_digest }}"
+      devices_per_replica: "{{ gludd_model_worker_plan.devices_per_replica }}"
+      service_name: "{{ gludd_model_worker_candidate_name }}.service"
+      health_url: "{{ gludd_model_worker_health_url }}"
+      attestation_path: "{{ gludd_model_worker_candidate_attestation }}"
+  changed_when: false
