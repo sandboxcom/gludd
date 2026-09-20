@@ -1422,6 +1422,17 @@
       "owned": true
     },
     {
+      "path": "src/general_ludd/infra/ansible_model_worker_runtime.py",
+      "line": 116,
+      "column": 13,
+      "kind": "temp-artifact",
+      "owner": "AnsibleModelWorkerConfigurationRuntime._inventory",
+      "acquisition": "tempfile.TemporaryDirectory(prefix='gludd-model-worker-inventory-')",
+      "teardown": "context-manager-exit",
+      "source_hash": "247e9b90844497f9e8578904f767b09d2be03d211e5c32d46712da5d3ac7bf4c",
+      "owned": true
+    },
+    {
       "path": "src/general_ludd/infra/azure_containerapp_arm.py",
       "line": 170,
       "column": 33,
