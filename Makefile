@@ -2593,7 +2593,7 @@ healthcheck:
 	@$(UV) run --no-sync python -c "from general_ludd.commands.make import MakeRunner; print('MakeRunner import OK')"
 
 ansible-syntax:
-	@for f in playbooks/*.yml; do echo "Checking $$f..."; $(UV) run --no-sync ansible-playbook -i localhost, --syntax-check "$$f" || exit 1; done
+	@for f in playbooks/*.yml; do echo "Checking $$f..."; $(UV) run --no-sync ansible-playbook -i config/ansible_syntax_inventory.yml --syntax-check "$$f" || exit 1; done
 
 ansible-lint-playbooks: yaml-lint
 
