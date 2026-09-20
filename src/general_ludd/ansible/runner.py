@@ -81,6 +81,34 @@ _EXECUTION_ENVIRONMENT_CONSTRAINTS = frozenset(
 _EXECUTION_ENVIRONMENT_TIMEOUTS = {"present": 7800.0, "absent": 1200.0}
 
 
+def _non_default_core_run_options(
+    *,
+    inventory: list[str] | None,
+    verbosity: int,
+    check: bool,
+    tags: list[str] | None,
+    skip_tags: list[str] | None,
+    connection: str,
+    become: bool,
+) -> dict[str, Any]:
+    """Return only explicitly selected extended runner controls.
+
+    Omitting defaults preserves the adapter's original call boundary for
+    integrations that implement the legacy core-runner protocol, while remote
+    workers still receive every inventory and SSH control they request.
+    """
+    options: dict[str, Any] = {
+        "inventory": inventory,
+        "verbosity": verbosity or None,
+        "check": True if check else None,
+        "tags": tags or None,
+        "skip_tags": skip_tags or None,
+        "connection": connection if connection != "local" else None,
+        "become": True if become else None,
+    }
+    return {key: value for key, value in options.items() if value is not None}
+
+
 def _build_registry(extra: dict[str, str] | None = None) -> dict[str, str]:
     reg = dict(DEFAULT_REGISTRY)
     if extra:
@@ -480,22 +508,25 @@ class AnsibleRunnerAdapter:
                 _merged_env["ANSIBLE_ROLES_PATH"] = (
                     activation_paths + os.pathsep + existing_rp if existing_rp else activation_paths
                 )
-            result = core_runner.run_playbook(
-                playbook_path=playbook_path,
+            run_options = _non_default_core_run_options(
                 inventory=inventory,
-                # Do not evaluate truthiness on this untrusted mapping: a dict
-                # subclass can override __bool__/__len__. CoreAnsibleRunner's
-                # strict validator will reject non-exact built-in structures.
-                extravars={} if extravars is None else extravars,
                 verbosity=verbosity,
                 check=check,
                 tags=tags,
                 skip_tags=skip_tags,
                 connection=connection,
                 become=become,
+            )
+            result = core_runner.run_playbook(
+                playbook_path=playbook_path,
+                # Do not evaluate truthiness on this untrusted mapping: a dict
+                # subclass can override __bool__/__len__. CoreAnsibleRunner's
+                # strict validator will reject non-exact built-in structures.
+                extravars={} if extravars is None else extravars,
                 timeout=effective_timeout,
                 extra_env=_merged_env or None,
                 cancel_requested=cancel_requested,
+                **run_options,
             )
             return result.model_dump()
         except Exception as exc:
