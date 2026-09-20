@@ -37,7 +37,7 @@ _DEFAULT_TEST_SEQUENCE = [
     "destroy",
 ]
 _DRIVER_MANAGED_PHASES = {"create", "destroy"}
-_EXPECTED_RELEASE_SCENARIOS = 140
+_EXPECTED_RELEASE_SCENARIOS = 142
 _CONDITIONAL_KEYS = {"changed_when", "failed_when", "that", "until", "when"}
 _RESERVED_ROLE_DEFAULTS = {"timeout"}
 _LEADING_JINJA_TEXT = re.compile(r"""^\s*-\s*["']?\{\{[^{}]+\}\}\s+[A-Za-z]""")
@@ -115,7 +115,12 @@ def test_warning_contract_covers_every_release_scenario() -> None:
     names = {config.parent.name for config in configs}
     assert len(source_configs) == _EXPECTED_RELEASE_SCENARIOS
     assert len(names) == _EXPECTED_RELEASE_SCENARIOS
-    assert {"project_init_role", "prompt_eval"} <= names
+    assert {
+        "project_init_role",
+        "prompt_eval",
+        "role_attest_model_worker",
+        "role_model_worker",
+    } <= names
     assert (_MOLECULE_ROOT / "prompt_eval" / "molecule.yml") in configs
 
 
