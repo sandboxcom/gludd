@@ -32,6 +32,13 @@ than parsing human CLI output; AMD documents AMD SMI as the replacement for
 the deprecated `rocm_smi` CLI and exposes VRAM, driver, UUID/BDF, and XGMI
 queries through the library.
 
+The controller engine is vendored byte-for-byte into the agent collection's
+`plugins/module_utils` runtime. Ansible transfers that collection-owned copy to
+the managed host, so a newly provisioned worker does not need the Gludd control
+plane package or repository checkout. One parametrized behavioral suite runs
+against both artifacts and an exact-source parity assertion prevents either
+copy from drifting independently.
+
 Primary references:
 
 - <https://docs.nvidia.com/deploy/nvml-api/latest/>

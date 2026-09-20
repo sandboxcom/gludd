@@ -7,10 +7,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from ansible_collections.general_ludd.agent.plugins.module_utils.model_worker_attestation import (
+    ModelWorkerAttestor as CollectionModelWorkerAttestor,
+)
 
 from general_ludd.hardware.model_worker_attestation import (
     ModelWorkerAttestationResult,
-    ModelWorkerAttestor,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -24,6 +26,17 @@ MODULE_PATH = (
     / "modules"
     / "gludd_model_worker_attest.py"
 )
+MODULE_UTILS_PATH = (
+    ROOT
+    / "collections"
+    / "ansible_collections"
+    / "general_ludd"
+    / "agent"
+    / "plugins"
+    / "module_utils"
+    / "model_worker_attestation.py"
+)
+CORE_RUNTIME_PATH = ROOT / "src" / "general_ludd" / "hardware" / "model_worker_attestation.py"
 
 
 class _Exit(Exception):
@@ -147,12 +160,28 @@ def test_module_uses_no_shell_and_marks_runtime_probe_no_log() -> None:
     assert 'runtime_probe=dict(type="list", elements="str", required=True, no_log=True)' in text
 
 
+def test_module_uses_collection_owned_managed_host_runtime() -> None:
+    """Managed hosts must not depend on the controller's Gludd installation."""
+    text = MODULE_PATH.read_text(encoding="utf-8")
+
+    assert (
+        "from ansible_collections.general_ludd.agent.plugins.module_utils."
+        "model_worker_attestation import ("
+    ) in text
+    assert "from general_ludd.hardware.model_worker_attestation" not in text
+
+
+def test_collection_runtime_is_an_exact_vendor_of_the_canonical_engine() -> None:
+    """The transferred Ansible runtime must not drift from controller semantics."""
+    assert MODULE_UTILS_PATH.read_bytes() == CORE_RUNTIME_PATH.read_bytes()
+
+
 def test_real_attestor_remains_the_module_default() -> None:
     from ansible_collections.general_ludd.agent.plugins.modules import (
         gludd_model_worker_attest as subject,
     )
 
-    assert subject.ModelWorkerAttestor is ModelWorkerAttestor
+    assert subject.ModelWorkerAttestor is CollectionModelWorkerAttestor
 
 
 def test_module_has_a_strict_focused_coverage_profile() -> None:
@@ -181,7 +210,8 @@ def test_executable_entrypoint_runs_the_same_read_only_attestation() -> None:
     with (
         patch("ansible.module_utils.basic.AnsibleModule", FakeAnsibleModule),
         patch(
-            "general_ludd.hardware.model_worker_attestation.ModelWorkerAttestor",
+            "ansible_collections.general_ludd.agent.plugins.module_utils."
+            "model_worker_attestation.ModelWorkerAttestor",
             return_value=FakeAttestor(),
         ),
         pytest.raises(_Exit) as exited,

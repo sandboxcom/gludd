@@ -9,7 +9,11 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from ansible_collections.general_ludd.agent.plugins.module_utils import (
+    model_worker_attestation as collection_attestation,
+)
 
+from general_ludd.hardware import model_worker_attestation as core_attestation
 from general_ludd.hardware.model_worker_attestation import (
     AcceleratorDeviceObservation,
     AcceleratorSnapshot,
@@ -25,6 +29,33 @@ from general_ludd.hardware.model_worker_attestation import (
 
 ROOT = Path(__file__).resolve().parents[2]
 _EXPECTED_RUNTIME = version_digest("vllm 0.10.2\n")
+_RUNTIME_SYMBOLS = (
+    "AcceleratorDeviceObservation",
+    "AcceleratorSnapshot",
+    "AmdSmiProbe",
+    "CommandObservation",
+    "ModelWorkerAttestationRequest",
+    "ModelWorkerAttestor",
+    "ModelWorkerTopology",
+    "NvidiaNvmlProbe",
+    "TopologyDeviceProfile",
+    "version_digest",
+)
+
+
+@pytest.fixture(
+    params=(core_attestation, collection_attestation),
+    ids=("controller", "managed-host"),
+    autouse=True,
+)
+def _attestation_runtime_contract(
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Run every behavioral contract against both deployment artifacts."""
+    runtime = request.param
+    for symbol in _RUNTIME_SYMBOLS:
+        monkeypatch.setitem(globals(), symbol, getattr(runtime, symbol))
 
 
 class _Memory:
@@ -729,4 +760,5 @@ def test_attestation_has_a_strict_focused_coverage_profile() -> None:
     profile = (ROOT / "config" / "coverage_model_worker_attestation.ini").read_text()
 
     assert "*/src/general_ludd/hardware/model_worker_attestation.py" in profile
+    assert "*/plugins/module_utils/model_worker_attestation.py" in profile
     assert "fail_under = 85" in profile

@@ -79,8 +79,7 @@ from __future__ import annotations
 from typing import cast
 
 from ansible.module_utils.basic import AnsibleModule
-
-from general_ludd.hardware.model_worker_attestation import (
+from ansible_collections.general_ludd.agent.plugins.module_utils.model_worker_attestation import (
     ModelWorkerAttestationRequest,
     ModelWorkerAttestor,
 )
