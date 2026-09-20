@@ -23,6 +23,19 @@ selected `RunnerLaunchPlan` already carries right-sized vLLM, Ollama, llama.cpp,
 or compatible future-runner arguments, including replica and devices-per-replica
 counts.
 
+The Azure implementation is concrete rather than a routing placeholder:
+
+- `azure_gpu_worker_materializer` copies the reviewed single-VM or VMSS module
+  into an owned OpenTofu root and writes only public desired state;
+- `azure_gpu_worker_runtime` performs init, validation, exact saved-plan audit,
+  apply, bounded output parsing, compensation, destroy, and absence proof with a
+  fresh OpenBao credential lease per cloud phase;
+- `azure_gpu_worker_sdk` resolves current VMSS private addresses and independently
+  enumerates the exact owned ARM IDs through maintained Azure SDKs; and
+- `ansible_model_worker_runtime` creates a mode-0600 ephemeral inventory, runs the
+  serial deploy or retire playbook, and accepts endpoints only from exact
+  content-free attestation facts.
+
 ## Owned state machine
 
 The success path is strictly ordered:
@@ -92,6 +105,7 @@ capability source.
 
 `tests/unit/test_model_worker_lifecycle.py` covers success, idempotent close,
 configuration and publication compensation, cleanup failure, exact endpoint
-admission, validation, and content-free traces. The focused branch-aware profile
-is `config/coverage_model_worker_lifecycle.ini`; it enforces at least 85%
-aggregate and 75% per-file coverage.
+admission, validation, and content-free traces. The Azure materializer, SDK,
+infrastructure runtime, and Ansible configuration adapter add 166 focused tests;
+the combined affected lifecycle replay passes 189 tests. Every focused production
+file exceeds both the 85% aggregate and 75% per-file release floors.

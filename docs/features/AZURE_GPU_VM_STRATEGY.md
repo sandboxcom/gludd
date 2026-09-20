@@ -1,12 +1,20 @@
 # Azure GPU VM inventory and strategy selection
 
-## Tranche boundary
+## Implemented boundary
 
-S83.162 tranche 1 is a read-only admission and planning layer. It discovers Azure
-GPU virtual-machine offers and decides between an already-attested Azure Container
-Apps placement and one host-local VM placement. It does not create a resource
-group, VM, scale set, disk, network, quota request, or role assignment. OpenTofu and
-the Ansible worker lifecycle remain the owners of later mutation tranches.
+S83.162 separates read-only admission from mutation. The admission layer discovers
+Azure GPU virtual-machine offers and decides among an already-attested Azure
+Container Apps placement, one host-local VM, and an eligible VM Scale Set. The
+mutation layer then uses `AzureGpuWorkerInfrastructureRuntime` to materialize and
+execute exactly one reviewed OpenTofu module. It never creates or deletes the
+pre-existing exact-scope resource group, requests quota, or grants a role.
+
+OpenTofu owns the VM or Uniform VMSS and every paid network/storage child. The
+provider-neutral lifecycle invokes `AnsibleModelWorkerConfigurationRuntime` only
+after independently reading back exact hosts. The Ansible roles attest the driver,
+runtime, topology, immutable runner generation, and health before an endpoint may
+be published. Self-improvement is one consumer of this lifecycle; chemistry,
+firmware, and other universal tasks use the same boundary.
 
 The immutable availability scope, assessment, and index contracts live in
 `general_ludd.infra.azure_operational_availability`. They are infrastructure
@@ -58,7 +66,7 @@ capacity claim. S83.160's finite TTL also prevents an old success from keeping a
 placement eligible forever. Its availability probability is not used to score
 model quality or rank two model identities.
 
-## Container Apps versus one VM
+## Container Apps versus VM and VMSS
 
 The selector first applies privacy permission, operator approval, immutable
 identity attestation, runtime compatibility, evidence freshness, topology, and
@@ -72,22 +80,25 @@ slower option, or a faster but more expensive option, does not count as a measur
 win. Unsupported runtime/backend, insufficient single-device memory, or explicit
 host-local tensor parallelism selects one VM when that VM passes every hard gate.
 
-VM Scale Sets are represented only by a future-admission evidence object. Replica
-semantics, high-availability behavior, and RDMA topology must each be independently
-attested before that object becomes eligible; tranche 1 still refuses VMSS
-selection after those flags are present. This prevents replica count from being
-mistaken for host-local model parallelism.
+VM Scale Sets are eligible only after replica semantics, high-availability
+behavior, RDMA topology, provisioning, bootstrap, rich health, telemetry, work
+dispatch, and teardown are independently attested. An eligible VMSS displaces a
+feasible single VM only on a measured cost-and-completion-time Pareto win, unless
+VMSS is the sole topology that can satisfy the demand. Replica count remains
+separate from `devices_per_replica`, so multiple hosts are never mistaken for
+host-local model parallelism.
 
 ## VMSS implementation constraints
 
-The mutation tranche must choose orchestration mode from measured topology rather
-than a global preference. Microsoft recommends Flexible orchestration for general
-availability, mixed VM types, and ordinary VM APIs, but its orchestration-mode
-matrix says Flexible does not support InfiniBand while Uniform supports it only in
-one placement group. ND multi-host GPU Direct RDMA therefore requires explicit
-Uniform/single-placement-group evidence; ordinary inference replicas should prefer
-Flexible when the selected SKU and network needs allow it. Orchestration mode is
-immutable after creation:
+The implemented VMSS module uses Uniform orchestration because the admitted
+multi-host and RDMA layouts require one immutable, homogeneous topology with rich
+application health and rolling replacement. Microsoft recommends Flexible
+orchestration for general availability, mixed VM types, and ordinary VM APIs, but
+its orchestration-mode matrix says Flexible does not support InfiniBand while
+Uniform supports it only in one placement group. Gludd therefore refuses a VMSS
+unless the measured evidence justifies this Uniform boundary; an ordinary
+single-host request remains a single VM or Container Apps placement. Orchestration
+mode is immutable after creation:
 [VMSS orchestration modes](https://learn.microsoft.com/en-us/azure/virtual-machine-scale-sets/virtual-machine-scale-sets-orchestration-modes),
 [ND family topology](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family),
 and [InfiniBand-enabled N-series guidance](https://learn.microsoft.com/en-us/azure/virtual-machines/overview-hb-hc).
@@ -137,6 +148,21 @@ not include model identifiers, prompts, endpoints, credentials, SKU names, vendo
 names, meter IDs, runtime digests, provider messages, or resource keys. Provider
 exceptions collapse to censored refusal classes such as `price_unavailable`.
 
+Mutation uses a second content-free trace containing only OpenTofu phase, state,
+elapsed seconds, and a desired-state digest. Every init, validate, plan, show,
+apply, output, and destroy phase acquires a fresh bounded credential from the
+operator-configured OpenBao Azure role and revokes that exact lease afterward.
+Credentials enter only the child-process environment. They are excluded from
+tfvars, state inputs, output parsing, Ansible desired state, and traces.
+
+Before apply, Gludd audits the saved plan against an exact resource-address and
+resource-type allowlist for the selected module. The materializer rejects symlink
+roots, foreign state, mismatched ownership markers, mutable image versions,
+cross-resource-group identities, broad controller CIDRs, and unattested cache
+disks. VMSS private addresses are resolved with maintained Compute and Resource
+Management SDK clients; single-VM addresses and all owned IDs are validated
+against exact OpenTofu outputs.
+
 The credential-free unit and integration suites use SDK-shaped fakes and an
 arbitrary future SKU. They prove restriction and zone normalization, both quota
 tiers, exact-price freshness, capacity freshness, content-free traces, hard-policy
@@ -152,20 +178,37 @@ workflow supplies live read-only evidence.
 ## ZDD and rollback
 
 Discovery and selection are side-effect free, so failure leaves the serving path
-unchanged. The separate `azure-gpu-vmss-worker` OpenTofu module creates a uniquely
-owned private Uniform scale set with explicit NAT egress, surge rolling upgrades,
-rich application health, automatic repair, and an exact-scope deployment role.
-Gludd's Ansible phase must attest driver/runtime/topology and health, register the
-replacement without traffic, switch traffic only after readiness, drain the prior
-worker, and then destroy only prior owned resources. Allocation, attestation,
-price, policy, or routing failure destroys the replacement and retains the old
-endpoint.
+unchanged. The `azure-gpu-vmss-worker` OpenTofu module creates a uniquely owned
+private Uniform scale set with explicit NAT egress, surge rolling upgrades, rich
+application health, automatic repair, and an exact-scope deployment role. The
+single-VM module creates one controller-restricted public worker for host-local
+multi-GPU layouts.
+
+The universal lifecycle keeps the old serving route while it provisions the
+replacement, configures hosts serially, and admits only the complete attested host
+set. Apply or output failure invokes destroy against the same owned state before
+returning a censored error. Close drains the route, retires the exact systemd
+generation, destroys infrastructure, and then uses an independently constructed
+Azure SDK client to enumerate the resource group and prove every recorded ARM ID
+absent. A successful OpenTofu exit alone is not cleanup proof.
 
 Rollback is immediate and non-destructive at selection time: remove the new
 strategy option or stop supplying fresh exact-scope evidence. The next selection
-refuses it; no Azure resource is changed by this module. Expired capacity or price
-evidence has the same effect. The lifecycle supervisor separately drains and
-destroys only lease-tagged VMSS resources, then requires final Azure absence.
+refuses it. Expired capacity or price evidence has the same effect. For an already
+materialized candidate, the lifecycle supervisor drains and destroys only the
+state- and lease-owned resources, then requires final Azure absence.
+
+## Verification
+
+The infrastructure path is covered by
+`tests/unit/test_azure_gpu_worker_materializer.py`,
+`tests/unit/test_azure_gpu_worker_sdk.py`, and
+`tests/unit/test_azure_gpu_worker_runtime.py`. They cover both VM strategies,
+private state inputs, foreign-state and symlink refusal, exact plan auditing,
+per-phase credential leases, SDK inventory normalization, compensation, censored
+failures, owned teardown, and independent absence. Their branch-aware focused
+profiles report 95%, 96%, and 93% respectively; each exceeds the 85% aggregate
+and 75% per-file release floors.
 
 ## Source evidence and operator reports
 
