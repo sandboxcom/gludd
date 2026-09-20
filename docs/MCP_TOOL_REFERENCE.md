@@ -801,4 +801,3 @@ _No parameters._
 | `state` | str | | `"present"` |
 | `timeout` | int | | `120` |
 | `worktree_path` | str | **required** |  |
-
