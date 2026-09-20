@@ -37,9 +37,16 @@
       facts_attested: true
       driver_ready: true
       runtime_ready: true
+      topology_ready: true
       device_count: 2
       source_revision: molecule-fixture-v1
       topology_digest: "{{ fixture_topology_digest }}"
+      observed_inventory_digest: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      driver_version_digest: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+      runtime_version_digest: sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+      backend: fixture
+      interconnect: fixture-link
+      reason_codes: []
   tasks:
     - name: Prove credential-shaped environment names fail closed
       block:

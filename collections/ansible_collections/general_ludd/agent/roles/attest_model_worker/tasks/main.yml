@@ -1,0 +1,62 @@
+---
+- name: Validate universal model worker attestation inputs
+  ansible.builtin.assert:
+    that:
+      - gludd_model_worker_plan is mapping
+      - gludd_model_worker_plan.schema_version | int == 1
+      - gludd_model_worker_plan.runner_id | length > 0
+      - gludd_model_worker_plan.source_revision | length > 0
+      - gludd_model_worker_plan.devices_per_replica | int > 0
+      - gludd_model_worker_attestation_backend is match('^[a-z][a-z0-9_-]{0,63}$')
+      - gludd_model_worker_attestation_minimum_memory_mib | int > 0
+      - gludd_model_worker_attestation_required_interconnect is match('^[a-z][a-z0-9_-]{0,63}$')
+      - gludd_model_worker_attestation_expected_topology_digest is match('^[0-9a-f]{64}$')
+      - gludd_model_worker_attestation_runtime_probe is sequence
+      - gludd_model_worker_attestation_runtime_probe is not string
+      - gludd_model_worker_attestation_runtime_probe | length > 0
+      - gludd_model_worker_attestation_runtime_probe | length <= 64
+      - gludd_model_worker_attestation_expected_runtime_version_digest is match('^sha256:[0-9a-f]{64}$')
+      - gludd_model_worker_attestation_timeout_seconds | int > 0
+      - gludd_model_worker_attestation_timeout_seconds | int <= 300
+    fail_msg: >-
+      attest_model_worker requires one bounded universal launch plan and exact
+      topology, device-memory, interconnect, and runtime-version expectations.
+
+- name: Observe model worker driver topology and runtime
+  general_ludd.agent.gludd_model_worker_attest:
+    runner_id: "{{ gludd_model_worker_plan.runner_id }}"
+    source_revision: "{{ gludd_model_worker_plan.source_revision }}"
+    backend: "{{ gludd_model_worker_attestation_backend }}"
+    minimum_device_count: "{{ gludd_model_worker_plan.devices_per_replica }}"
+    minimum_memory_mib: "{{ gludd_model_worker_attestation_minimum_memory_mib }}"
+    required_interconnect: "{{ gludd_model_worker_attestation_required_interconnect }}"
+    expected_topology_digest: "{{ gludd_model_worker_attestation_expected_topology_digest }}"
+    runtime_probe: "{{ gludd_model_worker_attestation_runtime_probe }}"
+    expected_runtime_version_digest: >-
+      {{ gludd_model_worker_attestation_expected_runtime_version_digest }}
+    timeout_seconds: "{{ gludd_model_worker_attestation_timeout_seconds }}"
+  register: gludd_model_worker_attestation_observation
+
+- name: Publish content-free model worker attestation
+  ansible.builtin.set_fact:
+    gludd_model_worker_attestation: >-
+      {{ gludd_model_worker_attestation_observation.ansible_facts.gludd_model_worker_attestation }}
+  changed_when: false
+
+- name: Require complete model worker attestation
+  ansible.builtin.assert:
+    that:
+      - gludd_model_worker_attestation.facts_attested | bool
+      - gludd_model_worker_attestation.driver_ready | bool
+      - gludd_model_worker_attestation.runtime_ready | bool
+      - gludd_model_worker_attestation.topology_ready | bool
+      - gludd_model_worker_attestation.device_count | int >= gludd_model_worker_plan.devices_per_replica | int
+      - gludd_model_worker_attestation.source_revision == gludd_model_worker_plan.source_revision
+      - gludd_model_worker_attestation.topology_digest == gludd_model_worker_attestation_expected_topology_digest
+      - gludd_model_worker_attestation.observed_inventory_digest is match('^[0-9a-f]{64}$')
+      - gludd_model_worker_attestation.driver_version_digest is match('^sha256:[0-9a-f]{64}$')
+      - gludd_model_worker_attestation.runtime_version_digest == gludd_model_worker_attestation_expected_runtime_version_digest
+      - gludd_model_worker_attestation.reason_codes | length == 0
+    fail_msg: >-
+      Model worker admission refused by content-free driver, topology, or
+      runtime evidence; inspect gludd_model_worker_attestation.reason_codes.

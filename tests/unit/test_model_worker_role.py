@@ -67,9 +67,13 @@ def test_role_requires_live_runtime_and_topology_attestation() -> None:
         "facts_attested",
         "driver_ready",
         "runtime_ready",
+        "topology_ready",
         "device_count",
         "source_revision",
         "topology_digest",
+        "observed_inventory_digest",
+        "driver_version_digest",
+        "runtime_version_digest",
     ):
         assert f"gludd_model_worker_attestation.{field}" in text
     assert "gludd_model_worker_plan.devices_per_replica" in text

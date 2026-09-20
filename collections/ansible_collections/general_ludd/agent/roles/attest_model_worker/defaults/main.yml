@@ -1,0 +1,9 @@
+---
+gludd_model_worker_plan: {}
+gludd_model_worker_attestation_backend: ""
+gludd_model_worker_attestation_minimum_memory_mib: 1
+gludd_model_worker_attestation_required_interconnect: any
+gludd_model_worker_attestation_expected_topology_digest: ""
+gludd_model_worker_attestation_runtime_probe: []
+gludd_model_worker_attestation_expected_runtime_version_digest: ""
+gludd_model_worker_attestation_timeout_seconds: 15

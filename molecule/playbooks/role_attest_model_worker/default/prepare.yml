@@ -1,0 +1,11 @@
+---
+- name: Prepare - confirm the immutable Gludd runtime is importable
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Explain the portable negative-path scenario
+      ansible.builtin.debug:
+        msg: >-
+          This portable scenario uses an unregistered accelerator backend to
+          prove attestation fails closed without probing or changing hardware.

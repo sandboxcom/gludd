@@ -50,9 +50,14 @@
       - gludd_model_worker_attestation.facts_attested | bool
       - gludd_model_worker_attestation.driver_ready | bool
       - gludd_model_worker_attestation.runtime_ready | bool
+      - gludd_model_worker_attestation.topology_ready | bool
       - gludd_model_worker_attestation.device_count | int >= gludd_model_worker_plan.devices_per_replica | int
       - gludd_model_worker_attestation.source_revision == gludd_model_worker_plan.source_revision
       - gludd_model_worker_attestation.topology_digest == gludd_model_worker_expected_topology_digest
+      - gludd_model_worker_attestation.observed_inventory_digest is match('^[0-9a-f]{64}$')
+      - gludd_model_worker_attestation.driver_version_digest is match('^sha256:[0-9a-f]{64}$')
+      - gludd_model_worker_attestation.runtime_version_digest is match('^sha256:[0-9a-f]{64}$')
+      - gludd_model_worker_attestation.reason_codes | length == 0
     fail_msg: >-
       Live driver, runtime, device-count, source-revision, and topology evidence
       must match the selected runner plan before any candidate service starts.
@@ -155,6 +160,11 @@
           'adapter_id': gludd_model_worker_plan.adapter_id,
           'source_revision': gludd_model_worker_plan.source_revision,
           'topology_digest': gludd_model_worker_expected_topology_digest,
+          'observed_inventory_digest': gludd_model_worker_attestation.observed_inventory_digest,
+          'driver_version_digest': gludd_model_worker_attestation.driver_version_digest,
+          'runtime_version_digest': gludd_model_worker_attestation.runtime_version_digest,
+          'backend': gludd_model_worker_attestation.backend,
+          'interconnect': gludd_model_worker_attestation.interconnect,
           'devices_per_replica': gludd_model_worker_plan.devices_per_replica,
           'service_name': gludd_model_worker_candidate_name
         } | to_nice_json }}
@@ -168,6 +178,11 @@
       adapter_id: "{{ gludd_model_worker_plan.adapter_id }}"
       source_revision: "{{ gludd_model_worker_plan.source_revision }}"
       topology_digest: "{{ gludd_model_worker_expected_topology_digest }}"
+      observed_inventory_digest: "{{ gludd_model_worker_attestation.observed_inventory_digest }}"
+      driver_version_digest: "{{ gludd_model_worker_attestation.driver_version_digest }}"
+      runtime_version_digest: "{{ gludd_model_worker_attestation.runtime_version_digest }}"
+      backend: "{{ gludd_model_worker_attestation.backend }}"
+      interconnect: "{{ gludd_model_worker_attestation.interconnect }}"
       devices_per_replica: "{{ gludd_model_worker_plan.devices_per_replica }}"
       service_name: "{{ gludd_model_worker_candidate_name }}.service"
       health_url: "{{ gludd_model_worker_health_url }}"

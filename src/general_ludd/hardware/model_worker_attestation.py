@@ -26,6 +26,10 @@ _DIGEST_RE = re.compile(r"[0-9a-f]{64}")
 _VERSION_DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}")
 _NVIDIA_ROW_RE = re.compile(r"GPU[0-9]+")
 _NVIDIA_LINK_RE = re.compile(r"(?:X|SYS|NODE|PHB|PXB|PIX|NV[0-9]+)")
+_SECRET_OPTION_RE = re.compile(
+    r"(?:^|[-_])(?:api[-_]?key|auth(?:orization)?|bearer|credential|password|secret|token)(?:$|[-_])",
+    re.IGNORECASE,
+)
 
 
 def _bounded_text(value: object, field_name: str) -> str:
@@ -282,6 +286,9 @@ class ModelWorkerAttestationRequest:
             text = _bounded_text(token, "runtime_probe")
             if any(delimiter in text for delimiter in "\r\n"):
                 raise ValueError("runtime_probe tokens must not contain line breaks")
+            option_name = text.lstrip("-").split("=", maxsplit=1)[0]
+            if _SECRET_OPTION_RE.search(option_name) is not None:
+                raise ValueError("runtime_probe must not contain credential options")
         if _VERSION_DIGEST_RE.fullmatch(self.expected_runtime_version_digest) is None:
             raise ValueError("expected_runtime_version_digest must be a SHA-256 digest")
         _positive_int(self.timeout_seconds, "timeout_seconds", maximum=300)

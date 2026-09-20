@@ -452,6 +452,7 @@ def test_custom_future_accelerator_probe_uses_the_same_contract() -> None:
         {"expected_topology_digest": "short"},
         {"runtime_probe": cast(tuple[str, ...], ["vllm", "--version"])},
         {"runtime_probe": ("vllm\n",)},
+        {"runtime_probe": ("runner", "--api-token", "private-value")},
         {"expected_runtime_version_digest": "sha256:short"},
         {"timeout_seconds": 0},
     ],

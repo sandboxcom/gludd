@@ -65,6 +65,7 @@ _ROLE_SCENARIO_ALIASES: dict[str, set[str]] = {
 _MODULE_SCENARIO_ALIASES: dict[str, set[str]] = {
     "gludd_accelerator_facts": {"role_discover_accelerators"},
     "gludd_local_model": {"local_game_gen"},
+    "gludd_model_worker_attest": {"role_attest_model_worker"},
 }
 
 

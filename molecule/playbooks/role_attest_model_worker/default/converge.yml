@@ -1,0 +1,62 @@
+---
+- name: Converge - prove unknown accelerator attestation fails closed
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    evidence_path: >-
+      {{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/attestation-evidence.json
+    fixture_plan:
+      schema_version: 1
+      runner_id: fixture-runner
+      adapter_id: fixture-adapter
+      source_revision: fixture-revision-v1
+      variant_id: fixture-variant
+      model_id: fixture/model@revision
+      quantization: fixture
+      distribution_mode: runner_managed
+      command: [fixture-runner, serve]
+      environment: {}
+      request_options: {}
+      replica_count: 1
+      devices_per_replica: 1
+  tasks:
+    - name: Validate the immutable fixture plan before guest observation
+      ansible.builtin.assert:
+        that:
+          - fixture_plan.schema_version | int == 1
+          - fixture_plan.runner_id == 'fixture-runner'
+          - fixture_plan.devices_per_replica | int == 1
+        success_msg: Fixture plan is bounded and immutable for this scenario.
+
+    - name: Invoke attestation with an unavailable extension backend
+      block:
+        - name: Run the real provider-neutral attestation role
+          ansible.builtin.include_role:
+            name: general_ludd.agent.attest_model_worker
+          vars:
+            gludd_model_worker_plan: "{{ fixture_plan }}"
+            gludd_model_worker_attestation_backend: molecule-missing
+            gludd_model_worker_attestation_minimum_memory_mib: 1
+            gludd_model_worker_attestation_required_interconnect: any
+            gludd_model_worker_attestation_expected_topology_digest: >-
+              aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+            gludd_model_worker_attestation_runtime_probe: [fixture-runner, --version]
+            gludd_model_worker_attestation_expected_runtime_version_digest: >-
+              sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+        - name: Reject unexpectedly accepted unavailable backend
+          ansible.builtin.fail:
+            msg: attest_model_worker unexpectedly accepted molecule-missing
+      rescue:
+        - name: Verify the admission assertion caused the failure
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'Require complete model worker attestation'
+              - gludd_model_worker_attestation.reason_codes == ['probe_unavailable']
+
+        - name: Persist content-free refusal evidence
+          ansible.builtin.copy:
+            dest: "{{ evidence_path }}"
+            mode: "0600"
+            content: "{{ gludd_model_worker_attestation | to_nice_json }}"
