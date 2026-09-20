@@ -46,7 +46,7 @@ _VMSS_ID = (
 def _credentials() -> AzureAcceleratorCredentials:
     return AzureAcceleratorCredentials(
         client_id="00000000-0000-4000-8000-000000000002",
-        client_secret="private-secret",
+        client_secret="private-secret",  # pragma: allowlist secret
         subscription_id=_SUBSCRIPTION,
         tenant_id="00000000-0000-4000-8000-000000000003",
     )

@@ -189,7 +189,7 @@ def test_refuses_nonempty_unowned_destination(tmp_path: Path) -> None:
         {"controller_cidr": "not-a-cidr"},
         {"controller_cidr": "2001:db8::1/128"},
         {"ssh_public_key": "not-a-key"},
-        {"ssh_private_key_path": "relative/key"},
+        {"ssh_private_key_path": "relative/key"},  # pragma: allowlist secret
         {"inference_port": True},
         {"owner_token": "OWNER"},
         {"trace_id": "not-a-trace"},

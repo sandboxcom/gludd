@@ -288,7 +288,7 @@ def test_stream_holds_generation_until_iterator_is_closed() -> None:
     [
         "http://10.0.0.99:8000/v1",
         "ftp://10.0.0.1:8000/v1",
-        "http://user:password@10.0.0.1:8000/v1",
+        "http://user:password@10.0.0.1:8000/v1",  # pragma: allowlist secret
         "http://10.0.0.1:8000/v1?token=secret",
         "http://10.0.0.1:8000/v1#fragment",
     ],
