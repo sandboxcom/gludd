@@ -344,8 +344,15 @@ class AnsibleRunnerAdapter:
         self,
         playbook_name: str,
         private_data_dir: str | None = None,
+        inventory: list[str] | None = None,
         extravars: dict[str, Any] | None = None,
         env: dict[str, str] | None = None,
+        verbosity: int = 0,
+        check: bool = False,
+        tags: list[str] | None = None,
+        skip_tags: list[str] | None = None,
+        connection: str = "local",
+        become: bool = False,
         timeout: float | None = None,
         cancel_requested: Callable[[], bool] | None = None,
         **runner_kwargs: Any,
@@ -358,8 +365,15 @@ class AnsibleRunnerAdapter:
         return self._run_resolved_playbook(
             self._core_runner,
             playbook_path=playbook_path,
+            inventory=inventory,
             extravars=extravars,
             env=env,
+            verbosity=verbosity,
+            check=check,
+            tags=tags,
+            skip_tags=skip_tags,
+            connection=connection,
+            become=become,
             timeout=timeout,
             cancel_requested=cancel_requested,
         )
@@ -372,6 +386,13 @@ class AnsibleRunnerAdapter:
         extravars: dict[str, Any] | None,
         env: dict[str, str] | None,
         timeout: float | None,
+        inventory: list[str] | None = None,
+        verbosity: int = 0,
+        check: bool = False,
+        tags: list[str] | None = None,
+        skip_tags: list[str] | None = None,
+        connection: str = "local",
+        become: bool = False,
         cancel_requested: Callable[[], bool] | None = None,
     ) -> dict[str, Any]:
         """Execute one resolved playbook with the selected controller runner."""
@@ -410,10 +431,17 @@ class AnsibleRunnerAdapter:
                 )
             result = core_runner.run_playbook(
                 playbook_path=playbook_path,
+                inventory=inventory,
                 # Do not evaluate truthiness on this untrusted mapping: a dict
                 # subclass can override __bool__/__len__. CoreAnsibleRunner's
                 # strict validator will reject non-exact built-in structures.
                 extravars={} if extravars is None else extravars,
+                verbosity=verbosity,
+                check=check,
+                tags=tags,
+                skip_tags=skip_tags,
+                connection=connection,
+                become=become,
                 timeout=effective_timeout,
                 extra_env=_merged_env or None,
                 cancel_requested=cancel_requested,

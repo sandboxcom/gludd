@@ -153,6 +153,38 @@ class TestRunnerRunPlaybook:
             )
         assert len(result["events"]) == 2
 
+    @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
+    def test_run_playbook_forwards_remote_execution_boundary(
+        self,
+        mock_core_cls: MagicMock,
+    ) -> None:
+        """Remote workers receive only the explicit inventory and SSH controls."""
+        mock_core = MagicMock()
+        mock_result = MagicMock()
+        mock_result.model_dump.return_value = {
+            "status": "successful",
+            "rc": 0,
+            "events": [],
+            "stats": {},
+            "host_results": {},
+        }
+        mock_core.run_playbook.return_value = mock_result
+        mock_core_cls.return_value = mock_core
+
+        with tempfile.TemporaryDirectory() as tmp:
+            adapter = AnsibleRunnerAdapter(private_data_dir=tmp)
+            adapter.run_playbook(
+                playbook_name="noop.yml",
+                inventory=["10.0.0.8,"],
+                connection="ssh",
+                become=True,
+            )
+
+        call_kwargs = mock_core.run_playbook.call_args.kwargs
+        assert call_kwargs["inventory"] == ["10.0.0.8,"]
+        assert call_kwargs["connection"] == "ssh"
+        assert call_kwargs["become"] is True
+
 
 class TestExecutionEnvironmentBootstrap:
     @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
