@@ -10,7 +10,7 @@ import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.infra.model_worker_lifecycle import (
@@ -48,6 +48,7 @@ def _bounded_text(value: object, field_name: str) -> str:
     return value
 
 
+@runtime_checkable
 class _EndpointCaller(Protocol):
     """One endpoint-specific gateway owned by a published generation."""
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Iterator, Mapping
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from general_ludd.azure.accelerator_credential_source import (
     AzureAcceleratorCredentialLease,
@@ -34,12 +34,14 @@ from general_ludd.infra.model_worker_lifecycle import (
 from general_ludd.models.gateway import ModelGateway, ModelResponse
 
 
+@runtime_checkable
 class _CredentialSource(Protocol):
     def acquire(self) -> AzureAcceleratorCredentialLease: ...
 
     def release(self, lease: AzureAcceleratorCredentialLease) -> None: ...
 
 
+@runtime_checkable
 class _PlaybookRunner(Protocol):
     def run_playbook(self, playbook_name: str, **kwargs: Any) -> dict[str, Any]: ...
 

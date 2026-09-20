@@ -14,7 +14,7 @@ import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, cast, runtime_checkable
 
 import httpx
 import tenacity
@@ -141,6 +141,7 @@ class _SecretsResolver(Protocol):
     def resolve(self, alias_name: str) -> str | None: ...
 
 
+@runtime_checkable
 class _RuntimeModelGateway(Protocol):
     """A dynamically owned model route behind one stable profile identity."""
 
