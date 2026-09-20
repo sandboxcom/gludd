@@ -34,7 +34,13 @@ The Azure implementation is concrete rather than a routing placeholder:
   enumerates the exact owned ARM IDs through maintained Azure SDKs; and
 - `ansible_model_worker_runtime` creates a mode-0600 ephemeral inventory, runs the
   serial deploy or retire playbook, and accepts endpoints only from exact
-  content-free attestation facts.
+  content-free attestation facts;
+- `model_worker_gateway_dispatch` publishes one stable universal profile, balances
+  calls over an attested generation, retains buffered and streaming in-flight
+  ownership, and atomically falls back to the prior healthy generation; and
+- `azure_gpu_model_worker_service` composes those owners so task code sees the
+  ordinary `ModelGatewayProtocol`, never Azure, OpenTofu, Ansible, or runner
+  details.
 
 ## Owned state machine
 
@@ -105,7 +111,9 @@ capability source.
 
 `tests/unit/test_model_worker_lifecycle.py` covers success, idempotent close,
 configuration and publication compensation, cleanup failure, exact endpoint
-admission, validation, and content-free traces. The Azure materializer, SDK,
-infrastructure runtime, and Ansible configuration adapter add 166 focused tests;
-the combined affected lifecycle replay passes 189 tests. Every focused production
+admission, validation, and content-free traces. The gateway dispatcher adds 33
+tests and reaches 98% branch-aware coverage; the Azure service composition adds
+eight tests and reaches 93%. The six-case hermetic integration matrix exercises
+single VM and VMSS ownership with vLLM, Ollama, and llama.cpp from materialization
+through model work and independently verified absence. Every focused production
 file exceeds both the 85% aggregate and 75% per-file release floors.

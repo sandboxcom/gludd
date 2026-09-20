@@ -16,6 +16,14 @@ runtime, topology, immutable runner generation, and health before an endpoint ma
 be published. Self-improvement is one consumer of this lifecycle; chemistry,
 firmware, and other universal tasks use the same boundary.
 
+`AzureGpuModelWorkerService` now joins that infrastructure/configuration boundary
+to the ordinary model gateway. `ModelWorkerGatewayDispatcher` keeps a stable
+logical profile while VM or VMSS generations change, balances exact attested
+endpoints, retains in-flight buffered and streaming calls during drain, and removes
+the profile before guest retirement or infrastructure destroy. A hermetic matrix
+proves this complete path for vLLM, Ollama, and llama.cpp on both strategies; live
+Azure capacity and paid inference remain separately opt-in release evidence.
+
 The immutable availability scope, assessment, and index contracts live in
 `general_ludd.infra.azure_operational_availability`. They are infrastructure
 evidence consumed by chemistry, firmware, self-improvement, and any other
