@@ -802,6 +802,7 @@
         "src/general_ludd/daemon.py",
         "src/general_ludd/daemon_wiring.py",
         "src/general_ludd/dispatch/capabilities.py",
+        "src/general_ludd/infra/ansible_model_worker_runtime.py",
         "src/general_ludd/infra/service_catalog.py",
         "src/general_ludd/mcp/loader.py",
         "src/general_ludd/memory/memory_bank.py",
