@@ -3,7 +3,7 @@
   ansible.builtin.assert:
     that:
       - gludd_model_worker_plan is mapping
-      - gludd_model_worker_plan.schema_version | int == 1
+      - gludd_model_worker_plan.schema_version | int == model_worker_schema_version | int
       - gludd_model_worker_plan.runner_id | length > 0
       - gludd_model_worker_plan.adapter_id | length > 0
       - gludd_model_worker_plan.source_revision | length > 0

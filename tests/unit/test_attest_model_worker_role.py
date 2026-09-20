@@ -29,6 +29,13 @@ def test_role_has_complete_collection_structure() -> None:
         assert (ROLE / relative).is_file(), relative
 
 
+def test_role_owns_its_schema_contract_with_a_role_prefixed_variable() -> None:
+    defaults = cast(dict[str, Any], yaml.safe_load(_read("defaults/main.yml")))
+
+    assert defaults["attest_model_worker_schema_version"] == 1
+    assert "attest_model_worker_schema_version" in _read("tasks/main.yml")
+
+
 def test_role_derives_attestation_request_from_universal_launch_plan() -> None:
     tasks = cast(list[dict[str, Any]], yaml.safe_load(_read("tasks/main.yml")))
     text = _read("tasks/main.yml")

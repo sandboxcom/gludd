@@ -1,4 +1,5 @@
 ---
+model_worker_schema_version: 1
 gludd_model_worker_plan: {}
 gludd_model_worker_attestation: {}
 gludd_model_worker_expected_topology_digest: ""

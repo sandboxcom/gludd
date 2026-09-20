@@ -1,4 +1,5 @@
 ---
+attest_model_worker_schema_version: 1
 gludd_model_worker_plan: {}
 gludd_model_worker_attestation_backend: ""
 gludd_model_worker_attestation_minimum_memory_mib: 1
