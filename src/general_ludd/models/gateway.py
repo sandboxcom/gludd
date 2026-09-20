@@ -141,6 +141,24 @@ class _SecretsResolver(Protocol):
     def resolve(self, alias_name: str) -> str | None: ...
 
 
+class _RuntimeModelGateway(Protocol):
+    """A dynamically owned model route behind one stable profile identity."""
+
+    def call_model(
+        self,
+        profile_id: str,
+        messages: list[dict[str, str]],
+        **kwargs: Any,
+    ) -> ModelResponse: ...
+
+    def call_model_stream(
+        self,
+        profile_id: str,
+        messages: list[dict[str, str]],
+        **kwargs: Any,
+    ) -> Iterator[object]: ...
+
+
 class _HealthTrackerProtocol(Protocol):
     def is_healthy(self, model_id: str, *, admit_probe: bool = ...) -> bool: ...
     def record_success(self, model_id: str) -> None: ...
@@ -946,6 +964,8 @@ class ModelGateway:
     ) -> None:
         """Create a gateway and assume ownership of any injected response cache."""
         self._profiles: dict[str, ModelProfile] = {}
+        self._runtime_routes: dict[str, _RuntimeModelGateway] = {}
+        self._profile_lock = threading.RLock()
         if profiles:
             src = profiles.values() if isinstance(profiles, dict) else profiles
             for p in src:
@@ -1085,7 +1105,80 @@ class ModelGateway:
 
     def get_profile(self, profile_id: str) -> ModelProfile | None:
         """Return one configured profile, or None when it is unknown."""
-        return self._profiles.get(profile_id)
+        with self._profile_lock:
+            return self._profiles.get(profile_id)
+
+    def _runtime_route(self, profile_id: str) -> _RuntimeModelGateway | None:
+        """Return one atomic snapshot of a dynamically owned route."""
+        with self._profile_lock:
+            return self._runtime_routes.get(profile_id)
+
+    def register_runtime_profile(
+        self,
+        profile: ModelProfile,
+        runtime: _RuntimeModelGateway,
+    ) -> None:
+        """Atomically publish one profile and its application-owned runtime."""
+        if not isinstance(profile, ModelProfile):
+            raise ValueError("profile must be ModelProfile")
+        if runtime is self or any(
+            not callable(getattr(runtime, method, None))
+            for method in ("call_model", "call_model_stream")
+        ):
+            raise ValueError("runtime must expose buffered and streaming model calls")
+        model_id = profile.model_profile_id
+        with self._profile_lock:
+            if model_id in self._profiles or model_id in self._runtime_routes:
+                raise ValueError(f"Profile '{model_id}' is already registered")
+            self._profiles[model_id] = profile
+            self._runtime_routes[model_id] = runtime
+            try:
+                self._notify_profile_change(
+                    event=ModelAddedEvent(
+                        model_id=model_id,
+                        profile=profile.model_dump(),
+                    ),
+                    hook_name="on_model_added",
+                    hook_payload={
+                        "model_id": model_id,
+                        "profile": profile.model_dump(),
+                    },
+                    action="add",
+                    model_id=model_id,
+                    broadcast_payload=profile.model_dump(),
+                )
+            except BaseException:
+                self._runtime_routes.pop(model_id, None)
+                self._profiles.pop(model_id, None)
+                raise
+
+    def remove_runtime_profile(
+        self,
+        profile_id: str,
+        runtime: _RuntimeModelGateway,
+    ) -> bool:
+        """Remove a dynamic profile only when the exact owner still controls it."""
+        with self._profile_lock:
+            if self._runtime_routes.get(profile_id) is not runtime:
+                return False
+            profile = self._profiles.get(profile_id)
+            self._runtime_routes.pop(profile_id, None)
+            self._profiles.pop(profile_id, None)
+            try:
+                self._notify_profile_change(
+                    event=ModelRemovedEvent(model_id=profile_id),
+                    hook_name="on_model_removed",
+                    hook_payload={"model_id": profile_id},
+                    action="remove",
+                    model_id=profile_id,
+                    broadcast_payload={},
+                )
+            except BaseException:
+                self._runtime_routes[profile_id] = runtime
+                if profile is not None:
+                    self._profiles[profile_id] = profile
+                raise
+            return True
 
     @staticmethod
     def _request_utf8_bytes(
@@ -1689,7 +1782,8 @@ class ModelGateway:
 
     def list_profiles(self) -> list[ModelProfile]:
         """Return the currently configured model profiles."""
-        return list(self._profiles.values())
+        with self._profile_lock:
+            return list(self._profiles.values())
 
     def call_model(
         self,
@@ -1706,6 +1800,20 @@ class ModelGateway:
         **kwargs: Any,
     ) -> ModelResponse:
         """Invoke one profile after enforcing cancellation, payload, and budget limits."""
+        runtime = self._runtime_route(profile_id)
+        if runtime is not None:
+            return runtime.call_model(
+                profile_id,
+                messages,
+                estimated_cost=estimated_cost,
+                budget_remaining=budget_remaining,
+                requested_max_output_tokens=requested_max_output_tokens,
+                timeout_seconds=timeout_seconds,
+                cancellation_event=cancellation_event,
+                _skip_health_check=_skip_health_check,
+                _request_payload_budget=_request_payload_budget,
+                **kwargs,
+            )
         provider_timeout = _default_provider_request_timeout(timeout_seconds)
         if cancellation_event is not None and cancellation_event.is_set():
             raise CallCancelledError(profile_id)
@@ -1872,6 +1980,19 @@ class ModelGateway:
         partially delivered stream is not an atomic cache value. Billing and all
         success side effects happen only after clean upstream exhaustion.
         """
+        runtime = self._runtime_route(profile_id)
+        if runtime is not None:
+            yield from runtime.call_model_stream(
+                profile_id,
+                messages,
+                estimated_cost=estimated_cost,
+                budget_remaining=budget_remaining,
+                requested_max_output_tokens=requested_max_output_tokens,
+                tools=tools,
+                project_id=project_id,
+                **kwargs,
+            )
+            return
         profile = self._profiles.get(profile_id)
         if profile is None:
             raise ValueError(f"Profile '{profile_id}' not found")
@@ -3931,25 +4052,31 @@ class ModelGateway:
             enabled=enabled,
             **{k: v for k, v in kwargs.items() if k in ModelProfile.model_fields},
         )
-        self._profiles[model_id] = profile
-        self._notify_profile_change(
-            event=ModelAddedEvent(model_id=model_id, profile=profile.model_dump()),
-            hook_name="on_model_added",
-            hook_payload={"model_id": model_id, "profile": profile.model_dump()},
-            action="add",
-            model_id=model_id,
-            broadcast_payload=profile.model_dump(),
-        )
+        with self._profile_lock:
+            if model_id in self._runtime_routes:
+                raise ValueError(f"Profile '{model_id}' is runtime-owned")
+            self._profiles[model_id] = profile
+            self._notify_profile_change(
+                event=ModelAddedEvent(model_id=model_id, profile=profile.model_dump()),
+                hook_name="on_model_added",
+                hook_payload={"model_id": model_id, "profile": profile.model_dump()},
+                action="add",
+                model_id=model_id,
+                broadcast_payload=profile.model_dump(),
+            )
         return profile
 
     def remove_profile(self, model_id: str) -> None:
         """Remove and broadcast one model profile identifier."""
-        self._profiles.pop(model_id, None)
-        self._notify_profile_change(
-            event=ModelRemovedEvent(model_id=model_id),
-            hook_name="on_model_removed",
-            hook_payload={"model_id": model_id},
-            action="remove",
-            model_id=model_id,
-            broadcast_payload={},
-        )
+        with self._profile_lock:
+            if model_id in self._runtime_routes:
+                raise ValueError(f"Profile '{model_id}' is runtime-owned")
+            self._profiles.pop(model_id, None)
+            self._notify_profile_change(
+                event=ModelRemovedEvent(model_id=model_id),
+                hook_name="on_model_removed",
+                hook_payload={"model_id": model_id},
+                action="remove",
+                model_id=model_id,
+                broadcast_payload={},
+            )
