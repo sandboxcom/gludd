@@ -1,6 +1,6 @@
 # MCP Tool Reference
 
-**Generated:** 2026-08-30 21:48 UTC | **Version:** `v0.1.0-beta.3-2642-g08397c285-dirty` | **Tools:** 40
+**Generated:** 2026-09-20 02:00 UTC | **Version:** `v0.1.0-beta.4-553-g50d744fa0-dirty` | **Tools:** 42
 
 Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automatically surfaced as an MCP tool with a JSON-schema input contract. This reference is regenerated via `make gen-mcp-tool-ref` (which calls `gen-mcp-tools` then this generator).
 
@@ -9,45 +9,47 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 ## Tool Index
 
 1. [`gludd_abtest`](#1-gludd-abtest) — Crash-isolated A/B test of a candidate code variant in a fresh subprocess — Runs a baseline (A = current C(src)) and a candidate (B = candidate worktree) under the SAME workload, each in a FRESH interpreter child process via C(general_ludd
-2. [`gludd_accounting`](#2-gludd-accounting) — Fetch per-project accounting snapshots via the daemon — C(state=all) calls C(GET /api/accounting) and returns accounting snapshots for ALL known projects as C(ansible_facts
-3. [`gludd_agent_run`](#3-gludd-agent-run) — Run the agent tool-call loop (prompt + tools → answer) — W6
-4. [`gludd_break_glass`](#4-gludd-break-glass) — OpenBao raft snapshot and restore (break-glass backup) — Wraps the OpenBao HTTP API for the two break-glass endpoints C(/v1/sys/storage/raft/snapshot) (GET — snapshot) and C(/v1/sys/storage/raft/restore) (POST — restore)
-5. [`gludd_db`](#5-gludd-db) — Todo/resource CRUD via daemon HTTP API (never raw SQLite) — Performs todo and resource operations against the daemon's REST API
-6. [`gludd_dispatch`](#6-gludd-dispatch) — Interact with the daemon's dynamic-dispatch API — C(state=dispatch) POSTs a tool-call to C(POST /api/dispatch) with a C(kind)/C(name)/C(args) body and returns the dispatch result as C(ansible_facts
-7. [`gludd_embed`](#7-gludd-embed) — Embedding similarity over the daemon's bert surface — With C(op=similar) (the default) queries the daemon's read-only C(POST /api/embeddings/similar) endpoint and returns the ranked similar canonical task types under C(ansible_facts
-8. [`gludd_environment`](#8-gludd-environment) — Inject the consolidated environment + optimization brief as ansible_facts — Queries the daemon's read-only C(GET /api/environment) endpoint and returns the consolidated environment brief under C(ansible_facts
-9. [`gludd_facts`](#9-gludd-facts) — Inject live daemon facts (work/todo/model/history/messages) as ansible_facts — Queries the daemon's read-only C(GET /api/facts) aggregation endpoint and returns the structured snapshot under C(ansible_facts
-10. [`gludd_features`](#10-gludd-features) — Fetch and verify the feature database via the daemon — C(state=list) calls C(GET /api/features) and returns all features (optionally filtered by status/category) as C(ansible_facts
-11. [`gludd_gate_check`](#11-gludd-gate-check) — Check whether a
-12. [`gludd_git`](#12-gludd-git) — Run hardened git control-plane operations through Gludd — Sends a typed, authenticated request to the daemon-owned GitAutomation service
-13. [`gludd_human_todo`](#13-gludd-human-todo) — File or resolve a bot→human request (HumanTodo) via the daemon — Agents use this module to ask a human for something they cannot get on their own — a permission escalation, an external action, a decision, missing input, or another blocker
-14. [`gludd_introspect`](#14-gludd-introspect) — Inject codebase self-knowledge facts (churn/complexity/coverage/debt) as ansible_facts — Queries the daemon's read-only C(GET /api/facts) endpoint and returns the C(codebase) self-introspection block under C(ansible_facts
-15. [`gludd_langchain_generate`](#15-gludd-langchain-generate) — Generate text (optionally structured JSON) via the daemon — Sends a prompt to the daemon's POST /admin/models/call endpoint, which runs the generation through the LangChain-backed model gateway
-16. [`gludd_langgraph_decision`](#16-gludd-langgraph-decision) — Ask the model to choose one option from a fixed set — Sends a decision prompt plus a list of allowed option tokens to the daemon's POST /admin/models/call endpoint and asks the model to reply with JSON of the form {"decision":
-17. [`gludd_langgraph_workflow`](#17-gludd-langgraph-workflow) — Run a multi-step LangGraph generate/review workflow — Sends a message list to the daemon's POST /admin/models/workflow endpoint, which executes a LangGraph generate -> review -> retry loop server-side and returns the best content plus quality metadata
-18. [`gludd_local_model`](#18-gludd-local-model) — Manage a daemon-owned local inference lifecycle — Delegates download, serve, consume, and shutdown to the Gludd daemon
-19. [`gludd_make`](#19-gludd-make) — Run a make target via the MakeRunner abstraction — Runs a C(make) target through the C(MakeRunner) subprocess wrapper with proper sanitized environment, bounded output capture, and per-target timeout
-20. [`gludd_mcp_tool`](#20-gludd-mcp-tool) — Invoke an MCP tool (honest placeholder — not yet wired) — Per the W3
-21. [`gludd_message`](#21-gludd-message) — Inter-agent message queue — send, receive, or ack messages via the daemon — Talks to the daemon message-queue API so agents/roles can coordinate
-22. [`gludd_metrics`](#22-gludd-metrics) — Inject live daemon metrics (agents/usage/cost/benchmarks) as ansible_facts — Queries the daemon's read-only C(GET /api/metrics) endpoint and returns the metrics snapshot under C(ansible_facts
-23. [`gludd_model_call`](#23-gludd-model-call) — Run a model generation via the daemon API — Sends a prompt to the daemon's POST /admin/models/call endpoint
-24. [`gludd_observe`](#24-gludd-observe) — Correlate registered observability sources through the Gludd daemon — Provides the Ansible seam for the cross-source C(GluddObserve) facade
-25. [`gludd_open_code`](#25-gludd-open-code) — Batched opencode agent tool patterns — gate, push, commit, test, status — Codifies the repeated back-and-forth tool-call patterns opencode agents perform by bundling multiple tool calls into single Ansible tasks
-26. [`gludd_ornith`](#26-gludd-ornith) — Pull rejected Ornith training pairs and invoke improvement rollouts — {'Bidirectional seam for the gludd x Ornith symbiotic loop
-27. [`gludd_osquery`](#27-gludd-osquery) — Query live system state via osquery and inject rows as ansible_facts — Runs a B(read-only) C(SELECT) query against C(osqueryi --json) and returns the result rows under C(ansible_facts
-28. [`gludd_ping`](#28-gludd-ping) — Verify daemon reachability — Pings the general_ludd daemon by calling /healthz
-29. [`gludd_proc_monitor`](#29-gludd-proc-monitor) — Report resource utilization, I/O and locks for gludd-managed processes — Queries the daemon's managed-process stats API and returns per-process resource utilization under C(ansible_facts
-30. [`gludd_process`](#30-gludd-process) — List, signal, and inspect daemon-managed processes — Talks to the general_ludd daemon's managed-process API so a playbook (or the model running a job) can enumerate the processes the daemon launched, inspect a live process's resource usage, or deliver a signal to one — all without ever calling C(kill)/C(ps) directly on the managed node
-31. [`gludd_push_guard`](#31-gludd-push-guard) — Enforce push-rate guard via force-push bypass tracking — Wraps the ForcePushTracker (scripts/push_rate_guard
-32. [`gludd_rag`](#32-gludd-rag) — Retrieval-Augmented Generation pipeline via module_utils
-33. [`gludd_reload`](#33-gludd-reload) — Hot-rotate a validated leaf code module with health-gated auto-rollback — Calls the authenticated Gludd daemon reload endpoint, which wraps C(general_ludd
-34. [`gludd_schedule`](#34-gludd-schedule) — Compute concurrency-safe execution batches via the daemon scheduler — Posts a list of work-item descriptors to C(POST /api/schedule) and returns the ordered concurrency-safe batches as C(ansible_facts
-35. [`gludd_skill`](#35-gludd-skill) — Select and render a skill with Jinja2 variables — Looks up a skill by name or trigger pattern and renders its body with Jinja2 C(StrictUndefined) — an unknown variable is an error, not silent empty text
-36. [`gludd_slurm_deploy`](#36-gludd-slurm-deploy) — Deploy a vLLM or llama
-37. [`gludd_spend`](#37-gludd-spend) — Fetch and configure the daemon spend-limiter — C(state=get) calls C(GET /api/spend) and returns the current spend snapshot as C(ansible_facts
-38. [`gludd_stream`](#38-gludd-stream) — Stream input signals (video/audio/text/binary) and dispatch buffered chunks to a cloned role — Opens a device (e
-39. [`gludd_traces`](#39-gludd-traces) — Inject recent execution traces (spans/cost/phase) as ansible_facts — Queries the daemon's read-only C(GET /api/traces) endpoint and returns the recent execution-trace snapshot under C(ansible_facts
-40. [`gludd_worktree`](#40-gludd-worktree) — Manage git worktrees (idempotent) — Creates or removes a git worktree via git_automation
+2. [`gludd_accelerator_facts`](#2-gludd-accelerator-facts) — Expose Gludd local and Slurm accelerator inventory as facts — Reads Gludd's normalized, read-only accelerator discovery endpoints
+3. [`gludd_accounting`](#3-gludd-accounting) — Fetch per-project accounting snapshots via the daemon — C(state=all) calls C(GET /api/accounting) and returns accounting snapshots for ALL known projects as C(ansible_facts
+4. [`gludd_agent_run`](#4-gludd-agent-run) — Run the agent tool-call loop (prompt + tools → answer) — W6
+5. [`gludd_break_glass`](#5-gludd-break-glass) — OpenBao raft snapshot and restore (break-glass backup) — Wraps the OpenBao HTTP API for the two break-glass endpoints C(/v1/sys/storage/raft/snapshot) (GET — snapshot) and C(/v1/sys/storage/raft/restore) (POST — restore)
+6. [`gludd_db`](#6-gludd-db) — Todo/resource CRUD via daemon HTTP API (never raw SQLite) — Performs todo and resource operations against the daemon's REST API
+7. [`gludd_dispatch`](#7-gludd-dispatch) — Interact with the daemon's dynamic-dispatch API — C(state=dispatch) POSTs a tool-call to C(POST /api/dispatch) with a C(kind)/C(name)/C(args) body and returns the dispatch result as C(ansible_facts
+8. [`gludd_embed`](#8-gludd-embed) — Embedding similarity over the daemon's bert surface — With C(op=similar) (the default) queries the daemon's read-only C(POST /api/embeddings/similar) endpoint and returns the ranked similar canonical task types under C(ansible_facts
+9. [`gludd_environment`](#9-gludd-environment) — Inject the consolidated environment + optimization brief as ansible_facts — Queries the daemon's read-only C(GET /api/environment) endpoint and returns the consolidated environment brief under C(ansible_facts
+10. [`gludd_facts`](#10-gludd-facts) — Inject live daemon facts (work/todo/model/history/messages) as ansible_facts — Queries the daemon's read-only C(GET /api/facts) aggregation endpoint and returns the structured snapshot under C(ansible_facts
+11. [`gludd_features`](#11-gludd-features) — Fetch and verify the feature database via the daemon — C(state=list) calls C(GET /api/features) and returns all features (optionally filtered by status/category) as C(ansible_facts
+12. [`gludd_gate_check`](#12-gludd-gate-check) — Check whether a
+13. [`gludd_git`](#13-gludd-git) — Run hardened git control-plane operations through Gludd — Sends a typed, authenticated request to the daemon-owned GitAutomation service
+14. [`gludd_human_todo`](#14-gludd-human-todo) — File or resolve a bot→human request (HumanTodo) via the daemon — Agents use this module to ask a human for something they cannot get on their own — a permission escalation, an external action, a decision, missing input, or another blocker
+15. [`gludd_introspect`](#15-gludd-introspect) — Inject codebase self-knowledge facts (churn/complexity/coverage/debt) as ansible_facts — Queries the daemon's read-only C(GET /api/facts) endpoint and returns the C(codebase) self-introspection block under C(ansible_facts
+16. [`gludd_langchain_generate`](#16-gludd-langchain-generate) — Generate text (optionally structured JSON) via the daemon — Sends a prompt to the daemon's POST /admin/models/call endpoint, which runs the generation through the LangChain-backed model gateway
+17. [`gludd_langgraph_decision`](#17-gludd-langgraph-decision) — Ask the model to choose one option from a fixed set — Sends a decision prompt plus a list of allowed option tokens to the daemon's POST /admin/models/call endpoint and asks the model to reply with JSON of the form {"decision":
+18. [`gludd_langgraph_workflow`](#18-gludd-langgraph-workflow) — Run a multi-step LangGraph generate/review workflow — Sends a message list to the daemon's POST /admin/models/workflow endpoint, which executes a LangGraph generate -> review -> retry loop server-side and returns the best content plus quality metadata
+19. [`gludd_local_model`](#19-gludd-local-model) — Manage a daemon-owned local inference lifecycle — Delegates download, serve, consume, and shutdown to the Gludd daemon
+20. [`gludd_make`](#20-gludd-make) — Run a make target via the MakeRunner abstraction — Runs a C(make) target through the C(MakeRunner) subprocess wrapper with proper sanitized environment, bounded output capture, and per-target timeout
+21. [`gludd_mcp_tool`](#21-gludd-mcp-tool) — Invoke an MCP tool (honest placeholder — not yet wired) — Per the W3
+22. [`gludd_message`](#22-gludd-message) — Inter-agent message queue — send, receive, or ack messages via the daemon — Talks to the daemon message-queue API so agents/roles can coordinate
+23. [`gludd_metrics`](#23-gludd-metrics) — Inject live daemon metrics (agents/usage/cost/benchmarks) as ansible_facts — Queries the daemon's read-only C(GET /api/metrics) endpoint and returns the metrics snapshot under C(ansible_facts
+24. [`gludd_model_call`](#24-gludd-model-call) — Run a model generation via the daemon API — Sends a prompt to the daemon's POST /admin/models/call endpoint
+25. [`gludd_model_worker_attest`](#25-gludd-model-worker-attest) — Attest a model worker's accelerator topology and runtime — Uses Gludd's provider-neutral model-worker attestation engine
+26. [`gludd_observe`](#26-gludd-observe) — Correlate registered observability sources through the Gludd daemon — Provides the Ansible seam for the cross-source C(GluddObserve) facade
+27. [`gludd_open_code`](#27-gludd-open-code) — Batched opencode agent tool patterns — gate, push, commit, test, status — Codifies the repeated back-and-forth tool-call patterns opencode agents perform by bundling multiple tool calls into single Ansible tasks
+28. [`gludd_ornith`](#28-gludd-ornith) — Pull rejected Ornith training pairs and invoke improvement rollouts — {'Bidirectional seam for the gludd x Ornith symbiotic loop
+29. [`gludd_osquery`](#29-gludd-osquery) — Query live system state via osquery and inject rows as ansible_facts — Runs a B(read-only) C(SELECT) query against C(osqueryi --json) and returns the result rows under C(ansible_facts
+30. [`gludd_ping`](#30-gludd-ping) — Verify daemon reachability — Pings the general_ludd daemon by calling /healthz
+31. [`gludd_proc_monitor`](#31-gludd-proc-monitor) — Report resource utilization, I/O and locks for gludd-managed processes — Queries the daemon's managed-process stats API and returns per-process resource utilization under C(ansible_facts
+32. [`gludd_process`](#32-gludd-process) — List, signal, and inspect daemon-managed processes — Talks to the general_ludd daemon's managed-process API so a playbook (or the model running a job) can enumerate the processes the daemon launched, inspect a live process's resource usage, or deliver a signal to one — all without ever calling C(kill)/C(ps) directly on the managed node
+33. [`gludd_push_guard`](#33-gludd-push-guard) — Enforce push-rate guard via force-push bypass tracking — Wraps the ForcePushTracker (scripts/push_rate_guard
+34. [`gludd_rag`](#34-gludd-rag) — Retrieval-Augmented Generation pipeline via module_utils
+35. [`gludd_reload`](#35-gludd-reload) — Hot-rotate a validated leaf code module with health-gated auto-rollback — Calls the authenticated Gludd daemon reload endpoint, which wraps C(general_ludd
+36. [`gludd_schedule`](#36-gludd-schedule) — Compute concurrency-safe execution batches via the daemon scheduler — Posts a list of work-item descriptors to C(POST /api/schedule) and returns the ordered concurrency-safe batches as C(ansible_facts
+37. [`gludd_skill`](#37-gludd-skill) — Select and render a skill with Jinja2 variables — Looks up a skill by name or trigger pattern and renders its body with Jinja2 C(StrictUndefined) — an unknown variable is an error, not silent empty text
+38. [`gludd_slurm_deploy`](#38-gludd-slurm-deploy) — Deploy a vLLM or llama
+39. [`gludd_spend`](#39-gludd-spend) — Fetch and configure the daemon spend-limiter — C(state=get) calls C(GET /api/spend) and returns the current spend snapshot as C(ansible_facts
+40. [`gludd_stream`](#40-gludd-stream) — Stream input signals (video/audio/text/binary) and dispatch buffered chunks to a cloned role — Opens a device (e
+41. [`gludd_traces`](#41-gludd-traces) — Inject recent execution traces (spans/cost/phase) as ansible_facts — Queries the daemon's read-only C(GET /api/traces) endpoint and returns the recent execution-trace snapshot under C(ansible_facts
+42. [`gludd_worktree`](#42-gludd-worktree) — Manage git worktrees (idempotent) — Creates or removes a git worktree via git_automation
 
 ---
 
@@ -72,7 +74,20 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `timeout` | float | | `60.0` |
 | `verdict_path` | str | |  |
 
-### 2. `gludd_accounting`
+### 2. `gludd_accelerator_facts`
+
+**Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_accelerator_facts`
+
+> Expose Gludd local and Slurm accelerator inventory as facts — Reads Gludd's normalized, read-only accelerator discovery endpoints. Returns Apple Metal, Intel XPU, JAX TPU, NVIDIA, AMD, and Slurm GRES inventory under C(ansible_facts.gludd_accelerators). Hardware models are returned as observed values rather than schema keys. Performs no provisioning and is safe in check mode.
+
+| Parameter | Type | Required | Default |
+|-----------|------|----------|---------|
+| `daemon_url` | str | | `"http://localhost:8000"` |
+| `psk` | str | | `""` |
+| `scope` | str | | `"all"` |
+| `timeout` | int | | `30` |
+
+### 3. `gludd_accounting`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_accounting`
 
@@ -86,7 +101,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `state` | str | | `"all"` |
 | `timeout` | int | | `30` |
 
-### 3. `gludd_agent_run`
+### 4. `gludd_agent_run`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_agent_run`
 
@@ -103,7 +118,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `timeout` | int | | `120` |
 | `tools` | list | | `[]` |
 
-### 4. `gludd_break_glass`
+### 5. `gludd_break_glass`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_break_glass`
 
@@ -117,7 +132,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `restore_source` | str | | `""` |
 | `token` | str | **required** |  |
 
-### 5. `gludd_db`
+### 6. `gludd_db`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_db`
 
@@ -140,7 +155,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `todo_id` | str | |  |
 | `work_type` | str | | `"code"` |
 
-### 6. `gludd_dispatch`
+### 7. `gludd_dispatch`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_dispatch`
 
@@ -156,7 +171,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `state` | str | | `"available"` |
 | `timeout` | int | | `30` |
 
-### 7. `gludd_embed`
+### 8. `gludd_embed`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_embed`
 
@@ -178,7 +193,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `top_k` | int | | `5` |
 | `work_type` | str | |  |
 
-### 8. `gludd_environment`
+### 9. `gludd_environment`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_environment`
 
@@ -193,7 +208,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `timeout` | int | | `30` |
 | `work_type` | str | |  |
 
-### 9. `gludd_facts`
+### 10. `gludd_facts`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_facts`
 
@@ -206,7 +221,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `psk` | str | | `""` |
 | `timeout` | int | | `30` |
 
-### 10. `gludd_features`
+### 11. `gludd_features`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_features`
 
@@ -222,7 +237,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `status` | str | |  |
 | `timeout` | int | | `30` |
 
-### 11. `gludd_gate_check`
+### 12. `gludd_gate_check`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_gate_check`
 
@@ -233,7 +248,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `gate_path` | str | | `".gate-status"` |
 | `state` | str | | `"check"` |
 
-### 12. `gludd_git`
+### 13. `gludd_git`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_git`
 
@@ -290,7 +305,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `todo_id` | str | |  |
 | `worktree_path` | str | |  |
 
-### 13. `gludd_human_todo`
+### 14. `gludd_human_todo`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_human_todo`
 
@@ -314,7 +329,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `timeout` | int | | `30` |
 | `title` | str | |  |
 
-### 14. `gludd_introspect`
+### 15. `gludd_introspect`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_introspect`
 
@@ -326,7 +341,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `psk` | str | | `""` |
 | `timeout` | int | | `30` |
 
-### 15. `gludd_langchain_generate`
+### 16. `gludd_langchain_generate`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_langchain_generate`
 
@@ -344,7 +359,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `system` | str | | `""` |
 | `timeout` | int | | `120` |
 
-### 16. `gludd_langgraph_decision`
+### 17. `gludd_langgraph_decision`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_langgraph_decision`
 
@@ -361,7 +376,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `system` | str | |  |
 | `timeout` | int | | `120` |
 
-### 17. `gludd_langgraph_workflow`
+### 18. `gludd_langgraph_workflow`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_langgraph_workflow`
 
@@ -380,7 +395,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `timeout` | int | | `300` |
 | `work_type` | str | | `"code"` |
 
-### 18. `gludd_local_model`
+### 19. `gludd_local_model`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_local_model`
 
@@ -405,7 +420,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `startup_timeout` | int | | `120` |
 | `timeout` | int | | `180` |
 
-### 19. `gludd_make`
+### 20. `gludd_make`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_make`
 
@@ -423,7 +438,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `target` | str | **required** |  |
 | `timeout_s` | int | |  |
 
-### 20. `gludd_mcp_tool`
+### 21. `gludd_mcp_tool`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_mcp_tool`
 
@@ -438,7 +453,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `timeout` | int | | `30` |
 | `tool` | str | **required** |  |
 
-### 21. `gludd_message`
+### 22. `gludd_message`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_message`
 
@@ -461,7 +476,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `ttl_seconds` | int | |  |
 | `unread` | bool | | `true` |
 
-### 22. `gludd_metrics`
+### 23. `gludd_metrics`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_metrics`
 
@@ -475,7 +490,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `psk` | str | | `""` |
 | `timeout` | int | | `30` |
 
-### 23. `gludd_model_call`
+### 24. `gludd_model_call`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_model_call`
 
@@ -491,7 +506,26 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `route_task_type` | str | |  |
 | `timeout` | int | | `120` |
 
-### 24. `gludd_observe`
+### 25. `gludd_model_worker_attest`
+
+**Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_model_worker_attest`
+
+> Attest a model worker's accelerator topology and runtime — Uses Gludd's provider-neutral model-worker attestation engine. Observes maintained NVIDIA NVML or AMD SMI interfaces on the managed host. Supports additional accelerator backends through the engine probe registry. Returns only content-free digests, readiness booleans, and refusal codes. Performs no provisioning and is safe in check mode.
+
+| Parameter | Type | Required | Default |
+|-----------|------|----------|---------|
+| `backend` | str | **required** |  |
+| `expected_runtime_version_digest` | str | **required** |  |
+| `expected_topology_digest` | str | **required** |  |
+| `minimum_device_count` | int | **required** |  |
+| `minimum_memory_mib` | int | **required** |  |
+| `required_interconnect` | str | **required** |  |
+| `runner_id` | str | **required** |  |
+| `runtime_probe` | list | **required** |  |
+| `source_revision` | str | **required** |  |
+| `timeout_seconds` | int | | `15` |
+
+### 26. `gludd_observe`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_observe`
 
@@ -512,7 +546,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `timeout` | int | | `30` |
 | `window_s` | float | | `300.0` |
 
-### 25. `gludd_open_code`
+### 27. `gludd_open_code`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_open_code`
 
@@ -520,7 +554,7 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 
 _No parameters._
 
-### 26. `gludd_ornith`
+### 28. `gludd_ornith`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_ornith`
 
@@ -542,7 +576,7 @@ _No parameters._
 | `task_description` | str | | `""` |
 | `timeout` | int | | `120` |
 
-### 27. `gludd_osquery`
+### 29. `gludd_osquery`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_osquery`
 
@@ -556,7 +590,7 @@ _No parameters._
 | `query` | str | **required** |  |
 | `timeout` | int | | `10` |
 
-### 28. `gludd_ping`
+### 30. `gludd_ping`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_ping`
 
@@ -568,7 +602,7 @@ _No parameters._
 | `psk` | str | | `""` |
 | `timeout` | int | | `10` |
 
-### 29. `gludd_proc_monitor`
+### 31. `gludd_proc_monitor`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_proc_monitor`
 
@@ -581,7 +615,7 @@ _No parameters._
 | `psk` | str | | `""` |
 | `timeout` | int | | `10` |
 
-### 30. `gludd_process`
+### 32. `gludd_process`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_process`
 
@@ -597,7 +631,7 @@ _No parameters._
 | `signal` | str | | `"SIGTERM"` |
 | `timeout` | int | | `10` |
 
-### 31. `gludd_push_guard`
+### 33. `gludd_push_guard`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_push_guard`
 
@@ -610,7 +644,7 @@ _No parameters._
 | `state_file` | str | | `".gate-logs/force-push-track.json"` |
 | `window_hours` | float | | `12.0` |
 
-### 32. `gludd_rag`
+### 34. `gludd_rag`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_rag`
 
@@ -628,7 +662,7 @@ _No parameters._
 | `timeout` | int | | `120` |
 | `top_k` | int | | `5` |
 
-### 33. `gludd_reload`
+### 35. `gludd_reload`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_reload`
 
@@ -649,7 +683,7 @@ _No parameters._
 | `result_path` | str | |  |
 | `role` | str | |  |
 
-### 34. `gludd_schedule`
+### 36. `gludd_schedule`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_schedule`
 
@@ -662,7 +696,7 @@ _No parameters._
 | `psk` | str | | `""` |
 | `timeout` | int | | `30` |
 
-### 35. `gludd_skill`
+### 37. `gludd_skill`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_skill`
 
@@ -678,7 +712,7 @@ _No parameters._
 | `trigger` | str | |  |
 | `variables` | dict | | `{}` |
 
-### 36. `gludd_slurm_deploy`
+### 38. `gludd_slurm_deploy`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_slurm_deploy`
 
@@ -704,7 +738,7 @@ _No parameters._
 | `port` | int | | `8000` |
 | `psk` | str | | `""` |
 
-### 37. `gludd_spend`
+### 39. `gludd_spend`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_spend`
 
@@ -719,7 +753,7 @@ _No parameters._
 | `timeout` | int | | `30` |
 | `window_seconds` | int | |  |
 
-### 38. `gludd_stream`
+### 40. `gludd_stream`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_stream`
 
@@ -738,7 +772,7 @@ _No parameters._
 | `psk` | str | | `""` |
 | `stop_condition` | dict | |  |
 
-### 39. `gludd_traces`
+### 41. `gludd_traces`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_traces`
 
@@ -752,7 +786,7 @@ _No parameters._
 | `timeout` | int | | `30` |
 | `todo_id` | str | |  |
 
-### 40. `gludd_worktree`
+### 42. `gludd_worktree`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_worktree`
 

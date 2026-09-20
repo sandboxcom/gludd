@@ -1870,6 +1870,78 @@ general_ludd.agent.gludd_model_call:
       returned: success
       type: dict
   module: gludd_model_call
+general_ludd.agent.gludd_model_worker_attest:
+  DOCUMENTATION:
+    description:
+    - Uses Gludd's provider-neutral model-worker attestation engine.
+    - Observes maintained NVIDIA NVML or AMD SMI interfaces on the managed host.
+    - Supports additional accelerator backends through the engine probe registry.
+    - Returns only content-free digests, readiness booleans, and refusal codes.
+    - Performs no provisioning and is safe in check mode.
+    module: gludd_model_worker_attest
+    options:
+      backend:
+        description: Accelerator probe backend identifier.
+        required: true
+        type: str
+      expected_runtime_version_digest:
+        description: Expected content-free digest of the runtime probe output.
+        required: true
+        type: str
+      expected_topology_digest:
+        description: Exact SHA-256 digest of the selected host topology.
+        required: true
+        type: str
+      minimum_device_count:
+        description: Minimum devices visible to the candidate service.
+        required: true
+        type: int
+      minimum_memory_mib:
+        description: Minimum memory required on every visible device.
+        required: true
+        type: int
+      required_interconnect:
+        description: Required interconnect class or C(any).
+        required: true
+        type: str
+      runner_id:
+        description: Attested model-runner profile identifier.
+        required: true
+        type: str
+      runtime_probe:
+        description: Tokenized, read-only runner version probe.
+        elements: str
+        required: true
+        type: list
+      source_revision:
+        description: Immutable observed runner-profile revision.
+        required: true
+        type: str
+      timeout_seconds:
+        default: 15
+        description: Bounded runner probe timeout.
+        type: int
+    short_description: Attest a model worker's accelerator topology and runtime
+  EXAMPLES:
+  - general_ludd.agent.gludd_model_worker_attest:
+      backend: nvidia
+      expected_runtime_version_digest: '{{ selected_runtime_version_digest }}'
+      expected_topology_digest: '{{ selected_topology_digest }}'
+      minimum_device_count: 2
+      minimum_memory_mib: 80000
+      required_interconnect: nvlink
+      runner_id: vllm-observed
+      runtime_probe:
+      - vllm
+      - --version
+      source_revision: vllm-profile-v1
+    name: Attest a two-device NVIDIA vLLM worker
+  RETURN:
+    ansible_facts:
+      description: Content-free model-worker attestation evidence.
+      returned: always
+      type: dict
+  module: gludd_model_worker_attest
 general_ludd.agent.gludd_observe:
   DOCUMENTATION:
     description:

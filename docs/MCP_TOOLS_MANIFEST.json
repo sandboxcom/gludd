@@ -1309,6 +1309,60 @@
     "server_id": "ansible"
   },
   {
+    "name": "general_ludd.agent.gludd_model_worker_attest",
+    "description": "Attest a model worker's accelerator topology and runtime — Uses Gludd's provider-neutral model-worker attestation engine. Observes maintained NVIDIA NVML or AMD SMI interfaces on the managed host. Supports additional accelerator backends through the engine probe registry. Returns only content-free digests, readiness booleans, and refusal codes. Performs no provisioning and is safe in check mode.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "runner_id": {
+          "type": "string"
+        },
+        "source_revision": {
+          "type": "string"
+        },
+        "backend": {
+          "type": "string"
+        },
+        "minimum_device_count": {
+          "type": "integer"
+        },
+        "minimum_memory_mib": {
+          "type": "integer"
+        },
+        "required_interconnect": {
+          "type": "string"
+        },
+        "expected_topology_digest": {
+          "type": "string"
+        },
+        "runtime_probe": {
+          "type": "array",
+          "x-no-log": true
+        },
+        "expected_runtime_version_digest": {
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "default": 15
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "runner_id",
+        "source_revision",
+        "backend",
+        "minimum_device_count",
+        "minimum_memory_mib",
+        "required_interconnect",
+        "expected_topology_digest",
+        "runtime_probe",
+        "expected_runtime_version_digest"
+      ]
+    },
+    "server_id": "ansible"
+  },
+  {
     "name": "general_ludd.agent.gludd_observe",
     "description": "Correlate registered observability sources through the Gludd daemon — Provides the Ansible seam for the cross-source C(GluddObserve) facade. Discovers only operator-registered sources from C(GET /api/observe/sources) and queries them by registered name through C(POST /api/observe/query). Callers cannot supply connector URLs, preserving the daemon's SSRF boundary. Supports merged queries, timelines, incident correlation, and service/host topology without duplicating the canonical normalization logic. Read-only and check-mode safe. A failing connector is isolated into the returned C(errors) list instead of aborting successful sources.",
     "input_schema": {
