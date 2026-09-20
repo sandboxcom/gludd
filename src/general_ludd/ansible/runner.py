@@ -177,6 +177,57 @@ def _normalize_role_output(role: str, raw: dict[str, Any]) -> dict[str, Any]:
     return raw
 
 
+def _normalized_local_image_id(value: object) -> str | None:
+    """Return a canonical immutable Podman image ID without accepting tags."""
+    if not isinstance(value, str):
+        return None
+    digest = value.removeprefix("sha256:")
+    if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
+        return None
+    return f"sha256:{digest}"
+
+
+def _publish_execution_environment_event(
+    event_bus: Any | None,
+    name: str,
+    **payload: object,
+) -> None:
+    """Publish a sanitized lifecycle event when an event bus is configured."""
+    logger.info("%s state=%s", name, payload.get("state", "unknown"))
+    if event_bus is not None:
+        event_bus.publish(
+            CustomEvent(
+                name=name,
+                payload=dict(payload),
+                source="ansible_runner",
+            )
+        )
+
+
+def _execution_environment_fact(result: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Extract the role's bounded fact from native or ansible-runner events."""
+    events = result.get("events")
+    if not isinstance(events, list):
+        return None
+    for event in reversed(events):
+        if not isinstance(event, dict):
+            continue
+        event_data = event.get("event_data")
+        candidates = [event.get("result")]
+        if isinstance(event_data, dict):
+            candidates.append(event_data.get("res"))
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            facts = candidate.get("ansible_facts")
+            if not isinstance(facts, dict):
+                continue
+            fact = facts.get("gludd_execution_environment")
+            if isinstance(fact, dict):
+                return dict(fact)
+    return None
+
+
 class AnsibleRunnerAdapter:
     """Adapter wiring ansible-core into the daemon with registry + isolation."""
 
@@ -496,7 +547,8 @@ class AnsibleRunnerAdapter:
         for name, value in supplied_constraints.items():
             extravars[f"execution_environment_bootstrap_{name}"] = value
 
-        self._publish_execution_environment_event(
+        _publish_execution_environment_event(
+            self._event_bus,
             "execution_environment_reconcile_started",
             state=state,
         )
@@ -514,7 +566,7 @@ class AnsibleRunnerAdapter:
             env=None,
             timeout=effective_timeout,
         )
-        fact = self._execution_environment_fact(result)
+        fact = _execution_environment_fact(result)
         validate_only = supplied_constraints.get("validate_only") is True
         if result.get("status") == "successful" and int(result.get("rc", 1)) == 0:
             failure = self._apply_execution_environment_fact(
@@ -537,32 +589,13 @@ class AnsibleRunnerAdapter:
             if result.get("status") == "successful" and rc == 0
             else "execution_environment_reconcile_failed"
         )
-        self._publish_execution_environment_event(terminal_name, state=state, rc=rc)
+        _publish_execution_environment_event(
+            self._event_bus,
+            terminal_name,
+            state=state,
+            rc=rc,
+        )
         return result
-
-    @staticmethod
-    def _execution_environment_fact(result: Mapping[str, Any]) -> dict[str, Any] | None:
-        """Extract the role's bounded fact from native or ansible-runner events."""
-        events = result.get("events")
-        if not isinstance(events, list):
-            return None
-        for event in reversed(events):
-            if not isinstance(event, dict):
-                continue
-            event_data = event.get("event_data")
-            candidates = [event.get("result")]
-            if isinstance(event_data, dict):
-                candidates.append(event_data.get("res"))
-            for candidate in candidates:
-                if not isinstance(candidate, dict):
-                    continue
-                facts = candidate.get("ansible_facts")
-                if not isinstance(facts, dict):
-                    continue
-                fact = facts.get("gludd_execution_environment")
-                if isinstance(fact, dict):
-                    return dict(fact)
-        return None
 
     def _apply_execution_environment_fact(
         self,
@@ -588,7 +621,7 @@ class AnsibleRunnerAdapter:
             return None
         if fact.get("state") != "present" or fact.get("verified") is not True:
             return "execution-environment candidate was not verified"
-        image_id = self._normalized_local_image_id(fact.get("image_id"))
+        image_id = _normalized_local_image_id(fact.get("image_id"))
         if image_id is None:
             return "execution-environment candidate has no immutable local image ID"
         isolation = ProcessIsolationConfig(
@@ -600,28 +633,6 @@ class AnsibleRunnerAdapter:
         self._core_runner.set_process_isolation(isolation)
         self._managed_execution_environment_isolation = True
         return None
-
-    @staticmethod
-    def _normalized_local_image_id(value: object) -> str | None:
-        """Return a canonical immutable Podman image ID without accepting tags."""
-        if not isinstance(value, str):
-            return None
-        digest = value.removeprefix("sha256:")
-        if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
-            return None
-        return f"sha256:{digest}"
-
-    def _publish_execution_environment_event(self, name: str, **payload: object) -> None:
-        """Publish a sanitized lifecycle event when an event bus is configured."""
-        logger.info("%s state=%s", name, payload.get("state", "unknown"))
-        if self._event_bus is not None:
-            self._event_bus.publish(
-                CustomEvent(
-                    name=name,
-                    payload=dict(payload),
-                    source="ansible_runner",
-                )
-            )
 
     async def run_role(self, task_args: dict[str, Any]) -> dict[str, Any]:
         """Execute a language role script with a 30s timeout and parse its JSON."""

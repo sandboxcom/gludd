@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from typing import cast
 
 import pytest
 
@@ -130,6 +131,7 @@ class _Configuration:
 class _Dispatcher:
     calls: list[str]
     fail_publish: bool = False
+    fail_withdraw: bool = False
 
     def publish(
         self,
@@ -143,6 +145,8 @@ class _Dispatcher:
 
     def withdraw(self, dispatch_lease: str) -> None:
         self.calls.append("withdraw")
+        if self.fail_withdraw:
+            raise RuntimeError("drain detail must be censored")
 
 
 @dataclass
@@ -158,6 +162,7 @@ class _Harness:
         fail_configure: bool = False,
         fail_retire: bool = False,
         fail_publish: bool = False,
+        fail_withdraw: bool = False,
     ) -> ModelWorkerLifecycleManager:
         return ModelWorkerLifecycleManager(
             infrastructure=_Infrastructure(
@@ -170,7 +175,11 @@ class _Harness:
                 fail_configure=fail_configure,
                 fail_retire=fail_retire,
             ),
-            dispatcher=_Dispatcher(self.calls, fail_publish=fail_publish),
+            dispatcher=_Dispatcher(
+                self.calls,
+                fail_publish=fail_publish,
+                fail_withdraw=fail_withdraw,
+            ),
             trace_sink=self.traces.append,
         )
 
@@ -255,6 +264,19 @@ def test_cleanup_reports_retire_or_absence_failure_after_trying_every_owner() ->
     assert harness.calls[-4:] == ["withdraw", "retire", "destroy", "exists"]
 
 
+def test_drain_failure_preserves_active_service_and_infrastructure() -> None:
+    harness = _Harness()
+    pool = harness.manager(fail_withdraw=True).acquire(_policy())
+
+    with pytest.raises(ModelWorkerLifecycleError) as caught:
+        pool.close()
+
+    assert caught.value.phase == "cleanup"
+    assert caught.value.cleanup_failed is True
+    assert pool.active is True
+    assert harness.calls == ["provision", "configure", "publish", "withdraw"]
+
+
 def test_traces_are_content_free_and_bind_only_policy_digest_and_counts() -> None:
     harness = _Harness()
     pool = harness.manager().acquire(_policy())
@@ -308,7 +330,7 @@ def test_traces_are_content_free_and_bind_only_policy_digest_and_counts() -> Non
             "owned resource identifiers must be unique",
         ),
         (
-            lambda: replace(_policy(), launch_plan=object()),
+            lambda: replace(_policy(), launch_plan=cast(RunnerLaunchPlan, object())),
             "launch_plan must be RunnerLaunchPlan",
         ),
         (
