@@ -157,6 +157,17 @@
       "owned": true
     },
     {
+      "path": "scripts/freellmapi_upstream_admission.py",
+      "line": 199,
+      "column": 17,
+      "kind": "temp-artifact",
+      "owner": "write_candidate_lock",
+      "acquisition": "tempfile.NamedTemporaryFile(dir=output.parent, prefix=f'.{output.name}.', delete=False)",
+      "teardown": "context-manager-exit",
+      "source_hash": "ba89ad89465777e5f015dfc349254fa8d53381a105021625392cb1bbc0178687",
+      "owned": true
+    },
+    {
       "path": "scripts/opencode_boot_smoke.py",
       "line": 97,
       "column": 11,

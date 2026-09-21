@@ -1,0 +1,66 @@
+{
+  "admitted_artifact": {
+    "abi_version": 1,
+    "bundle_sha256": "d3078364c02f482909681e21895c4e86dc11cc66c1da7ae2007ad35b096ddf7d",
+    "exports": [
+      "reliabilityPosterior",
+      "expectedReliability",
+      "speedScore",
+      "headroomFactor",
+      "rateWindowHeadroomFactor",
+      "rateLimitFactor"
+    ],
+    "manifest_sha256": "028736aea05e57d2dc5cb99ef109bb5a26d833b3e0f27554e4b70fe6f22e5f47",
+    "upstream_commit": "780a7d8d6dcbc818eb10ec17da210635b569ae22"
+  },
+  "archive": {
+    "sha256": "9f5156164cfc9b98416014b1ed1a9a49bb0005b32ae64b7a21e4afd8c467a198",
+    "size_bytes": 7359883
+  },
+  "candidate_id": "sha256:69d63b09199c37f38c02c711559b15e0fd5dc5ecc0e64e2d94c597dc5e5d3998",
+  "decision": {
+    "required_gate": "freellmapi-frozen-delta-v1",
+    "runtime_admitted": false,
+    "state": "pending_frozen_delta"
+  },
+  "schema_version": 1,
+  "sources": {
+    "license": {
+      "path": "LICENSE",
+      "sha256": "d32d45dfea4847f158db264ae8afb67f1a390e4f28cf18bf088a564f44c7f0b9",
+      "size_bytes": 1071,
+      "spdx": "MIT"
+    },
+    "package_lock": {
+      "path": "package-lock.json",
+      "sha256": "1d048019c4dff66db6b0ef7e359f8874810e36e07bf38ce2fd1b8ce74e21f4e1",
+      "size_bytes": 476555
+    },
+    "scoring": {
+      "path": "server/src/services/scoring.ts",
+      "sha256": "475557a97ff5a69150a4d30ad194edf05cb45b4d5d3b132d018b55344f3642f1",
+      "size_bytes": 26915,
+      "symbols_missing": [],
+      "symbols_present": [
+        "reliabilityPosterior",
+        "expectedReliability",
+        "speedScore",
+        "headroomFactor",
+        "rateWindowHeadroomFactor",
+        "rateLimitFactor"
+      ]
+    }
+  },
+  "upstream": {
+    "commit": "4191d8e7abef39fcd93fab009123467036f39750",
+    "published_at": "2026-09-20T15:14:06Z",
+    "release_id": 392469459,
+    "repository": "tashfeenahmed/freellmapi",
+    "repository_id": 1217040185,
+    "signature_sha256": "03eadfb4345774c5802cb61031ac6d1d6b18e9a539c8318c4b0f8c16d9af4d17",
+    "signed_payload_sha256": "c239c89989778667480642029a7a2c727c11da06d229216a14ec665fa40ccb74",
+    "tag": "v0.11.1",
+    "tree": "5686828098b98d945b2f2ac245fd1cfa96255915",
+    "verified_at": "2026-09-20T15:04:01Z"
+  }
+}
