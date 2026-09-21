@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -195,7 +196,8 @@ def test_record_and_trace_exclude_model_repository_and_provider_text(
     assert "private-name-must-not-persist" not in serialized
     assert "registry.example" not in serialized
     assert "provider message" not in serialized
-    assert traces[0]["event"] == "SELF_IMPROVE_AZURE_AVAILABILITY_RECORDED"
+    assert store.list_all()[0]["collection"] == "infra.azure_operational_availability"
+    assert traces[0]["event"] == "GLUDD_AZURE_AVAILABILITY_RECORDED"
     assert traces[0]["scope_version"] == 1
 
 
@@ -440,3 +442,35 @@ def test_foreign_collection_is_ignored(tmp_path: Path) -> None:
     )
 
     assert index.observed_scope_count == 0
+
+
+def test_digest_valid_legacy_collection_remains_readable(tmp_path: Path) -> None:
+    current = CapabilityEvidenceStore(str(tmp_path / "current.json"))
+    _record(
+        current,
+        observed_at=1_000.0,
+        outcome=AzureAvailabilityTerminal.AVAILABLE,
+    )
+    record = current.list_all()[0]
+    record["collection"] = "self_improve.azure_operational_availability"
+    payload = {key: value for key, value in record.items() if key != "evidence_digest"}
+    record["evidence_digest"] = hashlib.sha256(
+        json.dumps(
+            payload,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii")
+    ).hexdigest()
+    legacy = CapabilityEvidenceStore(str(tmp_path / "legacy.json"))
+    legacy.register_evidence(record)
+
+    index = load_azure_availability_index(
+        legacy,
+        max_age_seconds=60,
+        minimum_failures=1,
+        now_epoch=1_000.0,
+    )
+
+    assert index.assess(_scope()).observed_outcomes == 1
+    assert index.assess(_scope()).successful_outcomes == 1

@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Any, cast
 
 from general_ludd.infra.azure_containerapp_topology import AzureProfileCapacity
+from general_ludd.infra.azure_operational_availability import (
+    load_azure_availability_index,
+)
 from general_ludd.models.model_registry import (
     ModelDeploymentMetadata,
     ModelRegistry,
@@ -22,9 +25,6 @@ from general_ludd.self_improve.azure_model_selection import (
     AzureModelSelectionPolicy,
     discover_and_select_azure_model,
     write_azure_model_selection,
-)
-from general_ludd.self_improve.azure_operational_availability import (
-    load_azure_availability_index,
 )
 from general_ludd.self_improve.candidate_classification import (
     CandidateTaskClassification,

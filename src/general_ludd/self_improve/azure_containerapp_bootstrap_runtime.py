@@ -33,6 +33,12 @@ from general_ludd.infra.azure_containerapp_owned_candidate_types import (
 from general_ludd.infra.azure_containerapp_preflight_types import PreflightTrace
 from general_ludd.infra.azure_containerapp_sdk import AzureGPUMetricResponseReason
 from general_ludd.infra.azure_idle_retention import AzureIdleRetentionPolicy
+from general_ludd.infra.azure_operational_availability import (
+    AzureAvailabilityTerminal,
+    AzureInfrastructurePhase,
+    build_azure_availability_scope,
+    record_azure_availability_terminal,
+)
 from general_ludd.self_improve.azure_containerapp_bootstrap_credentials import (
     AzureCredentialProvider,
     release_once,
@@ -42,13 +48,7 @@ from general_ludd.self_improve.azure_containerapp_transport_types import (
     ContainerAppResponseFailure,
 )
 from general_ludd.self_improve.azure_infrastructure_evidence import (
-    AzureInfrastructurePhase,
     record_azure_infrastructure_failure,
-)
-from general_ludd.self_improve.azure_operational_availability import (
-    AzureAvailabilityTerminal,
-    build_azure_availability_scope,
-    record_azure_availability_terminal,
 )
 from general_ludd.self_improve.live_candidate_wiring import (
     ContainerAppCandidateBackend,

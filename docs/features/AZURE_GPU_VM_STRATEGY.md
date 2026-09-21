@@ -24,14 +24,15 @@ the profile before guest retirement or infrastructure destroy. A hermetic matrix
 proves this complete path for vLLM, Ollama, and llama.cpp on both strategies; live
 Azure capacity and paid inference remain separately opt-in release evidence.
 
-The immutable availability scope, assessment, and index contracts live in
-`general_ludd.infra.azure_operational_availability`. They are infrastructure
-evidence consumed by chemistry, firmware, self-improvement, and any other
-universal workload. The legacy
-`general_ludd.self_improve.azure_operational_availability` module retains the
-self-improvement evidence-store adapter and re-exports the exact contract objects
-for compatibility; generic infrastructure never imports the self-improvement
-package.
+The complete availability scope, recorder, finite-horizon loader, assessment,
+and index live in `general_ludd.infra.azure_operational_availability`. They are
+infrastructure capabilities consumed by chemistry, firmware, self-improvement,
+and any other universal workload. New records use the provider-neutral
+`infra.azure_operational_availability` collection and generic trace event; the
+loader still accepts digest-valid finite-horizon records from the legacy
+collection. The legacy `general_ludd.self_improve.azure_operational_availability`
+module is an import-only compatibility facade, so generic infrastructure never
+imports the self-improvement package.
 
 The production adapter invokes only these maintained SDK operations:
 
@@ -231,6 +232,17 @@ and [Retail Prices API](https://learn.microsoft.com/en-us/rest/api/cost-manageme
 Long-lived operator reports remain diagnostic evidence rather than service
 guarantees:
 
+- [Container Apps GPU quota request](https://learn.microsoft.com/en-us/answers/questions/2131142/using-gpu-in-container-apps)
+  confirms that advertised GPU profiles still require separately approved
+  capacity, so a visible T4 or A100 profile is not availability proof.
+- [Serverless GPU replicas stuck in `AssigningReplica`](https://learn.microsoft.com/en-us/answers/questions/5939955/typical-scheduling-latency-for-consumption-gpu-nc8)
+  records a multi-day placement failure without a useful customer-facing health
+  event, so startup timeouts become censored operational outcomes rather than
+  model-quality failures.
+- [GPU VM allocation failure after deallocation](https://learn.microsoft.com/en-us/answers/questions/5828368/this-issue-happens-when-i-stop-deallocate-the-vm-a)
+  distinguishes capacity reservation from discounted reserved instances, so
+  recently successful placement evidence remains finite-horizon rather than a
+  permanent capacity guarantee.
 - [GPU instances can be region-limited](https://learn.microsoft.com/en-us/answers/questions/692301/use-gpu-instances-from-another-region),
   so region and both quota tiers are explicit.
 - [A100 allocation failed after quota approval](https://learn.microsoft.com/en-us/answers/questions/2143000/allocation-failed-for-standard-nc24ads-a100-v4-com),

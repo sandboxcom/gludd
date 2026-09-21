@@ -12,6 +12,10 @@ from general_ludd.infra.azure_containerapp_gpu import (
     AzureContainerAppGPUUnavailable,
     select_smallest_sufficient_profile,
 )
+from general_ludd.infra.azure_operational_availability import (
+    AzureAvailabilityIndex,
+    build_azure_availability_scope,
+)
 from general_ludd.models.model_deployment_metadata import (
     ModelDeploymentMetadataUnavailable,
 )
@@ -36,10 +40,6 @@ from general_ludd.self_improve.azure_model_selection_types import (
     azure_model_deployment_identity_digest,
     model_requirement,
     model_selection_identity_digest,
-)
-from general_ludd.self_improve.azure_operational_availability import (
-    AzureAvailabilityIndex,
-    build_azure_availability_scope,
 )
 from general_ludd.self_improve.candidate_classification import (
     CandidateTaskClassification,

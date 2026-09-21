@@ -46,5 +46,26 @@ def test_legacy_self_improve_import_is_a_compatibility_facade() -> None:
         "AzureAvailabilityAssessment",
         "AzureAvailabilityIndex",
         "AzureAvailabilityScope",
+        "AzureAvailabilityTerminal",
+        "AzureOperationalEvidenceError",
+        "build_azure_availability_scope",
+        "load_azure_availability_index",
+        "record_azure_availability_terminal",
     ):
         assert getattr(legacy, name) is getattr(contracts, name)
+
+    legacy_source = Path(legacy.__file__).read_text(encoding="utf-8")
+    assert "class AzureAvailabilityTerminal" not in legacy_source
+    assert "def record_azure_availability_terminal" not in legacy_source
+    assert "from general_ludd.infra.azure_operational_availability import" in legacy_source
+
+
+def test_infra_owns_shared_azure_infrastructure_phase() -> None:
+    contracts = importlib.import_module(
+        "general_ludd.infra.azure_operational_availability"
+    )
+    legacy = importlib.import_module(
+        "general_ludd.self_improve.azure_infrastructure_evidence"
+    )
+
+    assert legacy.AzureInfrastructurePhase is contracts.AzureInfrastructurePhase

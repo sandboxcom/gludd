@@ -15,9 +15,11 @@ import re
 import time
 from collections import Counter
 from collections.abc import Callable, Mapping
-from enum import StrEnum
 from typing import Any
 
+from general_ludd.infra.azure_operational_availability import (
+    AzureInfrastructurePhase,
+)
 from general_ludd.self_improve.model_candidates import BackendFailure
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 
@@ -50,14 +52,6 @@ _RECORD_KEYS = frozenset(
         "workload_profile_type",
     }
 )
-
-
-class AzureInfrastructurePhase(StrEnum):
-    """Fixed effect phases eligible for infrastructure availability learning."""
-
-    PREFLIGHT = "preflight"
-    CANDIDATE_STARTUP = "candidate_startup"
-    REQUEST = "request"
 
 
 def _image_digest(container_image: object) -> str:
