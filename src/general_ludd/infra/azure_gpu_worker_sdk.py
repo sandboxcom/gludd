@@ -6,7 +6,7 @@ import ipaddress
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from general_ludd.azure.accelerator_credentials import AzureAcceleratorCredentials
 from general_ludd.infra.azure_gpu_vm_strategy import AzureExecutionStrategy
@@ -69,15 +69,23 @@ def _default_credential_factory(credentials: AzureAcceleratorCredentials) -> obj
 
 
 def _default_compute_client_factory(credential: object, subscription_id: str) -> object:
+    from azure.core.credentials import TokenCredential
     from azure.mgmt.compute import ComputeManagementClient
 
-    return ComputeManagementClient(credential, subscription_id)
+    return ComputeManagementClient(
+        credential=cast(TokenCredential, credential),
+        subscription_id=subscription_id,
+    )
 
 
 def _default_resource_client_factory(credential: object, subscription_id: str) -> object:
-    from azure.mgmt.resource import ResourceManagementClient
+    from azure.core.credentials import TokenCredential
+    from azure.mgmt.resource.resources import ResourceManagementClient
 
-    return ResourceManagementClient(credential, subscription_id)
+    return ResourceManagementClient(
+        credential=cast(TokenCredential, credential),
+        subscription_id=subscription_id,
+    )
 
 
 def _close(value: object) -> None:
