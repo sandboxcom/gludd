@@ -522,6 +522,24 @@ class TestMaintainabilityIndex:
         below_floor = {name: round(score, 1) for name, score in measured.items() if score < 20.0}
         assert not below_floor, f"Azure lifecycle files below MI 20: {below_floor}"
 
+    def test_azure_availability_architecture_files_stay_above_20(
+        self, all_metrics: list[_FileMetrics]
+    ) -> None:
+        """Keep the provider-neutral availability boundary maintainable."""
+        availability_files = {
+            Path("infra/azure_operational_availability.py"),
+            Path("infra/azure_operational_availability_contracts.py"),
+            Path("self_improve/azure_operational_availability.py"),
+        }
+        measured = {
+            fm.path.relative_to(SRC_ROOT): fm.maintainability_index
+            for fm in all_metrics
+            if fm.path.relative_to(SRC_ROOT) in availability_files
+        }
+        assert measured.keys() == availability_files
+        below_floor = {str(path): round(score, 1) for path, score in measured.items() if score < 20.0}
+        assert not below_floor, f"Azure availability files below MI 20: {below_floor}"
+
 
 class TestNestingDepth:
     def test_no_function_nesting_depth_exceeds_10(self, all_metrics: list[_FileMetrics]) -> None:
