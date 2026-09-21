@@ -65,6 +65,15 @@ def test_push_paths_have_ci_busy_or_rate_guard() -> None:
         assert guard in _target_line(target) or guard in _target_block(target), target
 
 
+def test_shared_branch_pull_uses_current_branch_merge_forward() -> None:
+    block = _target_block("git-pull-sandboxcom")
+
+    assert "git pull --rebase" not in block
+    assert "git branch --show-current" in block
+    assert 'git fetch sandboxcom "$$BRANCH"' in block
+    assert 'git merge --no-ff --no-edit "sandboxcom/$$BRANCH"' in block
+
+
 def test_batch_push_blocks_single_commit_threshold_override() -> None:
     for target in ["batch-push", "batch-push-nv"]:
         block = _target_block(target)

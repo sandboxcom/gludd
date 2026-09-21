@@ -3823,8 +3823,14 @@ ci-await:
 	@$(PYTHON) scripts/ci_await.py $(or $(BRANCH),master) $(or $(TIMEOUT),3600)
 
 git-pull-sandboxcom:
-	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git pull --rebase sandboxcom master
-	@echo "Pulled and rebased from sandboxcom/gludd"
+	@BRANCH=$$(git branch --show-current); \
+	if [ -z "$$BRANCH" ]; then \
+		echo "Cannot merge-forward a detached HEAD"; \
+		exit 1; \
+	fi; \
+	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git fetch sandboxcom "$$BRANCH"; \
+	git merge --no-ff --no-edit "sandboxcom/$$BRANCH"
+	@echo "Fetched and merge-forwarded the current branch from sandboxcom/gludd"
 
 git-fetch-sandboxcom:
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git fetch sandboxcom
