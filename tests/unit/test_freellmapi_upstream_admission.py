@@ -225,6 +225,12 @@ def test_admission_boundary_declares_its_operator_facing_public_api() -> None:
         "build_candidate_lock",
         "validate_candidate_lock",
     ]
+    assert FreeLLMAPIAdmissionError.__module__ == (
+        "general_ludd.models.freellmapi_upstream_source"
+    )
+    assert FreeLLMAPIAdmissionFault.__module__ == (
+        "general_ludd.models.freellmapi_upstream_source"
+    )
 
 
 @pytest.mark.parametrize(
