@@ -1128,6 +1128,36 @@ measured-zero-cost empty environment. This is placement evidence, not a model-qu
 observation, and it matches the capacity-exhaustion class reported in the long-lived
 Container Apps issue [#1705](https://github.com/microsoft/azure-container-apps/issues/1705).
 
+#### Fresh-environment T4 placement and exact absence (2026-09-21)
+
+The next bounded standalone proof used protected file authentication with in-process
+subscription discovery, so neither the identifier nor credential material entered
+command output. East US profile and quota discovery admitted T4 and A100. Gludd
+updated the exact owned environment in 490 seconds and OpenTofu audited then created
+exactly one T4 Container App in 710 seconds. The revision requested one replica but
+its exact replica inventory remained empty before the revision became terminal
+`Failed`/`Unhealthy`. No inference call or GPU attestation began, and the outcome was
+recorded only as infrastructure placement evidence.
+
+The app destroy completed in 19 seconds and the official SDK independently verified
+absence. The mandatory environment destroy exceeded OpenTofu's 900-second polling
+window, but ownership remained with the harness: it continued the independent ARM
+absence check until Azure reported the environment gone. The content-free operation
+digests were `2badefff303e198f4f4d1f156918a1c3a9f9f96abf1041fac12b95a3193f40d4`
+for the app and
+`be15cab31fe8066e6e938d5ac01127925941a9abde7f8d6013118d37452cb919`
+for the environment. Thus the run proves paid-resource acquisition and exact cleanup,
+not usable GPU capacity, model quality, or completion of S83.157.
+
+This fresh failure is consistent with practitioner reports of intermittent T4
+placement failure before image pull in Container Apps issue
+[#1511](https://github.com/microsoft/azure-container-apps/issues/1511) and constrained
+long-term A100/H100 availability in issue
+[#1797](https://github.com/microsoft/azure-container-apps/issues/1797). Those reports
+support bounded empirical failover; they are not capacity guarantees. Repeating the
+same paid East US T4 placement without newer availability evidence is therefore not
+an admissible next step.
+
 Bootstrap now records only an exact, digest-bound operational tuple after resource
 cleanup: region, workload-profile type, immutable container-image digest, deployment
 identity digest, lifecycle phase, fixed failure class, and timestamp. Prompts, model
