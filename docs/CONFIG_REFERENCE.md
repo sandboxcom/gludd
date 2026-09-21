@@ -360,6 +360,12 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_XDIST_TRACE_TRUNCATE` | Auto-indexed (see source) | — | optional | `scripts/run_xdist_trace.py:36` |
 | `GLUDD_XDIST_WORKERS` | Auto-indexed (see source) | — | optional | `scripts/adaptive_test.py:117` |
 
+### 1.1a Reserved trace event identifiers
+
+| Identifier | Purpose | Configuration status | Source |
+|---|---|---|---|
+| `GLUDD_AZURE_AVAILABILITY_RECORDED` | Emitted, content-free Azure operational-availability event carrying censored scope, phase, outcome, and deployment digests. It never includes prompts, model identifiers, provider response text, endpoints, or credentials. | Trace identifier only; not an environment variable and cannot configure runtime behavior. | `infra/azure_operational_availability.py` |
+
 ### 1.1b Active-workstream registry isolation
 
 `GLUDD_ACTIVE_WORKSTREAM_REGISTRY` selects the JSON registry used by worktree
