@@ -57,7 +57,31 @@ role with `state=present`, wait for the new revision to become ready, send the
 bounded inference proof, rerun with a metric timespan, and only then retire the
 old revision through OpenTofu. On any failure, leave the current healthy
 revision serving and run the owner-bound `absent` transition only for ephemeral
-self-improvement capacity.
+model-work capacity, including self-improvement.
+
+## Live failure replay
+
+The role ships the canonical
+[`live_failure_replay_v1.json`](files/live_failure_replay_v1.json) incident
+corpus and its Draft 2020-12
+[`schema`](files/live_failure_replay_v1.schema.json). The 22 chronological
+fixtures cover every bounded failure or rejection observed during the live
+Azure work documented from 2026-09-10 through 2026-09-21. Startup fixtures run
+through the same collection filter used by the role. Other fixtures bind to an
+exact regression node that exercises the already-owned production boundary.
+Run the corpus contract with:
+
+```console
+make test-files TESTFILES='tests/unit/test_azure_containerapp_live_failure_replay.py' PYTEST_ARGS=''
+```
+
+The corpus is operational evidence, not a raw-log archive. It retains only
+fixed reason classes, bounded counts and timings, reviewed actions, source-line
+ranges, and public practitioner references. It excludes prompts, credentials,
+provider text, resource IDs, endpoints, model names, and repositories. Repeated
+canaries remain separate chronological fixtures even when they replay through
+the same corrected classifier, so a later implementation cannot erase the
+history that falsified an earlier hypothesis.
 
 ## Practitioner evidence
 
@@ -93,3 +117,25 @@ self-improvement capacity.
   without lowering the model's quality score. This matches the 2026-09-21 Gludd
   East US T4 run, where one requested replica remained at zero before the exact
   revision became `Failed`/`Unhealthy` and cleanup independently proved absence.
+- [T4 and A100 replicas stuck in `AssigningReplica`](https://learn.microsoft.com/en-us/answers/questions/5572527/container-app-using-serverless-gpu-stuck-assigning)
+  corroborates the 900-second A100 zero-container bound. A successful ARM write
+  and healthy revision summary never substitute for serving-container evidence.
+- [Container Apps workload-profile exhaustion #1705](https://github.com/microsoft/azure-container-apps/issues/1705)
+  records a materialized replica with `WorkLoad Profile Full`. Gludd therefore
+  distinguishes a zero-replica placement failure from a nonempty unhealthy
+  runtime and never lowers model quality for either infrastructure outcome.
+- [OpenTofu existing-resource import #1571](https://github.com/opentofu/opentofu/issues/1571)
+  captures the state-adoption problem exposed by a retained Azure environment.
+  Gludd imports only an independently verified, exact owner-bound environment
+  before generating another audited plan.
+- [Azure Monitor empty time series](https://learn.microsoft.com/en-au/answers/questions/460863/azure-monitor-rest-api-empty-timeseries-data-point)
+  supports treating a structurally valid empty metric response as bounded
+  pending evidence rather than malformed provider output.
+- [Azure Monitor dimension registration delay](https://learn.microsoft.com/en-us/answers/questions/5811384/not-able-to-select-the-failure-type-dimension-valu)
+  motivated the bounded registration retry. The five- and fifteen-minute live
+  failures remain separate replay cases because waiting did not make the query
+  shape valid; both still fail closed without positive GPU evidence.
+- [Intermittent T4 placement #1511](https://github.com/microsoft/azure-container-apps/issues/1511)
+  and [constrained A100/H100 capacity #1797](https://github.com/microsoft/azure-container-apps/issues/1797)
+  justify versioned, exact-scope operational failover. They are availability
+  observations, not hardware guarantees or model-quality evidence.

@@ -1,0 +1,358 @@
+{
+  "$defs": {
+    "case": {
+      "additionalProperties": false,
+      "properties": {
+        "expected": {
+          "$ref": "#/$defs/expected"
+        },
+        "id": {
+          "maxLength": 96,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*-2026-09-[0-9]{2}$",
+          "type": "string"
+        },
+        "input": {
+          "$ref": "#/$defs/input"
+        },
+        "kind": {
+          "enum": [
+            "regression_contract",
+            "startup_diagnosis"
+          ]
+        },
+        "practitioner_refs": {
+          "items": {
+            "format": "uri",
+            "maxLength": 256,
+            "pattern": "^https://",
+            "type": "string"
+          },
+          "maxItems": 4,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "regression_node": {
+          "maxLength": 256,
+          "pattern": "^tests/unit/test_[a-z0-9_]+\\.py::test_[a-z0-9_]+$",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        }
+      },
+      "required": [
+        "expected",
+        "id",
+        "input",
+        "kind",
+        "practitioner_refs",
+        "regression_node",
+        "source"
+      ],
+      "type": "object"
+    },
+    "classifier": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "continue_to_inference",
+            "failover_profile_or_region",
+            "wait_for_bounded_startup"
+          ]
+        },
+        "model_quality_relevant": {
+          "const": false
+        },
+        "observed_replicas": {
+          "maximum": 512,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "phase": {
+          "enum": [
+            "placement",
+            "ready",
+            "startup"
+          ]
+        },
+        "protocol": {
+          "const": "gludd-azure-containerapp-startup-diagnosis-v1"
+        },
+        "requested_replicas": {
+          "maximum": 512,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "placement_unavailable",
+            "ready"
+          ]
+        }
+      },
+      "required": [
+        "action",
+        "model_quality_relevant",
+        "observed_replicas",
+        "phase",
+        "protocol",
+        "requested_replicas",
+        "retryable",
+        "state"
+      ],
+      "type": "object"
+    },
+    "expected": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "bounded_wait_then_cleanup",
+            "censor_from_quality",
+            "classify_allowlisted_guard",
+            "continue_to_inference",
+            "continue_validated_local",
+            "enforce_candidate_deadline",
+            "fail_closed_cleanup",
+            "failover_profile_or_region",
+            "import_exact_owned_environment",
+            "pin_published_operation_version",
+            "poll_bounded",
+            "query_documented_metric_contract",
+            "reconcile_exact_arm_absence",
+            "record_negative_calibration",
+            "restore_short_bound",
+            "retry_bounded_registration",
+            "size_canonical_batch",
+            "suppress_exact_unavailable_scope"
+          ]
+        },
+        "classifier": {
+          "$ref": "#/$defs/classifier"
+        },
+        "model_quality_relevant": {
+          "type": "boolean"
+        },
+        "reason_class": {
+          "enum": [
+            "api_version_rejected",
+            "cleanup_poll_timeout",
+            "commit_guard_unclassified",
+            "context_capacity",
+            "metric_catalog_absent",
+            "metric_pending",
+            "metric_query_rejected",
+            "operational_unavailable",
+            "placement_unavailable",
+            "proposal_scope",
+            "state_unbound",
+            "supplementary_unavailable",
+            "timeout",
+            "unavailable"
+          ]
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "action",
+        "model_quality_relevant",
+        "reason_class",
+        "retryable"
+      ],
+      "type": "object"
+    },
+    "input": {
+      "additionalProperties": false,
+      "maxProperties": 12,
+      "minProperties": 1,
+      "properties": {
+        "accepted": {
+          "type": "boolean"
+        },
+        "api_version": {
+          "pattern": "^20[0-9]{2}-[0-9]{2}-[0-9]{2}$",
+          "type": "string"
+        },
+        "candidate_timeout_seconds": {
+          "maximum": 3600,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "canonical_batch_bytes": {
+          "maximum": 1048576,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "catalog_records": {
+          "maximum": 16,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cleanup_poll_timeout_seconds": {
+          "maximum": 3600,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "context_limit_bytes": {
+          "maximum": 1048576,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "deadline_seconds": {
+          "maximum": 3600,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "elapsed_seconds": {
+          "maximum": 3600,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "exact_revision_bound": {
+          "type": "boolean"
+        },
+        "exit_code": {
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "health_state": {
+          "enum": [
+            "Healthy",
+            "Unhealthy"
+          ]
+        },
+        "http_status": {
+          "maximum": 599,
+          "minimum": 100,
+          "type": "integer"
+        },
+        "independent_absence": {
+          "type": "boolean"
+        },
+        "largest_shard_bytes": {
+          "maximum": 1048576,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "listed_replicas": {
+          "maximum": 512,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "local_candidate_available": {
+          "type": "boolean"
+        },
+        "local_state_bound": {
+          "type": "boolean"
+        },
+        "metric_series_count": {
+          "maximum": 512,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "profile_failures": {
+          "maximum": 16,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "provisioning_state": {
+          "enum": [
+            "Failed",
+            "Provisioned"
+          ]
+        },
+        "remote_owned": {
+          "type": "boolean"
+        },
+        "requested_replicas": {
+          "maximum": 512,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "response_withheld": {
+          "type": "boolean"
+        },
+        "running_state": {
+          "enum": [
+            "Failed",
+            "Running",
+            "Unknown"
+          ]
+        },
+        "shard_count": {
+          "maximum": 64,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "summary_replicas": {
+          "maximum": 512,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "validation_enabled": {
+          "type": "boolean"
+        },
+        "wildcard_dimensions": {
+          "maximum": 2,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "end_line": {
+          "maximum": 2000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "start_line": {
+          "maximum": 2000,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "end_line",
+        "start_line"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://gludd.example/schemas/azure/live-failure-replay-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/case"
+      },
+      "maxItems": 22,
+      "minItems": 22,
+      "type": "array"
+    },
+    "protocol": {
+      "const": "gludd-azure-live-failure-replay-v1"
+    },
+    "source_document": {
+      "const": "docs/features/SELF_IMPROVEMENT_MIXED_MODELS.md"
+    }
+  },
+  "required": [
+    "cases",
+    "protocol",
+    "source_document"
+  ],
+  "title": "Gludd Azure live failure replay corpus",
+  "type": "object"
+}
