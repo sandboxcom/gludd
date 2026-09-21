@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-import general_ludd.self_improve.freellmapi_scoring_kernel as scoring_kernel
-from general_ludd.self_improve.freellmapi_scoring_kernel import (
+import general_ludd.models.freellmapi_scoring_kernel as scoring_kernel
+from general_ludd.models.freellmapi_scoring_kernel import (
     FREELLMAPI_SCORING_BUNDLE_DIGEST,
     FreeLLMScoringFactors,
     FreeLLMScoringFault,
@@ -24,11 +24,11 @@ _OTHER_DIGEST = "b" * 64
 _ROOT = Path(__file__).resolve().parents[2]
 _BUNDLE = (
     _ROOT
-    / "src/general_ludd/self_improve/vendor/freellmapi/scoring_kernel.js"
+    / "src/general_ludd/models/vendor/freellmapi/scoring_kernel.js"
 )
 _MANIFEST = (
     _ROOT
-    / "src/general_ludd/self_improve/vendor/freellmapi/scoring_kernel.json"
+    / "src/general_ludd/models/vendor/freellmapi/scoring_kernel.json"
 )
 
 
