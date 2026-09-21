@@ -464,6 +464,11 @@
       "behavior": "make node-deps-audit NODE_DEPS_VALIDATE_ONLY=1 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_NPM_UPDATE_NOTIFIER=false NODE_DEPS_AUDIT_LEVEL=moderate"
     },
     {
+      "name": "freellmapi-upstream-admission",
+      "make_variables": ["FREELLMAPI_ADMISSION_TAG", "FREELLMAPI_ADMISSION_COMMIT", "FREELLMAPI_ADMISSION_LIVE", "FREELLMAPI_ADMISSION_OUTPUT"],
+      "behavior": "make freellmapi-upstream-admission FREELLMAPI_ADMISSION_TAG=v0.11.1 FREELLMAPI_ADMISSION_COMMIT=4191d8e7abef39fcd93fab009123467036f39750 FREELLMAPI_ADMISSION_LIVE=0 FREELLMAPI_ADMISSION_OUTPUT=config/freellmapi/upstream_candidate.json"
+    },
+    {
       "name": "pip-audit-gate",
       "make_variables": [],
       "behavior": "make pip-audit-gate"

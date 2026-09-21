@@ -27,6 +27,26 @@ NODE_DEPS_NPM_CACHE ?= /tmp/gludd-npm-cache-public-v1
 NODE_DEPS_NPM_REGISTRY ?= https://registry.npmjs.org
 NODE_DEPS_NPM_UPDATE_NOTIFIER ?= false
 NODE_DEPS_AUDIT_LEVEL ?= moderate
+FREELLMAPI_ADMISSION_TAG ?= v0.11.1
+FREELLMAPI_ADMISSION_COMMIT ?= 4191d8e7abef39fcd93fab009123467036f39750
+FREELLMAPI_ADMISSION_LIVE ?= 0
+FREELLMAPI_ADMISSION_OUTPUT ?= config/freellmapi/upstream_candidate.json
+ifneq (,$(findstring $$,$(value FREELLMAPI_ADMISSION_TAG)))
+$(error FREELLMAPI_ADMISSION_TAG contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value FREELLMAPI_ADMISSION_COMMIT)))
+$(error FREELLMAPI_ADMISSION_COMMIT contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value FREELLMAPI_ADMISSION_LIVE)))
+$(error FREELLMAPI_ADMISSION_LIVE contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value FREELLMAPI_ADMISSION_OUTPUT)))
+$(error FREELLMAPI_ADMISSION_OUTPUT contains forbidden input)
+endif
+export FREELLMAPI_ADMISSION_TAG
+export FREELLMAPI_ADMISSION_COMMIT
+export FREELLMAPI_ADMISSION_LIVE
+export FREELLMAPI_ADMISSION_OUTPUT
 GLUDD_UV_CACHE_DIR ?= /tmp/gludd-uv-cache-public-v2
 override UV_CACHE_DIR := $(GLUDD_UV_CACHE_DIR)
 export UV_CACHE_DIR
@@ -327,6 +347,7 @@ help:
 	@echo "  node-deps-sync        Install locked Node deps (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY, NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false)"
 	@echo "  node-deps-relock      Regenerate Node lock (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY, NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false)"
 	@echo "  node-deps-audit       Audit locked Node deps (NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false plus NODE_DEPS_AUDIT_LEVEL=low|moderate|high|critical)"
+	@echo "  freellmapi-upstream-admission  Validate/refresh the non-runnable upstream candidate (FREELLMAPI_ADMISSION_TAG, FREELLMAPI_ADMISSION_COMMIT, FREELLMAPI_ADMISSION_LIVE=0|1, FREELLMAPI_ADMISSION_OUTPUT)"
 	@echo "  bootstrap             init + lint + test + healthcheck"
 	@echo "  install-hooks         Install pre-commit hooks (secrets, lint, collect)"
 	@echo "  install-workflow-hook Validate/install the tracked GitHub workflow YAML hook (INSTALL_WORKFLOW_HOOK_VALIDATE_ONLY)"
@@ -929,6 +950,17 @@ node-deps-audit:
 	else \
 		NPM_CONFIG_USERCONFIG="$(NODE_DEPS_NPM_USERCONFIG)" NPM_CONFIG_CACHE="$(NODE_DEPS_NPM_CACHE)" NPM_CONFIG_REGISTRY="$(NODE_DEPS_NPM_REGISTRY)" NPM_CONFIG_UPDATE_NOTIFIER="$(NODE_DEPS_NPM_UPDATE_NOTIFIER)" npm audit --prefix .opencode --audit-level="$(NODE_DEPS_AUDIT_LEVEL)"; \
 	fi
+
+freellmapi-upstream-admission:
+	@case "$$FREELLMAPI_ADMISSION_LIVE" in 0|1) ;; *) echo "FREELLMAPI_ADMISSION_LIVE must be 0 or 1"; exit 2;; esac; \
+		MODE=validate; \
+		if [ "$$FREELLMAPI_ADMISSION_LIVE" = "1" ]; then MODE=refresh; fi; \
+		$(UV) run python scripts/freellmapi_upstream_admission.py \
+			--mode "$$MODE" \
+			--tag "$$FREELLMAPI_ADMISSION_TAG" \
+			--commit "$$FREELLMAPI_ADMISSION_COMMIT" \
+			--output "$$FREELLMAPI_ADMISSION_OUTPUT" \
+			--repository-root "$(CURDIR)"
 
 install-pip:
 	@$(PYTHON) -m venv .venv

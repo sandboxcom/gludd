@@ -3,7 +3,10 @@
 **Status:** Accepted architecture; compatibility proof is required before enablement
 **Decision date:** 2026-09-15
 **Upstream:** [`tashfeenahmed/freellmapi`][upstream]
-**Evaluated release:** `v0.9.9`, release commit abbreviation `780a7d8`
+**Admitted artifact:** `v0.9.9`, full source commit
+`780a7d8d6dcbc818eb10ec17da210635b569ae22`
+**Pending candidate:** [`v0.11.1`][release-v0.11.1], full source commit
+[`4191d8e7abef39fcd93fab009123467036f39750`][commit-v0.11.1]
 **Scope:** upstream ownership, in-process execution, signed free-tier knowledge,
 pure-function evaluation, security, updates, rollback, tests, and
 self-improvement evidence
@@ -479,6 +482,43 @@ One bot-created update branch performs these steps serially and fails closed:
 Discovery never mutates the running lock. Renovation is source replacement and
 rebuild, not rebasing a fork.
 
+### Implemented candidate-admission checkpoint
+
+The 2026-09-21 discovery slice implements the first three trust boundaries of
+the update workflow without admitting new runtime code:
+
+- `make freellmapi-upstream-admission` uses the maintained GitHub CLI against the
+  fixed `tashfeenahmed/freellmapi` repository. It accepts only an explicit stable
+  semver tag and full 40-character commit. `FREELLMAPI_ADMISSION_LIVE=1` is the
+  only mutating mode; the default mode validates the tracked lock offline.
+- The updater resolves lightweight or bounded annotated tags to the explicit
+  commit, requires GitHub's commit API to report a valid signature, binds the
+  verified tree, and records digests of the signature and signed payload without
+  persisting either raw value. This is source-discovery evidence; independent
+  build attestation and cross-engine provenance remain required before promotion.
+- The exact commit archive is read without extraction under compressed,
+  expanded-size, member-count, path, type, and per-source limits. The updater
+  verifies the MIT text, npm lock identity/version, selected scoring symbols,
+  and the digest and ABI identity of Gludd's still-admitted artifact.
+- The resulting
+  `config/freellmapi/upstream_candidate.json` is atomically replaced and
+  content-free. Two independent live acquisitions produced candidate
+  `sha256:69d63b09199c37f38c02c711559b15e0fd5dc5ecc0e64e2d94c597dc5e5d3998`
+  and archive
+  `sha256:9f5156164cfc9b98416014b1ed1a9a49bb0005b32ae64b7a21e4afd8c467a198`.
+- The candidate state is `pending_frozen_delta` and `runtime_admitted` is
+  unconditionally false. Missing selected symbols produce a tracked rejection,
+  not a fallback import. A lock cannot promote itself; the frozen delta,
+  upstream tests/build, cross-engine ABI, GHA, live-provider, rollback, and
+  review gates below remain release blockers.
+
+This checkpoint directly codifies current operator evidence. The
+[`v0.11.1` release][release-v0.11.1] says updates now follow published releases
+instead of untagged `main` after [issue #1270][issue-1270], and that per-endpoint
+latency history replaced a fixed budget after [issue #1262][issue-1262]. Gludd
+therefore pins a published release and commit while retaining its own outer
+scheduler, deadline policy, health evidence, and final routing authority.
+
 ## Security and privacy contract
 
 1. **Admission before bridge.** Project-private or policy-excluded business logic
@@ -660,6 +700,8 @@ scans, lifecycle cleanup, full gate, and hosted CI evidence are green.
 [node-embedder]: https://nodejs.org/download/release/v24.8.0/docs/api/all.html#c-embedder-api
 [pythonmonkey]: https://docs.pythonmonkey.io/
 [quickjs-wrapper]: https://github.com/PetterS/quickjs
+[release-v0.11.1]: https://github.com/tashfeenahmed/freellmapi/releases/tag/v0.11.1
+[commit-v0.11.1]: https://github.com/tashfeenahmed/freellmapi/commit/4191d8e7abef39fcd93fab009123467036f39750
 [security-35]: https://github.com/tashfeenahmed/freellmapi/issues/35
 [security-policy]: https://github.com/tashfeenahmed/freellmapi/blob/main/SECURITY.md
 [server-entry]: https://github.com/tashfeenahmed/freellmapi/blob/main/server/src/index.ts
