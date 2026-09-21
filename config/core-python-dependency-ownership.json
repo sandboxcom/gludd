@@ -832,7 +832,7 @@
       "collection_import_paths": [],
       "collection_requirement_paths": [],
       "core_import_paths": [
-        "src/general_ludd/self_improve/freellmapi_scoring_kernel.py"
+        "src/general_ludd/models/freellmapi_scoring_kernel.py"
       ],
       "disposition": "retain-core",
       "import_roots": [

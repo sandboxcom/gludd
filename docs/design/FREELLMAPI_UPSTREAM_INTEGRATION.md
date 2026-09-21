@@ -34,6 +34,13 @@ quota/reset and compatibility metadata. Filling that gap is the integration.
 Everything after catalog admission reuses Gludd's existing candidate probing,
 calibration, trial, routing, execution, trace, and lifecycle paths.
 
+The executable scoring kernel follows the same ownership rule. Its canonical
+Python boundary and attributed JavaScript artifact live under
+`general_ludd.models`, where chemistry, firmware, self-improvement, and future
+workloads can reuse them. `general_ludd.self_improve.freellmapi_scoring_kernel`
+is an identity-preserving compatibility import only; the model layer never
+imports self-improvement implementation.
+
 No FreeLLMAPI TypeScript function is pre-approved. A named, pure upstream export
 may be proposed only after a frozen shadow/ablation experiment identifies a
 specific Gludd capability gap and demonstrates a positive quality benefit after
@@ -113,6 +120,23 @@ The following facts were checked against upstream on 2026-09-15:
   though Gludd embeds only a subset.
 - Upstream also publishes multi-architecture OCI images. Their
   [Docker workflow][docker-workflow] creates release, commit, and branch tags.
+
+### Upstream recheck on 2026-09-21
+
+The latest signed release is now `v0.11.1` at full commit
+`4191d8e7abef39fcd93fab009123467036f39750`; the admitted executable subset
+remains pinned to `v0.9.9` until the update workflow can replay upstream tests,
+purity, provenance, ABI, and frozen delta evidence. A newer tag is discovery
+evidence, not automatic authorization to replace a working artifact.
+
+Two newer operator reports reinforce that boundary. [Issue #1270][issue-1270]
+showed the desktop updater advertising untagged commits for which no installer
+existed; `v0.11.1` changed it to compare published releases. [Issue #1262][issue-1262]
+showed a healthy but slow endpoint being cancelled by a fixed outer retry
+budget; `v0.11.1` changed that budget to measured endpoint history.
+Gludd therefore resolves full signed release identities, rejects mutable `main`,
+and retains its own measured, task-bounded deadline rather than importing
+FreeLLMAPI's process-wide retry policy.
   That is a supported upstream deployment form, but it is explicitly not Gludd's
   integration form.
 
@@ -627,6 +651,8 @@ scans, lifecycle cleanup, full gate, and hosted CI evidence are green.
 [issue-608]: https://github.com/tashfeenahmed/freellmapi/issues/608
 [issue-666]: https://github.com/tashfeenahmed/freellmapi/issues/666
 [issue-880]: https://github.com/tashfeenahmed/freellmapi/issues/880
+[issue-1262]: https://github.com/tashfeenahmed/freellmapi/issues/1262
+[issue-1270]: https://github.com/tashfeenahmed/freellmapi/issues/1270
 [jsrun]: https://imfing.github.io/jsrun/concepts/runtime/
 [license]: https://github.com/tashfeenahmed/freellmapi/blob/main/LICENSE
 [miniracer]: https://pypi.org/project/mini-racer/

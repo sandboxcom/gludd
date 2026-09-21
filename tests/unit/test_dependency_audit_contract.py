@@ -74,7 +74,7 @@ def test_quickjs_runtime_dependency_is_statically_auditable() -> None:
         ROOT
         / "src"
         / "general_ludd"
-        / "self_improve"
+        / "models"
         / "freellmapi_scoring_kernel.py"
     ).read_text(encoding="utf-8")
     tree = ast.parse(source)
