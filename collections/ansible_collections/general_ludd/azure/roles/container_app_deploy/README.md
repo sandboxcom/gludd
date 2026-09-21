@@ -30,6 +30,15 @@ mandatory reconciliation timestamp. The filter delegates to Gludd's core
 planner, so the role and Python lifecycle cannot drift into separate pricing or
 dependency algorithms. An empty mapping disables retention planning.
 
+When `containerapp_revision_name` is supplied, the role also reads only that
+app's bounded revision and replica inventories and publishes `diagnosis` under
+the same fact. A terminal `Failed`/`Unhealthy` revision with zero materialized
+replicas becomes `placement_unavailable`: it is retryable through a separately
+approved profile or region and is explicitly not model-quality evidence. A
+terminal revision with a materialized replica becomes `runtime_unhealthy`
+instead, while healthy requested replicas permit inference. Provider messages,
+resource names, model identities, and credentials never enter this fact.
+
 See [Azure model-runner idle retention](../../../../../../docs/azure-idle-retention.md)
 for the four user postures, billing boundaries, exact configuration, and
 practitioner reports that shaped the fail-closed behavior.
@@ -77,3 +86,10 @@ self-improvement capacity.
   instead of honoring `-lock-timeout`. The role does not treat that timeout as
   its safety boundary: it additionally binds the exact state, owner, operation,
   saved plan, and plan digest and leaves failure visible to the caller.
+- [Serverless GPU replicas stuck in `AssigningReplica`](https://learn.microsoft.com/en-us/answers/questions/5939955/typical-scheduling-latency-for-consumption-gpu-nc8)
+  records an operator seeing a GPU Container App remain unplaced for days without
+  a useful health event. Gludd therefore records zero-replica terminal startup as
+  finite-horizon placement evidence, bounds the wait, and recommends failover
+  without lowering the model's quality score. This matches the 2026-09-21 Gludd
+  East US T4 run, where one requested replica remained at zero before the exact
+  revision became `Failed`/`Unhealthy` and cleanup independently proved absence.

@@ -61,6 +61,25 @@ _RETENTION_POLICY_KEYS: Final = frozenset(
 _LATENCY_KEYS: Final = frozenset(
     {"p50_seconds", "p95_seconds", "sample_count", "observed_at"}
 )
+_STARTUP_REQUEST_KEYS: Final = frozenset(
+    {"revision_name", "requested_replicas"}
+)
+_REVISION_HEALTH_STATES: Final = frozenset(
+    {"Healthy", "Unhealthy", "None", "Unknown"}
+)
+_REVISION_PROVISIONING_STATES: Final = frozenset(
+    {
+        "Provisioning",
+        "Provisioned",
+        "Failed",
+        "Deprovisioning",
+        "Deprovisioned",
+        "Unknown",
+    }
+)
+_REVISION_RUNNING_STATES: Final = frozenset(
+    {"Running", "Processing", "Stopped", "Degraded", "Failed", "Unknown"}
+)
 
 
 def _mapping(value: object, label: str) -> Mapping[str, object]:
@@ -465,6 +484,138 @@ def normalize_containerapp_observation(
     }
 
 
+def _bounded_provider_state(value: object, allowed: frozenset[str]) -> str:
+    """Collapse provider additions to one content-free state."""
+    return value if isinstance(value, str) and value in allowed else "Unknown"
+
+
+def _startup_result(
+    *,
+    state: str,
+    phase: str,
+    retryable: bool,
+    action: str,
+    requested_replicas: int,
+    observed_replicas: int,
+) -> dict[str, object]:
+    return {
+        "protocol": "gludd-azure-containerapp-startup-diagnosis-v1",
+        "state": state,
+        "phase": phase,
+        "retryable": retryable,
+        "model_quality_relevant": False,
+        "action": action,
+        "requested_replicas": requested_replicas,
+        "observed_replicas": observed_replicas,
+    }
+
+
+def diagnose_containerapp_startup(
+    raw: object,
+    request: object,
+) -> dict[str, object]:
+    """Classify exact revision startup without retaining provider content."""
+    source = _exact_mapping(
+        raw,
+        "containerapp startup observation",
+        frozenset({"revisions", "replicas"}),
+    )
+    expected = _exact_mapping(
+        request,
+        "containerapp startup request",
+        _STARTUP_REQUEST_KEYS,
+    )
+    revision_name = _text(expected.get("revision_name"), "revision_name")
+    requested = _integer(
+        expected.get("requested_replicas"),
+        "requested_replicas",
+    )
+    if requested < 1:
+        raise ValueError("requested_replicas must be at least one")
+    if requested > _MAX_ITEMS:
+        raise ValueError("requested_replicas exceeds the bounded replica limit")
+
+    revisions = _values(source.get("revisions"), "revisions")
+    replicas = _values(source.get("replicas"), "replicas")
+    candidates = [item for item in revisions if item.get("name") == revision_name]
+    if len(candidates) > 1:
+        raise ValueError("revision inventory is absent or ambiguous")
+    if not candidates:
+        return _startup_result(
+            state="not_observed",
+            phase="discovery",
+            retryable=True,
+            action="wait_for_revision",
+            requested_replicas=requested,
+            observed_replicas=0,
+        )
+
+    properties = _mapping(
+        candidates[0].get("properties", {}),
+        "revision.properties",
+    )
+    summary_replicas = _integer(properties.get("replicas", 0), "revision replicas")
+    observed = max(summary_replicas, len(replicas))
+    health = _bounded_provider_state(
+        properties.get("healthState"),
+        _REVISION_HEALTH_STATES,
+    )
+    provisioning = _bounded_provider_state(
+        properties.get("provisioningState"),
+        _REVISION_PROVISIONING_STATES,
+    )
+    running = _bounded_provider_state(
+        properties.get("runningState"),
+        _REVISION_RUNNING_STATES,
+    )
+    ready = bool(
+        observed >= requested
+        and health == "Healthy"
+        and provisioning == "Provisioned"
+        and running == "Running"
+    )
+    terminal = bool(
+        health == "Unhealthy"
+        or provisioning in {"Failed", "Deprovisioned"}
+        or running in {"Stopped", "Degraded", "Failed"}
+    )
+    if ready:
+        return _startup_result(
+            state="ready",
+            phase="ready",
+            retryable=False,
+            action="continue_to_inference",
+            requested_replicas=requested,
+            observed_replicas=observed,
+        )
+    if terminal and observed == 0:
+        return _startup_result(
+            state="placement_unavailable",
+            phase="placement",
+            retryable=True,
+            action="failover_profile_or_region",
+            requested_replicas=requested,
+            observed_replicas=observed,
+        )
+    if terminal:
+        return _startup_result(
+            state="runtime_unhealthy",
+            phase="runtime",
+            retryable=False,
+            action="inspect_runner_and_image",
+            requested_replicas=requested,
+            observed_replicas=observed,
+        )
+    return _startup_result(
+        state="pending",
+        phase="placement" if observed == 0 else "startup",
+        retryable=True,
+        action="wait_for_bounded_startup",
+        requested_replicas=requested,
+        observed_replicas=observed,
+    )
+
+
 def _digest(value: object, label: str) -> str:
     text = _text(value, label)
     if _DIGEST.fullmatch(text) is None:
@@ -693,6 +844,7 @@ class FilterModule:
     def filters(self) -> dict[str, Any]:
         return {
             "containerapp_observation": normalize_containerapp_observation,
+            "containerapp_startup_diagnosis": diagnose_containerapp_startup,
             "containerapp_lifecycle_decision": decide_containerapp_lifecycle,
             "containerapp_idle_retention": plan_containerapp_idle_retention,
         }
@@ -701,6 +853,7 @@ class FilterModule:
 __all__ = (
     "FilterModule",
     "decide_containerapp_lifecycle",
+    "diagnose_containerapp_startup",
     "normalize_containerapp_observation",
     "plan_containerapp_idle_retention",
 )

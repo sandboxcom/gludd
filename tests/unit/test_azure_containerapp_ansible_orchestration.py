@@ -155,6 +155,50 @@ def _raw(*, gpu: float = 37.5, foreign_apps: bool = False) -> dict[str, object]:
     }
 
 
+def _startup_raw(
+    *,
+    provisioning_state: str = "Provisioning",
+    health_state: str = "None",
+    running_state: str = "Processing",
+    summary_replicas: int = 0,
+    observed_replicas: int = 0,
+) -> dict[str, object]:
+    return {
+        "revisions": {
+            "response": {
+                "value": [
+                    {
+                        "name": REVISION,
+                        "properties": {
+                            "provisioningState": provisioning_state,
+                            "healthState": health_state,
+                            "runningState": running_state,
+                            "replicas": summary_replicas,
+                        },
+                    }
+                ]
+            }
+        },
+        "replicas": {
+            "response": {
+                "value": [
+                    {"name": f"replica-{index}", "properties": {}}
+                    for index in range(observed_replicas)
+                ]
+            }
+        },
+    }
+
+
+def _startup_request(**overrides: object) -> dict[str, object]:
+    result: dict[str, object] = {
+        "revision_name": REVISION,
+        "requested_replicas": 1,
+    }
+    result.update(overrides)
+    return result
+
+
 def test_observation_normalizes_only_bounded_content_free_evidence() -> None:
     observed = containerapp_lifecycle.normalize_containerapp_observation(
         _raw(),
@@ -442,6 +486,147 @@ def test_observation_represents_metric_series_without_numeric_samples() -> None:
     assert observed["gpu"]["maximum_percent"] is None
 
 
+def test_startup_diagnosis_classifies_terminal_zero_replica_as_placement() -> None:
+    diagnosis = containerapp_lifecycle.diagnose_containerapp_startup(
+        _startup_raw(
+            provisioning_state="Failed",
+            health_state="Unhealthy",
+            running_state="Failed",
+        ),
+        _startup_request(),
+    )
+
+    assert diagnosis == {
+        "protocol": "gludd-azure-containerapp-startup-diagnosis-v1",
+        "state": "placement_unavailable",
+        "phase": "placement",
+        "retryable": True,
+        "model_quality_relevant": False,
+        "action": "failover_profile_or_region",
+        "requested_replicas": 1,
+        "observed_replicas": 0,
+    }
+    serialized = json.dumps(diagnosis, sort_keys=True)
+    assert REVISION not in serialized
+    assert APP_NAME not in serialized
+
+
+@pytest.mark.parametrize(
+    ("raw", "state", "phase", "retryable", "action"),
+    [
+        (
+            _startup_raw(),
+            "pending",
+            "placement",
+            True,
+            "wait_for_bounded_startup",
+        ),
+        (
+            _startup_raw(
+                provisioning_state="Provisioned",
+                health_state="Healthy",
+                running_state="Running",
+                summary_replicas=1,
+                observed_replicas=1,
+            ),
+            "ready",
+            "ready",
+            False,
+            "continue_to_inference",
+        ),
+        (
+            _startup_raw(
+                provisioning_state="Failed",
+                health_state="Unhealthy",
+                running_state="Degraded",
+                summary_replicas=1,
+                observed_replicas=1,
+            ),
+            "runtime_unhealthy",
+            "runtime",
+            False,
+            "inspect_runner_and_image",
+        ),
+    ],
+)
+def test_startup_diagnosis_distinguishes_pending_ready_and_runtime_failure(
+    raw: dict[str, object],
+    state: str,
+    phase: str,
+    retryable: bool,
+    action: str,
+) -> None:
+    diagnosis = containerapp_lifecycle.diagnose_containerapp_startup(
+        raw,
+        _startup_request(),
+    )
+
+    assert diagnosis["state"] == state
+    assert diagnosis["phase"] == phase
+    assert diagnosis["retryable"] is retryable
+    assert diagnosis["action"] == action
+    assert diagnosis["model_quality_relevant"] is False
+
+
+def test_startup_diagnosis_rejects_ambiguous_or_secret_bearing_evidence() -> None:
+    ambiguous = cast(dict[str, Any], _startup_raw())
+    revisions = ambiguous["revisions"]["response"]["value"]
+    revisions.append(dict(revisions[0]))
+    with pytest.raises(ValueError, match="revision inventory is absent or ambiguous"):
+        containerapp_lifecycle.diagnose_containerapp_startup(
+            ambiguous,
+            _startup_request(),
+        )
+
+    secret = cast(dict[str, Any], _startup_raw())
+    secret["replicas"]["response"]["clientSecret"] = "do-not-retain"
+    with pytest.raises(ValueError, match="secret-bearing"):
+        containerapp_lifecycle.diagnose_containerapp_startup(
+            secret,
+            _startup_request(),
+        )
+
+
+@pytest.mark.parametrize(
+    ("startup_request", "message"),
+    [
+        ({"revision_name": REVISION}, "exact schema"),
+        ({**_startup_request(), "unexpected": True}, "exact schema"),
+        (_startup_request(requested_replicas=True), "number"),
+        (_startup_request(requested_replicas=0), "at least one"),
+    ],
+)
+def test_startup_diagnosis_rejects_invalid_request_contracts(
+    startup_request: dict[str, object],
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        containerapp_lifecycle.diagnose_containerapp_startup(
+            _startup_raw(),
+            startup_request,
+        )
+
+
+def test_startup_diagnosis_represents_revision_not_yet_observed() -> None:
+    diagnosis = containerapp_lifecycle.diagnose_containerapp_startup(
+        _startup_raw(),
+        _startup_request(revision_name="foreign--0000001"),
+    )
+
+    assert diagnosis["state"] == "not_observed"
+    assert diagnosis["phase"] == "discovery"
+    assert diagnosis["action"] == "wait_for_revision"
+    assert diagnosis["observed_replicas"] == 0
+
+
+def test_startup_diagnosis_filter_is_available_to_ansible() -> None:
+    filters = containerapp_lifecycle.FilterModule().filters()
+
+    assert filters["containerapp_startup_diagnosis"] is (
+        containerapp_lifecycle.diagnose_containerapp_startup
+    )
+
+
 def test_lifecycle_decision_is_fail_closed_and_terraform_only() -> None:
     observed = containerapp_lifecycle.normalize_containerapp_observation(
         _raw(gpu=0.0),
@@ -642,20 +827,26 @@ def test_ansible_retention_filter_refuses_nonidle_or_ambiguous_input() -> None:
 
 
 def test_role_uses_mature_read_and_iac_collections_and_sets_fact() -> None:
-    tasks = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in (ROLE / "tasks" / "main.yml", ROLE / "tasks" / "observe.yml")
-    )
+    task_paths = (ROLE / "tasks" / "main.yml", ROLE / "tasks" / "observe.yml")
+    task_documents = [
+        yaml.safe_load(path.read_text(encoding="utf-8")) for path in task_paths
+    ]
+    tasks = "\n".join(path.read_text(encoding="utf-8") for path in task_paths)
     defaults = yaml.safe_load(
         (ROLE / "defaults" / "main.yml").read_text(encoding="utf-8")
     )
     galaxy = yaml.safe_load((COLLECTION / "galaxy.yml").read_text(encoding="utf-8"))
 
+    assert all(isinstance(document, list) for document in task_documents)
     assert "azure.azcollection.azure_rm_resource_info:" in tasks
     assert "cloud.terraform.terraform:" in tasks
     assert 'binary_path: "{{ containerapp_iac_binary_path }}"' in tasks
     assert "general_ludd.azure.containerapp_observation" in tasks
+    assert "general_ludd.azure.containerapp_startup_diagnosis" in tasks
+    assert "{{ _cad_app_id }}/revisions" in tasks
+    assert "containerapp_revision_name }}/replicas" in tasks
     assert "gludd_azure_containerapp:" in tasks
+    assert 'diagnosis: "{{ _cad_diagnosis | default(None) }}"' in tasks
     assert "general_ludd.azure.containerapp_idle_retention" in tasks
     assert "retention: \"{{ _cad_retention | default(None) }}\"" in tasks
     assert "checksum_algorithm: sha256" in tasks
@@ -668,6 +859,7 @@ def test_role_uses_mature_read_and_iac_collections_and_sets_fact() -> None:
     assert defaults["containerapp_poll_seconds"] > 0
     assert defaults["containerapp_iac_binary_path"] == "/usr/local/bin/tofu"
     assert defaults["containerapp_idle_retention"] == {}
+    assert defaults["containerapp_required_replicas"] == 1
     assert "containerapp_terraform_binary_path" not in defaults
     assert galaxy["dependencies"]["azure.azcollection"]
     assert galaxy["dependencies"]["cloud.terraform"]
@@ -689,3 +881,4 @@ def test_role_docs_record_sdk_reuse_fact_semantics_and_practitioner_failures() -
     assert "ansible-collections/community.general/issues/7422" in combined
     assert "opentofu/opentofu/issues/3347" in combined
     assert "opentofu/opentofu/issues/4225" in combined
+    assert "questions/5939955" in combined

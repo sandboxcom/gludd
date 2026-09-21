@@ -12,6 +12,12 @@
       - containerapp_workload_profile_type | length > 0
       - containerapp_owner_digest is match('^[0-9a-f]{64}$')
       - containerapp_required_profile_headroom | int >= 0
+      - containerapp_required_replicas | int >= 1
+      - containerapp_required_replicas | int <= 512
+      - >-
+        containerapp_revision_name | length == 0
+        or containerapp_revision_name
+        is match('^[a-z0-9][a-z0-9-]{0,126}[a-z0-9]$')
       - containerapp_idle_retention is mapping
       - containerapp_parallelism | int >= 1
       - containerapp_parallelism | int <= 4
@@ -132,5 +138,6 @@
       operation_digest: "{{ containerapp_operation_digest }}"
       decision: "{{ _cad_decision }}"
       retention: "{{ _cad_retention | default(None) }}"
+      diagnosis: "{{ _cad_diagnosis | default(None) }}"
       observation: "{{ _cad_observation }}"
       terraform_changed: "{{ _cad_terraform.changed | default(false) | bool }}"
