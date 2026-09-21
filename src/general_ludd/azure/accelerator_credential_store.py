@@ -304,7 +304,10 @@ class AzureAcceleratorCredentialStore:
                 return generation
         return None
 
-    def _archive_legacy_current(self, expected_subscription_id: str) -> Path | None:
+    def _archive_legacy_current(
+        self,
+        expected_subscription_id: str | None,
+    ) -> Path | None:
         if not self.current_path.exists():
             return None
         managed = self._generation_for_current()
@@ -409,7 +412,7 @@ class AzureAcceleratorCredentialStore:
     def load_current(
         self,
         *,
-        expected_subscription_id: str,
+        expected_subscription_id: str | None = None,
     ) -> AzureAcceleratorCredentials:
         """Load current credentials, restoring only the manifest-selected link."""
         with self._lock:
@@ -440,7 +443,7 @@ class AzureAcceleratorCredentialStore:
 def load_durable_azure_accelerator_credentials(
     path: str | os.PathLike[str],
     *,
-    expected_subscription_id: str,
+    expected_subscription_id: str | None = None,
 ) -> AzureAcceleratorCredentials:
     """Load one protected path with automatic active-link restoration."""
     target = durable_azure_accelerator_credential_path(path)
@@ -454,7 +457,7 @@ def load_durable_azure_accelerator_credentials(
 def load_preserved_azure_accelerator_credentials(
     path: str | os.PathLike[str],
     *,
-    expected_subscription_id: str,
+    expected_subscription_id: str | None = None,
 ) -> AzureAcceleratorCredentials:
     """Load a managed generation with recovery, or one legacy private file.
 

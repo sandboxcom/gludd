@@ -20,6 +20,7 @@ TMP_ROOT = Path("/tmp")
 WORKTREE_ROOT = TMP_ROOT / "gludd-worktrees"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 WORKTREE_GENERATED_DIRS = (".pytest_cache", ".mypy_cache", ".ruff_cache")
+SHARED_DOWNLOAD_CACHE_NAMES = frozenset({"gludd-uv-cache-public-v2"})
 WORKTREE_LIST_TIMEOUT_SECONDS = 10
 CLASSIFICATION_ENTRY_LIMIT = 40
 FAILURE_DETAIL_LIMIT = 3
@@ -223,6 +224,21 @@ def _classify_gludd_tmp(
     classifications: list[ScratchClassification] = []
     canonical_worktree_root = worktree_root.resolve()
     for entry in sorted(tmp_root.glob("gludd-*"), key=lambda path: os.fsencode(path.name)):
+        if (
+            entry.name in SHARED_DOWNLOAD_CACHE_NAMES
+            and entry.is_dir()
+            and not entry.is_symlink()
+        ):
+            observed_bytes = _tree_size_bytes(entry) if observe_exempt else None
+            classifications.append(
+                ScratchClassification(
+                    entry,
+                    "shared-download-cache",
+                    observed_bytes,
+                    0,
+                )
+            )
+            continue
         if entry.resolve() == canonical_worktree_root:
             active_worktrees = (
                 _registered_worktree_paths(worktree_root)

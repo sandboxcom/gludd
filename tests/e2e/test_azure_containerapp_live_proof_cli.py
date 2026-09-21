@@ -382,6 +382,58 @@ def test_hermetic_dry_run_needs_no_credential_or_live_factory(
     assert PROMPT_TEXT not in captured.out + captured.err
 
 
+def test_file_auth_resolves_auto_subscription_without_secret_output(
+    tmp_path: Path,
+    capsys: Any,
+) -> None:
+    project = _project(tmp_path)
+    auth_file = tmp_path / "azure-auth-private.json"
+    private_value = "fixture-sensitive-value-must-not-be-rendered"
+    auth_file.write_text(
+        json.dumps(
+            {
+                "clientId": "33333333-4444-5555-6666-777777777777",
+                "clientSecret": private_value,
+                "subscriptionId": SUBSCRIPTION,
+                "tenantId": "22222222-3333-4444-5555-666666666666",
+            }
+        ),
+        encoding="utf-8",
+    )
+    auth_file.chmod(0o600)
+    argv = _argv(
+        project,
+        live=1,
+        acknowledgement="DEPLOY_ONE_CONTAINER_APP_AND_DESTROY",
+    )
+    argv[1] = str(auth_file)
+    argv[3] = "auto"
+    resources = _Resources(_Runtime())
+    observed: dict[str, str] = {}
+
+    def factory(
+        args: Any,
+        policy: AzureContainerAppLiveProofPolicy,
+        *_unused: object,
+    ) -> _Resources:
+        observed["argument"] = args.subscription_id
+        observed["policy"] = policy.subscription_id
+        return resources
+
+    result = main(
+        argv,
+        live_resources_factory=cast(Any, factory),
+        token_hex=lambda _count: "abc123abc123",
+    )
+
+    captured = capsys.readouterr()
+    assert result == 0
+    assert observed == {"argument": SUBSCRIPTION, "policy": SUBSCRIPTION}
+    assert private_value not in captured.out + captured.err
+    assert SUBSCRIPTION not in captured.out + captured.err
+    assert str(auth_file) not in captured.out + captured.err
+
+
 def test_environment_policy_binds_owner_without_exposing_project_path(
     tmp_path: Path,
 ) -> None:

@@ -226,6 +226,21 @@ def _policy_trace(message: str) -> None:
     print(f"AZURE_CONTAINERAPP_PRIVACY_TRACE {message} secret_output=false", flush=True)
 
 
+def _resolve_subscription_id(args: argparse.Namespace) -> None:
+    """Resolve file-auth ``auto`` without rendering credential metadata."""
+    if cast(str, args.subscription_id).casefold() != "auto":
+        return
+    if args.auth_file is None:
+        raise ValueError(
+            "automatic subscription resolution requires file authentication"
+        )
+    credentials = load_azure_accelerator_credentials(
+        cast(str, args.auth_file),
+        expected_subscription_id=None,
+    )
+    args.subscription_id = credentials.subscription_id
+
+
 def _requirement() -> ModelServingRequirement:
     return ModelServingRequirement(
         model_id=_MODEL,
@@ -566,6 +581,7 @@ def main(
     failure_detail: str | None = None
     result = None
     try:
+        _resolve_subscription_id(args)
         app_name = f"gludd-vllm-proof-{token_hex(6)}"
         policy = _policy(args, app_name=app_name)
         project_root = Path(cast(str, args.project_root)).resolve(strict=True)

@@ -279,6 +279,34 @@ def test_tmp_size_counts_non_worktree_gludd_directories(tmp_path: Path) -> None:
     assert actual == pytest.approx(expected)
 
 
+def test_shared_uv_cache_is_observed_but_not_counted_as_disposable_scratch(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    cache = tmp_path / "gludd-uv-cache-public-v2"
+    cache.mkdir()
+    (cache / "archive.bin").write_bytes(b"shared-package-cache")
+
+    entries = module._classify_gludd_tmp(
+        tmp_root=tmp_path,
+        worktree_root=tmp_path / "gludd-worktrees",
+        observe_exempt=True,
+    )
+
+    assert entries == [
+        module.ScratchClassification(
+            cache,
+            "shared-download-cache",
+            len(b"shared-package-cache"),
+            0,
+        )
+    ]
+    assert module._gludd_tmp_size_mb(
+        tmp_root=tmp_path,
+        worktree_root=tmp_path / "gludd-worktrees",
+    ) == 0
+
+
 def test_disk_percentage_limit_remains_fail_closed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -460,4 +488,3 @@ def test_shell_disk_guard_removes_only_namespaced_node_download_caches() -> None
     assert '"/tmp/gludd-npm-cache-public-v1"' in source
     assert 'rm -rf -- "$cache_dir"' in source
     assert "rm -rf /tmp/gludd-*" not in source
-

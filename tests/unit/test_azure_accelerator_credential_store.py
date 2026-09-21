@@ -364,6 +364,20 @@ def test_preserved_loader_restores_managed_current_link(
     assert store.current_path.stat().st_ino == receipt.generation_path.stat().st_ino
 
 
+def test_preserved_loader_discovers_subscription_while_restoring_managed_link(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _test_store(tmp_path, monkeypatch)
+    receipt = store.install(_payload(), expected_subscription_id=SUBSCRIPTION_ID)
+    store.current_path.unlink()
+
+    loaded = load_preserved_azure_accelerator_credentials(store.current_path)
+
+    assert loaded.subscription_id == SUBSCRIPTION_ID
+    assert store.current_path.stat().st_ino == receipt.generation_path.stat().st_ino
+
+
 def test_preserved_loader_retains_legacy_private_file_compatibility(
     tmp_path: Path,
 ) -> None:

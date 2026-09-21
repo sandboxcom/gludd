@@ -187,6 +187,14 @@ headroom from `workloadProfileStates`. HTTP 401/403 and 404 become distinct,
 secret-free trace reasons so a missing environment is never confused with bad
 credentials.
 
+For the file-auth live proof,
+`AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID=auto` resolves the subscription
+inside the process from the protected credential. Gludd does not print the
+identifier, path, or secret, and immediately reloads the credential against the
+resolved identifier before constructing any Azure client. Workload-identity/OIDC
+runs still require an explicit subscription because no long-lived JSON artifact
+exists to resolve it from.
+
 On 2026-09-06 the supplied accelerator credential passed authentication and the
 preflight stopped with the typed, content-free reason `environment_not_found`.
 That proved the original ten-action role could authenticate but could not satisfy
@@ -302,7 +310,7 @@ proof is permitted.
 - [arbitrary non-root UID compatibility][aca-1746]
 - [region-specific image-pull authorization][aca-1629]
 
-Research was rechecked on 2026-09-07 against current Microsoft documentation and
+Research was rechecked on 2026-09-21 against current Microsoft documentation and
 the original practitioner threads:
 
 - Azure CLI issue [#24753][azure-cli-24753] records that implicit assignment
@@ -322,6 +330,14 @@ the original practitioner threads:
   investigation into 25-minute A100 startup delays and billing during the wait.
   The live proof consequently has bounded visible phase heartbeats, no hidden
   retry, a hard TTL/cost ceiling, and cleanup on every terminal path.
+- Container Apps report [#1797][aca-1797] records unresolved operator concern
+  about long-term A100 capacity and the absence of an announced H100 workload
+  profile. Gludd therefore treats every accelerator profile as discovered,
+  right-sized, and preflighted current capacity rather than a permanent SKU.
+- The accepted backlog request [#1828][aca-1828] confirms that AMD GPU profiles
+  are requested but not currently an Azure Container Apps capability. Gludd may
+  consume AMD accelerators through supported VM/cluster runtimes, but must not
+  synthesize an unsupported Container Apps profile.
 - Container Apps report [#1705][aca-1705] records the same misleading state seen
   by Gludd's 2026-09-15 live probes: revision metadata can report one desired
   replica while `WorkLoad Profile Full` leaves the container list empty. Gludd
@@ -417,6 +433,8 @@ normative boundary.
 [aca-1682]: https://github.com/microsoft/azure-container-apps/issues/1682
 [aca-1763]: https://github.com/microsoft/azure-container-apps/issues/1763
 [aca-1746]: https://github.com/microsoft/azure-container-apps/issues/1746
+[aca-1797]: https://github.com/microsoft/azure-container-apps/issues/1797
+[aca-1828]: https://github.com/microsoft/azure-container-apps/issues/1828
 [aca-1629]: https://github.com/microsoft/azure-container-apps/issues/1629
 [aca-1239]: https://github.com/microsoft/azure-container-apps/issues/1239
 [azapi-856]: https://github.com/Azure/terraform-provider-azapi/issues/856
