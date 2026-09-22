@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-22 — (resolved locally) Repository backlog was reported as v0.1.1 release scope
+
+- **What happened**: `make active-work-status` returned every unchecked historical, future, and release item in one `open_task_ids` list. The exact v0.1.1 milestone had six unfinished items, but the status surface presented roughly ninety items as one undifferentiated workload. Each legitimate backlog addition therefore looked like release scope growth and encouraged work to be spread away from the release boundary.
+- **Root cause**: The status command parsed checkbox state but ignored the ledger's explicit `v0.1.1 milestone is the exact task set S83.157–S83.168` ownership declaration. One repository-wide count was used for both delivery control and backlog visibility.
+- **Fix applied**: The first exact milestone declaration now owns `open_task_ids`. A structured `task_scope` reports the ledger path, version, range, defined size, milestone-open count, backlog-open count, and total-open count without duplicating the whole backlog in every heartbeat. The complete IDs remain directly auditable in `TASKS.md`, and repositories without an exact declaration retain the former all-open behavior.
+- **Evidence**: The failing-first regression reproduced the missing task-scope API. The complete active-work status suite now passes 49/49, including real Make invocation, exact-range partitioning, and repository fallback. The live ledger reports six open v0.1.1 tasks separately from the broader backlog.
+- **Practitioner evidence**: GitHub documents progress against the selected milestone, Linear separates current-cycle scope from backlog, and GitHub community discussions #9575 and #193565 record the operational need for separate release/backlog views and the harm from stale aggregate progress. `docs/features/application-resource-ownership.md` links the sources and codifies the direct-enumeration contract.
+- **Lesson**: A backlog is inventory, not an active commitment. Progress reporting must preserve both without assigning unrelated work to the current release owner.
+
 ### 2026-09-22 — (resolved locally) Ownership drift and global deployment identity stalled release progress
 
 - **What happened**: The active-work report labeled a live shard supervisor `UNKNOWN`, harmless source-line movement invalidated the resource inventory, and deployment ownership stopped at an in-memory instance-ID map. Repeated exact-head gate attempts therefore appeared idle, regenerated evidence unnecessarily, and could not safely attribute or delete coincident cloud IDs across projects after restart.

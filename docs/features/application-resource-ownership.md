@@ -137,6 +137,38 @@ fixed by splitting project route registration and separating FreeLLMAPI's
 immutable contracts, untrusted schema parser, and signature admission facade;
 the thresholds were not increased.
 
+## Release-progress ownership
+
+`TASKS.md` is both the durable evidence ledger and the repository backlog. Those
+are different reporting scopes. `make active-work-status` treats the first
+explicit `<version> milestone is the exact task set <range>` declaration as the
+active delivery boundary. Its `open_task_ids` contains only unchecked tasks in
+that range. `task_scope` reports the ledger path, range, milestone count,
+backlog count, and repository-wide count without copying the complete backlog
+into every status heartbeat. The IDs remain directly auditable in the named
+ledger. If no exact milestone declaration exists, the command fails safely to
+repository scope and preserves its former all-open behavior.
+
+Research refreshed on 2026-09-22 supports that separation:
+
+- GitHub's
+  [milestone progress documentation](https://docs.github.com/en/issues/using-labels-and-milestones-to-track-work/viewing-your-milestones-progress)
+  defines progress in terms of open work remaining in the selected milestone,
+  rather than every open repository issue.
+- Linear documents the same distinction between
+  [current-cycle scope](https://linear.app/docs/cycle-graph) and separate
+  [active and backlog views](https://linear.app/docs/default-team-pages).
+- A long-lived GitHub Projects practitioner discussion
+  [#9575](https://github.com/orgs/community/discussions/9575) describes release
+  milestones alongside a catch-all backlog. Conflating those groups removes the
+  view operators rely on for delivery focus.
+- GitHub community report
+  [#193565](https://github.com/orgs/community/discussions/193565) records a
+  progress-summary regression where the aggregate counter diverged from the
+  enumerated child connection. Gludd therefore derives each status snapshot
+  directly from the current ledger and reports the selected scope alongside the
+  complete enumerated IDs; it does not persist a second mutable counter.
+
 ## Resource bounds and operations
 
 Validation is a single Python AST pass over explicit paths, starts no daemon, and
