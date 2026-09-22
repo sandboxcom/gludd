@@ -512,6 +512,30 @@ the update workflow without admitting new runtime code:
   upstream tests/build, cross-engine ABI, GHA, live-provider, rollback, and
   review gates below remain release blockers.
 
+The first slice of the separate frozen-delta gate now lives in the cohesive
+`general_ludd.models.freellmapi_frozen_delta`,
+`general_ludd.models.freellmapi_frozen_delta_contracts`, and
+`general_ludd.models.freellmapi_frozen_delta_validation` modules. It binds a
+preregistered plan to the immutable candidate ID, ordered frozen-corpus digest,
+named upstream export, bounded capability operation, schema digests, and an ABI
+with no host capabilities. It compares paired baseline and shadow observations,
+subtracts the preregistered latency, memory, cost, and failure penalties, and
+requires the lower confidence bound to clear the configured positive-gain
+threshold.
+Non-positive, inconclusive, malformed, and ABI-incompatible candidates are
+explicit rejections. Even a positive result is only
+`accepted_for_build_review`; the emitted content-free evidence always retains
+`runtime_admitted: false`.
+
+This harness does not claim that the pending `v0.11.1` candidate has cleared the
+gate. A tracked real corpus and plan, isolated upstream build/test output,
+cross-engine bundle evidence, and the later GHA/live/rollback promotion proofs
+remain required. The focused adversarial suite exercises accepted, rejected,
+tampered, incomplete, non-finite, and host-capability cases without importing
+self-improvement implementation. The split also keeps every module inside the
+unchanged maintainability budget and uses explicit typed contracts instead of
+type-suppression comments.
+
 This checkpoint directly codifies current operator evidence. The
 [`v0.11.1` release][release-v0.11.1] says updates now follow published releases
 instead of untagged `main` after [issue #1270][issue-1270], and that per-endpoint
