@@ -13,6 +13,25 @@ import pytest
 from general_ludd.config.binary_paths import BinaryPathResolver, BinaryPaths
 from general_ludd.infra.compute import ComputeConfig, ComputeInstance, ComputeProvider, GPUType
 from general_ludd.infra.deployment import DeploymentManager
+from general_ludd.schemas.deployment import DeploymentRecord
+from general_ludd.schemas.project_identity import ProjectResourceIdentity
+
+
+def test_deployment_layers_use_the_core_project_identity() -> None:
+    record = DeploymentRecord(
+        project_id="project-a",
+        provider="azure",
+        instance_id="shared-id",
+        working_dir="/tmp/deployment",
+    )
+
+    assert DeploymentManager._record_identity(record) == ProjectResourceIdentity(
+        "project-a",
+        "azure",
+        "shared-id",
+    )
+    with pytest.raises(ValueError, match="project_id must be a bounded identifier"):
+        DeploymentRecord(project_id="../escape", instance_id="id", working_dir="/tmp/deployment")
 
 
 def _make_config() -> ComputeConfig:

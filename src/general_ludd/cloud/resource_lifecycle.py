@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from general_ludd.projects.identity import ProjectResourceIdentity, validate_project_id
+from general_ludd.schemas.project_identity import ProjectResourceIdentity, validate_project_id
 
 logger = logging.getLogger(__name__)
 

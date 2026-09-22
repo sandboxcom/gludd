@@ -16,6 +16,15 @@ from general_ludd.cloud.resource_lifecycle import (
     TrackedResource,
     get_lifecycle,
 )
+from general_ludd.schemas.project_identity import ProjectResourceIdentity
+
+
+def test_cloud_lifecycle_uses_the_core_project_identity() -> None:
+    assert ResourceLifecycleManager._key("project-a", "azure", "shared-id") == ProjectResourceIdentity(
+        "project-a",
+        "azure",
+        "shared-id",
+    )
 
 
 class TestTrackedResource:

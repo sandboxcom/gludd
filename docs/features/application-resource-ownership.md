@@ -37,6 +37,13 @@ Repository reads, destroy claims, successful deletion, and failed-claim release
 all resolve that exact tuple. This prevents a worker in one project from reading,
 overwriting, or destroying another project's coincidentally identical cloud ID.
 
+The identity value object and project-ID validation live in the core schema
+layer at `general_ludd.schemas.project_identity`. Infrastructure, cloud, and
+deployment schemas depend on that neutral primitive; the higher-level
+`general_ludd.projects.identity` module is only a compatibility export. This
+keeps the ownership contract reusable by every workload without making core
+schemas depend on project orchestration or self-improvement implementation.
+
 Deleting a project is cleanup-first. Gludd destroys only resources attributed to
 that project, verifies that none remain, and then deactivates the persisted
 project and removes it from the scheduler. A failed or unavailable destroy path

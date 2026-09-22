@@ -386,6 +386,8 @@ S83.158 composite-identity gate evidence: the next exact-head replay passed inte
 
 S83.158 migration-head gate evidence: the subsequent exact-head replay passed the repaired 4,101-test ORM/database batch and advanced to unit shard 5 before the isolated `migrate-up` acceptance exposed its stale revision-046 literal. The acceptance now requires revision 047, all three deployment-identity columns, and their exact composite primary key after invoking the real parameterized Make target against a new database. Focused replay and exact-head gate remain required after commit.
 
+S83.158 universal identity-layer evidence: the next exact-head replay passed the repaired migration acceptance and advanced through 1,699/1,701 exhaustive module-graph cases before detecting that the core deployment schema imported project identity upward from business orchestration. A failing-first compatibility contract now pins `general_ludd.schemas.project_identity` as the canonical project/provider/instance value object, retains `general_ludd.projects.identity` only as an identity-preserving compatibility export, and routes cloud, infrastructure, and schema consumers through the core boundary. The original architectural failures and 18 focused identity cases pass, with 100% focused coverage for the new production module; exact-head replay remains required after commit.
+
 ## Session 79 — Crypto Library Refactor + Behavioral Guardrails (2026-08-05, 86,428 tests)
 
 ### Crypto Refactor — 8/12 files COMPLETE

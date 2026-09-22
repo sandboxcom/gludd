@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field, field_validator
 
-from general_ludd.projects.identity import validate_project_id
+from general_ludd.schemas.project_identity import validate_project_id
 
 
 class DeploymentRecord(BaseModel):

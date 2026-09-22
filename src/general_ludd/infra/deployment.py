@@ -27,8 +27,8 @@ from general_ludd.infra.azure_accelerator import effective_timeout_minutes
 from general_ludd.infra.compute import ComputeConfig, ComputeInstance, ComputeProvider
 from general_ludd.infra.deploy_strategy import ResourceTier
 from general_ludd.infra.terraform import TerraformGenerator
-from general_ludd.projects.identity import ProjectResourceIdentity, validate_project_id
 from general_ludd.schemas.deployment import DeploymentRecord
+from general_ludd.schemas.project_identity import ProjectResourceIdentity, validate_project_id
 from general_ludd.security.sanitize import sanitize_error_message
 from general_ludd.security.state import project_state, secure_write_text
 
