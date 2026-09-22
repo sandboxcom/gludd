@@ -226,6 +226,28 @@ pytest process can leave child processes behind:
 These reports do not prove the exact local root cause; they establish that an
 individual-test timeout is not a complete suite/process-lifecycle boundary.
 
+### Deterministic statistical gate checks
+
+A release gate must not fail merely because an acceptance test drew a new
+sample from process-global random state. Distribution tests that compare a
+sample statistic with a rejection threshold use named, test-local generators
+and stable seeds. They keep their original sample sizes, alpha values, critical
+values, and assertions; retrying a failed draw, widening a threshold, or
+quarantining the test is not an acceptable repair. Tests whose purpose is true
+system entropy continue to exercise the system source, while repeatable
+distribution assertions control their byte or index source explicitly.
+
+This follows the long-lived practitioner record. [pytest issue #667, opened in
+2015](https://github.com/pytest-dev/pytest/issues/667) requests reproducible
+random state so failures can be replayed. [pytest-randomly issue #600, opened in
+2024](https://github.com/pytest-dev/pytest-randomly/issues/600) describes the
+need for deterministic but distinct per-test values. NumPy's
+[testing guide](https://github.com/numpy/numpy/blob/main/doc/TESTS.rst#tests-on-random-data)
+states that random-data tests should use a local seeded generator because a
+test that fails occasionally without a code change is not a useful regression
+signal. The Gludd regression therefore fixes sample ownership instead of
+rerunning the gate until chance produces a pass.
+
 ### Hermetic gate validation state
 
 On 2026-08-20, a definitive gate started from a clean checkout but finished

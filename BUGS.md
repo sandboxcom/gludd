@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-22 — (resolved locally) Unseeded statistical acceptance stopped the exact-head gate
+
+- **What happened**: `unit-3a:batch-022` stopped the release gate after 395 neighboring tests passed because `test_uniform_chi_squared` sampled Python's process-global random generator and happened to exceed its unchanged 5% rejection threshold. A retry could have hidden the failure, but it would have left every later gate exposed to the same non-reproducible stop.
+- **Root cause**: The random-generation test module had already isolated its normal-KS, `secrets.choice`, and `os.urandom` samples behind test-local seeded generators, but its uniform, moment, exponential, and triangular statistical acceptance checks still consumed shared, order-dependent state.
+- **Fix applied**: Every statistical acceptance sample now uses a named, test-local `random.Random` seed. Bounds and true-system-entropy checks retain their original sources, and no sample size, assertion, critical value, alpha, skip, retry, or production path changed.
+- **Evidence**: The exact-head gate failed first with the original chi-square assertion. The complete focused module now passes 25/25 under two workers, including the original failure and a global-state isolation contract; scoped Ruff is green. Exact-head gate replay remains required after the atomic fix commit.
+- **Practitioner evidence**: [pytest issue #667](https://github.com/pytest-dev/pytest/issues/667) has tracked reproducible random tests since 2015; [pytest-randomly issue #600](https://github.com/pytest-dev/pytest-randomly/issues/600) records the need for unique but deterministic per-test seeds; and [NumPy's testing guide](https://github.com/numpy/numpy/blob/main/doc/TESTS.rst#tests-on-random-data) directs statistical tests to use local seeded generators because occasional unchanged-code failures are not useful signals. `docs/features/GATE_RESOURCE_LIFECYCLE.md` codifies the resulting gate contract.
+- **Lesson**: Statistical rejection is useful only when its input is replayable. Release gates must never rely on ambient random state or pass by retrying an unrepeatable sample.
+
 ### 2026-09-22 — (resolved locally) Repository backlog was reported as v0.1.1 release scope
 
 - **What happened**: `make active-work-status` returned every unchecked historical, future, and release item in one `open_task_ids` list. The exact v0.1.1 milestone had six unfinished items, but the status surface presented roughly ninety items as one undifferentiated workload. Each legitimate backlog addition therefore looked like release scope growth and encouraged work to be spread away from the release boundary.
