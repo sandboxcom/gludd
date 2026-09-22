@@ -12,4 +12,3 @@ def test_contracts_stay_in_universal_model_infrastructure() -> None:
 
     assert "general_ludd.self_improve" not in source
     assert contracts.FREELLMAPI_FROZEN_DELTA_SCHEMA_VERSION == 1
-

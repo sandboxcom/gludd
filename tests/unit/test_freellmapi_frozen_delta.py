@@ -22,7 +22,7 @@ from general_ludd.models.freellmapi_frozen_delta import (
 _FIXTURES = tuple(hashlib.sha256(f"fixture-{index}".encode()).hexdigest() for index in range(4))
 _INPUT_SCHEMA = hashlib.sha256(b"input-schema").hexdigest()
 _OUTPUT_SCHEMA = hashlib.sha256(b"output-schema").hexdigest()
-_SECRET = "private prompt and model output must never appear"
+_FORBIDDEN_PAYLOAD = "private prompt and model output must never appear"
 
 
 def _canonical_digest(value: object) -> str:
@@ -130,7 +130,7 @@ def _observations(
             "shadow_cost_usd": shadow_cost_usd,
             "baseline_failed": False,
             "shadow_failed": shadow_failed,
-            "forbidden_payload": _SECRET,
+            "forbidden_payload": _FORBIDDEN_PAYLOAD,
         }
         for fixture in reversed(_FIXTURES)
     ]
@@ -166,7 +166,7 @@ def test_positive_preregistered_delta_is_deterministic_but_never_runtime_admitti
         "mean_failure_penalty": 0.0,
     }
     assert cast(str, first["evidence_id"]).startswith("sha256:")
-    assert _SECRET not in json.dumps(first, sort_keys=True)
+    assert _FORBIDDEN_PAYLOAD not in json.dumps(first, sort_keys=True)
 
 
 def test_delta_gate_declares_a_small_universal_public_api() -> None:
