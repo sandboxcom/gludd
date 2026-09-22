@@ -396,6 +396,10 @@ class TestDeleteProjectEdges:
                 return_value=lifecycle,
             ),
             patch(
+                "general_ludd.routers.projects._cleanup_persisted_project_resources",
+                new=AsyncMock(),
+            ),
+            patch(
                 "general_ludd.routers.projects.ProjectRepository",
                 return_value=repo,
             ),
@@ -406,6 +410,92 @@ class TestDeleteProjectEdges:
         repo.deactivate.assert_awaited_once_with("proj-00000001")
         session.commit.assert_awaited_once()
         mgr.remove_project.assert_called_once_with("proj-00000001")
+
+    def test_delete_destroys_durable_project_deployments_after_restart(self):
+        factory = _mock_session_factory()
+        app = _make_app(session_factory=factory)
+        _register(app)
+        client = TestClient(app)
+        project_manager = _mock_project_mgr()
+        lifecycle = MagicMock()
+        lifecycle.pending_cleanup.return_value = []
+        deployment_manager = MagicMock()
+        deployment_manager.list_deployments_shared = AsyncMock(
+            side_effect=[
+                [_FakeProject(instance_id="gpu-1", provider="azure")],
+                [],
+            ]
+        )
+        deployment_manager.destroy = AsyncMock()
+        repo = MagicMock()
+        repo.deactivate = AsyncMock()
+
+        with (
+            patch(_DAEMON_PATH, return_value=_mock_ext(project_manager)),
+            patch(
+                "general_ludd.routers.projects.get_lifecycle",
+                return_value=lifecycle,
+            ),
+            patch(
+                "general_ludd.infra.deployment.DeploymentManager",
+                return_value=deployment_manager,
+            ) as deployment_manager_type,
+            patch(
+                "general_ludd.routers.projects.ProjectRepository",
+                return_value=repo,
+            ),
+        ):
+            resp = client.delete("/admin/projects/proj-00000001")
+
+        assert resp.status_code == 200
+        deployment_manager_type.assert_called_once_with(
+            session_factory=factory,
+            project_id="proj-00000001",
+        )
+        deployment_manager.destroy.assert_awaited_once_with(
+            "gpu-1",
+            provider="azure",
+        )
+        deployment_manager.close.assert_called_once_with()
+        repo.deactivate.assert_awaited_once_with("proj-00000001")
+
+    def test_delete_preserves_project_when_durable_cleanup_fails(self):
+        factory = _mock_session_factory()
+        app = _make_app(session_factory=factory)
+        _register(app)
+        client = TestClient(app)
+        project_manager = _mock_project_mgr()
+        lifecycle = MagicMock()
+        lifecycle.pending_cleanup.return_value = []
+        deployment_manager = MagicMock()
+        deployment_manager.list_deployments_shared = AsyncMock(
+            return_value=[_FakeProject(instance_id="gpu-1", provider="azure")]
+        )
+        deployment_manager.destroy = AsyncMock(side_effect=RuntimeError("cloud down"))
+        repo = MagicMock()
+        repo.deactivate = AsyncMock()
+
+        with (
+            patch(_DAEMON_PATH, return_value=_mock_ext(project_manager)),
+            patch(
+                "general_ludd.routers.projects.get_lifecycle",
+                return_value=lifecycle,
+            ),
+            patch(
+                "general_ludd.infra.deployment.DeploymentManager",
+                return_value=deployment_manager,
+            ),
+            patch(
+                "general_ludd.routers.projects.ProjectRepository",
+                return_value=repo,
+            ),
+        ):
+            resp = client.delete("/admin/projects/proj-00000001")
+
+        assert resp.status_code == 409
+        deployment_manager.close.assert_called_once_with()
+        repo.deactivate.assert_not_awaited()
+        project_manager.remove_project.assert_not_called()
 
     def test_delete_when_ext_missing_projects_key(self):
         app = _make_app()

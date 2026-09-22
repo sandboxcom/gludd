@@ -76,6 +76,50 @@ def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | Non
     return getattr(app.state, "_session_factory", None)
 
 
+async def _cleanup_persisted_project_resources(
+    factory: async_sessionmaker[AsyncSession],
+    project_id: str,
+) -> None:
+    """Destroy and verify durable compute records before project removal."""
+    from general_ludd.infra.deployment import DeploymentManager
+
+    manager = DeploymentManager(
+        session_factory=factory,
+        project_id=project_id,
+    )
+    try:
+        records = await manager.list_deployments_shared()
+        for record in records:
+            await manager.destroy(
+                record.instance_id,
+                provider=record.provider,
+            )
+        remaining = await manager.list_deployments_shared()
+    except Exception as exc:
+        logger.error(
+            "Durable resource cleanup failed for project %s: %s",
+            project_id,
+            exc,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "project still owns durable resources; cleanup must succeed "
+                "before removal"
+            ),
+        ) from exc
+    finally:
+        manager.close()
+    if remaining:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "project still owns durable resources; cleanup must succeed "
+                "before removal"
+            ),
+        )
+
+
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     """Register project administration routes on ``app``."""
 
@@ -151,6 +195,9 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     async def admin_delete_project(project_id: str) -> dict[str, object]:
         from general_ludd.daemon import _get_or_create_extended_subsystems
         ext = _get_or_create_extended_subsystems(app)
+        factory = _get_session_factory(app)
+        if factory is not None:
+            await _cleanup_persisted_project_resources(factory, project_id)
         lifecycle = get_lifecycle()
         if lifecycle.pending_cleanup(project_id=project_id):
             await asyncio.to_thread(lifecycle.cleanup_project, project_id)
@@ -163,7 +210,6 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                         "before removal"
                     ),
                 )
-        factory = _get_session_factory(app)
         if factory is not None:
             async with factory() as session:
                 repo = ProjectRepository(session)

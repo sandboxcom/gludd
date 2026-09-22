@@ -106,6 +106,9 @@ async def test_deploy_attributes_elapsed_cost_and_publishes_lifecycle(tmp_path) 
     completed = bus.get_history()[-1]
     assert completed.payload["instance_id"] == "azure-instance-1"
     assert completed.payload["cost_incurred_usd"] == pytest.approx(instance.cost_incurred)
+    record = manager.get_deployment("azure-instance-1")
+    assert record is not None
+    assert record.project_id == "project-telemetry"
     register = get_lifecycle.return_value.register
     register.assert_called_once()
     assert register.call_args.args[:2] == ("azure", "azure-instance-1")

@@ -576,9 +576,20 @@ class DeploymentRecordModel(Base):
 
     __tablename__ = "deployment_records"
 
+    project_id: Mapped[str] = mapped_column(
+        String(128),
+        primary_key=True,
+        default="default",
+        server_default="default",
+        index=True,
+    )
+    provider: Mapped[str] = mapped_column(
+        String(32),
+        primary_key=True,
+        default="",
+    )
     instance_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     working_dir: Mapped[str] = mapped_column(String(1024), nullable=False)
-    provider: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     model_name: Mapped[str] = mapped_column(String(256), nullable=False, default="")
     state: Mapped[str] = mapped_column(String(32), nullable=False, default="running", index=True)
     ip_address: Mapped[str | None] = mapped_column(String(256), nullable=True)

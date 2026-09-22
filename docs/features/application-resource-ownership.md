@@ -30,6 +30,13 @@ mutation is rejected when that identifier is ambiguous. Cleanup also fails
 closed when no destroy callback is installed; the resource remains tracked
 instead of being falsely reported as destroyed.
 
+The same identity is persisted in the local restart registry and the shared
+deployment database. Migration 047 backfills legacy rows to the `default`
+project and changes the database primary key to project, provider, and instance.
+Repository reads, destroy claims, successful deletion, and failed-claim release
+all resolve that exact tuple. This prevents a worker in one project from reading,
+overwriting, or destroying another project's coincidentally identical cloud ID.
+
 Deleting a project is cleanup-first. Gludd destroys only resources attributed to
 that project, verifies that none remain, and then deactivates the persisted
 project and removes it from the scheduler. A failed or unavailable destroy path
@@ -105,10 +112,13 @@ process groups or deleting caller-owned model artifacts.
 
 Runtime rollout is additive and zero-downtime: new deployment managers register
 the composite identity while existing records continue to use the validated
-`default` project. Cleanup code understands both paths. Rollback must not remove
-project attribution before all resources created by the newer version are
-destroyed or transferred; otherwise the fail-closed HTTP 409 behavior is the safe
-operational state.
+`default` project. Migration 047 keeps a server default while old application
+instances drain, so their inserts remain valid during a rolling upgrade. Cleanup
+code understands both paths. A downgrade first checks for repeated instance IDs;
+if project/provider scoping is carrying otherwise-colliding resources, it refuses
+the lossy downgrade. Operators must destroy or explicitly transfer those records
+before retrying. Project deletion likewise leaves the project active and returns
+HTTP 409 whenever durable or in-memory cleanup cannot be verified.
 
 ## Resource bounds and operations
 

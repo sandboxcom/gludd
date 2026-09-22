@@ -557,8 +557,8 @@ class TestRegistryPersistence:
         mgr._registry["inst-1"] = record
         mgr._save_registry()
         mgr2 = DeploymentManager(working_dir=str(tmp_path))
-        assert "inst-1" in mgr2._registry
-        loaded = mgr2._registry["inst-1"]
+        loaded = mgr2.get_deployment("inst-1", provider="aws")
+        assert loaded is not None
         assert loaded.instance_id == "inst-1"
         assert loaded.provider == "aws"
         assert loaded.ip_address == "10.0.0.1"
