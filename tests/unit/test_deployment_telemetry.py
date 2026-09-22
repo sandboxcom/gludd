@@ -39,10 +39,37 @@ def _event_names(bus: EventBus) -> list[str]:
     return [str(event.payload["name"]) for event in bus.get_history()]
 
 
+def test_deployment_manager_installs_real_lifecycle_destroy_owner(tmp_path) -> None:
+    with (
+        patch.object(deployment_module, "_LIFECYCLE_IMPORTED", True),
+        patch("general_ludd.infra.deployment.get_lifecycle") as get_lifecycle,
+    ):
+        DeploymentManager(working_dir=str(tmp_path))
+
+    get_lifecycle.return_value.set_destroy_fn.assert_called_once_with(
+        deployment_module._destroy_instance
+    )
+
+
+def test_deployment_manager_retains_explicit_project_ownership(tmp_path) -> None:
+    with patch("general_ludd.infra.deployment.get_lifecycle"):
+        manager = DeploymentManager(
+            working_dir=str(tmp_path),
+            project_id="project-a",
+        )
+
+    assert manager.project_id == "project-a"
+
+
 @pytest.mark.asyncio
 async def test_deploy_attributes_elapsed_cost_and_publishes_lifecycle(tmp_path) -> None:
     bus = EventBus(history_size=20)
-    manager = DeploymentManager(working_dir=str(tmp_path), event_bus=bus)
+    with patch("general_ludd.infra.deployment.get_lifecycle") as get_lifecycle:
+        manager = DeploymentManager(
+            working_dir=str(tmp_path),
+            event_bus=bus,
+            project_id="project-telemetry",
+        )
 
     async def fake_terraform(
         args: list[str],
@@ -79,6 +106,14 @@ async def test_deploy_attributes_elapsed_cost_and_publishes_lifecycle(tmp_path) 
     completed = bus.get_history()[-1]
     assert completed.payload["instance_id"] == "azure-instance-1"
     assert completed.payload["cost_incurred_usd"] == pytest.approx(instance.cost_incurred)
+    record = manager.get_deployment("azure-instance-1")
+    assert record is not None
+    assert record.project_id == "project-telemetry"
+    register = get_lifecycle.return_value.register
+    register.assert_called_once()
+    assert register.call_args.args[:2] == ("azure", "azure-instance-1")
+    assert register.call_args.kwargs == {"project_id": "project-telemetry"}
+    assert str(register.call_args.args[2]).startswith(str(tmp_path))
     deployment_module._DEPLOYED_INSTANCES.pop("azure-instance-1", None)
 
 

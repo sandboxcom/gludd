@@ -404,7 +404,7 @@ async def test_expired_registry_record_requests_terraform_destroy(
         new_callable=AsyncMock,
     ) as destroy:
         await manager._destroy_at_expiry("gludd-expired")
-    destroy.assert_awaited_once_with("gludd-expired")
+    destroy.assert_awaited_once_with("gludd-expired", provider="azure")
 
 
 @pytest.mark.asyncio

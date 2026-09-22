@@ -15,6 +15,7 @@ __all__ = (
     "BucketLeaseModel",
     "ConcurrencyError",
     "DeploymentBusyError",
+    "DeploymentIdentityError",
     "DeploymentRecordModel",
     "DeploymentRegistryRepository",
     "ImmutableAzureCostIdentityError",
@@ -65,6 +66,7 @@ from general_ludd.db.azure_cost_repository import (
 )
 from general_ludd.db.deployment_repository import (
     DeploymentBusyError,
+    DeploymentIdentityError,
     DeploymentRegistryRepository,
 )
 from general_ludd.db.migrations import get_alembic_config, stamp_head

@@ -35,7 +35,7 @@ def test_migrate_up_target_is_parameterized_and_documented() -> None:
 def test_migrate_up_applies_the_complete_chain_to_an_isolated_database(
     tmp_path: Path,
 ) -> None:
-    """Exercise the real target and verify the complete revision-046 schema."""
+    """Exercise the real target and verify the complete revision-047 schema."""
     database = tmp_path / "migration.sqlite3"
     database_url = f"sqlite:///{database}"
 
@@ -60,16 +60,22 @@ def test_migrate_up_applies_the_complete_chain_to_an_isolated_database(
             revision = connection.execute(
                 sa.text("SELECT version_num FROM alembic_version")
             ).scalar_one()
+            inspector = sa.inspect(connection)
             todo_columns = {
-                column["name"] for column in sa.inspect(connection).get_columns("todos")
+                column["name"] for column in inspector.get_columns("todos")
             }
             lease_columns = {
                 column["name"]
-                for column in sa.inspect(connection).get_columns("bucket_leases")
+                for column in inspector.get_columns("bucket_leases")
             }
+            deployment_columns = {
+                column["name"]
+                for column in inspector.get_columns("deployment_records")
+            }
+            deployment_pk = inspector.get_pk_constraint("deployment_records")
     finally:
         engine.dispose()
-    assert revision == "046"
+    assert revision == "047"
     assert "approved_artifact_digest" in todo_columns
     assert {
         "todo_version",
@@ -78,3 +84,9 @@ def test_migrate_up_applies_the_complete_chain_to_an_isolated_database(
         "termination_confirmed_at",
         "updated_at",
     } <= lease_columns
+    assert {"project_id", "provider", "instance_id"} <= deployment_columns
+    assert deployment_pk["constrained_columns"] == [
+        "project_id",
+        "provider",
+        "instance_id",
+    ]
