@@ -583,11 +583,18 @@ def collect_status() -> dict[str, object]:
     tasks = (ROOT / "TASKS.md").read_text(encoding="utf-8")
     processes = _processes()
     gate = _gate()
-    if not gate["running_pid"]:
-        live_gate = next((process["pid"] for process in processes if process["task"] == "gate-refresh"), "")
-        if live_gate:
-            gate["running_pid"] = live_gate
-            gate["state"] = "RUNNING"
+    live_gate = next(
+        (
+            process["pid"]
+            for process in processes
+            if process["task"] in {"gate-refresh", "ci-shard-supervisor"}
+        ),
+        "",
+    )
+    if live_gate and not gate["running_pid"]:
+        gate["running_pid"] = live_gate
+    if gate["running_pid"]:
+        gate["state"] = "RUNNING"
     return {
         "pid": os.getpid(),
         "processes": processes,

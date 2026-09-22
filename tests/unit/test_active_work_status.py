@@ -41,6 +41,43 @@ def test_active_work_status_is_auditable_json() -> None:
     assert payload["audit_contract"]["agent_pids"] is False
 
 
+def test_collect_status_recognizes_canonical_serial_gate_supervisor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A foreground serial gate remains RUNNING without a background PID file."""
+    processes = [
+        {
+            "pid": "700",
+            "ppid": "699",
+            "command": "python scripts/run_ci_shards_serial.py --pytest-args=-q",
+            "task": "ci-shard-supervisor",
+        }
+    ]
+    monkeypatch.setattr(active_work_status, "_processes", lambda: processes)
+    monkeypatch.setattr(
+        active_work_status,
+        "_gate",
+        lambda: {
+            "status_file": "/repo/.gate-status",
+            "state": "UNKNOWN",
+            "running_pid": "",
+        },
+    )
+    monkeypatch.setattr(active_work_status, "_resource_observability", lambda _items: {})
+    monkeypatch.setattr(
+        active_work_status,
+        "_git",
+        lambda: {"branch": "development", "head": "a" * 40},
+    )
+
+    payload = active_work_status.collect_status()
+
+    gate = payload["gate"]
+    assert isinstance(gate, dict)
+    assert gate["state"] == "RUNNING"
+    assert gate["running_pid"] == "700"
+
+
 def test_process_labels_separate_test_workstreams() -> None:
     assert _task_label("pytest tests/unit/test_example.py") == "unit-tests"
     assert _task_label("pytest tests/e2e/test_opencode_plugin_load.py") == "opencode-e2e"
