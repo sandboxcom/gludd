@@ -120,8 +120,8 @@ async def _cleanup_persisted_project_resources(
         )
 
 
-def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
-    """Register project administration routes on ``app``."""
+def _register_project_creation_route(app: FastAPI) -> None:
+    """Register project creation and durable persistence."""
 
     @app.post("/admin/projects")
     async def admin_add_project(req: AddProjectRequest) -> dict[str, object]:
@@ -191,6 +191,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 detail="invalid project request; check name, weight, and repo URL",
             ) from exc
 
+
+def _register_project_deletion_route(app: FastAPI) -> None:
+    """Register cleanup-first project deletion."""
+
     @app.delete("/admin/projects/{project_id}")
     async def admin_delete_project(project_id: str) -> dict[str, object]:
         from general_ludd.daemon import _get_or_create_extended_subsystems
@@ -217,6 +221,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 await session.commit()
         ext["projects"].remove_project(project_id)
         return {"removed": project_id}
+
+
+def _register_project_weight_routes(app: FastAPI) -> None:
+    """Register project scheduling-weight mutations."""
 
     @app.put("/admin/projects/{project_id}/weight")
     async def admin_set_project_weight(project_id: str, req: SetWeightRequest) -> dict[str, object]:
@@ -250,6 +258,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 status_code=422, detail="invalid weights in rebalance request"
             ) from exc
 
+
+def _register_project_listing_route(app: FastAPI) -> None:
+    """Register the merged in-memory and durable project listing."""
+
     @app.get("/admin/projects")
     async def admin_list_projects() -> dict[str, object]:
         from general_ludd.daemon import _get_or_create_extended_subsystems
@@ -282,6 +294,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         response["db_projects"] = db_projects
         return response
 
+
+def _register_project_skill_route(app: FastAPI) -> None:
+    """Register project-scoped skill assignment."""
+
     @app.post("/admin/projects/skills")
     async def admin_project_skills(req: ProjectSkillRequest) -> dict[str, object]:
         project_id = req.project_id
@@ -313,6 +329,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             registry.register(skill, project_id=project_id)
         return {"status": "ok", "project_id": project_id, "skill": skill_name}
 
+
+def _register_dispatch_route(app: FastAPI) -> None:
+    """Register the global dispatch-mode mutation."""
+
     @app.put("/admin/dispatch/mode", response_model=None)
     async def admin_dispatch_mode(req: DispatchModeRequest) -> JSONResponse | dict[str, str]:
         mode = req.mode
@@ -323,6 +343,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         if cfg is not None and isinstance(cfg, dict):
             cfg["dispatch_mode"] = mode
         return {"dispatch_mode": mode}
+
+
+def _register_support_routes(app: FastAPI) -> None:
+    """Register bounded self-improvement and TUI support endpoints."""
 
     @app.post("/admin/self-improve")
     async def admin_self_improve() -> dict[str, object]:
@@ -348,3 +372,14 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     @app.get("/admin/tui-log")
     async def admin_tui_log_get() -> dict[str, object]:
         return {"entries": list(_tui_log_entries[-200:])}
+
+
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register cohesive project administration route groups on ``app``."""
+    _register_project_creation_route(app)
+    _register_project_deletion_route(app)
+    _register_project_weight_routes(app)
+    _register_project_listing_route(app)
+    _register_project_skill_route(app)
+    _register_dispatch_route(app)
+    _register_support_routes(app)

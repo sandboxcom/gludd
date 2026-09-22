@@ -120,6 +120,16 @@ the lossy downgrade. Operators must destroy or explicitly transfer those records
 before retrying. Project deletion likewise leaves the project active and returns
 HTTP 409 whenever durable or in-memory cleanup cannot be verified.
 
+Exact-head verification has one logical owner. A live shard supervisor and its
+verified observed child PIDs are reported as running work, never as unknown or
+idle. A failed gate contributes bounded failure evidence; it does not create a
+duplicate backlog item or authorize a second concurrent gate. After the
+ownership changes, the first replay advanced monotonically through integration
+and into unit shard 3, where it exposed ordinary complexity failures. Those were
+fixed by splitting project route registration and separating FreeLLMAPI's
+immutable contracts, untrusted schema parser, and signature admission facade;
+the thresholds were not increased.
+
 ## Resource bounds and operations
 
 Validation is a single Python AST pass over explicit paths, starts no daemon, and
