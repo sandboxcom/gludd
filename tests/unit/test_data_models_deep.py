@@ -628,7 +628,10 @@ class TestPrimaryKeys:
             assert len(pk_cols) >= 1, f"{cls.__name__} has no primary key column"
 
     def test_most_models_have_single_column_pk(self):
-        exceptions = {"AzureCostPredictionModel"}  # composite PK
+        exceptions = {
+            "AzureCostPredictionModel",
+            "DeploymentRecordModel",
+        }  # intentional composite identities
         for cls in _all_model_classes():
             if cls.__name__ in exceptions:
                 continue
@@ -638,6 +641,10 @@ class TestPrimaryKeys:
     def test_azure_cost_prediction_has_composite_pk(self):
         pk_cols = [c.name for c in _columns(m.AzureCostPredictionModel) if c.primary_key]
         assert set(pk_cols) == {"prediction_id", "prediction_version"}
+
+    def test_deployment_record_has_composite_owner_pk(self):
+        pk_cols = [c.name for c in _columns(m.DeploymentRecordModel) if c.primary_key]
+        assert set(pk_cols) == {"project_id", "provider", "instance_id"}
 
 
 # ── 11. Default-value coverage ──────────────────────────────────────────────
