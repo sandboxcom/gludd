@@ -384,6 +384,8 @@ S83.158 gate-progress correction evidence: the first exact-head replay reached u
 
 S83.158 composite-identity gate evidence: the next exact-head replay passed integration, the former complexity failures, and the first three unit shards before the broad ORM invariant exposed its stale one-entry composite-key exception list. The invariant now names and independently pins `DeploymentRecordModel`'s intentional `project_id`/`provider`/`instance_id` primary key, preserving cross-project ownership instead of weakening production identity to satisfy a generic test. Focused replay and exact-head gate remain required after commit.
 
+S83.158 migration-head gate evidence: the subsequent exact-head replay passed the repaired 4,101-test ORM/database batch and advanced to unit shard 5 before the isolated `migrate-up` acceptance exposed its stale revision-046 literal. The acceptance now requires revision 047, all three deployment-identity columns, and their exact composite primary key after invoking the real parameterized Make target against a new database. Focused replay and exact-head gate remain required after commit.
+
 ## Session 79 — Crypto Library Refactor + Behavioral Guardrails (2026-08-05, 86,428 tests)
 
 ### Crypto Refactor — 8/12 files COMPLETE
