@@ -404,6 +404,45 @@ jobs:
   # Every shard collects coverage data (.coverage SQLite file) and uploads it
   # as a shard-unique artifact; the downstream `coverage` job combines them
   # into a single canonical coverage.xml for the whole suite.
+  freellmapi-upstream-build:
+    needs: [version, gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["20.20.2", "22.23.2"]
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+        with:
+          ref: ${{ github.sha }}
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v5.0.0 (node24)
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Install locked Gludd dependencies
+        run: uv sync --frozen
+      - name: Build and test exact-pinned FreeLLMAPI source
+        run: |
+          make freellmapi-upstream-build \
+            FREELLMAPI_BUILD_LIVE=1 \
+            FREELLMAPI_BUILD_CANDIDATE=config/freellmapi/upstream_candidate.json \
+            FREELLMAPI_BUILD_PLAN=config/freellmapi/upstream_build_plan.json \
+            FREELLMAPI_BUILD_REPORT=/tmp/gludd-freellmapi-upstream-build-${{ matrix.node-version }}/evidence.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GLUDD_AUTH_PSK: ""
+      - name: Upload content-free upstream build evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+        with:
+          name: freellmapi-upstream-build-node-${{ matrix.node-version }}
+          path: /tmp/gludd-freellmapi-upstream-build-${{ matrix.node-version }}/evidence.json
+          if-no-files-found: ignore
+          retention-days: 14
+
   test-shard:
     needs: [version, gate]
     runs-on: ubuntu-latest
@@ -1647,7 +1686,7 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
   release:
-    needs: [version, gate, test-shard, coverage, molecule, linux, macos, windows, termux, container, ansible-ee, game-building]
+    needs: [version, gate, freellmapi-upstream-build, test-shard, coverage, molecule, linux, macos, windows, termux, container, ansible-ee, game-building]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     if: startsWith(github.ref, 'refs/tags/v')

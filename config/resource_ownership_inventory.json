@@ -168,6 +168,28 @@
       "owned": true
     },
     {
+      "path": "scripts/freellmapi_upstream_build.py",
+      "line": 338,
+      "column": 13,
+      "kind": "temp-artifact",
+      "owner": "write_report",
+      "acquisition": "tempfile.NamedTemporaryFile(dir=report.parent, prefix=f'.{report.name}.', delete=False)",
+      "teardown": "context-manager-exit",
+      "source_hash": "90509b4699a8b5d0ceb75873de155153362372313b153d4abaf26708f5302f06",
+      "owned": true
+    },
+    {
+      "path": "scripts/freellmapi_upstream_build.py",
+      "line": 415,
+      "column": 9,
+      "kind": "temp-artifact",
+      "owner": "run_live_build",
+      "acquisition": "tempfile.TemporaryDirectory(prefix='gludd-freellmapi-build-')",
+      "teardown": "context-manager-exit",
+      "source_hash": "9d180af48b713f04e92ea8f9435098b694a66041c630cff0e00d9405e608cb53",
+      "owned": true
+    },
+    {
       "path": "scripts/opencode_boot_smoke.py",
       "line": 97,
       "column": 11,

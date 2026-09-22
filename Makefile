@@ -31,6 +31,10 @@ FREELLMAPI_ADMISSION_TAG ?= v0.11.1
 FREELLMAPI_ADMISSION_COMMIT ?= 4191d8e7abef39fcd93fab009123467036f39750
 FREELLMAPI_ADMISSION_LIVE ?= 0
 FREELLMAPI_ADMISSION_OUTPUT ?= config/freellmapi/upstream_candidate.json
+FREELLMAPI_BUILD_LIVE ?= 0
+FREELLMAPI_BUILD_CANDIDATE ?= config/freellmapi/upstream_candidate.json
+FREELLMAPI_BUILD_PLAN ?= config/freellmapi/upstream_build_plan.json
+FREELLMAPI_BUILD_REPORT ?= /tmp/gludd-freellmapi-upstream-build/evidence.json
 ifneq (,$(findstring $$,$(value FREELLMAPI_ADMISSION_TAG)))
 $(error FREELLMAPI_ADMISSION_TAG contains forbidden input)
 endif
@@ -43,10 +47,26 @@ endif
 ifneq (,$(findstring $$,$(value FREELLMAPI_ADMISSION_OUTPUT)))
 $(error FREELLMAPI_ADMISSION_OUTPUT contains forbidden input)
 endif
+ifneq (,$(findstring $$,$(value FREELLMAPI_BUILD_LIVE)))
+$(error FREELLMAPI_BUILD_LIVE contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value FREELLMAPI_BUILD_CANDIDATE)))
+$(error FREELLMAPI_BUILD_CANDIDATE contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value FREELLMAPI_BUILD_PLAN)))
+$(error FREELLMAPI_BUILD_PLAN contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value FREELLMAPI_BUILD_REPORT)))
+$(error FREELLMAPI_BUILD_REPORT contains forbidden input)
+endif
 export FREELLMAPI_ADMISSION_TAG
 export FREELLMAPI_ADMISSION_COMMIT
 export FREELLMAPI_ADMISSION_LIVE
 export FREELLMAPI_ADMISSION_OUTPUT
+export FREELLMAPI_BUILD_LIVE
+export FREELLMAPI_BUILD_CANDIDATE
+export FREELLMAPI_BUILD_PLAN
+export FREELLMAPI_BUILD_REPORT
 GLUDD_UV_CACHE_DIR ?= /tmp/gludd-uv-cache-public-v2
 override UV_CACHE_DIR := $(GLUDD_UV_CACHE_DIR)
 export UV_CACHE_DIR
@@ -348,6 +368,7 @@ help:
 	@echo "  node-deps-relock      Regenerate Node lock (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY, NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false)"
 	@echo "  node-deps-audit       Audit locked Node deps (NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false plus NODE_DEPS_AUDIT_LEVEL=low|moderate|high|critical)"
 	@echo "  freellmapi-upstream-admission  Validate/refresh the non-runnable upstream candidate (FREELLMAPI_ADMISSION_TAG, FREELLMAPI_ADMISSION_COMMIT, FREELLMAPI_ADMISSION_LIVE=0|1, FREELLMAPI_ADMISSION_OUTPUT)"
+	@echo "  freellmapi-upstream-build  Validate/run the exact-source upstream suite (FREELLMAPI_BUILD_LIVE=0|1, FREELLMAPI_BUILD_CANDIDATE, FREELLMAPI_BUILD_PLAN, FREELLMAPI_BUILD_REPORT)"
 	@echo "  bootstrap             init + lint + test + healthcheck"
 	@echo "  install-hooks         Install pre-commit hooks (secrets, lint, collect)"
 	@echo "  install-workflow-hook Validate/install the tracked GitHub workflow YAML hook (INSTALL_WORKFLOW_HOOK_VALIDATE_ONLY)"
@@ -960,6 +981,17 @@ freellmapi-upstream-admission:
 			--tag "$$FREELLMAPI_ADMISSION_TAG" \
 			--commit "$$FREELLMAPI_ADMISSION_COMMIT" \
 			--output "$$FREELLMAPI_ADMISSION_OUTPUT" \
+			--repository-root "$(CURDIR)"
+
+freellmapi-upstream-build:
+	@case "$$FREELLMAPI_BUILD_LIVE" in 0|1) ;; *) echo "FREELLMAPI_BUILD_LIVE must be 0 or 1"; exit 2;; esac; \
+		MODE=validate; \
+		if [ "$$FREELLMAPI_BUILD_LIVE" = "1" ]; then MODE=live; fi; \
+		$(UV) run python -m scripts.freellmapi_upstream_build \
+			--mode "$$MODE" \
+			--candidate "$$FREELLMAPI_BUILD_CANDIDATE" \
+			--plan "$$FREELLMAPI_BUILD_PLAN" \
+			--report "$$FREELLMAPI_BUILD_REPORT" \
 			--repository-root "$(CURDIR)"
 
 install-pip:

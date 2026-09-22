@@ -242,6 +242,7 @@ class TestReleaseJobStructure:
         {
             "version",
             "gate",
+            "freellmapi-upstream-build",
             "test-shard",
             "coverage",
             "molecule",

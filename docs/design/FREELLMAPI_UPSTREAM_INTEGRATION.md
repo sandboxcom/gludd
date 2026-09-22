@@ -528,13 +528,54 @@ explicit rejections. Even a positive result is only
 `runtime_admitted: false`.
 
 This harness does not claim that the pending `v0.11.1` candidate has cleared the
-gate. A tracked real corpus and plan, isolated upstream build/test output,
-cross-engine bundle evidence, and the later GHA/live/rollback promotion proofs
-remain required. The focused adversarial suite exercises accepted, rejected,
-tampered, incomplete, non-finite, and host-capability cases without importing
-self-improvement implementation. The split also keeps every module inside the
-unchanged maintainability budget and uses explicit typed contracts instead of
-type-suppression comments.
+gate. A tracked real frozen corpus and delta plan, successful exact-source hosted
+build output, cross-engine bundle evidence, and the later live-provider/rollback
+promotion proofs remain required. The focused adversarial suite exercises
+accepted, rejected, tampered, incomplete, non-finite, and host-capability cases
+without importing self-improvement implementation. The split also keeps every
+module inside the unchanged maintainability budget and uses explicit typed
+contracts instead of type-suppression comments.
+
+### Implemented exact-source build checkpoint
+
+The next trust boundary is now represented by
+`config/freellmapi/upstream_build_plan.json` and the universal
+`general_ludd.models.freellmapi_upstream_build` contract. The default
+`make freellmapi-upstream-build` operation is offline and read-only. It binds the
+plan to the exact candidate and archive identities above and reports
+`validated_not_run`; validation is never presented as an executed build.
+
+The explicit live mode refetches only the locked commit archive, verifies its
+size, SHA-256, license, npm lock, and selected scoring symbols, and materializes
+it beneath a unique temporary directory. Extraction rejects absolute or parent
+paths, multiple roots, case-folding collisions, links, devices, unsupported
+member types, and bounded-size violations. It always removes the source and npm
+cache after the attempt. The build subprocess receives an allowlisted
+environment containing no GitHub, Azure, model-provider, or Gludd credential;
+the GitHub token is used only by the separate archive-fetch boundary.
+
+The fixed plan follows the exact upstream package scripts documented by the
+[`v0.11.1` root manifest][root-package-v0.11.1] and
+[`v0.11.1` server manifest][server-package-v0.11.1]: locked install, migration
+tests, root tests, lint, workspace build, and server coverage. No manifest text
+is converted into shell input: the runner uses fixed argv without a shell and
+first proves each named upstream script exists. GitHub Actions executes this
+plan independently on Node 20 and Node 22 and makes both jobs release
+prerequisites. Each success or failure report is content-free, digest-bound, and
+retains `runtime_admitted: false`.
+
+The toolchain pairs are exact rather than floating majors: Node 20.20.2 with npm
+10.8.2 and Node 22.23.2 with npm 10.9.8, as recorded by the official
+[Node 20 archive][node-20-build] and [Node 22 archive][node-22-build]. Node 20 is
+already out of maintenance, so that leg is compatibility evidence for the
+upstream-declared range only; it is ephemeral and never becomes a Gludd runtime
+dependency. The supported Node 22 leg remains independently mandatory.
+
+The local adversarial and workflow-contract suite passes 34 tests and reports
+93% branch coverage for the production validator, with no measured production
+file below 75%. This is implementation evidence, not hosted execution evidence:
+the real upstream Node 20/22 build remains open until both exact-HEAD GitHub
+Actions legs complete successfully.
 
 This checkpoint directly codifies current operator evidence. The
 [`v0.11.1` release][release-v0.11.1] says updates now follow published releases
@@ -673,6 +714,10 @@ long-term stability:
 - [Issue #35][security-35] records earlier server authentication/admin weaknesses.
   Removing the server surface is useful defense in depth, not permission to relax
   artifact or egress controls.
+- [Issue #671][issue-671] records the upstream CLI name returning npm `E404`
+  because the workspace package was not published. Gludd therefore does not
+  substitute an npm package for reviewed source: it runs the upstream-owned
+  scripts from the exact verified archive and keeps that archive ephemeral.
 - The current [security policy][security-policy] still names `0.6.x` while the
   release page lists `0.9.9`. Update automation therefore reconciles source,
   release, security, and provider facts instead of trusting one page.
@@ -713,6 +758,7 @@ scans, lifecycle cleanup, full gate, and hosted CI evidence are green.
 [dukpy]: https://pypi.org/project/dukpy/
 [issue-584]: https://github.com/tashfeenahmed/freellmapi/issues/584
 [issue-608]: https://github.com/tashfeenahmed/freellmapi/issues/608
+[issue-671]: https://github.com/tashfeenahmed/freellmapi/issues/671
 [issue-666]: https://github.com/tashfeenahmed/freellmapi/issues/666
 [issue-880]: https://github.com/tashfeenahmed/freellmapi/issues/880
 [issue-1262]: https://github.com/tashfeenahmed/freellmapi/issues/1262
@@ -722,10 +768,14 @@ scans, lifecycle cleanup, full gate, and hosted CI evidence are green.
 [miniracer]: https://pypi.org/project/mini-racer/
 [miniracer-security]: https://bpcreech.com/PyMiniRacer/architecture/
 [node-embedder]: https://nodejs.org/download/release/v24.8.0/docs/api/all.html#c-embedder-api
+[node-20-build]: https://nodejs.org/en/download/archive/v20.20.2
+[node-22-build]: https://nodejs.org/en/download/archive/v22.23.2
 [pythonmonkey]: https://docs.pythonmonkey.io/
 [quickjs-wrapper]: https://github.com/PetterS/quickjs
 [release-v0.11.1]: https://github.com/tashfeenahmed/freellmapi/releases/tag/v0.11.1
 [commit-v0.11.1]: https://github.com/tashfeenahmed/freellmapi/commit/4191d8e7abef39fcd93fab009123467036f39750
+[root-package-v0.11.1]: https://github.com/tashfeenahmed/freellmapi/blob/4191d8e7abef39fcd93fab009123467036f39750/package.json
+[server-package-v0.11.1]: https://github.com/tashfeenahmed/freellmapi/blob/4191d8e7abef39fcd93fab009123467036f39750/server/package.json
 [security-35]: https://github.com/tashfeenahmed/freellmapi/issues/35
 [security-policy]: https://github.com/tashfeenahmed/freellmapi/blob/main/SECURITY.md
 [server-entry]: https://github.com/tashfeenahmed/freellmapi/blob/main/server/src/index.ts

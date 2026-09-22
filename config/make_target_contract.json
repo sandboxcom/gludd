@@ -469,6 +469,11 @@
       "behavior": "make freellmapi-upstream-admission FREELLMAPI_ADMISSION_TAG=v0.11.1 FREELLMAPI_ADMISSION_COMMIT=4191d8e7abef39fcd93fab009123467036f39750 FREELLMAPI_ADMISSION_LIVE=0 FREELLMAPI_ADMISSION_OUTPUT=config/freellmapi/upstream_candidate.json"
     },
     {
+      "name": "freellmapi-upstream-build",
+      "make_variables": ["FREELLMAPI_BUILD_LIVE", "FREELLMAPI_BUILD_CANDIDATE", "FREELLMAPI_BUILD_PLAN", "FREELLMAPI_BUILD_REPORT"],
+      "behavior": "make freellmapi-upstream-build FREELLMAPI_BUILD_LIVE=0 FREELLMAPI_BUILD_CANDIDATE=config/freellmapi/upstream_candidate.json FREELLMAPI_BUILD_PLAN=config/freellmapi/upstream_build_plan.json FREELLMAPI_BUILD_REPORT=/tmp/gludd-freellmapi-upstream-build/evidence.json"
+    },
+    {
       "name": "pip-audit-gate",
       "make_variables": [],
       "behavior": "make pip-audit-gate"
