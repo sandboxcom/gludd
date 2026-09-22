@@ -27,6 +27,7 @@ from general_ludd.infra.azure_accelerator import effective_timeout_minutes
 from general_ludd.infra.compute import ComputeConfig, ComputeInstance, ComputeProvider
 from general_ludd.infra.deploy_strategy import ResourceTier
 from general_ludd.infra.terraform import TerraformGenerator
+from general_ludd.projects.identity import validate_project_id
 from general_ludd.schemas.deployment import DeploymentRecord
 from general_ludd.security.sanitize import sanitize_error_message
 from general_ludd.security.state import project_state, secure_write_text
@@ -86,6 +87,7 @@ def _discover_azure_regions() -> list[str]:
             if (
                 time.time() - data.get("ts", 0) < 86400
                 and isinstance(cached_regions, list)
+                and bool(cached_regions)
                 and all(isinstance(region, str) for region in cached_regions)
             ):
                 return [str(region) for region in cached_regions]
@@ -218,9 +220,15 @@ class DeploymentManager:
         event_bus: EventPublisher | None = None,
         session_factory: async_sessionmaker[AsyncSession] | None = None,
         worker_id: str | None = None,
+        project_id: str = "default",
     ) -> None:
         """Initialize a ``DeploymentManager`` instance."""
         _install_signal_handlers()
+        self._project_id = validate_project_id(project_id)
+        self._lifecycle: ResourceLifecycleManager | None = None
+        if _LIFECYCLE_IMPORTED and get_lifecycle is not None:
+            self._lifecycle = get_lifecycle()
+            self._lifecycle.set_destroy_fn(_destroy_instance)
         self._binary_resolver = binary_paths or BinaryPathResolver()
         self._working_dir = working_dir or str(project_state().temporary_directory("terraform", prefix="gludd-tf-"))
         # The dir the NEXT terraform invocation runs in. deploy()/destroy() point
@@ -237,6 +245,11 @@ class DeploymentManager:
         self._registry: dict[str, DeploymentRecord] = {}
         if self._session_factory is None:
             self._load_registry()
+
+    @property
+    def project_id(self) -> str:
+        """Return the project that owns deployments managed by this instance."""
+        return self._project_id
 
     def _publish_event(self, name: str, **payload: Any) -> None:
         """Publish deployment progress without letting observers break lifecycle work."""
@@ -581,11 +594,12 @@ class DeploymentManager:
             _DEPLOYED_INSTANCES.pop(deployment_id, None)
             _DEPLOYED_INSTANCES[instance_id] = terraform_dir
 
-            if _LIFECYCLE_IMPORTED and get_lifecycle is not None:
-                get_lifecycle().register(
+            if self._lifecycle is not None:
+                self._lifecycle.register(
                     config.provider.value,
                     instance_id,
                     terraform_dir,
+                    project_id=self._project_id,
                 )
 
             instance = ComputeInstance(
@@ -750,8 +764,12 @@ class DeploymentManager:
             if self._session_factory is None:
                 self._save_registry()
 
-            if _LIFECYCLE_IMPORTED and get_lifecycle is not None:
-                get_lifecycle().deregister(instance_id)
+            if self._lifecycle is not None:
+                self._lifecycle.deregister(
+                    instance_id,
+                    provider=record.provider,
+                    project_id=self._project_id,
+                )
             self._publish_event(
                 "terraform_destroy_completed",
                 instance_id=instance_id,

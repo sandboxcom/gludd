@@ -92,13 +92,14 @@ class TestResourceLifecycleManagerRegistration:
         mgr = ResourceLifecycleManager()
         mgr.deregister("never-registered")
 
-    def test_register_overwrite_reuses_key(self):
+    def test_exact_identity_reregister_reuses_key(self):
         mgr = ResourceLifecycleManager()
         mgr.register("azure", "inst-1", "/tmp/d1")
-        mgr.register("aws", "inst-1", "/tmp/d2")
+        mgr.register("azure", "inst-1", "/tmp/d2")
         tracked = mgr.all_tracked()
         assert len(tracked) == 1
-        assert tracked[0].provider == "aws"
+        assert tracked[0].provider == "azure"
+        assert tracked[0].deploy_dir == "/tmp/d2"
 
 
 class TestResourceLifecycleManagerQueries:

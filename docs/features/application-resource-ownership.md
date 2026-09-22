@@ -23,6 +23,20 @@ class `close`/`aclose`, a FastAPI shutdown owner, a structured task group, or a
 tracked registry that is cancelled and awaited. Injected clients and external
 model endpoints remain caller-owned and are never stopped by Gludd.
 
+Cloud compute uses a project-scoped composite identity: project, provider, and
+instance identifier. The lifecycle manager permits the same provider-local
+identifier in different projects without overwriting either owner. An unscoped
+mutation is rejected when that identifier is ambiguous. Cleanup also fails
+closed when no destroy callback is installed; the resource remains tracked
+instead of being falsely reported as destroyed.
+
+Deleting a project is cleanup-first. Gludd destroys only resources attributed to
+that project, verifies that none remain, and then deactivates the persisted
+project and removes it from the scheduler. A failed or unavailable destroy path
+returns HTTP 409 and preserves both the project and its ownership evidence. This
+ordering keeps project deletion safe under retries and prevents one project from
+destroying another project's compute.
+
 The local game-model target exposes three explicit modes:
 
 - `hermetic` uses the test-owned fake endpoint and is the safe default.
@@ -65,6 +79,14 @@ Long-lived practitioner reports show why acquisition alone is insufficient:
 - llama-cpp-python issue
   [#302](https://github.com/abetlen/llama-cpp-python/issues/302), opened
   2023-05-30, records model resources not being unloaded before another load.
+- Terraform issue
+  [#22301](https://github.com/hashicorp/terraform/issues/22301), opened in 2019,
+  records the operational difficulty of moving a live resource to a new address
+  without Terraform proposing replacement. A HashiCorp practitioner discussion,
+  [How to move created resources to modules](https://discuss.hashicorp.com/t/how-to-move-created-resources-to-modules/32440),
+  likewise centers explicit state movement to preserve ownership while refactoring.
+  Gludd therefore keeps project identity stable and separate from incidental
+  runtime coordinates.
 
 These reports span several years and support an exact owner-side contract rather
 than harness cleanup or garbage-collector finalizers.
@@ -80,6 +102,13 @@ Rollback restores the previous application commit and its matching inventory as
 one unit. If checker execution itself must be rolled back, remove only the gate
 dependency while retaining owner-side cleanup. Never compensate by killing broad
 process groups or deleting caller-owned model artifacts.
+
+Runtime rollout is additive and zero-downtime: new deployment managers register
+the composite identity while existing records continue to use the validated
+`default` project. Cleanup code understands both paths. Rollback must not remove
+project attribution before all resources created by the newer version are
+destroyed or transferred; otherwise the fail-closed HTTP 409 behavior is the safe
+operational state.
 
 ## Resource bounds and operations
 

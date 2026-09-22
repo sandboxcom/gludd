@@ -15,7 +15,7 @@ Endpoints covered:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -232,6 +232,31 @@ class TestAddProjectEdges:
 
 
 class TestAddProjectErrorPaths:
+    def test_successful_persist_commits_project(self):
+        factory = _mock_session_factory()
+        session = factory.return_value
+        app = _make_app(session_factory=factory)
+        _register(app)
+        client = TestClient(app)
+        mgr = _mock_project_mgr()
+        persist = AsyncMock()
+
+        with (
+            patch(
+                "general_ludd.projects.manager.persist_project",
+                persist,
+            ),
+            patch(_DAEMON_PATH, return_value=_mock_ext(mgr)),
+        ):
+            resp = client.post(
+                "/admin/projects",
+                json={"name": "owned", "weight": 50.0},
+            )
+
+        assert resp.status_code == 200
+        persist.assert_awaited_once()
+        session.commit.assert_awaited_once()
+
     def test_422_when_ext_missing_projects_key(self):
         app = _make_app()
         _register(app)
@@ -304,6 +329,84 @@ class TestDeleteProjectEdges:
         assert resp.status_code == 200
         mgr.remove_project.assert_called_once_with("proj-00000001")
 
+    def test_delete_cleans_project_owned_resources_before_removal(self):
+        app = _make_app()
+        _register(app)
+        client = TestClient(app)
+        mgr = _mock_project_mgr()
+        lifecycle = MagicMock()
+        lifecycle.pending_cleanup.side_effect = [
+            [{"project_id": "proj-00000001", "instance_id": "vm-1"}],
+            [],
+        ]
+        lifecycle.cleanup_project.return_value = 1
+
+        with (
+            patch(_DAEMON_PATH, return_value=_mock_ext(mgr)),
+            patch(
+                "general_ludd.routers.projects.get_lifecycle",
+                return_value=lifecycle,
+            ),
+        ):
+            resp = client.delete("/admin/projects/proj-00000001")
+
+        assert resp.status_code == 200
+        lifecycle.cleanup_project.assert_called_once_with("proj-00000001")
+        mgr.remove_project.assert_called_once_with("proj-00000001")
+
+    def test_delete_fails_closed_when_project_resources_remain(self):
+        app = _make_app()
+        _register(app)
+        client = TestClient(app)
+        mgr = _mock_project_mgr()
+        lifecycle = MagicMock()
+        lifecycle.pending_cleanup.return_value = [
+            {"project_id": "proj-00000001", "instance_id": "vm-1"}
+        ]
+        lifecycle.cleanup_project.return_value = 0
+
+        with (
+            patch(_DAEMON_PATH, return_value=_mock_ext(mgr)),
+            patch(
+                "general_ludd.routers.projects.get_lifecycle",
+                return_value=lifecycle,
+            ),
+        ):
+            resp = client.delete("/admin/projects/proj-00000001")
+
+        assert resp.status_code == 409
+        mgr.remove_project.assert_not_called()
+
+    def test_delete_deactivates_persisted_project_after_cleanup(self):
+        factory = _mock_session_factory()
+        session = factory.return_value
+        app = _make_app(session_factory=factory)
+        _register(app)
+        client = TestClient(app)
+        mgr = _mock_project_mgr()
+        lifecycle = MagicMock()
+        lifecycle.pending_cleanup.return_value = []
+        repo = MagicMock()
+        repo.deactivate = AsyncMock()
+
+        with (
+            patch(_DAEMON_PATH, return_value=_mock_ext(mgr)),
+            patch(
+                "general_ludd.routers.projects.get_lifecycle",
+                return_value=lifecycle,
+            ),
+            patch(
+                "general_ludd.routers.projects.ProjectRepository",
+                return_value=repo,
+            ),
+        ):
+            resp = client.delete("/admin/projects/proj-00000001")
+
+        assert resp.status_code == 200
+        repo.deactivate.assert_awaited_once_with("proj-00000001")
+        session.commit.assert_awaited_once()
+        mgr.remove_project.assert_called_once_with("proj-00000001")
+
     def test_delete_when_ext_missing_projects_key(self):
         app = _make_app()
         _register(app)
@@ -333,6 +436,21 @@ class TestDeleteProjectEdges:
 
 
 class TestSetWeightEdges:
+    def test_set_weight_failure_returns_422(self):
+        app = _make_app()
+        _register(app)
+        client = TestClient(app)
+        mgr = _mock_project_mgr()
+        mgr.set_weight.side_effect = ValueError("invalid")
+
+        with patch(_DAEMON_PATH, return_value=_mock_ext(mgr)):
+            resp = client.put(
+                "/admin/projects/proj-00000001/weight",
+                json={"weight": 25.0},
+            )
+
+        assert resp.status_code == 422
+
     def test_set_weight_nonexistent(self):
         app = _make_app()
         _register(app)
@@ -391,6 +509,21 @@ class TestSetWeightEdges:
 
 
 class TestRebalanceEdges:
+    def test_rebalance_failure_returns_422(self):
+        app = _make_app()
+        _register(app)
+        client = TestClient(app)
+        mgr = _mock_project_mgr()
+        mgr.rebalance.side_effect = ValueError("invalid")
+
+        with patch(_DAEMON_PATH, return_value=_mock_ext(mgr)):
+            resp = client.post(
+                "/admin/projects/rebalance",
+                json={"weights": {"proj-00000001": 50.0}},
+            )
+
+        assert resp.status_code == 422
+
     def test_rebalance_empty_dict(self):
         app = _make_app()
         _register(app)
@@ -448,6 +581,32 @@ class TestRebalanceEdges:
 
 
 class TestListProjectsEdges:
+    def test_list_projects_includes_persisted_active_projects(self):
+        factory = _mock_session_factory()
+        app = _make_app(session_factory=factory)
+        _register(app)
+        client = TestClient(app)
+        mgr = _mock_project_mgr()
+        repo = MagicMock()
+        repo.list_active = AsyncMock(
+            return_value=[
+                _FakeProject(project_id="proj-db000001", name="db", active=True)
+            ]
+        )
+
+        with (
+            patch(_DAEMON_PATH, return_value=_mock_ext(mgr)),
+            patch(
+                "general_ludd.routers.projects.ProjectRepository",
+                return_value=repo,
+            ),
+        ):
+            resp = client.get("/admin/projects")
+
+        assert resp.status_code == 200
+        assert resp.json()["db_projects"] == [
+            {"project_id": "proj-db000001", "name": "db", "active": True}
+        ]
     def test_list_projects_no_ext(self):
         app = _make_app()
         _register(app)
@@ -473,6 +632,63 @@ class TestListProjectsEdges:
 
 
 class TestProjectSkillsEdges:
+    def test_existing_skill_is_scoped_to_project(self):
+        app = _make_app()
+        registry = MagicMock()
+        skill = MagicMock()
+        registry.get.return_value = skill
+        app.state._skill_registry = registry
+        _register(app)
+        client = TestClient(app)
+
+        resp = client.post(
+            "/admin/projects/skills",
+            json={"project_id": "proj-00000001", "skill_name": "known-skill"},
+        )
+
+        assert resp.status_code == 200
+        registry.register.assert_called_once_with(
+            skill,
+            project_id="proj-00000001",
+        )
+
+    def test_catalog_skill_is_installed_discovered_and_scoped(self):
+        app = _make_app(config_dir="/tmp/gludd-project-skill-test")
+        registry = MagicMock()
+        skill = MagicMock()
+        registry.get.side_effect = [None, skill]
+        catalog = MagicMock()
+        catalog.get_skill.return_value = MagicMock()
+        catalog.install_skill.return_value = "/tmp/gludd-project-skill-test/skills/known"
+        app.state._skill_registry = registry
+        app.state._skill_catalog = catalog
+        _register(app)
+        client = TestClient(app)
+
+        with patch(
+            "general_ludd.routers.projects.discover_skills",
+            return_value=[skill],
+        ):
+            resp = client.post(
+                "/admin/projects/skills",
+                json={
+                    "project_id": "proj-00000001",
+                    "skill_name": "known-skill",
+                },
+            )
+
+        assert resp.status_code == 200
+        catalog.install_skill.assert_called_once_with(
+            "known-skill",
+            "/tmp/gludd-project-skill-test",
+        )
+        assert registry.register.call_count == 2
+        registry.register.assert_any_call(skill)
+        registry.register.assert_called_with(
+            skill,
+            project_id="proj-00000001",
+        )
+
     def test_empty_project_id_and_skill_name(self):
         app = _make_app()
         _register(app)
@@ -561,6 +777,21 @@ class TestProjectSkillsEdges:
 
 
 class TestDispatchModeEdges:
+    def test_valid_mode_updates_mutable_startup_config(self):
+        app = _make_app()
+        startup_config: dict[str, str] = {}
+        app.state._startup_config = startup_config
+        _register(app)
+        client = TestClient(app)
+
+        resp = client.put(
+            "/admin/dispatch/mode",
+            json={"mode": "passive_external"},
+        )
+
+        assert resp.status_code == 200
+        assert startup_config == {"dispatch_mode": "passive_external"}
+
     def test_invalid_mode_returns_400(self):
         app = _make_app()
         _register(app)

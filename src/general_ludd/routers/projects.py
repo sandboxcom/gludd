@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from general_ludd.cloud.resource_lifecycle import get_lifecycle
 from general_ludd.db.repository import ProjectRepository
 from general_ludd.self_improve.harness import SelfImprovementHarness
 from general_ludd.skills.catalog import SkillCatalog
@@ -150,6 +151,18 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     async def admin_delete_project(project_id: str) -> dict[str, object]:
         from general_ludd.daemon import _get_or_create_extended_subsystems
         ext = _get_or_create_extended_subsystems(app)
+        lifecycle = get_lifecycle()
+        if lifecycle.pending_cleanup(project_id=project_id):
+            await asyncio.to_thread(lifecycle.cleanup_project, project_id)
+            remaining = lifecycle.pending_cleanup(project_id=project_id)
+            if remaining:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "project still owns active resources; cleanup must succeed "
+                        "before removal"
+                    ),
+                )
         factory = _get_session_factory(app)
         if factory is not None:
             async with factory() as session:

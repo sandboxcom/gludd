@@ -51,18 +51,66 @@ class TestRegisterAndDeregister:
     def test_deregister_nonexistent_is_noop(self, manager: ResourceLifecycleManager) -> None:
         manager.deregister("nonexistent")
 
-    def test_double_register_replaces(self, manager: ResourceLifecycleManager) -> None:
+    def test_exact_identity_reregister_replaces(self, manager: ResourceLifecycleManager) -> None:
         manager.register("azure", "vm-001", "/tmp/deploy-001")
-        manager.register("aws", "vm-001", "/tmp/deploy-002")
+        manager.register("azure", "vm-001", "/tmp/deploy-002")
         tracked = manager.all_tracked()
         assert len(tracked) == 1
-        assert tracked[0].provider == "aws"
+        assert tracked[0].provider == "azure"
         assert tracked[0].deploy_dir == "/tmp/deploy-002"
+
+    def test_same_instance_id_different_providers_do_not_collide(
+        self,
+        manager: ResourceLifecycleManager,
+    ) -> None:
+        manager.register("azure", "shared-id", "/tmp/azure")
+        manager.register("aws", "shared-id", "/tmp/aws")
+
+        assert len(manager.all_tracked()) == 2
 
     def test_double_deregister_is_noop(self, manager: ResourceLifecycleManager) -> None:
         manager.register("azure", "vm-001", "/tmp/deploy-001")
         manager.deregister("vm-001")
         manager.deregister("vm-001")
+
+    def test_project_provider_instance_identity_prevents_cross_project_overwrite(
+        self,
+        manager: ResourceLifecycleManager,
+    ) -> None:
+        manager.register(
+            "azure",
+            "shared-id",
+            "/tmp/project-a",
+            project_id="project-a",
+        )
+        manager.register(
+            "azure",
+            "shared-id",
+            "/tmp/project-b",
+            project_id="project-b",
+        )
+
+        assert len(manager.all_tracked()) == 2
+        assert manager.pending_cleanup(project_id="project-a")[0]["deploy_dir"] == (
+            "/tmp/project-a"
+        )
+
+    def test_ambiguous_deregister_requires_project_scope(
+        self,
+        manager: ResourceLifecycleManager,
+    ) -> None:
+        manager.register("azure", "shared-id", "/tmp/a", project_id="project-a")
+        manager.register("azure", "shared-id", "/tmp/b", project_id="project-b")
+
+        with pytest.raises(ValueError, match="ambiguous"):
+            manager.deregister("shared-id")
+
+        manager.deregister(
+            "shared-id",
+            provider="azure",
+            project_id="project-a",
+        )
+        assert manager.is_tracked("shared-id", project_id="project-b")
 
 
 class TestPendingCleanup:
@@ -91,6 +139,15 @@ class TestPendingCleanup:
 
 
 class TestCleanupAll:
+    def test_cleanup_without_destroy_owner_fails_closed(
+        self,
+        manager: ResourceLifecycleManager,
+    ) -> None:
+        manager.register("azure", "vm-001", "/tmp/deploy-001")
+
+        assert manager.cleanup_all() == 0
+        assert manager.is_tracked("vm-001")
+
     def test_cleanup_all_calls_destroy(self, manager: ResourceLifecycleManager) -> None:
         destroyed: list[str] = []
 
@@ -124,6 +181,20 @@ class TestCleanupAll:
         assert count == 1
         assert destroyed == ["vm-001"]
 
+    def test_cleanup_project_only_destroys_that_projects_resources(
+        self,
+        manager: ResourceLifecycleManager,
+    ) -> None:
+        destroyed: list[str] = []
+        manager.set_destroy_fn(lambda instance_id, _deploy_dir: destroyed.append(instance_id))
+        manager.register("azure", "vm-a", "/tmp/a", project_id="project-a")
+        manager.register("azure", "vm-b", "/tmp/b", project_id="project-b")
+
+        assert manager.cleanup_project("project-a") == 1
+        assert destroyed == ["vm-a"]
+        assert not manager.is_tracked("vm-a", project_id="project-a")
+        assert manager.is_tracked("vm-b", project_id="project-b")
+
     def test_cleanup_all_resilient_to_destroy_failure(self, manager: ResourceLifecycleManager) -> None:
         destroyed: list[str] = []
 
@@ -152,8 +223,7 @@ class TestCleanupIdle:
         manager.set_destroy_fn(_destroy)
         manager.register("azure", "vm-001", "/tmp/deploy-001")
 
-        with manager._lock:
-            manager._resources["vm-001"].last_activity = time.time() - 3600
+        manager.all_tracked(provider="azure")[0].last_activity = time.time() - 3600
 
         count = manager.cleanup_idle("azure", idle_minutes=10)
         assert count == 1
@@ -180,8 +250,7 @@ class TestCleanupIdle:
         manager.set_destroy_fn(_destroy)
         manager.register("azure", "vm-001", "/tmp/deploy-001")
 
-        with manager._lock:
-            manager._resources["vm-001"].last_activity = time.time() - 3600
+        manager.all_tracked(provider="azure")[0].last_activity = time.time() - 3600
 
         count = manager.cleanup_idle("aws", idle_minutes=10)
         assert count == 0
@@ -193,26 +262,24 @@ class TestCostEstimate:
 
     def test_cost_estimate_positive_with_resources(self, manager: ResourceLifecycleManager) -> None:
         manager.register("azure", "vm-001", "/tmp/deploy-001")
-        with manager._lock:
-            manager._resources["vm-001"].registered_at = time.time() - 1800
+        manager.all_tracked(provider="azure")[0].registered_at = time.time() - 1800
 
         cost = manager.cost_estimate()
         assert cost > 0.0
 
     def test_cost_estimate_skips_cleaned_up(self, manager: ResourceLifecycleManager) -> None:
         manager.register("azure", "vm-001", "/tmp/deploy-001")
-        with manager._lock:
-            manager._resources["vm-001"].registered_at = time.time() - 3600
-            manager._resources["vm-001"].cleaned_up = True
+        resource = manager.all_tracked(provider="azure")[0]
+        resource.registered_at = time.time() - 3600
+        resource.cleaned_up = True
 
         assert manager.cost_estimate() == 0.0
 
     def test_cost_estimate_with_provider_filter(self, manager: ResourceLifecycleManager) -> None:
         manager.register("azure", "vm-001", "/tmp/deploy-001")
         manager.register("aws", "i-002", "/tmp/deploy-002")
-        with manager._lock:
-            manager._resources["vm-001"].registered_at = time.time() - 1800
-            manager._resources["i-002"].registered_at = time.time() - 1800
+        manager.all_tracked(provider="azure")[0].registered_at = time.time() - 1800
+        manager.all_tracked(provider="aws")[0].registered_at = time.time() - 1800
 
         cost = manager.cost_estimate(provider="aws")
         assert cost > 0.0
