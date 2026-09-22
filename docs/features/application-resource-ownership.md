@@ -2,16 +2,21 @@
 
 Gludd records every application-owned process, asynchronous task, client,
 temporary artifact, and service together with its acquisition site and teardown
-evidence. The gate is exact and fail-closed: a new, stale, duplicate, or unowned
-record fails `make check-resource-ownership` before tests start.
+evidence. The gate is semantic and fail-closed: a new, stale, duplicate-count,
+or unowned record fails `make check-resource-ownership` before tests start.
 
 ## Contract
 
 `config/resource_ownership_inventory.json` is generated only through the checker
 write mode. Normal validation uses read-only mode and compares the current AST
-evidence with the tracked inventory, including source hashes. Cleanup must be in
-the Gludd owner and cover success, failure, cancellation, and shutdown. A test may
-assert cleanup, but it must not reap a resource on Gludd's behalf.
+evidence with the tracked inventory. Identity is the counted tuple of path,
+resource kind, owner, and the acquisition/teardown source hash. Line and column
+remain review coordinates, not identity, so inserting unrelated code cannot turn
+one unchanged resource into simultaneous new and stale findings. Duplicate
+semantic acquisitions remain count-preserving: two acquisitions require two
+inventory records. Cleanup must be in the Gludd owner and cover success, failure,
+cancellation, and shutdown. A test may assert cleanup, but it must not reap a
+resource on Gludd's behalf.
 
 Ownership may transfer only to an explicit application lifecycle boundary: a
 class `close`/`aclose`, a FastAPI shutdown owner, a structured task group, or a
@@ -41,6 +46,14 @@ and mypy instead of replacing them.
 
 Long-lived practitioner reports show why acquisition alone is insufficient:
 
+- The detect-secrets design notes that
+  [line number is deliberately excluded from finding identity](https://github.com/Yelp/detect-secrets/blob/master/docs/design.md#potentialsecret)
+  because code moves during ordinary iteration. Its 2019 practitioner report
+  [#212](https://github.com/Yelp/detect-secrets/issues/212) records the concrete
+  cost of line-number-only baseline churn: a hook rewrote the baseline and
+  interrupted the commit even though no new secret existed. Gludd therefore
+  treats coordinates as diagnostics while preserving semantic identity and
+  occurrence counts.
 - CPython issue [#79325](https://github.com/python/cpython/issues/79325), opened
   2018-11-02, documents `TemporaryDirectory` cleanup failures.
 - CPython issue [#125502](https://github.com/python/cpython/issues/125502), opened
@@ -73,5 +86,7 @@ process groups or deleting caller-owned model artifacts.
 Validation is a single Python AST pass over explicit paths, starts no daemon, and
 writes only the requested inventory in write mode. Use the documented Make target
 variables so parallel worktrees have distinct reports and temp roots. A stale
-inventory is intentional failure evidence: regenerate it only after reviewing the
-new acquisition and teardown pair.
+semantic inventory entry is intentional failure evidence: regenerate it only
+after reviewing the changed acquisition and teardown pair. Coordinate-only moves
+require no inventory rewrite and therefore do not invalidate an otherwise tested
+release head.

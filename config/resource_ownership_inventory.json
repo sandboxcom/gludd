@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "policy": "exact-path-line-column-kind-and-acquisition-teardown-sha256",
+  "policy": "counted-path-kind-owner-and-acquisition-teardown-sha256",
   "resources": [
     {
       "path": "scripts/adaptive_test.py",
