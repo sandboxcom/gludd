@@ -1,0 +1,68 @@
+{
+  "archive_sha256": "9f5156164cfc9b98416014b1ed1a9a49bb0005b32ae64b7a21e4afd8c467a198",
+  "candidate_id": "sha256:69d63b09199c37f38c02c711559b15e0fd5dc5ecc0e64e2d94c597dc5e5d3998",
+  "gate": "freellmapi-upstream-build-v1",
+  "install": [
+    "npm",
+    "ci",
+    "--no-audit",
+    "--no-fund"
+  ],
+  "toolchains": [
+    {
+      "node_version": "20.20.2",
+      "npm_version": "10.8.2"
+    },
+    {
+      "node_version": "22.23.2",
+      "npm_version": "10.9.8"
+    }
+  ],
+  "owner": "general_ludd.models",
+  "schema_version": 1,
+  "source_retention": "ephemeral_verified_archive",
+  "step_timeout_seconds": 1800,
+  "steps": [
+    {
+      "argv": [
+        "npm",
+        "run",
+        "test:migrations"
+      ],
+      "id": "migrations"
+    },
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "id": "root_tests"
+    },
+    {
+      "argv": [
+        "npm",
+        "run",
+        "lint"
+      ],
+      "id": "lint"
+    },
+    {
+      "argv": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "id": "workspace_build"
+    },
+    {
+      "argv": [
+        "npm",
+        "run",
+        "test:coverage",
+        "-w",
+        "server"
+      ],
+      "id": "server_coverage"
+    }
+  ]
+}
