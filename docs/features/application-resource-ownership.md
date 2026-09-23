@@ -149,6 +149,19 @@ into every status heartbeat. The IDs remain directly auditable in the named
 ledger. If no exact milestone declaration exists, the command fails safely to
 repository scope and preserves its former all-open behavior.
 
+The Codex Stop hook and repository `codex-stop-guard` consume the same parser in
+`scripts/task_scope.py`; neither recounts checkboxes independently. An unfinished
+active-milestone item or a ratchet entry can continue or fail the release loop.
+Future and historical backlog items remain visible as excluded inventory but
+cannot keep the current release turn alive or make a clean milestone fail. This
+matters because the
+[official OpenAI hook contract](https://learn.chatgpt.com/docs/hooks) defines a
+Stop-hook `decision: "block"` as a request to create another continuation prompt,
+not as a passive warning. The predicate therefore has to describe an attainable,
+evidence-bound finish line. OpenAI's
+[Goals guidance](https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex)
+similarly distinguishes durable evidence-based completion from an endless loop.
+
 Research refreshed on 2026-09-22 supports that separation:
 
 - GitHub's
@@ -168,6 +181,11 @@ Research refreshed on 2026-09-22 supports that separation:
   enumerated child connection. Gludd therefore derives each status snapshot
   directly from the current ledger and reports the selected scope alongside the
   complete enumerated IDs; it does not persist a second mutable counter.
+
+Those practitioner reports also govern continuation: the Stop hook must not turn
+the catch-all backlog described in #9575 into current milestone ownership, and
+must derive its count from the same enumerated connection used by status so it
+cannot reproduce the divergent aggregate in #193565.
 
 ## Resource bounds and operations
 
