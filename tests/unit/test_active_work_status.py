@@ -34,11 +34,66 @@ def test_active_work_status_is_auditable_json() -> None:
     assert isinstance(payload["workstreams"], dict)
     assert all("task" in process for process in payload["processes"])
     assert isinstance(payload["open_task_ids"], list)
+    assert "all_open_task_ids" not in payload
+    assert "backlog_task_ids" not in payload
+    assert isinstance(payload["task_scope"], dict)
+    assert payload["task_scope"]["open_count"] == len(payload["open_task_ids"])
+    assert payload["task_scope"]["total_open_count"] >= len(payload["open_task_ids"])
+    assert payload["task_scope"]["ledger"] == "TASKS.md"
     assert isinstance(payload["gate"], dict)
     assert isinstance(payload["git"], dict)
     assert payload["git"]["head"]
     assert payload["audit_contract"]["ps_command"] == "make ps"
     assert payload["audit_contract"]["agent_pids"] is False
+
+
+def test_task_inventory_separates_release_milestone_from_backlog() -> None:
+    tasks = """# Tasks
+
+## Session 87 — v0.1.1 universal Gludd release
+
+The fail-closed v0.1.1 milestone is the exact task set S83.157\N{EN DASH}S83.168.
+
+- [ ] S83.156 — older work
+- [ ] S83.157 — release blocker
+- [x] S83.159 — completed release work
+- [ ] S83.168 — release blocker
+- [ ] S83.169 — future work
+- [ ] S79.2 — backlog work
+"""
+
+    inventory = active_work_status._task_inventory(tasks)
+
+    assert set(inventory) == {"open_task_ids", "task_scope"}
+    assert inventory["open_task_ids"] == ["S83.157", "S83.168"]
+    assert inventory["task_scope"] == {
+        "kind": "milestone",
+        "label": "v0.1.1",
+        "range": "S83.157-S83.168",
+        "ledger": "TASKS.md",
+        "defined_task_count": 12,
+        "open_count": 2,
+        "backlog_open_count": 3,
+        "total_open_count": 5,
+    }
+
+
+def test_task_inventory_falls_back_to_repository_scope_without_declaration() -> None:
+    inventory = active_work_status._task_inventory(
+        "- [ ] S1 — first\n- [x] S2 — done\n- [ ] S3 — third\n"
+    )
+
+    assert inventory["open_task_ids"] == ["S1", "S3"]
+    assert inventory["task_scope"] == {
+        "kind": "repository",
+        "label": "",
+        "range": "",
+        "ledger": "TASKS.md",
+        "defined_task_count": 0,
+        "open_count": 2,
+        "backlog_open_count": 0,
+        "total_open_count": 2,
+    }
 
 
 def test_collect_status_recognizes_canonical_serial_gate_supervisor(

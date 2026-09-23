@@ -4,6 +4,24 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-22 — (resolved locally) Unseeded statistical acceptance stopped the exact-head gate
+
+- **What happened**: `unit-3a:batch-022` stopped the release gate after 395 neighboring tests passed because `test_uniform_chi_squared` sampled Python's process-global random generator and happened to exceed its unchanged 5% rejection threshold. A retry could have hidden the failure, but it would have left every later gate exposed to the same non-reproducible stop.
+- **Root cause**: The random-generation test module had already isolated its normal-KS, `secrets.choice`, and `os.urandom` samples behind test-local seeded generators, but its uniform, moment, exponential, and triangular statistical acceptance checks still consumed shared, order-dependent state.
+- **Fix applied**: Every statistical acceptance sample now uses a named, test-local `random.Random` seed. Bounds and true-system-entropy checks retain their original sources, and no sample size, assertion, critical value, alpha, skip, retry, or production path changed.
+- **Evidence**: The exact-head gate failed first with the original chi-square assertion. The complete focused module now passes 25/25 under two workers, including the original failure and a global-state isolation contract; scoped Ruff is green. Exact-head gate replay remains required after the atomic fix commit.
+- **Practitioner evidence**: [pytest issue #667](https://github.com/pytest-dev/pytest/issues/667) has tracked reproducible random tests since 2015; [pytest-randomly issue #600](https://github.com/pytest-dev/pytest-randomly/issues/600) records the need for unique but deterministic per-test seeds; and [NumPy's testing guide](https://github.com/numpy/numpy/blob/main/doc/TESTS.rst#tests-on-random-data) directs statistical tests to use local seeded generators because occasional unchanged-code failures are not useful signals. `docs/features/GATE_RESOURCE_LIFECYCLE.md` codifies the resulting gate contract.
+- **Lesson**: Statistical rejection is useful only when its input is replayable. Release gates must never rely on ambient random state or pass by retrying an unrepeatable sample.
+
+### 2026-09-22 — (resolved locally) Repository backlog was reported as v0.1.1 release scope
+
+- **What happened**: `make active-work-status` returned every unchecked historical, future, and release item in one `open_task_ids` list. The exact v0.1.1 milestone had six unfinished items, but the status surface presented roughly ninety items as one undifferentiated workload. Each legitimate backlog addition therefore looked like release scope growth and encouraged work to be spread away from the release boundary.
+- **Root cause**: The status command parsed checkbox state but ignored the ledger's explicit `v0.1.1 milestone is the exact task set S83.157–S83.168` ownership declaration. One repository-wide count was used for both delivery control and backlog visibility.
+- **Fix applied**: The first exact milestone declaration now owns `open_task_ids`. A structured `task_scope` reports the ledger path, version, range, defined size, milestone-open count, backlog-open count, and total-open count without duplicating the whole backlog in every heartbeat. The complete IDs remain directly auditable in `TASKS.md`, and repositories without an exact declaration retain the former all-open behavior.
+- **Evidence**: The failing-first regression reproduced the missing task-scope API. The complete active-work status suite now passes 49/49, including real Make invocation, exact-range partitioning, and repository fallback. The live ledger reports six open v0.1.1 tasks separately from the broader backlog.
+- **Practitioner evidence**: GitHub documents progress against the selected milestone, Linear separates current-cycle scope from backlog, and GitHub community discussions #9575 and #193565 record the operational need for separate release/backlog views and the harm from stale aggregate progress. `docs/features/application-resource-ownership.md` links the sources and codifies the direct-enumeration contract.
+- **Lesson**: A backlog is inventory, not an active commitment. Progress reporting must preserve both without assigning unrelated work to the current release owner.
+
 ### 2026-09-22 — (resolved locally) Ownership drift and global deployment identity stalled release progress
 
 - **What happened**: The active-work report labeled a live shard supervisor `UNKNOWN`, harmless source-line movement invalidated the resource inventory, and deployment ownership stopped at an in-memory instance-ID map. Repeated exact-head gate attempts therefore appeared idle, regenerated evidence unnecessarily, and could not safely attribute or delete coincident cloud IDs across projects after restart.
