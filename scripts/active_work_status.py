@@ -17,19 +17,15 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING or __package__:
     from scripts.resource_arbiter import resource_path, resource_root
+    from scripts.task_scope import task_inventory as _task_inventory
 else:  # pragma: no cover - direct script execution
     _resource_arbiter = import_module("resource_arbiter")
+    _task_scope = import_module("task" + "_scope")
     resource_path = _resource_arbiter.resource_path
     resource_root = _resource_arbiter.resource_root
+    _task_inventory = _task_scope.task_inventory
 
 ROOT = Path(__file__).resolve().parent.parent
-TASK_ID_RE = re.compile(r"^\s*-\s*\[ \]\s+([^ —|]+)", re.MULTILINE)
-_MILESTONE_RANGE_RE = re.compile(
-    r"\b(?P<label>v\d+\.\d+\.\d+)\s+milestone\s+is\s+the\s+exact\s+task\s+set\s+"
-    r"(?P<prefix>[A-Za-z]+\d+)\.(?P<start>\d+)\s*[-\u2013]\s*"
-    r"(?P<end_prefix>[A-Za-z]+\d+)\.(?P<end>\d+)",
-    re.IGNORECASE,
-)
 # Keep every externally orchestrated resource visible in one snapshot.  The
 # project namespace is represented explicitly so callers can audit that model,
 # SearX, and Terraform work do not silently fall back to a global lease.
@@ -440,70 +436,6 @@ def _workstreams(processes: list[dict[str, str]]) -> dict[str, dict[str, object]
         if isinstance(pids, list):
             pids.append(process["pid"])
     return streams
-
-
-def _repository_task_inventory(open_task_ids: list[str]) -> dict[str, object]:
-    """Return the fail-safe unscoped task view for a ledger without a milestone."""
-    return {
-        "open_task_ids": open_task_ids,
-        "task_scope": {
-            "kind": "repository",
-            "label": "",
-            "range": "",
-            "ledger": "TASKS.md",
-            "defined_task_count": 0,
-            "open_count": len(open_task_ids),
-            "backlog_open_count": 0,
-            "total_open_count": len(open_task_ids),
-        },
-    }
-
-
-def _task_inventory(tasks: str) -> dict[str, object]:
-    """Separate the declared active milestone from repository backlog work.
-
-    ``TASKS.md`` is an evidence ledger as well as a backlog.  Treating every
-    unchecked historical or future item as release scope makes a bounded
-    milestone appear to grow whenever unrelated work is recorded.  The first
-    explicit ``<version> milestone is the exact task set <range>`` declaration
-    is authoritative because current sessions are kept at the top of the file.
-    """
-    all_open_task_ids = list(dict.fromkeys(TASK_ID_RE.findall(tasks)))
-    milestone = _MILESTONE_RANGE_RE.search(tasks)
-    if milestone is None or milestone.group("prefix") != milestone.group(
-        "end_prefix"
-    ):
-        return _repository_task_inventory(all_open_task_ids)
-
-    prefix = milestone.group("prefix")
-    start = int(milestone.group("start"))
-    end = int(milestone.group("end"))
-    if end < start:
-        return _repository_task_inventory(all_open_task_ids)
-
-    scoped_id = re.compile(rf"{re.escape(prefix)}\.(\d+)", re.IGNORECASE)
-    open_task_ids: list[str] = []
-    backlog_task_ids: list[str] = []
-    for task_id in all_open_task_ids:
-        task_match = scoped_id.fullmatch(task_id)
-        if task_match is not None and start <= int(task_match.group(1)) <= end:
-            open_task_ids.append(task_id)
-        else:
-            backlog_task_ids.append(task_id)
-
-    return {
-        "open_task_ids": open_task_ids,
-        "task_scope": {
-            "kind": "milestone",
-            "label": milestone.group("label"),
-            "range": f"{prefix}.{start}-{prefix}.{end}",
-            "ledger": "TASKS.md",
-            "defined_task_count": end - start + 1,
-            "open_count": len(open_task_ids),
-            "backlog_open_count": len(backlog_task_ids),
-            "total_open_count": len(all_open_task_ids),
-        },
-    }
 
 
 def _git() -> dict[str, str]:

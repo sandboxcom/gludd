@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-23 — (resolved locally) Codex stop controls forced future backlog into the active release loop
+
+- **What happened**: After `make active-work-status` correctly reported six open v0.1.1 tasks and 84 separate backlog items, the Codex Stop hook still emitted `90 TASKS.md item(s) remain`. Every attempted handoff therefore restarted an unbounded repository-wide loop and made completed release work look like no progress.
+- **Root cause**: `scripts/codex_stop_hook.py` and `scripts/codex_stop_guard.py` each had an independent checkbox counter instead of consuming the milestone-aware inventory used by `scripts/active_work_status.py`. The three user-facing control surfaces assigned different owners to the same ledger.
+- **Fix applied**: Milestone parsing now lives once in `scripts/task_scope.py`. Active status, the host Stop hook, and the repository stop guard consume that same immutable snapshot. Only unchecked tasks in the declared exact milestone can continue or fail the release loop; backlog remains visible as excluded inventory but cannot block completion. Ledgers without a valid milestone declaration retain the fail-safe repository-wide behavior, and ratchet entries remain independently blocking.
+- **Evidence**: Four failing-first regressions reproduced the `2`-instead-of-`1` counts and both controls' refusal to stop with only backlog remaining. The combined Stop-hook and active-status suite passes 60/60 and the repository-guard suite passes 9/9. Live `make active-work-status` and `make codex-stop-guard` both resolve the v0.1.1 ledger to six active tasks and 84 excluded backlog items; full test collection passes.
+- **Practitioner and platform evidence**: The long-lived GitHub community reports #9575 and #193565 already documented in `docs/features/application-resource-ownership.md` show why milestone scope and aggregate backlog must remain separate. Official OpenAI hook documentation establishes that a Stop hook's `decision: "block"` creates a new continuation prompt, so an overbroad predicate amplifies one counting error into repeated model work; OpenAI's Goals guidance likewise describes continuation as evidence-bound and warns against an endless loop without a true finish line.
+- **Lesson**: Every continuation, status, and completion gate must consume the same scoped task inventory. Duplicating a seemingly trivial checkbox count creates contradictory control planes and turns backlog bookkeeping into wasted execution; checking only the first duplicate is not a complete ownership repair.
+
 ### 2026-09-22 — (resolved locally) Unseeded statistical acceptance stopped the exact-head gate
 
 - **What happened**: `unit-3a:batch-022` stopped the release gate after 395 neighboring tests passed because `test_uniform_chi_squared` sampled Python's process-global random generator and happened to exceed its unchanged 5% rejection threshold. A retry could have hidden the failure, but it would have left every later gate exposed to the same non-reproducible stop.
