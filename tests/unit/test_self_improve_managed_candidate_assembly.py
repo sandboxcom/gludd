@@ -9,6 +9,7 @@ from typing import cast
 
 import pytest
 
+from general_ludd.models.candidate_identity import CatalogFreeTierCandidateIdentity
 from general_ludd.self_improve.candidate_classification import (
     CandidateTaskClassification,
     classify_candidate_task,
@@ -88,11 +89,21 @@ def _containerapp_identity() -> AzureContainerAppCandidateIdentity:
     )
 
 
+def _freellmapi_identity() -> CatalogFreeTierCandidateIdentity:
+    return CatalogFreeTierCandidateIdentity(
+        platform="freellmapi",
+        model_id="provider/free-model",
+        catalog_version="2026.09.24",
+        catalog_payload_sha256=_digest("catalog-payload"),
+    )
+
+
 def _source(
     identity: (
         LocalGGUFCandidateIdentity
         | AzureFoundryCandidateIdentity
         | AzureContainerAppCandidateIdentity
+        | CatalogFreeTierCandidateIdentity
     ),
     *,
     expected_identity_digest: str | None = None,
@@ -102,18 +113,12 @@ def _source(
     budget_state: CandidateBudgetState = CandidateBudgetState.WITHIN_LIMITS,
     privacy_state: CandidatePrivacyState = CandidatePrivacyState.APPROVED_PUBLIC,
 ) -> ManagedCandidateSource:
-    approved = approved_configuration_digest or _digest(
-        f"approved-config-{identity.identity_digest}"
-    )
+    approved = approved_configuration_digest or _digest(f"approved-config-{identity.identity_digest}")
     return ManagedCandidateSource(
         identity=identity,
-        expected_identity_digest=(
-            expected_identity_digest or identity.identity_digest
-        ),
+        expected_identity_digest=(expected_identity_digest or identity.identity_digest),
         approved_configuration_digest=approved,
-        current_configuration_digest=(
-            current_configuration_digest or approved
-        ),
+        current_configuration_digest=(current_configuration_digest or approved),
         health_state=health_state,
         budget_state=budget_state,
         privacy_state=privacy_state,
@@ -133,9 +138,7 @@ def _copy_source(
     return ManagedCandidateSource(
         identity=source.identity,
         expected_identity_digest=(
-            source.expected_identity_digest
-            if expected_identity_digest is None
-            else expected_identity_digest
+            source.expected_identity_digest if expected_identity_digest is None else expected_identity_digest
         ),
         approved_configuration_digest=(
             source.approved_configuration_digest
@@ -149,17 +152,13 @@ def _copy_source(
         ),
         health_state=source.health_state if health_state is None else health_state,
         budget_state=source.budget_state if budget_state is None else budget_state,
-        privacy_state=(
-            source.privacy_state if privacy_state is None else privacy_state
-        ),
+        privacy_state=(source.privacy_state if privacy_state is None else privacy_state),
     )
 
 
 def _assemble(
     *sources: ManagedCandidateSource,
-    required_providers: tuple[ModelCandidateProvider, ...] = (
-        ModelCandidateProvider.LOCAL_GGUF,
-    ),
+    required_providers: tuple[ModelCandidateProvider, ...] = (ModelCandidateProvider.LOCAL_GGUF,),
     azure_enabled: bool = False,
     classification: CandidateTaskClassification | None = None,
     expected_classification_digest: str | None = None,
@@ -169,8 +168,7 @@ def _assemble(
         selected_classification,
         tuple(sources),
         expected_classification_digest=(
-            expected_classification_digest
-            or selected_classification.classification_digest
+            expected_classification_digest or selected_classification.classification_digest
         ),
         required_providers=required_providers,
         azure_enabled=azure_enabled,
@@ -178,9 +176,7 @@ def _assemble(
 
 
 def test_mixed_assembly_is_canonical_immutable_and_content_free() -> None:
-    private_business_marker = (
-        "implement feature containing confidential-project-rule-marker-do-not-retain"
-    )
+    private_business_marker = "implement feature containing confidential-project-rule-marker-do-not-retain"
     classification = _classification(private_business_marker)
     local = _source(_local_identity())
     azure = _source(_azure_identity())
@@ -260,10 +256,7 @@ def test_local_foundry_and_containerapp_assembly_has_explicit_cleanup_boundary()
     )
     containerapp = assembly.candidates[2]
     assert containerapp.resource_ownership is CandidateResourceOwnership.CALLER_OWNED
-    assert (
-        containerapp.cleanup_action
-        is CandidateCleanupAction.DESTROY_AZURE_CONTAINER_APP
-    )
+    assert containerapp.cleanup_action is CandidateCleanupAction.DESTROY_AZURE_CONTAINER_APP
     assert containerapp.assembler_owns_resource is False
 
 
@@ -342,9 +335,7 @@ def test_local_only_assembly_needs_no_azure_opt_in() -> None:
 
 
 _SourceMutation = Callable[[ManagedCandidateSource], ManagedCandidateSource]
-_INELIGIBLE_MUTATIONS: tuple[
-    tuple[_SourceMutation, CandidateAssemblyFailure], ...
-] = (
+_INELIGIBLE_MUTATIONS: tuple[tuple[_SourceMutation, CandidateAssemblyFailure], ...] = (
     (
         lambda source: _copy_source(
             source,
@@ -478,9 +469,7 @@ def test_candidate_set_bounds_fail_closed() -> None:
     assert empty.value.failure is CandidateAssemblyFailure.EMPTY_CANDIDATE_SET
 
     candidates = tuple(
-        _source(
-            _local_identity(model_id=f"coder-{ordinal}", artifact_label=str(ordinal))
-        )
+        _source(_local_identity(model_id=f"coder-{ordinal}", artifact_label=str(ordinal)))
         for ordinal in range(MAX_MANAGED_CANDIDATES + 1)
     )
     with pytest.raises(CandidateAssemblyError) as excessive:
