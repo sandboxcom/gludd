@@ -130,7 +130,7 @@ ab9f5b59 test: pin clean-tree runtime fixture must live inside the checkout
 
 ---
 
-## SESSION 82 — 2026-08-08 — HEAD `9bf42a0f`: OpenCode DB cleanup safety + gate drift repairs + 5 waves (+~2,177 tests)
+## SESSION 82 — 2026-08-08 — HEAD `9bf42a0f`: Gate-refresh ALL GREEN (pre-test), spawner E2E harness, key detection targets, opencode E2E test fixes
 
 ### Key Accomplishments
 
@@ -191,7 +191,7 @@ eded4dfd chore: update Makefile, SESSION.md, TASKS.md
 c6250355 fix: opencode spawner format fix for v1.18.11 + test results
 54b29bf3 fix: gate-refresh lint + opencode E2E test fixes
 c72caad9 fix: opencode E2E test fixes + remaining test results
-38aa2ef7 feat: opencode E2E multitask test harness + 3x depth enforcement + test project template + spawner v1.18.11 fix
+38aa2ef7 fix: opencode E2E multitask test harness + 3x depth enforcement + test project template + spawner v1.18.11 fix
 f8149c3a chore: final test pass totals
 26a96e8f chore: final test pass totals
 903ba6a2 chore: update TASKS.md
@@ -226,7 +226,7 @@ fcb98aa1 chore: fresh gate-status + all Session 80 deliverables
 
 - **Generic software generation pipeline: BUILT** — 12 project types (game, website, scraper, database, CLI, API, word processor, kernel, pipeline, chatbot, desktop, test suite). Planner→coder→reviewer architecture extended from game-only to all project types.
 - **24 local model configs: CONFIGURED** — 8 coding-specialized models (DeepSeek Coder 6.7B/1.3B, CodeLlama 7B/13B, StarCoder2 3B/7B, Qwen2.5-Coder 7B, Stable Code 3B) + 16 general models (Qwen2.5 0.5B/1.5B/3B/7B/14B/32B, Llama 3.2 1B/3B/8B, Phi-3 mini/medium, SmolLM2 135M/360M/1.7B, TinyLlama 1.1B). All loaded into model registry with dispatch routing.
-- **Enforcement refactor: COMPLETE** — hasPendingWork() moved to shared.ts as canonical single source. All 13 plugins BLOCKING. 125 runtime tests PASS.
+- **Enforcement refactor: COMPLETE** — hasPendingWork() moved to shared.ts as canonical single source. All 13 plugins BLOCKING. 125 runtime PASS.
 - **Multi-model game pipeline: BUILT** — planner→coder→reviewer pipeline for running games across multiple local models simultaneously. E2E tests written.
 - **Daemon/CLI wiring: COMPLETE** — model pipeline endpoints and CLI commands integrated.
 - **Gate-lite: GREEN** — `51a8dfff`; failures fixed.
@@ -293,7 +293,7 @@ fcb98aa1 chore: fresh gate-status + all Session 80 deliverables
 | Wave 15 | +~500 | config_mgmt 60, container_orch, db_pool, e2e_download 54, gpu_ml, notification, plugin_system ~100, rate_limiter, config_schema, opa_policy, systemd_units, pyproject_audit, makefile_audit 24, version_consistency | `5df45687` |
 | Wave 15-16 | +~500 | credential_vault 82, watchdog 72, deadline_enforce, version_dep 32, job_spec, message_bus, worktree_agent, config_schema, opa_policy, systemd_units, pyproject, makefile 24 | `2dedb532` |
 | Wave 16-17 | +~500 | code_review, mcp_connector, memory_persistence, travel_dispatch, sandbox_runner, skill_runner, agent_behavior, game_gen_dispatch, deploy_pipeline deep | `2eb47c7a` |
-| Wave 17-18 | +~500 | agent_memory, dockerfile_audit, shell_scripts, python_imports, skill_discovery, spec_docs, terraform_stack, yaml_config deep | `f6cc8a2c` |
+| Wave 17-18 | +~500 | dockerfile_audit, shell_scripts, python_imports, skill_discovery, spec_docs, terraform_stack, yaml_config deep | `f6cc8a2c` |
 | Wave 18-19 | +~500 | credential_vault continued, watchdog hardening, lifecycle tests, integration edge cases deep | `f6cc8a2c` |
 | Wave 19 | +67 | workflow_edge_cases deep | `aa06cfc5` |
 

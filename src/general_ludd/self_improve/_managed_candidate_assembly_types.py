@@ -12,6 +12,7 @@ from typing import Final
 from general_ludd.self_improve.model_candidates import (
     AzureContainerAppCandidateIdentity,
     AzureFoundryCandidateIdentity,
+    CatalogFreeTierCandidateIdentity,
     LocalGGUFCandidateIdentity,
     ModelCandidateIdentity,
     ModelCandidateProvider,
@@ -24,6 +25,7 @@ _PROVIDER_ORDER: Final = {
     ModelCandidateProvider.LOCAL_GGUF: 0,
     ModelCandidateProvider.AZURE_FOUNDRY: 1,
     ModelCandidateProvider.AZURE_CONTAINER_APP: 2,
+    ModelCandidateProvider.CATALOG_FREE_TIER: 3,
 }
 
 
@@ -153,6 +155,7 @@ class ManagedCandidateSource:
                 LocalGGUFCandidateIdentity,
                 AzureFoundryCandidateIdentity,
                 AzureContainerAppCandidateIdentity,
+                CatalogFreeTierCandidateIdentity,
             ),
             "identity must be a typed model candidate identity",
         )
@@ -226,8 +229,7 @@ class AssembledManagedCandidate:
             "assembled candidate must retain eligible states",
         )
         _require_value(
-            (self.resource_ownership, self.cleanup_action)
-            == _resource_contract(self.provider),
+            (self.resource_ownership, self.cleanup_action) == _resource_contract(self.provider),
             "resource contract does not match candidate provider",
         )
 
@@ -302,15 +304,11 @@ class ManagedCandidateAssembly:
             type(self.candidates) is tuple
             and bool(self.candidates)
             and len(self.candidates) <= MAX_MANAGED_CANDIDATES
-            and all(
-                isinstance(candidate, AssembledManagedCandidate)
-                for candidate in self.candidates
-            ),
+            and all(isinstance(candidate, AssembledManagedCandidate) for candidate in self.candidates),
             "candidates must be one bounded immutable candidate set",
         )
         _require_value(
-            tuple(candidate.ordinal for candidate in self.candidates)
-            == tuple(range(len(self.candidates))),
+            tuple(candidate.ordinal for candidate in self.candidates) == tuple(range(len(self.candidates))),
             "candidate ordinals must be contiguous from zero",
         )
         canonical = tuple(
@@ -326,9 +324,7 @@ class ManagedCandidateAssembly:
             canonical == self.candidates,
             "candidates must follow canonical provider and identity order",
         )
-        identities = tuple(
-            candidate.candidate_identity_digest for candidate in self.candidates
-        )
+        identities = tuple(candidate.candidate_identity_digest for candidate in self.candidates)
         _require_value(
             len(set(identities)) == len(identities),
             "candidates must have unique immutable identities",
@@ -350,10 +346,7 @@ class ManagedCandidateAssembly:
     def providers(self) -> tuple[ModelCandidateProvider, ...]:
         """Return represented providers in canonical order without duplicates."""
         represented = {candidate.provider for candidate in self.candidates}
-        return tuple(
-            provider
-            for provider in sorted(represented, key=_PROVIDER_ORDER.__getitem__)
-        )
+        return tuple(provider for provider in sorted(represented, key=_PROVIDER_ORDER.__getitem__))
 
     def payload(self) -> dict[str, object]:
         """Return the complete canonical artifact used for digest replay."""
@@ -363,9 +356,7 @@ class ManagedCandidateAssembly:
             "candidates": [candidate.payload() for candidate in self.candidates],
             "classification_digest": self.classification_digest,
             "protocol": self.protocol,
-            "required_providers": [
-                provider.value for provider in self.required_providers
-            ],
+            "required_providers": [provider.value for provider in self.required_providers],
             "task_text_digest": self.task_text_digest,
         }
 
@@ -393,9 +384,7 @@ class ManagedCandidateAssembly:
             "event": "self_improve_managed_candidates_assembled",
             "protocol": self.protocol,
             "providers": [provider.value for provider in self.providers],
-            "required_providers": [
-                provider.value for provider in self.required_providers
-            ],
+            "required_providers": [provider.value for provider in self.required_providers],
             "task_text_digest": self.task_text_digest,
         }
         return (*admitted, completed)
