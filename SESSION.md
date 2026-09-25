@@ -1,4 +1,4 @@
-## PRIMARY OBJECTIVE: IN PROGRESS — reconcile the exact v0.1.1 milestone and keep self-improvement as one workload on Gludd's universal orchestration core. HEAD `f4e07c7a5e8cfa7102ed396c708facdd0f376341` on `development` (2026-09-25). S83.157 completed in commit `80eacd4f7`; S83.158 merged at `824353d4b`, S83.162 merged at `565bc2141`, and S83.163 merged at `c272ede8c`. Open v0.1.1 tasks: S83.165, S83.166, floor config. Next: continue S83.165 cross-backend atomic self-improvement proof, S83.166 release promotion, and floor-config enforcement alignment.
+## PRIMARY OBJECTIVE: IN PROGRESS — reconcile the exact v0.1.1 milestone and keep self-improvement as one workload on Gludd's universal orchestration core. HEAD `2b492af9aabbc41c2258a0d2d59ea77bbf2585e3` on `development` (2026-09-25). S83.157 completed in commit `80eacd4f7`; S83.158 merged at `824353d4b`; S83.162 merged at `565bc2141`; S83.163 merged at `c272ede8c`; and S83.165 merged at `f4e07c7a5`. Completed tasks: S83.157, S83.158, S83.159, S83.160, S83.161, S83.162, S83.163, S83.164, S83.165, S83.167, S83.168. Open v0.1.1 tasks: S83.166, floor config. Next: continue S83.166 release promotion and floor-config enforcement alignment.
 
 ## CI Diagnosis — Run 35820838925 (SHA `bd9359c8a4728b06162fb7e51ddf152c9db29985`)
 - Failing jobs: `ansible-ee`, `molecule (1)`, `freellmapi-upstream-build (22.23.2)`, and five `test-shard (3.11, ...)` shards.
@@ -26,8 +26,8 @@
 ### Current State
 
 - S83.157 marked completed in `TASKS.md` with evidence commit `80eacd4f7`.
-- S83.158, S83.162, and S83.163 are now merged to `development`; stale worktrees cleaned.
-- Open v0.1.1 milestone tasks: S83.165, S83.166, floor config.
+- S83.158, S83.162, S83.163, and S83.165 are now merged to `development`; stale worktrees cleaned.
+- Open v0.1.1 milestone tasks: S83.166, floor config.
 - Active worktrees cleaned; remaining work proceeds on the main `development` checkout.
 
 ### Recent Commits (HEAD `bd9359c8a4728b06162fb7e51ddf152c9db29985`)
@@ -42,11 +42,10 @@ e0fe903f6 fix/progress-scope-release-milestone
 
 ### Next Steps
 
-1. Continue S83.165 cross-backend atomic self-improvement proof.
-2. Prepare S83.166 release promotion once S83.165 is green.
-3. Align floor-config enforcement.
-4. Rerun `make gate` on the exact HEAD after ledger refresh.
-5. Address the CI failure on run 35820838925.
+1. Prepare S83.166 release promotion.
+2. Align floor-config enforcement.
+3. Rerun `make gate` on the exact HEAD after ledger refresh.
+4. Address the CI failure on run 35820838925.
 
 ---
 
