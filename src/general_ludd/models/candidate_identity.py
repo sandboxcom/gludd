@@ -19,6 +19,7 @@ class ModelCandidateProvider(StrEnum):
     LOCAL_GGUF = "local_gguf"
     AZURE_FOUNDRY = "azure_foundry"
     AZURE_CONTAINER_APP = "azure_container_app"
+    AZURE_VM_VMSS = "azure_vm_vmss"
     CATALOG_FREE_TIER = "catalog_free_tier"
 
 
@@ -48,9 +49,7 @@ class CatalogFreeTierCandidateIdentity:
 
     def __post_init__(self) -> None:
         """Require canonical provider/model evidence from one exact catalog."""
-        if not isinstance(self.platform, str) or _PLATFORM_RE.fullmatch(
-            self.platform
-        ) is None:
+        if not isinstance(self.platform, str) or _PLATFORM_RE.fullmatch(self.platform) is None:
             raise ValueError("platform must be one canonical provider slug")
         if (
             not isinstance(self.model_id, str)
@@ -60,15 +59,21 @@ class CatalogFreeTierCandidateIdentity:
             or any(ord(character) < 0x20 for character in self.model_id)
         ):
             raise ValueError("model_id must be bounded canonical UTF-8 text")
-        if not isinstance(
-            self.catalog_version,
-            str,
-        ) or _CATALOG_VERSION_RE.fullmatch(self.catalog_version) is None:
+        if (
+            not isinstance(
+                self.catalog_version,
+                str,
+            )
+            or _CATALOG_VERSION_RE.fullmatch(self.catalog_version) is None
+        ):
             raise ValueError("catalog_version must be one canonical date version")
-        if not isinstance(
-            self.catalog_payload_sha256,
-            str,
-        ) or _DIGEST_RE.fullmatch(self.catalog_payload_sha256) is None:
+        if (
+            not isinstance(
+                self.catalog_payload_sha256,
+                str,
+            )
+            or _DIGEST_RE.fullmatch(self.catalog_payload_sha256) is None
+        ):
             raise ValueError("catalog_payload_sha256 must be one lowercase digest")
 
     @property

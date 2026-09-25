@@ -26,9 +26,7 @@ from general_ludd.models.candidate_identity import (
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _LABEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
-_REPOSITORY_RE = re.compile(
-    r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
-)
+_REPOSITORY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _API_VERSION_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}(?:-preview)?$")
 _MAX_CALLS = 16
 _MAX_TOKENS = 100_000_000
@@ -43,9 +41,22 @@ _CONTAINER_APP_RESOURCE_ID_RE = re.compile(
     r"Microsoft\.App/containerApps/(?P<app>[a-z0-9][a-z0-9-]{0,31})$"
 )
 _CONTAINER_APP_IMAGE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
-_CONTAINER_APP_PROFILE_TYPES = frozenset(
-    {"Consumption-GPU-NC8as-T4", "Consumption-GPU-NC24-A100"}
+_CONTAINER_APP_PROFILE_TYPES = frozenset({"Consumption-GPU-NC8as-T4", "Consumption-GPU-NC24-A100"})
+_VM_VMSS_RESOURCE_ID_RE = re.compile(
+    r"^/subscriptions/(?P<subscription>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+    r"[0-9a-f]{4}-[0-9a-f]{12})/resourceGroups/"
+    r"(?P<resource_group>[A-Za-z0-9_.()\-]{1,90})/providers/"
+    r"Microsoft\.Compute/(?P<resource_type>virtualMachines|virtualMachineScaleSets)/"
+    r"(?P<name>[a-z0-9][a-z0-9-]{0,63})$"
 )
+_VM_VMSS_IMAGE_URN_RE = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}:"
+    r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}:"
+    r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}:"
+    r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+)
+_VM_SIZE_RE = re.compile(r"^Standard_[A-Za-z0-9_]+$")
+_VM_VMSS_ENDPOINT_SUFFIXES = (".cloudapp.azure.com",)
 
 
 class AzureFoundryAPIFamily(StrEnum):
@@ -79,10 +90,7 @@ def azure_containerapp_evidence_identity_digest(
         not isinstance(workload_profile_type, str)
         or not workload_profile_type
         or len(workload_profile_type) > 200
-        or any(
-            character.isspace() or ord(character) < 32
-            for character in workload_profile_type
-        )
+        or any(character.isspace() or ord(character) < 32 for character in workload_profile_type)
     ):
         raise ValueError("workload_profile_type must be one bounded identifier")
     return _stable_digest(
@@ -130,18 +138,14 @@ class LocalGGUFCandidateIdentity:
             or filename.suffix.lower() != ".gguf"
         ):
             raise ValueError("filename must be one confined GGUF path")
-        if not isinstance(self.artifact_sha256, str) or _DIGEST_RE.fullmatch(
-            self.artifact_sha256.lower()
-        ) is None:
+        if not isinstance(self.artifact_sha256, str) or _DIGEST_RE.fullmatch(self.artifact_sha256.lower()) is None:
             raise ValueError("artifact_sha256 must be one SHA-256 digest")
         if (self.repo_id is None) != (self.revision is None):
             raise ValueError("repo_id and revision must be supplied together")
         if self.repo_id is not None:
             if _REPOSITORY_RE.fullmatch(self.repo_id) is None:
                 raise ValueError("repo_id must be one canonical owner/repository pair")
-            if not isinstance(self.revision, str) or _COMMIT_RE.fullmatch(
-                self.revision.lower()
-            ) is None:
+            if not isinstance(self.revision, str) or _COMMIT_RE.fullmatch(self.revision.lower()) is None:
                 raise ValueError("revision must be one immutable commit SHA")
             object.__setattr__(self, "revision", self.revision.lower())
         object.__setattr__(self, "artifact_sha256", self.artifact_sha256.lower())
@@ -207,10 +211,7 @@ class AzureFoundryCandidateIdentity:
         valid_api_version = (
             self.api_version == "v1"
             if self.api_family is AzureFoundryAPIFamily.AZURE_OPENAI
-            else (
-                isinstance(self.api_version, str)
-                and _API_VERSION_RE.fullmatch(self.api_version) is not None
-            )
+            else (isinstance(self.api_version, str) and _API_VERSION_RE.fullmatch(self.api_version) is not None)
         )
         if not valid_api_version:
             raise ValueError("api_version does not match the selected Azure API family")
@@ -274,9 +275,8 @@ class AzureContainerAppCandidateIdentity:
         if matched is None or self.resource_id.endswith("."):
             raise ValueError("resource_id must identify one canonical Container App")
         revision = _strict_label(self.revision_name, "revision_name")
-        if (
-            revision.casefold() in _MUTABLE_MODEL_VERSION_ALIASES
-            or not revision.startswith(f"{matched.group('app')}--")
+        if revision.casefold() in _MUTABLE_MODEL_VERSION_ALIASES or not revision.startswith(
+            f"{matched.group('app')}--"
         ):
             raise ValueError("revision_name must bind the exact Container App revision")
         if (
@@ -284,15 +284,9 @@ class AzureContainerAppCandidateIdentity:
             or _CONTAINER_APP_IMAGE_DIGEST_RE.fullmatch(self.image_digest) is None
         ):
             raise ValueError("image_digest must be one immutable sha256 image digest")
-        if (
-            not isinstance(self.model_name, str)
-            or _REPOSITORY_RE.fullmatch(self.model_name) is None
-        ):
+        if not isinstance(self.model_name, str) or _REPOSITORY_RE.fullmatch(self.model_name) is None:
             raise ValueError("model_name must be one canonical owner/repository pair")
-        if (
-            not isinstance(self.model_revision, str)
-            or _COMMIT_RE.fullmatch(self.model_revision) is None
-        ):
+        if not isinstance(self.model_revision, str) or _COMMIT_RE.fullmatch(self.model_revision) is None:
             raise ValueError("model_revision must be one immutable commit SHA")
         if self.workload_profile_type not in _CONTAINER_APP_PROFILE_TYPES:
             raise ValueError("workload_profile_type must be one supported GPU profile")
@@ -327,6 +321,73 @@ class AzureContainerAppCandidateIdentity:
             model_name=self.model_name,
             model_revision=self.model_revision,
             workload_profile_type=self.workload_profile_type,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class AzureVmVmssCandidateIdentity:
+    """Exact Azure VM or VMSS vLLM deployment identity without authorization data."""
+
+    endpoint: str
+    resource_id: str
+    instance_id: str
+    image_urn: str
+    model_name: str
+    model_revision: str
+    vm_size: str
+
+    def __post_init__(self) -> None:
+        """Reject mutable images, non-Azure origins, and partial ARM identity."""
+        _validate_vm_vmss_endpoint(self.endpoint)
+        if not isinstance(self.resource_id, str):
+            raise ValueError("resource_id must identify one canonical VM or VMSS")
+        matched = _VM_VMSS_RESOURCE_ID_RE.fullmatch(self.resource_id)
+        if matched is None or self.resource_id.endswith("."):
+            raise ValueError("resource_id must identify one canonical VM or VMSS")
+        _strict_label(self.instance_id, "instance_id")
+        if not isinstance(self.image_urn, str) or _VM_VMSS_IMAGE_URN_RE.fullmatch(self.image_urn) is None:
+            raise ValueError("image_urn must be one canonical publisher:offer:sku:version")
+        if not isinstance(self.model_name, str) or _REPOSITORY_RE.fullmatch(self.model_name) is None:
+            raise ValueError("model_name must be one canonical owner/repository pair")
+        if not isinstance(self.model_revision, str) or _COMMIT_RE.fullmatch(self.model_revision) is None:
+            raise ValueError("model_revision must be one immutable commit SHA")
+        if not isinstance(self.vm_size, str) or _VM_SIZE_RE.fullmatch(self.vm_size) is None:
+            raise ValueError("vm_size must be one canonical Azure VM size")
+
+    @property
+    def provider(self) -> ModelCandidateProvider:
+        """Return the stable provider category."""
+        return ModelCandidateProvider.AZURE_VM_VMSS
+
+    @property
+    def identity_digest(self) -> str:
+        """Return a stable digest binding VM/VMSS, image, model, and SKU."""
+        return _stable_digest(
+            {
+                "endpoint": self.endpoint,
+                "image_urn": self.image_urn,
+                "instance_id": self.instance_id,
+                "model_name": self.model_name,
+                "model_revision": self.model_revision,
+                "protocol": "gludd-model-candidate-v1",
+                "provider": self.provider.value,
+                "resource_id": self.resource_id,
+                "vm_size": self.vm_size,
+            }
+        )
+
+    @property
+    def evidence_identity_digest(self) -> str:
+        """Bind model/image/SKU truth while excluding ephemeral instance coordinates."""
+        return _stable_digest(
+            {
+                "image_urn": self.image_urn,
+                "model_name": self.model_name,
+                "model_revision": self.model_revision,
+                "protocol": "gludd-vm-vmss-candidate-evidence-v1",
+                "provider": self.provider.value,
+                "vm_size": self.vm_size,
+            }
         )
 
 
@@ -397,10 +458,40 @@ def _validate_container_app_endpoint(endpoint: object) -> None:
         raise ValueError("endpoint must be the root of one Azure Container App")
 
 
+def _validate_vm_vmss_endpoint(endpoint: object) -> None:
+    if (
+        not isinstance(endpoint, str)
+        or not endpoint
+        or endpoint != endpoint.strip()
+        or len(endpoint.encode("utf-8")) > 2_048
+    ):
+        raise ValueError("endpoint must be one bounded canonical Azure VM URL")
+    try:
+        parsed = urlsplit(endpoint)
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("endpoint must be one bounded canonical Azure VM URL") from exc
+    hostname = parsed.hostname
+    if (
+        parsed.scheme != "https"
+        or hostname is None
+        or parsed.netloc != hostname
+        or not hostname.endswith(_VM_VMSS_ENDPOINT_SUFFIXES)
+        or parsed.username is not None
+        or parsed.password is not None
+        or port is not None
+        or parsed.path != ""
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("endpoint must be the root of one Azure VM or VMSS")
+
+
 ModelCandidateIdentity = (
     LocalGGUFCandidateIdentity
     | AzureFoundryCandidateIdentity
     | AzureContainerAppCandidateIdentity
+    | AzureVmVmssCandidateIdentity
     | CatalogFreeTierCandidateIdentity
 )
 
@@ -443,9 +534,7 @@ class BackendInfrastructureError(RuntimeError):
         self.failure = failure
 
 
-LOCAL_PROPOSAL_INFRASTRUCTURE_ERROR_MARKER = (
-    "SELF_IMPROVE_LOCAL_PROPOSAL_INFRASTRUCTURE_ERROR"
-)
+LOCAL_PROPOSAL_INFRASTRUCTURE_ERROR_MARKER = "SELF_IMPROVE_LOCAL_PROPOSAL_INFRASTRUCTURE_ERROR"
 
 
 class BackendPolicyError(RuntimeError):
@@ -460,12 +549,7 @@ class BackendPolicyError(RuntimeError):
 
 
 def _bounded_integer(value: object, field_name: str, *, minimum: int, maximum: int) -> int:
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, int)
-        or value < minimum
-        or value > maximum
-    ):
+    if isinstance(value, bool) or not isinstance(value, int) or value < minimum or value > maximum:
         raise ValueError(f"{field_name} must be an integer in {minimum}..{maximum}")
     return value
 
@@ -584,6 +668,7 @@ class BoundedCandidateSession(Generic[_RequestT, _ResponseT]):
                 LocalGGUFCandidateIdentity,
                 AzureFoundryCandidateIdentity,
                 AzureContainerAppCandidateIdentity,
+                AzureVmVmssCandidateIdentity,
                 CatalogFreeTierCandidateIdentity,
             ),
         ):
@@ -671,6 +756,7 @@ class BoundedCandidateSession(Generic[_RequestT, _ResponseT]):
                     LocalGGUFCandidateIdentity,
                     AzureFoundryCandidateIdentity,
                     AzureContainerAppCandidateIdentity,
+                    AzureVmVmssCandidateIdentity,
                     CatalogFreeTierCandidateIdentity,
                 ),
             )
@@ -682,14 +768,12 @@ class BoundedCandidateSession(Generic[_RequestT, _ResponseT]):
             in {
                 ModelCandidateProvider.AZURE_FOUNDRY,
                 ModelCandidateProvider.AZURE_CONTAINER_APP,
+                ModelCandidateProvider.AZURE_VM_VMSS,
             }
             and not self._azure_enabled
         ):
             raise BackendPolicyError(BackendPolicyFailure.AZURE_OPT_IN_REQUIRED)
-        if (
-            current.provider is ModelCandidateProvider.CATALOG_FREE_TIER
-            and not self._external_enabled
-        ):
+        if current.provider is ModelCandidateProvider.CATALOG_FREE_TIER and not self._external_enabled:
             raise BackendPolicyError(BackendPolicyFailure.EXTERNAL_OPT_IN_REQUIRED)
 
     def _reserve(
@@ -699,12 +783,10 @@ class BoundedCandidateSession(Generic[_RequestT, _ResponseT]):
         max_output_tokens: int,
         estimated_cost_microusd: int,
     ) -> None:
-        input_tokens, max_output_tokens, estimated_cost_microusd, tokens = (
-            self._validated_reservation(
-                input_tokens=input_tokens,
-                max_output_tokens=max_output_tokens,
-                estimated_cost_microusd=estimated_cost_microusd,
-            )
+        input_tokens, max_output_tokens, estimated_cost_microusd, tokens = self._validated_reservation(
+            input_tokens=input_tokens,
+            max_output_tokens=max_output_tokens,
+            estimated_cost_microusd=estimated_cost_microusd,
         )
         self._calls_started += 1
         self._reserved_tokens += tokens
@@ -738,20 +820,13 @@ class BoundedCandidateSession(Generic[_RequestT, _ResponseT]):
         if self._calls_started >= self._budget.max_calls:
             raise BackendPolicyError(BackendPolicyFailure.CALL_BUDGET_EXHAUSTED)
         if input_tokens > self._budget.max_input_tokens:
-            raise BackendPolicyError(
-                BackendPolicyFailure.INPUT_TOKEN_BUDGET_EXCEEDED
-            )
+            raise BackendPolicyError(BackendPolicyFailure.INPUT_TOKEN_BUDGET_EXCEEDED)
         if max_output_tokens > self._budget.max_output_tokens:
-            raise BackendPolicyError(
-                BackendPolicyFailure.OUTPUT_TOKEN_BUDGET_EXCEEDED
-            )
+            raise BackendPolicyError(BackendPolicyFailure.OUTPUT_TOKEN_BUDGET_EXCEEDED)
         tokens = input_tokens + max_output_tokens
         if self._reserved_tokens + tokens > self._budget.max_total_tokens:
             raise BackendPolicyError(BackendPolicyFailure.TOTAL_TOKEN_BUDGET_EXCEEDED)
-        if (
-            self._reserved_cost_microusd + estimated_cost_microusd
-            > self._budget.max_cost_microusd
-        ):
+        if self._reserved_cost_microusd + estimated_cost_microusd > self._budget.max_cost_microusd:
             raise BackendPolicyError(BackendPolicyFailure.COST_BUDGET_EXCEEDED)
         return input_tokens, max_output_tokens, estimated_cost_microusd, tokens
 
@@ -761,6 +836,7 @@ __all__ = (
     "AzureContainerAppCandidateIdentity",
     "AzureFoundryAPIFamily",
     "AzureFoundryCandidateIdentity",
+    "AzureVmVmssCandidateIdentity",
     "BackendBudgetSnapshot",
     "BackendCallBudget",
     "BackendFailure",
