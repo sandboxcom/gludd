@@ -1,4 +1,4 @@
-## PRIMARY OBJECTIVE: IN PROGRESS — reconcile the exact v0.1.1 milestone and keep self-improvement as one workload on Gludd's universal orchestration core. HEAD `6c5059205907ff05e5bd6e26f878a9cf50dcf630` on `development` (2026-09-25). S83.157 completed in commit `80eacd4f7`; S83.158 remains in progress (dedicated worktree branch has no unique commits; scheduler sub-branch `c2981a346` carries S83.163/S83.165 work). Open v0.1.1 tasks: S83.158, S83.162, S83.163, S83.165, S83.166. Next: continue S83.158 durable-scheduler integration, merge completed worktree branches, and rerun the exact-head gate.
+## PRIMARY OBJECTIVE: IN PROGRESS — reconcile the exact v0.1.1 milestone and keep self-improvement as one workload on Gludd's universal orchestration core. HEAD `f4e07c7a5e8cfa7102ed396c708facdd0f376341` on `development` (2026-09-25). S83.157 completed in commit `80eacd4f7`; S83.158 merged at `824353d4b`, S83.162 merged at `565bc2141`, and S83.163 merged at `c272ede8c`. Open v0.1.1 tasks: S83.165, S83.166, floor config. Next: continue S83.165 cross-backend atomic self-improvement proof, S83.166 release promotion, and floor-config enforcement alignment.
 
 ## CI Diagnosis — Run 35820838925 (SHA `bd9359c8a4728b06162fb7e51ddf152c9db29985`)
 - Failing jobs: `ansible-ee`, `molecule (1)`, `freellmapi-upstream-build (22.23.2)`, and five `test-shard (3.11, ...)` shards.
@@ -26,9 +26,9 @@
 ### Current State
 
 - S83.157 marked completed in `TASKS.md` with evidence commit `80eacd4f7`.
-- S83.158 not yet completed: its dedicated worktree branch (`agent-s83-158`) has no unique commits; the `agent-s83-158-scheduler` branch at `c2981a346` contains commits tagged for S83.163/S83.165.
-- Open v0.1.1 milestone tasks: S83.158, S83.162, S83.163, S83.165, S83.166.
-- Active worktrees remain for S83.157, S83.158 (claim/scheduler), S83.162, S83.163, S83.165, S83.166.
+- S83.158, S83.162, and S83.163 are now merged to `development`; stale worktrees cleaned.
+- Open v0.1.1 milestone tasks: S83.165, S83.166, floor config.
+- Active worktrees cleaned; remaining work proceeds on the main `development` checkout.
 
 ### Recent Commits (HEAD `bd9359c8a4728b06162fb7e51ddf152c9db29985`)
 
@@ -42,10 +42,11 @@ e0fe903f6 fix/progress-scope-release-milestone
 
 ### Next Steps
 
-1. Continue S83.158 durable-todo scheduler integration.
-2. Merge or clean up completed worktree branches.
-3. Rerun `make gate` on the exact HEAD after ledger refresh.
-4. Address the CI failure on run 35820838925.
+1. Continue S83.165 cross-backend atomic self-improvement proof.
+2. Prepare S83.166 release promotion once S83.165 is green.
+3. Align floor-config enforcement.
+4. Rerun `make gate` on the exact HEAD after ledger refresh.
+5. Address the CI failure on run 35820838925.
 
 ---
 
