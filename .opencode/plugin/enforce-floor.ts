@@ -23,19 +23,19 @@ function _tunable(overridePath: string, envVar: string, dflt: string): number {
   } catch {}
   return base
 }
-const FLOOR = _tunable("/tmp/gludd-floor-override", "CLAUDE_AGENT_FLOOR", "10")
-const CEILING = _tunable("/tmp/gludd-ceiling-override", "CLAUDE_AGENT_CEILING", "10")
+const FLOOR = _tunable("/tmp/gludd-floor-override", "CLAUDE_AGENT_FLOOR", "4")
+const CEILING = _tunable("/tmp/gludd-ceiling-override", "CLAUDE_AGENT_CEILING", "4")
 const TARGET = Math.min(
-  parseInt(process.env.CLAUDE_AGENT_TARGET || "10", 10),
+  parseInt(process.env.CLAUDE_AGENT_TARGET || "4", 10),
   CEILING,
 )
 // A wave is the complete set of parallel dispatches in one assistant message.
 // Keep this independently tunable for plugin e2e tests, but default to the
-// project-wide ten-agent ceiling.
+// project-wide four-agent ceiling.
 const WAVE_WIDTH = _tunable(
   "/tmp/gludd-dispatch-wave-width",
   "GLUDD_DISPATCH_WAVE_WIDTH",
-  "10",
+  "4",
 )
 const FLOOR_ENFORCE = process.env.GLUDD_FLOOR_ENFORCE !== "0"
 const STREAK_PLUGIN_NAME = "enforce-floor"
