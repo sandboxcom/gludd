@@ -1,4 +1,39 @@
-## PRIMARY OBJECTIVE: v0.1.1 MILESTONE — all S83.157–S83.168 tasks complete, floor-config enforcement alignment IN PROGRESS. HEAD `bfbcb8c7c64dc364715f24eb577fa7acd9d0f8be` on `development` (2026-09-25). S83.157 completed in commit `80eacd4f7`; S83.158 merged at `824353d4b`; S83.162 merged at `565bc2141`; S83.163 merged at `c272ede8c`; S83.165 merged at `f4e07c7a5`; S83.166 merged at `2aa29219e`; S83.167 completed; S83.168 completed. Floor-config enforcement alignment is **IN PROGRESS** (`agent-floor-config-v3` at `c231e2a20` is not yet merged into `development` per `make git-is-ancestor A=c231e2a20 B=HEAD` exit=1). 84 broader backlog items remain outside v0.1.1. Smoke test PASSED on current HEAD. Next: merge the floor-config branch into `development`, then push `development` once the AA032 blocker is resolved, run `make gate` on the resulting HEAD, and `make release-cut TAG='v0.1.1' MSG='...'` once CI is green.
+## PRIMARY OBJECTIVE: v0.1.1 MILESTONE — all S83.157–S83.168 tasks complete, floor-config enforcement alignment MERGED. HEAD `33b4c482a` on `development` (2026-09-25). S83.157 completed in commit `80eacd4f7`; S83.158 merged at `824353d4b`; S83.162 merged at `565bc2141`; S83.163 merged at `c272ede8c`; S83.165 merged at `f4e07c7a5`; S83.166 merged at `2aa29219e`; S83.167 completed; S83.168 completed; floor-config enforcement alignment merged at `33b4c482a`. 84 broader backlog items remain outside v0.1.1. Remote is diverged with unpushed commits; AA032 push blocker active (CI NO RUN for current HEAD). Next: resolve AA032 blocker, push `development`, run `make gate` on the resulting HEAD, and `make release-cut TAG='v0.1.1' MSG='...'` once CI is green.
+
+## SESSION 91 — 2026-09-25 — HEAD `33b4c482aa09bcedcfd23e7e465fa3db64e5eece`: final status update
+
+### Current State
+
+- All v0.1.1 milestone tasks (S83.157–S83.168) are complete and merged to `development`.
+- Floor-config enforcement alignment is **MERGED** into `development` at `33b4c482a` (`merge: agent-floor-config-v3 worktree work into development`).
+- HEAD: `33b4c482aa09bcedcfd23e7e465fa3db64e5eece` on `development`.
+- Working tree: CLEAN (prior to this SESSION.md edit).
+- Remote: diverged with unpushed commits.
+- CI: NO RUN for current HEAD.
+- Smoke test: PASSED on current HEAD.
+- Active workstreams: 0; open task IDs: 0.
+- Lingering worktree: `agent-floor-config-v2` at `bfbcb8c7c` (superseded by `agent-floor-config-v3` merge).
+- 84 broader backlog items remain outside the v0.1.1 milestone.
+
+### Next Steps
+
+1. Resolve the AA032 push-guard blocker.
+2. Push `development` to remote to trigger fresh CI.
+3. Run `make gate` on the resulting HEAD.
+4. `make release-cut TAG='v0.1.1' MSG='release: v0.1.1'` once CI is green.
+5. `make verify-release-completeness TAG=v0.1.1` after the release job publishes.
+
+## Current Gate Status
+<!-- gate:begin -->
+- HEAD `33b4c482aa09bcedcfd23e7e465fa3db64e5eece` on `development`. Working tree clean (prior to this SESSION.md edit). Remote is diverged with unpushed commits.
+- CI: NO RUN for current HEAD `33b4c482aa09`; prior run 35820838925 conclusion=failure on SHA `bd9359c8a4728b06162fb7e51ddf152c9db29985` is stale.
+- Smoke test: PASSED on `33b4c482aa09bcedcfd23e7e465fa3db64e5eece`.
+- Local gate status: needs rerun on current HEAD before release-cut.
+- Floor-config enforcement alignment: MERGED at `33b4c482a`.
+- AA032 push blocker: ACTIVE — CI NO RUN for current HEAD; remote diverged with unpushed commits.
+<!-- gate:end -->
+
+---
 
 ## SESSION 90 — 2026-09-25 — HEAD `bfbcb8c7c64dc364715f24eb577fa7acd9d0f8be`: final v0.1.1 milestone operational record
 
