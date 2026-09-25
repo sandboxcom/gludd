@@ -39,10 +39,18 @@ jobs:
               mode: 0o600,
               flag: 'wx',
             });
+      - name: Resolve self-improve comparison refs
+        id: self-improve-refs
+        run: |
+          echo "reference=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "baseline=$(git rev-parse HEAD~1)" >> "$GITHUB_OUTPUT"
       - name: Deploy, exercise, and tear down one bounded model candidate
         run: make azure-self-improve-live-proof
         env:
           SELF_IMPROVE_MODEL_PATH: ""
+          SELF_IMPROVE_BASELINE_REF: ${{ steps.self-improve-refs.outputs.baseline }}
+          SELF_IMPROVE_REFERENCE_REF: ${{ steps.self-improve-refs.outputs.reference }}
+          TARGET: azure-containerapp-live
           AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE: workload_identity
           AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE: ""
           AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE: ${{ runner.temp }}/gludd-azure-oidc.jwt

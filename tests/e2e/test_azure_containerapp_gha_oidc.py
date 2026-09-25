@@ -29,10 +29,7 @@ def test_live_workflow_uses_protected_oidc_without_static_credentials() -> None:
 def test_live_workflow_materializes_one_private_short_lived_assertion() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    assert (
-        "actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3"
-        in workflow
-    )
+    assert "actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3" in workflow
     assert "core.getIDToken('api://AzureADTokenExchange')" in workflow
     assert "process.env.RUNNER_TEMP" in workflow
     assert "gludd-azure-oidc.jwt" in workflow
@@ -56,3 +53,14 @@ def test_live_workflow_calls_only_the_bounded_make_contract() -> None:
     assert "AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET: always_destroy" in workflow
     assert 'SELF_IMPROVE_MODEL_PATH: ""' in workflow
     assert re.search(r"timeout-minutes:\s+75\b", workflow)
+
+
+def test_live_workflow_supplies_self_improve_comparison_refs() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "id: self-improve-refs" in workflow
+    assert 'echo "reference=${{ github.sha }}"' in workflow
+    assert "git rev-parse HEAD~1" in workflow
+    assert "SELF_IMPROVE_BASELINE_REF: ${{ steps.self-improve-refs.outputs.baseline }}" in workflow
+    assert "SELF_IMPROVE_REFERENCE_REF: ${{ steps.self-improve-refs.outputs.reference }}" in workflow
+    assert "TARGET: azure-containerapp-live" in workflow
