@@ -704,8 +704,36 @@ export function hasTasksMdPendingWork(tasksMdPath: string): boolean {
   try {
     if (!fs.existsSync(tasksMdPath)) return false
     const content = fs.readFileSync(tasksMdPath, "utf8")
-    if (/^\s*[-*]\s*\[\s*\]/m.test(content)) return true
     if (/\|\s*(NOT STARTED|IN PROGRESS|PENDING)\s*\|/im.test(content)) return true
+
+    // Milestone-aware checkbox scan: only unchecked tasks inside the
+    // declared exact milestone range count as pending work. Backlog items
+    // outside the active milestone are visible inventory, not release-blocking
+    // work. Mirrors scripts/task_scope.py.
+    const milestoneMatch = content.match(
+      /\b(v\d+\.\d+\.\d+)\s+milestone\s+is\s+the\s+exact\s+task\s+set\s+([A-Za-z]+\d+)\.(\d+)\s*[-\u2013]\s+([A-Za-z]+\d+)\.(\d+)/i,
+    )
+    if (milestoneMatch) {
+      const prefix = milestoneMatch[2]
+      const start = parseInt(milestoneMatch[3], 10)
+      const endPrefix = milestoneMatch[4]
+      const end = parseInt(milestoneMatch[5], 10)
+      if (prefix === endPrefix && end >= start) {
+        const scopedRe = new RegExp(
+          "^\\s*[-*]\\s*\\[\\s*\\]\\s+(" + prefix + "\\.\\d+)",
+          "gim",
+        )
+        let m: RegExpExecArray | null
+        while ((m = scopedRe.exec(content)) !== null) {
+          const num = parseInt(m[1].split(".")[1], 10)
+          if (num >= start && num <= end) return true
+        }
+        return false
+      }
+    }
+
+    // No valid milestone declaration: fall back to repository-wide scan.
+    if (/^\s*[-*]\s*\[\s*\]/m.test(content)) return true
     return false
   } catch {
     return false
