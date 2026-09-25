@@ -1,9 +1,10 @@
-## PRIMARY OBJECTIVE: IN PROGRESS — reconcile the exact v0.1.1 milestone and keep self-improvement as one workload on Gludd's universal orchestration core. Candidate `861fec6489cb4eef0bb823ea1180e0188d2b2c44` passed 68 focused release-readiness tests with 92% aggregate coverage. Its full gate reached unit-3b batch 12 after all static, type, collection, enforcement, integration, and earlier unit phases passed; the sole failure was this operational record exceeding its 30-day freshness contract. Next: validate this refresh, commit it separately, rerun the exact-head gate, then merge the readiness and universal-boundary branches sequentially into `development`.
+## PRIMARY OBJECTIVE: IN PROGRESS — reconcile the exact v0.1.1 milestone on branch `project-ownership-progress` at HEAD `f10386caa`. Six v0.1.1 tasks remain open (S83.157, S83.158, S83.162, S83.163, S83.165, S83.166); self-improvement remains one workload on Gludd's universal orchestration core. The previous full gate reached unit-3b batch 12 after all static, type, collection, enforcement, integration, and earlier unit phases passed; the sole failure was this operational record exceeding its 30-day freshness contract. Next: validate this refresh, commit it separately, rerun the exact-head gate, then continue the v0.1.1 readiness work.
 
 ## Current Gate Status
 <!-- gate:begin -->
-- Candidate `861fec6489cb4eef0bb823ea1180e0188d2b2c44`: focused readiness suite PASS (68 tests; 92% aggregate coverage; per-file floors satisfied).
-- Full gate: all non-test phases PASS; integration PASS (3,376 passed, 13 skipped); unit shards through unit-3b batch 11 PASS. Unit-3b batch 12 reported one failure because `SESSION.md` was 32 days old. Exact-head rerun pending this refresh commit.
+- Candidate `f10386caa` on `project-ownership-progress`: six open v0.1.1 tasks (S83.157, S83.158, S83.162, S83.163, S83.165, S83.166); local tree clean; remote diverged with 10 unpushed commits.
+- Previous full gate: all non-test phases PASS; integration PASS (3,376 passed, 13 skipped); unit shards through unit-3b batch 11 PASS. Unit-3b batch 12 reported one failure because `SESSION.md` was >30 days old. Exact-head rerun pending this refresh commit.
+- CI: NO RUN for `f10386caa`.
 <!-- gate:end -->
 
 ---
