@@ -45,20 +45,12 @@ _VMSS_PLAN = {
     "azurerm_virtual_network.worker": "azurerm_virtual_network",
     "azurerm_subnet.worker": "azurerm_subnet",
     "azurerm_network_security_group.worker": "azurerm_network_security_group",
-    "azurerm_subnet_network_security_group_association.worker": (
-        "azurerm_subnet_network_security_group_association"
-    ),
+    "azurerm_subnet_network_security_group_association.worker": ("azurerm_subnet_network_security_group_association"),
     "azurerm_public_ip.egress": "azurerm_public_ip",
     "azurerm_nat_gateway.worker": "azurerm_nat_gateway",
-    "azurerm_nat_gateway_public_ip_association.worker": (
-        "azurerm_nat_gateway_public_ip_association"
-    ),
-    "azurerm_subnet_nat_gateway_association.worker": (
-        "azurerm_subnet_nat_gateway_association"
-    ),
-    "azurerm_linux_virtual_machine_scale_set.worker": (
-        "azurerm_linux_virtual_machine_scale_set"
-    ),
+    "azurerm_nat_gateway_public_ip_association.worker": ("azurerm_nat_gateway_public_ip_association"),
+    "azurerm_subnet_nat_gateway_association.worker": ("azurerm_subnet_nat_gateway_association"),
+    "azurerm_linux_virtual_machine_scale_set.worker": ("azurerm_linux_virtual_machine_scale_set"),
 }
 
 
@@ -102,7 +94,23 @@ class _SdkReader(Protocol):
         scale_set_id: str,
     ) -> tuple[AzureGpuWorkerInstance, ...]: ...
 
+    def resolve_single_vm(
+        self,
+        *,
+        credentials: AzureAcceleratorCredentials,
+        spec: AzureGpuWorkerProvisioningSpec,
+        vm_id: str,
+    ) -> AzureGpuWorkerInstance: ...
+
     def remaining_owned_resource_ids(
+        self,
+        *,
+        credentials: AzureAcceleratorCredentials,
+        spec: AzureGpuWorkerProvisioningSpec,
+        owned_resource_ids: tuple[str, ...],
+    ) -> tuple[str, ...]: ...
+
+    def delete_owned_resources(
         self,
         *,
         credentials: AzureAcceleratorCredentials,
@@ -137,9 +145,7 @@ class AzureGpuWorkerRuntimeTrace:
             raise ValueError("phase is invalid")
         if not isinstance(self.state, TerraformRuntimeState):
             raise ValueError("state must be TerraformRuntimeState")
-        if not isinstance(self.operation_digest, str) or _HEX_DIGEST.fullmatch(
-            self.operation_digest
-        ) is None:
+        if not isinstance(self.operation_digest, str) or _HEX_DIGEST.fullmatch(self.operation_digest) is None:
             raise ValueError("operation_digest is invalid")
         if (
             isinstance(self.elapsed_seconds, bool)
@@ -156,11 +162,7 @@ def _discard_trace(_trace: AzureGpuWorkerRuntimeTrace) -> None:
 def _read_json(path: Path, phase: str) -> object:
     try:
         metadata = path.lstat()
-        if (
-            not stat.S_ISREG(metadata.st_mode)
-            or path.is_symlink()
-            or not 0 < metadata.st_size <= _MAX_JSON_BYTES
-        ):
+        if not stat.S_ISREG(metadata.st_mode) or path.is_symlink() or not 0 < metadata.st_size <= _MAX_JSON_BYTES:
             raise ValueError
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
@@ -184,12 +186,7 @@ def _owned_ids(value: object, resource_group_id: str) -> tuple[str, ...]:
     if not isinstance(value, list) or not value:
         raise ValueError
     prefix = f"{resource_group_id.lower()}/providers/"
-    if any(
-        not isinstance(item, str)
-        or not item.lower().startswith(prefix)
-        or len(item) > 2_048
-        for item in value
-    ):
+    if any(not isinstance(item, str) or not item.lower().startswith(prefix) or len(item) > 2_048 for item in value):
         raise ValueError
     result = tuple(value)
     if len({item.lower() for item in result}) != len(result):
@@ -261,11 +258,7 @@ def _audit_plan(document: object, strategy: AzureExecutionStrategy) -> None:
         changes = root.get("resource_changes")
         if not isinstance(changes, list):
             raise ValueError
-        expected = (
-            _SINGLE_VM_PLAN
-            if strategy is AzureExecutionStrategy.SINGLE_VM
-            else _VMSS_PLAN
-        )
+        expected = _SINGLE_VM_PLAN if strategy is AzureExecutionStrategy.SINGLE_VM else _VMSS_PLAN
         observed: dict[str, str] = {}
         for raw in changes:
             change = _mapping(raw)

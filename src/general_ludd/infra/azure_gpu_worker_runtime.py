@@ -191,11 +191,20 @@ class AzureGpuWorkerInfrastructureRuntime:
         self,
         outputs: Mapping[str, object],
     ) -> ProvisionedModelWorkerPool:
-        return _parse_single_vm_outputs(
+        parsed = _parse_single_vm_outputs(
             outputs,
             spec=self._spec,
             operation_digest=self.operation_digest,
         )
+        with self._credentials() as credentials:
+            instance = self._sdk.resolve_single_vm(
+                credentials=credentials,
+                spec=self._spec,
+                vm_id=parsed.hosts[0].host_id,
+            )
+        if instance.host_id != parsed.hosts[0].host_id or instance.address != parsed.hosts[0].address:
+            raise ValueError
+        return parsed
 
     def _parse_vmss(
         self,
@@ -315,6 +324,17 @@ class AzureGpuWorkerInfrastructureRuntime:
         self._require_owned(deployment)
         _terraform_dir, _plan_file, _plan_json, output_json = self._paths()
         self._invoke("destroy", json_file=output_json, timeout_seconds=7_200)
+        try:
+            with self._credentials() as credentials:
+                self._sdk.delete_owned_resources(
+                    credentials=credentials,
+                    spec=self._spec,
+                    owned_resource_ids=deployment.owned_resource_ids,
+                )
+        except AzureGpuWorkerRuntimeError:
+            raise
+        except Exception:
+            raise AzureGpuWorkerRuntimeError("cleanup") from None
 
     def exists(self, deployment: ProvisionedModelWorkerPool) -> bool:
         """Independently enumerate whether any exact owned ARM ID remains."""

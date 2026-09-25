@@ -22,10 +22,7 @@ from general_ludd.infra.azure_gpu_worker_sdk import (
 _SUBSCRIPTION = "00000000-0000-4000-8000-000000000001"
 _RESOURCE_GROUP = "gludd-accelerators"
 _RESOURCE_GROUP_ID = f"/subscriptions/{_SUBSCRIPTION}/resourceGroups/{_RESOURCE_GROUP}"
-_SCALE_SET_ID = (
-    f"{_RESOURCE_GROUP_ID}/providers/Microsoft.Compute/"
-    "virtualMachineScaleSets/gludd-worker-001-vmss"
-)
+_SCALE_SET_ID = f"{_RESOURCE_GROUP_ID}/providers/Microsoft.Compute/virtualMachineScaleSets/gludd-worker-001-vmss"
 
 
 def _credentials() -> AzureAcceleratorCredentials:
@@ -62,8 +59,7 @@ def _spec() -> AzureGpuWorkerProvisioningSpec:
         expires_at_utc="2026-09-20T12:00:00Z",
         availability_zones=("1",),
         user_assigned_identity_id=(
-            f"{_RESOURCE_GROUP_ID}/providers/Microsoft.ManagedIdentity/"
-            "userAssignedIdentities/gludd-worker"
+            f"{_RESOURCE_GROUP_ID}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/gludd-worker"
         ),
         rdma_enabled=True,
     )
@@ -100,10 +96,28 @@ class _VmOperations:
 
 
 @dataclass
+class _SingleVmOperations:
+    vm: object
+    calls: list[tuple[str, str]] = field(default_factory=list)
+
+    def get(self, resource_group: str, vm_name: str) -> object:
+        self.calls.append((resource_group, vm_name))
+        return self.vm
+
+
+@dataclass
+class _DeleteOperations:
+    deleted: list[tuple[str, str]] = field(default_factory=list)
+
+    def delete_by_id(self, resource_id: str, api_version: str) -> object:
+        self.deleted.append((resource_id, api_version))
+        return None
+
+
+@dataclass
 class _ComputeClient(_Closable):
-    virtual_machine_scale_set_vms: _VmOperations = field(
-        default_factory=lambda: _VmOperations([])
-    )
+    virtual_machine_scale_set_vms: _VmOperations = field(default_factory=lambda: _VmOperations([]))
+    virtual_machines: _SingleVmOperations = field(default_factory=lambda: _SingleVmOperations(object()))
 
 
 @dataclass
@@ -112,6 +126,7 @@ class _ResourceOperations:
     resources: list[object]
     get_calls: list[tuple[str, str]] = field(default_factory=list)
     list_calls: list[str] = field(default_factory=list)
+    delete: _DeleteOperations = field(default_factory=lambda: _DeleteOperations())
 
     def get_by_id(self, resource_id: str, api_version: str) -> object:
         self.get_calls.append((resource_id, api_version))
@@ -121,12 +136,14 @@ class _ResourceOperations:
         self.list_calls.append(resource_group)
         return self.resources
 
+    def delete_by_id(self, resource_id: str, api_version: str) -> object:
+        self.delete.deleted.append((resource_id, api_version))
+        return None
+
 
 @dataclass
 class _ResourceClient(_Closable):
-    resources: _ResourceOperations = field(
-        default_factory=lambda: _ResourceOperations({}, [])
-    )
+    resources: _ResourceOperations = field(default_factory=lambda: _ResourceOperations({}, []))
 
 
 def _vm(instance: str) -> object:
@@ -135,9 +152,7 @@ def _vm(instance: str) -> object:
     return SimpleNamespace(
         id=vm_id,
         name=instance,
-        network_profile=SimpleNamespace(
-            network_interfaces=[SimpleNamespace(id=nic_id, primary=True)]
-        ),
+        network_profile=SimpleNamespace(network_interfaces=[SimpleNamespace(id=nic_id, primary=True)]),
     )
 
 
@@ -172,9 +187,7 @@ def _reader(
 def test_resolves_exact_vmss_private_inventory_and_closes_sdk_clients() -> None:
     first = _vm("000001")
     second = _vm("000000")
-    compute = _ComputeClient(
-        virtual_machine_scale_set_vms=_VmOperations([first, second])
-    )
+    compute = _ComputeClient(virtual_machine_scale_set_vms=_VmOperations([first, second]))
     first_nic = first.network_profile.network_interfaces[0].id
     second_nic = second.network_profile.network_interfaces[0].id
     resource = _ResourceClient(
@@ -195,9 +208,7 @@ def test_resolves_exact_vmss_private_inventory_and_closes_sdk_clients() -> None:
         (f"{_SCALE_SET_ID}/virtualMachines/000000", "10.43.1.4"),
         (f"{_SCALE_SET_ID}/virtualMachines/000001", "10.43.1.5"),
     ]
-    assert compute.virtual_machine_scale_set_vms.calls == [
-        (_RESOURCE_GROUP, "gludd-worker-001-vmss")
-    ]
+    assert compute.virtual_machine_scale_set_vms.calls == [(_RESOURCE_GROUP, "gludd-worker-001-vmss")]
     assert all(call[1] == "2024-05-01" for call in resource.resources.get_calls)
     assert compute.closed is True
     assert resource.closed is True
@@ -282,9 +293,7 @@ def test_rejects_malformed_private_address() -> None:
     second = _vm("000001")
     first_nic = first.network_profile.network_interfaces[0].id
     second_nic = second.network_profile.network_interfaces[0].id
-    compute = _ComputeClient(
-        virtual_machine_scale_set_vms=_VmOperations([first, second])
-    )
+    compute = _ComputeClient(virtual_machine_scale_set_vms=_VmOperations([first, second]))
     resource = _ResourceClient(
         resources=_ResourceOperations(
             {first_nic: _nic("not-an-address"), second_nic: _nic("10.43.1.5")},
@@ -374,9 +383,7 @@ def test_resolver_rejects_ambiguous_network_interface(change: str) -> None:
         first.network_profile.network_interfaces[0].primary = False
     else:
         first.network_profile.network_interfaces[0].id = "/foreign"
-    compute = _ComputeClient(
-        virtual_machine_scale_set_vms=_VmOperations([first, second])
-    )
+    compute = _ComputeClient(virtual_machine_scale_set_vms=_VmOperations([first, second]))
     resource = _ResourceClient()
 
     with pytest.raises(AzureGpuWorkerSdkError) as caught:
@@ -397,18 +404,10 @@ def test_resolver_rejects_ambiguous_network_interface(change: str) -> None:
         SimpleNamespace(properties={"ipConfigurations": [None]}),
         SimpleNamespace(properties={"ipConfigurations": [{"properties": None}]}),
         SimpleNamespace(
-            properties={
-                "ipConfigurations": [
-                    {"properties": {"primary": False, "privateIPAddress": "10.0.0.4"}}
-                ]
-            }
+            properties={"ipConfigurations": [{"properties": {"primary": False, "privateIPAddress": "10.0.0.4"}}]}
         ),
         SimpleNamespace(
-            properties={
-                "ipConfigurations": [
-                    {"properties": {"primary": True, "privateIPAddress": "8.8.8.8"}}
-                ]
-            }
+            properties={"ipConfigurations": [{"properties": {"primary": True, "privateIPAddress": "8.8.8.8"}}]}
         ),
     ],
 )
@@ -419,9 +418,7 @@ def test_resolver_rejects_ambiguous_private_ip_configuration(
     second = _vm("000001")
     first_nic = first.network_profile.network_interfaces[0].id
     second_nic = second.network_profile.network_interfaces[0].id
-    compute = _ComputeClient(
-        virtual_machine_scale_set_vms=_VmOperations([first, second])
-    )
+    compute = _ComputeClient(virtual_machine_scale_set_vms=_VmOperations([first, second]))
     resource = _ResourceClient(
         resources=_ResourceOperations(
             {first_nic: network_interface, second_nic: _nic("10.43.1.5")},
@@ -455,9 +452,7 @@ def test_resolver_rejects_duplicate_inventory(duplicate: str) -> None:
             [],
         )
     )
-    compute = _ComputeClient(
-        virtual_machine_scale_set_vms=_VmOperations([first, second])
-    )
+    compute = _ComputeClient(virtual_machine_scale_set_vms=_VmOperations([first, second]))
 
     with pytest.raises(AzureGpuWorkerSdkError) as caught:
         _reader(compute, resource, _Closable()).resolve_vmss_instances(
@@ -516,6 +511,156 @@ def test_sdk_error_from_factory_is_preserved() -> None:
 
     assert resolve.value is expected
     assert inventory.value is expected
+
+
+_VM_ID = f"{_RESOURCE_GROUP_ID}/providers/Microsoft.Compute/virtualMachines/gludd-worker-001-vm"
+
+
+def _single_vm_compute_client(vm: object | None = None) -> _ComputeClient:
+    return _ComputeClient(
+        virtual_machine_scale_set_vms=_VmOperations([]),
+        virtual_machines=_SingleVmOperations(vm or object()),
+    )
+
+
+def _single_vm_resource_client(
+    nics: dict[str, object] | None = None,
+    delete: _DeleteOperations | None = None,
+) -> _ResourceClient:
+    return _ResourceClient(
+        resources=_ResourceOperations(
+            nics or {},
+            [],
+            delete=delete or _DeleteOperations(),
+        )
+    )
+
+
+def test_resolves_exact_single_vm_private_inventory_and_closes_sdk_clients() -> None:
+    vm = SimpleNamespace(
+        id=_VM_ID,
+        name="gludd-worker-001-vm",
+        network_profile=SimpleNamespace(
+            network_interfaces=[SimpleNamespace(id=f"{_VM_ID}/networkInterfaces/primary", primary=True)]
+        ),
+    )
+    compute = _single_vm_compute_client(vm)
+    resource = _single_vm_resource_client({f"{_VM_ID}/networkInterfaces/primary": _nic("10.43.1.4")})
+    credential = _Closable()
+
+    instance = _reader(compute, resource, credential).resolve_single_vm(
+        credentials=_credentials(),
+        spec=_single_spec(),
+        vm_id=_VM_ID,
+    )
+
+    assert instance == AzureGpuWorkerInstance(host_id=_VM_ID, address="10.43.1.4")
+    assert compute.virtual_machines.calls == [(_RESOURCE_GROUP, "gludd-worker-001-vm")]
+    assert resource.resources.get_calls == [(f"{_VM_ID}/networkInterfaces/primary", "2024-05-01")]
+    assert compute.closed is True
+    assert resource.closed is True
+    assert credential.closed is True
+
+
+def test_single_vm_resolver_rejects_malformed_inventory_and_censors_details() -> None:
+    vm = SimpleNamespace(
+        id="/foreign",
+        name="gludd-worker-001-vm",
+        network_profile=SimpleNamespace(
+            network_interfaces=[SimpleNamespace(id=f"{_VM_ID}/networkInterfaces/primary", primary=True)]
+        ),
+    )
+    compute = _single_vm_compute_client(vm)
+    resource = _single_vm_resource_client()
+    credential = _Closable()
+
+    with pytest.raises(AzureGpuWorkerSdkError) as caught:
+        _reader(compute, resource, credential).resolve_single_vm(
+            credentials=_credentials(),
+            spec=_single_spec(),
+            vm_id=_VM_ID,
+        )
+
+    assert caught.value.phase == "single-vm-inventory"
+    assert "private-value" not in str(caught.value)
+    assert compute.closed is True
+    assert resource.closed is True
+    assert credential.closed is True
+
+
+@pytest.mark.parametrize(
+    ("credentials", "spec", "vm_id"),
+    [
+        (object(), _single_spec(), _VM_ID),
+        (_credentials(), object(), _VM_ID),
+        (
+            replace(_credentials(), subscription_id="00000000-0000-4000-8000-000000000004"),
+            _single_spec(),
+            _VM_ID,
+        ),
+        (_credentials(), _spec(), _VM_ID),
+        (_credentials(), _single_spec(), "/foreign"),
+    ],
+)
+def test_single_vm_resolver_rejects_cross_scope_contracts(
+    credentials: object,
+    spec: object,
+    vm_id: str,
+) -> None:
+    with pytest.raises(AzureGpuWorkerSdkError) as caught:
+        AzureGpuWorkerSdkReader().resolve_single_vm(
+            credentials=credentials,  # type: ignore[arg-type]
+            spec=spec,  # type: ignore[arg-type]
+            vm_id=vm_id,
+        )
+
+    assert caught.value.phase == "single-vm-inventory"
+
+
+def test_deletes_owned_resources_and_closes_sdk_clients() -> None:
+    owned = (
+        _VM_ID,
+        f"{_RESOURCE_GROUP_ID}/providers/Microsoft.Network/networkInterfaces/worker",
+    )
+    compute = _ComputeClient()
+    delete = _DeleteOperations()
+    resource = _ResourceClient(resources=_ResourceOperations({}, [], delete=delete))
+    credential = _Closable()
+
+    deleted = _reader(compute, resource, credential).delete_owned_resources(
+        credentials=_credentials(),
+        spec=_single_spec(),
+        owned_resource_ids=owned,
+    )
+
+    assert deleted == owned
+    assert delete.deleted == [
+        (owned[0], "2024-05-01"),
+        (owned[1], "2024-05-01"),
+    ]
+    assert compute.closed is True
+    assert resource.closed is True
+    assert credential.closed is True
+
+
+@pytest.mark.parametrize(
+    "owned",
+    [
+        [],
+        (),
+        ("/foreign",),
+        (_VM_ID, _VM_ID.upper()),
+    ],
+)
+def test_delete_owned_resources_rejects_unowned_contract(owned: object) -> None:
+    with pytest.raises(AzureGpuWorkerSdkError) as caught:
+        AzureGpuWorkerSdkReader().delete_owned_resources(
+            credentials=_credentials(),
+            spec=_single_spec(),
+            owned_resource_ids=owned,  # type: ignore[arg-type]
+        )
+
+    assert caught.value.phase == "resource-cleanup"
 
 
 def test_nonclosable_sdk_boundary_is_supported() -> None:

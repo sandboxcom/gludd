@@ -160,11 +160,7 @@ class AzureGpuWorkerSdkReader:
     def _network_interface_id(vm: object, expected_vm_id: str) -> str:
         vm_id = getattr(vm, "id", None)
         name = getattr(vm, "name", None)
-        if (
-            not isinstance(vm_id, str)
-            or not isinstance(name, str)
-            or vm_id.lower() != expected_vm_id.lower()
-        ):
+        if not isinstance(vm_id, str) or not isinstance(name, str) or vm_id.lower() != expected_vm_id.lower():
             raise ValueError
         profile = getattr(vm, "network_profile", None)
         interfaces = getattr(profile, "network_interfaces", None)
@@ -215,10 +211,7 @@ class AzureGpuWorkerSdkReader:
                 f"{spec.resource_group_id}/providers/Microsoft.Compute/"
                 f"virtualMachineScaleSets/{spec.deployment_name}-vmss"
             )
-            if (
-                not isinstance(scale_set_id, str)
-                or scale_set_id.lower() != expected_scale_set_id.lower()
-            ):
+            if not isinstance(scale_set_id, str) or scale_set_id.lower() != expected_scale_set_id.lower():
                 raise ValueError
             with self._clients(credentials) as (compute, resource):
                 operations: Any = getattr(
@@ -262,6 +255,45 @@ class AzureGpuWorkerSdkReader:
         except Exception:
             raise AzureGpuWorkerSdkError("vmss-inventory") from None
 
+    def resolve_single_vm(
+        self,
+        *,
+        credentials: AzureAcceleratorCredentials,
+        spec: AzureGpuWorkerProvisioningSpec,
+        vm_id: str,
+    ) -> AzureGpuWorkerInstance:
+        """Resolve the exact private inventory of one owned single VM."""
+        try:
+            self._validate_contract(credentials, spec)
+            if spec.strategy is not AzureExecutionStrategy.SINGLE_VM:
+                raise ValueError
+            expected_vm_id = (
+                f"{spec.resource_group_id}/providers/Microsoft.Compute/virtualMachines/{spec.deployment_name}-vm"
+            )
+            if not isinstance(vm_id, str) or vm_id.lower() != expected_vm_id.lower():
+                raise ValueError
+            with self._clients(credentials) as (compute, resource):
+                operations: Any = getattr(compute, "virtual_machines", None)
+                vm = operations.get(
+                    spec.resource_group_name,
+                    f"{spec.deployment_name}-vm",
+                )
+                interface_id = self._network_interface_id(vm, vm_id)
+                resource_operations: Any = getattr(resource, "resources", None)
+                interface = resource_operations.get_by_id(
+                    interface_id,
+                    _NETWORK_API_VERSION,
+                )
+                instance = AzureGpuWorkerInstance(
+                    host_id=vm_id,
+                    address=self._private_address(interface),
+                )
+            return instance
+        except AzureGpuWorkerSdkError:
+            raise
+        except Exception:
+            raise AzureGpuWorkerSdkError("single-vm-inventory") from None
+
     def remaining_owned_resource_ids(
         self,
         *,
@@ -277,33 +309,55 @@ class AzureGpuWorkerSdkReader:
                 or not owned_resource_ids
                 or any(
                     not isinstance(resource_id, str)
-                    or not resource_id.lower().startswith(
-                        f"{spec.resource_group_id.lower()}/providers/"
-                    )
+                    or not resource_id.lower().startswith(f"{spec.resource_group_id.lower()}/providers/")
                     for resource_id in owned_resource_ids
                 )
-                or len({item.lower() for item in owned_resource_ids})
-                != len(owned_resource_ids)
+                or len({item.lower() for item in owned_resource_ids}) != len(owned_resource_ids)
             ):
                 raise ValueError
             with self._clients(credentials) as (_compute, resource):
                 operations: Any = getattr(resource, "resources", None)
                 observed = {
                     resource_id.lower()
-                    for item in operations.list_by_resource_group(
-                        spec.resource_group_name
-                    )
+                    for item in operations.list_by_resource_group(spec.resource_group_name)
                     if isinstance((resource_id := getattr(item, "id", None)), str)
                 }
-            return tuple(
-                resource_id
-                for resource_id in owned_resource_ids
-                if resource_id.lower() in observed
-            )
+            return tuple(resource_id for resource_id in owned_resource_ids if resource_id.lower() in observed)
         except AzureGpuWorkerSdkError:
             raise
         except Exception:
             raise AzureGpuWorkerSdkError("resource-inventory") from None
+
+    def delete_owned_resources(
+        self,
+        *,
+        credentials: AzureAcceleratorCredentials,
+        spec: AzureGpuWorkerProvisioningSpec,
+        owned_resource_ids: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        """Delete the exact owned ARM resources and return the IDs removed."""
+        try:
+            self._validate_contract(credentials, spec)
+            if (
+                not isinstance(owned_resource_ids, tuple)
+                or not owned_resource_ids
+                or any(
+                    not isinstance(resource_id, str)
+                    or not resource_id.lower().startswith(f"{spec.resource_group_id.lower()}/providers/")
+                    for resource_id in owned_resource_ids
+                )
+                or len({item.lower() for item in owned_resource_ids}) != len(owned_resource_ids)
+            ):
+                raise ValueError
+            with self._clients(credentials) as (_compute, resource):
+                operations: Any = getattr(resource, "resources", None)
+                for resource_id in owned_resource_ids:
+                    operations.delete_by_id(resource_id, _NETWORK_API_VERSION)
+            return owned_resource_ids
+        except AzureGpuWorkerSdkError:
+            raise
+        except Exception:
+            raise AzureGpuWorkerSdkError("resource-cleanup") from None
 
 
 __all__ = (
