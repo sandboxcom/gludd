@@ -20,10 +20,22 @@ class TestUtilizationTrackerFindIdleGpus:
     def test_find_idle_gpus_returns_endpoints_below_threshold(self):
         now = time.time()
         tracker = _make_tracker(
-            ComputeEndpoint(endpoint_id="ep1", url="http://gpu1:8000", model="llama3",
-                            gpu_type="A100", current_load=0, last_used=now - 1000),
-            ComputeEndpoint(endpoint_id="ep2", url="http://gpu2:8000", model="codellama",
-                            gpu_type="H100", current_load=2, last_used=now),
+            ComputeEndpoint(
+                endpoint_id="ep1",
+                url="http://gpu1:8000",
+                model="llama3",
+                gpu_type="A100",
+                current_load=0,
+                last_used=now - 1000,
+            ),
+            ComputeEndpoint(
+                endpoint_id="ep2",
+                url="http://gpu2:8000",
+                model="codellama",
+                gpu_type="H100",
+                current_load=2,
+                last_used=now,
+            ),
         )
         idle = tracker.find_idle_gpus(threshold=5.0, window=900)
         assert len(idle) == 1
@@ -32,8 +44,14 @@ class TestUtilizationTrackerFindIdleGpus:
     def test_find_idle_gpus_skips_non_gpu_endpoints(self):
         now = time.time()
         tracker = _make_tracker(
-            ComputeEndpoint(endpoint_id="ep1", url="http://cpu1:8000", model="tiny",
-                            gpu_type="", current_load=0, last_used=now - 1000),
+            ComputeEndpoint(
+                endpoint_id="ep1",
+                url="http://cpu1:8000",
+                model="tiny",
+                gpu_type="",
+                current_load=0,
+                last_used=now - 1000,
+            ),
         )
         idle = tracker.find_idle_gpus(threshold=5.0, window=900)
         assert len(idle) == 0
@@ -41,8 +59,14 @@ class TestUtilizationTrackerFindIdleGpus:
     def test_find_idle_gpus_recently_used_is_not_idle(self):
         now = time.time()
         tracker = _make_tracker(
-            ComputeEndpoint(endpoint_id="ep1", url="http://gpu1:8000", model="llama3",
-                            gpu_type="A100", current_load=0, last_used=now - 100),
+            ComputeEndpoint(
+                endpoint_id="ep1",
+                url="http://gpu1:8000",
+                model="llama3",
+                gpu_type="A100",
+                current_load=0,
+                last_used=now - 100,
+            ),
         )
         idle = tracker.find_idle_gpus(threshold=5.0, window=900)
         assert len(idle) == 0
@@ -50,11 +74,85 @@ class TestUtilizationTrackerFindIdleGpus:
     def test_find_idle_gpus_active_load_is_not_idle(self):
         now = time.time()
         tracker = _make_tracker(
-            ComputeEndpoint(endpoint_id="ep1", url="http://gpu1:8000", model="llama3",
-                            gpu_type="A100", current_load=3, last_used=now - 1000),
+            ComputeEndpoint(
+                endpoint_id="ep1",
+                url="http://gpu1:8000",
+                model="llama3",
+                gpu_type="A100",
+                current_load=3,
+                last_used=now - 1000,
+            ),
         )
         idle = tracker.find_idle_gpus(threshold=5.0, window=900)
         assert len(idle) == 0
+
+    def test_find_idle_gpus_recent_low_sm_util_history_is_idle(self):
+        now = time.time()
+        tracker = _make_tracker(
+            ComputeEndpoint(
+                endpoint_id="ep1",
+                url="http://gpu1:8000",
+                model="llama3",
+                gpu_type="A100",
+                current_load=1,
+                last_used=now,
+            ),
+        )
+        tracker.update_gpu_metrics("ep1", {"gpu_sm_util_pct": 2.0})
+        tracker.update_gpu_metrics("ep1", {"gpu_sm_util_pct": 3.0})
+        idle = tracker.find_idle_gpus(threshold=5.0, window=900)
+        assert len(idle) == 1
+        assert idle[0].endpoint_id == "ep1"
+
+    def test_find_idle_gpus_recent_high_sm_util_history_is_not_idle(self):
+        now = time.time()
+        tracker = _make_tracker(
+            ComputeEndpoint(
+                endpoint_id="ep1",
+                url="http://gpu1:8000",
+                model="llama3",
+                gpu_type="A100",
+                current_load=0,
+                last_used=now - 1000,
+            ),
+        )
+        tracker.update_gpu_metrics("ep1", {"gpu_sm_util_pct": 10.0})
+        tracker.update_gpu_metrics("ep1", {"gpu_sm_util_pct": 12.0})
+        idle = tracker.find_idle_gpus(threshold=5.0, window=900)
+        assert len(idle) == 0
+
+    def test_find_idle_gpus_mixed_sm_util_history_is_not_idle(self):
+        now = time.time()
+        tracker = _make_tracker(
+            ComputeEndpoint(
+                endpoint_id="ep1",
+                url="http://gpu1:8000",
+                model="llama3",
+                gpu_type="A100",
+                current_load=0,
+                last_used=now - 1000,
+            ),
+        )
+        tracker.update_gpu_metrics("ep1", {"gpu_sm_util_pct": 2.0})
+        tracker.update_gpu_metrics("ep1", {"gpu_sm_util_pct": 10.0})
+        idle = tracker.find_idle_gpus(threshold=5.0, window=900)
+        assert len(idle) == 0
+
+    def test_find_idle_gpus_no_history_falls_back_to_load_and_last_used(self):
+        now = time.time()
+        tracker = _make_tracker(
+            ComputeEndpoint(
+                endpoint_id="ep1",
+                url="http://gpu1:8000",
+                model="llama3",
+                gpu_type="A100",
+                current_load=0,
+                last_used=now - 1000,
+            ),
+        )
+        idle = tracker.find_idle_gpus(threshold=5.0, window=900)
+        assert len(idle) == 1
+        assert idle[0].endpoint_id == "ep1"
 
 
 class TestPhaseCheckComputeUtilization:
@@ -62,8 +160,14 @@ class TestPhaseCheckComputeUtilization:
     async def test_underutilized_endpoint_tracked_in_daemon_state(self):
         now = time.time()
         tracker = _make_tracker(
-            ComputeEndpoint(endpoint_id="ep1", url="http://gpu1:8000", model="llama3",
-                            gpu_type="A100", current_load=0, last_used=now - 1000),
+            ComputeEndpoint(
+                endpoint_id="ep1",
+                url="http://gpu1:8000",
+                model="llama3",
+                gpu_type="A100",
+                current_load=0,
+                last_used=now - 1000,
+            ),
         )
         daemon_state: dict = {}
         loop = EventLoop(
@@ -85,8 +189,14 @@ class TestPhaseCheckComputeUtilization:
     async def test_idle_counter_increments_each_tick(self):
         now = time.time()
         tracker = _make_tracker(
-            ComputeEndpoint(endpoint_id="ep1", url="http://gpu1:8000", model="llama3",
-                            gpu_type="A100", current_load=0, last_used=now - 1000),
+            ComputeEndpoint(
+                endpoint_id="ep1",
+                url="http://gpu1:8000",
+                model="llama3",
+                gpu_type="A100",
+                current_load=0,
+                last_used=now - 1000,
+            ),
         )
         daemon_state: dict = {}
         loop = EventLoop(
@@ -112,8 +222,14 @@ class TestPhaseCheckComputeUtilization:
     async def test_teardown_triggered_after_threshold_ticks(self):
         now = time.time()
         tracker = _make_tracker(
-            ComputeEndpoint(endpoint_id="ep1", url="http://gpu1:8000", model="llama3",
-                            gpu_type="A100", current_load=0, last_used=now - 1000),
+            ComputeEndpoint(
+                endpoint_id="ep1",
+                url="http://gpu1:8000",
+                model="llama3",
+                gpu_type="A100",
+                current_load=0,
+                last_used=now - 1000,
+            ),
         )
         daemon_state: dict = {}
         deploy_mgr = AsyncMock()
@@ -142,8 +258,14 @@ class TestPhaseCheckComputeUtilization:
     async def test_non_idle_endpoint_resets_counter(self):
         now = time.time()
         tracker = _make_tracker(
-            ComputeEndpoint(endpoint_id="ep1", url="http://gpu1:8000", model="llama3",
-                            gpu_type="A100", current_load=0, last_used=now - 1000),
+            ComputeEndpoint(
+                endpoint_id="ep1",
+                url="http://gpu1:8000",
+                model="llama3",
+                gpu_type="A100",
+                current_load=0,
+                last_used=now - 1000,
+            ),
         )
         daemon_state: dict = {}
         loop = EventLoop(
@@ -168,8 +290,14 @@ class TestPhaseCheckComputeUtilization:
     async def test_gpu_idle_respects_sm_threshold_via_load(self):
         now = time.time()
         tracker = _make_tracker(
-            ComputeEndpoint(endpoint_id="ep1", url="http://gpu1:8000", model="llama3",
-                            gpu_type="A100", current_load=0, last_used=now - 1000),
+            ComputeEndpoint(
+                endpoint_id="ep1",
+                url="http://gpu1:8000",
+                model="llama3",
+                gpu_type="A100",
+                current_load=0,
+                last_used=now - 1000,
+            ),
         )
         daemon_state: dict = {}
         loop = EventLoop(
@@ -188,8 +316,14 @@ class TestPhaseCheckComputeUtilization:
     @pytest.mark.asyncio
     async def test_phase_skips_when_not_check_tick(self):
         tracker = _make_tracker(
-            ComputeEndpoint(endpoint_id="ep1", url="http://gpu1:8000", model="llama3",
-                            gpu_type="A100", current_load=0, last_used=time.time() - 1000),
+            ComputeEndpoint(
+                endpoint_id="ep1",
+                url="http://gpu1:8000",
+                model="llama3",
+                gpu_type="A100",
+                current_load=0,
+                last_used=time.time() - 1000,
+            ),
         )
         daemon_state: dict = {}
         loop = EventLoop(
@@ -222,8 +356,14 @@ class TestPhaseCheckComputeUtilization:
     async def test_teardown_sets_torn_down_flag_in_daemon_state(self):
         now = time.time()
         tracker = _make_tracker(
-            ComputeEndpoint(endpoint_id="ep1", url="http://gpu1:8000", model="llama3",
-                            gpu_type="A100", current_load=0, last_used=now - 1000),
+            ComputeEndpoint(
+                endpoint_id="ep1",
+                url="http://gpu1:8000",
+                model="llama3",
+                gpu_type="A100",
+                current_load=0,
+                last_used=now - 1000,
+            ),
         )
         daemon_state: dict = {}
         deploy_mgr = AsyncMock()
