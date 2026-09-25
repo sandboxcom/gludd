@@ -5,8 +5,8 @@
 # is caught at the moment of dispatch, not only via the response-transform plugin.
 # This is the "don't run" counterpart to the floor enforcers. FAST + FAIL-OPEN.
 
-CEILING="${CLAUDE_AGENT_CEILING:-12}"
-TARGET="${CLAUDE_AGENT_TARGET:-10}"
+CEILING="${CLAUDE_AGENT_CEILING:-4}"
+TARGET="${CLAUDE_AGENT_TARGET:-4}"
 # LIVE CEILING OVERRIDE: like /tmp/gludd-floor-override, this lets the operator
 # retune the max concurrent subagents mid-session without a restart. A valid
 # integer wins over the env default. TARGET is clamped so it never exceeds the

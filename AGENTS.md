@@ -41,7 +41,7 @@ If you are reading this and NOT dispatching subagents, you are violating the con
 
 | Resource | Cap | Mechanism |
 |---|---|---|
-| Concurrent subagents (Task/agent/workflow) | **10 max** | `CLAUDE_AGENT_FLOOR=10`, `CLAUDE_AGENT_CEILING=10`; `/tmp/gludd-floor-override=10` |
+| Concurrent subagents (Task/agent/workflow) | **4 max** | `CLAUDE_AGENT_FLOOR=4`, `CLAUDE_AGENT_CEILING=4`; `/tmp/gludd-floor-override=4` |
 | Subagent context size | **Minimal** — ask for only what you need | Each prompt must explicitly say "return ≤5 bullet points" or similar |
 | Actual model-calling HTTP processes | **10 max parallel** regardless of subagent count | OpenShift/daemon-level throttle |
 | Research subagents | **Serialized** — at most 1 at a time | Research reads code; multiple researchers collide on the same files |
@@ -49,7 +49,7 @@ If you are reading this and NOT dispatching subagents, you are violating the con
 
 ### Behavioral rules (prompt-enforced)
 
-1. **Max 10 subagents per wave.** Never dispatch more than 10 task/agent/workflow calls in a single message.
+1. **Max 4 subagents per wave.** Never dispatch more than 4 task/agent/workflow calls in a single message.
 2. **Terse subagent prompts.** Each subagent prompt must be ≤20 lines. Ask for EXACTLY what you need; specify "return ≤N bullet points" or "return ≤N lines."
    - **Subagent context size:** Minimal — ask for only what you need. Each prompt must explicitly say "return ≤5 bullet points" or similar.
 3. **Subagents MUST read files but return ONLY terse summaries.** Subagents MUST read files to gather context, but return ONLY terse summaries (≤5 bullet points or ≤10 lines). Subagent prompts must specify: "Read files you need, but return a ≤N-line summary. Do NOT dump large file contents into your response."
@@ -68,14 +68,14 @@ If you are reading this and NOT dispatching subagents, you are violating the con
 
 ### Override precedence
 
-This directive OVERRIDES all "10-agent floor" rules below. The old rules remain in the document for historical reference but are dormant while this directive is active. If any rule below contradicts this section, THIS section wins.
+This directive OVERRIDES all "4-agent floor" rules below. The old rules remain in the document for historical reference but are dormant while this directive is active. If any rule below contradicts this section, THIS section wins.
 
 ### CRITICAL: Enhancement/Fix Dispatch Ratio
 
 **2026-07-12 user mandate: at least half of every dispatch wave must be project enhancements, not just bug fixes.** Multiple sessions of fix-only dispatches were observed — the agent was only dispatching repair work and never advancing the project with new features, tests, docs, or tooling.
 
 1. **At least 50% of every dispatch wave must be project enhancements.** New tests, new features, documentation, tooling/scripts, self-test mechanisms, guardrail improvements. In a 5-agent wave, at least 2-3 must be enhancements.
-2. **"Fix-only waves" are forbidden** when any Phase D/E/F items remain in TASKS.md. All 10 subagents doing bug fixes is a policy violation.
+2. **"Fix-only waves" are forbidden** when any Phase D/E/F items remain in TASKS.md. All 4 subagents doing bug fixes is a policy violation.
 3. **The ratio is checked per-wave, not per-session.** Every single dispatch message must include at least 2-3 enhancement subagents. No credit for "we did enhancements earlier."
 4. **Enhancement categories:** new self-tests, new features from TASKS.md, documentation, tooling/scripts, guardrail improvements, new make targets, observability improvements.
 5. **This overrides any conflicting priority language elsewhere.** A "fix top priority" directive means fixes get the FIRST dispatch slot — the remaining 4+ slots must still include 2+ enhancements.
@@ -111,7 +111,7 @@ The `enforce-enhancement-ratio.ts` plugin mechanically enforces the ratio rule:
 
 ## CRITICAL: Subagent Task Design — Fix, Don't Check
 
-**Every subagent MUST produce a concrete fix or deliverable — never just a status report, audit finding, or problem list.** A subagent that reads files, reports problems, and returns without fixing them is a slot wasted. The 10-agent floor means nothing if half the slots are running read-only status checks.
+**Every subagent MUST produce a concrete fix or deliverable — never just a status report, audit finding, or problem list.** A subagent that reads files, reports problems, and returns without fixing them is a slot wasted. The 4-agent floor means nothing if half the slots are running read-only status checks.
 
 ### The six rules
 
@@ -125,7 +125,7 @@ The `enforce-enhancement-ratio.ts` plugin mechanically enforces the ratio rule:
 
 5. **Every subagent prompt MUST end with: "Do NOT just report problems. Fix them."** This is a mechanical prompt suffix — if the subagent receives a task that could be interpreted as "survey and report," this directive forces it to produce a fix instead. A subagent prompt without this suffix is a dispatch bug.
 
-6. **Status-check subagents are a FALSE FLOOR.** They count toward the 10-agent floor in the enforcement plugins but produce zero value. A wave of 10 subagents where 5 are "check CI," "audit lint," "scan for dead code," "survey test coverage," and "list uncommitted files" is functionally a wave of 5 — the floor is 5, not 10. The orchestrator MUST NOT pad a wave with status-check subagents to satisfy the floor plugin. If only 5 real tasks exist, dispatch 5 AND 5 research/refactor subagents that produce actual deliverables — never 5 check-only placeholders.
+6. **Status-check subagents are a FALSE FLOOR.** They count toward the 4-agent floor in the enforcement plugins but produce zero value. A wave of 4 subagents where 5 are "check CI," "audit lint," "scan for dead code," "survey test coverage," and "list uncommitted files" is functionally a wave of 5 — the floor is 5, not 10. The orchestrator MUST NOT pad a wave with status-check subagents to satisfy the floor plugin. If only 5 real tasks exist, dispatch 5 AND 5 research/refactor subagents that produce actual deliverables — never 5 check-only placeholders.
 
 ### Forbidden subagent task descriptions (dispatch prompt keywords — any match is a dispatch bug)
 
@@ -379,7 +379,7 @@ Before generating ANY character of text, you MUST answer these questions:
 ### Self-Check Protocol
 
 When subagent results arrive, the ONLY valid next action is:
-- Dispatch replacement subagents (Task tool) to maintain the 10-agent floor
+- Dispatch replacement subagents (Task tool) to maintain the 4-agent floor
 - Read/write files to codify results
 - Run tests/lint/typecheck on modified code
 
@@ -601,8 +601,8 @@ In ONE message, dispatch these four reads concurrently:
 - `config/ratchet.yml` — known-unfixed work (if this file has ANY entries, the project has pending work)
 - `SESSION.md` — last session's state, known gaps, next steps
 
-**STEP 2 (SECOND tool-call message): identify pending work and dispatch a ≥10-wide subagent wave.**
-From the backlog reads, enumerate the pending items and IMMEDIATELY dispatch ≥10 subagents in ONE message (per the Pipeline Orchestration Model and the 10-agent floor). The dispatch wave is the deliverable of turn 1 — not a status report, not a plan, not a Q&A recap.
+**STEP 2 (SECOND tool-call message): identify pending work and dispatch a ≥4-wide subagent wave.**
+From the backlog reads, enumerate the pending items and IMMEDIATELY dispatch ≥4 subagents in ONE message (per the Pipeline Orchestration Model and the 4-agent floor). The dispatch wave is the deliverable of turn 1 — not a status report, not a plan, not a Q&A recap.
 
 ### What is FORBIDDEN on turn 1
 
@@ -614,7 +614,7 @@ From the backlog reads, enumerate the pending items and IMMEDIATELY dispatch ≥
 ### Enforcement (three layers)
 
 1. **Prompt** — this section.
-2. **Plugin** — `.opencode/plugin/enforce-session-start.ts` registers `experimental.chat.system.transform` to PREPEND a loud `🚨 SESSION-START DIRECTIVE` block as the FIRST section of the system prompt on every conversation. The directive names the four task-tracking files, requires parallel reads, and requires a ≥10-wide dispatch as the second action.
+2. **Plugin** — `.opencode/plugin/enforce-session-start.ts` registers `experimental.chat.system.transform` to PREPEND a loud `🚨 SESSION-START DIRECTIVE` block as the FIRST section of the system prompt on every conversation. The directive names the four task-tracking files, requires parallel reads, and requires a ≥4-wide dispatch as the second action.
 3. **Hard gate (default ON)** — `GLUDD_SESSION_START_ENFORCE=0` disables the `tool.execute.before` hook that DENIES Write/Edit/mutating Bash on turn 1 until at least one task-tracking file has been read. The gate is ON by default so prose-first relapses are blocked structurally; set `GLUDD_SESSION_START_ENFORCE=0` only for focused single-file work where the directive would wedge a legitimate Q&A turn.
 
 ### The exception
@@ -623,9 +623,9 @@ If the user's first message is a single specific question that does not imply co
 
 ## CRITICAL: Continuous Multitasking Enforcement (During-Run)
 
-The session-start contract gets turn 1 right. **This section keeps the floor at 10 for the rest of the run.** A session that opens with a 10-wide dispatch wave and then collapses to serial main-thread grinding has the same aggregate failure mode as never dispatching at all — the pool drains to zero and the next 40 minutes of work runs single-threaded.
+The session-start contract gets turn 1 right. **This section keeps the floor at 10 for the rest of the run.** A session that opens with a 4-wide dispatch wave and then collapses to serial main-thread grinding has the same aggregate failure mode as never dispatching at all — the pool drains to zero and the next 40 minutes of work runs single-threaded.
 
-1. **The 10-agent floor is enforced AT ALL TIMES, not just at session start.** Whenever the live subagent count drops below 10, the next non-dispatch tool call (Write/Edit/mutating-Bash) is DENIED until a refill wave brings the count back up. Enforced by `.opencode/plugin/enforce-floor.ts` (`tool.execute.before` hook, default ON). Set `GLUDD_FLOOR_ENFORCE=0` for focused single-file work where the floor would wedge legitimate serial edits.
+1. **The 4-agent floor is enforced AT ALL TIMES, not just at session start.** Whenever the live subagent count drops below 10, the next non-dispatch tool call (Write/Edit/mutating-Bash) is DENIED until a refill wave brings the count back up. Enforced by `.opencode/plugin/enforce-floor.ts` (`tool.execute.before` hook, default ON). Set `GLUDD_FLOOR_ENFORCE=0` for focused single-file work where the floor would wedge legitimate serial edits.
 2. **The session-start gate is also default ON.** The first mutating tool call of a session is denied until at least one task-tracking file (`TASKS.md` / `BUGS.md` / `config/ratchet.yml` / `SESSION.md`) has been read. Set `GLUDD_SESSION_START_ENFORCE=0` to disable.
 3. **Message-shape rule (hard).** Every assistant response containing tool calls MUST satisfy ONE of: (a) zero task/agent/workflow dispatches (pure read/edit/bash for serial hot-file work like `daemon.py` / `loop.py`); OR (b) TWO OR MORE parallel task/agent/workflow dispatches in ONE message. A response with 1 dispatch is a policy violation when ≥2 known work items remain — batch wider to 2.
 4. **Fill thin waves with read-only research.** When fewer than 2 edit tasks are queued, fill the remaining dispatch slot with a read-only research / audit / review task. They never conflict and are always productive. Do not let the wave shrink to 0-1 just because the edit backlog is short.
@@ -657,7 +657,7 @@ The pre-dispatch self-check and this post-response self-audit are the same count
 
 **When the user issues a new directive, interpret it ADDITIVELY ("AND") not SUBSTITUTIVELY ("OR"). New instructions STACK on top of existing objectives; they do not REPLACE them.**
 
-This is the binding meta-rule that prevents the recurring failure mode where a new priority collapses the 10-agent floor. New instructions do NOT void previous mandates (multitasking, anti-wait, observability, TDD) — they stack on top of them.
+This is the binding meta-rule that prevents the recurring failure mode where a new priority collapses the 4-agent floor. New instructions do NOT void previous mandates (multitasking, anti-wait, observability, TDD) — they stack on top of them.
 
 ### The rule (AND not OR)
 
@@ -798,11 +798,11 @@ text-only responses. No scoring, no threshold, no way to "check enough boxes."
 - ALL text-only responses (0 tool calls) when ANY signal true
 - Text summaries after subagent results arrive
 - Text after git-shipping targets
-- Under-floor dispatch waves (<10 dispatches with pending work)
+- Under-floor dispatch waves (<4 dispatches with pending work)
 
 ### What is allowed
 
-- Responses with >=10 task/agent/workflow dispatches
+- Responses with >=4 task/agent/workflow dispatches
 - Text-only when ALL 10 signals false
 
 ### Enforcement layers
@@ -839,8 +839,8 @@ text-only responses. No scoring, no threshold, no way to "check enough boxes."
 - Saying "Here's what needs to be done" and then NOT doing it immediately
 - Asking any question that is really "should I do my job?" in disguise
 - **Subagents-Returned Summary** — after a wave of subagent results arrives, sending a text-only response that summarizes all results ("Agent 1 did X, agent 2 did Y...") without immediately dispatching the next wave. The only valid response to results is: ingest, codify (commit/tick), DISPATCH NEXT WAVE. Any summary text with 0 dispatches after results is a stop-by-another-name.
-- **Pause Between Dispatch Waves** — sending a text response with fewer than 10 dispatches when work remains, or sending text-only (0 dispatches) between waves. The pipeline must stay primed at 10 agents at all times. A message whose only content is "let me check the results," "processing," "let me see," "let me figure out next steps" is a pause — it burns the main thread with no subagent dispatch.
-- **Under-Dispatch Floor** — sending text with tool calls (bash/read/grep/edit) but fewer than 10 subagent dispatches when work remains. Bash/read tools do NOT count toward the dispatch floor. A message with 1–9 dispatches while work is pending is a stop-by-another-name — the text is mechanically blocked by `enforce_stop_impl.ts` and the agent MUST dispatch ≥10 subagents. Git-shipping targets (ship-commit, batch-push, etc.) are exempted.
+- **Pause Between Dispatch Waves** — sending a text response with fewer than 4 dispatches when work remains, or sending text-only (0 dispatches) between waves. The pipeline must stay primed at 10 agents at all times. A message whose only content is "let me check the results," "processing," "let me see," "let me figure out next steps" is a pause — it burns the main thread with no subagent dispatch.
+- **Under-Dispatch Floor** — sending text with tool calls (bash/read/grep/edit) but fewer than 4 subagent dispatches when work remains. Bash/read tools do NOT count toward the dispatch floor. A message with 1–3 dispatches while work is pending is a stop-by-another-name — the text is mechanically blocked by `enforce_stop_impl.ts` and the agent MUST dispatch ≥4 subagents. Git-shipping targets (ship-commit, batch-push, etc.) are exempted.
 - **"Let me check what's left" / "Let me see what remains"** — pausing to survey remaining work instead of dispatching. Surveying is dispatch avoidance: the correct action is to dispatch the next wave immediately and survey the TASKS.md in parallel via a read tool call. The phrase structure "let me [check/see/look/survey] what's [left/remaining/pending]" is a stop pattern regardless of whether it's followed by a tool call — it signals the intent to pause before acting.
 - **Q&A-style summary as terminal response** — framing the final message as a recap with bolded question headers ("**What changed?**", "**Why?**", "**What's left?**") is the same violation as a markdown status table. A recap with no tool call is a premature stop regardless of phrasing. If anything is uncommitted, unpushed, or stale (README version mismatch, TASKS.md missing rows, .secrets.baseline churn, remote tip behind local), the response MUST be a tool call, never prose — even prose that "answers the user's question."
 
@@ -2063,10 +2063,10 @@ Plugins fire in opencode.json registration order. Earlier plugins win on ties.
 | Plugin | What it blocks | Disable via |
 |--------|---------------|-------------|
 | enforce-context.ts | ALL tools when SESSION.md stale >24h (↳ reads excluded) | GLUDD_CONTEXT_ENFORCE=0 |
-| enforce-multitask.ts | ALL non-dispatch tools when <10 dispatches (↳ reads excluded) | GLUDD_MULTITASK_FLOOR_ENFORCE=0 |
+| enforce-multitask.ts | ALL non-dispatch tools when <4 dispatches (↳ reads excluded) | GLUDD_MULTITASK_FLOOR_ENFORCE=0 |
 | enforce-delegate.ts | edit/write/bash after 2 consecutive calls; read-grind after serial reads | GLUDD_MAINTHREAD_STREAK_ENFORCE=0 |
 | enforce-floor.ts | ALL non-dispatch tools after 5 calls in 30s (↳ reads excluded) | GLUDD_FLOOR_ENFORCE=0 |
-| enforce-session-start.ts | edit/write/bash until >=10 dispatches made | GLUDD_SESSION_START_ENFORCE=0 |
+| enforce-session-start.ts | edit/write/bash until >=4 dispatches made | GLUDD_SESSION_START_ENFORCE=0 |
 | enforce-make.ts | non-make bash commands | (hard-coded ON) |
 | enforce-clean-tree.ts | task/agent dispatch on dirty git tree | GLUDD_CLEAN_TREE_ENFORCE=0 |
 | enforce-tdd.ts | edit/write to src/ when no test file exists | GLUDD_TDD_ENFORCE=0 |
@@ -2460,18 +2460,18 @@ the machine-enforceable correction.
   If `release-cut` timed out on its poll, run `verify-release-artifact` manually
   after CI finishes.
 
-## CRITICAL: 10-Agent Dispatch Floor (HARD ENFORCEMENT)
+## CRITICAL: 4-Agent Dispatch Floor (HARD ENFORCEMENT)
 
-**Every dispatch wave MUST contain EXACTLY 10 task/agent/workflow dispatches when
+**Every dispatch wave MUST contain EXACTLY 4 task/agent/workflow dispatches when
 pending work exists.** This is not a guideline, not a suggestion, not an
 aspirational target — it is a **mechanically enforced hard floor.** Any response
-with <10 dispatches while `TASKS.md` has unchecked items or `config/ratchet.yml`
+with <4 dispatches while `TASKS.md` has unchecked items or `config/ratchet.yml`
 has entries is a **policy violation** that the plugin will deny.
 
-### Why exactly 10
+### Why exactly 4
 
-A dispatch wave with fewer than 10 subagents leaves compute capacity idle. The
-COST-EFFICIENCY DIRECTIVE caps concurrent subagents at exactly 10 — the ceiling
+A dispatch wave with fewer than 4 subagents leaves compute capacity idle. The
+COST-EFFICIENCY DIRECTIVE caps concurrent subagents at exactly 4 — the ceiling
 is also the floor. Running at 7 or 5 when 10 is permitted is leaving tokens on
 the table. Every subagent slot that goes unfilled is a slot that should be doing
 a code audit, writing a test, improving a docstring, adding a guardrail — any
@@ -2481,7 +2481,7 @@ productive unit of work.
 
 **`enforce-multitask.ts`** mechanically blocks non-dispatch tools (Edit/Write/Bash)
 when:
-- The **prior message** had >0 but <10 dispatches (FLOOR BREACH)
+- The **prior message** had >0 but <4 dispatches (FLOOR BREACH)
 - The **current message** has 0 dispatches and pending work exists (INSUFFICIENT DISPATCHES)
 - **MAX_ZERO_STREAK** (2) consecutive responses had 0 dispatches (ZERO-DISPATCH STREAK)
 
@@ -2495,7 +2495,7 @@ Codified floor: 10. This is NOT advisory.
 REQUIRED: ≥10 parallel task/agent/workflow dispatches in ONE message.
 ```
 
-**UNDER-FLOOR HARD BLOCK (2026-07-15):** The block now fires IMMEDIATELY when fewer than 10 dispatches have been made in the current message — it does NOT wait for a message boundary. Every non-dispatch tool call (including read/glob/grep) is blocked until >=10 dispatches have been made in the session. Previously the block fired on the NEXT message after a thin wave; now it fires within the same wave, closing the "dispatch 1, then grind reads" bypass. When pending work exists, the ONLY valid next action is a >=10-dispatch wave.
+**UNDER-FLOOR HARD BLOCK (2026-07-15):** The block now fires IMMEDIATELY when fewer than 4 dispatches have been made in the current message — it does NOT wait for a message boundary. Every non-dispatch tool call (including read/glob/grep) is blocked until >=4 dispatches have been made in the session. Previously the block fired on the NEXT message after a thin wave; now it fires within the same wave, closing the "dispatch 1, then grind reads" bypass. When pending work exists, the ONLY valid next action is a >=4-dispatch wave.
 
 ### Subagent quality requirements
 
@@ -2554,7 +2554,7 @@ When all work is done, the plugin is silent.
 ### Enforcement layers
 
 1. **Config** — `.opencode/lib/multitask_config.ts` (canonical constants:
-   `MIN_DISPATCHES=10`, `MAX_DISPATCHES=10`, `HARD_MAX_DISPATCHES=10`,
+   `MIN_DISPATCHES=4`, `MAX_DISPATCHES=4`, `HARD_MAX_DISPATCHES=4`,
    `MAX_ZERO_STREAK=2`). Edits to the floor/ceiling go here — it is the
    single source of truth shared by all enforcement plugins.
 2. **Plugin** — `.opencode/plugin/enforce-multitask.ts` imports from
@@ -2565,13 +2565,13 @@ When all work is done, the plugin is silent.
 
 ## CRITICAL: Minimum 10 Subagents at All Times
 
-**You MUST maintain a MINIMUM of 10 concurrent subagent threads doing useful work at all times.** Never let the active count drop below 10 while work remains.
+**You MUST maintain a MINIMUM of 4 concurrent subagent threads doing useful work at all times.** Never let the active count drop below 4 while work remains.
 
 **Steady-state dispatch rule:** The moment ANY subagent completes (or fails), you MUST immediately dispatch a replacement. Do NOT wait for the remaining batch to drain before dispatching more. The pipeline must stay primed at 10+ at all times.
 
 **How to maintain the floor:**
 1. After each subagent completion notification, immediately check: how many are still running?
-2. If <10, immediately dispatch (10 - running) new subagents on the next available work item.
+2. If <4, immediately dispatch (4 - running) new subagents on the next available work item.
 3. Never present a status report or summary and stop — always have 10 threads in flight.
 4. If you run out of known work items, dispatch research/audit/review subagents to FIND more work.
 
@@ -2585,13 +2585,13 @@ When all work is done, the plugin is silent.
 
 The `scripts/agent_liveness.py` probe (Python-side live counting) informs the shell hooks but is not wired into the TypeScript plugins.
 
-**This is NOT optional.** Running with fewer than 10 subagents is a bug. The user will interrupt and ask why the floor isn't maintained. The enforce-floor.ts plugin will inject floor-breach directives if the streak-based heuristic detects the collapse.
+**This is NOT optional.** Running with fewer than 4 subagents is a bug. The user will interrupt and ask why the floor isn't maintained. The enforce-floor.ts plugin will inject floor-breach directives if the streak-based heuristic detects the collapse.
 
-**See also:** the *Steady-state dispatch (the 10-agent floor)* subsection under Pipeline Orchestration Model below for the concrete behavioral rules (fast result processing, no long foreground ops, next-wave-ready, uniform-duration tasks, research as filler) that make maintaining this floor possible in practice.
+**See also:** the *Steady-state dispatch (the 4-agent floor)* subsection under Pipeline Orchestration Model below for the concrete behavioral rules (fast result processing, no long foreground ops, next-wave-ready, uniform-duration tasks, research as filler) that make maintaining this floor possible in practice.
 
 ## CRITICAL: Anti-Grinding Enforcement
 
-**The `enforce-floor.ts` plugin maintains a consecutive non-dispatch counter that blocks ALL non-dispatch tools (including read/grep/glob) after 5 calls within a 30-second sliding window.** This closes the "rapid-grinding bypass" where the agent could make 20+ inline calls in under 5 seconds without ever dispatching a subagent — functionally violating the 10-agent floor while technically satisfying message-shape rules.
+**The `enforce-floor.ts` plugin maintains a consecutive non-dispatch counter that blocks ALL non-dispatch tools (including read/grep/glob) after 5 calls within a 30-second sliding window.** This closes the "rapid-grinding bypass" where the agent could make 20+ inline calls in under 5 seconds without ever dispatching a subagent — functionally violating the 4-agent floor while technically satisfying message-shape rules.
 
 ### How it works
 
@@ -2651,7 +2651,7 @@ orchestrator stalls waiting for results that will never arrive on time.
    capacity (≤5 agents) for one wave, then return to normal (10 agents) after
    confirming load stays low for 60+ seconds.
 5. **Background gate + subagents = multiplicative load.** A `make gate` runs
-   pytest with `-n auto` (all cores). A single gate + 10 subagents = every
+   pytest with `-n auto` (all cores). A single gate + 4 subagents = every
    CPU core oversubscribed 2-3x. Never run a background gate AND a full
    dispatch wave simultaneously — pause one or cap the other.
 
@@ -2830,9 +2830,9 @@ Subagents fail when they try to run long operations. To maximize success rate:
 3. **Each subagent gets ONE focused task** — one file to edit, one test to run, one research question. Don't bundle multiple concerns.
 4. **Read-only research tasks are the most reliable** — they never conflict and rarely time out.
 5. **File-editing tasks must specify exactly one file** — multiple-file edits risk conflicts with parallel agents.
-6. **Dispatch immediately when any agent completes** — do not wait for the batch to drain. The floor must stay at 10.
+6. **Dispatch immediately when any agent completes** — do not wait for the batch to drain. The floor must stay at 4.
 
-**Canonical limits:** `MIN_DISPATCHES` (default 10), `MAX_DISPATCHES` (default 10), and `HARD_MAX_DISPATCHES` (10) are defined in `.opencode/lib/multitask_config.ts`. All enforcement plugins import from this single source of truth.
+**Canonical limits:** `MIN_DISPATCHES` (default 4), `MAX_DISPATCHES` (default 4), and `HARD_MAX_DISPATCHES` (4) are defined in `.opencode/lib/multitask_config.ts`. All enforcement plugins import from this single source of truth.
 
 ### Main-thread command restriction (ANTI-STALL RULE)
 
@@ -2850,7 +2850,7 @@ Subagents fail when they try to run long operations. To maximize success rate:
 **Why:** The main thread blocks ALL subagent dispatch while it runs a command. A 30-second lint check = 30 seconds with 0 subagents running. A 40-minute gate = 40 minutes of total stall. The user sees this as "process malfunctioning."
 
 **Pattern for each wave:**
-1. Get 10 subagent results
+1. Get 4 subagent results
 2. Write ZERO analysis text
 3. Immediately dispatch 10 new subagents — one does `make ship-commit` (local commit only; push separately with `make batch-push`), nine do work
 4. Repeat
@@ -2890,7 +2890,7 @@ pointing to `make gate-background` + `make gate-status-check`), and
 `tests/unit/test_gate_background_targets.py` (target existence + phase markers
 + terminal markers + nohup + PID file).
 
-### Steady-state dispatch (the 10-agent floor)
+### Steady-state dispatch (the 4-agent floor)
 
 The goal is a **continuous, pipelined** stream of subagent batches — not a sawtooth of "dispatch burst → drain to zero → repeat."
 
@@ -2907,7 +2907,7 @@ The goal is a **continuous, pipelined** stream of subagent batches — not a saw
 
 Every assistant response containing tool calls MUST satisfy ONE of:
 - **(a) Zero task/agent/workflow dispatches** — pure read/edit/bash, no subagent fan-out. Valid for: serial mutations to hot files (daemon.py, loop.py), git operations, single-file edits during a hot-file conflict. **At most 2 consecutive zero-dispatch responses.** The 3rd zero-dispatch response in a row MUST include a dispatch (task/agent/workflow) OR explicitly justify why dispatch is impossible (quota exhausted, rate-limited, waiting for blocker). A 4th consecutive zero-dispatch response is a hard policy violation regardless of justification. Enforced mechanically by `enforce-multitask.ts` (zero-streak counter: denies at streak ≥ 2 when unchecked work exists) and `enforce-delegate.ts` (MAINTHREAD_THRESHOLD default 2; the 3rd consecutive non-dispatch call is hard-denied).
-- **(b) Two or more parallel task/agent/workflow dispatches in ONE message** — the dispatch wave pattern (see COST-EFFICIENCY DIRECTIVE: max 10 concurrent subagents). This is the steady-state.
+- **(b) Two or more parallel task/agent/workflow dispatches in ONE message** — the dispatch wave pattern (see COST-EFFICIENCY DIRECTIVE: max 4 concurrent subagents). This is the steady-state.
 
 A response with exactly 1 task dispatch is a **policy violation** when ≥2 known work items remain. The agent MUST either batch wider to 2 OR justify why only 1 dispatch is possible.
 
@@ -2923,7 +2923,7 @@ A response with exactly 1 task dispatch is a **policy violation** when ≥2 know
 1. Launch via `make <thing>-background` (returns in <1s).
 2. **IMMEDIATELY** dispatch the next wave of work — coverage tests, typing refactor, e2e tests, research. NEVER `sleep` on the main thread.
 3. Poll status from a SUBAGENT (`make gate-status-check` dispatched via Task tool), NOT from the main thread. The poller subagent returns the result; the orchestrator ingests it like any other result.
-4. While waiting for the poller, dispatch MORE work. The pipeline stays primed at the 10-agent floor.
+4. While waiting for the poller, dispatch MORE work. The pipeline stays primed at the 4-agent floor.
 
 **Forbidden patterns (each is a policy violation):**
 - `sleep 60 && make gate-status-check` on the main thread (blocks ALL dispatch).
@@ -2995,7 +2995,7 @@ The CI-poll anti-pattern above is now blocked by a **machine-enforced cooldown**
 
 **The pattern (mandatory):**
 1. Launch via `make <thing>-background` (canonical: `make gate-background`). For operations without a `-background` target, use `nohup make <thing> > .gate-logs/<thing>-<ts>.log 2>&1 &` so output is captured and observable.
-2. Continue other work — keep the subagent pool at the 10-agent floor.
+2. Continue other work — keep the subagent pool at the 4-agent floor.
 3. Poll status from a subagent every ~60s (`make gate-status-check` for the gate; `tail` the log for ad-hoc ops). NEVER poll from the main thread.
 4. When the terminal marker appears, ingest the result and act.
 
@@ -3257,7 +3257,7 @@ stop pattern. The CI poll limiter plugin enforces this mechanically.
 During CI waits, dispatch subagents to: fix tests, write structural tests, update
 docs, investigate slow shards. 0 subagents during CI wait is a policy violation.
 Use the CI window to make progress on disjoint work — the pipeline must stay primed
-at the 10-agent floor even when CI is the apparent center of attention.
+at the 4-agent floor even when CI is the apparent center of attention.
 
 ## CRITICAL: Polling CI Is Not Work (DC.2)
 

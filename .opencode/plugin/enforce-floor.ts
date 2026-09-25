@@ -488,7 +488,7 @@ const defaultImpl: HotModule = {
             "⛔ WAVE WIDTH VIOLATION — INLINE WORK BLOCKED",
             "",
             `Previous message dispatched ${_prevMessageDispatchCount}; required wave width is ${eff.waveWidth}.`,
-            "Run the pre-dispatch audit and submit one parallel wave of exactly 10 concrete tasks.",
+            "Run the pre-dispatch audit and submit one parallel wave of exactly 4 concrete tasks.",
             "Do not resume reads, edits, or bash calls after an undersized wave.",
           ].join("\n"),
         }

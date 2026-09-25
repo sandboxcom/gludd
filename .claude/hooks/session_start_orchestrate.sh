@@ -8,8 +8,8 @@
 # session start.
 set +e
 
-FLOOR="${CLAUDE_AGENT_FLOOR:-6}"
-TARGET="${CLAUDE_AGENT_TARGET:-8}"
+FLOOR="${CLAUDE_AGENT_FLOOR:-4}"
+TARGET="${CLAUDE_AGENT_TARGET:-4}"
 REPO="/Users/shawnwilson/gludd"
 # Live floor override (operator retunes the floor mid-session; see agent_floor_stop.sh).
 if [ -r /tmp/gludd-floor-override ]; then
