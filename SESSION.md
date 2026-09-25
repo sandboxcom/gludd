@@ -1,11 +1,51 @@
-## PRIMARY OBJECTIVE: IN PROGRESS — reconcile the exact v0.1.1 milestone on branch `project-ownership-progress` at HEAD `f10386caa`. Six v0.1.1 tasks remain open (S83.157, S83.158, S83.162, S83.163, S83.165, S83.166); self-improvement remains one workload on Gludd's universal orchestration core. The previous full gate reached unit-3b batch 12 after all static, type, collection, enforcement, integration, and earlier unit phases passed; the sole failure was this operational record exceeding its 30-day freshness contract. Next: validate this refresh, commit it separately, rerun the exact-head gate, then continue the v0.1.1 readiness work.
+## PRIMARY OBJECTIVE: IN PROGRESS — reconcile the exact v0.1.1 milestone and keep self-improvement as one workload on Gludd's universal orchestration core. HEAD `6c5059205907ff05e5bd6e26f878a9cf50dcf630` on `development` (2026-09-25). S83.157 completed in commit `80eacd4f7`; S83.158 remains in progress (dedicated worktree branch has no unique commits; scheduler sub-branch `c2981a346` carries S83.163/S83.165 work). Open v0.1.1 tasks: S83.158, S83.162, S83.163, S83.165, S83.166. Next: continue S83.158 durable-todo scheduler integration, merge completed worktree branches, and rerun the exact-head gate.
+
+## CI Diagnosis — Run 35820838925 (SHA `bd9359c8a4728b06162fb7e51ddf152c9db29985`)
+- Failing jobs: `ansible-ee`, `molecule (1)`, `freellmapi-upstream-build (22.23.2)`, and five `test-shard (3.11, ...)` shards.
+- Test-shard failures (all pass locally on current `development` / macOS / Python 3.14.0):
+  - `unit-1a1`: shard watchdog timeout (rc=124) during `test_abc_protocol_audit_deep.py::TestNoAbstractInstantiation::test_no_direct_abc_instantiation` — no progress for 600s.
+  - `unit-1a2`: `test_azure_self_improve_auth_args.py::test_make_target_missing_input_has_no_partial_argument_stream` AssertionError on stderr contract.
+  - `unit-1b`: `test_execution_environment_bootstrap_role.py::test_present_and_absent_lifecycle_runs_with_isolated_engine_contract` AssertionError.
+  - `unit-2`: `test_git_automation_worktree.py::TestWorktreeCreate::test_rejects_branch_path_escape_via_fn` raised `SandboxStateError: project root is unavailable: /tmp/gludd-worktrees` instead of returning a failed `WorktreeResult`.
+  - `unit-3b`: `test_self_improve_acceptance_matrix.py::test_reference_commits_have_exact_parent_scope_tests_and_line_facts` line-count mismatch (`assert 190 == 189`).
+- Non-test failures are build/environmental: Ansible execution-environment build, Molecule shard 1/4, and FreeLLMAPI upstream build (22.23.2).
+- Failure class: **environmental / transient / platform-specific**. The same test cases pass locally on current `development` (`6c5059205`), and the only commit since the failing SHA is a documentation-only milestone-ledger update.
+- Recommendation: push current `development` tip (`6c5059205`) to trigger a fresh CI run and verify whether these failures reproduce. Do not code-fix without a local reproduction.
 
 ## Current Gate Status
 <!-- gate:begin -->
-- Candidate `f10386caa` on `project-ownership-progress`: six open v0.1.1 tasks (S83.157, S83.158, S83.162, S83.163, S83.165, S83.166); local tree clean; remote diverged with 10 unpushed commits.
-- Previous full gate: all non-test phases PASS; integration PASS (3,376 passed, 13 skipped); unit shards through unit-3b batch 11 PASS. Unit-3b batch 12 reported one failure because `SESSION.md` was >30 days old. Exact-head rerun pending this refresh commit.
-- CI: NO RUN for `f10386caa`.
+- HEAD `6c5059205907ff05e5bd6e26f878a9cf50dcf630` on `development`. Working tree clean. Remote is diverged with unpushed commits.
+- CI: RED — run 35820838925 conclusion=failure on SHA `bd9359c8a4728b06162fb7e51ddf152c9db29985`; no CI run for current HEAD.
+- Local gate status: targeted failing tests from run 35820838925 all pass locally; full gate needs rerun.
 <!-- gate:end -->
+
+---
+
+## SESSION 87 — 2026-09-25 — HEAD `bd9359c8a4728b06162fb7e51ddf152c9db29985`: operational-record refresh and milestone ledger update
+
+### Current State
+
+- S83.157 marked completed in `TASKS.md` with evidence commit `80eacd4f7`.
+- S83.158 not yet completed: its dedicated worktree branch (`agent-s83-158`) has no unique commits; the `agent-s83-158-scheduler` branch at `c2981a346` contains commits tagged for S83.163/S83.165.
+- Open v0.1.1 milestone tasks: S83.158, S83.162, S83.163, S83.165, S83.166.
+- Active worktrees remain for S83.157, S83.158 (claim/scheduler), S83.162, S83.163, S83.165, S83.166.
+
+### Recent Commits (HEAD `bd9359c8a4728b06162fb7e51ddf152c9db29985`)
+
+```text
+bd9359c8a merge: project-ownership-progress worktree work into development
+f10386caa fix(progress): scope stop controls to active milestone
+8fa9556ee merge: project-ownership-progress worktree work into development
+559ff63ab fix(tests): make statistical gate checks deterministic
+e0fe903f6 fix/progress-scope-release-milestone
+```
+
+### Next Steps
+
+1. Continue S83.158 durable-todo scheduler integration.
+2. Merge or clean up completed worktree branches.
+3. Rerun `make gate` on the exact HEAD after ledger refresh.
+4. Address the CI failure on run 35820838925.
 
 ---
 
@@ -90,7 +130,7 @@ ab9f5b59 test: pin clean-tree runtime fixture must live inside the checkout
 
 ---
 
-## SESSION 82 — 2026-08-08 — HEAD `9bf42a0f`: OpenCode DB cleanup safety + gate drift repairs + 5 waves (+~2,177 tests)
+## SESSION 82 — 2026-08-08 — HEAD `9bf42a0f`: Gate-refresh ALL GREEN (pre-test), spawner E2E harness, key detection targets, opencode E2E test fixes
 
 ### Key Accomplishments
 
@@ -151,7 +191,7 @@ eded4dfd chore: update Makefile, SESSION.md, TASKS.md
 c6250355 fix: opencode spawner format fix for v1.18.11 + test results
 54b29bf3 fix: gate-refresh lint + opencode E2E test fixes
 c72caad9 fix: opencode E2E test fixes + remaining test results
-38aa2ef7 feat: opencode E2E multitask test harness + 3x depth enforcement + test project template + spawner v1.18.11 fix
+38aa2ef7 fix: opencode E2E multitask test harness + 3x depth enforcement + test project template + spawner v1.18.11 fix
 f8149c3a chore: final test pass totals
 26a96e8f chore: final test pass totals
 903ba6a2 chore: update TASKS.md
@@ -186,7 +226,7 @@ fcb98aa1 chore: fresh gate-status + all Session 80 deliverables
 
 - **Generic software generation pipeline: BUILT** — 12 project types (game, website, scraper, database, CLI, API, word processor, kernel, pipeline, chatbot, desktop, test suite). Planner→coder→reviewer architecture extended from game-only to all project types.
 - **24 local model configs: CONFIGURED** — 8 coding-specialized models (DeepSeek Coder 6.7B/1.3B, CodeLlama 7B/13B, StarCoder2 3B/7B, Qwen2.5-Coder 7B, Stable Code 3B) + 16 general models (Qwen2.5 0.5B/1.5B/3B/7B/14B/32B, Llama 3.2 1B/3B/8B, Phi-3 mini/medium, SmolLM2 135M/360M/1.7B, TinyLlama 1.1B). All loaded into model registry with dispatch routing.
-- **Enforcement refactor: COMPLETE** — hasPendingWork() moved to shared.ts as canonical single source. All 13 plugins BLOCKING. 125 runtime tests PASS.
+- **Enforcement refactor: COMPLETE** — hasPendingWork() moved to shared.ts as canonical single source. All 13 plugins BLOCKING. 125 runtime PASS.
 - **Multi-model game pipeline: BUILT** — planner→coder→reviewer pipeline for running games across multiple local models simultaneously. E2E tests written.
 - **Daemon/CLI wiring: COMPLETE** — model pipeline endpoints and CLI commands integrated.
 - **Gate-lite: GREEN** — `51a8dfff`; failures fixed.
@@ -253,7 +293,7 @@ fcb98aa1 chore: fresh gate-status + all Session 80 deliverables
 | Wave 15 | +~500 | config_mgmt 60, container_orch, db_pool, e2e_download 54, gpu_ml, notification, plugin_system ~100, rate_limiter, config_schema, opa_policy, systemd_units, pyproject_audit, makefile_audit 24, version_consistency | `5df45687` |
 | Wave 15-16 | +~500 | credential_vault 82, watchdog 72, deadline_enforce, version_dep 32, job_spec, message_bus, worktree_agent, config_schema, opa_policy, systemd_units, pyproject, makefile 24 | `2dedb532` |
 | Wave 16-17 | +~500 | code_review, mcp_connector, memory_persistence, travel_dispatch, sandbox_runner, skill_runner, agent_behavior, game_gen_dispatch, deploy_pipeline deep | `2eb47c7a` |
-| Wave 17-18 | +~500 | agent_memory, dockerfile_audit, shell_scripts, python_imports, skill_discovery, spec_docs, terraform_stack, yaml_config deep | `f6cc8a2c` |
+| Wave 17-18 | +~500 | dockerfile_audit, shell_scripts, python_imports, skill_discovery, spec_docs, terraform_stack, yaml_config deep | `f6cc8a2c` |
 | Wave 18-19 | +~500 | credential_vault continued, watchdog hardening, lifecycle tests, integration edge cases deep | `f6cc8a2c` |
 | Wave 19 | +67 | workflow_edge_cases deep | `aa06cfc5` |
 
