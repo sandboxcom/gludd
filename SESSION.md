@@ -1,4 +1,31 @@
-## PRIMARY OBJECTIVE: v0.1.1 MILESTONE COMPLETE — all S83 tasks finished; release pending CI green. HEAD `6fb76b46da13409518117a40b8276e5fa2f94bb0` on `development` (2026-09-25). S83.157 completed in commit `80eacd4f7`; S83.158 merged at `824353d4b`; S83.162 merged at `565bc2141`; S83.163 merged at `c272ede8c`; S83.165 merged at `f4e07c7a5`; S83.166 merged at `2aa29219e`. Completed v0.1.1 tasks: S83.157, S83.158, S83.159, S83.160, S83.161, S83.162, S83.163, S83.164, S83.165, S83.166, S83.167, S83.168. Floor-config enforcement alignment is complete — the `agent-floor-config` worktree branch (`f4e07c7a5`) is merged into `development` ancestry. 84 broader backlog items remain outside v0.1.1. Smoke test PASSED on current HEAD. Next: push `development` to trigger fresh CI, run `make gate`, and `make release-cut TAG='v0.1.1' MSG='...'` once CI is green.
+## PRIMARY OBJECTIVE: v0.1.1 MILESTONE — all S83.157–S83.168 tasks complete EXCEPT floor-config enforcement alignment, which is in progress. HEAD `1533422eed6425f6f92fb853f6c3379904e5ddc7` on `development` (2026-09-25). S83.157 completed in commit `80eacd4f7`; S83.158 merged at `824353d4b`; S83.162 merged at `565bc2141`; S83.163 merged at `c272ede8c`; S83.165 merged at `f4e07c7a5`; S83.166 merged at `2aa29219e`. Completed v0.1.1 tasks: S83.157, S83.158, S83.159, S83.160, S83.161, S83.162, S83.163, S83.164, S83.165, S83.166, S83.167, S83.168. Floor-config enforcement alignment is IN PROGRESS — being re-applied after the worktree cleanup lost prior uncommitted changes; do NOT mark complete until it is actually merged. 84 broader backlog items remain outside v0.1.1. Smoke test PASSED on current HEAD. Next: complete and merge floor-config enforcement alignment, push `development`, run `make gate`, and `make release-cut TAG='v0.1.1' MSG='...'` once CI is green.
+
+## SESSION 89 — 2026-09-25 — HEAD `1533422eed6425f6f92fb853f6c3379904e5ddc7`: correct operational record — floor config is in progress
+
+### Correction to Session 88 Record
+
+- The Session 88 entry incorrectly reported floor-config enforcement alignment as complete and merged.
+- Floor-config enforcement alignment is actually **IN PROGRESS**: prior uncommitted changes were lost during worktree cleanup and the work is being re-applied.
+- All other S83.157–S83.168 milestone tasks remain complete and merged to `development`.
+- Do not mark floor-config complete until the branch is actually merged into `development`.
+
+### Current State
+
+- HEAD: `1533422eed6425f6f92fb853f6c3379904e5ddc7` on `development`.
+- Working tree: CLEAN (prior to this SESSION.md edit).
+- Remote: diverged with unpushed commits.
+- CI: NO RUN for current HEAD.
+- Smoke test: PASSED on current HEAD.
+- Active workstreams: 0; open task IDs: 0.
+- 84 broader backlog items remain outside the v0.1.1 milestone.
+
+### Next Steps
+
+1. Complete floor-config enforcement alignment work.
+2. Merge the floor-config branch into `development`.
+3. Push `development` to remote to trigger fresh CI.
+4. Run `make gate` on the resulting HEAD.
+5. `make release-cut TAG='v0.1.1' MSG='...'` once CI is green.
 
 ## CI Diagnosis — Run 35820838925 (SHA `bd9359c8a4728b06162fb7e51ddf152c9db29985`)
 - Failing jobs: `ansible-ee`, `molecule (1)`, `freellmapi-upstream-build (22.23.2)`, and five `test-shard (3.11, ...)` shards.
@@ -14,10 +41,11 @@
 
 ## Current Gate Status
 <!-- gate:begin -->
-- HEAD `6fb76b46da13409518117a40b8276e5fa2f94bb0` on `development`. Working tree clean. Remote is diverged with unpushed commits.
-- CI: NO RUN for current HEAD `6fb76b46da13`; prior run 35820838925 conclusion=failure on SHA `bd9359c8a4728b06162fb7e51ddf152c9db29985` is now stale.
-- Smoke test: PASSED on `6fb76b46da13409518117a40b8276e5fa2f94bb0`.
+- HEAD `1533422eed6425f6f92fb853f6c3379904e5ddc7` on `development`. Working tree clean (prior to this SESSION.md edit). Remote is diverged with unpushed commits.
+- CI: NO RUN for current HEAD `1533422eed64`; prior run 35820838925 conclusion=failure on SHA `bd9359c8a4728b06162fb7e51ddf152c9db29985` is now stale.
+- Smoke test: PASSED on `1533422eed6425f6f92fb853f6c3379904e5ddc7`.
 - Local gate status: needs rerun on current HEAD before release-cut.
+- Floor-config enforcement alignment: IN PROGRESS — not yet merged.
 <!-- gate:end -->
 
 ---
