@@ -51,7 +51,7 @@ def test_promote_advances_active_and_preserves_previous_generation() -> None:
 def test_rollback_swaps_active_and_previous_generations() -> None:
     workflow = FreeLLMAPIRollbackWorkflow()
     blue = workflow.promote(("sha256:1111" + "0" * 60,))
-    green = workflow.promote(("sha256:2222" + " 0" * 60,))
+    green = workflow.promote(("sha256:2222" + "0" * 60,))
 
     rolled = workflow.rollback()
 

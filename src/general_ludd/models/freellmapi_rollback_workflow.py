@@ -1,45 +1,23 @@
-"""Rollback workflow boundary for FreeLLMAPI admitted artifacts.
+"""Fail-closed blue/green rollback workflow for FreeLLMAPI bridge artifacts.
 
-The workflow tracks blue/green generations, performs atomic switch-back, and
-enforces protected-artifact rules so that a rollback cannot displace an
-artifact that the current runtime depends on.  All state is content-free:
-only evidence identifiers are retained.
+The workflow tracks immutable artifact generations, atomic switch-back, and
+protected-artifact rules without exposing upstream content or worker state.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from enum import StrEnum
-from typing import NoReturn
-
-FREELLMAPI_ROLLBACK_SCHEMA_VERSION = 1
 
 
-class FreeLLMAPIRollbackFault(StrEnum):
-    """Stable failure categories that never expose upstream content."""
-
-    NO_PRIOR_GENERATION = "no_prior_generation"
-    EMPTY_ARTIFACT_SET = "empty_artifact_set"
-    ARTIFACT_CONFLICT = "artifact_conflict"
-
-
-class FreeLLMAPIRollbackError(ValueError):
-    """Fail-closed rollback error containing only its stable category."""
-
-    def __init__(self, fault: FreeLLMAPIRollbackFault) -> None:
-        """Create an error containing only its stable category."""
-        self.fault = fault
-        super().__init__(fault.value)
-
-
-# Backward-compatible alias used by the class-based workflow boundary.
-RollbackWorkflowError = FreeLLMAPIRollbackError
+class RollbackWorkflowError(ValueError):
+    """Fail-closed rollback error exposing no task or model content."""
 
 
 @dataclass(frozen=True, slots=True)
 class RollbackArtifact:
-    """One artifact tracked by the rollback workflow boundary."""
+    """One immutable artifact belonging to a single generation."""
 
     artifact_id: str
     generation_id: int
@@ -48,7 +26,7 @@ class RollbackArtifact:
 
 @dataclass(frozen=True, slots=True)
 class RollbackGeneration:
-    """One immutable generation in the blue/green rollback sequence."""
+    """Immutable identity of one pinned bridge artifact generation."""
 
     generation_id: int
     artifacts: tuple[str, ...]
@@ -57,109 +35,76 @@ class RollbackGeneration:
 
 @dataclass
 class FreeLLMAPIRollbackWorkflow:
-    """Blue/green rollback boundary for FreeLLMAPI deployments.
+    """Blue/green generation tracking with atomic switch-back."""
 
-    Promotions create monotonically numbered generations.  The most recent
-    generation is *active* (green); the one before it is *previous* (blue).
-    :meth:`rollback` atomically swaps them.  Artifacts belonging to the active
-    and previous generations are protected from cleanup.
-    """
-
+    active_generation: RollbackGeneration | None = None
+    previous_generation: RollbackGeneration | None = None
     _generations: list[RollbackGeneration] = field(default_factory=list)
-    _active_index: int = -1
-    _previous_index: int = -1
-
-    @property
-    def active_generation(self) -> RollbackGeneration | None:
-        """Return the generation currently serving new work, if any."""
-        if self._active_index < 0:
-            return None
-        return self._generations[self._active_index]
-
-    @property
-    def previous_generation(self) -> RollbackGeneration | None:
-        """Return the immediately previous accepted generation, if any."""
-        if self._previous_index < 0:
-            return None
-        return self._generations[self._previous_index]
+    _next_id: int = 1
 
     def promote(self, artifacts: tuple[str, ...]) -> RollbackGeneration:
-        """Stage a new generation and make it active.
-
-        Args:
-            artifacts: Non-empty tuple of unique artifact identifiers for the
-                new generation.
-
-        Returns:
-            The newly created active generation.
-
-        Raises:
-            FreeLLMAPIRollbackError: If *artifacts* is empty or contains
-                duplicate identifiers.
-        """
+        """Promote a new green generation and retain the previous blue one."""
         if not artifacts:
-            _fail(FreeLLMAPIRollbackFault.EMPTY_ARTIFACT_SET)
+            raise RollbackWorkflowError("artifacts must not be empty")
         if len(set(artifacts)) != len(artifacts):
-            _fail(FreeLLMAPIRollbackFault.ARTIFACT_CONFLICT)
+            raise RollbackWorkflowError("artifact ids must be unique")
+        for artifact_id in artifacts:
+            if not _is_sha256_uri(artifact_id):
+                raise RollbackWorkflowError("artifact id must be a sha256 uri")
 
-        generation_id = (self._generations[-1].generation_id + 1) if self._generations else 1
         generation = RollbackGeneration(
-            generation_id=generation_id,
+            generation_id=self._next_id,
             artifacts=artifacts,
             promoted_at=datetime.now(UTC),
         )
+        self._next_id += 1
+        self.previous_generation = self.active_generation
+        self.active_generation = generation
         self._generations.append(generation)
-        if self._active_index >= 0:
-            self._previous_index = self._active_index
-        self._active_index = len(self._generations) - 1
         return generation
 
     def rollback(self) -> RollbackGeneration:
-        """Atomically switch back to the previous generation.
-
-        Returns:
-            The generation that becomes active after the switch.
-
-        Raises:
-            FreeLLMAPIRollbackError: If there is no previous generation.
-        """
-        if self._previous_index < 0:
-            _fail(FreeLLMAPIRollbackFault.NO_PRIOR_GENERATION)
-        current_active = self._active_index
-        self._active_index = self._previous_index
-        self._previous_index = current_active
-        return self.active_generation  # type: ignore[return-value]
+        """Atomically switch new work back to the retained generation."""
+        if self.previous_generation is None:
+            raise RollbackWorkflowError("no previous generation to roll back to")
+        self.active_generation, self.previous_generation = (
+            self.previous_generation,
+            self.active_generation,
+        )
+        assert self.active_generation is not None
+        return self.active_generation
 
     def protected_artifacts(self) -> frozenset[str]:
-        """Return all artifact ids that may not be cleaned up."""
+        """Return artifact ids that must not be garbage collected."""
         protected: set[str] = set()
-        for index in (self._active_index, self._previous_index):
-            if index >= 0:
-                protected.update(self._generations[index].artifacts)
+        if self.active_generation is not None:
+            protected.update(self.active_generation.artifacts)
+        if self.previous_generation is not None:
+            protected.update(self.previous_generation.artifacts)
         return frozenset(protected)
 
     def is_artifact_protected(self, artifact_id: str) -> bool:
-        """Return True if *artifact_id* belongs to the active or previous generation."""
+        """Check whether an artifact id is currently protected."""
         return artifact_id in self.protected_artifacts()
 
     def cleanup_eligible_generations(self) -> tuple[RollbackGeneration, ...]:
-        """Return generations older than the active and previous ones.
+        """Return generations that are safe to garbage collect."""
+        protected = self.protected_artifacts()
+        return tuple(
+            generation
+            for generation in self._generations
+            if not any(artifact in protected for artifact in generation.artifacts)
+        )
 
-        These generations are safe to remove because they are no longer needed
-        for serving or rollback.
-        """
-        kept = {self._active_index, self._previous_index}
-        return tuple(generation for index, generation in enumerate(self._generations) if index not in kept)
+
+_SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
-def _fail(fault: FreeLLMAPIRollbackFault) -> NoReturn:
-    raise FreeLLMAPIRollbackError(fault)
+def _is_sha256_uri(value: str) -> bool:
+    return isinstance(value, str) and _SHA256_RE.fullmatch(value) is not None
 
 
 __all__ = [
-    "FREELLMAPI_ROLLBACK_SCHEMA_VERSION",
-    "FreeLLMAPIRollbackError",
-    "FreeLLMAPIRollbackFault",
     "FreeLLMAPIRollbackWorkflow",
     "RollbackArtifact",
     "RollbackGeneration",
