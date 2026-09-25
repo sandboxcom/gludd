@@ -17,7 +17,7 @@ import { isSubagent, reportAlive, writeHeartbeat, getProjectRoot } from "../lib/
 //     unchecked items.
 //   * Rule 1: ≥2 unchecked items AND 0 continuation-classified dispatches
 //     in the wave → DENY.
-//   * Rule 2: ≥10 dispatches AND 100% new-task → DENY.
+//   * Rule 2: ≥4 dispatches AND 100% new-task → DENY.
 //
 // STATE FILE: /tmp/gludd-additive-task.json
 // DISABLE: GLUDD_ADDITIVE_TASK_ENFORCE=0
@@ -155,7 +155,7 @@ const defaultImpl: HotModule = {
         }
       }
 
-      if (total >= 10 && newCount === total) {
+      if (total >= 4 && newCount === total) {
         const newPct = ((newCount / total) * 100).toFixed(0)
         s.wave = []
         saveState(s)
@@ -170,7 +170,7 @@ const defaultImpl: HotModule = {
         }
       }
 
-      if (total >= 10) s.wave = []
+      if (total >= 4) s.wave = []
       saveState(s)
     } catch { // fail open
   }

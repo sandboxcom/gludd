@@ -53,7 +53,7 @@
 #   GLUDD_FORCE_DELEGATE_MAXBLOCK — consecutive denials before fail-open (default: 4)
 #   GLUDD_FORCE_DELEGATE_STATE    — state file path override (default: /tmp/gludd-force-delegate.json)
 #   GLUDD_FORCE_DELEGATE_DECAY_SEC — idle seconds before a streak is discarded (default: 600)
-#   CLAUDE_AGENT_FLOOR            — live-subagent floor (shared with agent_floor hooks, default: 6)
+#   CLAUDE_AGENT_FLOOR            — live-subagent floor (shared with agent_floor hooks, default: 4)
 #   FLOOR_LIVE_OVERRIDE           — test seam: forces live count to a fixed integer (see agent_liveness.py)
 #
 # SESSION-ID FORWARDING (2026-07-10, agent_liveness.py defect #1/#3 fix): this
@@ -69,7 +69,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 GRACE="${GLUDD_FORCE_DELEGATE_GRACE:-3}"
 MAXBLOCK="${GLUDD_FORCE_DELEGATE_MAXBLOCK:-4}"
-FLOOR="${CLAUDE_AGENT_FLOOR:-6}"
+FLOOR="${CLAUDE_AGENT_FLOOR:-4}"
 DECAY_SEC="${GLUDD_FORCE_DELEGATE_DECAY_SEC:-600}"
 # Live floor override (see agent_floor_stop.sh): a valid integer in this file wins,
 # so the force-delegate gate honors the operator's mid-session floor retune too.

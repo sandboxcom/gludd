@@ -96,14 +96,14 @@ const PUSH_STATE_FILE = process.env.GLUDD_PUSH_STATE_FILE || "/tmp/gludd-push-st
 const POST_RESULTS_STATE_FILE = process.env.GLUDD_POST_RESULTS_STATE_FILE || "/tmp/gludd-post-results-state.json"
 const TEXT_ONLY_STATE_FILE = process.env.GLUDD_TEXT_ONLY_STATE_FILE || "/tmp/gludd-text-only-state.json"
 const WAVE_RESULT_THRESHOLD = 3
-const HARD_MAX_DISPATCHES = 10
+const HARD_MAX_DISPATCHES = 4
 const CONFIGURED_AGENT_MIN =
   process.env.CLAUDE_AGENT_FLOOR ||
   process.env.GLUDD_MIN_DISPATCHES ||
   process.env.GLUDD_MULTITASK_MIN_DISPATCHES
-// Ten is retained as the recommendation for genuinely broad work. It becomes
+// Four is retained as the recommendation for genuinely broad work. It becomes
 // a mandatory minimum only when an operator explicitly configures one.
-const AGENT_FLOOR_DEFAULT = parseInt(CONFIGURED_AGENT_MIN || "10", 10)
+const AGENT_FLOOR_DEFAULT = parseInt(CONFIGURED_AGENT_MIN || "4", 10)
 const REQUIRED_AGENT_MIN = CONFIGURED_AGENT_MIN !== undefined
   ? Math.max(0, Math.min(
       HARD_MAX_DISPATCHES,

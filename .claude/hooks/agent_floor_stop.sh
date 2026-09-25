@@ -31,9 +31,9 @@
 # Transient/rate-limit dispatch errors are retryable (re-dispatch after backoff) --
 # a one-line note, not a coercion. FAIL-OPEN on any error (exit 0 = allow stop).
 
-FLOOR="${CLAUDE_AGENT_FLOOR:-6}"
-TARGET="${CLAUDE_AGENT_TARGET:-10}"
-CEILING="${CLAUDE_AGENT_CEILING:-12}"
+FLOOR="${CLAUDE_AGENT_FLOOR:-4}"
+TARGET="${CLAUDE_AGENT_TARGET:-4}"
+CEILING="${CLAUDE_AGENT_CEILING:-4}"
 # LIVE FLOOR OVERRIDE: CLAUDE_AGENT_FLOOR is fixed at session start, so this file
 # lets the operator retune the floor mid-session without a restart. A valid integer
 # wins over the env var.
