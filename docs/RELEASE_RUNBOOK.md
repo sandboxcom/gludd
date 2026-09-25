@@ -1,6 +1,6 @@
 # Release runbook
 
-This is the fail-closed procedure for cutting Gludd `v0.1.0-beta.4`.
+This is the fail-closed procedure for cutting Gludd `v0.1.1`.
 
 ## The rule
 
@@ -13,20 +13,16 @@ matrix, and the published release passes the remote completeness check.
 The only acceptable remote verdict is:
 
 ```text
-make verify-release-completeness TAG=v0.1.0-beta.4
+make verify-release-completeness TAG=v0.1.1
 ...
 COMPLETENESS CHECK: PASS
 ```
 
-The beta4 verifier requires 28 artifact categories, at least 30 non-empty
-assets, a non-draft prerelease, the exact tag version in release artifacts, and
-no zero-byte asset. Before publication, CI also verifies artifact contents,
-aggregate checksums, digest-pinned image references, canonical Ansible runtime
-metadata, and all smoke attestations.
-
-The legacy 12 artifact categories remain a compatibility floor within beta4's
-28-category matrix; satisfying those 12 categories alone is not a complete
-beta4 release.
+The v0.1.1 verifier requires every required artifact category to pass, the
+exact tag version in release assets, a non-draft release, and no zero-byte
+asset. Before publication, CI also verifies artifact contents, aggregate
+checksums, digest-pinned image references, canonical Ansible runtime metadata,
+and all smoke attestations.
 
 ## Preconditions
 
@@ -34,7 +30,7 @@ Run these commands from the main checkout. Stop on every non-zero exit.
 
 ```text
 make check-version-consistency
-make check-readme-status TAG=v0.1.0-beta.4
+make check-readme-status TAG=v0.1.1
 make validate-ansible-runtime-boundary
 make check-collection-interop
 make gate-all
@@ -45,7 +41,7 @@ Required evidence:
 
 - `pyproject.toml`, `src/general_ludd/__init__.py`, and the README carry the same
   committed version bump;
-- the project version is `0.1.0-beta.4` everywhere;
+- the project version is `0.1.1` everywhere;
 - the core/controller/managed-host Python boundary is valid and locked;
 - every cross-collection role edge resolves and its dependency is declared;
 - aggregate coverage is at least 85%, every measured file is at least 75%, and
@@ -73,10 +69,10 @@ make verify-remote BRANCH=master SHA=<master-full-sha>
 Do not create a release from a feature worktree. Do not rebase either shared
 branch.
 
-## Cut beta4 with release-cut
+## Cut v0.1.1 with release-cut
 
 ```text
-make release-cut TAG=v0.1.0-beta.4 MSG='v0.1.0-beta.4: sandbox, local-model, runtime-boundary, and artifact-matrix hardening'
+make release-cut TAG=v0.1.1 MSG='v0.1.1: S83.166 release documentation and version bump'
 ```
 
 The tag-triggered workflow must complete all gate, test, coverage, Molecule,
@@ -153,18 +149,17 @@ zero-downtime service for existing users while a corrected candidate is built.
 ## Verify with verify-release-completeness
 
 ```text
-make verify-release-completeness TAG=v0.1.0-beta.4
-make release-view TAG=v0.1.0-beta.4
+make verify-release-completeness TAG=v0.1.1
+make release-view TAG=v0.1.1
 ```
 
 Expected release state:
 
 - `isDraft: false`;
-- `isPrerelease: true`;
-- at least 30 assets;
-- all 28 categories report `PASS`;
+- `isPrerelease: false`;
+- every required artifact category reports `PASS`;
 - no zero-sized asset;
-- release URL identifies `v0.1.0-beta.4`.
+- release URL identifies `v0.1.1`.
 
 Record the release URL, exact tag SHA, CI run URL, gate evidence, coverage
 evidence, and completeness PASS in the task ledger.
@@ -177,8 +172,8 @@ built by CI from the exact tagged SHA have valid provenance.
 If the tag workflow is green but publication was transiently interrupted:
 
 ```text
-make release-recut TAG=v0.1.0-beta.4
-make verify-release-completeness TAG=v0.1.0-beta.4
+make release-recut TAG=v0.1.1
+make verify-release-completeness TAG=v0.1.1
 ```
 
 If the tagged SHA is red or an artifact is functionally invalid, do not paper
@@ -203,8 +198,8 @@ check, then cut the next prerelease tag.
 ## Long-lived practitioner failure history
 
 Reviewed on 2026-08-30, two long-running practitioner reports explain why
-beta4 fails closed instead of trusting a successful build command or a
-well-named transfer artifact:
+v0.1.1 and earlier beta releases fail closed instead of trusting a successful
+build command or a well-named transfer artifact:
 
 - GitHub Actions upload-artifact
   [issue #290](https://github.com/actions/upload-artifact/issues/290), opened in
