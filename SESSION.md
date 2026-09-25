@@ -1,4 +1,4 @@
-## PRIMARY OBJECTIVE: IN PROGRESS — reconcile the exact v0.1.1 milestone and keep self-improvement as one workload on Gludd's universal orchestration core. HEAD `2aa29219e28d3a5d3e4cc16f61439600360d4db4` on `development` (2026-09-25). S83.157 completed in commit `80eacd4f7`; S83.158 merged at `824353d4b`; S83.162 merged at `565bc2141`; S83.163 merged at `c272ede8c`; S83.165 merged at `f4e07c7a5`; and S83.166 merged at `2aa29219e`. Completed v0.1.1 tasks: S83.157, S83.158, S83.159, S83.160, S83.161, S83.162, S83.163, S83.164, S83.165, S83.166, S83.167, S83.168. Remaining tasks: floor-config enforcement alignment (unmerged worktree `agent-floor-config`), 84 backlog items, and pushing the merged `development` tip to trigger fresh CI. Next: merge or clean up `agent-floor-config`, batch-push `development`, and verify CI green before release-cut v0.1.1.
+## PRIMARY OBJECTIVE: v0.1.1 MILESTONE COMPLETE — all S83 tasks finished; release pending CI green. HEAD `6fb76b46da13409518117a40b8276e5fa2f94bb0` on `development` (2026-09-25). S83.157 completed in commit `80eacd4f7`; S83.158 merged at `824353d4b`; S83.162 merged at `565bc2141`; S83.163 merged at `c272ede8c`; S83.165 merged at `f4e07c7a5`; S83.166 merged at `2aa29219e`. Completed v0.1.1 tasks: S83.157, S83.158, S83.159, S83.160, S83.161, S83.162, S83.163, S83.164, S83.165, S83.166, S83.167, S83.168. Floor-config enforcement alignment is complete — the `agent-floor-config` worktree branch (`f4e07c7a5`) is merged into `development` ancestry. 84 broader backlog items remain outside v0.1.1. Smoke test PASSED on current HEAD. Next: push `development` to trigger fresh CI, run `make gate`, and `make release-cut TAG='v0.1.1' MSG='...'` once CI is green.
 
 ## CI Diagnosis — Run 35820838925 (SHA `bd9359c8a4728b06162fb7e51ddf152c9db29985`)
 - Failing jobs: `ansible-ee`, `molecule (1)`, `freellmapi-upstream-build (22.23.2)`, and five `test-shard (3.11, ...)` shards.
@@ -14,10 +14,47 @@
 
 ## Current Gate Status
 <!-- gate:begin -->
-- HEAD `6c5059205907ff05e5bd6e26f878a9cf50dcf630` on `development`. Working tree clean. Remote is diverged with unpushed commits.
-- CI: RED — run 35820838925 conclusion=failure on SHA `bd9359c8a4728b06162fb7e51ddf152c9db29985`; no CI run for current HEAD.
-- Local gate status: targeted failing tests from run 35820838925 all pass locally; full gate needs rerun.
+- HEAD `6fb76b46da13409518117a40b8276e5fa2f94bb0` on `development`. Working tree clean. Remote is diverged with unpushed commits.
+- CI: NO RUN for current HEAD `6fb76b46da13`; prior run 35820838925 conclusion=failure on SHA `bd9359c8a4728b06162fb7e51ddf152c9db29985` is now stale.
+- Smoke test: PASSED on `6fb76b46da13409518117a40b8276e5fa2f94bb0`.
+- Local gate status: needs rerun on current HEAD before release-cut.
 <!-- gate:end -->
+
+---
+
+## SESSION 88 — 2026-09-25 — HEAD `6fb76b46da13409518117a40b8276e5fa2f94bb0`: final v0.1.1 operational record and smoke status
+
+### Current State
+
+- All v0.1.1 milestone tasks (S83.157–S83.168) are complete and merged to `development`.
+- Floor-config enforcement alignment is complete; the `agent-floor-config` worktree branch is merged into `development` ancestry.
+- Active workstreams: 0; open task IDs: 0; 84 broader backlog items remain outside the v0.1.1 milestone.
+- Working tree is CLEAN.
+- Remote is diverged with unpushed commits.
+
+### Recent Commits (HEAD `6fb76b46da13409518117a40b8276e5fa2f94bb0`)
+
+```text
+6fb76b46d docs: update milestone ledger and smoke status
+2aa29219e merge: agent-s83-166-docs worktree work into development
+34d9d69f1 S83.166: sync uv.lock for v0.1.1
+882b23790 S83.166: v0.1.1 release documentation and version bump
+e8a53bc1c docs: update milestone ledger after S83.165 merge
+```
+
+### Smoke Test
+
+- Result: PASSED
+- Daemon booted successfully, healthz and status APIs returned expected payloads, todo creation succeeded, no startup errors.
+
+### Next Steps (mandatory)
+
+1. Push `development` to remote to trigger fresh CI: `make batch-push`.
+2. Run `make gate` on the resulting HEAD.
+3. Verify CI green with `make ci-verdict BRANCH=development`.
+4. `make release-cut TAG='v0.1.1' MSG='release: v0.1.1'` once CI is green.
+5. `make verify-release-completeness TAG=v0.1.1` after the release job publishes.
+6. Clean up stale worktrees after merges are confirmed. `agent-floor-config` is already merged into `development` ancestry and cleaned up; remaining: `agent-s83-166`, `agent-s83-166-readiness`.
 
 ---
 

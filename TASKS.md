@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-08-17 Session 85. HEAD `07172af0` on `development`. Round 18 verdicts: molecule 31993898325 FAILED only binary_smoke_linux (transitive warning digest drift — re-pinned `58837b45`); build 31993898379 FAILED on the same class + beta3 escape-hatch comment (fixed `c8c6442e`). Round 19 push pending (2 commits — one more docs commit → batch-push; force-push rate-guard exhausted). Remaining: round-19 CI green → development-merge-to-master → release-cut v0.1.0-beta.4.**
+**Last consolidated: 2026-09-25 Session 88. HEAD `6fb76b46d` on `development`. The fail-closed v0.1.1 milestone (S83.157–S83.168) is complete: all twelve tasks are merged to `development`, the `agent-floor-config` enforcement-alignment worktree is merged and cleaned up, and the working tree is clean. 84 broader backlog items remain outside v0.1.1. Next: push `development` to trigger fresh CI, run `make gate` on the resulting HEAD, and `make release-cut TAG='v0.1.1' MSG='...'` once CI is green.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
