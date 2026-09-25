@@ -1,10 +1,22 @@
-## PRIMARY OBJECTIVE: IN PROGRESS — reconcile the exact v0.1.1 milestone and keep self-improvement as one workload on Gludd's universal orchestration core. HEAD `bd9359c8a4728b06162fb7e51ddf152c9db29985` on `development` (2026-09-25). S83.157 completed in commit `80eacd4f7`; S83.158 remains in progress (dedicated worktree branch has no unique commits; scheduler sub-branch `c2981a346` carries S83.163/S83.165 work). Open v0.1.1 tasks: S83.158, S83.162, S83.163, S83.165, S83.166. Next: continue S83.158 durable-scheduler integration, merge completed worktree branches, and rerun the exact-head gate.
+## PRIMARY OBJECTIVE: IN PROGRESS — reconcile the exact v0.1.1 milestone and keep self-improvement as one workload on Gludd's universal orchestration core. HEAD `6c5059205907ff05e5bd6e26f878a9cf50dcf630` on `development` (2026-09-25). S83.157 completed in commit `80eacd4f7`; S83.158 remains in progress (dedicated worktree branch has no unique commits; scheduler sub-branch `c2981a346` carries S83.163/S83.165 work). Open v0.1.1 tasks: S83.158, S83.162, S83.163, S83.165, S83.166. Next: continue S83.158 durable-scheduler integration, merge completed worktree branches, and rerun the exact-head gate.
+
+## CI Diagnosis — Run 35820838925 (SHA `bd9359c8a4728b06162fb7e51ddf152c9db29985`)
+- Failing jobs: `ansible-ee`, `molecule (1)`, `freellmapi-upstream-build (22.23.2)`, and five `test-shard (3.11, ...)` shards.
+- Test-shard failures (all pass locally on current `development` / macOS / Python 3.14.0):
+  - `unit-1a1`: shard watchdog timeout (rc=124) during `test_abc_protocol_audit_deep.py::TestNoAbstractInstantiation::test_no_direct_abc_instantiation` — no progress for 600s.
+  - `unit-1a2`: `test_azure_self_improve_auth_args.py::test_make_target_missing_input_has_no_partial_argument_stream` AssertionError on stderr contract.
+  - `unit-1b`: `test_execution_environment_bootstrap_role.py::test_present_and_absent_lifecycle_runs_with_isolated_engine_contract` AssertionError.
+  - `unit-2`: `test_git_automation_worktree.py::TestWorktreeCreate::test_rejects_branch_path_escape_via_fn` raised `SandboxStateError: project root is unavailable: /tmp/gludd-worktrees` instead of returning a failed `WorktreeResult`.
+  - `unit-3b`: `test_self_improve_acceptance_matrix.py::test_reference_commits_have_exact_parent_scope_tests_and_line_facts` line-count mismatch (`assert 190 == 189`).
+- Non-test failures are build/environmental: Ansible execution-environment build, Molecule shard 1/4, and FreeLLMAPI upstream build (22.23.2).
+- Failure class: **environmental / transient / platform-specific**. The same test cases pass locally on current `development` (`6c5059205`), and the only commit since the failing SHA is a documentation-only milestone-ledger update.
+- Recommendation: push current `development` tip (`6c5059205`) to trigger a fresh CI run and verify whether these failures reproduce. Do not code-fix without a local reproduction.
 
 ## Current Gate Status
 <!-- gate:begin -->
-- HEAD `bd9359c8a4728b06162fb7e51ddf152c9db29985` on `development`. Working tree clean. Remote is diverged with unpushed commits.
-- CI: RED — run 35820838925 conclusion=failure (checked via `make verify-state`).
-- Local gate status: UNKNOWN/needs rerun after this operational-record refresh.
+- HEAD `6c5059205907ff05e5bd6e26f878a9cf50dcf630` on `development`. Working tree clean. Remote is diverged with unpushed commits.
+- CI: RED — run 35820838925 conclusion=failure on SHA `bd9359c8a4728b06162fb7e51ddf152c9db29985`; no CI run for current HEAD.
+- Local gate status: targeted failing tests from run 35820838925 all pass locally; full gate needs rerun.
 <!-- gate:end -->
 
 ---
