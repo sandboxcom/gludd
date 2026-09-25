@@ -33,14 +33,8 @@ from general_ludd.infra.model_worker_lifecycle import ModelWorkerLifecyclePolicy
 _SUBSCRIPTION = "00000000-0000-4000-8000-000000000001"
 _RESOURCE_GROUP = "gludd-accelerators"
 _RESOURCE_GROUP_ID = f"/subscriptions/{_SUBSCRIPTION}/resourceGroups/{_RESOURCE_GROUP}"
-_VM_ID = (
-    f"{_RESOURCE_GROUP_ID}/providers/Microsoft.Compute/"
-    "virtualMachines/gludd-worker-001-vm"
-)
-_VMSS_ID = (
-    f"{_RESOURCE_GROUP_ID}/providers/Microsoft.Compute/"
-    "virtualMachineScaleSets/gludd-worker-001-vmss"
-)
+_VM_ID = f"{_RESOURCE_GROUP_ID}/providers/Microsoft.Compute/virtualMachines/gludd-worker-001-vm"
+_VMSS_ID = f"{_RESOURCE_GROUP_ID}/providers/Microsoft.Compute/virtualMachineScaleSets/gludd-worker-001-vmss"
 
 
 def _credentials() -> AzureAcceleratorCredentials:
@@ -77,19 +71,12 @@ def _spec(
         owner_token="gludd-owner-001",
         trace_id="a" * 32,
         expires_at_utc="2026-09-20T12:00:00Z",
-        availability_zone=(
-            "1" if strategy is AzureExecutionStrategy.SINGLE_VM else None
-        ),
-        availability_zones=(
-            () if strategy is AzureExecutionStrategy.SINGLE_VM else ("1",)
-        ),
+        availability_zone=("1" if strategy is AzureExecutionStrategy.SINGLE_VM else None),
+        availability_zones=(() if strategy is AzureExecutionStrategy.SINGLE_VM else ("1",)),
         user_assigned_identity_id=(
             None
             if strategy is AzureExecutionStrategy.SINGLE_VM
-            else (
-                f"{_RESOURCE_GROUP_ID}/providers/Microsoft.ManagedIdentity/"
-                "userAssignedIdentities/gludd-worker"
-            )
+            else (f"{_RESOURCE_GROUP_ID}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/gludd-worker")
         ),
         rdma_enabled=strategy is AzureExecutionStrategy.VMSS,
     )
@@ -251,14 +238,26 @@ class _SdkReader:
     remaining: tuple[str, ...] = ()
     resolve_calls: list[dict[str, object]] = field(default_factory=list)
     remaining_calls: list[dict[str, object]] = field(default_factory=list)
+    delete_calls: list[dict[str, object]] = field(default_factory=list)
 
     def resolve_vmss_instances(self, **kwargs: object) -> tuple[AzureGpuWorkerInstance, ...]:
         self.resolve_calls.append(kwargs)
         return self.instances
 
+    def resolve_single_vm(self, **kwargs: object) -> AzureGpuWorkerInstance:
+        self.resolve_calls.append(kwargs)
+        if self.instances:
+            return self.instances[0]
+        vm_id = kwargs.get("vm_id", "")
+        return AzureGpuWorkerInstance(host_id=str(vm_id), address="203.0.113.10")
+
     def remaining_owned_resource_ids(self, **kwargs: object) -> tuple[str, ...]:
         self.remaining_calls.append(kwargs)
         return self.remaining
+
+    def delete_owned_resources(self, **kwargs: object) -> tuple[str, ...]:
+        self.delete_calls.append(kwargs)
+        return kwargs.get("owned_resource_ids", ())
 
 
 class _FailingSdkReader(_SdkReader):
@@ -308,7 +307,7 @@ def test_single_vm_provision_destroy_and_independent_absence(
     tmp_path: Path,
 ) -> None:
     leases = _LeaseSource()
-    sdk = _SdkReader()
+    sdk = _SdkReader(instances=(AzureGpuWorkerInstance(host_id=_VM_ID, address="203.0.113.10"),))
     traces: list[AzureGpuWorkerRuntimeTrace] = []
     executor = _Executor(_plan(AzureExecutionStrategy.SINGLE_VM), _single_outputs())
     runtime = _runtime(
@@ -336,7 +335,7 @@ def test_single_vm_provision_destroy_and_independent_absence(
         "apply",
         "output",
     ]
-    assert len(leases.acquired) == 6
+    assert len(leases.acquired) == 7
     assert leases.released == leases.acquired
     assert traces[0].state is TerraformRuntimeState.STARTED
     assert traces[-1].state is TerraformRuntimeState.SUCCEEDED
@@ -345,8 +344,9 @@ def test_single_vm_provision_destroy_and_independent_absence(
     assert runtime.exists(deployment) is False
 
     assert [call["phase"] for call in executor.calls][-1] == "destroy"
-    assert len(leases.acquired) == 8
+    assert len(leases.acquired) == 10
     assert leases.released == leases.acquired
+    assert sdk.delete_calls[0]["owned_resource_ids"] == deployment.owned_resource_ids
     assert sdk.remaining_calls[0]["owned_resource_ids"] == deployment.owned_resource_ids
 
 
@@ -382,9 +382,7 @@ def test_vmss_provision_uses_sdk_resolved_private_instances(tmp_path: Path) -> N
 
 def test_plan_audit_rejects_unreviewed_resource_before_apply(tmp_path: Path) -> None:
     plan = _plan(AzureExecutionStrategy.SINGLE_VM)
-    plan["resource_changes"].append(
-        _change("azurerm_role_assignment.wide", "azurerm_role_assignment")
-    )
+    plan["resource_changes"].append(_change("azurerm_role_assignment.wide", "azurerm_role_assignment"))
     executor = _Executor(plan, _single_outputs())
     runtime = _runtime(tmp_path, spec=_spec(), executor=executor)
 
