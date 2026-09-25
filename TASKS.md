@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-09-25 Session 88. HEAD `6fb76b46d` on `development`. The fail-closed v0.1.1 milestone (S83.157–S83.168) is complete: all twelve tasks are merged to `development`, the `agent-floor-config` enforcement-alignment worktree is merged and cleaned up, and the working tree is clean. 84 broader backlog items remain outside v0.1.1. Next: push `development` to trigger fresh CI, run `make gate` on the resulting HEAD, and `make release-cut TAG='v0.1.1' MSG='...'` once CI is green.**
+**Last consolidated: 2026-09-25 Session 90. HEAD `bfbcb8c7c64dc364715f24eb577fa7acd9d0f8be` on `development`. The fail-closed v0.1.1 milestone (S83.157–S83.168) is complete: all twelve tasks are merged to `development`, floor-config enforcement alignment is merged, and the working tree is clean. 84 broader backlog items remain outside v0.1.1. Next: resolve the AA032 blocker, push `development` to trigger fresh CI, run `make gate` on the resulting HEAD, and `make release-cut TAG='v0.1.1' MSG='...'` once CI is green.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
