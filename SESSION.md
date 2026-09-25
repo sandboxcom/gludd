@@ -1,10 +1,39 @@
-## PRIMARY OBJECTIVE: IN PROGRESS — reconcile the exact v0.1.1 milestone and keep self-improvement as one workload on Gludd's universal orchestration core. Candidate `861fec6489cb4eef0bb823ea1180e0188d2b2c44` passed 68 focused release-readiness tests with 92% aggregate coverage. Its full gate reached unit-3b batch 12 after all static, type, collection, enforcement, integration, and earlier unit phases passed; the sole failure was this operational record exceeding its 30-day freshness contract. Next: validate this refresh, commit it separately, rerun the exact-head gate, then merge the readiness and universal-boundary branches sequentially into `development`.
+## PRIMARY OBJECTIVE: IN PROGRESS — reconcile the exact v0.1.1 milestone and keep self-improvement as one workload on Gludd's universal orchestration core. HEAD `bd9359c8a4728b06162fb7e51ddf152c9db29985` on `development` (2026-09-25). S83.157 completed in commit `80eacd4f7`; S83.158 remains in progress (dedicated worktree branch has no unique commits; scheduler sub-branch `c2981a346` carries S83.163/S83.165 work). Open v0.1.1 tasks: S83.158, S83.162, S83.163, S83.165, S83.166. Next: continue S83.158 durable-scheduler integration, merge completed worktree branches, and rerun the exact-head gate.
 
 ## Current Gate Status
 <!-- gate:begin -->
-- Candidate `861fec6489cb4eef0bb823ea1180e0188d2b2c44`: focused readiness suite PASS (68 tests; 92% aggregate coverage; per-file floors satisfied).
-- Full gate: all non-test phases PASS; integration PASS (3,376 passed, 13 skipped); unit shards through unit-3b batch 11 PASS. Unit-3b batch 12 reported one failure because `SESSION.md` was 32 days old. Exact-head rerun pending this refresh commit.
+- HEAD `bd9359c8a4728b06162fb7e51ddf152c9db29985` on `development`. Working tree clean. Remote is diverged with unpushed commits.
+- CI: RED — run 35820838925 conclusion=failure (checked via `make verify-state`).
+- Local gate status: UNKNOWN/needs rerun after this operational-record refresh.
 <!-- gate:end -->
+
+---
+
+## SESSION 87 — 2026-09-25 — HEAD `bd9359c8a4728b06162fb7e51ddf152c9db29985`: operational-record refresh and milestone ledger update
+
+### Current State
+
+- S83.157 marked completed in `TASKS.md` with evidence commit `80eacd4f7`.
+- S83.158 not yet completed: its dedicated worktree branch (`agent-s83-158`) has no unique commits; the `agent-s83-158-scheduler` branch at `c2981a346` contains commits tagged for S83.163/S83.165.
+- Open v0.1.1 milestone tasks: S83.158, S83.162, S83.163, S83.165, S83.166.
+- Active worktrees remain for S83.157, S83.158 (claim/scheduler), S83.162, S83.163, S83.165, S83.166.
+
+### Recent Commits (HEAD `bd9359c8a4728b06162fb7e51ddf152c9db29985`)
+
+```text
+bd9359c8a merge: project-ownership-progress worktree work into development
+f10386caa fix(progress): scope stop controls to active milestone
+8fa9556ee merge: project-ownership-progress worktree work into development
+559ff63ab fix(tests): make statistical gate checks deterministic
+e0fe903f6 fix/progress-scope-release-milestone
+```
+
+### Next Steps
+
+1. Continue S83.158 durable-todo scheduler integration.
+2. Merge or clean up completed worktree branches.
+3. Rerun `make gate` on the exact HEAD after ledger refresh.
+4. Address the CI failure on run 35820838925.
 
 ---
 
