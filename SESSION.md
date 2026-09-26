@@ -1,14 +1,15 @@
-## PRIMARY OBJECTIVE: v0.1.1 MILESTONE — finalize release pipeline. HEAD `d556e4654` on `development` (2026-09-26). Session 92 work: integration test fix, milestone-aware stop hook, 3-agent harness config with 10-agent code defaults preserved, task-registration fix. 84 broader backlog items remain outside v0.1.1. Remote is diverged with unpushed commits; AA032 push blocker active (CI NO RUN for current HEAD). Next: run `make gate` on current HEAD, push `development`, and `make release-cut TAG='v0.1.1' MSG='...'` once CI is green, then `make verify-release-completeness TAG=v0.1.1`.
+## PRIMARY OBJECTIVE: v0.1.1 MILESTONE — finalize release pipeline. HEAD `4093c61a5` on `development` (2026-09-26). Coverage-gap merge (`agent-coverage-gaps`) and floor-test harness alignment are now merged to `development`; stale `agent-fix-generate` worktree cleaned up. Local gate failed at test phase (non-zero exit). 84 broader backlog items remain outside v0.1.1. Remote is diverged with unpushed commits; AA032 push blocker active (CI NO RUN for current HEAD). Next: diagnose gate test failure, re-run `make gate` to green, push `development`, and `make release-cut TAG='v0.1.1' MSG='...'` once CI is green, then `make verify-release-completeness TAG=v0.1.1`.
 
-## SESSION 92 — 2026-09-26 — HEAD `d556e4654a22605c9b5f29e84ac77e3d5a7be5b8`: integration test fix, milestone-aware stop hook, floor-config harness alignment, task-registration fix
+## SESSION 92 — 2026-09-26 — HEAD `4093c61a5b6f...`: coverage gaps merged, floor-test harness alignment merged, stale worktree cleaned, gate failed at test phase
 
 ### Current State
 
-- HEAD: `d556e4654a22605c9b5f29e84ac77e3d5a7be5b8` on `development`.
-- Working tree: CLEAN (prior to this SESSION.md edit).
+- HEAD: `4093c61a5b6f06ca0ec73dd092a3a1b5f4080b3b` on `development`.
+- Working tree: CLEAN (after `agent-fix-generate` worktree cleanup and before this SESSION.md edit).
 - Remote: diverged with unpushed commits.
 - CI: NO RUN for current HEAD.
-- Smoke test: status from prior session; needs reconfirmation on current HEAD.
+- Local gate: **FAILED** at `test` phase (`test FAIL non-zero-exit`); all pre-test phases (lint, typecheck, collect, smoke, env-writes, hook-runtime, opencode-e2e, etc.) PASSED.
+- Stale worktree `agent-fix-generate` (merged at `c26020a67`) cleaned up; `make agent-worktree-list` now shows only the main checkout.
 - Active workstreams: 0; open task IDs: 0.
 - 84 broader backlog items remain outside the v0.1.1 milestone.
 
@@ -18,29 +19,32 @@
 2. **Milestone-aware stop hook** — updated `enforce-stop.ts` pending-work detection to be milestone-aware; tests added/aligned (`test_milestone_aware_stop_hook.py`, `test_exactly_10_dispatch_enforcement.py`).
 3. **3-agent harness config with 10-agent code defaults preserved** — changed active harness floor/ceiling to 3 concurrent subagents while keeping source-level defaults at 10 in `.opencode/lib/multitask_config.ts` and related code; updated AGENTS.md language and tests to reflect the split.
 4. **Task-registration fix** — repaired task-registration logic/data so TASKS.md integrity checks pass and new tasks register correctly.
+5. **Coverage gaps merged** — `agent-coverage-gaps` worktree merged into `development` at `4093c61a5`.
+6. **Stale worktree cleanup** — removed merged `agent-fix-generate` worktree/branch.
 
 ### Known Blockers / Gaps
 
-- **AA032 push blocker: ACTIVE** — CI NO RUN for current HEAD `d556e4654`; remote diverged with unpushed commits.
-- Local `make gate` needs a fresh run on current HEAD before release-cut.
+- **Gate test phase FAILED** on current HEAD `4093c61a5` (`test FAIL non-zero-exit`). Pre-test phases all passed. The test failure must be diagnosed and fixed before release-cut.
+- **AA032 push blocker: ACTIVE** — CI NO RUN for current HEAD `4093c61a5`; remote diverged with unpushed commits.
 - CI verdict for current HEAD is unknown until after push.
 - 84 broader backlog items remain outside v0.1.1 and are not in scope for this release.
 
 ### Next Steps (mandatory)
 
-1. Run `make gate` on current HEAD `d556e4654`.
-2. Resolve the AA032 push-guard blocker and push `development` to remote (`make batch-push` or equivalent) to trigger fresh CI.
-3. Verify CI green with `make ci-verdict BRANCH=development` once the run completes.
-4. `make release-cut TAG='v0.1.1' MSG='release: v0.1.1'` once CI is green.
-5. `make verify-release-completeness TAG=v0.1.1` after the release job publishes.
+1. Diagnose and fix the gate `test` phase failure on HEAD `4093c61a5`.
+2. Re-run `make gate` on current HEAD until green.
+3. Resolve the AA032 push-guard blocker and push `development` to remote (`make batch-push` or equivalent) to trigger fresh CI.
+4. Verify CI green with `make ci-verdict BRANCH=development` once the run completes.
+5. `make release-cut TAG='v0.1.1' MSG='release: v0.1.1'` once CI is green.
+6. `make verify-release-completeness TAG=v0.1.1` after the release job publishes.
 
 ## Current Gate Status
 <!-- gate:begin -->
-- HEAD `d556e4654a22605c9b5f29e84ac77e3d5a7be5b8` on `development`. Working tree clean (prior to this SESSION.md edit). Remote is diverged with unpushed commits.
-- CI: NO RUN for current HEAD `d556e4654a2`; prior run(s) on earlier SHAs may be stale.
-- Local gate status: needs rerun on current HEAD before release-cut.
+- HEAD `4093c61a5b6f06ca0ec73dd092a3a1b5f4080b3b` on `development`. Working tree clean (after worktree cleanup). Remote is diverged with unpushed commits.
+- CI: NO RUN for current HEAD `4093c61a5`; prior run(s) on earlier SHAs may be stale.
+- Local gate status (epoch 1790406574): **FAILED** at `test` phase (`test FAIL non-zero-exit`). Pre-test phases all PASSED: lint 0, typecheck 0, collect 0, smoke PASS, env-writes PASS, hook-runtime PASS, opencode-e2e PASS, verify-enforcement PASS, coverage-gaps PASS, dead-code PASS, verify-feature-claims PASS.
 - AA032 push blocker: ACTIVE — CI NO RUN for current HEAD; remote diverged with unpushed commits.
-- v0.1.1 release: pending gate pass + push + green CI.
+- v0.1.1 release: pending gate green + push + green CI.
 <!-- gate:end -->
 
 ---
