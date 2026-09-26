@@ -700,18 +700,29 @@ export function getProjectRoot(): string {
 // only checkbox format was detected, so table-format task entries silently
 // bypassed the 10-agent floor enforcement.
 
-export function hasTasksMdPendingWork(tasksMdPath: string): boolean {
+export interface TasksMdPendingStats {
+  pending: boolean
+  count: number
+}
+
+export function tasksMdPendingStats(tasksMdPath: string): TasksMdPendingStats {
   try {
-    if (!fs.existsSync(tasksMdPath)) return false
+    if (!fs.existsSync(tasksMdPath)) return { pending: false, count: 0 }
     const content = fs.readFileSync(tasksMdPath, "utf8")
-    if (/\|\s*(NOT STARTED|IN PROGRESS|PENDING)\s*\|/im.test(content)) return true
+
+    // Table-format entries always count as pending work regardless of milestone.
+    const tableMatches = content.match(/\|\s*(NOT STARTED|IN PROGRESS|PENDING)\s*\|/gim)
+    const tableCount = tableMatches?.length ?? 0
+    if (tableCount > 0) {
+      return { pending: true, count: tableCount }
+    }
 
     // Milestone-aware checkbox scan: only unchecked tasks inside the
     // declared exact milestone range count as pending work. Backlog items
     // outside the active milestone are visible inventory, not release-blocking
     // work. Mirrors scripts/task_scope.py.
     const milestoneMatch = content.match(
-      /\b(v\d+\.\d+\.\d+)\s+milestone\s+is\s+the\s+exact\s+task\s+set\s+([A-Za-z]+\d+)\.(\d+)\s*[-\u2013]\s+([A-Za-z]+\d+)\.(\d+)/i,
+      /\b(v\d+\.\d+\.\d+)\s+milestone\s+is\s+the\s+exact\s+task\s+set\s+([A-Za-z]+\d+)\.(\d+)\s*[-\u2013\u2014\u2212]\s*([A-Za-z]+\d+)\.(\d+)/i,
     )
     if (milestoneMatch) {
       const prefix = milestoneMatch[2]
@@ -723,19 +734,25 @@ export function hasTasksMdPendingWork(tasksMdPath: string): boolean {
           "^\\s*[-*]\\s*\\[\\s*\\]\\s+(" + prefix + "\\.\\d+)",
           "gim",
         )
+        let count = 0
         let m: RegExpExecArray | null
         while ((m = scopedRe.exec(content)) !== null) {
           const num = parseInt(m[1].split(".")[1], 10)
-          if (num >= start && num <= end) return true
+          if (num >= start && num <= end) count++
         }
-        return false
+        return { pending: count > 0, count }
       }
     }
 
     // No valid milestone declaration: fall back to repository-wide scan.
-    if (/^\s*[-*]\s*\[\s*\]/m.test(content)) return true
-    return false
+    const checkboxMatches = content.match(/^\s*[-*]\s*\[\s*\]/gm)
+    const count = checkboxMatches?.length ?? 0
+    return { pending: count > 0, count }
   } catch {
-    return false
+    return { pending: false, count: 0 }
   }
+}
+
+export function hasTasksMdPendingWork(tasksMdPath: string): boolean {
+  return tasksMdPendingStats(tasksMdPath).pending
 }
