@@ -21,7 +21,7 @@ const ESSAY_PARAGRAPH_THRESHOLD = parseInt(
 function hasPendingWork(): boolean {
   const root = getProjectRoot()
   try {
-    const tasksPath = path.join(root, "TASKS.md")
+    const tasksPath = process.env.GLUDD_TASKS_MD || path.join(root, "TASKS.md")
     if (hasTasksMdPendingWork(tasksPath)) return true
     const ratchetPath = path.join(root, "config", "ratchet.yml")
     if (fs.existsSync(ratchetPath)) {

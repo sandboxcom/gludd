@@ -3251,7 +3251,12 @@ def test_anti_essay_blocks_explanation_status_phrase_with_pending_work() -> None
         "experimental.text.complete",
         "await plugin['experimental.text.complete']({}, {text: 'Let me explain the current status'})",
     )
-    result = _run_ts(code)
+    env, tasks_path = _with_open_work({}, "")
+    try:
+        result = _run_ts(code, env_override=env)
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(tasks_path)
     assert isinstance(result, dict)
     assert "ANTI-ESSAY GUARD" in str(result.get("text", ""))
     assert "Let me explain" not in str(result.get("text", ""))
