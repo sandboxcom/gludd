@@ -2462,11 +2462,13 @@ the machine-enforceable correction.
 
 ## CRITICAL: 3-Agent Dispatch Floor (HARD ENFORCEMENT)
 
-**Every dispatch wave MUST contain EXACTLY 4 task/agent/workflow dispatches when
+**Every dispatch wave MUST contain EXACTLY 3 task/agent/workflow dispatches when
 pending work exists.** This is not a guideline, not a suggestion, not an
 aspirational target — it is a **mechanically enforced hard floor.** Any response
 with <3 dispatches while `TASKS.md` has unchecked items or `config/ratchet.yml`
 has entries is a **policy violation** that the plugin will deny.
+
+> **Harness value vs. code default.** The project source (`.opencode/lib/multitask_config.ts`, historical test pins, and dormant passages elsewhere in this file) defaults to a **10-agent floor/ceiling** for backward compatibility and test pinning. The active harness — `.claude/settings.json`, the `.claude/hooks/*.sh` shell hooks, environment variables, and `/tmp/gludd-floor-override` — is configured to **3 subagents** for the current session. Agents MUST dispatch according to the active harness value (**3**), not the code fallback (**10**). Any AGENTS.md language that still references a 10-agent floor is historical context; live enforcement follows the harness value of 3.
 
 ### Why exactly 3
 
