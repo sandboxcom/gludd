@@ -1,15 +1,16 @@
-"""Structural tests for adaptive dispatch with an absolute ten-agent ceiling.
+"""Structural tests for adaptive dispatch with an absolute three-agent ceiling.
 
-Verifies that ten remains the maximum/recommended batch size while mandatory
-minimums are opt-in in:
+Verifies that the active harness enforces three as the maximum/recommended
+batch size while mandatory minimums remain opt-in in:
   - enforce-session-start.ts: configured minimum and EFFECTIVE_MIN
   - enforce-multitask.ts: configured minimum and MAX_DISPATCHES
   - shared.ts: isDispatchTool classification
-  - AGENTS.md: no sub-10 dispatch count in any directive
+  - AGENTS.md: active harness floor (3) documented, legacy ten-agent ceiling
+    noted as historical context / code fallback
 
-These tests fail when a plugin re-introduces an unconditional ten-agent floor
-or allows more than ten concurrent dispatches.  Simple work may stay inline;
-larger independent work may use up to ten agents.
+These tests fail when a plugin re-introduces an unconditional three-agent floor
+or allows more than three concurrent dispatches.  Simple work may stay inline;
+larger independent work may use up to three agents.
 """
 
 from __future__ import annotations
@@ -56,16 +57,16 @@ def _env_default(src: str, env_var: str) -> int:
 
 
 # ============================================================================
-# 1. enforce-session-start.ts: ten is a recommendation, not a default floor
+# 1. enforce-session-start.ts: three is the active harness recommendation
 # ============================================================================
 
 
-def test_session_start_min_dispatches_hardcoded_10():
-    """The legacy target remains ten for explicit minimum configuration."""
+def test_session_start_min_dispatches_hardcoded_3():
+    """The active harness default is three for explicit minimum configuration."""
     src = _read(SESSION_START_TS)
     val = _env_default(src, "GLUDD_SESSION_START_MIN_DISPATCHES")
-    assert val == 10, (
-        f"enforce-session-start.ts MIN_DISPATCHES default is {val}, expected 10. Was the hardcoded fallback changed?"
+    assert val == 3, (
+        f"enforce-session-start.ts MIN_DISPATCHES default is {val}, expected 3. Was the hardcoded fallback changed?"
     )
 
 
@@ -97,29 +98,21 @@ def test_session_start_effective_min_is_opt_in():
 
 
 # ============================================================================
-# 3. enforce-multitask.ts: recommended target 10, required minimum opt-in
+# 3. enforce-multitask.ts: recommended target 3, required minimum opt-in
 # ============================================================================
 
 
-def test_multitask_min_dispatches_hardcoded_10():
+def test_multitask_min_dispatches_hardcoded_3():
     """MIN_DISPATCHES remains the configurable recommendation target.
 
-    The parseInt chain now goes:
-      parseInt(
-        process.env.GLUDD_MIN_DISPATCHES ||
-        process.env.GLUDD_MULTITASK_MIN_DISPATCHES ||
-        "10",
-        10,
-      )
-    The env-fallback "10" is the final default; extract it.  The radix 10
-    at the end of the parseInt call is also asserted to be 10 (the radix,
-    not the default value — they happen to coincide here).
+    The integerFromEnv call uses a final fallback of 3 to match the active
+    three-agent harness ceiling.
     """
     src = _read(MULTITASK_CONFIG_TS)
     m = re.search(r"integerFromEnv\(\s*\[.*?GLUDD_MIN_DISPATCHES.*?\][\s\S]*?,\s*(\d+)", src, re.DOTALL)
     assert m, "MIN_DISPATCHES integerFromEnv call not found in multitask_config.ts"
     val = int(m.group(1))
-    assert val == 10, f"multitask_config.ts MIN_DISPATCHES default fallback is {val}, expected 10."
+    assert val == 3, f"multitask_config.ts MIN_DISPATCHES default fallback is {val}, expected 3."
 
 
 def test_multitask_required_dispatches_is_explicit_opt_in():
@@ -151,20 +144,20 @@ def test_multitask_floor_breach_uses_required_dispatches():
 
 
 # ============================================================================
-# 4. enforce-multitask.ts: CEILING = 10 blocks >10 dispatches per wave
+# 4. enforce-multitask.ts: CEILING = 3 blocks >3 dispatches per wave
 # ============================================================================
 
 
 def test_multitask_has_max_dispatches_constant():
     """enforce-multitask.ts must export a MAX_DISPATCHES ceiling constant."""
     src = _read(MULTITASK_TS)
-    assert "MAX_DISPATCHES" in src, "enforce-multitask.ts must declare MAX_DISPATCHES to cap dispatches per wave at 10."
+    assert "MAX_DISPATCHES" in src, "enforce-multitask.ts must declare MAX_DISPATCHES to cap dispatches per wave at 3."
 
 
-def test_multitask_max_dispatches_value_is_10():
-    """HARD_MAX_DISPATCHES must be 10. Declared in multitask_config.ts."""
+def test_multitask_max_dispatches_value_is_3():
+    """HARD_MAX_DISPATCHES must be 3. Declared in multitask_config.ts."""
     src = _read(MULTITASK_CONFIG_TS)
-    assert "HARD_MAX_DISPATCHES = 10" in src
+    assert "HARD_MAX_DISPATCHES = 3" in src
     assert re.search(r"Math\.min\(\s*\n?\s*HARD_MAX_DISPATCHES", src)
 
 
@@ -192,10 +185,22 @@ def test_agents_md_documents_adaptive_dispatch():
 
 
 def test_agents_md_documents_ten_as_ceiling_not_floor():
-    """The active directive must make ten a maximum rather than a minimum."""
+    """AGENTS.md documents the active harness floor (3) and the code ceiling (10)."""
     src = _read(AGENTS_MD)
-    assert "Max 10 subagents per wave" in src
-    assert 'OVERRIDES all "10-agent floor" rules' in src
+    # Active harness floor is enforced by the COST-EFFICIENCY DIRECTIVE.
+    assert "Max 3 subagents per wave" in src, (
+        "AGENTS.md must document the active harness floor of 3 subagents per wave."
+    )
+    assert 'OVERRIDES all "3-agent floor" rules' in src, (
+        "AGENTS.md must state that the cost-efficiency directive overrides old floor rules."
+    )
+    # The project source still defaults to a 10-agent ceiling for backward compatibility.
+    assert "defaults to a **10-agent floor/ceiling**" in src, (
+        "AGENTS.md must note the code defaults to a 10-agent floor/ceiling."
+    )
+    assert "configured to **3 subagents**" in src, (
+        "AGENTS.md must document the active harness is configured to 3 subagents."
+    )
 
 
 # ============================================================================
