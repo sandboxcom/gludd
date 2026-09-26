@@ -22,7 +22,7 @@
 #    to be below floor). Touch that file to signal it.
 #  - FAIL-OPEN on any probe/parse error (exit 0 = allow). A hook bug can never wedge.
 
-FLOOR="${CLAUDE_AGENT_FLOOR:-4}"
+FLOOR="${CLAUDE_AGENT_FLOOR:-3}"
 GRACE=3
 STATE="${TMPDIR:-/tmp}/gludd-subfloor-count"
 QUOTA="/tmp/gludd-quota-block"

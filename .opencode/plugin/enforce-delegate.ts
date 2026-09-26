@@ -27,8 +27,8 @@ function execSync(...args: any[]): Buffer {
 // ============================================================================
 // CONFIG (mirrors the claude env var names so the same knobs work in opencode)
 // ============================================================================
-const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "4", 10)
-const TARGET = parseInt(process.env.CLAUDE_AGENT_TARGET || "4", 10)
+const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "3", 10)
+const TARGET = parseInt(process.env.CLAUDE_AGENT_TARGET || "3", 10)
 const MODEL_UTIL_STATE = process.env.GLUDD_MODEL_UTIL_STATE || "/tmp/gludd-model-util.json"
 const MODEL_UTIL_WINDOW = parseInt(process.env.GLUDD_MODEL_UTIL_WINDOW || "20", 10)
 const MODEL_UTIL_ENFORCE = (process.env.GLUDD_MODEL_UTIL_ENFORCE || "1") !== "0"

@@ -27,7 +27,7 @@ set -o pipefail 2>/dev/null || true
 
 STREAK_FILE="${GLUDD_MAINTHREAD_STREAK_FILE:-/tmp/gludd-mainthread-streak}"
 THRESHOLD="${GLUDD_MAINTHREAD_THRESHOLD:-12}"  # inline calls in a row before we nag (rev 2026-06-24: raised 8->12; coherent read/edit sets routinely exceed 8)
-TARGET="${CLAUDE_AGENT_TARGET:-4}"
+TARGET="${CLAUDE_AGENT_TARGET:-3}"
 REPO_DIR="/Users/shawnwilson/gludd"
 
 input="$(cat 2>/dev/null || echo '{}')"
