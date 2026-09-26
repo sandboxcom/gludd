@@ -234,16 +234,21 @@ post-publication invariant without making pre-publication validation impossible.
 ### Release version assertion ownership
 
 The 2026-09-26 v0.1.1 exact-head gate exposed a second form of release-version
-drift: the package and CLI correctly reported `0.1.1`, but a CLI unit test still
-required the copied literal `0.1.0`. Production metadata consistency alone could
-not detect that duplicate test authority before the complete release gate reached
-the file.
+drift: the package and CLI correctly reported `0.1.1`, but multiple unit,
+guardrail, and E2E tests still required the copied literal `0.1.0`. The first
+gate found one assertion in batch 10. A replacement gate proved that repair and
+then found another in batch 11. A targeted audit reproduced five failures across
+four files and found one additional weak assertion that could pass on the product
+name while ignoring a wrong version. Production metadata consistency alone could
+not detect those duplicate test authorities before the complete release gate
+reached each file.
 
-Behavioral tests now import the package's canonical `general_ludd.__version__`
-and assert the complete CLI rendering. They do not copy the current release
-number or weaken the contract to an arbitrary substring. Historical-version
-literals remain valid only in fixtures explicitly testing migration or
-compatibility behavior.
+Behavioral tests of the current release now import the package's canonical
+`general_ludd.__version__` and assert the complete CLI rendering. The repository
+skeleton separately parses that canonical value as a package version. Tests do
+not copy the current release number or weaken the contract to an arbitrary
+substring. Historical-version literals remain valid only in fixtures explicitly
+testing parsers, migrations, artifact names, or compatibility behavior.
 
 This follows practitioner experience rather than assuming the failure is unique
 to Gludd. [setuptools-scm issue #1231](https://github.com/pypa/setuptools-scm/issues/1231)
