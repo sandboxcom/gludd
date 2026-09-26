@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-09-25 Session 90. HEAD `bfbcb8c7c64dc364715f24eb577fa7acd9d0f8be` on `development`. The fail-closed v0.1.1 milestone (S83.157–S83.168) is complete except for the floor-config enforcement alignment, which is **IN PROGRESS** (`agent-floor-config-v3` at `c231e2a20` is not yet merged into `development` per `make git-is-ancestor A=c231e2a20 B=HEAD` exit=1). The working tree is clean. 84 broader backlog items remain outside v0.1.1. Next: merge the floor-config branch into `development`, then resolve the AA032 blocker, push `development` to trigger fresh CI, run `make gate` on the resulting HEAD, and `make release-cut TAG='v0.1.1' MSG='...'` once CI is green.**
+**Last consolidated: 2026-09-26 Session 92. HEAD `169f6f72c` on `development`. The fail-closed v0.1.1 milestone (S83.157–S83.168), floor-config enforcement alignment, and S91.1 harness documentation are complete and merged to `development`. CI is RED on current HEAD: Build and Release run `36231277602` conclusion=failure, Molecule Tests run `36231277572` conclusion=failure. The working tree is clean. 84 broader backlog items remain outside v0.1.1. `make release-cut TAG='v0.1.1' MSG='...'` is BLOCKED until CI is green. Next: diagnose the CI failure(s), fix the root cause, push `development`, verify CI green, then run release-cut and `make verify-release-completeness TAG=v0.1.1`.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 

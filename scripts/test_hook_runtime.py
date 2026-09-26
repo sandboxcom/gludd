@@ -144,10 +144,16 @@ def _run_ts(
     ts_code: str,
     env_override: dict[str, str] | None = None,
     timeout: int = 15,
+    cwd: str | os.PathLike[str] | None = None,
 ) -> Any:
     """Write TS code to temp file, run with node --experimental-strip-types, return parsed JSON.
 
     Returns None if stdout is empty (hook returned undefined/void).
+
+    Args:
+        cwd: Working directory for the node subprocess. Defaults to ROOT.
+            Tests that exercise filesystem-backed pending-work checks should
+            pass an isolated project root here so repo state is hermetic.
     """
     global _tmp_counter
     _tmp_counter += 1
@@ -181,7 +187,7 @@ def _run_ts(
             capture_output=True,
             text=True,
             timeout=timeout,
-            cwd=str(ROOT),
+            cwd=str(cwd if cwd is not None else ROOT),
             env=env,
         )
         if proc.returncode != 0:
@@ -283,6 +289,31 @@ def _with_open_work(env: dict[str, str], tmp_tasks: str) -> tuple[dict[str, str]
         f.write("- [ ] test task 1\n- [ ] test task 2\n")
     env["GLUDD_TASKS_MD"] = tasks_path
     return env, tasks_path
+
+
+def _hermetic_project_root(tmp_path: Path) -> Path:
+    """Create an isolated project root with deterministic pending-work signals.
+
+    The fixture produces one unchecked milestone-range TASKS.md item and one
+    backlog item outside the active milestone, a green .gate-status, empty
+    BUGS.md/config/ratchet.yml, and an empty .ci-status.  This lets
+    enforce-stop runtime tests assert on specific block reasons without
+    coupling to the real repository's CI/gate state.
+    """
+    root = tmp_path / "project_root"
+    root.mkdir(parents=True)
+    (root / "config").mkdir()
+    (root / "BUGS.md").write_text("")
+    (root / "config" / "ratchet.yml").write_text("")
+    (root / ".gate-status").write_text("=== GATE: PASSED ===\n")
+    (root / ".ci-status").write_text("")
+    tasks = (
+        "The v0.1.1 milestone is the exact task set S83.157-S83.168.\n\n"
+        "- [ ] S83.157 milestone-range task\n"
+        "- [ ] S84.001 backlog item\n"
+    )
+    (root / "TASKS.md").write_text(tasks)
+    return root
 
 
 # ---------------------------------------------------------------------------
@@ -2136,8 +2167,9 @@ console.log(JSON.stringify({{passedThrough}}))
     _clean_state_files(state_file)
 
 
-def test_stop_permission_seeking_want_me_to_blocked() -> None:
+def test_stop_permission_seeking_want_me_to_blocked(tmp_path: Path) -> None:
     """'Want me to proceed?' is ALWAYS blocked — asking permission to do work is never acceptable."""
+    project_root = _hermetic_project_root(tmp_path)
     _clean_state_files("/tmp/gludd-block-counter.json", "/tmp/gludd-persist-stop-block.json")
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
@@ -2150,14 +2182,19 @@ console.log(JSON.stringify({{
     hasPermissionBlock: finalText.includes('PERMISSION-SEEKING BLOCKED'),
 }}))
 """
-    result = _run_ts(code)
+    result = _run_ts(
+        code,
+        cwd=project_root,
+        env_override={"GLUDD_PROJECT_ROOT": str(project_root)},
+    )
     assert result is not None, "Expected JSON output"
     assert result["blocked"] is True, f"Expected text to be blocked, got: {result}"
     assert result["hasPermissionBlock"] is True, f"Expected PERMISSION-SEEKING BLOCKED, got: {result}"
 
 
-def test_stop_permission_seeking_should_i_blocked() -> None:
+def test_stop_permission_seeking_should_i_blocked(tmp_path: Path) -> None:
     """'Should I continue with fixing?' is ALWAYS blocked."""
+    project_root = _hermetic_project_root(tmp_path)
     _clean_state_files("/tmp/gludd-block-counter.json", "/tmp/gludd-persist-stop-block.json")
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
@@ -2170,7 +2207,11 @@ console.log(JSON.stringify({{
     hasPermissionBlock: finalText.includes('PERMISSION-SEEKING BLOCKED'),
 }}))
 """
-    result = _run_ts(code)
+    result = _run_ts(
+        code,
+        cwd=project_root,
+        env_override={"GLUDD_PROJECT_ROOT": str(project_root)},
+    )
     assert result is not None, "Expected JSON output"
     assert result["blocked"] is True, f"Expected text to be blocked, got: {result}"
     assert result["hasPermissionBlock"] is True, f"Expected PERMISSION-SEEKING BLOCKED, got: {result}"
@@ -2204,10 +2245,11 @@ console.log(JSON.stringify({{
     assert result["noMatch2"] is False, "Should NOT match 'I will proceed'"
 
 
-def test_stop_status_summary_blocked_despite_evidence() -> None:
+def test_stop_status_summary_blocked_despite_evidence(tmp_path: Path) -> None:
     """Status summary with commit hashes + 'CI PENDING' (= structured evidence)
     is STILL blanked while pending work exists — evidence never legitimizes
     stopping-to-summarize. Regression pin for the 2026-07-15 bypass."""
+    project_root = _hermetic_project_root(tmp_path)
     _clean_state_files("/tmp/gludd-block-counter.json", "/tmp/gludd-persist-stop-block.json")
     summary = (
         "Here's the session 37 final status:\\n\\n"
@@ -2231,7 +2273,11 @@ console.log(JSON.stringify({{
     hasStatusSummaryBlock: finalText.includes('STATUS-SUMMARY RESPONSE BLOCKED'),
 }}))
 """
-    result = _run_ts(code)
+    result = _run_ts(
+        code,
+        cwd=project_root,
+        env_override={"GLUDD_PROJECT_ROOT": str(project_root)},
+    )
     assert result is not None, "Expected JSON output"
     assert result["blocked"] is True, f"Status summary with evidence must be blocked, got: {result}"
     assert result["hasStatusSummaryBlock"] is True, f"Expected STATUS-SUMMARY RESPONSE BLOCKED, got: {result}"
