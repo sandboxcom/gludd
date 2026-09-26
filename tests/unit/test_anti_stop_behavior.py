@@ -104,9 +104,15 @@ class TestStopPatternEnforcer:
 class TestAdaptiveDelegationEnforcement:
     """Delegation stays adaptive while retaining a hard ten-agent ceiling."""
 
-    def test_agents_md_has_10_minimum(self):
+    def test_agents_md_documents_active_floor(self):
         content = AGENTS_MD.read_text()
-        assert "Minimum 10 Subagents" in content, "AGENTS.md must document the 10-subagent minimum"
+        assert "Minimum 3 Subagents" in content, "AGENTS.md must document the active 3-subagent floor"
+        assert "active harness" in content and "3 subagents" in content, (
+            "AGENTS.md must document the active harness value of 3"
+        )
+        assert "10-agent floor/ceiling" in content, (
+            "AGENTS.md must document the 10-agent code-default ceiling for backward compatibility"
+        )
 
     def test_agents_md_has_anti_stall_rule(self):
         content = AGENTS_MD.read_text()
@@ -134,9 +140,9 @@ class TestAdaptiveDelegationEnforcement:
         assert "REQUIRED_AGENT_MIN" in content
         assert "CONFIGURED_AGENT_MIN !== undefined" in content
 
-    def test_settings_json_floor_is_five(self):
+    def test_settings_json_floor_is_three(self):
         settings = (ROOT / ".claude" / "settings.json").read_text()
-        assert '"CLAUDE_AGENT_FLOOR": "5"' in settings, ".claude/settings.json must set CLAUDE_AGENT_FLOOR to 5"
+        assert '"CLAUDE_AGENT_FLOOR": "3"' in settings, ".claude/settings.json must set CLAUDE_AGENT_FLOOR to 3"
 
 
 class TestMainThreadRestriction:
