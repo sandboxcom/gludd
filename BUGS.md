@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-26 — (resolved locally) Azure SDK reader crossed the maintainability budget
+
+- **What happened**: The third clean exact-head v0.1.1 gate passed 3,398 integration tests and the first thirteen `unit-1b` batches, then failed in batch 14 because 221 production files measured below maintainability index 20 while the pinned regression budget permits 220. The nearest file to recovery was `infra/azure_gpu_worker_sdk.py` at MI 19.1.
+- **Root cause**: The SDK reader module owned two reusable public value/error types in addition to credential/client lifecycle, VM and VMSS inventory, network validation, deletion, and absence readback. That extra responsibility pushed one otherwise cohesive module across the repository-wide size/complexity boundary.
+- **Fix applied**: `AzureGpuWorkerInstance` and `AzureGpuWorkerSdkError` now live in the dedicated `azure_gpu_worker_sdk_types` module. The reader re-exports the identical objects, preserving every downstream import and exception identity. The Azure SDK coverage profile now measures both modules independently.
+- **Evidence**: The full gate is the failing-first reproduction: integration passed 3,398 with 13 skips in 552.01 seconds, then the owned shard reported 221 below-floor files and stopped all later batches. The new compatibility test failed first because the types module was absent. The complete reader/types/MI replay passes 52/52. Branch-aware coverage passes at 96% aggregate: reader 95%, types 100%, and no measured file below 75%. A new exact-head gate remains required.
+- **Practitioner evidence**: [Radon issue #266](https://github.com/rubik/radon/issues/266) has tracked surprising Halstead results for complex files since 2024, while [Xenon issue #59](https://github.com/rubik/xenon/issues/59) records practitioner demand for enforceable maintainability-index thresholds in CI. Radon's own documentation calls MI experimental. Gludd therefore treats MI as a bounded regression signal, verifies behavior separately, and responds through cohesive module decomposition rather than threshold inflation; `docs/features/AZURE_GPU_VM_STRATEGY.md` codifies that rule.
+- **Lesson**: A checked implementation item is not proof that its module remains maintainable. Release gates must execute the repository-wide budget, and a metric failure should trigger a behavior-preserving ownership split with compatibility and per-file coverage proof.
+
 ### 2026-09-26 — (resolved locally) Current-version tests duplicated the previous release
 
 - **What happened**: One exact-head v0.1.1 gate failed in `unit-1b` batch 10 because `TestCLIParsing.test_version_command` still asserted `0.1.0`. After that assertion was repaired, the next exact-head gate passed batch 10 but batch 11 found the same stale literal in the top-level `--version` test. A targeted current-version audit then reproduced five failures across unit, guardrail, skeleton E2E, and CLI E2E tests; the application correctly emitted `0.1.1` throughout.

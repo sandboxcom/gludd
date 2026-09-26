@@ -212,12 +212,25 @@ state- and lease-owned resources, then requires final Azure absence.
 The infrastructure path is covered by
 `tests/unit/test_azure_gpu_worker_materializer.py`,
 `tests/unit/test_azure_gpu_worker_sdk.py`, and
+`tests/unit/test_azure_gpu_worker_sdk_types.py`, and
 `tests/unit/test_azure_gpu_worker_runtime.py`. They cover both VM strategies,
 private state inputs, foreign-state and symlink refusal, exact plan auditing,
 per-phase credential leases, SDK inventory normalization, compensation, censored
 failures, owned teardown, and independent absence. Their branch-aware focused
-profiles report 95%, 96%, and 93% respectively; each exceeds the 85% aggregate
-and 75% per-file release floors.
+profiles report 96% aggregate across the SDK reader/types pair (95% and 100% per
+file), 96% for the materializer, and 93% for the runtime; each exceeds the 85%
+aggregate and 75% per-file release floors.
+
+The release gate also applies a repository-wide maintainability-index regression
+budget. When the SDK reader crossed that budget, Gludd moved its public immutable
+instance and censored error types into a cohesive module while retaining identity-
+preserving imports from the original reader. It did not loosen the threshold.
+[Radon issue #266](https://github.com/rubik/radon/issues/266) records surprising
+Halstead results for complex files, and
+[Xenon issue #59](https://github.com/rubik/xenon/issues/59) records practitioner
+demand for CI-enforced maintainability-index thresholds. Because Radon describes
+MI as experimental, Gludd uses it as a regression signal alongside behavioral,
+compatibility, and per-file coverage tests rather than as standalone proof.
 
 ## Source evidence and operator reports
 

@@ -146,7 +146,7 @@ class _ResourceClient(_Closable):
     resources: _ResourceOperations = field(default_factory=lambda: _ResourceOperations({}, []))
 
 
-def _vm(instance: str) -> object:
+def _vm(instance: str) -> SimpleNamespace:
     vm_id = f"{_SCALE_SET_ID}/virtualMachines/{instance}"
     nic_id = f"{vm_id}/networkInterfaces/primary"
     return SimpleNamespace(
