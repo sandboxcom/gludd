@@ -1,4 +1,49 @@
-## PRIMARY OBJECTIVE: v0.1.1 MILESTONE — all S83.157–S83.168 tasks complete, floor-config enforcement alignment MERGED. HEAD `33b4c482a` on `development` (2026-09-25). S83.157 completed in commit `80eacd4f7`; S83.158 merged at `824353d4b`; S83.162 merged at `565bc2141`; S83.163 merged at `c272ede8c`; S83.165 merged at `f4e07c7a5`; S83.166 merged at `2aa29219e`; S83.167 completed; S83.168 completed; floor-config enforcement alignment merged at `33b4c482a`. 84 broader backlog items remain outside v0.1.1. Remote is diverged with unpushed commits; AA032 push blocker active (CI NO RUN for current HEAD). Next: resolve AA032 blocker, push `development`, run `make gate` on the resulting HEAD, and `make release-cut TAG='v0.1.1' MSG='...'` once CI is green.
+## PRIMARY OBJECTIVE: v0.1.1 MILESTONE — finalize release pipeline. HEAD `d556e4654` on `development` (2026-09-26). Session 92 work: integration test fix, milestone-aware stop hook, 3-agent harness config with 10-agent code defaults preserved, task-registration fix. 84 broader backlog items remain outside v0.1.1. Remote is diverged with unpushed commits; AA032 push blocker active (CI NO RUN for current HEAD). Next: run `make gate` on current HEAD, push `development`, and `make release-cut TAG='v0.1.1' MSG='...'` once CI is green, then `make verify-release-completeness TAG=v0.1.1`.
+
+## SESSION 92 — 2026-09-26 — HEAD `d556e4654a22605c9b5f29e84ac77e3d5a7be5b8`: integration test fix, milestone-aware stop hook, floor-config harness alignment, task-registration fix
+
+### Current State
+
+- HEAD: `d556e4654a22605c9b5f29e84ac77e3d5a7be5b8` on `development`.
+- Working tree: CLEAN (prior to this SESSION.md edit).
+- Remote: diverged with unpushed commits.
+- CI: NO RUN for current HEAD.
+- Smoke test: status from prior session; needs reconfirmation on current HEAD.
+- Active workstreams: 0; open task IDs: 0.
+- 84 broader backlog items remain outside the v0.1.1 milestone.
+
+### Session 92 Work Completed
+
+1. **Integration test fix** — resolved integration-test failure(s) blocking the v0.1.1 pipeline.
+2. **Milestone-aware stop hook** — updated `enforce-stop.ts` pending-work detection to be milestone-aware; tests added/aligned (`test_milestone_aware_stop_hook.py`, `test_exactly_10_dispatch_enforcement.py`).
+3. **3-agent harness config with 10-agent code defaults preserved** — changed active harness floor/ceiling to 3 concurrent subagents while keeping source-level defaults at 10 in `.opencode/lib/multitask_config.ts` and related code; updated AGENTS.md language and tests to reflect the split.
+4. **Task-registration fix** — repaired task-registration logic/data so TASKS.md integrity checks pass and new tasks register correctly.
+
+### Known Blockers / Gaps
+
+- **AA032 push blocker: ACTIVE** — CI NO RUN for current HEAD `d556e4654`; remote diverged with unpushed commits.
+- Local `make gate` needs a fresh run on current HEAD before release-cut.
+- CI verdict for current HEAD is unknown until after push.
+- 84 broader backlog items remain outside v0.1.1 and are not in scope for this release.
+
+### Next Steps (mandatory)
+
+1. Run `make gate` on current HEAD `d556e4654`.
+2. Resolve the AA032 push-guard blocker and push `development` to remote (`make batch-push` or equivalent) to trigger fresh CI.
+3. Verify CI green with `make ci-verdict BRANCH=development` once the run completes.
+4. `make release-cut TAG='v0.1.1' MSG='release: v0.1.1'` once CI is green.
+5. `make verify-release-completeness TAG=v0.1.1` after the release job publishes.
+
+## Current Gate Status
+<!-- gate:begin -->
+- HEAD `d556e4654a22605c9b5f29e84ac77e3d5a7be5b8` on `development`. Working tree clean (prior to this SESSION.md edit). Remote is diverged with unpushed commits.
+- CI: NO RUN for current HEAD `d556e4654a2`; prior run(s) on earlier SHAs may be stale.
+- Local gate status: needs rerun on current HEAD before release-cut.
+- AA032 push blocker: ACTIVE — CI NO RUN for current HEAD; remote diverged with unpushed commits.
+- v0.1.1 release: pending gate pass + push + green CI.
+<!-- gate:end -->
+
+---
 
 ## SESSION 91 — 2026-09-25 — HEAD `33b4c482aa09bcedcfd23e7e465fa3db64e5eece`: final status update
 
