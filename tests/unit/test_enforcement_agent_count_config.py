@@ -38,7 +38,7 @@ class TestMinDispatchesExport:
         m = re.search(r"export\s+const\s+MIN_DISPATCHES\s*=\s*integerFromEnv", src)
         assert m, "MIN_DISPATCHES must be exported via integerFromEnv resolver"
 
-    def test_default_value_is_4(self):
+    def test_default_value_is_10(self):
         src = _config_src()
         m = re.search(
             r"export\s+const\s+MIN_DISPATCHES\s*=\s*integerFromEnv\(\s*\["
@@ -47,7 +47,7 @@ class TestMinDispatchesExport:
             src,
         )
         assert m, "MIN_DISPATCHES integerFromEnv call not found"
-        assert int(m.group(1)) == 4, f"MIN_DISPATCHES default must be 4, got {m.group(1)}"
+        assert int(m.group(1)) == 10, f"MIN_DISPATCHES default must be 10, got {m.group(1)}"
 
     def test_env_var_names_correct(self):
         src = _config_src()
@@ -91,11 +91,11 @@ class TestHardMaxDispatchesConstant:
         src = _config_src()
         assert "export const HARD_MAX_DISPATCHES" in src, "HARD_MAX_DISPATCHES must be exported"
 
-    def test_hard_max_dispatches_value_is_4(self):
+    def test_hard_max_dispatches_value_is_10(self):
         src = _config_src()
         m = re.search(r"HARD_MAX_DISPATCHES\s*=\s*(\d+)", src)
         assert m, "HARD_MAX_DISPATCHES assignment not found"
-        assert int(m.group(1)) == 4, f"HARD_MAX_DISPATCHES must be 4, got {m.group(1)}"
+        assert int(m.group(1)) == 10, f"HARD_MAX_DISPATCHES must be 10, got {m.group(1)}"
 
     def test_max_dispatches_bounded_by_hard_max(self):
         src = _config_src()
@@ -163,10 +163,10 @@ class TestAgentsMdReferencesConfig:
         combined = " ".join(lines_with_ref)
         assert "MAX_DISPATCHES" in combined, "AGENTS.md must reference MAX_DISPATCHES alongside multitask_config.ts"
 
-    def test_agents_md_defines_hard_max_dispatches_4(self):
+    def test_agents_md_defines_hard_max_dispatches_3(self):
         src = _agents_src()
         lines_with_ref = [line for line in src.split("\n") if "multitask_config.ts" in line]
         combined = " ".join(lines_with_ref)
-        assert "HARD_MAX_DISPATCHES" in combined and "4" in combined, (
-            "AGENTS.md must state HARD_MAX_DISPATCHES=4 at canonical source"
+        assert "HARD_MAX_DISPATCHES" in combined and "3" in combined, (
+            "AGENTS.md must state HARD_MAX_DISPATCHES=3 at canonical source"
         )
