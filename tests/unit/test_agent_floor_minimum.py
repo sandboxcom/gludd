@@ -1,15 +1,15 @@
-"""Verify the 10-subagent cap is enforced across all guardrail layers.
+"""Verify dispatch-floor alignment across guardrail layers.
 
-The agent cap (max concurrent subagents) must be consistent everywhere.
-A drift in any single layer creates a loophole the other layers cannot close.
-This test pins all five layers to the current cap of 10.
+The code defaults must preserve a 10-subagent cap so the default harness
+remains safe. The active harness is configured to 3 concurrent subagents;
+a drift in either direction creates a loophole the other layers cannot close.
 
 Layers checked:
-  1. .claude/settings.json            -> env.CLAUDE_AGENT_FLOOR == "10"
+  1. .claude/settings.json            -> env.CLAUDE_AGENT_FLOOR == "3" (active harness)
   2. .opencode/plugin/enforce-floor.ts    -> FLOOR constant defaults to 10
   3. .opencode/plugin/enforce-delegate.ts -> FLOOR constant defaults to 10
   4. .opencode/plugin/enforce-stop.ts     -> references MIN_DISPATCHES / under-floor
-  5. AGENTS.md                            -> documents the 10-subagent cap
+  5. AGENTS.md                            -> documents the cap and active harness
 """
 
 import json
@@ -22,12 +22,11 @@ CLAUDE_SETTINGS = ROOT / ".claude" / "settings.json"
 ENFORCE_FLOOR = ROOT / ".opencode" / "plugin" / "enforce-floor.ts"
 ENFORCE_DELEGATE = ROOT / ".opencode" / "plugin" / "enforce-delegate.ts"
 ENFORCE_STOP = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
-ENFORCE_STOP_IMPL = (
-    ROOT / ".opencode" / "plugin" / "impl" / "enforce_stop_impl.ts"
-)
+ENFORCE_STOP_IMPL = ROOT / ".opencode" / "plugin" / "impl" / "enforce_stop_impl.ts"
 AGENTS_MD = ROOT / "AGENTS.md"
 
-EXPECTED_FLOOR = 10
+EXPECTED_HARNESS_FLOOR = 3
+EXPECTED_CODE_DEFAULT_FLOOR = 10
 
 
 def _floor_declaration(text: str) -> str:
@@ -44,12 +43,10 @@ class TestClaudeSettingsFloor:
     def test_claude_agent_floor_is_three(self):
         data = json.loads(CLAUDE_SETTINGS.read_text())
         assert "env" in data, "settings.json missing 'env' block"
-        assert "CLAUDE_AGENT_FLOOR" in data["env"], (
-            "settings.json must set CLAUDE_AGENT_FLOOR"
-        )
+        assert "CLAUDE_AGENT_FLOOR" in data["env"], "settings.json must set CLAUDE_AGENT_FLOOR"
         floor = int(data["env"]["CLAUDE_AGENT_FLOOR"])
-        assert floor == EXPECTED_FLOOR, (
-            f"CLAUDE_AGENT_FLOOR={floor}, expected {EXPECTED_FLOOR}"
+        assert floor == EXPECTED_HARNESS_FLOOR, (
+            f"CLAUDE_AGENT_FLOOR={floor}, expected active-harness value {EXPECTED_HARNESS_FLOOR}"
         )
 
 
@@ -59,9 +56,7 @@ class TestEnforceFloorPlugin:
 
     def test_floor_default_is_seven(self):
         line = _floor_declaration(ENFORCE_FLOOR.read_text())
-        assert "10" in line, (
-            f"enforce-floor.ts FLOOR must default to 10; got: {line!r}"
-        )
+        assert "10" in line, f"enforce-floor.ts FLOOR must default to 10; got: {line!r}"
 
 
 class TestEnforceDelegatePlugin:
@@ -70,9 +65,7 @@ class TestEnforceDelegatePlugin:
 
     def test_floor_default_is_seven(self):
         line = _floor_declaration(ENFORCE_DELEGATE.read_text())
-        assert "10" in line, (
-            f"enforce-delegate.ts FLOOR must default to 10; got: {line!r}"
-        )
+        assert "10" in line, f"enforce-delegate.ts FLOOR must default to 10; got: {line!r}"
 
 
 class TestEnforceStopPlugin:
@@ -106,6 +99,5 @@ class TestAgentsMdCap:
         ]
         matched = [p for p in patterns if re.search(p, text, re.IGNORECASE)]
         assert matched, (
-            "AGENTS.md must document the 10-subagent cap "
-            "(no pattern tying '10' to the cap/subagent limit was found)"
+            "AGENTS.md must document the 10-subagent cap (no pattern tying '10' to the cap/subagent limit was found)"
         )
