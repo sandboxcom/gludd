@@ -80,6 +80,11 @@ TIMEOUT_SECS = TIMEOUT_MS / 1000.0
 POLL_SECS = int(os.environ.get("GLUDD_TASK_WATCHDOG_POLL", "5"))
 
 GATE_PID_FILE = Path(os.environ.get("GLUDD_WORKSPACE_ROOT", os.getcwd())) / ".gate-background.pid"
+GATE_RUN_LOCK_FILE = (
+    Path(os.environ.get("GLUDD_WORKSPACE_ROOT", os.getcwd()))
+    / ".gate-logs"
+    / "gate-run.lock"
+)
 
 # Processes matching these patterns are candidates for killing when they run
 # longer than the timeout. These are the commands dispatched subagents execute.
@@ -244,6 +249,19 @@ def _read_gate_pid(gate_pid_file: str = str(GATE_PID_FILE)) -> int | None:
         return None
 
 
+def _read_gate_run_lock_pid(
+    gate_run_lock_file: str = str(GATE_RUN_LOCK_FILE),
+) -> int | None:
+    """Return the active foreground gate owner recorded by ``gate_run_lock``."""
+    try:
+        payload = json.loads(Path(gate_run_lock_file).read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            return None
+        return int(payload["pid"])
+    except (FileNotFoundError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
 def _descendant_pids(lines: list[str], root_pid: int) -> set[int]:
     """Return the gate process and every descendant represented in ``ps``."""
     parents: dict[int, int] = {}
@@ -271,12 +289,13 @@ def _descendant_pids(lines: list[str], root_pid: int) -> set[int]:
 def find_hung_processes(
     timeout_secs: float = TIMEOUT_SECS,
     gate_pid_file: str = str(GATE_PID_FILE),
+    gate_run_lock_file: str = str(GATE_RUN_LOCK_FILE),
 ) -> list[HungProcess]:
     """Scan ``ps`` for processes older than timeout matching task patterns.
 
     Returns ``[{pid, etime_secs, command}, ...]``. Excludes:
     - The watchdog itself (``_SELF_PID``)
-    - The gate background process (has its own killer via ``agent_watchdog``)
+    - Active foreground and background gates, which own their process trees
     - Processes matching ``EXCLUDE_PATTERNS`` (watchdogs, daemons)
 
     Only processes matching ``TASK_PROCESS_PATTERNS`` are candidates — this is
@@ -290,10 +309,19 @@ def find_hung_processes(
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         return []
 
-    gate_pid = _read_gate_pid(gate_pid_file)
+    gate_pids = {
+        pid
+        for pid in (
+            _read_gate_pid(gate_pid_file),
+            _read_gate_run_lock_pid(gate_run_lock_file),
+        )
+        if pid is not None
+    }
     hung: list[HungProcess] = []
     lines = result.stdout.splitlines()[1:]  # skip header
-    gate_tree = _descendant_pids(lines, gate_pid) if gate_pid is not None else set()
+    gate_tree: set[int] = set()
+    for gate_pid in gate_pids:
+        gate_tree.update(_descendant_pids(lines, gate_pid))
 
     for line in lines:
         parts = line.strip().split(None, 3)

@@ -135,6 +135,36 @@ termination reason always wins over that shape:
 - every final progress record says `finished` or `terminated` and includes the
   return code plus termination reason when present.
 
+### Foreground gate ownership
+
+The task watchdog must distinguish a dispatched task process from the gate
+supervisor that owns that process tree. On 2026-09-26, an exact-head foreground
+`make gate` was visibly progressing through its 3,411-test integration phase
+when the five-minute stale-task watchdog killed the gate's `make` process after
+496 seconds. The watchdog already excluded `.gate-background.pid`, but a
+foreground gate publishes its owner atomically in
+`.gate-logs/gate-run.lock`. Ignoring that second ownership record made a healthy
+bounded gate indistinguishable from an abandoned task.
+
+`scripts/task_watchdog.py` now reads both owner records and excludes the union
+of each verified owner and its observed descendants. It still identifies and
+kills unrelated stale `pytest`, `make test`, Ansible, and Molecule processes;
+missing or malformed ownership evidence grants no exemption. This preserves
+the watchdog's bounded-resource and recovery behavior without allowing one
+control plane to cancel another control plane's observable, independently
+bounded work. The gate continues to emit progress and retains its own phase,
+no-progress, and whole-run limits, so the change does not create an unbounded
+execution path. Rollback is limited to removing the foreground-lock reader and
+its regression, with no state migration or resource mutation.
+
+The ownership requirement matches long-lived practitioner evidence. The open
+[pytest-timeout subprocess cleanup report](https://github.com/pytest-dev/pytest-timeout/issues/159)
+documents child processes surviving timeout termination and recommends an
+owning wrapper; [pytest issue #5243](https://github.com/pytest-dev/pytest/issues/5243)
+documents that `SIGTERM` does not run ordinary fixture finalizers. Those reports
+make process-tree authority—not elapsed time alone—the safe termination
+boundary.
+
 This division follows years of upstream practitioner discussion. The
 pytest-timeout session-timeout request distinguishes an external CI deadline
 from a stuck individual test, while the still-open child-cleanup report shows

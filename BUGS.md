@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-26 — (resolved locally) Five-minute task watchdog killed healthy foreground release gates
+
+- **What happened**: The clean exact-head v0.1.1 gate was visibly progressing through its 3,411-test integration phase when it received `SIGTERM` at 35%. The watchdog audit identified the gate's `make` PID and recorded an `auto-*` kill after 496 seconds. Earlier gate logs contained the same unexplained `Terminated: 15` signature, so retrying could never produce reliable release evidence.
+- **Root cause**: `scripts/task_watchdog.py` excluded only the background-gate PID from `.gate-background.pid`. Foreground `make gate` owns the same bounded process lifecycle through the atomic JSON `.gate-logs/gate-run.lock`, but the watchdog ignored that owner and classified the healthy supervisor as an ordinary task after the unrelated five-minute dispatch deadline.
+- **Fix applied**: The watchdog now reads both ownership records, computes the union of both complete process trees, and excludes them from stale-task termination. Unrelated stale test/Ansible/Molecule processes remain killable, while missing or malformed ownership evidence grants no exemption.
+- **Evidence**: A failing-first regression reproduced the missing foreground ownership input; the repaired and expanded watchdog suite passes 39/39 with 90% branch-aware production coverage. The interrupted gate left no project processes. Exact-head gate replay remains required after the atomic fix commit.
+- **Practitioner evidence**: pytest-timeout issue #159 documents subprocesses surviving timeout termination and recommends cleanup by the owning wrapper; pytest issue #5243 documents that `SIGTERM` can bypass fixture finalizers. `docs/features/GATE_RESOURCE_LIFECYCLE.md` records the owner-aware termination, bounded-resource, security, ZDD, observability, and rollback contract.
+- **Lesson**: A deadline detector may report stale work, but only the lifecycle owner may terminate its process tree. Foreground and background forms of the same bounded operation must publish equivalent ownership evidence.
+
 ### 2026-09-23 — (resolved locally) Codex stop controls forced future backlog into the active release loop
 
 - **What happened**: After `make active-work-status` correctly reported six open v0.1.1 tasks and 84 separate backlog items, the Codex Stop hook still emitted `90 TASKS.md item(s) remain`. Every attempted handoff therefore restarted an unbounded repository-wide loop and made completed release work look like no progress.
