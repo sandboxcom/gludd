@@ -30,10 +30,10 @@ import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 // minimum is opt-in via GLUDD_SESSION_START_MIN_DISPATCHES; absent that env var,
 // reads complete the session-start protocol without forcing needless agents.
 const MIN_DISPATCHES = parseInt(
-  process.env.GLUDD_SESSION_START_MIN_DISPATCHES || "3",
+  process.env.GLUDD_SESSION_START_MIN_DISPATCHES || "10",
   10,
 )
-const HARD_MAX_DISPATCHES = 3
+const HARD_MAX_DISPATCHES = 10
 const MAX_DISPATCHES = HARD_MAX_DISPATCHES
 const HAS_CONFIGURED_MIN_DISPATCHES =
   process.env.GLUDD_SESSION_START_MIN_DISPATCHES !== undefined

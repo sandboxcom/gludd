@@ -1,7 +1,7 @@
 // enforce-floor-v2: session-wide cumulative dispatch tracker.
 // Integrates with scripts/dispatch_tracker.py to track dispatched-vs-completed
 // counts across the ENTIRE session, not per-message.  When floor deficit > 0
-// (3 - (dispatched - completed) > 0), non-dispatch tools are DENIED.
+// (10 - (dispatched - completed) > 0), non-dispatch tools are DENIED.
 //
 // Activation: GLUDD_FLOOR_V2_ENFORCE=0 disables. Default ON.
 
@@ -28,7 +28,7 @@ function execSync(...args: any[]): any {
 
 const FLOOR_ENFORCE = process.env.GLUDD_FLOOR_V2_ENFORCE !== "0"
 const DISPATCH_STATE_FILE = process.env.GLUDD_DISPATCH_STATE_FILE || "/tmp/gludd-dispatch-state.json"
-const FLOOR = parseInt(process.env.GLUDD_DISPATCH_FLOOR || "3", 10)
+const FLOOR = parseInt(process.env.GLUDD_DISPATCH_FLOOR || "10", 10)
 
 const TRACKER_SCRIPT = "scripts/dispatch_tracker.py"
 const PYTHON = process.env.GLUDD_DISPATCH_PYTHON || "uv run python3"
@@ -143,7 +143,7 @@ const defaultImpl: HotModule = {
       const warning = [
         `FLOOR DEFICIT: ${d} agent(s) below floor.`,
         `dispatched=${s.dispatched} completed=${s.completed} in_flight=${Math.max(0, s.dispatched - s.completed)}`,
-            "Dispatch replacements to maintain the 3-agent floor.",
+            "Dispatch replacements to maintain the 10-agent floor.",
       ].join("\n")
       if (typeof output === "string") return warning + "\n\n" + (output as string)
       if ((output as any)?.text) {
