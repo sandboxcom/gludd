@@ -15,8 +15,8 @@
 #
 # FAIL-OPEN: any error -> emit nothing / exit 0, never wedge a turn.
 
-FLOOR="${CLAUDE_AGENT_FLOOR:-4}"
-TARGET="${CLAUDE_AGENT_TARGET:-4}"   # refill to TARGET, not FLOOR, so the next
+FLOOR="${CLAUDE_AGENT_FLOOR:-3}"
+TARGET="${CLAUDE_AGENT_TARGET:-3}"   # refill to TARGET, not FLOOR, so the next
                                       # burst of completions can't immediately re-breach.
 
 # --- observability only: keep the inc/dec tally roughly in sync (not load-bearing) ---

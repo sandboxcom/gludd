@@ -5,7 +5,7 @@ Rewritten 2026-07-14 to match the 2026-07-13 plugin rewrite:
 - No session.idle hook
 - Single tool.execute.before hook with 5s-inter-call message boundary detection
 - Explicit configured-minimum block; no implicit mandatory floor
-- Absolute dispatch ceiling of four
+- Absolute dispatch ceiling of three
 - CONSECUTIVE NON-DISPATCH STREAK added
 - Subagent guard via isSubagent() (shared.ts)
 - Disengage via isDisengaged() (shared.ts)
@@ -111,8 +111,8 @@ class TestMinDispatchConstants:
     def test_min_dispatches_default_from_env_match(self):
         src = _plugin_source()
         assert "MIN_DISPATCHES = integerFromEnv" in src
-        assert _extract_env_default(src, "GLUDD_MIN_DISPATCHES") == 4
-        assert _extract_env_default(src, "GLUDD_MULTITASK_MIN_DISPATCHES") == 4
+        assert _extract_env_default(src, "GLUDD_MIN_DISPATCHES") == 3
+        assert _extract_env_default(src, "GLUDD_MULTITASK_MIN_DISPATCHES") == 3
 
     def test_min_dispatches_is_positive_integer(self):
         d = _min_dispatch_default()
@@ -134,11 +134,11 @@ class TestMinDispatchConstants:
         assert m
         assert int(m.group(1)) == 2
 
-    def test_max_dispatches_is_4(self):
+    def test_max_dispatches_is_3(self):
         src = _plugin_source()
-        assert "HARD_MAX_DISPATCHES = 4" in src
+        assert "HARD_MAX_DISPATCHES = 3" in src
         assert re.search(r"Math\.min\(\s*HARD_MAX_DISPATCHES", src)
-        assert _extract_env_default(src, "GLUDD_MULTITASK_MAX_DISPATCHES") == 4
+        assert _extract_env_default(src, "GLUDD_MULTITASK_MAX_DISPATCHES") == 3
 
     def test_consecutive_non_dispatch_threshold_is_5(self):
         src = _plugin_source()
@@ -245,9 +245,11 @@ class TestConfiguredMinimumBlock:
         min_disp = _min_dispatch_default()
         assert self._under_floor_triggers(2, min_disp), f"2 dispatches triggers under-floor with floor={min_disp}"
 
-    def test_3_dispatches_triggers(self):
+    def test_3_dispatches_passes(self):
         min_disp = _min_dispatch_default()
-        assert self._under_floor_triggers(3, min_disp), f"3 dispatches triggers under-floor with floor={min_disp}"
+        assert not self._under_floor_triggers(3, min_disp), (
+            f"3 dispatches does NOT trigger under-floor with floor={min_disp}"
+        )
 
     def test_7_dispatches_passes(self):
         min_disp = _min_dispatch_default()

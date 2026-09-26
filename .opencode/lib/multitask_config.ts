@@ -13,10 +13,10 @@ function integerFromEnv(names: readonly string[], fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
-export const HARD_MAX_DISPATCHES = 4
+export const HARD_MAX_DISPATCHES = 3
 export const MIN_DISPATCHES = integerFromEnv(
   ["GLUDD_MIN_DISPATCHES", "GLUDD_MULTITASK_MIN_DISPATCHES"],
-  4,
+  3,
 )
 export const MAX_DISPATCHES = Math.max(
   1,

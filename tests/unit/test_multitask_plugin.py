@@ -1,11 +1,11 @@
 """Behavior pin for the enforce-multitask plugin.
 
 Per AGENTS.md cost-efficiency directive: delegation is adaptive unless an
-operator configures a minimum; ten is always the hard dispatch ceiling.
+operator configures a minimum; three is always the hard dispatch ceiling.
 Only tool.execute.before hook — message boundaries detected via 5s inter-call
 timeout. Dispatch counting, zero-streak tracking, and per-message enforcement
 all happen in a single hook. Shared configuration exports the recommended
-MIN_DISPATCHES (4), MAX_DISPATCHES (4),
+MIN_DISPATCHES (3), MAX_DISPATCHES (3),
 MAX_ZERO_STREAK (2), WAVE_HISTORY_SIZE (10), CONSECUTIVE_NON_DISPATCH_THRESHOLD (5),
 CONSECUTIVE_NON_DISPATCH_WINDOW_MS (30000).
 """
@@ -100,16 +100,16 @@ class TestPluginStructure:
 
 
 class TestMinDispatchesDefault:
-    def test_default_is_4(self):
+    def test_default_is_3(self):
         default = _extract_env_default(_plugin_source(), "GLUDD_MULTITASK_MIN_DISPATCHES")
-        assert default == 4, f"MIN_DISPATCHES default should be 4, got {default}"
+        assert default == 3, f"MIN_DISPATCHES default should be 3, got {default}"
 
     def test_string_value_matches_default(self):
         src = _plugin_source()
         assert "MIN_DISPATCHES = integerFromEnv" in src
         assert "Number.parseInt(raw, 10)" in src
-        assert _extract_env_default(src, "GLUDD_MIN_DISPATCHES") == 4
-        assert _extract_env_default(src, "GLUDD_MULTITASK_MIN_DISPATCHES") == 4
+        assert _extract_env_default(src, "GLUDD_MIN_DISPATCHES") == 3
+        assert _extract_env_default(src, "GLUDD_MULTITASK_MIN_DISPATCHES") == 3
 
 
 class TestMaxZeroStreak:
@@ -700,19 +700,19 @@ class TestConsecutiveNonDispatchDenyMessage:
 
 
 class TestAdaptiveMinimumAndHardCeiling:
-    """Ten is an absolute ceiling; mandatory minimums are explicit opt-ins."""
+    """Three is an absolute ceiling; mandatory minimums are explicit opt-ins."""
 
-    def test_min_dispatches_exactly_10(self):
-        """The recommended configured minimum is 10, parsed in one place."""
+    def test_min_dispatches_default_is_3(self):
+        """The recommended configured minimum is 3, parsed in one place."""
         src = _plugin_source()
         assert "MIN_DISPATCHES = integerFromEnv" in src
         assert "Number.parseInt(raw, 10)" in src
-        assert _extract_env_default(src, "GLUDD_MIN_DISPATCHES") == 4
-        assert _extract_env_default(src, "GLUDD_MULTITASK_MIN_DISPATCHES") == 4
+        assert _extract_env_default(src, "GLUDD_MIN_DISPATCHES") == 3
+        assert _extract_env_default(src, "GLUDD_MULTITASK_MIN_DISPATCHES") == 3
 
-    def test_max_dispatches_exactly_4(self):
+    def test_max_dispatches_exactly_3(self):
         default = _extract_env_default(_plugin_source(), "GLUDD_MULTITASK_MAX_DISPATCHES")
-        assert default == 4, f"MAX_DISPATCHES default must be 4, got {default}"
+        assert default == 3, f"MAX_DISPATCHES default must be 3, got {default}"
 
     def test_no_unconfigured_floor_for_wave(self):
         src = _plugin_source()
@@ -743,11 +743,11 @@ class TestAdaptiveMinimumAndHardCeiling:
             "Comparison must use strict-less-than for the configured minimum"
         )
 
-    def test_dispatch_count_must_be_four_not_more(self):
-        """A wave of 5 should be denied (ceiling). Verify MAX_DISPATCHES=4."""
+    def test_dispatch_count_must_be_three_not_more(self):
+        """A wave of 4 should be denied (ceiling). Verify MAX_DISPATCHES=3."""
         src = _plugin_source()
         assert "_state.thisMessageDispatches >= MAX_DISPATCHES" in src, (
-            "Ceiling check must deny at >= MAX_DISPATCHES (4)"
+            "Ceiling check must deny at >= MAX_DISPATCHES (3)"
         )
 
     def test_zero_dispatch_block_mentions_configured_minimum(self):

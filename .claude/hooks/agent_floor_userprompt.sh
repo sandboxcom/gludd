@@ -6,9 +6,9 @@
 # (PreToolUse) and turn-end (Stop) enforcers with a turn-START prompt.
 # FAIL-OPEN: any error -> emit nothing.
 
-FLOOR="${CLAUDE_AGENT_FLOOR:-4}"
-TARGET="${CLAUDE_AGENT_TARGET:-4}"
-CEILING="${CLAUDE_AGENT_CEILING:-4}"
+FLOOR="${CLAUDE_AGENT_FLOOR:-3}"
+TARGET="${CLAUDE_AGENT_TARGET:-3}"
+CEILING="${CLAUDE_AGENT_CEILING:-3}"
 # Live floor override (see agent_floor_stop.sh): a valid integer in this file wins.
 if [ -r /tmp/gludd-floor-override ]; then
   _fov="$(cat /tmp/gludd-floor-override 2>/dev/null)"

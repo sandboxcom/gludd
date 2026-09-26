@@ -34,9 +34,7 @@ class TestPluginRegistration:
 
     def test_registered_in_opencode_json(self):
         raw = OPENCODE_JSON.read_text()
-        assert "enforce-session-start.ts" in raw, (
-            "enforce-session-start.ts must be referenced in opencode.json"
-        )
+        assert "enforce-session-start.ts" in raw, "enforce-session-start.ts must be referenced in opencode.json"
 
     def test_exports_satisfies_plugin_type(self):
         assert "satisfies Plugin" in _src()
@@ -62,7 +60,7 @@ class TestKeyConstants:
         src = _src()
         m = re.search(r'GLUDD_SESSION_START_MIN_DISPATCHES \|\| "(\d+)"', src)
         assert m, "MIN_DISPATCHES default not found"
-        assert m.group(1) == "10"
+        assert m.group(1) == "3"
 
     def test_enforce_default_is_true(self):
         src = _src()
@@ -104,7 +102,7 @@ class TestKeyConstants:
 
     def test_effective_min_is_opt_in_and_bounded_by_hard_max(self):
         src = _src()
-        assert "const HARD_MAX_DISPATCHES = 10" in src
+        assert "const HARD_MAX_DISPATCHES = 3" in src
         assert "HAS_CONFIGURED_MIN_DISPATCHES" in src
         assert "Math.min(Number.isFinite(MIN_DISPATCHES)" in src
         assert re.search(r"EFFECTIVE_MIN\s*=[\s\S]+?:\s*0", src)
@@ -171,28 +169,22 @@ class TestSubagentGuard:
         src = _src()
         idx = src.find('"experimental.chat.system.transform"')
         assert idx > 0
-        after = src[idx:idx + 400]
-        assert "OPENCODE_SUBAGENT" in after, (
-            "system.transform must guard via OPENCODE_SUBAGENT"
-        )
+        after = src[idx : idx + 400]
+        assert "OPENCODE_SUBAGENT" in after, "system.transform must guard via OPENCODE_SUBAGENT"
 
     def test_system_transform_returns_output_on_subagent(self):
         src = _src()
         idx = src.find('"experimental.chat.system.transform"')
         assert idx > 0
-        after = src[idx:idx + 400]
-        assert "return output" in after, (
-            "system.transform must return output unchanged for subagents"
-        )
+        after = src[idx : idx + 400]
+        assert "return output" in after, "system.transform must return output unchanged for subagents"
 
     def test_tool_execute_before_has_subagent_guard(self):
         src = _src()
         idx = src.find('"tool.execute.before": async')
         assert idx > 0
-        after = src[idx:idx + 300]
-        assert "OPENCODE_SUBAGENT" in after, (
-            "tool.execute.before must guard via OPENCODE_SUBAGENT"
-        )
+        after = src[idx : idx + 300]
+        assert "OPENCODE_SUBAGENT" in after, "tool.execute.before must guard via OPENCODE_SUBAGENT"
 
     def test_subagent_guard_precedes_any_side_effect_in_before_hook(self):
         src = _src()
@@ -201,9 +193,7 @@ class TestSubagentGuard:
         after = src[before_idx:]
         subagent_idx = after.find("OPENCODE_SUBAGENT")
         report_idx = after.find("reportAlive")
-        assert subagent_idx < report_idx, (
-            "SUBAGENT check must precede reportAlive in tool.execute.before"
-        )
+        assert subagent_idx < report_idx, "SUBAGENT check must precede reportAlive in tool.execute.before"
 
 
 # ---------------------------------------------------------------------------
@@ -216,16 +206,12 @@ class TestSystemTransform:
         src = _src()
         idx = src.find('"experimental.chat.system.transform"')
         after = src[idx:]
-        assert "buildSessionDirective" in after or "SESSION START" in after, (
-            "must prepend session directive to output"
-        )
+        assert "buildSessionDirective" in after or "SESSION START" in after, "must prepend session directive to output"
 
     def test_directive_prepended_with_newline_separator(self):
         src = _src()
         idx = src.find('directive + "\\n\\n" + output')
-        assert idx > 0 or "directive + " in src, (
-            "directive must be prepended with newline separator"
-        )
+        assert idx > 0 or "directive + " in src, "directive must be prepended with newline separator"
 
     def test_returns_output_unchanged_when_not_string(self):
         src = _src()
@@ -269,25 +255,17 @@ class TestSystemTransform:
 
 class TestToolClassification:
     def test_task_is_dispatch_tool(self):
-        assert 'isDispatchTool' in _src(), (
-            "Plugin must define or import isDispatchTool()."
-        )
+        assert "isDispatchTool" in _src(), "Plugin must define or import isDispatchTool()."
 
     def test_agent_is_dispatch_tool(self):
-        assert 'isDispatchTool' in _src(), (
-            "Plugin must import isDispatchTool from shared.ts."
-        )
+        assert "isDispatchTool" in _src(), "Plugin must import isDispatchTool from shared.ts."
 
     def test_workflow_is_dispatch_tool(self):
-        assert 'isDispatchTool' in _src(), (
-            "Plugin must import isDispatchTool from shared.ts."
-        )
+        assert "isDispatchTool" in _src(), "Plugin must import isDispatchTool from shared.ts."
 
     def test_read_is_not_dispatch_tool(self):
         src = _src()
-        assert "isReadTool" in src, (
-            "Plugin must define or import isReadTool()."
-        )
+        assert "isReadTool" in src, "Plugin must define or import isReadTool()."
         # Read tools are classified in shared.ts (READ_TOOLS set). The plugin
         # uses isReadTool() — not inline tool === "read" — so verify the import.
         assert "isReadTool" in src
@@ -296,21 +274,21 @@ class TestToolClassification:
         src = _src()
         idx = src.find("function isTaskFileRead")
         assert idx > 0
-        after = src[idx:idx + 2000]
+        after = src[idx : idx + 2000]
         assert "TASK_FILES" in after
 
     def test_task_file_read_uses_read_tool_check(self):
         src = _src()
         idx = src.find("function isTaskFileRead")
         assert idx > 0
-        after = src[idx:idx + 200]
+        after = src[idx : idx + 200]
         assert "isReadTool" in after
 
     def test_task_file_read_has_stringify_guard(self):
         src = _src()
         idx = src.find("function isTaskFileRead")
         assert idx > 0
-        after = src[idx:idx + 2000]
+        after = src[idx : idx + 2000]
         assert "JSON.stringify" in after or "stringify" in after
 
     def test_task_files_list_contains_all_four(self):
@@ -353,19 +331,19 @@ class TestStateFileIO:
         src = _src()
         idx = src.find("function loadState")
         assert idx > 0
-        after = src[idx:idx + 600]
+        after = src[idx : idx + 600]
         assert "writeFileSync" in after, "loadState must create file when missing"
 
     def test_load_state_sets_started_at_to_date_now_on_creation(self):
         src = _src()
         idx = src.find("function loadState")
-        after = src[idx:idx + 800]
+        after = src[idx : idx + 800]
         assert "Date.now()" in after, "new state file must have started_at = Date.now()"
 
     def test_load_state_starts_with_observed_zero_dispatches(self):
         src = _src()
         idx = src.find("function loadState")
-        after = src[idx:idx + 800]
+        after = src[idx : idx + 800]
         assert "dispatches: 0" in after, (
             "A new state file must not fabricate dispatches to satisfy a configured minimum"
         )
@@ -373,40 +351,40 @@ class TestStateFileIO:
     def test_load_state_sets_reads_done_false_on_creation(self):
         src = _src()
         idx = src.find("function loadState")
-        after = src[idx:idx + 800]
+        after = src[idx : idx + 800]
         assert "readsDone: false" in after, "new state file must have readsDone = false"
 
     def test_load_state_handles_corrupt_file(self):
         src = _src()
         idx = src.find("function loadState")
-        after = src[idx:idx + 3000]
+        after = src[idx : idx + 3000]
         assert "catch" in after, "loadState must have try/catch for corrupt files"
 
     def test_load_state_returns_default_on_catch(self):
         src = _src()
         idx = src.find("function loadState")
-        after = src[idx:idx + 3000]
+        after = src[idx : idx + 3000]
         # After the catch block there should be a default return
-        assert "Date.now()" in after[after.index("catch"):]
+        assert "Date.now()" in after[after.index("catch") :]
 
     def test_save_state_uses_atomic_tmp_rename(self):
         src = _src()
         idx = src.find("function saveState")
         assert idx > 0
-        after = src[idx:idx + 800]
+        after = src[idx : idx + 800]
         assert ".tmp" in after, "saveState must use tmp file"
         assert "renameSync" in after, "saveState must use atomic rename"
 
     def test_save_state_uses_pid_unique_tmp_path(self):
         src = _src()
         idx = src.find("function saveState")
-        after = src[idx:idx + 500]
+        after = src[idx : idx + 500]
         assert "process.pid" in after, "tmp path must include PID for uniqueness"
 
     def test_save_state_fail_open_on_error(self):
         src = _src()
         idx = src.find("function saveState")
-        after = src[idx:idx + 800]
+        after = src[idx : idx + 800]
         assert "catch" in after, "saveState must have try/catch for fail-open"
 
 
@@ -420,34 +398,28 @@ class TestDispatchCountTracking:
         src = _src()
         idx = src.find("if (isDispatchTool(tool))")
         assert idx > 0
-        after = src[idx:idx + 200]
-        assert "state.dispatches += 1" in after, (
-            "dispatch tools must increment dispatches counter"
-        )
+        after = src[idx : idx + 200]
+        assert "state.dispatches += 1" in after, "dispatch tools must increment dispatches counter"
 
     def test_dispatch_resets_time_gate_on_first_dispatch(self):
         src = _src()
         idx = src.find("if (isDispatchTool(tool))")
         assert idx > 0
-        after = src[idx:idx + 250]
-        assert "timeGateReset = true" in after, (
-            "first dispatch must reset time gate"
-        )
+        after = src[idx : idx + 250]
+        assert "timeGateReset = true" in after, "first dispatch must reset time gate"
 
     def test_dispatch_triggers_update_primed_latch(self):
         src = _src()
         idx = src.find("if (isDispatchTool(tool))")
         assert idx > 0
-        after = src[idx:idx + 300]
-        assert "updatePrimedLatch(state)" in after, (
-            "dispatch must call updatePrimedLatch to check if primed"
-        )
+        after = src[idx : idx + 300]
+        assert "updatePrimedLatch(state)" in after, "dispatch must call updatePrimedLatch to check if primed"
 
     def test_dispatch_saves_state(self):
         src = _src()
         idx = src.find("if (isDispatchTool(tool))")
         assert idx > 0
-        after = src[idx:idx + 250]
+        after = src[idx : idx + 250]
         assert "saveState(state)" in after, "dispatch must persist state"
 
 
@@ -461,7 +433,7 @@ class TestTaskFileReadDetection:
         src = _src()
         idx = src.find("if (isTaskFileRead(tool, input, _output))")
         assert idx > 0
-        after = src[idx:idx + 200]
+        after = src[idx : idx + 200]
         assert "state.readsDone = true" in after
 
     def test_read_of_task_file_updates_tasks_mtime(self):
@@ -474,7 +446,7 @@ class TestTaskFileReadDetection:
         src = _src()
         idx = src.find("if (isTaskFileRead(tool, input, _output))")
         assert idx > 0
-        after = src[idx:idx + 600]
+        after = src[idx : idx + 600]
         assert "updatePrimedLatch(state)" in after
 
 
@@ -491,7 +463,7 @@ class TestPrimedLatch:
     def test_primed_condition_requires_reads_done_and_dispatches(self):
         src = _src()
         idx = src.find("function updatePrimedLatch")
-        after = src[idx:idx + 200]
+        after = src[idx : idx + 200]
         assert "state.readsDone" in after
         assert "state.dispatches >= EFFECTIVE_MIN" in after
 
@@ -502,7 +474,7 @@ class TestPrimedLatch:
     def test_latch_can_be_null(self):
         src = _src()
         idx = src.find("let sessionPrimed")
-        after = src[idx:idx + 50]
+        after = src[idx : idx + 50]
         assert "null" in after, "sessionPrimed must support null (uninitialized)"
 
     def test_latch_skips_state_io_when_primed(self):
@@ -536,8 +508,8 @@ class TestTimeGate:
         src = _src()
         idx = src.find("if (ENFORCE)")
         assert idx > 0, "hard deny must check ENFORCE flag in time gate"
-        after = src[idx + src.find("HARD_DENY_SECS"):]
-        segment = after[after.find("if (ENFORCE)"):after.find("if (ENFORCE)") + 400]
+        after = src[idx + src.find("HARD_DENY_SECS") :]
+        segment = after[after.find("if (ENFORCE)") : after.find("if (ENFORCE)") + 400]
         assert "throw new Error" in segment or "throw new Error" in src, "enforce mode must throw"
 
     def test_time_gate_warning_throttled_to_30s(self):
@@ -576,7 +548,7 @@ class TestFreshSessionGate:
         after_hook = src[before_idx:]
         idx = after_hook.find("SESSION START PROTOCOL")
         assert idx > 0, "deny message not found in tool.execute.before"
-        after = after_hook[idx:idx + 500]
+        after = after_hook[idx : idx + 500]
         assert "readsDone" in after, "deny message must include readsDone status"
 
     def test_fresh_session_deny_message_includes_dispatch_count(self):
@@ -585,7 +557,7 @@ class TestFreshSessionGate:
         after_hook = src[before_idx:]
         idx = after_hook.find("SESSION START PROTOCOL")
         assert idx > 0
-        after = after_hook[idx:idx + 500]
+        after = after_hook[idx : idx + 500]
         assert "dispatches" in after, "deny message must include dispatch count"
 
     def test_fresh_session_deny_message_mentions_effective_min(self):
@@ -594,7 +566,7 @@ class TestFreshSessionGate:
         after_hook = src[before_idx:]
         idx = after_hook.find("SESSION START PROTOCOL")
         assert idx > 0
-        after = after_hook[idx:idx + 500]
+        after = after_hook[idx : idx + 500]
         assert "EFFECTIVE_MIN" in after, "deny message must reference EFFECTIVE_MIN"
 
     def test_fresh_session_deny_message_mentions_env_var_disable(self):
@@ -603,16 +575,14 @@ class TestFreshSessionGate:
         after_hook = src[before_idx:]
         idx = after_hook.find("SESSION START PROTOCOL")
         assert idx > 0
-        after = after_hook[idx:idx + 1200]
-        assert "GLUDD_SESSION_START_ENFORCE=0" in after, (
-            "deny message must mention how to disable enforcement"
-        )
+        after = after_hook[idx : idx + 1200]
+        assert "GLUDD_SESSION_START_ENFORCE=0" in after, "deny message must mention how to disable enforcement"
 
     def test_fresh_session_gate_allows_reads(self):
         src = _src()
         idx = src.find("if (isReadTool(tool))")
         assert idx > 0
-        after = src[idx:idx + 200]
+        after = src[idx : idx + 200]
         assert "return" in after, "read tools must be allowed during fresh session"
 
 
@@ -654,7 +624,7 @@ class TestEnforceEnableDisable:
         src = _src()
         idx = src.find("if (ENFORCE)")
         assert idx > 0
-        after = src[idx:idx + 150]
+        after = src[idx : idx + 150]
         assert "denyMessage" in after, "denyMessage must be set inside ENFORCE block"
 
 
@@ -666,13 +636,11 @@ class TestEnforceEnableDisable:
 class TestHeartbeat:
     def test_report_alive_function_exists(self):
         src = _src()
-        assert "reportAlive" in src, (
-            "Plugin must define or import reportAlive."
-        )
+        assert "reportAlive" in src, "Plugin must define or import reportAlive."
 
     def test_report_alive_writes_to_alive_file(self):
         src = _src()
-        assert "reportAlive(\"enforce-session-start\")" in src
+        assert 'reportAlive("enforce-session-start")' in src
 
     def test_per_plugin_heartbeat_enforce_session_start_json(self):
         src = _src()
@@ -726,13 +694,13 @@ class TestFailOpenGuarantee:
     def test_save_state_fail_open_on_io_error(self):
         src = _src()
         idx = src.find("function saveState")
-        after = src[idx:idx + 800]
+        after = src[idx : idx + 800]
         assert "catch" in after, "saveState must catch I/O errors"
 
     def test_load_state_fail_open_on_corrupt_json(self):
         src = _src()
         idx = src.find("function loadState")
-        after = src[idx:idx + 3000]
+        after = src[idx : idx + 3000]
         assert "catch" in after, "loadState must catch corrupt JSON"
 
 
@@ -749,20 +717,20 @@ class TestSessionIsFresh:
     def test_uses_date_now_minus_started_at(self):
         src = _src()
         idx = src.find("function sessionIsFresh")
-        after = src[idx:idx + 150]
+        after = src[idx : idx + 150]
         assert "Date.now()" in after
         assert "started_at" in after
 
     def test_compares_against_fresh_secs(self):
         src = _src()
         idx = src.find("function sessionIsFresh")
-        after = src[idx:idx + 150]
+        after = src[idx : idx + 150]
         assert "FRESH_SECS" in after
 
     def test_divides_by_1000_for_seconds(self):
         src = _src()
         idx = src.find("function sessionIsFresh")
-        after = src[idx:idx + 150]
+        after = src[idx : idx + 150]
         assert "/ 1000" in after or "/1000" in after
 
 
