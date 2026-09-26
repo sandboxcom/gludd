@@ -40,14 +40,8 @@ _SUBSCRIPTION = "00000000-0000-4000-8000-000000000001"
 _RESOURCE_GROUP = "gludd-accelerators"
 _RESOURCE_GROUP_ID = f"/subscriptions/{_SUBSCRIPTION}/resourceGroups/{_RESOURCE_GROUP}"
 _DEPLOYMENT_NAME = "gludd-worker-001"
-_VM_ID = (
-    f"{_RESOURCE_GROUP_ID}/providers/Microsoft.Compute/"
-    f"virtualMachines/{_DEPLOYMENT_NAME}-vm"
-)
-_VMSS_ID = (
-    f"{_RESOURCE_GROUP_ID}/providers/Microsoft.Compute/"
-    f"virtualMachineScaleSets/{_DEPLOYMENT_NAME}-vmss"
-)
+_VM_ID = f"{_RESOURCE_GROUP_ID}/providers/Microsoft.Compute/virtualMachines/{_DEPLOYMENT_NAME}-vm"
+_VMSS_ID = f"{_RESOURCE_GROUP_ID}/providers/Microsoft.Compute/virtualMachineScaleSets/{_DEPLOYMENT_NAME}-vmss"
 _RELEASE = "b" * 64
 _TOPOLOGY = "c" * 64
 _RUNTIME = f"sha256:{'d' * 64}"
@@ -81,10 +75,7 @@ def _spec(strategy: AzureExecutionStrategy) -> AzureGpuWorkerProvisioningSpec:
         user_assigned_identity_id=(
             None
             if strategy is AzureExecutionStrategy.SINGLE_VM
-            else (
-                f"{_RESOURCE_GROUP_ID}/providers/Microsoft.ManagedIdentity/"
-                "userAssignedIdentities/gludd-worker"
-            )
+            else (f"{_RESOURCE_GROUP_ID}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/gludd-worker")
         ),
         rdma_enabled=strategy is AzureExecutionStrategy.VMSS,
     )
@@ -190,8 +181,7 @@ def _outputs(strategy: AzureExecutionStrategy) -> dict[str, object]:
             "owned_resource_ids": _output(
                 [
                     _VM_ID,
-                    f"{_RESOURCE_GROUP_ID}/providers/Microsoft.Network/"
-                    "networkInterfaces/worker",
+                    f"{_RESOURCE_GROUP_ID}/providers/Microsoft.Network/networkInterfaces/worker",
                 ]
             ),
         }
@@ -202,8 +192,7 @@ def _outputs(strategy: AzureExecutionStrategy) -> dict[str, object]:
         "owned_resource_ids": _output(
             [
                 _VMSS_ID,
-                f"{_RESOURCE_GROUP_ID}/providers/Microsoft.Network/"
-                "virtualNetworks/worker",
+                f"{_RESOURCE_GROUP_ID}/providers/Microsoft.Network/virtualNetworks/worker",
             ]
         ),
     }
@@ -273,6 +262,21 @@ class _SdkReader:
             ),
         )
 
+    def resolve_single_vm(
+        self,
+        **kwargs: object,
+    ) -> AzureGpuWorkerInstance:
+        assert self.strategy is AzureExecutionStrategy.SINGLE_VM
+        assert kwargs["vm_id"] == _VM_ID
+        return AzureGpuWorkerInstance(
+            host_id=_VM_ID,
+            address="203.0.113.10",
+        )
+
+    def delete_owned_resources(self, **kwargs: object) -> tuple[str, ...]:
+        assert kwargs["owned_resource_ids"]
+        return ()
+
     def remaining_owned_resource_ids(self, **kwargs: object) -> tuple[str, ...]:
         self.absence_checks += 1
         assert kwargs["owned_resource_ids"]
@@ -291,17 +295,12 @@ class _AnsibleRunner:
         extravars = kwargs["extravars"]
         plan = extravars["gludd_model_worker_plan"]
         self.launch_plans.append(plan)
-        inventory = yaml.safe_load(
-            Path(kwargs["inventory"][0]).read_text(encoding="utf-8")
-        )
+        inventory = yaml.safe_load(Path(kwargs["inventory"][0]).read_text(encoding="utf-8"))
         aliases = inventory["all"]["children"]["gludd_model_workers"]["hosts"]
         service_name = f"gludd-model-worker-{_RELEASE[:12]}.service"
         candidate = {
             "adapter_id": plan["adapter_id"],
-            "attestation_path": (
-                "/var/lib/gludd/model-workers/attestations/"
-                f"gludd-model-worker-{_RELEASE[:12]}.json"
-            ),
+            "attestation_path": (f"/var/lib/gludd/model-workers/attestations/gludd-model-worker-{_RELEASE[:12]}.json"),
             "backend": "cuda",
             "devices_per_replica": plan["devices_per_replica"],
             "driver_version_digest": f"sha256:{'e' * 64}",
@@ -421,9 +420,7 @@ def test_full_owned_worker_chain_serves_and_cleans_every_runner(
         model_name="org/model",
         endpoint_gateway_factory=_endpoint_factory,
         lifecycle_trace_sink=lambda _trace: None,
-        profile_options={
-            "role_names": ["chemistry", "firmware", "self_improvement"]
-        },
+        profile_options={"role_names": ["chemistry", "firmware", "self_improvement"]},
     )
 
     pool = service.acquire(policy)
