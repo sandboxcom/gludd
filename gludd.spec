@@ -109,6 +109,14 @@ a = Analysis(
         'uvicorn.protocols.websockets.auto',
         'uvicorn.lifespan',
         'uvicorn.lifespan.on',
+        # Azure SDK modules are imported inside functions (delayed/conditional)
+        # throughout the azure/infra/onboard/self_improve subpackages. Static
+        # PyInstaller analysis discovers the importer modules but not the Azure
+        # top-level packages themselves, so the frozen binary reports them as
+        # missing and the warning audit fails.
+        'azure.core',
+        'azure.identity',
+        'azure.mgmt',
     ],
     hookspath=[],
     hooksconfig={},
