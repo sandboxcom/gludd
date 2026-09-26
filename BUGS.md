@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-26 — (resolved locally) CLI release test duplicated the previous version
+
+- **What happened**: The exact-head v0.1.1 gate passed 3,398 integration tests and the first nine `unit-1b` batches, then failed because `TestCLIParsing.test_version_command` still asserted that the CLI output contained `0.1.0`; the application correctly emitted `general-ludd-agent 0.1.1`.
+- **Root cause**: The test copied a release value instead of consuming the package's canonical `general_ludd.__version__`. The existing release consistency checks covered production metadata but did not prevent a stale literal inside a behavioral assertion.
+- **Fix applied**: The CLI assertion now compares the complete rendered output with `general-ludd-agent {__version__}`. Future version changes therefore exercise the real command contract without requiring another test-only version edit or weakening the assertion to a substring.
+- **Evidence**: The full gate is the failing-first reproduction: 287 neighboring tests passed before this exact assertion stopped batch 10. The complete focused CLI module now passes 48/48 and scoped Ruff is green; a new exact-head gate remains required before the incident or release task can be considered complete.
+- **Practitioner evidence**: [setuptools-scm issue #1231](https://github.com/pypa/setuptools-scm/issues/1231) records a real CI failure caused by two competing version authorities, while [issue #804](https://github.com/pypa/setuptools-scm/issues/804) records a long-lived fallback-version mismatch. Both reinforce the single-authority contract documented in `docs/features/BETA4_DUAL_TRACK_CI.md`.
+- **Lesson**: Tests must verify the version owner's observable output, not become another version owner. Release-number literals belong only in explicit migration fixtures whose semantics require an old version.
+
 ### 2026-09-26 — (resolved locally) Five-minute task watchdog killed healthy foreground release gates
 
 - **What happened**: The clean exact-head v0.1.1 gate was visibly progressing through its 3,411-test integration phase when it received `SIGTERM` at 35%. The watchdog audit identified the gate's `make` PID and recorded an `auto-*` kill after 496 seconds. Earlier gate logs contained the same unexplained `Terminated: 15` signature, so retrying could never produce reliable release evidence.

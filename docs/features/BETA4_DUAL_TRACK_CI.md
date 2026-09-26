@@ -231,6 +231,29 @@ requiring an uncut tag. A GitHub tag-triggered run, or an explicit local
 tag and requires it to be the newest semantic-version tag. This preserves the
 post-publication invariant without making pre-publication validation impossible.
 
+### Release version assertion ownership
+
+The 2026-09-26 v0.1.1 exact-head gate exposed a second form of release-version
+drift: the package and CLI correctly reported `0.1.1`, but a CLI unit test still
+required the copied literal `0.1.0`. Production metadata consistency alone could
+not detect that duplicate test authority before the complete release gate reached
+the file.
+
+Behavioral tests now import the package's canonical `general_ludd.__version__`
+and assert the complete CLI rendering. They do not copy the current release
+number or weaken the contract to an arbitrary substring. Historical-version
+literals remain valid only in fixtures explicitly testing migration or
+compatibility behavior.
+
+This follows practitioner experience rather than assuming the failure is unique
+to Gludd. [setuptools-scm issue #1231](https://github.com/pypa/setuptools-scm/issues/1231)
+records a CI build failure caused by two simultaneous version authorities, and
+the long-running [setuptools-scm issue #804](https://github.com/pypa/setuptools-scm/issues/804)
+records a fallback-version mismatch that survived from 2023 into later releases.
+The operational rule is therefore strict: one owner supplies the version, every
+runtime and test consumer derives from it, and the exact-head gate verifies the
+observable command before any tag is created.
+
 Replacement candidate `f71a84dced1febed7c40fb8e5027d92194dee102` passed the
 repaired batch 36, then batch 37 exposed a second AF_UNIX path-budget defect.
 The runner already assigned every batch a compact, owned `TMPDIR`, but pytest's
