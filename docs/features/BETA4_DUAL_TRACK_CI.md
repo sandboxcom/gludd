@@ -259,6 +259,37 @@ The operational rule is therefore strict: one owner supplies the version, every
 runtime and test consumer derives from it, and the exact-head gate verifies the
 observable command before any tag is created.
 
+### Pending stable release ownership
+
+The next exact-head replay exposed the complementary lifecycle defect in
+`unit-1b` batch 25. Two objective-plugin tests assumed that a pending release
+must carry a prerelease suffix. Changing those assertions to `0.1.1` would have
+hidden the production problem: the guard itself used the same suffix heuristic,
+so an unpublished stable candidate could accumulate unpushed work without the
+release-focused dispatch denial. A non-collected test-package initializer also
+retained a stale beta3 assertion that the ordinary test runner never executed.
+
+The pyproject value now identifies the candidate, while Git evidence determines
+its local release state. The guard considers that value pending until an exact
+`v<version>` annotated tag resolves to the current commit. A missing tag, a
+lightweight tag, or a tag on an older commit remains pending. Git is invoked with
+an argument vector after a conservative ref-component check; no shell or network
+lookup is involved, and each read has a ten-second bound. This is an admission
+guard only: it does not mutate refs, restart services, or touch deployment
+resources, so it preserves ZDD. Rollback is the atomic guardrail commit followed
+by the required OpenCode restart.
+
+Real-hook tests create isolated repositories with an upstream and an unpushed
+candidate. They prove all four lifecycle states rather than mirroring the
+TypeScript predicate in Python. The version-consistency suite also forbids the
+non-collected package marker from becoming another version owner. This follows
+the workflow experience in [setuptools-scm issue #460](https://github.com/pypa/setuptools-scm/issues/460),
+where release-branch topology made tags invisible to direct history, and
+[issue #767](https://github.com/pypa/setuptools-scm/issues/767), where operators
+observed different version state before and after tagging. The practical rule is
+that a stable-looking string is not release evidence; the immutable tag and its
+target commit are.
+
 Replacement candidate `f71a84dced1febed7c40fb8e5027d92194dee102` passed the
 repaired batch 36, then batch 37 exposed a second AF_UNIX path-budget defect.
 The runner already assigned every batch a compact, owned `TMPDIR`, but pytest's

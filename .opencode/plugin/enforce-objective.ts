@@ -11,9 +11,12 @@ const nodeRequire = typeof require === "function" ? require : createRequire(impo
 function execSync(...args: any[]): Buffer {
   return nodeRequire("node:child_" + "process").execSync(...args);
 }
+function execFileSync(...args: any[]): Buffer {
+  return nodeRequire("node:child_" + "process").execFileSync(...args);
+}
 const NAG_PREFIX = "███  NO PRIMARY OBJECTIVE SET";
-const SPEC_VELOCITY_FILE = "/tmp/gludd-spec-velocity.json";
-const SPEC_BEHAVIOR_FILE = "/tmp/gludd-spec-behavior.json";
+const SPEC_VELOCITY_FILE = process.env.GLUDD_SPEC_VELOCITY_FILE || "/tmp/gludd-spec-velocity.json";
+const SPEC_BEHAVIOR_FILE = process.env.GLUDD_SPEC_BEHAVIOR_FILE || "/tmp/gludd-spec-behavior.json";
 // AB002: minimum specs per 5-minute window to maintain velocity.
 // If pace is below this, non-spec activities are blocked.
 const MIN_SPECS_PER_WINDOW = 25; // 100 specs in 20 min = 25 per 5-min window
@@ -22,7 +25,7 @@ const SPEC_TARGET_TOTAL = 8000;
 // AB003: max CI checks per spec window while spec target is unmet.
 const MAX_CI_CHECKS_PER_SPEC_WINDOW = 3;
 // AB007: objective stacking — secondary requests don't overwrite primary.
-const OBJECTIVE_STACK_FILE = "/tmp/gludd-objective-stack.json";
+const OBJECTIVE_STACK_FILE = process.env.GLUDD_OBJECTIVE_STACK_FILE || "/tmp/gludd-objective-stack.json";
 // AB008: behavioral failure recurrence tracking.
 const MAX_RECURRENCE_BEFORE_BLOCK = 3;
 function getPrimaryObjective(): string {
@@ -109,6 +112,40 @@ function getUnpushedCommitCount(): number {
     return 0;
   }
 }
+function releaseTagExists(root: string, version: string): boolean {
+  if (!/^[0-9A-Za-z][0-9A-Za-z.+-]*$/.test(version)) return false;
+  try {
+    const ref = `refs/tags/v${version}`;
+    execFileSync(
+      "git",
+      ["show-ref", "--verify", "--quiet", ref],
+      {
+        cwd: root,
+        timeout: 10000,
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+    const tagType = execFileSync("git", ["cat-file", "-t", ref], {
+      cwd: root,
+      timeout: 10000,
+      stdio: ["pipe", "pipe", "pipe"],
+    }).toString().trim();
+    if (tagType !== "tag") return false;
+    const taggedCommit = execFileSync("git", ["rev-parse", `${ref}^{}`], {
+      cwd: root,
+      timeout: 10000,
+      stdio: ["pipe", "pipe", "pipe"],
+    }).toString().trim();
+    const headCommit = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: root,
+      timeout: 10000,
+      stdio: ["pipe", "pipe", "pipe"],
+    }).toString().trim();
+    return taggedCommit === headCommit;
+  } catch {
+    return false;
+  }
+}
 function getPendingReleaseVersion(): string {
   try {
     const root = getProjectRoot();
@@ -118,8 +155,7 @@ function getPendingReleaseVersion(): string {
     const match = content.match(/^\s*version\s*=\s*"([^"]+)"/m);
     if (!match) return "";
     const version = match[1];
-    if (/-(?:alpha|beta|rc|dev)/.test(version)) return version;
-    return "";
+    return releaseTagExists(root, version) ? "" : version;
   } catch {
     return "";
   }

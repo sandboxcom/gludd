@@ -49,7 +49,11 @@ PLUGIN_TO_TEST = {
     "enforce-batch-push": ["test_batch_push_enforce.py", "test_behavioral_specs.py"],
     "enforce-depth": ["test_behavioral_specs.py"],
     "enforce-tdd": ["test_enforce_tdd_plugin.py", "test_behavioral_specs.py"],
-    "enforce-objective": ["test_enforce_objective_plugin.py", "test_behavioral_specs.py"],
+    "enforce-objective": [
+        "test_enforce_objective_plugin.py",
+        "test_enforce_objective_release_runtime.py",
+        "test_behavioral_specs.py",
+    ],
     "enforce-anti-essay": ["test_behavioral_specs.py"],
     "enforce-branch-discipline": ["test_behavioral_specs.py"],
     "enforce-test-integrity": ["test_behavioral_specs.py"],
