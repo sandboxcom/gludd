@@ -16,6 +16,9 @@ Tests:
   10. post_ship_allows_with_dispatches — persist block + dispatch clears the block
   11. tasksmd_unverified_items_count_pending — [x] without commit hash, verify pending
   12. tasksmd_verified_items_not_pending — [x] + commit hash, verify not pending
+  13. tasksmd_milestone_inside_range_pending — milestone declaration + unchecked inside range, verify pending
+  14. tasksmd_milestone_outside_range_not_pending — milestone declaration + unchecked outside range, verify not pending
+  15. tasksmd_no_milestone_declaration_any_unchecked_pending — no milestone declaration + any unchecked, verify pending
 """
 
 from __future__ import annotations
@@ -228,11 +231,7 @@ def test_foreign_gate_lite_log_does_not_latch_clean_project(
         _parsed, _raw, stderr, rc = _invoke_text_complete(
             hook_plugin_env,
             "commit abc1234f — 42 tests passed. CI GREEN. Collection OK.",
-            env_overrides={
-                "GLUDD_PUSH_STATE_FILE": str(
-                    hook_plugin_env.cwd / "push-state.json"
-                )
-            },
+            env_overrides={"GLUDD_PUSH_STATE_FILE": str(hook_plugin_env.cwd / "push-state.json")},
         )
         assert rc == 0, stderr
         pb = _read_persist_block(hook_plugin_env)
@@ -272,17 +271,11 @@ def test_push_state_override_isolates_foreign_project_block(
         _parsed, _raw, stderr, rc = _invoke_text_complete(
             hook_plugin_env,
             "commit abc1234f — 42 tests passed. CI GREEN. Collection OK.",
-            env_overrides={
-                "GLUDD_PUSH_STATE_FILE": str(
-                    hook_plugin_env.cwd / "push-state.json"
-                )
-            },
+            env_overrides={"GLUDD_PUSH_STATE_FILE": str(hook_plugin_env.cwd / "push-state.json")},
         )
         assert rc == 0, stderr
         pb = _read_persist_block(hook_plugin_env)
-        assert pb is None or pb.get("blocked") is not True, (
-            f"Foreign push state must be isolated. persist_block={pb}"
-        )
+        assert pb is None or pb.get("blocked") is not True, f"Foreign push state must be isolated. persist_block={pb}"
     finally:
         if old_log is None:
             GATE_LITE_TEST_LOG_PATH.unlink(missing_ok=True)
@@ -799,3 +792,142 @@ def test_tasksmd_verified_items_not_pending(hook_plugin_env: HookEnv):
 
     pb = _read_persist_block(hook_plugin_env)
     assert pb is None or pb.get("blocked") is not True, f"Verified [x] items: must NOT persist block. pb={pb}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TEST 13: tasksmd_milestone_inside_range_pending
+# A declared milestone range + unchecked task IDs inside that range → pending.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def test_tasksmd_milestone_inside_range_pending(hook_plugin_env: HookEnv):
+    """TASKS.md declares 'v0.1.1 milestone is the exact task set S83.157-S83.168'
+    and contains unchecked items S83.157 and S83.168. Both are inside the active
+    milestone range and MUST count as pending work."""
+    _clean_leaked_state_files()
+
+    tasks_path = hook_plugin_env.cwd / "TASKS.md"
+    tasks_path.write_text(
+        "v0.1.1 milestone is the exact task set S83.157-S83.168\n\n"
+        "- [ ] S83.157 Implement milestone-aware pending work\n"
+        "- [ ] S83.168 Add regression tests\n"
+    )
+
+    parsed, raw, stderr, rc = _invoke_text_complete(
+        hook_plugin_env,
+        "Milestone scoped work remains.",
+        dispatch_count=0,
+        tool_call_made=False,
+    )
+    assert rc == 0, stderr
+
+    if parsed is None:
+        pb = _read_persist_block(hook_plugin_env)
+        assert pb is not None, (
+            f"Milestone inside-range: unchecked S83.157/S83.168 MUST be pending. persist_block={pb}, raw={raw}"
+        )
+        assert pb.get("blocked") is True, f"Milestone inside-range must trigger block. Got: {pb}"
+    else:
+        block_text = parsed.get("text", "")
+        assert "BLOCKED" in block_text.upper(), f"Milestone inside-range: text must be blanked. raw={raw[:300]}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TEST 14: tasksmd_milestone_outside_range_not_pending
+# A declared milestone range + unchecked task IDs OUTSIDE that range → backlog,
+# not release-blocking pending work.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def test_tasksmd_milestone_outside_range_not_pending(hook_plugin_env: HookEnv):
+    """TASKS.md declares 'v0.1.1 milestone is the exact task set S83.157-S83.168'
+    but the only unchecked item is S83.50, which is outside the active range.
+    Backlog items MUST NOT count as pending work."""
+    _clean_leaked_state_files()
+
+    tasks_path = hook_plugin_env.cwd / "TASKS.md"
+    tasks_path.write_text(
+        "v0.1.1 milestone is the exact task set S83.157-S83.168\n\n"
+        "- [ ] S83.50 Old backlog item outside current milestone\n"
+    )
+
+    _seed_ci_cache("SUCCESS")
+
+    state_path = hook_plugin_env.state_path("GLUDD_STOP_STATE_FILE")
+    state_path.write_text(
+        json.dumps(
+            {
+                "ts": int(_time.time() * 1000),
+                "tasksMdUnchecked": False,
+                "tasksMdUncheckedCount": 0,
+                "ratchetEntries": 0,
+                "bugsOpen": False,
+                "gateStatusMissing": False,
+                "gateStale": False,
+                "gateStatusRed": False,
+                "ciVerdictPendingOrRed": False,
+                "ciVerdictUnknown": False,
+                "releaseIncomplete": False,
+                "testFailures": False,
+                "repoPending": False,
+                "underFloor": False,
+                "hasPendingWork": False,
+                "hasLocalWork": False,
+                "healthScore": 100,
+            }
+        )
+    )
+
+    parsed, raw, stderr, rc = _invoke_text_complete(
+        hook_plugin_env,
+        "Only backlog work outside the milestone remains. abc12345 — 42 passed. Done.",
+        dispatch_count=0,
+        tool_call_made=False,
+    )
+    assert rc == 0, stderr
+
+    if parsed is not None:
+        block_text = parsed.get("text", "")
+        assert "BLOCKED" not in block_text.upper(), (
+            f"Milestone outside-range: text MUST NOT be blanked. raw={raw[:300]}"
+        )
+
+    pb = _read_persist_block(hook_plugin_env)
+    assert pb is None or pb.get("blocked") is not True, f"Milestone outside-range: must NOT persist block. pb={pb}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TEST 15: tasksmd_no_milestone_declaration_any_unchecked_pending
+# No milestone declaration → fail-safe repository scope: any unchecked item
+# counts as pending work.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def test_tasksmd_no_milestone_declaration_any_unchecked_pending(
+    hook_plugin_env: HookEnv,
+):
+    """TASKS.md has no milestone declaration and contains a generic unchecked
+    item. Without a milestone scope, the fail-safe repository scope applies and
+    the item MUST count as pending work."""
+    _clean_leaked_state_files()
+
+    tasks_path = hook_plugin_env.cwd / "TASKS.md"
+    tasks_path.write_text("- [ ] Some uncategorized pending task\n")
+
+    parsed, raw, stderr, rc = _invoke_text_complete(
+        hook_plugin_env,
+        "Uncategorized repository work remains.",
+        dispatch_count=0,
+        tool_call_made=False,
+    )
+    assert rc == 0, stderr
+
+    if parsed is None:
+        pb = _read_persist_block(hook_plugin_env)
+        assert pb is not None, (
+            f"No milestone declaration: any unchecked item MUST be pending. persist_block={pb}, raw={raw}"
+        )
+        assert pb.get("blocked") is True, f"No-milestone unchecked item must trigger block. Got: {pb}"
+    else:
+        block_text = parsed.get("text", "")
+        assert "BLOCKED" in block_text.upper(), f"No-milestone: text must be blanked. raw={raw[:300]}"

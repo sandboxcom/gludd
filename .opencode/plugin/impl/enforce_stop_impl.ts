@@ -55,6 +55,7 @@ import {
   writeJsonFile,
   getProjectRoot,
   hasTasksMdPendingWork,
+  tasksMdPendingStats,
 } from "../../lib/shared.ts"
 import { loadHotModule, type HotModule } from "../../lib/hot_reload.ts"
 
@@ -596,16 +597,9 @@ function hasRealPendingWork(): WorkState {
 
   try {
     const tasksPath = path.join(root, "TASKS.md")
-    if (fs.existsSync(tasksPath)) {
-      const content = fs.readFileSync(tasksPath, "utf8")
-      const checkboxMatches = content.match(/^[ \t]*[-*]\s*\[\s*\]/gm)
-      const tableMatches = content.match(/\|\s*(NOT STARTED|IN PROGRESS|PENDING)\s*\|/gim)
-      const total = (checkboxMatches?.length ?? 0) + (tableMatches?.length ?? 0)
-      if (total > 0) {
-        tasksMdUncheckedCount = total
-        tasksMdUnchecked = true
-      }
-    }
+    const stats = tasksMdPendingStats(tasksPath)
+    tasksMdUnchecked = stats.pending
+    tasksMdUncheckedCount = stats.count
   } catch {}
 
   try {
