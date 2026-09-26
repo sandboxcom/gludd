@@ -18,6 +18,7 @@ Output:
 from __future__ import annotations
 
 import json
+import os
 import re
 import signal
 import subprocess
@@ -159,6 +160,7 @@ def main() -> int:
         return 0
 
     file_paths = [str(f) for f in test_files]
+    workers = os.environ.get("GLUDD_INTEGRATION_HEALTH_WORKERS", "auto")
     cmd = [
         "uv",
         "run",
@@ -167,7 +169,7 @@ def main() -> int:
         "pytest",
         *file_paths,
         "-n",
-        "auto",
+        workers,
         "--dist",
         "loadgroup",
         "--tb=short",
