@@ -32,7 +32,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TESTS_DIR = PROJECT_ROOT / "tests" / "integration"
 OUTPUT_FILE = Path("/tmp/gludd-integration-failures.json")
 
-TIMEOUT_SEC = 900
+TIMEOUT_SEC = 1800
 INTERMEDIATE_INTERVAL_SEC = 30
 PROGRESS_INTERVAL_FILES = 5
 
@@ -160,7 +160,7 @@ def main() -> int:
         return 0
 
     file_paths = [str(f) for f in test_files]
-    workers = os.environ.get("GLUDD_INTEGRATION_HEALTH_WORKERS", "auto")
+    workers = os.environ.get("GLUDD_INTEGRATION_HEALTH_WORKERS", "1")
     cmd = [
         "uv",
         "run",
