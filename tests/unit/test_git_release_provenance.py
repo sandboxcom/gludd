@@ -29,6 +29,7 @@ import pytest
 from general_ludd.git_release.provenance import (
     Attestation,
     ProvenanceRecord,
+    ReceiptPurpose,
     SignatureState,
     VerificationResult,
     build_provenance,
@@ -54,6 +55,9 @@ _LOCK = json.dumps(
 ).encode("utf-8")
 _LOCK_PARSED = json.loads(_LOCK.decode("utf-8"))
 _BUILDER = "github-actions:runner-01"
+_RELEASE_ID = "release-test-1"
+_SOURCE_SHA = "a" * 40
+_DEPLOYMENT_TARGET = "test"
 
 
 @pytest.fixture()
@@ -74,6 +78,8 @@ def provenance(lock_bytes: bytes, artifact_bytes: bytes) -> ProvenanceRecord:
         dependency_lock_bytes=lock_bytes,
         dependency_lock=_LOCK_PARSED,
         builder_identity=_BUILDER,
+        release_id=_RELEASE_ID,
+        source_sha=_SOURCE_SHA,
         signature_state=SignatureState.VERIFIED,
     )
 
@@ -101,6 +107,8 @@ def test_build_provenance_generates_cyclonedx_sbom_from_lockfile(
         dependency_lock_bytes=lock_bytes,
         dependency_lock=_LOCK_PARSED,
         builder_identity=_BUILDER,
+        release_id=_RELEASE_ID,
+        source_sha=_SOURCE_SHA,
     )
     assert record.sbom["bomFormat"] == "CycloneDX"
     assert record.sbom["specVersion"] == "1.5"
@@ -127,6 +135,8 @@ def test_build_provenance_computes_artifact_checksum(
         dependency_lock_bytes=lock_bytes,
         dependency_lock=_LOCK_PARSED,
         builder_identity=_BUILDER,
+        release_id=_RELEASE_ID,
+        source_sha=_SOURCE_SHA,
     )
     expected = hashlib.sha256(artifact_bytes).hexdigest()
     assert record.artifact_digest == expected
@@ -151,7 +161,15 @@ def test_verify_provenance_accepts_valid_record(
         provenance,
         expected_lock_bytes=lock_bytes,
         expected_artifact_bytes=artifact_bytes,
+        expected_subject=provenance.subject,
+        expected_builder_identity=_BUILDER,
+        expected_release_id=_RELEASE_ID,
+        expected_source_sha=_SOURCE_SHA,
         verified_attestation_digest=provenance.attestation.digest,
+        authorization_id=_RELEASE_ID,
+        authorization_source_sha=_SOURCE_SHA,
+        receipt_purpose=ReceiptPurpose.DEPLOY,
+        deployment_target=_DEPLOYMENT_TARGET,
     )
     assert isinstance(result, VerificationResult)
     assert result.ok is True, result.reasons
@@ -214,8 +232,10 @@ def test_verify_provenance_rejects_signed_cross_artifact_confusion(
     statement = deepcopy(provenance.attestation.statement)
     statement["subject"][0]["name"] = "different-release.tar.gz"
     statement["predicateType"] = "https://example.invalid/predicate/v1"
-    statement["predicate"]["builder"]["id"] = "unknown-builder"
-    statement["predicate"]["materials"][0]["digest"]["sha256"] = "e" * 64
+    statement["predicate"]["runDetails"]["builder"]["id"] = "unknown-builder"
+    statement["predicate"]["buildDefinition"]["resolvedDependencies"][0][
+        "digest"
+    ]["sha256"] = "e" * 64
     signed_digest = hashlib.sha256(
         json.dumps(statement, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
@@ -366,6 +386,8 @@ def test_verify_provenance_rejects_unsigned_when_verified_required(
         dependency_lock_bytes=lock_bytes,
         dependency_lock=_LOCK_PARSED,
         builder_identity=_BUILDER,
+        release_id=_RELEASE_ID,
+        source_sha=_SOURCE_SHA,
         signature_state=SignatureState.UNSIGNED,
     )
     result = verify_provenance(
@@ -392,10 +414,15 @@ def test_build_provenance_records_builder_identity(
         dependency_lock_bytes=lock_bytes,
         dependency_lock=_LOCK_PARSED,
         builder_identity="tekton:pipeline-abc",
+        release_id=_RELEASE_ID,
+        source_sha=_SOURCE_SHA,
     )
     assert record.builder_identity == "tekton:pipeline-abc"
     assert record.attestation is not None
-    assert record.attestation.statement["predicate"]["builder"]["id"] == "tekton:pipeline-abc"
+    assert (
+        record.attestation.statement["predicate"]["runDetails"]["builder"]["id"]
+        == "tekton:pipeline-abc"
+    )
 
 
 def test_build_provenance_rejects_empty_builder_identity(
@@ -409,6 +436,8 @@ def test_build_provenance_rejects_empty_builder_identity(
             dependency_lock_bytes=lock_bytes,
             dependency_lock=_LOCK_PARSED,
             builder_identity="",
+            release_id=_RELEASE_ID,
+            source_sha=_SOURCE_SHA,
         )
 
 
@@ -493,6 +522,8 @@ def test_verify_provenance_requires_complete_chain(
         dependency_lock_bytes=lock_bytes,
         dependency_lock=_LOCK_PARSED,
         builder_identity=_BUILDER,
+        release_id=_RELEASE_ID,
+        source_sha=_SOURCE_SHA,
         signature_state=SignatureState.VERIFIED,
     )
 
@@ -506,6 +537,8 @@ def test_verify_provenance_requires_complete_chain(
         dependency_lock_digest=good.dependency_lock_digest,
         artifact_digest=good.artifact_digest,
         subject=good.subject,
+        release_id=good.release_id,
+        source_sha=good.source_sha,
     )
     result = verify_provenance(
         broken,
@@ -524,6 +557,8 @@ def test_verify_provenance_requires_complete_chain(
         dependency_lock_digest=good.dependency_lock_digest,
         artifact_digest=good.artifact_digest,
         subject=good.subject,
+        release_id=good.release_id,
+        source_sha=good.source_sha,
     )
     result2 = verify_provenance(
         no_attest,

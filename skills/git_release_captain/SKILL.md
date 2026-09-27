@@ -29,9 +29,9 @@ If the query is about ML model promotion/canaries, use `ai-ml-expert` instead.
 | Rank helpers | `rank_helpers(candidates, TaskRequirements)`, `helper_build_file_changes(plan)` |
 | Discover helpers | `discover_helpers(repo_root)` |
 | Plan a release | `ReleasePlan` (gates, artifacts, deployment, rollback, approvals) |
-| Drive lifecycle | `ReleaseStateMachine(source_sha, artifact_digest)` |
+| Drive lifecycle | `ReleaseStateMachine(source_sha, artifact_digest, release_id, deployment_target)` |
 | Decide a verdict | `ReleaseVerdict`, `ReleaseVerdictState` |
-| Build/verify provenance | `build_provenance(...)`, `verify_provenance(...)` → `ProvenanceRecord`, `VerificationResult` |
+| Build/verify provenance | `build_provenance(...)`, `verify_provenance(...)` → release-scoped record and deploy/rollback receipt |
 | Orchestrate deployment | `DeploymentOrchestrator` (blue-green, canary, traffic shifts) |
 | Source authority | `SourceRegistry`, `default_registry()`, `FreshnessFlag` |
 
@@ -39,7 +39,7 @@ If the query is about ML model promotion/canaries, use `ai-ml-expert` instead.
 
 | Entry point | Purpose |
 |---|---|
-| `ReleaseStateMachine(source_sha=..., artifact_digest=...).advance(...)` | Returns `AdvanceResult(blocked, reasons, state)` |
+| `ReleaseStateMachine(..., release_id=..., deployment_target=...).advance(...)` | Requires exact deploy/rollback receipts and returns `AdvanceResult` |
 | `assess_repo(path)` | `RepoEvidence` (worktrees, dirty paths, operations, policies, upstreams) |
 | `rank_helpers(candidates, req)` | Sorted `HelperCandidate`s + `ScoreEvidence` per criterion |
 | `build_provenance(...)` / `verify_provenance(...)` | CycloneDX SBOM + in-toto statement; `SignatureState` |
@@ -58,15 +58,16 @@ DISCOVER → PLAN → BUILD_ONCE → VERIFY_OFFLINE → STAGE
   stage (GRC-SEC-004 "fail closed").
 - **VERIFY_OFFLINE requires non-empty gate evidence** — missing gate evidence
   blocks (GRC-SEC-004).
-- **STAGE requires the consumed artifact digest to match the pinned build digest**
+- **STAGE requires the consumed artifact digest and a deploy-purpose verification
+  receipt to match the pinned release, source, target, and build digest**
   (GRC-ZDD-001 "build once, promote by digest").
 - **CANARY/PROMOTE require a passed health gate** (GRC-ZDD-003).
 - **VERIFY_RELEASE_PAGE requires the remote release page proven complete**
   (GRC-ZDD-005).
 - **RELEASED is terminal** — a shipped release cannot transition out; recovery
   is a fresh plan.
-- **Rollback** is allowed from `CANARY` and `PROMOTE` and restores the prior
-  known-good digest; rollback from `RELEASED` is forbidden.
+- **Rollback** is allowed from `CANARY` and `PROMOTE` only with a rollback-purpose
+  receipt for the prior known-good digest; rollback from `RELEASED` is forbidden.
 - A blocked `AdvanceResult` leaves `state` unchanged — the machine never silently
   advances on a failed precondition.
 
@@ -79,16 +80,42 @@ from general_ludd.git_release import (
 
 evidence = assess_repo("/path/to/repo")  # RepoEvidence
 
-sm = ReleaseStateMachine(source_sha="abc123", artifact_digest="sha256:...")
+sm = ReleaseStateMachine(
+    source_sha="a" * 40,
+    artifact_digest="0" * 64,
+    release_id="release-1",
+    deployment_target="production",
+)
 result = sm.advance(target=ReleaseState.VERIFY_OFFLINE, gate_evidence=[...])
 # result.blocked, result.reasons (e.g. ["GRC-SEC-004"]), result.state
 ```
 
 ```python
-from general_ludd.git_release import build_provenance, verify_provenance
-prov = build_provenance(subject="...", artifact_digest="...", materials=[...])
-verdict = verify_provenance(prov, public_key=...)
-# verdict.signature_state in {signed, unsigned, invalid}
+from general_ludd.git_release import ReceiptPurpose, build_provenance, verify_provenance
+
+prov = build_provenance(
+    artifact_name="app.tar.gz",
+    artifact_bytes=artifact_bytes,
+    dependency_lock_bytes=lock_bytes,
+    builder_identity="github-actions:release",
+    release_id="release-1",
+    source_sha="a" * 40,
+)
+verdict = verify_provenance(
+    prov,
+    expected_artifact_bytes=artifact_bytes,
+    expected_lock_bytes=lock_bytes,
+    expected_subject="app.tar.gz",
+    expected_builder_identity="github-actions:release",
+    expected_release_id="release-1",
+    expected_source_sha="a" * 40,
+    verified_attestation_digest=external_signer_payload_digest,
+    authorization_id="release-1",
+    authorization_source_sha="a" * 40,
+    receipt_purpose=ReceiptPurpose.DEPLOY,
+    deployment_target="production",
+)
+# verdict.ok and verdict.receipt are required before staging.
 ```
 
 ## See Also

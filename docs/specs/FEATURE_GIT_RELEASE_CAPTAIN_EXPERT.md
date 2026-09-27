@@ -252,7 +252,22 @@ domain verifier then fails closed unless all of these references agree:
 - the statement builder and dependency-lock material, the record builder and
   lock digest, and the independently obtained lock bytes; and
 - the CycloneDX application component/supplier metadata and the same subject,
-  artifact digest, and builder identity.
+  artifact digest, builder identity, and exact dependency name/version set.
+
+The SLSA v1 predicate uses `buildDefinition` and `runDetails`. Its signed
+`externalParameters` bind the release ID and full source commit, and its single
+`resolvedDependencies` entry binds the raw dependency-lock digest. The verifier
+also requires independent subject and trusted-builder expectations; a signed,
+internally consistent statement is therefore insufficient for a different
+release, source commit, filename, builder, lockfile, SBOM, or artifact bytes.
+
+Successful verification emits a digest-bound `ArtifactVerificationReceipt`
+scoped to one authorization ID, source commit, deployment target, and purpose
+(`deploy` or `rollback`). Release state machines constructed with an explicit
+release ID and deployment target block staging without the exact deploy receipt
+and reject rollback without a separately verified receipt for the prior
+artifact. Deploy receipts cannot be replayed as rollback receipts, and receipts
+from another release, target, source commit, or artifact fail closed.
 
 This ordering follows the in-toto
 [validation model](https://github.com/in-toto/attestation/blob/main/docs/validation.md):
@@ -268,6 +283,8 @@ Long-lived operator reports shaped the failure cases:
 | [Cosign #2264 (2022)](https://github.com/sigstore/cosign/issues/2264) | Verification behavior changed for images carrying multiple predicate types, producing a persistent predicate-selection failure. | Predicate type is an explicit policy input; a different signed predicate never satisfies release provenance. |
 | [Cosign #3235 (2023)](https://github.com/sigstore/cosign/issues/3235) | A custom VSA was present alongside other attestations, but verification selected/reported a different predicate type. | The verified payload digest and exact predicate must identify the same statement before its claims are consumed. |
 | [SLSA #878 (2023)](https://github.com/slsa-framework/slsa/issues/878) | Maintainers documented that missing subject/resource binding enables applying a valid authorization to a different resource. | A valid signature over the wrong artifact name or digest is rejected as a cross-artifact confusion attempt. |
+| [Cosign #4534 (2025)](https://github.com/sigstore/cosign/issues/4534) | Signing or attesting could complete without uploading or retaining a bundle, leaving operators without payload material needed for later verification. | A `VERIFIED` state without the external verifier's exact payload digest never produces an authorization receipt. |
+| [Cosign #4210 (2025)](https://github.com/sigstore/cosign/issues/4210) | Source-track users needed an explicit subject/hash input during verification instead of trusting the attestation to select its own subject. | Gludd requires independently obtained artifact bytes and a policy-selected subject before deployment or rollback authorization. |
 
 ### GRC-SEC-006: Generated helper constraints
 
