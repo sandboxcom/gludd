@@ -1008,6 +1008,31 @@
 **Enforcement:** `scripts/audit_observability.py` + `make audit-enforcement-boot`
 **Behavior:** When opencode starts and loads enforcement plugins, a failing plugin silently disables ALL enforcement. The agent cannot detect this mid-session because enforcement failure is indistinguishable from "no violations occurring." The boot audit runs `make check-plugin-hook-invoke` at session start and verifies ≥80% of plugins load without error. If the loaded-vs-registered ratio drops below 80%, enforcement is DEGRADED and MUST be flagged. The boot check result is recorded in `/tmp/gludd-enforcement-boot-result.json`.
 
+### AB101 — long-pipeline-launch-precedes-parallel-dispatch
+**Category:** Parallel Pipeline Orchestration
+**Enforcement:** `enforce-pipeline-kickoff.ts` kickoff receipt and explicit `REF`
+**Behavior:** A long gate, ship, or CI-shard pipeline MUST be launched and bound to the tested ref before independent work is dispatched.
+
+### AB102 — tested-checkout-frozen-during-long-pipeline
+**Category:** Parallel Pipeline Orchestration
+**Enforcement:** `enforce-pipeline-kickoff.ts` frozen-checkout guard
+**Behavior:** While a long pipeline is active, the checkout and ref under test MUST reject writes and non-read-only Make targets.
+
+### AB103 — pipeline-candidate-batch-is-useful-and-deduplicated
+**Category:** Parallel Pipeline Orchestration
+**Enforcement:** `enforce-pipeline-kickoff.ts` candidate consolidation
+**Behavior:** The kickoff batch MUST exclude duplicates, file conflicts, unmet dependencies, waits, polls, status checks, and filler; zero candidates MUST remain valid.
+
+### AB104 — pipeline-worker-cap-includes-live-agents
+**Category:** Parallel Pipeline Orchestration
+**Enforcement:** `enforce-pipeline-kickoff.ts` occupied-slot ceiling
+**Behavior:** Pipeline-parallel work MUST never exceed three workers after existing in-flight agents are counted.
+
+### AB105 — pipeline-receipts-are-fresh-and-worktrees-isolated
+**Category:** Parallel Pipeline Orchestration
+**Enforcement:** `enforce-pipeline-kickoff.ts` receipt-mtime and prompt-isolation guards
+**Behavior:** A terminal receipt older than the current launch MUST NOT unfreeze the checkout, and every writing dispatch MUST name an isolated git worktree.
+
 Each spec defines a behavioral invariant. Each spec MUST have a corresponding
 enforcement mechanism (plugin, Makefile guard, or AGENTS.md policy section) and
 a structural test verifying that mechanism exists.

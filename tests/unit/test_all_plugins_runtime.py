@@ -37,6 +37,7 @@ PLUGIN_TO_TEST = {
     "enforce-multitask": ["test_multitask_plugin.py"],
     "enforce-no-suppressions": ["test_no_suppression_comments_plugin.py"],
     "enforce-no-wait": ["test_no_wait_plugin.py"],
+    "enforce-pipeline-kickoff": ["test_pipeline_parallel_kickoff.py"],
     "enforce-session-start": ["test_session_start_plugin.py", "test_enforcement_session_start_plugin.py"],
     "enforce-stop": [
         "test_enforce_stop_syntax.py",
