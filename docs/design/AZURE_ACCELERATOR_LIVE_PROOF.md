@@ -76,9 +76,30 @@ The first executable evidence-contract slice now exists in
 - a mixed-provider receipt that accepts only distinct provider evidence and an
   exact digest reference to the Azure child receipt.
 
-The focused contract is covered by 22 unit tests at 85% statement/branch
-coverage. It is deliberately pure and performs no Azure writes. The credential
-and planning probes for this evidence run established these boundaries:
+The independent hardening review adds fail-closed cross-binding that the first
+slice did not encode:
+
+- VM, VMSS, and Container App telemetry carries the run, Git SHA, candidate,
+  subscription, exact resource, collection time, and backend identity. The
+  trusted claim policy must match every identity before accepting a receipt.
+- VM and VMSS receipts list the distinct device-identity digests observed by
+  inventory, CUDA, and DCGM. All three sets must be identical and their size
+  must equal the exact policy GPU count; an aggregate from one device cannot
+  stand in for a multi-device topology.
+- Cleanup is an exact-resource Azure `404` observation bound to the same run,
+  Git SHA, subscription, and resource. Telemetry, absence, and completion must
+  be monotonically ordered, the proof must finish before both lease and spend
+  deadlines, and a release verifier supplies its clock so stale cleanup fails.
+- Untrusted Azure and mixed-provider JSON requires a canonical checksum rather
+  than treating it as optional. Every child provider reference carries the same
+  run and Git SHA, closing valid-digest substitution across proof runs.
+- Receipt parsers reject unknown fields, credential-bearing keys, bearer/SAS/
+  private-key patterns, and receipts without a successful secret-scan digest.
+
+The focused contract is covered by 44 unit tests with 96.6% line and 90.1%
+branch coverage for the receipt module. It is deliberately pure and performs
+no Azure writes. The credential and planning probes for this evidence run
+established these boundaries:
 
 | Probe | Result | Interpretation |
 |---|---|---|
@@ -545,6 +566,9 @@ mechanical coverage:
 | [WALinuxAgent issue #1938 (opened 2020)][forum-cloud-init-race] | VM agent/extensions and cloud-init contended for package management during boot. | ARM success is not readiness; wait for driver, agent, container, and endpoint independently. |
 | [DCGM exporter issue #328 (2024)][forum-dcgm-module] | A100/MIG profiling metrics were absent when the DCGM profiling module did not load. | Discover supported metric groups, preserve diagnostics, and require the independent CUDA trace rather than fabricating zero-valued telemetry. |
 | [Azure Q&A: A100 driver install repeatedly fails (2025)][forum-a100-driver] | The driver extension can fail on an A100 VM even after allocation. | Pin the supported OS/driver pair, capture extension logs, and destroy on driver-readiness failure. |
+| [Azure Q&A: Container App GPU stuck while billing (2025)][forum-aca-gpu-stuck] | GPU revisions remained in `AssigningReplica`, including reports of continued charges without a usable workload. | A control-plane allocation state is not workload proof; keep a separately enforced spend deadline and fail closed without revision-bound telemetry. |
+| [Azure Container Apps issue #541 (2022-)][forum-aca-health-metrics] | Operators cannot derive exact revision readiness from the available health metrics and external probing can itself affect metering. | Bind ACA evidence to the exact revision/resource and request interval; never substitute an app-level metric or unrelated revision sample. |
+| [Azure Q&A: resource group deletion timeout (2024)][forum-rg-delete-timeout] | Resource-group deletion can time out while dependent resources remain and the provisioning state rolls back. | A completed delete poll is insufficient; retain the lease/spend brake and require a fresh exact-resource `404` before cleanup passes. |
 
 Together these reports explain why a single "deployment succeeded" bit is
 insufficient. The proof deliberately separates identity, SKU policy, two
@@ -596,3 +620,6 @@ routing, CUDA execution, and cleanup.
 [forum-cloud-init-race]: https://github.com/Azure/WALinuxAgent/issues/1938
 [forum-dcgm-module]: https://github.com/NVIDIA/dcgm-exporter/issues/328
 [forum-a100-driver]: https://learn.microsoft.com/en-nz/answers/questions/2337728/continuously-fail-to-install-nvidia-driver-to-my-v
+[forum-aca-gpu-stuck]: https://learn.microsoft.com/en-us/answers/questions/5572527/container-app-using-serverless-gpu-stuck-assigning
+[forum-aca-health-metrics]: https://github.com/microsoft/azure-container-apps/issues/541
+[forum-rg-delete-timeout]: https://learn.microsoft.com/en-us/answers/questions/1664623/resources-and-resource-group-stuck-on-delete
