@@ -21,6 +21,12 @@ aborts the entire merge if collection or commit fails. This preserves current
 production content while making every reviewed historical tip reachable from the
 release graph without dozens of redundant collection runs.
 
+That exception never applies to reviewed heads whose content must enter a
+candidate. Content heads follow [Reviewed Head Integration](REVIEWED_HEAD_INTEGRATION.md):
+apply one source at a time for conflict/provenance attribution, then run one
+bulk focused-validation phase and one exact final gate. Mixing content heads
+into this ancestry-only octopus transaction is a contract violation.
+
 ## Bounded classification contract
 
 `make branch-reconciliation-inventory` requires explicit
