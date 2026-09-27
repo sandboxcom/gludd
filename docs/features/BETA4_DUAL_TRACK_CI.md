@@ -2477,3 +2477,58 @@ is changed by the proof job. Old and new application workers are unaffected, and
 an invalid proof stops before publication. Rollback is one workflow/test/doc
 revert; the next tag returns to rerunning every heavy validation while the prior
 release and its immutable artifacts remain available.
+
+### Exact-identity release wait (2026-09-27)
+
+The publication commands previously waited for the release artifact with fixed
+retry loops. `release-recut` stopped after about five minutes and `release-cut`
+stopped after about ten, even though the workflow itself documents a 30–60 minute
+cold build. This created a false operator failure while a healthy release was
+still queued or building. The loops also asked only whether an artifact existed;
+they did not first prove that the terminal workflow belonged to the new tag, its
+full commit SHA, the `Build and Release` workflow, and the `push` event.
+
+Both publication paths now snapshot the newest matching workflow run before tag
+mutation, then delegate to the existing `ci-await` owner with that baseline and
+four-part identity. Re-cuts therefore cannot mistake the prior failed or green
+run for the new tag push. Exact-SHA lookup deliberately omits GitHub's server-side
+branch filter, requests up to 50 commit matches, and locally requires the tag ref,
+SHA, workflow, event, and a run ID newer than the snapshot before choosing the
+newest run. Every lookup emits a heartbeat. Success requires
+`completed/success`; cancelled, failed, skipped,
+neutral, stale, action-required, startup-failure, timed-out, or an unknown
+completed conclusion fails closed. Lookup errors and an absent run retry within
+one bounded 90-minute window, after which timeout remains non-success.
+
+The poll interval falls from 60 seconds to 10 seconds. This cuts average discovery latency
+from at most 60 seconds to at most 10 seconds (and, under a uniform event arrival
+assumption, from 30 seconds to 5 seconds). The timeout ceiling rises from
+5–10 minutes to 90 minutes so it covers the existing 60-minute cold-build budget
+plus queue margin. This does not weaken the final checks: only after the exact run
+is green do `verify-release-artifact` and `verify-release-completeness` inspect
+the immutable published matrix.
+
+Practitioner and platform evidence reviewed 2026-09-27:
+
+- [GitHub CLI issue #5474](https://github.com/cli/cli/issues/5474), opened
+  2022-04-17, records `gh run list --branch` returning empty JSON and identifies
+  local `headBranch` filtering as the working remedy. Gludd uses commit filtering
+  for query reduction and repeats all identity checks locally.
+- [GitHub Community discussion #24626](https://github.com/orgs/community/discussions/24626),
+  opened 2021-03-01 with years of follow-up, reports the Actions workflow-run API
+  returning no results for branch-filtered queries even when runs are visible.
+  An empty query result is therefore pending evidence, never release permission.
+- [GitHub Community discussion #5673](https://github.com/orgs/community/discussions/5673),
+  opened 2021-09-16 and active through 2026, documents persistent demand for
+  bounded, configurable deployment waits as queued approvals and runner capacity
+  can outlast short client timeouts. Gludd owns an explicit bounded timeout rather
+  than treating one short retry loop as platform truth.
+- The official [`gh run list` manual](https://cli.github.com/manual/gh_run_list)
+  defines the commit, branch, workflow, event, limit, and JSON fields used here.
+  No new polling dependency or custom API client was introduced.
+
+This is ZDD by construction: waiting and verification mutate no application,
+database, service, or release asset. A failed or timed-out exact run stops before
+any success claim; previously published releases keep serving. Rollback is one
+script/Makefile/test/doc commit and restores the shorter loops without changing a
+tag, artifact, or deployment.

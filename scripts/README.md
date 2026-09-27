@@ -19,7 +19,7 @@
 
 | Script | Description |
 |---|---|
-| `ci_await.py` | Polls CI until terminal state (release-cut only) |
+| `ci_await.py` | Bounded exact-ref/SHA/workflow/event wait (release-cut only) |
 | `ci_check_cooldown.py` | CI check cooldown enforcer — blocks polling faster than 10 min |
 | `ci_push_guard.py` | Blocks push while CI is pending on the target branch |
 | `ci_annotations_poll.py` | Polls GitHub Actions annotations for live per-step status |

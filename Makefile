@@ -16,11 +16,12 @@ OPENCODE_DB_INCREMENTAL_PAGES ?= 1000
 OPENCODE_MAX_FILE_ENTRIES ?= 100000
 OPENCODE_MAINTENANCE_VALIDATE_ONLY ?= 0
 OPENCODE_MAINTENANCE_FORCE ?= 0
-VERIFY_POLLS ?= 30
 GLUDD_TASK_TIMEOUT ?= 300
 TIMEOUT ?= 3600
 GATE_POLL_INTERVAL ?= 60
 INTERVAL ?= 300
+RELEASE_AWAIT_TIMEOUT ?= 5400
+RELEASE_AWAIT_INTERVAL ?= 10
 COUNT ?= 1
 NODE_DEPS_NPM_USERCONFIG ?= /dev/null
 NODE_DEPS_NPM_CACHE ?= /tmp/gludd-npm-cache-public-v1
@@ -629,9 +630,9 @@ help:
 	@echo "  release-view TAG=..   Show a published GitHub Release + its assets"
 	@echo "  release-create TAG=.. CI-green-gated DRAFT release (single binary; complete via CI)"
 	@echo "  release-upload-assets TAG=.. FILES='..'  Add assets to an existing release (repair path)"
-	@echo "  release-cut TAG=.. MSG=.. The single release command (6 fail-closed steps)"
+	@echo "  release-cut TAG=.. MSG=.. The single release command (exact-run wait up to 90m)"
 	@echo "  release-promote TAG=.. MSG=..  Exact-SHA ff-only development promotion (validate-only supported)"
-	@echo "  release-recut TAG=..  Re-trigger CI release job for an existing tag"
+	@echo "  release-recut TAG=..  Re-trigger and await the exact tag release workflow"
 	@echo "  release-deploy TAG=.. MSG=..  Auto-deploy: merge dev->master, push, tag, wait for CI"
 	@echo "  release-delete TAG=.. Delete GitHub Release + local + remote git tags"
 	@echo "  verify-release-artifact       TAG=..  Confirm a release has published assets (exit 0 = shipped)"
@@ -688,7 +689,7 @@ help:
 	@echo "  ci-coverage-artifact-audit audit one externally stored hosted Cobertura report (CI_COVERAGE_*)"
 	@echo "  ci-coverage-gap-plan       print a bounded exact-run line/branch remediation plan (CI_COVERAGE_*)"
 	@echo "  ci-run-summary RUN=<id> show one immutable CI run; CI_RUN_SUMMARY_VALIDATE_ONLY=0|1"
-	@echo "  ci-await BRANCH=<b> [TIMEOUT=<s>]  Poll CI for branch until terminal (green/red/timeout)"
+	@echo "  ci-await BRANCH=<ref> TIMEOUT=<s> [SHA=.. CI_AWAIT_*]  Await one exact CI identity"
 	@echo "  ci-verdict-safe        Cooldown-enforced CI check (prefer over bare ci-verdict)"
 	@echo "  ci-dashboard           One-shot compact CI run listing"
 	@echo "  ci-diagnose            Fetch CI failure annotations and group by root cause"
@@ -3878,13 +3879,12 @@ ci-wait:
 	done; \
 	echo "=== CI-WAIT: timed out after $$MAX_WAIT seconds ==="; exit 1
 
-# Poll CI for a branch until it reaches a TERMINAL state (success/failure).
+# Poll CI for an exact identity until it reaches a TERMINAL state.
 # Exit codes: 0=SUCCESS, 1=FAILURE, 2=TIMEOUT (still pending).
-# Unlike ci-wait (which only exits on GREEN and hardcodes BRANCH=master),
-# ci-await accepts BRANCH= and detects terminal failure states too.
-# Usage: make ci-await BRANCH=development [TIMEOUT=3600]
+# SHA/workflow/event are optional for backwards-compatible branch-only use.
+# Usage: make ci-await BRANCH=development TIMEOUT=3600 SHA=... CI_AWAIT_WORKFLOW='Build and Release' CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL=10 CI_AWAIT_AFTER_RUN_ID=0 CI_AWAIT_VALIDATE_ONLY=0 CI_AWAIT_SNAPSHOT_ONLY=0
 ci-await:
-	@$(PYTHON) scripts/ci_await.py $(or $(BRANCH),master) $(or $(TIMEOUT),3600)
+	@$(PYTHON) scripts/ci_await.py --ref "$(or $(BRANCH),master)" --timeout "$(or $(TIMEOUT),3600)" --sha "$(SHA)" --workflow "$(CI_AWAIT_WORKFLOW)" --event "$(CI_AWAIT_EVENT)" --poll-interval "$(or $(CI_AWAIT_INTERVAL),60)" --after-run-id "$(or $(CI_AWAIT_AFTER_RUN_ID),0)" $(if $(filter 1,$(CI_AWAIT_VALIDATE_ONLY)),--validate-only,) $(if $(filter 1,$(CI_AWAIT_SNAPSHOT_ONLY)),--snapshot-only,)
 
 git-pull-sandboxcom:
 	@BRANCH=$$(git branch --show-current); \
@@ -4215,24 +4215,21 @@ git-tag-rm:
 git-tag-delete: git-tag-rm
 
 # Re-trigger a release CI job for an existing tag whose release job was skipped.
-# Deletes and re-pushes the tag, then polls verify-release-artifact.
+# Deletes and re-pushes the tag, awaits its exact workflow, then verifies assets.
 # Usage: make release-recut TAG=v0.1.0-alpha.1
 release-recut: _push-rate-guard require-sandboxcom-ssh-key
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-recut TAG=v0.1.0-alpha.1"; exit 1; }
 	@git tag -l "$(TAG)" | grep -q "$(TAG)" || { echo "ERROR: local tag $(TAG) not found"; exit 1; }
 	@$(MAKE) -s require-ci-green SHA=$$(git rev-parse "$(TAG)^{commit}")
-	@echo "Re-cutting release tag $(TAG)..."
-	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push sandboxcom :refs/tags/$(TAG) 2>/dev/null || true
-	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
-	@echo "Tag re-pushed. Polling for artifact publication ($(VERIFY_POLLS) polls)..."
-	@i=0; while [ $$i -lt $(VERIFY_POLLS) ]; do \
-		if $(MAKE) -s verify-release-artifact TAG=$(TAG) 2>/dev/null; then \
-			echo "Artifact present after $$i polls; checking completeness..."; \
-			$(MAKE) -s verify-release-completeness TAG=$(TAG); exit $$?; \
-		fi; \
-		sleep 10; i=$$((i+1)); \
-	done; \
-	echo "Poll exhausted after $(VERIFY_POLLS) attempts (treat as STILL BUILDING, not success)."; exit 1
+	@set -e; TAG_SHA="$$(git rev-parse "$(TAG)^{commit}")"; \
+		BASELINE="$$( $(MAKE) -s ci-await BRANCH="$(TAG)" TIMEOUT="$(RELEASE_AWAIT_TIMEOUT)" SHA="$$TAG_SHA" CI_AWAIT_WORKFLOW="Build and Release" CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL="$(RELEASE_AWAIT_INTERVAL)" CI_AWAIT_AFTER_RUN_ID=0 CI_AWAIT_VALIDATE_ONLY=0 CI_AWAIT_SNAPSHOT_ONLY=1 )"; \
+		echo "Re-cutting release tag $(TAG) after workflow run $$BASELINE..."; \
+		GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push sandboxcom :refs/tags/$(TAG) 2>/dev/null || true; \
+		GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"; \
+		echo "Waiting for exact tag workflow after run $$BASELINE before artifact verification..."; \
+		$(MAKE) --no-print-directory ci-await BRANCH="$(TAG)" TIMEOUT="$(RELEASE_AWAIT_TIMEOUT)" SHA="$$TAG_SHA" CI_AWAIT_WORKFLOW="Build and Release" CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL="$(RELEASE_AWAIT_INTERVAL)" CI_AWAIT_AFTER_RUN_ID="$$BASELINE" CI_AWAIT_VALIDATE_ONLY=0 CI_AWAIT_SNAPSHOT_ONLY=0
+	@$(MAKE) -s verify-release-artifact TAG=$(TAG)
+	@$(MAKE) -s verify-release-completeness TAG=$(TAG)
 
 # The single release command. 6 steps, fail-closed at every gate:
 #   0. require-ci-green        — abort if CI is not GREEN for HEAD (or SHA=...)
@@ -4342,7 +4339,8 @@ release-dry-run: _release-dry-run-guard
 #   2. git-push-sandboxcom     — push master
 #   3. git-tag-push            — annotated tag + push (triggers CI release job)
 #   4. release-view            — confirm the GitHub Release exists
-#   5. verify-release-artifact — poll until assets are published (up to ~10 min)
+#   5. ci-await               — await the exact tag workflow (bounded at 90 min)
+#   6. verify release          — verify the final artifact and complete matrix
 # Usage: make release-cut TAG=v0.1.0-alpha.1 MSG='release notes'
 release-cut:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-cut TAG=v0.1.0-alpha.1 [MSG='...']"; exit 1; }
@@ -4356,18 +4354,14 @@ release-cut:
 	$(MAKE) -s require-dual-track-green SHA="$$SHA_TO_VERIFY" CI_BRANCH="$(RELEASE_CI_BRANCH)" DUAL_TRACK_CI_LOCAL_ATTESTATION="$(RELEASE_LOCAL_ATTESTATION)"
 	@$(MAKE) -s check-readme-status TAG=$(TAG)
 	@$(MAKE) -s git-push-sandboxcom
-	@$(MAKE) -s git-tag-push TAG=$(TAG) MSG="$(MSG)"
-	@$(MAKE) -s release-view TAG=$(TAG) || echo "Release record not visible yet; continuing to artifact polling."
-	@echo "Polling for release artifact (up to 10 attempts, ~10 min)..."
-	@for i in 1 2 3 4 5 6 7 8 9 10; do \
-		if $(MAKE) -s verify-release-artifact TAG=$(TAG) 2>/dev/null; then \
-			echo "Release artifact present on attempt $$i/10; checking completeness..."; \
-			$(MAKE) -s verify-release-completeness TAG=$(TAG); exit $$?; \
-		fi; \
-		echo "Waiting for release artifact (attempt $$i/10)..."; \
-		sleep 60; \
-	done; \
-	echo "WARNING: release artifact not found after 10 minutes — a cold tag-triggered full-matrix build can take 30-60 min; poll again with make verify-release-completeness TAG=$(TAG) (poll timeout means STILL BUILDING, not failure)"; exit 1
+	@set -e; TAG_SHA="$$(git rev-parse HEAD)"; \
+		BASELINE="$$( $(MAKE) -s ci-await BRANCH="$(TAG)" TIMEOUT="$(RELEASE_AWAIT_TIMEOUT)" SHA="$$TAG_SHA" CI_AWAIT_WORKFLOW="Build and Release" CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL="$(RELEASE_AWAIT_INTERVAL)" CI_AWAIT_AFTER_RUN_ID=0 CI_AWAIT_VALIDATE_ONLY=0 CI_AWAIT_SNAPSHOT_ONLY=1 )"; \
+		$(MAKE) -s git-tag-push TAG=$(TAG) MSG="$(MSG)"; \
+		$(MAKE) -s release-view TAG=$(TAG) || echo "Release record not visible yet; continuing to exact workflow wait."; \
+		echo "Waiting for the exact tag workflow after run $$BASELINE before artifact verification..."; \
+		$(MAKE) --no-print-directory ci-await BRANCH="$(TAG)" TIMEOUT="$(RELEASE_AWAIT_TIMEOUT)" SHA="$$TAG_SHA" CI_AWAIT_WORKFLOW="Build and Release" CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL="$(RELEASE_AWAIT_INTERVAL)" CI_AWAIT_AFTER_RUN_ID="$$BASELINE" CI_AWAIT_VALIDATE_ONLY=0 CI_AWAIT_SNAPSHOT_ONLY=0
+	@$(MAKE) -s verify-release-artifact TAG=$(TAG)
+	@$(MAKE) -s verify-release-completeness TAG=$(TAG)
 
 # Compatibility entrypoint: release-promote is the only deployment state machine.
 # Usage: make release-deploy TAG=v0.1.0-beta.N MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=0|1

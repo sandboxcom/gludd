@@ -1008,6 +1008,21 @@
       "behavior": "make install-workflow-hook INSTALL_WORKFLOW_HOOK_VALIDATE_ONLY=1"
     },
     {
+      "name": "ci-await",
+      "make_variables": [
+        "BRANCH",
+        "TIMEOUT",
+        "SHA",
+        "CI_AWAIT_WORKFLOW",
+        "CI_AWAIT_EVENT",
+        "CI_AWAIT_INTERVAL",
+        "CI_AWAIT_VALIDATE_ONLY",
+        "CI_AWAIT_AFTER_RUN_ID",
+        "CI_AWAIT_SNAPSHOT_ONLY"
+      ],
+      "behavior": "make ci-await BRANCH=v0.1.1 TIMEOUT=5400 SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa CI_AWAIT_WORKFLOW='Build and Release' CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL=10 CI_AWAIT_AFTER_RUN_ID=0 CI_AWAIT_VALIDATE_ONLY=1 CI_AWAIT_SNAPSHOT_ONLY=0"
+    },
+    {
       "name": "coverage-files",
       "make_variables": [
         "COVERAGE_TESTFILES",

@@ -75,10 +75,12 @@ branch.
 make release-cut TAG=v0.1.1 MSG='v0.1.1: S83.166 release documentation and version bump'
 ```
 
-The tag-triggered workflow must complete all gate, test, coverage, Molecule,
-platform, container, and execution-environment jobs before its release job can
-publish. A local poll timeout only means the bounded poll ended; inspect CI at
-the next natural break and never treat timeout as success.
+The tag-triggered workflow first proves that the identical development SHA has a
+terminal green canonical run. It then completes the tag gate plus every platform,
+container, execution-environment, provenance, and artifact job before its release
+job can publish. `release-cut` snapshots any older matching tag run, polls the new
+exact tag/SHA/workflow/event every 10 seconds for at most 90 minutes, and finally
+runs artifact and full-matrix verification. A local timeout remains non-success.
 
 ## Functional artifact matrix
 
@@ -187,7 +189,9 @@ evidence, and completeness PASS in the task ledger.
 Never upload a locally built replacement to a published release. Only artifacts
 built by CI from the exact tagged SHA have valid provenance.
 
-If the tag workflow is green but publication was transiently interrupted:
+If publication was transiently interrupted, `release-recut` snapshots the prior
+run before re-pushing the tag, waits only for a newer exact-identity run, and then
+repeats both artifact checks:
 
 ```text
 make release-recut TAG=v0.1.1
