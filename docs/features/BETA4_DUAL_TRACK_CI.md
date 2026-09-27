@@ -2424,11 +2424,13 @@ continuation of the already-green run.
 
 The tag workflow now has a bounded `release_source_proof` job. It checks out the
 immutable event SHA and invokes the existing fail-closed CI verdict helper with
-both the full `GITHUB_SHA` and the explicit `development` branch. That helper uses
-the GitHub CLI's commit and branch filters, selects only the `Build and Release`
-workflow, requires its newest matching run to be terminal `success`, and prints
-the source run ID. Missing, pending, cancelled, skipped, failed, differently
-named, or differently addressed runs cannot authorize reuse.
+both the full `GITHUB_SHA` and the explicit `development` branch. The helper now
+queries the exact commit and `Build and Release` workflow without GitHub's
+server-side branch filter, requests `headBranch` and `event`, then locally requires
+the full SHA, bare `development` ref name, workflow name, and `push` event before
+selecting the newest run. Only terminal `success` prints the source run ID.
+Missing identity fields, pending, cancelled, skipped, failed, differently named,
+or differently addressed runs cannot authorize reuse.
 
 Only validations already covered by that complete source workflow are skipped in
 the tag run. The two-version gate still executes on the tag's exact checkout.
@@ -2469,8 +2471,13 @@ Practitioner and platform evidence reviewed 2026-09-27:
   defines the `success`, `failure`, `cancelled`, and `skipped` results used by the
   explicit release fan-in.
 - The official [`gh run list` reference](https://cli.github.com/manual/gh_run_list)
-  documents simultaneous `--commit` and `--branch` filters. Those are the mature
-  primitives already used by Gludd's canonical exact-SHA verifier.
+  documents the commit and workflow filters plus the `headBranch`, `headSha`,
+  `event`, and `workflowName` JSON fields. The long-lived empty-result failures in
+  [GitHub CLI issue #5474](https://github.com/cli/cli/issues/5474) and
+  [GitHub Community discussion #24626](https://github.com/orgs/community/discussions/24626)
+  make server-side branch filtering unsuitable as release evidence; Gludd reduces
+  the query by immutable commit/workflow and repeats every authorization check
+  locally.
 
 The rollout is ZDD: no running Gludd service, database, tag, or published artifact
 is changed by the proof job. Old and new application workers are unaffected, and
@@ -2494,7 +2501,9 @@ four-part identity. Re-cuts therefore cannot mistake the prior failed or green
 run for the new tag push. Exact-SHA lookup deliberately omits GitHub's server-side
 branch filter, requests up to 50 commit matches, and locally requires the tag ref,
 SHA, workflow, event, and a run ID newer than the snapshot before choosing the
-newest run. Every lookup emits a heartbeat. Success requires
+newest run. GitHub reports `headBranch` using the bare tag name (`v0.1.1`), not
+the full Git ref (`refs/tags/v0.1.1`), so the selector and its regression fixture
+use that API representation. Every lookup emits a heartbeat. Success requires
 `completed/success`; cancelled, failed, skipped,
 neutral, stale, action-required, startup-failure, timed-out, or an unknown
 completed conclusion fails closed. Lookup errors and an absent run retry within
@@ -2523,6 +2532,11 @@ Practitioner and platform evidence reviewed 2026-09-27:
   bounded, configurable deployment waits as queued approvals and runner capacity
   can outlast short client timeouts. Gludd owns an explicit bounded timeout rather
   than treating one short retry loop as platform truth.
+- [GitHub Community discussion #158805](https://github.com/orgs/community/discussions/158805)
+  records an observed tag-triggered workflow payload in which `head_branch`
+  contains the triggering job's `ref_name`: a bare tag name for a tag and a bare
+  branch name for a branch, with no full ref or ref type. Exact wait therefore
+  compares the bare tag name and rejects an assumed `refs/tags/...` value.
 - The official [`gh run list` manual](https://cli.github.com/manual/gh_run_list)
   defines the commit, branch, workflow, event, limit, and JSON fields used here.
   No new polling dependency or custom API client was introduced.

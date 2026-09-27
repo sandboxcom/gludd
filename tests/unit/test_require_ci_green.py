@@ -10,6 +10,8 @@ import importlib.util
 import os
 from typing import Any, cast
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # Import the module under test by path (it lives in scripts/, not a package)
 # ---------------------------------------------------------------------------
@@ -41,6 +43,8 @@ def _run(
     status: str,
     conclusion: str | None = None,
     workflow: str = "Build and Release",
+    branch: str = "development",
+    event: str = "push",
 ) -> dict[str, Any]:
     return {
         "databaseId": db_id,
@@ -48,6 +52,8 @@ def _run(
         "status": status,
         "conclusion": conclusion,
         "workflowName": workflow,
+        "headBranch": branch,
+        "event": event,
         "displayTitle": f"Run {db_id}",
     }
 
@@ -208,3 +214,45 @@ class TestCiGreen:
         code, message = verdict_for([run], SHA)
         assert code == 1
         assert "fail-closed" in message
+
+    def test_strict_source_proof_requires_exact_branch_workflow_and_push_event(self):
+        runs = [
+            _run(99, SHA, "completed", "success", branch="master"),
+            _run(98, SHA, "completed", "success", workflow="Other Workflow"),
+            _run(97, SHA, "completed", "success", event="workflow_dispatch"),
+            _run(96, SHA, "completed", "success"),
+        ]
+
+        code, message = verdict_from_runs(
+            runs,
+            SHA,
+            branch="development",
+            workflow="Build and Release",
+            event="push",
+        )
+
+        assert code == 0
+        assert "run 96" in message
+
+    @pytest.mark.parametrize(
+        "run",
+        [
+            _run(1, SHA, "completed", "success", branch="master"),
+            _run(2, SHA, "completed", "success", workflow="Other Workflow"),
+            _run(3, SHA, "completed", "success", event="workflow_dispatch"),
+        ],
+    )
+    def test_strict_source_proof_fails_closed_when_identity_does_not_match(
+        self,
+        run: dict[str, Any],
+    ) -> None:
+        code, message = verdict_from_runs(
+            [run],
+            SHA,
+            branch="development",
+            workflow="Build and Release",
+            event="push",
+        )
+
+        assert code == 1
+        assert "no run found" in message

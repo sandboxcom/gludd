@@ -38,7 +38,14 @@ def _run_id(run: dict[str, Any]) -> int:
         return 0
 
 
-def verdict_from_runs(runs: Sequence[dict[str, Any]], sha: str) -> tuple[int, str]:
+def verdict_from_runs(
+    runs: Sequence[dict[str, Any]],
+    sha: str,
+    *,
+    branch: str | None = None,
+    workflow: str | None = None,
+    event: str | None = None,
+) -> tuple[int, str]:
     """Return ``(exit_code, message)`` for runs against an exact full SHA.
 
     A full-string SHA comparison is intentional. Prefix matching can accept a
@@ -46,13 +53,22 @@ def verdict_from_runs(runs: Sequence[dict[str, Any]], sha: str) -> tuple[int, st
     Cancelled and skipped conclusions are red because neither is evidence of a
     successful test execution.
     """
-    matching = [run for run in runs if str(run.get("headSha", "")) == sha]
+    matching = [
+        run
+        for run in runs
+        if str(run.get("headSha", "")) == sha
+        and (branch is None or str(run.get("headBranch", "")) == branch)
+        and (workflow is None or str(run.get("workflowName", "")) == workflow)
+        and (event is None or str(run.get("event", "")) == event)
+    ]
     if not matching:
         return 1, f"CI RED: no run found for SHA {sha}"
 
-    preferred = [
-        run for run in matching if run.get("workflowName") == "Build and Release"
-    ]
+    preferred = (
+        [run for run in matching if run.get("workflowName") == "Build and Release"]
+        if workflow is None
+        else []
+    )
     candidates = preferred or matching
     latest = max(candidates, key=_run_id)
     run_id = latest.get("databaseId", "?")
@@ -74,6 +90,13 @@ def verdict_from_runs(runs: Sequence[dict[str, Any]], sha: str) -> tuple[int, st
 
 
 def _fetch_runs(sha: str, branch: str) -> list[dict[str, Any]]:
+    """Fetch exact-commit candidates; branch identity is enforced locally.
+
+    ``branch`` remains in the signature for callers that used the prior helper.
+    GitHub's server-side branch filter can return an empty result for existing
+    runs, so it must not decide whether source evidence exists.
+    """
+    del branch
     result = subprocess.run(
         [
             "gh",
@@ -81,12 +104,15 @@ def _fetch_runs(sha: str, branch: str) -> list[dict[str, Any]]:
             "list",
             "--commit",
             sha,
-            "--branch",
-            branch,
+            "--workflow",
+            "Build and Release",
             "-R",
             "sandboxcom/gludd",
             "--json",
-            "conclusion,databaseId,status,headSha,workflowName,displayTitle",
+            (
+                "conclusion,databaseId,status,headSha,headBranch,workflowName,"
+                "event,displayTitle"
+            ),
             "--limit",
             "20",
         ],
@@ -125,7 +151,13 @@ def verdict_for(
     sha = source
     selected_branch = branch or sha_or_branch or _detect_branch()
     try:
-        code, message = verdict_from_runs(_fetch_runs(sha, selected_branch), sha)
+        code, message = verdict_from_runs(
+            _fetch_runs(sha, selected_branch),
+            sha,
+            branch=selected_branch,
+            workflow="Build and Release",
+            event="push",
+        )
     except Exception as exc:
         print(f"CI ERROR: {exc}")
         return 2

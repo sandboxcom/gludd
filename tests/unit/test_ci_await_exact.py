@@ -67,6 +67,15 @@ def test_select_latest_run_requires_every_exact_identity_field() -> None:
     assert await_module.select_latest_run(candidates, _selector()) == exact_new
 
 
+def test_tag_push_head_branch_is_bare_tag_name_not_full_git_ref() -> None:
+    """GitHub reports a tag run's headBranch as ref_name, not refs/tags/name."""
+    full_ref = _payload(run_id=43, ref=f"refs/tags/{TAG}")
+    bare_tag = _payload(run_id=42, ref=TAG)
+
+    assert await_module.select_latest_run([full_ref], _selector()) is None
+    assert await_module.select_latest_run([full_ref, bare_tag], _selector()) == bare_tag
+
+
 def test_select_latest_run_requires_a_run_newer_than_the_pre_push_baseline() -> None:
     selector = await_module.RunSelector(
         ref=TAG,
@@ -497,3 +506,5 @@ def test_feature_doc_records_measured_wait_improvement_and_practitioner_evidence
     assert "github.com/cli/cli/issues/5474" in documentation
     assert "github.com/orgs/community/discussions/24626" in documentation
     assert "github.com/orgs/community/discussions/5673" in documentation
+    assert "github.com/orgs/community/discussions/158805" in documentation
+    assert "bare tag name" in documentation
