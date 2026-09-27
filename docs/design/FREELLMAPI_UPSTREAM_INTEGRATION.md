@@ -584,6 +584,45 @@ latency history replaced a fixed budget after [issue #1262][issue-1262]. Gludd
 therefore pins a published release and commit while retaining its own outer
 scheduler, deadline policy, health evidence, and final routing authority.
 
+### Tracked corpus, live-provider, and rollback receipts
+
+The v0.1.1 release proof now has a mechanically replayable, non-promoting chain:
+
+- `config/freellmapi/frozen_corpus.json` pins four held-out binary provider
+  outcomes, their exact inputs, and per-fixture digests. The paired plan and ABI
+  records bind that ordered corpus to candidate
+  `sha256:69d63b09199c37f38c02c711559b15e0fd5dc5ecc0e64e2d94c597dc5e5d3998`
+  and the still-admitted `v0.9.9` scoring artifact. No task text, provider key,
+  endpoint, or model response is retained.
+- `general_ludd.models.freellmapi_release_proof` executes the real pinned
+  `expectedReliability` kernel. The shadow result has a preregistered adjusted
+  gain of `0.225848931675` and lower confidence bound `0.223107905138`; the same
+  corpus with the advisor disabled produces a zero delta and exercises the
+  removal decision. Both receipts keep `runtime_admitted: false`.
+- The opt-in `make test-live-zai` run on 2026-09-27 reached the real Z.AI
+  transport through `FreeLLMAPICandidateBackend`. The provider rejected the
+  bounded request with HTTP 429 because the scoped credential had no available
+  balance or resource package. The tracked receipt records only
+  `provider_failure: rate_limited`, zero tokens, the hashed provider/model
+  identity, and teardown state; it does not relabel the rejection as a pass.
+- `config/freellmapi/rollback_receipt.json` then exercises the fail-closed review
+  rollback. The active lease identity is unchanged, the serving blue digest
+  remains `d3078364c02f482909681e21895c4e86dc11cc66c1da7ae2007ad35b096ddf7d`,
+  the candidate review generation closes, and the known-good artifact remains
+  protected. Promotion is never attempted.
+- `config/freellmapi/release_provenance_receipt.json` binds the candidate,
+  corpus, live-provider, and rollback evidence IDs into one immutable release
+  verdict, including the exact external block rather than a completion claim.
+
+These inputs are updateable without editing upstream-owned code: a new stable
+candidate replaces the candidate lock, then regenerates corpus, live-provider,
+and rollback receipts under their digest validators. The current proof cannot
+promote `v0.11.1`; a reproducible candidate bundle, exact Node 20/22 hosted build,
+CI provenance, and a successful bounded live call remain external prerequisites.
+The local exact-source attempt also stopped before source execution because the
+installed Node/npm pair did not match either pinned toolchain, reporting the
+content-free `toolchain_invalid` fault.
+
 ## Security and privacy contract
 
 1. **Admission before bridge.** Project-private or policy-excluded business logic
@@ -718,6 +757,15 @@ long-term stability:
   because the workspace package was not published. Gludd therefore does not
   substitute an npm package for reviewed source: it runs the upstream-owned
   scripts from the exact verified archive and keeps that archive ephemeral.
+- [Issue #1210][issue-1210] records a real provider path exhausting retries on
+  HTTP 429. The v0.1.1 live receipt consequently treats a rate limit as a typed
+  rejection, not a weak success or an invitation to bypass Gludd's budget.
+- [Issue #522][issue-522] records a live NVIDIA NIM degradation being reported as
+  a client error. Gludd therefore persists only its independently classified
+  provider fault and never copies an upstream body into release evidence.
+- Upstream published [v0.12.0][release-v0.12.0] after this candidate was frozen.
+  That is discovery evidence for the next serial update, not permission to
+  silently retarget the reviewed v0.11.1 source or its receipts.
 - The current [security policy][security-policy] still names `0.6.x` while the
   release page lists `0.9.9`. Update automation therefore reconciles source,
   release, security, and provider facts instead of trusting one page.
@@ -763,6 +811,8 @@ scans, lifecycle cleanup, full gate, and hosted CI evidence are green.
 [issue-880]: https://github.com/tashfeenahmed/freellmapi/issues/880
 [issue-1262]: https://github.com/tashfeenahmed/freellmapi/issues/1262
 [issue-1270]: https://github.com/tashfeenahmed/freellmapi/issues/1270
+[issue-1210]: https://github.com/tashfeenahmed/freellmapi/issues/1210
+[issue-522]: https://github.com/tashfeenahmed/freellmapi/issues/522
 [jsrun]: https://imfing.github.io/jsrun/concepts/runtime/
 [license]: https://github.com/tashfeenahmed/freellmapi/blob/main/LICENSE
 [miniracer]: https://pypi.org/project/mini-racer/
@@ -773,6 +823,7 @@ scans, lifecycle cleanup, full gate, and hosted CI evidence are green.
 [pythonmonkey]: https://docs.pythonmonkey.io/
 [quickjs-wrapper]: https://github.com/PetterS/quickjs
 [release-v0.11.1]: https://github.com/tashfeenahmed/freellmapi/releases/tag/v0.11.1
+[release-v0.12.0]: https://github.com/tashfeenahmed/freellmapi/releases/tag/v0.12.0
 [commit-v0.11.1]: https://github.com/tashfeenahmed/freellmapi/commit/4191d8e7abef39fcd93fab009123467036f39750
 [root-package-v0.11.1]: https://github.com/tashfeenahmed/freellmapi/blob/4191d8e7abef39fcd93fab009123467036f39750/package.json
 [server-package-v0.11.1]: https://github.com/tashfeenahmed/freellmapi/blob/4191d8e7abef39fcd93fab009123467036f39750/server/package.json

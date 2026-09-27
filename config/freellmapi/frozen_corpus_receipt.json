@@ -1,0 +1,58 @@
+{
+  "accepted": {
+    "abi_compatible": true,
+    "candidate_id": "sha256:69d63b09199c37f38c02c711559b15e0fd5dc5ecc0e64e2d94c597dc5e5d3998",
+    "capability_id": "score_candidate_features",
+    "corpus_sha256": "3c83085fa9d5ddd694009958d5ce59481c7b28fd7f3f7574bbb30c5f3b0eab81",
+    "decision": "accepted_for_build_review",
+    "evidence_id": "sha256:e04c4607bf8d74e9ba06b3ed2d809a516695d8cb8cb78ba212807ed500a27707",
+    "fixture_count": 4,
+    "gate": "freellmapi-frozen-delta-v1",
+    "metrics": {
+      "lower_confidence_bound": 0.223107905138,
+      "mean_adjusted_gain": 0.225848931675,
+      "mean_cost_penalty": 0.0,
+      "mean_failure_penalty": 0.0,
+      "mean_latency_penalty": 0.0,
+      "mean_memory_penalty": 0.0,
+      "mean_quality_gain": 0.225848931675
+    },
+    "plan_id": "sha256:ed7a4856ccb33bd623a2887f1f46f4fc0effafc8727d6df030bb401f6b119042",
+    "runtime_admitted": false,
+    "schema_version": 1,
+    "selected_export": "expectedReliability"
+  },
+  "artifact_bundle_sha256": "d3078364c02f482909681e21895c4e86dc11cc66c1da7ae2007ad35b096ddf7d",
+  "artifact_upstream_commit": "780a7d8d6dcbc818eb10ec17da210635b569ae22",
+  "candidate_id": "sha256:69d63b09199c37f38c02c711559b15e0fd5dc5ecc0e64e2d94c597dc5e5d3998",
+  "corpus_sha256": "3c83085fa9d5ddd694009958d5ce59481c7b28fd7f3f7574bbb30c5f3b0eab81",
+  "decision": "frozen_corpus_verified",
+  "evidence_id": "sha256:33003e2239bb8e30bff3577c246e16b5bea4408fca524a16020203e3333b7daa",
+  "fixture_count": 4,
+  "gate": "freellmapi-live-corpus-proof-v1",
+  "rejected": {
+    "abi_compatible": true,
+    "candidate_id": "sha256:69d63b09199c37f38c02c711559b15e0fd5dc5ecc0e64e2d94c597dc5e5d3998",
+    "capability_id": "score_candidate_features",
+    "corpus_sha256": "3c83085fa9d5ddd694009958d5ce59481c7b28fd7f3f7574bbb30c5f3b0eab81",
+    "decision": "rejected_nonpositive_delta",
+    "evidence_id": "sha256:24e9ad34b0c28e62c1a84e23409f41949fc1d81a4314abd4463cc7e6ebfb5a00",
+    "fixture_count": 4,
+    "gate": "freellmapi-frozen-delta-v1",
+    "metrics": {
+      "lower_confidence_bound": 0.0,
+      "mean_adjusted_gain": 0.0,
+      "mean_cost_penalty": 0.0,
+      "mean_failure_penalty": 0.0,
+      "mean_latency_penalty": 0.0,
+      "mean_memory_penalty": 0.0,
+      "mean_quality_gain": 0.0
+    },
+    "plan_id": "sha256:ed7a4856ccb33bd623a2887f1f46f4fc0effafc8727d6df030bb401f6b119042",
+    "runtime_admitted": false,
+    "schema_version": 1,
+    "selected_export": "expectedReliability"
+  },
+  "runtime_admitted": false,
+  "schema_version": 1
+}
