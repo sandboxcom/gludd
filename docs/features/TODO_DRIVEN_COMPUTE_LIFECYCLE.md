@@ -84,6 +84,50 @@ representing two owners of the same work.
 The in-process managed-self-improvement lock is only a local resource bound. It
 is not used as the ownership primitive.
 
+## Project-owned runtime control
+
+Every scheduler node now resolves through the canonical
+`ProjectWorkIdentity(project_id, todo_id, queue)` value object. Project-owned
+todo and queue resources include that project in their scheduler labels, so two
+owners can use the same human-facing todo or queue name without one being
+dropped from the planner map or unnecessarily serialized behind the other.
+Legacy unscoped work retains its prior labels under the internal `default`
+owner, and execution lease bucket strings remain `queue:todo` because `todo_id`
+is already database-wide unique. Lease acquisition separately validates the
+project fence and refuses to transfer a live same-attempt lease to another
+project.
+
+Explicit `Todo.dependencies` participate at both boundaries. The repository
+scans one bounded candidate page and leaves a todo queued unless every named
+dependency exists in the same project and is complete. Within an already
+claimed batch, the scheduler maps those dependencies to project-scoped graph
+nodes and emits the prerequisite in an earlier batch. Invalid graphs dispatch
+nothing; they no longer escape through an input-order sequential fallback.
+
+Work in progress is bounded even when no floor or PID controller is installed.
+`event_loop.max_active_todos` defaults to 10, is validated in the range 1–10,000,
+and the claim budget subtracts the selected project's current active count
+before any rows move to `active`. Floor and PID limits may only reduce that
+remaining budget. The dispatch semaphore remains a second, independent bound on
+executing coroutines.
+
+Crash checkpoints persist their project, queue, todo version, execution-lease
+holder, and canonical resume-shard identity. Startup uses the maintained
+`filelock` implementation plus an owner-only claim record to serialize claim
+refresh or stale takeover, and marks a checkpoint resumed only after the exact
+shard is owned by the current event loop. A live competing resume owner therefore
+fails closed; successful task-return persistence clears both the checkpoint and
+its resume claim. Execution effects remain governed by the database todo CAS and
+renewable execution lease, not by the filesystem claim.
+
+This is a zero-downtime additive rollout: checkpoint fields are optional,
+unscoped work maps to `default`, lease keys and database schema are unchanged,
+and old instances can drain beside new instances. Rollback may ignore the new
+optional snapshot fields and sidecars. Operators must not delete a resume claim
+to force progress; first prove the owning process is gone or let the bounded
+claim expire, while the database execution fence continues to prevent duplicate
+effects.
+
 ## Capacity providers
 
 `EventLoop.reconcile_compute_demand` calls the concrete Ansible runner's bounded
@@ -294,6 +338,26 @@ this repair on an already-migrated database; rolling workers may adopt the
 chained shutdown handler independently, preserving zero-downtime operation.
 
 ## Long-lived operator reports that shaped the design
+
+Research refreshed on 2026-09-27 added three scheduler and worker reports:
+
+- APScheduler issue
+  [#579](https://github.com/agronholm/apscheduler/issues/579), opened in 2021,
+  describes a concurrency limit attached to the function rather than the unique
+  job identity, serializing unrelated jobs while still leaving same-ID overlap
+  concerns. Gludd therefore scopes runtime resource labels to the canonical
+  project and todo identity instead of a callable or global queue name.
+- APScheduler issue
+  [#881](https://github.com/agronholm/apscheduler/issues/881), opened in 2024,
+  reports a worker stopping after roughly 1,000 simultaneous jobs were admitted.
+  Gludd subtracts active work before claiming and keeps both candidate scans and
+  execution concurrency bounded.
+- Gunicorn issue
+  [#2510](https://github.com/benoitc/gunicorn/issues/2510), opened in 2021,
+  records an auto-restart cutting off executor work after the request had already
+  returned. Gludd persists resume identity and ownership outside worker memory;
+  a replacement worker must win the durable shard claim and the database fence
+  before it can represent that work as resumed.
 
 - Gunicorn maintainers explain that workers are separate processes and do not
   share mutable globals. That is why todo ownership lives in the database rather

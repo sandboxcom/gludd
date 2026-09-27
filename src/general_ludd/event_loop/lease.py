@@ -18,6 +18,7 @@ from general_ludd.event_loop.lease_cancellation import (
     request_lease_cancellation,
 )
 from general_ludd.event_loop.lease_validation import validate_lease_input
+from general_ludd.schemas.project_identity import validate_project_id
 from general_ludd.schemas.todo import TodoStatus
 
 
@@ -66,6 +67,8 @@ async def acquire_leases_batch(
 ) -> list[BucketLeaseModel]:
     """Acquire a batch atomically without replacing another live attempt."""
     validate_lease_input(bucket_keys, holder_id, ttl_seconds, todo_versions)
+    if project_id is not None:
+        validate_project_id(project_id)
     if not bucket_keys:
         return []
     now = datetime.now(UTC)
@@ -80,6 +83,14 @@ async def acquire_leases_batch(
     # session if it catches ``LeaseBusyError`` without rolling back immediately.
     for key, existing in existing_map.items():
         version = None if todo_versions is None else todo_versions.get(key)
+        if (
+            project_id is not None
+            and existing.project_id is not None
+            and existing.project_id != project_id
+        ):
+            raise LeaseBusyError(
+                f"bucket {key!r} is owned by a different project"
+            )
         same_attempt = existing.holder_id == holder_id and (
             version is None or existing.todo_version == version
         )

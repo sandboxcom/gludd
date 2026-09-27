@@ -526,6 +526,39 @@ class TestInterruptedDispatchRecoveryBranches:
             "TODO-RESUME", phase="pre_model"
         )
 
+    @pytest.mark.asyncio
+    async def test_only_owned_resume_shard_is_marked_resumed(self):
+        manager = MagicMock()
+        owned = SimpleNamespace(
+            task_id="TODO-OWNED",
+            dispatch_state=SimpleNamespace(
+                phase_marker="pre_model",
+                project_id="project-a",
+                resume_shard_id="project-a:TODO-OWNED",
+            ),
+        )
+        contended = SimpleNamespace(
+            task_id="TODO-CONTENDED",
+            dispatch_state=SimpleNamespace(
+                phase_marker="mid_tool_loop",
+                project_id="project-a",
+                resume_shard_id="project-a:TODO-CONTENDED",
+            ),
+        )
+        manager.list_interrupted.return_value = [owned, contended]
+        manager.filter_actionable_sync.return_value = [owned, contended]
+        manager.claim_resume.side_effect = [True, False]
+        loop, _ = _make_loop(todo_repo=None, checkpoint_manager=manager)
+        loop._todo_repo = None
+
+        await loop._resume_interrupted_dispatches()
+
+        assert manager.claim_resume.call_count == 2
+        manager.mark_resumed.assert_called_once_with(
+            "TODO-OWNED",
+            phase="pre_model",
+        )
+
 
 class TestLegacyClaimRecoveryBranches:
     """A stale legacy claim is removed before leases reach the dispatcher."""

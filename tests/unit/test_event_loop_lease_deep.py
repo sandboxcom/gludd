@@ -181,6 +181,35 @@ class TestAcquireLeasesBatch:
 
         assert results[0].project_id == "ORIGINAL"
 
+    async def test_same_attempt_cannot_transfer_between_projects(self) -> None:
+        session = _mock_session()
+        now = datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC)
+        existing = BucketLeaseModel(
+            bucket_key="bucket-a",
+            holder_id="holder-1",
+            todo_version=2,
+            expires_at=now + timedelta(seconds=30),
+            project_id="project-a",
+        )
+        session.execute.return_value = _mock_scalar_result(existing)
+
+        with (
+            patch("general_ludd.event_loop.lease.datetime") as mock_dt,
+            pytest.raises(LeaseBusyError, match="different project"),
+        ):
+            mock_dt.now.return_value = now
+            mock_dt.UTC = UTC
+            await acquire_leases_batch(
+                session,
+                ["bucket-a"],
+                "holder-1",
+                project_id="project-b",
+                todo_versions={"bucket-a": 2},
+            )
+
+        assert existing.project_id == "project-a"
+        session.flush.assert_not_awaited()
+
     async def test_queries_all_owners_for_requested_keys(self) -> None:
         session = _mock_session()
         session.execute.return_value = _mock_scalar_result()

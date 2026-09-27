@@ -102,6 +102,7 @@ from general_ludd.reload.self_improve import SelfImprovementWorkflow
 from general_ludd.rules.engine import Rule, apply_rule_actions, evaluate_rules
 from general_ludd.schemas.benchmark import TaskType
 from general_ludd.schemas.job import JobSpec
+from general_ludd.schemas.project_identity import ProjectWorkIdentity
 from general_ludd.schemas.queue import Queue
 from general_ludd.schemas.task_decision import TaskDecision
 from general_ludd.schemas.task_return import TaskReturn, TaskReturnStatus
@@ -227,6 +228,53 @@ def _self_update_work_item_from_todo(todo: Any, todo_id: str) -> Any:
     except ValueError:
         tier = ApplyTier.REFUSED
     return work_item_for_tier(tier, todo_id)
+
+
+def _runtime_work_identity(
+    todo: Any,
+    fallback_project_id: str | None = None,
+) -> tuple[ProjectWorkIdentity, bool]:
+    """Resolve one todo to its canonical project-owned runtime identity."""
+    explicit_project_id = _safe_str(todo, "project_id")
+    if (
+        explicit_project_id is not None
+        and fallback_project_id is not None
+        and explicit_project_id != fallback_project_id
+    ):
+        raise ValueError("todo project identity does not match the selected project")
+    project_id = explicit_project_id or fallback_project_id
+    todo_id = str(_safe_str(todo, "todo_id", "") or id(todo))
+    queue = _safe_str(todo, "queue", "core") or "core"
+    return (
+        ProjectWorkIdentity(project_id or "default", todo_id, queue),
+        project_id is not None,
+    )
+
+
+def _todo_dependency_ids(todo: Any) -> tuple[str, ...]:
+    """Decode a todo's explicit dependency list without coercing values."""
+    raw = getattr(todo, "dependencies", None)
+    if raw is None or raw == "":
+        return ()
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError("todo dependencies must be a JSON string array") from exc
+    if not isinstance(raw, (list, tuple)):
+        # Compatibility for older duck-typed dispatch objects that do not
+        # declare this field (notably RPC/test doubles whose ``getattr`` creates
+        # an opaque proxy). Persisted JSON strings still fail closed above.
+        if not isinstance(raw, (dict, set)):
+            return ()
+        raise ValueError("todo dependencies must be a string array")
+    dependencies: list[str] = []
+    for value in raw:
+        if not isinstance(value, str) or not value:
+            raise ValueError("todo dependency identifiers must be non-empty strings")
+        if value not in dependencies:
+            dependencies.append(value)
+    return tuple(dependencies)
 
 
 def _resolve_prompt_text_static(
@@ -1961,13 +2009,39 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
         )
 
     async def _effective_claim_limit(self) -> tuple[int, int, Any]:
-        effective_limit = 10
+        config = getattr(self, "config", {})
+        event_loop_config = config.get("event_loop", {}) if isinstance(config, Mapping) else {}
+        if not isinstance(event_loop_config, Mapping):
+            event_loop_config = {}
+        max_active_todos = event_loop_config.get("max_active_todos", 10)
+        if (
+            not isinstance(max_active_todos, int)
+            or isinstance(max_active_todos, bool)
+            or not 1 <= max_active_todos <= 10_000
+        ):
+            raise ValueError("max_active_todos must be an integer between 1 and 10000")
         currently_active = 0
+        active_count_known = True
         if self._todo_repo is not None and self._active_session is not None:
             try:
-                currently_active = await self._todo_repo.count_active()
+                active_count = await self._todo_repo.count_active(
+                    project_id=self._tick_project_id,
+                )
             except Exception:
-                currently_active = 0
+                active_count_known = False
+                logger.exception("Active todo count unavailable; refusing new claims")
+            else:
+                if (
+                    isinstance(active_count, int)
+                    and not isinstance(active_count, bool)
+                    and active_count >= 0
+                ):
+                    currently_active = active_count
+        effective_limit = (
+            max(0, max_active_todos - currently_active)
+            if active_count_known
+            else 0
+        )
 
         if self._floor_controller is not None:
             floor_max = self._floor_controller.get_max_active()
@@ -2014,11 +2088,11 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
                     todo.version,
                     project_id=project_id,
                 )
-                queue = _safe_str(todo, "queue", "core") or "core"
                 if self._active_session is not None:
+                    identity, _ = _runtime_work_identity(todo, project_id)
                     await release_lease(
                         self._active_session,
-                        f"{queue}:{todo.todo_id}",
+                        identity.lease_bucket_key,
                         holder_id=self._lease_owner_id,
                     )
             except Exception as exc:
@@ -2066,8 +2140,7 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
         from general_ludd.event_loop.lease import acquire_leases_batch
 
         bucket_keys = [
-            f"{_safe_str(todo, 'queue', 'core') or 'core'}:"
-            f"{_safe_str(todo, 'todo_id', '') or ''}"
+            _runtime_work_identity(todo, project_id)[0].lease_bucket_key
             for todo in claimed
         ]
         try:
@@ -2175,7 +2248,6 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
         kept = list(claimed[:keep_count])
         released = list(claimed[keep_count:])
         for todo in released:
-            queue = _safe_str(todo, "queue", "core") or "core"
             todo_id = _safe_str(todo, "todo_id", "") or ""
             version = getattr(todo, "version", None)
             if todo_id and isinstance(version, int):
@@ -2190,7 +2262,14 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
                     continue
             if todo_id:
                 try:
-                    await release_lease(self._active_session, f"{queue}:{todo_id}")
+                    identity, _ = _runtime_work_identity(
+                        todo,
+                        self._tick_project_id,
+                    )
+                    await release_lease(
+                        self._active_session,
+                        identity.lease_bucket_key,
+                    )
                 except Exception as exc:
                     logger.warning(
                         "PID cap release failed to delete lease for todo %s: %s",
@@ -2236,43 +2315,72 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
         if not todos:
             return 0
 
-        # Build WorkItems.  Default each todo to its own exclusive resource
-        # (its todo_id) so nothing falsely parallelizes unless we can determine
-        # otherwise.  Todos sharing the same queue share a resource label so the
-        # scheduler correctly serializes queue-exclusive operations.
-        items: list[WorkItem] = []
-        for todo in todos:
-            todo_id = str(_safe_str(todo, "todo_id", "") or id(todo))
-            queue = _safe_str(todo, "queue", "core") or "core"
-            if queue == "self_update":
-                # Phase-2 Step 5: self_update-queue todos serialise on the
-                # tier-specific resource label (self_update:code for CODE,
-                # self_update:config for CONFIG/SCAFFOLD) so two code-tier
-                # source edits never run concurrently. Tier is reconstructed
-                # from the todo's `tier:` tag written by priority.to_todo_spec.
-                items.append(_self_update_work_item_from_todo(todo, todo_id))
-                continue
-            # Use the todo_id as a unique resource so each job is self-exclusive
-            # by default; add queue as a shared resource only when queue-exclusive
-            # serialization is explicitly needed (opt-in via config).
-            queue_exclusive = self._config_snapshot.get("scheduler_queue_exclusive", False)
-            resources: frozenset[str] = (
-                frozenset({f"queue:{queue}", f"todo:{todo_id}"}) if queue_exclusive else frozenset({f"todo:{todo_id}"})
-            )
-            items.append(WorkItem(id=todo_id, resources=resources))
-
-        # Build id→todo map for lookup.
-        todo_map: dict[str, Any] = {}
-        for todo in todos:
-            tid = str(_safe_str(todo, "todo_id", "") or id(todo))
-            todo_map[tid] = todo
-
         try:
+            resolved: list[tuple[Any, ProjectWorkIdentity, bool, str]] = []
+            todo_map: dict[str, Any] = {}
+            scheduler_ids: dict[tuple[str, str], str] = {}
+            for todo in todos:
+                identity, project_owned = _runtime_work_identity(
+                    todo,
+                    self._tick_project_id,
+                )
+                scheduler_id = identity.scheduler_id if project_owned else identity.todo_id
+                if scheduler_id in todo_map:
+                    raise ValueError(f"duplicate runtime work identity {scheduler_id!r}")
+                todo_map[scheduler_id] = todo
+                scheduler_ids[(identity.project_id, identity.todo_id)] = scheduler_id
+                resolved.append((todo, identity, project_owned, scheduler_id))
+
+            items: list[WorkItem] = []
+            queue_exclusive = self._config_snapshot.get(
+                "scheduler_queue_exclusive",
+                False,
+            )
+            for todo, identity, project_owned, scheduler_id in resolved:
+                depends_on = frozenset(
+                    dependency_scheduler_id
+                    for dependency_id in _todo_dependency_ids(todo)
+                    if (
+                        dependency_scheduler_id := scheduler_ids.get(
+                            (identity.project_id, dependency_id)
+                        )
+                    )
+                    is not None
+                )
+                if identity.queue == "self_update":
+                    base_item = _self_update_work_item_from_todo(todo, scheduler_id)
+                    items.append(
+                        WorkItem(
+                            id=base_item.id,
+                            resources=base_item.resources,
+                            depends_on=depends_on,
+                            is_greenfield=base_item.is_greenfield,
+                        )
+                    )
+                    continue
+                todo_resource = (
+                    identity.todo_resource
+                    if project_owned
+                    else f"todo:{identity.todo_id}"
+                )
+                resources = {todo_resource}
+                if queue_exclusive:
+                    resources.add(
+                        identity.queue_resource
+                        if project_owned
+                        else f"queue:{identity.queue}"
+                    )
+                items.append(
+                    WorkItem(
+                        id=scheduler_id,
+                        resources=frozenset(resources),
+                        depends_on=depends_on,
+                    )
+                )
             batches = Scheduler().plan(items)
         except (CycleError, ValueError) as exc:
-            # Fail-closed on scheduler error: fall back to sequential.
-            logger.warning("Scheduler.plan() failed (%s); falling back to sequential", exc)
-            batches = [[str(_safe_str(t, "todo_id", "") or id(t))] for t in todos]
+            logger.error("Scheduler.plan() rejected runtime work: %s", exc)
+            return 0
 
         dispatch_count = 0
         can_concurrent = self._session_factory is not None
@@ -2452,12 +2560,12 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
         version = versions.get(todo_id) if isinstance(versions, Mapping) else None
         if not isinstance(version, int) or isinstance(version, bool) or version <= 0:
             return None
-        queue = _safe_str(todo, "queue", "core") or "core"
+        identity, _ = _runtime_work_identity(todo, self._tick_project_id)
         ttl_seconds, heartbeat_interval_seconds = self._execution_lease_timing()
         return ExecutionLeaseSupervisor(
             session_factory=self._session_factory,
             identity=ExecutionLeaseIdentity(
-                bucket_key=f"{queue}:{todo_id}",
+                bucket_key=identity.lease_bucket_key,
                 holder_id=self._lease_owner_id,
                 todo_version=version,
             ),
@@ -2516,10 +2624,10 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
         leased_todo_ids = self._tick_state.get("execution_lease_todo_ids", [])
         if not todo_id or todo_id not in leased_todo_ids:
             return
-        queue = _safe_str(todo, "queue", "core") or "core"
+        identity, _ = _runtime_work_identity(todo, self._tick_project_id)
         await release_lease(
             session,
-            f"{queue}:{todo_id}",
+            identity.lease_bucket_key,
             holder_id=self._lease_owner_id,
         )
 
@@ -2986,6 +3094,11 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
         _todo_id = _safe_str(todo, "todo_id", "") or ""
         if self._checkpoint_manager is not None and _todo_id:
             with contextlib.suppress(Exception):
+                checkpoint_identity, _ = _runtime_work_identity(
+                    todo,
+                    project_id_val or self._tick_project_id,
+                )
+                todo_version = getattr(todo, "version", None)
                 self._checkpoint_manager.checkpoint(
                     AgentEnvironmentSnapshot(
                         task_id=_todo_id,
@@ -2996,6 +3109,16 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
                             resolved_prompt_profile=resolved_prompt_profile,
                             prompt_text=prompt_text or "",
                             phase_marker="pre_model",
+                            lease_holder_id=self._lease_owner_id,
+                            project_id=checkpoint_identity.project_id,
+                            queue=checkpoint_identity.queue,
+                            todo_version=(
+                                todo_version
+                                if isinstance(todo_version, int)
+                                and not isinstance(todo_version, bool)
+                                else None
+                            ),
+                            resume_shard_id=checkpoint_identity.resume_shard_id,
                         ),
                     ),
                     phase="pre_model",
@@ -4078,7 +4201,37 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
             statuses=statuses,
         )
         for snap in actionable:
-            phase = snap.dispatch_state.phase_marker if snap.dispatch_state is not None else "pre_model"
+            state = snap.dispatch_state
+            phase = state.phase_marker if state is not None else "pre_model"
+            project_id = getattr(state, "project_id", None) if state is not None else None
+            if not isinstance(project_id, str) or not project_id:
+                project_id = "default"
+            shard_id = getattr(state, "resume_shard_id", None) if state is not None else None
+            if not isinstance(shard_id, str) or not shard_id:
+                shard_id = ProjectWorkIdentity(
+                    project_id,
+                    snap.task_id,
+                ).resume_shard_id
+            try:
+                claimed = self._checkpoint_manager.claim_resume(
+                    snap.task_id,
+                    project_id=project_id,
+                    shard_id=shard_id,
+                    owner_id=self._lease_owner_id,
+                    ttl_seconds=self._execution_lease_timing()[0],
+                )
+            except Exception:
+                logger.exception(
+                    "B3.1.5: resume ownership failed for todo %s",
+                    snap.task_id,
+                )
+                continue
+            if not claimed:
+                logger.info(
+                    "B3.1.5: resume deferred; shard already owned for todo %s",
+                    snap.task_id,
+                )
+                continue
             self._checkpoint_manager.mark_resumed(snap.task_id, phase=phase)
             logger.info(
                 "B3.1.5: resumed dispatch for todo %s from phase=%s",

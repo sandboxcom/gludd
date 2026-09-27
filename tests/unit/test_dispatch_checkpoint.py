@@ -49,6 +49,10 @@ def _dispatch_state(**overrides: object) -> DispatchState:
             ContextMessage(role="user", content="go", token_estimate=1),
         ],
         "lease_holder_id": "writer-1",
+        "project_id": "project-a",
+        "queue": "core",
+        "todo_version": 7,
+        "resume_shard_id": "project-a:TODO-1",
     }
     base.update(overrides)
     return DispatchState.model_validate(base)
@@ -80,6 +84,8 @@ class TestDispatchStateRoundTrip:
         assert restored.todo_id == "TODO-1"
         assert restored.phase_marker == "pre_model"
         assert restored.lease_holder_id == "writer-1"
+        assert restored.project_id == "project-a"
+        assert restored.resume_shard_id == "project-a:TODO-1"
         assert len(restored.accumulated_messages) == 1
 
 
@@ -195,6 +201,14 @@ class TestDurableStore:
         handle = s1.dehydrate(_snapshot_with_dispatch())
         assert s2.hydrate(handle).task_id == "TODO-1"
 
+    def test_durable_store_replaces_invalid_key_length(self, tmp_path):
+        key_file = tmp_path / "hibernation.key"
+        key_file.write_bytes(b"short")
+
+        DurableHibernationStore(tmp_path / "snaps", key_file=key_file)
+
+        assert len(key_file.read_bytes()) == 32
+
 
 # --------------------------------------------------------------------------- #
 # 4. CheckpointManager — dehydrate/hydrate/list/clear                          #
@@ -249,6 +263,27 @@ class TestCheckpointManager:
         store = DurableHibernationStore(tmp_path / "snaps", key_file=tmp_path / "k")
         mgr = CheckpointManager(store)
         # Empty store: list_interrupted is a no-op-ish empty list.
+        assert mgr.list_interrupted() == []
+
+    def test_store_property_and_malformed_checkpoints_are_safe(self, tmp_path):
+        store = DurableHibernationStore(tmp_path / "snaps", key_file=tmp_path / "k")
+        mgr = CheckpointManager(store)
+        assert mgr.store is store
+
+        (store.base_dir / "bad-json.snapshot.json").write_text("{")
+        (store.base_dir / "not-object.snapshot.json").write_text("[]")
+        (store.base_dir / "bad-payload.snapshot.json").write_text(
+            json.dumps({"payload": 7})
+        )
+        (store.base_dir / "bad-snapshot.snapshot.json").write_text(
+            json.dumps({"payload": "{}"})
+        )
+        legacy = _snapshot_with_dispatch(dispatch_state=None)
+        payload = legacy.model_dump_json()
+        (store.base_dir / "legacy.snapshot.json").write_text(
+            json.dumps({"payload": payload})
+        )
+
         assert mgr.list_interrupted() == []
 
 
@@ -315,6 +350,131 @@ class TestResume:
         # re-acquire the lease for that holder before re-running.
         assert interrupted.dispatch_state.lease_holder_id == "writer-restarted-2"
 
+    def test_resume_shard_has_one_durable_owner(self, tmp_path):
+        store = DurableHibernationStore(tmp_path / "snaps", key_file=tmp_path / "k")
+        manager_a = CheckpointManager(store)
+        manager_b = CheckpointManager(store)
+        snap = _snapshot_with_dispatch(dispatch_state=_dispatch_state())
+        manager_a.checkpoint(snap, phase="pre_model")
+
+        assert manager_a.claim_resume(
+            snap.task_id,
+            project_id="project-a",
+            shard_id="project-a:TODO-1",
+            owner_id="writer-a",
+        )
+        assert not manager_b.claim_resume(
+            snap.task_id,
+            project_id="project-a",
+            shard_id="project-a:TODO-1",
+            owner_id="writer-b",
+        )
+        assert not manager_b.release_resume_claim(snap.task_id, owner_id="writer-b")
+        assert manager_a.release_resume_claim(snap.task_id, owner_id="writer-a")
+        assert manager_b.claim_resume(
+            snap.task_id,
+            project_id="project-a",
+            shard_id="project-a:TODO-1",
+            owner_id="writer-b",
+        )
+
+    def test_clear_removes_resume_shard_claim(self, tmp_path):
+        store = DurableHibernationStore(tmp_path / "snaps", key_file=tmp_path / "k")
+        manager = CheckpointManager(store)
+        snap = _snapshot_with_dispatch(dispatch_state=_dispatch_state())
+        manager.checkpoint(snap, phase="pre_model")
+        assert manager.claim_resume(
+            snap.task_id,
+            project_id="project-a",
+            shard_id="project-a:TODO-1",
+            owner_id="writer-a",
+        )
+
+        manager.clear(snap.task_id)
+
+        assert manager.claim_resume(
+            snap.task_id,
+            project_id="project-a",
+            shard_id="project-a:TODO-1",
+            owner_id="writer-b",
+        )
+
+    def test_resume_claim_refresh_is_scope_bound_and_stale_claim_is_replaced(
+        self, tmp_path
+    ):
+        store = DurableHibernationStore(tmp_path / "snaps", key_file=tmp_path / "k")
+        manager = CheckpointManager(store)
+
+        assert manager.claim_resume(
+            "TODO-1",
+            project_id="project-a",
+            shard_id="project-a:TODO-1",
+            owner_id="writer-a",
+        )
+        assert manager.claim_resume(
+            "TODO-1",
+            project_id="project-a",
+            shard_id="project-a:TODO-1",
+            owner_id="writer-a",
+        )
+        assert not manager.claim_resume(
+            "TODO-1",
+            project_id="project-a",
+            shard_id="project-a:other",
+            owner_id="writer-a",
+        )
+
+        claim_path = manager._resume_claim_path("TODO-1")
+        claim_path.write_text(json.dumps({"owner_id": "dead", "expires_at": 0}))
+        assert manager.claim_resume(
+            "TODO-1",
+            project_id="project-a",
+            shard_id="project-a:TODO-1",
+            owner_id="writer-b",
+        )
+
+    def test_resume_claim_rejects_invalid_tokens_and_ttl(self, tmp_path):
+        store = DurableHibernationStore(tmp_path / "snaps", key_file=tmp_path / "k")
+        manager = CheckpointManager(store)
+
+        with pytest.raises(ValueError, match="task_id"):
+            manager.claim_resume(
+                "",
+                project_id="project-a",
+                shard_id="shard",
+                owner_id="writer",
+            )
+        with pytest.raises(ValueError, match="ttl_seconds"):
+            manager.claim_resume(
+                "TODO-1",
+                project_id="project-a",
+                shard_id="shard",
+                owner_id="writer",
+                ttl_seconds=True,
+            )
+
+    def test_resume_claim_recovers_corrupt_record_and_release_missing(self, tmp_path):
+        store = DurableHibernationStore(tmp_path / "snaps", key_file=tmp_path / "k")
+        manager = CheckpointManager(store)
+        manager._resume_claim_path("TODO-1").write_text("{")
+
+        assert manager.claim_resume(
+            "TODO-1",
+            project_id="project-a",
+            shard_id="project-a:TODO-1",
+            owner_id="writer-a",
+        )
+        assert not manager.release_resume_claim("missing", owner_id="writer-a")
+
+    def test_mark_resumed_without_bus_is_observable_noop(self, tmp_path, caplog):
+        store = DurableHibernationStore(tmp_path / "snaps", key_file=tmp_path / "k")
+        manager = CheckpointManager(store)
+        caplog.set_level("INFO", logger="general_ludd.agents.dispatch_checkpoint")
+
+        manager.mark_resumed("TODO-1", phase="pre_model")
+
+        assert "dispatch resumed (no bus)" in caplog.text
+
 
 # --------------------------------------------------------------------------- #
 # 6. Spool offset sidecar                                                      #
@@ -348,6 +508,16 @@ class TestSpoolSidecar:
 
         # Missing sidecar → None (caller starts at offset 0).
         assert mgr2.read_spool_offset("UNKNOWN-TODO") is None
+
+    def test_invalid_spool_sidecars_fail_safe(self, tmp_path):
+        store = DurableHibernationStore(tmp_path / "snaps", key_file=tmp_path / "k")
+        manager = CheckpointManager(store)
+        sidecar = manager.spool_sidecar_path("TODO-1")
+
+        sidecar.write_text("{")
+        assert manager.read_spool_offset("TODO-1") is None
+        sidecar.write_text(json.dumps({"offset": -1}))
+        assert manager.read_spool_offset("TODO-1") is None
 
 
 # --------------------------------------------------------------------------- #

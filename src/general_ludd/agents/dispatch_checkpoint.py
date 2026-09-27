@@ -31,8 +31,11 @@ import logging
 import os
 import re
 import secrets
+import time
 from pathlib import Path
 from typing import Any
+
+from filelock import FileLock
 
 from general_ludd.agents.hibernation import (
     AgentEnvironmentSnapshot,
@@ -43,6 +46,7 @@ from general_ludd.agents.hibernation import (
 )
 from general_ludd.events.bus import EventBus
 from general_ludd.events.types import Event
+from general_ludd.schemas.project_identity import validate_project_id
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +84,7 @@ class DispatchResumedEvent(Event):
     """
 
     def __init__(self, todo_id: str, phase: str, **kwargs: Any) -> None:
+        """Initialize a content-free resume event."""
         super().__init__(
             type="dispatch_resumed",
             payload={"todo_id": todo_id, "phase": phase},
@@ -104,6 +109,7 @@ class DurableHibernationStore(HibernationStore):
         *,
         key_file: str | Path | None = None,
     ) -> None:
+        """Initialize the durable store and its long-lived signing key."""
         super().__init__(base_dir)
         self._key_file: Path = (
             Path(key_file).resolve() if key_file is not None else _default_key_file()
@@ -173,11 +179,13 @@ class CheckpointManager:
         store: HibernationStore,
         event_bus: EventBus | None = None,
     ) -> None:
+        """Initialize checkpoint storage with an optional event sink."""
         self._store = store
         self._bus = event_bus
 
     @property
     def store(self) -> HibernationStore:
+        """Return the underlying integrity-checked snapshot store."""
         return self._store
 
     # ------------------------------------------------------------------ #
@@ -214,6 +222,9 @@ class CheckpointManager:
         sidecar = self._sidecar_path(task_id)
         with _suppress_oserror():
             sidecar.unlink(missing_ok=True)
+        claim = self._resume_claim_path(task_id)
+        with self._resume_claim_lock(task_id), _suppress_oserror():
+            claim.unlink(missing_ok=True)
 
     # ------------------------------------------------------------------ #
     # Resume enumeration
@@ -281,6 +292,108 @@ class CheckpointManager:
             )
             return
         self._bus.publish(DispatchResumedEvent(todo_id=task_id, phase=phase))
+
+    def _resume_claim_path(self, task_id: str) -> Path:
+        return self._store.base_dir / f"{_safe_stem(task_id)}.resume-claim.json"
+
+    def _resume_claim_lock(self, task_id: str) -> FileLock:
+        lock_path = self._store.base_dir / f"{_safe_stem(task_id)}.resume-claim.lock"
+        return FileLock(str(lock_path), timeout=10, mode=0o600)
+
+    @staticmethod
+    def _valid_resume_token(value: str, field_name: str) -> str:
+        if (
+            not isinstance(value, str)
+            or not value
+            or len(value.encode("utf-8")) > 256
+            or any(char in value for char in "\r\n\x00")
+        ):
+            raise ValueError(f"{field_name} must be bounded non-empty text")
+        return value
+
+    def claim_resume(
+        self,
+        task_id: str,
+        *,
+        project_id: str,
+        shard_id: str,
+        owner_id: str,
+        ttl_seconds: int = 300,
+    ) -> bool:
+        """Atomically own one resumable checkpoint shard across processes.
+
+        The maintained ``filelock`` library serializes stale-claim takeover and
+        refresh. The small owner-only JSON record survives process restarts; an
+        unexpired claim held by another event loop fails closed.
+        """
+        validate_project_id(project_id)
+        self._valid_resume_token(task_id, "task_id")
+        self._valid_resume_token(shard_id, "shard_id")
+        self._valid_resume_token(owner_id, "owner_id")
+        if (
+            not isinstance(ttl_seconds, int)
+            or isinstance(ttl_seconds, bool)
+            or not 1 <= ttl_seconds <= 86_400
+        ):
+            raise ValueError("ttl_seconds must be an integer between 1 and 86400")
+        claim_path = self._resume_claim_path(task_id)
+        now = time.time()
+        with self._resume_claim_lock(task_id):
+            current: dict[str, Any] = {}
+            try:
+                value = json.loads(claim_path.read_text(encoding="utf-8"))
+                if isinstance(value, dict):
+                    current = value
+            except (OSError, json.JSONDecodeError):
+                current = {}
+            current_owner = current.get("owner_id")
+            current_expiry = current.get("expires_at")
+            if current_owner == owner_id:
+                if (
+                    current.get("project_id") != project_id
+                    or current.get("shard_id") != shard_id
+                ):
+                    return False
+            elif isinstance(current_expiry, (int, float)) and current_expiry > now:
+                return False
+            payload = {
+                "expires_at": now + ttl_seconds,
+                "owner_id": owner_id,
+                "project_id": project_id,
+                "shard_id": shard_id,
+                "task_id": task_id,
+            }
+            tmp = claim_path.with_name(f"{claim_path.name}.{os.getpid()}.tmp")
+            fd = os.open(
+                str(tmp),
+                os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                0o600,
+            )
+            try:
+                os.write(
+                    fd,
+                    json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(),
+                )
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            os.replace(tmp, claim_path)
+            return True
+
+    def release_resume_claim(self, task_id: str, *, owner_id: str) -> bool:
+        """Release one resume shard only for its exact durable owner."""
+        self._valid_resume_token(task_id, "task_id")
+        self._valid_resume_token(owner_id, "owner_id")
+        claim_path = self._resume_claim_path(task_id)
+        with self._resume_claim_lock(task_id):
+            try:
+                value = json.loads(claim_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return False
+            if not isinstance(value, dict) or value.get("owner_id") != owner_id:
+                return False
+            claim_path.unlink(missing_ok=True)
+            return True
 
     # ------------------------------------------------------------------ #
     # Spool-offset sidecar

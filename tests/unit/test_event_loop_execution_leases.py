@@ -108,6 +108,33 @@ async def test_invalid_lease_timing_returns_claim_to_queue_without_acquiring() -
     repo.transition.assert_awaited_once()
 
 
+@pytest.mark.asyncio
+async def test_default_wip_budget_subtracts_project_active_work() -> None:
+    todo = _todo()
+    todo.project_id = "project-a"
+    loop, repo, _ = _claim_loop(todo)
+    loop._tick_project_id = "project-a"
+    repo.count_active.return_value = 8
+    repo.claim_runnable.return_value = []
+
+    await loop._phase_claim_runnable_todos()
+
+    repo.count_active.assert_awaited_once_with(project_id="project-a")
+    repo.claim_runnable.assert_awaited_once_with(limit=2, project_id="project-a")
+
+
+@pytest.mark.asyncio
+async def test_unknown_active_count_fails_claim_closed() -> None:
+    todo = _todo()
+    loop, repo, _ = _claim_loop(todo)
+    repo.count_active.side_effect = RuntimeError("database unavailable")
+
+    await loop._phase_claim_runnable_todos()
+
+    repo.claim_runnable.assert_not_awaited()
+    assert loop._tick_state["claimed_todos"] == []
+
+
 def _session_factory(session: MagicMock) -> MagicMock:
     context = MagicMock()
     context.__aenter__ = AsyncMock(return_value=session)
