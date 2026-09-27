@@ -190,28 +190,30 @@ console.log(JSON.stringify({{
 def test_running_pipeline_blocks_checkout_writes_and_duplicate_or_filler_dispatches(
     tmp_path: Path,
 ) -> None:
-    env = _runtime_env(tmp_path, todos=[])
-    state = {
-        "version": 1,
-        "status": "running",
-        "pipeline_target": "gate-async",
-        "tested_ref": env["GLUDD_PIPELINE_TESTED_REF"],
-        "tested_worktree": str(tmp_path),
-        "created_at": 1_800_000_000_000,
-        "updated_at": 1_800_000_000_000,
-        "candidates": [],
-        "dispatched_keys": [],
-    }
-    Path(env["GLUDD_PIPELINE_KICKOFF_STATE"]).write_text(
-        json.dumps(state), encoding="utf-8"
-    )
-    prompt = (
-        "[pipeline-task:api-tests] Add API contract tests. Create and use an "
-        "isolated git worktree and feature branch. Never edit the frozen tested checkout."
+    env = _runtime_env(
+        tmp_path,
+        todos=[
+            {
+                "id": "api-tests",
+                "content": "Add API contract tests",
+                "status": "pending",
+                "files": ["tests/api.py"],
+            }
+        ],
     )
     code = f"""
 import pluginFactory from {PLUGIN!r}
+import * as fs from 'node:fs'
 const plugin = await pluginFactory({{}})
+const launch = {{tool: 'bash', args: {{command: 'make gate-async'}}}}
+const launchOutput = {{args: {{command: 'make gate-async'}}}}
+await plugin['tool.execute.before'](launch, launchOutput)
+await plugin['tool.execute.after'](
+  launch,
+  {{args: launchOutput.args, result: '', metadata: {{exitCode: 0}}}},
+)
+const state = JSON.parse(fs.readFileSync(process.env.GLUDD_PIPELINE_KICKOFF_STATE, 'utf8'))
+const prompt = state.candidates[0].dispatch_prompt
 const edit = await plugin['tool.execute.before'](
   {{tool: 'edit', args: {{filePath: {str(tmp_path / 'src/a.py')!r}}}}}, {{}})
 const filler = await plugin['tool.execute.before'](
@@ -219,9 +221,9 @@ const filler = await plugin['tool.execute.before'](
 const unsafe = await plugin['tool.execute.before'](
   {{tool: 'task', args: {{prompt: 'Add API contract tests'}}}}, {{}})
 const first = await plugin['tool.execute.before'](
-  {{tool: 'task', args: {{prompt: {prompt!r}}}}}, {{}})
+  {{tool: 'task', args: {{prompt}}}}, {{}})
 const duplicate = await plugin['tool.execute.before'](
-  {{tool: 'agent', args: {{prompt: {prompt!r}}}}}, {{}})
+  {{tool: 'agent', args: {{prompt}}}}, {{}})
 console.log(JSON.stringify({{
   edit: edit?.permissionDecision,
   filler: filler?.permissionDecision,
@@ -253,7 +255,10 @@ const output = {{args: {{command: 'make gate-async'}}}}
 await plugin['tool.execute.before'](input, output)
 await plugin['tool.execute.after'](input, {{args: output.args, result: '', metadata: {{exitCode: 0}}}})
 const started = JSON.parse(fs.readFileSync(process.env.GLUDD_PIPELINE_KICKOFF_STATE, 'utf8'))
-fs.writeFileSync(process.env.GLUDD_PIPELINE_STATUS_PATH, 'PASS 1800000000\\n')
+fs.writeFileSync(
+  process.env.GLUDD_PIPELINE_STATUS_PATH,
+  `PASS ${{Math.floor(Date.now() / 1000)}}\\n`,
+)
 const editAfterPass = await plugin['tool.execute.before'](
   {{tool: 'edit', args: {{filePath: {str(tmp_path / 'src/a.py')!r}}}}}, {{}})
 const finished = JSON.parse(fs.readFileSync(process.env.GLUDD_PIPELINE_KICKOFF_STATE, 'utf8'))
@@ -268,23 +273,41 @@ console.log(JSON.stringify({{
 
 
 def test_dispatch_cap_includes_agents_already_in_flight(tmp_path: Path) -> None:
-    env = _runtime_env(tmp_path, todos=[], in_flight=1)
-    prompt = (
-        "Create and use an isolated git worktree and feature branch. "
-        "Never edit the frozen tested checkout."
+    env = _runtime_env(
+        tmp_path,
+        todos=[
+            {
+                "id": f"task-{index}",
+                "content": f"Implement useful change {index}",
+                "status": "pending",
+                "files": [f"src/{index}.py"],
+            }
+            for index in range(3)
+        ],
+        in_flight=0,
     )
     code = f"""
 import pluginFactory from {PLUGIN!r}
+import * as fs from 'node:fs'
 const plugin = await pluginFactory({{}})
 const input = {{tool: 'bash', args: {{command: 'make gate-async'}}}}
 const output = {{args: {{command: 'make gate-async'}}}}
 await plugin['tool.execute.before'](input, output)
 await plugin['tool.execute.after'](input, {{args: output.args, result: '', metadata: {{exitCode: 0}}}})
-const dispatch = async (id) => plugin['tool.execute.before'](
-  {{tool: 'task', args: {{prompt: `[pipeline-task:${{id}}] Implement useful change ${{id}}. {prompt}`}}}}, {{}})
-const first = await dispatch('one')
-const second = await dispatch('two')
-const third = await dispatch('three')
+const state = JSON.parse(fs.readFileSync(process.env.GLUDD_PIPELINE_KICKOFF_STATE, 'utf8'))
+const multitaskPath = process.env.GLUDD_MULTITASK_STATE_FILE
+const dispatch = async (index, inFlight) => {{
+  fs.writeFileSync(multitaskPath, JSON.stringify({{estimatedInFlight: inFlight}}))
+  return plugin['tool.execute.before'](
+    {{tool: 'task', args: {{prompt: state.candidates[index].dispatch_prompt}}}},
+    {{}},
+  )
+}}
+// The multitask hook runs before pipeline-kickoff and has already counted the
+// current attempt: one unrelated worker + this attempt + accepted kickoff work.
+const first = await dispatch(0, 2)
+const second = await dispatch(1, 3)
+const third = await dispatch(2, 4)
 console.log(JSON.stringify({{
   first: first ?? null,
   second: second ?? null,
@@ -431,6 +454,435 @@ const verdict = await plugin['tool.execute.before'](
 console.log(JSON.stringify({{verdict: verdict ?? null}}))
 """
     assert _run_ts(code, env) == {"verdict": None}
+
+
+def test_dispatch_hash_deduplicates_alias_ids_and_binds_prompt_payload() -> None:
+    code = f"""
+import {{ dispatchKey }} from {MODULE!r}
+const first = dispatchKey(
+  '[pipeline-task:first] Implement useful parser tests. ' +
+  'Create and use an isolated git worktree. Never edit the frozen tested checkout.',
+)
+const alias = dispatchKey(
+  '[pipeline-task:alias] Implement useful parser tests. ' +
+  'Create and use an isolated git worktree. Never edit the frozen tested checkout.',
+)
+const mutated = dispatchKey(
+  '[pipeline-task:alias] Delete production safeguards. ' +
+  'Create and use an isolated git worktree. Never edit the frozen tested checkout.',
+)
+console.log(JSON.stringify({{sameTask: first === alias, mutationBound: first !== mutated}}))
+"""
+    assert _run_ts(code) == {"sameTask": True, "mutationBound": True}
+
+
+def test_negated_worktree_language_is_not_an_isolated_dispatch_prompt() -> None:
+    code = f"""
+import {{ isIsolatedDispatchPrompt }} from {MODULE!r}
+const valid = isIsolatedDispatchPrompt(
+  'Create and use an isolated git worktree. Never edit the frozen tested checkout.',
+)
+const negated = isIsolatedDispatchPrompt(
+  'Do not create an isolated git worktree. Never edit the frozen tested checkout.',
+)
+console.log(JSON.stringify({{valid, negated}}))
+"""
+    assert _run_ts(code) == {"valid": True, "negated": False}
+
+
+def test_freshly_touched_stale_receipt_cannot_unfreeze_new_pipeline(
+    tmp_path: Path,
+) -> None:
+    env = _runtime_env(tmp_path, todos=[])
+    code = f"""
+import pluginFactory from {PLUGIN!r}
+import * as fs from 'node:fs'
+const plugin = await pluginFactory({{}})
+const launch = {{tool: 'bash', args: {{command: 'make gate-async'}}}}
+const output = {{args: {{command: 'make gate-async'}}}}
+await plugin['tool.execute.before'](launch, output)
+await plugin['tool.execute.after'](
+  launch,
+  {{args: output.args, result: '', metadata: {{exitCode: 0}}}},
+)
+// A copied receipt can have a new filesystem mtime but still carry an epoch
+// from an older pipeline. The receipt timestamp, not mtime alone, is binding.
+fs.writeFileSync(process.env.GLUDD_PIPELINE_STATUS_PATH, 'PASS 1\\n')
+const edit = await plugin['tool.execute.before'](
+  {{tool: 'edit', args: {{filePath: {str(tmp_path / 'src/a.py')!r}}}}},
+  {{}},
+)
+const state = JSON.parse(fs.readFileSync(process.env.GLUDD_PIPELINE_KICKOFF_STATE, 'utf8'))
+console.log(JSON.stringify({{decision: edit?.permissionDecision ?? null, status: state.status}}))
+"""
+    assert _run_ts(code, env) == {"decision": "deny", "status": "running"}
+
+
+def test_cross_checkout_terminal_receipt_cannot_unfreeze_pipeline(
+    tmp_path: Path,
+) -> None:
+    foreign_checkout = tmp_path.parent / f"{tmp_path.name}-foreign"
+    foreign_checkout.mkdir()
+    env = {
+        **_runtime_env(tmp_path, todos=[]),
+        "GLUDD_PIPELINE_STATUS_PATH": str(foreign_checkout / ".gate-status"),
+    }
+    code = f"""
+import pluginFactory from {PLUGIN!r}
+import * as fs from 'node:fs'
+const plugin = await pluginFactory({{}})
+const launch = {{tool: 'bash', args: {{command: 'make gate-async'}}}}
+const output = {{args: {{command: 'make gate-async'}}}}
+await plugin['tool.execute.before'](launch, output)
+await plugin['tool.execute.after'](
+  launch,
+  {{args: output.args, result: '', metadata: {{exitCode: 0}}}},
+)
+fs.writeFileSync(
+  process.env.GLUDD_PIPELINE_STATUS_PATH,
+  `PASS ${{Math.floor(Date.now() / 1000)}}\\n`,
+)
+const edit = await plugin['tool.execute.before'](
+  {{tool: 'edit', args: {{filePath: {str(tmp_path / 'src/a.py')!r}}}}},
+  {{}},
+)
+const state = JSON.parse(fs.readFileSync(process.env.GLUDD_PIPELINE_KICKOFF_STATE, 'utf8'))
+console.log(JSON.stringify({{decision: edit?.permissionDecision ?? null, status: state.status}}))
+"""
+    assert _run_ts(code, env) == {"decision": "deny", "status": "running"}
+
+
+def test_symlinked_cross_checkout_receipt_is_rejected(tmp_path: Path) -> None:
+    foreign_checkout = tmp_path.parent / f"{tmp_path.name}-foreign-link"
+    foreign_checkout.mkdir()
+    foreign_status = foreign_checkout / ".gate-status"
+    linked_status = tmp_path / "linked-gate-status"
+    linked_status.symlink_to(foreign_status)
+    env = {
+        **_runtime_env(tmp_path, todos=[]),
+        "GLUDD_PIPELINE_STATUS_PATH": str(linked_status),
+    }
+    code = f"""
+import pluginFactory from {PLUGIN!r}
+import * as fs from 'node:fs'
+const plugin = await pluginFactory({{}})
+const launch = {{tool: 'bash', args: {{command: 'make gate-async'}}}}
+const output = {{args: {{command: 'make gate-async'}}}}
+await plugin['tool.execute.before'](launch, output)
+await plugin['tool.execute.after'](
+  launch,
+  {{args: output.args, result: '', metadata: {{exitCode: 0}}}},
+)
+fs.writeFileSync(
+  process.env.GLUDD_PIPELINE_STATUS_PATH,
+  `PASS ${{Math.floor(Date.now() / 1000)}}\\n`,
+)
+const edit = await plugin['tool.execute.before'](
+  {{tool: 'edit', args: {{filePath: {str(tmp_path / 'src/a.py')!r}}}}},
+  {{}},
+)
+const state = JSON.parse(fs.readFileSync(process.env.GLUDD_PIPELINE_KICKOFF_STATE, 'utf8'))
+console.log(JSON.stringify({{decision: edit?.permissionDecision ?? null, status: state.status}}))
+"""
+    assert _run_ts(code, env) == {"decision": "deny", "status": "running"}
+
+
+def test_terminal_receipt_path_cannot_be_mutated_after_launch(tmp_path: Path) -> None:
+    env = _runtime_env(tmp_path, todos=[])
+    code = f"""
+import pluginFactory from {PLUGIN!r}
+import * as fs from 'node:fs'
+import * as path from 'node:path'
+const plugin = await pluginFactory({{}})
+const launch = {{tool: 'bash', args: {{command: 'make gate-async'}}}}
+const output = {{args: {{command: 'make gate-async'}}}}
+await plugin['tool.execute.before'](launch, output)
+await plugin['tool.execute.after'](
+  launch,
+  {{args: output.args, result: '', metadata: {{exitCode: 0}}}},
+)
+const state = JSON.parse(fs.readFileSync(process.env.GLUDD_PIPELINE_KICKOFF_STATE, 'utf8'))
+const swappedPath = path.join(process.env.GLUDD_PROJECT_ROOT, 'swapped-gate-status')
+state.status_path = swappedPath
+fs.writeFileSync(process.env.GLUDD_PIPELINE_KICKOFF_STATE, JSON.stringify(state))
+fs.writeFileSync(swappedPath, `PASS ${{Math.floor(Date.now() / 1000)}}\\n`)
+const edit = await plugin['tool.execute.before'](
+  {{tool: 'edit', args: {{filePath: {str(tmp_path / 'src/a.py')!r}}}}},
+  {{}},
+)
+const finished = JSON.parse(fs.readFileSync(process.env.GLUDD_PIPELINE_KICKOFF_STATE, 'utf8'))
+console.log(JSON.stringify({{
+  decision: edit?.permissionDecision ?? null,
+  status: finished.status,
+}}))
+"""
+    assert _run_ts(code, env) == {"decision": "deny", "status": "running"}
+
+
+def test_ship_receipt_rejects_stale_same_ref_content(tmp_path: Path) -> None:
+    env = {
+        **_runtime_env(tmp_path, todos=[]),
+        "GLUDD_PIPELINE_STATUS_PATH": str(tmp_path / ".ship-status"),
+    }
+    tested_ref = env["GLUDD_PIPELINE_TESTED_REF"]
+    Path(env["GLUDD_PIPELINE_STATUS_PATH"]).write_text(
+        f"SHIP PASS {tested_ref}\n", encoding="utf-8"
+    )
+    code = f"""
+import pluginFactory from {PLUGIN!r}
+import * as fs from 'node:fs'
+const plugin = await pluginFactory({{}})
+const launch = {{tool: 'bash', args: {{command: 'make ship-async'}}}}
+const output = {{args: {{command: 'make ship-async'}}}}
+await plugin['tool.execute.before'](launch, output)
+await plugin['tool.execute.after'](
+  launch,
+  {{args: output.args, result: '', metadata: {{exitCode: 0}}}},
+)
+const stale = fs.readFileSync(process.env.GLUDD_PIPELINE_STATUS_PATH, 'utf8')
+fs.writeFileSync(process.env.GLUDD_PIPELINE_STATUS_PATH, stale)
+const edit = await plugin['tool.execute.before'](
+  {{tool: 'edit', args: {{filePath: {str(tmp_path / 'src/a.py')!r}}}}},
+  {{}},
+)
+const state = JSON.parse(fs.readFileSync(process.env.GLUDD_PIPELINE_KICKOFF_STATE, 'utf8'))
+console.log(JSON.stringify({{decision: edit?.permissionDecision ?? null, status: state.status}}))
+"""
+    assert _run_ts(code, env) == {"decision": "deny", "status": "running"}
+
+
+def test_ship_receipt_uses_exact_ref_and_last_terminal_line(tmp_path: Path) -> None:
+    env = {
+        **_runtime_env(tmp_path, todos=[]),
+        "GLUDD_PIPELINE_STATUS_PATH": str(tmp_path / ".ship-status"),
+    }
+    code = f"""
+import pluginFactory from {PLUGIN!r}
+import * as fs from 'node:fs'
+const plugin = await pluginFactory({{}})
+const launch = {{tool: 'bash', args: {{command: 'make ship-async'}}}}
+const output = {{args: {{command: 'make ship-async'}}}}
+await plugin['tool.execute.before'](launch, output)
+await plugin['tool.execute.after'](
+  launch,
+  {{args: output.args, result: '', metadata: {{exitCode: 0}}}},
+)
+fs.writeFileSync(process.env.GLUDD_PIPELINE_STATUS_PATH, 'SHIP PASS wrong-ref\\n')
+const swapped = await plugin['tool.execute.before'](
+  {{tool: 'edit', args: {{filePath: {str(tmp_path / 'src/a.py')!r}}}}},
+  {{}},
+)
+fs.writeFileSync(
+  process.env.GLUDD_PIPELINE_STATUS_PATH,
+  `SHIP PASS ${{process.env.GLUDD_PIPELINE_TESTED_REF}}\\nSHIP FAIL gate\\n`,
+)
+const afterFailure = await plugin['tool.execute.before'](
+  {{tool: 'edit', args: {{filePath: {str(tmp_path / 'src/a.py')!r}}}}},
+  {{}},
+)
+const state = JSON.parse(fs.readFileSync(process.env.GLUDD_PIPELINE_KICKOFF_STATE, 'utf8'))
+console.log(JSON.stringify({{
+  swapped: swapped?.permissionDecision ?? null,
+  afterFailure: afterFailure ?? null,
+  status: state.status,
+}}))
+"""
+    assert _run_ts(code, env) == {
+        "swapped": "deny",
+        "afterFailure": None,
+        "status": "failed",
+    }
+
+
+def test_zero_useful_candidates_rejects_ad_hoc_dispatch(tmp_path: Path) -> None:
+    env = _runtime_env(
+        tmp_path,
+        todos=[
+            {"id": "poll", "content": "Wait for CI status", "status": "pending"},
+            {
+                "id": "blocked",
+                "content": "Implement blocked package release",
+                "status": "pending",
+                "depends_on": ["not-complete"],
+            },
+        ],
+    )
+    prompt = (
+        "[pipeline-task:invented] Implement an unrelated useful change. "
+        "Create and use an isolated git worktree. "
+        "Never edit the frozen tested checkout."
+    )
+    code = f"""
+import pluginFactory from {PLUGIN!r}
+const plugin = await pluginFactory({{}})
+const launch = {{tool: 'bash', args: {{command: 'make gate-async'}}}}
+const output = {{args: {{command: 'make gate-async'}}}}
+await plugin['tool.execute.before'](launch, output)
+await plugin['tool.execute.after'](
+  launch,
+  {{args: output.args, result: '', metadata: {{exitCode: 0}}}},
+)
+const verdict = await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: {prompt!r}}}}},
+  {{}},
+)
+console.log(JSON.stringify({{
+  decision: verdict?.permissionDecision ?? null,
+  message: verdict?.message ?? '',
+}}))
+"""
+    result = _run_ts(code, env)
+    assert result["decision"] == "deny"
+    assert "candidate" in result["message"].lower()
+
+
+def test_candidate_source_mutation_after_launch_is_not_dispatchable(
+    tmp_path: Path,
+) -> None:
+    env = _runtime_env(
+        tmp_path,
+        todos=[
+            {
+                "id": "parser",
+                "content": "Implement useful parser tests",
+                "status": "pending",
+                "files": ["tests/parser.py"],
+            }
+        ],
+    )
+    code = f"""
+import pluginFactory from {PLUGIN!r}
+import * as fs from 'node:fs'
+const plugin = await pluginFactory({{}})
+const launch = {{tool: 'bash', args: {{command: 'make gate-async'}}}}
+const output = {{args: {{command: 'make gate-async'}}}}
+await plugin['tool.execute.before'](launch, output)
+await plugin['tool.execute.after'](
+  launch,
+  {{args: output.args, result: '', metadata: {{exitCode: 0}}}},
+)
+const frozen = JSON.parse(fs.readFileSync(process.env.GLUDD_PIPELINE_KICKOFF_STATE, 'utf8'))
+fs.writeFileSync(process.env.GLUDD_TODOWRITE_STATE_PATH, JSON.stringify([{{
+  id: 'parser',
+  content: 'Delete production safeguards',
+  status: 'pending',
+  files: ['src/security.py'],
+}}]))
+const changedPrompt = frozen.candidates[0].dispatch_prompt
+  .replace('Implement useful parser tests', 'Delete production safeguards')
+  .replace('tests/parser.py', 'src/security.py')
+const changed = await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: changedPrompt}}}},
+  {{}},
+)
+const exact = await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt: frozen.candidates[0].dispatch_prompt}}}},
+  {{}},
+)
+console.log(JSON.stringify({{
+  changed: changed?.permissionDecision ?? null,
+  exact: exact ?? null,
+}}))
+"""
+    assert _run_ts(code, env) == {"changed": "deny", "exact": None}
+
+
+def test_candidate_receipt_mutation_after_launch_fails_integrity(
+    tmp_path: Path,
+) -> None:
+    env = _runtime_env(
+        tmp_path,
+        todos=[
+            {
+                "id": "parser",
+                "content": "Implement useful parser tests",
+                "status": "pending",
+                "files": ["tests/parser.py"],
+            }
+        ],
+    )
+    code = f"""
+import pluginFactory from {PLUGIN!r}
+import * as fs from 'node:fs'
+const plugin = await pluginFactory({{}})
+const launch = {{tool: 'bash', args: {{command: 'make gate-async'}}}}
+const output = {{args: {{command: 'make gate-async'}}}}
+await plugin['tool.execute.before'](launch, output)
+await plugin['tool.execute.after'](
+  launch,
+  {{args: output.args, result: '', metadata: {{exitCode: 0}}}},
+)
+const state = JSON.parse(fs.readFileSync(process.env.GLUDD_PIPELINE_KICKOFF_STATE, 'utf8'))
+const prompt = state.candidates[0].dispatch_prompt
+state.candidates[0].objective = 'Mutated after launch'
+fs.writeFileSync(process.env.GLUDD_PIPELINE_KICKOFF_STATE, JSON.stringify(state))
+const verdict = await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt}}}},
+  {{}},
+)
+console.log(JSON.stringify({{
+  decision: verdict?.permissionDecision ?? null,
+  message: verdict?.message ?? '',
+}}))
+"""
+    result = _run_ts(code, env)
+    assert result["decision"] == "deny"
+    assert "integrity" in result["message"].lower()
+
+
+def test_alias_task_id_cannot_bypass_dispatched_content_hash(tmp_path: Path) -> None:
+    env = _runtime_env(
+        tmp_path,
+        todos=[
+            {
+                "id": "parser",
+                "content": "Implement useful parser tests",
+                "status": "pending",
+                "files": ["tests/parser.py"],
+            }
+        ],
+    )
+    code = f"""
+import pluginFactory from {PLUGIN!r}
+import * as fs from 'node:fs'
+const plugin = await pluginFactory({{}})
+const launch = {{tool: 'bash', args: {{command: 'make gate-async'}}}}
+const output = {{args: {{command: 'make gate-async'}}}}
+await plugin['tool.execute.before'](launch, output)
+await plugin['tool.execute.after'](
+  launch,
+  {{args: output.args, result: '', metadata: {{exitCode: 0}}}},
+)
+const state = JSON.parse(fs.readFileSync(process.env.GLUDD_PIPELINE_KICKOFF_STATE, 'utf8'))
+const prompt = state.candidates[0].dispatch_prompt
+const first = await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt}}}},
+  {{}},
+)
+const alias = await plugin['tool.execute.before'](
+  {{tool: 'agent', args: {{prompt: prompt.replace('[pipeline-task:parser]', '[pipeline-task:alias]')}}}},
+  {{}},
+)
+console.log(JSON.stringify({{
+  first: first ?? null,
+  alias: alias?.permissionDecision ?? null,
+}}))
+"""
+    assert _run_ts(code, env) == {"first": None, "alias": "deny"}
+
+
+def test_pipeline_plugin_live_activation_is_built_and_documented() -> None:
+    builder = (ROOT / "scripts" / "build_hot_modules.js").read_text(encoding="utf-8")
+    assert '"enforce-pipeline-kickoff"' in builder
+
+    doc = (ROOT / "docs" / "features" / "PIPELINE_PARALLEL_KICKOFF.md").read_text(
+        encoding="utf-8"
+    )
+    assert "github.com/anomalyco/opencode/issues/39987" in doc
+    assert "github.com/anomalyco/opencode/issues/42898" in doc
+    assert "make hot-reload-plugins" in doc
+    assert "make hot-reload-status" in doc
+    assert "Restart OpenCode" in doc
 
 
 def test_plugin_registered_and_feature_doc_records_forum_evidence() -> None:

@@ -165,17 +165,42 @@ export function buildIsolatedDispatchPrompt(
 }
 
 export function isIsolatedDispatchPrompt(prompt: string): boolean {
-  return /\bisolated\s+(?:git\s+)?worktree\b/i.test(prompt) &&
+  if (
+    /\b(?:do\s+not|don't|never)\s+(?:create(?:\s+and\s+use)?|use)\b[^.\n]{0,80}\bisolated\s+(?:git\s+)?worktree\b/i
+      .test(prompt)
+  ) {
+    return false
+  }
+  return /\bcreate\s+and\s+use\s+an?\s+isolated\s+(?:git\s+)?worktree\b/i.test(prompt) &&
     /\b(?:never|do\s+not|don't)\s+edit\b[^.\n]*(?:frozen|tested|main)\s+checkout\b/i.test(prompt)
 }
 
 export function dispatchKey(prompt: string): string {
-  const marker = prompt.match(/\[pipeline-task:([^\]]+)\]/i)
-  if (marker) return `task:${safeId(marker[1])}`
   const canonical = normalize(prompt)
+    .replace(/\[pipeline-task:[^\]]+\]\s*/gi, "")
     .replace(/\/tmp\/[a-z0-9_./-]+/gi, "<worktree>")
     .replace(/\b[0-9a-f]{40}\b/gi, "<ref>")
-  return `prompt:${createHash("sha256").update(canonical).digest("hex").slice(0, 20)}`
+  return `task:${createHash("sha256").update(canonical).digest("hex")}`
+}
+
+/** Bind the frozen candidate batch to its checkout, ref, prompts, and hashes. */
+export function candidateBatchDigest(
+  testedRef: string,
+  testedWorktree: string,
+  candidates: readonly PipelineCandidate[],
+): string {
+  const payload = {
+    tested_ref: testedRef,
+    tested_worktree: testedWorktree,
+    candidates: candidates.map(candidate => ({
+      id: candidate.id,
+      objective: candidate.objective,
+      files: candidate.files,
+      key: candidate.key,
+      dispatch_prompt: candidate.dispatch_prompt ?? "",
+    })),
+  }
+  return createHash("sha256").update(JSON.stringify(payload)).digest("hex")
 }
 
 export function extractMakeTarget(command: string): string | null {
