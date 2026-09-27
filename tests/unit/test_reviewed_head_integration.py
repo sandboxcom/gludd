@@ -303,6 +303,25 @@ def test_plan_rejects_empty_base_alias_and_nonexact_gate() -> None:
         replace(plan, exact_gate_id="test-one")
 
 
+@pytest.mark.parametrize(
+    "command_id",
+    (
+        "gate-all-bypass",
+        "gate-fullish",
+        "ci-gate-exact",
+        "ci-gate-exactish:3.11",
+        "gate:",
+    ),
+)
+def test_plan_rejects_full_gate_lookalike_ids(command_id: str) -> None:
+    with pytest.raises(ValueError, match="full-gate"):
+        build_reviewed_head_integration_plan(
+            base_sha=_BASE_SHA,
+            heads=_heads(),
+            exact_gate_id=command_id,
+        )
+
+
 def test_evidence_shapes_reject_aliases_duplicates_and_non_gate_commands() -> None:
     receipt = _receipt()
     first = receipt.applied_heads[0]
@@ -358,6 +377,19 @@ def test_receipt_rejects_missing_chain_mode_and_command_bindings() -> None:
         replace(receipt, exact_gate=replace(receipt.exact_gate, command_id="gate-full"))
 
 
+def test_receipt_rejects_chain_that_reuses_the_integration_base() -> None:
+    receipt = _receipt()
+    first, second = receipt.applied_heads
+
+    with pytest.raises(ValueError, match="fresh integration SHA"):
+        replace(
+            receipt,
+            applied_heads=(first, replace(second, after_sha=_BASE_SHA)),
+            focused_validation=replace(receipt.focused_validation, tip_sha=_BASE_SHA),
+            exact_gate=replace(receipt.exact_gate, tip_sha=_BASE_SHA),
+        )
+
+
 def test_receipt_json_schema_round_trip_is_typed_and_exact_sha_bound() -> None:
     receipt = _receipt()
     payload = reviewed_head_integration_receipt_payload(receipt)
@@ -407,7 +439,7 @@ def test_receipt_parser_rejects_tampered_run_count_gate_and_provenance(
 
 def test_receipt_parser_errors_do_not_echo_untrusted_content() -> None:
     payload = reviewed_head_integration_receipt_payload(_receipt())
-    secret = "untrusted-secret-material"
+    secret = "untrusted-secret-material"  # pragma: allowlist secret
     payload[secret] = secret
 
     with pytest.raises(ReviewedHeadIntegrationReceiptError) as exc_info:
@@ -474,7 +506,25 @@ def test_receipt_loader_is_bounded_duplicate_safe_and_content_free(
             expected_final_sha=_FINAL_SHA,
         )
 
-    secret = "duplicate-secret-key"
+    artifact.write_bytes(b"{" + b" " * 1_048_576)
+    with pytest.raises(
+        ReviewedHeadIntegrationReceiptError,
+        match="missing or exceeds",
+    ):
+        load_reviewed_head_integration_receipt(
+            artifact,
+            expected_final_sha=_FINAL_SHA,
+        )
+
+    artifact.write_bytes(b"\xff")
+    with pytest.raises(ReviewedHeadIntegrationReceiptError) as exc_info:
+        load_reviewed_head_integration_receipt(
+            artifact,
+            expected_final_sha=_FINAL_SHA,
+        )
+    assert "could not be decoded" in str(exc_info.value)
+
+    secret = "duplicate-secret-key"  # pragma: allowlist secret
     artifact.write_text(
         '{"schema_version":1,"' + secret + '":1,"' + secret + '":2}',
         encoding="utf-8",
@@ -496,6 +546,22 @@ def test_receipt_loader_is_bounded_duplicate_safe_and_content_free(
         ).final_sha
         == _FINAL_SHA
     )
+
+
+def test_receipt_loader_rejects_excessive_json_nesting_content_free(
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "deeply-nested.json"
+    artifact.write_text("[" * 2_000 + "0" + "]" * 2_000, encoding="utf-8")
+
+    with pytest.raises(ReviewedHeadIntegrationReceiptError) as exc_info:
+        load_reviewed_head_integration_receipt(
+            artifact,
+            expected_final_sha=_FINAL_SHA,
+        )
+
+    assert "receipt" in str(exc_info.value)
+    assert "Recursion" not in str(exc_info.value)
 
 
 def test_receipt_parser_rejects_malformed_expected_sha_without_echoing_it() -> None:

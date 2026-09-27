@@ -96,10 +96,13 @@ the invoking worktree's HEAD and fails closed if the artifact is absent,
 malformed, tampered, stale, or from another candidate. Errors identify only
 the rejected boundary and never echo receipt content.
 
-This requirement is deliberately limited to v0.1.1 release readiness.
-Ordinary development `make gate`, focused checks, commits, and beta4 readiness
-do not require a receipt. `release-promote` forwards the artifact and its exact
-development SHA; it still owns no receipt-generation or Git-mutation shortcut.
+This requirement is deliberately limited to v0.1.1 release readiness and
+publication. Ordinary development `make gate`, focused checks, commits, and
+beta4 readiness do not require a receipt. `release-promote` forwards the
+artifact and its exact development SHA to `release-cut`, which repeats the
+hermetic receipt check before any push or tag mutation. Promotion fast-forwards
+master to that captured SHA, never to a moving branch ref; it still owns no
+receipt-generation shortcut.
 
 ## Ancestry-only exception
 
@@ -140,7 +143,10 @@ new head, or candidate mutation invalidates its final SHA; quarantine the stale
 artifact, build a new plan, and rerun both final phases rather than editing the
 old receipt. Readiness is validate-only and makes no traffic change, so rollout
 and rollback remain zero-downtime (ZDD): release publication starts only after
-the immutable final candidate has passed every existing release check.
+the immutable final candidate has passed every existing release check. If
+publication fails after the local fast-forward, leave the validated commit in
+place and rerun the idempotent checks; never rewrite a shared branch to make a
+stale receipt fit.
 
 [github-duplicate-gates]: https://github.com/orgs/community/discussions/43988
 [so-octopus-conflict]: https://stackoverflow.com/questions/14424414/resolve-conflicts-on-git-merge-octopus

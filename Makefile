@@ -632,8 +632,8 @@ help:
 	@echo "  release-view TAG=..   Show a published GitHub Release + its assets"
 	@echo "  release-create TAG=.. CI-green-gated DRAFT release (single binary; complete via CI)"
 	@echo "  release-upload-assets TAG=.. FILES='..'  Add assets to an existing release (repair path)"
-	@echo "  release-cut TAG=.. MSG=.. The single release command (exact-run wait up to 90m)"
-	@echo "  release-promote TAG=.. MSG=..  Exact-SHA ff-only development promotion (validate-only supported)"
+	@echo "  release-cut TAG=.. MSG=.. REVIEWED_HEAD_INTEGRATION_RECEIPT=..  The single release command (6 fail-closed steps; exact-run wait up to 90m)"
+	@echo "  release-promote TAG=.. MSG=.. REVIEWED_HEAD_INTEGRATION_RECEIPT=..  Exact-SHA ff-only development promotion (validate-only supported)"
 	@echo "  release-recut TAG=..  Re-trigger and await the exact tag release workflow"
 	@echo "  release-deploy TAG=.. MSG=..  Auto-deploy: merge dev->master, push, tag, wait for CI"
 	@echo "  release-delete TAG=.. Delete GitHub Release + local + remote git tags"
@@ -4345,15 +4345,20 @@ release-dry-run: _release-dry-run-guard
 #   4. release-view            — confirm the GitHub Release exists
 #   5. ci-await               — await the exact tag workflow (bounded at 90 min)
 #   6. verify release          — verify the final artifact and complete matrix
-# Usage: make release-cut TAG=v0.1.0-alpha.1 MSG='release notes'
+# v0.1.1 additionally requires REVIEWED_HEAD_INTEGRATION_RECEIPT and revalidates
+# it against the exact promoted SHA before any push or tag mutation.
+# Usage: make release-cut TAG=v0.1.0-alpha.1 MSG='release notes' REVIEWED_HEAD_INTEGRATION_RECEIPT=path
 release-cut:
-	@[ -n "$(TAG)" ] || { echo "Usage: make release-cut TAG=v0.1.0-alpha.1 [MSG='...']"; exit 1; }
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-cut TAG=v0.1.0-alpha.1 [MSG='...'] [REVIEWED_HEAD_INTEGRATION_RECEIPT=path]"; exit 1; }
 	@HEAD_SHA="$$(git rev-parse HEAD)"; SHA_TO_VERIFY="$(RELEASE_CANDIDATE_SHA)"; \
 	if [ -z "$$SHA_TO_VERIFY" ]; then SHA_TO_VERIFY="$$HEAD_SHA"; fi; \
 	if [ -n "$(RELEASE_CANDIDATE_SHA)$(RELEASE_CI_BRANCH)$(RELEASE_LOCAL_ATTESTATION)" ]; then \
 		[ -n "$(RELEASE_CANDIDATE_SHA)" ] && [ -n "$(RELEASE_CI_BRANCH)" ] && [ -n "$(RELEASE_LOCAL_ATTESTATION)" ] || { echo "ERROR: promoted release evidence identity is incomplete"; exit 2; }; \
 		[ "$$HEAD_SHA" = "$$SHA_TO_VERIFY" ] || { echo "ERROR: release-cut HEAD does not match promoted candidate"; exit 2; }; \
 		[ -f "$(RELEASE_LOCAL_ATTESTATION)" ] || { echo "ERROR: promoted local attestation is missing"; exit 2; }; \
+	fi; \
+	if [ "$(TAG)" = "v0.1.1" ]; then \
+		$(MAKE) --no-print-directory release-readiness TAG="$(TAG)" RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= REVIEWED_HEAD_INTEGRATION_RECEIPT="$(REVIEWED_HEAD_INTEGRATION_RECEIPT)" RELEASE_CANDIDATE_SHA="$$SHA_TO_VERIFY"; \
 	fi; \
 	$(MAKE) -s require-dual-track-green SHA="$$SHA_TO_VERIFY" CI_BRANCH="$(RELEASE_CI_BRANCH)" DUAL_TRACK_CI_LOCAL_ATTESTATION="$(RELEASE_LOCAL_ATTESTATION)"
 	@$(MAKE) -s check-readme-status TAG=$(TAG)
@@ -4370,7 +4375,7 @@ release-cut:
 # Compatibility entrypoint: release-promote is the only deployment state machine.
 # Usage: make release-deploy TAG=v0.1.0-beta.N MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=0|1
 release-deploy: _no-raw-git-guard
-	@$(MAKE) --no-print-directory release-promote TAG="$(TAG)" MSG="$(MSG)" RELEASE_PROMOTE_VALIDATE_ONLY="$(RELEASE_PROMOTE_VALIDATE_ONLY)"
+	@$(MAKE) --no-print-directory release-promote TAG="$(TAG)" MSG="$(MSG)" RELEASE_PROMOTE_VALIDATE_ONLY="$(RELEASE_PROMOTE_VALIDATE_ONLY)" REVIEWED_HEAD_INTEGRATION_RECEIPT="$(REVIEWED_HEAD_INTEGRATION_RECEIPT)"
 
 # Delete a GitHub Release and its associated git tags (local + remote).
 # Usage: make release-delete TAG=v0.1.0-alpha.1
@@ -9829,9 +9834,9 @@ compare-models:
 # Validation mode proves topology and release policy without network or ref writes.
 # Real mode revalidates exact-SHA evidence, fast-forwards master in the main
 # checkout, then delegates tag publication and artifact verification to release-cut.
-# Usage: make release-promote TAG=v0.1.0-beta.N MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=0|1
+# Usage: make release-promote TAG=v0.1.0-beta.N MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=0|1 REVIEWED_HEAD_INTEGRATION_RECEIPT=path
 release-promote:
-	@[ -n "$(TAG)" ] || { echo "Usage: make release-promote TAG=v0.1.0-beta.N [MSG=release-notes] [RELEASE_PROMOTE_VALIDATE_ONLY=0|1]"; exit 2; }
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-promote TAG=v0.1.0-beta.N [MSG=release-notes] [RELEASE_PROMOTE_VALIDATE_ONLY=0|1] [REVIEWED_HEAD_INTEGRATION_RECEIPT=path]"; exit 2; }
 	@case "$(RELEASE_PROMOTE_VALIDATE_ONLY)" in 0|1|"") ;; *) echo "ERROR: RELEASE_PROMOTE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
 	@MAIN_PATH='/Users/shawnwilson/gludd'; \
 	CURRENT_SHA="$$(git rev-parse --verify HEAD^{commit})" || { echo "ERROR: current HEAD does not resolve"; exit 2; }; \
@@ -9853,5 +9858,5 @@ release-promote:
 	[ -f "$$LOCAL_ATTESTATION" ] || { echo "ERROR: development local attestation is missing: $$LOCAL_ATTESTATION"; exit 2; }; \
 	$(MAKE) --no-print-directory require-dual-track-green SHA="$$DEV_SHA" CI_BRANCH=development DUAL_TRACK_CI_LOCAL_ATTESTATION="$$LOCAL_ATTESTATION" DUAL_TRACK_CI_VALIDATE_ONLY=0; \
 	$(MAKE) --no-print-directory release-readiness TAG="$(TAG)" RELEASE_READINESS_VALIDATE_ONLY=0 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= REVIEWED_HEAD_INTEGRATION_RECEIPT="$(REVIEWED_HEAD_INTEGRATION_RECEIPT)" RELEASE_CANDIDATE_SHA="$$DEV_SHA"; \
-	git -C "$$MAIN_PATH" merge --ff-only development; \
-	$(MAKE) --no-print-directory -C "$$MAIN_PATH" release-cut TAG="$(TAG)" MSG="$(MSG)" RELEASE_CANDIDATE_SHA="$$DEV_SHA" RELEASE_CI_BRANCH=development RELEASE_LOCAL_ATTESTATION="$$LOCAL_ATTESTATION"
+	git -C "$$MAIN_PATH" merge --ff-only "$$DEV_SHA"; \
+	$(MAKE) --no-print-directory -C "$$MAIN_PATH" release-cut TAG="$(TAG)" MSG="$(MSG)" REVIEWED_HEAD_INTEGRATION_RECEIPT="$(if $(strip $(REVIEWED_HEAD_INTEGRATION_RECEIPT)),$(abspath $(REVIEWED_HEAD_INTEGRATION_RECEIPT)),)" RELEASE_CANDIDATE_SHA="$$DEV_SHA" RELEASE_CI_BRANCH=development RELEASE_LOCAL_ATTESTATION="$$LOCAL_ATTESTATION"

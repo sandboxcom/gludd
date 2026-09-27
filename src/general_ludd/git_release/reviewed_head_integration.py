@@ -157,9 +157,12 @@ def _require_command_id(value: object, label: str) -> str:
 
 
 def _is_full_gate(command_id: str) -> bool:
-    return command_id == "gate" or command_id.startswith(
-        ("gate:", "gate-all", "gate-full", "ci-gate-exact")
-    )
+    base, separator, qualifier = command_id.partition(":")
+    if base not in {"gate", "gate-all", "gate-full", "ci-gate-exact"}:
+        return False
+    if separator:
+        return bool(qualifier)
+    return base != "ci-gate-exact"
 
 
 def _stable_unique(values: tuple[str, ...]) -> tuple[str, ...]:
@@ -499,6 +502,11 @@ class ReviewedHeadIntegrationReceipt:
             raise ValueError("receipt requires one application per reviewed head")
 
         expected_before = self.plan.base_sha
+        reserved_shas = {
+            self.plan.base_sha,
+            *(head.source_sha for head in self.plan.heads),
+        }
+        integration_shas: set[str] = set()
         for ordinal, (head, evidence) in enumerate(
             zip(self.plan.heads, self.applied_heads, strict=True),
             start=1,
@@ -514,6 +522,14 @@ class ReviewedHeadIntegrationReceipt:
                 raise ValueError("applied head does not match its planned mode")
             if evidence.before_sha != expected_before:
                 raise ValueError("applied-head integration chain is discontinuous")
+            if (
+                evidence.after_sha in reserved_shas
+                or evidence.after_sha in integration_shas
+            ):
+                raise ValueError(
+                    "each applied head must produce a fresh integration SHA"
+                )
+            integration_shas.add(evidence.after_sha)
             expected_before = evidence.after_sha
 
         final_sha = expected_before
@@ -685,7 +701,7 @@ def parse_reviewed_head_integration_receipt(
         payload = _ReviewedHeadIntegrationReceiptPayload.model_validate(raw)
     except ReviewedHeadIntegrationReceiptError:
         raise
-    except (TypeError, ValidationError):
+    except (RecursionError, TypeError, ValidationError):
         raise ReviewedHeadIntegrationReceiptError(
             "reviewed-head integration receipt schema validation failed"
         ) from None
@@ -728,15 +744,26 @@ def load_reviewed_head_integration_receipt(
 ) -> ReviewedHeadIntegrationReceipt:
     """Load one bounded JSON artifact while keeping all failures content-free."""
     try:
-        if not path.is_file() or path.stat().st_size > _MAX_RECEIPT_BYTES:
+        if not path.is_file():
             raise ReviewedHeadIntegrationReceiptError(
                 "reviewed-head integration receipt is missing or exceeds the size limit"
             )
-        encoded = path.read_text(encoding="utf-8")
+        encoded_bytes = path.read_bytes()
+        if len(encoded_bytes) > _MAX_RECEIPT_BYTES:
+            raise ReviewedHeadIntegrationReceiptError(
+                "reviewed-head integration receipt is missing or exceeds the size limit"
+            )
+        encoded = encoded_bytes.decode("utf-8")
         raw = json.loads(encoded, object_pairs_hook=_reject_duplicate_json_keys)
     except ReviewedHeadIntegrationReceiptError:
         raise
-    except (OSError, UnicodeError, json.JSONDecodeError, _DuplicateJsonKey):
+    except (
+        OSError,
+        RecursionError,
+        UnicodeError,
+        json.JSONDecodeError,
+        _DuplicateJsonKey,
+    ):
         raise ReviewedHeadIntegrationReceiptError(
             "reviewed-head integration receipt could not be decoded"
         ) from None

@@ -29,7 +29,9 @@ make release-readiness TAG=v0.1.0-beta.4 \
 Stable v0.1.1 readiness additionally requires the immutable reviewed-head
 receipt described in `docs/features/REVIEWED_HEAD_INTEGRATION.md`. The receipt
 must cover the exact final candidate SHA; validation failures are content-free
-so untrusted JSON cannot be reflected into logs.
+so untrusted JSON cannot be reflected into logs. `release-cut` repeats this
+exact-SHA receipt validation before publication, including when an operator
+invokes the lower-level target directly.
 
 `--gha-head-sha` is optional for local use, but supplying the SHA observed by
 GHA makes a mismatch explicit. CI status is queried through
