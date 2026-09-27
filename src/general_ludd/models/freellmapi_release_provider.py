@@ -18,6 +18,33 @@ from general_ludd.models.freellmapi_release_common import (
     sha256_digest,
     stable_evidence_id,
     strict_timestamp,
+    verify_receipt_identity,
+)
+
+_LIVE_RECEIPT_KEYS = frozenset(
+    {
+        "schema_version",
+        "gate",
+        "candidate_id",
+        "corpus_evidence_id",
+        "provider",
+        "provider_model_sha256",
+        "candidate_identity_digest",
+        "observed_at",
+        "external_opt_in",
+        "transport_owner",
+        "request_count",
+        "accepted_count",
+        "provider_input_tokens",
+        "provider_output_tokens",
+        "provider_total_tokens",
+        "provider_failure",
+        "queue_empty_after",
+        "provisioned_compute_remaining",
+        "decision",
+        "runtime_admitted",
+        "evidence_id",
+    }
 )
 
 
@@ -39,6 +66,14 @@ def _accounting(accounting: object) -> tuple[int, int, int, int, int, int, int]:
             fail(fault)
         values.append(value)
     return cast("tuple[int, int, int, int, int, int, int]", tuple(values))
+
+
+def _receipt_count(receipt: Mapping[str, object], name: str) -> int:
+    fault = FreeLLMAPIReleaseProofFault.LIVE_PROVIDER_INVALID
+    value = receipt.get(name)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        fail(fault)
+    return value
 
 
 def build_live_provider_receipt(
@@ -143,45 +178,60 @@ def build_live_provider_receipt(
     return receipt
 
 
-def verify_receipt_identity(
-    receipt: Mapping[str, object], fault: FreeLLMAPIReleaseProofFault
-) -> None:
-    """Verify a receipt's stable content-addressed identity."""
-    stored = evidence_id(receipt.get("evidence_id"), fault)
-    unsigned = dict(receipt)
-    unsigned.pop("evidence_id", None)
-    if stored != stable_evidence_id(unsigned):
-        fail(fault)
-
-
 def validate_live_receipt(
     receipt: Mapping[str, object], *, candidate_id: object, corpus_id: object
 ) -> None:
     """Validate a tracked live receipt without replaying the external call."""
     fault = FreeLLMAPIReleaseProofFault.LIVE_PROVIDER_INVALID
     verify_receipt_identity(receipt, fault)
+    expected_candidate = evidence_id(candidate_id, fault)
+    expected_corpus = evidence_id(corpus_id, fault)
+    provider = receipt.get("provider")
+    provisioned = receipt.get("provisioned_compute_remaining")
     if (
-        receipt.get("schema_version") != FREELLMAPI_RELEASE_PROOF_SCHEMA_VERSION
+        set(receipt) != _LIVE_RECEIPT_KEYS
+        or receipt.get("schema_version") != FREELLMAPI_RELEASE_PROOF_SCHEMA_VERSION
         or receipt.get("gate") != FREELLMAPI_LIVE_PROVIDER_GATE
-        or receipt.get("candidate_id") != candidate_id
-        or receipt.get("corpus_evidence_id") != corpus_id
+        or receipt.get("candidate_id") != expected_candidate
+        or receipt.get("corpus_evidence_id") != expected_corpus
+        or not isinstance(provider, str)
+        or PROVIDER_RE.fullmatch(provider) is None
         or receipt.get("decision")
         not in {"live_provider_verified", "live_provider_rejected"}
         or receipt.get("runtime_admitted") is not False
         or receipt.get("external_opt_in") is not True
         or receipt.get("queue_empty_after") is not True
-        or receipt.get("provisioned_compute_remaining") != 0
+        or isinstance(provisioned, bool)
+        or provisioned != 0
         or receipt.get("transport_owner") != "general_ludd.models.gateway"
     ):
         fail(fault)
     strict_timestamp(receipt.get("observed_at"), fault)
     sha256_digest(receipt.get("provider_model_sha256"), fault)
     sha256_digest(receipt.get("candidate_identity_digest"), fault)
+    request_count = _receipt_count(receipt, "request_count")
+    accepted_count = _receipt_count(receipt, "accepted_count")
+    input_tokens = _receipt_count(receipt, "provider_input_tokens")
+    output_tokens = _receipt_count(receipt, "provider_output_tokens")
+    total_tokens = _receipt_count(receipt, "provider_total_tokens")
     decision = receipt.get("decision")
     failure = receipt.get("provider_failure")
-    if (decision == "live_provider_verified" and failure is not None) or (
-        decision == "live_provider_rejected" and failure not in PROVIDER_FAILURES
-    ):
+    accepted_valid = (
+        decision == "live_provider_verified"
+        and failure is None
+        and request_count == 1
+        and accepted_count == 1
+        and input_tokens + output_tokens == total_tokens
+    )
+    rejected_valid = (
+        decision == "live_provider_rejected"
+        and isinstance(failure, str)
+        and failure in PROVIDER_FAILURES
+        and request_count == 1
+        and accepted_count == 0
+        and (input_tokens, output_tokens, total_tokens) == (0, 0, 0)
+    )
+    if not (accepted_valid or rejected_valid):
         fail(fault)
 
 

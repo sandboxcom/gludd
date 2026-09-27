@@ -5,7 +5,10 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 
-from general_ludd.models.freellmapi_frozen_delta import evaluate_frozen_delta
+from general_ludd.models.freellmapi_frozen_delta import (
+    FREELLMAPI_FROZEN_DELTA_GATE,
+    evaluate_frozen_delta,
+)
 from general_ludd.models.freellmapi_frozen_delta_validation import validate_candidate
 from general_ludd.models.freellmapi_release_common import (
     FREELLMAPI_FROZEN_CORPUS_GATE,
@@ -13,10 +16,12 @@ from general_ludd.models.freellmapi_release_common import (
     FreeLLMAPIReleaseProofFault,
     as_mapping,
     canonical_digest,
+    evidence_id,
     fail,
     nonnegative_number,
     sha256_digest,
     stable_evidence_id,
+    verify_receipt_identity,
 )
 from general_ludd.models.freellmapi_scoring_kernel import (
     FreeLLMScoringFactors,
@@ -52,6 +57,25 @@ _FIXTURE_KEYS = frozenset(
         "baseline_expected_reliability",
         "fixture_digest",
     }
+)
+_CORPUS_RECEIPT_KEYS = frozenset(
+    {
+        "schema_version", "gate", "candidate_id", "corpus_sha256",
+        "artifact_bundle_sha256", "artifact_upstream_commit", "fixture_count",
+        "accepted", "rejected", "decision", "runtime_admitted", "evidence_id",
+    }
+)
+_DELTA_RECEIPT_KEYS = frozenset(
+    {
+        "schema_version", "gate", "candidate_id", "plan_id", "corpus_sha256",
+        "selected_export", "capability_id", "abi_compatible", "fixture_count",
+        "decision", "runtime_admitted", "metrics", "evidence_id",
+    }
+)
+_DELTA_CONTEXT_FIELDS = (
+    "schema_version", "gate", "candidate_id", "plan_id", "corpus_sha256",
+    "selected_export", "capability_id", "abi_compatible", "fixture_count",
+    "runtime_admitted",
 )
 
 
@@ -201,6 +225,97 @@ def _observations(
     ]
 
 
+def _validated_delta_receipt(
+    value: object,
+    *,
+    decision: str,
+    candidate_id: str,
+    corpus_digest: str,
+    fixture_count: int,
+    expected_plan_id: str | None,
+) -> Mapping[str, object]:
+    fault = FreeLLMAPIReleaseProofFault.CORPUS_INVALID
+    receipt = as_mapping(value, fault)
+    verify_receipt_identity(receipt, fault)
+    plan_id = evidence_id(receipt.get("plan_id"), fault)
+    if (
+        set(receipt) != _DELTA_RECEIPT_KEYS
+        or receipt.get("schema_version") != 1
+        or receipt.get("gate") != FREELLMAPI_FROZEN_DELTA_GATE
+        or receipt.get("candidate_id") != candidate_id
+        or receipt.get("corpus_sha256") != corpus_digest
+        or receipt.get("fixture_count") != fixture_count
+        or receipt.get("abi_compatible") is not True
+        or receipt.get("decision") != decision
+        or receipt.get("runtime_admitted") is not False
+        or not isinstance(receipt.get("selected_export"), str)
+        or not receipt.get("selected_export")
+        or not isinstance(receipt.get("capability_id"), str)
+        or not receipt.get("capability_id")
+        or not isinstance(receipt.get("metrics"), Mapping)
+        or (expected_plan_id is not None and plan_id != expected_plan_id)
+    ):
+        fail(fault)
+    return receipt
+
+
+def validate_corpus_receipt(
+    receipt: Mapping[str, object],
+    *,
+    candidate_lock: Mapping[str, object],
+    expected_plan_id: str | None = None,
+) -> None:
+    """Validate corpus evidence and bind its accepted/removal pair exactly."""
+    fault = FreeLLMAPIReleaseProofFault.CORPUS_INVALID
+    verify_receipt_identity(receipt, fault)
+    try:
+        candidate_id, _ = validate_candidate(candidate_lock)
+    except Exception:
+        fail(fault)
+    admitted = as_mapping(candidate_lock.get("admitted_artifact"), fault)
+    corpus_digest = sha256_digest(receipt.get("corpus_sha256"), fault)
+    artifact_digest = sha256_digest(receipt.get("artifact_bundle_sha256"), fault)
+    artifact_commit = receipt.get("artifact_upstream_commit")
+    fixture_count = receipt.get("fixture_count")
+    if (
+        set(receipt) != _CORPUS_RECEIPT_KEYS
+        or receipt.get("schema_version") != FREELLMAPI_RELEASE_PROOF_SCHEMA_VERSION
+        or receipt.get("gate") != FREELLMAPI_FROZEN_CORPUS_GATE
+        or receipt.get("candidate_id") != candidate_id
+        or artifact_digest != admitted.get("bundle_sha256")
+        or artifact_commit != admitted.get("upstream_commit")
+        or not isinstance(artifact_commit, str)
+        or re.fullmatch(r"[0-9a-f]{40}", artifact_commit) is None
+        or isinstance(fixture_count, bool)
+        or not isinstance(fixture_count, int)
+        or not 2 <= fixture_count <= 256
+        or receipt.get("decision") != "frozen_corpus_verified"
+        or receipt.get("runtime_admitted") is not False
+    ):
+        fail(fault)
+    accepted = _validated_delta_receipt(
+        receipt.get("accepted"),
+        decision="accepted_for_build_review",
+        candidate_id=candidate_id,
+        corpus_digest=corpus_digest,
+        fixture_count=fixture_count,
+        expected_plan_id=expected_plan_id,
+    )
+    rejected = _validated_delta_receipt(
+        receipt.get("rejected"),
+        decision="rejected_nonpositive_delta",
+        candidate_id=candidate_id,
+        corpus_digest=corpus_digest,
+        fixture_count=fixture_count,
+        expected_plan_id=expected_plan_id,
+    )
+    if (
+        any(accepted.get(field) != rejected.get(field) for field in _DELTA_CONTEXT_FIELDS)
+        or accepted.get("evidence_id") == rejected.get("evidence_id")
+    ):
+        fail(fault)
+
+
 def run_frozen_corpus_proof(
     *,
     candidate_lock: Mapping[str, object],
@@ -276,7 +391,12 @@ def run_frozen_corpus_proof(
         "runtime_admitted": False,
     }
     record["evidence_id"] = stable_evidence_id(record)
+    validate_corpus_receipt(
+        record,
+        candidate_lock=candidate_lock,
+        expected_plan_id=stable_evidence_id(plan),
+    )
     return record
 
 
-__all__ = ["run_frozen_corpus_proof"]
+__all__ = ["run_frozen_corpus_proof", "validate_corpus_receipt"]

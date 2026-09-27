@@ -623,6 +623,35 @@ The local exact-source attempt also stopped before source execution because the
 installed Node/npm pair did not match either pinned toolchain, reporting the
 content-free `toolchain_invalid` fault.
 
+#### Adversarial receipt hardening
+
+A content-addressed receipt proves consistency, not authorship. The tracked-chain
+validator therefore now requires both the complete release-provenance receipt and
+its independently trusted evidence ID. That ID must come from the reviewed release
+control plane; accepting an ID read from the same untrusted receipt set would
+recreate the forgery weakness. The current reviewed root is
+`sha256:0e9fdb5759bef683c5a71f929cba4d551c1b65784f362536f5e404ae5f186bc1`.
+Coordinated corpus reordering, upstream revision or delta-plan drift, and a fully
+rehashed live/rollback/provenance chain now fail against that root.
+
+Rollback also revalidates the content-addressed candidate lock, admitted artifact,
+corpus receipt, accepted/removal delta pair, and strict live-receipt schema before
+closing green. The accepted and rejected records must share candidate, plan,
+corpus, export, capability, ABI, fixture count, and non-admission context. Live
+receipts accept no extra fields and require one request, decision-consistent
+counts, exact zero-token rejection accounting, a canonical provider, and a typed
+provider failure. Recomputing a receipt hash cannot legitimize contradictory
+accounting or detach rollback from the reviewed provenance root.
+
+Provider and build failures remain separate taxonomies. A native HTTP 429 is
+`live_provider_rate_limited`; an unsupported local Node/npm pair is
+`upstream_build_toolchain_invalid`. The release blocker can record both without
+turning either into success, and derives the pending release label from the
+content-addressed candidate instead of a hard-coded revision. This directly
+preserves the lesson from [issue #1210][issue-1210] (real provider 429 exhaustion)
+without confusing it with the exact-toolchain discipline motivated by the
+mutable-update report in [issue #1270][issue-1270].
+
 ## Security and privacy contract
 
 1. **Admission before bridge.** Project-private or policy-excluded business logic

@@ -102,6 +102,17 @@ def stable_evidence_id(value: Mapping[str, object]) -> str:
     )
 
 
+def verify_receipt_identity(
+    receipt: Mapping[str, object], fault: FreeLLMAPIReleaseProofFault
+) -> None:
+    """Verify that a receipt is exactly bound to its stored content identity."""
+    stored = evidence_id(receipt.get("evidence_id"), fault)
+    unsigned = dict(receipt)
+    unsigned.pop("evidence_id", None)
+    if stored != stable_evidence_id(unsigned):
+        fail(fault)
+
+
 def nonnegative_number(
     value: object,
     fault: FreeLLMAPIReleaseProofFault,
@@ -150,4 +161,5 @@ __all__ = [
     "sha256_digest",
     "stable_evidence_id",
     "strict_timestamp",
+    "verify_receipt_identity",
 ]
