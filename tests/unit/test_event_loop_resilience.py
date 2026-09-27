@@ -27,6 +27,7 @@ def _make_loop_resilience(**overrides):
     session.add = MagicMock()
     http_client = AsyncMock()
     todo_repo = AsyncMock()
+    todo_repo.count_active.return_value = 0
     task_return_repo = AsyncMock()
     defaults = dict(
         worker_base_url="http://worker:8000",
