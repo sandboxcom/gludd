@@ -237,6 +237,38 @@ verified. Build outputs SHALL receive checksums, an SBOM, and provenance.
 Signing keys SHALL remain in an external signer or secret provider and SHALL
 never appear in prompts, logs, generated scripts, or artifacts.
 
+#### v0.1.1 signed-payload binding
+
+`verify_provenance` now treats `SignatureState.VERIFIED` as an outcome claim,
+not as sufficient signature evidence. A verified release must supply the exact
+canonical attestation SHA-256 returned by the external signature verifier. The
+domain verifier then fails closed unless all of these references agree:
+
+- the external verifier's payload digest and the recomputed canonical in-toto
+  statement digest;
+- the exact in-toto statement version and policy-selected predicate type;
+- the single statement subject name and SHA-256, the provenance record's
+  subject and artifact digest, and the independently obtained artifact bytes;
+- the statement builder and dependency-lock material, the record builder and
+  lock digest, and the independently obtained lock bytes; and
+- the CycloneDX application component/supplier metadata and the same subject,
+  artifact digest, and builder identity.
+
+This ordering follows the in-toto
+[validation model](https://github.com/in-toto/attestation/blob/main/docs/validation.md):
+authenticate the envelope, validate the statement and predicate type, then
+require a subject digest matching the artifact being authorized. Internal
+self-consistency is not accepted in place of an externally verified payload
+digest.
+
+Long-lived operator reports shaped the failure cases:
+
+| Operator report | Observed failure | Gludd consequence |
+|---|---|---|
+| [Cosign #2264 (2022)](https://github.com/sigstore/cosign/issues/2264) | Verification behavior changed for images carrying multiple predicate types, producing a persistent predicate-selection failure. | Predicate type is an explicit policy input; a different signed predicate never satisfies release provenance. |
+| [Cosign #3235 (2023)](https://github.com/sigstore/cosign/issues/3235) | A custom VSA was present alongside other attestations, but verification selected/reported a different predicate type. | The verified payload digest and exact predicate must identify the same statement before its claims are consumed. |
+| [SLSA #878 (2023)](https://github.com/slsa-framework/slsa/issues/878) | Maintainers documented that missing subject/resource binding enables applying a valid authorization to a different resource. | A valid signature over the wrong artifact name or digest is rejected as a cross-artifact confusion attempt. |
+
 ### GRC-SEC-006: Generated helper constraints
 
 A generated helper SHALL:

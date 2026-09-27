@@ -23,8 +23,10 @@ hosting provider's release UI can consume them without an adapter.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
-from collections.abc import Mapping
+import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -37,6 +39,10 @@ __all__ = [
     "build_provenance",
     "verify_provenance",
 ]
+
+_INTOTO_STATEMENT_TYPE = "https://in-toto.io/Statement/v1"
+_SLSA_PROVENANCE_TYPE = "https://slsa.dev/provenance/v1"
+_SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
 
 
 class SignatureState(StrEnum):
@@ -58,8 +64,9 @@ class Attestation:
 
     ``statement`` is the in-toto Statement dict (``_type``, ``subject``,
     ``predicateType``, ``predicate``). ``digest`` is the sha256 of the
-    canonical-JSON serialization of the statement, so a verifier can prove the
-    attestation bytes match what was signed without re-serializing.
+    canonical-JSON serialization of the statement. Verification recomputes it
+    and compares it with the payload digest returned by the external signer;
+    copying this field from an unverified record is not signature evidence.
     """
 
     predicate_type: str
@@ -189,6 +196,138 @@ def _canonical_json_bytes(obj: Mapping[str, Any]) -> bytes:
     return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
+def _as_mapping(value: object) -> Mapping[str, object] | None:
+    if not isinstance(value, Mapping):
+        return None
+    return value
+
+
+def _as_sequence(value: object) -> Sequence[object] | None:
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return value
+    return None
+
+
+def _verify_signature_binding(
+    attestation: Attestation | None,
+    *,
+    expected_signature_state: SignatureState,
+    verified_attestation_digest: str | None,
+) -> list[str]:
+    """Bind the record to the payload digest returned by an external verifier."""
+    if expected_signature_state is not SignatureState.VERIFIED:
+        return []
+    if verified_attestation_digest is None:
+        return ["signature-payload-digest-missing"]
+    if _SHA256_RE.fullmatch(verified_attestation_digest) is None:
+        return ["signature-payload-digest-invalid"]
+    if attestation is None or not hmac.compare_digest(
+        verified_attestation_digest,
+        attestation.digest,
+    ):
+        return ["signature-payload-digest-mismatch"]
+    return []
+
+
+def _verify_attestation_binding(
+    record: ProvenanceRecord,
+    *,
+    expected_predicate_type: str,
+) -> list[str]:
+    """Cross-bind the in-toto statement to every immutable record identity."""
+    attestation = record.attestation
+    if attestation is None:
+        return ["attestation-missing"]
+
+    reasons: list[str] = []
+    try:
+        canonical_digest = _sha256_hex(_canonical_json_bytes(attestation.statement))
+    except (TypeError, ValueError):
+        canonical_digest = ""
+        reasons.append("attestation-not-canonical-json")
+    if canonical_digest != attestation.digest:
+        reasons.append("attestation-digest-mismatch")
+
+    statement = _as_mapping(attestation.statement)
+    if statement is None:
+        reasons.append("attestation-statement-invalid")
+        return reasons
+    if statement.get("_type") != _INTOTO_STATEMENT_TYPE:
+        reasons.append("attestation-statement-type-mismatch")
+    if (
+        attestation.predicate_type != expected_predicate_type
+        or statement.get("predicateType") != expected_predicate_type
+    ):
+        reasons.append("attestation-predicate-type-mismatch")
+
+    subjects = _as_sequence(statement.get("subject"))
+    if not subjects:
+        reasons.append("attestation-subject-missing")
+    elif len(subjects) != 1:
+        reasons.append("attestation-subject-cardinality-invalid")
+    else:
+        subject = _as_mapping(subjects[0])
+        if subject is None:
+            reasons.append("attestation-subject-invalid")
+        else:
+            if subject.get("name") != record.subject:
+                reasons.append("attestation-subject-mismatch")
+            digest = _as_mapping(subject.get("digest"))
+            if digest is None or digest.get("sha256") != record.artifact_digest:
+                reasons.append("attestation-artifact-digest-mismatch")
+
+    predicate = _as_mapping(statement.get("predicate"))
+    if predicate is None:
+        reasons.extend(
+            [
+                "attestation-builder-missing",
+                "attestation-lock-digest-mismatch",
+            ]
+        )
+        return reasons
+
+    builder = _as_mapping(predicate.get("builder"))
+    if builder is None or not builder.get("id"):
+        reasons.append("attestation-builder-missing")
+    elif builder.get("id") != record.builder_identity:
+        reasons.append("attestation-builder-mismatch")
+
+    materials = _as_sequence(predicate.get("materials"))
+    lock_digest_bound = False
+    if materials is not None:
+        for value in materials:
+            material = _as_mapping(value)
+            if material is None or material.get("uri") != "dependency-lock":
+                continue
+            digest = _as_mapping(material.get("digest"))
+            if digest is not None and digest.get("sha256") == record.dependency_lock_digest:
+                lock_digest_bound = True
+                break
+    if not lock_digest_bound:
+        reasons.append("attestation-lock-digest-mismatch")
+    return reasons
+
+
+def _verify_sbom_binding(record: ProvenanceRecord) -> list[str]:
+    """Cross-bind the CycloneDX metadata to the provenance subject and builder."""
+    sbom = _as_mapping(record.sbom)
+    if sbom is None or sbom.get("bomFormat") != "CycloneDX":
+        return ["sbom-missing-or-wrong-format"]
+    reasons: list[str] = []
+    if not sbom.get("components"):
+        reasons.append("sbom-empty-components")
+    metadata = _as_mapping(sbom.get("metadata"))
+    component = _as_mapping(metadata.get("component")) if metadata is not None else None
+    supplier = _as_mapping(metadata.get("supplier")) if metadata is not None else None
+    if component is None or component.get("name") != record.subject:
+        reasons.append("sbom-subject-mismatch")
+    if component is None or component.get("bom-ref") != f"sha256:{record.artifact_digest}":
+        reasons.append("sbom-artifact-digest-mismatch")
+    if supplier is None or supplier.get("name") != record.builder_identity:
+        reasons.append("sbom-builder-mismatch")
+    return reasons
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -276,33 +415,50 @@ def verify_provenance(
     expected_artifact_bytes: bytes | None = None,
     expected_lock_bytes: bytes | None = None,
     expected_signature_state: SignatureState = SignatureState.VERIFIED,
+    verified_attestation_digest: str | None = None,
+    expected_predicate_type: str = _SLSA_PROVENANCE_TYPE,
 ) -> VerificationResult:
     """Check signature, checksums, and SBOM completeness for ``record``.
 
     Returns a :class:`VerificationResult`; ``ok`` is True only when every
     precondition held. Reasons are lowercase + hyphenated so they can be
     matched by prefix (``"signature-*"``, ``"artifact-*"``, ``"sbom-*"``).
+
+    Args:
+        record: Provenance record to verify.
+        expected_artifact_bytes: Artifact bytes independently obtained by the
+            deploy or release-page verifier.
+        expected_lock_bytes: Dependency-lock bytes independently obtained from
+            the pinned source tree.
+        expected_signature_state: Required outcome from the external signer.
+        verified_attestation_digest: Canonical payload SHA-256 returned by the
+            external signature verifier. A verified release fails closed when
+            this value is absent; it must not be copied from ``record``.
+        expected_predicate_type: Exact signed predicate type allowed by policy.
     """
     reasons: list[str] = []
 
-    # 1. Signature state.
+    # 1. Signature state and the exact payload digest reported by the external
+    # signer. A VERIFIED enum alone is a claim, not cryptographic evidence.
     if record.signature_state != expected_signature_state:
         reasons.append(f"signature-state-{record.signature_state.value}-expected-{expected_signature_state.value}")
+    reasons.extend(
+        _verify_signature_binding(
+            record.attestation,
+            expected_signature_state=expected_signature_state,
+            verified_attestation_digest=verified_attestation_digest,
+        )
+    )
 
-    # 2. Provenance chain completeness (sbom + attestation + subject).
-    sbom = record.sbom
-    if not sbom or sbom.get("bomFormat") != "CycloneDX":
-        reasons.append("sbom-missing-or-wrong-format")
-    elif not sbom.get("components"):
-        reasons.append("sbom-empty-components")
-    if record.attestation is None:
-        reasons.append("attestation-missing")
-    else:
-        stmt = record.attestation.statement
-        if not stmt.get("subject"):
-            reasons.append("attestation-subject-missing")
-        if "predicate" not in stmt or not stmt["predicate"].get("builder", {}).get("id"):
-            reasons.append("attestation-builder-missing")
+    # 2. Provenance chain completeness and immutable cross-binding. A valid
+    # signature over the wrong subject or predicate must still fail policy.
+    reasons.extend(_verify_sbom_binding(record))
+    reasons.extend(
+        _verify_attestation_binding(
+            record,
+            expected_predicate_type=expected_predicate_type,
+        )
+    )
 
     # 3. Dependency-lock digest.
     if expected_lock_bytes is not None:
