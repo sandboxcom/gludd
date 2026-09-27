@@ -93,8 +93,11 @@ class DebounceV2:
         if self._max_wait is not None and self._first_call_at is not None:
             due_at = min(due_at, self._first_call_at + self._max_wait)
 
-        if self._timer is None or due_at < self._timer:
-            self._timer = due_at
+        # Debounce is measured from the most recent call, while ``max_wait``
+        # provides the only upper bound for a sustained burst.  Keeping an
+        # earlier timer here turns debounce into a fixed-window throttle and
+        # can publish work before the caller's quiet period has elapsed.
+        self._timer = due_at
 
     def _tick(self) -> None:
         if self._pending_args is None or self._timer is None:

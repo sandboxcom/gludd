@@ -55,6 +55,21 @@ class TestDebounceV2Trailing:
         d.drive(3.0)
         assert calls == [4]
 
+    def test_quiet_window_moves_with_most_recent_call(self) -> None:
+        """Do not emit until one full quiet period follows the latest call."""
+        calls: list[int] = []
+        clock = SimulatedClock(0.0)
+        d = DebounceV2(lambda x: calls.append(x), wait=3.0, trailing=True, clock=clock)
+
+        d(1)
+        clock.advance(2.0)
+        d(2)
+
+        d.drive(3.0)
+        assert calls == []
+        d.drive(5.0)
+        assert calls == [2]
+
     def test_cancel_prevents_pending_call(self) -> None:
         calls: list[int] = []
         clock = SimulatedClock(0.0)
@@ -191,6 +206,9 @@ class TestDebounceV2Both:
         d(3)
         assert calls == [1]
         clock.advance(2.0)
+        d._tick()
+        assert calls == [1]
+        clock.advance(1.0)
         d._tick()
         assert calls == [1, 3]
         d(4)
