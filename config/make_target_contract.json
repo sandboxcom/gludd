@@ -280,9 +280,11 @@
         "TAG",
         "RELEASE_READINESS_VALIDATE_ONLY",
         "RELEASE_COMPLETED_STAGES",
-        "RELEASE_OBSERVATIONS"
+        "RELEASE_OBSERVATIONS",
+        "REVIEWED_HEAD_INTEGRATION_RECEIPT",
+        "RELEASE_CANDIDATE_SHA"
       ],
-      "behavior": "make release-readiness TAG=v0.1.0-beta.4 RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS="
+      "behavior": "make release-readiness TAG=v0.1.1 RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= REVIEWED_HEAD_INTEGRATION_RECEIPT=tests/fixtures/reviewed_head_integration_receipt.json RELEASE_CANDIDATE_SHA=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
     },
     {
       "name": "check-release-failure-ledger",
@@ -294,9 +296,10 @@
       "make_variables": [
         "TAG",
         "MSG",
-        "RELEASE_PROMOTE_VALIDATE_ONLY"
+        "RELEASE_PROMOTE_VALIDATE_ONLY",
+        "REVIEWED_HEAD_INTEGRATION_RECEIPT"
       ],
-      "behavior": "make release-promote TAG=v0.1.0-beta.4 MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=1"
+      "behavior": "make release-promote TAG=v0.1.0-beta.4 MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=1 REVIEWED_HEAD_INTEGRATION_RECEIPT="
     },
     {
       "name": "ci-job-failure-context",

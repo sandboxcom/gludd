@@ -34,6 +34,10 @@ from typing import cast
 
 from run_ci_shards_serial import canonical_json_sha256, release_execution_policy
 
+from general_ludd.git_release.reviewed_head_integration import (
+    ReviewedHeadIntegrationReceiptError,
+    load_reviewed_head_integration_receipt,
+)
 from general_ludd.quality.preflight import check_tasks_ticks
 from general_ludd.review import release_forecast
 
@@ -48,6 +52,7 @@ RELEASE_TASK_PREFIXES = {
 RELEASE_REQUIRED_TASKS = {
     STABLE_RELEASE_TAG: STABLE_RELEASE_TASK_IDS,
 }
+RELEASE_RECEIPT_REQUIRED_TAGS = frozenset({STABLE_RELEASE_TAG})
 RELEASE_ACTION_TASKS = {
     DEFAULT_RELEASE_TAG: frozenset({"S86.10"}),
     STABLE_RELEASE_TAG: frozenset({"S83.166"}),
@@ -110,6 +115,7 @@ EXIT_VERSION = 5
 EXIT_TASKS = 6
 EXIT_ERROR = 7
 EXIT_RESOURCE = 8
+EXIT_RECEIPT = 9
 
 RunFn = Callable[[Sequence[str], str | None], subprocess.CompletedProcess[str]]
 
@@ -147,6 +153,10 @@ class Readiness:
     unmanaged_local_inference_processes: list[dict[str, object]] = field(
         default_factory=list
     )
+    reviewed_head_receipt_required: bool = False
+    reviewed_head_receipt_valid: bool = False
+    reviewed_head_receipt_final_sha: str = ""
+    reviewed_head_receipt_detail: str = ""
     errors: list[str] = field(default_factory=list)
 
     @property
@@ -165,6 +175,10 @@ class Readiness:
             and self.release_policy_compatible
             and not self.incomplete_release_tasks
             and not self.unmanaged_local_inference_processes
+            and (
+                not self.reviewed_head_receipt_required
+                or self.reviewed_head_receipt_valid
+            )
         )
 
 
@@ -306,6 +320,47 @@ def build_remediation_plan(
             )
         )
 
+    if (
+        result.reviewed_head_receipt_required
+        and not result.reviewed_head_receipt_valid
+    ):
+        steps.append(
+            RemediationStep(
+                code="reviewed_head_integration_receipt",
+                blockers=(result.reviewed_head_receipt_detail or "receipt invalid",),
+                validate_argv=(
+                    "make",
+                    "release-readiness",
+                    f"TAG={tag}",
+                    "RELEASE_READINESS_VALIDATE_ONLY=1",
+                    "RELEASE_COMPLETED_STAGES=",
+                    "RELEASE_OBSERVATIONS=",
+                    "REVIEWED_HEAD_INTEGRATION_RECEIPT=<immutable-receipt.json>",
+                    f"RELEASE_CANDIDATE_SHA={result.head or '<full-sha>'}",
+                ),
+                owner_release_argv=(),
+                apply_argv=None,
+                requires_owner_confirmation=True,
+                resolution=(
+                    "Generate a new schema-versioned receipt from the reviewed plan, "
+                    "single-head application evidence, one focused run, and one exact "
+                    "gate run for the unchanged candidate SHA; then validate it."
+                ),
+                safety=(
+                    "Receipt validation never mutates Git. Any candidate change "
+                    "invalidates the artifact and requires fresh final validation."
+                ),
+            )
+        )
+
+    receipt_recheck = (
+        (
+            "REVIEWED_HEAD_INTEGRATION_RECEIPT=<immutable-receipt.json>",
+            f"RELEASE_CANDIDATE_SHA={result.head or '<full-sha>'}",
+        )
+        if tag in RELEASE_RECEIPT_REQUIRED_TAGS
+        else ()
+    )
     return RemediationPlan(
         schema_version=1,
         steps=tuple(steps),
@@ -316,6 +371,7 @@ def build_remediation_plan(
             "RELEASE_READINESS_VALIDATE_ONLY=0",
             "RELEASE_COMPLETED_STAGES=",
             "RELEASE_OBSERVATIONS=",
+            *receipt_recheck,
         ),
     )
 
@@ -435,6 +491,28 @@ def _release_policy_preflight(run: RunFn, root: Path) -> tuple[bool, str]:
         result.stdout or result.stderr or "release policy preflight returned no output"
     ).strip()
     return result.returncode == 0, detail
+
+
+def _reviewed_head_receipt_check(
+    receipt_path: Path | None,
+    *,
+    expected_final_sha: str,
+) -> tuple[bool, str, str]:
+    """Validate immutable integration evidence without exposing its contents."""
+    if receipt_path is None:
+        return False, "reviewed-head integration receipt is required", ""
+    try:
+        receipt = load_reviewed_head_integration_receipt(
+            receipt_path,
+            expected_final_sha=expected_final_sha,
+        )
+    except ReviewedHeadIntegrationReceiptError as exc:
+        return False, str(exc), ""
+    return (
+        True,
+        "reviewed-head integration receipt is valid for the exact release candidate",
+        receipt.final_sha,
+    )
 
 
 def _version_check(run: RunFn, root: Path) -> tuple[bool, str]:
@@ -588,9 +666,13 @@ def assess(
     run: RunFn = _run,
     gha_head_sha: str = "",
     tag: str = DEFAULT_RELEASE_TAG,
+    reviewed_head_integration_receipt: Path | None = None,
+    expected_head_sha: str = "",
 ) -> Readiness:
     """Collect all release evidence without mutating the repository."""
-    result = Readiness()
+    result = Readiness(
+        reviewed_head_receipt_required=tag in RELEASE_RECEIPT_REQUIRED_TAGS
+    )
     try:
         result.release_policy_compatible, result.release_policy_detail = (
             _release_policy_preflight(run, root)
@@ -630,6 +712,24 @@ def assess(
         result.ci_head_matches = not gha_head_sha or gha_head_sha == state.head
         result.dirty_count = state.dirty_count
         result.unintegrated_worktrees = state.unintegrated_worktrees
+
+        if result.reviewed_head_receipt_required:
+            if expected_head_sha and expected_head_sha != state.head:
+                result.reviewed_head_receipt_detail = (
+                    "reviewed-head integration receipt candidate SHA does not match "
+                    "the invoking worktree HEAD"
+                )
+            else:
+                (
+                    result.reviewed_head_receipt_valid,
+                    result.reviewed_head_receipt_detail,
+                    result.reviewed_head_receipt_final_sha,
+                ) = _reviewed_head_receipt_check(
+                    reviewed_head_integration_receipt,
+                    expected_final_sha=state.head,
+                )
+            if not result.reviewed_head_receipt_valid:
+                result.errors.append(result.reviewed_head_receipt_detail)
 
         detached = _detached_worktrees(run, root)
         result.detached_worktrees = detached
@@ -683,6 +783,11 @@ def _exit_code(result: Readiness) -> int:
         return EXIT_OK
     if any(error.startswith("unmanaged local inference") for error in result.errors):
         return EXIT_RESOURCE
+    if any(
+        error.startswith("reviewed-head integration receipt")
+        for error in result.errors
+    ):
+        return EXIT_RECEIPT
     if any(error.startswith("CI evidence") for error in result.errors) or (
         result.head and not (result.ci_head_matches and result.ci_verdict == "GREEN")
     ):
@@ -792,6 +897,19 @@ def _forecast_blockers(
                 artifacts=("smoke-attestations",),
             )
         )
+    if (
+        result.reviewed_head_receipt_required
+        and not result.reviewed_head_receipt_valid
+    ):
+        blockers.append(
+            release_forecast.Blocker(
+                code="reviewed-head-integration-receipt",
+                phase="candidate_commit",
+                repair_minutes=15.0,
+                failure_class="invalid-evidence",
+                artifacts=("reviewed-head-integration-receipt",),
+            )
+        )
     if coverage_gap_modules:
         blockers.append(
             release_forecast.Blocker(
@@ -811,6 +929,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--gha-head-sha", default="", help="expected CI HEAD SHA")
     parser.add_argument("--root", default=str(ROOT), help="explicit repository worktree root")
     parser.add_argument("--tag", default=DEFAULT_RELEASE_TAG, help="target release tag")
+    parser.add_argument(
+        "--reviewed-head-integration-receipt",
+        default="",
+        help="schema-versioned reviewed-head integration receipt JSON",
+    )
+    parser.add_argument(
+        "--expected-head-sha",
+        default="",
+        help="exact candidate SHA required for hermetic receipt validation",
+    )
     parser.add_argument(
         "--validate-only",
         action="store_true",
@@ -847,6 +975,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(
             "--tag must be a supported canonical stable or beta release tag"
         )
+    raw_receipt_path = cast(str, args.reviewed_head_integration_receipt)
+    expected_head_sha = cast(str, args.expected_head_sha)
+    receipt_required = tag in RELEASE_RECEIPT_REQUIRED_TAGS
+    if receipt_required and not raw_receipt_path:
+        parser.error(
+            "--reviewed-head-integration-receipt is required for this release tag"
+        )
+    if args.validate_only and raw_receipt_path and not expected_head_sha:
+        parser.error(
+            "--expected-head-sha is required for hermetic receipt validation"
+        )
     completed = {value for value in cast(str, args.completed_stages).split(",") if value}
     observations: dict[str, list[float]] = {}
     for entry in filter(None, cast(str, args.observations).split(",")):
@@ -859,6 +998,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error("--observations minutes must be numeric")
 
     root = Path(cast(str, args.root)).absolute()
+    receipt_path = (
+        Path(raw_receipt_path)
+        if Path(raw_receipt_path).is_absolute()
+        else root / raw_receipt_path
+    ) if raw_receipt_path else None
     raw_history = cast(str, args.history)
     history_path = (
         Path(raw_history).absolute()
@@ -876,6 +1020,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ValueError as exc:
         parser.error(str(exc))
     if args.validate_only:
+        receipt_payload: dict[str, object] = {
+            "final_sha": "",
+            "schema_version": 1,
+            "valid": False,
+        }
+        if receipt_path is not None:
+            try:
+                receipt = load_reviewed_head_integration_receipt(
+                    receipt_path,
+                    expected_final_sha=expected_head_sha,
+                )
+            except ReviewedHeadIntegrationReceiptError as exc:
+                parser.error(str(exc))
+            receipt_payload.update(final_sha=receipt.final_sha, valid=True)
         print(
             json.dumps(
                 {
@@ -887,6 +1045,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                             release_execution_policy()
                         ),
                     },
+                    "reviewed_head_integration_receipt": receipt_payload,
                     "tag": tag,
                     "validate_only": True,
                 },
@@ -895,7 +1054,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 0
 
-    result = assess(root=root, gha_head_sha=args.gha_head_sha, tag=tag)
+    result = assess(
+        root=root,
+        gha_head_sha=args.gha_head_sha,
+        tag=tag,
+        reviewed_head_integration_receipt=receipt_path,
+        expected_head_sha=expected_head_sha,
+    )
     coverage_gaps = _coverage_gap_modules(root)
     seed_estimate = estimate_release_eta(
         completed_stages=completed,

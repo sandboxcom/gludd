@@ -8,9 +8,14 @@ one unioned focused validation and one exact final gate.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 __all__ = [
     "AppliedHeadEvidence",
@@ -22,7 +27,13 @@ __all__ = [
     "ReviewedHead",
     "ReviewedHeadIntegrationPlan",
     "ReviewedHeadIntegrationReceipt",
+    "ReviewedHeadIntegrationReceiptError",
     "build_reviewed_head_integration_plan",
+    "encode_reviewed_head_integration_receipt",
+    "load_reviewed_head_integration_receipt",
+    "parse_reviewed_head_integration_receipt",
+    "reviewed_head_integration_receipt_json_schema",
+    "reviewed_head_integration_receipt_payload",
 ]
 
 _SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -31,6 +42,100 @@ _SOURCE_REF = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,254}\Z")
 _COMMAND_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/=-]{0,255}\Z")
 _MAX_REVIEWED_HEADS = 32
 _MAX_FOCUSED_VALIDATIONS = 128
+_MAX_RECEIPT_BYTES = 1_048_576
+
+_Sha = Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
+_Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+_SourceRef = Annotated[
+    str,
+    Field(min_length=1, max_length=255, pattern=r"^[A-Za-z0-9][A-Za-z0-9._/-]*$"),
+]
+_CommandId = Annotated[
+    str,
+    Field(min_length=1, max_length=256, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/=-]*$"),
+]
+
+
+class _ReceiptModel(BaseModel):
+    """Forbid unversioned receipt fields before semantic conversion."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class _ReviewedHeadPayload(_ReceiptModel):
+    source_ref: _SourceRef
+    source_sha: _Sha
+    reviewed_base_sha: _Sha
+    review_receipt_sha256: _Sha256
+    focused_validation_ids: tuple[_CommandId, ...] = Field(
+        min_length=1,
+        max_length=_MAX_FOCUSED_VALIDATIONS,
+    )
+    application_mode: Literal["cherry_pick", "merge_two_parent"]
+
+
+class _PlanPayload(_ReceiptModel):
+    base_sha: _Sha
+    heads: tuple[_ReviewedHeadPayload, ...] = Field(
+        min_length=1,
+        max_length=_MAX_REVIEWED_HEADS,
+    )
+    focused_validation_ids: tuple[_CommandId, ...] = Field(
+        min_length=1,
+        max_length=_MAX_FOCUSED_VALIDATIONS,
+    )
+    exact_gate_id: _CommandId
+
+
+class _AppliedHeadPayload(_ReceiptModel):
+    ordinal: int = Field(ge=1, le=_MAX_REVIEWED_HEADS)
+    source_ref: _SourceRef
+    source_sha: _Sha
+    review_receipt_sha256: _Sha256
+    application_mode: Literal["cherry_pick", "merge_two_parent"]
+    before_sha: _Sha
+    after_sha: _Sha
+    parent_shas: tuple[_Sha, ...] = Field(min_length=1, max_length=2)
+
+
+class _FocusedValidationPayload(_ReceiptModel):
+    tip_sha: _Sha
+    source_shas: tuple[_Sha, ...] = Field(
+        min_length=1,
+        max_length=_MAX_REVIEWED_HEADS,
+    )
+    command_ids: tuple[_CommandId, ...] = Field(
+        min_length=1,
+        max_length=_MAX_FOCUSED_VALIDATIONS,
+    )
+    run_count: Literal[1]
+    passed: Literal[True]
+
+
+class _ExactGatePayload(_ReceiptModel):
+    tip_sha: _Sha
+    command_id: _CommandId
+    run_count: Literal[1]
+    passed: Literal[True]
+
+
+class _ReviewedHeadIntegrationReceiptPayload(_ReceiptModel):
+    schema_version: Literal[1]
+    plan: _PlanPayload
+    applied_heads: tuple[_AppliedHeadPayload, ...] = Field(
+        min_length=1,
+        max_length=_MAX_REVIEWED_HEADS,
+    )
+    focused_validation: _FocusedValidationPayload
+    exact_gate: _ExactGatePayload
+
+
+class ReviewedHeadIntegrationReceiptError(ValueError):
+    """Content-free rejection of an untrusted serialized receipt."""
+
+
+class _DuplicateJsonKey(ValueError):
+    """Internal duplicate-key marker that never preserves untrusted content."""
 
 
 def _require_match(value: object, pattern: re.Pattern[str], label: str) -> str:
@@ -195,6 +300,8 @@ class ReviewedHeadIntegrationPlan:
             raise ValueError("integration requires distinct reviewed heads and receipts")
         if any(head.source_sha == self.base_sha for head in self.heads):
             raise ValueError("a reviewed head cannot equal the integration base")
+        if any(head.reviewed_base_sha != self.base_sha for head in self.heads):
+            raise ValueError("every reviewed head must bind to the integration base")
 
         expected_focused = _stable_unique(
             tuple(
@@ -435,3 +542,205 @@ class ReviewedHeadIntegrationReceipt:
     def final_sha(self) -> str:
         """Return the exact integrated tip covered by both validations."""
         return self.applied_heads[-1].after_sha
+
+
+def reviewed_head_integration_receipt_json_schema() -> dict[str, object]:
+    """Return the canonical Draft 2020-12 JSON Schema for a receipt."""
+    return _ReviewedHeadIntegrationReceiptPayload.model_json_schema(
+        mode="validation"
+    )
+
+
+def reviewed_head_integration_receipt_payload(
+    receipt: ReviewedHeadIntegrationReceipt,
+) -> dict[str, object]:
+    """Serialize validated evidence without trusting redundant plan steps."""
+    return {
+        "schema_version": 1,
+        "plan": {
+            "base_sha": receipt.plan.base_sha,
+            "heads": [
+                {
+                    "source_ref": head.source_ref,
+                    "source_sha": head.source_sha,
+                    "reviewed_base_sha": head.reviewed_base_sha,
+                    "review_receipt_sha256": head.review_receipt_sha256,
+                    "focused_validation_ids": list(head.focused_validation_ids),
+                    "application_mode": head.application_mode.value,
+                }
+                for head in receipt.plan.heads
+            ],
+            "focused_validation_ids": list(receipt.plan.focused_validation_ids),
+            "exact_gate_id": receipt.plan.exact_gate_id,
+        },
+        "applied_heads": [
+            {
+                "ordinal": evidence.ordinal,
+                "source_ref": evidence.source_ref,
+                "source_sha": evidence.source_sha,
+                "review_receipt_sha256": evidence.review_receipt_sha256,
+                "application_mode": evidence.application_mode.value,
+                "before_sha": evidence.before_sha,
+                "after_sha": evidence.after_sha,
+                "parent_shas": list(evidence.parent_shas),
+            }
+            for evidence in receipt.applied_heads
+        ],
+        "focused_validation": {
+            "tip_sha": receipt.focused_validation.tip_sha,
+            "source_shas": list(receipt.focused_validation.source_shas),
+            "command_ids": list(receipt.focused_validation.command_ids),
+            "run_count": receipt.focused_validation.run_count,
+            "passed": receipt.focused_validation.passed,
+        },
+        "exact_gate": {
+            "tip_sha": receipt.exact_gate.tip_sha,
+            "command_id": receipt.exact_gate.command_id,
+            "run_count": receipt.exact_gate.run_count,
+            "passed": receipt.exact_gate.passed,
+        },
+    }
+
+
+def encode_reviewed_head_integration_receipt(
+    receipt: ReviewedHeadIntegrationReceipt,
+) -> str:
+    """Return deterministic JSON suitable for an immutable evidence artifact."""
+    return json.dumps(
+        reviewed_head_integration_receipt_payload(receipt),
+        sort_keys=True,
+        separators=(",", ":"),
+    ) + "\n"
+
+
+def _payload_to_receipt(
+    payload: _ReviewedHeadIntegrationReceiptPayload,
+) -> ReviewedHeadIntegrationReceipt:
+    """Convert the schema-checked transport model into semantic evidence."""
+    heads = tuple(
+        ReviewedHead(
+            source_ref=head.source_ref,
+            source_sha=head.source_sha,
+            reviewed_base_sha=head.reviewed_base_sha,
+            review_receipt_sha256=head.review_receipt_sha256,
+            focused_validation_ids=head.focused_validation_ids,
+            application_mode=HeadApplicationMode(head.application_mode),
+        )
+        for head in payload.plan.heads
+    )
+    plan = build_reviewed_head_integration_plan(
+        base_sha=payload.plan.base_sha,
+        heads=heads,
+        exact_gate_id=payload.plan.exact_gate_id,
+    )
+    if plan.focused_validation_ids != payload.plan.focused_validation_ids:
+        raise ValueError("serialized focused validations do not match the plan")
+    return ReviewedHeadIntegrationReceipt(
+        plan=plan,
+        applied_heads=tuple(
+            AppliedHeadEvidence(
+                ordinal=evidence.ordinal,
+                source_ref=evidence.source_ref,
+                source_sha=evidence.source_sha,
+                review_receipt_sha256=evidence.review_receipt_sha256,
+                application_mode=HeadApplicationMode(evidence.application_mode),
+                before_sha=evidence.before_sha,
+                after_sha=evidence.after_sha,
+                parent_shas=evidence.parent_shas,
+            )
+            for evidence in payload.applied_heads
+        ),
+        focused_validation=FocusedValidationEvidence(
+            tip_sha=payload.focused_validation.tip_sha,
+            source_shas=payload.focused_validation.source_shas,
+            command_ids=payload.focused_validation.command_ids,
+            run_count=payload.focused_validation.run_count,
+            passed=payload.focused_validation.passed,
+        ),
+        exact_gate=ExactGateEvidence(
+            tip_sha=payload.exact_gate.tip_sha,
+            command_id=payload.exact_gate.command_id,
+            run_count=payload.exact_gate.run_count,
+            passed=payload.exact_gate.passed,
+        ),
+    )
+
+
+def parse_reviewed_head_integration_receipt(
+    raw: object,
+    *,
+    expected_final_sha: str,
+) -> ReviewedHeadIntegrationReceipt:
+    """Validate schema, typed semantics, and the exact release-candidate SHA."""
+    try:
+        from jsonschema import Draft202012Validator
+
+        validator = Draft202012Validator(
+            reviewed_head_integration_receipt_json_schema()
+        )
+        if next(validator.iter_errors(raw), None) is not None:
+            raise ReviewedHeadIntegrationReceiptError(
+                "reviewed-head integration receipt schema validation failed"
+            )
+        payload = _ReviewedHeadIntegrationReceiptPayload.model_validate(raw)
+    except ReviewedHeadIntegrationReceiptError:
+        raise
+    except (TypeError, ValidationError):
+        raise ReviewedHeadIntegrationReceiptError(
+            "reviewed-head integration receipt schema validation failed"
+        ) from None
+
+    try:
+        receipt = _payload_to_receipt(payload)
+    except (TypeError, ValueError):
+        raise ReviewedHeadIntegrationReceiptError(
+            "reviewed-head integration receipt semantic validation failed"
+        ) from None
+    try:
+        _require_sha(expected_final_sha, "expected_final_sha")
+    except ValueError:
+        raise ReviewedHeadIntegrationReceiptError(
+            "expected release candidate SHA is invalid"
+        ) from None
+    if receipt.final_sha != expected_final_sha:
+        raise ReviewedHeadIntegrationReceiptError(
+            "reviewed-head integration receipt final SHA does not match release candidate"
+        )
+    return receipt
+
+
+def _reject_duplicate_json_keys(
+    pairs: list[tuple[str, object]],
+) -> dict[str, object]:
+    """Reject ambiguous JSON without retaining an attacker-controlled key."""
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise _DuplicateJsonKey
+        result[key] = value
+    return result
+
+
+def load_reviewed_head_integration_receipt(
+    path: Path,
+    *,
+    expected_final_sha: str,
+) -> ReviewedHeadIntegrationReceipt:
+    """Load one bounded JSON artifact while keeping all failures content-free."""
+    try:
+        if not path.is_file() or path.stat().st_size > _MAX_RECEIPT_BYTES:
+            raise ReviewedHeadIntegrationReceiptError(
+                "reviewed-head integration receipt is missing or exceeds the size limit"
+            )
+        encoded = path.read_text(encoding="utf-8")
+        raw = json.loads(encoded, object_pairs_hook=_reject_duplicate_json_keys)
+    except ReviewedHeadIntegrationReceiptError:
+        raise
+    except (OSError, UnicodeError, json.JSONDecodeError, _DuplicateJsonKey):
+        raise ReviewedHeadIntegrationReceiptError(
+            "reviewed-head integration receipt could not be decoded"
+        ) from None
+    return parse_reviewed_head_integration_receipt(
+        raw,
+        expected_final_sha=expected_final_sha,
+    )

@@ -67,6 +67,40 @@ Make targets retain mutation ownership, approval behavior, conflict recovery,
 and observable output. This keeps the model hermetic and lets tests exercise
 adversarial ordering and provenance without mutating a repository.
 
+## Receipt generation and release boundary
+
+After the single focused phase and exact gate pass, construct a
+`ReviewedHeadIntegrationReceipt` from the recorded plan and application
+evidence, then serialize it with
+`encode_reviewed_head_integration_receipt`. The encoder emits canonical,
+schema-versioned JSON; it does not inspect or mutate Git. Store that JSON as an
+immutable candidate artifact rather than editing it by hand. The checked
+fixture at `tests/fixtures/reviewed_head_integration_receipt.json` is a shape
+example, not release evidence.
+
+For v0.1.1, `release-readiness` is the consuming release boundary:
+
+```sh
+make release-readiness TAG=v0.1.1 \
+  RELEASE_READINESS_VALIDATE_ONLY=1 \
+  RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= \
+  REVIEWED_HEAD_INTEGRATION_RECEIPT=artifacts/reviewed-head-receipt.json \
+  RELEASE_CANDIDATE_SHA=<full-40-character-sha>
+```
+
+Validate-only mode is hermetic: it parses the bounded JSON through the
+canonical JSON Schema and typed semantic model, checks provenance and the
+single-run invariants, and binds both validation records to the supplied exact
+candidate SHA. Real readiness replaces that caller-supplied comparison with
+the invoking worktree's HEAD and fails closed if the artifact is absent,
+malformed, tampered, stale, or from another candidate. Errors identify only
+the rejected boundary and never echo receipt content.
+
+This requirement is deliberately limited to v0.1.1 release readiness.
+Ordinary development `make gate`, focused checks, commits, and beta4 readiness
+do not require a receipt. `release-promote` forwards the artifact and its exact
+development SHA; it still owns no receipt-generation or Git-mutation shortcut.
+
 ## Ancestry-only exception
 
 `development-merge-forward-batch` remains valid only for already-reviewed,
@@ -102,8 +136,11 @@ disk, and test-process pressure while retaining final-state coverage.
 
 Before the exact gate passes, rollback is the existing Make-owned abort/revert
 path for the current application. After a receipt exists, any history rewrite,
-new head, or candidate mutation invalidates its final SHA; build a new plan and
-rerun both final phases rather than editing the old receipt.
+new head, or candidate mutation invalidates its final SHA; quarantine the stale
+artifact, build a new plan, and rerun both final phases rather than editing the
+old receipt. Readiness is validate-only and makes no traffic change, so rollout
+and rollback remain zero-downtime (ZDD): release publication starts only after
+the immutable final candidate has passed every existing release check.
 
 [github-duplicate-gates]: https://github.com/orgs/community/discussions/43988
 [so-octopus-conflict]: https://stackoverflow.com/questions/14424414/resolve-conflicts-on-git-merge-octopus

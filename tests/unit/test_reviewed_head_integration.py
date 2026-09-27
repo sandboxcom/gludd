@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -16,7 +18,12 @@ from general_ludd.git_release.reviewed_head_integration import (
     ReviewedHead,
     ReviewedHeadIntegrationPlan,
     ReviewedHeadIntegrationReceipt,
+    ReviewedHeadIntegrationReceiptError,
     build_reviewed_head_integration_plan,
+    encode_reviewed_head_integration_receipt,
+    load_reviewed_head_integration_receipt,
+    parse_reviewed_head_integration_receipt,
+    reviewed_head_integration_receipt_payload,
 )
 
 _BASE_SHA = "a" * 40
@@ -24,6 +31,7 @@ _HEAD_ONE_SHA = "b" * 40
 _HEAD_TWO_SHA = "c" * 40
 _AFTER_ONE_SHA = "d" * 40
 _FINAL_SHA = "e" * 40
+_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _heads() -> tuple[ReviewedHead, ...]:
@@ -348,3 +356,172 @@ def test_receipt_rejects_missing_chain_mode_and_command_bindings() -> None:
         )
     with pytest.raises(ValueError, match="planned command"):
         replace(receipt, exact_gate=replace(receipt.exact_gate, command_id="gate-full"))
+
+
+def test_receipt_json_schema_round_trip_is_typed_and_exact_sha_bound() -> None:
+    receipt = _receipt()
+    payload = reviewed_head_integration_receipt_payload(receipt)
+
+    parsed = parse_reviewed_head_integration_receipt(
+        payload,
+        expected_final_sha=_FINAL_SHA,
+    )
+
+    assert payload["schema_version"] == 1
+    assert parsed == receipt
+    assert parsed.final_sha == _FINAL_SHA
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (
+            lambda payload: payload["focused_validation"].update(run_count=2),
+            "schema validation failed",
+        ),
+        (
+            lambda payload: payload["exact_gate"].update(passed=False),
+            "schema validation failed",
+        ),
+        (
+            lambda payload: payload["applied_heads"][0].update(
+                review_receipt_sha256="3" * 64
+            ),
+            "semantic validation failed",
+        ),
+    ],
+)
+def test_receipt_parser_rejects_tampered_run_count_gate_and_provenance(
+    mutate: object,
+    message: str,
+) -> None:
+    payload = reviewed_head_integration_receipt_payload(_receipt())
+    mutate(payload)  # type: ignore[operator]
+
+    with pytest.raises(ReviewedHeadIntegrationReceiptError, match=message):
+        parse_reviewed_head_integration_receipt(
+            payload,
+            expected_final_sha=_FINAL_SHA,
+        )
+
+
+def test_receipt_parser_errors_do_not_echo_untrusted_content() -> None:
+    payload = reviewed_head_integration_receipt_payload(_receipt())
+    secret = "untrusted-secret-material"
+    payload[secret] = secret
+
+    with pytest.raises(ReviewedHeadIntegrationReceiptError) as exc_info:
+        parse_reviewed_head_integration_receipt(
+            payload,
+            expected_final_sha=_FINAL_SHA,
+        )
+
+    assert secret not in str(exc_info.value)
+
+
+def test_receipt_parser_rejects_candidate_sha_or_reviewed_base_drift() -> None:
+    payload = reviewed_head_integration_receipt_payload(_receipt())
+    with pytest.raises(
+        ReviewedHeadIntegrationReceiptError,
+        match="final SHA does not match release candidate",
+    ):
+        parse_reviewed_head_integration_receipt(
+            payload,
+            expected_final_sha="f" * 40,
+        )
+
+    payload = reviewed_head_integration_receipt_payload(_receipt())
+    payload["plan"]["heads"][0]["reviewed_base_sha"] = "f" * 40
+    with pytest.raises(
+        ReviewedHeadIntegrationReceiptError,
+        match="semantic validation failed",
+    ):
+        parse_reviewed_head_integration_receipt(
+            payload,
+            expected_final_sha=_FINAL_SHA,
+        )
+
+    payload = reviewed_head_integration_receipt_payload(_receipt())
+    payload["plan"]["focused_validation_ids"] = ["test-one"]
+    with pytest.raises(
+        ReviewedHeadIntegrationReceiptError,
+        match="semantic validation failed",
+    ):
+        parse_reviewed_head_integration_receipt(
+            payload,
+            expected_final_sha=_FINAL_SHA,
+        )
+
+
+def test_receipt_loader_is_bounded_duplicate_safe_and_content_free(
+    tmp_path: Path,
+) -> None:
+    missing = tmp_path / "missing.json"
+    with pytest.raises(
+        ReviewedHeadIntegrationReceiptError,
+        match="missing or exceeds",
+    ):
+        load_reviewed_head_integration_receipt(
+            missing,
+            expected_final_sha=_FINAL_SHA,
+        )
+
+    artifact = tmp_path / "receipt.json"
+    artifact.write_text("{", encoding="utf-8")
+    with pytest.raises(ReviewedHeadIntegrationReceiptError, match="could not be decoded"):
+        load_reviewed_head_integration_receipt(
+            artifact,
+            expected_final_sha=_FINAL_SHA,
+        )
+
+    secret = "duplicate-secret-key"
+    artifact.write_text(
+        '{"schema_version":1,"' + secret + '":1,"' + secret + '":2}',
+        encoding="utf-8",
+    )
+    with pytest.raises(ReviewedHeadIntegrationReceiptError) as exc_info:
+        load_reviewed_head_integration_receipt(
+            artifact,
+            expected_final_sha=_FINAL_SHA,
+        )
+    assert secret not in str(exc_info.value)
+
+    encoded = encode_reviewed_head_integration_receipt(_receipt())
+    assert json.loads(encoded)["schema_version"] == 1
+    artifact.write_text(encoded, encoding="utf-8")
+    assert (
+        load_reviewed_head_integration_receipt(
+            artifact,
+            expected_final_sha=_FINAL_SHA,
+        ).final_sha
+        == _FINAL_SHA
+    )
+
+
+def test_receipt_parser_rejects_malformed_expected_sha_without_echoing_it() -> None:
+    malformed = "candidate-secret"
+    with pytest.raises(ReviewedHeadIntegrationReceiptError) as exc_info:
+        parse_reviewed_head_integration_receipt(
+            reviewed_head_integration_receipt_payload(_receipt()),
+            expected_final_sha=malformed,
+        )
+    assert "expected release candidate SHA is invalid" in str(exc_info.value)
+    assert malformed not in str(exc_info.value)
+
+
+def test_receipt_release_boundary_documents_generation_zdd_and_forum_evidence() -> None:
+    documentation = (
+        _ROOT / "docs" / "features" / "REVIEWED_HEAD_INTEGRATION.md"
+    ).read_text(encoding="utf-8")
+
+    for required in (
+        "encode_reviewed_head_integration_receipt",
+        "canonical JSON Schema",
+        "REVIEWED_HEAD_INTEGRATION_RECEIPT",
+        "Ordinary development `make gate`",
+        "zero-downtime (ZDD)",
+        "quarantine the stale",
+        "stackoverflow.com/questions/14424414",
+        "github.com/orgs/community/discussions/43988",
+    ):
+        assert required in documentation

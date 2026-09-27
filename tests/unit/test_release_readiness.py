@@ -13,6 +13,10 @@ import pytest
 from general_ludd.review.release_forecast import Blocker, RunObservation
 
 ROOT = Path(__file__).resolve().parents[2]
+REVIEWED_RECEIPT_FIXTURE = (
+    ROOT / "tests" / "fixtures" / "reviewed_head_integration_receipt.json"
+)
+REVIEWED_RECEIPT_FINAL_SHA = "e" * 40
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import release_readiness as rr  # noqa: E402
@@ -39,6 +43,9 @@ def test_exit_codes_are_stable_and_prioritized() -> None:
     assert rr._exit_code(
         rr.Readiness(errors=["unmanaged local inference process is running"])
     ) == rr.EXIT_RESOURCE
+    assert rr._exit_code(
+        rr.Readiness(errors=["reviewed-head integration receipt is invalid"])
+    ) == rr.EXIT_RECEIPT
 
 
 def test_unmanaged_local_inference_detection_requires_daemon_ancestor() -> None:
@@ -222,6 +229,72 @@ def test_assess_passes_when_all_release_evidence_is_present(
     result = rr.assess(root=tmp_path, run=lambda *_: _completed([]))
     assert result.ready
     assert result.head == "abc123"
+
+
+def test_stable_assess_requires_and_binds_reviewed_receipt_to_current_head(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import workflow_state_guard
+
+    state = SimpleNamespace(
+        branch="development",
+        head=REVIEWED_RECEIPT_FINAL_SHA,
+        dirty_count=0,
+        unintegrated_worktrees=[],
+        unintegrated_branches=[],
+    )
+    monkeypatch.setattr(workflow_state_guard, "collect_state", lambda **_: state)
+    monkeypatch.setattr(rr, "_detached_worktrees", lambda *_: [])
+    monkeypatch.setattr(rr, "_ci_verdict", lambda *_: ("GREEN", "CI GREEN"))
+    monkeypatch.setattr(rr, "_version_check", lambda *_: (True, "OK"))
+    monkeypatch.setattr(rr, "_incomplete_tasks", lambda *_: [])
+    monkeypatch.setattr(rr, "_ledger_check", lambda *_: (True, "OK"))
+    monkeypatch.setattr(rr, "_tasks_tick_check", lambda *_: (True, "OK"))
+
+    result = rr.assess(
+        root=tmp_path,
+        run=lambda argv, *_: _completed(argv),
+        tag=rr.STABLE_RELEASE_TAG,
+        reviewed_head_integration_receipt=REVIEWED_RECEIPT_FIXTURE,
+        expected_head_sha=REVIEWED_RECEIPT_FINAL_SHA,
+    )
+
+    assert result.ready
+    assert result.reviewed_head_receipt_required
+    assert result.reviewed_head_receipt_valid
+    assert result.reviewed_head_receipt_final_sha == state.head
+
+    mismatched = rr.assess(
+        root=tmp_path,
+        run=lambda argv, *_: _completed(argv),
+        tag=rr.STABLE_RELEASE_TAG,
+        reviewed_head_integration_receipt=REVIEWED_RECEIPT_FIXTURE,
+        expected_head_sha="f" * 40,
+    )
+    assert not mismatched.ready
+    assert rr._exit_code(mismatched) == rr.EXIT_RECEIPT
+    assert mismatched.reviewed_head_receipt_final_sha == ""
+
+
+def test_receipt_check_is_required_and_keeps_invalid_json_content_free(
+    tmp_path: Path,
+) -> None:
+    assert rr._reviewed_head_receipt_check(
+        None,
+        expected_final_sha=REVIEWED_RECEIPT_FINAL_SHA,
+    ) == (False, "reviewed-head integration receipt is required", "")
+
+    secret = "receipt-secret-material"
+    invalid = tmp_path / "invalid.json"
+    invalid.write_text(secret, encoding="utf-8")
+    valid, detail, final_sha = rr._reviewed_head_receipt_check(
+        invalid,
+        expected_final_sha=REVIEWED_RECEIPT_FINAL_SHA,
+    )
+    assert not valid
+    assert final_sha == ""
+    assert secret not in detail
 
 
 def test_assess_fails_closed_for_noncanonical_local_policy(
@@ -492,6 +565,30 @@ def test_incomplete_release_task_remediation_never_mutates_the_ledger() -> None:
     assert "must not be checked merely to clear readiness" in step.resolution
 
 
+def test_receipt_remediation_regenerates_evidence_without_mutating_git() -> None:
+    result = rr.Readiness(
+        head=REVIEWED_RECEIPT_FINAL_SHA,
+        reviewed_head_receipt_required=True,
+        reviewed_head_receipt_detail="reviewed-head integration receipt is required",
+    )
+
+    plan = rr.build_remediation_plan(result, tag=rr.STABLE_RELEASE_TAG)
+
+    assert len(plan.steps) == 1
+    step = plan.steps[0]
+    assert step.code == "reviewed_head_integration_receipt"
+    assert step.apply_argv is None
+    assert step.requires_owner_confirmation
+    assert "RELEASE_READINESS_VALIDATE_ONLY=1" in step.validate_argv
+    assert f"RELEASE_CANDIDATE_SHA={REVIEWED_RECEIPT_FINAL_SHA}" in (
+        step.validate_argv
+    )
+    assert plan.recheck_argv[-2:] == (
+        "REVIEWED_HEAD_INTEGRATION_RECEIPT=<immutable-receipt.json>",
+        f"RELEASE_CANDIDATE_SHA={REVIEWED_RECEIPT_FINAL_SHA}",
+    )
+
+
 def test_nonprunable_worktree_never_receives_cleanup_instructions() -> None:
     result = rr.Readiness(
         unintegrated_worktrees=[
@@ -542,6 +639,24 @@ def test_forecast_has_no_blockers_when_release_evidence_is_complete() -> None:
     )
 
     assert rr._forecast_blockers(result) == ()
+
+
+def test_forecast_prioritizes_required_reviewed_head_receipt() -> None:
+    result = rr.Readiness(
+        ci_head_matches=True,
+        ci_verdict="GREEN",
+        version_consistent=True,
+        ledger_valid=True,
+        release_policy_compatible=True,
+        reviewed_head_receipt_required=True,
+    )
+
+    blockers = rr._forecast_blockers(result)
+
+    assert [blocker.code for blocker in blockers] == [
+        "reviewed-head-integration-receipt"
+    ]
+    assert blockers[0].phase == "candidate_commit"
 
 
 def test_release_eta_uses_gludd_calibration_and_parallel_critical_path() -> None:
@@ -734,10 +849,49 @@ def test_readiness_main_validate_only_emits_current_release_eta(
 def test_readiness_main_accepts_supported_stable_release(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert rr.main(["--tag", "v0.1.1", "--validate-only"]) == 0
+    assert (
+        rr.main(
+            [
+                "--tag",
+                "v0.1.1",
+                "--reviewed-head-integration-receipt",
+                str(REVIEWED_RECEIPT_FIXTURE),
+                "--expected-head-sha",
+                REVIEWED_RECEIPT_FINAL_SHA,
+                "--validate-only",
+            ]
+        )
+        == 0
+    )
     payload = json.loads(capsys.readouterr().out)
     assert payload["tag"] == "v0.1.1"
     assert payload["validate_only"] is True
+    assert payload["reviewed_head_integration_receipt"] == {
+        "final_sha": REVIEWED_RECEIPT_FINAL_SHA,
+        "schema_version": 1,
+        "valid": True,
+    }
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--tag", "v0.1.1", "--validate-only"],
+        [
+            "--tag",
+            "v0.1.1",
+            "--reviewed-head-integration-receipt",
+            str(REVIEWED_RECEIPT_FIXTURE),
+            "--validate-only",
+        ],
+    ],
+)
+def test_stable_validate_only_requires_receipt_and_expected_sha(
+    argv: list[str],
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        rr.main(argv)
+    assert exc_info.value.code == 2
 
 
 @pytest.mark.parametrize(
@@ -826,6 +980,8 @@ def test_release_readiness_make_target_is_safe_and_contracted() -> None:
         "RELEASE_READINESS_VALIDATE_ONLY",
         "RELEASE_COMPLETED_STAGES",
         "RELEASE_OBSERVATIONS",
+        "REVIEWED_HEAD_INTEGRATION_RECEIPT",
+        "RELEASE_CANDIDATE_SHA",
     ]
     result = subprocess.run(
         [
@@ -835,6 +991,8 @@ def test_release_readiness_make_target_is_safe_and_contracted() -> None:
             "RELEASE_READINESS_VALIDATE_ONLY=1",
             "RELEASE_COMPLETED_STAGES=",
             "RELEASE_OBSERVATIONS=",
+            "REVIEWED_HEAD_INTEGRATION_RECEIPT=",
+            "RELEASE_CANDIDATE_SHA=",
         ],
         cwd=ROOT,
         capture_output=True,
@@ -849,6 +1007,33 @@ def test_release_readiness_make_target_is_safe_and_contracted() -> None:
     assert policy["command"][-1] == "MAX_FILES_PER_BATCH=64"
     assert policy["execution_policy"]["python_version"] == "3.11"
     assert len(policy["execution_policy_sha256"]) == 64
+
+
+def test_release_readiness_make_target_validates_stable_receipt_hermetically() -> None:
+    result = subprocess.run(
+        [
+            "make",
+            "release-readiness",
+            "TAG=v0.1.1",
+            "RELEASE_READINESS_VALIDATE_ONLY=1",
+            "RELEASE_COMPLETED_STAGES=",
+            "RELEASE_OBSERVATIONS=",
+            f"REVIEWED_HEAD_INTEGRATION_RECEIPT={REVIEWED_RECEIPT_FIXTURE}",
+            f"RELEASE_CANDIDATE_SHA={REVIEWED_RECEIPT_FINAL_SHA}",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["reviewed_head_integration_receipt"]["valid"] is True
+    assert payload["reviewed_head_integration_receipt"]["final_sha"] == (
+        REVIEWED_RECEIPT_FINAL_SHA
+    )
 
 
 def test_readiness_remediation_documentation_pins_safe_operator_boundaries() -> None:

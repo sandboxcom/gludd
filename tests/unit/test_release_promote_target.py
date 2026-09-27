@@ -107,6 +107,7 @@ def test_public_help_and_make_contract_include_safe_behavior() -> None:
         "TAG",
         "MSG",
         "RELEASE_PROMOTE_VALIDATE_ONLY",
+        "REVIEWED_HEAD_INTEGRATION_RECEIPT",
     ]
     assert "RELEASE_PROMOTE_VALIDATE_ONLY=1" in entries["release-promote"]["behavior"]
 
@@ -147,6 +148,10 @@ def test_promote_carries_source_bound_evidence_across_fast_forward() -> None:
 
     assert evidence < merge < publication
     assert 'RELEASE_CANDIDATE_SHA="$$DEV_SHA"' in block
+    assert (
+        'REVIEWED_HEAD_INTEGRATION_RECEIPT="$(REVIEWED_HEAD_INTEGRATION_RECEIPT)"'
+        in block
+    )
     assert 'RELEASE_CI_BRANCH=development' in block
     assert 'RELEASE_LOCAL_ATTESTATION="$$LOCAL_ATTESTATION"' in block
 

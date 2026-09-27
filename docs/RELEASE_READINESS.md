@@ -1,7 +1,8 @@
-# Beta.3 Release Readiness
+# Release Readiness
 
 `scripts/release_readiness.py` is the fail-closed preflight for the
-`development` branch before cutting beta.3. It prints one JSON diagnostics
+`development` branch before cutting a supported release. It prints one JSON
+diagnostics
 object and returns a stable exit code:
 
 | Code | Blocking evidence |
@@ -13,12 +14,22 @@ object and returns a stable exit code:
 | 5 | The canonical version-consistency helper reports a mismatch. |
 | 6 | The task ledger is invalid or an unchecked `T-BETA3-*` task remains. |
 | 7 | Required evidence could not be collected. |
+| 8 | A project-owned local-inference server has no Gludd daemon owner. |
+| 9 | The required reviewed-head receipt is invalid or does not bind the exact candidate SHA. |
 
-Run it from the repository root:
+Run beta4 validation from the repository root:
 
 ```sh
-uv run python scripts/release_readiness.py --gha-head-sha "$GHA_HEAD_SHA"
+make release-readiness TAG=v0.1.0-beta.4 \
+  RELEASE_READINESS_VALIDATE_ONLY=1 \
+  RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= \
+  REVIEWED_HEAD_INTEGRATION_RECEIPT= RELEASE_CANDIDATE_SHA=
 ```
+
+Stable v0.1.1 readiness additionally requires the immutable reviewed-head
+receipt described in `docs/features/REVIEWED_HEAD_INTEGRATION.md`. The receipt
+must cover the exact final candidate SHA; validation failures are content-free
+so untrusted JSON cannot be reflected into logs.
 
 `--gha-head-sha` is optional for local use, but supplying the SHA observed by
 GHA makes a mismatch explicit. CI status is queried through
