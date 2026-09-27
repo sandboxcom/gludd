@@ -181,21 +181,26 @@ function isInsideTestedCheckout(filePath: string, testedWorktree: string): boole
 }
 
 function physicalPath(filePath: string): string {
+  let resolvedPath: string | undefined
   try {
-    return fs.realpathSync(filePath)
-  } catch {
+    resolvedPath = fs.realpathSync(filePath)
+  } catch {}
+  if (resolvedPath !== undefined) return resolvedPath
+
+  let symlinkTarget: string | undefined
+  try {
+    if (fs.lstatSync(filePath).isSymbolicLink()) {
+      symlinkTarget = path.resolve(path.dirname(filePath), fs.readlinkSync(filePath))
+    }
+  } catch {}
+  if (symlinkTarget !== undefined) {
     try {
-      if (fs.lstatSync(filePath).isSymbolicLink()) {
-        const target = path.resolve(path.dirname(filePath), fs.readlinkSync(filePath))
-        try {
-          return fs.realpathSync(target)
-        } catch {
-          return path.join(fs.realpathSync(path.dirname(target)), path.basename(target))
-        }
-      }
-    } catch {}
-    return path.join(fs.realpathSync(path.dirname(filePath)), path.basename(filePath))
+      return fs.realpathSync(symlinkTarget)
+    } catch {
+      return path.join(fs.realpathSync(path.dirname(symlinkTarget)), path.basename(symlinkTarget))
+    }
   }
+  return path.join(fs.realpathSync(path.dirname(filePath)), path.basename(filePath))
 }
 
 function isPhysicalPathInsideCheckout(filePath: string, testedWorktree: string): boolean {
