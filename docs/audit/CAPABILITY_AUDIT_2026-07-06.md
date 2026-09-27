@@ -32,7 +32,7 @@ The gludd ansible role layer was audited against the opencode skills and plugins
 | Plugin | Gludd Equivalent | Status |
 |---|---|---|
 | `enforce-make.ts` | `enforcement_gate` | **PARTIAL MATCH** — gludd role covers gate/push discipline; bash-metachar deny + TDD-test-required sub-policies are harness-only (cannot intercept bash args from ansible) |
-| `enforce-floor.ts` | `agent_floor_check` | **CREATED** — 10-agent floor, streak block, plugin-alive state (read-side) |
+| `enforce-floor.ts` | `agent_floor_check` | **CREATED** — historical fixed floor (now superseded), streak block, plugin-alive state (read-side) |
 | `enforce-stop.ts` | `enforcement_verify` | **PARTIAL MATCH** — role reads plugin state files; text-pattern false-done detection is not expressible in ansible |
 | `enforce-delegate.ts` | `delegate_discipline_check` | **CREATED** — sonnet ratio + worktree disk + mainthread streak audit (read-side) |
 | `enforce-session-start.ts` | (none) | **HARNESS-INTERNAL** — daemon lifespan startup is the analog; no role needed |
@@ -50,7 +50,7 @@ The gludd ansible role layer was audited against the opencode skills and plugins
 |---|---|---|
 | `spec_lifecycle` | Action | Spec-Driven Development pipeline (drafts → active → archive) with A-B-C doc flow (APPROACH, BUSINESS_CONTEXT, COMPLETION_REPORT) |
 | `enforce_disengage` | Action | Last-resort escape hatch — writes `/tmp/gludd-watchdog-disengage.json` + resets block counter for wedged enforcement plugins |
-| `agent_floor_check` | Check (read-side) | Audits 10-agent floor, streak counter, plugin-alive state; surfaces via `gludd_facts` |
+| `agent_floor_check` | Check (read-side) | Audits the configured floor, streak counter, and plugin-alive state; surfaces via `gludd_facts` |
 | `delegate_discipline_check` | Check (read-side) | Audits sonnet ratio, worktree disk usage, mainthread streak |
 | `deletion_gate` | Check (read-side) | Threshold-based deletion block; honors `DELETION_REASON` escape hatch |
 | `task_deadline_check` | Check (read-side) | Audits 5-min task deadlines; cross-refs `/tmp/gludd-task-stale.json` + `/tmp/gludd-task-killed.json` |

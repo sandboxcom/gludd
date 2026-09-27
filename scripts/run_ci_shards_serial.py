@@ -27,10 +27,12 @@ from typing import TYPE_CHECKING, Any, Protocol, TextIO
 
 if TYPE_CHECKING:
     from scripts.ci_named_shard_files import ISOLATED_TESTS, SHARDS, expand_shard
+    from scripts.gate_status_attestation import repository_state_id
     from scripts.resource_arbiter import resource_root as project_resource_root
     from scripts.run_ci_shards_parallel import _env_for_shard, _parse_shards
 else:
     from ci_named_shard_files import ISOLATED_TESTS, SHARDS, expand_shard
+    from gate_status_attestation import repository_state_id
     from resource_arbiter import resource_root as project_resource_root
     from run_ci_shards_parallel import _env_for_shard, _parse_shards
 
@@ -214,6 +216,24 @@ def _identity_is_release_eligible(identity: dict[str, object]) -> bool:
         and identity.get("clean")
         and identity.get("exact_sha")
     )
+
+
+def _identity_is_execution_eligible(
+    identity: dict[str, object],
+    *,
+    allow_dirty_worktree: bool,
+) -> bool:
+    """Allow a dirty commit-preflight run without weakening release evidence."""
+    return bool(
+        identity.get("queries_ok", True)
+        and identity.get("exact_sha")
+        and (identity.get("clean") or allow_dirty_worktree)
+    )
+
+
+def _worktree_state_id() -> str:
+    """Return the content identity used to detect mutation during a dirty gate."""
+    return repository_state_id(ROOT, source="worktree")
 
 
 def _is_cancellation_returncode(returncode: int) -> bool:
@@ -1253,7 +1273,21 @@ def main() -> int:
         action="store_true",
         help="reject noncanonical pytest policy before release-attestation work",
     )
+    parser.add_argument(
+        "--allow-dirty-worktree",
+        action="store_true",
+        help=(
+            "permit a stable dirty worktree for commit-preflight testing; "
+            "the resulting attestation remains ineligible for release"
+        ),
+    )
     args = parser.parse_args()
+    if args.allow_dirty_worktree and args.require_release_policy:
+        print(
+            "SERIAL-SHARD-POLICY-REJECTED dirty worktrees cannot produce release evidence",
+            flush=True,
+        )
+        return 2
     shards = _parse_shards(args.shards)
     pytest_args = shlex.split(args.pytest_args)
     observed_policy = execution_policy(pytest_args)
@@ -1281,8 +1315,15 @@ def main() -> int:
         expected_sha=os.environ.get("GLUDD_CANDIDATE_SHA")
         or os.environ.get("GITHUB_SHA")
     )
-    if _identity_is_release_eligible(identity):
+    if _identity_is_execution_eligible(
+        identity,
+        allow_dirty_worktree=args.allow_dirty_worktree,
+    ):
         try:
+            initial_worktree_state = None
+            if args.allow_dirty_worktree:
+                initial_worktree_state = _worktree_state_id()
+                identity["worktree_state_id"] = initial_worktree_state
             returncode = run(
                 shards,
                 pytest_args,
@@ -1294,6 +1335,14 @@ def main() -> int:
                 coverage_output=args.coverage_output,
             )
             error = None
+            if (
+                returncode == 0
+                and initial_worktree_state is not None
+                and _worktree_state_id() != initial_worktree_state
+            ):
+                returncode = RUNNER_EXCEPTION_EXIT_CODE
+                error = "repository state changed during dirty gate"
+                print(f"SHARD-WORKTREE-MUTATED error={error}", flush=True)
         except Exception as exc:
             returncode = RUNNER_EXCEPTION_EXIT_CODE
             error = f"{type(exc).__name__}: {exc}"

@@ -139,6 +139,7 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_DISENGAGE_AUDIT_PATH` | Auto-indexed (see source) | — | optional | `scripts/run_ci_shards_parallel.py:58` |
 | `GLUDD_DISENGAGE_PATH` | Auto-indexed (see source) | — | optional | `scripts/run_ci_shards_parallel.py:57` |
 | `GLUDD_DISK_FREE_OVERRIDE` | Auto-indexed (see source) | — | optional | `scripts/test_worktree_disk_guard.py:49` |
+| `GLUDD_DISPATCH_OUTCOMES_FILE` | Override the atomic JSON state file used to track empty dispatches and bounded pressure-release recovery. Use a unique path for isolated test or concurrent project sessions. | `/tmp/gludd-dispatch-outcomes.json` | optional | `.opencode/lib/shared.ts:486` |
 | `GLUDD_DISPATCH_FLOOR` | Auto-indexed (see source) | `10` | optional | `scripts/dispatch_tracker.py:30` |
 | `GLUDD_DISPATCH_STATE_FILE` | Auto-indexed (see source) | — | optional | `scripts/dispatch_tracker.py:28` |
 | `GLUDD_E2E_ACTIVE` | Auto-indexed (see source) | — | optional | `src/general_ludd/daemon.py:3454` |
@@ -185,6 +186,7 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_HOT_OUT_DIR` | Auto-indexed (see source) | `/tmp` | optional | `scripts/check_hot_reload_fresh.py:33` |
 | `GLUDD_INGEST_TOKEN` | Auto-indexed (see source) | — | optional | `src/general_ludd/receiver/router.py:110` |
 | `GLUDD_INGEST_URL` | Auto-indexed (see source) | — | optional | `scripts/provider_smoke_harness.py:145` |
+| `GLUDD_INTEGRATION_HEALTH_WORKERS` | Set the pytest-xdist worker count used by the integration-health audit. The conservative default avoids oversubscribing local release gates; increase it only when the host has verified capacity. | `1` | optional | `scripts/check_integration_health.py:163` |
 | `GLUDD_INTEGRITY_KEY` | Auto-indexed (see source) | — | optional | `scripts/troubleshoot.py:35` |
 | `GLUDD_JOB_INGRESS_MAX_COLLECTION_ITEMS` | Auto-indexed (see source) | — | optional | `src/general_ludd/schemas/job.py:41` |
 | `GLUDD_JOB_INGRESS_MAX_DEPTH` | Auto-indexed (see source) | — | optional | `src/general_ludd/schemas/job.py:40` |

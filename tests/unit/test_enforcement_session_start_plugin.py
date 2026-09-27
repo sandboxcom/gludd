@@ -56,11 +56,11 @@ class TestPluginRegistration:
 
 
 class TestKeyConstants:
-    def test_min_dispatches_default_is_3(self):
+    def test_min_dispatches_uses_canonical_opt_in_default(self):
         src = _src()
-        m = re.search(r'GLUDD_SESSION_START_MIN_DISPATCHES \|\| "(\d+)"', src)
-        assert m, "MIN_DISPATCHES default not found"
-        assert m.group(1) == "3"
+        assert "../lib/multitask_config.ts" in src
+        assert "GLUDD_SESSION_START_MIN_DISPATCHES || String(DEFAULT_MIN_DISPATCHES)" in src
+        assert "clampDispatchCount" in src
 
     def test_enforce_default_is_true(self):
         src = _src()
@@ -102,9 +102,10 @@ class TestKeyConstants:
 
     def test_effective_min_is_opt_in_and_bounded_by_hard_max(self):
         src = _src()
-        assert "const HARD_MAX_DISPATCHES = 3" in src
+        assert "HARD_MAX_DISPATCHES" in src
+        assert "../lib/multitask_config.ts" in src
         assert "HAS_CONFIGURED_MIN_DISPATCHES" in src
-        assert "Math.min(Number.isFinite(MIN_DISPATCHES)" in src
+        assert "clampDispatchCount(Number.isFinite(MIN_DISPATCHES)" in src
         assert re.search(r"EFFECTIVE_MIN\s*=[\s\S]+?:\s*0", src)
 
 
@@ -140,9 +141,10 @@ class TestDirectiveBanner:
         src = _src()
         assert "HARD_DENY_SECS" in src or "non-dispatch mutations DENIED" in src
 
-    def test_banner_contains_no_prose_rule(self):
+    def test_banner_makes_no_prose_rule_conditional_on_explicit_minimum(self):
         src = _src()
-        assert "no prose" in src.lower() or "No prose" in src
+        assert 'EFFECTIVE_MIN > 0 ? "DO NOT WRITE any prose' in src
+        assert 'proceed inline or delegate based on task shape' in src
 
     def test_banner_references_plugin_file(self):
         src = _src()

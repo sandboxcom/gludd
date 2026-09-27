@@ -114,9 +114,9 @@ currently get **no git serialization at all**. Keep this in mind when running th
   is exactly how v0.1.0-beta.1 shipped with 1 of 12 required assets against a RED
   commit.)
 - `make verify-release-artifact` only proves "non-draft + ≥1 asset".
-  **`make verify-release-completeness TAG=...` is the real gate** (12 artifact
-  categories, prerelease-flag-vs-tag, version-stamped names, no zero-size
-  assets). CI runs it as a blocking step on tag builds.
+  **`make verify-release-completeness TAG=...` is the real gate** (28 artifact
+  categories, at least 30 assets, prerelease-flag-vs-tag, version-stamped names,
+  no zero-size assets). CI runs it as a blocking step on tag builds.
 - A cold tag-triggered matrix build takes **30–60 min**, but the local poll is
   ~10 min — **poll timeout means "still building", NOT failure.** Re-check with
   `make verify-release-completeness` rather than assuming a bad release.

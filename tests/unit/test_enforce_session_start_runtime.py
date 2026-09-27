@@ -168,26 +168,21 @@ class TestTaskFileRead:
 
 
 class TestEffectiveMin:
-    """EFFECTIVE_MIN is the canonical session-start floor (10 by user mandate).
-
-    Originally derived via Math.max/Math.min; simplified to a hardcoded 10 when
-    the floor was raised (2026-06-22). Both forms are acceptable.
-    """
+    """EFFECTIVE_MIN is opt-in and clamped to the canonical hard ceiling."""
 
     def test_effective_min_is_computed(self, plugin_src):
         assert "EFFECTIVE_MIN" in plugin_src, (
             "Plugin must define EFFECTIVE_MIN."
         )
 
-    def test_effective_min_uses_math_max(self, plugin_src):
-        assert "Math.max" in plugin_src or "EFFECTIVE_MIN = 10" in plugin_src, (
-            "EFFECTIVE_MIN must use Math.max or be hardcoded to 10."
-        )
+    def test_effective_min_uses_canonical_clamp(self, plugin_src):
+        assert "clampDispatchCount" in plugin_src
+        assert "HARD_MAX_DISPATCHES" in plugin_src
+        assert "HAS_CONFIGURED_MIN_DISPATCHES" in plugin_src
 
-    def test_effective_min_uses_math_min(self, plugin_src):
-        assert "Math.min" in plugin_src or "EFFECTIVE_MIN = 10" in plugin_src, (
-            "EFFECTIVE_MIN must use Math.min or be hardcoded to 10."
-        )
+    def test_effective_min_has_no_legacy_hardcoded_ceiling(self, plugin_src):
+        assert "EFFECTIVE_MIN = 10" not in plugin_src
+        assert "clampDispatchCount" in plugin_src
 
     def test_effective_min_appears_in_banner(self, plugin_src):
         assert "EFFECTIVE_MIN" in plugin_src, (

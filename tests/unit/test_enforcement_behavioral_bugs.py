@@ -44,30 +44,34 @@ class TestBug1_EnforceStopExecSync:
         assert "repoHasPendingWork(execSync" in src, "Call to repoHasPendingWork must use execSync, not undefined 'es'."
 
 
-# ── Bug 2: enforce-stop.ts — adaptive minimum, hard maximum ten ───────────────
+# ── Bug 2: enforce-stop.ts — adaptive minimum, hard maximum three ─────────────
 
 
 class TestBug2_EnforceStopAdaptiveMinimum:
-    """No implicit floor is imposed, while the hard maximum remains ten."""
+    """No implicit floor is imposed, while the hard maximum remains three."""
 
-    def test_floor_is_explicit_and_ceiling_is_ten(self):
+    def test_floor_is_explicit_and_ceiling_is_canonical_three(self):
         src = _read_plugin("enforce-stop.ts")
         assert 'CLAUDE_AGENT_FLOOR || "7"' not in src, "BUG STILL PRESENT: FLOOR defaults to the retired value seven."
-        assert "HARD_MAX_DISPATCHES = 10" in src
+        assert "../../lib/multitask_config.ts" in src
+        assert "HARD_MAX_DISPATCHES" in src
+        assert "clampDispatchCount" in src
         assert "CONFIGURED_AGENT_MIN !== undefined" in src
         assert "REQUIRED_AGENT_MIN" in src
 
 
-# ── Bug 3: enforce-delegate.ts — CLAUDE_AGENT_FLOOR defaults to "10" not "7" ──
+# ── Bug 3: enforce-delegate.ts — floor consumes the canonical cap ─────────────
 
 
 class TestBug3_EnforceDelegateFloorDefault:
-    """FLOOR defaults to "7"; AGENTS.md mandates "10"."""
+    """FLOOR defaults to the canonical opt-in minimum, not the ceiling."""
 
-    def test_floor_defaults_to_10_not_7(self):
+    def test_floor_uses_canonical_cap_not_legacy_literal(self):
         src = _read_plugin("enforce-delegate.ts")
-        assert 'CLAUDE_AGENT_FLOOR || "7"' not in src, "BUG STILL PRESENT: FLOOR defaults to '7'. Must default to '10'."
-        assert 'CLAUDE_AGENT_FLOOR || "10"' in src, "FLOOR must default to '10' to match AGENTS.md floor."
+        assert 'CLAUDE_AGENT_FLOOR || "7"' not in src, "BUG STILL PRESENT: FLOOR defaults to the retired value seven."
+        assert "../lib/multitask_config.ts" in src
+        assert "CLAUDE_AGENT_FLOOR || String(MIN_DISPATCHES)" in src
+        assert "clampDispatchCount" in src
 
 
 # ── Bug 4: enforce-no-wait.ts — bash command uses input.args?.command ─────────

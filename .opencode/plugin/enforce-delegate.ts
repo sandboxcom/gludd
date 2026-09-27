@@ -4,6 +4,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { isSubagent, reportAlive, isDisengaged, isDispatchTool, isReadTool, isInPressureRelease, isInInlineRecovery, recordDispatchAttempt, readDispatchOutcomes } from "../lib/shared.ts"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
+import { HARD_MAX_DISPATCHES, MIN_DISPATCHES, clampDispatchCount } from "../lib/multitask_config.ts"
 const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
 function execSync(...args: any[]): Buffer {
   return nodeRequire("node:child_" + "process").execSync(...args)
@@ -27,8 +28,12 @@ function execSync(...args: any[]): Buffer {
 // ============================================================================
 // CONFIG (mirrors the claude env var names so the same knobs work in opencode)
 // ============================================================================
-const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
-const TARGET = parseInt(process.env.CLAUDE_AGENT_TARGET || "10", 10)
+const FLOOR = clampDispatchCount(
+  parseInt(process.env.CLAUDE_AGENT_FLOOR || String(MIN_DISPATCHES), 10),
+)
+const TARGET = clampDispatchCount(
+  parseInt(process.env.CLAUDE_AGENT_TARGET || String(HARD_MAX_DISPATCHES), 10),
+)
 const MODEL_UTIL_STATE = process.env.GLUDD_MODEL_UTIL_STATE || "/tmp/gludd-model-util.json"
 const MODEL_UTIL_WINDOW = parseInt(process.env.GLUDD_MODEL_UTIL_WINDOW || "20", 10)
 const MODEL_UTIL_ENFORCE = (process.env.GLUDD_MODEL_UTIL_ENFORCE || "1") !== "0"
@@ -94,7 +99,11 @@ const READ_GRIND_DENY_MS = parseInt(process.env.GLUDD_READ_GRIND_DENY_MS || "600
 const READ_GRIND_STALE_MS = parseFloat(process.env.GLUDD_READ_GRIND_STALE_MS || "60000")
 const DISK_DANGER_GB = parseFloat(process.env.GLUDD_DISK_DANGER_GB || "2.5")
 const DISK_HARD_FLOOR_GB = parseFloat(process.env.GLUDD_DISK_HARD_FLOOR_GB || "1.0")
-const WORKTREE_CAP = parseInt(process.env.GLUDD_WORKTREE_CAP || "6", 10)
+const HARD_WORKTREE_CAP = 2
+const WORKTREE_CAP = Math.max(
+  1,
+  Math.min(HARD_WORKTREE_CAP, parseInt(process.env.GLUDD_WORKTREE_CAP || "2", 10)),
+)
 const WORKTREE_MIN_FREE_GB = parseFloat(process.env.GLUDD_MIN_FREE_GB || "5.0")
 // GIT SHIPPING ALLOWLIST (RP.13 fix): git operations (commit, push, tag,
 // merge) are terminal shipping actions, not inline grinding. They must NOT
@@ -663,6 +672,7 @@ function isMainthreadTool(tool: string): boolean {
 function mainthreadBudgetBefore(tool: string, command: string): string | null {
   try {
     if (!MAINTHREAD_STREAK_ENABLED) return null
+    if (FLOOR === 0) return null
     if (isDisengaged()) return null
     // PRESSURE-RELEASE: skip mainthread streak when in pressure-release
     // or inline-recovery mode. The agent needs inline tool use to recover

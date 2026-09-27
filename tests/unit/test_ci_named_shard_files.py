@@ -647,6 +647,129 @@ def test_cli_rejects_non_release_eligible_identity_before_running(
     assert payload["error"] == "repository identity is not release eligible"
 
 
+def test_cli_allows_stable_dirty_identity_only_for_nonrelease_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A commit-preflight gate may test dirty content without blessing a release."""
+    module = _load_script("run_ci_shards_serial")
+    destination = tmp_path / "dirty-gate.json"
+    resource_paths = module.ResourcePaths(
+        root=tmp_path,
+        coverage_shards=tmp_path / "coverage-fragments",
+        coverage_json=tmp_path / "coverage.json",
+        coverage_audit=tmp_path / "coverage-audit.json",
+        attestation=tmp_path / "default-attestation.json",
+    )
+    identity = {
+        "head_sha": "abc123",
+        "expected_sha": "abc123",
+        "branch": "feature",
+        "clean": False,
+        "exact_sha": True,
+        "queries_ok": True,
+    }
+    calls: list[str] = []
+    states = iter(("candidate-state", "candidate-state"))
+    monkeypatch.setattr(module, "_resource_paths", lambda: resource_paths)
+    monkeypatch.setattr(module, "_repository_identity", lambda **_kwargs: identity)
+    monkeypatch.setattr(module, "_worktree_state_id", lambda: next(states))
+    monkeypatch.setattr(
+        module,
+        "run",
+        lambda *_args, **_kwargs: calls.append("run") or 0,
+    )
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "run_ci_shards_serial.py",
+            "--shards=unit-2",
+            "--allow-dirty-worktree",
+            f"--attestation-output={destination}",
+        ],
+    )
+
+    assert module.main() == 0
+    assert calls == ["run"]
+    payload = json.loads(destination.read_text(encoding="utf-8"))
+    assert payload["status"] == "pass"
+    assert payload["identity"]["clean"] is False
+    assert payload["identity"]["worktree_state_id"] == "candidate-state"
+    assert module._identity_is_release_eligible(payload["identity"]) is False
+
+
+def test_dirty_gate_rejects_worktree_mutation_during_test_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    destination = tmp_path / "mutated-dirty-gate.json"
+    resource_paths = module.ResourcePaths(
+        root=tmp_path,
+        coverage_shards=tmp_path / "coverage-fragments",
+        coverage_json=tmp_path / "coverage.json",
+        coverage_audit=tmp_path / "coverage-audit.json",
+        attestation=tmp_path / "default-attestation.json",
+    )
+    monkeypatch.setattr(module, "_resource_paths", lambda: resource_paths)
+    monkeypatch.setattr(
+        module,
+        "_repository_identity",
+        lambda **_kwargs: {
+            "head_sha": "abc123",
+            "expected_sha": "abc123",
+            "branch": "feature",
+            "clean": False,
+            "exact_sha": True,
+            "queries_ok": True,
+        },
+    )
+    states = iter(("candidate-state", "mutated-state"))
+    monkeypatch.setattr(module, "_worktree_state_id", lambda: next(states))
+    monkeypatch.setattr(module, "run", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "run_ci_shards_serial.py",
+            "--shards=unit-2",
+            "--allow-dirty-worktree",
+            f"--attestation-output={destination}",
+        ],
+    )
+
+    assert module.main() == module.RUNNER_EXCEPTION_EXIT_CODE
+    payload = json.loads(destination.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    assert payload["error"] == "repository state changed during dirty gate"
+
+
+def test_release_policy_rejects_dirty_gate_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "run_ci_shards_serial.py",
+            "--shards=unit-2",
+            "--allow-dirty-worktree",
+            "--require-release-policy",
+            "--pytest-args=-W error",
+        ],
+    )
+
+    assert module.main() == 2
+
+
+def test_commit_preflight_gate_invokes_dirty_nonrelease_mode() -> None:
+    source = (ROOT / "scripts" / "run_gate.sh").read_text(encoding="utf-8")
+
+    assert "run_ci_shards_serial.py --pytest-args=-q --allow-dirty-worktree" in source
+
+
 def test_serial_runner_rejects_nonpositive_batch_size() -> None:
     module = _load_script("run_ci_shards_serial")
 

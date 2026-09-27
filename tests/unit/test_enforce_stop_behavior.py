@@ -9,9 +9,9 @@ Tests:
   3. push_blocked_signal_reads_state_file — write multitask state, verify underFloor detected
   4. push_blocked_cooldown_not_pending — CI cooldown, verify ciVerdictUnknown → pending
   5. multitask_text_block_zero_dispatches — 0 dispatches, verify text blanked
-  6. multitask_text_allow_with_dispatches — 10 dispatches, verify text allowed
+  6. multitask_text_allow_with_dispatches — 3 dispatches, verify text allowed
   7. results_ingestion_blocks_text — 5 task_result markers in prev turn, verify blanked
-  8. results_ingestion_allows_with_dispatch — results + 10 dispatches, verify allowed
+  8. results_ingestion_allows_with_dispatch — results + 3 dispatches, verify allowed
   9. post_ship_blocks_text — persist block written, next non-dispatch tool denied
   10. post_ship_allows_with_dispatches — persist block + dispatch clears the block
   11. tasksmd_unverified_items_count_pending — [x] without commit hash, verify pending
@@ -411,12 +411,12 @@ def test_multitask_text_block_zero_dispatches(hook_plugin_env: HookEnv):
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TEST 6: multitask_text_allow_with_dispatches
-# 10 dispatches + pending work → isTextOnly=false, text allowed through.
+# Three dispatches + pending work → isTextOnly=false, text allowed through.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
 def test_multitask_text_allow_with_dispatches(hook_plugin_env: HookEnv):
-    """dispatchCount=10 → isTextOnly=false → blockMandatoryPendingText
+    """dispatchCount=3 → isTextOnly=false → blockMandatoryPendingText
     does NOT fire. Text passes through unmodified."""
     _clean_leaked_state_files()
 
@@ -424,19 +424,19 @@ def test_multitask_text_allow_with_dispatches(hook_plugin_env: HookEnv):
 
     parsed, raw, stderr, rc = _invoke_text_complete(
         hook_plugin_env,
-        "Dispatching 10 agents now: Agent 1 fixes X, Agent 2 adds Y...",
-        dispatch_count=10,
+        "Dispatching 3 agents now: Agent 1 fixes X, Agent 2 adds Y...",
+        dispatch_count=3,
         tool_call_made=True,
     )
     assert rc == 0, stderr
 
     if parsed is not None:
         block_text = parsed.get("text", "")
-        assert "BLOCKED" not in block_text.upper(), f"10 dispatches: text MUST NOT be blanked. raw={raw[:300]}"
+        assert "BLOCKED" not in block_text.upper(), f"3 dispatches: text MUST NOT be blanked. raw={raw[:300]}"
     # parsed=None (hook returned undefined) means allowed — correct.
     pb = _read_persist_block(hook_plugin_env)
     assert pb is None or pb.get("blocked") is not True or pb.get("reason") in ("after-results-text-only",), (
-        f"10 dispatches MUST NOT leave a deny-persist. persist_block={pb}"
+        f"3 dispatches MUST NOT leave a deny-persist. persist_block={pb}"
     )
 
 
@@ -575,8 +575,8 @@ def test_results_ingestion_allows_with_dispatch(hook_plugin_env: HookEnv):
 
     parsed, raw, stderr, rc = _invoke_text_complete(
         hook_plugin_env,
-        "Results arrived. Dispatching next wave of 10 agents now.",
-        dispatch_count=10,
+        "Results arrived. Dispatching the next bounded wave of 3 agents now.",
+        dispatch_count=3,
         tool_call_made=True,
     )
     assert rc == 0, stderr

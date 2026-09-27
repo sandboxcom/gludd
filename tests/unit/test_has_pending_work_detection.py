@@ -74,7 +74,7 @@ class TestCheckboxDetection:
 
 
 class TestTableRowDetection:
-    """hasTasksMdPendingWork() in shared.ts now scans table rows via
+    """tasksMdPendingStats() in shared.ts now scans table rows via
     /\\|\\s*(NOT STARTED|IN PROGRESS|PENDING)\\s*\\|/im.  The checkbox
     regex is the primary detector; table-row detection is a secondary pass
     that catches TASKS.md entries in status-table format."""
@@ -164,14 +164,18 @@ class TestTableRowDetection:
         )
 
     def test_table_row_in_full_has_pending_work_chain(self):
-        """Verify table-row keywords appear in hasTasksMdPendingWork function body."""
+        """Verify the stats helper detects table rows and its wrapper delegates."""
         shared_path = PLUGIN_PATH.parent.parent / "lib" / "shared.ts"
         shared_src = shared_path.read_text()
-        func_body = shared_src.split("function hasTasksMdPendingWork")[1]
-        assert "NOT STARTED" in func_body
-        assert "IN PROGRESS" in func_body
-        assert "PENDING" in func_body
-        assert "|\\s*" in func_body.replace("|\\s", "|\\s").replace("| ", "| ")
+        stats_body = shared_src.split("function tasksMdPendingStats", maxsplit=1)[1].split(
+            "function hasTasksMdPendingWork", maxsplit=1
+        )[0]
+        wrapper_body = shared_src.split("function hasTasksMdPendingWork", maxsplit=1)[1]
+        assert "NOT STARTED" in stats_body
+        assert "IN PROGRESS" in stats_body
+        assert "PENDING" in stats_body
+        assert "|\\s*" in stats_body.replace("|\\s", "|\\s").replace("| ", "| ")
+        assert "tasksMdPendingStats(tasksMdPath).pending" in wrapper_body
 
 
 # ── 3. Unresolved BUGS.md entries ─────────────────────────────────────────────

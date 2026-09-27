@@ -598,6 +598,29 @@ The following evidence is invalid:
 - hosted coverage whose artifact, size, digest, or Python identity is unbound; or
 - a locally compensated cleanup that hides an application-owned resource leak.
 
+The commit-preflight gate is deliberately not a release lane. `make gate` must
+test the candidate before a commit exists, so it invokes the serial runner's
+explicit dirty-worktree mode. That mode still requires the expected HEAD, hashes
+the complete worktree before and after the shard run, and fails if any candidate
+content changes while tests execute. Its terminal shard attestation retains
+`clean: false` and can never satisfy release verification. The runner rejects any
+attempt to combine the dirty-worktree option with release-policy attestation.
+After the gate passes, the signed gate status binds that same worktree identity
+to the staged index; the commit guard rejects a partial or subsequently changed
+index. Canonical local and hosted dual-track producers remain clean-only.
+
+This split avoids a long-lived practitioner failure mode without hiding user
+changes behind an implicit stash. pre-commit issue
+[#2127](https://github.com/pre-commit/pre-commit/issues/2127) reproduces a
+commit-time dirty-tree transition that fails without restoring every change, and
+issue [#1418](https://github.com/pre-commit/pre-commit/issues/1418) shows a
+checkout hook breaking the framework's hidden stash/restore sequence. GSD issue
+[#3141](https://github.com/gsd-build/gsd-2/issues/3141) reports an automated
+work-to-commit state machine halting permanently after dirty-tree, stash, and
+cleanup assumptions cascade. Gludd therefore observes an immutable content
+identity directly during preflight and reserves clean-commit identity for actual
+release evidence.
+
 Every bounded shard batch contains at most 16 files, uses one worker, disables
 worker restarts, has a unique base temporary directory, emits heartbeats, and
 terminates its owned process group with bounded TERM-to-KILL cleanup. The 16-file
@@ -2351,8 +2374,10 @@ evidence.
 
 The stable release is bound to the exact ledger declarations S83.157 through
 S83.168. The checker rejects a missing or partial task set, even if every beta4
-task is complete, and reports only unchecked members of that exact set. S83.166
-is the terminal publish/promotion action, so it must be declared but is excluded
+task is complete, and reports every member that is not effectively complete.
+A checked marker cannot close a task whose explicit status remains `pending` or
+`in_progress`, while an unchecked task always remains open. S83.166 is the
+terminal publish/promotion action, so it must be declared but is excluded
 from the pre-publication readiness cycle just as beta4's terminal release action
 is. Post-publication verification remains responsible for completing it.
 

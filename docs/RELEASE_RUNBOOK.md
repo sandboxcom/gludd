@@ -18,11 +18,11 @@ make verify-release-completeness TAG=v0.1.1
 COMPLETENESS CHECK: PASS
 ```
 
-The v0.1.1 verifier requires every required artifact category to pass, the
-exact tag version in release assets, a non-draft release, and no zero-byte
-asset. Before publication, CI also verifies artifact contents, aggregate
-checksums, digest-pinned image references, canonical Ansible runtime metadata,
-and all smoke attestations.
+The v0.1.1 verifier requires all 28 artifact categories to pass, at least 30
+assets to be present, the exact tag version in release assets, a non-draft
+release, and no zero-byte asset. Before publication, CI also verifies artifact
+contents, aggregate checksums, digest-pinned image references, canonical
+Ansible runtime metadata, and all smoke attestations.
 
 ## Preconditions
 
@@ -96,6 +96,23 @@ The release workflow builds, validates, and stages these immutable outputs:
 | Container | GHCR image metadata | run a namespaced container and wait a bounded 30 seconds for `/healthz` |
 | Metadata | CycloneDX SBOM, install script, licenses, provenance, checksums | validate schemas, execute installer from the Linux archive, and verify exact SHA-256 coverage |
 
+The completeness verifier recognizes exactly 28 mandatory categories; none are
+optional. The minimum is 30 assets because the runtime-collection category
+requires three separately named collection tarballs:
+
+| Group | Exact required categories |
+|---|---|
+| Platform binaries (4) | Linux x86_64, Linux aarch64, macOS arm64, Windows x86_64 |
+| Native packages/installers (4) | `.deb`, `.rpm`, `.dmg`, Windows `.exe` installer |
+| Base metadata (4) | checksums, SBOM, `LICENSE`, `THIRD_PARTY_LICENSES` |
+| Python and collections (4) | wheel, sdist, three runtime collection tarballs, collection manifest |
+| Ansible execution boundary (8) | EE definition, EE collection requirements, EE Python requirements, EE system requirements, EE runtime lock, managed-host Python lock, collection Python boundary inventory, EE image metadata |
+| Runtime delivery (4) | container image metadata, install script, smoke attestations, release manifest |
+
+This list mirrors `EXPECTED_CATEGORIES` in
+`scripts/verify_release_completeness.py`. A category-count change must update
+the verifier, its structural tests, and this runbook together.
+
 Every platform job writes a versioned smoke attestation only after its checks
 pass. `scripts/verify_release_asset_matrix.py` unions those attestations and
 requires all 15 smoke checks before the publishing action runs. Every artifact
@@ -157,7 +174,8 @@ Expected release state:
 
 - `isDraft: false`;
 - `isPrerelease: false`;
-- every required artifact category reports `PASS`;
+- all 28 required artifact categories report `PASS`;
+- at least 30 assets are present;
 - no zero-sized asset;
 - release URL identifies `v0.1.1`.
 

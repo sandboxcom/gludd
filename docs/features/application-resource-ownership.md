@@ -143,14 +143,17 @@ the thresholds were not increased.
 are different reporting scopes. `make active-work-status` treats the first
 explicit `<version> milestone is the exact task set <range>` declaration as the
 active delivery boundary. Its `open_task_ids` contains only unchecked tasks in
-that range. `task_scope` reports the ledger path, range, milestone count,
+that range plus any checked task whose explicit status remains non-complete.
+Unchecked tasks remain open even if implementation-phase metadata says
+`completed`; only the evidence gate may close their acceptance marker.
+`task_scope` reports the ledger path, range, milestone count,
 backlog count, and repository-wide count without copying the complete backlog
 into every status heartbeat. The IDs remain directly auditable in the named
 ledger. If no exact milestone declaration exists, the command fails safely to
 repository scope and preserves its former all-open behavior.
 
 The Codex Stop hook and repository `codex-stop-guard` consume the same parser in
-`scripts/task_scope.py`; neither recounts checkboxes independently. An unfinished
+`scripts/task_scope.py`; neither recounts markers independently. An unfinished
 active-milestone item or a ratchet entry can continue or fail the release loop.
 Future and historical backlog items remain visible as excluded inventory but
 cannot keep the current release turn alive or make a clean milestone fail. This

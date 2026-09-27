@@ -311,6 +311,21 @@ def test_incomplete_tasks_supports_v011_stable_release(tmp_path: Path) -> None:
     assert rr._incomplete_tasks(tmp_path, tag="v0.1.1") == ["S83.161"]
 
 
+def test_incomplete_tasks_rejects_checked_task_with_noncomplete_status(
+    tmp_path: Path,
+) -> None:
+    lines = [
+        (
+            f"- [x] S83.{task_id} — v0.1.1 work | "
+            f"status: {'in_progress' if task_id == 157 else 'completed'}\n"
+        )
+        for task_id in range(157, 169)
+    ]
+    (tmp_path / "TASKS.md").write_text("".join(lines), encoding="utf-8")
+
+    assert rr._incomplete_tasks(tmp_path, tag="v0.1.1") == ["S83.157"]
+
+
 def test_repository_v011_milestone_ids_are_present_exactly_once_in_order() -> None:
     task_lines = [
         line

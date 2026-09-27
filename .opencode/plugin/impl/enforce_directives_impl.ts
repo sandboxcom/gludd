@@ -1,9 +1,9 @@
-// Dormant directive-enforcement implementation. Keep this below plugin/impl so
-// OpenCode does not auto-discover an unregistered top-level plugin.
+// Registered directive-enforcement implementation. The thin top-level wrapper
+// imports this module while keeping OpenCode's discovered export surface small.
 //
 // THE FAILURE PATTERN (AGENTS.md session gap):
 //   1. User: "E2E coverage must be >85% before beta.3" → agent stops at 68%
-//   2. User: "maintain 10-agent floor at all times" → agent dispatches 3
+//   2. User supplies a numeric constraint → enforcement retains the constraint
 // This plugin makes those violations structurally impossible.
 //
 // WHAT IT DOES:
@@ -27,6 +27,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import { loadHotModule, type HotModule } from "../../lib/hot_reload.ts"
+import { clampDispatchCount } from "../../lib/multitask_config.ts"
 import { isSubagent, reportAlive, writeHeartbeat, readJsonFile, writeJsonFile } from "../../lib/shared.ts"
 
 const STATE_FILE = process.env.GLUDD_DIRECTIVE_STATE || "/tmp/gludd-active-directives.json"
@@ -35,14 +36,6 @@ const ENABLED = process.env.GLUDD_DIRECTIVE_ENFORCE !== "0"
 // ── Hardcoded directives from AGENTS.md session rules ───────────────────────
 // These are ALWAYS active. User messages can add more via pattern matching.
 const HARDCODED_DIRECTIVES: Directive[] = [
-  {
-    id: "floor-10",
-    kind: "floor",
-    subject: "subagent floor",
-    target: 10,
-    source: "AGENTS.md: 10-Agent Dispatch Floor",
-    pattern: /\b(?:maintain|keep|floor)\b.*?\b(\d+)[- ]agent\b/i,
-  },
   {
     id: "tdd-test-first",
     kind: "prohibition",
@@ -123,11 +116,13 @@ function loadState(): DirectiveState {
       }
       return {
         directives: Array.isArray(raw.directives)
-          ? raw.directives.map((d: any) => ({
+          ? raw.directives.filter((d: any) => d.id !== "floor-10").map((d: any) => ({
               id: String(d.id ?? ""),
               kind: String(d.kind ?? "rule"),
               subject: String(d.subject ?? ""),
-              target: typeof d.target === "number" ? d.target : undefined,
+              target: typeof d.target === "number"
+                ? (String(d.kind ?? "") === "floor" ? clampDispatchCount(d.target) : d.target)
+                : undefined,
               source: String(d.source ?? ""),
               pattern: d.pattern instanceof RegExp ? d.pattern : (typeof d.pattern === "string" ? new RegExp(d.pattern) : /(?:)/),
               active: Boolean(d.active ?? true),
@@ -189,7 +184,7 @@ function extractDirectivesFromText(text: string): Partial<Directive>[] {
     found.push({
       kind: "floor",
       subject: "subagent floor",
-      target: parseInt(floorMatch[1], 10),
+      target: clampDispatchCount(parseInt(floorMatch[1], 10)),
       source: "user-directive",
       active: true,
     })
@@ -346,6 +341,7 @@ const defaultImpl: HotModule = {
       const s = loadState()
       const floorDirective = s.directives.find(d => d.kind === "floor" && d.active)
       if (floorDirective && floorDirective.target !== undefined) {
+        const floorTarget = clampDispatchCount(floorDirective.target)
         const now = Date.now()
         const sinceLastDispatch = now - s.last_dispatch_ts
         // Allow reads, edits, and writes through — only block bash ops that
@@ -355,10 +351,10 @@ const defaultImpl: HotModule = {
           const isGitTarget = /\b(git-commit|git-push|batch-push|ship-commit|release-cut|git-tag-push)\b/.test(cmd)
           const isReadOnly = /\b(git-status|git-log|git-diff|ci-verdict|gate-status|verify-state|disk|git-staged|git-show)\b/.test(cmd)
           // Block shipping/commit targets when no dispatches recently
-          if (isGitTarget && s.last_dispatch_count === 0 && sinceLastDispatch > 60000) {
+          if (floorTarget > 0 && isGitTarget && s.last_dispatch_count === 0 && sinceLastDispatch > 60000) {
             return {
               permissionDecision: "deny",
-              message: `DIRECTIVE VIOLATION: floor=${floorDirective.target} agents required, but 0 dispatches made. Commit/push blocked until ≥${floorDirective.target} agents dispatched.`,
+              message: `DIRECTIVE VIOLATION: floor=${floorTarget} agents required, but 0 dispatches made. Commit/push blocked until ≥${floorTarget} agents dispatched.`,
             }
           }
           // Allow read-only targets
@@ -397,8 +393,9 @@ const defaultImpl: HotModule = {
           case "floor":
             // Block completion claims paired with "floor" subject when dispatch count is zero
             if (COMPLETION_CLAIM_RE.test(text) && /\bagent\b.*\bfloor\b|\bfloor\b.*\bagent\b/i.test(text)) {
-              if (s.last_dispatch_count < (d.target ?? 10)) {
-                blockMsg = `DIRECTIVE VIOLATION: floor=${d.target ?? 10} agents required, but only ${s.last_dispatch_count} dispatched. Resuming work in progress is not completion.`
+              const floorTarget = clampDispatchCount(d.target ?? 0)
+              if (floorTarget > 0 && s.last_dispatch_count < floorTarget) {
+                blockMsg = `DIRECTIVE VIOLATION: floor=${floorTarget} agents required, but only ${s.last_dispatch_count} dispatched. Resuming work in progress is not completion.`
               }
             }
             break

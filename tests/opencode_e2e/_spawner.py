@@ -6,16 +6,16 @@ Usage::
 
     spawner = OpencodeSpawner(
         project_dir="/tmp/opencode-e2e-test/",
-        prompt="Read TASKS.md, dispatch 10 subagents to complete tasks.",
+        prompt="Read TASKS.md and dispatch up to three useful subagents.",
         timeout_sec=3600,
-        prompt_sequence=["Read TASKS.md and dispatch 10 subagents.",
+        prompt_sequence=["Read TASKS.md and dispatch up to three useful subagents.",
                          "Keep working. Complete all remaining tasks."],
         prompt_interval_sec=300,
     )
     result = spawner.run()
     print(result.verdict)          # "PASS" or "FAIL"
     print(result.dispatch_waves)   # list[dict]
-    print(result.per_wave_violations)  # waves with <10 dispatches
+    print(result.per_wave_violations)  # waves outside configured bounds
     print(result.depth_count)      # max nesting depth observed
 """
 
@@ -36,6 +36,7 @@ OPENCODE_BIN = "opencode"
 _CAPTURE_POLL_SEC = 0.05
 _TERMINATE_GRACE_SEC = 1.0
 _KILL_GRACE_SEC = 1.0
+HARD_MAX_DISPATCHES = 3
 
 TOOL_CALL_RE = re.compile(r'(?:\btool_use\b|"type"\s*:\s*"tool_use"|"type":"tool_use")')
 TOOL_RESULT_RE = re.compile(r'(?:tool_result|"type"\s*:\s*"tool_result")')
@@ -117,12 +118,20 @@ class OpencodeSpawner:
         prompt_sequence: list[str] | None = None,
         prompt_interval_sec: int = 300,
         progress_interval_sec: float = 30,
+        minimum_dispatches: int = 0,
+        maximum_dispatches: int = HARD_MAX_DISPATCHES,
     ) -> None:
         self._project_dir = os.path.abspath(project_dir)
         self._prompt = prompt
         self._prompt_sequence = prompt_sequence or []
         self._prompt_interval_sec = prompt_interval_sec
         self._progress_interval_sec = progress_interval_sec
+        bounded_maximum = max(1, min(HARD_MAX_DISPATCHES, int(maximum_dispatches)))
+        self._maximum_dispatches = bounded_maximum
+        self._minimum_dispatches = max(
+            0,
+            min(bounded_maximum, int(minimum_dispatches)),
+        )
         self._timeout_sec = timeout_sec
         self._agent = agent
         self._model = model
@@ -553,13 +562,24 @@ class OpencodeSpawner:
                 }
             )
 
-            if 0 < f.dispatch_count < 10:
+            violation_reason = ""
+            if f.dispatch_count > self._maximum_dispatches:
+                violation_reason = (
+                    f"Wave {f.sequence} had {f.dispatch_count} dispatches "
+                    f"(ceiling={self._maximum_dispatches})"
+                )
+            elif 0 < f.dispatch_count < self._minimum_dispatches:
+                violation_reason = (
+                    f"Wave {f.sequence} had {f.dispatch_count} dispatches "
+                    f"(configured minimum={self._minimum_dispatches})"
+                )
+            if violation_reason:
                 per_wave_violations.append(
                     {
                         "sequence": f.sequence,
                         "timestamp": f.timestamp,
                         "dispatch_count": f.dispatch_count,
-                        "reason": f"Wave {f.sequence} had {f.dispatch_count} dispatches (floor=10)",
+                        "reason": violation_reason,
                     }
                 )
 

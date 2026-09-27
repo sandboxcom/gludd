@@ -90,14 +90,18 @@ def test_dc1_dispatch_examples() -> None:
         )
 
 
-def test_dc1_zero_subagents_forbidden() -> None:
-    """DC.1 must explicitly forbid 0 subagents during CI waits."""
+def test_dc1_zero_subagents_allowed_without_filler() -> None:
+    """DC.1 must allow inline ownership without manufacturing agent work."""
     content = _read_agents_md()
     dc1_block = _extract_section(content, "CI Wait Productivity (DC.1)")
     assert dc1_block is not None, "DC.1 section not found"
-    assert "0 subagents" in dc1_block, (
-        "DC.1 must call out '0 subagents during CI wait is a policy violation'."
-    )
+    for phrase in (
+        "zero subagents is valid",
+        "never justifies filler",
+        "up to three useful owners",
+    ):
+        assert phrase in dc1_block, f"DC.1 must preserve '{phrase}'."
+    assert "0 subagents during CI wait is a policy violation" not in dc1_block
 
 
 def test_dc2_three_poll_threshold() -> None:

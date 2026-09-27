@@ -67,7 +67,7 @@
 | Script | Description |
 |---|---|
 | `verify_release_artifact.py` | Checks if a release has at least one downloadable asset (not a bare tag) |
-| `verify_release_completeness.py` | Full release completeness check — 12 artifact categories, version stamps, zero-size detection |
+| `verify_release_completeness.py` | Full release completeness check — 28 artifact categories, 30-asset minimum, version stamps, zero-size detection |
 | `bump_version.py` | Bumps version across pyproject.toml, README.md, and `__init__.py` |
 | `check_readme_status_current.py` | Ensures README status version matches the release version |
 | `check_version_consistency.py` | Checks version consistency across all files |

@@ -54,7 +54,7 @@ def _run_plugin(
             extra={
                 "OPENCODE_SUBAGENT": "",
                 "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
-                "GLUDD_MIN_DISPATCHES": "10",
+                "GLUDD_MIN_DISPATCHES": "99",
                 "GLUDD_PROJECT_ROOT": str(Path(cwd or ROOT)),
             },
         )
@@ -179,7 +179,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 
 
 def test_enough_dispatches_allows_non_dispatch(tmp_path):
-    """After 10 dispatches in the SAME message (before text.complete),
+    """After three dispatches in the same message (before text.complete),
     non-dispatch tools are allowed because thisMessageDispatches >= MIN_DISPATCHES."""
     ws = tmp_path / "enough"
     ws.mkdir()
@@ -191,19 +191,12 @@ const plugin = await mod.default({{}})
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
 """
     result = _run_plugin(code, cwd=str(ws))
     r = _last_json(result)
-    assert r is None or r.get("permissionDecision") != "deny", f"10 dispatches same-msg should allow, got: {r}"
+    assert r is None or r.get("permissionDecision") != "deny", f"Three dispatches in one message should allow, got: {r}"
 
 
 # ─── Single dispatch blocked ────────────────────────────────────────────────
@@ -254,7 +247,7 @@ def test_full_dispatch_wave_unblocks_non_dispatch(tmp_path):
     ws.mkdir()
     _make_working_workspace(ws)
 
-    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(10))
+    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(3))
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
@@ -307,7 +300,7 @@ def test_dispatch_resets_zero_streak(tmp_path):
     _make_working_workspace(ws)
 
     # Same shape as the zero-streak test, except message 3 dispatches a full wave.
-    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(10))
+    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(3))
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
@@ -475,7 +468,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 def test_consecutive_non_dispatch_within_time_window(tmp_path):
     """4 consecutive non-dispatch calls with 100ms sleeps between them
     (all within MSG_GAP_MS=500). CONFIGURED MINIMUM BLOCK now fires on
-    the first write because thisMessageDispatches=0 < floor=10.
+    the first write because thisMessageDispatches=0 is below the clamped floor of three.
     Previously all were allowed; now the plugin catches them."""
     ws = tmp_path / "time-window"
     ws.mkdir()
@@ -576,8 +569,8 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 
 
 def test_partial_wave_then_grind(tmp_path):
-    """Dispatch 5 tasks, then after boundary, make non-dispatch call.
-    Floor breach blocks because prevMessageDispatches=5 < MIN(10) and
+    """Dispatch two tasks, then after boundary, make non-dispatch call.
+    Floor breach blocks because prevMessageDispatches=2 < MIN(3) and
     thisMessageDispatches=0.  First non-dispatch call after the boundary
     IS blocked — this proves boundary detection works, just not for
     calls within the gap."""
@@ -585,7 +578,7 @@ def test_partial_wave_then_grind(tmp_path):
     ws.mkdir()
     _make_working_workspace(ws)
 
-    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(5))
+    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(2))
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
@@ -687,21 +680,17 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# FAILURE 2: Less-than-10 dispatches doesn't block non-dispatch tools
-# ─── 8 dispatches then write with pending work ────────────────────────────────
+# FAILURE 2: Below-minimum waves block non-dispatch tools
+# ─── Two dispatches then write with pending work ────────────────────────────────
 
 
-def test_eight_dispatches_then_write_should_be_blocked(tmp_path):
-    """BUG: Dispatch 8 tasks (< floor of 10), then write with pending work.
-    In the real session, the agent dispatched 7-8 subagents and then used
-    edit/write/bash freely. The CONFIGURED MINIMUM BLOCK should have prevented
-    this but message boundary detection made it unreliable.
-    Test: 8 dispatches, message boundary (sleep > MSG_GAP_MS), then write."""
-    ws = tmp_path / "eight-dispatch"
+def test_two_dispatches_then_write_should_be_blocked(tmp_path):
+    """Dispatch two tasks below the clamped floor, cross a boundary, then write."""
+    ws = tmp_path / "two-dispatch"
     ws.mkdir()
     _make_working_workspace(ws)
 
-    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(8))
+    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(2))
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
@@ -713,7 +702,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
     r = _last_json(result)
     assert r is not None and r.get("permissionDecision") == "deny", (
-        f"BUG: 8 dispatches then write with pending work SHOULD be blocked. 8 < floor=10. Got: {r}"
+        f"Two dispatches then write with pending work should be blocked below floor three. Got: {r}"
     )
     assert "CONFIGURED MINIMUM BLOCK" in r.get("message", ""), (
         f"Expected CONFIGURED MINIMUM BLOCK, got: {r.get('message', '')}"
@@ -721,17 +710,16 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# New tests: 10-agent floor enforcement ──────────────────────────────────
+# Three-agent cap and configured-minimum enforcement ──────────────────────────────────
 
 
-def test_exactly_ten_dispatches_allows_non_dispatch(tmp_path):
-    """Dispatch exactly 10 tasks, then in the SAME message, a non-dispatch tool
-    is allowed (thisMessageDispatches=10 >= MIN_DISPATCHES=10)."""
-    ws = tmp_path / "exact-10"
+def test_exactly_three_dispatches_allows_non_dispatch(tmp_path):
+    """Three dispatches satisfy the clamped configured minimum."""
+    ws = tmp_path / "exact-three"
     ws.mkdir()
     _make_working_workspace(ws)
 
-    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(10))
+    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(3))
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
@@ -742,18 +730,18 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
     r = _last_json(result)
     assert r is None or r.get("permissionDecision") != "deny", (
-        f"10 dispatches in same message should allow write, got: {r}"
+        f"Three dispatches in the same message should allow write, got: {r}"
     )
 
 
-def test_nine_dispatches_blocks_non_dispatch(tmp_path):
-    """Dispatch 9 tasks (< floor of 10) then write in same message -> DENIED
+def test_two_dispatches_blocks_non_dispatch(tmp_path):
+    """Dispatch two tasks below the floor of three, then write -> DENIED
     with CONFIGURED MINIMUM BLOCK message."""
-    ws = tmp_path / "nine"
+    ws = tmp_path / "two"
     ws.mkdir()
     _make_working_workspace(ws)
 
-    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(9))
+    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(2))
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
@@ -763,7 +751,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 """
     result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
     r = _last_json(result)
-    assert r is not None and r.get("permissionDecision") == "deny", f"9 dispatches (<10 floor) should block, got: {r}"
+    assert r is not None and r.get("permissionDecision") == "deny", f"Two dispatches (<3 floor) should block, got: {r}"
     assert "CONFIGURED MINIMUM BLOCK" in r.get("message", "")
 
 
@@ -874,13 +862,13 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 
 
 def test_env_disable_skips_under_floor_check(tmp_path):
-    """GLUDD_MULTITASK_FLOOR_ENFORCE=0: 9 dispatches (< floor) + write does
+    """GLUDD_MULTITASK_FLOOR_ENFORCE=0: two dispatches below floor + write does
     NOT block because enforcement is entirely disabled."""
     ws = tmp_path / "env-disable-under"
     ws.mkdir()
     _make_working_workspace(ws)
 
-    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(9))
+    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(2))
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
@@ -898,13 +886,13 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 
 
 def test_subagent_skips_under_floor_check(tmp_path):
-    """OPENCODE_SUBAGENT=1: 9 dispatches (< floor) + write does NOT block
+    """OPENCODE_SUBAGENT=1: two dispatches below floor + write does NOT block
     because subagent context skips ALL enforcement."""
     ws = tmp_path / "subagent-under"
     ws.mkdir()
     _make_working_workspace(ws)
 
-    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(9))
+    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(2))
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
@@ -923,14 +911,13 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     )
 
 
-def test_ten_dispatches_required_message_explicit(tmp_path):
-    """The deny message for under-floor waves explicitly says '10' (the literal
-    number) and contains 'CONFIGURED MINIMUM BLOCK'."""
+def test_three_dispatches_required_message_explicit(tmp_path):
+    """The under-floor deny message names the clamped floor of three."""
     ws = tmp_path / "msg-explicit"
     ws.mkdir()
     _make_working_workspace(ws)
 
-    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(9))
+    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(2))
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
@@ -942,11 +929,11 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     r = _last_json(result)
     msg = r.get("message", "")
     assert "CONFIGURED MINIMUM BLOCK" in msg, f"Expected CONFIGURED MINIMUM BLOCK, got: {msg}"
-    assert "10" in msg, f"Deny message must mention floor=10 explicitly, got: {msg}"
+    assert "3" in msg, f"Deny message must mention the clamped floor of three, got: {msg}"
 
 
 def test_under_floor_check_fires_without_zero_streak(tmp_path):
-    """Under-floor check fires with 9 dispatches in same message + write.
+    """Under-floor check fires with two dispatches in the same message + write.
     zeroStreak is 0 (never incremented because no message boundary was crossed),
     yet the CONFIGURED MINIMUM BLOCK still fires because it does NOT check
     zeroStreak at all."""
@@ -954,7 +941,7 @@ def test_under_floor_check_fires_without_zero_streak(tmp_path):
     ws.mkdir()
     _make_working_workspace(ws)
 
-    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(9))
+    dispatches = "\n".join("await plugin['tool.execute.before']({tool: 'task'}, undefined)" for _ in range(2))
     code = f"""\
 import * as fs from 'node:fs'
 const mod = await import('{PLUGIN_PATH}')
@@ -970,7 +957,7 @@ console.log(JSON.stringify({{...r, zeroStreakBefore: state.zeroStreak}}))
     r = _last_json(result)
     assert r is not None and r.get("permissionDecision") == "deny", f"Under-floor check must fire, got: {r}"
     assert r.get("zeroStreakBefore") == 0, (
-        f"zeroStreak should be 0 after 9 dispatches in same message, got: {r.get('zeroStreakBefore')}"
+        f"zeroStreak should be 0 after two dispatches in same message, got: {r.get('zeroStreakBefore')}"
     )
     assert "CONFIGURED MINIMUM BLOCK" in r.get("message", "")
 

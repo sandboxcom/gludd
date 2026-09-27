@@ -8614,7 +8614,13 @@ disengage-next:
 reload-enforcement:
 	@echo "=== RELOAD ENFORCEMENT STATE ==="
 	@$(MAKE) --no-print-directory clean-tmp
-	@FLOOR="$${CLAUDE_AGENT_FLOOR:-10}"; \
+	@FLOOR="$${CLAUDE_AGENT_FLOOR:-0}"; \
+	CEILING="$${CLAUDE_AGENT_CEILING:-3}"; \
+	case "$$FLOOR" in ''|*[!0-9]*) FLOOR=0 ;; esac; \
+	case "$$CEILING" in ''|*[!0-9]*) CEILING=3 ;; esac; \
+	if [ "$$CEILING" -gt 3 ]; then CEILING=3; fi; \
+	if [ "$$CEILING" -lt 1 ]; then CEILING=1; fi; \
+	if [ "$$FLOOR" -gt "$$CEILING" ]; then FLOOR="$$CEILING"; fi; \
 	echo "$${FLOOR}" > /tmp/gludd-floor-override; \
 	echo "  /tmp/gludd-floor-override          → $${FLOOR}"
 	@$(UV) run python3 -c 'import json,os,time; path=os.environ.get("GLUDD_STREAK_FILE","/tmp/gludd-tool-streak.json"); json.dump({"count":0,"ts":int(time.time()*1000)},open(path,"w"))'

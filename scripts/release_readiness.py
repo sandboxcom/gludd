@@ -530,9 +530,14 @@ def _tasks_tick_check(root: Path) -> tuple[bool, str]:
 
 
 def _incomplete_tasks(root: Path, tag: str = DEFAULT_RELEASE_TAG) -> list[str]:
+    ledger_module = importlib.import_module("validate_task_ledger")
     extract_tasks = cast(
         "Callable[[Path], tuple[list[dict[str, object]], list[dict[str, object]]]]",
-        importlib.import_module("validate_task_ledger").extract_tasks,
+        ledger_module.extract_tasks,
+    )
+    task_is_effectively_complete = cast(
+        "Callable[..., bool]",
+        ledger_module.task_is_effectively_complete,
     )
 
     tasks_path = root / "TASKS.md"
@@ -556,7 +561,13 @@ def _incomplete_tasks(root: Path, tag: str = DEFAULT_RELEASE_TAG) -> list[str]:
         missing = ", ".join(sorted(missing_tasks))
         raise RuntimeError(f"{tag} milestone is incomplete; missing task(s): {missing}")
     release_actions = RELEASE_ACTION_TASKS.get(tag, frozenset())
-    for task in unchecked:
+    task_states = (
+        *((task, True) for task in checked),
+        *((task, False) for task in unchecked),
+    )
+    for task, is_checked in task_states:
+        if task_is_effectively_complete(task, checked=is_checked):
+            continue
         raw_ids = task.get("ids", [])
         if not isinstance(raw_ids, list):
             continue

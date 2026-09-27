@@ -78,6 +78,24 @@ The fail-closed v0.1.1 milestone is the exact task set S83.157\N{EN DASH}S83.168
     }
 
 
+def test_task_inventory_keeps_checked_noncomplete_status_open() -> None:
+    tasks = """# Tasks
+
+The fail-closed v0.1.1 milestone is the exact task set S83.157-S83.168.
+
+- [x] S83.157 — checkbox contradicts status | status: in_progress
+- [x] S83.158 — genuinely complete | status: completed
+- [ ] S83.159 — checkbox contradicts status | status: completed
+- [ ] S83.160 — genuinely pending | status: pending
+"""
+
+    inventory = active_work_status._task_inventory(tasks)
+
+    assert inventory["open_task_ids"] == ["S83.157", "S83.159", "S83.160"]
+    assert inventory["task_scope"]["open_count"] == 3
+    assert inventory["task_scope"]["total_open_count"] == 3
+
+
 def test_task_inventory_falls_back_to_repository_scope_without_declaration() -> None:
     inventory = active_work_status._task_inventory(
         "- [ ] S1 — first\n- [x] S2 — done\n- [ ] S3 — third\n"
