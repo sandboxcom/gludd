@@ -59,7 +59,7 @@
     },
     {
       "path": "scripts/check_integration_health.py",
-      "line": 251,
+      "line": 253,
       "column": 15,
       "kind": "process",
       "owner": "main",
@@ -224,7 +224,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 270,
+      "line": 290,
       "column": 33,
       "kind": "temp-artifact",
       "owner": "_write_terminal_attestation",
@@ -235,7 +235,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 423,
+      "line": 443,
       "column": 16,
       "kind": "temp-artifact",
       "owner": "_owned_socket_safe_tmpdir",
@@ -246,7 +246,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 686,
+      "line": 706,
       "column": 14,
       "kind": "process",
       "owner": "_run_owned_pytest",
@@ -257,7 +257,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 1050,
+      "line": 1070,
       "column": 12,
       "kind": "temp-artifact",
       "owner": "run",
@@ -433,7 +433,7 @@
     },
     {
       "path": "scripts/task_watchdog.py",
-      "line": 420,
+      "line": 448,
       "column": 17,
       "kind": "temp-artifact",
       "owner": "record_kill",
@@ -444,7 +444,7 @@
     },
     {
       "path": "scripts/test_hook_runtime.py",
-      "line": 157,
+      "line": 167,
       "column": 9,
       "kind": "temp-artifact",
       "owner": "_run_ts",
@@ -1269,7 +1269,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 964,
+      "line": 1043,
       "column": 22,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1280,7 +1280,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 976,
+      "line": 1055,
       "column": 27,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1291,7 +1291,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 990,
+      "line": 1069,
       "column": 32,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1302,7 +1302,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 2387,
+      "line": 2575,
       "column": 29,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job_isolated",
@@ -1313,7 +1313,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3515,
+      "line": 3721,
       "column": 26,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -1324,7 +1324,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3573,
+      "line": 3779,
       "column": 27,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -1335,7 +1335,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 4639,
+      "line": 4936,
       "column": 40,
       "kind": "async-task",
       "owner": "EventLoop._phase_reconcile_completed_decisions",
@@ -1346,7 +1346,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 4653,
+      "line": 4950,
       "column": 44,
       "kind": "async-task",
       "owner": "EventLoop._phase_reconcile_completed_decisions",
@@ -1489,7 +1489,7 @@
     },
     {
       "path": "src/general_ludd/infra/deployment.py",
-      "line": 725,
+      "line": 834,
       "column": 27,
       "kind": "async-task",
       "owner": "DeploymentManager.destroy",
@@ -1500,13 +1500,13 @@
     },
     {
       "path": "src/general_ludd/infra/deployment_events.py",
-      "line": 92,
-      "column": 25,
+      "line": 109,
+      "column": 21,
       "kind": "async-task",
       "owner": "PostgresWakeupListener.start",
       "acquisition": "asyncio.create_task(self._run(), name=f'gludd-pg-wakeup-{self._worker_id}-{os.getpid()}')",
-      "teardown": "await self._task; self._task.cancel()",
-      "source_hash": "4579cde303c2d3f38e1f7ab5d7588310534a133a392e8989b1c6bbea0f481515",
+      "teardown": "await task; self._task.cancel()",
+      "source_hash": "f9c57f639c2af2bfd0cd9737e7a5da448b170d45bd9c2852bdf481aea4702159",
       "owned": true
     },
     {
