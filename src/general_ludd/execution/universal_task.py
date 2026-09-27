@@ -11,6 +11,7 @@ from general_ludd.execution.universal_task_types import (
     CandidateAssessment,
     ExecutionTarget,
     ModelGatewayProtocol,
+    ModelProfileOrigin,
     ModelResponseProtocol,
     ModelServicePlannerProtocol,
     ModelServicePlanProtocol,
@@ -98,6 +99,7 @@ class UniversalTaskExecutor:
                     "accelerator_sku": target.accelerator_sku,
                     "accelerator_approved": accelerator_approved,
                 },
+                profile_origin=target.profile_origin,
             )
             evaluations.append(evaluation)
             if evaluation.eligible:
@@ -109,7 +111,12 @@ class UniversalTaskExecutor:
             eligible,
             key=lambda target: (target.estimated_cost_usd, target.profile_id),
         )
-        return RouteDecision(selected.profile_id, selected.provider, tuple(evaluations))
+        return RouteDecision(
+            selected.profile_id,
+            selected.provider,
+            tuple(evaluations),
+            selected.profile_origin,
+        )
 
     def execute(
         self,
@@ -363,7 +370,7 @@ class UniversalTaskExecutor:
 
 __all__ = [
     "AdapterDecision", "CandidateAssessment", "ExecutionTarget",
-    "ModelResponseProtocol", "ModelServicePlanProtocol", "ModelServicePlannerProtocol",
+    "ModelProfileOrigin", "ModelResponseProtocol", "ModelServicePlanProtocol", "ModelServicePlannerProtocol",
     "RouteDecision", "TargetEvaluation", "TaskAdapterProtocol", "TaskStatus",
     "ToolRunnerProtocol", "UniversalTaskExecutor", "UniversalTaskRequest",
     "UniversalTaskResult",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -11,6 +12,8 @@ from typing import Any, Protocol, runtime_checkable
 from general_ludd.hardware.model_service_rightsizing import InferenceWorkloadDemand
 from general_ludd.scheduling.scheduler import WorkItem
 
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
 
 class TaskStatus(StrEnum):
     """Terminal state of a universal task attempt."""
@@ -18,6 +21,24 @@ class TaskStatus(StrEnum):
     SUCCEEDED = "succeeded"
     REFUSED = "refused"
     FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class ModelProfileOrigin:
+    """Digest-bound provenance for a configured or discovered model profile."""
+
+    source: str
+    protocol: str
+    evidence_sha256: str
+
+    def __post_init__(self) -> None:
+        """Reject ambiguous labels and evidence that is not content-addressed."""
+        for name in ("source", "protocol"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value or value != value.strip():
+                raise ValueError(f"{name} must be canonical non-empty text")
+        if _SHA256_RE.fullmatch(self.evidence_sha256) is None:
+            raise ValueError("evidence_sha256 must be a lowercase SHA-256 digest")
 
 
 @runtime_checkable
@@ -118,6 +139,7 @@ class ExecutionTarget:
     privacy_evidence: str
     offline: bool
     model_runner_id: str | None = None
+    profile_origin: ModelProfileOrigin | None = None
 
     def __post_init__(self) -> None:
         """Require complete routing evidence and a finite cost claim."""
@@ -143,6 +165,11 @@ class ExecutionTarget:
             or not self.model_runner_id.strip()
         ):
             raise ValueError("model_runner_id must be non-empty text when provided")
+        if self.profile_origin is not None and not isinstance(
+            self.profile_origin,
+            ModelProfileOrigin,
+        ):
+            raise ValueError("profile_origin must be ModelProfileOrigin when provided")
 
 
 @runtime_checkable
@@ -181,6 +208,7 @@ class TargetEvaluation:
     eligible: bool
     reasons: tuple[str, ...]
     evidence: Mapping[str, object] = field(default_factory=dict)
+    profile_origin: ModelProfileOrigin | None = None
 
 
 @dataclass(frozen=True)
@@ -190,6 +218,7 @@ class RouteDecision:
     selected_profile_id: str | None
     selected_provider: str | None
     evaluations: tuple[TargetEvaluation, ...]
+    selected_profile_origin: ModelProfileOrigin | None = None
 
 
 @dataclass(frozen=True)
@@ -264,6 +293,7 @@ __all__ = [
     "CandidateAssessment",
     "ExecutionTarget",
     "ModelGatewayProtocol",
+    "ModelProfileOrigin",
     "ModelResponseProtocol",
     "ModelServicePlanProtocol",
     "ModelServicePlannerProtocol",

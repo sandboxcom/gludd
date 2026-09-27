@@ -26,10 +26,13 @@ from general_ludd.embedded.firmware import (
 )
 from general_ludd.execution.universal_task import (
     ExecutionTarget,
+    ModelProfileOrigin,
     TaskStatus,
     UniversalTaskExecutor,
     UniversalTaskRequest,
+    UniversalTaskResult,
 )
+from general_ludd.execution.universal_task_runtime import UniversalTaskRuntime
 from general_ludd.scheduling.scheduler import Scheduler
 
 CAPABILITY = "arduino-cpp"
@@ -179,19 +182,41 @@ def _planner() -> AcceleratorPlanner:
         provider="azure",
         approved=True,
     )
+    catalog_provider = HardwareDescriptor(
+        kind=AcceleratorKind.CLOUD,
+        name="FreeLLMAPI-admitted Groq service",
+        sku="freellmapi-groq-managed",
+        region="provider-managed",
+        provider="groq",
+        approved=True,
+    )
     return AcceleratorPlanner(
-        approved_cloud_skus=frozenset({azure.sku}),
+        approved_cloud_skus=frozenset({azure.sku, catalog_provider.sku}),
         local_hardware=(local,),
-        cloud_catalog=(azure,),
+        cloud_catalog=(azure, catalog_provider),
     )
 
 
-def _target(provider: str, cost: float) -> ExecutionTarget:
+def _target(
+    provider: str,
+    cost: float,
+    *,
+    profile_origin: ModelProfileOrigin | None = None,
+) -> ExecutionTarget:
     local = provider == "local"
+    accelerator_sku = {
+        "local": "local-gpu",
+        "azure": "Standard_NC24ads_A100_v4",
+        "groq": "freellmapi-groq-managed",
+    }[provider]
     return ExecutionTarget(
-        profile_id=f"{provider}-firmware",
+        profile_id=(
+            "freellmapi-groq-0123456789abcdef0123"
+            if profile_origin is not None
+            else f"{provider}-firmware"
+        ),
         provider=provider,
-        accelerator_sku="local-gpu" if local else "Standard_NC24ads_A100_v4",
+        accelerator_sku=accelerator_sku,
         capabilities=frozenset({CAPABILITY}),
         allowed_data_classifications=frozenset(
             {"public", "internal", "confidential", "restricted"}
@@ -203,8 +228,9 @@ def _target(provider: str, cost: float) -> ExecutionTarget:
         health_evidence=f"{provider} health probe",
         capability_evidence="Arduino C++ compile benchmark",
         cost_evidence=f"{provider} measured cost",
-        privacy_evidence="offline isolation" if local else "approved Azure egress",
+        privacy_evidence="offline isolation" if local else "approved provider egress",
         offline=local,
+        profile_origin=profile_origin,
     )
 
 
@@ -237,7 +263,7 @@ def _execute(
     runner: _PipelineRunner | None,
     *,
     targets: tuple[ExecutionTarget, ...] | None = None,
-) -> object:
+) -> UniversalTaskResult:
     executor = UniversalTaskExecutor(
         gateway=gateway,
         scheduler=Scheduler(),
@@ -248,11 +274,16 @@ def _execute(
     return executor.execute(request, ArduinoFirmwareAdapter(policy_engine=PolicyEngine()))
 
 
-def test_one_executor_instance_runs_independent_chemistry_and_firmware_adapters() -> None:
+def test_one_runtime_routes_chemistry_and_firmware_via_freellmapi_origin() -> None:
     gateway = _Gateway(_polymer_candidate())
     runner = _PipelineRunner()
+    origin = ModelProfileOrigin(
+        source="freellmapi",
+        protocol="gludd-freellmapi-probe-profile-v1",
+        evidence_sha256="f" * 64,
+    )
     target = replace(
-        _target("local", 0.05),
+        _target("groq", 0.0, profile_origin=origin),
         capabilities=frozenset({CAPABILITY, "polymer_design"}),
     )
     executor = UniversalTaskExecutor(
@@ -262,30 +293,33 @@ def test_one_executor_instance_runs_independent_chemistry_and_firmware_adapters(
         target_source=lambda: (target,),
         tool_runner=runner,
     )
+    runtime = UniversalTaskRuntime(
+        executor=executor,
+        adapters=(
+            PolymerDesignAdapter(policy_engine=PolicyEngine()),
+            ArduinoFirmwareAdapter(policy_engine=PolicyEngine()),
+        ),
+    )
     polymer_request = UniversalTaskRequest(
         task_id="polymer-task-1",
         capability="polymer_design",
         instruction="Design a bounded glucose-derived polymer candidate.",
         budget_usd=1.0,
-        data_classification="restricted",
+        data_classification="public",
         resources=frozenset({"polymer-design"}),
         metadata={"requested_properties": ["glass_transition_temperature"]},
     )
 
-    polymer = executor.execute(
-        polymer_request,
-        PolymerDesignAdapter(policy_engine=PolicyEngine()),
-    )
+    polymer = runtime.execute(polymer_request)
     gateway.content = _candidate()
-    firmware = executor.execute(
-        _request(classification="restricted"),
-        ArduinoFirmwareAdapter(policy_engine=PolicyEngine()),
-    )
+    firmware = runtime.execute(_request(classification="public"))
 
     assert polymer.status is TaskStatus.SUCCEEDED
     assert firmware.status is TaskStatus.SUCCEEDED
-    assert polymer.route is not None and polymer.route.selected_provider == "local"
-    assert firmware.route is not None and firmware.route.selected_provider == "local"
+    assert polymer.route is not None and polymer.route.selected_provider == "groq"
+    assert firmware.route is not None and firmware.route.selected_provider == "groq"
+    assert polymer.route.selected_profile_origin == origin
+    assert firmware.route.selected_profile_origin == origin
     assert type(polymer.candidate).__module__ == "general_ludd.chemistry.polymer_design"
     assert type(firmware.candidate).__module__ == "general_ludd.embedded.firmware"
     assert len(gateway.calls) == 2
@@ -321,10 +355,14 @@ def test_same_universal_executor_routes_and_verifies_local_or_azure_firmware(
     assert gateway.calls[0]["profile_id"] == f"{expected_provider}-firmware"
     assert runner.calls[0][0] == TOOL
     assert runner.calls[0][1]["board_fqbn"] == "arduino:avr:uno"
-    assert result.evidence["policy"]["allowed"] is True
-    assert result.evidence["validation"]["status"] == "validated"
-    assert result.evidence["provenance"]["compile_artifact_sha256"]
-    assert result.evidence["safety"]["physical_device_access"] is False
+    policy = result.evidence["policy"]
+    validation = result.evidence["validation"]
+    provenance = result.evidence["provenance"]
+    safety = result.evidence["safety"]
+    assert isinstance(policy, dict) and policy["allowed"] is True
+    assert isinstance(validation, dict) and validation["status"] == "validated"
+    assert isinstance(provenance, dict) and provenance["compile_artifact_sha256"]
+    assert isinstance(safety, dict) and safety["physical_device_access"] is False
 
 
 @pytest.mark.parametrize(
@@ -454,7 +492,10 @@ class _Toolchain(FirmwareToolchain):
 def test_tool_runner_bridges_real_toolchain_without_bypassing_failed_compile() -> None:
     toolchain = _Toolchain()
     runner = ArduinoToolRunner(toolchain)
-    payload = {"source": SOURCE, "board_fqbn": "arduino:avr:uno"}
+    payload: dict[str, object] = {
+        "source": SOURCE,
+        "board_fqbn": "arduino:avr:uno",
+    }
 
     evidence = runner.run(TOOL, payload)
 

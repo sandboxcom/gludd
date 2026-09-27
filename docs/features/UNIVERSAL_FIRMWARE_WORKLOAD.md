@@ -38,9 +38,10 @@ explicitly approved deployment workflow.
 A firmware task is complete only when all of these records are present and
 valid:
 
-1. The universal router supplies a healthy local or Azure endpoint decision
-   with capability, privacy, cost, classification, accelerator, and health
-   evidence. Restricted work is eligible only for an offline local target.
+1. The universal router supplies a healthy local, Azure, or digest-bound
+   FreeLLMAPI-origin native-provider decision with capability, privacy, cost,
+   classification, accelerator, health, and profile-origin evidence. Restricted
+   work is eligible only for an offline target.
 2. The model returns strict JSON containing complete Arduino C++ source for the
    exact FQBN. Markdown, prose, placeholders, board substitution, and unsafe
    host or upload operations are rejected.
@@ -55,8 +56,11 @@ valid:
 The provider-neutral request uses capability `arduino-cpp`, allowlists only
 `arduino_toolchain`, and carries `board_fqbn`, `expected_serial`, and the
 default-false `physical_device_access` flag as typed metadata. Local Ollama,
-local vLLM, Azure-hosted vLLM, and Azure model endpoints can all implement the
-same injected gateway contract; no provider SDK appears in the embedded code.
+local vLLM, Azure-hosted vLLM, Azure model endpoints, and FreeLLMAPI-admitted
+native profiles can all implement the same injected gateway contract; no
+provider SDK appears in the embedded code. See
+[Universal Task Runtime](UNIVERSAL_TASK_RUNTIME.md) for the immutable registry
+and profile-origin contract.
 
 Failure, missing tools, an uncompiled candidate, missing artifact digest, static
 findings, simulator failure, or a missing observable always leaves
@@ -114,12 +118,12 @@ evidence, strict model-output parsing, privacy and physical-access refusal,
 compile/static/simulator fail-closed behavior, command construction, artifact
 hashing, bounded simulator termination, and the package dependency boundary.
 `tests/unit/test_universal_firmware_adapter.py` additionally executes the
-firmware capability end-to-end through `UniversalTaskExecutor`, proves
-evidence-based local/Azure selection with approved accelerators, exercises the
-shared policy and scheduler gates, and rejects missing, malformed, unsafe, or
-incomplete tool evidence. The polymer acceptance suite exercises the same
-executor and adapter method surface, providing a cross-domain architectural
-proof instead of a self-improvement surrogate.
+firmware capability end-to-end through `UniversalTaskRuntime`, proves
+evidence-based local/Azure selection and a digest-bound FreeLLMAPI-origin native
+provider with approved accelerators, exercises the shared policy and scheduler
+gates, and rejects missing, malformed, unsafe, or incomplete tool evidence. The
+same runtime instance dispatches both the polymer and Arduino adapters, providing
+a cross-domain architectural proof instead of a self-improvement surrogate.
 
 Deployment is additive and supports ZDD: ship the adapter and tool bridge dark,
 verify the board toolchain and provider targets, register `arduino-cpp` routing,

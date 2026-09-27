@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import importlib
 from collections.abc import Callable
+from dataclasses import replace
 
 import pytest
 
@@ -73,6 +75,45 @@ def test_execution_target_rejects_missing_scope_or_invalid_cost(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         factory()
+
+
+def test_execution_target_binds_profile_origin_without_conflating_provider() -> None:
+    """Discovery provenance and the native invocation provider are distinct facts."""
+    types_module = importlib.import_module(
+        "general_ludd.execution.universal_task_types"
+    )
+    origin_type = types_module.ModelProfileOrigin
+    origin = origin_type(
+        source="freellmapi",
+        protocol="gludd-freellmapi-probe-profile-v1",
+        evidence_sha256="a" * 64,
+    )
+
+    target = replace(_target(), provider="groq", profile_origin=origin)
+
+    assert target.provider == "groq"
+    assert target.profile_origin == origin
+
+
+@pytest.mark.parametrize(
+    ("values", "message"),
+    [
+        (("", "profile-v1", "a" * 64), "source"),
+        (("catalog", "", "a" * 64), "protocol"),
+        (("catalog", "profile-v1", "not-a-digest"), "evidence_sha256"),
+    ],
+)
+def test_profile_origin_requires_complete_digest_bound_evidence(
+    values: tuple[str, str, str],
+    message: str,
+) -> None:
+    """An advisory discovery label alone is not auditable route provenance."""
+    origin_type = importlib.import_module(
+        "general_ludd.execution.universal_task_types"
+    ).ModelProfileOrigin
+
+    with pytest.raises(ValueError, match=message):
+        origin_type(*values)
 
 
 def _target(
