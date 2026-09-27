@@ -54,6 +54,7 @@ class LangGraphAgentLoop:
         max_total_tokens: int | None = None,
         sandbox_enforcer: SandboxEnforcer | None = None,
     ) -> None:
+        """Initialize the agent loop and its optional policy controls."""
         self._gateway = model_gateway
         self._chat_model = chat_model
         self._mcp_client = mcp_client
@@ -95,6 +96,7 @@ class LangGraphAgentLoop:
         return tool.server_id
 
     def is_available(self) -> bool:
+        """Return whether an MCP client is configured."""
         return self._mcp_client is not None
 
     async def run_with_tools(
@@ -103,6 +105,7 @@ class LangGraphAgentLoop:
         system_prompt: str,
         user_prompt: str,
     ) -> str:
+        """Run one job through the configured model and MCP tools."""
         if self._mcp_client is None:
             return await self._run_plain(job, system_prompt, user_prompt)
 
@@ -251,12 +254,9 @@ class LangGraphAgentLoop:
         """
         if self._mcp_client is None:
             return []
-
         from langchain_core.tools import StructuredTool
-
         mcp_tools = await self._mcp_client.list_tools()
         langchain_tools: list[Any] = []
-
         for mcp_tool in mcp_tools:
             tool_name = mcp_tool.name
             tool_desc = mcp_tool.description or f"MCP tool: {tool_name}"

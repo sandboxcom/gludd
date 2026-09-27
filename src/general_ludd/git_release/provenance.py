@@ -553,7 +553,6 @@ def build_provenance(
         raise ValueError("artifact_bytes is required")
     if not dependency_lock_bytes:
         raise ValueError("dependency_lock_bytes is required (GRC-SEC-005: deps SHALL be locked)")
-
     artifact_digest = _sha256_hex(artifact_bytes)
     lock_digest = _sha256_hex(dependency_lock_bytes)
     try:
@@ -571,7 +570,6 @@ def build_provenance(
             raise ValueError("dependency_lock must be JSON serializable") from exc
         if not hmac.compare_digest(parsed_bytes, supplied_bytes):
             raise ValueError("dependency_lock does not match dependency_lock_bytes")
-
     sbom = _build_cyclonedx_sbom(
         dependency_lock=parsed_lock,
         artifact_name=artifact_name,
@@ -592,7 +590,6 @@ def build_provenance(
         statement=statement,
         digest=_sha256_hex(_canonical_json_bytes(statement)),
     )
-
     return ProvenanceRecord(
         sbom=sbom,
         signature_state=signature_state,

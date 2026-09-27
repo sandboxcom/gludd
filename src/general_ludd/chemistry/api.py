@@ -94,13 +94,14 @@ class ChemistryExpertAPI:
         *,
         audit_available: bool = True,
     ) -> None:
+        """Initialize the policy, router, and audit-service availability."""
         self._policy = policy or ChemistryPolicy()
         self._router = router or ChemistryRouter(self._policy)
         self._audit_available = audit_available
 
     def handle_request(self, request: ChemistryRequest) -> ChemistryResult:
+        """Validate, route, and safely resolve a chemistry request."""
         run_id = _new_run_id()
-
         # 1. Policy: constraint validation.
         decision = self._policy.check_request(request)
         if not decision.allowed:
@@ -116,7 +117,6 @@ class ChemistryExpertAPI:
                     )
                 ],
             )
-
         # 2. Mutation tasks require the audit service to be available.
         if request.task in MUTATION_TASKS:
             mutation_decision = self._policy.check_mutation(
@@ -137,12 +137,9 @@ class ChemistryExpertAPI:
                         )
                     ],
                 )
-
         # 3. Route (risk classification happens inside the router).
         route = self._router.route(request)
-
         # 4. §9 safety stops.
-
         # 4a. Ambiguous chemical identity → stop actionable work, request
         #     disambiguation with candidate records.
         ambiguous = [e for e in request.entities if _is_ambiguous(e)]
@@ -167,7 +164,6 @@ class ChemistryExpertAPI:
                     )
                 ],
             )
-
         # 4b. Missing current hazard evidence → refuse protocol/scale-up
         #     (research may continue). Spec §9 row "Missing current hazard
         #     or incompatibility evidence | Refuse protocol/scale-up".
@@ -193,7 +189,6 @@ class ChemistryExpertAPI:
                         risk_tier=RiskTier(route.risk_tier),
                     ),
                 )
-
         # 5. Dispatch (the real workflow implementations plug in here; the
         #    typed entry point returns a succeeded scaffold).
         return ChemistryResult(

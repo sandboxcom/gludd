@@ -164,12 +164,10 @@ class OpenRouterSource:
             raise PricingSourceDataError(
                 "invalid OpenRouter pricing response: expected JSON"
             ) from exc
-
         if not isinstance(data, dict) or not isinstance(data.get("data", []), list):
             raise PricingSourceDataError(
                 "invalid OpenRouter pricing response: data must be a list"
             )
-
         models = data.get("data", [])
         fetched_at = time.time()
         results: list[ModelPrice] = []

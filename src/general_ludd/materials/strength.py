@@ -26,8 +26,10 @@ _THERMAL_LINEAR_MODEL_MAX_ABS_DELTA_T_K = 10_000.0
 
 
 def _extract_capacity(prop: dict[str, Any]) -> float | None:
-    """Return the numeric capacity from a property record (handles both
-    ``value`` and ``value_or_range`` keys)."""
+    """Return the numeric capacity from a property record.
+
+    Both ``value`` and ``value_or_range`` keys are supported.
+    """
     v = prop.get("value")
     if v is None:
         v = prop.get("value_or_range")
@@ -51,9 +53,10 @@ def _stress_check(
     *,
     allow_zero_applied: bool = False,
 ) -> dict[str, Any]:
-    """Core (capacity - applied) / applied margin computation shared by the
-    direct-stress checks (tension, compression, shear, bending extreme fiber).
+    """Compute a shared direct-stress margin.
 
+    This implements ``(capacity - applied) / applied`` for tension,
+    compression, shear, and bending extreme fiber.
     Returns a verdict dict with margin, state, capacity, applied, unit,
     uncertainty, equation_id, inputs, and assumptions. Returns state
     ``insufficient_data`` when capacity is missing/non-numeric and
@@ -64,7 +67,6 @@ def _stress_check(
     capacity = _extract_capacity(capacity_prop)
     unit = capacity_prop.get("unit", "MPa")
     uncertainty = capacity_prop.get("uncertainty", 0.0)
-
     inputs: dict[str, Any] = {
         "capacity": {
             "value": capacity,
@@ -75,7 +77,6 @@ def _stress_check(
     }
     if extra_inputs:
         inputs.update(extra_inputs)
-
     base: dict[str, Any] = {
         "failure_mode": failure_mode,
         "equation_id": equation_id,
@@ -84,7 +85,6 @@ def _stress_check(
         "unit": unit,
         "uncertainty": uncertainty,
     }
-
     applied_is_finite = (
         not isinstance(applied_MPa, bool)
         and isinstance(applied_MPa, (int, float))
@@ -162,8 +162,10 @@ def check_tension(capacity_prop: dict[str, Any], applied_stress_MPa: float) -> d
 
 
 def check_compression(capacity_prop: dict[str, Any], applied_stress_MPa: float) -> dict[str, Any]:
-    """Axial compression margin (crushing/crushing mode; see
-    :func:`check_buckling_euler` for slender-column stability)."""
+    """Calculate the axial compression margin.
+
+    This covers crushing; use :func:`check_buckling_euler` for stability.
+    """
     return _stress_check(
         capacity_prop,
         applied_stress_MPa,
@@ -315,8 +317,9 @@ def check_thermal_stress(
     delta_T_K: float,
     capacity_prop: dict[str, Any],
 ) -> dict[str, Any]:
-    """Thermal stress margin for a fully constrained member:
-    sigma_thermal = E * alpha * delta_T.
+    """Calculate thermal-stress margin for a fully constrained member.
+
+    ``sigma_thermal = E * alpha * delta_T``.
 
     A positive delta_T (heating) produces compressive stress; the magnitude
     is compared against the compressive/yield capacity.
@@ -379,7 +382,6 @@ def check_fatigue_sn(
     If ``S_e_MPa`` (endurance limit at 10^6 cycles) is not supplied, it is
     estimated as 0.5 * S_ut (steel baseline per Shigley). The estimate is
     flagged in assumptions and carries wide uncertainty (MATE-SAFE-003).
-
     For N <= 10^3: allowable = 0.9 * S_ut (low-cycle fatigue cutoff).
     For N >= 10^6: allowable = S_e (endurance limit).
     Between: log-log interpolation (Basquin).
@@ -388,12 +390,10 @@ def check_fatigue_sn(
     assumptions: list[str] = []
     uncertainty_fraction = 0.05
     endurance_was_estimated = S_e_MPa is None
-
     if S_e_MPa is None:
         S_e_MPa = 0.5 * S_ut_MPa
         assumptions.append(f"endurance limit estimated as 0.5*S_ut={S_e_MPa:.1f} MPa (steel baseline)")
         uncertainty_fraction = 0.15
-
     if cycles <= 1_000:
         allowable = 0.9 * S_ut_MPa
         n_label = "N <= 10^3 (LCF cutoff at 0.9*S_ut)"
@@ -413,7 +413,6 @@ def check_fatigue_sn(
         log_s = log_s_hi + (log_n - 3.0) * (log_s_lo - log_s_hi) / (6.0 - 3.0)
         allowable = 10.0**log_s
         n_label = f"N={cycles} (finite-life Basquin interpolation)"
-
     applied_is_finite = (
         not isinstance(applied_amplitude_MPa, bool)
         and isinstance(applied_amplitude_MPa, (int, float))

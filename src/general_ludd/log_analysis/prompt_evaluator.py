@@ -1,3 +1,5 @@
+"""Evaluate prompt logs for efficiency, quality, and context waste."""
+
 import json
 import re
 from collections import defaultdict
@@ -12,6 +14,7 @@ _INLINE_ROLE_PREFIX = re.compile(
 
 
 def parse_conversation_log(log_path: str | Path) -> list[dict[str, Any]]:
+    """Parse an inline or on-disk conversation log into normalized entries."""
     source = str(log_path)
     is_inline = (
         not isinstance(log_path, Path)
@@ -134,6 +137,7 @@ def _build_fallback_entry(role: str, content: str) -> dict[str, Any]:
 
 
 def extract_prompts(conversation: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return conversation entries that carry recognized chat roles."""
     return [
         entry
         for entry in conversation
@@ -142,8 +146,8 @@ def extract_prompts(conversation: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def classify_prompt(prompt_text: str) -> str:
+    """Classify a prompt using deterministic lexical markers."""
     text = prompt_text.lower().strip()
-
     markers: list[tuple[str, list[str]]] = [
         (
             "planning",
@@ -231,9 +235,7 @@ def classify_prompt(prompt_text: str) -> str:
             ],
         ),
     ]
-
     scores: dict[str, int] = defaultdict(int)
-
     for category, patterns in markers:
         for pat in patterns:
             if re.search(pat, text):
@@ -246,6 +248,7 @@ def classify_prompt(prompt_text: str) -> str:
 
 
 def measure_prompt_efficiency(prompt: str, response: dict[str, Any]) -> dict[str, Any]:
+    """Measure token, tool, completion, and error signals for a response."""
     tokens_in = _estimate_tokens(prompt)
     tokens_out = _estimate_tokens(str(response.get("content", "")))
     tools_called = len(response.get("tool_calls", []))
@@ -316,6 +319,7 @@ def _count_errors(response_text: str, tool_results: str) -> int:
 
 
 def detect_context_waste(conversation: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Find repeated or disproportionately verbose conversation content."""
     findings: list[dict[str, Any]] = []
 
 
@@ -378,6 +382,7 @@ def detect_context_waste(conversation: list[dict[str, Any]]) -> list[dict[str, A
 
 
 def analyze_cot_quality(cot_text: str) -> dict[str, Any]:
+    """Score supplied reasoning text with deterministic quality heuristics."""
     if not cot_text or not cot_text.strip():
         return {
             "reasoning_depth": 0,
@@ -451,6 +456,7 @@ def analyze_cot_quality(cot_text: str) -> dict[str, Any]:
 
 
 def recommend_improvements(analysis: dict[str, Any]) -> list[str]:
+    """Recommend prompt improvements from a collected analysis."""
     recommendations: list[str] = []
 
     cot_quality = analysis.get("cot_quality", {})
@@ -513,6 +519,7 @@ def ab_compare(
     variant_a: list[dict[str, Any]],
     variant_b: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    """Compare two conversation variants and choose the stronger result."""
     a_metrics = _compute_variant_metrics(variant_a)
     b_metrics = _compute_variant_metrics(variant_b)
 
@@ -604,6 +611,7 @@ def _score_variant(metrics: dict[str, Any]) -> float:
 
 
 def generate_report(analyses: list[dict[str, Any]], format: str = "markdown") -> str:
+    """Render analyses as Markdown or serialized JSON."""
     if format != "markdown":
         return json.dumps(analyses, indent=2, default=str)
 

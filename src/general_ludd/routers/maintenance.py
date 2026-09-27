@@ -24,8 +24,8 @@ _MAX_SEEN_KEYS = 256
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register maintenance and administrative routes on ``app``."""
     repo_root = os.environ.get("GLUDD_REPO_ROOT", ".")
-
     @app.get("/admin/code-intel/hot-files")
     async def code_intel_hot_files(limit: int = 10) -> dict[str, object]:
         from general_ludd.code_intelligence.git_intel import GitIntelligence
@@ -40,7 +40,6 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 gi.recent_commits, min(limit, 20)
             ),
         }
-
     @app.get("/admin/deps/outdated")
     async def deps_outdated() -> dict[str, object]:
         from general_ludd.dependency.manager import DependencyManager

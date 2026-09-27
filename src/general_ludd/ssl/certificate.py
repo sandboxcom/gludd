@@ -212,7 +212,6 @@ def sign_csr(
 def parse_cert(cert_pem: bytes) -> dict[str, object]:
     """Return a serializable summary of a PEM certificate."""
     cert = x509.load_pem_x509_certificate(cert_pem)
-
     _oid_to_name: dict[str, str] = {
         "2.5.4.3": "commonName",
         "2.5.4.6": "countryName",

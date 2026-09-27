@@ -148,7 +148,7 @@ def render_error(
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
-
+    """Register renderer discovery and execution routes on ``app``."""
     @app.get(
         "/api/renderers",
         summary="List registered renderer playbooks (admin)",
@@ -212,7 +212,6 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         spec = registry.get(name)
         if spec is None:
             raise HTTPException(status_code=404, detail=f"renderer {name!r} not found")
-
         # Cache hit short-circuits playbook execution entirely. The cache stores
         # rendered HTML (keyed by spec.name) so both canonical and schema-driven
         # modes share the same path. Cache stays keyed on spec.name per §6.
@@ -220,7 +219,6 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             cached_html = cache.get(name)
             if cached_html is not None:
                 return HTMLResponse(content=cached_html)
-
         try:
             result = await run_renderer(app, spec)
         except RendererTimeout as exc:
@@ -284,7 +282,6 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                     detail="An unexpected renderer error occurred.",
                 ),
             )
-
         if result.schema is not None:
             html = render_schema_page(
                 schema=result.schema,
