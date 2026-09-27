@@ -61,6 +61,7 @@
           "test-one",
           "lint-shared"
         ],
+        "prerequisite_ancestry": [],
         "review_receipt_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
         "reviewed_base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "source_ref": "feature/one",
@@ -72,6 +73,7 @@
           "test-two",
           "lint-shared"
         ],
+        "prerequisite_ancestry": [],
         "review_receipt_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
         "reviewed_base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "source_ref": "feature/two",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -15,6 +16,8 @@ from general_ludd.git_release.reviewed_head_integration import (
     HeadApplicationMode,
     IntegrationStep,
     IntegrationStepKind,
+    PrerequisiteAncestor,
+    PrerequisiteResolution,
     ReviewedHead,
     ReviewedHeadIntegrationPlan,
     ReviewedHeadIntegrationReceipt,
@@ -31,7 +34,19 @@ _HEAD_ONE_SHA = "b" * 40
 _HEAD_TWO_SHA = "c" * 40
 _AFTER_ONE_SHA = "d" * 40
 _FINAL_SHA = "e" * 40
+_ANCESTOR_ONE_SHA = "1" * 40
+_ANCESTOR_TWO_SHA = "2" * 40
+_DIFFERENT_REVIEW_BASE_SHA = "3" * 40
 _ROOT = Path(__file__).resolve().parents[2]
+
+
+def _plan_payload(payload: dict[str, object]) -> dict[str, object]:
+    return cast(dict[str, object], payload["plan"])
+
+
+def _head_payload(payload: dict[str, object]) -> dict[str, object]:
+    plan = _plan_payload(payload)
+    return cast(list[dict[str, object]], plan["heads"])[0]
 
 
 def _heads() -> tuple[ReviewedHead, ...]:
@@ -132,6 +147,226 @@ def test_plan_rejects_duplicate_heads_and_per_head_full_gates() -> None:
 
     with pytest.raises(ValueError, match="full gates are forbidden"):
         replace(_heads()[0], focused_validation_ids=("gate",))
+
+
+def test_plan_requires_every_unmerged_prerequisite_head_in_earlier_order() -> None:
+    dependent = replace(
+        _heads()[1],
+        prerequisite_ancestry=(
+            PrerequisiteAncestor(
+                ancestor_sha=_HEAD_ONE_SHA,
+                resolution=PrerequisiteResolution.REQUIRED_HEAD,
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="required unmerged ancestor"):
+        build_reviewed_head_integration_plan(
+            base_sha=_BASE_SHA,
+            heads=(dependent,),
+            exact_gate_id="ci-gate-exact:3.11",
+        )
+
+    closed_plan = build_reviewed_head_integration_plan(
+        base_sha=_BASE_SHA,
+        heads=(_heads()[0], dependent),
+        exact_gate_id="ci-gate-exact:3.11",
+    )
+    assert closed_plan.heads[-1].prerequisite_ancestry[0].ancestor_sha == (
+        _HEAD_ONE_SHA
+    )
+
+    with pytest.raises(ValueError, match="required unmerged ancestor"):
+        build_reviewed_head_integration_plan(
+            base_sha=_BASE_SHA,
+            heads=(dependent, _heads()[0]),
+            exact_gate_id="ci-gate-exact:3.11",
+        )
+
+
+def test_plan_resolves_differing_review_bases_through_ancestry_closure() -> None:
+    already_reachable = replace(
+        _heads()[0],
+        reviewed_base_sha=_DIFFERENT_REVIEW_BASE_SHA,
+        prerequisite_ancestry=(
+            PrerequisiteAncestor(
+                ancestor_sha=_DIFFERENT_REVIEW_BASE_SHA,
+                resolution=PrerequisiteResolution.ALREADY_REACHABLE,
+            ),
+        ),
+    )
+    dependent = replace(
+        _heads()[1],
+        reviewed_base_sha=_HEAD_ONE_SHA,
+        prerequisite_ancestry=(
+            PrerequisiteAncestor(
+                ancestor_sha=_HEAD_ONE_SHA,
+                resolution=PrerequisiteResolution.REQUIRED_HEAD,
+            ),
+        ),
+    )
+
+    plan = build_reviewed_head_integration_plan(
+        base_sha=_BASE_SHA,
+        heads=(already_reachable, dependent),
+        exact_gate_id="ci-gate-exact:3.11",
+    )
+
+    assert plan.heads[0].reviewed_base_sha == _DIFFERENT_REVIEW_BASE_SHA
+    assert plan.heads[1].reviewed_base_sha == _HEAD_ONE_SHA
+
+
+def test_plan_rejects_a_differing_review_base_missing_from_closure() -> None:
+    with pytest.raises(ValueError, match=r"reviewed base.*ancestry closure"):
+        build_reviewed_head_integration_plan(
+            base_sha=_BASE_SHA,
+            heads=(
+                replace(
+                    _heads()[0],
+                    reviewed_base_sha=_DIFFERENT_REVIEW_BASE_SHA,
+                ),
+            ),
+            exact_gate_id="ci-gate-exact:3.11",
+        )
+
+
+@pytest.mark.parametrize(
+    "resolution",
+    (
+        PrerequisiteResolution.ALREADY_REACHABLE,
+        PrerequisiteResolution.PATCH_EQUIVALENT,
+    ),
+)
+def test_plan_preserves_nonapplication_prerequisite_resolutions(
+    resolution: PrerequisiteResolution,
+) -> None:
+    head = replace(
+        _heads()[0],
+        prerequisite_ancestry=(
+            PrerequisiteAncestor(
+                ancestor_sha=_ANCESTOR_ONE_SHA,
+                resolution=resolution,
+            ),
+        ),
+    )
+
+    plan = build_reviewed_head_integration_plan(
+        base_sha=_BASE_SHA,
+        heads=(head,),
+        exact_gate_id="ci-gate-exact:3.11",
+    )
+
+    assert plan.heads == (head,)
+
+
+def test_prerequisite_ancestry_receipts_are_canonical_and_round_trip() -> None:
+    ancestry = (
+        PrerequisiteAncestor(
+            ancestor_sha=_ANCESTOR_TWO_SHA,
+            resolution=PrerequisiteResolution.PATCH_EQUIVALENT,
+        ),
+        PrerequisiteAncestor(
+            ancestor_sha=_ANCESTOR_ONE_SHA,
+            resolution=PrerequisiteResolution.ALREADY_REACHABLE,
+        ),
+        PrerequisiteAncestor(
+            ancestor_sha=_DIFFERENT_REVIEW_BASE_SHA,
+            resolution=PrerequisiteResolution.ALREADY_REACHABLE,
+        ),
+    )
+    first = replace(
+        _heads()[0],
+        reviewed_base_sha=_DIFFERENT_REVIEW_BASE_SHA,
+        prerequisite_ancestry=ancestry,
+    )
+    canonical_first = replace(
+        _heads()[0],
+        reviewed_base_sha=_DIFFERENT_REVIEW_BASE_SHA,
+        prerequisite_ancestry=tuple(reversed(ancestry)),
+    )
+    plan = build_reviewed_head_integration_plan(
+        base_sha=_BASE_SHA,
+        heads=(first, _heads()[1]),
+        exact_gate_id="ci-gate-exact:3.11",
+    )
+    canonical_plan = build_reviewed_head_integration_plan(
+        base_sha=_BASE_SHA,
+        heads=(canonical_first, _heads()[1]),
+        exact_gate_id="ci-gate-exact:3.11",
+    )
+    receipt = replace(_receipt(), plan=plan)
+    canonical_receipt = replace(_receipt(), plan=canonical_plan)
+
+    encoded = encode_reviewed_head_integration_receipt(receipt)
+
+    assert encoded == encode_reviewed_head_integration_receipt(canonical_receipt)
+    assert json.loads(encoded)["plan"]["heads"][0]["prerequisite_ancestry"] == [
+        {
+            "ancestor_sha": _ANCESTOR_ONE_SHA,
+            "resolution": "already_reachable",
+        },
+        {
+            "ancestor_sha": _ANCESTOR_TWO_SHA,
+            "resolution": "patch_equivalent",
+        },
+        {
+            "ancestor_sha": _DIFFERENT_REVIEW_BASE_SHA,
+            "resolution": "already_reachable",
+        },
+    ]
+    assert (
+        parse_reviewed_head_integration_receipt(
+            json.loads(encoded),
+            expected_final_sha=_FINAL_SHA,
+        )
+        == receipt
+    )
+
+
+def test_prerequisite_ancestry_rejects_duplicates_self_and_tampering() -> None:
+    prerequisite = PrerequisiteAncestor(
+        ancestor_sha=_ANCESTOR_ONE_SHA,
+        resolution=PrerequisiteResolution.ALREADY_REACHABLE,
+    )
+    with pytest.raises(ValueError, match="distinct"):
+        replace(
+            _heads()[0],
+            prerequisite_ancestry=(prerequisite, prerequisite),
+        )
+    with pytest.raises(ValueError, match="itself"):
+        replace(
+            _heads()[0],
+            prerequisite_ancestry=(
+                replace(prerequisite, ancestor_sha=_HEAD_ONE_SHA),
+            ),
+        )
+
+    payload = reviewed_head_integration_receipt_payload(_receipt())
+    _head_payload(payload)["prerequisite_ancestry"] = [
+        {
+            "ancestor_sha": _ANCESTOR_ONE_SHA,
+            "resolution": "required_head",
+        }
+    ]
+    with pytest.raises(
+        ReviewedHeadIntegrationReceiptError,
+        match="semantic validation failed",
+    ):
+        parse_reviewed_head_integration_receipt(
+            payload,
+            expected_final_sha=_FINAL_SHA,
+        )
+
+    payload = reviewed_head_integration_receipt_payload(_receipt())
+    _head_payload(payload).pop("prerequisite_ancestry")
+    with pytest.raises(
+        ReviewedHeadIntegrationReceiptError,
+        match="schema validation failed",
+    ):
+        parse_reviewed_head_integration_receipt(
+            payload,
+            expected_final_sha=_FINAL_SHA,
+        )
 
 
 def test_step_rejects_octopus_sources_and_mixed_validation_shapes() -> None:
@@ -463,7 +698,7 @@ def test_receipt_parser_rejects_candidate_sha_or_reviewed_base_drift() -> None:
         )
 
     payload = reviewed_head_integration_receipt_payload(_receipt())
-    payload["plan"]["heads"][0]["reviewed_base_sha"] = "f" * 40
+    _head_payload(payload)["reviewed_base_sha"] = "f" * 40
     with pytest.raises(
         ReviewedHeadIntegrationReceiptError,
         match="semantic validation failed",
@@ -474,7 +709,7 @@ def test_receipt_parser_rejects_candidate_sha_or_reviewed_base_drift() -> None:
         )
 
     payload = reviewed_head_integration_receipt_payload(_receipt())
-    payload["plan"]["focused_validation_ids"] = ["test-one"]
+    _plan_payload(payload)["focused_validation_ids"] = ["test-one"]
     with pytest.raises(
         ReviewedHeadIntegrationReceiptError,
         match="semantic validation failed",
@@ -585,9 +820,14 @@ def test_receipt_release_boundary_documents_generation_zdd_and_forum_evidence() 
         "canonical JSON Schema",
         "REVIEWED_HEAD_INTEGRATION_RECEIPT",
         "Ordinary development `make gate`",
+        "prerequisite ancestry closure",
+        "`required_head`",
+        "`already_reachable`",
+        "`patch_equivalent`",
         "zero-downtime (ZDD)",
         "quarantine the stale",
         "stackoverflow.com/questions/14424414",
+        "stackoverflow.com/questions/8963375",
         "github.com/orgs/community/discussions/43988",
     ):
         assert required in documentation

@@ -24,6 +24,8 @@ __all__ = [
     "HeadApplicationMode",
     "IntegrationStep",
     "IntegrationStepKind",
+    "PrerequisiteAncestor",
+    "PrerequisiteResolution",
     "ReviewedHead",
     "ReviewedHeadIntegrationPlan",
     "ReviewedHeadIntegrationReceipt",
@@ -42,6 +44,7 @@ _SOURCE_REF = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,254}\Z")
 _COMMAND_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/=-]{0,255}\Z")
 _MAX_REVIEWED_HEADS = 32
 _MAX_FOCUSED_VALIDATIONS = 128
+_MAX_PREREQUISITE_ANCESTORS = 256
 _MAX_RECEIPT_BYTES = 1_048_576
 
 _Sha = Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
@@ -62,6 +65,15 @@ class _ReceiptModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class _PrerequisiteAncestorPayload(_ReceiptModel):
+    ancestor_sha: _Sha
+    resolution: Literal[
+        "required_head",
+        "already_reachable",
+        "patch_equivalent",
+    ]
+
+
 class _ReviewedHeadPayload(_ReceiptModel):
     source_ref: _SourceRef
     source_sha: _Sha
@@ -72,6 +84,9 @@ class _ReviewedHeadPayload(_ReceiptModel):
         max_length=_MAX_FOCUSED_VALIDATIONS,
     )
     application_mode: Literal["cherry_pick", "merge_two_parent"]
+    prerequisite_ancestry: tuple[_PrerequisiteAncestorPayload, ...] = Field(
+        max_length=_MAX_PREREQUISITE_ANCESTORS,
+    )
 
 
 class _PlanPayload(_ReceiptModel):
@@ -184,6 +199,28 @@ class HeadApplicationMode(StrEnum):
     MERGE_TWO_PARENT = "merge_two_parent"
 
 
+class PrerequisiteResolution(StrEnum):
+    """How one prerequisite ancestor is satisfied by an integration plan."""
+
+    REQUIRED_HEAD = "required_head"
+    ALREADY_REACHABLE = "already_reachable"
+    PATCH_EQUIVALENT = "patch_equivalent"
+
+
+@dataclass(frozen=True, slots=True)
+class PrerequisiteAncestor:
+    """Bounded evidence for one ancestor required by a reviewed head."""
+
+    ancestor_sha: str
+    resolution: PrerequisiteResolution
+
+    def __post_init__(self) -> None:
+        """Validate one prerequisite identity and its reviewed resolution."""
+        _require_sha(self.ancestor_sha, "prerequisite ancestor_sha")
+        if not isinstance(self.resolution, PrerequisiteResolution):
+            raise ValueError("prerequisite resolution is invalid")
+
+
 @dataclass(frozen=True, slots=True)
 class ReviewedHead:
     """One reviewed source head and its narrow validation provenance."""
@@ -194,6 +231,7 @@ class ReviewedHead:
     review_receipt_sha256: str
     focused_validation_ids: tuple[str, ...]
     application_mode: HeadApplicationMode
+    prerequisite_ancestry: tuple[PrerequisiteAncestor, ...] = ()
 
     def __post_init__(self) -> None:
         """Validate reviewed-head identity and focused-check provenance."""
@@ -220,6 +258,32 @@ class ReviewedHead:
                 raise ValueError("per-head full gates are forbidden")
         if len(set(self.focused_validation_ids)) != len(self.focused_validation_ids):
             raise ValueError("focused validation IDs must be distinct per head")
+        if (
+            not isinstance(self.prerequisite_ancestry, tuple)
+            or len(self.prerequisite_ancestry) > _MAX_PREREQUISITE_ANCESTORS
+        ):
+            raise ValueError("prerequisite ancestry must be a bounded tuple")
+        for prerequisite in self.prerequisite_ancestry:
+            if not isinstance(prerequisite, PrerequisiteAncestor):
+                raise ValueError("prerequisite ancestry entries are invalid")
+            if prerequisite.ancestor_sha == self.source_sha:
+                raise ValueError("a reviewed head cannot require itself")
+        prerequisite_shas = tuple(
+            prerequisite.ancestor_sha
+            for prerequisite in self.prerequisite_ancestry
+        )
+        if len(set(prerequisite_shas)) != len(prerequisite_shas):
+            raise ValueError("prerequisite ancestor SHAs must be distinct")
+        object.__setattr__(
+            self,
+            "prerequisite_ancestry",
+            tuple(
+                sorted(
+                    self.prerequisite_ancestry,
+                    key=lambda prerequisite: prerequisite.ancestor_sha,
+                )
+            ),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -303,8 +367,28 @@ class ReviewedHeadIntegrationPlan:
             raise ValueError("integration requires distinct reviewed heads and receipts")
         if any(head.source_sha == self.base_sha for head in self.heads):
             raise ValueError("a reviewed head cannot equal the integration base")
-        if any(head.reviewed_base_sha != self.base_sha for head in self.heads):
-            raise ValueError("every reviewed head must bind to the integration base")
+        for head in self.heads:
+            if head.reviewed_base_sha != self.base_sha and all(
+                prerequisite.ancestor_sha != head.reviewed_base_sha
+                for prerequisite in head.prerequisite_ancestry
+            ):
+                raise ValueError(
+                    "every differing reviewed base must appear in its ancestry closure"
+                )
+
+        integrated_source_shas: set[str] = set()
+        for head in self.heads:
+            if any(
+                prerequisite.resolution
+                is PrerequisiteResolution.REQUIRED_HEAD
+                and prerequisite.ancestor_sha not in integrated_source_shas
+                for prerequisite in head.prerequisite_ancestry
+            ):
+                raise ValueError(
+                    "every required unmerged ancestor must be a named earlier "
+                    "reviewed head"
+                )
+            integrated_source_shas.add(head.source_sha)
 
         expected_focused = _stable_unique(
             tuple(
@@ -583,6 +667,13 @@ def reviewed_head_integration_receipt_payload(
                     "review_receipt_sha256": head.review_receipt_sha256,
                     "focused_validation_ids": list(head.focused_validation_ids),
                     "application_mode": head.application_mode.value,
+                    "prerequisite_ancestry": [
+                        {
+                            "ancestor_sha": prerequisite.ancestor_sha,
+                            "resolution": prerequisite.resolution.value,
+                        }
+                        for prerequisite in head.prerequisite_ancestry
+                    ],
                 }
                 for head in receipt.plan.heads
             ],
@@ -641,6 +732,15 @@ def _payload_to_receipt(
             review_receipt_sha256=head.review_receipt_sha256,
             focused_validation_ids=head.focused_validation_ids,
             application_mode=HeadApplicationMode(head.application_mode),
+            prerequisite_ancestry=tuple(
+                PrerequisiteAncestor(
+                    ancestor_sha=prerequisite.ancestor_sha,
+                    resolution=PrerequisiteResolution(
+                        prerequisite.resolution
+                    ),
+                )
+                for prerequisite in head.prerequisite_ancestry
+            ),
         )
         for head in payload.plan.heads
     )

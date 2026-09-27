@@ -25,9 +25,12 @@ heads.
 
 ## Operator behavior
 
-1. Pin the integration base SHA. For every source, record its full SHA, source
-   ref, reviewed-base SHA, review-receipt digest, focused validation IDs, and
-   application mode.
+1. Pin the integration base SHA. For every source, retain its actual full SHA,
+   source ref, original reviewed-base SHA, review-receipt digest, focused
+   validation IDs, and application mode. A reviewed base need not equal the
+   later integration base, but a differing base must appear by its exact SHA in
+   that head's prerequisite inventory with a reviewed resolution. Never replace
+   historical identities with reconstructed or synthetic SHAs.
 2. Apply sources in plan order, one invocation at a time. Use
    `make git-cherry-pick SHA=<full-sha>` for a reviewed single commit or
    `make git-merge MSG=<branch>` when branch ancestry must remain visible.
@@ -42,6 +45,37 @@ heads.
 5. If focused validation passes, run the plan's explicit exact gate once. Both
    receipts must name the same final SHA. A later mutation invalidates both and
    requires a new focused phase and gate.
+
+## Prerequisite ancestry closure
+
+The v0.1.1 plan records a bounded prerequisite ancestry closure on every
+reviewed head. Each prerequisite has a full ancestor SHA and exactly one
+resolution:
+
+- `required_head` means the ancestor still contributes unique content. It must
+  be a separately named, reviewed head earlier in plan order. The rule applies
+  recursively to that earlier head, so the named plan is closed over all
+  required unmerged ancestry rather than merely containing a dependent tip.
+- `already_reachable` means the pinned integration base already contains that
+  ancestor. It remains visible as evidence but needs no application step.
+- `patch_equivalent` means reviewed patch-identity evidence proves the change is
+  already present under another commit ID. It likewise needs no application
+  step and does not manufacture false Git ancestry.
+
+The builder rejects a required ancestor that is absent or appears after its
+dependent head. It also rejects self-dependencies, duplicate ancestor SHAs,
+malformed identities, a differing reviewed-base SHA omitted from that head's
+closure, and more than 256 prerequisite records per head.
+Prerequisite records are canonicalized by full SHA, so equivalent input orders
+produce byte-identical deterministic receipts. The schema requires the list,
+including an explicit empty list when the bounded inventory found no
+prerequisites; omission is not an ancestry attestation.
+
+The contract consumes reviewed classification evidence rather than running Git.
+The caller must derive the complete prerequisite inventory with the repository's
+bounded reachability and patch-equivalence primitives before constructing the
+plan. Marking unique content as `already_reachable` or `patch_equivalent` is a
+false attestation, not a shortcut around naming and reviewing its head.
 
 `git-cherry-pick-list`, `gated-merge`, and an octopus merge are not valid
 reviewed-content integration shortcuts. Their aggregate invocation hides the
@@ -129,13 +163,24 @@ boundary: results before integration cannot replace validation of the final
 queue state. Gludd therefore keeps narrow per-head review evidence, consolidates
 focused checks after application, and preserves one full gate on the final tip.
 
+The long-lived Stack Overflow question
+[How does one work on a new Git branch that depends on another branch that is
+not yet merged?][so-dependent-branch] documents the exact stacked-history case:
+later work is based on the pending predecessor and must be adjusted as that
+predecessor changes or lands. That practitioner experience is why Gludd treats
+the named tip as insufficient evidence and requires its unique unmerged
+prerequisites to appear earlier in the reviewed plan, while retaining explicit
+exceptions for content already reachable or patch-equivalent.
+
 ## ZDD, resources, and rollback
 
 Planning and receipt validation are pure data operations: no checkout, process,
 port, daemon, service, deployment, or cloud resource changes. Integration uses
 the existing namespaced worktree and Make-owned Git operations, so production
 traffic is unaffected. One focused phase plus one final gate bounds CPU, memory,
-disk, and test-process pressure while retaining final-state coverage.
+disk, and test-process pressure while retaining final-state coverage. Ancestry
+validation is also bounded and in-memory: at most 32 reviewed heads and 256
+prerequisite records per head, with no background process or external resource.
 
 Before the exact gate passes, rollback is the existing Make-owned abort/revert
 path for the current application. After a receipt exists, any history rewrite,
@@ -149,5 +194,6 @@ place and rerun the idempotent checks; never rewrite a shared branch to make a
 stale receipt fit.
 
 [github-duplicate-gates]: https://github.com/orgs/community/discussions/43988
+[so-dependent-branch]: https://stackoverflow.com/questions/8963375/how-does-one-work-on-a-new-git-branch-that-depends-on-another-git-branch-that-is
 [so-octopus-conflict]: https://stackoverflow.com/questions/14424414/resolve-conflicts-on-git-merge-octopus
 [so-octopus-need]: https://stackoverflow.com/questions/44976184/is-there-ever-a-time-when-only-an-octopus-merge-will-do
