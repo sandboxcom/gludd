@@ -21,6 +21,7 @@ from general_ludd.execution.universal_task import (
     ExecutionTarget,
     ModelServicePlannerProtocol,
     ModelServicePlanProtocol,
+    PinnedProfileOriginVerifier,
     TaskStatus,
     UniversalTaskExecutor,
     UniversalTaskRequest,
@@ -80,8 +81,12 @@ def _request(
     )
 
 
-def _target(capability: str) -> ExecutionTarget:
-    return ExecutionTarget(
+def _target(
+    capability: str,
+    *,
+    model_runner_id: str | None = "vllm-observed",
+) -> ExecutionTarget:
+    return ExecutionTarget.bind_origin(
         profile_id="gateway-profile",
         provider="azure",
         accelerator_sku="observed-gpu",
@@ -94,8 +99,17 @@ def _target(capability: str) -> ExecutionTarget:
         cost_evidence="provider-price-observation",
         privacy_evidence="public-data-policy",
         offline=False,
-        model_runner_id="vllm-observed",
+        model_runner_id=model_runner_id,
+        origin_source="operator-configured",
+        origin_protocol="gludd-native-profile-v1",
+        origin_evidence_sha256="3" * 64,
     )
+
+
+def _verifier(target: ExecutionTarget) -> PinnedProfileOriginVerifier:
+    origin = target.profile_origin
+    assert origin is not None
+    return PinnedProfileOriginVerifier.from_origins((origin,))
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,7 +137,7 @@ class _FakeServicePlanner:
         self,
         request: UniversalTaskRequest,
         target: ExecutionTarget,
-    ) -> _FakeServicePlan:
+    ) -> ModelServicePlanProtocol:
         self.calls.append((request, target))
         if self.refusal:
             raise UniversalModelServicePlanningError(("insufficient_memory",))
@@ -180,7 +194,7 @@ class _Scheduler:
 
     def plan(self, items: list[WorkItem]) -> list[list[str]]:
         item = items[0]
-        self.resources = cast(frozenset[str], item.resources)
+        self.resources = item.resources
         return [[str(item.id)]]
 
 
@@ -245,6 +259,7 @@ def test_every_capability_uses_the_same_model_service_task_path(
         accelerator_planner=_Accelerators(),
         target_source=lambda: (target,),
         model_service_planner=service_planner,
+        profile_origin_verifier=_verifier(target),
     )
 
     result = executor.execute(_request(capability), _Adapter(capability))
@@ -270,6 +285,7 @@ def test_workload_fails_closed_when_planner_is_absent_or_refuses() -> None:
         scheduler=_Scheduler(),
         accelerator_planner=_Accelerators(),
         target_source=lambda: (target,),
+        profile_origin_verifier=_verifier(target),
     )
 
     absent = without_planner.execute(
@@ -287,6 +303,7 @@ def test_workload_fails_closed_when_planner_is_absent_or_refuses() -> None:
         accelerator_planner=_Accelerators(),
         target_source=lambda: (target,),
         model_service_planner=refusing_planner,
+        profile_origin_verifier=_verifier(target),
     )
     refused = refusing.execute(
         _request("chemistry.design"),
@@ -307,6 +324,7 @@ def test_tasks_without_typed_workload_preserve_existing_gateway_path() -> None:
         accelerator_planner=_Accelerators(),
         target_source=lambda: (target,),
         model_service_planner=planner,
+        profile_origin_verifier=_verifier(target),
     )
 
     result = executor.execute(
@@ -368,6 +386,7 @@ def test_executor_fails_closed_on_broken_or_malformed_service_plans(
             ModelServicePlannerProtocol,
             _ControlledServicePlanner(outcome),
         ),
+        profile_origin_verifier=_verifier(target),
     )
 
     result = executor.execute(
@@ -392,6 +411,7 @@ def test_executor_discards_non_tuple_or_unsafe_planner_reasons() -> None:
             ModelServicePlannerProtocol,
             _ControlledServicePlanner(error),
         ),
+        profile_origin_verifier=_verifier(target),
     )
 
     result = executor.execute(
@@ -555,7 +575,7 @@ def _real_plan() -> UniversalModelServicePlan:
         ),
         (
             _request("chemistry.design"),
-            replace(_target("chemistry.design"), model_runner_id=None),
+            _target("chemistry.design", model_runner_id=None),
             "model_runner_identity_missing",
         ),
     ],
@@ -657,7 +677,7 @@ def test_planning_error_defaults_deduplicates_and_sorts() -> None:
 
 def test_planner_rejects_wrong_dependencies_and_contract_types() -> None:
     with pytest.raises(ValueError, match="callable"):
-        UniversalModelServicePlanner(cast(object, object()))  # type: ignore[arg-type]
+        UniversalModelServicePlanner(object())  # type: ignore[arg-type]
 
     planner = UniversalModelServicePlanner(lambda _request, _target: _inventory())
     with pytest.raises(ValueError, match="request"):

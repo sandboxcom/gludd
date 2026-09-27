@@ -20,24 +20,49 @@ After dispatch, the existing executor owns one provider-neutral path:
 Self-improvement can implement the same adapter protocol. It receives no
 privileged routing path from this runtime.
 
+Dispatch is exact rather than hierarchical or best-effort. A polymer or Arduino
+request presented to a registry or target set that supports only
+`self_improve.proposal` is refused with explicit adapter or target evidence; it
+is never rewritten into a self-improvement task.
+
 ## Provider and profile-origin evidence
 
 The invocation provider and the source of a model profile are different facts.
 An admitted FreeLLMAPI record, for example, becomes a native Gludd profile for
 its actual provider; FreeLLMAPI is discovery provenance, not a magic inference
-backend. `ModelProfileOrigin` keeps that distinction explicit with three
-immutable fields:
+backend. Every execution target requires a content-addressed
+`ModelProfileOrigin` receipt. The receipt binds discovery evidence to the exact
+route properties that were admitted:
 
 | Field | Meaning |
 | --- | --- |
 | `source` | Profile discovery or configuration source |
 | `protocol` | Versioned admission/binding contract |
 | `evidence_sha256` | Digest of the exact admitted source evidence |
+| `profile_id` | Exact gateway profile identity |
+| `provider` | Native invocation provider, never a catalog alias |
+| `accelerator_sku` | Approved accelerator identity |
+| `capabilities` | Exact admitted capability set |
+| `allowed_data_classifications` | Exact privacy scope |
+| `offline` | Whether the route is locally isolated |
+| `model_runner_id` | Attested model runner identity |
+| `receipt_sha256` | Digest of all preceding canonical fields |
 
 The selected origin is retained in `RouteDecision` and each target evaluation.
-A source label without a lowercase SHA-256 evidence binding is invalid. The
-router still requires the target's native provider to match approved accelerator
-inventory, so discovery provenance cannot create hardware or health evidence.
+A source label without a lowercase SHA-256 evidence binding is invalid, as is a
+receipt whose digest does not match its canonical fields. Before routing, the
+executor asks an injected verifier to match the complete receipt against a
+pinned admission set. A missing verifier, verifier failure, non-boolean verdict,
+or unpinned receipt fails closed. The router revalidates both the receipt digest
+and its target binding on every snapshot, so post-construction or deserialization
+mutation cannot bypass admission. Replaying a valid FreeLLMAPI-origin receipt on
+a local or Azure profile—or changing its accelerator, capabilities, privacy,
+offline status, or runner—therefore cannot cross a capability boundary. The
+router also refuses duplicate profile identities before selection, preventing an
+approved route from being swapped for a later target with different provider or
+capability metadata. It still independently requires the target's native
+provider to match approved accelerator inventory, so discovery provenance cannot
+create hardware or health evidence.
 
 The acceptance matrix exercises all three supported route shapes through the
 same gateway and scheduler contracts:
@@ -89,9 +114,12 @@ runtime carries only stable profile identity and provenance.
 
 ## ZDD rollout and rollback
 
-The registry and origin fields are additive and require no persistent migration.
-Deploy the new runtime dark, register adapters alongside the existing direct
-executor calls, replay representative local, Azure, and catalog-origin tasks,
-and then shift new requests by capability while in-flight work drains. Rollback
-removes the registry binding or deploys the previous application; no model
-candidate or domain result is synthesized or persisted by the runtime itself.
+Origin receipts are in-memory configuration and require no persistent data
+migration, but they are mandatory at the execution boundary. Before shifting
+traffic, generate and pin receipts for every configured target, deploy the new
+runtime dark, and replay representative local, Azure, and catalog-origin tasks.
+Register adapters alongside existing direct executor calls, then shift new
+requests by capability while in-flight work drains. Rollback shifts new traffic
+to the previous application; the unused receipt configuration can remain in
+place. No model candidate or domain result is synthesized or persisted by the
+runtime itself.

@@ -6,7 +6,7 @@ import hashlib
 import json
 from dataclasses import replace
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -27,6 +27,7 @@ from general_ludd.embedded.firmware import (
 from general_ludd.execution.universal_task import (
     ExecutionTarget,
     ModelProfileOrigin,
+    PinnedProfileOriginVerifier,
     TaskStatus,
     UniversalTaskExecutor,
     UniversalTaskRequest,
@@ -74,6 +75,12 @@ class _PipelineRunner:
     def run(self, tool_name: str, payload: dict[str, object]) -> dict[str, object]:
         self.calls.append((tool_name, payload))
         return self.evidence
+
+
+class _NonBooleanOriginVerifier:
+    def verify(self, origin: ModelProfileOrigin) -> bool:
+        del origin
+        return cast(bool, 1)
 
 
 def _stage(
@@ -201,7 +208,10 @@ def _target(
     provider: str,
     cost: float,
     *,
-    profile_origin: ModelProfileOrigin | None = None,
+    profile_id: str | None = None,
+    capabilities: frozenset[str] = frozenset({CAPABILITY}),
+    origin_source: str = "operator-configured",
+    origin_evidence_sha256: str | None = None,
 ) -> ExecutionTarget:
     local = provider == "local"
     accelerator_sku = {
@@ -209,15 +219,17 @@ def _target(
         "azure": "Standard_NC24ads_A100_v4",
         "groq": "freellmapi-groq-managed",
     }[provider]
-    return ExecutionTarget(
-        profile_id=(
-            "freellmapi-groq-0123456789abcdef0123"
-            if profile_origin is not None
-            else f"{provider}-firmware"
-        ),
+    resolved_profile_id = profile_id or f"{provider}-firmware"
+    protocol = (
+        "gludd-freellmapi-probe-profile-v1"
+        if origin_source == "freellmapi"
+        else "gludd-native-profile-v1"
+    )
+    return ExecutionTarget.bind_origin(
+        profile_id=resolved_profile_id,
         provider=provider,
         accelerator_sku=accelerator_sku,
-        capabilities=frozenset({CAPABILITY}),
+        capabilities=capabilities,
         allowed_data_classifications=frozenset(
             {"public", "internal", "confidential", "restricted"}
             if local
@@ -230,7 +242,12 @@ def _target(
         cost_evidence=f"{provider} measured cost",
         privacy_evidence="offline isolation" if local else "approved provider egress",
         offline=local,
-        profile_origin=profile_origin,
+        origin_source=origin_source,
+        origin_protocol=protocol,
+        origin_evidence_sha256=origin_evidence_sha256
+        or hashlib.sha256(
+            f"{origin_source}\0{provider}\0{resolved_profile_id}".encode()
+        ).hexdigest(),
     )
 
 
@@ -257,50 +274,8 @@ def _request(
     )
 
 
-def _execute(
-    request: UniversalTaskRequest,
-    gateway: _Gateway,
-    runner: _PipelineRunner | None,
-    *,
-    targets: tuple[ExecutionTarget, ...] | None = None,
-) -> UniversalTaskResult:
-    executor = UniversalTaskExecutor(
-        gateway=gateway,
-        scheduler=Scheduler(),
-        accelerator_planner=_planner(),
-        target_source=lambda: targets or (_target("local", 0.2), _target("azure", 0.1)),
-        tool_runner=runner,
-    )
-    return executor.execute(request, ArduinoFirmwareAdapter(policy_engine=PolicyEngine()))
-
-
-def test_one_runtime_routes_chemistry_and_firmware_via_freellmapi_origin() -> None:
-    gateway = _Gateway(_polymer_candidate())
-    runner = _PipelineRunner()
-    origin = ModelProfileOrigin(
-        source="freellmapi",
-        protocol="gludd-freellmapi-probe-profile-v1",
-        evidence_sha256="f" * 64,
-    )
-    target = replace(
-        _target("groq", 0.0, profile_origin=origin),
-        capabilities=frozenset({CAPABILITY, "polymer_design"}),
-    )
-    executor = UniversalTaskExecutor(
-        gateway=gateway,
-        scheduler=Scheduler(),
-        accelerator_planner=_planner(),
-        target_source=lambda: (target,),
-        tool_runner=runner,
-    )
-    runtime = UniversalTaskRuntime(
-        executor=executor,
-        adapters=(
-            PolymerDesignAdapter(policy_engine=PolicyEngine()),
-            ArduinoFirmwareAdapter(policy_engine=PolicyEngine()),
-        ),
-    )
-    polymer_request = UniversalTaskRequest(
+def _polymer_request() -> UniversalTaskRequest:
+    return UniversalTaskRequest(
         task_id="polymer-task-1",
         capability="polymer_design",
         instruction="Design a bounded glucose-derived polymer candidate.",
@@ -310,7 +285,63 @@ def test_one_runtime_routes_chemistry_and_firmware_via_freellmapi_origin() -> No
         metadata={"requested_properties": ["glass_transition_temperature"]},
     )
 
-    polymer = runtime.execute(polymer_request)
+
+def _verifier(*targets: ExecutionTarget) -> PinnedProfileOriginVerifier:
+    origins = tuple(target.profile_origin for target in targets)
+    assert all(origin is not None for origin in origins)
+    return PinnedProfileOriginVerifier.from_origins(
+        tuple(origin for origin in origins if origin is not None)
+    )
+
+
+def _execute(
+    request: UniversalTaskRequest,
+    gateway: _Gateway,
+    runner: _PipelineRunner | None,
+    *,
+    targets: tuple[ExecutionTarget, ...] | None = None,
+) -> UniversalTaskResult:
+    resolved_targets = targets or (_target("local", 0.2), _target("azure", 0.1))
+    executor = UniversalTaskExecutor(
+        gateway=gateway,
+        scheduler=Scheduler(),
+        accelerator_planner=_planner(),
+        target_source=lambda: resolved_targets,
+        tool_runner=runner,
+        profile_origin_verifier=_verifier(*resolved_targets),
+    )
+    return executor.execute(request, ArduinoFirmwareAdapter(policy_engine=PolicyEngine()))
+
+
+def test_one_runtime_routes_chemistry_and_firmware_via_freellmapi_origin() -> None:
+    gateway = _Gateway(_polymer_candidate())
+    runner = _PipelineRunner()
+    target = _target(
+        "groq",
+        0.0,
+        profile_id="freellmapi-groq-0123456789abcdef0123",
+        capabilities=frozenset({CAPABILITY, "polymer_design"}),
+        origin_source="freellmapi",
+        origin_evidence_sha256="f" * 64,
+    )
+    origin = target.profile_origin
+    assert origin is not None
+    executor = UniversalTaskExecutor(
+        gateway=gateway,
+        scheduler=Scheduler(),
+        accelerator_planner=_planner(),
+        target_source=lambda: (target,),
+        tool_runner=runner,
+        profile_origin_verifier=_verifier(target),
+    )
+    runtime = UniversalTaskRuntime(
+        executor=executor,
+        adapters=(
+            PolymerDesignAdapter(policy_engine=PolicyEngine()),
+            ArduinoFirmwareAdapter(policy_engine=PolicyEngine()),
+        ),
+    )
+    polymer = runtime.execute(_polymer_request())
     gateway.content = _candidate()
     firmware = runtime.execute(_request(classification="public"))
 
@@ -323,6 +354,334 @@ def test_one_runtime_routes_chemistry_and_firmware_via_freellmapi_origin() -> No
     assert type(polymer.candidate).__module__ == "general_ludd.chemistry.polymer_design"
     assert type(firmware.candidate).__module__ == "general_ludd.embedded.firmware"
     assert len(gateway.calls) == 2
+
+
+def test_self_improvement_only_target_cannot_absorb_polymer_or_firmware() -> None:
+    """Exact capability routing refuses instead of falling through to self-improve."""
+    gateway = _Gateway(_polymer_candidate())
+    self_improve_only = _target(
+        "local",
+        0.0,
+        capabilities=frozenset({"self_improve.proposal"}),
+    )
+    executor = UniversalTaskExecutor(
+        gateway=gateway,
+        scheduler=Scheduler(),
+        accelerator_planner=_planner(),
+        target_source=lambda: (self_improve_only,),
+        tool_runner=_PipelineRunner(),
+        profile_origin_verifier=_verifier(self_improve_only),
+    )
+    runtime = UniversalTaskRuntime(
+        executor=executor,
+        adapters=(
+            PolymerDesignAdapter(policy_engine=PolicyEngine()),
+            ArduinoFirmwareAdapter(policy_engine=PolicyEngine()),
+        ),
+    )
+
+    polymer = runtime.execute(_polymer_request())
+    firmware = runtime.execute(_request())
+
+    assert polymer.status is TaskStatus.REFUSED
+    assert firmware.status is TaskStatus.REFUSED
+    assert polymer.reasons == ("no_eligible_target",)
+    assert firmware.reasons == ("no_eligible_target",)
+    assert gateway.calls == []
+    for result in (polymer, firmware):
+        assert result.route is not None
+        assert result.route.evaluations[0].reasons == ("capability_not_supported",)
+
+
+def test_duplicate_profile_identity_cannot_swap_domain_or_provider() -> None:
+    """One ID cannot route through Groq then execute as local self-improvement."""
+    shared_profile_id = "freellmapi-shared-0123456789abcdef0123"
+    polymer_target = _target(
+        "groq",
+        0.0,
+        profile_id=shared_profile_id,
+        capabilities=frozenset({"polymer_design"}),
+        origin_source="freellmapi",
+    )
+    self_improve_target = _target(
+        "local",
+        0.1,
+        profile_id=shared_profile_id,
+        capabilities=frozenset({"self_improve.proposal"}),
+    )
+    gateway = _Gateway(_polymer_candidate())
+    executor = UniversalTaskExecutor(
+        gateway=gateway,
+        scheduler=Scheduler(),
+        accelerator_planner=_planner(),
+        target_source=lambda: (polymer_target, self_improve_target),
+        tool_runner=_PipelineRunner(),
+        profile_origin_verifier=_verifier(
+            polymer_target,
+            self_improve_target,
+        ),
+    )
+
+    result = executor.execute(
+        _polymer_request(),
+        PolymerDesignAdapter(policy_engine=PolicyEngine()),
+    )
+
+    assert result.status is TaskStatus.REFUSED
+    assert result.reasons == ("no_eligible_target",)
+    assert result.route is not None
+    assert all(
+        "profile_id_ambiguous" in evaluation.reasons
+        for evaluation in result.route.evaluations
+    )
+    assert gateway.calls == []
+
+
+def test_discovered_profile_requires_the_exact_pinned_origin_receipt() -> None:
+    """Self-consistent but untrusted origin claims never reach the gateway."""
+    trusted_target = _target(
+        "groq",
+        0.0,
+        profile_id="freellmapi-groq-0123456789abcdef0123",
+        origin_source="freellmapi",
+        origin_evidence_sha256="f" * 64,
+    )
+    forged_target = _target(
+        "groq",
+        0.0,
+        profile_id="freellmapi-groq-0123456789abcdef0123",
+        origin_source="freellmapi",
+        origin_evidence_sha256="e" * 64,
+    )
+    gateway = _Gateway(_candidate())
+
+    missing_verifier = UniversalTaskExecutor(
+        gateway=gateway,
+        scheduler=Scheduler(),
+        accelerator_planner=_planner(),
+        target_source=lambda: (forged_target,),
+        tool_runner=_PipelineRunner(),
+    ).execute(_request(), ArduinoFirmwareAdapter(policy_engine=PolicyEngine()))
+    wrong_receipt = UniversalTaskExecutor(
+        gateway=gateway,
+        scheduler=Scheduler(),
+        accelerator_planner=_planner(),
+        target_source=lambda: (forged_target,),
+        tool_runner=_PipelineRunner(),
+        profile_origin_verifier=_verifier(trusted_target),
+    ).execute(_request(), ArduinoFirmwareAdapter(policy_engine=PolicyEngine()))
+
+    assert missing_verifier.status is TaskStatus.REFUSED
+    assert wrong_receipt.status is TaskStatus.REFUSED
+    assert missing_verifier.route is not None
+    assert wrong_receipt.route is not None
+    assert "profile_origin_verifier_unavailable" in (
+        missing_verifier.route.evaluations[0].reasons
+    )
+    assert "profile_origin_untrusted" in wrong_receipt.route.evaluations[0].reasons
+    assert gateway.calls == []
+
+
+def test_ambiguous_origin_verifier_verdict_fails_closed() -> None:
+    """Truthy verifier objects cannot impersonate an exact trust decision."""
+    target = _target(
+        "groq",
+        0.0,
+        profile_id="freellmapi-groq-0123456789abcdef0123",
+        origin_source="freellmapi",
+    )
+    gateway = _Gateway(_candidate())
+    result = UniversalTaskExecutor(
+        gateway=gateway,
+        scheduler=Scheduler(),
+        accelerator_planner=_planner(),
+        target_source=lambda: (target,),
+        tool_runner=_PipelineRunner(),
+        profile_origin_verifier=_NonBooleanOriginVerifier(),
+    ).execute(_request(), ArduinoFirmwareAdapter(policy_engine=PolicyEngine()))
+
+    assert result.status is TaskStatus.REFUSED
+    assert result.route is not None
+    assert result.route.evaluations[0].reasons == (
+        "profile_origin_verification_invalid",
+    )
+    assert gateway.calls == []
+
+
+@pytest.mark.parametrize(
+    ("malformed_origin", "reason"),
+    [
+        (None, "profile_origin_required"),
+        (object(), "profile_origin_invalid"),
+    ],
+)
+def test_corrupted_target_cannot_erase_or_replace_its_origin_receipt(
+    malformed_origin: object,
+    reason: str,
+) -> None:
+    """The route boundary revalidates receipts even after target construction."""
+    target = _target(
+        "groq",
+        0.0,
+        profile_id="freellmapi-groq-0123456789abcdef0123",
+        origin_source="freellmapi",
+    )
+    verifier = _verifier(target)
+    object.__setattr__(target, "profile_origin", malformed_origin)
+    gateway = _Gateway(_candidate())
+
+    result = UniversalTaskExecutor(
+        gateway=gateway,
+        scheduler=Scheduler(),
+        accelerator_planner=_planner(),
+        target_source=lambda: (target,),
+        tool_runner=_PipelineRunner(),
+        profile_origin_verifier=verifier,
+    ).execute(_request(), ArduinoFirmwareAdapter(policy_engine=PolicyEngine()))
+
+    assert result.status is TaskStatus.REFUSED
+    assert result.route is not None
+    assert result.route.evaluations[0].reasons == (reason,)
+    assert gateway.calls == []
+
+
+def test_mutated_origin_fields_cannot_reuse_a_pinned_receipt() -> None:
+    """Pinned receipt identity is rehashed at the route boundary."""
+    target = _target(
+        "groq",
+        0.0,
+        profile_id="freellmapi-groq-0123456789abcdef0123",
+        origin_source="freellmapi",
+    )
+    verifier = _verifier(target)
+    origin = target.profile_origin
+    assert origin is not None
+    object.__setattr__(origin, "evidence_sha256", "e" * 64)
+    gateway = _Gateway(_candidate())
+
+    assert verifier.verify(origin) is False
+    result = UniversalTaskExecutor(
+        gateway=gateway,
+        scheduler=Scheduler(),
+        accelerator_planner=_planner(),
+        target_source=lambda: (target,),
+        tool_runner=_PipelineRunner(),
+        profile_origin_verifier=verifier,
+    ).execute(_request(), ArduinoFirmwareAdapter(policy_engine=PolicyEngine()))
+
+    assert result.status is TaskStatus.REFUSED
+    assert result.route is not None
+    assert result.route.evaluations[0].reasons == ("profile_origin_invalid",)
+    assert gateway.calls == []
+
+
+@pytest.mark.parametrize(
+    ("provider", "accelerator_sku", "offline"),
+    [
+        ("local", "local-gpu", True),
+        ("azure", "Standard_NC24ads_A100_v4", False),
+    ],
+)
+def test_mutated_target_cannot_replay_receipt_across_native_providers(
+    provider: str,
+    accelerator_sku: str,
+    offline: bool,
+) -> None:
+    """Route-time binding blocks post-construction local and Azure replay."""
+    target = _target(
+        "groq",
+        0.0,
+        profile_id="freellmapi-groq-0123456789abcdef0123",
+        origin_source="freellmapi",
+    )
+    verifier = _verifier(target)
+    object.__setattr__(target, "provider", provider)
+    object.__setattr__(target, "accelerator_sku", accelerator_sku)
+    object.__setattr__(target, "offline", offline)
+    gateway = _Gateway(_candidate())
+
+    result = UniversalTaskExecutor(
+        gateway=gateway,
+        scheduler=Scheduler(),
+        accelerator_planner=_planner(),
+        target_source=lambda: (target,),
+        tool_runner=_PipelineRunner(),
+        profile_origin_verifier=verifier,
+    ).execute(_request(), ArduinoFirmwareAdapter(policy_engine=PolicyEngine()))
+
+    assert result.status is TaskStatus.REFUSED
+    assert result.route is not None
+    assert result.route.evaluations[0].reasons == (
+        "profile_origin_target_mismatch",
+    )
+    assert gateway.calls == []
+
+
+def test_mutated_target_cannot_expand_a_pinned_capability_scope() -> None:
+    """A pinned Arduino receipt cannot be widened into a polymer route."""
+    target = _target(
+        "groq",
+        0.0,
+        profile_id="freellmapi-groq-0123456789abcdef0123",
+        origin_source="freellmapi",
+    )
+    verifier = _verifier(target)
+    object.__setattr__(
+        target,
+        "capabilities",
+        frozenset({CAPABILITY, "polymer_design"}),
+    )
+    gateway = _Gateway(_polymer_candidate())
+
+    result = UniversalTaskExecutor(
+        gateway=gateway,
+        scheduler=Scheduler(),
+        accelerator_planner=_planner(),
+        target_source=lambda: (target,),
+        tool_runner=_PipelineRunner(),
+        profile_origin_verifier=verifier,
+    ).execute(_polymer_request(), PolymerDesignAdapter(policy_engine=PolicyEngine()))
+
+    assert result.status is TaskStatus.REFUSED
+    assert result.route is not None
+    assert result.route.evaluations[0].reasons == (
+        "profile_origin_target_mismatch",
+    )
+    assert gateway.calls == []
+
+
+@pytest.mark.parametrize(
+    ("provider", "accelerator_sku", "offline"),
+    [
+        ("local", "local-gpu", True),
+        ("azure", "Standard_NC24ads_A100_v4", False),
+    ],
+)
+def test_freellmapi_origin_receipt_cannot_cross_native_provider_boundaries(
+    provider: str,
+    accelerator_sku: str,
+    offline: bool,
+) -> None:
+    catalog_target = _target(
+        "groq",
+        0.0,
+        profile_id="freellmapi-groq-0123456789abcdef0123",
+        origin_source="freellmapi",
+    )
+
+    with pytest.raises(ValueError, match="profile_origin_target_mismatch"):
+        replace(
+            catalog_target,
+            provider=provider,
+            accelerator_sku=accelerator_sku,
+            offline=offline,
+        )
+
+    with pytest.raises(ValueError, match="profile_origin_target_mismatch"):
+        replace(
+            catalog_target,
+            capabilities=frozenset({CAPABILITY, "polymer_design"}),
+        )
 
 
 @pytest.mark.parametrize(

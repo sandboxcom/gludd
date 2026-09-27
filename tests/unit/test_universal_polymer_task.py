@@ -19,6 +19,7 @@ from general_ludd.ai_ml.policy import PolicyEngine
 from general_ludd.chemistry.polymer_design import PolymerDesignAdapter
 from general_ludd.execution.universal_task import (
     ExecutionTarget,
+    PinnedProfileOriginVerifier,
     TaskStatus,
     UniversalTaskExecutor,
     UniversalTaskRequest,
@@ -126,12 +127,19 @@ def _planner() -> AcceleratorPlanner:
     )
 
 
-def _local_target(*, healthy: bool = True, cost: float = 0.2) -> ExecutionTarget:
-    return ExecutionTarget(
+def _local_target(
+    *,
+    healthy: bool = True,
+    cost: float = 0.2,
+    provider: str = "local",
+    accelerator_sku: str = "local-mps",
+    capabilities: frozenset[str] = frozenset({CAPABILITY}),
+) -> ExecutionTarget:
+    return ExecutionTarget.bind_origin(
         profile_id="local-polymer",
-        provider="local",
-        accelerator_sku="local-mps",
-        capabilities=frozenset({CAPABILITY}),
+        provider=provider,
+        accelerator_sku=accelerator_sku,
+        capabilities=capabilities,
         allowed_data_classifications=frozenset(
             {"public", "internal", "confidential", "restricted"}
         ),
@@ -142,11 +150,14 @@ def _local_target(*, healthy: bool = True, cost: float = 0.2) -> ExecutionTarget
         cost_evidence="local measured token cost",
         privacy_evidence="no network egress",
         offline=True,
+        origin_source="operator-configured",
+        origin_protocol="gludd-native-profile-v1",
+        origin_evidence_sha256="1" * 64,
     )
 
 
 def _azure_target(*, healthy: bool = True, cost: float = 0.1) -> ExecutionTarget:
-    return ExecutionTarget(
+    return ExecutionTarget.bind_origin(
         profile_id="azure-polymer",
         provider="azure",
         accelerator_sku="Standard_NC24ads_A100_v4",
@@ -159,6 +170,17 @@ def _azure_target(*, healthy: bool = True, cost: float = 0.1) -> ExecutionTarget
         cost_evidence="catalog price snapshot",
         privacy_evidence="approved public/internal egress policy",
         offline=False,
+        origin_source="operator-configured",
+        origin_protocol="gludd-native-profile-v1",
+        origin_evidence_sha256="2" * 64,
+    )
+
+
+def _verifier(*targets: ExecutionTarget) -> PinnedProfileOriginVerifier:
+    origins = tuple(target.profile_origin for target in targets)
+    assert all(origin is not None for origin in origins)
+    return PinnedProfileOriginVerifier.from_origins(
+        tuple(origin for origin in origins if origin is not None)
     )
 
 
@@ -186,13 +208,14 @@ def _executor(
     targets: tuple[ExecutionTarget, ...] | None = None,
     tool_runner: _ToolRunner | None = None,
 ) -> UniversalTaskExecutor:
+    resolved_targets = targets or (_local_target(), _azure_target())
     return UniversalTaskExecutor(
         gateway=gateway,
         scheduler=Scheduler(),
         accelerator_planner=_planner(),
-        target_source=lambda: targets
-        or (_local_target(), _azure_target()),
+        target_source=lambda: resolved_targets,
         tool_runner=tool_runner,
+        profile_origin_verifier=_verifier(*resolved_targets),
     )
 
 
@@ -251,19 +274,21 @@ def test_public_work_falls_back_to_healthy_azure_target() -> None:
 
 def test_execute_uses_one_evidence_snapshot_for_route_and_invocation() -> None:
     calls = 0
+    target = _local_target()
 
     def target_source() -> tuple[ExecutionTarget, ...]:
         nonlocal calls
         calls += 1
         if calls > 1:
             return ()
-        return (_local_target(),)
+        return (target,)
 
     executor = UniversalTaskExecutor(
         gateway=_Gateway(json.dumps(_candidate())),
         scheduler=Scheduler(),
         accelerator_planner=_planner(),
         target_source=target_source,
+        profile_origin_verifier=_verifier(target),
     )
 
     result = executor.execute(_request(), _adapter())
@@ -380,12 +405,10 @@ def test_required_tool_is_injected_allowlisted_and_fail_closed() -> None:
 
 
 def test_route_refuses_missing_capability_health_budget_or_hardware() -> None:
-    bad_capability = replace(
-        _local_target(), capabilities=frozenset({"text_summary"})
-    )
+    bad_capability = _local_target(capabilities=frozenset({"text_summary"}))
     unhealthy = _azure_target(healthy=False)
     over_budget = _azure_target(cost=5.0)
-    missing_hardware = replace(_local_target(), accelerator_sku="missing-sku")
+    missing_hardware = _local_target(accelerator_sku="missing-sku")
     gateway = _Gateway(json.dumps(_candidate()))
 
     result = _executor(
@@ -459,11 +482,13 @@ def test_executor_refuses_adapter_policy_and_scheduler_mismatches() -> None:
         def plan(self, _items: list[WorkItem]) -> list[list[str]]:
             return []
 
+    scheduler_target = _local_target()
     scheduler_refusal = UniversalTaskExecutor(
         gateway=_Gateway(json.dumps(_candidate())),
         scheduler=_RejectingScheduler(),
         accelerator_planner=_planner(),
-        target_source=lambda: (_local_target(),),
+        target_source=lambda: (scheduler_target,),
+        profile_origin_verifier=_verifier(scheduler_target),
     ).execute(_request(), _adapter())
     assert scheduler_refusal.status is TaskStatus.FAILED
     assert scheduler_refusal.reasons == ("scheduler_rejected_task",)
@@ -472,7 +497,7 @@ def test_executor_refuses_adapter_policy_and_scheduler_mismatches() -> None:
 def test_route_rejects_accelerator_provider_mismatch() -> None:
     executor = _executor(
         _Gateway(json.dumps(_candidate())),
-        targets=(replace(_local_target(), provider="azure"),),
+        targets=(_local_target(provider="azure"),),
     )
 
     route = executor.route(_request())

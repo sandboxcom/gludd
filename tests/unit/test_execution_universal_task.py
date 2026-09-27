@@ -77,6 +77,10 @@ class _BadCapabilityAdapter(_Adapter):
     capability = " test "
 
 
+class _SelfImproveOnlyAdapter(_Adapter):
+    capability = "self_improve.proposal"
+
+
 class _Executor:
     def __init__(self) -> None:
         self.calls: list[tuple[UniversalTaskRequest, TaskAdapterProtocol]] = []
@@ -147,3 +151,40 @@ def test_runtime_rejects_duplicate_or_non_adapter_registrations() -> None:
         runtime_type(executor=object(), adapters=(_Adapter(),))
     with pytest.raises(ValueError, match="canonical non-empty text"):
         runtime_type(executor=_Executor(), adapters=(_BadCapabilityAdapter(),))
+
+
+def test_self_improvement_only_registry_refuses_polymer_and_arduino_exactly() -> None:
+    """Missing domain adapters cannot silently redirect work to self-improvement."""
+    runtime_type = importlib.import_module(
+        "general_ludd.execution.universal_task_runtime"
+    ).UniversalTaskRuntime
+    executor = _Executor()
+    runtime = runtime_type(
+        executor=executor,
+        adapters=(_SelfImproveOnlyAdapter(),),
+    )
+
+    results = tuple(
+        runtime.execute(
+            UniversalTaskRequest(
+                task_id=f"task-{capability}",
+                capability=capability,
+                instruction="Execute only the requested domain capability.",
+                budget_usd=0.0,
+            )
+        )
+        for capability in ("polymer_design", "arduino-cpp")
+    )
+
+    assert executor.calls == []
+    assert all(result.status is TaskStatus.REFUSED for result in results)
+    assert all(
+        result.reasons == ("capability_adapter_unavailable",)
+        for result in results
+    )
+    assert all(
+        result.evidence == {
+            "registered_capabilities": ("self_improve.proposal",)
+        }
+        for result in results
+    )
