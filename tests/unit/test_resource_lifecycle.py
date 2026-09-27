@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import os
+import signal
 import tempfile
 import time
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+import general_ludd.cloud.resource_lifecycle as resource_lifecycle
 from general_ludd.cloud.resource_lifecycle import (
     LIFECYCLE_TARGETS,
     ResourceLifecycleManager,
@@ -111,6 +113,30 @@ class TestRegisterAndDeregister:
             project_id="project-a",
         )
         assert manager.is_tracked("shared-id", project_id="project-b")
+
+    def test_touch_requires_exact_identity_and_updates_only_that_resource(
+        self,
+        manager: ResourceLifecycleManager,
+    ) -> None:
+        manager.register("azure", "shared", "/tmp/a", project_id="project-a")
+        manager.register("azure", "shared", "/tmp/b", project_id="project-b")
+        before = {
+            resource.project_id: resource.last_activity
+            for resource in manager.all_tracked()
+        }
+
+        with pytest.raises(ValueError, match="ambiguous resource identity"):
+            manager.touch("shared")
+        with pytest.raises(KeyError, match="missing"):
+            manager.touch("missing", provider="azure", project_id="project-a")
+
+        manager.touch("shared", provider="azure", project_id="project-a")
+        after = {
+            resource.project_id: resource.last_activity
+            for resource in manager.all_tracked()
+        }
+        assert after["project-a"] >= before["project-a"]
+        assert after["project-b"] == before["project-b"]
 
 
 class TestPendingCleanup:
@@ -373,6 +399,59 @@ class TestSignalAndAtexitHandlers:
 
         chained_handler.assert_called_once_with(15, None)
         mock_kill.assert_not_called()
+
+    def test_signal_handler_respects_preexisting_ignore(
+        self,
+        monkeypatch: Any,
+        manager: ResourceLifecycleManager,
+    ) -> None:
+        manager._previous_signal_handlers[signal.SIGTERM] = signal.SIG_IGN
+        mock_kill = MagicMock()
+        monkeypatch.setattr(os, "kill", mock_kill)
+
+        manager._handle_signal(signal.SIGTERM, None)
+
+        mock_kill.assert_not_called()
+
+    def test_partial_signal_install_rolls_back_every_installed_handler(
+        self,
+        monkeypatch: Any,
+        manager: ResourceLifecycleManager,
+    ) -> None:
+        """A failed second install must not leave SIGTERM pointing at this manager."""
+        previous_term = MagicMock()
+        previous_int = MagicMock()
+        installed: dict[int, object] = {
+            signal.SIGTERM: previous_term,
+            signal.SIGINT: previous_int,
+        }
+        install_attempts = 0
+
+        def fake_getsignal(signum: int) -> object:
+            return installed[signum]
+
+        def fake_signal(signum: int, handler: object) -> object:
+            nonlocal install_attempts
+            install_attempts += 1
+            if signum == signal.SIGINT and handler == manager._handle_signal:
+                raise ValueError("forced partial install")
+            old = installed[signum]
+            installed[signum] = handler
+            return old
+
+        monkeypatch.setattr(resource_lifecycle, "_signal_handlers_installed", False)
+
+        with (
+            patch.object(signal, "getsignal", side_effect=fake_getsignal),
+            patch.object(signal, "signal", side_effect=fake_signal),
+        ):
+            assert resource_lifecycle._install_signal_handlers(manager) is False
+
+        assert install_attempts == 3
+        assert installed[signal.SIGTERM] is previous_term
+        assert installed[signal.SIGINT] is previous_int
+        assert manager._previous_signal_handlers == {}
+        assert resource_lifecycle._signal_handlers_installed is False
 
     def test_singleton_imports_signal_and_atexit(self) -> None:
         mgr = get_lifecycle()

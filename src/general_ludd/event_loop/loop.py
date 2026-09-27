@@ -621,22 +621,21 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
         Cancellation is best-effort: each task's done-callback removes it from the
         live set as it settles, so after the gather the set drains to empty.
         """
-        async with self._bg_tasks_lock:
-            pending = list(self._background_tasks)
-        if not pending:
-            return
-        if cancel:
-            for task in pending:
-                if not task.done():
-                    task.cancel()
-        # gather a snapshot (never the live set) with return_exceptions so a
-        # cancelled/failed background task can't propagate into shutdown.
-        await asyncio.gather(*pending, return_exceptions=True)
-        # A done-callback is scheduled by asyncio after the gather callback
-        # resumes. Remove the drained snapshot synchronously as well, so callers
-        # can rely on the shutdown postcondition before the next loop turn.
-        async with self._bg_tasks_lock:
-            self._background_tasks.difference_update(pending)
+        while True:
+            async with self._bg_tasks_lock:
+                pending = list(self._background_tasks)
+            if not pending:
+                return
+            if cancel:
+                for task in pending:
+                    if not task.done():
+                        task.cancel()
+            # A cancelled task may schedule final cleanup work while settling.
+            # Gather and remove this stable snapshot, then loop so that cleanup
+            # tasks registered during cancellation cannot escape shutdown.
+            await asyncio.gather(*pending, return_exceptions=True)
+            async with self._bg_tasks_lock:
+                self._background_tasks.difference_update(pending)
 
     async def _append_message_queue_section(
         self, prompt_text: str | None, todo: Any, project_id: str | None
@@ -1018,7 +1017,10 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
             logger.error("EventLoop run_forever exited with error: %s", exc)
             raise
         finally:
-            logger.error("EventLoop run_forever stopped; no further ticks will occur")
+            if self._running:
+                logger.error("EventLoop run_forever stopped unexpectedly")
+            else:
+                logger.info("EventLoop run_forever stopped gracefully")
 
     async def _drain_inbound_queue(self) -> None:
         """B3.1.3 Slice 5: drain the inbound :class:`WriteQueue` between ticks.
@@ -5057,6 +5059,18 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
         daemon_state["_last_gpu_metrics_at"] = _time.time()
         for ep in idle_endpoints:
             current_idle_ids.add(ep.endpoint_id)
+            if ep.endpoint_id in torn_down:
+                try:
+                    self._utilization_tracker.unregister_endpoint(ep.endpoint_id)
+                except Exception as exc:
+                    logger.error(
+                        "Failed to finalize local cleanup for destroyed endpoint %s: %s",
+                        ep.endpoint_id,
+                        exc,
+                    )
+                    continue
+                idle_tracking.pop(ep.endpoint_id, None)
+                continue
             if ep.endpoint_id not in idle_tracking:
                 idle_tracking[ep.endpoint_id] = {
                     "endpoint_id": ep.endpoint_id,
@@ -5130,9 +5144,21 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
                     # lifecycle owner into a false teardown-success receipt while
                     # the paid resource may still be running.
                     continue
-                self._utilization_tracker.unregister_endpoint(ep.endpoint_id)
+                # Destruction is the authoritative external transition. Record
+                # its tombstone before local tracker cleanup so a partial local
+                # failure can retry unregistering without destroying twice.
+                if ep.endpoint_id not in torn_down:
+                    torn_down.append(ep.endpoint_id)
+                try:
+                    self._utilization_tracker.unregister_endpoint(ep.endpoint_id)
+                except Exception as exc:
+                    logger.error(
+                        "Destroyed idle endpoint %s but local unregister failed: %s",
+                        ep.endpoint_id,
+                        exc,
+                    )
+                    continue
                 idle_tracking.pop(ep.endpoint_id, None)
-                torn_down.append(ep.endpoint_id)
         no_longer_idle = [eid for eid in idle_tracking if eid not in current_idle_ids]
         for eid in no_longer_idle:
             idle_tracking.pop(eid, None)

@@ -237,6 +237,20 @@ class TestAcquireLeasesBatch:
         session.add.assert_not_called()
         session.flush.assert_not_awaited()
 
+    async def test_partial_version_fence_cannot_refresh_an_older_attempt(self) -> None:
+        """Every bucket in a fenced batch must carry an exact todo version."""
+        session = _mock_session()
+
+        with pytest.raises(ValueError, match="exactly match"):
+            await acquire_leases_batch(
+                session,
+                ["bucket-a", "bucket-b"],
+                "holder-1",
+                todo_versions={"bucket-a": 2},
+            )
+
+        session.execute.assert_not_awaited()
+
     @pytest.mark.parametrize("ttl_seconds", [0, -1, 86_401, True, 1.5])
     async def test_rejects_unsafe_ttl(self, ttl_seconds: object) -> None:
         session = _mock_session()

@@ -255,6 +255,35 @@ supervision and 96% for the lease repository. The separate lifecycle receipt
 reports 85% total coverage for `resource_lifecycle.py` (87.9% lines and 75.9%
 branches); no measured file is below 75%.
 
+An independent adversarial review then tightened the receipt boundary itself.
+Each PostgreSQL listener start now receives a fresh UUIDv4 `proof_id`, and the
+live acceptance requires the same `(worker PID, proof_id)` pair on ready,
+notification, reconnect, durable catch-up, and close. Calling cleanup on a
+listener that never reached `LISTEN` cannot emit a close receipt, repeated close
+is idempotent, and a restart receives a fresh identity. The same review made
+partial signal-handler installation transactional, requires an exact version
+for every bucket in a fenced lease batch, drains cleanup tasks created during
+shutdown cancellation, and retains a confirmed idle-destroy tombstone while a
+failed local unregister retries without issuing a second provider destroy.
+Migration 040 now has a dialect-compilation regression test proving its
+`created_at` default renders as `CURRENT_TIMESTAMP` for SQLite and `now()` for
+PostgreSQL.
+
+The hardened receipt was replayed from
+`feature/v011-scheduler-review` against a newly created PostgreSQL 16 container
+and a namespaced two-CPU, 2 GiB Podman machine. All five live cases passed in
+10.29 seconds. Worker `17716` retained proof identity
+`8c50959118074b228e0ba7278dca3f6e`, and worker `17717` retained
+`b3bbfb524fc1461692c9fa454dcfef8a`, across ready, notification, forced
+disconnect, durable catch-up, and close. Graceful shutdown emitted neither the
+old false event-loop error nor the false daemon-task error. The target removed
+its PostgreSQL container and stopped the VM; the exact-machine delete target
+then removed `gludd-scheduler-review` in one second. The adversarial unit profile
+passed 333 tests with warnings treated as errors. The lifecycle profile passed
+198 tests at 92% aggregate coverage, with both measured files above 89%; the
+execution-lease profile remained at 95% aggregate coverage with every measured
+file above 90%.
+
 The hosted `Build and Release` dispatch contract passed its committed-head
 example preflight. An actual GitHub Actions dispatch deliberately remains gated
 on the exact branch commit existing on the configured remote: this isolated proof
@@ -272,6 +301,22 @@ chained shutdown handler independently, preserving zero-downtime operation.
 - A long-running request report describes work apparently starting again after a
   worker was replaced. Regardless of the hosting-layer cause, effects therefore
   need durable claim fencing and idempotency: [Gunicorn issue #2905](https://github.com/benoitc/gunicorn/issues/2905).
+- A Gunicorn operator trying to add SIGTERM cleanup reported that replacing the
+  worker's handler caused shutdown to hang for the full graceful timeout. Gludd
+  therefore chains the captured runtime handler and rolls back the first handler
+  if installing the second one fails:
+  [Gunicorn discussion #3054](https://github.com/benoitc/gunicorn/discussions/3054).
+- Psycopg operators have reproduced async cancellation leaving server work or
+  connections alive, and later reported pool connections leaking specifically
+  across `CancelledError`. Gludd owns and awaits the dedicated LISTEN task and
+  accepts a close proof only for a lifecycle that actually reached ready:
+  [psycopg issue #543](https://github.com/psycopg/psycopg/issues/543),
+  [psycopg issue #1208](https://github.com/psycopg/psycopg/issues/1208).
+- A months-long LISTEN/NOTIFY user reported notification-loss concerns around
+  repeatedly entering the `notifies()` generator. Gludd keeps one dedicated
+  generator per connection and uses durable audit-table catch-up after every
+  reconnect instead of treating notifications as the source of truth:
+  [psycopg issue #962](https://github.com/psycopg/psycopg/issues/962).
 - A KEDA Azure Queue report shows zero-replica metrics becoming unknown and a
   workload waking only one replica despite queued demand. Gludd consequently
   records todo demand and desired topology itself instead of treating replica

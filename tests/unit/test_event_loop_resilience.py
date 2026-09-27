@@ -401,7 +401,35 @@ class TestGracefulShutdown:
         assert len(loop._background_tasks) == 0
 
     @pytest.mark.asyncio
-    async def test_run_forever_stops_cleanly_on_stop(self):
+    async def test_shutdown_drains_cleanup_task_spawned_during_cancellation(self) -> None:
+        """Partial teardown work added by a cancelled task is drained too."""
+        loop, _ = _make_loop_resilience()
+        cleanup_tasks: list[asyncio.Task[None]] = []
+
+        async def cleanup() -> None:
+            await asyncio.Event().wait()
+
+        async def work() -> None:
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cleanup_task = asyncio.create_task(cleanup())
+                cleanup_tasks.append(cleanup_task)
+                loop._track_background_task(cleanup_task)
+
+        original = asyncio.create_task(work())
+        loop._track_background_task(original)
+        await asyncio.sleep(0)
+
+        await asyncio.wait_for(loop.shutdown(), timeout=5.0)
+
+        assert original.cancelled()
+        assert len(cleanup_tasks) == 1
+        assert cleanup_tasks[0].cancelled()
+        assert len(loop._background_tasks) == 0
+
+    @pytest.mark.asyncio
+    async def test_run_forever_stops_cleanly_on_stop(self, caplog):
         """Calling stop() mid-loop exits run_forever cleanly within timeout."""
         loop, mocks = _make_loop_resilience()
         mocks["todo_repo"].claim_runnable.return_value = []
@@ -419,10 +447,13 @@ class TestGracefulShutdown:
 
         loop.tick = counting_tick
 
-        await loop.run_forever(interval=0.001)
+        with caplog.at_level("INFO"):
+            await loop.run_forever(interval=0.001)
 
         assert ticks_run >= 2
         assert loop._running is False
+        assert "stopped gracefully" in caplog.text
+        assert not [record for record in caplog.records if record.levelname == "ERROR"]
 
 
 # ---------------------------------------------------------------------------

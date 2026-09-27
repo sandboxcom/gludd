@@ -920,7 +920,7 @@ def _on_event_loop_done(task: asyncio.Task[Any]) -> None:
     if exc is not None:
         logger.error("EventLoop task terminated with exception: %s", exc)
     else:
-        logger.error("EventLoop task exited unexpectedly without exception")
+        logger.info("EventLoop task completed normally")
 
 
 def _check_degraded(app: FastAPI) -> JSONResponse | None:

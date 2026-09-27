@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -232,3 +234,106 @@ def test_empty_lifecycle_cleanup_is_not_reported_as_a_warning(caplog) -> None:
         deployment_module._cleanup_orphaned_instances()
 
     assert "Lifecycle cleanup" not in caplog.text
+
+
+def test_region_discovery_prefers_fresh_cache_without_shelling_out(tmp_path) -> None:
+    cache = tmp_path / "azure-regions.json"
+    cache.write_text(json.dumps({"ts": 100.0, "regions": ["custom-region"]}))
+    state = SimpleNamespace(path=lambda *_parts: cache)
+    with (
+        patch.object(deployment_module, "project_state", return_value=state),
+        patch.object(deployment_module.time, "time", return_value=101.0),
+        patch.object(deployment_module, "_get_all_regions") as discover,
+    ):
+        regions = deployment_module._discover_azure_regions()
+
+    assert regions == ["custom-region"]
+    discover.assert_not_called()
+
+
+def test_region_discovery_recovers_from_bad_cache_and_orders_gpu_regions(tmp_path) -> None:
+    cache = tmp_path / "azure-regions.json"
+    cache.write_text("not-json")
+    state = SimpleNamespace(path=lambda *_parts: cache)
+    secure_write = MagicMock()
+    with (
+        patch.object(deployment_module, "project_state", return_value=state),
+        patch.object(
+            deployment_module,
+            "_get_all_regions",
+            return_value=["custom-region", "eastus", "westus2"],
+        ),
+        patch.object(deployment_module, "secure_write_text", secure_write),
+    ):
+        regions = deployment_module._discover_azure_regions()
+
+    assert regions == ["westus2", "eastus", "custom-region"]
+    secure_write.assert_called_once()
+
+
+def test_region_discovery_falls_back_to_priority_catalog(tmp_path) -> None:
+    cache = tmp_path / "missing.json"
+    state = SimpleNamespace(path=lambda *_parts: cache)
+    with (
+        patch.object(deployment_module, "project_state", return_value=state),
+        patch.object(deployment_module, "_get_all_regions", return_value=[]),
+        patch.object(deployment_module, "secure_write_text"),
+    ):
+        regions = deployment_module._discover_azure_regions()
+
+    assert regions == deployment_module.GPU_PRIORITY_REGIONS
+
+
+@pytest.mark.asyncio
+async def test_cleanup_expired_skips_live_records_and_destroys_expired(tmp_path) -> None:
+    manager = DeploymentManager(working_dir=str(tmp_path))
+    now = datetime.now(UTC)
+    expired = DeploymentRecord(
+        instance_id="expired",
+        working_dir=str(tmp_path),
+        provider="azure",
+        model_name="test-model",
+        state="running",
+        expires_at=now - timedelta(seconds=1),
+    )
+    future = expired.model_copy(
+        update={"instance_id": "future", "expires_at": now + timedelta(hours=1)}
+    )
+    timeless = expired.model_copy(update={"instance_id": "timeless", "expires_at": None})
+    manager.list_deployments_shared = AsyncMock(  # type: ignore[method-assign]
+        return_value=[future, timeless, expired]
+    )
+    manager.destroy = AsyncMock()  # type: ignore[method-assign]
+    manager.get_deployment_shared = AsyncMock(  # type: ignore[method-assign]
+        side_effect=lambda instance_id, **_kwargs: {
+            "future": future,
+            "timeless": timeless,
+            "expired": expired,
+        }[instance_id]
+    )
+
+    destroyed = await manager.cleanup_expired()
+
+    assert destroyed == ["expired"]
+    manager.destroy.assert_awaited_once_with("expired", provider="azure")
+
+
+@pytest.mark.asyncio
+async def test_cleanup_expired_persists_retry_state_after_destroy_failure(tmp_path) -> None:
+    manager = DeploymentManager(working_dir=str(tmp_path))
+    expired = DeploymentRecord(
+        instance_id="expired",
+        working_dir=str(tmp_path),
+        provider="azure",
+        model_name="test-model",
+        state="running",
+        expires_at=datetime.now(UTC) - timedelta(seconds=1),
+    )
+    manager.list_deployments_shared = AsyncMock(return_value=[expired])  # type: ignore[method-assign]
+    manager.get_deployment_shared = AsyncMock(return_value=expired)  # type: ignore[method-assign]
+    manager.destroy = AsyncMock(side_effect=RuntimeError("provider unavailable"))  # type: ignore[method-assign]
+    manager._persist_record = AsyncMock()  # type: ignore[method-assign]
+
+    assert await manager.cleanup_expired() == []
+    assert expired.state == "cleanup_retry"
+    manager._persist_record.assert_awaited_once_with(expired)

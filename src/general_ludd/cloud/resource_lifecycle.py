@@ -473,11 +473,32 @@ def _install_signal_handlers(manager: ResourceLifecycleManager) -> bool:
     if threading.current_thread() is not threading.main_thread():
         logger.debug("Deferring lifecycle signal handlers to the main thread")
         return False
+    installed: list[int] = []
+    captured: list[int] = []
     try:
         for signum in (signal.SIGTERM, signal.SIGINT):
             manager._previous_signal_handlers[signum] = signal.getsignal(signum)
+            captured.append(signum)
             signal.signal(signum, manager._handle_signal)
-    except ValueError:
+            installed.append(signum)
+    except (OSError, RuntimeError, ValueError):
+        # Signal installation is a two-handler transaction. If the second
+        # install fails, leaving the first installed would make the next retry
+        # capture our own handler as its predecessor and recurse on delivery.
+        for installed_signum in reversed(installed):
+            previous = manager._previous_signal_handlers.get(
+                installed_signum,
+                signal.SIG_DFL,
+            )
+            try:
+                signal.signal(installed_signum, previous)
+            except (OSError, RuntimeError, ValueError):
+                logger.exception(
+                    "Failed to roll back lifecycle signal handler %d",
+                    installed_signum,
+                )
+        for captured_signum in captured:
+            manager._previous_signal_handlers.pop(captured_signum, None)
         logger.debug(
             "Deferring lifecycle signal handlers outside the main interpreter",
             exc_info=True,

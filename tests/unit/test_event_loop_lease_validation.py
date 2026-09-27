@@ -44,3 +44,13 @@ def test_rejects_ambiguous_or_unbounded_lease_inputs(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         validate_lease_input(bucket_keys, holder_id, ttl_seconds, todo_versions)
+
+
+def test_rejects_a_partial_todo_version_fence() -> None:
+    with pytest.raises(ValueError, match="every requested bucket key"):
+        validate_lease_input(
+            ["todo:a", "todo:b"],
+            "worker",
+            30,
+            {"todo:a": 7},
+        )

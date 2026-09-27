@@ -429,6 +429,55 @@ class TestPhaseCheckComputeUtilization:
         assert "ep1" not in daemon_state["idle_endpoints"]
         assert daemon_state["torn_down_endpoints"] == ["ep1"]
 
+    @pytest.mark.asyncio
+    async def test_destroy_success_is_not_repeated_when_unregister_partially_fails(
+        self,
+    ) -> None:
+        """A confirmed destroy remains a tombstone while local cleanup retries."""
+        endpoint = ComputeEndpoint(
+            endpoint_id="ep1",
+            url="http://gpu1:8000",
+            model="llama3",
+            gpu_type="A100",
+            current_load=0,
+            last_used=time.time() - 1000,
+        )
+        tracker = _make_tracker(endpoint)
+        original_unregister = tracker.unregister_endpoint
+        unregister_attempts = 0
+
+        def fail_once(endpoint_id: str) -> None:
+            nonlocal unregister_attempts
+            unregister_attempts += 1
+            if unregister_attempts == 1:
+                raise RuntimeError("tracker write failed")
+            original_unregister(endpoint_id)
+
+        tracker.unregister_endpoint = MagicMock(side_effect=fail_once)  # type: ignore[method-assign]
+        deployment_owner = AsyncMock()
+        deployment_owner.destroy = AsyncMock()
+        daemon_state: dict[str, Any] = {}
+        loop = EventLoop(
+            utilization_tracker=tracker,
+            deployment_manager=deployment_owner,
+            daemon_state=daemon_state,
+            config={
+                "compute_idle_check_interval_ticks": 1,
+                "compute_idle_teardown_threshold_ticks": 1,
+                "compute_idle_gpu_sm_pct": 5.0,
+            },
+        )
+
+        loop._total_ticks = 1
+        await loop._phase_check_compute_utilization()
+        loop._total_ticks = 2
+        await loop._phase_check_compute_utilization()
+
+        deployment_owner.destroy.assert_awaited_once_with("ep1")
+        assert tracker.get_endpoint("ep1") is None
+        assert daemon_state["torn_down_endpoints"] == ["ep1"]
+        assert "ep1" not in daemon_state["idle_endpoints"]
+
 
 class TestFindUnderutilized:
     def test_find_underutilized_below_threshold(self) -> None:

@@ -27,8 +27,12 @@ def validate_lease_input(
             )
     if todo_versions is None:
         return
-    if set(todo_versions) - set(bucket_keys):
+    requested_keys = set(bucket_keys)
+    versioned_keys = set(todo_versions)
+    if versioned_keys - requested_keys:
         raise ValueError("todo_versions contains an unknown bucket key")
+    if requested_keys - versioned_keys:
+        raise ValueError("todo_versions must exactly match every requested bucket key")
     for version in todo_versions.values():
         if isinstance(version, bool) or not isinstance(version, int) or version <= 0:
             raise ValueError("todo versions must be positive integers")
