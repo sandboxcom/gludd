@@ -60,10 +60,15 @@ support Gludd's narrow method-only policy:
 
 ## S83.104: cancellation-safe asynchronous Git locking
 
-Planned in this tranche: prove that cancelling an asynchronous lock acquisition
-cannot leave a background executor holding the repository mutex. The worker
-must finish its blocking acquire and, if it acquired the lock, release it before
-the executor is shut down and cancellation propagates.
+Cancelling an asynchronous lock acquisition can no longer leave a background
+executor holding the repository mutex. Gludd now retains the executor's native
+future, waits through its already-bounded acquire on the exceptional path, and
+releases an acquired context on the same single worker thread before shutting
+down the executor and propagating cancellation. The same path preserves enter
+failures without calling exit on a context that never acquired. Deterministic
+thread events reproduce the former leak without sleeps. The widened mutex
+replay passes 190 tests, and the sole measured production file reaches 92%
+combined line-and-branch coverage with both aggregate and per-file gates green.
 
 CPython users have repeatedly reported that cancelling `run_in_executor` work
 does not stop its worker thread, including issue
