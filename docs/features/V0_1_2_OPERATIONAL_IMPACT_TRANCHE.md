@@ -44,10 +44,13 @@ directly: <https://github.com/lodash/lodash/issues/1934>.
 
 ## S83.136: runtime-checkable method-only adapters
 
-Planned in this tranche: extend the existing method-only runtime protocol
-contract to newer local-worker and managed-evaluation injection seams. Data-
-bearing result protocols remain static-only because a shallow structural check
-cannot validate their values.
+The existing method-only runtime protocol contract now covers the newer local
+proposal worker and managed-attempt evaluator injection seams. Runtime callers
+can reject objects missing `run_observable` or the evaluator call boundary
+before work starts. The observable result protocol remains static-only because
+a shallow structural check cannot validate its return code and output values.
+The same regression inventory continues to prove that all other data-bearing
+protocols remain static-only.
 
 The Python typing community has documented both property side effects during
 runtime protocol checks and the fragility of data-member checks. Those reports

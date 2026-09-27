@@ -14,6 +14,16 @@ _METHOD_ONLY_ADAPTERS = (
     ("general_ludd.self_improve.codex_comparison", "_LlamaGrammarType", ("from_json_schema",)),
     ("general_ludd.self_improve.codex_comparison", "_LocalModel", ("__call__",)),
     ("general_ludd.self_improve.codex_comparison", "_ModelFactory", ("__call__",)),
+    (
+        "general_ludd.self_improve.local_worker_request",
+        "_ObservableRunner",
+        ("run_observable",),
+    ),
+    (
+        "general_ludd.self_improve.managed_runtime_evaluation",
+        "ManagedAttemptEvaluator",
+        ("__call__",),
+    ),
     ("general_ludd.self_improve.managed_runner", "_AttemptEvaluator", ("__call__",)),
     ("general_ludd.self_improve.managed_runner", "_CandidatePlanner", ("__call__",)),
     ("general_ludd.self_improve.managed_runner", "_FailureLoader", ("__call__",)),

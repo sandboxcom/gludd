@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
-from typing import Final, NoReturn, Protocol
+from typing import Final, NoReturn, Protocol, runtime_checkable
 
 from general_ludd.self_improve._callback_compat import validated_timeout_seconds
 from general_ludd.self_improve.codex_comparison import (
@@ -43,6 +43,7 @@ class _ObservableResult(Protocol):
         """Return bounded standard error."""
 
 
+@runtime_checkable
 class _ObservableRunner(Protocol):
     """Minimal parent-owned process boundary used by local inference."""
 
