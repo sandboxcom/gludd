@@ -110,6 +110,14 @@ With zero demand, the event loop reconciles its owned execution environment to
 when ownership and idle policy permit, its exact managed environment. Neither
 path performs subscription-wide deletion, pruning, or inferred cleanup.
 
+Utilization-triggered idle teardown follows the same proof boundary. If no
+deployment owner is wired, or the owner's exact destroy call fails, Gludd keeps
+the endpoint registered together with its accumulated idle evidence. It may log
+that teardown is pending, but it must not append a torn-down receipt. Only a
+successful owner-side destroy may unregister the endpoint and record teardown;
+a later tick retries once ownership has recovered. This prevents a missing
+lifecycle dependency from hiding compute that may still be running and billed.
+
 ## Observability
 
 Every lifecycle transition is content-free and secret-safe:
@@ -149,6 +157,11 @@ queues, bootstrap failure, and unknown database state. These tests are hermetic
 and run in GitHub Actions. The paid live Azure proof is separately gated by
 explicit credentials, scope, cost, TTL, and acknowledgement so pull requests do
 not create cloud resources.
+
+`tests/unit/test_compute_idle_teardown.py` additionally proves the owner-loss
+recovery boundary: an idle endpoint remains registered and is not reported as
+torn down while the deployment owner is unavailable; after that exact owner is
+restored, the next tick destroys, unregisters, and records the endpoint once.
 
 `tests/unit/test_owned_process_supervisor.py` deliberately wedges child work and
 proves that timeout and internal cancellation terminate and reap the exact process
@@ -208,6 +221,49 @@ uncertain remote outcome keeps the lease rather than risking duplicate effects.
 `execution_lease_heartbeat_interval_seconds` defaults to 30; invalid or
 non-renewable timing fails the complete claim closed before dispatch.
 
+## v0.1.1 durable scheduler proof receipt (2026-09-27)
+
+The proof was run from the isolated `feature/v011-scheduler-live-proof`
+worktree with a uniquely named two-CPU, 2 GiB Podman machine. The first live
+PostgreSQL run failed before scheduling because migration 040 rendered SQLite's
+`strftime()` as a PostgreSQL server default. Replacing it with SQLAlchemy's
+dialect-safe `now()` expression let a fresh database migrate through revision
+047. That failing run is retained as the test-first receipt for the migration
+repair.
+
+The next live run passed four cases and failed the two-worker Gunicorn teardown
+case: both wake listeners started, but neither emitted its owned close receipt,
+and Python warned about leaked semaphores. The resource lifecycle signal hook
+was replacing Gunicorn's existing graceful handler and re-sending the default
+signal. It now performs its exact provider cleanup and then delegates to the
+previous runtime handler. A focused unit test pins that chaining behavior while
+the existing default-handler test still proves crash termination.
+
+The final `make test-e2e-postgres-multiworker` run passed all five cases in
+11.32 seconds against PostgreSQL 16. It proved fresh migrations, disjoint claims
+from independent worker processes, cost-lease fencing, concurrent deployment
+registry writes, cross-connection Terraform event visibility, notification
+recovery after forced disconnect, and two-worker Gunicorn shutdown. Both worker
+PIDs emitted `Terraform PostgreSQL wake listener closed`; no semaphore leak
+warning remained. The target removed its database container and stopped the
+machine, and `make podman-project-delete` then removed the exact proof machine.
+
+The consolidated deterministic scheduler, lease, migration, idle-teardown, and
+resource-lifecycle profile passed 184 tests with warnings treated as errors. Its
+execution-lease coverage receipt reports 98% aggregate coverage, with 99% for
+supervision and 96% for the lease repository. The separate lifecycle receipt
+reports 85% total coverage for `resource_lifecycle.py` (87.9% lines and 75.9%
+branches); no measured file is below 75%.
+
+The hosted `Build and Release` dispatch contract passed its committed-head
+example preflight. An actual GitHub Actions dispatch deliberately remains gated
+on the exact branch commit existing on the configured remote: this isolated proof
+does not push or merge. Once an authorized publisher pushes that commit, the same
+`ci-trigger-committed-head` target can dispatch only the matching remote SHA and
+return the hosted run URL. No schema rewrite or service outage is required for
+this repair on an already-migrated database; rolling workers may adopt the
+chained shutdown handler independently, preserving zero-downtime operation.
+
 ## Long-lived operator reports that shaped the design
 
 - Gunicorn maintainers explain that workers are separate processes and do not
@@ -249,6 +305,12 @@ non-renewable timing fails the complete claim closed before dispatch.
   timeouts severing healthy long-lived work, motivating protocol-level keepalive
   rather than external connection state as execution ownership:
   [ansible-runner issue #1187](https://github.com/ansible/ansible-runner/issues/1187).
+- Operator SDK users reported a failed Ansible finalizer allowing the owner custom
+  resource to disappear while its external resources remained. Gludd therefore
+  retains the endpoint and its idle evidence until the exact deployment owner
+  confirms destruction; missing ownership can never become a successful teardown
+  receipt:
+  [operator-sdk issue #2546](https://github.com/operator-framework/operator-sdk/issues/2546).
 
 Azure's own scaling documentation remains the normative platform reference:
 [Azure Container Apps scaling](https://learn.microsoft.com/en-us/azure/container-apps/scale-app).

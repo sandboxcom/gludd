@@ -5125,6 +5125,11 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
                         "_deployment_manager not initialized; cannot destroy idle endpoint %s",
                         ep.endpoint_id,
                     )
+                    # Keep the endpoint and its idle evidence until an owner can
+                    # prove destruction.  Unregistering here would turn a missing
+                    # lifecycle owner into a false teardown-success receipt while
+                    # the paid resource may still be running.
+                    continue
                 self._utilization_tracker.unregister_endpoint(ep.endpoint_id)
                 idle_tracking.pop(ep.endpoint_id, None)
                 torn_down.append(ep.endpoint_id)

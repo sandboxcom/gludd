@@ -359,6 +359,21 @@ class TestSignalAndAtexitHandlers:
         assert "vm-001" in cleaned
         mock_kill.assert_called_once()
 
+    def test_signal_handler_chains_existing_runtime_handler(
+        self,
+        monkeypatch: Any,
+        manager: ResourceLifecycleManager,
+    ) -> None:
+        chained_handler = MagicMock()
+        manager._previous_signal_handlers[15] = chained_handler
+        mock_kill = MagicMock()
+        monkeypatch.setattr(os, "kill", mock_kill)
+
+        manager._handle_signal(15, None)
+
+        chained_handler.assert_called_once_with(15, None)
+        mock_kill.assert_not_called()
+
     def test_singleton_imports_signal_and_atexit(self) -> None:
         mgr = get_lifecycle()
         assert mgr is not None
