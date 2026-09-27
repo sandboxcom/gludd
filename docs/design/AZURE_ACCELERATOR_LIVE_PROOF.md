@@ -61,6 +61,38 @@ new target must fail before chargeable provisioning until the converged Azure
 stack uses actual VM/NIC outputs, a digest-pinned image, closed ingress,
 platform-enforced shutdown, and a readiness-gated service.
 
+### v0.1.1 implementation evidence (2026-09-27)
+
+The first executable evidence-contract slice now exists in
+`general_ludd.infra.azure_accelerator_proof`. It provides:
+
+- a monotonic success state machine that cannot reach `PASS` before deletion,
+  plus a failure path that cannot leave `CLEANUP_REQUIRED` as success;
+- strict VM/VMSS CUDA-kernel and DCGM evidence, including exact device-policy
+  attribution, and Container App exact-revision Azure Monitor evidence;
+- canonical SHA-256 receipts that bind the Git SHA, claim, requested and
+  observed SKU, exactly one output token, route removal, resource absence, and
+  lease closure; and
+- a mixed-provider receipt that accepts only distinct provider evidence and an
+  exact digest reference to the Azure child receipt.
+
+The focused contract is covered by 22 unit tests at 85% statement/branch
+coverage. It is deliberately pure and performs no Azure writes. The credential
+and planning probes for this evidence run established these boundaries:
+
+| Probe | Result | Interpretation |
+|---|---|---|
+| `provider-harness PROVIDER=azure LIVE=1` | `AZURE_SUBSCRIPTION_ID is required` | Azure allocation and live accelerator telemetry were not attempted. |
+| `provider-harness PROVIDER=runpod LIVE=1` | `RUNPOD_API_KEY is required` | A real two-provider child receipt could not be produced. |
+| `azure-self-improve-live-proof ... LIVE=0` | selected `Consumption-GPU-NC24-A100`, compiled the runtime, and entered mixed-candidate evaluation | This is reproducible planning evidence only; validate-only output is not live GPU proof. |
+
+Accordingly, the v0.1.1 live result remains **NOT PROVEN** rather than skipped
+green. No paid resources or provider writes occurred, and no synthetic receipt
+was substituted for missing telemetry. The long-lived operator reports in
+section 12 remain acceptance inputs: in particular, a missing DCGM profiling
+module, ARM success before driver readiness, or quota without allocation
+capacity must each fail closed.
+
 ## 3. Public contract
 
 Implement:
