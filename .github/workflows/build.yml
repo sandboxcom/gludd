@@ -76,6 +76,28 @@ jobs:
             echo "version=0.1.0-alpha.$(date -u +%Y%m%d%H%M)" >> "$GITHUB_OUTPUT"
           fi
 
+  # A release tag points at the same immutable commit that already completed
+  # the development workflow. Prove that exact source run before reusing its
+  # heavyweight validation; tag-specific artifact builds still run below.
+  release_source_proof:
+    needs: version
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+        with:
+          ref: ${{ github.sha }}
+      - name: Prove exact SHA already passed development CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "=== CI PHASE: release-source-proof ==="
+          python scripts/require_ci_green.py "$GITHUB_SHA" development
+
   gate:
     needs: version
     runs-on: ubuntu-latest
@@ -406,6 +428,9 @@ jobs:
   # into a single canonical coverage.xml for the whole suite.
   freellmapi-upstream-build:
     needs: [version, gate]
+    # The exact-SHA development run is required before a release tag can reach
+    # publication, so the tag run does not repeat this 2-version upstream suite.
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -445,6 +470,9 @@ jobs:
 
   test-shard:
     needs: [version, gate]
+    # Release tags reuse only an exact successful development workflow; branch,
+    # PR, and dispatch runs continue to execute every canonical coverage shard.
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     # Every named shard is a release prerequisite. Failures and missing coverage
     # stay red instead of being reclassified as an informational result.
@@ -680,6 +708,8 @@ jobs:
 
   molecule:
     needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
+    # The exact same scenarios already passed for this SHA on development.
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     # Each shard owns one bounded pass plus cleanup/log publication. Re-running
     # a whole shard duplicated completed scenarios and exhausted this ceiling.
@@ -1658,8 +1688,9 @@ jobs:
     timeout-minutes: 30
     # Skip on PRs — these tests need DEEPSEEK_API_KEY (repository secret,
     # unavailable in PR workflows from forks) and would silently skip every
-    # time, wasting a runner slot.  Tag, push, and workflow_dispatch only.
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
+    # time, wasting a runner slot. Release tags reuse the exact-SHA development
+    # result; non-tag pushes and workflow_dispatch still execute this job.
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v'))
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
         with:
@@ -1686,10 +1717,33 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
   release:
-    needs: [version, gate, freellmapi-upstream-build, test-shard, coverage, molecule, linux, macos, windows, termux, container, ansible-ee, game-building]
+    needs: [version, gate, release_source_proof, freellmapi-upstream-build, test-shard, coverage, molecule, linux, macos, windows, termux, container, ansible-ee, game-building]
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    if: startsWith(github.ref, 'refs/tags/v')
+    # A skipped prerequisite normally skips dependent jobs. Here skips are the
+    # expected tag state only for heavyweight validation already proved by the
+    # exact-SHA development run. Every tag-specific producer must still pass.
+    # !cancelled() avoids always()'s cancellation/hang semantics while the
+    # explicit result matrix remains fail-closed on every other state.
+    if: >-
+      ${{
+        !cancelled() &&
+        startsWith(github.ref, 'refs/tags/v') &&
+        needs.version.result == 'success' &&
+        needs.gate.result == 'success' &&
+        needs.release_source_proof.result == 'success' &&
+        needs['freellmapi-upstream-build'].result == 'skipped' &&
+        needs['test-shard'].result == 'skipped' &&
+        needs.coverage.result == 'skipped' &&
+        needs.molecule.result == 'skipped' &&
+        needs['game-building'].result == 'skipped' &&
+        needs.linux.result == 'success' &&
+        needs.macos.result == 'success' &&
+        needs.windows.result == 'success' &&
+        needs.termux.result == 'success' &&
+        needs.container.result == 'success' &&
+        needs['ansible-ee'].result == 'success'
+      }}
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:

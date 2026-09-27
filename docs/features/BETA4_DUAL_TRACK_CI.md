@@ -2412,3 +2412,68 @@ branch mutation, and the stable tag must pass the existing immutable evidence
 path before publication. It starts no process, service, or cleanup task. Rollback
 is the isolated checker, test, and documentation commit; the previously supported
 beta tag and its task mapping remain unchanged.
+
+### Exact-SHA tag validation reuse (2026-09-27)
+
+The tag workflow previously repeated five heavyweight validation families after
+the identical development commit had already completed them: the two-version
+FreeLLMAPI upstream build, eight canonical coverage shards, coverage aggregation,
+four Molecule shards, and game-building validation. GitHub treats a branch push
+and a tag push as separate events, so this was a second execution rather than a
+continuation of the already-green run.
+
+The tag workflow now has a bounded `release_source_proof` job. It checks out the
+immutable event SHA and invokes the existing fail-closed CI verdict helper with
+both the full `GITHUB_SHA` and the explicit `development` branch. That helper uses
+the GitHub CLI's commit and branch filters, selects only the `Build and Release`
+workflow, requires its newest matching run to be terminal `success`, and prints
+the source run ID. Missing, pending, cancelled, skipped, failed, differently
+named, or differently addressed runs cannot authorize reuse.
+
+Only validations already covered by that complete source workflow are skipped in
+the tag run. The two-version gate still executes on the tag's exact checkout.
+Linux, macOS, Windows, Termux, container, and Ansible execution-environment jobs
+still rebuild and smoke the release-versioned artifacts. The release fan-in still
+generates the SBOM, wheel and sdist, checksums, source-SHA manifest, complete asset
+matrix, published-release verification, downloadable binary smoke, and rollback
+evidence. Its condition enumerates every direct dependency result: source proof,
+gate, and artifact producers must be `success`, while only the five reused job
+families may be `skipped`. A cancellation, new dependency state, or condition
+drift remains fail closed.
+
+This changes the configured tag critical-path ceiling before publication from the
+120-minute test-shard lane to the 45-minute tag-specific artifact lane, a bounded
+75-minute reduction. It also avoids up to 16 duplicate hosted jobs per release
+(two upstream legs, eight test shards, one coverage aggregation, four Molecule
+shards, and one game job). These are configuration-bound ceilings, not an
+assertion that every run consumes its entire timeout; hosted timing remains
+observable in the source and tag workflow records.
+
+Practitioner and platform evidence reviewed 2026-09-27:
+
+- [GitHub Community discussion #27031](https://github.com/orgs/community/discussions/27031),
+  opened 2021-07-02, records the long-lived branch-then-tag duplicate-run problem
+  for one commit and recommends an exact-commit pre-job before skipping duplicate
+  work. Gludd uses its owned verdict helper rather than adding an unpinned generic
+  skip action.
+- [GitHub Community discussion #44396](https://github.com/orgs/community/discussions/44396),
+  opened 2023-01-15, reports duplicate compile, deploy, and release work for the
+  same branch/tag SHA and explains why concurrency cancellation is not a safe
+  substitute. Gludd preserves separate SHA-scoped runs and reuses only an already
+  terminal source result.
+- GitHub's [workflow trigger documentation](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
+  states that multiple triggering events create multiple workflow runs. Its
+  [job dependency documentation](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-jobs)
+  documents skipped dependency propagation, and the
+  [contexts reference](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#needs-context)
+  defines the `success`, `failure`, `cancelled`, and `skipped` results used by the
+  explicit release fan-in.
+- The official [`gh run list` reference](https://cli.github.com/manual/gh_run_list)
+  documents simultaneous `--commit` and `--branch` filters. Those are the mature
+  primitives already used by Gludd's canonical exact-SHA verifier.
+
+The rollout is ZDD: no running Gludd service, database, tag, or published artifact
+is changed by the proof job. Old and new application workers are unaffected, and
+an invalid proof stops before publication. Rollback is one workflow/test/doc
+revert; the next tag returns to rerunning every heavy validation while the prior
+release and its immutable artifacts remain available.
