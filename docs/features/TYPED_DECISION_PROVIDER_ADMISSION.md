@@ -19,6 +19,10 @@ capability. A later release may admit one or more backends behind the same
 Gludd-owned contract after they pass the evaluation, security, lifecycle, and
 zero-downtime gates below.
 
+The five independently deliverable steps, dependencies, metrics, and rollback
+boundaries are tracked in the
+[`v0.1.2 typed-decision backlog`](../releases/v0.1.2-typed-decision-backlog.md).
+
 ## What OpenJev Means
 
 There is no single canonical "OpenJev" project. The name currently refers to
