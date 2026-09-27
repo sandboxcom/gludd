@@ -41,7 +41,10 @@ def test_project_work_identity_scopes_runtime_keys_to_the_owner() -> None:
     assert first.resume_shard_id == "project-a:TODO-1"
     assert first.todo_resource == "project:project-a:todo:TODO-1"
     assert first.queue_resource == "project:project-a:queue:core"
-    assert first.lease_bucket_key == "core:TODO-1"
+    assert first.lease_bucket_key == (
+        "project:project-a:queue:core:todo:TODO-1"
+    )
+    assert first.lease_bucket_key != second.lease_bucket_key
     assert first != second
 
 

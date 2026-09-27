@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from general_ludd.db.models import BucketLeaseModel
 from general_ludd.event_loop.lease import reclaim_expired_leases, release_lease
 from general_ludd.event_loop.loop import EventLoop
 from general_ludd.schemas.todo import Todo, TodoStatus
@@ -207,8 +208,12 @@ class TestTaskTimeoutAndRetry:
     async def test_lease_reclaim_with_max_age_respects_cutoff(self):
         """reclaim_expired_leases must only delete leases past max_age_seconds."""
         session = AsyncMock()
-        expired = MagicMock()
-        expired.expires_at = datetime.now(UTC) - timedelta(seconds=600)
+        expired = BucketLeaseModel(
+            bucket_key="malformed",
+            holder_id="holder",
+            expires_at=datetime.now(UTC) - timedelta(seconds=600),
+            termination_confirmed_at=datetime.now(UTC),
+        )
         result_mock = MagicMock()
         result_mock.scalars.return_value.all.return_value = [expired]
         session.execute.return_value = result_mock

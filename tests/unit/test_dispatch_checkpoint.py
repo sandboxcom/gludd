@@ -175,11 +175,10 @@ class TestDurableStore:
         base_dir = tmp_path / "snapshots"
 
         store_a = DurableHibernationStore(base_dir, key_file=key_a)
-        handle = store_a.dehydrate(_snapshot_with_dispatch())
+        store_a.dehydrate(_snapshot_with_dispatch())
 
-        store_b = DurableHibernationStore(base_dir, key_file=key_b)
         with pytest.raises(IntegrityError):
-            store_b.hydrate(handle)
+            DurableHibernationStore(base_dir, key_file=key_b)
 
     def test_durable_key_file_created_with_0600_perms(self, tmp_path):
         key_file = tmp_path / "subdir" / "hibernation.key"
@@ -208,6 +207,20 @@ class TestDurableStore:
         DurableHibernationStore(tmp_path / "snaps", key_file=key_file)
 
         assert len(key_file.read_bytes()) == 32
+
+    def test_durable_store_rejects_invalid_key_when_snapshots_exist(self, tmp_path):
+        key_file = tmp_path / "hibernation.key"
+        snapshots = tmp_path / "snaps"
+        store = DurableHibernationStore(snapshots, key_file=key_file)
+        manager = CheckpointManager(store)
+        manager.checkpoint(
+            _snapshot_with_dispatch(dispatch_state=_dispatch_state()),
+            phase="pre_model",
+        )
+        key_file.write_bytes(b"lost-key")
+
+        with pytest.raises(IntegrityError, match="prior checkpoints"):
+            DurableHibernationStore(snapshots, key_file=key_file)
 
 
 # --------------------------------------------------------------------------- #
@@ -253,11 +266,57 @@ class TestCheckpointManager:
         mgr.checkpoint(snap, phase="pre_model")
         assert mgr.list_interrupted()
 
-        mgr.clear(snap.task_id)
+        mgr.clear(
+            snap.task_id,
+            project_id="project-a",
+            shard_id="project-a:TODO-1",
+        )
 
         assert mgr.list_interrupted() == []
         # Clearing an already-cleared task is a no-op.
-        mgr.clear(snap.task_id)
+        mgr.clear(
+            snap.task_id,
+            project_id="project-a",
+            shard_id="project-a:TODO-1",
+        )
+
+    def test_same_todo_id_in_two_projects_has_distinct_checkpoints(self, tmp_path):
+        store = DurableHibernationStore(tmp_path / "snaps", key_file=tmp_path / "k")
+        mgr = CheckpointManager(store)
+        project_a = _snapshot_with_dispatch(dispatch_state=_dispatch_state())
+        project_b = _snapshot_with_dispatch(
+            dispatch_state=_dispatch_state(
+                project_id="project-b",
+                resume_shard_id="project-b:TODO-1",
+            )
+        )
+
+        mgr.checkpoint(project_a, phase="pre_model")
+        mgr.checkpoint(project_b, phase="pre_model")
+
+        interrupted = mgr.list_interrupted()
+        assert {
+            (snap.task_id, snap.dispatch_state.project_id)
+            for snap in interrupted
+            if snap.dispatch_state is not None
+        } == {("TODO-1", "project-a"), ("TODO-1", "project-b")}
+
+    def test_tampered_checkpoint_is_not_actionable(self, tmp_path):
+        store = DurableHibernationStore(tmp_path / "snaps", key_file=tmp_path / "k")
+        mgr = CheckpointManager(store)
+        mgr.checkpoint(
+            _snapshot_with_dispatch(dispatch_state=_dispatch_state()),
+            phase="pre_model",
+        )
+        path = next(store.base_dir.glob("*.snapshot.json"))
+        envelope = json.loads(path.read_text())
+        payload = json.loads(envelope["payload"])
+        payload["dispatch_state"]["project_id"] = "project-b"
+        payload["dispatch_state"]["resume_shard_id"] = "project-b:TODO-1"
+        envelope["payload"] = json.dumps(payload)
+        path.write_text(json.dumps(envelope))
+
+        assert mgr.list_interrupted() == []
 
     def test_no_checkpoints_no_resume(self, tmp_path):
         store = DurableHibernationStore(tmp_path / "snaps", key_file=tmp_path / "k")
@@ -369,8 +428,18 @@ class TestResume:
             shard_id="project-a:TODO-1",
             owner_id="writer-b",
         )
-        assert not manager_b.release_resume_claim(snap.task_id, owner_id="writer-b")
-        assert manager_a.release_resume_claim(snap.task_id, owner_id="writer-a")
+        assert not manager_b.release_resume_claim(
+            snap.task_id,
+            project_id="project-a",
+            shard_id="project-a:TODO-1",
+            owner_id="writer-b",
+        )
+        assert manager_a.release_resume_claim(
+            snap.task_id,
+            project_id="project-a",
+            shard_id="project-a:TODO-1",
+            owner_id="writer-a",
+        )
         assert manager_b.claim_resume(
             snap.task_id,
             project_id="project-a",
@@ -390,7 +459,11 @@ class TestResume:
             owner_id="writer-a",
         )
 
-        manager.clear(snap.task_id)
+        manager.clear(
+            snap.task_id,
+            project_id="project-a",
+            shard_id="project-a:TODO-1",
+        )
 
         assert manager.claim_resume(
             snap.task_id,
@@ -417,14 +490,15 @@ class TestResume:
             shard_id="project-a:TODO-1",
             owner_id="writer-a",
         )
-        assert not manager.claim_resume(
-            "TODO-1",
-            project_id="project-a",
-            shard_id="project-a:other",
-            owner_id="writer-a",
-        )
+        with pytest.raises(ValueError, match="resume shard"):
+            manager.claim_resume(
+                "TODO-1",
+                project_id="project-a",
+                shard_id="project-a:other",
+                owner_id="writer-a",
+            )
 
-        claim_path = manager._resume_claim_path("TODO-1")
+        claim_path = manager._resume_claim_path("project-a:TODO-1")
         claim_path.write_text(json.dumps({"owner_id": "dead", "expires_at": 0}))
         assert manager.claim_resume(
             "TODO-1",
@@ -448,23 +522,76 @@ class TestResume:
             manager.claim_resume(
                 "TODO-1",
                 project_id="project-a",
-                shard_id="shard",
+                shard_id="project-a:TODO-1",
                 owner_id="writer",
                 ttl_seconds=True,
+            )
+        with pytest.raises(ValueError, match="resume shard"):
+            manager.claim_resume(
+                "TODO-1",
+                project_id="project-a",
+                shard_id="project-b:TODO-1",
+                owner_id="writer",
             )
 
     def test_resume_claim_recovers_corrupt_record_and_release_missing(self, tmp_path):
         store = DurableHibernationStore(tmp_path / "snaps", key_file=tmp_path / "k")
         manager = CheckpointManager(store)
-        manager._resume_claim_path("TODO-1").write_text("{")
+        claim_path = manager._resume_claim_path("project-a:TODO-1")
+        claim_path.write_text("{")
 
+        assert not manager.claim_resume(
+            "TODO-1",
+            project_id="project-a",
+            shard_id="project-a:TODO-1",
+            owner_id="writer-a",
+        )
+        claim_path.unlink()
         assert manager.claim_resume(
             "TODO-1",
             project_id="project-a",
             shard_id="project-a:TODO-1",
             owner_id="writer-a",
         )
-        assert not manager.release_resume_claim("missing", owner_id="writer-a")
+        assert not manager.release_resume_claim(
+            "missing",
+            project_id="project-a",
+            shard_id="project-a:missing",
+            owner_id="writer-a",
+        )
+
+    def test_stale_owner_cannot_release_restarted_owner_claim(self, tmp_path):
+        store = DurableHibernationStore(tmp_path / "snaps", key_file=tmp_path / "k")
+        manager = CheckpointManager(store)
+        shard_id = "project-a:TODO-1"
+        assert manager.claim_resume(
+            "TODO-1",
+            project_id="project-a",
+            shard_id=shard_id,
+            owner_id="writer-old",
+        )
+        manager._resume_claim_path(shard_id).write_text(
+            json.dumps({"owner_id": "writer-old", "expires_at": 0})
+        )
+        assert manager.claim_resume(
+            "TODO-1",
+            project_id="project-a",
+            shard_id=shard_id,
+            owner_id="writer-new",
+        )
+
+        assert not manager.release_resume_claim(
+            "TODO-1",
+            project_id="project-a",
+            shard_id=shard_id,
+            owner_id="writer-old",
+        )
+        assert not manager.claim_resume(
+            "TODO-1",
+            project_id="project-a",
+            shard_id=shard_id,
+            owner_id="writer-third",
+        )
 
     def test_mark_resumed_without_bus_is_observable_noop(self, tmp_path, caplog):
         store = DurableHibernationStore(tmp_path / "snaps", key_file=tmp_path / "k")

@@ -81,7 +81,9 @@ class TestEventLoopClaimFailsWithoutProject:
         loop._total_ticks = 1
         await loop._phase_claim_runnable_todos()
         todo_repo.claim_runnable.assert_called_once_with(
-            limit=10, project_id="proj-abc"
+            limit=10,
+            max_active=10,
+            project_id="proj-abc",
         )
 
 

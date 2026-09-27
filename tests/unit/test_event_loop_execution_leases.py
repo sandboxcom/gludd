@@ -6,7 +6,7 @@ import asyncio
 import threading
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -62,7 +62,10 @@ async def test_claim_uses_process_stable_owner_and_todo_version_fence() -> None:
     assert loop._lease_owner_id.startswith("event-loop-")
     assert loop._tick_state["claimed_todos"] == [todo]
     assert acquire.await_args.kwargs["holder_id"] == loop._lease_owner_id
-    assert acquire.await_args.kwargs["todo_versions"] == {"core:TODO-1": 8}
+    assert acquire.await_args.kwargs["todo_versions"] == {
+        "unowned:queue:core:todo:TODO-1": 8,
+        "core:TODO-1": 8,
+    }
     assert acquire.await_args.kwargs["ttl_seconds"] == 90
     assert loop._tick_state["execution_lease_versions"] == {"TODO-1": 8}
 
@@ -120,7 +123,11 @@ async def test_default_wip_budget_subtracts_project_active_work() -> None:
     await loop._phase_claim_runnable_todos()
 
     repo.count_active.assert_awaited_once_with(project_id="project-a")
-    repo.claim_runnable.assert_awaited_once_with(limit=2, project_id="project-a")
+    repo.claim_runnable.assert_awaited_once_with(
+        limit=2,
+        max_active=10,
+        project_id="project-a",
+    )
 
 
 @pytest.mark.asyncio
@@ -128,6 +135,19 @@ async def test_unknown_active_count_fails_claim_closed() -> None:
     todo = _todo()
     loop, repo, _ = _claim_loop(todo)
     repo.count_active.side_effect = RuntimeError("database unavailable")
+
+    await loop._phase_claim_runnable_todos()
+
+    repo.claim_runnable.assert_not_awaited()
+    assert loop._tick_state["claimed_todos"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invalid_count", [True, -1, 1.5, "0"])
+async def test_invalid_active_count_fails_claim_closed(invalid_count: object) -> None:
+    todo = _todo()
+    loop, repo, _ = _claim_loop(todo)
+    repo.count_active.return_value = invalid_count
 
     await loop._phase_claim_runnable_todos()
 
@@ -159,11 +179,18 @@ async def test_normal_isolated_dispatch_releases_only_exact_owner_lease() -> Non
     ) as release:
         await loop._dispatch_execute_job_isolated(todo)
 
-    release.assert_awaited_once_with(
-        session,
-        "core:TODO-1",
-        holder_id=loop._lease_owner_id,
-    )
+    assert release.await_args_list == [
+        call(
+            session,
+            "unowned:queue:core:todo:TODO-1",
+            holder_id=loop._lease_owner_id,
+        ),
+        call(
+            session,
+            "core:TODO-1",
+            holder_id=loop._lease_owner_id,
+        ),
+    ]
     session.commit.assert_awaited_once()
 
 
@@ -213,7 +240,7 @@ async def test_isolated_dispatch_heartbeats_exact_claim_until_release() -> None:
     )
     supervisor.run.assert_awaited_once_with(heartbeat_immediately=False)
     supervisor.stop.assert_called()
-    release.assert_awaited_once()
+    assert release.await_count == 2
 
 
 @pytest.mark.asyncio
@@ -279,7 +306,7 @@ def test_supervisor_factory_uses_claimed_version_and_event_bus() -> None:
     assert kwargs["session_factory"] is factory
     assert kwargs["event_bus"] is event_bus
     assert kwargs["identity"] == ExecutionLeaseIdentity(
-        bucket_key="core:TODO-1",
+        bucket_key="unowned:queue:core:todo:TODO-1",
         holder_id=loop._lease_owner_id,
         todo_version=8,
     )

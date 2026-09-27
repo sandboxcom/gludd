@@ -135,6 +135,7 @@ class TestAcquireLeasesBatch:
             holder_id="holder-1",
             todo_version=2,
             expires_at=now + timedelta(seconds=30),
+            project_id="PROJ-01",
         )
         existing.id = 1
         session.execute.return_value = _mock_scalar_result(existing)
@@ -154,7 +155,7 @@ class TestAcquireLeasesBatch:
         assert results[0].project_id == "PROJ-01"
         assert results[1].project_id == "PROJ-01"
 
-    async def test_project_id_none_leaves_existing_unchanged(self) -> None:
+    async def test_project_id_none_cannot_refresh_project_owned_lease(self) -> None:
         session = _mock_session()
         now = datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC)
         existing = BucketLeaseModel(
@@ -171,15 +172,16 @@ class TestAcquireLeasesBatch:
             mock_dt.now.return_value = now
             mock_dt.UTC = UTC
             mock_dt.timedelta = timedelta
-            results = await acquire_leases_batch(
-                session,
-                ["bucket-a"],
-                "holder-1",
-                project_id=None,
-                todo_versions={"bucket-a": 2},
-            )
+            with pytest.raises(LeaseBusyError, match="different project"):
+                await acquire_leases_batch(
+                    session,
+                    ["bucket-a"],
+                    "holder-1",
+                    project_id=None,
+                    todo_versions={"bucket-a": 2},
+                )
 
-        assert results[0].project_id == "ORIGINAL"
+        assert existing.project_id == "ORIGINAL"
 
     async def test_same_attempt_cannot_transfer_between_projects(self) -> None:
         session = _mock_session()
@@ -220,6 +222,19 @@ class TestAcquireLeasesBatch:
         compiled = str(call_args.compile(compile_kwargs={"literal_binds": True}))
         assert "holder-X" not in compiled
         assert "k1" in compiled and "k2" in compiled
+
+    async def test_unowned_key_rejects_project_owner(self) -> None:
+        session = _mock_session()
+
+        with pytest.raises(ValueError, match="unowned bucket"):
+            await acquire_leases_batch(
+                session,
+                ["unowned:queue:core:todo:TODO-1"],
+                "holder-1",
+                project_id="project-a",
+            )
+
+        session.execute.assert_not_awaited()
 
     async def test_expired_same_holder_cannot_resurrect_attempt(self) -> None:
         session = _mock_session()
@@ -372,13 +387,14 @@ class TestReclaimExpiredLeases:
         assert count == 0
         session.delete.assert_not_called()
 
-    async def test_expired_lease_without_colon_in_key_deletes_only(self) -> None:
+    async def test_expired_malformed_lease_deletes_only_after_termination(self) -> None:
         session = _mock_session()
         now = datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC)
         expired = BucketLeaseModel(
             bucket_key="no-colon-key",
             holder_id="holder-1",
             expires_at=now - timedelta(seconds=600),
+            termination_confirmed_at=now,
         )
         expired.id = 1
 
@@ -400,6 +416,26 @@ class TestReclaimExpiredLeases:
         assert count == 1
         session.delete.assert_awaited_once_with(expired)
         session.flush.assert_awaited_once()
+
+    async def test_expired_malformed_lease_is_retained_until_termination(self) -> None:
+        session = _mock_session()
+        now = datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC)
+        expired = BucketLeaseModel(
+            bucket_key="no-colon-key",
+            holder_id="holder-1",
+            expires_at=now - timedelta(seconds=600),
+        )
+        expired.id = 1
+        session.execute.return_value = _mock_scalar_result(expired)
+
+        with patch("general_ludd.event_loop.lease.datetime") as mock_dt:
+            mock_dt.now.return_value = now
+            mock_dt.UTC = UTC
+            count = await reclaim_expired_leases(session)
+
+        assert count == 0
+        assert expired.cancel_requested_at == now
+        session.delete.assert_not_awaited()
 
     async def test_expired_active_attempt_requests_cancellation(self) -> None:
         session = _mock_session()
@@ -447,6 +483,128 @@ class TestReclaimExpiredLeases:
         assert expired.cancel_requested_at == now
         # One batched lease query plus one batched todo query.
         assert session.execute.await_count == 2
+
+    async def test_project_scoped_active_attempt_requests_cancellation(self) -> None:
+        session = _mock_session()
+        now = datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC)
+        expired = BucketLeaseModel(
+            bucket_key="project:project-a:queue:core:todo:TODO-P",
+            holder_id="holder-old",
+            todo_version=2,
+            project_id="project-a",
+            expires_at=now - timedelta(seconds=600),
+        )
+        todo = TodoModel(
+            todo_id="TODO-P",
+            title="scoped work",
+            queue="core",
+            status=TodoStatus.ACTIVE.value,
+            version=2,
+            project_id="project-a",
+        )
+        session.execute = AsyncMock(
+            side_effect=[_mock_scalar_result(expired), _mock_scalar_result(todo)]
+        )
+
+        with patch("general_ludd.event_loop.lease.datetime") as mock_dt:
+            mock_dt.now.return_value = now
+            mock_dt.UTC = UTC
+            count = await reclaim_expired_leases(session)
+
+        assert count == 0
+        assert expired.cancel_requested_at == now
+        session.delete.assert_not_awaited()
+
+    async def test_unowned_confirmed_attempt_requeues_exact_unowned_todo(self) -> None:
+        session = _mock_session()
+        now = datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC)
+        expired = BucketLeaseModel(
+            bucket_key="unowned:queue:core:todo:TODO-U",
+            holder_id="holder-old",
+            todo_version=4,
+            expires_at=now - timedelta(seconds=600),
+            termination_confirmed_at=now,
+        )
+        todo = TodoModel(
+            todo_id="TODO-U",
+            title="unowned work",
+            queue="core",
+            status=TodoStatus.ACTIVE.value,
+            version=4,
+        )
+        transition_result = MagicMock(rowcount=1)
+        session.execute = AsyncMock(
+            side_effect=[
+                _mock_scalar_result(expired),
+                _mock_scalar_result(todo),
+                transition_result,
+            ]
+        )
+
+        with patch("general_ludd.event_loop.lease.datetime") as mock_dt:
+            mock_dt.now.return_value = now
+            mock_dt.UTC = UTC
+            count = await reclaim_expired_leases(session)
+
+        assert count == 1
+        session.delete.assert_awaited_once_with(expired)
+
+    async def test_legacy_ambiguous_todo_id_deletes_only_opaque_lease(self) -> None:
+        session = _mock_session()
+        now = datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC)
+        expired = BucketLeaseModel(
+            bucket_key="core:TODO-DUP",
+            holder_id="holder-old",
+            expires_at=now - timedelta(seconds=600),
+        )
+        todos = [
+            TodoModel(
+                todo_id="TODO-DUP",
+                title="one",
+                queue="core",
+                status=TodoStatus.ACTIVE.value,
+                project_id="project-a",
+            ),
+            TodoModel(
+                todo_id="TODO-DUP",
+                title="two",
+                queue="core",
+                status=TodoStatus.ACTIVE.value,
+                project_id="project-b",
+            ),
+        ]
+        todo_result = MagicMock()
+        todo_result.scalars.return_value.all.return_value = todos
+        session.execute = AsyncMock(
+            side_effect=[_mock_scalar_result(expired), todo_result]
+        )
+
+        with patch("general_ludd.event_loop.lease.datetime") as mock_dt:
+            mock_dt.now.return_value = now
+            mock_dt.UTC = UTC
+            count = await reclaim_expired_leases(session)
+
+        assert count == 1
+        session.delete.assert_awaited_once_with(expired)
+
+    async def test_non_string_bucket_requests_cancellation_fail_closed(self) -> None:
+        session = _mock_session()
+        now = datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC)
+        expired = MagicMock(
+            bucket_key=42,
+            cancel_requested_at=None,
+            termination_confirmed_at=None,
+        )
+        session.execute.return_value = _mock_scalar_result(expired)
+
+        with patch("general_ludd.event_loop.lease.datetime") as mock_dt:
+            mock_dt.now.return_value = now
+            mock_dt.UTC = UTC
+            count = await reclaim_expired_leases(session)
+
+        assert count == 0
+        assert expired.cancel_requested_at == now
+        session.delete.assert_not_awaited()
 
     async def test_returns_count_of_expired_leases(self) -> None:
         session = _mock_session()

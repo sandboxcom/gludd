@@ -42,11 +42,12 @@ from general_ludd.agents.hibernation import (
     DispatchState,
     HibernationHandle,
     HibernationStore,
+    IntegrityError,
     default_hibernation_dir,
 )
 from general_ludd.events.bus import EventBus
 from general_ludd.events.types import Event
-from general_ludd.schemas.project_identity import validate_project_id
+from general_ludd.schemas.project_identity import ProjectWorkIdentity, validate_project_id
 
 logger = logging.getLogger(__name__)
 
@@ -114,10 +115,17 @@ class DurableHibernationStore(HibernationStore):
         self._key_file: Path = (
             Path(key_file).resolve() if key_file is not None else _default_key_file()
         )
-        self._mac_key = self._load_or_create_key(self._key_file)
+        self._mac_key = self._load_or_create_key(
+            self._key_file,
+            has_prior_checkpoints=any(self.base_dir.glob("*.snapshot.json")),
+        )
 
     @staticmethod
-    def _load_or_create_key(key_file: Path) -> bytes:
+    def _load_or_create_key(
+        key_file: Path,
+        *,
+        has_prior_checkpoints: bool = False,
+    ) -> bytes:
         """Return the 32-byte MAC key, creating it on first boot.
 
         Owner-only (0o600) on creation; if the file exists it is read as-is.
@@ -130,10 +138,20 @@ class DurableHibernationStore(HibernationStore):
             data = key_file.read_bytes()
             if len(data) == 32:
                 return data
+            if has_prior_checkpoints:
+                raise IntegrityError(
+                    "durable hibernation key is corrupt while prior checkpoints "
+                    "exist; refusing to replace ownership proof"
+                )
             logger.warning(
                 "hibernation key file %s is wrong size (%d); regenerating",
                 key_file,
                 len(data),
+            )
+        elif has_prior_checkpoints:
+            raise IntegrityError(
+                "durable hibernation key is missing while prior checkpoints "
+                "exist; refusing to mint a replacement ownership proof"
             )
         key = secrets.token_bytes(32)
         # Atomic owner-only write: O_CREAT|O_TRUNC + 0o600 at open time so
@@ -204,26 +222,52 @@ class CheckpointManager:
         stopped. Returns the integrity handle (the caller does not usually
         need it — the on-disk file is what survives the crash).
         """
-        if snap.dispatch_state is not None:
-            snap.dispatch_state.phase_marker = phase
-        return self._store.dehydrate(snap)
+        state = snap.dispatch_state
+        if state is None:
+            return self._store.dehydrate(snap)
+        state.phase_marker = phase
+        identity = self._resume_identity(
+            snap.task_id,
+            project_id=state.project_id,
+            shard_id=state.resume_shard_id,
+        )
+        if state.todo_id != snap.task_id:
+            raise ValueError("dispatch state todo_id must match snapshot task_id")
+        # The storage key itself is project scoped. The durable payload retains
+        # the business todo id in DispatchState and is normalized on listing.
+        stored = snap.model_copy(
+            deep=True,
+            update={"task_id": identity.resume_shard_id},
+        )
+        return self._store.dehydrate(stored)
 
-    def clear(self, task_id: str) -> None:
+    def clear(
+        self,
+        task_id: str,
+        *,
+        project_id: str,
+        shard_id: str,
+    ) -> None:
         """Remove the checkpoint for *task_id*.
 
         Called from the ``clear_on_persist`` boundary: the dispatch committed
         so its checkpoint is no longer actionable. Idempotent — clearing a
         missing checkpoint is a no-op.
         """
-        path = self._store._path_for(task_id)
+        identity = self._resume_identity(
+            task_id,
+            project_id=project_id,
+            shard_id=shard_id,
+        )
+        path = self._store._path_for(identity.resume_shard_id)
         with _suppress_oserror():
             path.unlink(missing_ok=True)
         # Best-effort cleanup of any spool sidecar too.
-        sidecar = self._sidecar_path(task_id)
+        sidecar = self._sidecar_path(identity.resume_shard_id)
         with _suppress_oserror():
             sidecar.unlink(missing_ok=True)
-        claim = self._resume_claim_path(task_id)
-        with self._resume_claim_lock(task_id), _suppress_oserror():
+        claim = self._resume_claim_path(identity.resume_shard_id)
+        with self._resume_claim_lock(identity.resume_shard_id), _suppress_oserror():
             claim.unlink(missing_ok=True)
 
     # ------------------------------------------------------------------ #
@@ -242,14 +286,21 @@ class CheckpointManager:
             raw = self._read_raw_envelope(candidate)
             if raw is None:
                 continue
-            payload_str = raw.get("payload")
-            if not isinstance(payload_str, str):
+            checksum = raw.get("checksum")
+            if not isinstance(checksum, str):
                 continue
             try:
-                snap = AgentEnvironmentSnapshot.model_validate_json(payload_str)
+                snap = self._store.hydrate(
+                    HibernationHandle(
+                        task_id=candidate.name,
+                        path=str(candidate),
+                        checksum=checksum,
+                        size_bytes=candidate.stat().st_size,
+                    )
+                )
             except Exception:
                 logger.warning(
-                    "checkpoint manager: unparseable snapshot at %s; skipping",
+                    "checkpoint manager: unverifiable snapshot at %s; skipping",
                     candidate,
                 )
                 continue
@@ -258,6 +309,26 @@ class CheckpointManager:
             # checkpoints, and have no resumable work.
             if snap.dispatch_state is None:
                 continue
+            state = snap.dispatch_state
+            try:
+                identity = self._resume_identity(
+                    state.todo_id,
+                    project_id=state.project_id,
+                    shard_id=state.resume_shard_id,
+                )
+            except ValueError:
+                logger.warning(
+                    "checkpoint manager: invalid ownership scope at %s; skipping",
+                    candidate,
+                )
+                continue
+            if snap.task_id != identity.resume_shard_id:
+                logger.warning(
+                    "checkpoint manager: storage shard mismatch at %s; skipping",
+                    candidate,
+                )
+                continue
+            snap.task_id = state.todo_id
             out.append(snap)
         return out
 
@@ -293,12 +364,27 @@ class CheckpointManager:
             return
         self._bus.publish(DispatchResumedEvent(todo_id=task_id, phase=phase))
 
-    def _resume_claim_path(self, task_id: str) -> Path:
-        return self._store.base_dir / f"{_safe_stem(task_id)}.resume-claim.json"
+    def _resume_claim_path(self, shard_id: str) -> Path:
+        return self._store.base_dir / f"{_safe_stem(shard_id)}.resume-claim.json"
 
-    def _resume_claim_lock(self, task_id: str) -> FileLock:
-        lock_path = self._store.base_dir / f"{_safe_stem(task_id)}.resume-claim.lock"
+    def _resume_claim_lock(self, shard_id: str) -> FileLock:
+        lock_path = self._store.base_dir / f"{_safe_stem(shard_id)}.resume-claim.lock"
         return FileLock(str(lock_path), timeout=10, mode=0o600)
+
+    @staticmethod
+    def _resume_identity(
+        task_id: str,
+        *,
+        project_id: str | None,
+        shard_id: str | None,
+    ) -> ProjectWorkIdentity:
+        """Validate that task, project, and shard name the same owned work."""
+        if not isinstance(project_id, str):
+            raise ValueError("project_id is required for a resume shard")
+        identity = ProjectWorkIdentity(project_id=project_id, todo_id=task_id)
+        if shard_id != identity.resume_shard_id:
+            raise ValueError("resume shard does not match project and task identity")
+        return identity
 
     @staticmethod
     def _valid_resume_token(value: str, field_name: str) -> str:
@@ -330,22 +416,29 @@ class CheckpointManager:
         self._valid_resume_token(task_id, "task_id")
         self._valid_resume_token(shard_id, "shard_id")
         self._valid_resume_token(owner_id, "owner_id")
+        identity = self._resume_identity(
+            task_id,
+            project_id=project_id,
+            shard_id=shard_id,
+        )
         if (
             not isinstance(ttl_seconds, int)
             or isinstance(ttl_seconds, bool)
             or not 1 <= ttl_seconds <= 86_400
         ):
             raise ValueError("ttl_seconds must be an integer between 1 and 86400")
-        claim_path = self._resume_claim_path(task_id)
+        claim_path = self._resume_claim_path(identity.resume_shard_id)
         now = time.time()
-        with self._resume_claim_lock(task_id):
+        with self._resume_claim_lock(identity.resume_shard_id):
             current: dict[str, Any] = {}
             try:
                 value = json.loads(claim_path.read_text(encoding="utf-8"))
                 if isinstance(value, dict):
                     current = value
-            except (OSError, json.JSONDecodeError):
+            except FileNotFoundError:
                 current = {}
+            except (OSError, json.JSONDecodeError):
+                return False
             current_owner = current.get("owner_id")
             current_expiry = current.get("expires_at")
             if current_owner == owner_id:
@@ -380,17 +473,35 @@ class CheckpointManager:
             os.replace(tmp, claim_path)
             return True
 
-    def release_resume_claim(self, task_id: str, *, owner_id: str) -> bool:
+    def release_resume_claim(
+        self,
+        task_id: str,
+        *,
+        project_id: str,
+        shard_id: str,
+        owner_id: str,
+    ) -> bool:
         """Release one resume shard only for its exact durable owner."""
         self._valid_resume_token(task_id, "task_id")
         self._valid_resume_token(owner_id, "owner_id")
-        claim_path = self._resume_claim_path(task_id)
-        with self._resume_claim_lock(task_id):
+        identity = self._resume_identity(
+            task_id,
+            project_id=project_id,
+            shard_id=shard_id,
+        )
+        claim_path = self._resume_claim_path(identity.resume_shard_id)
+        with self._resume_claim_lock(identity.resume_shard_id):
             try:
                 value = json.loads(claim_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 return False
-            if not isinstance(value, dict) or value.get("owner_id") != owner_id:
+            if (
+                not isinstance(value, dict)
+                or value.get("owner_id") != owner_id
+                or value.get("project_id") != project_id
+                or value.get("shard_id") != shard_id
+                or value.get("task_id") != task_id
+            ):
                 return False
             claim_path.unlink(missing_ok=True)
             return True

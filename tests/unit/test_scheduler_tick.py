@@ -271,6 +271,49 @@ class TestSchedulerTickConcurrentDispatch:
         assert batches == [["PARENT"], ["CHILD"]]
 
     @pytest.mark.asyncio
+    async def test_dependency_cycle_dispatches_nothing(self) -> None:
+        """A real two-node cycle is rejected rather than dispatched in input order."""
+        from general_ludd.event_loop.loop import EventLoop
+
+        first = _make_todo(
+            "FIRST",
+            project_id="project-a",
+            dependencies=["SECOND"],
+        )
+        second = _make_todo(
+            "SECOND",
+            project_id="project-a",
+            dependencies=["FIRST"],
+        )
+        loop = EventLoop(session=None, config={})
+        loop._session_factory = _make_session_factory()
+        loop._config_snapshot = {}
+        cast(Any, loop)._dispatch_scheduler_batch = AsyncMock(return_value=2)
+
+        assert await loop._dispatch_jobs_via_scheduler([first, second]) == 0
+        loop._dispatch_scheduler_batch.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_missing_predecessor_fails_closed_without_scoped_db_proof(
+        self,
+    ) -> None:
+        """A dependency omitted from the batch needs same-project COMPLETE proof."""
+        from general_ludd.event_loop.loop import EventLoop
+
+        child = _make_todo(
+            "CHILD",
+            project_id="project-a",
+            dependencies=["MISSING"],
+        )
+        loop = EventLoop(session=None, todo_repo=None, config={})
+        loop._session_factory = _make_session_factory()
+        loop._config_snapshot = {}
+        cast(Any, loop)._dispatch_scheduler_batch = AsyncMock(return_value=1)
+
+        assert await loop._dispatch_jobs_via_scheduler([child]) == 0
+        loop._dispatch_scheduler_batch.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_metrics_todos_dispatched_updated(self) -> None:
         """_phase_dispatch_execute_jobs updates tick_metrics['todos_dispatched']."""
         from general_ludd.event_loop.loop import EventLoop

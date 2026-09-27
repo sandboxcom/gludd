@@ -492,6 +492,69 @@ class TestTodoRepository:
 
         assert [todo.todo_id for todo in claimed] == [dependent.todo_id]
 
+    async def test_claim_runnable_fails_closed_for_missing_and_cyclic_dependencies(
+        self,
+        async_session: AsyncSession,
+    ):
+        repo = TodoRepository(async_session)
+        await repo.create(
+            {
+                "todo_id": "TODO-MISSING-DEPENDENCY",
+                "title": "missing dependency",
+                "status": TodoStatus.QUEUED.value,
+                "dependencies": '["DOES-NOT-EXIST"]',
+            }
+        )
+        await repo.create(
+            {
+                "todo_id": "TODO-CYCLE-A",
+                "title": "cycle a",
+                "status": TodoStatus.QUEUED.value,
+                "dependencies": '["TODO-CYCLE-B"]',
+            }
+        )
+        await repo.create(
+            {
+                "todo_id": "TODO-CYCLE-B",
+                "title": "cycle b",
+                "status": TodoStatus.QUEUED.value,
+                "dependencies": '["TODO-CYCLE-A"]',
+            }
+        )
+
+        assert await repo.claim_runnable(limit=10) == []
+
+    async def test_claim_runnable_enforces_max_active_inside_claim_transaction(
+        self,
+        async_session: AsyncSession,
+    ):
+        repo = TodoRepository(async_session)
+        await repo.create(
+            {
+                "todo_id": "TODO-ACTIVE",
+                "title": "already active",
+                "status": TodoStatus.ACTIVE.value,
+            }
+        )
+        await repo.create(
+            {
+                "todo_id": "TODO-WIP-ONE",
+                "title": "first queued",
+                "status": TodoStatus.QUEUED.value,
+            }
+        )
+        await repo.create(
+            {
+                "todo_id": "TODO-WIP-TWO",
+                "title": "second queued",
+                "status": TodoStatus.QUEUED.value,
+            }
+        )
+
+        claimed = await repo.claim_runnable(limit=10, max_active=2)
+
+        assert len(claimed) == 1
+
 
 class TestTaskReturnRepository:
     async def test_create_task_return(self, async_session: AsyncSession):

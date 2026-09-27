@@ -684,6 +684,7 @@ class TestLease:
         existing.bucket_key = "bucket-1"
         existing.holder_id = "holder-a"
         existing.todo_version = None
+        existing.project_id = None
         existing.expires_at = datetime.now(UTC).replace(year=2099)
         existing.cancel_requested_at = None
         existing.termination_confirmed_at = None

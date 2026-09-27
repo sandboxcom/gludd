@@ -18,7 +18,7 @@ from general_ludd.event_loop.lease_cancellation import (
     request_lease_cancellation,
 )
 from general_ludd.event_loop.lease_validation import validate_lease_input
-from general_ludd.schemas.project_identity import validate_project_id
+from general_ludd.schemas.project_identity import ProjectWorkIdentity, validate_project_id
 from general_ludd.schemas.todo import TodoStatus
 
 
@@ -69,6 +69,16 @@ async def acquire_leases_batch(
     validate_lease_input(bucket_keys, holder_id, ttl_seconds, todo_versions)
     if project_id is not None:
         validate_project_id(project_id)
+    for key in bucket_keys:
+        scoped_identity = ProjectWorkIdentity.from_lease_bucket_key(key)
+        if key.startswith("project:") and (
+            scoped_identity is None or scoped_identity.project_id != project_id
+        ):
+            raise ValueError(
+                "project-scoped bucket key must match the lease project_id"
+            )
+        if key.startswith("unowned:") and project_id is not None:
+            raise ValueError("unowned bucket key cannot carry a project_id")
     if not bucket_keys:
         return []
     now = datetime.now(UTC)
@@ -83,11 +93,7 @@ async def acquire_leases_batch(
     # session if it catches ``LeaseBusyError`` without rolling back immediately.
     for key, existing in existing_map.items():
         version = None if todo_versions is None else todo_versions.get(key)
-        if (
-            project_id is not None
-            and existing.project_id is not None
-            and existing.project_id != project_id
-        ):
+        if existing.project_id != project_id:
             raise LeaseBusyError(
                 f"bucket {key!r} is owned by a different project"
             )
@@ -202,22 +208,69 @@ async def reclaim_expired_leases(
     expired = list(result.scalars().all())
     if not expired:
         return 0
-    todo_ids = {
-        lease.bucket_key.partition(":")[2]
-        for lease in expired
-        if isinstance(lease.bucket_key, str) and ":" in lease.bucket_key
-    }
-    todo_map: dict[str, TodoModel] = {}
+    lease_scopes: dict[str, tuple[str | None, str, bool]] = {}
+    for lease in expired:
+        bucket_key = lease.bucket_key
+        if not isinstance(bucket_key, str):
+            continue
+        scoped = ProjectWorkIdentity.from_lease_bucket_key(bucket_key)
+        if scoped is not None:
+            lease_scopes[bucket_key] = (scoped.project_id, scoped.todo_id, True)
+            continue
+        parts = bucket_key.split(":")
+        if (
+            len(parts) == 5
+            and parts[0] == "unowned"
+            and parts[1] == "queue"
+            and parts[3] == "todo"
+        ):
+            lease_scopes[bucket_key] = (None, parts[4], True)
+            continue
+        # Backward-compatible legacy ``queue:todo`` recovery. A project-less
+        # legacy key is used only when its todo id resolves unambiguously.
+        if len(parts) == 2 and all(parts):
+            lease_scopes[bucket_key] = (
+                getattr(lease, "project_id", None),
+                parts[1],
+                False,
+            )
+    todo_ids = {todo_id for _, todo_id, _ in lease_scopes.values()}
+    todos_by_id: dict[str, list[TodoModel]] = {}
     if todo_ids:
         todo_rows = (
             await session.execute(select(TodoModel).where(TodoModel.todo_id.in_(todo_ids)))
         ).scalars().all()
-        todo_map = {todo.todo_id: todo for todo in todo_rows}
+        for todo_row in todo_rows:
+            todos_by_id.setdefault(todo_row.todo_id, []).append(todo_row)
     reclaimed = 0
     for lease in expired:
         bucket_key = lease.bucket_key
-        todo_id = bucket_key.partition(":")[2] if isinstance(bucket_key, str) else ""
-        todo = todo_map.get(todo_id)
+        scope = lease_scopes.get(bucket_key) if isinstance(bucket_key, str) else None
+        if scope is None:
+            # An unparseable key cannot safely identify a todo to requeue. Keep
+            # it fenced until its exact owner confirms termination; only then
+            # is deleting the otherwise-orphaned lease safe.
+            if getattr(lease, "termination_confirmed_at", None) is not None:
+                await session.delete(lease)
+                reclaimed += 1
+            elif getattr(lease, "cancel_requested_at", None) is None:
+                lease.cancel_requested_at = now
+                lease.updated_at = now
+            continue
+        project_id, todo_id, exact_scope = scope
+        if exact_scope and lease.project_id != project_id:
+            if lease.cancel_requested_at is None:
+                lease.cancel_requested_at = now
+                lease.updated_at = now
+            continue
+        candidates = todos_by_id.get(todo_id, [])
+        if exact_scope or project_id is not None:
+            todo = next(
+                (row for row in candidates if row.project_id == project_id),
+                None,
+            )
+        else:
+            todo = candidates[0] if len(candidates) == 1 else None
         if todo is None or todo.status != TodoStatus.ACTIVE.value:
             await session.delete(lease)
             reclaimed += 1
@@ -231,7 +284,7 @@ async def reclaim_expired_leases(
                 lease.cancel_requested_at = now
                 lease.updated_at = now
             continue
-        transitioned = await session.execute(
+        transition_stmt = (
             update(TodoModel)
             .where(
                 TodoModel.todo_id == todo_id,
@@ -244,6 +297,14 @@ async def reclaim_expired_leases(
                 updated_at=now,
             )
         )
+        if exact_scope:
+            if project_id is None:
+                transition_stmt = transition_stmt.where(TodoModel.project_id.is_(None))
+            else:
+                transition_stmt = transition_stmt.where(
+                    TodoModel.project_id == project_id,
+                )
+        transitioned = await session.execute(transition_stmt)
         if (cast("CursorResult[Any]", transitioned).rowcount or 0) != 1:
             continue
         await session.delete(lease)

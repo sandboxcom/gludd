@@ -646,7 +646,13 @@ class TodoRepository:
         await self._session.flush()
         return recovered
 
-    async def claim_runnable(self, limit: int = 10, project_id: str | None = None) -> list[TodoModel]:
+    async def claim_runnable(
+        self,
+        limit: int = 10,
+        project_id: str | None = None,
+        *,
+        max_active: int | None = None,
+    ) -> list[TodoModel]:
         """Claim QUEUED todos for execution with a guarded conditional UPDATE.
 
         SQLite has no row-level locking (``with_for_update`` is silently dropped),
@@ -657,10 +663,44 @@ class TodoRepository:
         the row, so every todo is returned to exactly one caller -> no double
         claim / double dispatch.
         """
-        from sqlalchemy import update
+        from sqlalchemy import func, update
 
         _pid = self._resolve_pid(project_id)
         claim_limit = max(0, min(limit, _DEFAULT_LIST_LIMIT))
+        if max_active is not None:
+            if (
+                not isinstance(max_active, int)
+                or isinstance(max_active, bool)
+                or not 0 <= max_active <= 10_000
+            ):
+                raise ValueError("max_active must be an integer between 0 and 10000")
+            # A project row is the stable serialization point shared by every
+            # worker claiming for that project. PostgreSQL honors this row lock;
+            # SQLite's single-writer lock plus the guarded updates below retains
+            # the same fail-closed loser behavior.
+            if _pid is not None:
+                project_lock = (
+                    select(ProjectModel.project_id)
+                    .where(ProjectModel.project_id == _pid)
+                    .with_for_update()
+                )
+                if (await self._session.execute(project_lock)).scalar_one_or_none() is None:
+                    return []
+            active_stmt = select(func.count()).select_from(TodoModel).where(
+                TodoModel.status == TodoStatus.ACTIVE.value,
+            )
+            if _pid is None:
+                active_stmt = active_stmt.where(TodoModel.project_id.is_(None))
+            else:
+                active_stmt = active_stmt.where(TodoModel.project_id == _pid)
+            active_count = (await self._session.execute(active_stmt)).scalar_one()
+            if (
+                not isinstance(active_count, int)
+                or isinstance(active_count, bool)
+                or active_count < 0
+            ):
+                return []
+            claim_limit = min(claim_limit, max(0, max_active - active_count))
         if claim_limit == 0:
             return []
         stmt = select(TodoModel).where(
@@ -732,6 +772,21 @@ class TodoRepository:
                 )
                 .values(status=TodoStatus.ACTIVE.value, version=old_version + 1, updated_at=now)
             )
+            if max_active is not None:
+                live_active_count = select(func.count()).select_from(TodoModel).where(
+                    TodoModel.status == TodoStatus.ACTIVE.value,
+                )
+                if _pid is None:
+                    live_active_count = live_active_count.where(
+                        TodoModel.project_id.is_(None),
+                    )
+                else:
+                    live_active_count = live_active_count.where(
+                        TodoModel.project_id == _pid,
+                    )
+                guard = guard.where(
+                    live_active_count.scalar_subquery() < max_active,
+                )
             try:
                 res = await self._session.execute(guard)
             except OperationalError as exc:

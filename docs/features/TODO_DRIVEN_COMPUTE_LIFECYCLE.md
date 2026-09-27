@@ -58,6 +58,10 @@ The winning transaction is committed and its database session is closed before
 the dispatch phase begins. PostgreSQL additionally uses `FOR UPDATE SKIP LOCKED`;
 SQLite, which silently drops row locks, retains the same safety through the
 status-and-version compare-and-swap and treats `SQLITE_BUSY` as a lost claim.
+The WIP ceiling is part of that same guarded update: PostgreSQL serializes
+project claimers on the project row, and every backend re-evaluates the scoped
+active count inside each `queued -> active` statement. A count error, negative
+count, boolean, string, or non-integral count refuses all new claims.
 Neither a bucket lease nor an in-process lock is trusted as the ownership fence.
 
 The execution backend owns its deadline. Native Ansible work runs in Gludd's
@@ -91,42 +95,54 @@ Every scheduler node now resolves through the canonical
 todo and queue resources include that project in their scheduler labels, so two
 owners can use the same human-facing todo or queue name without one being
 dropped from the planner map or unnecessarily serialized behind the other.
-Legacy unscoped work retains its prior labels under the internal `default`
-owner, and execution lease bucket strings remain `queue:todo` because `todo_id`
-is already database-wide unique. Lease acquisition separately validates the
-project fence and refuses to transfer a live same-attempt lease to another
-project.
+Legacy unscoped work is explicitly namespaced as `unowned`; it is never aliased
+to a valid project named `default`. Canonical execution leases use
+`project:<project>:queue:<queue>:todo:<todo>` (or the disjoint `unowned` form),
+and lease acquisition refuses both a key/project mismatch and any attempt to
+adopt an existing projectless lease. During the v0.1.1 rolling upgrade, each new
+worker atomically holds the canonical key and the former `queue:todo` key. That
+temporary compatibility fence lets old and new workers drain side by side
+without creating two owners; it may serialize coincident cross-project todo IDs
+until pre-v0.1.1 workers are retired.
 
 Explicit `Todo.dependencies` participate at both boundaries. The repository
 scans one bounded candidate page and leaves a todo queued unless every named
 dependency exists in the same project and is complete. Within an already
 claimed batch, the scheduler maps those dependencies to project-scoped graph
-nodes and emits the prerequisite in an earlier batch. Invalid graphs dispatch
-nothing; they no longer escape through an input-order sequential fallback.
+nodes and emits the prerequisite in an earlier batch. A predecessor omitted
+from the batch requires same-project `complete` proof from the repository.
+Missing predecessors, malformed dependencies, and cycles dispatch nothing;
+they no longer escape through an input-order sequential fallback.
 
 Work in progress is bounded even when no floor or PID controller is installed.
 `event_loop.max_active_todos` defaults to 10, is validated in the range 1–10,000,
 and the claim budget subtracts the selected project's current active count
 before any rows move to `active`. Floor and PID limits may only reduce that
-remaining budget. The dispatch semaphore remains a second, independent bound on
-executing coroutines.
+remaining budget. `claim_runnable()` repeats the count under the project lock and
+in the conditional update itself, closing the count-then-claim race between
+workers. The dispatch semaphore remains a second, independent bound on executing
+coroutines.
 
 Crash checkpoints persist their project, queue, todo version, execution-lease
-holder, and canonical resume-shard identity. Startup uses the maintained
-`filelock` implementation plus an owner-only claim record to serialize claim
-refresh or stale takeover, and marks a checkpoint resumed only after the exact
-shard is owned by the current event loop. A live competing resume owner therefore
-fails closed; successful task-return persistence clears both the checkpoint and
-its resume claim. Execution effects remain governed by the database todo CAS and
-renewable execution lease, not by the filesystem claim.
+holder, and canonical resume-shard identity under a project-scoped storage path.
+Enumeration verifies the durable HMAC before reading ownership fields; a missing
+or corrupt key with prior checkpoints refuses startup recovery instead of
+minting replacement proof. Startup then performs an exact project-scoped todo
+lookup and uses the maintained `filelock` implementation plus an owner-only claim
+record to serialize refresh or stale takeover. Missing scope, a forged shard,
+corrupt claim JSON, repository failure, or any status other than `queued` fails
+closed. In particular, an `active` checkpoint never reuses its stale holder
+token: lease recovery must first prove termination and return the todo to
+`queued`. Successful task-return persistence clears only the exact project's
+checkpoint and resume claim.
 
-This is a zero-downtime additive rollout: checkpoint fields are optional,
-unscoped work maps to `default`, lease keys and database schema are unchanged,
-and old instances can drain beside new instances. Rollback may ignore the new
-optional snapshot fields and sidecars. Operators must not delete a resume claim
-to force progress; first prove the owning process is gone or let the bounded
-claim expire, while the database execution fence continues to prevent duplicate
-effects.
+This is a zero-downtime additive rollout: the database schema is unchanged and
+the dual-key compatibility fence lets old instances drain beside new instances.
+Pre-v0.1.1 task-only checkpoint paths are deliberately non-actionable because
+their owner cannot be proved; rollback may ignore the new scoped snapshots and
+sidecars. Operators must not delete a resume claim to force progress; first
+prove the owning process is gone or let the bounded claim expire, while the
+database execution fence continues to prevent duplicate effects.
 
 ## Capacity providers
 
@@ -339,7 +355,22 @@ chained shutdown handler independently, preserving zero-downtime operation.
 
 ## Long-lived operator reports that shaped the design
 
-Research refreshed on 2026-09-27 added three scheduler and worker reports:
+Research refreshed on 2026-09-27 includes these scheduler and worker reports:
+
+- SQLAlchemy users have repeatedly asked how to make competing updates safe;
+  maintainers clarify that `with_for_update()` affects a preceding `SELECT`,
+  while a guarded `UPDATE` relies on database locking/isolation. Gludd therefore
+  keeps both the PostgreSQL project-row lock and the predicate inside the write:
+  [SQLAlchemy issue #5704](https://github.com/sqlalchemy/sqlalchemy/issues/5704).
+- Kubernetes operators reported a leader that had lost its lease but continued
+  believing it was leader, producing a split-brain risk. Gludd never treats a
+  stale checkpoint owner token as current authority and requires exact
+  termination proof before requeue:
+  [Kubernetes issue #23731](https://github.com/kubernetes/kubernetes/issues/23731).
+- Celery users report worker-loss requeue races multiplying one task into several
+  broker copies. Gludd keeps resume claiming, todo CAS, and execution leases as
+  separate durable fences and makes malformed claim state fail closed:
+  [Celery discussion #9460](https://github.com/celery/celery/discussions/9460).
 
 - APScheduler issue
   [#579](https://github.com/agronholm/apscheduler/issues/579), opened in 2021,

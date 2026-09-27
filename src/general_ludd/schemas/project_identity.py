@@ -37,10 +37,10 @@ class ProjectResourceIdentity:
 class ProjectWorkIdentity:
     """Stable project-owned identity for one schedulable todo.
 
-    Scheduler and resume identifiers include the project owner. The execution
-    lease keeps its established ``queue:todo`` format because ``todo_id`` is a
-    database-wide unique business key; ``project_id`` remains a separately
-    validated lease fence during acquisition.
+    Scheduler, resume, and execution-lease identifiers include the project
+    owner. Database uniqueness is an implementation detail, not an ownership
+    boundary: imports and migrations can legitimately preserve the same
+    business todo identifier in two projects.
     """
 
     project_id: str
@@ -80,5 +80,29 @@ class ProjectWorkIdentity:
 
     @property
     def lease_bucket_key(self) -> str:
-        """Return the compatibility-safe execution bucket key."""
-        return f"{self.queue}:{self.todo_id}"
+        """Return the collision-free project-owned execution bucket key."""
+        return (
+            f"project:{self.project_id}:queue:{self.queue}:todo:{self.todo_id}"
+        )
+
+    @classmethod
+    def from_lease_bucket_key(cls, bucket_key: str) -> ProjectWorkIdentity | None:
+        """Parse one canonical project-owned lease key, or return ``None``.
+
+        Returning ``None`` for legacy/unowned or malformed keys lets recovery
+        code retain compatibility without ever guessing a project owner.
+        """
+        if not isinstance(bucket_key, str):
+            return None
+        parts = bucket_key.split(":")
+        if (
+            len(parts) != 6
+            or parts[0] != "project"
+            or parts[2] != "queue"
+            or parts[4] != "todo"
+        ):
+            return None
+        try:
+            return cls(project_id=parts[1], queue=parts[3], todo_id=parts[5])
+        except ValueError:
+            return None
