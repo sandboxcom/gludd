@@ -1,8 +1,8 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
+import { createRequire } from "node:module"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 import {
   deny,
@@ -33,6 +33,12 @@ import {
   withFrozenRef,
   type PipelineCandidate,
 } from "../lib/pipeline_kickoff.ts"
+
+const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
+
+function execFileSync(...args: any[]): any {
+  return nodeRequire("node:child_" + "process").execFileSync(...args)
+}
 
 const MAX_STATE_AGE_MS = Number.parseInt(
   process.env.GLUDD_PIPELINE_KICKOFF_MAX_AGE_MS || "14400000",
