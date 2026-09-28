@@ -38,6 +38,8 @@ NATURAL_ACCEPTANCE = [
     "0a173c0ccf7475677563d9aa18fd7a3bf02aed35",
     "e19b8ef48d5779fc8a9356b17a88cc6afc59636c",
     "ea12b54b97e3ce389395bc69fb43343362564522",
+    "d0591e43c826ddbbc9456f83a2fd0b09b82ccfd6",
+    "84a314d05963519bab331981e1a0d8d86d96e42b",
 ]
 TYPED_DOMAIN = [
     "1f937c6b45c968f9be690485ae1c4705569d7bd3",
@@ -56,6 +58,7 @@ TYPED_DOMAIN = [
     "32ffe159616982f50d8e0d2f8743d0fa9059c0fe",
     "0bbffa7573e67ab42bf4e64a318acf7e958b625d",
     "0769f40e105ec1b829c9e31c7033706380577cba",
+    "7d443ed9c9343f04b53ef9fd38e2693049597b71",
 ]
 OPENJEV_LAYA = [
     "7771ba3c5d6d4e347651c9b6a7fc323cd0e941ec",
@@ -80,6 +83,18 @@ OPENJEV_LAYA = [
     "9b16aec6bac63ae80624cf8b91561d1504f3046c",
     "c48c7619552e5b5bfc42937937476874fef8fcb6",
 ]
+FREELLMAPI_UPSTREAM_SYNC = [
+    "2bff9cb0dc5fd6cc54b11c82288caff9f892c117",
+    "19ec541d1d94b69a5acdc1e718e1caa4a2b05f9e",
+    "dcd27ffdd9425eb5ff80e1d037b0e6066dccb017",
+    "0ef9d26ebc3a79470e59035a30907fb3b75346ba",
+]
+AZURE_ACCELERATOR_ACCEPTANCE = [
+    "2bff9cb0dc5fd6cc54b11c82288caff9f892c117",
+    "19ec541d1d94b69a5acdc1e718e1caa4a2b05f9e",
+    "dcd27ffdd9425eb5ff80e1d037b0e6066dccb017",
+    "5566d6dcff58c4f6391c9e3b8e3320ed55c73df9",
+]
 
 
 def _text() -> str:
@@ -97,16 +112,33 @@ def _inventory() -> dict[str, Any]:
 def test_inventory_pins_snapshot_heads_and_pending_state() -> None:
     inventory = _inventory()
     assert inventory["schema_version"] == 1
+    assert inventory["manifest_base"] == (
+        "2bff9cb0dc5fd6cc54b11c82288caff9f892c117"
+    )
     assert inventory["development_head"] == (
         "7c4fbc7e695d6a20b1a332cd2ba2285bb08091a3"
     )
     streams = inventory["streams"]
     assert streams["natural_language_config"]["head"] == NATURAL_ACCEPTANCE[-1]
-    assert streams["natural_language_config"]["status"] == "pending_descendant"
+    assert streams["natural_language_config"]["status"] == (
+        "complete_source_snapshot"
+    )
     assert streams["typed_domain_adapters"]["head"] == TYPED_DOMAIN[-1]
     assert streams["typed_domain_adapters"]["status"] == "complete_source_snapshot"
     assert streams["openjev_laya"]["head"] == OPENJEV_LAYA[-1]
     assert streams["openjev_laya"]["status"] == "complete_source_snapshot"
+    assert streams["freellmapi_upstream_sync"]["head"] == (
+        FREELLMAPI_UPSTREAM_SYNC[-1]
+    )
+    assert streams["freellmapi_upstream_sync"]["status"] == (
+        "complete_source_snapshot"
+    )
+    assert streams["azure_accelerator_acceptance"]["head"] == (
+        AZURE_ACCELERATOR_ACCEPTANCE[-1]
+    )
+    assert streams["azure_accelerator_acceptance"]["status"] == (
+        "complete_source_snapshot"
+    )
 
 
 def test_inventory_pins_exact_source_parent_child_order() -> None:
@@ -120,6 +152,12 @@ def test_inventory_pins_exact_source_parent_child_order() -> None:
         "main": TYPED_DOMAIN
     }
     assert streams["openjev_laya"]["source_chains"] == {"main": OPENJEV_LAYA}
+    assert streams["freellmapi_upstream_sync"]["source_chains"] == {
+        "main": FREELLMAPI_UPSTREAM_SYNC
+    }
+    assert streams["azure_accelerator_acceptance"]["source_chains"] == {
+        "main": AZURE_ACCELERATOR_ACCEPTANCE
+    }
 
 
 def test_feature_only_sets_are_exact_unique_and_nonduplicative() -> None:
@@ -137,6 +175,11 @@ def test_feature_only_sets_are_exact_unique_and_nonduplicative() -> None:
             *TYPED_DOMAIN[9:],
         ],
         "openjev_laya": OPENJEV_LAYA[9:],
+        "freellmapi_upstream_sync": [FREELLMAPI_UPSTREAM_SYNC[-1]],
+        "azure_accelerator_acceptance": [
+            AZURE_ACCELERATOR_ACCEPTANCE[-2],
+            AZURE_ACCELERATOR_ACCEPTANCE[-1],
+        ],
     }
     actual = {
         name: stream["feature_only_cherry_picks"]
@@ -159,19 +202,49 @@ def test_feature_only_sets_are_exact_unique_and_nonduplicative() -> None:
         TYPED_DOMAIN[7],
         TYPED_DOMAIN[8],
         *OPENJEV_LAYA[:9],
+        FREELLMAPI_UPSTREAM_SYNC[0],
+        FREELLMAPI_UPSTREAM_SYNC[1],
     } <= excluded
 
 
 def test_proof_and_integration_boundaries_fail_closed() -> None:
     streams = _inventory()["streams"]
-    assert streams["natural_language_config"]["proof_status"] == "pending"
+    assert streams["natural_language_config"]["proof_status"] == (
+        "partial_branch_local"
+    )
     assert streams["natural_language_config"]["integration_status"] == (
         "blocked_pending_reconciliation"
     )
     for name in ("typed_domain_adapters", "openjev_laya"):
         assert streams[name]["proof_status"] == "partial_branch_local"
         assert streams[name]["integration_status"] == "feature_only_review_ready"
+    assert streams["freellmapi_upstream_sync"]["proof_status"] == "contract_only"
+    assert streams["azure_accelerator_acceptance"]["proof_status"] == "design_only"
+    for name in ("freellmapi_upstream_sync", "azure_accelerator_acceptance"):
+        assert streams[name]["integration_status"] == "feature_only_review_ready"
     assert _inventory()["combined_release_proof"] == "pending"
+
+
+def test_new_heads_retain_single_source_order_and_honest_live_boundaries() -> None:
+    text = _text()
+    for head, parent in (
+        (NATURAL_ACCEPTANCE[-2], NATURAL_ACCEPTANCE[-3]),
+        (NATURAL_ACCEPTANCE[-1], NATURAL_ACCEPTANCE[-2]),
+        (TYPED_DOMAIN[-1], TYPED_DOMAIN[-2]),
+        (FREELLMAPI_UPSTREAM_SYNC[-1], FREELLMAPI_UPSTREAM_SYNC[-2]),
+        (AZURE_ACCELERATOR_ACCEPTANCE[-1], AZURE_ACCELERATOR_ACCEPTANCE[-2]),
+    ):
+        assert head in text
+        assert parent in text
+    for phrase in (
+        "shared accelerator-ledger commit is selected once",
+        "neither sibling tip is an ancestor of the other",
+        "no retained exact-head execution receipt",
+        "runtime authority remains none",
+        "all Azure tracks remain unadmitted",
+        "full gate: pending",
+    ):
+        assert phrase in text
 
 
 def test_manifest_retains_trust_zdd_rollback_and_practitioner_evidence() -> None:
