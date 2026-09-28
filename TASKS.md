@@ -85,6 +85,7 @@ general capabilities.
   scripts/run_ci_shards_serial.py
   scripts/run_gate.sh
   scripts/validate_task_ledger.py
+  src/general_ludd/security/security_backlog.py
   tests/e2e/test_additive_task_e2e.py
   tests/e2e/test_behavior_enforcement.py
   tests/e2e/test_delegate_e2e.py
@@ -342,6 +343,15 @@ general capabilities.
   worktree protections it controls. The formerly failing audit passes 1/1,
   Markdown lint is green, and task-ledger validation and path integrity pass;
   the collect-all replay continues so later failures can be repaired together.
+
+  The same collect-all replay reached `unit-2:batch-044` and exposed a real
+  upward dependency: the low-level security backlog probe imported the
+  high-level event loop solely to inspect its source. The probe now reads only
+  validated package-relative source paths (while preserving already-loaded
+  module hooks used by fail-closed regression tests), so it retains end-to-end
+  audit-wiring verification without importing the application layer. The exact
+  architecture regression passes 1/1 and the complete security-backlog suite
+  passes 99/99; the collect-all replay continues for a complete failure set.
 
 - [ ] S91.2 — **Reconcile every active v0.1.1 release-completeness contract with the live fail-closed verifier** across `AGENTS.md`, `README.md`, `docs/CLAUDE.md`, `docs/MERGE_PLAN.md`, `docs/RELEASE_CHECKLIST.md`, `docs/RELEASE_RUNBOOK.md`, `docs/STABILIZATION_PLAN.md`, `docs/architecture.md`, `docs/index.md`, `docs/specs/BEHAVIORAL_SPECS.md`, `docs/specs/COMPREHENSIVE_SPECS_20K.md`, `docs/specs/OPERATIONAL_DISCIPLINE_SPECS.md`, `scripts/README.md`, `scripts/generate_specs_to_4000.py`, `tests/unit/test_documentation_integrity.py`, and `tests/unit/test_pipeline_priority.py`: require all 28 mandatory categories and the 30-asset minimum already enforced by `scripts/verify_release_completeness.py`, preserve historical 12-category release records as history, and prevent release guidance from regressing independently of the executable gate. | evidence: the fresh full gate passed integration and all earlier `unit-1d` batches before the final documentation batch rejected `docs/RELEASE_RUNBOOK.md`; investigation found the test itself still required an obsolete 12-category phrase while the live verifier and its focused tests structurally pin 28 mandatory categories and `MIN_ASSETS == 30`; the corrected integrity assertion failed first against the stale runbook; active operator docs, generated-spec input/output, and policy guidance now mirror the executable 28-category/30-asset contract while historical 12-category release records remain unchanged; the combined release-verifier/documentation/pipeline replay passes 175/175, the cross-document mirror regression passes 1/1, Markdown lint passes 15 files, Python lint is green after repairing all eight touched-generator findings, spec lint passes 220/220, generated-artifact hygiene, runbook currency, version consistency, README version, task integrity, ledger validation, and 107-path registration are green; the next exact-candidate gate cleared the formerly failing final `unit-1d` documentation batch before stopping later in unrelated `unit-2` pending-work structural coverage; exact complete gate and commit evidence remain pending | priority: critical | effort: XS | status: in_progress
 
