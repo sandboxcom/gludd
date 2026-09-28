@@ -401,9 +401,11 @@ state. A child pytest result of 1 (test failure), 2 (batch-local collection or
 session failure without an owner cancellation signal), 5 (nothing collected),
 or 6 (warning limit exceeded) is recorded and reported, but every independent
 later batch and named shard still runs. The terminal summary retains every
-failed phase and the runner returns a nonzero maximum status; it never turns a
-collected failure green. Coverage is not combined into release evidence when
-any such failure exists.
+failed phase under an exact key such as `<shard>:batch-NNN`,
+`<shard>:batch-NNN:coverage`, `<shard>:cleanup`, or `<shard>:plan`. When the
+plan contains only collected pytest failures, the runner returns their nonzero
+maximum status; it never turns a collected failure green. Coverage is not
+combined into release evidence when any such failure exists.
 
 This is intentionally different from `continue-on-error`. Practitioners have
 repeatedly needed every independent CI leg to run while keeping the aggregate
@@ -427,7 +429,13 @@ cleanup. The runner performs bounded cleanup, emits `later-*=not-started`, and
 does not launch another batch or shard. Operators should therefore read
 `later-*=continuing` as complete diagnostic collection and
 `later-*=not-started` as an intentional safety boundary, never as equivalent
-release outcomes.
+release outcomes. A later terminal safety code takes precedence over any
+earlier collected pytest status even when its number is lower. Cancellation
+also takes precedence over a simultaneous cleanup failure; otherwise the first
+unsafe execution result remains terminal while cleanup is retained as a
+separate failed phase. The terminal attestation publishes that exact return
+code with `status: fail` and never binds a stale coverage artifact to a failed
+run.
 
 Hermetic fixer tests create no source-tree lock or shared mutable workspace and
 can run concurrently across xdist workers. Each invocation owns only its pytest

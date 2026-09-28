@@ -1027,6 +1027,7 @@ def run(
 
     failures: dict[str, int] = {}
     cancellation_rc = 0
+    terminal_rc = 0
     if run_isolated:
         isolated_rc = _run_owned_pytest(
             _isolated_pytest_command(pytest_args),
@@ -1065,14 +1066,17 @@ def run(
 
     for index, shard in enumerate(shards, start=1):
         safety_stop_rc = 0
+        shard_failure_rc = 0
         batches = _partition_test_paths(
             expand_shard(shard),
             max_files=max_files_per_batch,
         )
         if not batches:
             print(f"SHARD-EMPTY shard={shard}", flush=True)
-            failures[shard] = 2
+            failures[f"{shard}:plan"] = 2
+            shard_failure_rc = 2
             safety_stop_rc = 2
+            terminal_rc = 2
             print(
                 f"SERIAL-SHARD-FAILED shard={shard} rc=2; "
                 "later-shards=not-started",
@@ -1099,6 +1103,7 @@ def run(
                 batchtemp = workspace / f"batch-{batch_index:03d}"
                 batchtemp.mkdir(parents=True)
                 batch_name = f"{shard}-batch-{batch_index:03d}"
+                failure_phase = f"{shard}:batch-{batch_index:03d}"
                 env = _owned_terraform_environment(
                     _env_for_shard(batch_name, batchtemp),
                     workspace,
@@ -1107,7 +1112,11 @@ def run(
                     workspace,
                     context=f"{shard}:batch-{batch_index:03d}:before",
                 ):
-                    failures[shard] = DISK_HEADROOM_EXIT_CODE
+                    failures[failure_phase] = DISK_HEADROOM_EXIT_CODE
+                    shard_failure_rc = max(
+                        shard_failure_rc,
+                        DISK_HEADROOM_EXIT_CODE,
+                    )
                     safety_stop_rc = DISK_HEADROOM_EXIT_CODE
                     print(
                         f"SHARD-DISK-FAIL shard={shard} batch={batch_index} "
@@ -1129,7 +1138,11 @@ def run(
                     expected_interpreter,
                     context=f"{shard}:batch-{batch_index:03d}:before",
                 ):
-                    failures[shard] = INTERPRETER_DRIFT_EXIT_CODE
+                    failures[failure_phase] = INTERPRETER_DRIFT_EXIT_CODE
+                    shard_failure_rc = max(
+                        shard_failure_rc,
+                        INTERPRETER_DRIFT_EXIT_CODE,
+                    )
                     safety_stop_rc = INTERPRETER_DRIFT_EXIT_CODE
                     shard_failed = True
                     break
@@ -1154,24 +1167,37 @@ def run(
                 batch_cleanup_rc = _cleanup_owned_tmpdir(owned_tmpdir) or 0
                 owned_tmpdirs.remove(owned_tmpdir)
                 cleanup_rc = max(cleanup_rc, batch_cleanup_rc)
+                if rc != 0:
+                    failures[failure_phase] = rc
+                    shard_failure_rc = max(shard_failure_rc, rc)
+                    if _is_cancellation_returncode(rc):
+                        cancellation_rc = rc
                 if batch_cleanup_rc:
-                    failures[shard] = max(
-                        failures.get(shard, 0),
-                        batch_cleanup_rc,
-                    )
                     print(
                         f"SHARD-CLEANUP-SIGNAL shard={shard} "
                         f"batch={batch_index} rc={batch_cleanup_rc}",
                         flush=True,
                     )
                     shard_failed = True
-                    if _is_cancellation_returncode(batch_cleanup_rc):
+                    if not cancellation_rc and _is_cancellation_returncode(
+                        batch_cleanup_rc
+                    ):
                         cancellation_rc = batch_cleanup_rc
-                    safety_stop_rc = batch_cleanup_rc
+                if cancellation_rc:
+                    if rc != 0:
+                        print(
+                            f"SHARD-FAIL shard={shard} batch={batch_index} "
+                            f"rc={rc}; later-batches=not-started",
+                            flush=True,
+                        )
+                    shard_failed = True
+                    safety_stop_rc = cancellation_rc
                     break
                 if rc != 0:
-                    failures[shard] = max(failures.get(shard, 0), rc)
-                    if _is_collect_all_pytest_returncode(rc):
+                    if (
+                        _is_collect_all_pytest_returncode(rc)
+                        and batch_cleanup_rc == 0
+                    ):
                         print(
                             f"SHARD-FAIL shard={shard} batch={batch_index} rc={rc}; "
                             "later-batches=continuing",
@@ -1185,12 +1211,18 @@ def run(
                         flush=True,
                     )
                     shard_failed = True
-                    if _is_cancellation_returncode(rc):
-                        cancellation_rc = rc
-                    safety_stop_rc = rc
+                    safety_stop_rc = (
+                        batch_cleanup_rc
+                        if _is_collect_all_pytest_returncode(rc)
+                        else rc
+                    )
+                    break
+                if batch_cleanup_rc:
+                    safety_stop_rc = batch_cleanup_rc
                     break
                 if not coverage_saved:
-                    failures[shard] = max(failures.get(shard, 0), 1)
+                    failures[f"{failure_phase}:coverage"] = 1
+                    shard_failure_rc = max(shard_failure_rc, 1)
                     safety_stop_rc = 1
                     print(
                         f"SHARD-COVERAGE-INTEGRITY-FAIL shard={shard} "
@@ -1213,15 +1245,18 @@ def run(
                 )
             shutil.rmtree(workspace, ignore_errors=True)
         if cleanup_rc:
-            failures[shard] = max(failures.get(shard, 0), cleanup_rc)
+            failures[f"{shard}:cleanup"] = cleanup_rc
+            shard_failure_rc = max(shard_failure_rc, cleanup_rc)
             print(
                 f"SHARD-CLEANUP-SIGNAL shard={shard} rc={cleanup_rc}",
                 flush=True,
             )
             if _is_cancellation_returncode(cleanup_rc):
-                cancellation_rc = cleanup_rc
-            safety_stop_rc = cleanup_rc
+                cancellation_rc = cancellation_rc or cleanup_rc
+            if not safety_stop_rc:
+                safety_stop_rc = cleanup_rc
         if cancellation_rc:
+            terminal_rc = cancellation_rc
             print(
                 f"SERIAL-SHARD-CANCELLED shard={shard} rc={cancellation_rc}; "
                 "later-shards=not-started",
@@ -1229,15 +1264,16 @@ def run(
             )
             break
         if safety_stop_rc:
+            terminal_rc = safety_stop_rc
             print(
-                f"SERIAL-SHARD-FAILED shard={shard} rc={failures[shard]}; "
+                f"SERIAL-SHARD-FAILED shard={shard} rc={safety_stop_rc}; "
                 "later-shards=not-started",
                 flush=True,
             )
             break
-        if shard in failures:
+        if shard_failure_rc:
             print(
-                f"SERIAL-SHARD-COLLECTED shard={shard} rc={failures[shard]}; "
+                f"SERIAL-SHARD-COLLECTED shard={shard} rc={shard_failure_rc}; "
                 "later-shards=continuing",
                 flush=True,
             )
@@ -1258,7 +1294,7 @@ def run(
         flush=True,
     )
     shutil.rmtree(COVERAGE_SHARDS, ignore_errors=True)
-    return max(failures.values(), default=0)
+    return terminal_rc or max(failures.values(), default=0)
 
 
 def main() -> int:
