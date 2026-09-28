@@ -418,9 +418,10 @@ def _check_d18_audit_log() -> tuple[bool, str]:
       * ``general_ludd.db.repository.AuditEventRepository`` defines
         ``record_typed`` (the typed entry point for the ``AuditEventType``
         taxonomy).
-      * ``general_ludd.event_loop.loop`` — the central dispatch path
+      * ``general_ludd.event_loop.decision_reconciliation`` — the delegated
+        central dispatch path
         mutating operations flow through — still calls
-        ``self._audit_repo.record_typed(...)``.
+        ``loop._audit_repo.record_typed(...)``.
     """
     try:
         import general_ludd.db.repository as repo_mod
@@ -434,18 +435,28 @@ def _check_d18_audit_log() -> tuple[bool, str]:
         return False, "OPEN — AuditEventRepository.record_typed no longer defined (regression)"
 
     try:
+        import general_ludd.event_loop.decision_reconciliation as reconciliation_mod
         import general_ludd.event_loop.loop as loop_mod
     except ImportError as exc:
-        return False, f"OPEN — general_ludd.event_loop.loop failed to import: {exc}"
+        return False, f"OPEN — event-loop audit path failed to import: {exc}"
     loop_src = _read_module_source(loop_mod)
-    if "_audit_repo.record_typed(" not in loop_src:
+    if "await reconcile_completed_decisions(self)" not in loop_src:
         return False, (
-            "OPEN — event_loop.loop no longer calls _audit_repo.record_typed(...) "
+            "OPEN — event_loop.loop no longer delegates to reconcile_completed_decisions(...) "
             "(regression — audit logging wiring removed from the dispatch path)"
         )
 
+    reconciliation_src = _read_module_source(reconciliation_mod)
+    if "_audit_repo.record_typed(" not in reconciliation_src:
+        return False, (
+            "OPEN — event_loop.decision_reconciliation no longer calls "
+            "_audit_repo.record_typed(...) after sensitive todo status "
+            "changes (regression)"
+        )
+
     return True, (
-        "LANDED-VERIFIED — AuditEventRepository.record_typed exists and is called from event_loop.loop's dispatch path"
+        "LANDED-VERIFIED — AuditEventRepository.record_typed exists and is "
+        "called through event_loop.loop's delegated reconciliation path"
     )
 
 
