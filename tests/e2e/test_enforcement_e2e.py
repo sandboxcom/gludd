@@ -49,6 +49,7 @@ PLUGIN_REGISTRATION_ORDER = [
     "enforce-verified-claims.ts",
     "enforce-no-suppressions.ts",
     "enforce-no-wait.ts",
+    "enforce-pipeline-kickoff.ts",
     "enforce-deletion-gate.ts",
     "enforce-batch-push.ts",
     "enforce-depth.ts",
