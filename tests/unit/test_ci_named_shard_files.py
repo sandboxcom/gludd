@@ -1094,6 +1094,104 @@ def test_serial_runner_stops_the_whole_plan_after_one_interrupted_batch(
     assert started == ["unit-1b:batch-001"]
 
 
+def test_serial_runner_stops_after_failed_batch_without_coverage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
+    workspaces = tmp_path / "workspaces"
+    compact_roots = tmp_path / "compact-roots"
+    started: list[str] = []
+
+    def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
+        del dir
+        parent = workspaces if prefix.startswith("gludd-gate-") else compact_roots
+        path = parent / prefix
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
+
+    def failed_run(*_args: object, label: str, **_kwargs: object) -> int:
+        started.append(label)
+        return 1
+
+    monkeypatch.setattr(module.tempfile, "mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr(
+        module,
+        "expand_shard",
+        lambda shard: [f"tests/unit/test_{shard}.py"],
+    )
+    monkeypatch.setattr(module, "_run_owned_pytest", failed_run)
+    monkeypatch.setattr(module, "_save_shard_coverage", lambda *_args: False)
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", lambda _path: 0)
+
+    assert (
+        module.run(
+            ["unit-1b", "unit-1d"],
+            [],
+            run_isolated=False,
+            aggregate_coverage=False,
+        )
+        == 1
+    )
+    assert started == ["unit-1b:batch-001"]
+    assert (
+        "SHARD-COVERAGE-INTEGRITY-FAIL shard=unit-1b batch=1 rc=1; "
+        "later-batches=not-started" in capsys.readouterr().out
+    )
+
+
+def test_serial_runner_collects_independent_failures_with_coverage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
+    workspaces = tmp_path / "workspaces"
+    compact_roots = tmp_path / "compact-roots"
+    started: list[str] = []
+
+    def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
+        del dir
+        parent = workspaces if prefix.startswith("gludd-gate-") else compact_roots
+        path = parent / prefix
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
+
+    def failed_run(*_args: object, label: str, **_kwargs: object) -> int:
+        started.append(label)
+        return 1
+
+    monkeypatch.setattr(module.tempfile, "mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr(
+        module,
+        "expand_shard",
+        lambda shard: [f"tests/unit/test_{shard}.py"],
+    )
+    monkeypatch.setattr(module, "_run_owned_pytest", failed_run)
+    monkeypatch.setattr(module, "_save_shard_coverage", lambda *_args: True)
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", lambda _path: 0)
+
+    assert (
+        module.run(
+            ["unit-1b", "unit-1d"],
+            [],
+            run_isolated=False,
+            aggregate_coverage=False,
+        )
+        == 1
+    )
+    assert started == ["unit-1b:batch-001", "unit-1d:batch-001"]
+    output = capsys.readouterr().out
+    assert output.count("later-shards=continuing") == 2
+
+
 def test_serial_runner_stops_the_whole_plan_after_internal_runner_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1881,7 +1979,7 @@ def test_collected_failure_never_masks_later_terminal_safety_stop(
         assert "'unit-1a1:cleanup': 9" in output
 
 
-def test_failed_batch_without_coverage_fragment_does_not_hide_later_evidence(
+def test_failed_batch_without_coverage_fragment_stops_before_later_evidence(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1935,8 +2033,8 @@ def test_failed_batch_without_coverage_fragment_does_not_hide_later_evidence(
     )
 
     assert result == 2
-    assert launched == ["unit-1a1:batch-001", "unit-1a1:batch-002"]
-    assert saved == [1, 2]
+    assert launched == ["unit-1a1:batch-001"]
+    assert saved == [1]
     assert aggregate_called is False
 
 

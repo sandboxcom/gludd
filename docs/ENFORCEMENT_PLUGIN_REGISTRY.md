@@ -8,7 +8,7 @@
 > **Verify currency:** `make test-specific TESTFILE='tests/unit/test_enforcement_registry'`
 > fails if any plugin in `opencode.json` is missing from this document.
 
-## Total: 32 active plugins
+## Total: 33 active plugins
 
 | # | Plugin | Hook(s) | What it blocks | Disable env var |
 |---|--------|---------|----------------|-----------------|
@@ -44,6 +44,7 @@
 | 30 | `enforce-directives.ts` | `tool.execute.before`, `experimental.text.complete` | Enforces explicit numeric, prohibition, completion, and all-items user directives; blocks commit/push or completion claims while a matched directive remains unmet. | `GLUDD_DIRECTIVE_ENFORCE=0` |
 | 31 | `enforce-task-tracking.ts` | `tool.execute.before`, `experimental.text.complete`, `experimental.chat.system.transform` | Denies implementation edits until TASKS.md has been updated for the work, then emits escalating stale-task reminders and injects the task-tracking directive. | `GLUDD_TASK_TRACKING_ENFORCE=0` |
 | 32 | `enforce-additive-task.ts` | `tool.execute.before` | Rejects all-new-task dispatch waves while at least two TASKS.md items remain unchecked; at least one dispatch must reference an existing task ID. | `GLUDD_ADDITIVE_TASK_ENFORCE=0` (`GLUDD_ADDITIVE_TASK_BLOCK=0` for warning-only mode) |
+| 33 | `enforce-pipeline-kickoff.ts` | `tool.execute.before`, `tool.execute.after` | Deduplicates long pipeline launches, freezes the tested checkout and exact ref, and admits only useful isolated-worktree dispatches from the frozen candidate batch while the pipeline is active. | `GLUDD_PIPELINE_KICKOFF_ENFORCE=0` |
 
 ## Hook surface reference
 

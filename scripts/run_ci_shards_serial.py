@@ -1073,7 +1073,7 @@ def run(
         )
         if not batches:
             print(f"SHARD-EMPTY shard={shard}", flush=True)
-            failures[f"{shard}:plan"] = 2
+            failures[shard] = 2
             shard_failure_rc = 2
             safety_stop_rc = 2
             terminal_rc = 2
@@ -1193,6 +1193,24 @@ def run(
                     shard_failed = True
                     safety_stop_rc = cancellation_rc
                     break
+                if batch_cleanup_rc:
+                    safety_stop_rc = (
+                        rc
+                        if rc != 0 and not _is_collect_all_pytest_returncode(rc)
+                        else batch_cleanup_rc
+                    )
+                    break
+                if not coverage_saved:
+                    failures[f"{failure_phase}:coverage"] = 1
+                    shard_failure_rc = max(shard_failure_rc, 1)
+                    safety_stop_rc = rc or 1
+                    print(
+                        f"SHARD-COVERAGE-INTEGRITY-FAIL shard={shard} "
+                        f"batch={batch_index} rc=1; later-batches=not-started",
+                        flush=True,
+                    )
+                    shard_failed = True
+                    break
                 if rc != 0:
                     if (
                         _is_collect_all_pytest_returncode(rc)
@@ -1216,20 +1234,6 @@ def run(
                         if _is_collect_all_pytest_returncode(rc)
                         else rc
                     )
-                    break
-                if batch_cleanup_rc:
-                    safety_stop_rc = batch_cleanup_rc
-                    break
-                if not coverage_saved:
-                    failures[f"{failure_phase}:coverage"] = 1
-                    shard_failure_rc = max(shard_failure_rc, 1)
-                    safety_stop_rc = 1
-                    print(
-                        f"SHARD-COVERAGE-INTEGRITY-FAIL shard={shard} "
-                        f"batch={batch_index} rc=1; later-batches=not-started",
-                        flush=True,
-                    )
-                    shard_failed = True
                     break
                 print(
                     f"SHARD-BATCH-PASS shard={shard} batch={batch_index} rc=0",
