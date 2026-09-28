@@ -3481,6 +3481,21 @@ def test_objective_runtime_hook_invocation() -> None:
 
 
 # ---------------------------------------------------------------------------
+# enforce-pipeline-kickoff.ts  —  real proxy-hook invocation
+# ---------------------------------------------------------------------------
+
+
+def test_pipeline_kickoff_runtime_hook_invocation() -> None:
+    code = _factory_plugin_code(
+        "enforce-pipeline-kickoff.ts",
+        "tool.execute.before",
+        "await plugin['tool.execute.before']({tool: 'read', args: {}}, {args: {}})",
+    )
+    result = _run_ts(code, env_override={"GLUDD_PIPELINE_KICKOFF_ENFORCE": "0"})
+    assert result is None or isinstance(result, dict)
+
+
+# ---------------------------------------------------------------------------
 # enforce-release-deadline.ts  —  real proxy-hook invocation
 # ---------------------------------------------------------------------------
 

@@ -20,6 +20,10 @@ from general_ludd.event_loop.lease import (
     renew_lease,
     request_lease_cancellation,
 )
+from general_ludd.event_loop.lease_cancellation import (
+    register_local_cancellation_signal,
+    unregister_local_cancellation_signal,
+)
 from general_ludd.events import CustomEvent
 
 logger = logging.getLogger(__name__)
@@ -65,6 +69,7 @@ class ExecutionLeaseSupervisor:
         *,
         session_factory: SessionFactory,
         identity: ExecutionLeaseIdentity,
+        alias_bucket_keys: tuple[str, ...] = (),
         event_bus: EventPublisher | None = None,
         ttl_seconds: int = 300,
         heartbeat_interval_seconds: float = 30.0,
@@ -74,6 +79,7 @@ class ExecutionLeaseSupervisor:
         Args:
             session_factory: Creates an independent short-lived database session.
             identity: Immutable holder and todo-version fence.
+            alias_bucket_keys: Compatibility lease keys fencing the same attempt.
             event_bus: Optional sink for sanitized lifecycle events.
             ttl_seconds: Lease duration applied by each heartbeat.
             heartbeat_interval_seconds: Delay between successful renewals.
@@ -89,11 +95,21 @@ class ExecutionLeaseSupervisor:
             raise ValueError("heartbeat interval must be shorter than lease TTL")
         self._session_factory = session_factory
         self.identity = identity
+        self._bucket_keys = tuple(
+            dict.fromkeys((identity.bucket_key, *alias_bucket_keys))
+        )
         self._event_bus = event_bus
         self._ttl_seconds = ttl_seconds
         self._heartbeat_interval_seconds = heartbeat_interval_seconds
         self._cancel_requested = threading.Event()
         self._stop_requested = asyncio.Event()
+        for bucket_key in self._bucket_keys:
+            register_local_cancellation_signal(
+                bucket_key=bucket_key,
+                holder_id=identity.holder_id,
+                todo_version=identity.todo_version,
+                signal=self._cancel_requested,
+            )
 
     def is_cancellation_requested(self) -> bool:
         """Return a thread-safe cancellation signal for blocking runners."""
@@ -102,6 +118,13 @@ class ExecutionLeaseSupervisor:
     def stop(self) -> None:
         """Stop future heartbeats without changing runner cancellation state."""
         self._stop_requested.set()
+        for bucket_key in self._bucket_keys:
+            unregister_local_cancellation_signal(
+                bucket_key=bucket_key,
+                holder_id=self.identity.holder_id,
+                todo_version=self.identity.todo_version,
+                signal=self._cancel_requested,
+            )
 
     def publish(self, name: str, **payload: object) -> None:
         """Emit one content-free lifecycle marker without affecting execution."""
@@ -133,13 +156,16 @@ class ExecutionLeaseSupervisor:
         try:
             async with self._session_factory() as session:
                 try:
-                    status = await renew_lease(
-                        session,
-                        bucket_key=self.identity.bucket_key,
-                        holder_id=self.identity.holder_id,
-                        todo_version=self.identity.todo_version,
-                        ttl_seconds=self._ttl_seconds,
-                    )
+                    statuses = [
+                        await renew_lease(
+                            session,
+                            bucket_key=bucket_key,
+                            holder_id=self.identity.holder_id,
+                            todo_version=self.identity.todo_version,
+                            ttl_seconds=self._ttl_seconds,
+                        )
+                        for bucket_key in self._bucket_keys
+                    ]
                     await session.commit()
                 except Exception:
                     with contextlib.suppress(Exception):
@@ -158,6 +184,13 @@ class ExecutionLeaseSupervisor:
             )
             return LeaseRenewalStatus.STALE
 
+        status = (
+            LeaseRenewalStatus.CANCEL_REQUESTED
+            if LeaseRenewalStatus.CANCEL_REQUESTED in statuses
+            else LeaseRenewalStatus.STALE
+            if LeaseRenewalStatus.STALE in statuses
+            else LeaseRenewalStatus.RENEWED
+        )
         if status is not LeaseRenewalStatus.RENEWED:
             self._cancel_requested.set()
         self.publish("execution_lease_heartbeat", status=status.value)
@@ -200,11 +233,16 @@ class ExecutionLeaseSupervisor:
         try:
             async with self._session_factory() as session:
                 try:
-                    requested = await request_lease_cancellation(
-                        session,
-                        bucket_key=self.identity.bucket_key,
-                        holder_id=self.identity.holder_id,
-                        todo_version=self.identity.todo_version,
+                    requested = any(
+                        [
+                            await request_lease_cancellation(
+                                session,
+                                bucket_key=bucket_key,
+                                holder_id=self.identity.holder_id,
+                                todo_version=self.identity.todo_version,
+                            )
+                            for bucket_key in self._bucket_keys
+                        ]
                     )
                     await session.commit()
                 except Exception:
@@ -232,12 +270,16 @@ class ExecutionLeaseSupervisor:
         try:
             async with self._session_factory() as session:
                 try:
-                    confirmed = await confirm_lease_termination(
-                        session,
-                        bucket_key=self.identity.bucket_key,
-                        holder_id=self.identity.holder_id,
-                        todo_version=self.identity.todo_version,
-                    )
+                    confirmations = [
+                        await confirm_lease_termination(
+                            session,
+                            bucket_key=bucket_key,
+                            holder_id=self.identity.holder_id,
+                            todo_version=self.identity.todo_version,
+                        )
+                        for bucket_key in self._bucket_keys
+                    ]
+                    confirmed = bool(confirmations) and all(confirmations)
                     reclaimed = (
                         await reclaim_expired_leases(session) if confirmed else 0
                     )

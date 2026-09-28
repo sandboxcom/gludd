@@ -783,7 +783,7 @@ updated and rerun through both lanes.
 - [download-artifact v8 Buffer warning report](https://github.com/actions/upload-artifact/issues/811)
 - [actions/toolkit artifact release notes](https://github.com/actions/toolkit/blob/main/packages/artifact/RELEASES.md)
 
-## Paired-lane fail-fast and coverage source boundary
+## Paired-lane failure collection and coverage source boundary
 
 Candidate `41a6d38e50a381ac077e433b6394592c77df716a` and hosted run
 `32962870788` verified the hidden-file repair: all eight hosted shards uploaded
@@ -793,14 +793,38 @@ later shards; on GitHub, the coverage audit correctly enforced independent 75%
 line and branch floors but graded four measured collection files outside its
 declared `src/general_ludd` source tree along with 111 genuine source gaps.
 
-Pytest documents `-x` as the immediate stop contract. A long-lived practitioner
-request specifically calls out the hosted-time cost of continuing after failure,
-and xdist issue 868 records that process-level `--maxfail` behavior has cleanup
-edge cases. Gludd therefore owns fail-fast at the serial shard boundary after the
-failed child's cleanup, rather than delegating cross-process policy to xdist.
+Pytest documents `-x` as the immediate stop contract, but an all-shard release
+diagnostic has a different responsibility: retain every independent ordinary
+test, collection, and no-tests outcome without allowing a damaged runner to
+start more work. A long-lived practitioner request calls out the hosted-time
+cost of continuing after failure, while pytest discussion 13213 shows that
+`--continue-on-collection-errors` does not cover stale explicit node arguments:
+pytest classifies those as usage errors. Gludd therefore owns the boundary
+between child processes. Exit results 1, 2, 5, and the supported plugin result 6
+are collected only when that batch also produced a readable, hash-preserved
+coverage database and completed cleanup; later batches and shards then run.
 
 - [pytest practitioner request for hosted fail-fast behavior](https://github.com/pytest-dev/pytest/issues/9515)
+- [pytest practitioner report: collection continuation does not cover stale nodes](https://github.com/pytest-dev/pytest/discussions/13213)
 - [xdist maxfail cleanup report](https://github.com/pytest-dev/pytest-xdist/issues/868)
+
+Cancellation, worker death, no-progress timeout, interpreter drift, disk
+headroom loss, empty plans, workspace or temporary-root setup errors, missing or
+malformed coverage, and cleanup failure remain terminal. This distinction is
+intentionally stricter than the child's numeric result alone. A 2026 xdist
+practitioner report reproduces a receiver thread hanging indefinitely after
+workers exit, and a long-lived pytest-cov report shows coverage databases
+failing with a missing SQLite table. The serial owner therefore terminates and
+reaps its process group, validates coverage through coverage.py before copying
+it, compares source and destination digests, classifies destination I/O errors,
+cleans partially created resources, and records every reached setup, test,
+coverage, and cleanup phase in the terminal summary. Setup or cleanup safety
+faults override ordinary pytest and coverage results; an established safety
+stop remains authoritative, and an operator signal retains strongest
+precedence.
+
+- [xdist practitioner report: dead-worker cleanup can hang](https://github.com/pytest-dev/pytest-xdist/issues/1313)
+- [pytest-cov practitioner report: malformed coverage database](https://github.com/pytest-dev/pytest-cov/issues/385)
 
 Coverage.py defines `source` as the file trees eligible for measurement and its
 JSON reporting interface provides explicit include/omit selection. Gludd's audit
@@ -811,11 +835,13 @@ floors; filtering cannot turn a genuine low-coverage source file green.
 - [coverage.py source contract](https://github.com/coveragepy/coveragepy/blob/main/coverage/control.py)
 - [coverage.py JSON include/omit contract](https://github.com/coveragepy/coveragepy/blob/main/doc/python-coverage.1.txt)
 
-The zero-downtime response is candidate invalidation: after either lane fails,
-the producer stops later shards, completes only owner cleanup, emits the terminal
-failure, and creates no tag or deployment. Rollback is one commit per contract;
-rolling back source filtering intentionally restores the false-positive files,
-while rolling back fail-fast restores wasted work but cannot make a release green.
+The zero-downtime response is still candidate invalidation: any collected or
+terminal failure prevents a successful attestation, tag, or deployment. Ordinary
+failures may finish the immutable diagnostic plan and aggregate intact coverage;
+a safety fault starts no later work and completes only owner cleanup. Rollback is
+one commit per contract and changes no service, database, daemon, or external
+model process; rolling it back restores incomplete failure evidence but cannot
+make a failed candidate release-eligible.
 
 ## Diagnostic artifact workspace isolation
 

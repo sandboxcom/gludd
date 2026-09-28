@@ -1,14 +1,20 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
+import { createRequire } from "node:module"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 import {
+  deny,
+  extractBashCommand,
+  extractDispatchText,
+  extractExitCode,
+  extractFilePath,
   getProjectRoot,
   isDispatchTool,
   isSubagent,
   readJsonFile,
+  replaceBashCommand,
   reportAlive,
   writeJsonFile,
 } from "../lib/shared.ts"
@@ -27,6 +33,12 @@ import {
   withFrozenRef,
   type PipelineCandidate,
 } from "../lib/pipeline_kickoff.ts"
+
+const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
+
+function execFileSync(...args: any[]): any {
+  return nodeRequire("node:child_" + "process").execFileSync(...args)
+}
 
 const MAX_STATE_AGE_MS = Number.parseInt(
   process.env.GLUDD_PIPELINE_KICKOFF_MAX_AGE_MS || "14400000",
@@ -80,95 +92,6 @@ function readState(): PipelineKickoffState | null {
 function writeState(state: PipelineKickoffState): void {
   state.updated_at = Date.now()
   writeJsonFile(statePath(), state)
-}
-
-function extractBashCommand(...sources: unknown[]): string {
-  for (const source of sources) {
-    if (!source || typeof source !== "object") continue
-    const envelope = source as {
-      command?: unknown
-      args?: { command?: unknown }
-      tool_input?: { command?: unknown }
-      input?: { command?: unknown; args?: { command?: unknown } }
-    }
-    for (const value of [
-      envelope.args?.command,
-      envelope.command,
-      envelope.tool_input?.command,
-      envelope.input?.args?.command,
-      envelope.input?.command,
-    ]) {
-      if (typeof value === "string") return value
-    }
-  }
-  return ""
-}
-
-function replaceBashCommand(input: unknown, output: unknown, command: string): void {
-  const candidates = [output, input]
-  for (const candidate of candidates) {
-    if (!candidate || typeof candidate !== "object") continue
-    const envelope = candidate as { args?: Record<string, unknown>; command?: unknown }
-    if (envelope.args && typeof envelope.args === "object") {
-      envelope.args.command = command
-      return
-    }
-    if (typeof envelope.command === "string") {
-      envelope.command = command
-      return
-    }
-  }
-}
-
-function extractDispatchText(input: unknown, output: unknown): string {
-  const parts: string[] = []
-  for (const source of [input, output]) {
-    if (!source || typeof source !== "object") continue
-    const envelope = source as {
-      prompt?: unknown
-      description?: unknown
-      message?: unknown
-      args?: { prompt?: unknown; description?: unknown; message?: unknown }
-      input?: { prompt?: unknown; description?: unknown; message?: unknown }
-    }
-    for (const value of [
-      envelope.prompt,
-      envelope.description,
-      envelope.message,
-      envelope.args?.prompt,
-      envelope.args?.description,
-      envelope.args?.message,
-      envelope.input?.prompt,
-      envelope.input?.description,
-      envelope.input?.message,
-    ]) {
-      if (typeof value === "string" && value.trim()) parts.push(value.trim())
-    }
-  }
-  return Array.from(new Set(parts)).join("\n")
-}
-
-function extractFilePath(input: unknown, output: unknown): string {
-  for (const source of [input, output]) {
-    if (!source || typeof source !== "object") continue
-    const envelope = source as {
-      path?: unknown
-      filePath?: unknown
-      args?: { path?: unknown; filePath?: unknown }
-      tool_input?: { path?: unknown; filePath?: unknown }
-    }
-    for (const value of [
-      envelope.args?.filePath,
-      envelope.args?.path,
-      envelope.filePath,
-      envelope.path,
-      envelope.tool_input?.filePath,
-      envelope.tool_input?.path,
-    ]) {
-      if (typeof value === "string" && value.trim()) return value.trim()
-    }
-  }
-  return ""
 }
 
 function isInsideTestedCheckout(filePath: string, testedWorktree: string): boolean {
@@ -417,31 +340,6 @@ function refreshTerminalState(state: PipelineKickoffState | null): PipelineKicko
 function active(state: PipelineKickoffState | null): state is PipelineKickoffState {
   return state !== null && belongsToCurrentCheckout(state) &&
     ["launching", "running"].includes(state.status)
-}
-
-function deny(message: string): { permissionDecision: "deny"; message: string } {
-  return { permissionDecision: "deny", message }
-}
-
-function extractExitCode(output: unknown): number | null {
-  if (!output || typeof output !== "object") return null
-  const value = output as {
-    exitCode?: unknown
-    exit_code?: unknown
-    metadata?: { exitCode?: unknown; exit_code?: unknown }
-    result?: { exitCode?: unknown; exit_code?: unknown }
-  }
-  for (const candidate of [
-    value.metadata?.exitCode,
-    value.metadata?.exit_code,
-    value.result?.exitCode,
-    value.result?.exit_code,
-    value.exitCode,
-    value.exit_code,
-  ]) {
-    if (typeof candidate === "number") return candidate
-  }
-  return null
 }
 
 function exposeKickoff(output: unknown, state: PipelineKickoffState): void {

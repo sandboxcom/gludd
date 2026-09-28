@@ -15,10 +15,11 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from general_ludd.db.models import Base
-from general_ludd.db.repository import TodoRepository
+from general_ludd.db.models import Base, ProjectModel
+from general_ludd.db.repository import ProjectRepository, TodoRepository
 from general_ludd.event_loop.loop import EventLoop
 from general_ludd.local_model import get_model
+from general_ludd.projects.manager import persist_project
 from general_ludd.schemas.todo import TodoStatus
 from general_ludd.self_improve.codex_comparison import (
     CandidateEvidence,
@@ -423,6 +424,13 @@ async def test_self_improvement_uses_common_todo_ranking_compute_and_real_edit(
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
         async with factory() as session:
+            await persist_project(
+                ProjectRepository(session),
+                project_id=plan.project_id,
+                name="Private policy E2E",
+                weight=100.0,
+                dispatch_mode="active",
+            )
             repository = TodoRepository(session)
             await repository.create(
                 {
@@ -455,6 +463,7 @@ async def test_self_improvement_uses_common_todo_ranking_compute_and_real_edit(
                 }
             )
             await session.commit()
+            assert await session.get(ProjectModel, plan.project_id) is not None
 
         project_manager = SimpleNamespace(
             select_project=lambda: SimpleNamespace(project_id=plan.project_id)

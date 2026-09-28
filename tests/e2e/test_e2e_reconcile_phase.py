@@ -24,9 +24,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from general_ludd.db.models import Base, TaskDecisionModel, TaskReturnModel
-from general_ludd.db.repository import TodoRepository
+from general_ludd.db.models import (
+    Base,
+    ProjectModel,
+    TaskDecisionModel,
+    TaskReturnModel,
+)
+from general_ludd.db.repository import ProjectRepository, TodoRepository
 from general_ludd.event_loop.loop import EventLoop
+from general_ludd.projects.manager import persist_project
 from general_ludd.review.reviewer import ReturnReviewer
 from general_ludd.schemas.job import JobSpec
 from general_ludd.schemas.task_return import TaskReturn
@@ -52,6 +58,16 @@ async def _create_test_infra():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        await persist_project(
+            ProjectRepository(session),
+            project_id=_PROJECT_ID,
+            name="Reconcile phase E2E",
+            weight=100.0,
+            dispatch_mode="active",
+        )
+        await session.commit()
+        assert await session.get(ProjectModel, _PROJECT_ID) is not None
 
     import general_ludd.daemon as daemon_mod
     from general_ludd.routers.todos import register as reg_todos

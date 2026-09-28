@@ -365,16 +365,18 @@ _CONNECTOR_INFRASTRUCTURE_MODULE_NAMES = frozenset(
 
 # Strict allowlist of every importable connector module path under
 # ``general_ludd.connectors``. Built once at import time by scanning the package
-# directory (``pkgutil.iter_modules``), so it auto-maintains as connectors are
-# added/removed — but it NEVER contains anything outside this package.  This is
-# the D-30 fix: operator-controlled ``module``/``class`` config values are
-# hard-rejected unless they resolve to a path in this frozenset, closing the
-# arbitrary-code-execution hole where ``"module": "os"`` would have imported an
-# arbitrary stdlib/third-party module.
+# directory (``pkgutil.iter_modules``), so it auto-maintains as public connectors
+# are added/removed. Python-private ``_*`` transport/type helpers and the named
+# infrastructure modules are never operator-selectable. This is the D-30 fix:
+# operator-controlled ``module``/``class`` config values are hard-rejected unless
+# they resolve to a path in this frozenset, closing the arbitrary-code-execution
+# hole where ``"module": "os"`` would have imported an arbitrary stdlib or
+# third-party module.
 _ALLOWED_CONNECTOR_MODULES: frozenset[str] = frozenset(
     f"{_CONNECTORS_PKG}.{name}"
     for _finder, name, _ispkg in pkgutil.iter_modules(_connectors_pkg.__path__)
-    if name not in _CONNECTOR_INFRASTRUCTURE_MODULE_NAMES
+    if not name.startswith("_")
+    and name not in _CONNECTOR_INFRASTRUCTURE_MODULE_NAMES
 )
 
 
