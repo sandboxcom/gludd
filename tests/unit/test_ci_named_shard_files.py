@@ -1031,7 +1031,7 @@ def test_serial_runner_stops_the_whole_plan_after_one_interrupted_batch(
     assert started == ["unit-1b:batch-001"]
 
 
-def test_serial_runner_stops_the_whole_plan_after_one_failed_shard(
+def test_serial_runner_stops_the_whole_plan_after_internal_runner_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1075,6 +1075,34 @@ def test_serial_runner_stops_the_whole_plan_after_one_failed_shard(
         "SERIAL-SHARD-FAILED shard=unit-2 rc=3; later-shards=not-started"
         in capsys.readouterr().out
     )
+
+
+@pytest.mark.parametrize(
+    ("returncode", "expected"),
+    [
+        (0, False),
+        (1, True),
+        (2, True),
+        (3, False),
+        (4, False),
+        (5, True),
+        (6, True),
+        (70, False),
+        (73, False),
+        (78, False),
+        (124, False),
+        (125, False),
+        (128 + signal.SIGINT, False),
+        (128 + signal.SIGTERM, False),
+    ],
+)
+def test_serial_runner_classifies_collect_all_and_safety_results(
+    returncode: int,
+    expected: bool,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    assert module._is_collect_all_pytest_returncode(returncode) is expected
 
 
 def test_serial_runner_reserves_xdist_and_test_name_socket_budget(
@@ -1467,7 +1495,7 @@ def test_serial_runner_uses_a_fresh_non_coverage_process_for_isolated_tests() ->
     assert all(not argument.startswith("--cov") for argument in command)
 
 
-def test_serial_runner_does_not_continue_after_a_failed_shard(
+def test_serial_runner_collects_later_shards_after_test_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1514,7 +1542,214 @@ def test_serial_runner_does_not_continue_after_a_failed_shard(
     result = module.run(["unit-1a1", "unit-1a2"], [])
 
     assert result == 1
-    assert launched == ["unit-1a1"]
+    assert launched == ["unit-1a1", "unit-1a2"]
+
+
+def test_serial_runner_collects_later_batches_after_collection_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
+    launched: list[str] = []
+    temp_index = 0
+
+    def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
+        nonlocal temp_index
+        del dir
+        temp_index += 1
+        path = tmp_path / f"{prefix}{temp_index}"
+        path.mkdir()
+        return str(path)
+
+    def fake_run_owned(*_args: object, label: str, **_kwargs: object) -> int:
+        launched.append(label)
+        return 2 if label == "unit-1a1:batch-001" else 0
+
+    monkeypatch.setattr(module.tempfile, "mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", lambda _path: None)
+    monkeypatch.setattr(
+        module,
+        "expand_shard",
+        lambda shard: [f"tests/{shard}-a.py", f"tests/{shard}-b.py"],
+    )
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(module, "_run_owned_pytest", fake_run_owned)
+    monkeypatch.setattr(module, "_save_shard_coverage", lambda *_args: True)
+    monkeypatch.setattr(module, "_aggregate_coverage", lambda: 0)
+
+    result = module.run(
+        ["unit-1a1", "unit-1a2"],
+        [],
+        max_files_per_batch=1,
+        run_isolated=False,
+    )
+
+    assert result == 2
+    assert launched == [
+        "unit-1a1:batch-001",
+        "unit-1a1:batch-002",
+        "unit-1a2:batch-001",
+        "unit-1a2:batch-002",
+    ]
+
+
+def test_serial_runner_collects_shards_after_isolated_test_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
+    launched: list[str] = []
+
+    def fake_run_owned(command: list[str], *, label: str, **_kwargs: object) -> int:
+        del command
+        launched.append(label)
+        return 1 if label == "isolated" else 0
+
+    monkeypatch.setattr(module, "expand_shard", lambda shard: [f"tests/{shard}.py"])
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(module, "_run_owned_pytest", fake_run_owned)
+    monkeypatch.setattr(module, "_save_shard_coverage", lambda *_args: True)
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", lambda _path: None)
+    monkeypatch.setattr(module, "_aggregate_coverage", lambda: 0)
+
+    result = module.run(["unit-1a1", "unit-1a2"], [])
+
+    assert result == 1
+    assert launched == ["isolated", "unit-1a1:batch-001", "unit-1a2:batch-001"]
+
+
+def test_serial_runner_stops_on_empty_shard_plan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
+    launched: list[str] = []
+    identity = {
+        "implementation": "cpython",
+        "version": "3.11.14",
+        "executable": "/opt/python/3.11/bin/python3.11",
+    }
+
+    monkeypatch.setattr(module, "_interpreter_identity", lambda: identity)
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(
+        module,
+        "expand_shard",
+        lambda shard: [] if shard == "unit-1a1" else ["tests/later.py"],
+    )
+
+    def run_owned(*_args: object, label: str, **_kwargs: object) -> int:
+        launched.append(label)
+        return 0
+
+    monkeypatch.setattr(
+        module,
+        "_run_owned_pytest",
+        run_owned,
+    )
+
+    result = module.run(
+        ["unit-1a1", "unit-1a2"],
+        [],
+        run_isolated=False,
+        aggregate_coverage=False,
+    )
+
+    assert result == 2
+    assert launched == []
+
+
+@pytest.mark.parametrize(
+    ("scenario", "expected_rc", "expected_batches"),
+    [
+        ("disk", 73, []),
+        ("interpreter", 78, []),
+        ("coverage", 1, ["unit-1a1:batch-001"]),
+    ],
+)
+def test_serial_runner_preserves_immediate_resource_safety_stops(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    scenario: str,
+    expected_rc: int,
+    expected_batches: list[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    resources = module.ResourcePaths(
+        root=tmp_path / "resources",
+        coverage_shards=tmp_path / "resources" / "coverage-fragments",
+        coverage_json=tmp_path / "resources" / "coverage.json",
+        coverage_audit=tmp_path / "resources" / "coverage-audit.json",
+        attestation=tmp_path / "resources" / "attestation.json",
+    )
+    module.COVERAGE_SHARDS = resources.coverage_shards
+    module.COVERAGE_JSON = resources.coverage_json
+    module.COVERAGE_AUDIT = resources.coverage_audit
+    identity = {
+        "implementation": "cpython",
+        "version": "3.11.14",
+        "executable": "/opt/python/3.11/bin/python3.11",
+    }
+    launched: list[str] = []
+    temp_index = 0
+
+    def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
+        nonlocal temp_index
+        del dir
+        temp_index += 1
+        path = tmp_path / f"{prefix}{temp_index}"
+        path.mkdir(parents=True)
+        return str(path)
+
+    def cleanup(path: Path) -> int:
+        shutil.rmtree(path, ignore_errors=True)
+        return 0
+
+    def run_owned(*_args: object, label: str, **_kwargs: object) -> int:
+        launched.append(label)
+        return 0
+
+    monkeypatch.setattr(module, "_resource_paths", lambda: resources)
+    monkeypatch.setattr(module, "_interpreter_identity", lambda: identity)
+    monkeypatch.setattr(module.tempfile, "mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr(module, "expand_shard", lambda shard: [f"tests/{shard}.py"])
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(
+        module,
+        "_disk_headroom_available",
+        lambda *_args, **_kwargs: scenario != "disk",
+    )
+    monkeypatch.setattr(
+        module,
+        "_interpreter_is_unchanged",
+        lambda *_args, **_kwargs: scenario != "interpreter",
+    )
+    monkeypatch.setattr(module, "_run_owned_pytest", run_owned)
+    monkeypatch.setattr(
+        module,
+        "_save_shard_coverage",
+        lambda *_args: scenario != "coverage",
+    )
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", cleanup)
+
+    result = module.run(
+        ["unit-1a1", "unit-1a2"],
+        [],
+        run_isolated=False,
+        aggregate_coverage=False,
+    )
+
+    assert result == expected_rc
+    assert launched == expected_batches
 
 
 def test_serial_runner_records_isolated_failure_and_stops_before_shards(

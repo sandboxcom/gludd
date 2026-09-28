@@ -42,6 +42,7 @@ DEFAULT_SHARDS = tuple(SHARDS)
 _CANCELLATION_RETURN_CODES = frozenset(
     {128 + int(signal.SIGINT), 128 + int(signal.SIGTERM)}
 )
+_COLLECT_ALL_PYTEST_RETURN_CODES = frozenset({1, 2, 5, 6})
 ATTESTATION_SCHEMA_VERSION = 3
 RELEASE_PYTEST_ARGS = ("-W", "error")
 RELEASE_PYTHON_VERSION = "3.11"
@@ -239,6 +240,11 @@ def _worktree_state_id() -> str:
 def _is_cancellation_returncode(returncode: int) -> bool:
     """Return whether a child result represents operator cancellation."""
     return returncode in _CANCELLATION_RETURN_CODES
+
+
+def _is_collect_all_pytest_returncode(returncode: int) -> bool:
+    """Return whether a pytest result is evidence to retain while continuing."""
+    return returncode in _COLLECT_ALL_PYTEST_RETURN_CODES
 
 
 def _utc_now() -> str:
@@ -1031,11 +1037,19 @@ def run(
         )
         if isolated_rc:
             failures["isolated"] = isolated_rc
-            print(f"ISOLATED-TESTS-FAIL rc={isolated_rc}", flush=True)
+            continuation = (
+                "later-shards=continuing"
+                if _is_collect_all_pytest_returncode(isolated_rc)
+                else "later-shards=not-started"
+            )
+            print(
+                f"ISOLATED-TESTS-FAIL rc={isolated_rc}; {continuation}",
+                flush=True,
+            )
         else:
             print("ISOLATED-TESTS-PASS rc=0", flush=True)
 
-    if failures:
+    if failures and not _is_collect_all_pytest_returncode(failures["isolated"]):
         print(
             f"SERIAL-ISOLATED-FAILED rc={failures['isolated']}; "
             "later-shards=not-started",
@@ -1050,6 +1064,7 @@ def run(
         return max(failures.values())
 
     for index, shard in enumerate(shards, start=1):
+        safety_stop_rc = 0
         batches = _partition_test_paths(
             expand_shard(shard),
             max_files=max_files_per_batch,
@@ -1057,6 +1072,7 @@ def run(
         if not batches:
             print(f"SHARD-EMPTY shard={shard}", flush=True)
             failures[shard] = 2
+            safety_stop_rc = 2
             print(
                 f"SERIAL-SHARD-FAILED shard={shard} rc=2; "
                 "later-shards=not-started",
@@ -1092,6 +1108,7 @@ def run(
                     context=f"{shard}:batch-{batch_index:03d}:before",
                 ):
                     failures[shard] = DISK_HEADROOM_EXIT_CODE
+                    safety_stop_rc = DISK_HEADROOM_EXIT_CODE
                     print(
                         f"SHARD-DISK-FAIL shard={shard} batch={batch_index} "
                         f"rc={DISK_HEADROOM_EXIT_CODE}; later-batches=not-started",
@@ -1113,6 +1130,7 @@ def run(
                     context=f"{shard}:batch-{batch_index:03d}:before",
                 ):
                     failures[shard] = INTERPRETER_DRIFT_EXIT_CODE
+                    safety_stop_rc = INTERPRETER_DRIFT_EXIT_CODE
                     shard_failed = True
                     break
                 rc = _run_owned_pytest(
@@ -1149,9 +1167,18 @@ def run(
                     shard_failed = True
                     if _is_cancellation_returncode(batch_cleanup_rc):
                         cancellation_rc = batch_cleanup_rc
+                    safety_stop_rc = batch_cleanup_rc
                     break
-                if rc != 0 or not coverage_saved:
-                    failures[shard] = rc or 1
+                if rc != 0:
+                    failures[shard] = max(failures.get(shard, 0), rc)
+                    if _is_collect_all_pytest_returncode(rc):
+                        print(
+                            f"SHARD-FAIL shard={shard} batch={batch_index} rc={rc}; "
+                            "later-batches=continuing",
+                            flush=True,
+                        )
+                        shard_failed = True
+                        continue
                     print(
                         f"SHARD-FAIL shard={shard} batch={batch_index} rc={rc}; "
                         "later-batches=not-started",
@@ -1160,6 +1187,17 @@ def run(
                     shard_failed = True
                     if _is_cancellation_returncode(rc):
                         cancellation_rc = rc
+                    safety_stop_rc = rc
+                    break
+                if not coverage_saved:
+                    failures[shard] = max(failures.get(shard, 0), 1)
+                    safety_stop_rc = 1
+                    print(
+                        f"SHARD-COVERAGE-INTEGRITY-FAIL shard={shard} "
+                        f"batch={batch_index} rc=1; later-batches=not-started",
+                        flush=True,
+                    )
+                    shard_failed = True
                     break
                 print(
                     f"SHARD-BATCH-PASS shard={shard} batch={batch_index} rc=0",
@@ -1182,6 +1220,7 @@ def run(
             )
             if _is_cancellation_returncode(cleanup_rc):
                 cancellation_rc = cleanup_rc
+            safety_stop_rc = cleanup_rc
         if cancellation_rc:
             print(
                 f"SERIAL-SHARD-CANCELLED shard={shard} rc={cancellation_rc}; "
@@ -1189,13 +1228,19 @@ def run(
                 flush=True,
             )
             break
-        if shard in failures:
+        if safety_stop_rc:
             print(
                 f"SERIAL-SHARD-FAILED shard={shard} rc={failures[shard]}; "
                 "later-shards=not-started",
                 flush=True,
             )
             break
+        if shard in failures:
+            print(
+                f"SERIAL-SHARD-COLLECTED shard={shard} rc={failures[shard]}; "
+                "later-shards=continuing",
+                flush=True,
+            )
 
     if failures:
         coverage_rc = 0

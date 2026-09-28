@@ -394,6 +394,41 @@ processes and unrelated test sessions are outside that group and remain
 untouched. The fixed file bound prevents cumulative collection growth while the
 strictly serial schedule keeps peak worker count at one.
 
+### Collect-all failures versus safety stops (2026-09-27)
+
+The serial runner now separates diagnostic test evidence from unsafe execution
+state. A child pytest result of 1 (test failure), 2 (batch-local collection or
+session failure without an owner cancellation signal), 5 (nothing collected),
+or 6 (warning limit exceeded) is recorded and reported, but every independent
+later batch and named shard still runs. The terminal summary retains every
+failed phase and the runner returns a nonzero maximum status; it never turns a
+collected failure green. Coverage is not combined into release evidence when
+any such failure exists.
+
+This is intentionally different from `continue-on-error`. Practitioners have
+repeatedly needed every independent CI leg to run while keeping the aggregate
+result red; the durable recommendation in
+[GitHub Community discussion #45546](https://github.com/orgs/community/discussions/45546)
+is fail-fast disabled with errors still enforced. Pytest users also report that
+[`--continue-on-collection-errors` does not cover every stale or missing test
+selection](https://github.com/pytest-dev/pytest/discussions/13213), so Gludd's
+bounded runner continues at its own batch boundary and preserves the exact
+failing command instead of relying on one large pytest process. The older
+[`pytest` collection-hang report #6054](https://github.com/pytest-dev/pytest/issues/6054)
+documents why collection silence must remain a resource stop rather than a
+collect-all result.
+
+Safety and integrity failures still stop immediately. These include an owner
+SIGINT/SIGTERM (mapped to 130/143), disk-headroom failure (73), xdist worker
+death (70), interpreter drift (78), no-progress termination (124), runner
+exception (125), pytest internal/usage or unknown statuses, an empty shard plan,
+coverage loss after a successful batch, and any unsafe or incomplete owned-root
+cleanup. The runner performs bounded cleanup, emits `later-*=not-started`, and
+does not launch another batch or shard. Operators should therefore read
+`later-*=continuing` as complete diagnostic collection and
+`later-*=not-started` as an intentional safety boundary, never as equivalent
+release outcomes.
+
 Hermetic fixer tests create no source-tree lock or shared mutable workspace and
 can run concurrently across xdist workers. Each invocation owns only its pytest
 temporary root. Ignoring `.gate-status` changes Git classification, not status
