@@ -2501,7 +2501,10 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
         if lease_supervisor is not None:
             initial_status = await lease_supervisor.heartbeat_once()
             if initial_status is not LeaseRenewalStatus.RENEWED:
-                await lease_supervisor.confirm_termination()
+                try:
+                    await lease_supervisor.confirm_termination()
+                finally:
+                    lease_supervisor.stop()
                 raise OwnedExecutionCancelled(
                     "execution lease unavailable before dispatch"
                 )

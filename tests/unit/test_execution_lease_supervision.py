@@ -149,6 +149,68 @@ async def test_rolled_back_database_cancel_does_not_notify_local_runner() -> Non
         await engine.dispose()
 
 
+@pytest.mark.asyncio
+async def test_savepoint_notifications_follow_outer_transaction_outcome() -> None:
+    """SAVEPOINT rollback discards, while outer commit publishes, a cancel."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        identity = ExecutionLeaseIdentity(
+            bucket_key="core:TODO-SAVEPOINT-CANCEL",
+            holder_id="event-loop-owner",
+            todo_version=10,
+        )
+        async with factory() as session:
+            await acquire_leases_batch(
+                session,
+                [identity.bucket_key],
+                identity.holder_id,
+                ttl_seconds=60,
+                todo_versions={identity.bucket_key: identity.todo_version},
+            )
+            await session.commit()
+
+        supervisor = ExecutionLeaseSupervisor(
+            session_factory=factory,
+            identity=identity,
+            ttl_seconds=60,
+            heartbeat_interval_seconds=5.0,
+        )
+        async with factory() as session:
+            savepoint = await session.begin_nested()
+            assert await request_lease_cancellation(
+                session,
+                bucket_key=identity.bucket_key,
+                holder_id=identity.holder_id,
+                todo_version=identity.todo_version,
+            )
+            await savepoint.rollback()
+            await session.commit()
+        assert supervisor.is_cancellation_requested() is False
+
+        async with factory() as session:
+            savepoint = await session.begin_nested()
+            assert await request_lease_cancellation(
+                session,
+                bucket_key=identity.bucket_key,
+                holder_id=identity.holder_id,
+                todo_version=identity.todo_version,
+            )
+            await savepoint.commit()
+            assert supervisor.is_cancellation_requested() is False
+            await session.commit()
+        assert supervisor.is_cancellation_requested() is True
+        supervisor.stop()
+    finally:
+        await engine.dispose()
+
+
 @pytest.mark.parametrize(
     ("ttl_seconds", "interval_seconds", "message"),
     [

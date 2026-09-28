@@ -16,6 +16,7 @@ from general_ludd.db.models import BucketLeaseModel
 from general_ludd.event_loop.lease_validation import validate_lease_input
 
 _CancellationKey = tuple[str, str, int]
+_PendingCancellations = dict[object, set[_CancellationKey]]
 _PENDING_LOCAL_CANCELLATIONS = "gludd_pending_local_lease_cancellations"
 _local_cancel_signals: dict[
     _CancellationKey,
@@ -68,15 +69,27 @@ def _notify_committed_local_cancellations(session: Session) -> None:
     """Wake local runners only after their durable cancellation commits."""
     if session.in_nested_transaction():
         return
-    identities = session.info.pop(_PENDING_LOCAL_CANCELLATIONS, set())
-    for identity in identities:
+    pending = cast(
+        "_PendingCancellations",
+        session.info.pop(_PENDING_LOCAL_CANCELLATIONS, {}),
+    )
+    for identity in {item for identities in pending.values() for item in identities}:
         _notify_local_cancellation(identity)
 
 
 @event.listens_for(Session, "after_rollback")
 def _discard_rolled_back_local_cancellations(session: Session) -> None:
     """Never expose a cancellation whose database transaction rolled back."""
-    if not session.in_nested_transaction():
+    nested = session.get_nested_transaction()
+    if nested is None:
+        session.info.pop(_PENDING_LOCAL_CANCELLATIONS, None)
+        return
+    pending = cast(
+        "_PendingCancellations",
+        session.info.get(_PENDING_LOCAL_CANCELLATIONS, {}),
+    )
+    pending.pop(nested, None)
+    if not pending:
         session.info.pop(_PENDING_LOCAL_CANCELLATIONS, None)
 
 
@@ -110,8 +123,20 @@ async def request_lease_cancellation(
     await session.flush()
     requested = (cast("CursorResult[Any]", result).rowcount or 0) == 1
     if requested:
-        pending = session.info.setdefault(_PENDING_LOCAL_CANCELLATIONS, set())
-        pending.add((bucket_key, holder_id, todo_version))
+        sync_session = session.sync_session
+        transaction = (
+            sync_session.get_nested_transaction()
+            or sync_session.get_transaction()
+        )
+        if transaction is None:
+            raise RuntimeError("lease cancellation requires an active transaction")
+        pending = cast(
+            "_PendingCancellations",
+            session.info.setdefault(_PENDING_LOCAL_CANCELLATIONS, {}),
+        )
+        pending.setdefault(transaction, set()).add(
+            (bucket_key, holder_id, todo_version)
+        )
     return requested
 
 

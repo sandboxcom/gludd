@@ -255,6 +255,7 @@ async def test_isolated_dispatch_refuses_stale_initial_lease() -> None:
     supervisor = MagicMock()
     supervisor.heartbeat_once = AsyncMock(return_value=LeaseRenewalStatus.STALE)
     supervisor.run = AsyncMock()
+    supervisor.stop = MagicMock()
     supervisor.confirm_termination = AsyncMock(
         return_value=LeaseTerminationOutcome(confirmed=False, reclaimed=0)
     )
@@ -274,6 +275,7 @@ async def test_isolated_dispatch_refuses_stale_initial_lease() -> None:
     loop._dispatch_execute_job.assert_not_awaited()
     supervisor.confirm_termination.assert_awaited_once()
     supervisor.run.assert_not_awaited()
+    supervisor.stop.assert_called_once_with()
     release.assert_not_awaited()
 
 
