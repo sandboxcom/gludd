@@ -40,6 +40,7 @@ from general_ludd.db.repository import (
 )
 from general_ludd.db.tenant import reset_tenant as _reset_tenant
 from general_ludd.db.tenant import set_tenant as _set_tenant
+from general_ludd.event_loop import runtime_helpers as _runtime_helpers
 from general_ludd.event_loop.decision_reconciliation import (
     reconcile_completed_decisions,
 )
@@ -125,6 +126,8 @@ from general_ludd.self_improve.promotion import (
     build_managed_self_improve_promotion_coordinator,
 )
 from general_ludd.self_improve.runtime import build_managed_self_improve_runner
+
+_runtime_lease_bucket_key = _runtime_helpers.runtime_lease_bucket_key
 
 if TYPE_CHECKING:
     # TYPE_CHECKING-only: avoids a runtime import cycle and keeps the drain
