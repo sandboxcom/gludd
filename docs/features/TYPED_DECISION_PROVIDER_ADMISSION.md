@@ -19,9 +19,13 @@ capability. A later release may admit one or more backends behind the same
 Gludd-owned contract after they pass the evaluation, security, lifecycle, and
 zero-downtime gates below.
 
-The five independently deliverable steps, dependencies, metrics, and rollback
-boundaries are tracked in the
+The five independently deliverable core steps and optional expansion artifacts
+are tracked in the
 [`v0.1.2 typed-decision backlog`](../releases/v0.1.2-typed-decision-backlog.md).
+The implementation-ready, provider-neutral boundary is specified in the
+[`OpenJev/Laya adapter and update contract`](../releases/v0.1.2-openjev-laya-adapter-contract.md).
+That contract and its non-runnable schemas do not satisfy the revisit triggers
+below or authorize a runtime integration.
 
 ## What OpenJev Means
 
