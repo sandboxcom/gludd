@@ -12,6 +12,8 @@ from types import ModuleType
 from typing import Protocol, cast
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = ROOT / "docs" / "releases" / "typed-decision-adapter-contract-v1.schema.json"
@@ -786,6 +788,391 @@ def test_empty_duplicate_and_replay_version_inputs_fail_closed() -> None:
     with pytest.raises(planner.PlannerInputError, match="not canonical JSON"):
         planner.verify_batch_residency_plan(
             noncanonical,
+            _schema(),
+            [profile],
+            [request],
+            bounds=_bounds(),
+            snapshot=_snapshot(),
+            measurements=(),
+        )
+
+
+@settings(max_examples=8, deadline=None, derandomize=True)
+@given(
+    profile_order=st.permutations((0, 1)),
+    measurement_order=st.permutations((0, 1)),
+    snapshot_order=st.permutations((0, 1, 2)),
+)
+def test_nonsemantic_input_permutations_produce_identical_plan(
+    profile_order: list[int],
+    measurement_order: list[int],
+    snapshot_order: list[int],
+) -> None:
+    first = _profile(1)
+    second = _second_worker()
+    profiles = [first, second]
+    requests = [_request("first", first), _request("second", second)]
+    measurements = [_measurement(first, 512), _measurement(second, 512)]
+    residents = [
+        planner.ResidentIdentity(_digest("resident-a"), 256, 0, 0, 3),
+        planner.ResidentIdentity(_digest("resident-b"), 256, 0, 0, 1),
+        planner.ResidentIdentity(_digest("resident-c"), 256, 0, 0, 2),
+    ]
+    baseline = _build(
+        profiles,
+        requests,
+        snapshot=_snapshot(*residents),
+        measurements=tuple(measurements),
+    )
+    permuted = _build(
+        [profiles[index] for index in profile_order],
+        requests,
+        snapshot=_snapshot(*(residents[index] for index in snapshot_order)),
+        measurements=tuple(measurements[index] for index in measurement_order),
+    )
+    assert permuted == baseline
+
+
+@settings(max_examples=6, deadline=None, derandomize=True)
+@given(
+    tenants=st.lists(
+        st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=1, max_size=8),
+        min_size=2,
+        max_size=6,
+        unique=True,
+    ),
+)
+def test_tenant_digest_is_a_strict_batch_isolation_key(tenants: list[str]) -> None:
+    profile = _profile(0)
+    requests = [
+        _request(f"request-{index}", profile, tenant=tenant)
+        for index, tenant in enumerate(tenants)
+    ]
+    plan = _build([profile], requests)
+    assert len(plan.groups) == len(tenants)
+    assert all(group.member_count == 1 for group in plan.groups)
+    assert len({group.group_key_digest for group in plan.groups}) == len(tenants)
+
+
+@settings(max_examples=9, deadline=None, derandomize=True)
+@given(
+    field=st.sampled_from(
+        (
+            "profile_id",
+            "tenant_digest",
+            "identity_fingerprint",
+            "schema_version",
+            "question_schema_digest",
+            "token_budget",
+            "calibration_digest",
+            "trust_sensitivity_class",
+            "deadline_bucket_ms",
+        ),
+    ),
+)
+def test_every_capability_and_isolation_field_changes_group_identity(field: str) -> None:
+    values: dict[str, object] = {
+        "profile_id": "profile-one",
+        "tenant_digest": _digest("tenant-one"),
+        "identity_fingerprint": _digest("identity-one"),
+        "schema_version": "schema/v1",
+        "question_schema_digest": _digest("questions-one"),
+        "token_budget": 128,
+        "calibration_digest": _digest("calibration-one"),
+        "trust_sensitivity_class": "confidential",
+        "deadline_bucket_ms": 1000,
+    }
+    alternatives: dict[str, object] = {
+        "profile_id": "profile-two",
+        "tenant_digest": _digest("tenant-two"),
+        "identity_fingerprint": _digest("identity-two"),
+        "schema_version": "schema/v2",
+        "question_schema_digest": _digest("questions-two"),
+        "token_budget": 256,
+        "calibration_digest": _digest("calibration-two"),
+        "trust_sensitivity_class": "restricted",
+        "deadline_bucket_ms": 2000,
+    }
+    baseline = planner.GroupingEvidence(**values)
+    mutated_values = {**values, field: alternatives[field]}
+    mutated = planner.GroupingEvidence(**mutated_values)
+    assert planner.canonical_digest(baseline.to_dict()) != planner.canonical_digest(
+        mutated.to_dict(),
+    )
+
+
+@settings(max_examples=10, deadline=None, derandomize=True)
+@given(
+    field=st.sampled_from(
+        (
+            "max_requests",
+            "max_profiles",
+            "max_loaded_identities",
+            "resident_byte_budget",
+            "max_total_request_bytes",
+        ),
+    ),
+    invalid=st.one_of(
+        st.none(),
+        st.booleans(),
+        st.floats(allow_nan=True, allow_infinity=True),
+        st.text(min_size=1, max_size=8),
+    ),
+)
+def test_planner_bounds_reject_every_non_integer_without_type_errors(
+    field: str,
+    invalid: object,
+) -> None:
+    values: dict[str, object] = {
+        "max_requests": 10,
+        "max_profiles": 2,
+        "max_loaded_identities": 2,
+        "resident_byte_budget": 4096,
+        "max_total_request_bytes": 8192,
+    }
+    values[field] = invalid
+    with pytest.raises(planner.PlannerInputError, match=field):
+        planner.PlannerBounds(**values)
+
+
+@settings(max_examples=10, deadline=None, derandomize=True)
+@given(
+    field=st.sampled_from(
+        (
+            "token_budget",
+            "state_bytes",
+            "question_count",
+            "max_choice_options",
+            "max_score_levels",
+            "request_bytes",
+            "deadline_bucket_ms",
+        ),
+    ),
+    invalid=st.sampled_from((True, 1.5, -1, 10**100)),
+)
+def test_request_resource_fields_reject_non_integer_or_unbounded_values(
+    field: str,
+    invalid: object,
+) -> None:
+    profile = _profile(0)
+    request = _request("resource-request", profile)
+    malformed = planner.BatchRequest(**{**request.to_dict(), field: invalid})
+    with pytest.raises(planner.PlannerInputError, match="exceeds admitted bounds"):
+        _build([profile], [malformed])
+
+
+def test_profile_and_resident_resource_integers_have_absolute_ceilings() -> None:
+    profile = _profile(1)
+    residency = profile["residency"]
+    assert isinstance(residency, dict)
+    residency["resident_byte_budget"] = 10**100
+    with pytest.raises(planner.PlannerInputError, match="resident byte budget"):
+        _build(
+            [profile],
+            [_request("request", profile)],
+            measurements=(_measurement(profile),),
+        )
+
+    external = _profile(0)
+    for field in ("lease_count", "inflight_count", "last_used_sequence"):
+        values = {
+            "fingerprint": _digest(field),
+            "measured_bytes": 1,
+            "lease_count": 0,
+            "inflight_count": 0,
+            "last_used_sequence": 0,
+        }
+        values[field] = 10**100
+        resident = planner.ResidentIdentity(**values)
+        with pytest.raises(planner.PlannerInputError, match="resident counters"):
+            _build(
+                [external],
+                [_request(f"request-{field}", external)],
+                snapshot=_snapshot(resident),
+            )
+
+
+@settings(max_examples=6, deadline=None, derandomize=True)
+@given(order=st.permutations((0, 1, 2, 3)))
+def test_requested_leased_and_inflight_identities_are_never_eviction_candidates(
+    order: list[int],
+) -> None:
+    resident_profile = _profile(1)
+    new_profile = _second_worker()
+    identity = resident_profile["identity"]
+    assert isinstance(identity, dict) and isinstance(identity["fingerprint"], str)
+    residents = [
+        planner.ResidentIdentity(identity["fingerprint"], 512, 0, 0, 0),
+        planner.ResidentIdentity(_digest("leased"), 512, 1, 0, 0),
+        planner.ResidentIdentity(_digest("inflight"), 512, 0, 1, 0),
+        planner.ResidentIdentity(_digest("eligible"), 512, 0, 0, 0),
+    ]
+    plan = _build(
+        [resident_profile, new_profile],
+        [
+            _request("resident", resident_profile),
+            _request("new", new_profile),
+        ],
+        snapshot=_snapshot(*(residents[index] for index in order)),
+        measurements=(_measurement(new_profile, 512),),
+    )
+    by_fingerprint = {item.fingerprint: item for item in plan.evictions}
+    for protected in residents[:3]:
+        assert by_fingerprint[protected.fingerprint].decision == "retain"
+    assert by_fingerprint[residents[0].fingerprint].reason == "requested_identity"
+    assert by_fingerprint[residents[1].fingerprint].reason == "active_lease"
+    assert by_fingerprint[residents[2].fingerprint].reason == "inflight_request"
+
+
+@settings(max_examples=2, deadline=None, derandomize=True)
+@given(order=st.permutations((0, 1)))
+def test_equal_age_eviction_ties_are_broken_by_fingerprint(order: list[int]) -> None:
+    profile = _profile(1)
+    residents = [
+        planner.ResidentIdentity(_digest("tie-a"), 512, 0, 0, 7),
+        planner.ResidentIdentity(_digest("tie-b"), 512, 0, 0, 7),
+    ]
+    plan = _build(
+        [profile],
+        [_request("request", profile)],
+        snapshot=_snapshot(*(residents[index] for index in order)),
+        measurements=(_measurement(profile, 512),),
+    )
+    evicted = [item.fingerprint for item in plan.evictions if item.decision == "plan_evict"]
+    assert evicted == [min(resident.fingerprint for resident in residents)]
+
+
+@settings(max_examples=4, deadline=None, derandomize=True)
+@given(kind=st.sampled_from(("profile", "resident", "measurement", "request")))
+def test_duplicate_identity_and_request_dimensions_always_fail_closed(kind: str) -> None:
+    profile = _profile(1)
+    request = _request("request", profile)
+    if kind == "profile":
+        duplicate = copy.deepcopy(profile)
+        duplicate["profile_id"] = "duplicate-worker-profile"
+        with pytest.raises(planner.PlannerInputError, match="duplicate admitted identity"):
+            _build([profile, duplicate], [request], measurements=(_measurement(profile),))
+    elif kind == "resident":
+        resident = planner.ResidentIdentity(_digest("resident"), 1, 0, 0, 0)
+        with pytest.raises(planner.PlannerInputError, match="duplicate resident"):
+            _build(
+                [profile],
+                [request],
+                snapshot=_snapshot(resident, resident),
+                measurements=(_measurement(profile),),
+            )
+    elif kind == "measurement":
+        measurement = _measurement(profile)
+        with pytest.raises(planner.PlannerInputError, match="duplicate identity measurement"):
+            _build([profile], [request], measurements=(measurement, measurement))
+    else:
+        with pytest.raises(planner.PlannerInputError, match="duplicate request_id"):
+            _build([profile], [request, request], measurements=(_measurement(profile),))
+
+
+@settings(max_examples=6, deadline=None, derandomize=True)
+@given(
+    secret=st.from_regex(r"[A-Za-z][A-Za-z0-9]{7,31}", fullmatch=True),
+    digest_field=st.sampled_from(("tenant_digest", "question_schema_digest")),
+)
+def test_raw_request_identifiers_and_placeholder_digests_never_enter_evidence(
+    secret: str,
+    digest_field: str,
+) -> None:
+    profile = _profile(0)
+    request = _request(secret, profile, tenant=f"tenant-{secret}")
+    plan = _build([profile], [request])
+    assert secret.encode() not in planner.canonical_json_bytes(plan.to_dict())
+
+    malformed = planner.BatchRequest(
+        **{
+            **request.to_dict(),
+            digest_field: "sha256:" + "0" * 64,
+        },
+    )
+    with pytest.raises(planner.PlannerInputError) as error:
+        _build([profile], [malformed])
+    assert secret not in str(error.value)
+
+
+def _tamper_path(document: dict[str, object], path: tuple[object, ...]) -> None:
+    current: object = document
+    for part in path[:-1]:
+        if isinstance(part, int):
+            assert isinstance(current, list)
+            current = current[part]
+        else:
+            assert isinstance(current, dict)
+            current = current[part]
+    final = path[-1]
+    if isinstance(final, int):
+        assert isinstance(current, list)
+        current[final] = "tampered"
+    else:
+        assert isinstance(current, dict)
+        current[final] = "tampered"
+
+
+@settings(max_examples=6, deadline=None, derandomize=True)
+@given(
+    path=st.sampled_from(
+        (
+            ("plan_digest",),
+            ("evidence", "evidence_digest"),
+            ("groups", 0, "group_id"),
+            ("groups", 0, "key", "tenant_digest"),
+            ("residency", 0, "reason"),
+            ("bounds", "max_requests"),
+        ),
+    ),
+)
+def test_digest_replay_rejects_tamper_at_every_evidence_layer(
+    path: tuple[object, ...],
+) -> None:
+    profile = _profile(0)
+    request = _request("request", profile)
+    document = _build([profile], [request]).to_dict()
+    _tamper_path(document, path)
+    with pytest.raises(planner.PlannerInputError, match="mismatch"):
+        planner.verify_batch_residency_plan(
+            document,
+            _schema(),
+            [profile],
+            [request],
+            bounds=_bounds(),
+            snapshot=_snapshot(),
+            measurements=(),
+        )
+
+
+@settings(max_examples=4, deadline=None, derandomize=True)
+@given(
+    flag=st.sampled_from(
+        (
+            "admission_performed",
+            "network_accessed",
+            "runtime_invoked",
+            "models_downloaded",
+        ),
+    ),
+)
+def test_every_side_effect_flag_is_false_and_fails_closed_when_changed(flag: str) -> None:
+    profile = _profile(0)
+    request = _request("request", profile)
+    document = _build([profile], [request]).to_dict()
+    assert all(
+        document[name] is False
+        for name in (
+            "admission_performed",
+            "network_accessed",
+            "runtime_invoked",
+            "models_downloaded",
+        )
+    )
+    document[flag] = True
+    with pytest.raises(planner.PlannerInputError, match="fail-closed"):
+        planner.verify_batch_residency_plan(
+            document,
             _schema(),
             [profile],
             [request],

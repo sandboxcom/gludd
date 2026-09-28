@@ -27,6 +27,8 @@ MAX_PLANNER_REQUESTS = 1024
 MAX_PLANNER_PROFILES = 64
 MAX_RESIDENT_IDENTITIES = 64
 MAX_RESIDENT_BYTES = 1 << 50
+MAX_RESIDENT_COUNTER = 1_000_000
+MAX_USAGE_SEQUENCE = (1 << 63) - 1
 MAX_TOTAL_REQUEST_BYTES = 1 << 30
 
 ADMITTED_PROFILE_STATES = ("shadow", "canary_1", "canary_5", "canary_25")
@@ -104,7 +106,11 @@ class PlannerBounds:
             ),
         )
         for name, value, minimum, maximum in checks:
-            if isinstance(value, bool) or not minimum <= value <= maximum:
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or not minimum <= value <= maximum
+            ):
                 raise PlannerInputError(
                     f"{name} must be between {minimum} and {maximum}",
                 )
@@ -550,6 +556,10 @@ def _profile_info(
         "resident_byte_budget",
         context="profile.residency",
     )
+    if resident_budget > MAX_RESIDENT_BYTES:
+        raise PlannerInputError(
+            f"profile {profile_id} resident byte budget exceeds planner ceiling",
+        )
     transport_kind = _string(transport, "kind", context="profile.transport")
     if ownership == "external_endpoint":
         if max_loaded != 0 or resident_budget != 0 or preloads:
@@ -645,6 +655,14 @@ def _validate_request_value(
         raise PlannerInputError(f"request {request_id} {message}")
 
 
+def _request_reference(request_id: object) -> str:
+    """Return a non-reversible reference suitable for validation errors."""
+
+    if not isinstance(request_id, str):
+        return "sha256:invalid-request-id"
+    return "sha256:" + hashlib.sha256(request_id.encode("utf-8")).hexdigest()
+
+
 def _request_fact(
     request: BatchRequest,
     profile: _ProfileInfo,
@@ -652,29 +670,30 @@ def _request_fact(
     ordinal: int,
 ) -> _RequestFact:
     request_id = request.request_id
+    request_reference = _request_reference(request_id)
     _validate_request_value(
         isinstance(request_id, str) and _IDENTIFIER.fullmatch(request_id) is not None,
-        request_id=str(request_id),
+        request_id=request_reference,
         message="request_id is invalid",
     )
     _validate_request_value(
-        _is_digest(request.tenant_digest, reject_sentinel=False),
-        request_id=request_id,
+        _is_digest(request.tenant_digest),
+        request_id=request_reference,
         message="tenant digest is invalid",
     )
     _validate_request_value(
-        _is_digest(request.question_schema_digest, reject_sentinel=False),
-        request_id=request_id,
+        _is_digest(request.question_schema_digest),
+        request_id=request_reference,
         message="question schema digest is invalid",
     )
     _validate_request_value(
         request.schema_version == profile.contract_version,
-        request_id=request_id,
+        request_id=request_reference,
         message="schema version is not admitted",
     )
     _validate_request_value(
         request.trust_sensitivity_class in {"public", "confidential", "restricted"},
-        request_id=request_id,
+        request_id=request_reference,
         message="trust sensitivity class is invalid",
     )
     _validate_request_value(
@@ -682,12 +701,12 @@ def _request_fact(
         and bool(request.question_types)
         and len(set(request.question_types)) == len(request.question_types)
         and set(request.question_types).issubset(profile.question_types),
-        request_id=request_id,
+        request_id=request_reference,
         message="question type exceeds capability",
     )
     _validate_request_value(
         request.state_shape in profile.state_shapes,
-        request_id=request_id,
+        request_id=request_reference,
         message="state shape exceeds capability",
     )
     integer_checks = (
@@ -704,19 +723,19 @@ def _request_fact(
             isinstance(value, int)
             and not isinstance(value, bool)
             and minimum <= value <= maximum,
-            request_id=request_id,
+            request_id=request_reference,
             message=f"{name} exceeds admitted bounds",
         )
     if "choice" in request.question_types:
         _validate_request_value(
             request.max_choice_options >= 2,
-            request_id=request_id,
+            request_id=request_reference,
             message="choice options are incomplete",
         )
     if "score" in request.question_types:
         _validate_request_value(
             request.max_score_levels >= 2,
-            request_id=request_id,
+            request_id=request_reference,
             message="score levels are incomplete",
         )
 
@@ -804,7 +823,7 @@ def _validate_snapshot(snapshot: ResidencySnapshot) -> dict[str, ResidentIdentit
         raise PlannerInputError("residency snapshot exceeds identity bound")
     loaded: dict[str, ResidentIdentity] = {}
     for resident in snapshot.loaded:
-        if not _is_digest(resident.fingerprint, reject_sentinel=False):
+        if not _is_digest(resident.fingerprint):
             raise PlannerInputError("resident fingerprint is invalid")
         if resident.fingerprint in loaded:
             raise PlannerInputError("duplicate resident identity")
@@ -819,8 +838,11 @@ def _validate_snapshot(snapshot: ResidencySnapshot) -> dict[str, ResidentIdentit
         if (
             not 1 <= resident.measured_bytes <= MAX_RESIDENT_BYTES
             or resident.lease_count < 0
+            or resident.lease_count > MAX_RESIDENT_COUNTER
             or resident.inflight_count < 0
+            or resident.inflight_count > MAX_RESIDENT_COUNTER
             or resident.last_used_sequence < 0
+            or resident.last_used_sequence > MAX_USAGE_SEQUENCE
         ):
             raise PlannerInputError("resident counters exceed bounds")
         loaded[resident.fingerprint] = resident
@@ -834,7 +856,7 @@ def _validate_measurements(
 ) -> dict[str, int]:
     measured: dict[str, int] = {}
     for measurement in measurements:
-        if not _is_digest(measurement.fingerprint, reject_sentinel=False):
+        if not _is_digest(measurement.fingerprint):
             raise PlannerInputError("measurement fingerprint is invalid")
         if measurement.fingerprint in measured:
             raise PlannerInputError("duplicate identity measurement")
@@ -1079,7 +1101,9 @@ def build_batch_residency_plan(
         seen_request_ids.add(request.request_id)
         profile_info = profile_by_id.get(request.profile_id)
         if profile_info is None:
-            raise PlannerInputError(f"request {request.request_id} references unknown profile")
+            raise PlannerInputError(
+                f"request {_request_reference(request.request_id)} references unknown profile",
+            )
         fact = _request_fact(request, profile_info, ordinal=ordinal)
         facts.append(fact)
         total_request_bytes += request.request_bytes
