@@ -19,6 +19,11 @@ def _documented_fields(runbook: str, label: str) -> tuple[str, ...]:
     return tuple(re.findall(r"`([^`]+)`", line))
 
 
+def _section(document: str, heading: str) -> str:
+    remainder = document.split(f"{heading}\n", maxsplit=1)[1]
+    return remainder.split("\n## ", maxsplit=1)[0]
+
+
 def test_feature_contract_links_operator_runbook_and_authority_is_bounded() -> None:
     assert RUNBOOK.is_file()
     feature = FEATURE.read_text(encoding="utf-8")
@@ -204,3 +209,62 @@ def test_runbook_pins_exact_evidence_fields_and_resource_bounds() -> None:
         "8 levels / 4,096 nodes / 256 KiB characters",
     ):
         assert bound in runbook
+
+
+def test_practitioner_ledger_pins_provenance_categories_and_reasoning() -> None:
+    ledger = _section(_runbook(), "## Practitioner-Issues Ledger")
+
+    assert "**Ledger snapshot:** 2026-09-27" in ledger
+    assert "**Long-lived-evidence result: NOT ESTABLISHED**" in ledger
+    assert "No cited issue has 90 days of public history" in ledger
+    assert "`aayushch/laya`" in ledger
+    assert "`zoedsy/openJEV`" in ledger
+    assert "https://github.com/aayushch/laya" not in ledger
+    assert "https://github.com/zoedsy/openJEV" not in ledger
+
+    required_sources = (
+        "https://github.com/NandhaKishorM/laya/issues/302",
+        "https://github.com/NandhaKishorM/laya/issues/384",
+        "https://huggingface.co/convaiinnovations/laya/discussions/2",
+        "https://github.com/NandhaKishorM/laya/issues/394",
+        "https://github.com/NandhaKishorM/laya/issues/285",
+        "https://github.com/NandhaKishorM/laya/issues/254",
+        "https://github.com/NandhaKishorM/laya/issues/334",
+        "https://github.com/NandhaKishorM/laya/issues/433",
+        "https://github.com/NandhaKishorM/laya/issues/585",
+        "https://github.com/NandhaKishorM/laya/pull/592",
+        "https://github.com/NandhaKishorM/laya/issues/399",
+        "https://github.com/razorback16/openjev/issues/5",
+        "https://github.com/razorback16/openjev/issues/6",
+    )
+    for source in required_sources:
+        assert source in ledger
+
+    entries = re.split(r"(?m)^### ", ledger)[1:]
+    assert len(entries) == 9
+    labels = (
+        "- **Categories:**",
+        "- **Source and status:**",
+        "- **Source fact:**",
+        "- **Gludd inference:**",
+        "- **Mitigation / test mapping:**",
+        "- **Residual risk:**",
+    )
+    covered_categories: set[str] = set()
+    for entry in entries:
+        for label in labels:
+            assert entry.count(label) == 1
+        category_line = next(
+            line for line in entry.splitlines() if line.startswith("- **Categories:**")
+        )
+        covered_categories.update(re.findall(r"`([^`]+)`", category_line))
+        assert entry.index("- **Source fact:**") < entry.index("- **Gludd inference:**")
+
+    assert covered_categories == {
+        "compatibility",
+        "operator-observability",
+        "schema/version",
+        "security",
+        "state/recovery",
+        "update",
+    }

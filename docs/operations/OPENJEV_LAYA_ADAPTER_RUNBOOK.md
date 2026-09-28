@@ -43,6 +43,215 @@ and were still too young to satisfy the ninety-day/two-stable-release maturity
 gate. Repeat that review for every update. Treat the contract's dated source and
 issue links as observations, never as a current availability or safety promise.
 
+## Practitioner-Issues Ledger
+
+**Ledger snapshot:** 2026-09-27
+
+**Long-lived-evidence result: NOT ESTABLISHED**
+
+No cited issue has 90 days of public history at this snapshot. The oldest cited
+report was shown as eight days old. These entries establish relevant failure
+classes, not a mature production record, and therefore do not satisfy or weaken
+the ninety-day/two-stable-release admission gate. Recheck every status and source
+at update review; a closed issue is not evidence that an arbitrary pin contains
+the fix.
+
+The names are deliberately scoped. `Laya` below means only
+`NandhaKishorM/laya` and its `convaiinnovations/laya` model community;
+`OpenJev` means only `razorback16/openjev`. The similarly named
+`aayushch/laya` event-processing project and the downstream `zoedsy/openJEV`
+wrapper are excluded. A source fact is what the linked reporter, maintainer, or
+tracker states; a Gludd inference is the local control derived from it. Neither
+is silently promoted into an upstream guarantee.
+
+### LAYA-302 — Jev-shaped transport is not semantic compatibility
+
+- **Categories:** `compatibility`, `schema/version`
+- **Source and status:** [Laya issue 302](https://github.com/NandhaKishorM/laya/issues/302),
+  opened 2026-09-24 and open at the ledger snapshot.
+- **Source fact:** The reporter tested Laya commit `1e28ac2` and found that 64
+  Choice options succeeded while 128 returned 422, a null Score level produced a
+  null legend rejected by `typesafe-sdk` 0.7.1, and Laya's entropy-derived
+  confidence differed materially from the draft TypeSafe formula.
+- **Gludd inference:** A Jev-shaped endpoint is not contract equivalence. Option
+  bounds, nullability, and confidence meaning belong to the exact provider,
+  schema, and calibration identity; thresholds cannot move between them.
+- **Mitigation / test mapping:** Keep the 20-option Gludd ceiling, closed
+  Choice/Noul/Score normalization, exact schema/capability binding, and
+  fail-closed unknown fields in `test_typed_decision_adapter_normalization.py`
+  and `test_typed_decision_adapter_normalization_properties.py`.
+- **Residual risk:** The report compares against a draft third-party contract,
+  the issue remains open, and no admitted transport exists; semantic parity must
+  be remeasured from pinned fixtures before any future shadow traffic.
+
+### LAYA-384 — state shape can change language routing
+
+- **Categories:** `compatibility`, `state/recovery`
+- **Source and status:** [Laya issue 384](https://github.com/NandhaKishorM/laya/issues/384),
+  opened 2026-09-24 and open at the ledger snapshot.
+- **Source fact:** On Laya 0.3.20, the reporter's German text inside a dictionary
+  state returned `english` with `language_undecided: true` and selected a
+  0.10-score checkpoint, while the same sentence as a string routed correctly.
+- **Gludd inference:** Payload shape can alter upstream routing and therefore the
+  effective model identity. Gludd must not let an upstream auto-router silently
+  choose or recover an identity, especially from an undecided result.
+- **Mitigation / test mapping:** Bind state shape, language/domain capability,
+  question schema, and profile identity in the planner; reject undecided routing
+  and cross-profile replay through
+  `test_typed_decision_batch_residency_planner.py` and
+  `test_typed_decision_adapter_offline_acceptance.py`.
+- **Residual risk:** The issue is open and its linked work did not establish a
+  released fix at this snapshot. Current profiles remain disabled and the
+  implemented planner never invokes routing or recovery.
+
+### LAYA-HF2-394 — confidence gates do not transfer
+
+- **Categories:** `compatibility`, `update`
+- **Source and status:** [model discussion 2](https://huggingface.co/convaiinnovations/laya/discussions/2)
+  was shown as opened eight days before the snapshot with no resolved marker;
+  [Laya issue 394](https://github.com/NandhaKishorM/laya/issues/394) opened
+  2026-09-24 and remained open.
+- **Source fact:** The model discussion reported all eight 20-option examples at
+  confidence 1.0, including three wrong answers, under the shipped 0.1006
+  temperature. The issue later measured a 0.85 gate selecting 9 of 12
+  20-option cases with 5 correct, while the same gate was perfect on its small
+  3-option sample; the loader clamp was described as a guardrail, not calibration.
+- **Gludd inference:** Upstream confidence is advisory evidence, never Gludd
+  authority. Calibration and abstention must bind exact source/model/tokenizer,
+  option count, language/domain slice, corpus, and formula.
+- **Mitigation / test mapping:** Preserve raw confidence only inside bounded
+  normalized evidence, keep admission closed, and require the frozen corpus,
+  held-out calibration, abstention/fallback, and drift-canary backlog gates before
+  Phase 5.
+- **Residual risk:** Both datasets are reporter-authored and small; they expose a
+  transfer failure but do not quantify production quality or supply a safe
+  threshold for Gludd.
+
+### LAYA-285 — release changes can stale benchmark evidence
+
+- **Categories:** `operator-observability`, `update`
+- **Source and status:** [Laya issue 285](https://github.com/NandhaKishorM/laya/issues/285),
+  opened 2026-09-23 and open at the ledger snapshot.
+- **Source fact:** The reporter states that inference paths, checkpoints, and
+  configurations changed after the committed benchmark tables were produced,
+  that some calibration numbers no longer reproduced, and that the repository
+  did not routinely rerun and bind those tables to raw results and environments.
+- **Gludd inference:** A release label or upstream headline number is not update
+  evidence. Every candidate identity needs fresh Gludd measurements with its
+  exact environment, corpus, and artifact pins.
+- **Mitigation / test mapping:** The compatibility/update checker binds immutable
+  source, runtime, model, tokenizer, renderer, and calibration pins; Phase 1 and
+  Phase 5 require independently retained raw evaluation evidence and the frozen
+  calibration harness.
+- **Residual risk:** The issue is open with no assigned owner on the snapshot;
+  upstream tables remain contextual observations and cannot promote a profile.
+
+### LAYA-254-334 — serving and tokenization need pre-work bounds
+
+- **Categories:** `security`
+- **Source and status:** [Laya issue 254](https://github.com/NandhaKishorM/laya/issues/254)
+  opened 2026-09-23 and was closed at the snapshot; [Laya issue 334](https://github.com/NandhaKishorM/laya/issues/334)
+  opened 2026-09-24 and was closed with linked pull request 335.
+- **Source fact:** Issue 254 reported timing-unsafe bearer comparison, missing
+  request/state/question limits, exception-text disclosure, and invalid port
+  acceptance. Issue 334 demonstrated that roughly 100,000 short answer options
+  could remain under the body cap yet cause one tokenizer call per option before
+  rejection, blocking a single inference worker.
+- **Gludd inference:** Neither upstream HTTP admission nor a body-size limit alone
+  is a Gludd security boundary. Cardinality, bytes, depth, work, authentication,
+  errors, and origin policy must be bounded before buffering, rendering, or
+  tokenization.
+- **Mitigation / test mapping:** Retain the 20-option, 32-question, byte, depth,
+  queue, deadline, and zero-retry limits; use bounded redacted errors and future
+  fake-server transport tests. Current normalization and resource property tests
+  execute before any network or runtime side effect.
+- **Residual risk:** Closed tracker status does not prove which release includes
+  each fix or that every entry point shares it. Exact pinned source review,
+  security policy, SBOM, transport tests, and Gludd-owned admission remain gates.
+
+### LAYA-433 — observer hooks can duplicate effects
+
+- **Categories:** `operator-observability`, `security`
+- **Source and status:** [Laya issue 433](https://github.com/NandhaKishorM/laya/issues/433),
+  opened 2026-09-24 and closed with linked pull request 435 at the snapshot.
+- **Source fact:** The reporter reproduced a default hook firing twice for one
+  `Router.predict` call and twice per request in `predict_batch`, because both
+  Router and Agent composed the defaults.
+- **Gludd inference:** Mutable upstream hooks cannot own logging, mutation, or
+  policy. A duplicate callback can duplicate disclosure, accounting, or an
+  external effect even when the model result is unchanged.
+- **Mitigation / test mapping:** Keep prediction redaction/injection hooks outside
+  the runtime adapter contract, immutable and copy-on-write when implemented;
+  require exactly-once, non-mutating, secret-safe tests. Existing dry-run and
+  acceptance tests pin redaction and every inert side-effect flag.
+- **Residual risk:** The linked fix is not proof for an unpinned install, and
+  Gludd's future hook boundary is not implemented; no hook may gain admission or
+  task-policy authority.
+
+### LAYA-585-592 — a metric name can hide a changed quantity
+
+- **Categories:** `operator-observability`, `schema/version`
+- **Source and status:** [Laya issue 585](https://github.com/NandhaKishorM/laya/issues/585)
+  opened 2026-09-26 and was closed at the snapshot, while its linked
+  [pull request 592](https://github.com/NandhaKishorM/laya/pull/592) remained open.
+- **Source fact:** The issue showed batched evaluation storing elapsed time divided
+  by chunk size as each row's latency, mixing throughput share with request wait
+  under one metric; the JSON report did not disclose actual grouping. The linked
+  open pull request proposed separating those quantities and recording timing
+  configuration.
+- **Gludd inference:** Metric compatibility requires a named quantity, unit,
+  cohort, grouping, and executed configuration, not merely the same field name.
+  A closed issue plus an open fix must be treated as unresolved for pinning.
+- **Mitigation / test mapping:** Bind future metrics to schema/version and actual
+  batch-plan identity; retain deterministic group/evidence digests and never use
+  upstream latency labels as promotion thresholds without a Gludd measurement
+  contract.
+- **Residual risk:** Review was still active and the implemented offline report
+  intentionally records no live latency. Runtime metric definitions, alerts, and
+  canary evaluation remain Phase 5 prerequisites.
+
+### LAYA-399 — upstream CI state is not supply-chain evidence
+
+- **Categories:** `security`, `update`
+- **Source and status:** [Laya issue 399](https://github.com/NandhaKishorM/laya/issues/399),
+  opened 2026-09-24 and open at the ledger snapshot.
+- **Source fact:** From repository settings and an Actions sample, the reporter
+  identified an obsolete required Python check, suites that did not execute,
+  72 of 100 sampled main push runs cancelled, unpinned or over-privileged release
+  concerns, and no private vulnerability reporting or `SECURITY.md`.
+- **Gludd inference:** A passing upstream head or badge cannot attest every merged
+  state, dependency, release action, or security response path. Gludd must verify
+  the exact acquired archive and treat security-policy absence as a maturity gap.
+- **Mitigation / test mapping:** Phase 1 requires immutable provenance, license,
+  SBOM, and security review; Phase 5 requires Gludd's own hermetic, coverage,
+  lint, type, security, and rollback gates. Upstream CI is supporting evidence
+  only.
+- **Residual risk:** The issue remains open and several remedies require
+  maintainer settings. The ninety-day/two-release/security-policy gate remains
+  closed even if a later combined head is green.
+
+### OPENJEV-5-6 — benchmark context and sealed quality need provenance
+
+- **Categories:** `operator-observability`, `update`
+- **Source and status:** [OpenJev issue 5](https://github.com/razorback16/openjev/issues/5)
+  opened 2026-09-22 and [OpenJev issue 6](https://github.com/razorback16/openjev/issues/6)
+  opened 2026-09-23; both were open with no linked development at the snapshot.
+- **Source fact:** Issue 5 reports that the throughput table omitted state/token
+  size, runtime flags, a reproducible script, and full-window measurements while
+  documented backends exposed different prompt limits. Issue 6 reports a large
+  public-versus-sealed accuracy gap in JevBench v1.4 and lower placement than its
+  v1.3 rows after the evaluation changed.
+- **Gludd inference:** Throughput without request shape and quality without a
+  sealed, versioned method cannot size capacity or authorize an update. External
+  OpenJev service claims remain operator-owned observations, not readiness.
+- **Mitigation / test mapping:** Bind benchmark method, corpus version, request
+  shape, prompt bounds, hardware/runtime flags, raw results, and exact identity;
+  apply Gludd's frozen corpus and shadow-only evaluation before any canary. The
+  current dry run proves only evidence consistency and side-effect freedom.
+- **Residual risk:** OpenJev's cited public tracker history is only days old and
+  these reporter claims have no linked fix. Long-term availability, security
+  response, reproducibility, and full-context resource behavior remain unknown.
+
 ## Phase 1: Offline Discovery
 
 Discovery means proving what is already on disk; it does not mean contacting an
