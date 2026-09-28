@@ -19,6 +19,7 @@ from scripts import accept_typed_decision_adapter_candidate as acceptance
 from scripts import check_typed_decision_adapter_update as update
 from scripts import normalize_typed_decision_adapter_fixture as normalizer
 from scripts import plan_typed_decision_adapter_batch as planner
+from scripts import render_typed_decision_adapter_dry_run as dry_run
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = ROOT / "docs/releases/typed-decision-adapter-contract-v1.schema.json"
@@ -860,3 +861,370 @@ def test_stage_side_effect_flag_drift_fails_closed(
     )
     with pytest.raises(acceptance.AcceptanceError, match="rejected: normalization"):
         acceptance.run_offline_acceptance(schema, lanes)
+
+
+EXPECTED_DRY_RUN_DIGEST = (
+    "sha256:569516688988b2b4fd5838ad79c577057302270e8713c918c020d2aa939884f9"
+)
+
+
+def test_operator_dry_run_is_typed_deterministic_and_side_effect_free(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    schema = _schema()
+    lanes = _lanes(tmp_path)
+
+    def forbidden_apply(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("dry-run attempted persistence")
+
+    monkeypatch.setattr(update, "persist_prepared_update", forbidden_apply)
+    first = dry_run.build_dry_run_report(schema, lanes)
+    permuted = tuple(
+        dataclasses.replace(
+            lane,
+            requests=tuple(reversed(lane.requests)),
+            normalization_fixtures=tuple(reversed(lane.normalization_fixtures)),
+        )
+        for lane in reversed(lanes)
+    )
+    second = dry_run.build_dry_run_report(schema, permuted)
+
+    assert first == second
+    assert first.report_digest == EXPECTED_DRY_RUN_DIGEST
+    assert dry_run.verify_dry_run_report(first.to_dict(), schema, lanes) == first
+    assert dry_run.render_dry_run_report(first) == dry_run.render_dry_run_report(second)
+    assert dry_run.render_dry_run_report(first).endswith(b"\n")
+    assert all(
+        getattr(first, flag) is False for flag in dry_run.DRY_RUN_INERT_FLAGS
+    )
+    assert all(not lane.prepared_update_path.exists() for lane in lanes)
+
+    for lane in first.lanes:
+        assert tuple(stage.stage for stage in lane.stages) == dry_run.DRY_RUN_STAGE_ORDER
+        assert tuple(stage.status for stage in lane.stages) == tuple(
+            dry_run.DRY_RUN_STAGE_STATUS[stage]
+            for stage in dry_run.DRY_RUN_STAGE_ORDER
+        )
+        assert lane.rollback.required is True
+        assert lane.rollback.target_state == "disabled"
+        assert lane.rollback.durable is False
+        assert all(mode.enabled is False for mode in lane.recovery_modes)
+        assert all(
+            getattr(stage, flag) is False
+            for stage in lane.stages
+            for flag in dry_run.STAGE_INERT_FLAGS
+        )
+
+
+def test_dry_run_rejects_malformed_identity_before_render(tmp_path: Path) -> None:
+    lanes = list(_lanes(tmp_path))
+    candidate = copy.deepcopy(lanes[0].candidate_profile)
+    identity = candidate["identity"]
+    assert isinstance(identity, dict)
+    identity["fingerprint"] = "sha256:" + "0" * 64
+    lanes[0] = dataclasses.replace(lanes[0], candidate_profile=candidate)
+
+    with pytest.raises(dry_run.DryRunReportError, match="rejected: compatibility"):
+        dry_run.build_dry_run_report(_schema(), tuple(lanes))
+    assert not lanes[0].prepared_update_path.exists()
+
+
+def test_dry_run_receipt_cannot_cross_profile_version_or_tenant(
+    tmp_path: Path,
+) -> None:
+    schema = _schema()
+    lanes = _lanes(tmp_path)
+    document = dry_run.build_dry_run_report(schema, lanes).to_dict()
+
+    changed_fixture = dataclasses.replace(
+        lanes[0].normalization_fixtures[0],
+        response_schema_version="jev-systemone-observed-response/2099-01-01",
+    )
+    version_lane = dataclasses.replace(
+        lanes[0],
+        normalization_fixtures=(changed_fixture, *lanes[0].normalization_fixtures[1:]),
+    )
+    profile_lane = _lane(
+        tmp_path / "other-profile",
+        provider="other-openjev",
+        profile_index=0,
+        examples=(
+            ("openjev-choice-normalization", "acceptance-choice-1"),
+            ("openjev-score-normalization", "acceptance-score-1"),
+        ),
+    )
+    tenant_lane = dataclasses.replace(
+        lanes[0],
+        requests=tuple(
+            dataclasses.replace(request, tenant_digest=_digest("dry-run-other-tenant"))
+            for request in lanes[0].requests
+        ),
+    )
+
+    for changed_lanes in (
+        (version_lane, lanes[1]),
+        (profile_lane, lanes[1]),
+        (tenant_lane, lanes[1]),
+    ):
+        with pytest.raises(dry_run.DryRunReportError):
+            dry_run.verify_dry_run_report(document, schema, changed_lanes)
+
+
+def test_dry_run_stage_order_skip_and_duplication_fail_closed(tmp_path: Path) -> None:
+    report = dry_run.build_dry_run_report(_schema(), _lanes(tmp_path)).to_dict()
+    lanes = report["lanes"]
+    assert isinstance(lanes, list) and isinstance(lanes[0], dict)
+    stages = lanes[0]["stages"]
+    assert isinstance(stages, list)
+
+    for order in itertools.permutations(range(len(stages))):
+        if order == tuple(range(len(stages))):
+            continue
+        document = copy.deepcopy(report)
+        lane_documents = document["lanes"]
+        assert isinstance(lane_documents, list) and isinstance(lane_documents[0], dict)
+        lane_documents[0]["stages"] = [copy.deepcopy(stages[index]) for index in order]
+        with pytest.raises(dry_run.DryRunReportError, match="rejected: report"):
+            dry_run.verify_dry_run_report(document, _schema(), _lanes(tmp_path))
+
+    for changed_stages in (stages[:-1], [*stages, copy.deepcopy(stages[-1])]):
+        document = copy.deepcopy(report)
+        lane_documents = document["lanes"]
+        assert isinstance(lane_documents, list) and isinstance(lane_documents[0], dict)
+        lane_documents[0]["stages"] = changed_stages
+        with pytest.raises(dry_run.DryRunReportError, match="rejected: report"):
+            dry_run.verify_dry_run_report(document, _schema(), _lanes(tmp_path))
+
+
+def test_dry_run_hashes_secret_provenance_and_payload_identifiers(tmp_path: Path) -> None:
+    secret = "DryRun-Leak-Marker-518"
+    lanes = _lanes(tmp_path)
+    lane = lanes[0]
+    baseline = copy.deepcopy(lane.baseline_profile)
+    candidate = copy.deepcopy(lane.candidate_profile)
+    shadow = copy.deepcopy(lane.shadow_profile)
+    assert isinstance(baseline, dict) and isinstance(candidate, dict)
+    assert isinstance(shadow, dict)
+    for profile in (baseline, candidate, shadow):
+        source = profile["source_pin"]
+        assert isinstance(source, dict)
+        source["repository"] = f"https://example.invalid/{secret}"
+
+    fixture = lane.normalization_fixtures[0]
+    upstream_request = copy.deepcopy(fixture.upstream_request)
+    assert isinstance(upstream_request, dict)
+    upstream_request["state"] = secret
+    secret_fixture = dataclasses.replace(
+        fixture,
+        fixture_id=f"{secret}-fixture",
+        request_id=f"{secret}-request",
+        upstream_request=upstream_request,
+    )
+    secret_lane = dataclasses.replace(
+        lane,
+        lane_id=secret,
+        actor_id=secret,
+        baseline_profile=baseline,
+        candidate_profile=candidate,
+        shadow_profile=shadow,
+        requests=(_batch_request(shadow, secret_fixture), *lane.requests[1:]),
+        normalization_fixtures=(secret_fixture, *lane.normalization_fixtures[1:]),
+    )
+
+    rendered = dry_run.render_dry_run_report(
+        dry_run.build_dry_run_report(_schema(), (secret_lane, lanes[1])),
+    )
+    assert secret.encode() not in rendered
+    assert not secret_lane.prepared_update_path.exists()
+
+
+def test_dry_run_document_rejects_every_side_effect_flag_drift(tmp_path: Path) -> None:
+    schema = _schema()
+    lanes = _lanes(tmp_path)
+    report = dry_run.build_dry_run_report(schema, lanes).to_dict()
+    mutations: list[dict[str, object]] = []
+    for flag in dry_run.DRY_RUN_INERT_FLAGS:
+        document = copy.deepcopy(report)
+        document[flag] = True
+        mutations.append(document)
+
+    for flag in dry_run.STAGE_INERT_FLAGS:
+        document = copy.deepcopy(report)
+        lane_documents = document["lanes"]
+        assert isinstance(lane_documents, list) and isinstance(lane_documents[0], dict)
+        stages = lane_documents[0]["stages"]
+        assert isinstance(stages, list) and isinstance(stages[0], dict)
+        stages[0][flag] = True
+        mutations.append(document)
+
+    for document in mutations:
+        with pytest.raises(dry_run.DryRunReportError, match="rejected: report"):
+            dry_run.verify_dry_run_report(document, schema, lanes)
+
+
+def _reseal_dry_run_document(document: dict[str, object]) -> None:
+    lane_documents = document.get("lanes")
+    if isinstance(lane_documents, list):
+        for lane in lane_documents:
+            if isinstance(lane, dict):
+                lane["lane_digest"] = update.canonical_digest(
+                    {key: value for key, value in lane.items() if key != "lane_digest"},
+                )
+    document["report_digest"] = update.canonical_digest(
+        {key: value for key, value in document.items() if key != "report_digest"},
+    )
+
+
+def test_dry_run_rejects_resealed_nested_contract_tamper(tmp_path: Path) -> None:
+    schema = _schema()
+    lanes = _lanes(tmp_path)
+    report = dry_run.build_dry_run_report(schema, lanes).to_dict()
+    mutations: list[dict[str, object]] = []
+
+    def first_lane(document: dict[str, object]) -> dict[str, object]:
+        lane_documents = document["lanes"]
+        assert isinstance(lane_documents, list) and isinstance(lane_documents[0], dict)
+        return lane_documents[0]
+
+    changed = copy.deepcopy(report)
+    first_lane(changed)["unexpected"] = False
+    mutations.append(changed)
+
+    changed = copy.deepcopy(report)
+    compatibility = first_lane(changed)["compatibility"]
+    assert isinstance(compatibility, dict)
+    compatibility.pop("status")
+    mutations.append(changed)
+
+    changed = copy.deepcopy(report)
+    compatibility = first_lane(changed)["compatibility"]
+    assert isinstance(compatibility, dict)
+    compatibility["status"] = "COMPATIBLE_NOOP"
+    mutations.append(changed)
+
+    changed = copy.deepcopy(report)
+    provenance = first_lane(changed)["provenance"]
+    assert isinstance(provenance, dict)
+    provenance["schema_digest"] = _digest("foreign-schema")
+    mutations.append(changed)
+
+    changed = copy.deepcopy(report)
+    provenance = first_lane(changed)["provenance"]
+    assert isinstance(provenance, dict)
+    provenance["unexpected"] = _digest("extra-provenance")
+    mutations.append(changed)
+
+    changed = copy.deepcopy(report)
+    rollback = first_lane(changed)["rollback"]
+    assert isinstance(rollback, dict)
+    rollback["durable"] = True
+    mutations.append(changed)
+
+    changed = copy.deepcopy(report)
+    rollback = first_lane(changed)["rollback"]
+    assert isinstance(rollback, dict)
+    rollback["unexpected"] = False
+    mutations.append(changed)
+
+    changed = copy.deepcopy(report)
+    recovery_modes = first_lane(changed)["recovery_modes"]
+    assert isinstance(recovery_modes, list) and isinstance(recovery_modes[0], dict)
+    recovery_modes[0]["enabled"] = True
+    mutations.append(changed)
+
+    changed = copy.deepcopy(report)
+    recovery_modes = first_lane(changed)["recovery_modes"]
+    assert isinstance(recovery_modes, list)
+    recovery_modes.pop()
+    mutations.append(changed)
+
+    changed = copy.deepcopy(report)
+    stages = first_lane(changed)["stages"]
+    assert isinstance(stages, list)
+    stages[0], stages[1] = stages[1], stages[0]
+    mutations.append(changed)
+
+    changed = copy.deepcopy(report)
+    stages = first_lane(changed)["stages"]
+    assert isinstance(stages, list)
+    stages.pop()
+    mutations.append(changed)
+
+    changed = copy.deepcopy(report)
+    stages = first_lane(changed)["stages"]
+    assert isinstance(stages, list)
+    stages[0] = "not-an-object"
+    mutations.append(changed)
+
+    changed = copy.deepcopy(report)
+    stages = first_lane(changed)["stages"]
+    assert isinstance(stages, list) and isinstance(stages[0], dict)
+    stages[0]["predecessor_digest"] = "not-a-digest"
+    mutations.append(changed)
+
+    changed = copy.deepcopy(report)
+    first_lane(changed)["normalization_kinds"] = ["choice", "choice"]
+    mutations.append(changed)
+
+    for document in mutations:
+        _reseal_dry_run_document(document)
+        with pytest.raises(dry_run.DryRunReportError, match="rejected: report"):
+            dry_run.verify_dry_run_report(document, schema, lanes)
+
+    wrong_collection = copy.deepcopy(report)
+    wrong_collection["lanes"] = "not-a-list"
+    _reseal_dry_run_document(wrong_collection)
+    with pytest.raises(dry_run.DryRunReportError, match="rejected: report"):
+        dry_run.verify_dry_run_report(wrong_collection, schema, lanes)
+
+    wrong_lane = copy.deepcopy(report)
+    lane_documents = wrong_lane["lanes"]
+    assert isinstance(lane_documents, list)
+    lane_documents[0] = "not-an-object"
+    _reseal_dry_run_document(wrong_lane)
+    with pytest.raises(dry_run.DryRunReportError, match="rejected: report"):
+        dry_run.verify_dry_run_report(wrong_lane, schema, lanes)
+
+    invalid_report = dataclasses.replace(
+        dry_run.build_dry_run_report(schema, lanes),
+        report_digest=_digest("forged-report"),
+    )
+    with pytest.raises(dry_run.DryRunReportError, match="rejected: report"):
+        dry_run.render_dry_run_report(invalid_report)
+
+
+def test_dry_run_build_boundaries_fail_before_side_effects(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    schema = _schema()
+    lanes = _lanes(tmp_path)
+
+    with pytest.raises(dry_run.DryRunReportError, match="rejected: inputs"):
+        dry_run.build_dry_run_report(schema, ())
+
+    duplicate = dataclasses.replace(lanes[1], lane_id=lanes[0].lane_id)
+    with pytest.raises(dry_run.DryRunReportError, match="rejected: inputs"):
+        dry_run.build_dry_run_report(schema, (lanes[0], duplicate))
+
+    bad_shadow = dataclasses.replace(
+        lanes[0],
+        shadow_profile=copy.deepcopy(lanes[0].candidate_profile),
+    )
+    with pytest.raises(dry_run.DryRunReportError, match="shadow_projection"):
+        dry_run.build_dry_run_report(schema, (bad_shadow, lanes[1]))
+
+    small_bounds = dataclasses.replace(lanes[0].bounds, max_requests=1)
+    bad_batch = dataclasses.replace(lanes[0], bounds=small_bounds)
+    with pytest.raises(dry_run.DryRunReportError, match="batch_residency"):
+        dry_run.build_dry_run_report(schema, (bad_batch, lanes[1]))
+
+    with pytest.raises(dry_run.DryRunReportError, match="fixture_coverage"):
+        dry_run.build_dry_run_report(schema, (lanes[0],))
+
+    monkeypatch.setattr(acceptance, "_rollback_is_verified", lambda *_args: False)
+    with pytest.raises(dry_run.DryRunReportError, match="rejected: rollback"):
+        dry_run.build_dry_run_report(schema, lanes)
+
+    assert all(not lane.prepared_update_path.exists() for lane in lanes)
