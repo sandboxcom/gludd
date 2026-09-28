@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import dataclasses
 import hashlib
+import itertools
 import json
 import stat
 from collections.abc import Iterator, Mapping
@@ -12,8 +13,11 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 from scripts import accept_typed_decision_adapter_candidate as acceptance
 from scripts import check_typed_decision_adapter_update as update
+from scripts import normalize_typed_decision_adapter_fixture as normalizer
 from scripts import plan_typed_decision_adapter_batch as planner
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -23,7 +27,7 @@ EXPECTED_SCHEMA_DIGEST = (
     "sha256:1082d5b5a024f62514fd0bf6c23f2cbe2deaed2f26900010082c98dabdb60468"
 )
 EXPECTED_ACCEPTANCE_DIGEST = (
-    "sha256:5601bb2507bcefc1cb04075127626c0da80be244dee509bce03825b8484eb27c"
+    "sha256:f88d65ccdf11664ed81062b702ed7e7dddab0fc16bd58bdfbbe02e77d0f3873c"
 )
 EXPECTED_STAGE_DIGESTS = {
     "openjev": (
@@ -270,8 +274,14 @@ def test_exact_pinned_pipeline_is_redacted_idempotent_and_replayable(
     assert acceptance.verify_offline_acceptance(first.to_dict(), schema, lanes) == first
     assert first.schema_digest == EXPECTED_SCHEMA_DIGEST
     assert first.receipt_digest == EXPECTED_ACCEPTANCE_DIGEST
+    lane_ids = {
+        acceptance._reference("lane_id", lane.lane_id): lane.lane_id for lane in lanes
+    }
     stage_digests = {
-        lane.lane_id: (lane.update_plan_digest, lane.batch_plan_digest)
+        lane_ids[lane.lane_reference]: (
+            lane.update_plan_digest,
+            lane.batch_plan_digest,
+        )
         for lane in first.lanes
     }
     assert stage_digests == EXPECTED_STAGE_DIGESTS
@@ -630,3 +640,223 @@ def test_internal_handoff_shapes_reject_ambiguous_or_noncanonical_inputs(
             (request,),
             (noncanonical_fixture,),
         )
+
+
+def test_stage_chain_rejects_every_reorder_skip_and_duplication(tmp_path: Path) -> None:
+    receipt = acceptance.run_offline_acceptance(_schema(), _lanes(tmp_path)).to_dict()
+    lane_documents = receipt["lanes"]
+    assert isinstance(lane_documents, list) and isinstance(lane_documents[0], dict)
+    chain = lane_documents[0]["stage_chain"]
+    assert isinstance(chain, list)
+    assert [checkpoint["stage"] for checkpoint in chain] == list(
+        acceptance.ACCEPTANCE_STAGE_ORDER,
+    )
+
+    for order in itertools.permutations(range(len(chain))):
+        if order == tuple(range(len(chain))):
+            continue
+        tampered = copy.deepcopy(receipt)
+        lanes = tampered["lanes"]
+        assert isinstance(lanes, list) and isinstance(lanes[0], dict)
+        lanes[0]["stage_chain"] = [copy.deepcopy(chain[index]) for index in order]
+        with pytest.raises(acceptance.AcceptanceError, match="rejected: receipt"):
+            acceptance._validate_receipt_shape(tampered)
+
+    for changed_chain in (chain[:-1], [*chain, copy.deepcopy(chain[-1])]):
+        tampered = copy.deepcopy(receipt)
+        lanes = tampered["lanes"]
+        assert isinstance(lanes, list) and isinstance(lanes[0], dict)
+        lanes[0]["stage_chain"] = changed_chain
+        with pytest.raises(acceptance.AcceptanceError, match="rejected: receipt"):
+            acceptance._validate_receipt_shape(tampered)
+
+
+def test_crash_before_projection_and_failed_partial_handoff_recover_rollback(
+    tmp_path: Path,
+) -> None:
+    schema = _schema()
+    lanes = _lanes(tmp_path)
+    lane = lanes[0]
+    prepared = acceptance.prepare_preprojection_handoff(schema, lane)
+
+    assert acceptance.recover_preprojection_handoff(schema, lane) == prepared
+    assert prepared.phase == "prepared_before_projection"
+    assert prepared.rollback_required is True
+    assert prepared.rollback_target_state == "disabled"
+    assert all(
+        getattr(prepared, flag) is False for flag in acceptance.INERT_SIDE_EFFECT_FLAGS
+    )
+
+    invalid_shadow = copy.deepcopy(lane.shadow_profile)
+    assert isinstance(invalid_shadow, dict)
+    invalid_shadow["limits"] = {"partial": "handoff"}
+    failed_lane = dataclasses.replace(lane, shadow_profile=invalid_shadow)
+    with pytest.raises(
+        acceptance.AcceptanceError,
+        match="rejected: shadow_projection",
+    ):
+        acceptance.run_offline_acceptance(schema, (failed_lane, lanes[1]))
+    assert acceptance.recover_preprojection_handoff(schema, lane) == prepared
+
+
+def test_receipts_cannot_cross_wire_version_profile_or_tenant(
+    tmp_path: Path,
+) -> None:
+    schema = _schema()
+    lanes = _lanes(tmp_path)
+    receipt = acceptance.run_offline_acceptance(schema, lanes).to_dict()
+
+    version_fixture = dataclasses.replace(
+        lanes[0].normalization_fixtures[0],
+        request_schema_version="jev-systemone-observed-request/2099-01-01",
+    )
+    version_lane = dataclasses.replace(
+        lanes[0],
+        normalization_fixtures=(
+            version_fixture,
+            *lanes[0].normalization_fixtures[1:],
+        ),
+    )
+
+    other_root = tmp_path / "other-profile"
+    other_root.mkdir()
+    profile_lane = _lane(
+        other_root,
+        provider="other-openjev",
+        profile_index=0,
+        examples=(
+            ("openjev-choice-normalization", "acceptance-choice-1"),
+            ("openjev-score-normalization", "acceptance-score-1"),
+        ),
+    )
+
+    tenant_requests = tuple(
+        dataclasses.replace(request, tenant_digest=_digest("other-tenant"))
+        for request in lanes[0].requests
+    )
+    tenant_lane = dataclasses.replace(lanes[0], requests=tenant_requests)
+
+    for changed_lanes in (
+        (version_lane, lanes[1]),
+        (profile_lane, lanes[1]),
+        (tenant_lane, lanes[1]),
+    ):
+        with pytest.raises(acceptance.AcceptanceError):
+            acceptance.verify_offline_acceptance(receipt, schema, changed_lanes)
+
+
+@given(
+    value=st.from_regex(
+        r"[A-Za-z][A-Za-z0-9._:-]{7,63}",
+        fullmatch=True,
+    ),
+)
+@settings(max_examples=50, deadline=None)
+def test_digest_references_are_domain_separated(value: str) -> None:
+    references = {
+        acceptance._reference(domain, value)
+        for domain in ("lane_id", "fixture_id", "request_id", "stage")
+    }
+    assert len(references) == 4
+    assert all(reference.startswith("sha256:") for reference in references)
+    assert value not in references
+    aliased_evidence = _digest(value)
+    chain = acceptance._build_stage_chain(
+        _digest(f"root-{value}"),
+        {stage: aliased_evidence for stage in acceptance.ACCEPTANCE_STAGE_ORDER},
+    )
+    assert len({checkpoint.checkpoint_digest for checkpoint in chain}) == len(chain)
+
+
+def test_secret_identifiers_and_payloads_never_reach_acceptance_evidence(
+    tmp_path: Path,
+) -> None:
+    secret = "LeakMarker-Adapter-Secret-927"
+    lanes = _lanes(tmp_path)
+    fixture = lanes[0].normalization_fixtures[0]
+    upstream_request = copy.deepcopy(fixture.upstream_request)
+    assert isinstance(upstream_request, dict)
+    upstream_request["state"] = secret
+    secret_fixture = dataclasses.replace(
+        fixture,
+        fixture_id=f"{secret}-fixture",
+        request_id=f"{secret}-request",
+        upstream_request=upstream_request,
+    )
+    secret_request = _batch_request(lanes[0].shadow_profile, secret_fixture)
+    secret_lane = dataclasses.replace(
+        lanes[0],
+        lane_id=secret,
+        actor_id=secret,
+        requests=(secret_request, *lanes[0].requests[1:]),
+        normalization_fixtures=(
+            secret_fixture,
+            *lanes[0].normalization_fixtures[1:],
+        ),
+    )
+
+    receipt = acceptance.run_offline_acceptance(
+        _schema(),
+        (secret_lane, lanes[1]),
+    )
+    assert secret.encode() not in update.canonical_json_bytes(receipt.to_dict())
+    assert secret.encode() not in secret_lane.prepared_update_path.read_bytes()
+
+
+def test_stage_side_effect_flag_drift_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    schema = _schema()
+    lanes = _lanes(tmp_path)
+    unsafe_plan = dataclasses.replace(
+        acceptance._plan_batch(schema, lanes[1]),
+        network_accessed=True,
+    )
+    original_plan = acceptance._plan_batch
+
+    def inject_unsafe_plan(
+        plan_schema: Mapping[str, object],
+        lane: acceptance.AdapterAcceptanceLane,
+    ) -> planner.BatchResidencyPlan:
+        if lane.lane_id == lanes[1].lane_id:
+            return unsafe_plan
+        return original_plan(plan_schema, lane)
+
+    monkeypatch.setattr(acceptance, "_plan_batch", inject_unsafe_plan)
+    with pytest.raises(acceptance.AcceptanceError, match="rejected: stage_binding"):
+        acceptance.run_offline_acceptance(schema, lanes)
+
+    monkeypatch.setattr(acceptance, "_plan_batch", original_plan)
+    original_normalize = normalizer.normalize_fixture
+
+    def inject_unsafe_normalization(
+        record_schema: Mapping[str, object],
+        profile: Mapping[str, object],
+        *,
+        request_id: str,
+        task_kind: str,
+        request_schema_version: str,
+        response_schema_version: str,
+        upstream_request: Mapping[str, object],
+        upstream_response: Mapping[str, object],
+    ) -> normalizer.NormalizationRecord:
+        record = original_normalize(
+            record_schema,
+            profile,
+            request_id=request_id,
+            task_kind=task_kind,
+            request_schema_version=request_schema_version,
+            response_schema_version=response_schema_version,
+            upstream_request=upstream_request,
+            upstream_response=upstream_response,
+        )
+        return dataclasses.replace(record, network_accessed=True)
+
+    monkeypatch.setattr(
+        normalizer,
+        "normalize_fixture",
+        inject_unsafe_normalization,
+    )
+    with pytest.raises(acceptance.AcceptanceError, match="rejected: normalization"):
+        acceptance.run_offline_acceptance(schema, lanes)
