@@ -241,7 +241,7 @@ _NO_UV_SYNC_GOALS := \
     ci-remotes ci-diff-since-remote ci-head-compare ci-remote-head-guard ci-trigger ci-shards-log-context \
     git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head git-push-current-head-to-master-nv \
     grep search show-lines cat-file copy-file mkdir-p write-text append-text replace-lines replace-text replace-all-text write-text-b64 replace-text-b64 rm-files \
-    check-disk check-disk-classification disk disk-check disk-guard cache-disk cache-clean disk-user-caches audit-home-tmp \
+    disk-cleanup-preflight check-disk check-disk-classification disk disk-check disk-guard cache-disk cache-clean disk-user-caches audit-home-tmp \
     cache-resource-inventory cache-resource-remove tmp-gludd-usage tmp-gludd-worktree-usage \
     tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
     clean clean-artifacts clean-worktree-venvs clean-worktree-caches active-work-status ps agent-worktree agent-worktree-base azure-self-improve-auth-args \
@@ -328,7 +328,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         verify-enforcement \
 ci-view ci-rerun ci-trigger ci-active ci-job-log ci-job-failure-context ci-artifact-download ci-artifact-context ci-coverage-artifact-audit ci-coverage-gap-plan ci-shards-log-context \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
-log-agent-result disk-guard disk-check check-disk check-disk-classification check-system-load disk tmp-gludd-usage tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
+log-agent-result disk-guard disk-check disk-cleanup-preflight check-disk check-disk-classification check-system-load disk tmp-gludd-usage tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
         tmp-gludd-worktree-usage clean-worktree-venvs clean-worktree-caches \
         searx-up searx-down searx-test searx-start searx-stop searx-status searx-install \
         networking-role-lint networking-role-syntax test-scapy-adapter networking-validate \
@@ -719,7 +719,8 @@ help:
 	@echo "  fix-hooks-tmp           temp fix target"
 	@echo "  disk-guard            Check disk usage + clean caches if above threshold (default 95%)"
 	@echo "  disk-check            Check disk usage only, exit 1 if above threshold"
-	@echo "  check-disk            Pre-commit disk guard (CHECK_DISK_VALIDATE_ONLY=0; set 1 for deterministic contract test)"
+	@echo "  disk-cleanup-preflight  Auto-reclaim proven-idle Gludd storage, then recheck thresholds (DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0|1, DISK_CLEANUP_PREFLIGHT_DRY_RUN=0|1, DISK_CLEANUP_RECEIPT_GRACE_SECONDS>=1800)"
+	@echo "  check-disk            Pre-commit automatic cleanup guard (CHECK_DISK_VALIDATE_ONLY=0; set 1 for deterministic contract test)"
 	@echo "  check-disk-classification  Bounded JSON-lines proof of counted vs exempt /tmp/gludd-* roots"
 	@echo "  check-system-load     Read-only system load diagnostic (1m avg, CPU count, verdict)"
 	@echo "  disk                  Print disk usage + gludd footprint"
@@ -1781,7 +1782,7 @@ opencode-hello:
 	@echo "=== stderr ==="
 	@cat /tmp/opencode-hello-stderr.log
 
-gate-fast: check-generated-artifact-hygiene lint typecheck collect-check
+gate-fast: disk-cleanup-preflight check-generated-artifact-hygiene lint typecheck collect-check
 	@echo "=== GATE-FAST: PASS ==="
 
 _check-windows-tracked-paths:
@@ -1792,7 +1793,7 @@ _gate-run-lock-acquire:
 
 .NOTPARALLEL: gate gate-refresh
 
-gate: _gate-run-lock-acquire check-generated-artifact-hygiene _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-resource-ownership check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets check-no-prompt-prone-edit-tools validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning integration-health check-runbook-currency check-version-bump-atomicity
+gate: _gate-run-lock-acquire disk-cleanup-preflight check-generated-artifact-hygiene _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-resource-ownership check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets check-no-prompt-prone-edit-tools validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning integration-health check-runbook-currency check-version-bump-atomicity
 	@rm -f .gate-failed .gate-status.next .gate-status.running
 	@printf "RUNNING %s %s\n" "$$(date +%s)" "$$PPID" > .gate-status.running && mv .gate-status.running .gate-status
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status.next
@@ -1884,7 +1885,7 @@ gate: _gate-run-lock-acquire check-generated-artifact-hygiene _dead-code-baselin
 # "No Unseen Events" invariant in AGENTS.md). The _gate-fresh-check used by
 # commit targets still requires the FULL `make gate`; gate-lite is for fast
 # local feedback between commits, not a commit prerequisite.
-gate-lite: _dead-code-baseline-refresh check-opencode-integrity check-subagent-guards check-skills-frontmatter check-coverage-gaps check-make-help check-plugin-syntax check-plugin-runtime check-plugin-imports check-no-prompt-prone-edit-tools check-task-integrity lint-specs check-spec-enforcement-coverage check-plugin-hook-invoke
+gate-lite: disk-cleanup-preflight _dead-code-baseline-refresh check-opencode-integrity check-subagent-guards check-skills-frontmatter check-coverage-gaps check-make-help check-plugin-syntax check-plugin-runtime check-plugin-imports check-no-prompt-prone-edit-tools check-task-integrity lint-specs check-spec-enforcement-coverage check-plugin-hook-invoke
 	@rm -f .gate-lite-failed
 	@echo "=== GATE-LITE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-lite-status
 	@# OBSERVABILITY INVARIANT (AGENTS.md "No unseen events"): every phase
@@ -2796,12 +2797,37 @@ disk-check:
 uv-cache-prune-status:
 	@/bin/ps -ax -o pid=,ppid=,etime=,command= | /usr/bin/awk '/[u]v cache prune/ { found=1; print } END { if (!found) print "UV_CACHE_PRUNE_IDLE" }'
 
-# Pre-commit disk check: fail if /tmp/gludd-* >100MB or disk >90%.
+# Automatic disk preflight: clean only generated caches in completed/inactive
+# Gludd worktrees, then fail closed unless both canonical limits are healthy.
+DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY ?= 0
+DISK_CLEANUP_PREFLIGHT_DRY_RUN ?= 0
+DISK_CLEANUP_RECEIPT_GRACE_SECONDS ?= 1800
+CHECK_DISK_VALIDATE_ONLY ?= 0
+
+disk-cleanup-preflight:
+	@if [ "$(DISK_CLEANUP_PREFLIGHT_DRY_RUN)" != "0" ] && [ "$(DISK_CLEANUP_PREFLIGHT_DRY_RUN)" != "1" ]; then \
+		echo "Usage: make disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0|1 DISK_CLEANUP_PREFLIGHT_DRY_RUN=0|1 DISK_CLEANUP_RECEIPT_GRACE_SECONDS='>=1800'"; \
+		exit 2; \
+	elif [ "$(DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY)" = "1" ]; then \
+		$(MAKE) --no-print-directory test-files TESTFILES=tests/unit/test_automatic_disk_cleanup.py PYTEST_ARGS='-q -n 0'; \
+	elif [ "$(DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY)" = "0" ] && [ "$(DISK_CLEANUP_PREFLIGHT_DRY_RUN)" = "1" ]; then \
+		$(SYSTEM_PYTHON) -m scripts.automatic_disk_cleanup --dry-run --receipt-grace-seconds "$(DISK_CLEANUP_RECEIPT_GRACE_SECONDS)"; \
+	elif [ "$(DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY)" = "0" ] && [ "$(DISK_CLEANUP_PREFLIGHT_DRY_RUN)" = "0" ]; then \
+		$(SYSTEM_PYTHON) -m scripts.automatic_disk_cleanup --receipt-grace-seconds "$(DISK_CLEANUP_RECEIPT_GRACE_SECONDS)"; \
+	else \
+		echo "Usage: make disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0|1 DISK_CLEANUP_PREFLIGHT_DRY_RUN=0|1 DISK_CLEANUP_RECEIPT_GRACE_SECONDS='>=1800'"; \
+		exit 2; \
+	fi
+
+# Compatibility entry point used by the pre-commit hook.
 check-disk:
 	@if [ "$(CHECK_DISK_VALIDATE_ONLY)" = "1" ]; then \
-		$(MAKE) --no-print-directory test-files TESTFILES=tests/unit/test_check_disk_usage.py PYTEST_ARGS='-q -n 0'; \
+		$(MAKE) --no-print-directory test-files TESTFILES='tests/unit/test_check_disk_usage.py tests/unit/test_automatic_disk_cleanup.py' PYTEST_ARGS='-q -n 0'; \
+	elif [ "$(CHECK_DISK_VALIDATE_ONLY)" = "0" ]; then \
+		$(MAKE) --no-print-directory disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0 DISK_CLEANUP_PREFLIGHT_DRY_RUN=0 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800; \
 	else \
-		$(SYSTEM_PYTHON) scripts/check_disk_usage.py; \
+		echo "Usage: make check-disk CHECK_DISK_VALIDATE_ONLY=0|1"; \
+		exit 2; \
 	fi
 
 check-disk-classification:
@@ -6274,7 +6300,7 @@ development-status:
 	@git rev-list --count master..development 2>/dev/null || echo "0"
 	@echo "unmerged commits on development"
 
-preflight: check-plugin-liveness
+preflight: disk-cleanup-preflight check-plugin-liveness
 	@echo "========================================"
 	@echo "  PREFLIGHT QUALITY GATE"
 	@echo "========================================"

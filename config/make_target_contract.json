@@ -548,6 +548,11 @@
       "behavior": "make check-disk CHECK_DISK_VALIDATE_ONLY=1"
     },
     {
+      "name": "disk-cleanup-preflight",
+      "make_variables": ["DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY", "DISK_CLEANUP_PREFLIGHT_DRY_RUN", "DISK_CLEANUP_RECEIPT_GRACE_SECONDS"],
+      "behavior": "make disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=1 DISK_CLEANUP_PREFLIGHT_DRY_RUN=0 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800"
+    },
+    {
       "name": "check-disk-classification",
       "make_variables": [],
       "behavior": "make check-disk-classification"

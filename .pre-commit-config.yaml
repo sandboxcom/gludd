@@ -76,8 +76,8 @@ repos:
         stages: [pre-commit]
 
       - id: check-disk
-        name: disk usage check (/tmp/gludd-* and disk %)
-        entry: uv run python scripts/check_disk_usage.py
+        name: automatic inactive-worktree cache cleanup and disk check
+        entry: make check-disk CHECK_DISK_VALIDATE_ONLY=0
         language: system
         pass_filenames: false
         stages: [pre-commit]
