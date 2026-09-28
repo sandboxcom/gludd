@@ -28,8 +28,8 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import StaticPool
 
-from general_ludd.db.models import Base, BucketLeaseModel, TodoModel
-from general_ludd.db.repository import TodoRepository
+from general_ludd.db.models import Base, BucketLeaseModel, ProjectModel, TodoModel
+from general_ludd.db.repository import ProjectRepository, TodoRepository
 from general_ludd.event_loop.lease import (
     acquire_lease,
     acquire_leases_batch,
@@ -38,6 +38,7 @@ from general_ludd.event_loop.lease import (
     release_lease,
 )
 from general_ludd.event_loop.loop import PHASE_ORDER, EventLoop
+from general_ludd.projects.manager import persist_project
 from general_ludd.schemas.queue import Queue
 from general_ludd.schemas.todo import TodoStatus
 
@@ -390,7 +391,18 @@ def _runner_for_pipeline():
 @pytest.fixture
 async def _session_factory(db_engine):
     """Session factory for the pipeline DB."""
-    return async_sessionmaker(db_engine, expire_on_commit=False)
+    factory = async_sessionmaker(db_engine, expire_on_commit=False)
+    async with factory() as session:
+        await persist_project(
+            ProjectRepository(session),
+            project_id=_PIPELINE_PROJECT_ID,
+            name="Event loop pipeline E2E",
+            weight=100.0,
+            dispatch_mode="active",
+        )
+        await session.commit()
+        assert await session.get(ProjectModel, _PIPELINE_PROJECT_ID) is not None
+    return factory
 
 
 @pytest.fixture
