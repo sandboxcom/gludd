@@ -729,6 +729,10 @@ def test_cli_allows_stable_dirty_identity_only_for_nonrelease_gate(
         "queries_ok": True,
     }
     calls: list[str] = []
+
+    def fake_run(*_args: object, **_kwargs: object) -> int:
+        calls.append("run")
+        return 0
     states = iter(("candidate-state", "candidate-state"))
     monkeypatch.setattr(module, "_resource_paths", lambda: resource_paths)
     monkeypatch.setattr(module, "_repository_identity", lambda **_kwargs: identity)
@@ -736,7 +740,7 @@ def test_cli_allows_stable_dirty_identity_only_for_nonrelease_gate(
     monkeypatch.setattr(
         module,
         "run",
-        lambda *_args, **_kwargs: calls.append("run") or 0,
+        fake_run,
     )
     monkeypatch.setattr(
         module.sys,
