@@ -8,7 +8,9 @@ It intentionally has no transport, model-loading, runtime, or admission code.
 
 from __future__ import annotations
 
+import math
 import re
+import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
@@ -27,8 +29,17 @@ from scripts.check_typed_decision_adapter_update import (
 NORMALIZATION_VERSION = "gludd.typed-decision-normalization/v1"
 RECORD_VERSION = "typed-decision-adapter-normalization-record/v1"
 TASK_KIND = "failure_classification"
+CONTRACT_SCHEMA_VERSION = "gludd.typed-decision-adapter-contract/v1"
+CONTRACT_SCHEMA_DIGEST = (
+    "sha256:1082d5b5a024f62514fd0bf6c23f2cbe2deaed2f26900010082c98dabdb60468"
+)
 SUM_TOLERANCE = Decimal("0.0001")
 MAX_TOKEN_COUNT = (1 << 63) - 1
+MAX_STATE_DEPTH = 32
+MAX_STATE_NODES = 65_536
+MAX_RECORD_DEPTH = 8
+MAX_RECORD_NODES = 4_096
+MAX_RECORD_CHARACTERS = 256 * 1024
 
 _REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,128}\Z")
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
@@ -109,6 +120,61 @@ def _string(
     return value
 
 
+def _identifier(
+    value: object,
+    *,
+    reason: ReasonCode,
+    detail: str,
+    maximum: int = 160,
+) -> str:
+    """Accept one unambiguous NFC identifier without control code points."""
+
+    identifier = _string(value, reason=reason, detail=detail, maximum=maximum)
+    if unicodedata.normalize("NFC", identifier) != identifier or any(
+        unicodedata.category(character).startswith("C") for character in identifier
+    ):
+        _reject(reason, detail)
+    return identifier
+
+
+def _validate_bounded_tree(
+    value: object,
+    *,
+    max_depth: int,
+    max_nodes: int,
+    max_characters: int,
+    reason: ReasonCode,
+    detail: str,
+) -> None:
+    """Bound nested JSON work iteratively before schema traversal or hashing."""
+
+    stack: list[tuple[object, int]] = [(value, 0)]
+    nodes = 0
+    characters = 0
+    while stack:
+        current, depth = stack.pop()
+        nodes += 1
+        if depth > max_depth or nodes > max_nodes:
+            _reject(reason, detail)
+        if isinstance(current, dict):
+            for key, child in current.items():
+                if not isinstance(key, str):
+                    _reject(reason, detail)
+                characters += len(key)
+                stack.append((child, depth + 1))
+        elif isinstance(current, list):
+            stack.extend((child, depth + 1) for child in current)
+        elif isinstance(current, str):
+            characters += len(current)
+        elif isinstance(current, float):
+            if not math.isfinite(current):
+                _reject(reason, detail)
+        elif current is not None and not isinstance(current, (bool, int)):
+            _reject(reason, detail)
+        if characters > max_characters:
+            _reject(reason, detail)
+
+
 def _integer(
     value: object,
     *,
@@ -138,7 +204,7 @@ def _decimal(
         _reject(reason, detail)
     try:
         converted = Decimal(str(value))
-    except InvalidOperation:
+    except (InvalidOperation, OverflowError, ValueError):
         _reject(reason, detail)
     if not converted.is_finite() or not minimum <= converted <= maximum:
         _reject(reason, detail)
@@ -175,7 +241,7 @@ class CanonicalProbability:
             reason="replay_mismatch",
             detail="probability_fields",
         )
-        label = _string(
+        label = _identifier(
             item["label"],
             reason="replay_mismatch",
             detail="probability_label",
@@ -255,7 +321,14 @@ class NormalizedOutcome:
         if isinstance(outcome, (bool, str)):
             parsed_outcome: OutcomeValue = outcome
         elif isinstance(outcome, (int, float)) and not isinstance(outcome, bool):
-            parsed_outcome = float(outcome)
+            parsed_outcome = _canonical_float(
+                _decimal(
+                    outcome,
+                    reason="replay_mismatch",
+                    detail="outcome_value",
+                    maximum=Decimal(9),
+                ),
+            )
         else:
             _reject("replay_mismatch", "outcome_value")
         if item["disposition"] != "valid" or item["reason_code"] is not None:
@@ -282,7 +355,7 @@ class NormalizedOutcome:
                 reason="replay_mismatch",
                 detail="outcome_task",
             ),
-            question_id=_string(
+            question_id=_identifier(
                 item["question_id"],
                 reason="replay_mismatch",
                 detail="outcome_question",
@@ -419,6 +492,17 @@ class NormalizationRecord:
             "version",
         }
         _strict_keys(item, expected, reason="replay_mismatch", detail="record_fields")
+        outcomes = item["outcomes"]
+        if not isinstance(outcomes, list) or not 1 <= len(outcomes) <= 32:
+            _reject("replay_mismatch", "record_outcomes")
+        _validate_bounded_tree(
+            item,
+            max_depth=MAX_RECORD_DEPTH,
+            max_nodes=MAX_RECORD_NODES,
+            max_characters=MAX_RECORD_CHARACTERS,
+            reason="replay_mismatch",
+            detail="record_bounds",
+        )
         digest = item["record_digest"]
         if not isinstance(digest, str) or _DIGEST.fullmatch(digest) is None:
             _reject("replay_mismatch", "record_digest")
@@ -437,25 +521,30 @@ class NormalizationRecord:
         )
         if any(value is not False for value in false_flags) or item["ready"] is not True:
             _reject("replay_mismatch", "record_side_effect_flags")
-        outcomes = item["outcomes"]
-        if not isinstance(outcomes, list) or not outcomes:
-            _reject("replay_mismatch", "record_outcomes")
         if item["version"] != RECORD_VERSION:
             _reject("replay_mismatch", "record_version")
-        return cls(
-            binding=NormalizationBinding.from_dict(item["binding"]),
-            outcomes=tuple(NormalizedOutcome.from_dict(outcome) for outcome in outcomes),
-            request_id=_string(
+        binding = NormalizationBinding.from_dict(item["binding"])
+        parsed_outcomes = tuple(
+            NormalizedOutcome.from_dict(outcome) for outcome in outcomes
+        )
+        request_id = _string(
                 item["request_id"],
                 reason="replay_mismatch",
                 detail="record_request_id",
                 maximum=128,
-            ),
-            task_kind=_string(
+            )
+        if _REQUEST_ID.fullmatch(request_id) is None:
+            _reject("replay_mismatch", "record_request_id")
+        task_kind = _string(
                 item["task_kind"],
                 reason="replay_mismatch",
                 detail="record_task_kind",
-            ),
+            )
+        record = cls(
+            binding=binding,
+            outcomes=parsed_outcomes,
+            request_id=request_id,
+            task_kind=task_kind,
             ready=True,
             network_accessed=False,
             runtime_invoked=False,
@@ -463,6 +552,81 @@ class NormalizationRecord:
             admission_performed=False,
             record_digest=digest,
         )
+        _validate_record_consistency(record)
+        return record
+
+
+def _validate_record_consistency(record: NormalizationRecord) -> None:
+    """Reject a correctly hashed record whose typed identities disagree."""
+
+    binding = record.binding
+    if (
+        binding.contract_schema_version != CONTRACT_SCHEMA_VERSION
+        or binding.contract_schema_digest != CONTRACT_SCHEMA_DIGEST
+        or binding.normalization_version != NORMALIZATION_VERSION
+        or record.task_kind != TASK_KIND
+    ):
+        _reject("replay_mismatch", "record_binding")
+    question_ids = tuple(outcome.question_id for outcome in record.outcomes)
+    if question_ids != tuple(sorted(set(question_ids))):
+        _reject("replay_mismatch", "record_question_identity")
+    for outcome in record.outcomes:
+        if (
+            outcome.normalization_version != NORMALIZATION_VERSION
+            or outcome.request_id != record.request_id
+            or outcome.identity_fingerprint != binding.identity_fingerprint
+            or outcome.task_kind != record.task_kind
+            or outcome.kind not in {"choice", "noul", "score"}
+        ):
+            _reject("replay_mismatch", "outcome_binding")
+        labels = tuple(item.label for item in outcome.probabilities)
+        if not 2 <= len(labels) <= 20 or len(labels) != len(set(labels)):
+            _reject("replay_mismatch", "outcome_probability_identity")
+        decimals = tuple(Decimal(str(item.probability)) for item in outcome.probabilities)
+        if abs(sum(decimals, Decimal(0)) - Decimal(1)) > SUM_TOLERANCE:
+            _reject("replay_mismatch", "outcome_probability_sum")
+        if outcome.kind == "choice":
+            if (
+                labels != tuple(sorted(labels))
+                or not isinstance(outcome.outcome, str)
+                or outcome.outcome not in labels
+                or outcome.upstream_confidence is None
+            ):
+                _reject("replay_mismatch", "choice_outcome")
+            maximum = max(decimals)
+            winners = tuple(
+                label
+                for label, probability in zip(labels, decimals, strict=True)
+                if probability == maximum
+            )
+            if winners != (outcome.outcome,):
+                _reject("replay_mismatch", "choice_outcome")
+        elif outcome.kind == "noul":
+            if (
+                labels != ("false", "true")
+                or not isinstance(outcome.outcome, bool)
+                or outcome.upstream_confidence is not None
+                or decimals[1] == Decimal("0.5")
+                or outcome.outcome != (decimals[1] > Decimal("0.5"))
+            ):
+                _reject("replay_mismatch", "noul_outcome")
+        else:
+            expected_labels = tuple(str(index) for index in range(len(labels)))
+            expected_score = sum(
+                (
+                    Decimal(index) * probability
+                    for index, probability in enumerate(decimals)
+                ),
+                Decimal(0),
+            )
+            if (
+                labels != expected_labels
+                or isinstance(outcome.outcome, bool)
+                or not isinstance(outcome.outcome, (int, float))
+                or outcome.upstream_confidence is None
+                or abs(Decimal(str(outcome.outcome)) - expected_score) > SUM_TOLERANCE
+            ):
+                _reject("replay_mismatch", "score_outcome")
 
 
 def _profile_sections(
@@ -706,9 +870,12 @@ def _validate_capability_bounds(
     try:
         state_bytes = len(canonical_json_bytes(request["state"]))
         request_bytes = len(canonical_json_bytes(request))
+    except (TypeError, ValueError, RuntimeError):
+        _reject("request_malformed", "request_canonical_json")
+    try:
         response_bytes = len(canonical_json_bytes(response))
     except (TypeError, ValueError, RuntimeError):
-        _reject("request_malformed", "canonical_json")
+        _reject("response_malformed", "response_canonical_json")
     if state_bytes > state_limit:
         _reject("capability_mismatch", "state_bytes")
     if request_bytes > request_limit:
@@ -772,7 +939,16 @@ def _choice(
         reason="request_malformed",
         detail="choice_criteria",
     )
-    labels = tuple(sorted(criteria))
+    labels = tuple(
+        sorted(
+            _identifier(
+                label,
+                reason="request_malformed",
+                detail="choice_label",
+            )
+            for label in criteria
+        ),
+    )
     selected = _string(
         answer.get("choice"),
         reason="response_semantic_mismatch",
@@ -828,20 +1004,27 @@ def _score(
         detail="score_fields",
     )
     criteria = question.get("criteria")
-    if (
-        not isinstance(criteria, list)
-        or any(not isinstance(item, str) for item in criteria)
-        or len(criteria) != len(set(criteria))
-    ):
+    if not isinstance(criteria, list):
         _reject("request_malformed", "score_criteria")
-    labels = tuple(str(index) for index in range(len(criteria)))
+    canonical_criteria = tuple(
+        _identifier(
+            item,
+            reason="request_malformed",
+            detail="score_criteria",
+            maximum=2048,
+        )
+        for item in criteria
+    )
+    if len(canonical_criteria) != len(set(canonical_criteria)):
+        _reject("request_malformed", "score_criteria")
+    labels = tuple(str(index) for index in range(len(canonical_criteria)))
     legend = _mapping(
         answer.get("legend"),
         reason="response_semantic_mismatch",
         detail="score_legend_shape",
     )
     if set(legend) != set(labels) or any(
-        legend[label] != criteria[int(label)] for label in labels
+        legend[label] != canonical_criteria[int(label)] for label in labels
     ):
         _reject("response_semantic_mismatch", "score_legend")
     canonical, decimals = _probabilities(
@@ -882,10 +1065,18 @@ def _normalize_outcomes(
         reason="response_malformed",
         detail="answers",
     )
-    if set(questions) != set(answers):
+    question_ids = tuple(
+        _identifier(
+            question_id,
+            reason="request_malformed",
+            detail="question_id",
+        )
+        for question_id in questions
+    )
+    if set(question_ids) != set(answers):
         _reject("response_malformed", "answer_identity_set")
     outcomes: list[NormalizedOutcome] = []
-    for question_id in sorted(questions):
+    for question_id in sorted(question_ids):
         question = _mapping(
             questions[question_id],
             reason="request_malformed",
@@ -944,6 +1135,13 @@ def normalize_fixture(
         _reject("request_malformed", "request_shape")
     if not isinstance(upstream_response, dict):
         _reject("response_malformed", "response_shape")
+    schema_digest = _canonical_digest(
+        schema,
+        reason="contract_invalid",
+        detail="schema_canonical_json",
+    )
+    if schema_digest != CONTRACT_SCHEMA_DIGEST:
+        _reject("contract_invalid", "schema_digest")
     _identity, transport, capabilities, limits, fingerprint = (
         _validate_profile_and_envelope(
             schema,
@@ -953,6 +1151,21 @@ def normalize_fixture(
             request_schema_version=request_schema_version,
             response_schema_version=response_schema_version,
         )
+    )
+    max_state_characters = _integer(
+        capabilities.get("max_state_bytes"),
+        reason="profile_unpinned",
+        detail="capability_max_state_bytes",
+        minimum=1,
+        maximum=1_048_576,
+    )
+    _validate_bounded_tree(
+        upstream_request.get("state"),
+        max_depth=MAX_STATE_DEPTH,
+        max_nodes=MAX_STATE_NODES,
+        max_characters=max_state_characters,
+        reason="capability_mismatch",
+        detail="state_complexity",
     )
     _validate_wire_schema(schema, upstream_request, "wireRequest", "request_malformed")
     _validate_wire_schema(schema, upstream_response, "wireResponse", "response_malformed")
@@ -988,11 +1201,7 @@ def normalize_fixture(
     )
     binding = NormalizationBinding(
         contract_schema_version=_schema_version(schema),
-        contract_schema_digest=_canonical_digest(
-            schema,
-            reason="contract_invalid",
-            detail="schema_canonical_json",
-        ),
+        contract_schema_digest=schema_digest,
         normalization_version=NORMALIZATION_VERSION,
         request_schema_version=request_schema_version,
         response_schema_version=response_schema_version,
@@ -1066,16 +1275,19 @@ def replay_normalization(
 
     if not isinstance(record, NormalizationRecord):
         _reject("replay_mismatch", "record_type")
-    rebuilt = normalize_fixture(
-        schema,
-        profile,
-        request_id=request_id,
-        task_kind=task_kind,
-        request_schema_version=request_schema_version,
-        response_schema_version=response_schema_version,
-        upstream_request=upstream_request,
-        upstream_response=upstream_response,
-    )
+    try:
+        rebuilt = normalize_fixture(
+            schema,
+            profile,
+            request_id=request_id,
+            task_kind=task_kind,
+            request_schema_version=request_schema_version,
+            response_schema_version=response_schema_version,
+            upstream_request=upstream_request,
+            upstream_response=upstream_response,
+        )
+    except NormalizationError:
+        _reject("replay_mismatch", "rebuild_rejected")
     if rebuilt != record:
         _reject("replay_mismatch", "record_changed")
     return rebuilt
