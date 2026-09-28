@@ -22,6 +22,12 @@ Both the baseline and candidate must bind all of the following:
   artifact, artifact signature, SBOM, and provenance SHA-256 digests; and
 - affirmative tag, commit, tree, and artifact-signature verification results.
 
+Each release also carries a domain-separated `identity_sha256` over that exact
+upstream and supply-chain record. Changing or swapping a tag, commit, tree, or
+digest without changing the independently collected identity binding fails
+closed. The binding is evidence correlation, not a replacement for upstream
+signature or provenance verification.
+
 A candidate must be newer than the baseline and must change its commit, tree,
 and archive identity. Mutable refs, all-zero placeholders, partial hashes,
 unknown fields, a source/archive digest mismatch, or a failed verification
@@ -37,8 +43,11 @@ complete admission record.
 The manifest lists every baseline and candidate shim with a stable ID, Gludd
 path, kind, digest, and the upstream export it adapts. The verifier accepts only
 Gludd-owned adapter, schema, migration, or test-bridge records below
-`src/general_ludd/`. A path containing `vendor`, a copied-upstream flag, duplicate
-ID/path, malformed export name, or incomplete digest fails closed.
+`src/general_ludd/`. Paths must be canonical ASCII POSIX paths attested as
+regular files. Traversal components, backslashes, NULs, symlink attestations,
+case-insensitive path collisions, any case spelling of a `vendor` segment, a
+copied-upstream flag, duplicate ID/path, malformed export name, or incomplete
+digest fails closed.
 
 The normalized inventories produce a deterministic, sorted ID-only diff with
 `added`, `changed`, `removed`, and `unchanged` groups. Input ordering cannot
@@ -54,7 +63,8 @@ upstream tests run only from a separately verified ephemeral archive.
 Every update carries three independently digested plans:
 
 1. A backward-compatible schema transition with explicit source and target
-   versions.
+   versions; the target must strictly advance, so downgrades and no-op
+   pseudo-migrations are rejected.
 2. A non-destructive `expand-migrate-contract` plan whose ordered phases are
    `expand`, `dual_read`, `backfill`, and `cutover`; contract cleanup is deferred.
 3. A test-reuse plan naming the existing Gludd suites and upstream-owned suites.
@@ -74,8 +84,27 @@ pure verifier performs no I/O: it admits only metadata collection bounded to at
 most eight requests, 30 seconds per request, and 1 MiB per response. Artifact
 downloads and config mutation remain forbidden.
 
+Successful receipts expose the normalized `declared_mode`, bind the normalized
+boundary in `live_boundary_sha256`, and always report
+`collection_observed: false`. The latter is deliberate: this pure verifier can
+validate permission and bounds, but cannot honestly claim that a network
+collection occurred. A separate observed collector must retain its own runtime
+evidence; an admission receipt is never that evidence.
+
 Tests use synthetic digests and do not open sockets, download bytes, inspect a
 user config, or write admission state.
+
+The JSON-compatible manifest is bounded before semantic validation: 64 KiB,
+fixed nesting and node limits, bounded containers, and bounded individual
+strings. Recursive, unsupported, over-deep, over-wide, and oversized inputs
+produce stable content-free faults rather than unbounded serialization work.
+Only exact JSON scalar and container types are accepted; subclasses with
+attacker-controlled methods are rejected before those methods can execute.
+Because the verifier deliberately performs no filesystem I/O, the process that
+collects a shim manifest remains responsible for obtaining the regular-file
+attestation without following a symlink. The verifier rejects a non-regular
+attestation and all lexical escape forms; it does not pretend to resolve a live
+filesystem path.
 
 ## ZDD and rollback
 
@@ -88,6 +117,24 @@ removal waits for a later observed contract phase.
 Rollback therefore selects the still-present baseline artifact and shim set.
 No schema contraction or destructive migration is needed, and a rejected
 candidate leaves the active configuration and v0.1.1 evidence untouched.
+
+An independent outcome verifier handles `completed`, `interrupted`,
+`cancelled`, and `failed` observations without executing the update. Mutation
+followed by interruption or cancellation requires a rollback attempt; every
+outcome requires cleanup evidence. Failure precedence is stable and
+content-free: rollback failure outranks cleanup failure, which outranks the
+primary interruption/cancellation/failure. A completed shadow update still
+never admits runtime behavior.
+
+## Receipt scope and replay boundary
+
+Every request binds a project identity digest, a unique operation digest, and
+an optional prior-receipt digest. The caller must pass the same trusted values
+separately; a manifest cannot choose its own trust scope. Successful and
+rejected receipts carry only the normalized scope digest. Receipt consumers
+recompute that digest before accepting an admission receipt, so copying one to
+another project, operation, or receipt chain fails closed while an idempotent
+retry of the same operation remains deterministic.
 
 ## Operator and maintainer evidence
 
@@ -115,6 +162,17 @@ recorded without claiming long-term stability:
 - [Issue #674](https://github.com/tashfeenahmed/freellmapi/issues/674) asks for
   daily custom-provider auto-fetch and was closed as not planned. This supports
   explicit bounded live metadata checks instead of an ambient background poller.
+- [Discussion #533](https://github.com/tashfeenahmed/freellmapi/discussions/533)
+  records an operator finding that Docker `latest` did not identify the newest
+  release as expected; the maintainer found that it tracked unreleased `main`
+  rather than a release and endorsed the operator's version-tag pin. This
+  supports treating tag, commit, tree, archive, and artifact digests as one
+  immutable release identity instead of trusting a mutable tag name.
+- [Issue #440](https://github.com/tashfeenahmed/freellmapi/issues/440) records a
+  custom-provider SSRF report whose first guard needed two follow-up bypass
+  fixes. This supports revalidating the complete live boundary on every
+  admission, keeping live mode explicit, bounded, metadata-only, and unable to
+  mutate config or download an artifact.
 - The [v0.12.0 release](https://github.com/tashfeenahmed/freellmapi/releases/tag/v0.12.0)
   announces a request-history schema migration with first-start backfill and
   tells self-hosted operators to back up before updating. That concrete change
@@ -126,6 +184,11 @@ recorded without claiming long-term stability:
 A successful receipt says `admitted_for_shadow` and always says
 `runtime_admitted: false`. It binds normalized baseline/candidate identities,
 the full owned-shim inventory, plans, rollback contract, and normalized manifest
-by SHA-256. A rejection contains only a stable fault category and manifest
-digest. Unknown or malformed input fails closed rather than being preserved for
-diagnostics.
+by SHA-256. The two identity fields are the validated, domain-separated release
+identities themselves rather than second-order hashes with ambiguous meaning.
+A rejection contains only a stable fault category and manifest digest. Both
+forms also bind the trusted receipt scope; outcome receipts bind the admission
+receipt and normalized outcome by digest. Receipt consumers revalidate fixed
+literals, every digest, sorted disjoint diff groups, and exact diff counts before
+accepting scope. Unknown, malformed, inconsistent, or oversized input fails
+closed rather than being preserved for diagnostics.
