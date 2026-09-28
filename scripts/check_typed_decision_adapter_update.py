@@ -84,6 +84,7 @@ _PIN_PATHS = (
     ("source_pin", "release"),
     ("source_pin", "reviewed_at"),
     ("source_pin", "source_archive_digest"),
+    ("residency", "preload_identity_fingerprints"),
 )
 
 _DIGEST_FIELDS = (
@@ -634,6 +635,38 @@ def _review_date(value: object) -> date | None:
         return None
 
 
+def _is_exact_residency_fingerprint_rebind(
+    baseline: Mapping[str, object],
+    candidate: Mapping[str, object],
+    *,
+    baseline_fingerprint: object,
+    candidate_fingerprint: object,
+) -> bool:
+    """Allow only the preload substitution mechanically required by a new identity."""
+
+    if (
+        not isinstance(baseline_fingerprint, str)
+        or not isinstance(candidate_fingerprint, str)
+        or baseline_fingerprint == candidate_fingerprint
+        or baseline.get("ownership") != "universal_model_worker"
+        or candidate.get("ownership") != "universal_model_worker"
+        or baseline.get("preload_identity_fingerprints") != [baseline_fingerprint]
+        or candidate.get("preload_identity_fingerprints") != [candidate_fingerprint]
+    ):
+        return False
+    baseline_without_preload = {
+        key: value
+        for key, value in baseline.items()
+        if key != "preload_identity_fingerprints"
+    }
+    candidate_without_preload = {
+        key: value
+        for key, value in candidate.items()
+        if key != "preload_identity_fingerprints"
+    }
+    return baseline_without_preload == candidate_without_preload
+
+
 def check_profile_update(
     schema: Mapping[str, object],
     baseline: Mapping[str, object],
@@ -698,12 +731,14 @@ def check_profile_update(
     ):
         findings.append("identity contract changed")
 
+    fingerprint_changed = baseline_identity.get(
+        "fingerprint",
+    ) != candidate_identity.get("fingerprint")
     protected_sections = {
         "transport": "transport contract changed",
         "capabilities": "capability contract changed",
         "limits": "limit contract changed",
         "batching": "batching contract changed",
-        "residency": "residency contract changed",
         "redaction": "redaction contract changed",
         "compatibility": "compatibility contract changed",
         "update_policy": "update policy changed",
@@ -713,6 +748,20 @@ def check_profile_update(
         if _value_changed(baseline, candidate, section):
             findings.append(message)
 
+    baseline_residency = _mapping(baseline, "residency")
+    candidate_residency = _mapping(candidate, "residency")
+    if _value_changed(baseline, candidate, "residency") and (
+        baseline_residency is None
+        or candidate_residency is None
+        or not _is_exact_residency_fingerprint_rebind(
+            baseline_residency,
+            candidate_residency,
+            baseline_fingerprint=baseline_identity.get("fingerprint"),
+            candidate_fingerprint=candidate_identity.get("fingerprint"),
+        )
+    ):
+        findings.append("residency contract changed")
+
     source_identity_changed = any(
         baseline_source.get(field) != candidate_source.get(field)
         for field in ("release", "commit", "source_archive_digest")
@@ -720,9 +769,6 @@ def check_profile_update(
         baseline_identity.get(field) != candidate_identity.get(field)
         for field in _IDENTITY_BOUND_FIELDS
     )
-    fingerprint_changed = baseline_identity.get(
-        "fingerprint",
-    ) != candidate_identity.get("fingerprint")
     if source_identity_changed and not fingerprint_changed:
         findings.append("identity-bound inputs changed without a new fingerprint")
     if fingerprint_changed and not source_identity_changed:
