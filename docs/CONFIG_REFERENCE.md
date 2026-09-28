@@ -243,6 +243,7 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_PER_WORKER_GB` | Auto-indexed (see source) | `1.5` | optional | `scripts/adaptive_test.py:98` |
 | `GLUDD_PG_WAKE_RECONNECT_MAX_SECONDS` | Auto-indexed (see source) | `5.0` | optional | `src/general_ludd/daemon.py:2286` |
 | `GLUDD_PG_WAKE_RECONNECT_SECONDS` | Auto-indexed (see source) | `0.1` | optional | `src/general_ludd/daemon.py:2285` |
+| `GLUDD_PIPELINE_KICKOFF_ENFORCE` | Set to `0` only to disable the long-pipeline checkout-freeze, duplicate-launch, bounded-dispatch, and isolated-worktree guard. Unset or any other value keeps enforcement enabled. | enabled | optional | `.opencode/plugin/enforce-pipeline-kickoff.ts:413` |
 | `GLUDD_PLUGIN_DIR` | Auto-indexed (see source) | `.opencode/plugin` | optional | `scripts/check_hot_reload_fresh.py:29` |
 | `GLUDD_PLUGIN_DISENGAGE_DURATION` | Auto-indexed (see source) | `3600` | optional | `scripts/check_plugin_hashes.py:32` |
 | `GLUDD_PLUGIN_LOADED_LOG` | Auto-indexed (see source) | `/tmp/gludd-plugin-loaded.log` | optional | `scripts/verify_plugin_liveness.py:42` |

@@ -313,6 +313,181 @@ console.log(JSON.stringify(result))
     assert "claims 72%" in result["text"]
 
 
+def test_directives_persist_pool_intent_and_refill_completed_agents(tmp_path: Path):
+    state = tmp_path / "directives-pool.json"
+    code = f"""
+const mod = await import('{_plugin("enforce-directives.ts")}')
+const plugin = await mod.default({{}})
+const messages = plugin['experimental.chat.messages.transform']
+await messages({{}}, {{messages: [{{
+  info: {{role: 'user'}},
+  parts: [{{
+    type: 'text',
+    text: 'Keep 3x subagents running; if there are fewer, use spare slots for v0.1.2 work.',
+  }}]
+}}]}})
+for (const name of ['alpha', 'beta', 'gamma']) {{
+  await plugin['tool.execute.before']({{tool: 'task'}}, {{args: {{prompt: name}}}})
+}}
+const completedMessages = {{messages: [
+  {{info: {{role: 'user'}}, parts: [{{
+    type: 'text',
+    text: 'Keep 3x subagents running; if there are fewer, use spare slots for v0.1.2 work.',
+  }}]}},
+  {{info: {{role: 'assistant'}}, parts: [
+    {{
+      id: 'part-alpha', type: 'tool', callID: 'call-alpha', tool: 'task',
+      state: {{status: 'completed', output: 'alpha done'}},
+    }},
+    {{
+      id: 'part-beta', type: 'tool', callID: 'call-beta', tool: 'task',
+      state: {{status: 'completed', output: 'beta done'}},
+    }},
+  ]}},
+]}}
+await messages({{}}, completedMessages)
+await messages({{}}, completedMessages)
+const blocked = await plugin['tool.execute.before'](
+  {{tool: 'bash'}}, {{args: {{command: 'make gate'}}}}
+)
+await plugin['tool.execute.before']({{tool: 'task'}}, {{args: {{prompt: 'delta'}}}})
+await plugin['tool.execute.before']({{tool: 'task'}}, {{args: {{prompt: 'epsilon'}}}})
+const allowed = await plugin['tool.execute.before'](
+  {{tool: 'bash'}}, {{args: {{command: 'make gate'}}}}
+)
+const persisted = JSON.parse((await import('node:fs')).readFileSync(process.env.GLUDD_DIRECTIVE_STATE, 'utf8'))
+console.log(JSON.stringify({{
+  blocked: blocked?.permissionDecision === 'deny',
+  blockedMessage: blocked?.message ?? '',
+  allowed: allowed === undefined,
+  active: persisted.active_dispatch_count,
+  target: persisted.directives.find((item) => item.kind === 'floor')?.target,
+}}))
+"""
+    result = _run_ts(
+        code,
+        tmp_path,
+        {
+            "GLUDD_DIRECTIVE_STATE": str(state),
+            "GLUDD_DIRECTIVE_ENFORCE": "1",
+        },
+    )
+    assert result == {
+        "blocked": True,
+        "blockedMessage": (
+            "DIRECTIVE VIOLATION: active subagent pool 1/3; dispatch 2 "
+            "replacement agent(s) before continuing mutation work."
+        ),
+        "allowed": True,
+        "active": 3,
+        "target": 3,
+    }
+
+
+def test_directives_survive_restart_but_transient_agent_count_does_not(tmp_path: Path):
+    state = tmp_path / "directives-restart.json"
+    code = f"""
+const fs = await import('node:fs')
+fs.writeFileSync(process.env.GLUDD_DIRECTIVE_STATE, JSON.stringify({{
+  directives: [{{
+    id: 'floor-standing', kind: 'floor', subject: 'subagent floor', target: 3,
+    source: 'user-directive', pattern: 'subagents', active: true,
+    created_ts: 1, updated_ts: 1
+  }}],
+  last_dispatch_count: 3, active_dispatch_count: 3,
+  last_dispatch_ts: Date.now(), pid: process.pid + 1000
+}}))
+const mod = await import('{_plugin("enforce-directives.ts")}')
+const plugin = await mod.default({{}})
+const blocked = await plugin['tool.execute.before'](
+  {{tool: 'write'}}, {{args: {{filePath: 'example.py'}}}}
+)
+const persisted = JSON.parse(fs.readFileSync(process.env.GLUDD_DIRECTIVE_STATE, 'utf8'))
+console.log(JSON.stringify({{
+  blocked: blocked?.permissionDecision === 'deny',
+  active: persisted.active_dispatch_count,
+  target: persisted.directives.find((item) => item.kind === 'floor')?.target,
+  pidRefreshed: persisted.pid === process.pid,
+}}))
+"""
+    result = _run_ts(
+        code,
+        tmp_path,
+        {
+            "GLUDD_DIRECTIVE_STATE": str(state),
+            "GLUDD_DIRECTIVE_ENFORCE": "1",
+        },
+    )
+    assert result == {
+        "blocked": True,
+        "active": 0,
+        "target": 3,
+        "pidRefreshed": True,
+    }
+
+
+def test_directives_honor_explicit_release_pause_before_pool_refill(tmp_path: Path):
+    state = tmp_path / "directives-pause.json"
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "TASKS.md").write_text(
+        "- [ ] S83.166 - Deploy and release v0.1.1 with rollback proof.\n",
+        encoding="utf-8",
+    )
+    code = f"""
+const fs = await import('node:fs')
+const path = await import('node:path')
+const mod = await import('{_plugin("enforce-directives.ts")}')
+const plugin = await mod.default({{}})
+const messages = plugin['experimental.chat.messages.transform']
+await messages({{}}, {{messages: [{{
+  info: {{role: 'user'}},
+  parts: [{{type: 'text', text: 'Keep 3x subagents running and use spare slots.'}}]
+}}]}})
+await messages({{}}, {{messages: [{{
+  info: {{role: 'user'}},
+  parts: [{{type: 'text', text: 'Wait until the v0.1.1 deployment is finished to resume the subagent work.'}}]
+}}]}})
+const dispatchWhilePaused = await plugin['tool.execute.before'](
+  {{tool: 'task'}}, {{args: {{prompt: 'future work'}}}}
+)
+const gateWhilePaused = await plugin['tool.execute.before'](
+  {{tool: 'bash'}}, {{args: {{command: 'make gate'}}}}
+)
+fs.writeFileSync(
+  path.join(process.env.GLUDD_PROJECT_ROOT, 'TASKS.md'),
+  '- [x] S83.166 - Deploy and release v0.1.1 with rollback proof.\\n'
+)
+const dispatchAfterResume = await plugin['tool.execute.before'](
+  {{tool: 'task'}}, {{args: {{prompt: 'future work'}}}}
+)
+console.log(JSON.stringify({{
+  pausedDenied: dispatchWhilePaused?.permissionDecision === 'deny',
+  pauseMessage: dispatchWhilePaused?.message ?? '',
+  gateAllowed: gateWhilePaused === undefined,
+  resumedAllowed: dispatchAfterResume === undefined,
+}}))
+"""
+    result = _run_ts(
+        code,
+        tmp_path,
+        {
+            "GLUDD_DIRECTIVE_STATE": str(state),
+            "GLUDD_DIRECTIVE_ENFORCE": "1",
+            "GLUDD_PROJECT_ROOT": str(project),
+        },
+    )
+    assert result == {
+        "pausedDenied": True,
+        "pauseMessage": (
+            "DIRECTIVE PAUSE: subagent dispatch is paused until the v0.1.1 "
+            "deployment is finished."
+        ),
+        "gateAllowed": True,
+        "resumedAllowed": True,
+    }
+
+
 def test_enforce_deliverable_warns_for_check_only_and_oversized_prompt(tmp_path: Path):
     code = f"""
 const warnings = []
