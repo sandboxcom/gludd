@@ -263,6 +263,48 @@ def test_cleanup_failure_precedence_is_semantic_not_numeric(
     assert phases["unit-1b:batch-001:cleanup"] == module.CLEANUP_FAILURE_EXIT_CODE
 
 
+def test_successful_cleanup_retry_does_not_erase_terminal_failure(
+    runner: tuple[Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module, resources = runner
+    _install_scripted_batches(
+        module,
+        monkeypatch,
+        plans={"unit-1b": ["tests/synthetic/first.py"]},
+        outcomes=[0],
+    )
+    real_cleanup = module._cleanup_owned_tmpdir_safely
+    cleanup_calls = 0
+
+    def fail_once_then_remove(path: Path, *, context: str) -> int:
+        nonlocal cleanup_calls
+        cleanup_calls += 1
+        if cleanup_calls == 1:
+            return int(module.CLEANUP_FAILURE_EXIT_CODE)
+        return int(real_cleanup(path, context=context))
+
+    monkeypatch.setattr(
+        module,
+        "_cleanup_owned_tmpdir_safely",
+        fail_once_then_remove,
+    )
+
+    assert module.run(
+        ["unit-1b"],
+        [],
+        run_isolated=False,
+        aggregate_coverage=False,
+    ) == module.CLEANUP_FAILURE_EXIT_CODE
+
+    _summary, failures, phases = _terminal_summary(capsys.readouterr().out)
+    assert cleanup_calls == 2
+    assert failures["unit-1b:cleanup"] == module.CLEANUP_FAILURE_EXIT_CODE
+    assert phases["unit-1b:batch-001:cleanup"] == module.CLEANUP_FAILURE_EXIT_CODE
+    assert not resources.coverage_shards.exists()
+
+
 @pytest.mark.parametrize("coverage_kind", ["missing", "corrupt"])
 def test_missing_or_corrupt_batch_coverage_suppresses_release_merge(
     runner: tuple[Any, Any],

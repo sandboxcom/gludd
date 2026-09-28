@@ -1618,9 +1618,12 @@ def run(
                     context=f"{cleanup_phase}:cleanup",
                 )
                 cleanup_rc = max(cleanup_rc, deferred_cleanup_rc)
+                cleanup_result_phase = f"{cleanup_phase}:cleanup"
+                if cleanup_result_phase in phase_results:
+                    cleanup_result_phase = f"{cleanup_result_phase}:retry"
                 _record_phase_result(
                     phase_results,
-                    f"{cleanup_phase}:cleanup",
+                    cleanup_result_phase,
                     deferred_cleanup_rc,
                 )
             workspace_cleanup_rc = _remove_owned_tree(
