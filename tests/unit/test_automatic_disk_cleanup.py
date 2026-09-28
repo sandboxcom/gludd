@@ -1454,6 +1454,45 @@ def test_unsafe_cache_file_and_removal_failure_are_reported(tmp_path: Path) -> N
     )
 
 
+def test_stale_generated_scratch_cleanup_maps_refusals_and_errors(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[bool] = []
+
+    def cleanup_runner(*, dry_run: bool) -> dict[str, list[str]]:
+        calls.append(dry_run)
+        return {
+            "removed": ["/tmp/gludd-test-old.json"],
+            "skipped": [
+                "/tmp/gludd-test-current.json:recent",
+                "/tmp/gludd-test-live.sock:active-socket-pids=7331",
+                "/tmp/gludd-test-state.lock:lease-marker",
+                "/tmp/gludd-test-unknown.sock:socket-inspection-failed",
+                "/tmp/gludd-test-raced.json:identity-changed",
+            ],
+        }
+
+    result = automatic_disk_cleanup.clean_stale_generated_scratch(
+        dry_run=True,
+        cleanup_runner=cleanup_runner,
+    )
+
+    assert calls == [True]
+    assert result.removed == ("/tmp/gludd-test-old.json",)
+    assert result.skipped == (
+        "/tmp/gludd-test-current.json:recent",
+        "/tmp/gludd-test-live.sock:active-socket-pids=7331",
+        "/tmp/gludd-test-state.lock:lease-marker",
+    )
+    assert result.errors == (
+        "/tmp/gludd-test-unknown.sock:socket-inspection-failed",
+        "/tmp/gludd-test-raced.json:identity-changed",
+    )
+    output = capsys.readouterr().out
+    assert "action=stale-generated-scratch status=starting" in output
+    assert "action=stale-generated-scratch status=complete" in output
+
+
 def test_preflight_is_noop_when_both_thresholds_are_healthy(capsys: pytest.CaptureFixture[str]) -> None:
     cleanup_calls = 0
 
@@ -1500,6 +1539,95 @@ def test_preflight_cleans_then_rechecks_both_thresholds(capsys: pytest.CaptureFi
     assert "phase=recheck status=healthy" in output
 
 
+def test_preflight_repeats_cleanup_while_usage_improves_until_healthy(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    snapshots = iter(
+        (
+            DiskSnapshot(scratch_mb=995.5, disk_pct=92.0),
+            DiskSnapshot(scratch_mb=114.5, disk_pct=92.0),
+            DiskSnapshot(scratch_mb=42.0, disk_pct=89.0),
+        )
+    )
+    cleanup_calls = 0
+
+    def cleanup() -> automatic_disk_cleanup.CleanupResult:
+        nonlocal cleanup_calls
+        cleanup_calls += 1
+        return automatic_disk_cleanup.CleanupResult(
+            removed=(f"/tmp/gludd-worktrees/done-{cleanup_calls}/.venv",),
+            skipped=(),
+            errors=(),
+        )
+
+    result = automatic_disk_cleanup.run_preflight(
+        inspect_usage=lambda: next(snapshots),
+        cleanup=cleanup,
+    )
+
+    assert result == 0
+    assert cleanup_calls == 2
+    output = capsys.readouterr().out
+    assert "phase=cleanup status=starting pass=1" in output
+    assert "phase=recheck status=pressure pass=1" in output
+    assert "phase=cleanup status=starting pass=2" in output
+    assert "phase=recheck status=healthy pass=2" in output
+
+
+def test_preflight_stops_fail_closed_when_cleanup_makes_no_measurable_progress(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    high = DiskSnapshot(scratch_mb=114.5, disk_pct=92.0)
+    cleanup_calls = 0
+
+    def cleanup() -> automatic_disk_cleanup.CleanupResult:
+        nonlocal cleanup_calls
+        cleanup_calls += 1
+        return automatic_disk_cleanup.CleanupResult(
+            removed=("/tmp/gludd-worktrees/done/.pytest_cache",),
+            skipped=(),
+            errors=(),
+        )
+
+    result = automatic_disk_cleanup.run_preflight(
+        inspect_usage=lambda: high,
+        cleanup=cleanup,
+    )
+
+    assert result == 1
+    assert cleanup_calls == 1
+    captured = capsys.readouterr()
+    assert "phase=recheck status=failed pass=1 reason=no-progress" in captured.err
+
+
+def test_preflight_stops_at_bounded_cleanup_pass_limit(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    snapshots = iter(
+        (
+            DiskSnapshot(scratch_mb=140.0, disk_pct=94.0),
+            DiskSnapshot(scratch_mb=130.0, disk_pct=93.0),
+            DiskSnapshot(scratch_mb=120.0, disk_pct=92.0),
+        )
+    )
+    cleanup_calls = 0
+
+    def cleanup() -> automatic_disk_cleanup.CleanupResult:
+        nonlocal cleanup_calls
+        cleanup_calls += 1
+        return automatic_disk_cleanup.CleanupResult((), (), ())
+
+    result = automatic_disk_cleanup.run_preflight(
+        inspect_usage=lambda: next(snapshots),
+        cleanup=cleanup,
+        max_cleanup_passes=2,
+    )
+
+    assert result == 1
+    assert cleanup_calls == 2
+    assert "phase=recheck status=failed pass=2 reason=pass-limit" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize(
     "after",
     [
@@ -1510,7 +1638,7 @@ def test_preflight_cleans_then_rechecks_both_thresholds(capsys: pytest.CaptureFi
 def test_preflight_fails_closed_when_either_threshold_remains_high(
     after: DiskSnapshot, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    snapshots = iter((DiskSnapshot(scratch_mb=120.0, disk_pct=20.0), after))
+    snapshots = iter((after, after))
 
     result = automatic_disk_cleanup.run_preflight(
         inspect_usage=lambda: next(snapshots),
@@ -1540,6 +1668,21 @@ def test_preflight_fails_closed_on_cleanup_or_inspection_errors(
 
     assert automatic_disk_cleanup.run_preflight(inspect_usage=fail_inspection) == 1
     assert "status=failed" in capsys.readouterr().err
+
+
+def test_preflight_fails_closed_when_cleanup_raises(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fail_cleanup() -> automatic_disk_cleanup.CleanupResult:
+        raise OSError("cleanup unavailable")
+
+    result = automatic_disk_cleanup.run_preflight(
+        inspect_usage=lambda: DiskSnapshot(scratch_mb=120.0, disk_pct=91.0),
+        cleanup=fail_cleanup,
+    )
+
+    assert result == 1
+    assert "phase=cleanup status=failed pass=1" in capsys.readouterr().err
 
 
 def test_canonical_inspection_and_worktree_discovery_are_reused(
@@ -1841,10 +1984,16 @@ def test_default_cleanup_discovers_and_preserves_git_worktrees(
         "_active_process_pids",
         lambda _path: [],
     )
+    stale_file = tmp_path / "gludd-test-stale.json"
+    monkeypatch.setattr(
+        automatic_disk_cleanup.clean_ci_shard_scratch,
+        "clean_ci_shard_scratch",
+        lambda **kwargs: {"removed": [str(stale_file)], "skipped": []},
+    )
 
     result = automatic_disk_cleanup._automatic_cleanup()
 
-    assert result.removed == ()
+    assert result.removed == (str(stale_file),)
     assert any("completion proof required" in item for item in result.skipped)
     assert cache.exists()
     assert finished.path.exists()
@@ -1980,3 +2129,7 @@ def test_feature_document_records_zdd_rollback_and_long_lived_reports() -> None:
     assert "github.com/astral-sh/uv/issues/11432" in document
     assert "github.com/astral-sh/uv/issues/11694" in document
     assert "github.com/stablyai/orca/issues/10562" in document
+    assert "github.com/python/cpython/issues/111246" in document
+    assert "github.com/pytest-dev/pytest/discussions/10325" in document
+    assert "Eight passes" in document
+    assert "lsof" in document

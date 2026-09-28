@@ -54,6 +54,7 @@ MIN_COMMIT_RECEIPT_GRACE_SECONDS = 30 * 60
 DEFAULT_COMMIT_RECEIPT_GRACE_SECONDS = MIN_COMMIT_RECEIPT_GRACE_SECONDS
 MAX_WORKTREE_MATERIALIZATIONS = 4
 MAX_EVIDENCE_RELOCATIONS = 16
+MAX_PREFLIGHT_CLEANUP_PASSES = 8
 REGENERABLE_IGNORED_DIR_NAMES = frozenset(
     {".hypothesis", "__pycache__", "node_modules", *GENERATED_CACHE_DIR_NAMES}
 )
@@ -1202,6 +1203,69 @@ def _combine_cleanup_results(*results: CleanupResult) -> CleanupResult:
     )
 
 
+def _expected_generated_scratch_refusal(item: str) -> bool:
+    """Return whether a generated-scratch skip is an intentional protection."""
+    reason = item.rsplit(":", maxsplit=1)[-1]
+    return reason in {
+        "lease-marker",
+        "recent",
+        "symlink",
+        "unsupported-generated-file",
+        "unsupported-file-type",
+    } or reason.startswith(("active-pids=", "active-socket-pids="))
+
+
+def clean_stale_generated_scratch(
+    *,
+    dry_run: bool = False,
+    cleanup_runner: Callable[..., dict[str, list[str]]] | None = None,
+) -> CleanupResult:
+    """Reclaim only stale, inactive generated test scratch under `/tmp`."""
+    print(
+        "phase=cleanup action=stale-generated-scratch status=starting",
+        flush=True,
+    )
+    runner = cleanup_runner or clean_ci_shard_scratch.clean_ci_shard_scratch
+    try:
+        raw_result = runner(dry_run=dry_run)
+        removed = raw_result["removed"]
+        raw_skipped = raw_result["skipped"]
+        if (
+            not isinstance(removed, list)
+            or not isinstance(raw_skipped, list)
+            or not all(isinstance(item, str) for item in (*removed, *raw_skipped))
+        ):
+            raise ValueError("generated scratch cleanup returned invalid evidence")
+    except (
+        KeyError,
+        OSError,
+        ProcessInspectionError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        subprocess.SubprocessError,
+    ):
+        print(
+            "phase=cleanup action=stale-generated-scratch status=failed",
+            file=sys.stderr,
+            flush=True,
+        )
+        return CleanupResult((), (), ("stale-generated-scratch:inspection-failed",))
+
+    skipped = tuple(
+        item for item in raw_skipped if _expected_generated_scratch_refusal(item)
+    )
+    errors = tuple(
+        item for item in raw_skipped if not _expected_generated_scratch_refusal(item)
+    )
+    print(
+        "phase=cleanup action=stale-generated-scratch status=complete "
+        f"removed={len(removed)} skipped={len(skipped)} errors={len(errors)}",
+        flush=True,
+    )
+    return CleanupResult(tuple(removed), skipped, errors)
+
+
 def _automatic_cleanup(
     *,
     dry_run: bool = False,
@@ -1253,6 +1317,7 @@ def _automatic_cleanup(
         relocation_result = CleanupResult(
             (), (), ("release-evidence-relocation:inspection-failed",)
         )
+    scratch_result = clean_stale_generated_scratch(dry_run=dry_run)
     worktree_result = clean_inactive_worktree_caches(
         records=records,
         approved_roots=roots,
@@ -1272,7 +1337,12 @@ def _automatic_cleanup(
         dry_run=dry_run,
     )
     uv_result = prune_shared_uv_cache(dry_run=dry_run)
-    return _combine_cleanup_results(relocation_result, worktree_result, uv_result)
+    return _combine_cleanup_results(
+        relocation_result,
+        scratch_result,
+        worktree_result,
+        uv_result,
+    )
 
 
 def _snapshot_text(snapshot: DiskSnapshot) -> str:
@@ -1284,12 +1354,18 @@ def _snapshot_text(snapshot: DiskSnapshot) -> str:
     )
 
 
+def _usage_decreased(before: DiskSnapshot, after: DiskSnapshot) -> bool:
+    """Return whether either canonical measurement demonstrably decreased."""
+    return after.scratch_mb < before.scratch_mb or after.disk_pct < before.disk_pct
+
+
 def run_preflight(
     *,
     inspect_usage: InspectUsage = inspect_usage,
     cleanup: Cleanup | None = None,
+    max_cleanup_passes: int = MAX_PREFLIGHT_CLEANUP_PASSES,
 ) -> int:
-    """Inspect, conditionally clean, recheck, and fail closed on uncertainty."""
+    """Clean while measured pressure falls, within a strict pass bound."""
     print("phase=inspect status=starting", flush=True)
     try:
         before = inspect_usage()
@@ -1301,40 +1377,110 @@ def run_preflight(
         return 0
 
     print(f"phase=inspect status=pressure {_snapshot_text(before)}", flush=True)
-    print("phase=cleanup status=starting", flush=True)
-    cleanup_result = (cleanup or _automatic_cleanup)()
-    for item in cleanup_result.skipped:
-        print(f"phase=cleanup action=skip detail={json.dumps(item)}", flush=True)
-    for item in cleanup_result.errors:
+    if max_cleanup_passes < 1:
         print(
-            f"phase=cleanup action=refuse detail={json.dumps(item)}",
+            "phase=cleanup status=failed reason=invalid-pass-limit",
             file=sys.stderr,
             flush=True,
         )
-    print(
-        "phase=cleanup status=complete "
-        f"removed={len(cleanup_result.removed)} "
-        f"skipped={len(cleanup_result.skipped)} "
-        f"errors={len(cleanup_result.errors)}",
-        flush=True,
-    )
+        return 1
 
-    print("phase=recheck status=starting", flush=True)
-    try:
-        after = inspect_usage()
-    except (DiskInspectionError, OSError, RuntimeError, subprocess.SubprocessError) as exc:
-        print(f"phase=recheck status=failed reason={exc}", file=sys.stderr, flush=True)
-        return 1
-    if cleanup_result.errors or after.is_high:
+    cleanup_action = cleanup or _automatic_cleanup
+    current = before
+    for pass_number in range(1, max_cleanup_passes + 1):
+        print(f"phase=cleanup status=starting pass={pass_number}", flush=True)
+        try:
+            cleanup_result = cleanup_action()
+        except (
+            DiskInspectionError,
+            OSError,
+            RuntimeError,
+            ValueError,
+            subprocess.SubprocessError,
+        ) as exc:
+            print(
+                f"phase=cleanup status=failed pass={pass_number} reason={exc}",
+                file=sys.stderr,
+                flush=True,
+            )
+            return 1
+        for item in cleanup_result.skipped:
+            print(
+                "phase=cleanup action=skip "
+                f"pass={pass_number} detail={json.dumps(item)}",
+                flush=True,
+            )
+        for item in cleanup_result.errors:
+            print(
+                "phase=cleanup action=refuse "
+                f"pass={pass_number} detail={json.dumps(item)}",
+                file=sys.stderr,
+                flush=True,
+            )
         print(
-            f"phase=recheck status=failed {_snapshot_text(after)} "
-            f"cleanup_errors={len(cleanup_result.errors)}",
-            file=sys.stderr,
+            "phase=cleanup status=complete "
+            f"pass={pass_number} "
+            f"removed={len(cleanup_result.removed)} "
+            f"skipped={len(cleanup_result.skipped)} "
+            f"errors={len(cleanup_result.errors)}",
             flush=True,
         )
-        return 1
-    print(f"phase=recheck status=healthy {_snapshot_text(after)}", flush=True)
-    return 0
+
+        print(f"phase=recheck status=starting pass={pass_number}", flush=True)
+        try:
+            after = inspect_usage()
+        except (
+            DiskInspectionError,
+            OSError,
+            RuntimeError,
+            subprocess.SubprocessError,
+        ) as exc:
+            print(
+                f"phase=recheck status=failed pass={pass_number} reason={exc}",
+                file=sys.stderr,
+                flush=True,
+            )
+            return 1
+        if cleanup_result.errors:
+            print(
+                "phase=recheck status=failed "
+                f"pass={pass_number} reason=cleanup-errors "
+                f"{_snapshot_text(after)} "
+                f"cleanup_errors={len(cleanup_result.errors)}",
+                file=sys.stderr,
+                flush=True,
+            )
+            return 1
+        if not after.is_high:
+            print(
+                f"phase=recheck status=healthy pass={pass_number} "
+                f"{_snapshot_text(after)}",
+                flush=True,
+            )
+            return 0
+        if not _usage_decreased(current, after):
+            print(
+                "phase=recheck status=failed "
+                f"pass={pass_number} reason=no-progress {_snapshot_text(after)}",
+                file=sys.stderr,
+                flush=True,
+            )
+            return 1
+        if pass_number == max_cleanup_passes:
+            print(
+                "phase=recheck status=failed "
+                f"pass={pass_number} reason=pass-limit {_snapshot_text(after)}",
+                file=sys.stderr,
+                flush=True,
+            )
+            return 1
+        print(
+            f"phase=recheck status=pressure pass={pass_number} "
+            f"{_snapshot_text(after)}",
+            flush=True,
+        )
+        current = after
+    return 1
 
 
 def _receipt_grace_argument(raw_value: str) -> int:
