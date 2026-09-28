@@ -9,6 +9,9 @@ from typing import Any
 import pytest
 
 from general_ludd.connectors import _aws_config_types as aws_types
+from general_ludd.connectors import _slack_transport as slack_transport
+from general_ludd.connectors import aws_config_trail as aws_config_trail_module
+from general_ludd.connectors import slack as slack_module
 from general_ludd.connectors._slack_transport import CallableTransportAdapter, invoke_transport
 
 
@@ -23,6 +26,14 @@ class _Response:
 
     def json(self) -> object:
         return self._body
+
+
+def test_extractions_preserve_legacy_import_boundaries() -> None:
+    assert (
+        aws_config_trail_module.ConfigResourceIdentifier
+        is aws_types.ConfigResourceIdentifier
+    )
+    assert slack_module._CallbackResponse is slack_transport._CallbackResponse
 
 
 def test_invoke_transport_adapts_request_tuple() -> None:

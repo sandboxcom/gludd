@@ -8,16 +8,21 @@ TargetKind = Literal["config", "yaml", "role", "code"]
 RiskLevel = Literal["low", "medium", "high"]
 SubsystemSpec = dict[str, object]
 
+# Capabilities map to distinct executor write scopes for policy and audit.
 CAP_CONFIG_WRITE = "config_write"
 CAP_COLLECTIONS_SELF_MODIFY = "collections_self_modify"
 CAP_CODE_SELF_MODIFY = "code_self_modify"
 
+# Higher priority values are dispatched sooner. Configuration changes are
+# fast-tracked while code changes remain review-heavy.
 PRIORITY_CONFIG = 8
 PRIORITY_ROLE = 5
 PRIORITY_CODE = 3
 
+# Verified repository root for self-modifiable Ansible roles.
 ROLES_BASE = "collections/ansible_collections/general_ludd/agent/roles"
 
+# Phrases that require behavioral code rather than a configuration edit.
 CODE_BEHAVIOUR_MARKERS = (
     "how the",
     "how it",
@@ -36,6 +41,7 @@ CODE_BEHAVIOUR_MARKERS = (
     "selection logic",
 )
 
+# Curated from the repository's actual configuration, role, and source paths.
 DEFAULT_SUBSYSTEM_MAP: dict[str, SubsystemSpec] = {
     "budget": {
         "kind": "config",

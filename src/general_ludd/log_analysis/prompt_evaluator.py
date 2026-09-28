@@ -145,10 +145,9 @@ def extract_prompts(conversation: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
-def classify_prompt(prompt_text: str) -> str:
-    """Classify a prompt using deterministic lexical markers."""
-    text = prompt_text.lower().strip()
-    markers: list[tuple[str, list[str]]] = [
+def _prompt_markers() -> list[tuple[str, list[str]]]:
+    """Return a fresh deterministic marker table for prompt classification."""
+    return [
         (
             "planning",
             [
@@ -235,8 +234,14 @@ def classify_prompt(prompt_text: str) -> str:
             ],
         ),
     ]
+
+
+def classify_prompt(prompt_text: str) -> str:
+    """Classify a prompt using deterministic lexical markers."""
+    text = prompt_text.lower().strip()
     scores: dict[str, int] = defaultdict(int)
-    for category, patterns in markers:
+
+    for category, patterns in _prompt_markers():
         for pat in patterns:
             if re.search(pat, text):
                 scores[category] += 1

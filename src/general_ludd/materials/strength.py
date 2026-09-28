@@ -43,6 +43,13 @@ def _extract_capacity(prop: dict[str, Any]) -> float | None:
     return None
 
 
+def _is_admissible_applied_stress(value: object, *, allow_zero: bool) -> bool:
+    """Return whether a stress value is finite and valid for the load case."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return math.isfinite(float(value)) and (value > 0 or (allow_zero and value == 0))
+
+
 def _stress_check(
     capacity_prop: dict[str, Any],
     applied_MPa: float,
@@ -67,6 +74,7 @@ def _stress_check(
     capacity = _extract_capacity(capacity_prop)
     unit = capacity_prop.get("unit", "MPa")
     uncertainty = capacity_prop.get("uncertainty", 0.0)
+
     inputs: dict[str, Any] = {
         "capacity": {
             "value": capacity,
@@ -77,6 +85,7 @@ def _stress_check(
     }
     if extra_inputs:
         inputs.update(extra_inputs)
+
     base: dict[str, Any] = {
         "failure_mode": failure_mode,
         "equation_id": equation_id,
@@ -85,13 +94,10 @@ def _stress_check(
         "unit": unit,
         "uncertainty": uncertainty,
     }
-    applied_is_finite = (
-        not isinstance(applied_MPa, bool)
-        and isinstance(applied_MPa, (int, float))
-        and math.isfinite(float(applied_MPa))
-    )
-    applied_is_admissible = applied_is_finite and (
-        applied_MPa > 0 or (allow_zero_applied and applied_MPa == 0)
+
+    applied_is_admissible = _is_admissible_applied_stress(
+        applied_MPa,
+        allow_zero=allow_zero_applied,
     )
 
     # Invalid loading is the stronger safety signal and therefore takes
@@ -371,6 +377,26 @@ def check_thermal_stress(
 # ---------------------------------------------------------------------------
 
 
+def _fatigue_uncertainty(
+    allowable: float,
+    applied_amplitude_MPa: float,
+    endurance_was_estimated: bool,
+    uncertainty_fraction: float,
+) -> tuple[bool, float]:
+    """Return amplitude validity and the corresponding fatigue uncertainty."""
+    applied_is_finite = (
+        not isinstance(applied_amplitude_MPa, bool)
+        and isinstance(applied_amplitude_MPa, (int, float))
+        and math.isfinite(float(applied_amplitude_MPa))
+    )
+    if endurance_was_estimated:
+        applied_basis = float(applied_amplitude_MPa) if applied_is_finite else 0.0
+        uncertainty_basis = max(0.5 * allowable, applied_basis)
+    else:
+        uncertainty_basis = allowable
+    return applied_is_finite, uncertainty_basis * uncertainty_fraction
+
+
 def check_fatigue_sn(
     S_ut_MPa: float,
     applied_amplitude_MPa: float,
@@ -382,6 +408,7 @@ def check_fatigue_sn(
     If ``S_e_MPa`` (endurance limit at 10^6 cycles) is not supplied, it is
     estimated as 0.5 * S_ut (steel baseline per Shigley). The estimate is
     flagged in assumptions and carries wide uncertainty (MATE-SAFE-003).
+
     For N <= 10^3: allowable = 0.9 * S_ut (low-cycle fatigue cutoff).
     For N >= 10^6: allowable = S_e (endurance limit).
     Between: log-log interpolation (Basquin).
@@ -390,10 +417,12 @@ def check_fatigue_sn(
     assumptions: list[str] = []
     uncertainty_fraction = 0.05
     endurance_was_estimated = S_e_MPa is None
+
     if S_e_MPa is None:
         S_e_MPa = 0.5 * S_ut_MPa
         assumptions.append(f"endurance limit estimated as 0.5*S_ut={S_e_MPa:.1f} MPa (steel baseline)")
         uncertainty_fraction = 0.15
+
     if cycles <= 1_000:
         allowable = 0.9 * S_ut_MPa
         n_label = "N <= 10^3 (LCF cutoff at 0.9*S_ut)"
@@ -413,19 +442,14 @@ def check_fatigue_sn(
         log_s = log_s_hi + (log_n - 3.0) * (log_s_lo - log_s_hi) / (6.0 - 3.0)
         allowable = 10.0**log_s
         n_label = f"N={cycles} (finite-life Basquin interpolation)"
-    applied_is_finite = (
-        not isinstance(applied_amplitude_MPa, bool)
-        and isinstance(applied_amplitude_MPa, (int, float))
-        and math.isfinite(float(applied_amplitude_MPa))
+
+    # Keep inferred-strength uncertainty tied to the larger decision driver.
+    applied_is_finite, uncertainty = _fatigue_uncertainty(
+        allowable,
+        applied_amplitude_MPa,
+        endurance_was_estimated,
+        uncertainty_fraction,
     )
-    if endurance_was_estimated:
-        # Keep the baseline uncertainty tied to the inferred strength while
-        # widening it when the decision-driving amplitude is larger.
-        applied_basis = float(applied_amplitude_MPa) if applied_is_finite else 0.0
-        uncertainty_basis = max(0.5 * allowable, applied_basis)
-    else:
-        uncertainty_basis = allowable
-    uncertainty = uncertainty_basis * uncertainty_fraction
 
     inputs: dict[str, Any] = {
         "S_ut": {"value": S_ut_MPa, "unit": "MPa"},

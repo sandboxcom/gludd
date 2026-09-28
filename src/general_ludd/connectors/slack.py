@@ -12,9 +12,9 @@ It should NOT be registered in a ``SourceRegistry`` or loaded via
 
 Design constraints (intentional, do not "simplify" away):
 
-* No imports from ``general_ludd`` base classes, package ``__init__`` or other
-  connectors -- this module is deliberately standalone so it can be vendored or
-  tested in isolation.
+* Connector behavior stays independent of connector base classes and package
+  initialization; transport and URL-policy helpers live in the private sibling
+  module :mod:`general_ludd.connectors._slack_transport`.
 * The HTTP transport is *injected*. Production callers pass a real client; tests
   pass a fake. We never construct a global/default network client at import time.
 * SSRF protection: ``base_url`` and ``webhook_url`` are both validated against
@@ -42,6 +42,9 @@ from general_ludd.connectors._slack_transport import (
     assert_safe_url,
     invoke_transport,
     parse_slack_ts,
+)
+from general_ludd.connectors._slack_transport import (
+    _CallbackResponse as _CallbackResponse,
 )
 
 logger = logging.getLogger(__name__)

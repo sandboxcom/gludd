@@ -23,9 +23,21 @@ _SAFE_LABEL = re.compile(r"^[A-Za-z0-9_.\-:/]{1,100}$")
 _MAX_SEEN_KEYS = 256
 
 
+def _check_quality_payload(payload: dict[str, object]) -> dict[str, object]:
+    """Evaluate the coverage fields supplied to the quality endpoint."""
+    from general_ludd.quality.gate import QualityGateChecker
+
+    checker = QualityGateChecker()
+    return checker.check_python_coverage(
+        coverage_percent=float(str(payload.get("coverage_percent", 0.0))),
+        branch_percent=cast(float | None, payload.get("branch_percent")),
+    )
+
+
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     """Register maintenance and administrative routes on ``app``."""
     repo_root = os.environ.get("GLUDD_REPO_ROOT", ".")
+
     @app.get("/admin/code-intel/hot-files")
     async def code_intel_hot_files(limit: int = 10) -> dict[str, object]:
         from general_ludd.code_intelligence.git_intel import GitIntelligence
@@ -40,6 +52,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 gi.recent_commits, min(limit, 20)
             ),
         }
+
     @app.get("/admin/deps/outdated")
     async def deps_outdated() -> dict[str, object]:
         from general_ludd.dependency.manager import DependencyManager
@@ -116,10 +129,4 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/admin/quality/check")
     async def quality_check(payload: dict[str, object]) -> dict[str, object]:
-        from general_ludd.quality.gate import QualityGateChecker
-
-        checker = QualityGateChecker()
-        return checker.check_python_coverage(
-            coverage_percent=float(str(payload.get("coverage_percent", 0.0))),
-            branch_percent=cast(float | None, payload.get("branch_percent")),
-        )
+        return _check_quality_payload(payload)

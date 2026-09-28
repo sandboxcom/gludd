@@ -6,10 +6,11 @@ into the project's connector record shape.
 
 Design constraints (see the connector contract):
 
-* No imports of a connector base class, package ``__init__``, or sibling
-  modules — this file stands alone and only depends on the stdlib.
+* Connector behavior stays independent of connector base classes and package
+  initialization; transport contracts and adapters live in the private sibling
+  module :mod:`general_ludd.connectors._sentry_transport`.
 * HTTP transport is injectable so tests can supply a mocked transport; the
-  default transport uses ``urllib`` from the stdlib.
+  default transport uses ``httpx`` with redirects disabled.
 * SSRF protection: ``base_url`` is rejected at construction time if its host is
   a literal private / loopback / link-local / reserved address. No DNS
   resolution is performed (a literal-host check only — name-based hosts are

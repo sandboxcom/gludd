@@ -274,6 +274,29 @@ def _lock_packages(lock: Mapping[str, Any]) -> dict[str, str] | None:
     return normalized
 
 
+def _validated_dependency_lock(
+    dependency_lock_bytes: bytes,
+    dependency_lock: Mapping[str, Any] | None,
+) -> Mapping[str, Any]:
+    """Decode a lockfile and reject any mismatched parsed representation."""
+    try:
+        decoded_lock = json.loads(dependency_lock_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("dependency_lock_bytes must contain JSON") from exc
+    if not isinstance(decoded_lock, Mapping) or _lock_packages(decoded_lock) is None:
+        raise ValueError("dependency_lock_bytes must contain a packages mapping")
+    parsed_lock: Mapping[str, Any] = decoded_lock
+    if dependency_lock is not None:
+        try:
+            parsed_bytes = _canonical_json_bytes(parsed_lock)
+            supplied_bytes = _canonical_json_bytes(dependency_lock)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("dependency_lock must be JSON serializable") from exc
+        if not hmac.compare_digest(parsed_bytes, supplied_bytes):
+            raise ValueError("dependency_lock does not match dependency_lock_bytes")
+    return parsed_lock
+
+
 def _receipt_payload(receipt: ArtifactVerificationReceipt) -> dict[str, str]:
     return {
         "attestation_digest": receipt.attestation_digest,
@@ -553,23 +576,11 @@ def build_provenance(
         raise ValueError("artifact_bytes is required")
     if not dependency_lock_bytes:
         raise ValueError("dependency_lock_bytes is required (GRC-SEC-005: deps SHALL be locked)")
+
     artifact_digest = _sha256_hex(artifact_bytes)
     lock_digest = _sha256_hex(dependency_lock_bytes)
-    try:
-        decoded_lock = json.loads(dependency_lock_bytes.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ValueError("dependency_lock_bytes must contain JSON") from exc
-    if not isinstance(decoded_lock, Mapping) or _lock_packages(decoded_lock) is None:
-        raise ValueError("dependency_lock_bytes must contain a packages mapping")
-    parsed_lock: Mapping[str, Any] = decoded_lock
-    if dependency_lock is not None:
-        try:
-            parsed_bytes = _canonical_json_bytes(parsed_lock)
-            supplied_bytes = _canonical_json_bytes(dependency_lock)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("dependency_lock must be JSON serializable") from exc
-        if not hmac.compare_digest(parsed_bytes, supplied_bytes):
-            raise ValueError("dependency_lock does not match dependency_lock_bytes")
+    parsed_lock = _validated_dependency_lock(dependency_lock_bytes, dependency_lock)
+
     sbom = _build_cyclonedx_sbom(
         dependency_lock=parsed_lock,
         artifact_name=artifact_name,
@@ -590,6 +601,7 @@ def build_provenance(
         statement=statement,
         digest=_sha256_hex(_canonical_json_bytes(statement)),
     )
+
     return ProvenanceRecord(
         sbom=sbom,
         signature_state=signature_state,

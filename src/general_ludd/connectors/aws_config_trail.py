@@ -50,6 +50,9 @@ from general_ludd.connectors._aws_config_types import (
     _default_factory,
     _TupleAwsClient,
 )
+from general_ludd.connectors._aws_config_types import (
+    ConfigResourceIdentifier as ConfigResourceIdentifier,
+)
 
 __all__ = ["AwsConfigTrailSource"]
 

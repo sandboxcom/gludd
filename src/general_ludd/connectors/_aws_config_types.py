@@ -7,16 +7,22 @@ from typing import Any, Protocol, TypedDict, cast, runtime_checkable
 
 
 class ConfigResourceIdentifier(TypedDict, total=False):
+    """Identify one row returned by ``list_discovered_resources``."""
+
     resourceType: str
     resourceId: str
     resourceName: str
 
 
 class ListDiscoveredResourcesResponse(TypedDict, total=False):
+    """Describe a ``list_discovered_resources`` response."""
+
     resourceIdentifiers: list[ConfigResourceIdentifier]
 
 
 class ConfigurationItem(TypedDict, total=False):
+    """Describe one AWS Config resource-history item."""
+
     resourceId: str
     resourceType: str
     configurationItemStatus: str
@@ -27,10 +33,14 @@ class ConfigurationItem(TypedDict, total=False):
 
 
 class GetResourceConfigHistoryResponse(TypedDict, total=False):
+    """Describe a ``get_resource_config_history`` response."""
+
     configurationItems: list[ConfigurationItem]
 
 
 class CloudTrailLookupEvent(TypedDict, total=False):
+    """Describe one event returned by CloudTrail lookup."""
+
     EventId: str
     EventName: str
     EventTime: object
@@ -42,15 +52,25 @@ class CloudTrailLookupEvent(TypedDict, total=False):
 
 
 class LookupEventsResponse(TypedDict, total=False):
+    """Describe a CloudTrail ``lookup_events`` response."""
+
     Events: list[CloudTrailLookupEvent]
 
 
 class HealthStatus(TypedDict):
+    """Report connector health without raising transport errors."""
+
     ok: bool
     detail: str
 
 
 class NormalizedRecord(TypedDict):
+    """Represent one normalized infrastructure-state record.
+
+    ``ts`` and ``value`` remain ``object`` because AWS returns timestamps and
+    state identifiers in more than one concrete representation.
+    """
+
     ts: object
     source: str
     kind: str
@@ -63,6 +83,8 @@ class NormalizedRecord(TypedDict):
 
 @runtime_checkable
 class _Client(Protocol):
+    """Model boto3's service-specific, dynamically generated client surface."""
+
     def __getattr__(self, name: str) -> Any: ...
 
 

@@ -10,6 +10,8 @@ from general_ludd.distributed.vector_clock import VectorClock
 
 
 class DataStoreLike(Protocol):
+    """Provide the store operations required by anti-entropy sync."""
+
     def list_keys(self) -> list[str]: ...
 
     def get(self, key: str) -> Any: ...
@@ -23,6 +25,8 @@ def _hash_data(data: bytes) -> str:
 
 @dataclass(slots=True)
 class MerkleNode:
+    """Store one Merkle digest and its covered key range."""
+
     hash: str
     left: MerkleNode | None = None
     right: MerkleNode | None = None
@@ -30,7 +34,12 @@ class MerkleNode:
 
 
 class MerkleTree:
-    """Binary Merkle tree over key/value/vector-clock tuples."""
+    """Build a binary Merkle tree over key/value/vector-clock tuples.
+
+    Leaves hash ``(key, value, version)`` and internal nodes hash their child
+    digests. Comparing roots and then mismatched subtrees identifies only the
+    keys that need anti-entropy synchronization.
+    """
 
     def __init__(self, data: list[tuple[str, Any, VectorClock]]) -> None:
         if not data:
@@ -133,7 +142,11 @@ def merkle_sync(
     store_a: DataStoreLike,
     store_b: DataStoreLike,
 ) -> dict[str, tuple[str, str]]:
-    """Exchange only values whose Merkle leaves differ."""
+    """Exchange only values whose Merkle leaves differ.
+
+    Return ``{key: (action_a, action_b)}``, where each action is ``pull`` or
+    ``equal`` from that store's perspective.
+    """
     keys = sorted(set(store_a.list_keys()) | set(store_b.list_keys()))
     divergent = _build_for(store_a, keys).compare(_build_for(store_b, keys))
     actions: dict[str, tuple[str, str]] = {}
