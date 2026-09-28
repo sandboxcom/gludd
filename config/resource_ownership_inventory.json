@@ -861,6 +861,17 @@
       "owned": true
     },
     {
+      "path": "src/general_ludd/connectors/_sentry_transport.py",
+      "line": 55,
+      "column": 13,
+      "kind": "client",
+      "owner": "UrllibTransport.get",
+      "acquisition": "httpx.Client(timeout=timeout, follow_redirects=False)",
+      "teardown": "context-manager-exit",
+      "source_hash": "c46d4c8d09074c818b4cc56607e7886ec7db884323c14943eeb52acce0383600",
+      "owned": true
+    },
+    {
       "path": "src/general_ludd/connectors/appdynamics.py",
       "line": 193,
       "column": 13,
@@ -1136,17 +1147,6 @@
       "owned": true
     },
     {
-      "path": "src/general_ludd/connectors/sentry.py",
-      "line": 103,
-      "column": 13,
-      "kind": "client",
-      "owner": "_UrllibTransport.get",
-      "acquisition": "httpx.Client(timeout=timeout, follow_redirects=False)",
-      "teardown": "context-manager-exit",
-      "source_hash": "1a8b1f026fe2a97e1c230f730ef53b8460981fb4d0e8a2fea261eca7eb79e2ac",
-      "owned": true
-    },
-    {
       "path": "src/general_ludd/connectors/splunk_observability.py",
       "line": 93,
       "column": 9,
@@ -1268,8 +1268,30 @@
       "owned": true
     },
     {
+      "path": "src/general_ludd/event_loop/decision_reconciliation.py",
+      "line": 271,
+      "column": 32,
+      "kind": "async-task",
+      "owner": "_commit_transition",
+      "acquisition": "asyncio.create_task(loop._auto_record_episode(todo, new_status, decision))",
+      "teardown": "ownership-transfer:loop._track_background_task(asyncio.create_task(loop._auto_record_episode(todo, new_status, decision)))",
+      "source_hash": "623e9a4a7134f0c84bd994be7a92d41c541e91f11da2308c92b5aa509d5c45fd",
+      "owned": true
+    },
+    {
+      "path": "src/general_ludd/event_loop/decision_reconciliation.py",
+      "line": 278,
+      "column": 36,
+      "kind": "async-task",
+      "owner": "_commit_transition",
+      "acquisition": "asyncio.create_task(loop._maybe_cleanup_ephemeral(todo))",
+      "teardown": "ownership-transfer:loop._track_background_task(asyncio.create_task(loop._maybe_cleanup_ephemeral(todo)))",
+      "source_hash": "8df599399dfbde9146a355f218c0f57b4cd5cebdb08000de71b81ce44452107c",
+      "owned": true
+    },
+    {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 1043,
+      "line": 1046,
       "column": 22,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1280,7 +1302,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 1055,
+      "line": 1058,
       "column": 27,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1291,7 +1313,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 1069,
+      "line": 1072,
       "column": 32,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1302,7 +1324,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 2575,
+      "line": 2578,
       "column": 29,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job_isolated",
@@ -1313,7 +1335,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3721,
+      "line": 3724,
       "column": 26,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -1324,35 +1346,13 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3779,
+      "line": 3782,
       "column": 27,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
       "acquisition": "asyncio.create_task(self._benchmark_recorder.record_from_trace(_trace, success=True))",
       "teardown": "ownership-transfer:self._track_background_task(_tbt)",
       "source_hash": "fadd656f36e9ff6ad6dfe0c3446ad823cd74549dddbdcb84e7baf32625eac988",
-      "owned": true
-    },
-    {
-      "path": "src/general_ludd/event_loop/loop.py",
-      "line": 4936,
-      "column": 40,
-      "kind": "async-task",
-      "owner": "EventLoop._phase_reconcile_completed_decisions",
-      "acquisition": "asyncio.create_task(self._auto_record_episode(todo, new_status, d))",
-      "teardown": "ownership-transfer:self._track_background_task(asyncio.create_task(self._auto_record_episode(todo, new_status, d)))",
-      "source_hash": "4a20d4ae1871a0c6cb8fb6b89521eb2daa88ca41c47d7edb3e297a561da3afe5",
-      "owned": true
-    },
-    {
-      "path": "src/general_ludd/event_loop/loop.py",
-      "line": 4950,
-      "column": 44,
-      "kind": "async-task",
-      "owner": "EventLoop._phase_reconcile_completed_decisions",
-      "acquisition": "asyncio.create_task(self._maybe_cleanup_ephemeral(todo))",
-      "teardown": "ownership-transfer:self._track_background_task(asyncio.create_task(self._maybe_cleanup_ephemeral(todo)))",
-      "source_hash": "3e57b74649a5f8fff4e0f0ee0a5581a11164b75e672e7c3183722bd6cdffc9eb",
       "owned": true
     },
     {
@@ -1753,7 +1753,7 @@
     },
     {
       "path": "src/general_ludd/pricing_intel/sources.py",
-      "line": 144,
+      "line": 162,
       "column": 17,
       "kind": "client",
       "owner": "OpenRouterSource.fetch_model_prices",
@@ -1764,7 +1764,7 @@
     },
     {
       "path": "src/general_ludd/pricing_intel/sources.py",
-      "line": 627,
+      "line": 632,
       "column": 17,
       "kind": "client",
       "owner": "RunPodPricingSource.fetch_compute_prices",
@@ -1775,7 +1775,7 @@
     },
     {
       "path": "src/general_ludd/pricing_intel/sources.py",
-      "line": 1827,
+      "line": 1832,
       "column": 17,
       "kind": "client",
       "owner": "LiteLLMJSONSource.fetch_model_prices",
@@ -1786,7 +1786,7 @@
     },
     {
       "path": "src/general_ludd/pricing_intel/sources.py",
-      "line": 2153,
+      "line": 2158,
       "column": 17,
       "kind": "client",
       "owner": "LambdaLabsPricingSource.fetch_compute_prices",
@@ -1797,7 +1797,7 @@
     },
     {
       "path": "src/general_ludd/pricing_intel/sources.py",
-      "line": 2283,
+      "line": 2288,
       "column": 17,
       "kind": "client",
       "owner": "HuggingFacePricingSource.fetch_compute_prices",
@@ -1808,7 +1808,7 @@
     },
     {
       "path": "src/general_ludd/pricing_intel/sources.py",
-      "line": 2407,
+      "line": 2412,
       "column": 17,
       "kind": "client",
       "owner": "ZAIPricingSource.fetch_model_prices",
