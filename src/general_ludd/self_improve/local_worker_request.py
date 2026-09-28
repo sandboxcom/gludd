@@ -7,6 +7,10 @@ import tempfile
 from pathlib import Path
 from typing import Final, NoReturn, Protocol, runtime_checkable
 
+from general_ludd.execution.adapter_protocols import (
+    ObservableRunnerProtocol,
+    require_runtime_adapter,
+)
 from general_ludd.self_improve._callback_compat import validated_timeout_seconds
 from general_ludd.self_improve.codex_comparison import (
     LOCAL_PROPOSAL_VALIDATION_RETRY_PROTOCOL,
@@ -44,8 +48,8 @@ class _ObservableResult(Protocol):
 
 
 @runtime_checkable
-class _ObservableRunner(Protocol):
-    """Minimal parent-owned process boundary used by local inference."""
+class _ObservableRunner(ObservableRunnerProtocol[_ObservableResult], Protocol):
+    """Self-improvement compatibility refinement of the universal runner."""
 
     def run_observable(
         self,
@@ -132,6 +136,11 @@ def run_local_proposal_request(
     if envelope is not None and envelope.request_text != request:
         raise ValueError("proposal envelope request does not match prompt bytes")
     timeout = validated_timeout_seconds(timeout_seconds)
+    require_runtime_adapter(
+        runner,
+        ObservableRunnerProtocol,
+        boundary="local proposal runner",
+    )
 
     with tempfile.TemporaryDirectory(prefix="gludd-self-improve-proposal-") as raw:
         exchange = Path(raw)

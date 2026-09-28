@@ -19,6 +19,7 @@ from general_ludd.self_improve.managed_runner import (
     TaskSpec,
 )
 from general_ludd.self_improve.managed_runtime_evaluation import (
+    ManagedAttemptEvaluator,
     evaluate_policy_bound_managed_proposal,
 )
 from general_ludd.self_improve.private_policy import load_self_improve_policy
@@ -106,6 +107,32 @@ def test_policy_bound_evaluation_rejects_merge_before_policy_or_evaluator(
     assert events == []
 
 
+def test_policy_bound_evaluation_rejects_missing_evaluator_before_policy(
+    tmp_path: Path,
+) -> None:
+    """A malformed injection cannot trigger policy I/O before admission."""
+    events: list[str] = []
+
+    with pytest.raises(
+        TypeError,
+        match=r"^managed attempt evaluator does not satisfy its runtime protocol$",
+    ):
+        evaluate_policy_bound_managed_proposal(
+            tmp_path,
+            object(),
+            events.append,
+            _task(),
+            _reference(),
+            _bound(tmp_path),
+            1,
+            evaluator=cast(ManagedAttemptEvaluator[object], object()),
+            expected_attempt_identity_digest="b" * 64,
+            merge=False,
+        )
+
+    assert events == []
+
+
 def test_policy_bound_evaluation_rechecks_public_scope_around_exactly_one_call(
     tmp_path: Path,
 ) -> None:
@@ -118,10 +145,10 @@ def test_policy_bound_evaluation_rechecks_public_scope_around_exactly_one_call(
     calls: list[tuple[object, ...]] = []
 
     def evaluator(
-        actual_runner: object,
-        actual_task: TaskSpec,
-        actual_reference: CodexReference,
-        actual_bound: PlanBoundProposal,
+        runner: object,
+        task: TaskSpec,
+        reference: CodexReference,
+        bound_proposal: PlanBoundProposal,
         attempt: int,
         *,
         expected_attempt_identity_digest: str,
@@ -129,10 +156,10 @@ def test_policy_bound_evaluation_rechecks_public_scope_around_exactly_one_call(
     ) -> AttemptResult:
         calls.append(
             (
-                actual_runner,
-                actual_task,
-                actual_reference,
-                actual_bound,
+                runner,
+                task,
+                reference,
+                bound_proposal,
                 attempt,
                 expected_attempt_identity_digest,
                 merge,
