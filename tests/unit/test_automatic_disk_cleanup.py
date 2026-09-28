@@ -74,12 +74,18 @@ def test_cleanup_removes_only_allowlisted_caches_from_inactive_gludd_worktree(
         remove_tree=remove_tree,
     )
 
-    assert set(removed) == {
-        inactive.path / name for name in automatic_disk_cleanup.GENERATED_CACHE_DIR_NAMES
-    }
+    disposable_names = set(automatic_disk_cleanup.GENERATED_CACHE_DIR_NAMES) - set(
+        automatic_disk_cleanup.TOOL_ENVIRONMENT_DIR_NAMES
+    )
+    assert set(removed) == {inactive.path / name for name in disposable_names}
     assert result.removed == tuple(str(path) for path in sorted(removed))
     assert any("active logical workstream" in item for item in result.skipped)
     assert any("outside approved namespace" in item for item in result.skipped)
+    assert any(
+        f"{inactive.path / '.venv'}:completion proof required" in item
+        for item in result.skipped
+    )
+    assert (inactive.path / ".venv").exists()
     for record in (inactive, active, outside):
         assert record.path.exists()
         assert (record.path / ".git").exists()
@@ -346,7 +352,9 @@ def test_fresh_exact_commit_receipt_prunes_cache_but_preserves_continuation(
 ) -> None:
     root = tmp_path / "gludd-worktrees"
     record = _record(root / "continued", "feature/continued")
-    cache = record.path / ".venv"
+    tool_environment = record.path / ".venv"
+    cache = record.path / ".pytest_cache"
+    tool_environment.mkdir()
     cache.mkdir()
     lease = automatic_disk_cleanup.WorkstreamLease(
         branch=record.branch or "", worktree=record.path, updated_epoch=100
@@ -388,10 +396,12 @@ def test_fresh_exact_commit_receipt_prunes_cache_but_preserves_continuation(
         "exact-head successful commit receipt",
         cache_only=True,
     )
+    assert tool_environment.exists()
     assert not cache.exists()
     assert record.path.exists()
     assert materialization_calls == 0
     assert any("completion lease proof unavailable" in item for item in result.skipped)
+    assert any("completion proof required" in item for item in result.skipped)
 
 
 def test_exact_commit_receipt_retires_only_after_minimum_grace(
@@ -720,6 +730,148 @@ def test_lease_refresh_during_revalidation_cancels_cleanup(tmp_path: Path) -> No
     assert cache.exists()
     assert not result.removed
     assert result.skipped == (f"{record.path}:lease refreshed",)
+
+
+def test_tool_environment_rechecks_lease_immediately_before_removal(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "gludd-worktrees"
+    record = _record(root / "completed", "feature/completed")
+    tool_environment = record.path / ".venv"
+    disposable_cache = record.path / ".pytest_cache"
+    tool_environment.mkdir()
+    disposable_cache.mkdir()
+    initial = automatic_disk_cleanup.WorkstreamLease(
+        branch=record.branch or "", worktree=record.path, updated_epoch=1
+    )
+    renewed = automatic_disk_cleanup.WorkstreamLease(
+        branch=record.branch or "", worktree=record.path, updated_epoch=2
+    )
+    lease_reads = iter(
+        (
+            {record.branch: initial},
+            {record.branch: initial},
+            {record.branch: renewed},
+        )
+    )
+
+    result = automatic_disk_cleanup.clean_inactive_worktree_caches(
+        records=[record],
+        approved_roots=(root,),
+        protected_paths=frozenset(),
+        active_branches=lambda: frozenset({record.branch or ""}),
+        active_workstream_leases=lambda: next(lease_reads),
+        lifecycle_proof=lambda _record, _lease: (
+            automatic_disk_cleanup.LifecycleDecision(True, "completed")
+        ),
+        refresh_records=lambda: [record],
+        active_process_pids=lambda _path: [],
+    )
+
+    assert not disposable_cache.exists()
+    assert tool_environment.exists()
+    assert any("tool environment lease changed" in item for item in result.skipped)
+
+
+def test_tool_environment_rejects_completion_proof_downgrade_race(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "gludd-worktrees"
+    record = _record(root / "continued", "feature/continued")
+    tool_environment = record.path / ".venv"
+    disposable_cache = record.path / ".ruff_cache"
+    tool_environment.mkdir()
+    disposable_cache.mkdir()
+    lease = automatic_disk_cleanup.WorkstreamLease(
+        branch=record.branch or "", worktree=record.path, updated_epoch=1
+    )
+    lifecycle_reads = iter(
+        (
+            automatic_disk_cleanup.LifecycleDecision(True, "completed"),
+            automatic_disk_cleanup.LifecycleDecision(True, "completed"),
+            automatic_disk_cleanup.LifecycleDecision(
+                True, "fresh continuation receipt", cache_only=True
+            ),
+        )
+    )
+
+    result = automatic_disk_cleanup.clean_inactive_worktree_caches(
+        records=[record],
+        approved_roots=(root,),
+        protected_paths=frozenset(),
+        active_branches=lambda: frozenset({record.branch or ""}),
+        active_workstream_leases=lambda: {record.branch or "": lease},
+        lifecycle_proof=lambda _record, _lease: next(lifecycle_reads),
+        refresh_records=lambda: [record],
+        active_process_pids=lambda _path: [],
+    )
+
+    assert not disposable_cache.exists()
+    assert tool_environment.exists()
+    assert any(
+        "tool environment completion proof downgraded" in item
+        for item in result.skipped
+    )
+
+
+def test_tool_environment_rechecks_processes_after_disposable_cache_cleanup(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "gludd-worktrees"
+    record = _record(root / "running", "feature/running")
+    tool_environment = record.path / ".venv"
+    disposable_cache = record.path / ".mypy_cache"
+    tool_environment.mkdir()
+    disposable_cache.mkdir()
+    lease = automatic_disk_cleanup.WorkstreamLease(
+        branch=record.branch or "", worktree=record.path, updated_epoch=1
+    )
+    process_reads = iter(([], [], [5150]))
+
+    result = automatic_disk_cleanup.clean_inactive_worktree_caches(
+        records=[record],
+        approved_roots=(root,),
+        protected_paths=frozenset(),
+        active_branches=lambda: frozenset({record.branch or ""}),
+        active_workstream_leases=lambda: {record.branch or "": lease},
+        lifecycle_proof=lambda _record, _lease: (
+            automatic_disk_cleanup.LifecycleDecision(True, "completed")
+        ),
+        refresh_records=lambda: [record],
+        active_process_pids=lambda _path: next(process_reads),
+    )
+
+    assert not disposable_cache.exists()
+    assert tool_environment.exists()
+    assert any("active-pids=5150" in item for item in result.skipped)
+
+
+def test_completed_idle_proof_allows_tool_environment_reclamation(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "gludd-worktrees"
+    record = _record(root / "retired", "feature/retired")
+    tool_environment = record.path / ".venv"
+    tool_environment.mkdir()
+    lease = automatic_disk_cleanup.WorkstreamLease(
+        branch=record.branch or "", worktree=record.path, updated_epoch=1
+    )
+
+    result = automatic_disk_cleanup.clean_inactive_worktree_caches(
+        records=[record],
+        approved_roots=(root,),
+        protected_paths=frozenset(),
+        active_branches=lambda: frozenset({record.branch or ""}),
+        active_workstream_leases=lambda: {record.branch or "": lease},
+        lifecycle_proof=lambda _record, _lease: (
+            automatic_disk_cleanup.LifecycleDecision(True, "completed")
+        ),
+        refresh_records=lambda: [record],
+        active_process_pids=lambda _path: [],
+    )
+
+    assert not tool_environment.exists()
+    assert str(tool_environment) in result.removed
 
 
 def test_dry_run_preserves_generated_caches_and_materialization(tmp_path: Path) -> None:
@@ -1692,7 +1844,9 @@ def test_default_cleanup_discovers_and_preserves_git_worktrees(
 
     result = automatic_disk_cleanup._automatic_cleanup()
 
-    assert result.removed == (str(cache),)
+    assert result.removed == ()
+    assert any("completion proof required" in item for item in result.skipped)
+    assert cache.exists()
     assert finished.path.exists()
     assert main.path.exists()
 

@@ -35,11 +35,17 @@ else:
     prune_worktrees_safe = importlib.import_module("scripts.prune_worktrees_safe")
     workstream_registry = importlib.import_module("scripts.workstream_registry")
 
-GENERATED_CACHE_DIR_NAMES = (
+DISPOSABLE_CACHE_DIR_NAMES = (
     ".mypy_cache",
     ".pytest_cache",
     ".ruff_cache",
+)
+TOOL_ENVIRONMENT_DIR_NAMES = (
     ".venv",
+)
+GENERATED_CACHE_DIR_NAMES = (
+    *DISPOSABLE_CACHE_DIR_NAMES,
+    *TOOL_ENVIRONMENT_DIR_NAMES,
 )
 DEFAULT_TMP_WORKTREE_ROOT = Path("/tmp/gludd-worktrees")
 SHARED_UV_CACHE_ROOT = Path("/tmp/gludd-uv-cache-public-v2")
@@ -862,6 +868,8 @@ def clean_inactive_worktree_caches(
             ):
                 skipped.append(f"{path}:completion lease changed")
                 continue
+            if completion_lease is not None and lifecycle.cache_only:
+                completion_lease = None
         elif completion_lease is not None:
             skipped.append(f"{path}:completion lease changed")
             continue
@@ -876,6 +884,70 @@ def clean_inactive_worktree_caches(
             )
             continue
 
+        def tool_environment_reclaimable(
+            cache: Path,
+            candidate_record: prune_worktrees_safe.WorktreeRecord = record,
+            candidate_path: Path = path,
+            required_lease: WorkstreamLease | None = completion_lease,
+        ) -> bool:
+            """Repeat the full completion proof immediately before env removal."""
+            if required_lease is None:
+                skipped.append(
+                    f"{cache}:completion proof required for tool environment"
+                )
+                return False
+            try:
+                environment_records = refresh_records()
+                environment_active = active_branches()
+                environment_leases = (
+                    dict(active_workstream_leases())
+                    if active_workstream_leases is not None
+                    else {}
+                )
+            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+                errors.append(f"{cache}:tool-environment-revalidation-failed")
+                return False
+            environment_record = _matching_refreshed_record(
+                candidate_record, environment_records
+            )
+            if environment_record is None:
+                skipped.append(f"{cache}:tool environment registration changed")
+                return False
+            if (
+                candidate_record.branch not in environment_active
+                or environment_leases.get(candidate_record.branch) != required_lease
+            ):
+                skipped.append(f"{cache}:tool environment lease changed")
+                return False
+            environment_lifecycle = lifecycle_decision(
+                environment_record, environment_leases
+            )
+            if environment_lifecycle.error:
+                errors.append(f"{cache}:{environment_lifecycle.reason}")
+                return False
+            if not environment_lifecycle.reclaimable:
+                skipped.append(f"{cache}:{environment_lifecycle.reason}")
+                return False
+            if environment_lifecycle.cache_only:
+                skipped.append(
+                    f"{cache}:tool environment completion proof downgraded"
+                )
+                return False
+            try:
+                environment_pids = active_process_pids(candidate_path)
+            except ProcessInspectionError:
+                errors.append(
+                    f"{cache}:tool-environment-process-inspection-failed"
+                )
+                return False
+            if environment_pids:
+                skipped.append(
+                    f"{cache}:active-pids="
+                    f"{','.join(str(pid) for pid in environment_pids)}"
+                )
+                return False
+            return True
+
         for cache_name in GENERATED_CACHE_DIR_NAMES:
             cache = path / cache_name
             if cache.is_symlink():
@@ -885,6 +957,11 @@ def clean_inactive_worktree_caches(
                 continue
             if not cache.is_dir() or cache.parent.resolve() != path.resolve():
                 errors.append(f"{cache}:unsafe-cache")
+                continue
+            if (
+                cache_name in TOOL_ENVIRONMENT_DIR_NAMES
+                and not tool_environment_reclaimable(cache)
+            ):
                 continue
             if dry_run:
                 skipped.append(f"{cache}:would remove cache")
@@ -947,6 +1024,9 @@ def clean_inactive_worktree_caches(
             continue
         if not final_lifecycle.reclaimable:
             skipped.append(f"{path}:{final_lifecycle.reason}")
+            continue
+        if final_lifecycle.cache_only:
+            skipped.append(f"{path}:completion proof downgraded")
             continue
         try:
             final_pids = active_process_pids(path)

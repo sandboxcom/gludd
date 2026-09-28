@@ -35,11 +35,18 @@ worktree without that receipt remains protected. Dirty work is always protected.
 A renewed or missing lease, new process, registration change, or dirtying race
 detected during any reinspection cancels cleanup.
 
-The first recovery tier removes only direct-child `.venv`, `.pytest_cache`,
-`.mypy_cache`, and `.ruff_cache` directories. Symlinks, files with an allowlisted
-name, changed registrations, and inspection failures are refused. An inactive
-unregistered worktree can use this cache-only tier, but never qualifies for
-checkout removal because it has no completion-lease proof.
+The first recovery tier distinguishes disposable caches from dependency
+environments. Direct-child `.pytest_cache`, `.mypy_cache`, and `.ruff_cache`
+directories may be removed after the cache-safe ownership checks. A `.venv` is a
+tool environment, not an ordinary cache: it is preserved for active,
+receipt-only, and unregistered completion-unproven worktrees. It becomes eligible
+only with the same non-cache-only completed/idle lease proof required for
+materialization retirement. Immediately before `.venv` removal, the preflight
+again verifies the unchanged registration and lease, full lifecycle proof, and
+absence of matching processes. Symlinks, files with an allowlisted name, changed
+registrations, proof downgrades, and inspection failures are refused. An inactive
+unregistered worktree can use the disposable-cache tier, but never qualifies for
+`.venv` or checkout removal because it has no completion-lease proof.
 
 Under continuing pressure, at most four proven-complete materializations are
 removed per run. Immediately before `git worktree remove` (without `--force`),
@@ -77,8 +84,9 @@ pressure still blocks the gate.
 
 ## Zero-downtime operation and observability
 
-The active-workstream lease protects model-owned work that cannot be inferred
-from operating-system PIDs, including a no-PID thinking interval. Git cleanliness,
+The active-workstream lease and retained `.venv` protect model-owned work that
+cannot be inferred from operating-system PIDs, including a no-PID thinking interval.
+Git cleanliness,
 integration ancestry/patch identity, and integration timestamps provide the
 automatic completion signal. An exact-head commit receipt provides the immediate
 cache-safe signal, and its unchanged age plus the configurable minimum grace
