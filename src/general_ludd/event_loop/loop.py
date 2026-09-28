@@ -86,9 +86,6 @@ from general_ludd.event_loop.review_orchestration import (
     safe_string_attribute as _safe_str,
 )
 from general_ludd.event_loop.runtime_helpers import (
-    runtime_lease_bucket_key as _runtime_lease_bucket_key,
-)
-from general_ludd.event_loop.runtime_helpers import (
     runtime_lease_bucket_keys as _runtime_lease_bucket_keys,
 )
 from general_ludd.event_loop.runtime_helpers import (
@@ -2575,13 +2572,15 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
         if not isinstance(version, int) or isinstance(version, bool) or version <= 0:
             return None
         ttl_seconds, heartbeat_interval_seconds = self._execution_lease_timing()
+        bucket_keys = _runtime_lease_bucket_keys(todo, self._tick_project_id)
         return ExecutionLeaseSupervisor(
             session_factory=self._session_factory,
             identity=ExecutionLeaseIdentity(
-                bucket_key=_runtime_lease_bucket_key(todo, self._tick_project_id),
+                bucket_key=bucket_keys[0],
                 holder_id=self._lease_owner_id,
                 todo_version=version,
             ),
+            alias_bucket_keys=bucket_keys[1:],
             event_bus=self._event_bus,
             ttl_seconds=ttl_seconds,
             heartbeat_interval_seconds=heartbeat_interval_seconds,
@@ -3766,6 +3765,16 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
                 and _lease_supervisor_override.is_cancellation_requested()
             ):
                 raise OwnedExecutionCancelled
+            if (
+                _lease_supervisor_override is not None
+                and _session_override is not None
+            ):
+                # The isolated session may have started a transaction while
+                # loading shared variables.  Never pin that transaction across
+                # a blocking runner: the independent heartbeat/cancellation
+                # sessions must be able to observe and commit the durable
+                # cancellation fence while the runner is still active.
+                await _session_override.commit()
             if _lease_supervisor_override is None:
                 run_result = await self._bounded_to_thread(
                     self._runner.run_playbook,
