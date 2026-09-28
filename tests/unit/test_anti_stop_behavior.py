@@ -102,17 +102,13 @@ class TestStopPatternEnforcer:
 
 
 class TestAdaptiveDelegationEnforcement:
-    """Delegation stays adaptive while retaining a hard ten-agent ceiling."""
+    """Delegation stays adaptive while retaining a hard three-agent ceiling."""
 
     def test_agents_md_documents_active_floor(self):
         content = AGENTS_MD.read_text()
-        assert "Minimum 3 Subagents" in content, "AGENTS.md must document the active 3-subagent floor"
-        assert "active harness" in content and "3 subagents" in content, (
-            "AGENTS.md must document the active harness value of 3"
-        )
-        assert "10-agent floor/ceiling" in content, (
-            "AGENTS.md must document the 10-agent code-default ceiling for backward compatibility"
-        )
+        assert "Up to 3 Useful Subagents" in content
+        assert "active harness floor is configured to zero" in content
+        assert "hard ceiling of three" in content.lower()
 
     def test_agents_md_has_anti_stall_rule(self):
         content = AGENTS_MD.read_text()
@@ -126,23 +122,30 @@ class TestAdaptiveDelegationEnforcement:
             "AGENTS.md must list forbidden main-thread commands"
         )
 
-    def test_enforce_floor_defaults_to_ten(self):
+    def test_enforce_floor_uses_canonical_three_agent_cap(self):
         content = ENFORCE_FLOOR.read_text()
-        assert '"10"' in content, "enforce-floor.ts FLOOR must default to 10"
+        assert "../lib/multitask_config.ts" in content
+        assert "String(HARD_MAX_DISPATCHES)" in content
+        assert "String(MIN_DISPATCHES)" in content
+        assert "clampDispatchCount" in content
 
-    def test_enforce_delegate_defaults_to_ten(self):
+    def test_enforce_delegate_uses_canonical_three_agent_cap(self):
         content = ENFORCE_DELEGATE.read_text()
-        assert '"10"' in content, "enforce-delegate.ts FLOOR must default to 10"
+        assert "../lib/multitask_config.ts" in content
+        assert "String(MIN_DISPATCHES)" in content
+        assert "clampDispatchCount" in content
 
-    def test_enforce_stop_has_ten_agent_ceiling_and_opt_in_minimum(self):
+    def test_enforce_stop_has_three_agent_ceiling_and_opt_in_minimum(self):
         content = plugin_contract_source(ENFORCE_STOP)
-        assert "HARD_MAX_DISPATCHES = 10" in content
+        assert "../../lib/multitask_config.ts" in content
+        assert "HARD_MAX_DISPATCHES" in content
+        assert "clampDispatchCount" in content
         assert "REQUIRED_AGENT_MIN" in content
         assert "CONFIGURED_AGENT_MIN !== undefined" in content
 
-    def test_settings_json_floor_is_three(self):
+    def test_settings_json_floor_is_opt_in(self):
         settings = (ROOT / ".claude" / "settings.json").read_text()
-        assert '"CLAUDE_AGENT_FLOOR": "3"' in settings, ".claude/settings.json must set CLAUDE_AGENT_FLOOR to 3"
+        assert '"CLAUDE_AGENT_FLOOR": "0"' in settings, ".claude/settings.json must keep the floor opt-in"
 
 
 class TestMainThreadRestriction:
@@ -162,6 +165,6 @@ class TestMainThreadRestriction:
 
     def test_describes_wave_pattern(self):
         content = AGENTS_MD.read_text()
-        assert "ZERO analysis text" in content or "zero analysis" in content.lower(), (
-            "AGENTS.md must describe the wave pattern (zero analysis text between waves)"
+        assert "do not manufacture parallel ownership" in content.lower(), (
+            "AGENTS.md must describe adaptive ownership between waves"
         )

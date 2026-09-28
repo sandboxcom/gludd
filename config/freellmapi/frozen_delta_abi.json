@@ -1,0 +1,8 @@
+{
+  "abi_version": 1,
+  "host_capabilities": [],
+  "input_schema_sha256": "50d391a54ab2a00b06dcba80397c79034b9bcdd5bf3bc73e6bd6de019367724d",
+  "operation": "score_candidate_features",
+  "output_schema_sha256": "93235a81b5b1a8de3862069d3059cc9731680c5ac31f7413fdd7c288d931b19e",
+  "upstream_export": "expectedReliability"
+}

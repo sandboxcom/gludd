@@ -401,6 +401,44 @@ class TestQueueLeaseAcquireReclaim:
             holder_id="tick-A",
         ) == 1
 
+    async def test_cross_project_lease_transfer_is_rejected(
+        self,
+        async_session: AsyncSession,
+    ):
+        bucket_key = "project:project-a:queue:core:todo:TODO-SHARED"
+        await acquire_lease(
+            async_session,
+            bucket_key=bucket_key,
+            holder_id="same-holder-token",
+            project_id="project-a",
+        )
+
+        with pytest.raises(ValueError, match="must match"):
+            await acquire_lease(
+                async_session,
+                bucket_key=bucket_key,
+                holder_id="same-holder-token",
+                project_id="project-b",
+            )
+
+    async def test_legacy_lease_cannot_adopt_a_new_project_owner(
+        self,
+        async_session: AsyncSession,
+    ):
+        await acquire_lease(
+            async_session,
+            bucket_key="legacy-shared",
+            holder_id="same-holder-token",
+        )
+
+        with pytest.raises(LeaseBusyError, match="different project"):
+            await acquire_lease(
+                async_session,
+                bucket_key="legacy-shared",
+                holder_id="same-holder-token",
+                project_id="project-b",
+            )
+
     async def test_reclaim_expired_leases_noop_when_none_expired(
         self, async_session: AsyncSession
     ):

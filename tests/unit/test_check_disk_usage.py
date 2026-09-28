@@ -439,6 +439,7 @@ def test_disk_checks_use_portable_system_tools_without_project_venv() -> None:
         "ifneq", 1
     )[0]
     lightweight_targets = {
+        "disk-cleanup-preflight",
         "check-disk",
         "check-disk-classification",
         "tmp-gludd-clean-ci-shards",
@@ -455,7 +456,9 @@ def test_disk_checks_use_portable_system_tools_without_project_venv() -> None:
     assert 'df -Pk "$TARGET_DIR"' in guard_source
     assert "awk 'END {gsub(/%/,\"\"); print $5}'" in guard_source
     assert lightweight_targets <= set(no_uv_goals.split())
-    assert "$(SYSTEM_PYTHON) scripts/check_disk_usage.py" in check_disk_recipe
+    assert "disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0" in (
+        check_disk_recipe
+    )
     assert "$(UV) run" not in check_disk_recipe
     assert "$(SYSTEM_PYTHON) scripts/check_disk_usage.py --classify" in (
         classification_recipe

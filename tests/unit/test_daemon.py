@@ -42,6 +42,18 @@ def transport(app):
     return ASGITransport(app=app)
 
 
+def test_clean_event_loop_completion_is_not_reported_as_an_error(caplog) -> None:
+    task = MagicMock()
+    task.cancelled.return_value = False
+    task.exception.return_value = None
+
+    with caplog.at_level(logging.INFO, logger=daemon_mod.__name__):
+        daemon_mod._on_event_loop_done(task)
+
+    assert "completed normally" in caplog.text
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+
+
 class TestDaemonApp:
     def test_create_daemon_app_returns_fastapi(self):
         from fastapi import FastAPI

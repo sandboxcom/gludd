@@ -29,6 +29,7 @@ from general_ludd.controllers.pid import LoadController
 from general_ludd.db.models import (
     Base,
     BucketLeaseModel,
+    ProjectModel,
     TaskReturnModel,
     TodoModel,
 )
@@ -127,7 +128,7 @@ async def _insert_active_todo_with_lease(
     expires_delta: timedelta = timedelta(minutes=10),
 ) -> None:
     """Seed an ACTIVE todo plus a live bucket lease for that todo."""
-    bk = bucket_key or f"core:{todo_id}"
+    bk = bucket_key or f"unowned:queue:core:todo:{todo_id}"
     async with factory() as s:
         s.add(
             TodoModel(
@@ -162,6 +163,7 @@ async def test_pid_cap_release_deletes_lease_row(session_factory):
 
     async with session_factory() as s:
         loop = EventLoop(session=s)
+        loop._lease_owner_id = "tick-6"
         loop._active_session = s
         loop._todo_repo = TodoRepository(s)
 
@@ -299,6 +301,56 @@ async def test_concurrent_claim_runnable_has_exactly_one_winner(
 
 
 @pytest.mark.asyncio
+async def test_concurrent_claimers_cannot_exceed_project_wip_cap(session_factory):
+    """Two workers racing on distinct todos still share one atomic WIP budget."""
+    project_id = "proj-wip-race"
+    async with session_factory() as session:
+        session.add(ProjectModel(project_id=project_id, name="WIP race"))
+        session.add_all(
+            [
+                TodoModel(
+                    todo_id="WIP-A",
+                    title="first",
+                    status=TodoStatus.QUEUED.value,
+                    queue="core",
+                    version=1,
+                    work_type="code",
+                    project_id=project_id,
+                ),
+                TodoModel(
+                    todo_id="WIP-B",
+                    title="second",
+                    status=TodoStatus.QUEUED.value,
+                    queue="core",
+                    version=1,
+                    work_type="code",
+                    project_id=project_id,
+                ),
+            ]
+        )
+        await session.commit()
+
+    async with session_factory() as session_a, session_factory() as session_b:
+        claimed_a, claimed_b = await asyncio.gather(
+            TodoRepository(session_a).claim_runnable(
+                limit=1,
+                project_id=project_id,
+                max_active=1,
+            ),
+            TodoRepository(session_b).claim_runnable(
+                limit=1,
+                project_id=project_id,
+                max_active=1,
+            ),
+        )
+        await asyncio.gather(session_a.commit(), session_b.commit())
+
+    assert len(claimed_a) + len(claimed_b) == 1
+    async with session_factory() as session:
+        assert await TodoRepository(session).count_active(project_id=project_id) == 1
+
+
+@pytest.mark.asyncio
 async def test_event_loop_live_lease_conflict_fails_closed_in_real_session(
     session_factory,
 ):
@@ -309,7 +361,7 @@ async def test_event_loop_live_lease_conflict_fails_closed_in_real_session(
     async with session_factory() as s:
         await acquire_lease(
             s,
-            bucket_key="core:T1",
+            bucket_key="unowned:queue:core:todo:T1",
             holder_id="event-loop-existing-owner",
             todo_version=2,
         )
@@ -328,7 +380,7 @@ async def test_event_loop_live_lease_conflict_fails_closed_in_real_session(
         lease = (
             await s.execute(
                 select(BucketLeaseModel).where(
-                    BucketLeaseModel.bucket_key == "core:T1"
+                    BucketLeaseModel.bucket_key == "unowned:queue:core:todo:T1"
                 )
             )
         ).scalar_one()
@@ -366,7 +418,7 @@ async def test_event_loop_persists_lease_with_post_flush_todo_version(
         lease = (
             await s.execute(
                 select(BucketLeaseModel).where(
-                    BucketLeaseModel.bucket_key == "core:T1"
+                    BucketLeaseModel.bucket_key == "unowned:queue:core:todo:T1"
                 )
             )
         ).scalar_one()

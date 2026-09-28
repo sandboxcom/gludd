@@ -5,6 +5,9 @@ import pytest
 from general_ludd.connectors.registry import ConnectorRegistry
 
 _HELPER_MODULES = (
+    "_aws_config_types",
+    "_sentry_transport",
+    "_slack_transport",
     "baseten_contracts",
     "macos_security_support",
     "windows_defender_support",

@@ -280,9 +280,11 @@
         "TAG",
         "RELEASE_READINESS_VALIDATE_ONLY",
         "RELEASE_COMPLETED_STAGES",
-        "RELEASE_OBSERVATIONS"
+        "RELEASE_OBSERVATIONS",
+        "REVIEWED_HEAD_INTEGRATION_RECEIPT",
+        "RELEASE_CANDIDATE_SHA"
       ],
-      "behavior": "make release-readiness TAG=v0.1.0-beta.4 RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS="
+      "behavior": "make release-readiness TAG=v0.1.1 RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= REVIEWED_HEAD_INTEGRATION_RECEIPT=tests/fixtures/reviewed_head_integration_receipt.json RELEASE_CANDIDATE_SHA=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
     },
     {
       "name": "check-release-failure-ledger",
@@ -294,9 +296,10 @@
       "make_variables": [
         "TAG",
         "MSG",
-        "RELEASE_PROMOTE_VALIDATE_ONLY"
+        "RELEASE_PROMOTE_VALIDATE_ONLY",
+        "REVIEWED_HEAD_INTEGRATION_RECEIPT"
       ],
-      "behavior": "make release-promote TAG=v0.1.0-beta.4 MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=1"
+      "behavior": "make release-promote TAG=v0.1.0-beta.4 MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=1 REVIEWED_HEAD_INTEGRATION_RECEIPT="
     },
     {
       "name": "ci-job-failure-context",
@@ -543,6 +546,11 @@
       "name": "check-disk",
       "make_variables": ["CHECK_DISK_VALIDATE_ONLY"],
       "behavior": "make check-disk CHECK_DISK_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "disk-cleanup-preflight",
+      "make_variables": ["DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY", "DISK_CLEANUP_PREFLIGHT_DRY_RUN", "DISK_CLEANUP_RECEIPT_GRACE_SECONDS"],
+      "behavior": "make disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=1 DISK_CLEANUP_PREFLIGHT_DRY_RUN=0 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800"
     },
     {
       "name": "check-disk-classification",
@@ -1006,6 +1014,21 @@
       "name": "install-workflow-hook",
       "make_variables": ["INSTALL_WORKFLOW_HOOK_VALIDATE_ONLY"],
       "behavior": "make install-workflow-hook INSTALL_WORKFLOW_HOOK_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "ci-await",
+      "make_variables": [
+        "BRANCH",
+        "TIMEOUT",
+        "SHA",
+        "CI_AWAIT_WORKFLOW",
+        "CI_AWAIT_EVENT",
+        "CI_AWAIT_INTERVAL",
+        "CI_AWAIT_VALIDATE_ONLY",
+        "CI_AWAIT_AFTER_RUN_ID",
+        "CI_AWAIT_SNAPSHOT_ONLY"
+      ],
+      "behavior": "make ci-await BRANCH=v0.1.1 TIMEOUT=5400 SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa CI_AWAIT_WORKFLOW='Build and Release' CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL=10 CI_AWAIT_AFTER_RUN_ID=0 CI_AWAIT_VALIDATE_ONLY=1 CI_AWAIT_SNAPSHOT_ONLY=0"
     },
     {
       "name": "coverage-files",

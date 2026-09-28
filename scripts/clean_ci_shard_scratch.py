@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Remove stale gludd CI shard scratch directories without touching active runs."""
+"""Remove stale Gludd CI scratch entries without touching active runs."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import importlib
 import os
 import re
 import shutil
+import stat
 import subprocess
 import time
 from collections.abc import Callable
@@ -22,6 +23,7 @@ else:
 
 DEFAULT_MIN_AGE_SECONDS = 6 * 60 * 60
 PROCESS_INSPECTION_TIMEOUT_SECONDS = 10
+PROGRESS_INTERVAL = 100
 PATTERNS = (
     "gludd-ci-shard-*",
     "gludd-gate-unit-*",
@@ -32,6 +34,24 @@ PATTERNS = (
     "gludd-testunit-*",
     "gludd-testspecific-*",
     "gludd-testfiles-*",
+)
+LEASE_MARKER_TOKENS = frozenset({"lease", "lock", "pid"})
+GENERATED_FILE_SUFFIXES = frozenset(
+    {
+        ".coverage",
+        ".js",
+        ".json",
+        ".jsonl",
+        ".log",
+        ".md",
+        ".mjs",
+        ".py",
+        ".status",
+        ".txt",
+        ".xml",
+        ".yaml",
+        ".yml",
+    }
 )
 
 
@@ -99,24 +119,117 @@ def _active_process_pids(candidate: Path) -> list[int]:
     return sorted(active_pids)
 
 
+def _active_socket_pids(candidate: Path) -> list[int]:
+    """Return processes holding a Unix socket, failing closed without lsof."""
+    lsof = shutil.which("lsof")
+    if lsof is None:
+        raise ProcessInspectionError("socket ownership inspection unavailable")
+    try:
+        completed = subprocess.run(
+            [lsof, "-nP", "-F", "p", "--", os.fsdecode(os.fsencode(candidate))],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=PROCESS_INSPECTION_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ProcessInspectionError("socket ownership inspection failed") from exc
+    if completed.returncode not in (0, 1):
+        raise ProcessInspectionError("socket ownership inspection failed")
+    pids: set[int] = set()
+    for line in completed.stdout.splitlines():
+        if not line.startswith("p"):
+            continue
+        try:
+            pid = int(line[1:])
+        except ValueError:
+            continue
+        if pid != os.getpid():
+            pids.add(pid)
+    return sorted(pids)
+
+
+def _is_lease_marker(path: Path) -> bool:
+    """Conservatively protect names that identify lock, lease, or PID state."""
+    tokens = frozenset(re.split(r"[-_.]+", path.name.casefold()))
+    return not tokens.isdisjoint(LEASE_MARKER_TOKENS)
+
+
+def _same_identity(before: os.stat_result, after: os.stat_result) -> bool:
+    """Return whether a candidate is the same unchanged filesystem entry."""
+    return (
+        before.st_dev,
+        before.st_ino,
+        before.st_mode,
+        before.st_size,
+        before.st_mtime_ns,
+    ) == (
+        after.st_dev,
+        after.st_ino,
+        after.st_mode,
+        after.st_size,
+        after.st_mtime_ns,
+    )
+
+
+def _is_safety_refusal(item: str) -> bool:
+    """Return whether a skip signals active ownership or uncertain mutation."""
+    reason = item.rsplit(":", maxsplit=1)[-1]
+    return (
+        reason == "identity-changed"
+        or reason.endswith("-failed")
+        or reason.startswith(("active-pids=", "active-socket-pids="))
+    )
+
+
 def clean_ci_shard_scratch(
     *,
     tmp_root: Path = Path("/tmp"),
     min_age_seconds: int = DEFAULT_MIN_AGE_SECONDS,
     dry_run: bool = False,
     active_process_pids: Callable[[Path], list[int]] = _active_process_pids,
+    active_socket_pids: Callable[[Path], list[int]] = _active_socket_pids,
 ) -> dict[str, list[str]]:
-    """Remove stale inactive shard roots and report every removal or refusal."""
+    """Remove stale inactive generated roots and report removals or refusals."""
     now = time.time()
     removed: list[str] = []
     skipped: list[str] = []
-    for path in iter_candidates(tmp_root):
-        if not path.exists():
+    candidates = iter_candidates(tmp_root)
+    print(
+        f"phase=stale-scratch-scan status=starting candidates={len(candidates)}",
+        flush=True,
+    )
+    for index, path in enumerate(candidates, start=1):
+        inspected = index - 1
+        if inspected and inspected % PROGRESS_INTERVAL == 0:
+            print(
+                "phase=stale-scratch-scan status=progress "
+                f"inspected={inspected} total={len(candidates)}",
+                flush=True,
+            )
+        if path.is_symlink():
+            skipped.append(f"{path}:symlink")
             continue
-        if not path.is_dir():
-            skipped.append(f"{path}:not-directory")
+        try:
+            identity = path.lstat()
+        except FileNotFoundError:
             continue
-        if not is_stale(path, now=now, min_age_seconds=min_age_seconds):
+        except OSError:
+            skipped.append(f"{path}:identity-inspection-failed")
+            continue
+        is_directory = stat.S_ISDIR(identity.st_mode)
+        is_regular = stat.S_ISREG(identity.st_mode)
+        is_socket = stat.S_ISSOCK(identity.st_mode)
+        if not (is_directory or is_regular or is_socket):
+            skipped.append(f"{path}:unsupported-file-type")
+            continue
+        if not is_directory and _is_lease_marker(path):
+            skipped.append(f"{path}:lease-marker")
+            continue
+        if is_regular and path.suffix.casefold() not in GENERATED_FILE_SUFFIXES:
+            skipped.append(f"{path}:unsupported-generated-file")
+            continue
+        if now - identity.st_mtime < min_age_seconds:
             skipped.append(f"{path}:recent")
             continue
         try:
@@ -128,9 +241,65 @@ def clean_ci_shard_scratch(
             joined_pids = ",".join(str(pid) for pid in active_pids)
             skipped.append(f"{path}:active-pids={joined_pids}")
             continue
-        if not dry_run:
-            _remove_tree(path)
+        if is_socket:
+            try:
+                socket_pids = active_socket_pids(path)
+            except ProcessInspectionError:
+                skipped.append(f"{path}:socket-inspection-failed")
+                continue
+            if socket_pids:
+                joined_pids = ",".join(str(pid) for pid in socket_pids)
+                skipped.append(f"{path}:active-socket-pids={joined_pids}")
+                continue
+        if dry_run:
+            removed.append(str(path))
+            continue
+        try:
+            current_identity = path.lstat()
+        except OSError:
+            skipped.append(f"{path}:identity-revalidation-failed")
+            continue
+        if not _same_identity(identity, current_identity):
+            skipped.append(f"{path}:identity-changed")
+            continue
+        try:
+            recheck_pids = active_process_pids(path)
+        except ProcessInspectionError:
+            skipped.append(f"{path}:process-revalidation-failed")
+            continue
+        if recheck_pids:
+            joined_pids = ",".join(str(pid) for pid in recheck_pids)
+            skipped.append(f"{path}:active-pids={joined_pids}")
+            continue
+        if is_socket:
+            try:
+                recheck_socket_pids = active_socket_pids(path)
+            except ProcessInspectionError:
+                skipped.append(f"{path}:socket-revalidation-failed")
+                continue
+            if recheck_socket_pids:
+                joined_pids = ",".join(str(pid) for pid in recheck_socket_pids)
+                skipped.append(f"{path}:active-socket-pids={joined_pids}")
+                continue
+        try:
+            if is_directory:
+                _remove_tree(path)
+            else:
+                path.unlink()
+        except OSError:
+            skipped.append(f"{path}:removal-failed")
+            continue
         removed.append(str(path))
+    print(
+        "phase=stale-scratch-scan status=progress "
+        f"inspected={len(candidates)} total={len(candidates)}",
+        flush=True,
+    )
+    print(
+        "phase=stale-scratch-scan status=complete "
+        f"inspected={len(candidates)} removed={len(removed)} skipped={len(skipped)}",
+        flush=True,
+    )
     return {"removed": removed, "skipped": skipped}
 
 
@@ -272,10 +441,7 @@ def main(argv: list[str] | None = None) -> int:
         "Removed stale gludd CI shard scratch directories "
         f"removed={removed_count} skipped={skipped_count}"
     )
-    refused = any(
-        ":active-pids=" in item or item.endswith(":process-inspection-failed")
-        for item in result["skipped"]
-    )
+    refused = any(_is_safety_refusal(item) for item in result["skipped"])
     return 1 if refused else 0
 
 

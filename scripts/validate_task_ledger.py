@@ -21,8 +21,10 @@ from __future__ import annotations
 import re
 import sys
 import time
+from collections.abc import Mapping
 from collections import defaultdict
 from pathlib import Path
+from typing import TypedDict
 
 # Support dotted phase IDs (``S53.31``), legacy hyphenated IDs (``FIX-3``),
 # and the multi-segment Beta.3 ledger IDs (``T-BETA3-E2E``).
@@ -34,6 +36,35 @@ PRIMARY_ID_PATTERN = re.compile(
 )
 EPOCH_PATTERN = re.compile(r"epoch\s+(\d{10,})")
 STALE_SECONDS = 24 * 3600
+COMPLETED_STATUSES = frozenset({"complete", "completed", "done"})
+
+
+class TaskRecord(TypedDict):
+    """Normalized TASKS.md checkbox record."""
+
+    line: str
+    ids: list[str]
+    all_ids: list[str]
+    status: str | None
+    epoch: int | None
+
+
+def task_is_effectively_complete(task: Mapping[str, object], *, checked: bool) -> bool:
+    """Require checkbox and explicit status, when present, to agree.
+
+    Historical ledger entries do not all carry a ``status`` field, so a
+    checked item without one keeps its checkbox meaning.  Once a status is
+    present it is authoritative evidence too: completion requires both
+    signals, while an unchecked item always remains open.
+    """
+    if not checked:
+        return False
+    status = task.get("status")
+    if status is None:
+        return True
+    if not isinstance(status, str):
+        return False
+    return status.casefold().rstrip("|,;.") in COMPLETED_STATUSES
 
 
 def _primary_ids(stripped: str) -> list[str]:
@@ -66,11 +97,11 @@ def _all_ids(stripped: str) -> list[str]:
     return ID_PATTERN.findall(stripped)
 
 
-def extract_tasks(tasks_path: Path) -> tuple[list[dict], list[dict]]:
+def extract_tasks(tasks_path: Path) -> tuple[list[TaskRecord], list[TaskRecord]]:
     """Parse TASKS.md, return (checked, unchecked) lists of task dicts."""
     text = tasks_path.read_text(encoding="utf-8")
-    checked: list[dict] = []
-    unchecked: list[dict] = []
+    checked: list[TaskRecord] = []
+    unchecked: list[TaskRecord] = []
 
     for line in text.splitlines():
         stripped = line.strip()
@@ -92,7 +123,7 @@ def extract_tasks(tasks_path: Path) -> tuple[list[dict], list[dict]]:
         status_match = re.search(r"status:\s*(\S+)", stripped)
         status = status_match.group(1) if status_match else None
 
-        task: dict = {
+        task: TaskRecord = {
             "line": stripped,
             "ids": primary,
             "all_ids": all_ids,
@@ -120,9 +151,9 @@ def main() -> int:
     now = int(time.time())
 
     # Build ID → task mappings
-    checked_ids: dict[str, list[dict]] = defaultdict(list)
-    unchecked_ids: dict[str, list[dict]] = defaultdict(list)
-    global_ids: dict[str, list[dict]] = defaultdict(list)
+    checked_ids: dict[str, list[TaskRecord]] = defaultdict(list)
+    unchecked_ids: dict[str, list[TaskRecord]] = defaultdict(list)
+    global_ids: dict[str, list[TaskRecord]] = defaultdict(list)
 
     for task in checked:
         for tid in task["ids"]:
@@ -134,6 +165,17 @@ def main() -> int:
             unchecked_ids[tid].append(task)
             global_ids[tid].append(task)
 
+    # A checkbox and an explicit status are independent completion evidence.
+    # Contradictions fail closed instead of allowing either signal to hide
+    # unfinished release work.
+    for task in checked:
+        if task["status"] is not None and not task_is_effectively_complete(
+            task, checked=True
+        ):
+            issues.append(
+                "STATUS-MISMATCH: checked item has non-complete status "
+                f"{task['status']!r}: IDs={task['ids']}"
+            )
     # 1. Duplicate IDs
     for tid, tasks in global_ids.items():
         if len(tasks) > 1:

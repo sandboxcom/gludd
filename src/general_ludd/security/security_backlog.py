@@ -42,6 +42,7 @@ import inspect
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from types import ModuleType
 
 STATUS_LANDED = "LANDED-VERIFIED"
@@ -153,7 +154,7 @@ def _default_check() -> tuple[bool, str]:
     return False, "OPEN — not yet implemented"
 
 
-def _read_module_source(module: ModuleType | Callable[..., object]) -> str:
+def _read_module_source(module: ModuleType | Callable[..., object] | Path) -> str:
     """Return ``module``'s source text, or ``""`` if it cannot be read.
 
     Isolated as its own function (rather than inlining ``inspect.getsource``
@@ -161,10 +162,40 @@ def _read_module_source(module: ModuleType | Callable[..., object]) -> str:
     wiring being silently removed, without needing to actually mutate the
     real source files on disk.
     """
+    if isinstance(module, Path):
+        try:
+            return module.read_text(encoding="utf-8")
+        except OSError:
+            return ""
     try:
         return inspect.getsource(module)
     except (OSError, TypeError):
         return ""
+
+
+def _read_internal_module_source(module_name: str) -> str:
+    """Read an internal module without importing a higher architecture layer.
+
+    Security backlog probes inspect wiring in several application layers.  A
+    probe must not make the low-level :mod:`general_ludd.security` package
+    depend on those layers merely to read their source.  Resolve only safe,
+    package-relative module names beneath ``general_ludd`` and fail closed for
+    invalid or unreadable paths.
+    """
+    parts = module_name.split(".")
+    if not parts or any(not part.isidentifier() for part in parts):
+        return ""
+    qualified_name = f"general_ludd.{module_name}"
+    loaded_module = sys.modules.get(qualified_name)
+    if loaded_module is not None:
+        return _read_module_source(loaded_module)
+    package_root = Path(__file__).resolve().parents[1]
+    source_path = package_root.joinpath(*parts).with_suffix(".py")
+    try:
+        source_path.resolve().relative_to(package_root)
+    except (OSError, ValueError):
+        return ""
+    return _read_module_source(source_path)
 
 
 def _check_d07_input_validation() -> tuple[bool, str]:
@@ -418,9 +449,10 @@ def _check_d18_audit_log() -> tuple[bool, str]:
       * ``general_ludd.db.repository.AuditEventRepository`` defines
         ``record_typed`` (the typed entry point for the ``AuditEventType``
         taxonomy).
-      * ``general_ludd.event_loop.loop`` — the central dispatch path
+      * ``general_ludd.event_loop.decision_reconciliation`` — the delegated
+        central dispatch path
         mutating operations flow through — still calls
-        ``self._audit_repo.record_typed(...)``.
+        ``loop._audit_repo.record_typed(...)``.
     """
     try:
         import general_ludd.db.repository as repo_mod
@@ -433,19 +465,24 @@ def _check_d18_audit_log() -> tuple[bool, str]:
     if not hasattr(audit_repo_cls, "record_typed"):
         return False, "OPEN — AuditEventRepository.record_typed no longer defined (regression)"
 
-    try:
-        import general_ludd.event_loop.loop as loop_mod
-    except ImportError as exc:
-        return False, f"OPEN — general_ludd.event_loop.loop failed to import: {exc}"
-    loop_src = _read_module_source(loop_mod)
-    if "_audit_repo.record_typed(" not in loop_src:
+    loop_src = _read_internal_module_source("event_loop.loop")
+    if "await reconcile_completed_decisions(self)" not in loop_src:
         return False, (
-            "OPEN — event_loop.loop no longer calls _audit_repo.record_typed(...) "
+            "OPEN — event_loop.loop no longer delegates to reconcile_completed_decisions(...) "
             "(regression — audit logging wiring removed from the dispatch path)"
         )
 
+    reconciliation_src = _read_internal_module_source("event_loop.decision_reconciliation")
+    if "_audit_repo.record_typed(" not in reconciliation_src:
+        return False, (
+            "OPEN — event_loop.decision_reconciliation no longer calls "
+            "_audit_repo.record_typed(...) after sensitive todo status "
+            "changes (regression)"
+        )
+
     return True, (
-        "LANDED-VERIFIED — AuditEventRepository.record_typed exists and is called from event_loop.loop's dispatch path"
+        "LANDED-VERIFIED — AuditEventRepository.record_typed exists and is "
+        "called through event_loop.loop's delegated reconciliation path"
     )
 
 

@@ -135,6 +135,36 @@ termination reason always wins over that shape:
 - every final progress record says `finished` or `terminated` and includes the
   return code plus termination reason when present.
 
+### Foreground gate ownership
+
+The task watchdog must distinguish a dispatched task process from the gate
+supervisor that owns that process tree. On 2026-09-26, an exact-head foreground
+`make gate` was visibly progressing through its 3,411-test integration phase
+when the five-minute stale-task watchdog killed the gate's `make` process after
+496 seconds. The watchdog already excluded `.gate-background.pid`, but a
+foreground gate publishes its owner atomically in
+`.gate-logs/gate-run.lock`. Ignoring that second ownership record made a healthy
+bounded gate indistinguishable from an abandoned task.
+
+`scripts/task_watchdog.py` now reads both owner records and excludes the union
+of each verified owner and its observed descendants. It still identifies and
+kills unrelated stale `pytest`, `make test`, Ansible, and Molecule processes;
+missing or malformed ownership evidence grants no exemption. This preserves
+the watchdog's bounded-resource and recovery behavior without allowing one
+control plane to cancel another control plane's observable, independently
+bounded work. The gate continues to emit progress and retains its own phase,
+no-progress, and whole-run limits, so the change does not create an unbounded
+execution path. Rollback is limited to removing the foreground-lock reader and
+its regression, with no state migration or resource mutation.
+
+The ownership requirement matches long-lived practitioner evidence. The open
+[pytest-timeout subprocess cleanup report](https://github.com/pytest-dev/pytest-timeout/issues/159)
+documents child processes surviving timeout termination and recommends an
+owning wrapper; [pytest issue #5243](https://github.com/pytest-dev/pytest/issues/5243)
+documents that `SIGTERM` does not run ordinary fixture finalizers. Those reports
+make process-tree authority—not elapsed time alone—the safe termination
+boundary.
+
 This division follows years of upstream practitioner discussion. The
 pytest-timeout session-timeout request distinguishes an external CI deadline
 from a stuck individual test, while the still-open child-cleanup report shows
@@ -363,6 +393,49 @@ and removes each batch workspace after coverage is preserved. External model
 processes and unrelated test sessions are outside that group and remain
 untouched. The fixed file bound prevents cumulative collection growth while the
 strictly serial schedule keeps peak worker count at one.
+
+### Collect-all failures versus safety stops (2026-09-27)
+
+The serial runner now separates diagnostic test evidence from unsafe execution
+state. A child pytest result of 1 (test failure), 2 (batch-local collection or
+session failure without an owner cancellation signal), 5 (nothing collected),
+or 6 (warning limit exceeded) is recorded and reported, but every independent
+later batch and named shard still runs. The terminal summary retains every
+failed phase under an exact key such as `<shard>:batch-NNN`,
+`<shard>:batch-NNN:coverage`, `<shard>:cleanup`, or `<shard>:plan`. When the
+plan contains only collected pytest failures, the runner returns their nonzero
+maximum status; it never turns a collected failure green. Coverage is not
+combined into release evidence when any such failure exists.
+
+This is intentionally different from `continue-on-error`. Practitioners have
+repeatedly needed every independent CI leg to run while keeping the aggregate
+result red; the durable recommendation in
+[GitHub Community discussion #45546](https://github.com/orgs/community/discussions/45546)
+is fail-fast disabled with errors still enforced. Pytest users also report that
+[`--continue-on-collection-errors` does not cover every stale or missing test
+selection](https://github.com/pytest-dev/pytest/discussions/13213), so Gludd's
+bounded runner continues at its own batch boundary and preserves the exact
+failing command instead of relying on one large pytest process. The older
+[`pytest` collection-hang report #6054](https://github.com/pytest-dev/pytest/issues/6054)
+documents why collection silence must remain a resource stop rather than a
+collect-all result.
+
+Safety and integrity failures still stop immediately. These include an owner
+SIGINT/SIGTERM (mapped to 130/143), disk-headroom failure (73), xdist worker
+death (70), interpreter drift (78), no-progress termination (124), runner
+exception (125), pytest internal/usage or unknown statuses, an empty shard plan,
+coverage loss after a successful batch, and any unsafe or incomplete owned-root
+cleanup. The runner performs bounded cleanup, emits `later-*=not-started`, and
+does not launch another batch or shard. Operators should therefore read
+`later-*=continuing` as complete diagnostic collection and
+`later-*=not-started` as an intentional safety boundary, never as equivalent
+release outcomes. A later terminal safety code takes precedence over any
+earlier collected pytest status even when its number is lower. Cancellation
+also takes precedence over a simultaneous cleanup failure; otherwise the first
+unsafe execution result remains terminal while cleanup is retained as a
+separate failed phase. The terminal attestation publishes that exact return
+code with `status: fail` and never binds a stale coverage artifact to a failed
+run.
 
 Hermetic fixer tests create no source-tree lock or shared mutable workspace and
 can run concurrently across xdist workers. Each invocation owns only its pytest

@@ -48,23 +48,23 @@ class TestPluginRegistration:
 
 
 class TestKeyConstants:
-    def test_floor_default_is_10(self):
+    def test_floor_uses_canonical_three_agent_cap(self):
         src = _src()
-        m = re.search(r'CLAUDE_AGENT_FLOOR",\s*"(\d+)"', src)
-        assert m, "CLAUDE_AGENT_FLOOR default not found"
-        assert m.group(1) == "10"
+        assert "../lib/multitask_config.ts" in src
+        assert "CLAUDE_AGENT_FLOOR" in src
+        assert "String(HARD_MAX_DISPATCHES)" in src
+        assert "clampDispatchCount" in src
 
-    def test_ceiling_default_is_10(self):
+    def test_ceiling_uses_canonical_three_agent_cap(self):
         src = _src()
-        m = re.search(r'CLAUDE_AGENT_CEILING",\s*"(\d+)"', src)
-        assert m, "CLAUDE_AGENT_CEILING default not found"
-        assert m.group(1) == "10"
+        assert "CLAUDE_AGENT_CEILING" in src
+        assert "String(HARD_MAX_DISPATCHES)" in src
+        assert "clampDispatchCount" in src
 
-    def test_target_default_is_10(self):
+    def test_target_uses_canonical_three_agent_cap(self):
         src = _src()
-        m = re.search(r'CLAUDE_AGENT_TARGET\s*\|\|\s*"(\d+)"', src)
-        assert m, "CLAUDE_AGENT_TARGET default not found"
-        assert m.group(1) == "10"
+        assert "CLAUDE_AGENT_TARGET || String(HARD_MAX_DISPATCHES)" in src
+        assert "clampDispatchCount" in src
 
     def test_target_capped_by_ceiling(self):
         src = _src()
@@ -99,6 +99,12 @@ class TestKeyConstants:
     def test_floor_override_file_path(self):
         src = _src()
         assert "/tmp/gludd-floor-override" in src
+        assert "GLUDD_FLOOR_OVERRIDE_PATH" in src
+
+    def test_load_throttle_file_path_is_namespacable(self):
+        src = _src()
+        assert "/tmp/gludd-load-throttle" in src
+        assert "GLUDD_LOAD_THROTTLE_PATH" in src
 
     def test_ceiling_override_file_path(self):
         src = _src()

@@ -366,14 +366,22 @@ def test_make_target_is_public_and_delegates_to_the_single_checker() -> None:
     assert "check-generated-artifact-hygiene" in phony_region
 
 
-def test_checker_is_an_early_fast_and_full_gate_prerequisite() -> None:
+def test_checker_follows_disk_preflight_and_precedes_fast_quality_work() -> None:
     makefile = MAKEFILE.read_text(encoding="utf-8")
     fast = _target_prerequisites(makefile, "gate-fast")
     full = _target_prerequisites(makefile, "gate")
     refresh = _target_prerequisites(makefile, "gate-refresh")
     release_full = _target_prerequisites(makefile, "gate-full")
 
-    assert fast[0] == "check-generated-artifact-hygiene"
+    assert fast[:2] == [
+        "disk-cleanup-preflight",
+        "check-generated-artifact-hygiene",
+    ]
+    assert fast.count("check-generated-artifact-hygiene") == 1
+    for quality_target in ("lint", "typecheck", "collect-check"):
+        assert fast.index("check-generated-artifact-hygiene") < fast.index(
+            quality_target
+        )
     assert full.index("check-generated-artifact-hygiene") < full.index(
         "check-opencode-integrity",
     )

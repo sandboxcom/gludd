@@ -232,6 +232,15 @@ or promotion checks.
   an already reviewed dependency; helper extraction cannot silently broaden a
   package mapping or turn an indirect dependency into a direct one.
 
+The release replay caught that exact class of drift after later reviewed
+extractions: checkpoint locking added one `filelock` consumer; the Sentry
+transport moved its `httpx` ownership from the facade to the private transport;
+reviewed-head validation added `jsonschema` and Pydantic consumers; and decision
+reconciliation plus lease recovery added two SQLAlchemy consumers. The repair
+updates only those mechanically observed paths. It neither weakens exact-set
+comparison nor grants a dependency to an unrelated module, so a future move,
+addition, or stale facade entry still fails closed.
+
 Together these reports show why lowering line count alone is not success. The
 refactor is complete only when smaller units preserve lexical resource lifetime,
 atomic state transitions, cancellation origin, public compatibility, and the

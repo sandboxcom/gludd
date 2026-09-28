@@ -212,8 +212,8 @@ console.log(JSON.stringify({{ result_text: result?.text }}))
 # ─── 4. thin-wave-blocked (BUG: disengage bypasses text.complete in enforce-multitask.ts) ─
 
 
-def test_thin_wave_blocked_after_dispatching_3(tmp_path):
-    """Dispatch 3 subagents (not 10), pending work -> text.complete blocks as THIN WAVE.
+def test_thin_wave_blocked_below_configured_three_agent_floor(tmp_path):
+    """Dispatch 2 subagents with an explicit floor of 3 -> THIN WAVE blocks.
 
     BUG: enforce-multitask.ts text.complete checks isDisengaged() at line 301
     using the real /tmp/gludd-watchdog-disengage.json path. A live disengage
@@ -227,7 +227,6 @@ const mod = await import('{PLUGIN_MULTITASK}')
 const plugin = await mod.default({{}})
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 const result = await plugin['experimental.text.complete'](undefined, {{ text: 'Some thin wave concluding text.' }})
 console.log(JSON.stringify({{ result_text: result?.text || result }}))
 """
@@ -235,7 +234,7 @@ console.log(JSON.stringify({{ result_text: result?.text || result }}))
         code,
         env_override={
             "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
-            "GLUDD_MIN_DISPATCHES": "10",
+            "GLUDD_MIN_DISPATCHES": "3",
             **_GAP_ENV,
         },
         cwd=str(ws),
@@ -245,7 +244,7 @@ console.log(JSON.stringify({{ result_text: result?.text || result }}))
     assert r is not None, f"No JSON in output: {proc.stdout[:500]}"
     result_text = r.get("result_text", "")
     assert "THIN WAVE BLOCKED" in result_text, (
-        f"Expected THIN WAVE BLOCKED after only 3 dispatches. Got: {result_text[:300]!r}"
+        f"Expected THIN WAVE BLOCKED after only 2 dispatches. Got: {result_text[:300]!r}"
     )
 
 

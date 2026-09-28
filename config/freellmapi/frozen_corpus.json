@@ -1,0 +1,73 @@
+{
+  "artifact_bundle_sha256": "d3078364c02f482909681e21895c4e86dc11cc66c1da7ae2007ad35b096ddf7d",
+  "artifact_upstream_commit": "780a7d8d6dcbc818eb10ec17da210635b569ae22",
+  "candidate_id": "sha256:69d63b09199c37f38c02c711559b15e0fd5dc5ecc0e64e2d94c597dc5e5d3998",
+  "fixtures": [
+    {
+      "baseline_expected_reliability": 0.5,
+      "budget_tokens": 1000.0,
+      "candidate_identity_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "community_failures": 1.0,
+      "community_successes": 4.0,
+      "failures": 2.0,
+      "fixture_digest": "b8b11afb3ad40c2f8979386e4c02c1e000d9e82aa49927a0104eb483253b55ae",
+      "held_out_success": true,
+      "rate_limit_penalty": 0.0,
+      "rate_window_used_fraction": 0.1,
+      "successes": 18.0,
+      "tokens_per_second": 60.0,
+      "ttfb_ms": 300.0,
+      "used_tokens": 100.0
+    },
+    {
+      "baseline_expected_reliability": 0.5,
+      "budget_tokens": 1000.0,
+      "candidate_identity_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "community_failures": 1.0,
+      "community_successes": 2.0,
+      "failures": 1.0,
+      "fixture_digest": "312910fc3501c527899087bc7d443c7fee024e676da2c40fffcf8cbec11650e3",
+      "held_out_success": true,
+      "rate_limit_penalty": 0.0,
+      "rate_window_used_fraction": 0.1,
+      "successes": 12.0,
+      "tokens_per_second": 60.0,
+      "ttfb_ms": 300.0,
+      "used_tokens": 100.0
+    },
+    {
+      "baseline_expected_reliability": 0.5,
+      "budget_tokens": 1000.0,
+      "candidate_identity_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "community_failures": 3.0,
+      "community_successes": 1.0,
+      "failures": 12.0,
+      "fixture_digest": "a283a3007e56d8d3ac7fcba5962b3cfebf6666c3a05ff59e27e70791b067746b",
+      "held_out_success": false,
+      "rate_limit_penalty": 0.0,
+      "rate_window_used_fraction": 0.1,
+      "successes": 1.0,
+      "tokens_per_second": 60.0,
+      "ttfb_ms": 300.0,
+      "used_tokens": 100.0
+    },
+    {
+      "baseline_expected_reliability": 0.5,
+      "budget_tokens": 1000.0,
+      "candidate_identity_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "community_failures": 4.0,
+      "community_successes": 1.0,
+      "failures": 18.0,
+      "fixture_digest": "649fb85d21008c58995f58696f4a3a40c10aa486353b677108407e5e4cb31e31",
+      "held_out_success": false,
+      "rate_limit_penalty": 0.0,
+      "rate_window_used_fraction": 0.1,
+      "successes": 2.0,
+      "tokens_per_second": 60.0,
+      "ttfb_ms": 300.0,
+      "used_tokens": 100.0
+    }
+  ],
+  "schema_version": 1,
+  "selected_export": "expectedReliability"
+}

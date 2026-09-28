@@ -1,5 +1,5 @@
 """Verify enforce-objective.ts BLOCKING behavior for dispatch when unpushed
-commits exist and a release version is pending in pyproject.toml.
+commits exist and the pyproject version has no matching release tag.
 
 Structural checks on the plugin source AND behavioral simulation of the
 dispatch-deny logic via the regex/version patterns that mirror the plugin code.
@@ -39,6 +39,18 @@ class TestDispatchBlockingStructure:
         src = _plugin_source()
         assert "getPendingReleaseVersion" in src, "Plugin must export getPendingReleaseVersion to check pyproject.toml"
         assert "pyproject.toml" in src, "Plugin must read pyproject.toml for pending release check"
+
+    def test_pending_release_uses_exact_tag_evidence_without_a_shell(self):
+        src = _plugin_source()
+        start = src.index("function getPendingReleaseVersion")
+        end = src.index("// AB002:", start)
+        body = src[start:end]
+        assert "releaseTagExists" in body
+        assert "execFileSync" in src
+        assert '"show-ref", "--verify", "--quiet"' in src
+        assert "refs/tags/v${version}" in src
+        assert '["cat-file", "-t", ref]' in src
+        assert '["rev-parse", "HEAD"]' in src
 
     def test_dispatch_deny_block_present(self):
         src = _plugin_source()
@@ -136,56 +148,45 @@ class TestPyprojectVersionExtraction:
         version = match.group(1)
         assert len(version) > 0, "Version should not be empty"
 
-    def test_current_version_is_pre_release(self):
-        """The current version (0.1.0-beta.3) should be detected as pre-release."""
+    def test_current_version_is_valid_release_version(self):
+        """The current version may be stable or prerelease during a release."""
         content = PYPROJECT_PATH.read_text()
         match = self.VERSION_RE.search(content)
         assert match is not None
         version = match.group(1)
-        assert TestPreReleaseVersionRegex.PRE_RELEASE_RE.search(version), (
-            f"Current version {version} should be detected as pre-release"
-        )
+        assert re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", version)
 
 
 class TestBlockingLogicSimulation:
-    """Simulate the plugin's dispatch-blocking logic with Python equivalents."""
+    """Simulate the plugin's tag-backed dispatch-blocking logic."""
 
-    PRE_RELEASE_RE = re.compile(r"-(?:alpha|beta|rc|dev)")
     VERSION_RE = re.compile(r"^\s*version\s*=\s*\"([^\"]+)\"", re.MULTILINE)
 
-    def _get_pending_version(self) -> str:
-        if not PYPROJECT_PATH.exists():
-            return ""
-        content = PYPROJECT_PATH.read_text()
+    def _get_pending_version(self, content: str, *, tag_exists: bool) -> str:
         match = self.VERSION_RE.search(content)
         if not match:
             return ""
-        version = match[1]
-        if self.PRE_RELEASE_RE.search(version):
-            return version
-        return ""
+        return "" if tag_exists else match[1]
 
-    def _should_block(self, unpushed_count: int) -> bool:
-        pending = self._get_pending_version()
+    def _should_block(self, unpushed_count: int, content: str, *, tag_exists: bool) -> bool:
+        pending = self._get_pending_version(content, tag_exists=tag_exists)
         return unpushed_count > 0 and bool(pending)
 
-    def test_blocks_when_unpushed_and_pending_release(self):
-        """When unpushed > 0 and version is pre-release, block dispatch."""
-        pending = self._get_pending_version()
-        assert pending, "pyproject.toml must have a pre-release version for this test"
-        assert self._should_block(5), "5 unpushed + pending release → should block"
+    def test_blocks_stable_version_when_exact_tag_is_absent(self):
+        content = '[project]\nversion = "0.1.1"\n'
+        assert self._should_block(5, content, tag_exists=False)
+
+    def test_blocks_prerelease_version_when_exact_tag_is_absent(self):
+        content = '[project]\nversion = "0.1.1-rc.1"\n'
+        assert self._should_block(5, content, tag_exists=False)
 
     def test_allows_when_no_unpushed_commits(self):
-        assert not self._should_block(0), "0 unpushed → should allow dispatch"
+        content = '[project]\nversion = "0.1.1"\n'
+        assert not self._should_block(0, content, tag_exists=False)
 
-    def test_allows_when_no_pending_release(self):
-        """Simulation: if pyproject.toml had a stable version, no block."""
-        # We test the logic independently: when pending_version is empty, no block
-        simulated_pending = ""
-        sim_block = False
-        if 5 > 0 and bool(simulated_pending):
-            sim_block = True
-        assert not sim_block, "Stable version (no pre-release) → should allow dispatch"
+    def test_allows_when_exact_release_tag_exists(self):
+        content = '[project]\nversion = "0.1.1"\n'
+        assert not self._should_block(5, content, tag_exists=True)
 
     def test_block_message_contains_counts(self):
         """Verify the block message pattern includes count info."""

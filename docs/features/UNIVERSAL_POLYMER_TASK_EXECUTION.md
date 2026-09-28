@@ -23,8 +23,9 @@ all of the following evidence:
 
 Missing or malformed evidence is a refusal, never a partial success. The model
 gateway and tool runner are injected, so tests and deployments can bind local,
-Azure, or chemistry-tool implementations without teaching the core about a
-specific provider or SDK.
+Azure, or digest-bound FreeLLMAPI-origin native profiles without teaching the
+core about a specific provider or SDK. Capability dispatch and profile-origin
+semantics are documented in [Universal Task Runtime](UNIVERSAL_TASK_RUNTIME.md).
 
 ## Evidence-based provider routing
 

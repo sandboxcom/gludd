@@ -46,6 +46,18 @@ PLUGINS = _load_plugin_paths()
 PLUGIN_BASENAMES = [_plugin_basename(p) for p in PLUGINS]
 
 
+def _registry_table_plugins(text: str) -> list[tuple[int, str]]:
+    """Return numbered plugin rows from the operator registry table."""
+    return [
+        (int(number), basename)
+        for number, basename in re.findall(
+            r"^\|\s*(\d+)\s*\|\s*`([^`]+)`\s*\|",
+            text,
+            re.MULTILINE,
+        )
+    ]
+
+
 class TestRegistryDocumentExists:
     """The registry file itself must exist and be non-trivial."""
 
@@ -85,7 +97,7 @@ class TestRegistryCoversEveryPlugin:
         text = REGISTRY_DOC.read_text()
         # Match either the basename (`enforce-make.ts`) or the stem
         # (`enforce-make`), as either form is acceptable in prose.
-        stem = basename.removesuffix(".ts")
+        stem = _plugin_stem(basename)
         assert basename in text or f"`{stem}`" in text or re.search(
             rf"\b{re.escape(stem)}\b", text
         ), (
@@ -100,7 +112,7 @@ class TestRegistryDocumentsDisableMechanism:
     @pytest.mark.parametrize("basename", PLUGIN_BASENAMES)
     def test_plugin_entry_mentions_disable(self, basename: str) -> None:
         text = REGISTRY_DOC.read_text()
-        stem = basename.removesuffix(".ts")
+        stem = _plugin_stem(basename)
         # Find the row/section for this plugin. We accept either a markdown
         # table row or a section header.
         # The pattern matches a backtick-wrapped plugin name followed (on the
@@ -161,19 +173,51 @@ def _extract_plugin_section(text: str, stem: str) -> str | None:
     return text[idx:idx + 400]
 
 
-class TestRegistryMatchesOcopencodeJsonCount:
-    """The plugin count advertised in the registry must match reality."""
+class TestRegistryMatchesOpencodeJsonExactly:
+    """The numbered registry table must exactly mirror opencode.json."""
 
     def test_total_plugin_count_matches(self) -> None:
         text = REGISTRY_DOC.read_text()
-        m = re.search(r"Total:\s*(\d+)\s+active\s+plugins", text, re.IGNORECASE)
-        assert m, (
-            "Registry must advertise a total plugin count in the form "
-            "'Total: N active plugins'."
+        advertised_counts = re.findall(
+            r"Total:\s*(\d+)\s+active\s+plugins",
+            text,
+            re.IGNORECASE,
         )
-        advertised = int(m.group(1))
+        assert len(advertised_counts) == 1, (
+            "Registry must advertise a total plugin count in the form "
+            "'Total: N active plugins' exactly once."
+        )
+        advertised = int(advertised_counts[0])
         actual = len(PLUGINS)
         assert advertised == actual, (
             f"Registry advertises {advertised} plugins but opencode.json "
             f"declares {actual}. Update the 'Total:' line."
         )
+
+    def test_numbered_table_is_an_exact_ordered_registry(self) -> None:
+        rows = _registry_table_plugins(REGISTRY_DOC.read_text())
+
+        assert len(PLUGIN_BASENAMES) == len(set(PLUGIN_BASENAMES)), (
+            "opencode.json must not register the same plugin basename twice"
+        )
+        assert [number for number, _basename in rows] == list(
+            range(1, len(PLUGIN_BASENAMES) + 1)
+        ), "Registry row numbers must be contiguous and cover every active plugin"
+        assert [basename for _number, basename in rows] == PLUGIN_BASENAMES, (
+            "Registry rows must exactly match opencode.json order; duplicates, "
+            "prose-only mentions, stale entries, and undocumented additions are invalid"
+        )
+
+    @pytest.mark.parametrize(
+        ("path", "expected"),
+        [
+            ("./.opencode/plugin/enforce-example.ts", "enforce-example"),
+            ("./.opencode/plugin/enforce-example.mjs", "enforce-example"),
+        ],
+    )
+    def test_plugin_stem_is_extension_agnostic(
+        self,
+        path: str,
+        expected: str,
+    ) -> None:
+        assert _plugin_stem(path) == expected

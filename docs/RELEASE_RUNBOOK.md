@@ -18,11 +18,11 @@ make verify-release-completeness TAG=v0.1.1
 COMPLETENESS CHECK: PASS
 ```
 
-The v0.1.1 verifier requires every required artifact category to pass, the
-exact tag version in release assets, a non-draft release, and no zero-byte
-asset. Before publication, CI also verifies artifact contents, aggregate
-checksums, digest-pinned image references, canonical Ansible runtime metadata,
-and all smoke attestations.
+The v0.1.1 verifier requires all 28 artifact categories to pass, at least 30
+assets to be present, the exact tag version in release assets, a non-draft
+release, and no zero-byte asset. Before publication, CI also verifies artifact
+contents, aggregate checksums, digest-pinned image references, canonical
+Ansible runtime metadata, and all smoke attestations.
 
 ## Preconditions
 
@@ -75,10 +75,12 @@ branch.
 make release-cut TAG=v0.1.1 MSG='v0.1.1: S83.166 release documentation and version bump'
 ```
 
-The tag-triggered workflow must complete all gate, test, coverage, Molecule,
-platform, container, and execution-environment jobs before its release job can
-publish. A local poll timeout only means the bounded poll ended; inspect CI at
-the next natural break and never treat timeout as success.
+The tag-triggered workflow first proves that the identical development SHA has a
+terminal green canonical run. It then completes the tag gate plus every platform,
+container, execution-environment, provenance, and artifact job before its release
+job can publish. `release-cut` snapshots any older matching tag run, polls the new
+exact tag/SHA/workflow/event every 10 seconds for at most 90 minutes, and finally
+runs artifact and full-matrix verification. A local timeout remains non-success.
 
 ## Functional artifact matrix
 
@@ -95,6 +97,23 @@ The release workflow builds, validates, and stages these immutable outputs:
 | Ansible EE | seven canonical boundary inputs plus image metadata | build with `ansible-builder`, run offline import smoke, push beside active image, record digest |
 | Container | GHCR image metadata | run a namespaced container and wait a bounded 30 seconds for `/healthz` |
 | Metadata | CycloneDX SBOM, install script, licenses, provenance, checksums | validate schemas, execute installer from the Linux archive, and verify exact SHA-256 coverage |
+
+The completeness verifier recognizes exactly 28 mandatory categories; none are
+optional. The minimum is 30 assets because the runtime-collection category
+requires three separately named collection tarballs:
+
+| Group | Exact required categories |
+|---|---|
+| Platform binaries (4) | Linux x86_64, Linux aarch64, macOS arm64, Windows x86_64 |
+| Native packages/installers (4) | `.deb`, `.rpm`, `.dmg`, Windows `.exe` installer |
+| Base metadata (4) | checksums, SBOM, `LICENSE`, `THIRD_PARTY_LICENSES` |
+| Python and collections (4) | wheel, sdist, three runtime collection tarballs, collection manifest |
+| Ansible execution boundary (8) | EE definition, EE collection requirements, EE Python requirements, EE system requirements, EE runtime lock, managed-host Python lock, collection Python boundary inventory, EE image metadata |
+| Runtime delivery (4) | container image metadata, install script, smoke attestations, release manifest |
+
+This list mirrors `EXPECTED_CATEGORIES` in
+`scripts/verify_release_completeness.py`. A category-count change must update
+the verifier, its structural tests, and this runbook together.
 
 Every platform job writes a versioned smoke attestation only after its checks
 pass. `scripts/verify_release_asset_matrix.py` unions those attestations and
@@ -157,7 +176,8 @@ Expected release state:
 
 - `isDraft: false`;
 - `isPrerelease: false`;
-- every required artifact category reports `PASS`;
+- all 28 required artifact categories report `PASS`;
+- at least 30 assets are present;
 - no zero-sized asset;
 - release URL identifies `v0.1.1`.
 
@@ -169,7 +189,9 @@ evidence, and completeness PASS in the task ledger.
 Never upload a locally built replacement to a published release. Only artifacts
 built by CI from the exact tagged SHA have valid provenance.
 
-If the tag workflow is green but publication was transiently interrupted:
+If publication was transiently interrupted, `release-recut` snapshots the prior
+run before re-pushing the tag, waits only for a newer exact-identity run, and then
+repeats both artifact checks:
 
 ```text
 make release-recut TAG=v0.1.1

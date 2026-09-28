@@ -12,6 +12,7 @@ WORKFLOW_PATH = ROOT / ".github" / "workflows" / "build.yml"
 
 REQUIRED_RELEASE_JOBS = {
     "gate",
+    "release_source_proof",
     "test-shard",
     "coverage",
     "molecule",
@@ -85,7 +86,23 @@ def test_release_waits_for_every_test_and_artifact_producer() -> None:
     if isinstance(needs, str):
         needs = [needs]
     assert set(needs) >= REQUIRED_RELEASE_JOBS
-    assert str(release.get("if", "")) == "startsWith(github.ref, 'refs/tags/v')"
+    condition = str(release.get("if", ""))
+    assert "startsWith(github.ref, 'refs/tags/v')" in condition
+    assert "needs.release_source_proof.result == 'success'" in condition
+    assert "needs.gate.result == 'success'" in condition
+    for reused_job in (
+        "freellmapi-upstream-build",
+        "test-shard",
+        "coverage",
+        "molecule",
+        "game-building",
+    ):
+        expression = (
+            f"needs.{reused_job}.result"
+            if "-" not in reused_job
+            else f"needs['{reused_job}'].result"
+        )
+        assert f"{expression} == 'skipped'" in condition
 
 
 def test_test_shards_reject_empty_selection_and_missing_coverage() -> None:

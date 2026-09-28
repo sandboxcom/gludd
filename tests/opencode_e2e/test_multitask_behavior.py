@@ -1,7 +1,7 @@
 """E2E multitask enforcement behavior test.
 
 Spawns a minimal opencode project and verifies:
-  1. Always deploys exactly 10 subagents per wave (never fewer)
+  1. Applies an opt-in minimum and never exceeds three subagents per wave
   2. Never stops on its own (text-only response = bug)
   3. 3x depth dispatch works (main->agent->agent->agent)
   4. PASSES when externally terminated (was still working)
@@ -123,7 +123,7 @@ def _invoke_multitask_hook(
     *,
     subagent: bool = False,
     disengaged: bool = False,
-    min_dispatches: int = 10,
+    min_dispatches: int = 3,
     enforce: bool = True,
 ) -> dict | None:
     """Invoke enforce-multitask.ts hook via Node subprocess."""
@@ -225,7 +225,7 @@ if (result) {{
     else:
         env.pop("GLUDD_SESSION_START_ENFORCE", None)
     env["GLUDD_SESSION_STATE"] = str(state_path)
-    env["GLUDD_SESSION_START_MIN_DISPATCHES"] = "10"
+    env["GLUDD_SESSION_START_MIN_DISPATCHES"] = "99"
     cwd = str(project_root)
 
     try:
@@ -423,13 +423,13 @@ def _make_temp_project() -> Path:
 
     (tmp / "AGENTS.md").write_text("""# E2E Test Project
 
-## CRITICAL: 10-Agent Dispatch Floor
+## CRITICAL: Adaptive Dispatch With Three-Agent Ceiling
 
-Every dispatch wave MUST contain EXACTLY 10 task/agent/workflow dispatches when pending work exists.
+Dispatch only independent useful work, with no more than three task/agent/workflow calls per wave.
 
-## CRITICAL: Minimum 10 Subagents at All Times
+## CRITICAL: Configured Minimum
 
-Maintain exactly 10 concurrent subagents.
+An operator-configured minimum is clamped to the three-agent ceiling.
 
 ## CRITICAL: Never Stop While Work Remains
 
@@ -446,7 +446,7 @@ All commands must use `make <target>`.
 
 ## CRITICAL: Session Start Protocol
 
-First action: read TASKS.md, then dispatch exactly 10 subagents.
+First action: read TASKS.md, then assess whether useful parallel work exists.
 Never send prose before the first dispatch wave.
 """)
 
@@ -487,16 +487,16 @@ def temp_project():
     shutil.rmtree(tmp, ignore_errors=True)
 
 
-# ── Test: Multitask Hook — configure minimum 10 dispatches ────────────────
+# ── Test: Multitask Hook — oversized minimum clamps to three ────────────────
 
 
 class TestMultitaskFloorEnforcement:
     """enforce-multitask.ts enforces exact wave width."""
 
-    def test_multitask_configured_minimum_10(self, temp_project):
-        """An explicit minimum of ten — mutation blocks when below floor."""
-        result = _invoke_multitask_hook(temp_project, "write", min_dispatches=10, enforce=True)
-        assert result is not None, "Should block write when no dispatches made, floor=10, and pending work exists"
+    def test_multitask_configured_minimum_above_cap(self, temp_project):
+        """An oversized explicit minimum clamps to three and still blocks."""
+        result = _invoke_multitask_hook(temp_project, "write", min_dispatches=99, enforce=True)
+        assert result is not None, "Should block a mutation below the clamped floor of three"
 
     def test_multitask_allow_with_min_0(self, temp_project):
         """GLUDD_MIN_DISPATCHES=0 disables the floor."""
@@ -510,7 +510,7 @@ class TestMultitaskFloorEnforcement:
 
     def test_subagent_skips_multitask_enforcement(self, temp_project):
         """OPENCODE_SUBAGENT=1 bypasses multitask enforcement."""
-        result = _invoke_multitask_hook(temp_project, "read", subagent=True, min_dispatches=10)
+        result = _invoke_multitask_hook(temp_project, "read", subagent=True, min_dispatches=99)
         assert result is None
 
     def test_disengaged_bypass(self, temp_project):
@@ -518,7 +518,7 @@ class TestMultitaskFloorEnforcement:
         disc_path = Path("/tmp/gludd-e2e-disengage-next.json")
         disc_path.write_text("1")
         try:
-            result = _invoke_multitask_hook(temp_project, "write", disengaged=True, min_dispatches=10)
+            result = _invoke_multitask_hook(temp_project, "write", disengaged=True, min_dispatches=99)
             assert result is None, f"Disengage should bypass floor, got={result}"
         finally:
             disc_path.unlink(missing_ok=True)
@@ -530,12 +530,12 @@ class TestMultitaskFloorEnforcement:
         Path(state_file).write_text(
             json.dumps(
                 _multitask_state(
-                    thisMessageDispatches=3,
-                    sessionDispatchTotal=3,
+                    thisMessageDispatches=2,
+                    sessionDispatchTotal=2,
                 )
             )
         )
-        dispatch_count_file.write_text(json.dumps({"count": 3, "ts": int(time.time() * 1000)}))
+        dispatch_count_file.write_text(json.dumps({"count": 2, "ts": int(time.time() * 1000)}))
         plugin_path = temp_project / ".opencode" / "plugin" / "enforce-multitask.ts"
         script = f"""
 import * as path from "node:path";
@@ -560,7 +560,7 @@ if (result && typeof result === "object") {{
             sp = f.name
         try:
             env = _isolated_multitask_state_env(temp_project, state_file)
-            env["GLUDD_MIN_DISPATCHES"] = "10"
+            env["GLUDD_MIN_DISPATCHES"] = "99"
             env["GLUDD_MULTITASK_FLOOR_ENFORCE"] = "1"
             proc = subprocess.run(
                 [NODE_BIN, EXPERIMENTAL_FLAG, sp],
@@ -573,7 +573,7 @@ if (result && typeof result === "object") {{
             assert proc.returncode == 0, proc.stderr
             stdout = proc.stdout.strip()
             assert "BLOCKED" in stdout or "THIN" in stdout, (
-                f"Expected block for thin wave (3 dispatches), got: {stdout}"
+                f"Expected block for thin wave (2 dispatches), got: {stdout}"
             )
         finally:
             Path(sp).unlink(missing_ok=True)
@@ -689,7 +689,7 @@ var defaultImpl = m.default;
 var plugin = typeof defaultImpl === "function" ? defaultImpl({{}}) : defaultImpl;
 var fn = plugin["tool.execute.before"];
 
-for (var i = 0; i < 10; i++) {{
+        for (var i = 0; i < 3; i++) {{
   await fn({{ tool: "task", args: {{ description: "E2E-" + i, prompt: "make task-done-" + i }} }});
 }}
 
@@ -704,7 +704,7 @@ process.stdout.write(JSON.stringify(out));
             env = _isolated_plugin_env(temp_project)
             env["OPENCODE_SUBAGENT"] = "0"
             env["GLUDD_MULTITASK_STATE_FILE"] = state_file
-            env["GLUDD_MIN_DISPATCHES"] = "10"
+            env["GLUDD_MIN_DISPATCHES"] = "99"
             env["GLUDD_MULTITASK_FLOOR_ENFORCE"] = "1"
             env["GLUDD_PROJECT_ROOT"] = str(temp_project)
             proc = subprocess.run(
@@ -716,14 +716,14 @@ process.stdout.write(JSON.stringify(out));
                 env=env,
             )
             data = json.loads(proc.stdout.strip())
-            assert data["dispatches"] == 10, f"Expected 10 dispatches in wave, got {data['dispatches']}"
-            assert data["total"] == 10, f"Expected 10 total dispatches, got {data['total']}"
+            assert data["dispatches"] == 3, f"Expected 3 dispatches in wave, got {data['dispatches']}"
+            assert data["total"] == 3, f"Expected 3 total dispatches, got {data['total']}"
         finally:
             Path(sp).unlink(missing_ok=True)
             Path(state_file).unlink(missing_ok=True)
 
-    def test_ceiling_blocks_11th_dispatch(self, temp_project):
-        """11th dispatch in a wave is denied."""
+    def test_ceiling_blocks_4th_dispatch(self, temp_project):
+        """Fourth dispatch in a wave is denied."""
         state_file = str(_isolated_state_path(temp_project, "ceiling"))
         plugin_path = temp_project / ".opencode" / "plugin" / "enforce-multitask.ts"
         script = f"""
@@ -734,7 +734,7 @@ var defaultImpl = m.default;
 var plugin = typeof defaultImpl === "function" ? defaultImpl({{}}) : defaultImpl;
 var fn = plugin["tool.execute.before"];
 
-for (var i = 0; i < 10; i++) {{
+        for (var i = 0; i < 3; i++) {{
   await fn({{ tool: "task" }});
 }}
 var result = await fn({{ tool: "task" }});
@@ -751,7 +751,7 @@ if (result) {{
             env = _isolated_plugin_env(temp_project)
             env["OPENCODE_SUBAGENT"] = "0"
             env["GLUDD_MULTITASK_STATE_FILE"] = state_file
-            env["GLUDD_MIN_DISPATCHES"] = "10"
+            env["GLUDD_MIN_DISPATCHES"] = "99"
             env["GLUDD_MULTITASK_FLOOR_ENFORCE"] = "1"
             env["GLUDD_PROJECT_ROOT"] = str(temp_project)
             proc = subprocess.run(
@@ -781,7 +781,7 @@ if (result) {{
         Path(state_file).write_text(
             json.dumps(
                 _multitask_state(
-                    sessionDispatchTotal=10,
+                    sessionDispatchTotal=3,
                     zeroStreak=3,
                     underFloorCount=3,
                 )
@@ -800,7 +800,7 @@ if (typeof fn !== "function") {{
 }}
 
 var state = JSON.parse(fs.readFileSync({json.dumps(state_file)}, "utf8"));
-state.sessionDispatchTotal = 10;
+state.sessionDispatchTotal = 3;
 state.thisMessageDispatches = 0;
 state.zeroStreak = 3;
 state.underFloorCount = 3;
@@ -823,7 +823,7 @@ if (result && typeof result === "object" && result.text) {{
             env = _isolated_plugin_env(temp_project)
             env["OPENCODE_SUBAGENT"] = "0"
             env["GLUDD_MULTITASK_STATE_FILE"] = state_file
-            env["GLUDD_MIN_DISPATCHES"] = "10"
+            env["GLUDD_MIN_DISPATCHES"] = "99"
             env["GLUDD_MULTITASK_FLOOR_ENFORCE"] = "1"
             env["GLUDD_PROJECT_ROOT"] = str(ROOT)
             proc = subprocess.run(

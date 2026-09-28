@@ -73,8 +73,8 @@ See [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) §5 for the details.
 touching any release target.** The three facts that get this wrong most often:
 
 - `make release-cut TAG=... MSG='...'` is the **only sanctioned path** to publish a release.
-- `make verify-release-completeness TAG=...` is the **real gate** (12 artifact categories,
-  prerelease-flag-vs-tag, version-stamped asset names, no zero-size assets).
+- `make verify-release-completeness TAG=...` is the **real gate** (28 artifact categories,
+  at least 30 assets, prerelease-flag-vs-tag, version-stamped asset names, no zero-size assets).
   `make verify-release-artifact` is **not** the gate — it only proves "non-draft + ≥1 asset".
 - `make release-create` **cannot publish a public release.** It is a CI-green-gated,
   **draft-only** single-binary fallback.

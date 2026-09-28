@@ -4,9 +4,8 @@ Prevents 100% new-task dispatch waves when >=2 items remain unchecked in TASKS.m
 Requires at least 1 continuation slot (task ID reference like SEC.1, D-13)
 per dispatch wave.
 
-Covers: denial on all-new-task with >=2 unchecked, allow when continuation present,
-subagent guard, env-var disable, fail-open on corrupt TASKS.md, denial at
-exact 10/10 new-task ratio.
+Covers: denial on a complete all-new-task wave with >=2 unchecked, allow when a
+continuation is present, subagent guard, env-var disable, and fail-open behavior.
 """
 
 from __future__ import annotations
@@ -63,9 +62,9 @@ class TestDenyMessageContent:
         src = _plugin_source()
         assert "GLUDD_ADDITIVE_TASK_ENFORCE" in src, "Deny must mention env-var disable"
 
-    def test_ratio_denial_message_present(self):
+    def test_no_duplicate_ratio_denial_path(self):
         src = _plugin_source()
-        assert "ADDITIVE TASK RATIO VIOLATION" in src, "Ratio denial message missing"
+        assert "ADDITIVE TASK RATIO VIOLATION" not in src
 
 
 class TestAdditiveStateInterface:
@@ -104,22 +103,23 @@ class TestDenialCondition:
         assert "if (BLOCK)" in src, "Must gate denial on BLOCK soft-mode switch"
 
 
-class TestExactDispatchCountDenial:
-    """Denial at exact 10/10 new-task dispatches with 0 continuations."""
+class TestCompleteWaveDenial:
+    """Denial at the canonical full-wave size with zero continuations."""
 
-    def test_checks_total_at_least_10(self):
+    def test_checks_total_at_canonical_wave_size(self):
         src = _plugin_source()
-        assert "total >= 10" in src, "Must check total >= 10 for ratio violation"
+        assert "const COMPLETE_WAVE_SIZE = HARD_MAX_DISPATCHES" in src
+        assert "total >= COMPLETE_WAVE_SIZE" in src
 
     def test_checks_all_new_tasks(self):
         src = _plugin_source()
         assert "newCount === total" in src, "Must check newCount === total"
 
-    def test_denial_includes_new_task_count(self):
+    def test_denial_includes_dispatch_count(self):
         src = _plugin_source()
-        idx = src.find("ADDITIVE TASK RATIO VIOLATION")
+        idx = src.find("ADDITIVE TASK VIOLATION")
         after = src[idx : idx + 300]
-        assert "newCount" in after or "newPct" in after, "Denial must include new-task count/percent"
+        assert "total" in after, "Denial must include the dispatch count"
 
 
 class TestClassificationLogic:
@@ -302,9 +302,9 @@ class TestStatePersistence:
         src = _plugin_source()
         assert "process.pid" in src, "Must track PID for stale detection"
 
-    def test_wave_reset_after_ten_dispatches(self):
+    def test_wave_reset_after_canonical_complete_wave(self):
         src = _plugin_source()
-        assert "total >= 10" in src and "s.wave = []" in src, "Wave must reset after 10 dispatches"
+        assert "total >= COMPLETE_WAVE_SIZE" in src and "s.wave = []" in src
 
 
 class TestWaveFiltering:

@@ -242,6 +242,7 @@ class TestReleaseJobStructure:
         {
             "version",
             "gate",
+            "release_source_proof",
             "freellmapi-upstream-build",
             "test-shard",
             "coverage",
@@ -271,6 +272,107 @@ class TestReleaseJobStructure:
         wf = _load_workflow()
         release = wf["jobs"]["release"]
         assert "timeout-minutes" in release
+
+
+class TestReleaseSourceEvidenceReuse:
+    """A tag may reuse only a successful development run for its exact SHA."""
+
+    HEAVY_VALIDATION_JOBS: tuple[str, ...] = (
+        "freellmapi-upstream-build",
+        "test-shard",
+        "coverage",
+        "molecule",
+        "game-building",
+    )
+    TAG_ARTIFACT_JOBS: tuple[str, ...] = (
+        "linux",
+        "macos",
+        "windows",
+        "termux",
+        "container",
+        "ansible-ee",
+    )
+
+    def test_tag_source_proof_is_exact_sha_and_development_scoped(self) -> None:
+        wf = _load_workflow()
+        proof = wf["jobs"]["release_source_proof"]
+
+        assert _collect_job_refs(proof.get("needs", [])) == {"version"}
+        assert "startsWith(github.ref, 'refs/tags/v')" in str(proof.get("if", ""))
+        checkout = next(
+            step
+            for step in proof["steps"]
+            if str(step.get("uses", "")).startswith("actions/checkout@")
+        )
+        assert checkout["with"]["ref"] == "${{ github.sha }}"
+        commands = "\n".join(str(step.get("run", "")) for step in proof["steps"])
+        assert 'python scripts/require_ci_green.py "$GITHUB_SHA" development' in commands
+        proof_step = next(step for step in proof["steps"] if "require_ci_green.py" in str(step.get("run", "")))
+        assert proof_step["env"]["GH_TOKEN"] == "${{ github.token }}"
+
+    def test_tag_skips_only_validation_already_proved_for_exact_sha(self) -> None:
+        wf = _load_workflow()
+        jobs = wf["jobs"]
+
+        for name in ("freellmapi-upstream-build", "test-shard", "molecule"):
+            assert "!startsWith(github.ref, 'refs/tags/v')" in str(jobs[name].get("if", ""))
+        assert _collect_job_refs(jobs["coverage"].get("needs", [])) == {
+            "version",
+            "test-shard",
+        }
+        assert "!startsWith(github.ref, 'refs/tags/v')" in str(
+            jobs["game-building"].get("if", "")
+        )
+
+        for name in self.TAG_ARTIFACT_JOBS:
+            condition = str(jobs[name].get("if", ""))
+            assert "startsWith(github.ref, 'refs/tags/v')" in condition
+            checkout = next(
+                step
+                for step in jobs[name]["steps"]
+                if str(step.get("uses", "")).startswith("actions/checkout@")
+            )
+            assert checkout["with"]["ref"] == "${{ github.sha }}"
+
+    def test_release_fails_closed_on_proof_or_dependency_result_drift(self) -> None:
+        wf = _load_workflow()
+        release = wf["jobs"]["release"]
+        condition = str(release.get("if", ""))
+
+        assert "!cancelled()" in condition
+        assert "needs.release_source_proof.result == 'success'" in condition
+        assert "needs.gate.result == 'success'" in condition
+        for name in self.HEAVY_VALIDATION_JOBS:
+            expression = (
+                f"needs.{name}.result" if "-" not in name else f"needs['{name}'].result"
+            )
+            assert f"{expression} == 'skipped'" in condition
+        for name in self.TAG_ARTIFACT_JOBS:
+            expression = (
+                f"needs.{name}.result" if "-" not in name else f"needs['{name}'].result"
+            )
+            assert f"{expression} == 'success'" in condition
+
+    def test_feature_doc_pins_practitioner_evidence_zdd_and_measured_bound(self) -> None:
+        text = (
+            WORKFLOW_PATH.parents[2]
+            / "docs"
+            / "features"
+            / "BETA4_DUAL_TRACK_CI.md"
+        ).read_text(encoding="utf-8")
+
+        for required in (
+            "Exact-SHA tag validation reuse",
+            "GitHub Community discussion #27031",
+            "2021-07-02",
+            "GitHub Community discussion #44396",
+            "2023-01-15",
+            "75-minute reduction",
+            "16 duplicate hosted jobs",
+            "ZDD",
+            "Rollback",
+        ):
+            assert required in text
 
 
 class TestNoDuplicateJobNames:

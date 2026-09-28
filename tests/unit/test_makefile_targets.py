@@ -134,14 +134,14 @@ class TestReleaseCutPipeline:
         )
 
     def test_release_cut_poll_loop_emits_progress(self) -> None:
-        """The verify-release-artifact poll loop must print per-attempt progress.
+        """The exact-run wait must print progress while the release is pending.
 
         Per AGENTS.md 'No Unseen Events' rule: a long-running poll must emit a
         heartbeat / progress marker, never run silently.
         """
         recipe = _recipe("release-cut")
-        assert "attempt" in recipe or "Waiting" in recipe, (
-            "release-cut verify poll must emit per-attempt progress "
+        assert "ci-await" in recipe and "Waiting" in recipe, (
+            "release-cut exact-run wait must emit progress "
             "(AGENTS.md: No Unseen Events)"
         )
 

@@ -71,6 +71,33 @@ def _is_ambiguous(entity: str) -> bool:
     return lowered.startswith("ambiguous:") or lowered in _AMBIGUOUS_ENTITIES
 
 
+def _ambiguous_identity_result(
+    request: ChemistryRequest,
+    run_id: str,
+    ambiguous: list[str],
+) -> ChemistryResult:
+    """Build the fail-closed result for ambiguous chemical identities."""
+    return ChemistryResult(
+        request_id=request.request_id,
+        run_id=run_id,
+        status=ResultStatus.refused,
+        summary="ambiguous chemical identity: disambiguation required before actionable work",
+        limitations=[
+            (
+                f"disambiguation-required: {entity!r} matches multiple "
+                "candidate records; provide an explicit structure or identifier"
+            )
+            for entity in ambiguous
+        ],
+        errors=[
+            _err(
+                "chem.ambiguous_identity",
+                "identity disambiguation required (spec §9)",
+            )
+        ],
+    )
+
+
 class ChemistryExpertAPI:
     """Top-level entry point for chemistry requests.
 
@@ -94,11 +121,13 @@ class ChemistryExpertAPI:
         *,
         audit_available: bool = True,
     ) -> None:
+        """Initialize the policy, router, and audit-service availability."""
         self._policy = policy or ChemistryPolicy()
         self._router = router or ChemistryRouter(self._policy)
         self._audit_available = audit_available
 
     def handle_request(self, request: ChemistryRequest) -> ChemistryResult:
+        """Validate, route, and safely resolve a chemistry request."""
         run_id = _new_run_id()
 
         # 1. Policy: constraint validation.
@@ -147,26 +176,7 @@ class ChemistryExpertAPI:
         #     disambiguation with candidate records.
         ambiguous = [e for e in request.entities if _is_ambiguous(e)]
         if ambiguous:
-            return ChemistryResult(
-                request_id=request.request_id,
-                run_id=run_id,
-                status=ResultStatus.refused,
-                summary=("ambiguous chemical identity: disambiguation required before actionable work"),
-                limitations=[
-                    (
-                        f"disambiguation-required: {a!r} matches multiple "
-                        f"candidate records; provide an explicit structure "
-                        f"or identifier"
-                    )
-                    for a in ambiguous
-                ],
-                errors=[
-                    _err(
-                        "chem.ambiguous_identity",
-                        "identity disambiguation required (spec §9)",
-                    )
-                ],
-            )
+            return _ambiguous_identity_result(request, run_id, ambiguous)
 
         # 4b. Missing current hazard evidence → refuse protocol/scale-up
         #     (research may continue). Spec §9 row "Missing current hazard

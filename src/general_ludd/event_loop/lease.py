@@ -12,13 +12,16 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from general_ludd.db.models import BucketLeaseModel, TodoModel
+from general_ludd.db.models import BucketLeaseModel
 from general_ludd.event_loop.lease_cancellation import (
     confirm_lease_termination,
     request_lease_cancellation,
 )
+from general_ludd.event_loop.lease_recovery import (
+    reclaim_expired_leases as _reclaim_expired_leases,
+)
 from general_ludd.event_loop.lease_validation import validate_lease_input
-from general_ludd.schemas.todo import TodoStatus
+from general_ludd.schemas.project_identity import ProjectWorkIdentity, validate_project_id
 
 
 class LeaseBusyError(RuntimeError):
@@ -66,6 +69,18 @@ async def acquire_leases_batch(
 ) -> list[BucketLeaseModel]:
     """Acquire a batch atomically without replacing another live attempt."""
     validate_lease_input(bucket_keys, holder_id, ttl_seconds, todo_versions)
+    if project_id is not None:
+        validate_project_id(project_id)
+    for key in bucket_keys:
+        scoped_identity = ProjectWorkIdentity.from_lease_bucket_key(key)
+        if key.startswith("project:") and (
+            scoped_identity is None or scoped_identity.project_id != project_id
+        ):
+            raise ValueError(
+                "project-scoped bucket key must match the lease project_id"
+            )
+        if key.startswith("unowned:") and project_id is not None:
+            raise ValueError("unowned bucket key cannot carry a project_id")
     if not bucket_keys:
         return []
     now = datetime.now(UTC)
@@ -80,6 +95,10 @@ async def acquire_leases_batch(
     # session if it catches ``LeaseBusyError`` without rolling back immediately.
     for key, existing in existing_map.items():
         version = None if todo_versions is None else todo_versions.get(key)
+        if existing.project_id != project_id:
+            raise LeaseBusyError(
+                f"bucket {key!r} is owned by a different project"
+            )
         same_attempt = existing.holder_id == holder_id and (
             version is None or existing.todo_version == version
         )
@@ -176,69 +195,12 @@ async def reclaim_expired_leases(
     session: AsyncSession,
     max_age_seconds: int = 300,
 ) -> int:
-    """Request cancellation, then requeue only termination-confirmed attempts.
-
-    Heartbeat expiry is evidence that the owner may be unhealthy; it is not proof
-    that model, Ansible, or infrastructure effects stopped. The first sweep keeps
-    the lease and records ``cancel_requested_at``. Only a later sweep that sees
-    exact-owner ``termination_confirmed_at`` may advance ACTIVE back to QUEUED.
-    """
-    del max_age_seconds
-
-    now = datetime.now(UTC)
-    stmt = select(BucketLeaseModel).where(BucketLeaseModel.expires_at < now)
-    result = await session.execute(stmt)
-    expired = list(result.scalars().all())
-    if not expired:
-        return 0
-    todo_ids = {
-        lease.bucket_key.partition(":")[2]
-        for lease in expired
-        if isinstance(lease.bucket_key, str) and ":" in lease.bucket_key
-    }
-    todo_map: dict[str, TodoModel] = {}
-    if todo_ids:
-        todo_rows = (
-            await session.execute(select(TodoModel).where(TodoModel.todo_id.in_(todo_ids)))
-        ).scalars().all()
-        todo_map = {todo.todo_id: todo for todo in todo_rows}
-    reclaimed = 0
-    for lease in expired:
-        bucket_key = lease.bucket_key
-        todo_id = bucket_key.partition(":")[2] if isinstance(bucket_key, str) else ""
-        todo = todo_map.get(todo_id)
-        if todo is None or todo.status != TodoStatus.ACTIVE.value:
-            await session.delete(lease)
-            reclaimed += 1
-            continue
-        if (
-            lease.termination_confirmed_at is None
-            or lease.todo_version is None
-            or todo.version != lease.todo_version
-        ):
-            if lease.cancel_requested_at is None:
-                lease.cancel_requested_at = now
-                lease.updated_at = now
-            continue
-        transitioned = await session.execute(
-            update(TodoModel)
-            .where(
-                TodoModel.todo_id == todo_id,
-                TodoModel.status == TodoStatus.ACTIVE.value,
-                TodoModel.version == lease.todo_version,
-            )
-            .values(
-                status=TodoStatus.QUEUED.value,
-                version=TodoModel.version + 1,
-                updated_at=now,
-            )
-        )
-        if (cast("CursorResult[Any]", transitioned).rowcount or 0) != 1:
-            continue
-        await session.delete(lease)
-        reclaimed += 1
-    await session.flush()
-    return reclaimed
+    """Recover expired leases using this module's patchable clock boundary."""
+    return await _reclaim_expired_leases(
+        session,
+        max_age_seconds,
+        now=datetime.now(UTC),
+    )
 
 
 async def release_lease(

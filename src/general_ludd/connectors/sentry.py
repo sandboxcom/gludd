@@ -6,10 +6,11 @@ into the project's connector record shape.
 
 Design constraints (see the connector contract):
 
-* No imports of a connector base class, package ``__init__``, or sibling
-  modules — this file stands alone and only depends on the stdlib.
+* Connector behavior stays independent of connector base classes and package
+  initialization; transport contracts and adapters live in the private sibling
+  module :mod:`general_ludd.connectors._sentry_transport`.
 * HTTP transport is injectable so tests can supply a mocked transport; the
-  default transport uses ``urllib`` from the stdlib.
+  default transport uses ``httpx`` with redirects disabled.
 * SSRF protection: ``base_url`` is rejected at construction time if its host is
   a literal private / loopback / link-local / reserved address. No DNS
   resolution is performed (a literal-host check only — name-based hosts are
@@ -24,99 +25,32 @@ Design constraints (see the connector contract):
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import urllib.parse
-from collections.abc import Callable
-from typing import Protocol, cast, runtime_checkable
+from typing import cast
 from urllib.parse import urlsplit
 
-import httpx
-
+from general_ludd.connectors._sentry_transport import (
+    CallableTransport,
+    SentryResponse,
+    Transport,
+    UrllibTransport,
+)
 from general_ludd.security.ssrf import is_url_blocked
 
 logger = logging.getLogger(__name__)
 
 __all__ = ["SentrySource", "Transport"]
 
+_SentryResponse = SentryResponse
+_CallableTransport = CallableTransport
+_UrllibTransport = UrllibTransport
+
 _DEFAULT_BASE_URL = "https://sentry.io"
 _DEFAULT_TIMEOUT = 30.0
 _DEFAULT_STATS_PERIOD = "24h"
 _DEFAULT_LIMIT = 100
-
-
-class _SentryResponse:
-    """A minimal, transport-agnostic HTTP response.
-
-    Only the surface the connector needs is modeled: a status code and a raw
-    body (``bytes`` or ``str``). ``json()`` decodes the body lazily.
-    """
-
-    __slots__ = ("_body", "status")
-
-    def __init__(self, status: int, body: bytes | str) -> None:
-        self.status = status
-        self._body = body
-
-    @property
-    def text(self) -> str:
-        if isinstance(self._body, bytes):
-            return self._body.decode("utf-8", errors="replace")
-        return self._body
-
-    def json(self) -> object:
-        body = self.text.strip()
-        if not body:
-            return None
-        return json.loads(body)
-
-
-@runtime_checkable
-class Transport(Protocol):
-    """Injectable HTTP transport.
-
-    Implementations perform a single GET and return an :class:`_SentryResponse`.
-    A mocked transport in tests can record the requested URL/headers and return
-    canned payloads without any network access.
-    """
-
-    def get(
-        self,
-        url: str,
-        *,
-        headers: dict[str, str],
-        timeout: float,
-    ) -> _SentryResponse: ...
-
-
-class _UrllibTransport:
-    """Default transport backed by httpx with redirect-following disabled."""
-
-    def get(
-        self,
-        url: str,
-        *,
-        headers: dict[str, str],
-        timeout: float,
-    ) -> _SentryResponse:
-        with httpx.Client(timeout=timeout, follow_redirects=False) as client:
-            resp = client.get(url, headers=headers)
-        return _SentryResponse(status=resp.status_code, body=resp.content)
-
-
-class _CallableTransport:
-    def __init__(self, fn: object) -> None:
-        self._fn = cast("Callable[..., object]", fn)
-
-    def get(self, url: str, *, headers: dict[str, str], timeout: float) -> _SentryResponse:
-        result = self._fn("GET", url, headers=headers, timeout=timeout)
-        if isinstance(result, tuple) and len(result) == 2:
-            status, body = result
-            if isinstance(body, (dict, list)):
-                body = json.dumps(body)
-            return _SentryResponse(int(status), str(body))
-        return cast(_SentryResponse, result)
 
 
 class SentrySource:
@@ -140,6 +74,7 @@ class SentrySource:
     KIND: str = "logs"
 
     def __init__(self, config: dict[str, object], *, transport: Transport | None = None) -> None:
+        """Validate connector configuration and initialize its transport."""
         if not isinstance(config, dict):
             raise TypeError("config must be a dict")
 
@@ -223,7 +158,6 @@ class SentrySource:
         otherwise ``{"ok": False, "detail": "..."}``. A 401 (bad/missing token)
         therefore reports ``ok=False``.
         """
-
         url = f"{self.base_url}/api/0/"
         try:
             resp = self._get(url)
@@ -246,7 +180,6 @@ class SentrySource:
         * ``statsPeriod`` — relative time window (e.g. ``"24h"``, ``"14d"``).
         * ``limit`` — max issues to return.
         """
-
         spec = spec or {}
         params: dict[str, str] = {}
         query = spec.get("query")
@@ -285,7 +218,6 @@ class SentrySource:
         caller can associate the event with traces. Returns ``None`` if the
         event cannot be fetched (non-2xx or empty body).
         """
-
         safe_id = urllib.parse.quote(str(issue_id), safe="")
         url = f"{self.base_url}/api/0/issues/{safe_id}/events/latest/"
         resp = self._get(url)

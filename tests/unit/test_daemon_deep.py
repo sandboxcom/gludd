@@ -726,15 +726,16 @@ class TestEventLoopDone:
             _on_event_loop_done(task)
         assert "terminated with exception" in caplog.text
 
-    def test_no_exception_still_logs_error(self, caplog):
+    def test_no_exception_logs_normal_completion_without_false_error(self, caplog):
         from general_ludd.daemon import _on_event_loop_done
 
         task = MagicMock()
         task.cancelled.return_value = False
         task.exception.return_value = None
-        with caplog.at_level("ERROR"):
+        with caplog.at_level("INFO"):
             _on_event_loop_done(task)
-        assert "exited unexpectedly" in caplog.text
+        assert "completed normally" in caplog.text
+        assert not [record for record in caplog.records if record.levelname == "ERROR"]
 
 
 class TestGetAppAdaptiveRouter:

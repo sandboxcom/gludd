@@ -673,52 +673,23 @@ class TestEnforceStopCiPendingOrRed:
 # 4. enforce-floor.ts — floor/target/ceiling constants
 # --------------------------------------------------------------------------- #
 class TestEnforceFloorConstants:
-    """The three band constants must be 5/6/8 (cost-efficiency directive 2026-07-11)."""
+    """The floor is opt-in while target and ceiling retain the hard cap."""
 
-    def test_floor_constant_is_5(self):
+    def test_floor_constant_uses_opt_in_minimum(self):
         src = ENFORCE_FLOOR.read_text()
-        # FLOOR now uses _tunable helper with default "10" (raised from 5 per
-        # cost-efficiency directive relaxation 2026-07-13).
-        m = re.search(
-            r"const\s+FLOOR\s*=\s*_tunable\s*\([^)]*CLAUDE_AGENT_FLOOR[^)]*[\"'](\d+)[\"']\s*\)",
-            src,
-        )
-        assert m, (
-            "FLOOR constant declaration not found — expected "
-            "_tunable(\"/tmp/gludd-floor-override\", \"CLAUDE_AGENT_FLOOR\", \"10\")"
-        )
-        assert m.group(1) == "10", (
-            f"FLOOR default is {m.group(1)}, expected 10"
-        )
+        assert "const FLOOR = Math.min(" in src
+        assert '"CLAUDE_AGENT_FLOOR", String(MIN_DISPATCHES)' in src
 
     def test_target_constant_is_6(self):
         src = ENFORCE_FLOOR.read_text()
-        # TARGET uses Math.min(parseInt(process.env.CLAUDE_AGENT_TARGET || "10"), CEILING)
-        m = re.search(
-            r"const\s+TARGET\s*=\s*Math\.min\s*\(\s*parseInt\s*\(\s*process\.env\.CLAUDE_AGENT_TARGET\s*\|\|\s*[\"'](\d+)[\"']",
-            src,
-        )
-        assert m, (
-            "TARGET constant declaration not found — expected "
-            "Math.min(parseInt(process.env.CLAUDE_AGENT_TARGET || \"10\", 10), CEILING)"
-        )
-        assert m.group(1) == "10", (
-            f"TARGET default is {m.group(1)}, expected 10"
-        )
+        assert "const TARGET = Math.min(" in src
+        assert "CLAUDE_AGENT_TARGET || String(HARD_MAX_DISPATCHES)" in src
+        assert "clampDispatchCount" in src
 
     def test_ceiling_constant_is_8(self):
         src = ENFORCE_FLOOR.read_text()
-        m = re.search(
-            r"const\s+CEILING\s*=\s*_tunable\s*\([^)]*CLAUDE_AGENT_CEILING[^)]*[\"'](\d+)[\"']\s*\)",
-            src,
-        )
-        assert m, (
-            "CEILING constant declaration not found — expected "
-            "_tunable(\"/tmp/gludd-ceiling-override\", \"CLAUDE_AGENT_CEILING\", \"10\")"
-        )
-        assert m.group(1) == "10", (
-            f"CEILING default is {m.group(1)}, expected 10"
-        )
+        assert "const CEILING = clampDispatchCount(" in src
+        assert '"CLAUDE_AGENT_CEILING", String(HARD_MAX_DISPATCHES)' in src
 
     def test_all_three_constants_present(self):
         """FLOOR, TARGET, and CEILING must all be declared (bands intact)."""

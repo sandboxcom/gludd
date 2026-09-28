@@ -5,13 +5,20 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
+from general_ludd.db.models import Base
 from general_ludd.event_loop.execution_supervision import (
     ExecutionLeaseIdentity,
     ExecutionLeaseSupervisor,
     LeaseTerminationOutcome,
 )
-from general_ludd.event_loop.lease import LeaseRenewalStatus
+from general_ludd.event_loop.lease import (
+    LeaseRenewalStatus,
+    acquire_leases_batch,
+    request_lease_cancellation,
+)
 
 
 def _session_factory(session: MagicMock) -> MagicMock:
@@ -37,6 +44,171 @@ def _supervisor(
         ttl_seconds=60,
         heartbeat_interval_seconds=5.0,
     )
+
+
+@pytest.mark.asyncio
+async def test_committed_database_cancel_notifies_matching_local_runner() -> None:
+    """A durable cancel wakes its in-process runner only after commit."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        legacy_bucket_key = "core:TODO-COMMIT-CANCEL"
+        identity = ExecutionLeaseIdentity(
+            bucket_key=(
+                "project:proj-cancel:queue:core:todo:TODO-COMMIT-CANCEL"
+            ),
+            holder_id="event-loop-owner",
+            todo_version=8,
+        )
+        async with factory() as session:
+            await acquire_leases_batch(
+                session,
+                [identity.bucket_key, legacy_bucket_key],
+                identity.holder_id,
+                ttl_seconds=60,
+                project_id="proj-cancel",
+                todo_versions={
+                    identity.bucket_key: identity.todo_version,
+                    legacy_bucket_key: identity.todo_version,
+                },
+            )
+            await session.commit()
+
+        supervisor = ExecutionLeaseSupervisor(
+            session_factory=factory,
+            identity=identity,
+            alias_bucket_keys=(legacy_bucket_key,),
+            ttl_seconds=60,
+            heartbeat_interval_seconds=5.0,
+        )
+        async with factory() as session:
+            assert await request_lease_cancellation(
+                session,
+                bucket_key=legacy_bucket_key,
+                holder_id=identity.holder_id,
+                todo_version=identity.todo_version,
+            )
+            assert supervisor.is_cancellation_requested() is False
+            await session.commit()
+        assert supervisor.is_cancellation_requested() is True
+        supervisor.stop()
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_rolled_back_database_cancel_does_not_notify_local_runner() -> None:
+    """A rolled-back durable cancel cannot leak into runner control state."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        identity = ExecutionLeaseIdentity(
+            bucket_key="core:TODO-ROLLBACK-CANCEL",
+            holder_id="event-loop-owner",
+            todo_version=9,
+        )
+        async with factory() as session:
+            await acquire_leases_batch(
+                session,
+                [identity.bucket_key],
+                identity.holder_id,
+                ttl_seconds=60,
+                todo_versions={identity.bucket_key: identity.todo_version},
+            )
+            await session.commit()
+
+        supervisor = ExecutionLeaseSupervisor(
+            session_factory=factory,
+            identity=identity,
+            ttl_seconds=60,
+            heartbeat_interval_seconds=5.0,
+        )
+        async with factory() as session:
+            assert await request_lease_cancellation(
+                session,
+                bucket_key=identity.bucket_key,
+                holder_id=identity.holder_id,
+                todo_version=identity.todo_version,
+            )
+            await session.rollback()
+        assert supervisor.is_cancellation_requested() is False
+        supervisor.stop()
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_savepoint_notifications_follow_outer_transaction_outcome() -> None:
+    """SAVEPOINT rollback discards, while outer commit publishes, a cancel."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        identity = ExecutionLeaseIdentity(
+            bucket_key="core:TODO-SAVEPOINT-CANCEL",
+            holder_id="event-loop-owner",
+            todo_version=10,
+        )
+        async with factory() as session:
+            await acquire_leases_batch(
+                session,
+                [identity.bucket_key],
+                identity.holder_id,
+                ttl_seconds=60,
+                todo_versions={identity.bucket_key: identity.todo_version},
+            )
+            await session.commit()
+
+        supervisor = ExecutionLeaseSupervisor(
+            session_factory=factory,
+            identity=identity,
+            ttl_seconds=60,
+            heartbeat_interval_seconds=5.0,
+        )
+        async with factory() as session:
+            savepoint = await session.begin_nested()
+            assert await request_lease_cancellation(
+                session,
+                bucket_key=identity.bucket_key,
+                holder_id=identity.holder_id,
+                todo_version=identity.todo_version,
+            )
+            await savepoint.rollback()
+            await session.commit()
+        assert supervisor.is_cancellation_requested() is False
+
+        async with factory() as session:
+            savepoint = await session.begin_nested()
+            assert await request_lease_cancellation(
+                session,
+                bucket_key=identity.bucket_key,
+                holder_id=identity.holder_id,
+                todo_version=identity.todo_version,
+            )
+            await savepoint.commit()
+            assert supervisor.is_cancellation_requested() is False
+            await session.commit()
+        assert supervisor.is_cancellation_requested() is True
+        supervisor.stop()
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.parametrize(

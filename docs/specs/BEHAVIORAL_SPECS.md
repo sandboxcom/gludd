@@ -25,7 +25,7 @@
 
 ### AA004 — subagent-step-limit-cleanup-failure
 **Category:** Subagent Discipline
-**Enforcement:** `enforce-delegate.ts` + Makefile `_subagent-cleanup-guard`
+**Enforcement:** `enforce-delegate.ts` + `make subagent-cleanup`
 **Behavior:** 8 subagents hit step limits in one session, leaving uncommitted changes and half-done work. Each required a follow-up subagent to clean up. Agent MUST check subagent results for step-limit truncation and immediately clean up (commit or revert) before dispatching new work. No new subagents allowed with dirty working tree from prior subagent.
 
 ### AA005 — wrong-branch-operations
@@ -41,7 +41,7 @@
 ### AA007 — single-tasking-instead-of-dispatching
 **Category:** Dispatch Floor
 **Enforcement:** `enforce-multitask.ts` + `enforce-floor.ts`
-**Behavior:** Agent repeatedly made serial tool calls (check CI, read file, edit file) instead of dispatching parallel subagents. Floor enforcement now BLOCKING: after 2 consecutive non-dispatch tool calls while pending work exists, ALL non-dispatch tools are denied until a dispatch refills the pool.
+**Behavior:** Agent repeatedly made sterile status calls instead of advancing concrete work. Adaptive ownership permits inline execution by default and dispatches up to three independent owners only when task shape benefits; enforcement never fabricates work merely to refill a pool.
 
 ### AA008 — bypassing-guardrails-with-alternate-targets
 **Category:** Guardrail Integrity
@@ -85,7 +85,7 @@
 
 ### AA016 — failed-merge-recovery-without-proper-tooling
 **Category:** Merge Safety
-**Enforcement:** `make git-merge-abort` + `_merge-recovery-guard`
+**Enforcement:** `make git-merge-abort`
 **Behavior:** Agent got stuck in a merge conflict with corrupted Makefile (conflict markers broke `make` parsing). Had to create `Makefile.tmp` to run `git merge --abort`. The `git-merge-abort` and `git-reset-hard` targets now exist and are tested. All merge recovery paths are codified in Makefile targets.
 
 ### AA017 — push-before-verifying-previous-ci-verdict
@@ -121,7 +121,7 @@
 ### AB003 — agent-stops-writing-specs-to-check-ci
 **Category:** Intent Priority
 **Enforcement:** `enforce-objective.ts` extended
-**Behavior:** Agent interrupted spec writing to check CI 5+ times while spec target was unmet. CI should be checked by SUBAGENTS while agent focuses on primary task. Agent must dispatch CI monitoring to a subagent while continuing spec writing on main thread.
+**Behavior:** Agent interrupted spec writing to check CI 5+ times while the spec target was unmet. CI is checked once at natural breaks by the owning thread; polling-only subagents are forbidden because they consume ownership without producing a deliverable.
 
 ### AB004 — specs-written-but-not-committed-before-interrupt
 **Category:** Commit Discipline
@@ -585,7 +585,7 @@
 
 ### AA076 — test-fix-each-exposes-another
 **Category:** Test Integrity
-**Enforcement:** `make test-unit` without `-x` flag
+**Enforcement:** `make test-unit` without the pytest -x flag
 **Behavior:** Agent used `make test-specific` to fix one test at a time. Each fix exposed the next failing test (gate-lite fail-fast). Agent never ran the full test suite to see ALL failures. The unit test target without `-x` should be run at least once per session. gate-lite now has a `--no-fail-fast` variant that runs all tests and reports all failures.
 
 ### AA077 — behavioral-plugin-registration-order
@@ -715,27 +715,27 @@
 
 ### AB042 — agent-dispatch-wave-contains-duplicate-tasks
 **Category:** Subagent Discipline
-**Enforcement:** `scripts/audit_agent_behavior.py` + `make audit-agent-duplicate-dispatches`
+**Enforcement:** `scripts/audit_agent_behavior.py`
 **Behavior:** Agent dispatches two subagents to perform the same task (same file + same objective) in the same wave. Both subagents complete the same work or one finds nothing to do. The dispatch dedup guard MUST hash task descriptions and reject dispatches that match a recently-completed or in-progress task. No two subagents in a single wave may share the same (file, objective) pair.
 
 ### AB043 — agent-commits-with-stale-subagent-results
 **Category:** Commit Discipline
-**Enforcement:** `scripts/audit_agent_behavior.py` + `make audit-agent-stale-commit`
+**Enforcement:** `scripts/audit_agent_behavior.py`
 **Behavior:** Agent commits work before processing all subagent results from the prior dispatch wave. Subagent results arrive but are never codified — the commit proceeds with incomplete state. The orchestrator MUST process ALL subagent results (commit or explicitly cancel each) before making any new commit. The result-processing gap MUST be zero — no unprocessed results at commit time.
 
 ### AB044 — agent-ignores-red-gate-after-subagent-return
 **Category:** Quality Gate
-**Enforcement:** `scripts/audit_agent_behavior.py` + `make audit-agent-gate-awareness`
+**Enforcement:** `scripts/audit_agent_behavior.py`
 **Behavior:** A subagent reports gate failure (tests fail, lint errors), but the orchestrator proceeds to the next task without addressing the failure. Gate status is checked but not acted upon. The orchestrator MUST fix ALL gate failures reported by subagents before dispatching new feature work. A red gate is not a status report — it is the work.
 
 ### AB045 — agent-dispatch-without-pre-dispatch-checklist
 **Category:** Subagent Discipline
-**Enforcement:** `scripts/audit_agent_behavior.py` + `make audit-agent-dispatch-discipline`
+**Enforcement:** `scripts/audit_agent_behavior.py`
 **Behavior:** Agent dispatches a wave without running the mechanical pre-dispatch checklist: check TASKS.md for unchecked items, verify no duplicate dispatches, confirm clean tree, verify correct branch. The pre-dispatch checklist MUST be run before EVERY dispatch wave. Skipping it is a protocol violation.
 
 ### AB046 — agent-codifies-results-out-of-priority-order
 **Category:** Subagent Discipline
-**Enforcement:** `scripts/audit_agent_behavior.py` + `make audit-agent-priority-order`
+**Enforcement:** `scripts/audit_agent_behavior.py`
 **Behavior:** Subagent results arrive but are processed in FIFO order instead of priority order. A P0 CI-fix result is left unprocessed while P3 documentation results are committed first. Results MUST be processed in priority order: P0 (CI/gate failures) → P1 (release blockers) → P2 (user frustration fixes) → P3 (quality improvements) → P4 (aspirational).
 
 ### AB047 — agent-marks-task-complete-without-evidence
@@ -745,32 +745,32 @@
 
 ### AB048 — agent-skips-task-ledger-update
 **Category:** Task Tracking
-**Enforcement:** `scripts/audit_agent_behavior.py` + `make audit-agent-task-ledger`
+**Enforcement:** `scripts/audit_agent_behavior.py`
 **Behavior:** Agent receives subagent results but dispatches the next wave without updating TASKS.md. The task ledger drifts out of sync with reality — completed tasks still show `[ ]`, new tasks aren't recorded. The task ledger MUST be updated BEFORE the next dispatch wave: mark completed items `[x]`, record new items, update status of in-progress items.
 
 ### AB049 — agent-abandons-work-on-merge-conflict
 **Category:** Merge Safety
-**Enforcement:** `scripts/audit_agent_behavior.py` + `make audit-agent-abandoned-merges`
+**Enforcement:** `scripts/audit_agent_behavior.py`
 **Behavior:** Agent encounters a merge conflict, cannot resolve it immediately, and abandons the work entirely. The branch with the conflicting changes is left unmerged and the feature is lost. A merge conflict is a solveable problem — it MUST be resolved, never abandoned. If resolution requires >5 minutes, the conflict MUST be documented in TASKS.md as blocked with a specific resolution plan.
 
 ### AB050 — agent-subagent-context-exceeds-budget
 **Category:** Subagent Discipline
-**Enforcement:** `scripts/audit_agent_behavior.py` + `make audit-agent-context-budget`
+**Enforcement:** `scripts/audit_agent_behavior.py`
 **Behavior:** Agent dispatches a subagent with context (system prompt, file reads, instructions) exceeding the subagent's token budget. The subagent either truncates or fails to process all context. Subagent prompts MUST be concisely bounded: ≤20 lines per the COST-EFFICIENCY DIRECTIVE. A subagent needs EXACTLY the context to complete its task — no more.
 
 ### AB051 — agent-reuses-stale-subagent-session
 **Category:** Subagent Discipline
-**Enforcement:** `scripts/audit_agent_behavior.py` + `make audit-agent-stale-sessions`
+**Enforcement:** `scripts/audit_agent_behavior.py`
 **Behavior:** Agent resumes a subagent session via task_id that has been idle for >30 minutes. The subagent's context is stale — files it read have changed, its understanding of the task is outdated. Resumed subagent sessions MUST be fresh (<30 min idle). Stale sessions MUST be recreated with fresh context.
 
 ### AB052 — agent-launches-file-editor-without-worktree
 **Category:** Subagent Discipline
-**Enforcement:** `scripts/audit_agent_behavior.py` + `make audit-agent-worktree-isolation`
+**Enforcement:** `scripts/audit_agent_behavior.py`
 **Behavior:** Agent dispatches a subagent that edits files without first creating a worktree for it. The subagent mutates the shared master checkout, risking conflicts with other parallel subagents. Every file-editing subagent MUST be worktree-isolated. Read-only research subagents are exempt from this requirement.
 
 ### AB053 — agent-dispatches-with-wrong-model
 **Category:** Subagent Discipline
-**Enforcement:** `scripts/audit_agent_behavior.py` + `make audit-agent-model-selection`
+**Enforcement:** `scripts/audit_agent_behavior.py`
 **Behavior:** Agent dispatches a complex multi-file synthesis task with haiku (lightweight model) or a simple grep task with opus (most expensive model). Model selection MUST match task complexity: opus for complex synthesis, sonnet for standard editing, haiku for simple lookups/greps. Cost-efficiency requires matching model capability to task difficulty.
 
 ### AB054 — agent-abandons-stale-worktree
@@ -780,7 +780,7 @@
 
 ### AB055 — agent-subagent-result-idle-timeout
 **Category:** Subagent Discipline
-**Enforcement:** `scripts/audit_agent_behavior.py` + `make audit-agent-result-processing`
+**Enforcement:** `scripts/audit_agent_behavior.py`
 **Behavior:** Agent receives subagent results but sits idle for >60 seconds before processing them, reading files or composing responses instead of immediately dispatching the next wave. Subagent results MUST be processed in ≤30 seconds. The processing window is: read result → update TASKS.md → commit/cancel → dispatch next wave. No reads, no analysis prose, no planning.
 
 ### AB056 — agent-dead-code-left-after-refactor
@@ -795,12 +795,12 @@
 
 ### AB058 — agent-dispatch-prompt-lacks-tool-context
 **Category:** Subagent Discipline
-**Enforcement:** `scripts/audit_agent_behavior.py` + `make audit-agent-dispatch-prompts`
+**Enforcement:** `scripts/audit_agent_behavior.py`
 **Behavior:** Agent dispatches a subagent but the prompt fails to specify: (a) which tools are available (bash, write, edit, read, glob, grep), (b) which make targets are relevant, (c) what commands/scripts exist for the subagent to use. A subagent saying "bash unavailable" when bash IS available is a dispatch bug. The prompt MUST explicitly list available tools and relevant make targets.
 
 ### AB059 — agent-codifies-results-to-wrong-branch
 **Category:** Branch Discipline
-**Enforcement:** `scripts/audit_agent_behavior.py` + `make audit-agent-branch-discipline`
+**Enforcement:** `scripts/audit_agent_behavior.py`
 **Behavior:** Agent commits subagent results to `master` when they should land on `development` (or vice versa). The commits end up on the wrong branch, requiring cherry-picks or merges to fix. Before committing subagent results, the orchestrator MUST verify the current branch matches the intended landing branch for that work. Feature work lands on `development`; emergency fixes on `master` get backported.
 
 ### AB060 — agent-system-prompt-exceeds-manageable-size
@@ -1008,6 +1008,31 @@
 **Enforcement:** `scripts/audit_observability.py` + `make audit-enforcement-boot`
 **Behavior:** When opencode starts and loads enforcement plugins, a failing plugin silently disables ALL enforcement. The agent cannot detect this mid-session because enforcement failure is indistinguishable from "no violations occurring." The boot audit runs `make check-plugin-hook-invoke` at session start and verifies ≥80% of plugins load without error. If the loaded-vs-registered ratio drops below 80%, enforcement is DEGRADED and MUST be flagged. The boot check result is recorded in `/tmp/gludd-enforcement-boot-result.json`.
 
+### AB101 — long-pipeline-launch-precedes-parallel-dispatch
+**Category:** Parallel Pipeline Orchestration
+**Enforcement:** `enforce-pipeline-kickoff.ts` kickoff receipt and explicit `REF`
+**Behavior:** A long gate, ship, or CI-shard pipeline MUST be launched and bound to the tested ref before independent work is dispatched.
+
+### AB102 — tested-checkout-frozen-during-long-pipeline
+**Category:** Parallel Pipeline Orchestration
+**Enforcement:** `enforce-pipeline-kickoff.ts` frozen-checkout guard
+**Behavior:** While a long pipeline is active, the checkout and ref under test MUST reject writes and non-read-only Make targets.
+
+### AB103 — pipeline-candidate-batch-is-useful-and-deduplicated
+**Category:** Parallel Pipeline Orchestration
+**Enforcement:** `enforce-pipeline-kickoff.ts` candidate consolidation
+**Behavior:** The kickoff batch MUST exclude duplicates, file conflicts, unmet dependencies, waits, polls, status checks, and filler; zero candidates MUST remain valid.
+
+### AB104 — pipeline-worker-cap-includes-live-agents
+**Category:** Parallel Pipeline Orchestration
+**Enforcement:** `enforce-pipeline-kickoff.ts` occupied-slot ceiling
+**Behavior:** Pipeline-parallel work MUST never exceed three workers after existing in-flight agents are counted.
+
+### AB105 — pipeline-receipts-are-fresh-and-worktrees-isolated
+**Category:** Parallel Pipeline Orchestration
+**Enforcement:** `enforce-pipeline-kickoff.ts` receipt-mtime and prompt-isolation guards
+**Behavior:** A terminal receipt older than the current launch MUST NOT unfreeze the checkout, and every writing dispatch MUST name an isolated git worktree.
+
 Each spec defines a behavioral invariant. Each spec MUST have a corresponding
 enforcement mechanism (plugin, Makefile guard, or AGENTS.md policy section) and
 a structural test verifying that mechanism exists.
@@ -1022,7 +1047,7 @@ Total: 4000 specs across 26 groups.
 ### AC001 — artifact-verification-gate
 **Category:** Release Discipline
 **Enforcement:** `make verify-release-completeness` + `_release-completeness-guard` in Makefile
-**Behavior:** `make release-cut` MUST NOT proceed unless `make verify-release-completeness TAG=<tag>` exits 0. The artifact-verification gate checks 12 artifact categories (binary-linux, binary-macos, sbom, checksums, container-image, provenance, install-sh, systemd-unit, deb-package, rpm-package, windows-installer, release-notes). If any category is missing, release-cut is BLOCKED with a list of missing artifacts. CI may not yet have built artifacts — the guard must distinguish between "CI still running" (abort, retry later) and "CI finished, artifacts missing" (block, fix build). The guard uses `make verify-release-completeness-safe` which respects the artifact-check cooldown (no re-check within 10 min without FORCE=1) to prevent API quota exhaustion.
+**Behavior:** `make release-cut` MUST NOT proceed unless `make verify-release-completeness TAG=<tag>` exits 0. The artifact-verification gate checks 28 mandatory artifact categories and a minimum of 30 assets; the exact category inventory is owned by `scripts/verify_release_completeness.py` and none are optional. If any category is missing, release-cut is BLOCKED with a list of missing artifacts. CI may not yet have built artifacts — the guard must distinguish between "CI still running" (abort, retry later) and "CI finished, artifacts missing" (block, fix build). The guard uses `make verify-release-completeness-safe` which respects the artifact-check cooldown (no re-check within 10 min without FORCE=1) to prevent API quota exhaustion.
 
 ### AC002 — release-branch-discipline
 **Category:** Release Discipline
@@ -1034,10 +1059,10 @@ Total: 4000 specs across 26 groups.
 **Enforcement:** `_tag-immutability-guard` in Makefile + `scripts/check_tag_immutability.py`
 **Behavior:** Once a tag's CI run is GREEN, the tag MUST NOT be moved, deleted, or overwritten. `make git-tag-move` must check: if the target tag exists with a CI-GREEN verdict, the move is BLOCKED without `FORCE=1`. The only sanctioned tag movement is `make release-recut TAG=<tag>` (delete + re-push) when the Build-and-Release job itself failed (artifact upload flake) but the commit is known-good. Recutting a tag that had green CI and complete artifacts is PROHIBITED. The tag-immutability script checks `gh release view` for existing artifacts and CI verdict for the tagged commit.
 
-### AC004 — release-completeness-12-categories
+### AC004 — release-completeness-28-categories
 **Category:** Release Discipline
-**Enforcement:** `scripts/verify_release_completeness.py` `EXPECTED_CATEGORIES` dict (12 entries, structurally pinned)
-**Behavior:** Every release MUST have artifacts in all 12 REQUIRED categories (no optional/exception list — user mandate 2026-07-24, TASKS CP.11/RL.4): linux-x86_64 binary, linux-aarch64 binary, macos-arm64 binary, windows-x86_64 binary, .deb (amd64), .rpm (x86_64), .dmg (macOS), .exe installer (Windows), checksums, SBOM, LICENSE, THIRD_PARTY_LICENSES. PLUS four additional checks: minimum asset count (>=12), prerelease-flag-vs-tag-shape, version-stamped asset names, no zero-size assets. A `len(EXPECTED_CATEGORIES) == 12` structural assertion fires at import time to catch regressions. Category changes require modifying the dict in `verify_release_completeness.py` (no external YAML config).
+**Enforcement:** `scripts/verify_release_completeness.py` `EXPECTED_CATEGORIES` dict (28 entries, structurally pinned)
+**Behavior:** Every release MUST satisfy all 28 REQUIRED categories (no optional/exception list — user mandate 2026-07-24, TASKS CP.11/RL.4): four platform binaries; four native packages/installers; checksums, SBOM, LICENSE, and THIRD_PARTY_LICENSES; wheel, sdist, runtime collection tarballs, and collection manifest; eight locked Ansible execution-boundary artifacts; container image metadata, install script, smoke attestations, and release manifest. PLUS four additional checks: minimum asset count (>=30), prerelease-flag-vs-tag-shape, version-stamped asset names, no zero-size assets. A `len(EXPECTED_CATEGORIES) == 28` structural assertion fires at import time to catch regressions. Category changes require modifying the dict in `verify_release_completeness.py` (no external YAML config).
 
 ### AC005 — prerelease-flag-vs-tag-shape
 **Category:** Release Discipline
@@ -1403,10 +1428,10 @@ After `make agent-merge`, the worktree MUST be cleaned up with `make agent-clean
 **Enforcement:** AGENTS.md worktree lifecycle
 **Test:** `test_b24_worktree_cleanup_after_merge`
 
-### B25 — No more than 6 concurrent worktree agents
-The orchestrator MUST NOT dispatch more than 6 worktree-isolated agents concurrently.
+### B25 — No more than two concurrent worktree agents
+The orchestrator MUST NOT dispatch more than two file-editing, worktree-isolated agents concurrently.
 **Enforcement:** AGENTS.md worktree cap rule + disk-discipline
-**Test:** `test_b25_max_6_concurrent_worktree_agents`
+**Test:** `test_b25_max_two_concurrent_worktree_agents`
 
 ---
 
@@ -1718,30 +1743,30 @@ Every test file in `tests/` MUST be importable — no syntax errors, no missing 
 
 ---
 
-## Group D — Dispatch Floor (D01–D30)
+## Group D — Dispatch Concurrency (D01–D30)
 
-### D01 — Minimum 10 dispatches per wave
-When pending work exists, each dispatch wave MUST contain at least 10 task/agent/workflow dispatches.
-**Enforcement:** AGENTS.md `enforce-multitask.ts` MIN_DISPATCHES=10
-**Test:** `test_d01_min_10_dispatches_per_wave`
+### D01 — Configured minimum is opt-in and capped at three
+A wave may contain zero through three useful task/agent/workflow dispatches. An explicit minimum is enforced, but every value above three MUST clamp to three.
+**Enforcement:** AGENTS.md; `.opencode/lib/multitask_config.ts` `HARD_MAX_DISPATCHES=3`
+**Test:** `test_d01_adaptive_minimum_and_three_agent_ceiling`
 
 ### D02 — Under-floor dispatch denied
 A response with fewer than MIN_DISPATCHES dispatches while work is pending MUST be blocked.
 **Enforcement:** AGENTS.md `enforce-multitask.ts` under-floor hard block
 **Test:** `test_d02_under_floor_dispatch_denied`
 
-### D03 — Zero-dispatch streak blocked at MAX_ZERO_STREAK
-After MAX_ZERO_STREAK (2) consecutive zero-dispatch responses, further non-dispatch tool calls are blocked.
+### D03 — Configured-floor zero-dispatch streak is bounded
+When an operator explicitly configures a positive floor, its bounded zero-dispatch streak may block further non-dispatch calls. The default zero floor leaves inline work unblocked.
 **Enforcement:** AGENTS.md `enforce-multitask.ts` zero-streak counter
 **Test:** `test_d03_zero_dispatch_streak_blocked`
 
 ### D04 — Dispatch resets zero-streak counter
-A dispatch wave (≥1 task/agent/workflow) MUST reset the zero-dispatch streak counter to 0.
+When a positive floor is configured, a dispatch wave (≥1 task/agent/workflow) MUST reset its zero-dispatch streak counter to 0.
 **Enforcement:** AGENTS.md `enforce-multitask.ts` streak reset on dispatch
 **Test:** `test_d04_dispatch_resets_zero_streak`
 
 ### D05 — Read tools do not increment streak
-Read/grep/glob tool calls MUST NOT increment the zero-dispatch streak counter.
+When a positive floor is configured, read/grep/glob tool calls MUST NOT increment its zero-dispatch streak counter.
 **Enforcement:** AGENTS.md `enforce-multitask.ts` isReadTool check
 **Test:** `test_d05_read_tools_do_not_increment_streak`
 
@@ -1775,25 +1800,26 @@ A response with exactly 1 task/agent/workflow dispatch when ≥2 work items rema
 **Enforcement:** AGENTS.md `enforce-delegate.ts` MAINTHREAD_THRESHOLD
 **Test:** `test_d11_main_thread_grind_threshold`
 
-### D12 — Dispatch ceiling at 10
-No more than 10 concurrent subagents may be dispatched.
-**Enforcement:** AGENTS.md `enforce-floor.ts` CEILING=10 + COST-EFFICIENCY DIRECTIVE
-**Test:** `test_d12_dispatch_ceiling_at_10`
+### D12 — Dispatch ceiling at three
+No more than three concurrent subagents may be dispatched.
+**Enforcement:** AGENTS.md `enforce-floor.ts` + COST-EFFICIENCY DIRECTIVE
+**Test:** `test_d12_dispatch_ceiling_at_three`
 
-### D13 — Worktree agents capped at ~6
-At most 5-6 worktree-isolated agents may be concurrent.
+### D13 — Worktree agents capped at two
+At most two file-editing, worktree-isolated agents may be concurrent.
 **Enforcement:** AGENTS.md worktree cap
-**Test:** `test_d13_worktree_agents_capped_at_6`
+**Test:** `test_d13_worktree_agents_capped_at_two`
 
 ### D14 — Read-only research tasks stay on main checkout
 Research subagents that only read files MUST NOT be worktree-isolated.
 **Enforcement:** AGENTS.md worktree isolation criteria
 **Test:** `test_d14_readonly_research_stays_main_checkout`
 
-### D15 — Commit dispatched as subagent
-One of the 10 dispatch slots SHOULD run `make ship-commit` (local only, PUSH=0).
-**Enforcement:** AGENTS.md steady-state dispatch rule #6
-**Test:** `test_d15_commit_dispatched_as_subagent`
+### D15 — Commit ownership is explicit
+The workstream that owns a verified change SHOULD commit it; never create a
+subagent merely to occupy a slot or transfer responsibility for committing.
+**Enforcement:** AGENTS.md ownership and no-filler rules
+**Test:** `test_d15_commit_ownership_is_explicit`
 
 ### D16 — Clean tree before dispatch
 Before dispatching any subagent, the working tree MUST be clean (no uncommitted changes).
@@ -1831,7 +1857,7 @@ At most 2 file-editing subagents may run in parallel (disjoint files only).
 **Test:** `test_d22_coding_subagents_max_2_parallel`
 
 ### D23 — Refill on every completion
-When a subagent completes, the orchestrator MUST dispatch a replacement immediately.
+When a subagent completes, the orchestrator MUST ingest its result and release its slot. It assigns another owner only when a concrete independent deliverable exists.
 **Enforcement:** AGENTS.md "Refill on every completion"
 **Test:** `test_d23_refill_on_every_completion`
 
@@ -1861,7 +1887,7 @@ GLUDD_MIN_DISPATCHES env var MUST be able to override the floor (minimum 2).
 **Test:** `test_d28_dispatch_floor_env_var_overridable`
 
 ### D29 — Floor enforcement is default ON
-The dispatch floor enforcement MUST default to ON (not advisory).
+The dispatch ceiling MUST default to ON, while the dispatch floor defaults to zero and becomes active only through an explicit operator override.
 **Enforcement:** AGENTS.md `enforce-multitask.ts` FLOOR_ENFORCE default true
 **Test:** `test_d29_floor_enforcement_default_on`
 
@@ -1910,7 +1936,7 @@ Words like "done", "landed", "pushed", "fixed", "passing" MUST carry machine-pro
 **Test:** `test_s07_completion_words_blocked_without_evidence`
 
 ### S08 — Status summaries during session-start are blocked
-After backlog reads and before first dispatch wave, a status summary response is blanked.
+After session-start evidence reads, a status-only response is blanked while real work remains; the next action may be inline or delegated.
 **Enforcement:** AGENTS.md `enforce-stop.ts` STATUS_SUMMARY_RE + session-start window
 **Test:** `test_s08_status_summaries_blocked_session_start`
 
@@ -2282,7 +2308,7 @@ If `.gate-status` is older than the last source file modification, it MUST be co
 **Test:** `test_g14_gate_kill_terminates_cleanly`
 
 ### G15 — Gate is never run on main thread
-`make gate` on the main thread is blocked by `enforce-make.ts`.
+`make gate` on the main thread is allowed when bounded and observable; background execution is an optional scheduling choice.
 **Enforcement:** AGENTS.md `enforce-make.ts` long-op foreground deny
 **Test:** `test_g15_gate_never_on_main_thread`
 
@@ -2363,8 +2389,8 @@ No matching run found must exit RED (failure), not default to green.
 **Enforcement:** AGENTS.md `scripts/require_ci_green.py` fail-closed logic
 **Test:** `test_r05_require_ci_green_fail_closed`
 
-### R06 — Verify-release-completeness checks 12 categories
-`make verify-release-completeness` MUST check all 12 required artifact categories.
+### R06 — Verify-release-completeness checks 28 categories
+`make verify-release-completeness` MUST check all 28 required artifact categories and the 30-asset minimum.
 **Enforcement:** AGENTS.md `scripts/verify_release_completeness.py` 12-category check
 **Test:** `test_r06_verify_release_completeness_12_categories`
 
@@ -2429,7 +2455,7 @@ CI workflow `release` job MUST `needs: [gate]` (transitively) so broken code can
 **Test:** `test_r18_verify_artifact_not_the_gate`
 
 ### R19 — Asset categories are documented
-The 12 required artifact categories for a release MUST be documented in `docs/RELEASE_RUNBOOK.md`.
+The 28 required artifact categories and 30-asset minimum for a release MUST be documented in `docs/RELEASE_RUNBOOK.md`.
 **Enforcement:** AGENTS.md `docs/RELEASE_RUNBOOK.md` **Test:** `test_r19_asset_categories_documented`
 **Test:** `test_r19_asset_categories_documented`
 
@@ -2487,10 +2513,10 @@ Two subagents MUST NOT concurrently run merge, tag, or push operations against t
 **Enforcement:** AGENTS.md worktree lock caveat + orchestrator serialization
 **Test:** `test_w09_no_concurrent_merge_tag_push_worktree`
 
-### W10 — Max 6 concurrent worktree agents
-The orchestrator MUST NOT dispatch more than 6 worktree-isolated agents at once (ENOSPC guard).
+### W10 — Max two concurrent worktree agents
+The orchestrator MUST NOT dispatch more than two file-editing, worktree-isolated agents at once (ENOSPC and ownership guard).
 **Enforcement:** AGENTS.md worktree cap + disk discipline
-**Test:** `test_w10_max_6_concurrent_worktree_agents`
+**Test:** `test_w10_max_two_concurrent_worktree_agents`
 
 ### W11 — Worktree disk space monitored
 `make agent-worktree-list` MUST show disk usage per worktree; agent MUST check before dispatching.
@@ -3005,7 +3031,7 @@ The coverage `--fail-under` threshold in `pyproject.toml` MUST NOT be lowered to
 **Test:** `test_q20_background_gate_pid_tracked`
 
 ### Q21 — Gate never run on main thread
-`make gate` on the main thread is BLOCKED by `enforce-make.ts` — must use `gate-background`.
+`make gate` may run on the main thread when it is bounded and observable; `gate-background` is available when the owner has another concrete deliverable.
 **Enforcement:** AGENTS.md `enforce-make.ts` long-op foreground deny
 **Test:** `test_q21_gate_never_on_main_thread`
 
@@ -3174,12 +3200,12 @@ When a subagent result arrives, the orchestrator MUST read it and take action �
 **Test:** `test_x23_subagent_result_read_and_actioned`
 
 ### X24 — Refill subagent immediately on completion
-When a subagent completes or fails, a replacement MUST be dispatched in the next response.
+When a subagent completes or fails, its result MUST be processed in the next response. Replacement ownership is conditional on another concrete independent deliverable.
 **Enforcement:** AGENTS.md "Refill on every completion"
 **Test:** `test_x24_refill_subagent_on_completion`
 
 ### X25 — Wave dispatch is all at once
-All subagents in a wave MUST be dispatched in ONE message — never serial one-at-a-time dispatches.
+Assignments in a planned wave SHOULD be issued together without unrelated work between them. A single-owner decision remains valid when only one independent deliverable exists.
 **Enforcement:** AGENTS.md message-shape rule — ≥2 dispatches per message
 **Test:** `test_x25_wave_dispatch_all_at_once`
 
@@ -3839,7 +3865,7 @@ Every commit path that lands code in the repo MUST pass the gate — zero except
 **Test:** `test_z02_no_ci_bypass_all_commits_gate_checked`
 
 ### Z03 — Release completeness is verified before "shipped"
-`make verify-release-completeness TAG=<tag>` MUST pass with all 12 artifact categories before claiming shipped.
+`make verify-release-completeness TAG=<tag>` MUST pass with all 28 artifact categories and at least 30 assets before claiming shipped.
 **Enforcement:** Makefile `make release-cut` step 4 + AGENTS.md release policy
 **Test:** `test_z03_release_completeness_verified_before_shipped`
 
@@ -4028,7 +4054,8 @@ Before making a mutating tool call (edit/write/bash), the agent MUST verify it a
 **Test:** `test_h09_every_tool_call_advances_objective`
 
 ### H10 — Undispatched work is a blocking condition
-If the subagent pool is below the floor (10), refilling it is #1 priority — no main-thread work until refilled.
+Only an explicitly configured nonzero floor makes a thin dispatch wave blocking;
+an unconfigured floor permits useful inline ownership.
 **Enforcement:** AGENTS.md `enforce-floor.ts` + `enforce-multitask.ts`
 **Test:** `test_h10_undispatched_work_blocking_condition`
 
@@ -4063,7 +4090,8 @@ When on the critical path (CI fix, release cut, gate repair), "while you're at i
 **Test:** `test_h16_no_while_youre_at_it_on_critical_path`
 
 ### H17 — Dispatch capacity is reserved for objective work
-When the objective is unmet, all 10 dispatch slots MUST be filled with objective-advancing tasks — no filler.
+When the objective is unmet, every used dispatch slot MUST advance it. Unused
+capacity stays unused; filler is forbidden.
 **Enforcement:** AGENTS.md "Subagent slots are precious" + `enforce-objective.ts`
 **Test:** `test_h17_dispatch_capacity_reserved_for_objective`
 
@@ -4152,8 +4180,8 @@ The ONLY valid stop condition is: no unchecked TASKS.md items, ratchet empty, ga
 **Enforcement:** AGENTS.md `enforce-stop.ts` `hasRealPendingWork()` comprehensive check
 **Test:** `test_h34_stop_conditions_exhaustion_not_fatigue`
 
-### H35 — Subagent pool must be full before main-thread work
-Every session turn with pending work MUST start by ensuring the subagent pool is at the 10-agent floor.
+### H35 — Subagent ownership must be right-sized before main-thread work
+Every session turn with pending work MUST identify independent owners first, using zero through three agents and never manufacturing filler.
 **Enforcement:** AGENTS.md `enforce-floor.ts` + `enforce-multitask.ts` streak counter
 **Test:** `test_h35_subagent_pool_full_before_main_thread`
 
@@ -4951,8 +4979,8 @@ After pushing, verify that CI was triggered (a new run appears) — a push that 
 **Enforcement:** AGENTS.md "verify-remote" + CI trigger check
 **Test:** `test_v93_post_push_verification_ci_triggered`
 
-### V94 — Post-release verification: all 12 asset categories confirmed
-After `make release-cut`, ALL 12 artifact categories must be confirmed present, non-zero, and version-stamped.
+### V94 — Post-release verification: all 28 artifact categories confirmed
+After `make release-cut`, ALL 28 artifact categories and at least 30 assets must be confirmed present, non-zero, and version-stamped.
 **Enforcement:** Makefile `make verify-release-completeness` 12-category check **Test:** `test_v94_post_release_verification_12_categories`
 **Test:** `test_v94_post_release_verification_12_categories`
 
@@ -5134,7 +5162,9 @@ A subagent that edits one test file does not need opus. A subagent that designs 
 **Test:** `test_j27_subagent_model_caps_at_task_need`
 
 ### J28 — Token budget awareness per wave
-Each dispatch wave has an implicit token budget. 10 opus subagents reading 5000-line files each = budget explosion. Batch size × model cost × expected output = wave cost.
+Each dispatch wave has an implicit token budget. Three frontier-model subagents
+reading 5000-line files each can still create a budget explosion. Batch size ×
+model cost × expected output = wave cost.
 **Enforcement:** AGENTS.md "Cost-Efficiency Directive" hard caps table
 **Test:** `test_j28_token_budget_awareness_per_wave`
 
@@ -5203,13 +5233,16 @@ A version is NOT shipped until `make verify-release-completeness TAG=<tag>` exit
 ---
 
 ### J41 — Dispatch at floor, not when convenient
-When pending work exists and the subagent count is below the floor (10), the next tool call MUST be a dispatch wave. No reads, no edits, no bash — just dispatches.
-**Enforcement:** AGENTS.md "10-Agent Dispatch Floor" + enforce-multitask.ts
+When an operator explicitly configures a nonzero floor and enough independent
+work exists, satisfy that floor without exceeding three. With no configured
+floor, useful inline work remains valid.
+**Enforcement:** AGENTS.md "Three-Agent Dispatch Ceiling and Configurable Floor" + enforce-multitask.ts
 **Test:** `test_j41_dispatch_at_floor`
 
 ### J42 — Refill immediately on completion
-The moment a subagent result arrives, dispatch a replacement. Do not wait for the batch to drain before refilling. The floor must stay at 10 continuously.
-**Enforcement:** AGENTS.md "Minimum 10 Subagents at All Times" (steady-state dispatch)
+When a subagent result arrives, reuse the slot only when another independent,
+objective-advancing deliverable is ready. Never refill with filler work.
+**Enforcement:** AGENTS.md "Adaptive Dispatch and Three-Agent Ceiling at All Times" (steady-state dispatch)
 **Test:** `test_j42_refill_immediately_on_completion`
 
 ### J43 — Never dispatch a read-only status check
@@ -5224,7 +5257,7 @@ A code change, a test file, a commit, a merged PR, a make target — something t
 
 ### J45 — Size subagent tasks for 2–5 minutes
 Shorter = wasteful dispatch overhead. Longer = deadline risk + slot hogging. Target 2–5 minutes of meaningful work per subagent.
-**Enforcement:** AGENTS.md "10-Agent Dispatch Floor" (subagent quality requirements)
+**Enforcement:** AGENTS.md "Three-Agent Dispatch Ceiling and Configurable Floor" (subagent quality requirements)
 **Test:** `test_j45_size_for_2_to_5_minutes`
 
 ### J46 — File-editing subagents get worktrees
@@ -5242,15 +5275,17 @@ At most one in-flight agent per hot file (daemon.py, loop.py, gateway.py) at any
 **Enforcement:** AGENTS.md "Pipeline Orchestration Model" constraint 4a
 **Test:** `test_j48_one_agent_per_hot_file`
 
-### J49 — Cap concurrent worktree agents at 6
-Each worktree creates ~320 MB venv. More than 6 risks ENOSPC deadlocks. Non-isolated agents for new-file work and read-only tasks avoid the disk cost.
+### J49 — Cap concurrent worktree agents at two
+Each worktree creates substantial environment and disk overhead. More than two
+concurrent file-editing worktrees increases collision and ENOSPC risk.
 **Enforcement:** AGENTS.md "Pipeline Orchestration Model" constraint 4b + disk-guard
 **Test:** `test_j49_cap_worktree_agents_at_six`
 
-### J50 — Dispatch research filler when edit backlog is thin
-When fewer than 10 edit tasks exist, fill remaining slots with read-only research/audit/review tasks. They never conflict and are always productive.
-**Enforcement:** AGENTS.md "Fill thin waves with read-only research"
-**Test:** `test_j50_dispatch_research_filler`
+### J50 — Never dispatch filler when the backlog is thin
+When fewer independent tasks exist than available slots, leave the remaining
+slots idle. Read-only status work stays inline unless it has a concrete research deliverable.
+**Enforcement:** AGENTS.md no-filler and ownership rules
+**Test:** `test_j50_never_dispatch_research_filler`
 
 ---
 
@@ -5468,7 +5503,8 @@ At every decision point, ask: "If the user were watching over my shoulder, would
 **Test:** `test_j91_golden_rule_of_agent_behavior`
 
 ### J92 — Do not optimize for looking busy
-Dispatching 10 subagents that all do read-only status checks satisfies the floor plugin but produces zero value. Optimize for completed work, not for appearing to meet metrics.
+Dispatching three subagents that all do read-only status checks consumes the
+entire pool but produces zero value. Optimize for completed work, not activity.
 **Enforcement:** AGENTS.md "Subagent Task Design — Fix, Don't Check" (status-check subagents are false floor)
 **Test:** `test_j92_do_not_optimize_for_looking_busy`
 
@@ -5477,25 +5513,25 @@ A single-file read + one-line edit takes <30 seconds inline. Dispatching it to a
 **Enforcement:** AGENTS.md "Cost-Efficiency Directive" rule 5
 **Test:** `test_j93_inline_when_faster_than_dispatch`
 
-### J94 — Session-start protocol is mandatory
-Every session begins with: watchdog start → parallel read of TASKS.md, BUGS.md, ratchet.yml, SESSION.md, git-status, git-log → immediate dispatch wave. No prose before dispatch.
+### J94 — Session-start evidence is mandatory
+Every session begins by reading the scoped task, bug, ratchet, session, and repository-state evidence. It then selects inline ownership or one-to-three concrete independent owners; no dispatch wave is required when inline work is cheaper or no independent deliverable exists.
 **Enforcement:** AGENTS.md "Session Start Protocol" + enforce-session-start.ts
-**Test:** `test_j94_session_start_protocol`
+**Test:** `test_active_policy_specs_share_the_canonical_three_agent_contract`
 
-### J95 — Long foreground ops are forbidden
-`make gate` (40 min), `make test-unit` (27 min) on the main thread block ALL subagent dispatch. Use `make gate-background` + poll from a subagent. Never run long ops in the foreground.
+### J95 — Long operations are observable and bounded
+Long operations must stream progress or heartbeats and have a bounded owner. A foreground gate is valid when it remains observable; a background gate is optional and must not occupy a subagent with polling.
 **Enforcement:** AGENTS.md "Long-Running Operations MUST Be Backgrounded" + enforce-make.ts
-**Test:** `test_j95_long_foreground_ops_forbidden`
+**Test:** `test_active_policy_specs_share_the_canonical_three_agent_contract`
 
-### J96 — Never block the main thread
-The main thread dispatches subagents and polls — it does not sleep, wait, or run long operations. A blocked main thread = 0 subagents running = pipeline collapse.
+### J96 — Keep orchestration observable
+The main thread may execute or supervise bounded observable work and may dispatch up to three useful owners. Zero subagents is valid; hidden blocking and filler work are forbidden.
 **Enforcement:** AGENTS.md "Background Operations NEVER Block" + enforce-no-wait.ts
-**Test:** `test_j96_never_block_main_thread`
+**Test:** `test_active_policy_specs_share_the_canonical_three_agent_contract`
 
-### J97 — Results arrive → process fast → dispatch next wave
-The window between "results arrive" and "next dispatch wave" must be ≤3 read calls. File inspection between waves is a dispatching bug. Process results and re-dispatch.
+### J97 — Process results before assigning new ownership
+Process results promptly. Reuse a slot only when another independent deliverable exists; zero replacement dispatches are valid, and there is no fixed read-call quota.
 **Enforcement:** AGENTS.md "Steady-state dispatch" rule 7 + enforce-floor.ts POST_RESULT_READ_LIMIT
-**Test:** `test_j97_process_fast_dispatch_next`
+**Test:** `test_active_policy_specs_share_the_canonical_three_agent_contract`
 
 ### J98 — Feature work lands on development first
 Create features on `development`, commit, push, then merge `development→master`. Never create the same feature independently on both branches.
@@ -6093,8 +6129,8 @@ Non-release work (feature dev, test writing, refactoring) must never be gated on
 **Enforcement:** AGENTS.md `AGENTS.md` "CI-green is a precondition for RELEASE CUT only"
 **Test:** `test_y12_non_release_work_must_not_gate_on_ci`
 
-### Y13 — CI pending must not reduce subagent count
-The agent must maintain the 10-agent floor even while CI is running — CI pending is not a license to thin the pool.
+### Y13 — CI pending must not erase useful work
+While CI runs, the agent continues genuinely independent work with up to three owners; CI pending neither forces filler agents nor permits an avoidable stop.
 **Enforcement:** AGENTS.md `enforce-floor.ts` — CI status not exempted from floor check
 **Test:** `test_y13_ci_pending_must_not_reduce_subagent_count`
 
@@ -6124,7 +6160,7 @@ When `make verify-release-completeness TAG=<tag>` exits non-zero, any text-only 
 
 ### Y18 — Release artifact missing all platforms is incomplete
 A release with only a macOS binary (missing Linux, SBOM, checksums) is not complete; `verify-release-completeness` catches this.
-**Enforcement:** AGENTS.md `scripts/verify_release_completeness.py` — 12 asset categories checked
+**Enforcement:** AGENTS.md `scripts/verify_release_completeness.py` — 28 artifact categories and the 30-asset minimum checked
 **Test:** `test_y18_release_missing_platforms_is_incomplete`
 
 ### Y19 — Prerelease flag must match tag shape
@@ -6211,10 +6247,10 @@ Any unchecked `- [ ]` item in TASKS.md is treated as an active user objective; i
 **Enforcement:** AGENTS.md `enforce-stop.ts` `hasRealPendingWork()` — TASKS.md unchecked items
 **Test:** `test_y34_implicit_objectives_from_tasks_tracked`
 
-### Y35 — User instruction "continue" requires immediate dispatch wave
-When the user says `continue`, `resume`, `keep working`, or equivalent, the next action must be a ≥10-wide dispatch wave with zero intervening reads or edits.
+### Y35 — User instruction "continue" resumes scoped work
+When the user says `continue`, `resume`, `keep working`, or equivalent, resume the highest-priority scoped work. Choose inline execution or up to three concrete independent owners from the task shape; do not manufacture a dispatch wave.
 **Enforcement:** AGENTS.md `enforce-session-start.ts` — session-start protocol re-triggered on "continue"
-**Test:** `test_y35_continue_requires_immediate_dispatch_wave`
+**Test:** `test_active_policy_specs_share_the_canonical_three_agent_contract`
 
 ### Y36 — User instruction "fix this" requires fix-before-new-work
 A directive like "fix X FIRST" must be completed (tested, committed, verified) before any new feature work begins.
@@ -6232,7 +6268,8 @@ A new user directive stacks on existing objectives; it does not replace them. "F
 **Test:** `test_y38_user_priority_is_and_not_or`
 
 ### Y39 — New instruction must not reduce subagent count
-After a user message with a new instruction, the next dispatch wave must be ≥10 — never fewer than the floor.
+After a user message with a new instruction, preserve ownership: keep coupled
+work inline and dispatch only independent deliverables, up to the ceiling of three.
 **Enforcement:** AGENTS.md `enforce-session-start.ts` — dispatch-count check after user message
 **Test:** `test_y39_new_instruction_must_not_reduce_subagent_count`
 
@@ -6350,7 +6387,7 @@ Once the user says "done," the agent must not recheck exhaustion and self-redisp
 ## Background-Operation Non-Blocking (Y61–Y75)
 
 ### Y61 — Background gate does not block dispatch
-While `make gate-background` is running, the agent must dispatch other agents — the foreground stays free.
+While `make gate-background` is running, the owning thread may advance another concrete deliverable or observe the gate at a natural checkpoint; it must not manufacture filler ownership.
 **Enforcement:** AGENTS.md `enforce-no-wait.ts` — background-ops do not gate dispatch
 **Test:** `test_y61_background_gate_does_not_block_dispatch`
 
@@ -6374,13 +6411,13 @@ Under the anti-loop directive, bare `make ci-verdict` on the main thread (not in
 **Enforcement:** AGENTS.md `enforce-no-wait.ts` — context-aware: allows when dispatched, denies when main-thread
 **Test:** `test_y65_background_polling_must_be_from_subagent`
 
-### Y66 — Agent must not wait for background-op before dispatching next wave
-After launching a background operation, the next tool call must be a dispatch wave — not a status check or text output.
-**Enforcement:** AGENTS.md `enforce-multitask.ts` — post-background-launch zero-dispatch is denied
+### Y66 — Background operations retain explicit ownership
+After launching a background operation, continue another concrete deliverable when one exists or observe the operation at a natural checkpoint. A background launch never creates a mandatory dispatch wave.
+**Enforcement:** AGENTS.md adaptive ownership contract + observable background runner
 **Test:** `test_y66_no_wait_for_background_op_before_next_dispatch`
 
 ### Y67 — Long foreground op is denied with suggestion
-`make gate`, `make test-unit`, `make qa`, `make validate` on the main thread are denied; deny message includes `SUGGESTION: make gate-background`.
+`make gate`, `make test-unit`, `make qa`, and `make validate` are valid on the main thread when bounded and observable; `make gate-background` remains an optional scheduling tool.
 **Enforcement:** AGENTS.md `enforce-make.ts` `tool.execute.before` — long-op matcher
 **Test:** `test_y67_long_foreground_op_denied_with_suggestion`
 
@@ -6433,9 +6470,9 @@ The first tool-call message of every session must include reads of TASKS.md, BUG
 **Enforcement:** AGENTS.md `enforce-session-start.ts` `tool.execute.before` — task-file read required before mutation
 **Test:** `test_y76_session_start_reads_task_backlog_first`
 
-### Y77 — Session start second action is dispatch wave
-The tool-call message immediately following the backlog reads must contain ≥10 task/agent/workflow dispatches — no intervening reads, edits, or bash.
-**Enforcement:** AGENTS.md `enforce-session-start.ts` — dispatch requirement after task-file reads
+### Y77 — Session start second action advances scoped work
+The tool-call message following the evidence reads must advance scoped work inline or assign up to three concrete independent owners; it must not be a status-only pause.
+**Enforcement:** AGENTS.md `enforce-session-start.ts` — useful-action requirement after task-file reads
 **Test:** `test_y77_session_start_second_action_is_dispatch_wave`
 
 ### Y78 — Prose-first session start is blocked
@@ -6444,8 +6481,8 @@ A session that begins with text output ("Sure! Let me check...") before any tool
 **Test:** `test_y78_prose_first_session_start_is_blocked`
 
 ### Y79 — Session start within 5-min window
-If ≥5 minutes elapse from session start to the first dispatch wave, the session is in violation.
-**Enforcement:** AGENTS.md `enforce-session-start.ts` — time-to-dispatch timer (hard deny at 120s)
+If session-start evidence is followed by status-only delay instead of useful work, the session is in violation; elapsed time alone does not require delegation.
+**Enforcement:** AGENTS.md `enforce-session-start.ts` — next-useful-action guard
 **Test:** `test_y79_session_start_within_5_min_window`
 
 ### Y80 — Session SESSION.md is written before shutdown
@@ -6816,7 +6853,7 @@ Push to unprotected branch requires sign-off in commit msg. This invariant MUST 
 
 ### P74 — Push must record deploy-timestamp to deploy-and-forget state
 Push must record deploy-timestamp to deploy-and-forget state. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + Makefile `make collect-check` combined
 **Test:** `test_p74_push_discipline_guard_74`
 
 ### P75 — Push with pre-commit hook failures auto-stashed denied
@@ -7293,7 +7330,7 @@ Branch from submodule path must use submodule branch not parent. This invariant 
 
 ### B74 — Branch with config/ratchet.yml unchanged from baseline flagged
 Branch with config/ratchet.yml unchanged from baseline flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + Makefile `make collect-check` combined
 **Test:** `test_b74_branch_discipline_guard_74`
 
 ### B75 — Branch must not be named identical to a make target
@@ -7745,7 +7782,7 @@ Objective granularity: sub-objective completion detection. This invariant MUST b
 
 ### O74 — Objective mutation: mid-session reprioritization handled
 Objective mutation: mid-session reprioritization handled. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + Makefile `make collect-check` combined
 **Test:** `test_o74_objective_tracking_74`
 
 ### O75 — Objective evidence: completion requires measurable signal
@@ -8100,7 +8137,7 @@ Test integrity: coverage threshold per modified module >=85%. This invariant MUS
 
 ### T74 — Test integrity: no test file with zero assertions
 Test integrity: no test file with zero assertions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + Makefile `make collect-check` combined
 **Test:** `test_t74_test_integrity_74`
 
 ### T75 — Test integrity: all test functions must be discoverable by pytest
@@ -8433,8 +8470,8 @@ Dispatch floor: minimum 10 task/agent dispatches per wave mechanically enforced.
 **Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
 **Test:** `test_d70_dispatch_floor_70`
 
-### D71 — Dispatch floor: zero-dispatch streak counter blocks at MAX_ZERO_STREAK=2
-Dispatch floor: zero-dispatch streak counter blocks at MAX_ZERO_STREAK=2. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### D71 — Configured dispatch floors may bound zero-dispatch streaks
+An explicitly configured positive floor MAY bound zero-dispatch streaks at two. With the default zero floor, the streak mechanism is inactive.
 **Enforcement:** AGENTS.md `tests/unit/test_require_ci_green.py` structural assertion gate
 **Test:** `test_d71_dispatch_floor_71`
 
@@ -8450,7 +8487,7 @@ Dispatch floor: estimatedInFlight counter prevents pool drainage. This invariant
 
 ### D74 — Dispatch floor: waveHistory tracks per-wave dispatch count for audit
 Dispatch floor: waveHistory tracks per-wave dispatch count for audit. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + Makefile `make collect-check` combined
 **Test:** `test_d74_dispatch_floor_74`
 
 ### D75 — Dispatch floor: consecutiveNonDispatch count resets on any dispatch
@@ -8463,8 +8500,8 @@ Dispatch floor: grinding block at 5 non-dispatch calls in 30s window. This invar
 **Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
 **Test:** `test_d76_dispatch_floor_76`
 
-### D77 — Dispatch floor: dispatch refill required when in-flight drops below 10
-Dispatch floor: dispatch refill required when in-flight drops below 10. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### D77 — Adaptive ownership evaluates useful reassignment after completion
+When in-flight work completes, the orchestrator evaluates whether another concrete independent deliverable merits ownership. No refill count applies under the default zero floor.
 **Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make container-run` CI+local dual
 **Test:** `test_d77_dispatch_floor_77`
 
@@ -8493,8 +8530,8 @@ Dispatch floor: GLUDD_MIN_DISPATCHES env var allows floor tuning. This invariant
 **Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
 **Test:** `test_d82_dispatch_floor_82`
 
-### D83 — Dispatch floor: session-start dispatch requirement kicks in immediately
-Dispatch floor: session-start dispatch requirement kicks in immediately. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### D83 — Session start applies the adaptive ownership contract immediately
+Session start MUST apply the zero-default, three-agent-ceiling ownership contract immediately. No mandatory dispatch exists unless the operator explicitly configures a positive floor.
 **Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
 **Test:** `test_d83_dispatch_floor_83`
 
@@ -8528,8 +8565,8 @@ Dispatch floor: fast result processing: <5s between result and next wave. This i
 **Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
 **Test:** `test_d89_dispatch_floor_89`
 
-### D90 — Dispatch floor: dispatch wave must be next action after backlog reads
-Dispatch floor: dispatch wave must be next action after backlog reads. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### D90 — Useful work must follow backlog evidence
+After backlog evidence is read, the next action MUST advance scoped work inline or through useful delegated ownership; no mandatory wave exists under the default zero floor.
 **Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
 **Test:** `test_d90_dispatch_floor_90`
 
@@ -8548,8 +8585,8 @@ Dispatch floor: hot-file serialization: max 1 agent per hot file at a time. This
 **Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING
 **Test:** `test_d93_dispatch_floor_93`
 
-### D94 — Dispatch floor: worktree cap: max 6 concurrent worktree agents
-Dispatch floor: worktree cap: max 6 concurrent worktree agents. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### D94 — Dispatch floor: worktree cap: max two concurrent worktree agents
+Dispatch floor: worktree cap: max two concurrent file-editing worktree agents. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
 **Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + Makefile `make agent-merge` combined
 **Test:** `test_d94_dispatch_floor_94`
 
@@ -8820,7 +8857,7 @@ Stop prevention: stop after push: verify remote SHA matches before stopping. Thi
 
 ### S74 — Stop prevention: stop after version bump: verify release completeness first
 Stop prevention: stop after version bump: verify release completeness first. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + Makefile `make collect-check` combined
 **Test:** `test_s74_stop_prevention_74`
 
 ### S75 — Stop prevention: text-only response when TASKS has unchecked items blanked
@@ -8848,8 +8885,8 @@ Stop prevention: 'shall I continue' is detected as permission-seeking stop. This
 **Enforcement:** AGENTS.md `Hard Break Enforcement` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-session-start.ts` triple layer
 **Test:** `test_s79_stop_prevention_79`
 
-### S80 — Stop prevention: prose summary before dispatch wave is blanked
-Stop prevention: prose summary before dispatch wave is blanked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### S80 — Stop prevention: status-only prose before useful work is blanked
+Status-only prose that displaces the next useful action is blanked while real work remains. Inline and delegated actions are equally valid under adaptive ownership.
 **Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` section
 **Test:** `test_s80_stop_prevention_80`
 
@@ -8958,8 +8995,8 @@ Essay prevention: tool-call-to-text ratio <0.5 triggers block. This invariant MU
 **Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement; Makefile `make check-duplicate-targets` prerequisite
 **Test:** `test_e22_essay_prevention_22`
 
-### E23 — Essay prevention: prose analysis before dispatch wave is replaced with dispatch
-Essay prevention: prose analysis before dispatch wave is replaced with dispatch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### E23 — Essay prevention: prose analysis must not displace useful work
+Excess prose before a useful action is rejected while real work remains. The corrective action may be inline execution or justified delegation.
 **Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block; AGENTS.md `scripts/task_watchdog.py` enforcement
 **Test:** `test_e23_essay_prevention_23`
 
@@ -9610,7 +9647,7 @@ merge_safety enforcement guard #73: automated unique mechanism. This invariant M
 
 ### M74 — merge_safety enforcement guard #74: automated unique mechanism
 merge_safety enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + Makefile `make collect-check` combined
 **Test:** `test_m74_merge_safety_74`
 
 ### M75 — merge_safety enforcement guard #75: automated unique mechanism
@@ -10137,7 +10174,7 @@ gate_discipline enforcement guard #73: automated unique mechanism. This invarian
 
 ### G74 — gate_discipline enforcement guard #74: automated unique mechanism
 gate_discipline enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + Makefile `make collect-check` combined
 **Test:** `test_g74_gate_discipline_74`
 
 ### G75 — gate_discipline enforcement guard #75: automated unique mechanism
@@ -10664,7 +10701,7 @@ release_integrity enforcement guard #73: automated unique mechanism. This invari
 
 ### R74 — release_integrity enforcement guard #74: automated unique mechanism
 release_integrity enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + Makefile `make collect-check` combined
 **Test:** `test_r74_release_integrity_74`
 
 ### R75 — release_integrity enforcement guard #75: automated unique mechanism
@@ -11141,7 +11178,7 @@ worktree_isolation enforcement guard #73: automated unique mechanism. This invar
 
 ### W74 — worktree_isolation enforcement guard #74: automated unique mechanism
 worktree_isolation enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + Makefile `make collect-check` combined
 **Test:** `test_w74_worktree_isolation_74`
 
 ### W75 — worktree_isolation enforcement guard #75: automated unique mechanism
@@ -11593,7 +11630,7 @@ file_safety enforcement guard #73: automated unique mechanism. This invariant MU
 
 ### F74 — file_safety enforcement guard #74: automated unique mechanism
 file_safety enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + Makefile `make collect-check` combined
 **Test:** `test_f74_file_safety_74`
 
 ### F75 — file_safety enforcement guard #75: automated unique mechanism
@@ -12045,7 +12082,7 @@ context_freshness enforcement guard #73: automated unique mechanism. This invari
 
 ### C74 — context_freshness enforcement guard #74: automated unique mechanism
 context_freshness enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + Makefile `make collect-check` combined
 **Test:** `test_c74_context_freshness_74`
 
 ### C75 — context_freshness enforcement guard #75: automated unique mechanism
@@ -12497,7 +12534,7 @@ quality_gate enforcement guard #73: automated unique mechanism. This invariant M
 
 ### Q74 — quality_gate enforcement guard #74: automated unique mechanism
 quality_gate enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + Makefile `make collect-check` combined
 **Test:** `test_q74_quality_gate_74`
 
 ### Q75 — quality_gate enforcement guard #75: automated unique mechanism
@@ -12974,7 +13011,7 @@ subagent_discipline enforcement guard #73: automated unique mechanism. This inva
 
 ### X74 — subagent_discipline enforcement guard #74: automated unique mechanism
 subagent_discipline enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + Makefile `make collect-check` combined
 **Test:** `test_x74_subagent_discipline_74`
 
 ### X75 — subagent_discipline enforcement guard #75: automated unique mechanism
@@ -13426,7 +13463,7 @@ audit_completeness enforcement guard #73: automated unique mechanism. This invar
 
 ### A74 — audit_completeness enforcement guard #74: automated unique mechanism
 audit_completeness enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + Makefile `make collect-check` combined
 **Test:** `test_a74_audit_completeness_74`
 
 ### A75 — audit_completeness enforcement guard #75: automated unique mechanism
@@ -13903,7 +13940,7 @@ naming_code_quality enforcement guard #73: automated unique mechanism. This inva
 
 ### N74 — naming_code_quality enforcement guard #74: automated unique mechanism
 naming_code_quality enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + Makefile `make collect-check` combined
 **Test:** `test_n74_naming_code_quality_74`
 
 ### N75 — naming_code_quality enforcement guard #75: automated unique mechanism
@@ -14355,7 +14392,7 @@ knowledge_management enforcement guard #73: automated unique mechanism. This inv
 
 ### K74 — knowledge_management enforcement guard #74: automated unique mechanism
 knowledge_management enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + Makefile `make collect-check` combined
 **Test:** `test_k74_knowledge_management_74`
 
 ### K75 — knowledge_management enforcement guard #75: automated unique mechanism
@@ -14807,7 +14844,7 @@ user_intent enforcement guard #73: automated unique mechanism. This invariant MU
 
 ### U74 — user_intent enforcement guard #74: automated unique mechanism
 user_intent enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + Makefile `make collect-check` combined
 **Test:** `test_u74_user_intent_74`
 
 ### U75 — user_intent enforcement guard #75: automated unique mechanism
@@ -15259,7 +15296,7 @@ zero_failure enforcement guard #73: automated unique mechanism. This invariant M
 
 ### Z74 — zero_failure enforcement guard #74: automated unique mechanism
 zero_failure enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + Makefile `make collect-check` combined
 **Test:** `test_z74_zero_failure_74`
 
 ### Z75 — zero_failure enforcement guard #75: automated unique mechanism
@@ -15719,8 +15756,8 @@ Intent priority: gate running: dispatch other agents while gate runs. This invar
 **Enforcement:** AGENTS.md `Guardrail Integrity Policy` section
 **Test:** `test_i40_intent_priority_40`
 
-### I41 — Intent priority: subagent failed: re-dispatch replacement immediately
-Intent priority: subagent failed: re-dispatch replacement immediately. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### I41 — Intent priority: process failed delegated work before reassignment
+When delegated work fails, process the failure and preserve the original intent before deciding whether the remaining deliverable merits reassignment. Replacement is never automatic filler.
 **Enforcement:** Makefile `make check-opencode-backup` prerequisite
 **Test:** `test_i41_intent_priority_41`
 
@@ -15834,8 +15871,8 @@ Intent priority: worktree isolation: per-agent worktree for file edits. This inv
 **Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
 **Test:** `test_i63_intent_priority_63`
 
-### I64 — Intent priority: dispatch floor: maintain 10 agents at all times
-Intent priority: dispatch floor: maintain 10 agents at all times. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### I64 — Intent priority: adaptive ownership respects the three-agent ceiling
+Intent priority uses inline execution by default and up to three concrete independent owners when useful. A positive floor is opt-in; no always-full pool exists.
 **Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
 **Test:** `test_i64_intent_priority_64`
 
@@ -15999,8 +16036,8 @@ Intent priority: version bump: bump version with release, not before. This invar
 **Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
 **Test:** `test_i96_intent_priority_96`
 
-### I97 — Intent priority: artifact completeness: 12/12 asset categories before release
-Intent priority: artifact completeness: 12/12 asset categories before release. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### I97 — Intent priority: artifact completeness: 28/28 artifact categories and 30 assets before release
+Intent priority: artifact completeness: 28/28 artifact categories and at least 30 assets before release. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
 **Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make git-rebranch-onto` CI+local dual
 **Test:** `test_i97_intent_priority_97`
 
@@ -16084,7 +16121,7 @@ The agent MUST verify that all submodules are clean and committed before pushing
 
 ### P131 — The agent MUST block pushes that would exceed a 50-commit batch limit in a single operation.
 The agent MUST block pushes that would exceed a 50-commit batch limit in a single operation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make reload-enforcement` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make reload-enforcement` combined
 **Test:** `test_p131_130`
 
 ### P132 — The agent MUST confirm the remote repository exists before attempting to push.
@@ -16184,7 +16221,7 @@ The agent MUST require re-audit when ratchet-baseline has changed since last pus
 
 ### P151 — The agent MUST block pushes that would trigger more than one CI workflow simultaneously.
 The agent MUST block pushes that would trigger more than one CI workflow simultaneously. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make watchdog-auto` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make watchdog-auto` combined
 **Test:** `test_p151_150`
 
 ### P152 — The agent MUST ensure the push commit batch does not include commits with merge conflict markers.
@@ -16282,7 +16319,7 @@ The agent MUST track branch creation date in SESSION.md for session audit purpos
 
 ### B136 — The agent MUST enforce branch name character rules: slash only, no leading dash.
 The agent MUST enforce branch name character rules: slash only, no leading dash. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make test-integration` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make test-integration` combined
 **Test:** `test_b136_135`
 
 ### B137 — The agent MUST block checkout of shared branches from within a worktree.
@@ -16380,7 +16417,7 @@ The agent MUST deny branch creation when the working tree has uncommitted merge 
 
 ### O102 — The agent MUST deduplicate similar objectives from different sources.
 The agent MUST deduplicate similar objectives from different sources. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make test-hook-runtime` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make test-hook-runtime` combined
 **Test:** `test_o102_101`
 
 ### O103 — The agent MUST treat ratchet entries as implicit objectives that must be resolved.
@@ -16480,7 +16517,7 @@ The agent MUST cache objective state and invalidate on TASKS.md changes. This in
 
 ### O122 — The agent MUST log every objective state change with a reason for the transition.
 The agent MUST log every objective state change with a reason for the transition. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make gate-audit` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make gate-audit` combined
 **Test:** `test_o122_121`
 
 ### O123 — The agent MUST support replay of objective resolution steps on demand.
@@ -16495,7 +16532,7 @@ The agent MUST flag mid-execution changes to an objective's description as scope
 
 ### O125 — The agent MUST treat Makefile targets as codified objectives.
 The agent MUST treat Makefile targets as codified objectives. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + `config/ratchet.yml:stale-gate` ratchet-combined
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + `config/ratchet.yml:stale-gate` ratchet-combined
 **Test:** `test_o125_124`
 
 ### O126 — The agent MUST treat plugin blocks as objective enforcement points.
@@ -16580,7 +16617,7 @@ The agent MUST persist the primary objective across session restarts via SESSION
 
 ### O142 — The agent MUST detect sub-objective completion and propagate to the parent objective.
 The agent MUST detect sub-objective completion and propagate to the parent objective. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make typecheck` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make typecheck` combined
 **Test:** `test_o142_141`
 
 ### O143 — The agent MUST handle mid-session objective reprioritization without losing state.
@@ -16678,7 +16715,7 @@ The agent MUST include an assertion message explaining expected vs actual values
 
 ### T107 — The agent MUST use pytest's tmp_path fixture for temporary file creation.
 The agent MUST use pytest's tmp_path fixture for temporary file creation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make validate` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make validate` combined
 **Test:** `test_t107_106`
 
 ### T108 — The agent MUST ensure tests do not leave child processes running after completion.
@@ -16718,7 +16755,7 @@ The agent MUST seed random number generators for reproducibility in tests. This 
 
 ### T115 — The agent MUST use freezegun when a test depends on system time.
 The agent MUST use freezegun when a test depends on system time. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-objective.ts` triple layer
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-objective.ts` triple layer
 **Test:** `test_t115_114`
 
 ### T116 — The agent MUST ensure test collection succeeds before running any tests.
@@ -16778,7 +16815,7 @@ The agent MUST ensure every test file contains at least one class or function. T
 
 ### T127 — The agent MUST forbid the use of exit() or sys.exit() in test code.
 The agent MUST forbid the use of exit() or sys.exit() in test code. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make security` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make security` combined
 **Test:** `test_t127_126`
 
 ### T128 — The agent MUST use pytest-benchmark marker for benchmark tests.
@@ -16823,7 +16860,7 @@ The agent MUST regenerate snapshot tests when --snapshot-update is passed. This 
 
 ### T136 — The agent MUST detect and reject tests that call the function under test zero times.
 The agent MUST detect and reject tests that call the function under test zero times. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` section
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` section
 **Test:** `test_t136_135`
 
 ### T137 — The agent MUST set or disable deadlines for hypothesis tests.
@@ -16878,7 +16915,7 @@ The agent MUST guarantee test isolation: no test may depend on the order of exec
 
 ### T147 — The agent MUST scope test fixtures correctly (function vs module vs session).
 The agent MUST scope test fixtures correctly (function vs module vs session). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make git-diff` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make git-diff` combined
 **Test:** `test_t147_146`
 
 ### T148 — The agent MUST forbid hardcoded absolute paths in test assertions.
@@ -16921,7 +16958,7 @@ The agent MUST clean up temporary directories and files after each test. This in
 
 ### D100 — The agent MUST limit subagent prompts to 20 lines or fewer.
 The agent MUST limit subagent prompts to 20 lines or fewer. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` section
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` section
 **Test:** `test_d100_99`
 
 ### D101 — The agent MUST require subagents to return a summary of 10 lines or fewer.
@@ -16976,7 +17013,7 @@ The agent MUST inform each subagent of the available tools it can use. This inva
 
 ### D111 — The agent MUST inform each subagent of the available make targets.
 The agent MUST inform each subagent of the available make targets. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make git-checkout` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make git-checkout` combined
 **Test:** `test_d111_110`
 
 ### D112 — The agent MUST restrict each subagent to workspace and /tmp/gludd-* paths.
@@ -17076,7 +17113,7 @@ The agent MUST dispatch higher-priority tasks before lower-priority ones. This i
 
 ### D131 — The agent MUST isolate each agent with its own worktree to prevent cross-contamination.
 The agent MUST isolate each agent with its own worktree to prevent cross-contamination. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make ci-verdict` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make ci-verdict` combined
 **Test:** `test_d131_130`
 
 ### D132 — The agent MUST verify a subagent's result before marking the task as done.
@@ -17099,8 +17136,8 @@ The agent MUST mechanically enforce the minimum 10 task/agent dispatches per wav
 **Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-audit.ts` state-aware block
 **Test:** `test_d135_134`
 
-### D136 — The agent MUST maintain a zero-dispatch streak counter that blocks at MAX_ZERO_STREAK=2.
-The agent MUST maintain a zero-dispatch streak counter that blocks at MAX_ZERO_STREAK=2. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### D136 — The agent MUST scope zero-dispatch streaks to configured floors.
+The agent MUST keep zero-dispatch streak enforcement inactive under the default zero floor and apply the bound only when an operator explicitly configures a positive floor.
 **Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` + `scripts/check_duplicate_targets.py` ratchet+script gate
 **Test:** `test_d136_135`
 
@@ -17129,8 +17166,8 @@ The agent MUST block grinding at 5 consecutive non-dispatch calls within a 30-se
 **Enforcement:** Makefile `make typecheck` prerequisite
 **Test:** `test_d141_140`
 
-### D142 — The agent MUST require dispatch refill when in-flight count drops below 10.
-The agent MUST require dispatch refill when in-flight count drops below 10. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### D142 — The agent MUST evaluate ownership when in-flight work completes.
+The agent MUST ingest completed work and assign another owner only when a concrete independent deliverable remains. The default floor is zero and the hard ceiling is three.
 **Enforcement:** AGENTS.md `scripts/check_duplicate_targets.py` enforcement
 **Test:** `test_d142_141`
 
@@ -17159,8 +17196,8 @@ The agent MUST honor the GLUDD_MIN_DISPATCHES env var for floor tuning. This inv
 **Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make reload-enforcement` combined
 **Test:** `test_d147_146`
 
-### D148 — The agent MUST trigger the session-start dispatch requirement immediately on session start.
-The agent MUST trigger the session-start dispatch requirement immediately on session start. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### D148 — The agent MUST trigger session-start evidence loading immediately.
+The agent MUST load scoped task, bug, ratchet, session, and repository-state evidence at session start, then choose inline or delegated ownership under the canonical adaptive contract.
 **Enforcement:** AGENTS.md `config/ratchet.yml:untested-source` ratchet-tracked gate
 **Test:** `test_d148_147`
 
@@ -17169,14 +17206,14 @@ The agent MUST treat subagent result arrival as a dispatch opportunity window. T
 **Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
 **Test:** `test_d149_148`
 
-### D150 — The agent MUST dispatch any main-thread operation exceeding 3 seconds to a subagent.
-The agent MUST dispatch any main-thread operation exceeding 3 seconds to a subagent. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### D150 — The agent MUST keep long main-thread operations bounded and observable.
+The agent MAY run a long operation on the main thread when it streams progress or heartbeats and has an explicit bound; delegation depends on whether independent ownership is useful.
 **Enforcement:** AGENTS.md `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-no-wait.ts` dual layer
 **Test:** `test_d150_149`
 
-### D151 — The agent MUST dispatch commit operations as subagent tasks, not main-thread mutating bash.
-The agent MUST dispatch commit operations as subagent tasks, not main-thread mutating bash. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make verify-remote` combined
+### D151 — Commit operations retain explicit repository ownership.
+The owning thread MAY perform commit operations through sanctioned Make targets after required checks. Delegating a commit is optional and must not split ownership of shared branch state.
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make verify-remote` combined
 **Test:** `test_d151_150`
 
 ### D152 — The agent MUST fill thin edit backlogs with research filler subagents.
@@ -17189,8 +17226,8 @@ The agent MUST prefer uniform-duration tasks to minimize pipeline drainage. This
 **Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING (GLUDD_D_ENFORCE=0 for disable)
 **Test:** `test_d153_152`
 
-### D154 — The agent MUST process results in under 5 seconds and dispatch the next wave immediately.
-The agent MUST process results in under 5 seconds and dispatch the next wave immediately. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### D154 — The agent MUST process results before assigning more work.
+The agent MUST process completed results promptly and assign another owner only when a concrete independent deliverable remains; no fixed five-second or replacement-wave quota applies.
 **Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + `config/ratchet.yml:missing-test` ratchet-combined
 **Test:** `test_d154_153`
 
@@ -17274,7 +17311,7 @@ The agent MUST never permit a stop when TASKS.md has items older than the sessio
 
 ### S115 — The agent MUST never permit a stop when SESSION.md is stale (more than 1 hour old).
 The agent MUST never permit a stop when SESSION.md is stale (more than 1 hour old). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make verify-release-completeness` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make verify-release-completeness` combined
 **Test:** `test_s115_114`
 
 ### S116 — The agent MUST never permit a stop when BUGS.md has open incidents without resolution.
@@ -17374,7 +17411,7 @@ The agent MUST self-correct stop behavior after receiving the second block. This
 
 ### S135 — The agent MUST not treat open human-todos (requiring human action) as 'done'.
 The agent MUST not treat open human-todos (requiring human action) as 'done'. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make check-node-v26-compat` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make check-node-v26-compat` combined
 **Test:** `test_s135_134`
 
 ### S136 — The agent MUST codify results first after receiving CI GREEN before stopping.
@@ -17572,7 +17609,7 @@ The agent MUST enforce a line-count gate: responses exceeding 40 lines need tool
 
 ### E119 — The agent MUST enforce a paragraph-count gate: responses exceeding 3 paragraphs need tool calls.
 The agent MUST enforce a paragraph-count gate: responses exceeding 3 paragraphs need tool calls. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make development-start` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make development-start` combined
 **Test:** `test_e119_118`
 
 ### E120 — The agent MUST track text-only token consumption against the dispatch budget.
@@ -17672,7 +17709,7 @@ The agent MUST flag qualitative assessment prose ('on a scale of 1-10'). This in
 
 ### E139 — The agent MUST flag markdown admonitions (!!! note, ??? warning) in responses.
 The agent MUST flag markdown admonitions (!!! note, ??? warning) in responses. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make ship-commit` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make ship-commit` combined
 **Test:** `test_e139_138`
 
 ### E140 — The agent MUST reduce code review prose to a test case rather than commentary.
@@ -17770,7 +17807,7 @@ The agent MUST verify agent-cleanup has been done before merging worktree branch
 
 ### M129 — The agent MUST check that the merge destination does not have uncommitted changes.
 The agent MUST check that the merge destination does not have uncommitted changes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make hot-reload-plugins` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make hot-reload-plugins` combined
 **Test:** `test_m129_128`
 
 ### M130 — The agent MUST verify that the CI workflow for the source branch has completed.
@@ -17870,7 +17907,7 @@ The agent MUST verify that no lint suppressions are added by the merge. This inv
 
 ### M149 — The agent MUST check that the merge does not lower the overall test coverage.
 The agent MUST check that the merge does not lower the overall test coverage. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make test` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make test` combined
 **Test:** `test_m149_148`
 
 ### M150 — The agent MUST block merges that delete test files without corresponding source changes.
@@ -17908,7 +17945,7 @@ The agent MUST include the sbom generation step in the full gate pipeline. This 
 
 ### G127 — The agent MUST verify that ansible syntax is valid during the validate gate.
 The agent MUST verify that ansible syntax is valid during the validate gate. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + `scripts/require_ci_green.py` + `.opencode/plugin/enforce-batch-push.ts` triple layer
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + `scripts/require_ci_green.py` + `.opencode/plugin/enforce-batch-push.ts` triple layer
 **Test:** `test_g127_126`
 
 ### G128 — The agent MUST run the molecule tests during the full gate when ansible content changed.
@@ -17968,7 +18005,7 @@ The agent MUST check for untested source files during the coverage audit gate. T
 
 ### G139 — The agent MUST verify that docker buildx has sufficient disk space for the container gate.
 The agent MUST verify that docker buildx has sufficient disk space for the container gate. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make test-count` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make test-count` combined
 **Test:** `test_g139_138`
 
 ### G140 — The agent MUST ensure that the CI workflow is syntactically valid during the gate.
@@ -18066,7 +18103,7 @@ The agent MUST ensure the macOS binary is notarized (or documented as unnotarize
 
 ### R129 — The agent MUST verify the Linux binary is statically linked.
 The agent MUST verify the Linux binary is statically linked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make gate-background` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make gate-background` combined
 **Test:** `test_r129_128`
 
 ### R130 — The agent MUST check that the install script references the correct release version.
@@ -18166,7 +18203,7 @@ The agent MUST ensure the release pipeline has not been modified since the last 
 
 ### R149 — The agent MUST verify that the deploy script is up to date with the release version.
 The agent MUST verify that the deploy script is up to date with the release version. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make lint` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make lint` combined
 **Test:** `test_r149_148`
 
 ### R150 — The agent MUST check that the release does not break backward compatibility.
@@ -18179,8 +18216,8 @@ The agent MUST gate every release on ci-green before pushing the tag. This invar
 **Enforcement:** AGENTS.md `.opencode/plugin/enforce-branch-discipline.ts` env-var-gated BLOCKING (GLUDD_R_ENFORCE=0 for disable)
 **Test:** `test_r151_150`
 
-### R152 — The agent MUST verify release completeness (12 artifact categories) before claiming shipped.
-The agent MUST verify release completeness (12 artifact categories) before claiming shipped. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### R152 — The agent MUST verify release completeness (28 artifact categories and at least 30 assets) before claiming shipped.
+The agent MUST verify release completeness (28 artifact categories and at least 30 assets) before claiming shipped. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
 **Enforcement:** AGENTS.md `Fix Means Repair Never Disable` + `config/ratchet.yml:duplicate-target` ratchet-combined
 **Test:** `test_r152_151`
 
@@ -18264,7 +18301,7 @@ The agent MUST verify that the merge was successful before cleaning up the workt
 
 ### W134 — The agent MUST use --no-ff when merging worktree branches to preserve history.
 The agent MUST use --no-ff when merging worktree branches to preserve history. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make collect-check` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make collect-check` combined
 **Test:** `test_w134_133`
 
 ### W135 — The agent MUST verify that the merged commit appears in master's log after merge.
@@ -18362,9 +18399,9 @@ The agent MUST not merge to master from inside a worktree (main checkout only). 
 **Enforcement:** AGENTS.md `scripts/check_readme_status_current.py` + `.opencode/plugin/enforce-deadline.ts` dual layer
 **Test:** `test_w153_152`
 
-### W154 — The agent MUST cap concurrent worktree agents at 6 to prevent disk exhaustion.
-The agent MUST cap concurrent worktree agents at 6 to prevent disk exhaustion. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make secrets-baseline` combined
+### W154 — The agent MUST cap concurrent worktree agents at two to prevent disk exhaustion.
+The agent MUST cap concurrent file-editing worktree agents at two to prevent disk exhaustion and ownership collisions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make secrets-baseline` combined
 **Test:** `test_w154_153`
 
 
@@ -18462,7 +18499,7 @@ The agent MUST ensure that temporary files are cleaned up after use. This invari
 
 ### F139 — The agent MUST not modify tracked files tracked by git without proper staging.
 The agent MUST not modify tracked files tracked by git without proper staging. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make git-status` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make git-status` combined
 **Test:** `test_f139_138`
 
 ### F140 — The agent MUST verify that the file extension matches the expected content type.
@@ -18560,7 +18597,7 @@ The agent MUST check for stale enforcement state files before relying on them. T
 
 ### C124 — The agent MUST read the relevant design doc before implementing a feature.
 The agent MUST read the relevant design doc before implementing a feature. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make git-commit` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make git-commit` combined
 **Test:** `test_c124_123`
 
 ### C125 — The agent MUST verify that the implementation matches the design doc (or update the doc).
@@ -18660,7 +18697,7 @@ The agent MUST verify that gunicorn configuration is correct before starting the
 
 ### C144 — The agent MUST check the daemon health endpoint before assuming it is running.
 The agent MUST check the daemon health endpoint before assuming it is running. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make git-stash` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make git-stash` combined
 **Test:** `test_c144_143`
 
 ### C145 — The agent MUST verify that the database is reachable before running migrations.
@@ -18758,7 +18795,7 @@ The agent MUST verify that the code follows the Single Responsibility Principle.
 
 ### Q134 — The agent MUST ensure that function signatures have proper type annotations.
 The agent MUST ensure that function signatures have proper type annotations. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make ci-wait` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make ci-wait` combined
 **Test:** `test_q134_133`
 
 ### Q135 — The agent MUST check that the code does not have unreachable statements.
@@ -18858,7 +18895,7 @@ The agent MUST ensure test collection produces zero errors. This invariant MUST 
 
 ### Q154 — The agent MUST verify that all tests pass before committing.
 The agent MUST verify that all tests pass before committing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make release-promote` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make release-promote` combined
 **Test:** `test_q154_153`
 
 
@@ -18874,8 +18911,8 @@ The agent MUST retry failed subagent dispatches with exponential backoff. This i
 **Enforcement:** AGENTS.md `CI-Poll Subagents Are Forbidden` + `config/ratchet.yml:typecheck-baseline` ratchet-combined
 **Test:** `test_x122_121`
 
-### X123 — The agent MUST not dispatch subagents that would exceed the 10-agent ceiling.
-The agent MUST not dispatch subagents that would exceed the 10-agent ceiling. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### X123 — The agent MUST not dispatch subagents that would exceed the 3-agent ceiling.
+The agent MUST not dispatch subagents that would exceed the 3-agent ceiling. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
 **Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-anti-essay.ts` state-aware block
 **Test:** `test_x123_122`
 
@@ -18919,8 +18956,8 @@ The agent MUST specify that subagents must read files but return only terse summ
 **Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` `tool.execute.before` block
 **Test:** `test_x131_130`
 
-### X132 — The agent MUST dispatch replacement subagents immediately when one completes.
-The agent MUST dispatch replacement subagents immediately when one completes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### X132 — The agent MUST release completed ownership before optional reassignment.
+The agent MUST ingest completed delegated work and release its slot before deciding whether another concrete independent deliverable merits reassignment.
 **Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` permissionDecision deny
 **Test:** `test_x132_131`
 
@@ -18956,7 +18993,7 @@ The agent MUST not dispatch subagents from within a subagent (no nesting). This 
 
 ### X139 — The agent MUST include the AGENTS.md policy context in subagent prompts when relevant.
 The agent MUST include the AGENTS.md policy context in subagent prompts when relevant. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make check-readme-status` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make check-readme-status` combined
 **Test:** `test_x139_138`
 
 ### X140 — The agent MUST verify that the subagent has the correct working directory before dispatching.
@@ -19054,7 +19091,7 @@ The agent MUST audit the .secrets.baseline for new secret patterns added. This i
 
 ### A129 — The agent MUST check for uncommitted changes across all worktrees.
 The agent MUST check for uncommitted changes across all worktrees. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make feature-start` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make feature-start` combined
 **Test:** `test_a129_128`
 
 ### A130 — The agent MUST verify that all registered plugins are in opencode.json.
@@ -19154,7 +19191,7 @@ The agent MUST verify that the ansible inventory is consistent. This invariant M
 
 ### A149 — The agent MUST audit terraform state for drift.
 The agent MUST audit terraform state for drift. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make agent-cleanup` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make agent-cleanup` combined
 **Test:** `test_a149_148`
 
 ### A150 — The agent MUST check that molecule test configurations are valid.
@@ -19252,7 +19289,7 @@ The agent MUST use consistent log level naming that matches the severity. This i
 
 ### N134 — The agent MUST name secret keys with a hierarchical dot-separated convention.
 The agent MUST name secret keys with a hierarchical dot-separated convention. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make development-status` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make development-status` combined
 **Test:** `test_n134_133`
 
 ### N135 — The agent MUST use consistent metric naming with namespace and unit suffix.
@@ -19352,7 +19389,7 @@ The agent MUST use UPPER_CASE for module-level constants. This invariant MUST be
 
 ### N154 — The agent MUST use descriptive variable names (no single-letter vars except loop indices).
 The agent MUST use descriptive variable names (no single-letter vars except loop indices). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make reload-enforcement` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make reload-enforcement` combined
 **Test:** `test_n154_153`
 
 
@@ -19450,7 +19487,7 @@ The agent MUST maintain the enhancement-to-fix ratio history per wave. This inva
 
 ### K139 — The agent MUST track the session stop rate and patterns for process improvement.
 The agent MUST track the session stop rate and patterns for process improvement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make watchdog-auto` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make watchdog-auto` combined
 **Test:** `test_k139_138`
 
 ### K140 — The agent MUST record the pre-commit hook install status history.
@@ -19548,7 +19585,7 @@ The agent MUST not reinterpret 'fix X' as 'disable X' (fix means repair, never d
 
 ### U124 — The agent MUST detect when a user directive conflicts with a codified policy and flag it.
 The agent MUST detect when a user directive conflicts with a codified policy and flag it. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make test-integration` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make test-integration` combined
 **Test:** `test_u124_123`
 
 ### U125 — The agent MUST apply user preferences consistently across the entire session.
@@ -19648,7 +19685,7 @@ The agent MUST state its assumption and proceed when the user's intent is ambigu
 
 ### U144 — The agent MUST not ask the user for permission to do its job.
 The agent MUST not ask the user for permission to do its job. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make test-hook-runtime` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make test-hook-runtime` combined
 **Test:** `test_u144_143`
 
 ### U145 — The agent MUST recognize when a user is expressing frustration and adjust approach.
@@ -19746,7 +19783,7 @@ The agent MUST guarantee that BUGS.md open incidents have resolution plans. This
 
 ### Z134 — The agent MUST guarantee that the ratchet is not growing (burn-down trend positive).
 The agent MUST guarantee that the ratchet is not growing (burn-down trend positive). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make gate-audit` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make gate-audit` combined
 **Test:** `test_z134_133`
 
 ### Z135 — The agent MUST guarantee that no uncommitted changes exist at session end.
@@ -19759,9 +19796,9 @@ The agent MUST guarantee that all subagent results are codified before stopping.
 **Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` env-var-gated BLOCKING (GLUDD_Z_ENFORCE=0 for disable)
 **Test:** `test_z136_135`
 
-### Z137 — The agent MUST guarantee that the 10-agent dispatch floor was maintained throughout.
-The agent MUST guarantee that the 10-agent dispatch floor was maintained throughout. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + `config/ratchet.yml:missing-test` ratchet-combined
+### Z137 — The agent MUST guarantee the three-agent ceiling was never exceeded.
+The agent MUST guarantee that ownership remained deduplicated and no dispatch wave exceeded three. A mandatory minimum applies only when explicitly configured.
+**Enforcement:** `.opencode/lib/multitask_config.ts` canonical cap + runtime plugin clamps
 **Test:** `test_z137_136`
 
 ### Z138 — The agent MUST guarantee that no test skip, xfail, or continue-on-error exists.
@@ -19846,7 +19883,7 @@ The agent MUST guarantee that test collection has zero errors. This invariant MU
 
 ### Z154 — The agent MUST guarantee that all tests pass before claiming work is done.
 The agent MUST guarantee that all tests pass before claiming work is done. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make typecheck` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make typecheck` combined
 **Test:** `test_z154_153`
 
 
@@ -19944,7 +19981,7 @@ The agent MUST re-read TASKS.md at every hard break to refresh priority awarenes
 
 ### H119 — The agent MUST require collect-check to pass at every hard break boundary.
 The agent MUST require collect-check to pass at every hard break boundary. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make validate` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make validate` combined
 **Test:** `test_h119_118`
 
 ### H120 — The agent MUST not allow partial-batch results to leak into the next batch.
@@ -20044,7 +20081,7 @@ The agent MUST not break while a background gate operation is running. This inva
 
 ### H139 — The agent MUST not break while CI is pending on the current branch.
 The agent MUST not break while CI is pending on the current branch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make security` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make security` combined
 **Test:** `test_h139_138`
 
 ### H140 — The agent MUST re-confirm the user objective at each hard break.
@@ -20142,7 +20179,7 @@ The agent MUST verify that release artifact checksums are present and correct. T
 
 ### V104 — The agent MUST confirm that the SBOM was generated for the correct release version.
 The agent MUST confirm that the SBOM was generated for the correct release version. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make git-diff` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make git-diff` combined
 **Test:** `test_v104_103`
 
 ### V105 — The agent MUST verify that the release is non-draft before claiming it as shipped.
@@ -20155,8 +20192,8 @@ The agent MUST confirm that no zero-size assets exist in the release. This invar
 **Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` env-var-gated BLOCKING (GLUDD_V_ENFORCE=0 for disable)
 **Test:** `test_v106_105`
 
-### V107 — The agent MUST verify that all 12 artifact categories are present before marking release complete.
-The agent MUST verify that all 12 artifact categories are present before marking release complete. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### V107 — The agent MUST verify that all 28 artifact categories and at least 30 assets are present before marking release complete.
+The agent MUST verify that all 28 artifact categories and at least 30 assets are present before marking release complete. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
 **Enforcement:** AGENTS.md `Task Self-Tracking` + `config/ratchet.yml:typecheck-baseline` ratchet-combined
 **Test:** `test_v107_106`
 
@@ -20242,7 +20279,7 @@ The agent MUST verify that CI build matrix jobs all passed before releasing. Thi
 
 ### V124 — The agent MUST confirm that no dead code exists in the committed tree before releasing.
 The agent MUST confirm that no dead code exists in the committed tree before releasing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make git-checkout` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make git-checkout` combined
 **Test:** `test_v124_123`
 
 ### V125 — The agent MUST verify that dependency pins are at secure, audited versions.
@@ -20342,7 +20379,7 @@ The agent MUST verify that the task watchdog process is alive and monitoring. Th
 
 ### V144 — The agent MUST confirm that all subagent results have been codified before stopping.
 The agent MUST confirm that all subagent results have been codified before stopping. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make ci-verdict` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make ci-verdict` combined
 **Test:** `test_v144_143`
 
 ### V145 — The agent MUST verify that merge commits follow the --no-ff convention.
@@ -20440,7 +20477,7 @@ The agent MUST determine whether a config value should be env-var-overridable. T
 
 ### J109 — The agent MUST assess whether a session has enough context to continue without re-reading files.
 The agent MUST assess whether a session has enough context to continue without re-reading files. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make verify-remote` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make verify-remote` combined
 **Test:** `test_j109_108`
 
 ### J110 — The agent MUST judge whether the user's silence means approval, confusion, or frustration.
@@ -20540,7 +20577,7 @@ The agent MUST assess whether a plugin change requires a hot-reload or a full re
 
 ### J129 — The agent MUST judge whether a session has become stuck and needs the disengage escape.
 The agent MUST judge whether a session has become stuck and needs the disengage escape. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make verify-release-completeness` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make verify-release-completeness` combined
 **Test:** `test_j129_128`
 
 ### J130 — The agent MUST decide whether to report an issue or fix it immediately.
@@ -20640,7 +20677,7 @@ The agent MUST decide whether a feature is ready for release or needs more stabi
 
 ### J149 — The agent MUST assess whether a bug is a release blocker or can ship as known.
 The agent MUST assess whether a bug is a release blocker or can ship as known. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make check-node-v26-compat` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make check-node-v26-compat` combined
 **Test:** `test_j149_148`
 
 ### J150 — The agent MUST judge whether two tasks should be on the same branch or separate branches.
@@ -20738,7 +20775,7 @@ The agent MUST learn the user's communication style and adjust verbosity accordi
 
 ### L115 — The agent MUST identify recurring lint violations and proactively fix the root pattern.
 The agent MUST identify recurring lint violations and proactively fix the root pattern. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make agent-worktree` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make agent-worktree` combined
 **Test:** `test_l115_114`
 
 ### L116 — The agent MUST learn which files are hot and serialize access without being told.
@@ -20838,7 +20875,7 @@ The agent MUST learn from past gate failures to address them before re-running. 
 
 ### L135 — The agent MUST identify which enforcement plugins trigger most and tune accordingly.
 The agent MUST identify which enforcement plugins trigger most and tune accordingly. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make development-start` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make development-start` combined
 **Test:** `test_l135_134`
 
 ### L136 — The agent MUST learn the repo's dependency graph to minimize unnecessary re-reads.
@@ -20936,7 +20973,7 @@ The agent MUST identify which error messages in the codebase are misleading and 
 
 ### Y101 — The agent MUST yield to the pip-audit requirement and fix known vulnerabilities.
 The agent MUST yield to the pip-audit requirement and fix known vulnerabilities. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make ship-commit` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make ship-commit` combined
 **Test:** `test_y101_100`
 
 ### Y102 — The agent MUST yield to the SAST scan requirement for security-sensitive changes.
@@ -20994,8 +21031,8 @@ The agent MUST yield control after 3 consecutive inline edits to prevent grindin
 **Enforcement:** AGENTS.md `scripts/check_duplicate_targets.py` enforcement
 **Test:** `test_y112_111`
 
-### Y113 — The agent MUST yield to the next dispatch wave when subagent results arrive.
-The agent MUST yield to the next dispatch wave when subagent results arrive. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### Y113 — The agent MUST process delegated results before continuing.
+The agent MUST validate and codify delegated results before continuing inline or assigning another concrete independent owner.
 **Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` `tool.execute.before` block
 **Test:** `test_y113_112`
 
@@ -21036,7 +21073,7 @@ The agent MUST yield to the enforcement plugin block and correct behavior, not f
 
 ### Y121 — The agent MUST yield to disk pressure and defer worktree creation when space is low.
 The agent MUST yield to disk pressure and defer worktree creation when space is low. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make hot-reload-plugins` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make hot-reload-plugins` combined
 **Test:** `test_y121_120`
 
 ### Y122 — The agent MUST yield to the enhancement ratio requirement and include enhancement tasks.
@@ -21109,8 +21146,8 @@ The agent MUST yield to the nothing-dropped guardrail and codify all results. Th
 **Enforcement:** Makefile `make feature-start` fail-closed guard
 **Test:** `test_y135_134`
 
-### Y136 — The agent MUST yield to the session-start protocol and dispatch immediately.
-The agent MUST yield to the session-start protocol and dispatch immediately. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### Y136 — The agent MUST honor session-start evidence before task execution.
+The agent MUST load session-start evidence before task execution, then choose inline work or up to three useful owners according to task shape.
 **Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
 **Test:** `test_y136_135`
 
@@ -21136,7 +21173,7 @@ The agent MUST yield to the gate-freshness requirement and re-run gate when stal
 
 ### Y141 — The agent MUST yield to the push-rate guard and respect the cooldown interval.
 The agent MUST yield to the push-rate guard and respect the cooldown interval. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make test` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make test` combined
 **Test:** `test_y141_140`
 
 ### Y142 — The agent MUST yield to the verify-remote requirement after every push.
@@ -21151,7 +21188,7 @@ The agent MUST yield to the CI-busy check and not push when CI is in progress. T
 
 ### Y144 — The agent MUST yield to the pre-commit hooks and not bypass them without cause.
 The agent MUST yield to the pre-commit hooks and not bypass them without cause. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + `config/ratchet.yml:lint-baseline` ratchet-combined
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + `config/ratchet.yml:lint-baseline` ratchet-combined
 **Test:** `test_y144_143`
 
 ### Y145 — The agent MUST yield to the typecheck baseline and not exceed it without justification.
@@ -21234,7 +21271,7 @@ The agent MUST fix user-reported bugs before implementing self-found improvement
 
 ### I109 — The agent MUST fix regressions before adding new tests for unrelated behavior.
 The agent MUST fix regressions before adding new tests for unrelated behavior. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make test-count` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make test-count` combined
 **Test:** `test_i109_108`
 
 ### I110 — The agent MUST preempt all lower-severity work when a critical (sev1) issue is detected.
@@ -21334,7 +21371,7 @@ The agent MUST fix a broken gate before running the gate on newly added code. Th
 
 ### I129 — The agent MUST fix plugin errors before editing files guarded by that plugin.
 The agent MUST fix plugin errors before editing files guarded by that plugin. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make gate-background` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make gate-background` combined
 **Test:** `test_i129_128`
 
 ### I130 — The agent MUST fix Makefile syntax errors before adding new targets.
@@ -21374,7 +21411,7 @@ The agent MUST enforce ordering when the user specifies 'do X BEFORE Y'. This in
 
 ### I137 — The agent MUST detect urgency markers in user messages and elevate priority.
 The agent MUST detect urgency markers in user messages and elevate priority. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + `scripts/check_disk_usage.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Enforcement:** AGENTS.md `Three-Agent Dispatch Ceiling and Configurable Floor` + `scripts/check_disk_usage.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
 **Test:** `test_i137_136`
 
 ### I138 — The agent MUST revert the most recent change before adding more changes if asked.
@@ -21397,13 +21434,13 @@ The agent MUST continue other work while CI runs (never wait on CI). This invari
 **Enforcement:** AGENTS.md `.opencode/plugin/enforce-objective.ts` `tool.execute.before` block
 **Test:** `test_i141_140`
 
-### I142 — The agent MUST dispatch other subagents while a background gate is running.
-The agent MUST dispatch other subagents while a background gate is running. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### I142 — A background gate MUST remain observable while useful work may continue.
+A background gate MUST retain an observable owner. Other work may continue when a concrete independent deliverable exists, but filler dispatch and polling-only subagents are forbidden.
 **Enforcement:** AGENTS.md `.opencode/plugin/enforce-batch-push.ts` permissionDecision deny
 **Test:** `test_i142_141`
 
-### I143 — The agent MUST re-dispatch a replacement when a subagent fails.
-The agent MUST re-dispatch a replacement when a subagent fails. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+### I143 — The agent MUST preserve ownership when delegated work fails.
+The agent MUST process a delegated failure and recover the deliverable inline or reassign it when delegation remains useful; replacement is not automatic.
 **Enforcement:** Makefile `make lint` fail-closed guard
 **Test:** `test_i143_142`
 
@@ -21434,7 +21471,7 @@ The agent MUST update TASKS.md before dispatching to ensure accuracy. This invar
 
 ### I149 — The agent MUST update SESSION.md before stopping to preserve context.
 The agent MUST update SESSION.md before stopping to preserve context. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
-**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make lint` combined
+**Enforcement:** AGENTS.md `Adaptive Dispatch and Three-Agent Ceiling` + Makefile `make lint` combined
 **Test:** `test_i149_148`
 
 ### I150 — The agent MUST log an incident in BUGS.md before fixing it.

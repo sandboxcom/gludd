@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from general_ludd import __version__
 from tests.unit._plugin_contract import plugin_contract_source
 
 ROOT = Path(__file__).parent.parent.parent
@@ -99,7 +100,7 @@ class TestMakefileTargets:
             timeout=30,
         )
         assert result.returncode == 0, f"make version failed:\n{result.stderr}\n{result.stdout}"
-        assert "0.1.0" in result.stdout or "0.1.0-alpha" in result.stdout
+        assert result.stdout.strip() == f"general-ludd-agent {__version__}"
 
     def test_make_ansible_syntax_passes(self) -> None:
         collections_dir = ROOT / "collections"

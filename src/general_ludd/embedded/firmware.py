@@ -511,12 +511,10 @@ class ArduinoFirmwareAdapter:
             return AdapterDecision(False, (str(exc),))
 
         reasons: list[str] = []
-        if target.provider not in _BACKENDS:
-            reasons.append("unsupported_model_backend")
         if firmware_request.physical_device_access:
             reasons.append("physical_device_access_requires_separate_authority")
-        if request.data_classification == "restricted" and target.provider != "local":
-            reasons.append("restricted_firmware_requires_local_backend")
+        if request.data_classification == "restricted" and not target.offline:
+            reasons.append("restricted_firmware_requires_offline_target")
         if self.required_tool not in request.allowed_tools:
             reasons.append("arduino_toolchain_not_allowed")
         if reasons:

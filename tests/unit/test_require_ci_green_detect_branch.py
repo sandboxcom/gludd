@@ -14,6 +14,7 @@ No real git or gh calls are made. All subprocess I/O is mocked.
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 from subprocess import CompletedProcess
 from typing import Any, cast
@@ -118,8 +119,8 @@ class TestDetectBranchIntegration:
                 verdict_for("abc123", branch="master")
             mock_det.assert_not_called()
 
-    def test_detected_branch_passed_to_gh(self):
-        """The branch returned by _detect_branch is passed through to the gh subprocess."""
+    def test_exact_commit_query_avoids_server_branch_filter_and_requests_identity(self):
+        """The API query stays broad enough for reliable local branch filtering."""
         captured: dict[str, Any] = {}
 
         def fake_run(cmd, *args, **kwargs):
@@ -130,8 +131,40 @@ class TestDetectBranchIntegration:
              patch("subprocess.run", side_effect=fake_run):
             verdict_for("deadbeef", branch=None)
 
-        # The gh command should include the detected branch name
-        assert "feature/rp-12" in captured["cmd"]
+        command = captured["cmd"]
+        assert "--commit" in command
+        assert command[command.index("--commit") + 1] == "deadbeef"
+        assert "--workflow" in command
+        assert command[command.index("--workflow") + 1] == "Build and Release"
+        assert "--branch" not in command
+        fields = command[command.index("--json") + 1]
+        assert "headBranch" in fields
+        assert "event" in fields
+
+    def test_query_filters_branch_and_event_locally_before_authorizing_reuse(self):
+        runs = [
+            {
+                "databaseId": 3,
+                "headSha": "deadbeef",
+                "headBranch": "master",
+                "workflowName": "Build and Release",
+                "event": "push",
+                "status": "completed",
+                "conclusion": "success",
+            },
+            {
+                "databaseId": 2,
+                "headSha": "deadbeef",
+                "headBranch": "development",
+                "workflowName": "Build and Release",
+                "event": "workflow_dispatch",
+                "status": "completed",
+                "conclusion": "success",
+            },
+        ]
+
+        with patch("subprocess.run", return_value=_proc(json.dumps(runs))):
+            assert verdict_for("deadbeef", branch="development") == 1
 
     def test_rejects_ambiguous_branch_arguments(self):
         with pytest.raises(TypeError, match="either positionally or by keyword"):

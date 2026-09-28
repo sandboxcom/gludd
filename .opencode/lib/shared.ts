@@ -289,6 +289,124 @@ export function writeJsonFile(filePath: string, data: unknown): void {
   } catch { /* permission / disk-full → silently skip */ }
 }
 
+// ── Hook envelope helpers ──────────────────────────────────────────────────
+// Tool providers wrap equivalent values in several stable envelope shapes.
+// Keep that compatibility logic here instead of duplicating parsers in each
+// enforcement entrypoint.
+
+export function extractBashCommand(...sources: unknown[]): string {
+  for (const source of sources) {
+    if (!source || typeof source !== "object") continue
+    const envelope = source as {
+      command?: unknown
+      args?: { command?: unknown }
+      tool_input?: { command?: unknown }
+      input?: { command?: unknown; args?: { command?: unknown } }
+    }
+    for (const value of [
+      envelope.args?.command,
+      envelope.command,
+      envelope.tool_input?.command,
+      envelope.input?.args?.command,
+      envelope.input?.command,
+    ]) {
+      if (typeof value === "string") return value
+    }
+  }
+  return ""
+}
+
+export function replaceBashCommand(input: unknown, output: unknown, command: string): void {
+  for (const candidate of [output, input]) {
+    if (!candidate || typeof candidate !== "object") continue
+    const envelope = candidate as { args?: Record<string, unknown>; command?: unknown }
+    if (envelope.args && typeof envelope.args === "object") {
+      envelope.args.command = command
+      return
+    }
+    if (typeof envelope.command === "string") {
+      envelope.command = command
+      return
+    }
+  }
+}
+
+export function extractDispatchText(input: unknown, output: unknown): string {
+  const parts: string[] = []
+  for (const source of [input, output]) {
+    if (!source || typeof source !== "object") continue
+    const envelope = source as {
+      prompt?: unknown
+      description?: unknown
+      message?: unknown
+      args?: { prompt?: unknown; description?: unknown; message?: unknown }
+      input?: { prompt?: unknown; description?: unknown; message?: unknown }
+    }
+    for (const value of [
+      envelope.prompt,
+      envelope.description,
+      envelope.message,
+      envelope.args?.prompt,
+      envelope.args?.description,
+      envelope.args?.message,
+      envelope.input?.prompt,
+      envelope.input?.description,
+      envelope.input?.message,
+    ]) {
+      if (typeof value === "string" && value.trim()) parts.push(value.trim())
+    }
+  }
+  return Array.from(new Set(parts)).join("\n")
+}
+
+export function extractFilePath(input: unknown, output: unknown): string {
+  for (const source of [input, output]) {
+    if (!source || typeof source !== "object") continue
+    const envelope = source as {
+      path?: unknown
+      filePath?: unknown
+      args?: { path?: unknown; filePath?: unknown }
+      tool_input?: { path?: unknown; filePath?: unknown }
+    }
+    for (const value of [
+      envelope.args?.filePath,
+      envelope.args?.path,
+      envelope.filePath,
+      envelope.path,
+      envelope.tool_input?.filePath,
+      envelope.tool_input?.path,
+    ]) {
+      if (typeof value === "string" && value.trim()) return value.trim()
+    }
+  }
+  return ""
+}
+
+export function extractExitCode(output: unknown): number | null {
+  if (!output || typeof output !== "object") return null
+  const value = output as {
+    exitCode?: unknown
+    exit_code?: unknown
+    metadata?: { exitCode?: unknown; exit_code?: unknown }
+    result?: { exitCode?: unknown; exit_code?: unknown }
+  }
+  for (const candidate of [
+    value.metadata?.exitCode,
+    value.metadata?.exit_code,
+    value.result?.exitCode,
+    value.result?.exit_code,
+    value.exitCode,
+    value.exit_code,
+  ]) {
+    if (typeof candidate === "number") return candidate
+  }
+  return null
+}
+
+export function deny(message: string): { permissionDecision: "deny"; message: string } {
+  return { permissionDecision: "deny", message }
+}
+
 // ── Tool classification helpers ────────────────────────────────────────────
 // Canonical definitions for dispatch-tool and read-tool classification.
 // Eliminates 1-3 line duplicated functions across 8+ enforcement plugins.

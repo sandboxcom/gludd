@@ -13,9 +13,10 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from general_ludd.db.models import Base, TodoModel
-from general_ludd.db.repository import TodoRepository
+from general_ludd.db.models import Base, ProjectModel, TodoModel
+from general_ludd.db.repository import ProjectRepository, TodoRepository
 from general_ludd.event_loop.loop import PHASE_ORDER, EventLoop
+from general_ludd.projects.manager import persist_project
 from general_ludd.schemas.todo import TodoStatus
 
 _PROJECT_ID = "proj-pipeline"
@@ -37,6 +38,16 @@ async def _session_factory(_engine):
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(_engine, expire_on_commit=False)
+    async with factory() as session:
+        await persist_project(
+            ProjectRepository(session),
+            project_id=_PROJECT_ID,
+            name="Daemon pipeline E2E",
+            weight=100.0,
+            dispatch_mode="active",
+        )
+        await session.commit()
+        assert await session.get(ProjectModel, _PROJECT_ID) is not None
     try:
         yield factory
     finally:

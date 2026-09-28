@@ -16,11 +16,12 @@ OPENCODE_DB_INCREMENTAL_PAGES ?= 1000
 OPENCODE_MAX_FILE_ENTRIES ?= 100000
 OPENCODE_MAINTENANCE_VALIDATE_ONLY ?= 0
 OPENCODE_MAINTENANCE_FORCE ?= 0
-VERIFY_POLLS ?= 30
 GLUDD_TASK_TIMEOUT ?= 300
 TIMEOUT ?= 3600
 GATE_POLL_INTERVAL ?= 60
 INTERVAL ?= 300
+RELEASE_AWAIT_TIMEOUT ?= 5400
+RELEASE_AWAIT_INTERVAL ?= 10
 COUNT ?= 1
 NODE_DEPS_NPM_USERCONFIG ?= /dev/null
 NODE_DEPS_NPM_CACHE ?= /tmp/gludd-npm-cache-public-v1
@@ -73,6 +74,8 @@ export UV_CACHE_DIR
 RELEASE_READINESS_VALIDATE_ONLY ?= 0
 RELEASE_COMPLETED_STAGES ?=
 RELEASE_OBSERVATIONS ?=
+REVIEWED_HEAD_INTEGRATION_RECEIPT ?=
+RELEASE_CANDIDATE_SHA ?=
 RELEASE_FAILURE_LEDGER ?= docs/releases/beta-release-failures.json
 SELF_IMPROVE_MODEL_PATH ?=
 SELF_IMPROVE_PROMPT_FILE ?=
@@ -238,7 +241,7 @@ _NO_UV_SYNC_GOALS := \
     ci-remotes ci-diff-since-remote ci-head-compare ci-remote-head-guard ci-trigger ci-shards-log-context \
     git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head git-push-current-head-to-master-nv \
     grep search show-lines cat-file copy-file mkdir-p write-text append-text replace-lines replace-text replace-all-text write-text-b64 replace-text-b64 rm-files \
-    check-disk check-disk-classification disk disk-check disk-guard cache-disk cache-clean disk-user-caches audit-home-tmp \
+    disk-cleanup-preflight check-disk check-disk-classification disk disk-check disk-guard cache-disk cache-clean disk-user-caches audit-home-tmp \
     cache-resource-inventory cache-resource-remove tmp-gludd-usage tmp-gludd-worktree-usage \
     tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
     clean clean-artifacts clean-worktree-venvs clean-worktree-caches active-work-status ps agent-worktree agent-worktree-base azure-self-improve-auth-args \
@@ -325,7 +328,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         verify-enforcement \
 ci-view ci-rerun ci-trigger ci-active ci-job-log ci-job-failure-context ci-artifact-download ci-artifact-context ci-coverage-artifact-audit ci-coverage-gap-plan ci-shards-log-context \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
-log-agent-result disk-guard disk-check check-disk check-disk-classification check-system-load disk tmp-gludd-usage tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
+log-agent-result disk-guard disk-check disk-cleanup-preflight check-disk check-disk-classification check-system-load disk tmp-gludd-usage tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
         tmp-gludd-worktree-usage clean-worktree-venvs clean-worktree-caches \
         searx-up searx-down searx-test searx-start searx-stop searx-status searx-install \
         networking-role-lint networking-role-syntax test-scapy-adapter networking-validate \
@@ -622,16 +625,16 @@ help:
 	@echo ""
 	@echo "  --- Release ---"
 	@echo "  release-list          List all GitHub releases"
-	@echo "  release-readiness TAG=..  Fail-closed beta4 blockers + Gludd-calibrated P50/P90 ETA"
+	@echo "  release-readiness TAG=..  Fail-closed blockers + exact reviewed-head receipt for v0.1.1"
 	@echo "  check-release-failure-ledger RELEASE_FAILURE_LEDGER=..  Validate immutable beta failure mappings"
 	@echo "  release-branch-new    Cut a release/* branch from a CI-green base (NAME, BASE, RELEASE_BRANCH_VALIDATE_ONLY)"
 	@echo "  require-dual-track-green Require exact-SHA local + hosted CI attestations (SHA, DUAL_TRACK_CI_VALIDATE_ONLY)"
 	@echo "  release-view TAG=..   Show a published GitHub Release + its assets"
 	@echo "  release-create TAG=.. CI-green-gated DRAFT release (single binary; complete via CI)"
 	@echo "  release-upload-assets TAG=.. FILES='..'  Add assets to an existing release (repair path)"
-	@echo "  release-cut TAG=.. MSG=.. The single release command (6 fail-closed steps)"
-	@echo "  release-promote TAG=.. MSG=..  Exact-SHA ff-only development promotion (validate-only supported)"
-	@echo "  release-recut TAG=..  Re-trigger CI release job for an existing tag"
+	@echo "  release-cut TAG=.. MSG=.. REVIEWED_HEAD_INTEGRATION_RECEIPT=..  The single release command (6 fail-closed steps; exact-run wait up to 90m)"
+	@echo "  release-promote TAG=.. MSG=.. REVIEWED_HEAD_INTEGRATION_RECEIPT=..  Exact-SHA ff-only development promotion (validate-only supported)"
+	@echo "  release-recut TAG=..  Re-trigger and await the exact tag release workflow"
 	@echo "  release-deploy TAG=.. MSG=..  Auto-deploy: merge dev->master, push, tag, wait for CI"
 	@echo "  release-delete TAG=.. Delete GitHub Release + local + remote git tags"
 	@echo "  verify-release-artifact       TAG=..  Confirm a release has published assets (exit 0 = shipped)"
@@ -688,7 +691,7 @@ help:
 	@echo "  ci-coverage-artifact-audit audit one externally stored hosted Cobertura report (CI_COVERAGE_*)"
 	@echo "  ci-coverage-gap-plan       print a bounded exact-run line/branch remediation plan (CI_COVERAGE_*)"
 	@echo "  ci-run-summary RUN=<id> show one immutable CI run; CI_RUN_SUMMARY_VALIDATE_ONLY=0|1"
-	@echo "  ci-await BRANCH=<b> [TIMEOUT=<s>]  Poll CI for branch until terminal (green/red/timeout)"
+	@echo "  ci-await BRANCH=<ref> TIMEOUT=<s> [SHA=.. CI_AWAIT_*]  Await one exact CI identity"
 	@echo "  ci-verdict-safe        Cooldown-enforced CI check (prefer over bare ci-verdict)"
 	@echo "  ci-dashboard           One-shot compact CI run listing"
 	@echo "  ci-diagnose            Fetch CI failure annotations and group by root cause"
@@ -716,7 +719,8 @@ help:
 	@echo "  fix-hooks-tmp           temp fix target"
 	@echo "  disk-guard            Check disk usage + clean caches if above threshold (default 95%)"
 	@echo "  disk-check            Check disk usage only, exit 1 if above threshold"
-	@echo "  check-disk            Pre-commit disk guard (CHECK_DISK_VALIDATE_ONLY=0; set 1 for deterministic contract test)"
+	@echo "  disk-cleanup-preflight  Auto-reclaim proven-idle Gludd storage, then recheck thresholds (DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0|1, DISK_CLEANUP_PREFLIGHT_DRY_RUN=0|1, DISK_CLEANUP_RECEIPT_GRACE_SECONDS>=1800)"
+	@echo "  check-disk            Pre-commit automatic cleanup guard (CHECK_DISK_VALIDATE_ONLY=0; set 1 for deterministic contract test)"
 	@echo "  check-disk-classification  Bounded JSON-lines proof of counted vs exempt /tmp/gludd-* roots"
 	@echo "  check-system-load     Read-only system load diagnostic (1m avg, CPU count, verdict)"
 	@echo "  disk                  Print disk usage + gludd footprint"
@@ -1778,7 +1782,7 @@ opencode-hello:
 	@echo "=== stderr ==="
 	@cat /tmp/opencode-hello-stderr.log
 
-gate-fast: check-generated-artifact-hygiene lint typecheck collect-check
+gate-fast: disk-cleanup-preflight check-generated-artifact-hygiene lint typecheck collect-check
 	@echo "=== GATE-FAST: PASS ==="
 
 _check-windows-tracked-paths:
@@ -1789,7 +1793,7 @@ _gate-run-lock-acquire:
 
 .NOTPARALLEL: gate gate-refresh
 
-gate: _gate-run-lock-acquire check-generated-artifact-hygiene _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-resource-ownership check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets check-no-prompt-prone-edit-tools validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning integration-health check-runbook-currency check-version-bump-atomicity
+gate: _gate-run-lock-acquire disk-cleanup-preflight check-generated-artifact-hygiene _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-resource-ownership check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets check-no-prompt-prone-edit-tools validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning integration-health check-runbook-currency check-version-bump-atomicity
 	@rm -f .gate-failed .gate-status.next .gate-status.running
 	@printf "RUNNING %s %s\n" "$$(date +%s)" "$$PPID" > .gate-status.running && mv .gate-status.running .gate-status
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status.next
@@ -1881,7 +1885,7 @@ gate: _gate-run-lock-acquire check-generated-artifact-hygiene _dead-code-baselin
 # "No Unseen Events" invariant in AGENTS.md). The _gate-fresh-check used by
 # commit targets still requires the FULL `make gate`; gate-lite is for fast
 # local feedback between commits, not a commit prerequisite.
-gate-lite: _dead-code-baseline-refresh check-opencode-integrity check-subagent-guards check-skills-frontmatter check-coverage-gaps check-make-help check-plugin-syntax check-plugin-runtime check-plugin-imports check-no-prompt-prone-edit-tools check-task-integrity lint-specs check-spec-enforcement-coverage check-plugin-hook-invoke
+gate-lite: disk-cleanup-preflight _dead-code-baseline-refresh check-opencode-integrity check-subagent-guards check-skills-frontmatter check-coverage-gaps check-make-help check-plugin-syntax check-plugin-runtime check-plugin-imports check-no-prompt-prone-edit-tools check-task-integrity lint-specs check-spec-enforcement-coverage check-plugin-hook-invoke
 	@rm -f .gate-lite-failed
 	@echo "=== GATE-LITE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-lite-status
 	@# OBSERVABILITY INVARIANT (AGENTS.md "No unseen events"): every phase
@@ -2793,12 +2797,37 @@ disk-check:
 uv-cache-prune-status:
 	@/bin/ps -ax -o pid=,ppid=,etime=,command= | /usr/bin/awk '/[u]v cache prune/ { found=1; print } END { if (!found) print "UV_CACHE_PRUNE_IDLE" }'
 
-# Pre-commit disk check: fail if /tmp/gludd-* >100MB or disk >90%.
+# Automatic disk preflight: clean only generated caches in completed/inactive
+# Gludd worktrees, then fail closed unless both canonical limits are healthy.
+DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY ?= 0
+DISK_CLEANUP_PREFLIGHT_DRY_RUN ?= 0
+DISK_CLEANUP_RECEIPT_GRACE_SECONDS ?= 1800
+CHECK_DISK_VALIDATE_ONLY ?= 0
+
+disk-cleanup-preflight:
+	@if [ "$(DISK_CLEANUP_PREFLIGHT_DRY_RUN)" != "0" ] && [ "$(DISK_CLEANUP_PREFLIGHT_DRY_RUN)" != "1" ]; then \
+		echo "Usage: make disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0|1 DISK_CLEANUP_PREFLIGHT_DRY_RUN=0|1 DISK_CLEANUP_RECEIPT_GRACE_SECONDS='>=1800'"; \
+		exit 2; \
+	elif [ "$(DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY)" = "1" ]; then \
+		$(MAKE) --no-print-directory test-files TESTFILES=tests/unit/test_automatic_disk_cleanup.py PYTEST_ARGS='-q -n 0'; \
+	elif [ "$(DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY)" = "0" ] && [ "$(DISK_CLEANUP_PREFLIGHT_DRY_RUN)" = "1" ]; then \
+		$(SYSTEM_PYTHON) -m scripts.automatic_disk_cleanup --dry-run --receipt-grace-seconds "$(DISK_CLEANUP_RECEIPT_GRACE_SECONDS)"; \
+	elif [ "$(DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY)" = "0" ] && [ "$(DISK_CLEANUP_PREFLIGHT_DRY_RUN)" = "0" ]; then \
+		$(SYSTEM_PYTHON) -m scripts.automatic_disk_cleanup --receipt-grace-seconds "$(DISK_CLEANUP_RECEIPT_GRACE_SECONDS)"; \
+	else \
+		echo "Usage: make disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0|1 DISK_CLEANUP_PREFLIGHT_DRY_RUN=0|1 DISK_CLEANUP_RECEIPT_GRACE_SECONDS='>=1800'"; \
+		exit 2; \
+	fi
+
+# Compatibility entry point used by the pre-commit hook.
 check-disk:
 	@if [ "$(CHECK_DISK_VALIDATE_ONLY)" = "1" ]; then \
-		$(MAKE) --no-print-directory test-files TESTFILES=tests/unit/test_check_disk_usage.py PYTEST_ARGS='-q -n 0'; \
+		$(MAKE) --no-print-directory test-files TESTFILES='tests/unit/test_check_disk_usage.py tests/unit/test_automatic_disk_cleanup.py' PYTEST_ARGS='-q -n 0'; \
+	elif [ "$(CHECK_DISK_VALIDATE_ONLY)" = "0" ]; then \
+		$(MAKE) --no-print-directory disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0 DISK_CLEANUP_PREFLIGHT_DRY_RUN=0 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800; \
 	else \
-		$(SYSTEM_PYTHON) scripts/check_disk_usage.py; \
+		echo "Usage: make check-disk CHECK_DISK_VALIDATE_ONLY=0|1"; \
+		exit 2; \
 	fi
 
 check-disk-classification:
@@ -3878,13 +3907,12 @@ ci-wait:
 	done; \
 	echo "=== CI-WAIT: timed out after $$MAX_WAIT seconds ==="; exit 1
 
-# Poll CI for a branch until it reaches a TERMINAL state (success/failure).
+# Poll CI for an exact identity until it reaches a TERMINAL state.
 # Exit codes: 0=SUCCESS, 1=FAILURE, 2=TIMEOUT (still pending).
-# Unlike ci-wait (which only exits on GREEN and hardcodes BRANCH=master),
-# ci-await accepts BRANCH= and detects terminal failure states too.
-# Usage: make ci-await BRANCH=development [TIMEOUT=3600]
+# SHA/workflow/event are optional for backwards-compatible branch-only use.
+# Usage: make ci-await BRANCH=development TIMEOUT=3600 SHA=... CI_AWAIT_WORKFLOW='Build and Release' CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL=10 CI_AWAIT_AFTER_RUN_ID=0 CI_AWAIT_VALIDATE_ONLY=0 CI_AWAIT_SNAPSHOT_ONLY=0
 ci-await:
-	@$(PYTHON) scripts/ci_await.py $(or $(BRANCH),master) $(or $(TIMEOUT),3600)
+	@$(PYTHON) scripts/ci_await.py --ref "$(or $(BRANCH),master)" --timeout "$(or $(TIMEOUT),3600)" --sha "$(SHA)" --workflow "$(CI_AWAIT_WORKFLOW)" --event "$(CI_AWAIT_EVENT)" --poll-interval "$(or $(CI_AWAIT_INTERVAL),60)" --after-run-id "$(or $(CI_AWAIT_AFTER_RUN_ID),0)" $(if $(filter 1,$(CI_AWAIT_VALIDATE_ONLY)),--validate-only,) $(if $(filter 1,$(CI_AWAIT_SNAPSHOT_ONLY)),--snapshot-only,)
 
 git-pull-sandboxcom:
 	@BRANCH=$$(git branch --show-current); \
@@ -4215,24 +4243,21 @@ git-tag-rm:
 git-tag-delete: git-tag-rm
 
 # Re-trigger a release CI job for an existing tag whose release job was skipped.
-# Deletes and re-pushes the tag, then polls verify-release-artifact.
+# Deletes and re-pushes the tag, awaits its exact workflow, then verifies assets.
 # Usage: make release-recut TAG=v0.1.0-alpha.1
 release-recut: _push-rate-guard require-sandboxcom-ssh-key
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-recut TAG=v0.1.0-alpha.1"; exit 1; }
 	@git tag -l "$(TAG)" | grep -q "$(TAG)" || { echo "ERROR: local tag $(TAG) not found"; exit 1; }
 	@$(MAKE) -s require-ci-green SHA=$$(git rev-parse "$(TAG)^{commit}")
-	@echo "Re-cutting release tag $(TAG)..."
-	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push sandboxcom :refs/tags/$(TAG) 2>/dev/null || true
-	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
-	@echo "Tag re-pushed. Polling for artifact publication ($(VERIFY_POLLS) polls)..."
-	@i=0; while [ $$i -lt $(VERIFY_POLLS) ]; do \
-		if $(MAKE) -s verify-release-artifact TAG=$(TAG) 2>/dev/null; then \
-			echo "Artifact present after $$i polls; checking completeness..."; \
-			$(MAKE) -s verify-release-completeness TAG=$(TAG); exit $$?; \
-		fi; \
-		sleep 10; i=$$((i+1)); \
-	done; \
-	echo "Poll exhausted after $(VERIFY_POLLS) attempts (treat as STILL BUILDING, not success)."; exit 1
+	@set -e; TAG_SHA="$$(git rev-parse "$(TAG)^{commit}")"; \
+		BASELINE="$$( $(MAKE) -s ci-await BRANCH="$(TAG)" TIMEOUT="$(RELEASE_AWAIT_TIMEOUT)" SHA="$$TAG_SHA" CI_AWAIT_WORKFLOW="Build and Release" CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL="$(RELEASE_AWAIT_INTERVAL)" CI_AWAIT_AFTER_RUN_ID=0 CI_AWAIT_VALIDATE_ONLY=0 CI_AWAIT_SNAPSHOT_ONLY=1 )"; \
+		echo "Re-cutting release tag $(TAG) after workflow run $$BASELINE..."; \
+		GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push sandboxcom :refs/tags/$(TAG) 2>/dev/null || true; \
+		GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"; \
+		echo "Waiting for exact tag workflow after run $$BASELINE before artifact verification..."; \
+		$(MAKE) --no-print-directory ci-await BRANCH="$(TAG)" TIMEOUT="$(RELEASE_AWAIT_TIMEOUT)" SHA="$$TAG_SHA" CI_AWAIT_WORKFLOW="Build and Release" CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL="$(RELEASE_AWAIT_INTERVAL)" CI_AWAIT_AFTER_RUN_ID="$$BASELINE" CI_AWAIT_VALIDATE_ONLY=0 CI_AWAIT_SNAPSHOT_ONLY=0
+	@$(MAKE) -s verify-release-artifact TAG=$(TAG)
+	@$(MAKE) -s verify-release-completeness TAG=$(TAG)
 
 # The single release command. 6 steps, fail-closed at every gate:
 #   0. require-ci-green        — abort if CI is not GREEN for HEAD (or SHA=...)
@@ -4249,11 +4274,13 @@ check-release-failure-ledger:
 	@$(UV) run python scripts/check_release_failure_ledger.py --ledger "$(RELEASE_FAILURE_LEDGER)" --repository-root .
 
 release-readiness:
-	@[ -n "$(TAG)" ] || { echo "Usage: make release-readiness TAG=v0.1.0-beta.4 RELEASE_READINESS_VALIDATE_ONLY=0|1 RELEASE_COMPLETED_STAGES=stage,... RELEASE_OBSERVATIONS=stage=minutes,..."; exit 2; }
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-readiness TAG=v0.1.1 RELEASE_READINESS_VALIDATE_ONLY=0|1 RELEASE_COMPLETED_STAGES=stage,... RELEASE_OBSERVATIONS=stage=minutes,... REVIEWED_HEAD_INTEGRATION_RECEIPT=path RELEASE_CANDIDATE_SHA=full-sha"; exit 2; }
 	@RELEASE_READINESS_VALIDATE_ONLY="$(RELEASE_READINESS_VALIDATE_ONLY)" \
 		$(UV) run python scripts/release_readiness.py --root "$(CURDIR)" --tag "$(TAG)" \
 		--completed-stages "$(RELEASE_COMPLETED_STAGES)" \
 		--observations "$(RELEASE_OBSERVATIONS)" \
+		--reviewed-head-integration-receipt "$(REVIEWED_HEAD_INTEGRATION_RECEIPT)" \
+		--expected-head-sha "$(RELEASE_CANDIDATE_SHA)" \
 		$(if $(filter 1,$(RELEASE_READINESS_VALIDATE_ONLY)),--validate-only,)
 
 # === AC001-AC020 Release Pipeline Integrity Guards ===
@@ -4342,10 +4369,13 @@ release-dry-run: _release-dry-run-guard
 #   2. git-push-sandboxcom     — push master
 #   3. git-tag-push            — annotated tag + push (triggers CI release job)
 #   4. release-view            — confirm the GitHub Release exists
-#   5. verify-release-artifact — poll until assets are published (up to ~10 min)
-# Usage: make release-cut TAG=v0.1.0-alpha.1 MSG='release notes'
+#   5. ci-await               — await the exact tag workflow (bounded at 90 min)
+#   6. verify release          — verify the final artifact and complete matrix
+# v0.1.1 additionally requires REVIEWED_HEAD_INTEGRATION_RECEIPT and revalidates
+# it against the exact promoted SHA before any push or tag mutation.
+# Usage: make release-cut TAG=v0.1.0-alpha.1 MSG='release notes' REVIEWED_HEAD_INTEGRATION_RECEIPT=path
 release-cut:
-	@[ -n "$(TAG)" ] || { echo "Usage: make release-cut TAG=v0.1.0-alpha.1 [MSG='...']"; exit 1; }
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-cut TAG=v0.1.0-alpha.1 [MSG='...'] [REVIEWED_HEAD_INTEGRATION_RECEIPT=path]"; exit 1; }
 	@HEAD_SHA="$$(git rev-parse HEAD)"; SHA_TO_VERIFY="$(RELEASE_CANDIDATE_SHA)"; \
 	if [ -z "$$SHA_TO_VERIFY" ]; then SHA_TO_VERIFY="$$HEAD_SHA"; fi; \
 	if [ -n "$(RELEASE_CANDIDATE_SHA)$(RELEASE_CI_BRANCH)$(RELEASE_LOCAL_ATTESTATION)" ]; then \
@@ -4353,26 +4383,25 @@ release-cut:
 		[ "$$HEAD_SHA" = "$$SHA_TO_VERIFY" ] || { echo "ERROR: release-cut HEAD does not match promoted candidate"; exit 2; }; \
 		[ -f "$(RELEASE_LOCAL_ATTESTATION)" ] || { echo "ERROR: promoted local attestation is missing"; exit 2; }; \
 	fi; \
+	if [ "$(TAG)" = "v0.1.1" ]; then \
+		$(MAKE) --no-print-directory release-readiness TAG="$(TAG)" RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= REVIEWED_HEAD_INTEGRATION_RECEIPT="$(REVIEWED_HEAD_INTEGRATION_RECEIPT)" RELEASE_CANDIDATE_SHA="$$SHA_TO_VERIFY"; \
+	fi; \
 	$(MAKE) -s require-dual-track-green SHA="$$SHA_TO_VERIFY" CI_BRANCH="$(RELEASE_CI_BRANCH)" DUAL_TRACK_CI_LOCAL_ATTESTATION="$(RELEASE_LOCAL_ATTESTATION)"
 	@$(MAKE) -s check-readme-status TAG=$(TAG)
 	@$(MAKE) -s git-push-sandboxcom
-	@$(MAKE) -s git-tag-push TAG=$(TAG) MSG="$(MSG)"
-	@$(MAKE) -s release-view TAG=$(TAG) || echo "Release record not visible yet; continuing to artifact polling."
-	@echo "Polling for release artifact (up to 10 attempts, ~10 min)..."
-	@for i in 1 2 3 4 5 6 7 8 9 10; do \
-		if $(MAKE) -s verify-release-artifact TAG=$(TAG) 2>/dev/null; then \
-			echo "Release artifact present on attempt $$i/10; checking completeness..."; \
-			$(MAKE) -s verify-release-completeness TAG=$(TAG); exit $$?; \
-		fi; \
-		echo "Waiting for release artifact (attempt $$i/10)..."; \
-		sleep 60; \
-	done; \
-	echo "WARNING: release artifact not found after 10 minutes — a cold tag-triggered full-matrix build can take 30-60 min; poll again with make verify-release-completeness TAG=$(TAG) (poll timeout means STILL BUILDING, not failure)"; exit 1
+	@set -e; TAG_SHA="$$(git rev-parse HEAD)"; \
+		BASELINE="$$( $(MAKE) -s ci-await BRANCH="$(TAG)" TIMEOUT="$(RELEASE_AWAIT_TIMEOUT)" SHA="$$TAG_SHA" CI_AWAIT_WORKFLOW="Build and Release" CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL="$(RELEASE_AWAIT_INTERVAL)" CI_AWAIT_AFTER_RUN_ID=0 CI_AWAIT_VALIDATE_ONLY=0 CI_AWAIT_SNAPSHOT_ONLY=1 )"; \
+		$(MAKE) -s git-tag-push TAG=$(TAG) MSG="$(MSG)"; \
+		$(MAKE) -s release-view TAG=$(TAG) || echo "Release record not visible yet; continuing to exact workflow wait."; \
+		echo "Waiting for the exact tag workflow after run $$BASELINE before artifact verification..."; \
+		$(MAKE) --no-print-directory ci-await BRANCH="$(TAG)" TIMEOUT="$(RELEASE_AWAIT_TIMEOUT)" SHA="$$TAG_SHA" CI_AWAIT_WORKFLOW="Build and Release" CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL="$(RELEASE_AWAIT_INTERVAL)" CI_AWAIT_AFTER_RUN_ID="$$BASELINE" CI_AWAIT_VALIDATE_ONLY=0 CI_AWAIT_SNAPSHOT_ONLY=0
+	@$(MAKE) -s verify-release-artifact TAG=$(TAG)
+	@$(MAKE) -s verify-release-completeness TAG=$(TAG)
 
 # Compatibility entrypoint: release-promote is the only deployment state machine.
 # Usage: make release-deploy TAG=v0.1.0-beta.N MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=0|1
 release-deploy: _no-raw-git-guard
-	@$(MAKE) --no-print-directory release-promote TAG="$(TAG)" MSG="$(MSG)" RELEASE_PROMOTE_VALIDATE_ONLY="$(RELEASE_PROMOTE_VALIDATE_ONLY)"
+	@$(MAKE) --no-print-directory release-promote TAG="$(TAG)" MSG="$(MSG)" RELEASE_PROMOTE_VALIDATE_ONLY="$(RELEASE_PROMOTE_VALIDATE_ONLY)" REVIEWED_HEAD_INTEGRATION_RECEIPT="$(REVIEWED_HEAD_INTEGRATION_RECEIPT)"
 
 # Delete a GitHub Release and its associated git tags (local + remote).
 # Usage: make release-delete TAG=v0.1.0-alpha.1
@@ -6271,7 +6300,7 @@ development-status:
 	@git rev-list --count master..development 2>/dev/null || echo "0"
 	@echo "unmerged commits on development"
 
-preflight: check-plugin-liveness
+preflight: disk-cleanup-preflight check-plugin-liveness
 	@echo "========================================"
 	@echo "  PREFLIGHT QUALITY GATE"
 	@echo "========================================"
@@ -8614,7 +8643,13 @@ disengage-next:
 reload-enforcement:
 	@echo "=== RELOAD ENFORCEMENT STATE ==="
 	@$(MAKE) --no-print-directory clean-tmp
-	@FLOOR="$${CLAUDE_AGENT_FLOOR:-10}"; \
+	@FLOOR="$${CLAUDE_AGENT_FLOOR:-0}"; \
+	CEILING="$${CLAUDE_AGENT_CEILING:-3}"; \
+	case "$$FLOOR" in ''|*[!0-9]*) FLOOR=0 ;; esac; \
+	case "$$CEILING" in ''|*[!0-9]*) CEILING=3 ;; esac; \
+	if [ "$$CEILING" -gt 3 ]; then CEILING=3; fi; \
+	if [ "$$CEILING" -lt 1 ]; then CEILING=1; fi; \
+	if [ "$$FLOOR" -gt "$$CEILING" ]; then FLOOR="$$CEILING"; fi; \
 	echo "$${FLOOR}" > /tmp/gludd-floor-override; \
 	echo "  /tmp/gludd-floor-override          → $${FLOOR}"
 	@$(UV) run python3 -c 'import json,os,time; path=os.environ.get("GLUDD_STREAK_FILE","/tmp/gludd-tool-streak.json"); json.dump({"count":0,"ts":int(time.time()*1000)},open(path,"w"))'
@@ -9825,9 +9860,9 @@ compare-models:
 # Validation mode proves topology and release policy without network or ref writes.
 # Real mode revalidates exact-SHA evidence, fast-forwards master in the main
 # checkout, then delegates tag publication and artifact verification to release-cut.
-# Usage: make release-promote TAG=v0.1.0-beta.N MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=0|1
+# Usage: make release-promote TAG=v0.1.0-beta.N MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=0|1 REVIEWED_HEAD_INTEGRATION_RECEIPT=path
 release-promote:
-	@[ -n "$(TAG)" ] || { echo "Usage: make release-promote TAG=v0.1.0-beta.N [MSG=release-notes] [RELEASE_PROMOTE_VALIDATE_ONLY=0|1]"; exit 2; }
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-promote TAG=v0.1.0-beta.N [MSG=release-notes] [RELEASE_PROMOTE_VALIDATE_ONLY=0|1] [REVIEWED_HEAD_INTEGRATION_RECEIPT=path]"; exit 2; }
 	@case "$(RELEASE_PROMOTE_VALIDATE_ONLY)" in 0|1|"") ;; *) echo "ERROR: RELEASE_PROMOTE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
 	@MAIN_PATH='/Users/shawnwilson/gludd'; \
 	CURRENT_SHA="$$(git rev-parse --verify HEAD^{commit})" || { echo "ERROR: current HEAD does not resolve"; exit 2; }; \
@@ -9842,12 +9877,12 @@ release-promote:
 	git -C "$$MAIN_PATH" merge-base --is-ancestor "$$MASTER_SHA" "$$DEV_SHA" || { echo "ERROR: master cannot fast-forward to development"; exit 2; }; \
 	if [ "$(RELEASE_PROMOTE_VALIDATE_ONLY)" = "1" ]; then \
 		$(MAKE) --no-print-directory require-dual-track-green SHA="$$DEV_SHA" CI_BRANCH=development DUAL_TRACK_CI_LOCAL_ATTESTATION="$$LOCAL_ATTESTATION" DUAL_TRACK_CI_VALIDATE_ONLY=1; \
-		$(MAKE) --no-print-directory release-readiness TAG="$(TAG)" RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS=; \
+		$(MAKE) --no-print-directory release-readiness TAG="$(TAG)" RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= REVIEWED_HEAD_INTEGRATION_RECEIPT="$(REVIEWED_HEAD_INTEGRATION_RECEIPT)" RELEASE_CANDIDATE_SHA="$$DEV_SHA"; \
 		echo "RELEASE-PROMOTE-VALIDATED tag=$(TAG) master=$$MASTER_SHA development=$$DEV_SHA mode=ff-only"; \
 		exit 0; \
 	fi; \
 	[ -f "$$LOCAL_ATTESTATION" ] || { echo "ERROR: development local attestation is missing: $$LOCAL_ATTESTATION"; exit 2; }; \
 	$(MAKE) --no-print-directory require-dual-track-green SHA="$$DEV_SHA" CI_BRANCH=development DUAL_TRACK_CI_LOCAL_ATTESTATION="$$LOCAL_ATTESTATION" DUAL_TRACK_CI_VALIDATE_ONLY=0; \
-	$(MAKE) --no-print-directory release-readiness TAG="$(TAG)" RELEASE_READINESS_VALIDATE_ONLY=0 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS=; \
-	git -C "$$MAIN_PATH" merge --ff-only development; \
-	$(MAKE) --no-print-directory -C "$$MAIN_PATH" release-cut TAG="$(TAG)" MSG="$(MSG)" RELEASE_CANDIDATE_SHA="$$DEV_SHA" RELEASE_CI_BRANCH=development RELEASE_LOCAL_ATTESTATION="$$LOCAL_ATTESTATION"
+	$(MAKE) --no-print-directory release-readiness TAG="$(TAG)" RELEASE_READINESS_VALIDATE_ONLY=0 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= REVIEWED_HEAD_INTEGRATION_RECEIPT="$(REVIEWED_HEAD_INTEGRATION_RECEIPT)" RELEASE_CANDIDATE_SHA="$$DEV_SHA"; \
+	git -C "$$MAIN_PATH" merge --ff-only "$$DEV_SHA"; \
+	$(MAKE) --no-print-directory -C "$$MAIN_PATH" release-cut TAG="$(TAG)" MSG="$(MSG)" REVIEWED_HEAD_INTEGRATION_RECEIPT="$(if $(strip $(REVIEWED_HEAD_INTEGRATION_RECEIPT)),$(abspath $(REVIEWED_HEAD_INTEGRATION_RECEIPT)),)" RELEASE_CANDIDATE_SHA="$$DEV_SHA" RELEASE_CI_BRANCH=development RELEASE_LOCAL_ATTESTATION="$$LOCAL_ATTESTATION"

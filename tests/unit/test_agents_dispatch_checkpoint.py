@@ -8,7 +8,12 @@ def test_checkpoint_survives_restart_and_corrupt_spool_is_fail_safe(tmp_path):
     snapshot = AgentEnvironmentSnapshot(
         task_id="todo-1",
         agent_name="release-agent",
-        dispatch_state=DispatchState(todo_id="todo-1", prompt_text="run E2E"),
+        dispatch_state=DispatchState(
+            todo_id="todo-1",
+            prompt_text="run E2E",
+            project_id="project-a",
+            resume_shard_id="project-a:todo-1",
+        ),
     )
     first_store = dispatch_checkpoint.DurableHibernationStore(base_dir, key_file=key_file)
     manager = dispatch_checkpoint.CheckpointManager(first_store)
@@ -24,5 +29,9 @@ def test_checkpoint_survives_restart_and_corrupt_spool_is_fail_safe(tmp_path):
     assert resumed_manager.read_spool_offset("../../todo-1") == 42
     resumed_manager.spool_sidecar_path("../../todo-1").write_text("not json")
     assert resumed_manager.read_spool_offset("../../todo-1") is None
-    resumed_manager.clear("todo-1")
-    assert not first_store._path_for("todo-1").exists()
+    resumed_manager.clear(
+        "todo-1",
+        project_id="project-a",
+        shard_id="project-a:todo-1",
+    )
+    assert not first_store._path_for("project-a:todo-1").exists()

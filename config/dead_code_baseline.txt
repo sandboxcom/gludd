@@ -350,7 +350,6 @@ src/general_ludd/db/models.py:PermissionEscalationRequestModel
 src/general_ludd/db/session.py:close_engine
 src/general_ludd/dispatch/variable_store.py:apply_results
 src/general_ludd/distributed/eventual_consistency.py:HintedHandoff
-src/general_ludd/distributed/eventual_consistency.py:merkle_sync
 src/general_ludd/distributed/eventual_consistency.py:read_repair
 src/general_ludd/distributed/gossip.py:ensure_convergence
 src/general_ludd/distributed/gossip.py:spread_rumor

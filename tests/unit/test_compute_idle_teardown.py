@@ -1,6 +1,7 @@
 """Tests for compute idle detection and auto-teardown phase."""
 
 import time
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -17,7 +18,7 @@ def _make_tracker(*endpoints: ComputeEndpoint) -> UtilizationTracker:
 
 
 class TestUtilizationTrackerFindIdleGpus:
-    def test_find_idle_gpus_returns_endpoints_below_threshold(self):
+    def test_find_idle_gpus_returns_endpoints_below_threshold(self) -> None:
         now = time.time()
         tracker = _make_tracker(
             ComputeEndpoint(
@@ -41,7 +42,7 @@ class TestUtilizationTrackerFindIdleGpus:
         assert len(idle) == 1
         assert idle[0].endpoint_id == "ep1"
 
-    def test_find_idle_gpus_skips_non_gpu_endpoints(self):
+    def test_find_idle_gpus_skips_non_gpu_endpoints(self) -> None:
         now = time.time()
         tracker = _make_tracker(
             ComputeEndpoint(
@@ -56,7 +57,7 @@ class TestUtilizationTrackerFindIdleGpus:
         idle = tracker.find_idle_gpus(threshold=5.0, window=900)
         assert len(idle) == 0
 
-    def test_find_idle_gpus_recently_used_is_not_idle(self):
+    def test_find_idle_gpus_recently_used_is_not_idle(self) -> None:
         now = time.time()
         tracker = _make_tracker(
             ComputeEndpoint(
@@ -71,7 +72,7 @@ class TestUtilizationTrackerFindIdleGpus:
         idle = tracker.find_idle_gpus(threshold=5.0, window=900)
         assert len(idle) == 0
 
-    def test_find_idle_gpus_active_load_is_not_idle(self):
+    def test_find_idle_gpus_active_load_is_not_idle(self) -> None:
         now = time.time()
         tracker = _make_tracker(
             ComputeEndpoint(
@@ -86,7 +87,7 @@ class TestUtilizationTrackerFindIdleGpus:
         idle = tracker.find_idle_gpus(threshold=5.0, window=900)
         assert len(idle) == 0
 
-    def test_find_idle_gpus_recent_low_sm_util_history_is_idle(self):
+    def test_find_idle_gpus_recent_low_sm_util_history_is_idle(self) -> None:
         now = time.time()
         tracker = _make_tracker(
             ComputeEndpoint(
@@ -104,7 +105,7 @@ class TestUtilizationTrackerFindIdleGpus:
         assert len(idle) == 1
         assert idle[0].endpoint_id == "ep1"
 
-    def test_find_idle_gpus_recent_high_sm_util_history_is_not_idle(self):
+    def test_find_idle_gpus_recent_high_sm_util_history_is_not_idle(self) -> None:
         now = time.time()
         tracker = _make_tracker(
             ComputeEndpoint(
@@ -121,7 +122,7 @@ class TestUtilizationTrackerFindIdleGpus:
         idle = tracker.find_idle_gpus(threshold=5.0, window=900)
         assert len(idle) == 0
 
-    def test_find_idle_gpus_mixed_sm_util_history_is_not_idle(self):
+    def test_find_idle_gpus_mixed_sm_util_history_is_not_idle(self) -> None:
         now = time.time()
         tracker = _make_tracker(
             ComputeEndpoint(
@@ -138,7 +139,7 @@ class TestUtilizationTrackerFindIdleGpus:
         idle = tracker.find_idle_gpus(threshold=5.0, window=900)
         assert len(idle) == 0
 
-    def test_find_idle_gpus_no_history_falls_back_to_load_and_last_used(self):
+    def test_find_idle_gpus_no_history_falls_back_to_load_and_last_used(self) -> None:
         now = time.time()
         tracker = _make_tracker(
             ComputeEndpoint(
@@ -157,7 +158,7 @@ class TestUtilizationTrackerFindIdleGpus:
 
 class TestPhaseCheckComputeUtilization:
     @pytest.mark.asyncio
-    async def test_underutilized_endpoint_tracked_in_daemon_state(self):
+    async def test_underutilized_endpoint_tracked_in_daemon_state(self) -> None:
         now = time.time()
         tracker = _make_tracker(
             ComputeEndpoint(
@@ -169,7 +170,7 @@ class TestPhaseCheckComputeUtilization:
                 last_used=now - 1000,
             ),
         )
-        daemon_state: dict = {}
+        daemon_state: dict[str, Any] = {}
         loop = EventLoop(
             utilization_tracker=tracker,
             daemon_state=daemon_state,
@@ -186,7 +187,7 @@ class TestPhaseCheckComputeUtilization:
         assert idle["ep1"]["idle_ticks"] == 1
 
     @pytest.mark.asyncio
-    async def test_idle_counter_increments_each_tick(self):
+    async def test_idle_counter_increments_each_tick(self) -> None:
         now = time.time()
         tracker = _make_tracker(
             ComputeEndpoint(
@@ -198,7 +199,7 @@ class TestPhaseCheckComputeUtilization:
                 last_used=now - 1000,
             ),
         )
-        daemon_state: dict = {}
+        daemon_state: dict[str, Any] = {}
         loop = EventLoop(
             utilization_tracker=tracker,
             daemon_state=daemon_state,
@@ -219,7 +220,7 @@ class TestPhaseCheckComputeUtilization:
         assert daemon_state["idle_endpoints"]["ep1"]["idle_ticks"] == 3
 
     @pytest.mark.asyncio
-    async def test_teardown_triggered_after_threshold_ticks(self):
+    async def test_teardown_triggered_after_threshold_ticks(self) -> None:
         now = time.time()
         tracker = _make_tracker(
             ComputeEndpoint(
@@ -231,7 +232,7 @@ class TestPhaseCheckComputeUtilization:
                 last_used=now - 1000,
             ),
         )
-        daemon_state: dict = {}
+        daemon_state: dict[str, Any] = {}
         deploy_mgr = AsyncMock()
         deploy_mgr.destroy = AsyncMock()
         deploy_mgr.get_deployment = MagicMock(return_value=MagicMock(instance_id="ep1"))
@@ -255,7 +256,7 @@ class TestPhaseCheckComputeUtilization:
         assert "ep1" in daemon_state.get("torn_down_endpoints", [])
 
     @pytest.mark.asyncio
-    async def test_non_idle_endpoint_resets_counter(self):
+    async def test_non_idle_endpoint_resets_counter(self) -> None:
         now = time.time()
         tracker = _make_tracker(
             ComputeEndpoint(
@@ -267,7 +268,7 @@ class TestPhaseCheckComputeUtilization:
                 last_used=now - 1000,
             ),
         )
-        daemon_state: dict = {}
+        daemon_state: dict[str, Any] = {}
         loop = EventLoop(
             utilization_tracker=tracker,
             daemon_state=daemon_state,
@@ -287,7 +288,7 @@ class TestPhaseCheckComputeUtilization:
         assert "ep1" not in daemon_state.get("idle_endpoints", {})
 
     @pytest.mark.asyncio
-    async def test_gpu_idle_respects_sm_threshold_via_load(self):
+    async def test_gpu_idle_respects_sm_threshold_via_load(self) -> None:
         now = time.time()
         tracker = _make_tracker(
             ComputeEndpoint(
@@ -299,7 +300,7 @@ class TestPhaseCheckComputeUtilization:
                 last_used=now - 1000,
             ),
         )
-        daemon_state: dict = {}
+        daemon_state: dict[str, Any] = {}
         loop = EventLoop(
             utilization_tracker=tracker,
             daemon_state=daemon_state,
@@ -314,7 +315,7 @@ class TestPhaseCheckComputeUtilization:
         assert "ep1" in daemon_state.get("idle_endpoints", {})
 
     @pytest.mark.asyncio
-    async def test_phase_skips_when_not_check_tick(self):
+    async def test_phase_skips_when_not_check_tick(self) -> None:
         tracker = _make_tracker(
             ComputeEndpoint(
                 endpoint_id="ep1",
@@ -325,7 +326,7 @@ class TestPhaseCheckComputeUtilization:
                 last_used=time.time() - 1000,
             ),
         )
-        daemon_state: dict = {}
+        daemon_state: dict[str, Any] = {}
         loop = EventLoop(
             utilization_tracker=tracker,
             daemon_state=daemon_state,
@@ -340,7 +341,7 @@ class TestPhaseCheckComputeUtilization:
         assert "idle_endpoints" not in daemon_state
 
     @pytest.mark.asyncio
-    async def test_phase_runs_when_no_tracker(self):
+    async def test_phase_runs_when_no_tracker(self) -> None:
         loop = EventLoop(
             utilization_tracker=None,
             daemon_state={},
@@ -353,7 +354,7 @@ class TestPhaseCheckComputeUtilization:
         await loop._phase_check_compute_utilization()
 
     @pytest.mark.asyncio
-    async def test_teardown_sets_torn_down_flag_in_daemon_state(self):
+    async def test_teardown_sets_torn_down_flag_in_daemon_state(self) -> None:
         now = time.time()
         tracker = _make_tracker(
             ComputeEndpoint(
@@ -365,7 +366,7 @@ class TestPhaseCheckComputeUtilization:
                 last_used=now - 1000,
             ),
         )
-        daemon_state: dict = {}
+        daemon_state: dict[str, Any] = {}
         deploy_mgr = AsyncMock()
         deploy_mgr.destroy = AsyncMock()
         deploy_mgr.get_deployment = MagicMock(return_value=MagicMock(instance_id="ep1"))
@@ -383,9 +384,103 @@ class TestPhaseCheckComputeUtilization:
         await loop._phase_check_compute_utilization()
         assert "ep1" in daemon_state.get("torn_down_endpoints", [])
 
+    @pytest.mark.asyncio
+    async def test_teardown_without_owner_remains_pending_until_owner_recovers(self) -> None:
+        """Retain idle evidence until a recovered owner proves destruction."""
+        now = time.time()
+        tracker = _make_tracker(
+            ComputeEndpoint(
+                endpoint_id="ep1",
+                url="http://gpu1:8000",
+                model="llama3",
+                gpu_type="A100",
+                current_load=0,
+                last_used=now - 1000,
+            ),
+        )
+        daemon_state: dict[str, Any] = {}
+        loop = EventLoop(
+            utilization_tracker=tracker,
+            deployment_manager=None,
+            daemon_state=daemon_state,
+            config={
+                "compute_idle_check_interval_ticks": 1,
+                "compute_idle_teardown_threshold_ticks": 1,
+                "compute_idle_gpu_sm_pct": 5.0,
+            },
+        )
+        loop._total_ticks = 1
+
+        await loop._phase_check_compute_utilization()
+
+        assert tracker.get_endpoint("ep1") is not None
+        assert daemon_state["idle_endpoints"]["ep1"]["idle_ticks"] == 1
+        assert daemon_state["torn_down_endpoints"] == []
+
+        deployment_owner = AsyncMock()
+        deployment_owner.destroy = AsyncMock()
+        loop._deployment_manager = deployment_owner
+        loop._total_ticks = 2
+
+        await loop._phase_check_compute_utilization()
+
+        deployment_owner.destroy.assert_awaited_once_with("ep1")
+        assert tracker.get_endpoint("ep1") is None
+        assert "ep1" not in daemon_state["idle_endpoints"]
+        assert daemon_state["torn_down_endpoints"] == ["ep1"]
+
+    @pytest.mark.asyncio
+    async def test_destroy_success_is_not_repeated_when_unregister_partially_fails(
+        self,
+    ) -> None:
+        """A confirmed destroy remains a tombstone while local cleanup retries."""
+        endpoint = ComputeEndpoint(
+            endpoint_id="ep1",
+            url="http://gpu1:8000",
+            model="llama3",
+            gpu_type="A100",
+            current_load=0,
+            last_used=time.time() - 1000,
+        )
+        tracker = _make_tracker(endpoint)
+        original_unregister = tracker.unregister_endpoint
+        unregister_attempts = 0
+
+        def fail_once(endpoint_id: str) -> None:
+            nonlocal unregister_attempts
+            unregister_attempts += 1
+            if unregister_attempts == 1:
+                raise RuntimeError("tracker write failed")
+            original_unregister(endpoint_id)
+
+        tracker.unregister_endpoint = MagicMock(side_effect=fail_once)  # type: ignore[method-assign]
+        deployment_owner = AsyncMock()
+        deployment_owner.destroy = AsyncMock()
+        daemon_state: dict[str, Any] = {}
+        loop = EventLoop(
+            utilization_tracker=tracker,
+            deployment_manager=deployment_owner,
+            daemon_state=daemon_state,
+            config={
+                "compute_idle_check_interval_ticks": 1,
+                "compute_idle_teardown_threshold_ticks": 1,
+                "compute_idle_gpu_sm_pct": 5.0,
+            },
+        )
+
+        loop._total_ticks = 1
+        await loop._phase_check_compute_utilization()
+        loop._total_ticks = 2
+        await loop._phase_check_compute_utilization()
+
+        deployment_owner.destroy.assert_awaited_once_with("ep1")
+        assert tracker.get_endpoint("ep1") is None
+        assert daemon_state["torn_down_endpoints"] == ["ep1"]
+        assert "ep1" not in daemon_state["idle_endpoints"]
+
 
 class TestFindUnderutilized:
-    def test_find_underutilized_below_threshold(self):
+    def test_find_underutilized_below_threshold(self) -> None:
         tracker = _make_tracker(
             ComputeEndpoint(endpoint_id="ep1", url="http://a:8000", max_concurrent=10, current_load=2),
             ComputeEndpoint(endpoint_id="ep2", url="http://b:8000", max_concurrent=4, current_load=4),
@@ -394,7 +489,7 @@ class TestFindUnderutilized:
         assert len(under) == 1
         assert under[0].endpoint_id == "ep1"
 
-    def test_find_underutilized_none_when_all_busy(self):
+    def test_find_underutilized_none_when_all_busy(self) -> None:
         tracker = _make_tracker(
             ComputeEndpoint(endpoint_id="ep1", url="http://a:8000", max_concurrent=4, current_load=4),
         )

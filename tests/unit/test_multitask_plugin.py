@@ -100,16 +100,17 @@ class TestPluginStructure:
 
 
 class TestMinDispatchesDefault:
-    def test_default_is_3(self):
+    def test_default_is_zero(self):
         default = _extract_env_default(_plugin_source(), "GLUDD_MULTITASK_MIN_DISPATCHES")
-        assert default == 3, f"MIN_DISPATCHES default should be 3, got {default}"
+        assert default == 0, f"MIN_DISPATCHES default should be opt-in, got {default}"
 
     def test_string_value_matches_default(self):
         src = _plugin_source()
-        assert "MIN_DISPATCHES = integerFromEnv" in src
+        assert "MIN_DISPATCHES = Math.min(" in src
+        assert "integerFromEnv(" in src
         assert "Number.parseInt(raw, 10)" in src
-        assert _extract_env_default(src, "GLUDD_MIN_DISPATCHES") == 3
-        assert _extract_env_default(src, "GLUDD_MULTITASK_MIN_DISPATCHES") == 3
+        assert _extract_env_default(src, "GLUDD_MIN_DISPATCHES") == 0
+        assert _extract_env_default(src, "GLUDD_MULTITASK_MIN_DISPATCHES") == 0
 
 
 class TestMaxZeroStreak:
@@ -371,12 +372,12 @@ class TestPerMessageEnforcement:
 
 
 class TestMinDispatchesPerWave:
-    def test_default_is_4(self):
-        """The shared parser recommends 4 when an operator opts in."""
+    def test_default_is_zero(self):
+        """The shared parser does not require delegation without operator opt-in."""
         src = _plugin_source()
-        assert "MIN_DISPATCHES = integerFromEnv" in src
-        assert _extract_env_default(src, "GLUDD_MIN_DISPATCHES") == 4
-        assert _extract_env_default(src, "GLUDD_MULTITASK_MIN_DISPATCHES") == 4
+        assert "MIN_DISPATCHES = Math.min(" in src
+        assert _extract_env_default(src, "GLUDD_MIN_DISPATCHES") == 0
+        assert _extract_env_default(src, "GLUDD_MULTITASK_MIN_DISPATCHES") == 0
 
     def test_env_var_gludd_min_dispatches(self):
         src = _plugin_source()
@@ -702,13 +703,14 @@ class TestConsecutiveNonDispatchDenyMessage:
 class TestAdaptiveMinimumAndHardCeiling:
     """Three is an absolute ceiling; mandatory minimums are explicit opt-ins."""
 
-    def test_min_dispatches_default_is_3(self):
-        """The recommended configured minimum is 3, parsed in one place."""
+    def test_min_dispatches_default_is_zero(self):
+        """The mandatory minimum is disabled until explicitly configured."""
         src = _plugin_source()
-        assert "MIN_DISPATCHES = integerFromEnv" in src
+        assert "MIN_DISPATCHES = Math.min(" in src
+        assert "integerFromEnv(" in src
         assert "Number.parseInt(raw, 10)" in src
-        assert _extract_env_default(src, "GLUDD_MIN_DISPATCHES") == 3
-        assert _extract_env_default(src, "GLUDD_MULTITASK_MIN_DISPATCHES") == 3
+        assert _extract_env_default(src, "GLUDD_MIN_DISPATCHES") == 0
+        assert _extract_env_default(src, "GLUDD_MULTITASK_MIN_DISPATCHES") == 0
 
     def test_max_dispatches_exactly_3(self):
         default = _extract_env_default(_plugin_source(), "GLUDD_MULTITASK_MAX_DISPATCHES")

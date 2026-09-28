@@ -1,20 +1,7 @@
 #!/usr/bin/env bash
-# Stop hook (#79/#78): BLOCK turn-end while fewer than FLOOR subagents are live.
-#
-# ⚠️  KNOWN LIMITATION (2026-07-05): The liveness probe (scripts/agent_liveness.py)
-# counts Agent-type subagent transcripts AND Workflow-subagent transcripts in
-# Claude Code sessions. HOWEVER, in opencode sessions the backend counts subagent
-# sessions via SQLite (parent_id IS NOT NULL), and Workflow-dispatched tasks may
-# NOT appear as subagent sessions — leading to an undercount. The probe also has
-# no ``--include-workflows`` flag: workflow inclusion is always-on in the Claude
-# backend but may miss opencode Workflow instances. Because of this visibility gap,
-# GLUDD_FLOOR_ENFORCE is kept at 0 (advisory-only) in .claude/settings.json so a
-# false "0 live" reading during Workflow-based sessions does NOT wedge the
-# orchestrator. If the probe is fixed to reliably count Workflow subagents in both
-# harnesses, GLUDD_FLOOR_ENFORCE can be re-enabled.
-# GATE-SAFE FLOOR RULE: a running gate does NOT lower the read-only floor.
-# Only heavy worktree-writers are capped during a gate -- read-only agents
-# (research/audit/review/explore) MUST still be dispatched to reach FLOOR.
+# Stop hook (#79/#78): when explicitly configured, block turn-end below FLOOR.
+# The default FLOOR is zero: never create read-only filler merely to occupy slots.
+# A running gate does not rewrite an operator's explicit floor.
 #
 # ROBUST DESIGN: counts GROUND TRUTH -- the harness's own per-agent task .output
 # files that were appended to within the activity window -- instead of a
@@ -31,46 +18,20 @@
 # Transient/rate-limit dispatch errors are retryable (re-dispatch after backoff) --
 # a one-line note, not a coercion. FAIL-OPEN on any error (exit 0 = allow stop).
 
-FLOOR="${CLAUDE_AGENT_FLOOR:-3}"
+HARD_CEILING=3
+FLOOR="${CLAUDE_AGENT_FLOOR:-0}"
 TARGET="${CLAUDE_AGENT_TARGET:-3}"
 CEILING="${CLAUDE_AGENT_CEILING:-3}"
-# LIVE FLOOR OVERRIDE: CLAUDE_AGENT_FLOOR is fixed at session start, so this file
-# lets the operator retune the floor mid-session without a restart. A valid integer
-# wins over the env var.
-if [ -r /tmp/gludd-floor-override ]; then
-  _fov="$(cat /tmp/gludd-floor-override 2>/dev/null)"
-  case "$_fov" in ''|*[!0-9]*) : ;; *) FLOOR="$_fov" ;; esac
-fi
-# LIVE CEILING OVERRIDE: parallel to the floor override — retune max subagents
-# mid-session without a restart. TARGET clamped so it never exceeds the ceiling.
-if [ -r /tmp/gludd-ceiling-override ]; then
-  _cov="$(cat /tmp/gludd-ceiling-override 2>/dev/null)"
-  case "$_cov" in ''|*[!0-9]*) : ;; *) CEILING="$_cov" ;; esac
-fi
+case "$FLOOR" in ''|*[!0-9]*) FLOOR="0" ;; esac
+case "$TARGET" in ''|*[!0-9]*) TARGET="$HARD_CEILING" ;; esac
+case "$CEILING" in ''|*[!0-9]*) CEILING="$HARD_CEILING" ;; esac
+[ "$FLOOR" -gt "$HARD_CEILING" ] && FLOOR="$HARD_CEILING"
+[ "$TARGET" -gt "$HARD_CEILING" ] && TARGET="$HARD_CEILING"
+[ "$CEILING" -gt "$HARD_CEILING" ] && CEILING="$HARD_CEILING"
+[ "$FLOOR" -gt "$CEILING" ] && FLOOR="$CEILING"
 [ "$TARGET" -gt "$CEILING" ] && TARGET="$CEILING"
-# REFILL: refill just into the band (hysteresis), NOT up to TARGET.
-# Clamp so that REFILL and the display band never invert when FLOOR is env-overridden
-# above CEILING (e.g. CLAUDE_AGENT_FLOOR=999 for testing). The enforcement is correct
-# either way; this is purely cosmetic -- avoids "hold band 999-12" in the reason string.
-if [ "$FLOOR" -gt "$CEILING" ]; then
-  DISPLAY_FLOOR="$CEILING"
-else
-  DISPLAY_FLOOR="$FLOOR"
-fi
-REFILL=$((DISPLAY_FLOOR + 2))
-[ "$REFILL" -gt "$CEILING" ] && REFILL="$CEILING"
+REFILL="$FLOOR"
 WINDOW=90  # seconds; a live background agent streams tool/output well within this
-
-# ADVISORY MODE (2026-06-21, by user instruction): this hook previously emitted
-# {"decision":"block"} to forcibly prevent turn-end while live<FLOOR. But the
-# live-count probe (agent_liveness.py) only scans the Agent-tool task dir and
-# CANNOT see Workflow subagents — so it reported "0 live" and trapped the
-# orchestrator even while a Workflow was running a full parallel pool. That false
-# alarm made it impossible to ever satisfy the floor during Workflow-based work.
-# It is now ADVISORY: never blocks. Set GLUDD_FLOOR_ENFORCE=1 to restore blocking.
-if [ "${GLUDD_FLOOR_ENFORCE:-0}" != "1" ]; then
-  exit 0
-fi
 
 # Never hard-wedge: if we're already inside a stop-hook continuation, allow stop.
 input="$(cat 2>/dev/null || echo '{}')"
@@ -92,27 +53,13 @@ case "$live" in
 esac
 
 if [ "$live" -lt "$FLOOR" ]; then
-  # ENFORCING (rev 2026-06-18b): genuinely BLOCK turn-end via the Stop-hook JSON
-  # contract -- {"decision":"block","reason":...} on stdout, exit 0. This is what
-  # the user asked for: the floor DOES prevent stopping, it is not advisory.
-  #
-  # WHY exit 0 (not exit 1): in the Claude Code hook contract a non-zero exit from
-  # a Stop hook is a HOOK ERROR (stderr shown to the user as a failure), which is
-  # the disruptive "stop hook error" the user flagged. A *clean* block is the JSON
-  # decision with exit 0. So we keep the enforcement (block) and drop the error.
-  #
-  # WHY python3 json.dumps: it guarantees well-formed, fully escaped JSON, so the
-  # hook can never emit malformed stdout that the harness would report as an error
-  # (a hand-built printf could break on quotes/newlines in the reason).
-  #
-  # ANTI-WEDGE: stop_hook_active (checked above) is the ONLY escape -- a second
-  # consecutive stop is allowed so a genuine dead-end (rate-limited, no work left,
-  # broken dispatch) can still end the session instead of looping forever. In the
-  # normal cooperative case the block is real: it feeds the reason back, the main
-  # loop dispatches agents, the floor is met, and the next stop succeeds.
-  reason="AGENT-FLOOR ENFORCED: only ${live} subagent(s) live, below floor ${FLOOR} (hold band ${DISPLAY_FLOOR}-${CEILING}). Do NOT stop now. Dispatch disjoint Agent task(s) to refill to at least ${REFILL} -- read-only proposers/auditors/reviewers are allowed even while a gate runs -- then continue your work. If dispatch is blocked by a rate-limit/quota error, retry with backoff (that is the only acceptable reason to be below floor)."
-  python3 -c 'import json,sys; print(json.dumps({"decision":"block","reason":sys.argv[1]}))' "$reason" 2>/dev/null && exit 0
-  # python3 unavailable / failed -> fail OPEN (allow stop). Never wedge, never error.
-  exit 0
+  deficit=$((REFILL - live)); [ "$deficit" -lt 1 ] && deficit=1
+  reason="AGENT-FLOOR (BLOCKING): ${live} live, below explicit floor ${FLOOR} "
+  reason="${reason}(band ${FLOOR}-${CEILING}). A running gate does not rewrite the operator's floor. "
+  reason="${reason}Dispatch about ${deficit} suitable disjoint task(s); never invent filler work. "
+  reason="${reason}If no independent task exists, remove or lower the explicit floor."
+  printf '{"decision":"block","reason":"%s"}\n' "$reason" >&2
+  printf '{"decision":"block","reason":"%s"}\n' "$reason"
+  exit 1
 fi
 exit 0

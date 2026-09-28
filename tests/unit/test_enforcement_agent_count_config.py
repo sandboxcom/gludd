@@ -1,9 +1,9 @@
 """Structural tests for multitask_config.ts as the canonical enforcement config.
 
 Verifies:
-1. MIN_DISPATCHES exported with default 10
+1. MIN_DISPATCHES exported with default 0 and a hard clamp
 2. enforce-multitask.ts imports and uses MIN_DISPATCHES from multitask_config.ts
-3. HARD_MAX_DISPATCHES = 10 constant exists
+3. HARD_MAX_DISPATCHES = 3 constant exists
 4. MAX_ZERO_STREAK = 2 constant exists
 5. AGENTS.md mentions multitask_config.ts as canonical source
 """
@@ -31,23 +31,20 @@ def _agents_src() -> str:
 
 
 class TestMinDispatchesExport:
-    """multitask_config.ts exports MIN_DISPATCHES with default 10."""
+    """multitask_config.ts exports an opt-in, ceiling-bounded minimum."""
 
     def test_export_declaration_exists(self):
         src = _config_src()
-        m = re.search(r"export\s+const\s+MIN_DISPATCHES\s*=\s*integerFromEnv", src)
-        assert m, "MIN_DISPATCHES must be exported via integerFromEnv resolver"
+        assert "export const MIN_DISPATCHES = Math.min(" in src
+        assert "integerFromEnv(" in src
 
-    def test_default_value_is_10(self):
+    def test_default_value_is_zero_and_bounded_by_max(self):
         src = _config_src()
-        m = re.search(
-            r"export\s+const\s+MIN_DISPATCHES\s*=\s*integerFromEnv\(\s*\["
-            r'"GLUDD_MIN_DISPATCHES"\s*,\s*"GLUDD_MULTITASK_MIN_DISPATCHES"'
-            r"\s*\],\s*(\d+)",
-            src,
-        )
-        assert m, "MIN_DISPATCHES integerFromEnv call not found"
-        assert int(m.group(1)) == 10, f"MIN_DISPATCHES default must be 10, got {m.group(1)}"
+        assert '"GLUDD_MIN_DISPATCHES", "GLUDD_MULTITASK_MIN_DISPATCHES"' in src
+        assert "HARD_MAX_DISPATCHES" in src
+        assert "MAX_DISPATCHES," in src
+        assert "\n      0," in src
+        assert "clampDispatchCount" in src
 
     def test_env_var_names_correct(self):
         src = _config_src()
@@ -85,21 +82,21 @@ class TestEnforceMultitaskImportsMinDispatches:
 
 
 class TestHardMaxDispatchesConstant:
-    """HARD_MAX_DISPATCHES = 10 constant exists in multitask_config.ts."""
+    """HARD_MAX_DISPATCHES = 3 is the canonical resource ceiling."""
 
     def test_hard_max_dispatches_exported(self):
         src = _config_src()
         assert "export const HARD_MAX_DISPATCHES" in src, "HARD_MAX_DISPATCHES must be exported"
 
-    def test_hard_max_dispatches_value_is_10(self):
+    def test_hard_max_dispatches_value_is_3(self):
         src = _config_src()
         m = re.search(r"HARD_MAX_DISPATCHES\s*=\s*(\d+)", src)
         assert m, "HARD_MAX_DISPATCHES assignment not found"
-        assert int(m.group(1)) == 10, f"HARD_MAX_DISPATCHES must be 10, got {m.group(1)}"
+        assert int(m.group(1)) == 3, f"HARD_MAX_DISPATCHES must be 3, got {m.group(1)}"
 
     def test_max_dispatches_bounded_by_hard_max(self):
         src = _config_src()
-        assert "Math.min(\n    HARD_MAX_DISPATCHES" in src, "MAX_DISPATCHES must be bounded by HARD_MAX_DISPATCHES"
+        assert "clampDispatchCount(" in src, "MAX_DISPATCHES must be bounded by HARD_MAX_DISPATCHES"
 
     def test_hard_max_imported_by_enforce_multitask(self):
         src = _plugin_src()
@@ -151,13 +148,13 @@ class TestAgentsMdReferencesConfig:
             "AGENTS.md must state multitask_config.ts is the single source of truth"
         )
 
-    def test_agents_md_defines_min_dispatches_default_10(self):
+    def test_agents_md_defines_min_dispatches_default_3(self):
         src = _agents_src()
         lines_with_ref = [line for line in src.split("\n") if "multitask_config.ts" in line]
         combined = " ".join(lines_with_ref)
         assert "MIN_DISPATCHES" in combined, "AGENTS.md must reference MIN_DISPATCHES alongside multitask_config.ts"
 
-    def test_agents_md_defines_max_dispatches_default_10(self):
+    def test_agents_md_defines_max_dispatches_default_3(self):
         src = _agents_src()
         lines_with_ref = [line for line in src.split("\n") if "multitask_config.ts" in line]
         combined = " ".join(lines_with_ref)

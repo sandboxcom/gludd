@@ -209,6 +209,25 @@ def sign_csr(
     )
 
 
+def _name_values(
+    name: x509.Name,
+    oid_to_name: dict[str, str],
+) -> dict[str, list[str]]:
+    """Group repeated X.509 name attributes under stable display names."""
+    values: dict[str, list[str]] = {}
+    for attribute in name:
+        display_name = oid_to_name.get(
+            attribute.oid.dotted_string,
+            attribute.oid.dotted_string,
+        )
+        value = str(attribute.value)
+        if display_name in values:
+            values[display_name].append(value)
+        else:
+            values[display_name] = [value]
+    return values
+
+
 def parse_cert(cert_pem: bytes) -> dict[str, object]:
     """Return a serializable summary of a PEM certificate."""
     cert = x509.load_pem_x509_certificate(cert_pem)
@@ -222,23 +241,8 @@ def parse_cert(cert_pem: bytes) -> dict[str, object]:
         "2.5.4.11": "organizationalUnitName",
     }
 
-    subject: dict[str, list[str]] = {}
-    for attr in cert.subject:
-        name = _oid_to_name.get(attr.oid.dotted_string, attr.oid.dotted_string)
-        val = str(attr.value)
-        if name in subject:
-            subject[name].append(val)
-        else:
-            subject[name] = [val]
-
-    issuer: dict[str, list[str]] = {}
-    for attr in cert.issuer:
-        name = _oid_to_name.get(attr.oid.dotted_string, attr.oid.dotted_string)
-        val = str(attr.value)
-        if name in issuer:
-            issuer[name].append(val)
-        else:
-            issuer[name] = [val]
+    subject = _name_values(cert.subject, _oid_to_name)
+    issuer = _name_values(cert.issuer, _oid_to_name)
 
     sans: list[str] = []
     try:

@@ -547,84 +547,87 @@ def test_two_worker_gunicorn_boots_and_serves_health() -> None:
         assert healthy, "two-worker daemon never became healthy:\n" + "".join(lines[-40:])
 
         ready_deadline = time.monotonic() + 15
-        ready_pids: set[str] = set()
+        ready_receipts: set[tuple[str, str]] = set()
         while time.monotonic() < ready_deadline:
-            ready_pids = {
-                match.group(1)
+            ready_receipts = {
+                (match.group(1), match.group(2))
                 for line in lines
                 if (
                     match := re.search(
-                        r"Terraform PostgreSQL wake listener ready .* pid=(\d+)",
+                        r"Terraform PostgreSQL wake listener ready .* pid=(\d+) proof_id=([0-9a-f]{32})\b",
                         line,
                     )
                 )
             }
-            if len(ready_pids) >= 2:
+            if len(ready_receipts) >= 2:
                 break
             time.sleep(0.05)
-        assert len(ready_pids) == 2, "both worker listeners were not ready:\n" + "".join(lines[-60:])
+        assert len(ready_receipts) == 2, "both worker listeners were not ready:\n" + "".join(lines[-60:])
+        ready_pids = {pid for pid, _proof_id in ready_receipts}
+        assert len(ready_pids) == 2
 
         published_at = time.monotonic()
         audit_id = asyncio.run(_publish_terminal_event(f"gunicorn-notify-{uuid.uuid4().hex}"))
         notify_deadline = time.monotonic() + 5
-        notified_pids: set[str] = set()
+        notified_receipts: set[tuple[str, str]] = set()
         while time.monotonic() < notify_deadline:
-            notified_pids = {
-                match.group(1)
+            notified_receipts = {
+                (match.group(1), match.group(2))
                 for line in lines
                 if (
                     match := re.search(
-                        rf"wake notification received .* pid=(\d+) audit_event_id={audit_id}\b",
+                        rf"wake notification received .* pid=(\d+) "
+                        rf"proof_id=([0-9a-f]{{32}}) audit_event_id={audit_id}\b",
                         line,
                     )
                 )
             }
-            if notified_pids == ready_pids:
+            if notified_receipts == ready_receipts:
                 break
             time.sleep(0.05)
-        assert notified_pids == ready_pids, "event did not promptly wake both workers:\n" + "".join(lines[-80:])
+        assert notified_receipts == ready_receipts, "event did not promptly wake both workers:\n" + "".join(lines[-80:])
         assert time.monotonic() - published_at < 5
 
         reconnect_marker = len(lines)
         assert asyncio.run(_terminate_wakeup_connections()) == 2
         reconnect_deadline = time.monotonic() + 5
-        reconnect_pids: set[str] = set()
+        reconnect_receipts: set[tuple[str, str]] = set()
         while time.monotonic() < reconnect_deadline:
-            reconnect_pids = {
-                match.group(1)
+            reconnect_receipts = {
+                (match.group(1), match.group(2))
                 for line in lines[reconnect_marker:]
                 if (
                     match := re.search(
-                        r"wake listener reconnecting .* pid=(\d+)",
+                        r"wake listener reconnecting .* pid=(\d+) proof_id=([0-9a-f]{32})\b",
                         line,
                     )
                 )
             }
-            if reconnect_pids == ready_pids:
+            if reconnect_receipts == ready_receipts:
                 break
             time.sleep(0.05)
-        assert reconnect_pids == ready_pids, "listeners did not detect disconnect:\n" + "".join(lines[-80:])
+        assert reconnect_receipts == ready_receipts, "listeners did not detect disconnect:\n" + "".join(lines[-80:])
 
         missed_audit_id = asyncio.run(
             _publish_terminal_event(f"gunicorn-catchup-{uuid.uuid4().hex}")
         )
         catchup_deadline = time.monotonic() + 8
-        caught_up_pids: set[str] = set()
+        caught_up_receipts: set[tuple[str, str]] = set()
         while time.monotonic() < catchup_deadline:
-            caught_up_pids = {
-                match.group(1)
+            caught_up_receipts = {
+                (match.group(1), match.group(2))
                 for line in lines[reconnect_marker:]
                 if (
                     match := re.search(
-                        rf"wake catch-up .* pid=(\d+) .* latest={missed_audit_id}\b",
+                        rf"wake catch-up .* pid=(\d+) proof_id=([0-9a-f]{{32}}) .* latest={missed_audit_id}\b",
                         line,
                     )
                 )
             }
-            if caught_up_pids == ready_pids:
+            if caught_up_receipts == ready_receipts:
                 break
             time.sleep(0.05)
-        assert caught_up_pids == ready_pids, "missed event was not caught up:\n" + "".join(lines[-100:])
+        assert caught_up_receipts == ready_receipts, "missed event was not caught up:\n" + "".join(lines[-100:])
     finally:
         if process.poll() is None:
             os.killpg(process.pid, signal.SIGTERM)
@@ -635,18 +638,20 @@ def test_two_worker_gunicorn_boots_and_serves_health() -> None:
 
     assert process.returncode == 0
     output = "".join(lines)
-    closed_pids = {
-        match.group(1)
+    closed_receipts = {
+        (match.group(1), match.group(2))
         for line in lines
         if (
             match := re.search(
-                r"Terraform PostgreSQL wake listener closed .* pid=(\d+)",
+                r"Terraform PostgreSQL wake listener closed .* pid=(\d+) proof_id=([0-9a-f]{32})\b",
                 line,
             )
         )
     }
-    assert closed_pids == ready_pids
+    assert closed_receipts == ready_receipts
     for unexpected in (
+        "EventLoop run_forever stopped; no further ticks will occur",
+        "EventLoop task exited unexpectedly without exception",
         "SearXNG process exited prematurely",
         "searxng installed but still not importable",
         "No model_profiles loaded",

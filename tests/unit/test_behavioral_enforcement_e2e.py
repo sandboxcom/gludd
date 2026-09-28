@@ -159,10 +159,11 @@ class TestAdaptiveDispatchEnforcement:
         assert '"tool.execute.before"' in src, "tool.execute.before missing — cannot intercept dispatch count"
 
     def test_min_dispatches_constant_defined(self):
-        """The recommendation stays ten, while the effective default is zero."""
+        """The recommendation is three, while the effective default is zero."""
         src = _plugin_source(ENFORCE_MULTITASK)
         cfg = (PLUGIN_DIR / ".." / "lib" / "multitask_config.ts").resolve().read_text()
-        assert "HARD_MAX_DISPATCHES = 10" in cfg
+        assert "HARD_MAX_DISPATCHES = 3" in cfg
+        assert "clampDispatchCount" in cfg
         assert "HAS_CONFIGURED_MIN_DISPATCHES" in src
         assert re.search(r"REQUIRED_DISPATCHES\s*=.*?\?", src, re.DOTALL)
         assert re.search(r"REQUIRED_DISPATCHES\s*=.*?:\s*0", src, re.DOTALL)

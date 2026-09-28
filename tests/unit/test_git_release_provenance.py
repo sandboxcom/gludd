@@ -20,12 +20,16 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+from copy import deepcopy
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from general_ludd.git_release.provenance import (
+    Attestation,
     ProvenanceRecord,
+    ReceiptPurpose,
     SignatureState,
     VerificationResult,
     build_provenance,
@@ -51,6 +55,9 @@ _LOCK = json.dumps(
 ).encode("utf-8")
 _LOCK_PARSED = json.loads(_LOCK.decode("utf-8"))
 _BUILDER = "github-actions:runner-01"
+_RELEASE_ID = "release-test-1"
+_SOURCE_SHA = "a" * 40
+_DEPLOYMENT_TARGET = "test"
 
 
 @pytest.fixture()
@@ -71,6 +78,8 @@ def provenance(lock_bytes: bytes, artifact_bytes: bytes) -> ProvenanceRecord:
         dependency_lock_bytes=lock_bytes,
         dependency_lock=_LOCK_PARSED,
         builder_identity=_BUILDER,
+        release_id=_RELEASE_ID,
+        source_sha=_SOURCE_SHA,
         signature_state=SignatureState.VERIFIED,
     )
 
@@ -98,6 +107,8 @@ def test_build_provenance_generates_cyclonedx_sbom_from_lockfile(
         dependency_lock_bytes=lock_bytes,
         dependency_lock=_LOCK_PARSED,
         builder_identity=_BUILDER,
+        release_id=_RELEASE_ID,
+        source_sha=_SOURCE_SHA,
     )
     assert record.sbom["bomFormat"] == "CycloneDX"
     assert record.sbom["specVersion"] == "1.5"
@@ -124,6 +135,8 @@ def test_build_provenance_computes_artifact_checksum(
         dependency_lock_bytes=lock_bytes,
         dependency_lock=_LOCK_PARSED,
         builder_identity=_BUILDER,
+        release_id=_RELEASE_ID,
+        source_sha=_SOURCE_SHA,
     )
     expected = hashlib.sha256(artifact_bytes).hexdigest()
     assert record.artifact_digest == expected
@@ -143,14 +156,219 @@ def test_verify_provenance_accepts_valid_record(
     lock_bytes: bytes,
     artifact_bytes: bytes,
 ) -> None:
+    assert provenance.attestation is not None
+    result = verify_provenance(
+        provenance,
+        expected_lock_bytes=lock_bytes,
+        expected_artifact_bytes=artifact_bytes,
+        expected_subject=provenance.subject,
+        expected_builder_identity=_BUILDER,
+        expected_release_id=_RELEASE_ID,
+        expected_source_sha=_SOURCE_SHA,
+        verified_attestation_digest=provenance.attestation.digest,
+        authorization_id=_RELEASE_ID,
+        authorization_source_sha=_SOURCE_SHA,
+        receipt_purpose=ReceiptPurpose.DEPLOY,
+        deployment_target=_DEPLOYMENT_TARGET,
+    )
+    assert isinstance(result, VerificationResult)
+    assert result.ok is True, result.reasons
+    assert result.reasons == []
+
+
+def test_verify_provenance_requires_external_signature_payload_binding(
+    provenance: ProvenanceRecord,
+    lock_bytes: bytes,
+    artifact_bytes: bytes,
+) -> None:
     result = verify_provenance(
         provenance,
         expected_lock_bytes=lock_bytes,
         expected_artifact_bytes=artifact_bytes,
     )
-    assert isinstance(result, VerificationResult)
+
+    assert result.ok is False
+    assert "signature-payload-digest-missing" in result.reasons
+
+
+def test_verify_provenance_rejects_statement_changed_after_signature(
+    provenance: ProvenanceRecord,
+    lock_bytes: bytes,
+    artifact_bytes: bytes,
+) -> None:
+    assert provenance.attestation is not None
+    statement = deepcopy(provenance.attestation.statement)
+    statement["subject"][0]["digest"]["sha256"] = "f" * 64
+    forged_digest = hashlib.sha256(
+        json.dumps(statement, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    forged = replace(
+        provenance,
+        attestation=Attestation(
+            predicate_type=provenance.attestation.predicate_type,
+            statement=statement,
+            digest=forged_digest,
+        ),
+    )
+
+    result = verify_provenance(
+        forged,
+        expected_lock_bytes=lock_bytes,
+        expected_artifact_bytes=artifact_bytes,
+        verified_attestation_digest=provenance.attestation.digest,
+    )
+
+    assert result.ok is False
+    assert "signature-payload-digest-mismatch" in result.reasons
+    assert "attestation-artifact-digest-mismatch" in result.reasons
+
+
+def test_verify_provenance_rejects_signed_cross_artifact_confusion(
+    provenance: ProvenanceRecord,
+    lock_bytes: bytes,
+    artifact_bytes: bytes,
+) -> None:
+    assert provenance.attestation is not None
+    statement = deepcopy(provenance.attestation.statement)
+    statement["subject"][0]["name"] = "different-release.tar.gz"
+    statement["predicateType"] = "https://example.invalid/predicate/v1"
+    statement["predicate"]["runDetails"]["builder"]["id"] = "unknown-builder"
+    statement["predicate"]["buildDefinition"]["resolvedDependencies"][0][
+        "digest"
+    ]["sha256"] = "e" * 64
+    signed_digest = hashlib.sha256(
+        json.dumps(statement, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    signed_but_wrong = replace(
+        provenance,
+        attestation=Attestation(
+            predicate_type="https://example.invalid/predicate/v1",
+            statement=statement,
+            digest=signed_digest,
+        ),
+    )
+
+    result = verify_provenance(
+        signed_but_wrong,
+        expected_lock_bytes=lock_bytes,
+        expected_artifact_bytes=artifact_bytes,
+        verified_attestation_digest=signed_digest,
+    )
+
+    assert result.ok is False
+    assert "attestation-subject-mismatch" in result.reasons
+    assert "attestation-predicate-type-mismatch" in result.reasons
+    assert "attestation-builder-mismatch" in result.reasons
+    assert "attestation-lock-digest-mismatch" in result.reasons
+
+
+def test_verify_provenance_rejects_invalid_external_payload_digest(
+    provenance: ProvenanceRecord,
+) -> None:
+    result = verify_provenance(
+        provenance,
+        verified_attestation_digest="sha256:not-a-digest",
+    )
+
+    assert result.ok is False
+    assert "signature-payload-digest-invalid" in result.reasons
+
+
+def test_verify_provenance_can_explicitly_validate_unsigned_internal_evidence(
+    provenance: ProvenanceRecord,
+    lock_bytes: bytes,
+    artifact_bytes: bytes,
+) -> None:
+    unsigned = replace(provenance, signature_state=SignatureState.UNSIGNED)
+
+    result = verify_provenance(
+        unsigned,
+        expected_lock_bytes=lock_bytes,
+        expected_artifact_bytes=artifact_bytes,
+        expected_signature_state=SignatureState.UNSIGNED,
+    )
+
     assert result.ok is True, result.reasons
-    assert result.reasons == []
+
+
+def test_verify_provenance_rejects_malformed_statement_shapes(
+    provenance: ProvenanceRecord,
+) -> None:
+    assert provenance.attestation is not None
+    original = deepcopy(provenance.attestation.statement)
+    predicate = original["predicate"]
+    subject = original["subject"][0]
+    cases = (
+        (
+            {
+                "_type": "https://in-toto.io/Statement/v0.1",
+                "predicateType": provenance.attestation.predicate_type,
+            },
+            "attestation-statement-type-mismatch",
+        ),
+        (
+            {
+                "_type": original["_type"],
+                "predicateType": original["predicateType"],
+                "subject": [subject, subject],
+                "predicate": predicate,
+            },
+            "attestation-subject-cardinality-invalid",
+        ),
+        (
+            {
+                "_type": original["_type"],
+                "predicateType": original["predicateType"],
+                "subject": ["not-a-subject"],
+                "predicate": predicate,
+            },
+            "attestation-subject-invalid",
+        ),
+    )
+
+    for statement, expected_reason in cases:
+        digest = hashlib.sha256(
+            json.dumps(statement, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        malformed = replace(
+            provenance,
+            attestation=Attestation(
+                predicate_type=provenance.attestation.predicate_type,
+                statement=statement,
+                digest=digest,
+            ),
+        )
+
+        result = verify_provenance(
+            malformed,
+            verified_attestation_digest=digest,
+        )
+
+        assert result.ok is False
+        assert expected_reason in result.reasons
+
+
+def test_verify_provenance_rejects_unbound_sbom_metadata(
+    provenance: ProvenanceRecord,
+) -> None:
+    assert provenance.attestation is not None
+    unbound = replace(
+        provenance,
+        sbom={
+            "bomFormat": "CycloneDX",
+            "components": [{"type": "library", "name": "dependency"}],
+        },
+    )
+
+    result = verify_provenance(
+        unbound,
+        verified_attestation_digest=provenance.attestation.digest,
+    )
+
+    assert result.ok is False
+    assert "sbom-subject-mismatch" in result.reasons
+    assert "sbom-artifact-digest-mismatch" in result.reasons
+    assert "sbom-builder-mismatch" in result.reasons
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +386,8 @@ def test_verify_provenance_rejects_unsigned_when_verified_required(
         dependency_lock_bytes=lock_bytes,
         dependency_lock=_LOCK_PARSED,
         builder_identity=_BUILDER,
+        release_id=_RELEASE_ID,
+        source_sha=_SOURCE_SHA,
         signature_state=SignatureState.UNSIGNED,
     )
     result = verify_provenance(
@@ -194,10 +414,15 @@ def test_build_provenance_records_builder_identity(
         dependency_lock_bytes=lock_bytes,
         dependency_lock=_LOCK_PARSED,
         builder_identity="tekton:pipeline-abc",
+        release_id=_RELEASE_ID,
+        source_sha=_SOURCE_SHA,
     )
     assert record.builder_identity == "tekton:pipeline-abc"
     assert record.attestation is not None
-    assert record.attestation.statement["predicate"]["builder"]["id"] == "tekton:pipeline-abc"
+    assert (
+        record.attestation.statement["predicate"]["runDetails"]["builder"]["id"]
+        == "tekton:pipeline-abc"
+    )
 
 
 def test_build_provenance_rejects_empty_builder_identity(
@@ -211,6 +436,8 @@ def test_build_provenance_rejects_empty_builder_identity(
             dependency_lock_bytes=lock_bytes,
             dependency_lock=_LOCK_PARSED,
             builder_identity="",
+            release_id=_RELEASE_ID,
+            source_sha=_SOURCE_SHA,
         )
 
 
@@ -295,6 +522,8 @@ def test_verify_provenance_requires_complete_chain(
         dependency_lock_bytes=lock_bytes,
         dependency_lock=_LOCK_PARSED,
         builder_identity=_BUILDER,
+        release_id=_RELEASE_ID,
+        source_sha=_SOURCE_SHA,
         signature_state=SignatureState.VERIFIED,
     )
 
@@ -308,6 +537,8 @@ def test_verify_provenance_requires_complete_chain(
         dependency_lock_digest=good.dependency_lock_digest,
         artifact_digest=good.artifact_digest,
         subject=good.subject,
+        release_id=good.release_id,
+        source_sha=good.source_sha,
     )
     result = verify_provenance(
         broken,
@@ -326,6 +557,8 @@ def test_verify_provenance_requires_complete_chain(
         dependency_lock_digest=good.dependency_lock_digest,
         artifact_digest=good.artifact_digest,
         subject=good.subject,
+        release_id=good.release_id,
+        source_sha=good.source_sha,
     )
     result2 = verify_provenance(
         no_attest,

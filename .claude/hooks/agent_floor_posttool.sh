@@ -18,7 +18,7 @@
 # so a JUST-completed agent (frozen transcript) is not miscounted as live, while
 # keeping per-tool latency low. Any error -> emit nothing, never wedge/slow a turn.
 
-FLOOR="${CLAUDE_AGENT_FLOOR:-3}"
+FLOOR="${CLAUDE_AGENT_FLOOR:-0}"
 TARGET="${CLAUDE_AGENT_TARGET:-3}"
 CEILING="${CLAUDE_AGENT_CEILING:-3}"
 # Live floor override (see agent_floor_stop.sh): a valid integer in this file wins.

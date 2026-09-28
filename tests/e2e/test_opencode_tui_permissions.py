@@ -36,13 +36,22 @@ _OSC_RE = re.compile(r"\x1b\][^\x07]*(?:\x07|\x1b\\)")
 
 
 def _plain(raw: bytes) -> str:
-    text = raw.decode("utf-8", errors="replace").replace("\r", "\n")
+    text = (
+        raw.decode("utf-8", errors="replace")
+        .replace("\r", "\n")
+        .replace("\N{HORIZONTAL ELLIPSIS}", "...")
+    )
     return _CSI_RE.sub("", _OSC_RE.sub("", text))
 
 
 def _compact(text: str) -> str:
     """Strip TUI redraw glyphs while retaining meaningful answer characters."""
     return re.sub(r"[^A-Za-z0-9._-]+", "", text)
+
+
+def test_plain_normalizes_opencode_prompt_ellipsis() -> None:
+    """Readiness matching is stable across OpenCode prompt glyph variants."""
+    assert "Ask anything..." in _plain("Ask anything…".encode())
 
 
 def _write_primed_session_state(tmp_path: Path) -> Path:

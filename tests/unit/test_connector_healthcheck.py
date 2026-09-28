@@ -147,6 +147,14 @@ class _EmptyDictSource:
 # Module-level export: every Source has health()
 # --------------------------------------------------------------------------- #
 class TestEveryConnectorHasHealth:
+    def test_private_support_modules_are_not_operator_selectable(self) -> None:
+        module_paths = _connector_module_paths()
+
+        assert all(
+            not module_path.rsplit(".", 1)[-1].startswith("_")
+            for module_path in module_paths
+        ), "private transport/type helpers must not enter the connector allowlist"
+
     @pytest.mark.parametrize("mod_path", _connector_module_paths())
     def test_module_has_source_class_with_health(self, mod_path: str) -> None:
         cls = _source_class_for(mod_path)

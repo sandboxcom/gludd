@@ -433,17 +433,25 @@ def _compatible_profile(
 
 
 def _profile(case: _HardwareCase, runner_id: str) -> RunnerLaunchProfile:
-    common = {
-        "runner_id": runner_id,
-        "source_revision": f"{case.case_id}-observed-contract",
-        "facts_attested": True,
-    }
+    source_revision = f"{case.case_id}-observed-contract"
     if case.profile_kind == "vllm":
-        return vllm_launch_profile(**common)
+        return vllm_launch_profile(
+            runner_id=runner_id,
+            source_revision=source_revision,
+            facts_attested=True,
+        )
     if case.profile_kind == "llama-cpp":
-        return llama_cpp_launch_profile(**common)
+        return llama_cpp_launch_profile(
+            runner_id=runner_id,
+            source_revision=source_revision,
+            facts_attested=True,
+        )
     if case.profile_kind == "ollama":
-        return ollama_launch_profile(**common)
+        return ollama_launch_profile(
+            runner_id=runner_id,
+            source_revision=source_revision,
+            facts_attested=True,
+        )
     return _compatible_profile(case, runner_id)
 
 
@@ -510,7 +518,7 @@ def _request(case: _HardwareCase) -> UniversalTaskRequest:
 
 
 def _target(case: _HardwareCase) -> ExecutionTarget:
-    return ExecutionTarget(
+    return ExecutionTarget.bind_origin(
         profile_id=f"gateway:{case.case_id}",
         provider=case.provider,
         accelerator_sku=case.model,
@@ -524,6 +532,9 @@ def _target(case: _HardwareCase) -> ExecutionTarget:
         privacy_evidence="public-data-policy",
         offline=case.location is AcceleratorLocation.LOCAL,
         model_runner_id=f"runner:{case.case_id}",
+        origin_source="operator-configured",
+        origin_protocol="gludd-native-profile-v1",
+        origin_evidence_sha256="5" * 64,
     )
 
 
@@ -558,7 +569,9 @@ def test_canonical_inventory_reaches_selection_and_launch_without_sku_keys(
 def test_current_allocation_reduction_fails_closed_end_to_end() -> None:
     case = next(item for item in _CASES if item.case_id == "azure-vm-multi-nvidia-gpu")
     snapshot = _snapshot(case)
-    unavailable_resource = replace(snapshot.pools[0].resource, available_count=2)
+    resource = snapshot.pools[0].resource
+    assert isinstance(resource, AcceleratorResource)
+    unavailable_resource = replace(resource, available_count=2)
     unavailable_pool = replace(snapshot.pools[0], resource=unavailable_resource)
     unavailable = replace(snapshot, pools=(unavailable_pool,))
     planner = UniversalModelServicePlanner(lambda _request, _target: unavailable)

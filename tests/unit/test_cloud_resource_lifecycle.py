@@ -464,6 +464,40 @@ class TestResourceLifecycleManagerSignalHandlers:
         finally:
             rl._signal_handlers_installed = saved
 
+    def test_partial_install_restores_the_first_runtime_handler(self):
+        """A failed SIGINT install must not strand Gludd's SIGTERM handler."""
+        import general_ludd.cloud.resource_lifecycle as rl
+
+        mgr = ResourceLifecycleManager()
+        previous_term = mock.Mock()
+        previous_int = mock.Mock()
+        installed = {
+            signal.SIGTERM: previous_term,
+            signal.SIGINT: previous_int,
+        }
+
+        def fake_signal(signum, handler):
+            if signum == signal.SIGINT and handler == mgr._handle_signal:
+                raise ValueError("forced partial install")
+            old = installed[signum]
+            installed[signum] = handler
+            return old
+
+        saved = rl._signal_handlers_installed
+        try:
+            rl._signal_handlers_installed = False
+            with (
+                mock.patch("signal.getsignal", side_effect=lambda signum: installed[signum]),
+                mock.patch("signal.signal", side_effect=fake_signal),
+            ):
+                assert rl._install_signal_handlers(mgr) is False
+        finally:
+            rl._signal_handlers_installed = saved
+
+        assert installed[signal.SIGTERM] is previous_term
+        assert installed[signal.SIGINT] is previous_int
+        assert mgr._previous_signal_handlers == {}
+
 
 class TestGetLifecycleSingleton:
     def test_returns_same_instance(self):

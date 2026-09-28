@@ -79,7 +79,8 @@ class TestEventLoopE2E:
         from sqlalchemy.ext.asyncio import create_async_engine
         from sqlalchemy.pool import StaticPool
 
-        from general_ludd.db.models import BucketLeaseModel
+        from general_ludd.db.models import BucketLeaseModel, ProjectModel, TodoModel
+        from general_ludd.db.repository import ProjectRepository
         from general_ludd.db.session import (
             create_async_session_factory,
             ensure_tables,
@@ -88,6 +89,9 @@ class TestEventLoopE2E:
             acquire_lease,
             reclaim_expired_leases,
         )
+        from general_ludd.projects.manager import persist_project
+        from general_ludd.schemas.project_identity import ProjectWorkIdentity
+        from general_ludd.schemas.todo import TodoStatus
 
         engine = create_async_engine(
             "sqlite+aiosqlite:///:memory:",
@@ -99,24 +103,53 @@ class TestEventLoopE2E:
             factory = create_async_session_factory(engine)
 
             async with factory() as session:
-                # One already-expired lease, one still valid.
+                project_id = "proj-reclaim-e2e"
+                todo_id = "TODO-RECLAIM-E2E"
+                lease_key = ProjectWorkIdentity(
+                    project_id,
+                    todo_id,
+                    "core",
+                ).lease_bucket_key
+                await persist_project(
+                    ProjectRepository(session),
+                    project_id=project_id,
+                    name="Lease reclaim E2E",
+                    weight=100.0,
+                    dispatch_mode="active",
+                )
+                session.add(
+                    TodoModel(
+                        todo_id=todo_id,
+                        title="already completed owner",
+                        queue="core",
+                        priority=5,
+                        work_type="maintenance",
+                        status=TodoStatus.COMPLETE.value,
+                        project_id=project_id,
+                    )
+                )
                 session.add(
                     BucketLeaseModel(
-                        bucket_key="core",
+                        bucket_key=lease_key,
                         holder_id="worker-old",
                         expires_at=datetime.now(UTC) - timedelta(seconds=10),
+                        project_id=project_id,
+                        todo_version=1,
                     )
                 )
                 await session.commit()
+                assert await session.get(ProjectModel, project_id) is not None
 
                 reclaimed = await reclaim_expired_leases(session)
                 assert isinstance(reclaimed, int)
                 assert reclaimed == 1
                 await acquire_lease(
                     session,
-                    "core",
+                    lease_key,
                     "worker-new",
                     ttl_seconds=300,
+                    project_id=project_id,
+                    todo_version=1,
                 )
 
                 remaining = (

@@ -1066,10 +1066,11 @@ the CI release job), and then verifies the published release.
 
 **A tag is not a release, and "has assets" is not "complete".**
 
-- **`make verify-release-completeness TAG=...` is the real gate.** It checks 12 artifact
-  categories — 4 platform binaries (linux-x86_64, linux-aarch64, macos-arm64,
-  windows-x86_64), `.deb`, `.rpm`, `.dmg`, `.exe` installer, checksums, SBOM, `LICENSE`,
-  `THIRD_PARTY_LICENSES` — plus: the prerelease flag must match the tag shape
+- **`make verify-release-completeness TAG=...` is the real gate.** It checks 28 artifact
+  categories spanning platform binaries, native installers, Python packages,
+  collections, the locked Ansible execution boundary, image metadata, smoke
+  attestations, manifests, checksums, SBOM, and licenses; it also requires at
+  least 30 assets. The prerelease flag must match the tag shape
   (`-alpha`/`-beta`/`-rc` ⇒ prerelease), asset names must carry the tag's version, and no
   asset may be zero-size. CI runs it as a **blocking step** on tag builds.
 - **`make verify-release-artifact` is NOT the gate.** It only proves "non-draft and at

@@ -254,9 +254,10 @@ GitHub Actions (`.github/workflows/build.yml`):
 3. **linux / macos / windows** — PyInstaller binary + tarball, timestamped alpha version on push;
    stable version on tag (`v*`)
 4. **release** (tag builds only) — publishes the GitHub Release, then runs
-   `scripts/verify_release_completeness.py` as a **blocking** final step: 12 artifact
-   categories, the prerelease-flag-vs-tag-shape rule, version-stamped asset names, and no
-   zero-size assets. An incomplete release fails the workflow.
+   `scripts/verify_release_completeness.py` as a **blocking** final step: 28 artifact
+   categories, at least 30 assets, the prerelease-flag-vs-tag-shape rule,
+   version-stamped asset names, and no zero-size assets. An incomplete release
+   fails the workflow.
 
 A cold tag-triggered matrix build takes **30–60 minutes**. See
 [RELEASE_RUNBOOK.md](RELEASE_RUNBOOK.md) for the operator procedure.

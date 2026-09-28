@@ -110,13 +110,14 @@ class TestMinDispatchConstants:
 
     def test_min_dispatches_default_from_env_match(self):
         src = _plugin_source()
-        assert "MIN_DISPATCHES = integerFromEnv" in src
-        assert _extract_env_default(src, "GLUDD_MIN_DISPATCHES") == 3
-        assert _extract_env_default(src, "GLUDD_MULTITASK_MIN_DISPATCHES") == 3
+        assert "MIN_DISPATCHES = Math.min(" in src
+        assert "integerFromEnv(" in src
+        assert _extract_env_default(src, "GLUDD_MIN_DISPATCHES") == 0
+        assert _extract_env_default(src, "GLUDD_MULTITASK_MIN_DISPATCHES") == 0
 
-    def test_min_dispatches_is_positive_integer(self):
+    def test_min_dispatches_is_zero_until_explicitly_configured(self):
         d = _min_dispatch_default()
-        assert d > 0, f"MIN_DISPATCHES must be positive, got {d}"
+        assert d == 0, f"MIN_DISPATCHES must be opt-in, got {d}"
 
     def test_required_dispatches_used_in_under_floor_check(self):
         src = _plugin_source()
@@ -137,7 +138,7 @@ class TestMinDispatchConstants:
     def test_max_dispatches_is_3(self):
         src = _plugin_source()
         assert "HARD_MAX_DISPATCHES = 3" in src
-        assert re.search(r"Math\.min\(\s*HARD_MAX_DISPATCHES", src)
+        assert "MAX_DISPATCHES = clampDispatchCount(" in src
         assert _extract_env_default(src, "GLUDD_MULTITASK_MAX_DISPATCHES") == 3
 
     def test_consecutive_non_dispatch_threshold_is_5(self):
@@ -238,39 +239,21 @@ class TestConfiguredMinimumBlock:
         return count < min_disp
 
     def test_1_dispatch_triggers(self):
-        min_disp = _min_dispatch_default()
+        min_disp = 3
         assert self._under_floor_triggers(1, min_disp), f"1 dispatch triggers under-floor with floor={min_disp}"
 
     def test_2_dispatches_triggers(self):
-        min_disp = _min_dispatch_default()
+        min_disp = 3
         assert self._under_floor_triggers(2, min_disp), f"2 dispatches triggers under-floor with floor={min_disp}"
 
     def test_3_dispatches_passes(self):
-        min_disp = _min_dispatch_default()
+        min_disp = 3
         assert not self._under_floor_triggers(3, min_disp), (
             f"3 dispatches does NOT trigger under-floor with floor={min_disp}"
         )
 
-    def test_7_dispatches_passes(self):
-        min_disp = _min_dispatch_default()
-        assert not self._under_floor_triggers(7, min_disp), (
-            f"7 dispatches does NOT trigger under-floor with floor={min_disp}"
-        )
-
-    def test_9_dispatches_passes(self):
-        min_disp = _min_dispatch_default()
-        assert not self._under_floor_triggers(9, min_disp), (
-            f"9 dispatches does NOT trigger under-floor with floor={min_disp}"
-        )
-
-    def test_10_dispatches_passes(self):
-        min_disp = _min_dispatch_default()
-        assert not self._under_floor_triggers(10, min_disp), (
-            f"10 dispatches does NOT trigger under-floor with floor={min_disp}"
-        )
-
     def test_0_dispatches_triggers_under_floor(self):
-        min_disp = _min_dispatch_default()
+        min_disp = 3
         assert self._under_floor_triggers(0, min_disp), "0 dispatches DOES trigger under-floor hard block"
 
     def test_under_floor_deny_message_present(self):
@@ -527,7 +510,7 @@ class TestEnvOverride:
     def test_env_default_is_integer(self):
         default = _min_dispatch_default()
         assert isinstance(default, int), f"Default must be int, got {type(default)}"
-        assert default >= 2, f"Default should be >=2, got {default}"
+        assert default == 0, f"Default should be opt-in (zero), got {default}"
 
     def test_env_override_would_change_value(self):
         src = _plugin_source()

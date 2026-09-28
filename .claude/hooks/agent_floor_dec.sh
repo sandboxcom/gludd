@@ -15,7 +15,7 @@
 #
 # FAIL-OPEN: any error -> emit nothing / exit 0, never wedge a turn.
 
-FLOOR="${CLAUDE_AGENT_FLOOR:-3}"
+FLOOR="${CLAUDE_AGENT_FLOOR:-0}"
 TARGET="${CLAUDE_AGENT_TARGET:-3}"   # refill to TARGET, not FLOOR, so the next
                                       # burst of completions can't immediately re-breach.
 

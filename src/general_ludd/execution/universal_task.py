@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 
 from general_ludd.execution.universal_task_types import (
@@ -11,9 +12,12 @@ from general_ludd.execution.universal_task_types import (
     CandidateAssessment,
     ExecutionTarget,
     ModelGatewayProtocol,
+    ModelProfileOrigin,
     ModelResponseProtocol,
     ModelServicePlannerProtocol,
     ModelServicePlanProtocol,
+    PinnedProfileOriginVerifier,
+    ProfileOriginVerifierProtocol,
     RouteDecision,
     SchedulerProtocol,
     TargetEvaluation,
@@ -38,14 +42,23 @@ class UniversalTaskExecutor:
         target_source: Callable[[], Sequence[ExecutionTarget]],
         tool_runner: ToolRunnerProtocol | None = None,
         model_service_planner: ModelServicePlannerProtocol | None = None,
+        profile_origin_verifier: ProfileOriginVerifierProtocol | None = None,
     ) -> None:
         """Bind injected scheduling, routing, model, and tool dependencies."""
+        if profile_origin_verifier is not None and not isinstance(
+            profile_origin_verifier,
+            ProfileOriginVerifierProtocol,
+        ):
+            raise TypeError(
+                "profile_origin_verifier must implement ProfileOriginVerifierProtocol"
+            )
         self._gateway = gateway
         self._scheduler = scheduler
         self._accelerator_planner = accelerator_planner
         self._target_source = target_source
         self._tool_runner = tool_runner
         self._model_service_planner = model_service_planner
+        self._profile_origin_verifier = profile_origin_verifier
 
     def route(self, request: UniversalTaskRequest) -> RouteDecision:
         """Select the cheapest eligible target from current evidence."""
@@ -61,11 +74,57 @@ class UniversalTaskExecutor:
             str(getattr(item, "sku", "")): item
             for item in self._accelerator_planner.discover_hardware()
         }
+        profile_id_counts = Counter(target.profile_id for target in targets)
         evaluations: list[TargetEvaluation] = []
-        eligible: list[ExecutionTarget] = []
+        eligible: list[tuple[ExecutionTarget, ModelProfileOrigin]] = []
 
         for target in targets:
             reasons: list[str] = []
+            if profile_id_counts[target.profile_id] != 1:
+                reasons.append("profile_id_ambiguous")
+            origin = target.profile_origin
+            validated_origin: ModelProfileOrigin | None = None
+            origin_verified = False
+            if origin is None:
+                reasons.append("profile_origin_required")
+            elif not isinstance(origin, ModelProfileOrigin):
+                reasons.append("profile_origin_invalid")
+            else:
+                try:
+                    origin.validate()
+                except Exception:
+                    reasons.append("profile_origin_invalid")
+                else:
+                    validated_origin = origin
+            if validated_origin is not None:
+                if not validated_origin.matches_target(
+                    profile_id=target.profile_id,
+                    provider=target.provider,
+                    accelerator_sku=target.accelerator_sku,
+                    capabilities=target.capabilities,
+                    allowed_data_classifications=(
+                        target.allowed_data_classifications
+                    ),
+                    offline=target.offline,
+                    model_runner_id=target.model_runner_id,
+                ):
+                    reasons.append("profile_origin_target_mismatch")
+                elif self._profile_origin_verifier is None:
+                    reasons.append("profile_origin_verifier_unavailable")
+                else:
+                    try:
+                        verdict = self._profile_origin_verifier.verify(
+                            validated_origin
+                        )
+                    except Exception:
+                        reasons.append("profile_origin_verification_failed")
+                    else:
+                        if not isinstance(verdict, bool):
+                            reasons.append("profile_origin_verification_invalid")
+                        elif verdict is not True:
+                            reasons.append("profile_origin_untrusted")
+                        else:
+                            origin_verified = True
             if request.capability not in target.capabilities:
                 reasons.append("capability_not_supported")
             if request.data_classification not in target.allowed_data_classifications:
@@ -97,19 +156,36 @@ class UniversalTaskExecutor:
                     "estimated_cost_usd": target.estimated_cost_usd,
                     "accelerator_sku": target.accelerator_sku,
                     "accelerator_approved": accelerator_approved,
+                    "profile_origin": (
+                        None
+                        if validated_origin is None
+                        else {
+                            "source": validated_origin.source,
+                            "protocol": validated_origin.protocol,
+                            "evidence_sha256": validated_origin.evidence_sha256,
+                            "receipt_sha256": validated_origin.receipt_sha256,
+                            "verified": origin_verified,
+                        }
+                    ),
                 },
+                profile_origin=validated_origin,
             )
             evaluations.append(evaluation)
-            if evaluation.eligible:
-                eligible.append(target)
+            if evaluation.eligible and validated_origin is not None:
+                eligible.append((target, validated_origin))
 
         if not eligible:
             return RouteDecision(None, None, tuple(evaluations))
-        selected = min(
+        selected, selected_origin = min(
             eligible,
-            key=lambda target: (target.estimated_cost_usd, target.profile_id),
+            key=lambda item: (item[0].estimated_cost_usd, item[0].profile_id),
         )
-        return RouteDecision(selected.profile_id, selected.provider, tuple(evaluations))
+        return RouteDecision(
+            selected.profile_id,
+            selected.provider,
+            tuple(evaluations),
+            selected_origin,
+        )
 
     def execute(
         self,
@@ -363,7 +439,8 @@ class UniversalTaskExecutor:
 
 __all__ = [
     "AdapterDecision", "CandidateAssessment", "ExecutionTarget",
-    "ModelResponseProtocol", "ModelServicePlanProtocol", "ModelServicePlannerProtocol",
+    "ModelProfileOrigin", "ModelResponseProtocol", "ModelServicePlanProtocol", "ModelServicePlannerProtocol",
+    "PinnedProfileOriginVerifier", "ProfileOriginVerifierProtocol",
     "RouteDecision", "TargetEvaluation", "TaskAdapterProtocol", "TaskStatus",
     "ToolRunnerProtocol", "UniversalTaskExecutor", "UniversalTaskRequest",
     "UniversalTaskResult",

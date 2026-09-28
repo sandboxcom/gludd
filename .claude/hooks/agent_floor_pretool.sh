@@ -7,7 +7,7 @@
 # breach. A hook cannot dispatch (only the model can) — this is a forcing SIGNAL.
 # FAST + FAIL-OPEN: short probe; any error -> emit nothing, never wedge a tool.
 
-FLOOR="${CLAUDE_AGENT_FLOOR:-3}"
+FLOOR="${CLAUDE_AGENT_FLOOR:-0}"
 TARGET="${CLAUDE_AGENT_TARGET:-3}"
 CEILING="${CLAUDE_AGENT_CEILING:-3}"
 # Live floor override (see agent_floor_stop.sh): a valid integer in this file wins.

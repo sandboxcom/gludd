@@ -6,96 +6,18 @@ Pure-Python, stdlib only. A 2D rectangle-based R-tree for spatial queries.
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
-from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
+
+from general_ludd.algorithms._r_tree_nodes import BBox as BBox
+from general_ludd.algorithms._r_tree_nodes import _Node as _Node
 
 T = TypeVar("T")
 
-
-@dataclass
-class BBox:
-    x1: float
-    y1: float
-    x2: float
-    y2: float
-
-    @property
-    def area(self) -> float:
-        return max(0.0, self.x2 - self.x1) * max(0.0, self.y2 - self.y1)
-
-    @property
-    def margin(self) -> float:
-        return 2.0 * ((self.x2 - self.x1) + (self.y2 - self.y1))
-
-    def contains(self, other: BBox) -> bool:
-        return self.x1 <= other.x1 and self.y1 <= other.y1 and self.x2 >= other.x2 and self.y2 >= other.y2
-
-    def intersects(self, other: BBox) -> bool:
-        return not (self.x2 < other.x1 or self.x1 > other.x2 or self.y2 < other.y1 or self.y1 > other.y2)
-
-    def distance_sq(self, other: BBox) -> float:
-        dx: float = max(0.0, max(self.x1 - other.x2, other.x1 - self.x2))
-        dy: float = max(0.0, max(self.y1 - other.y2, other.y1 - self.y2))
-        return dx * dx + dy * dy
-
-    def expanded(self, other: BBox) -> BBox:
-        return BBox(
-            x1=min(self.x1, other.x1),
-            y1=min(self.y1, other.y1),
-            x2=max(self.x2, other.x2),
-            y2=max(self.y2, other.y2),
-        )
-
-    @staticmethod
-    def union_all(bboxes: Sequence[BBox]) -> BBox:
-        if not bboxes:
-            return BBox(math.inf, math.inf, -math.inf, -math.inf)
-        x1 = min(b.x1 for b in bboxes)
-        y1 = min(b.y1 for b in bboxes)
-        x2 = max(b.x2 for b in bboxes)
-        y2 = max(b.y2 for b in bboxes)
-        return BBox(x1, y1, x2, y2)
-
-    @property
-    def center(self) -> tuple[float, float]:
-        return ((self.x1 + self.x2) / 2.0, (self.y1 + self.y2) / 2.0)
-
-
-class _Node(Generic[T]):
-    __slots__ = ("bbox", "children", "data", "is_leaf", "parent")
-
-    def __init__(self, is_leaf: bool = True) -> None:
-        self.bbox: BBox = BBox(math.inf, math.inf, -math.inf, -math.inf)
-        self.children: list[Any] = []
-        self.data: list[Any] = []
-        self.parent: _Node[T] | None = None
-        self.is_leaf = is_leaf
-
-    @property
-    def size(self) -> int:
-        return len(self.children)
-
-    def child_bbox(self, idx: int) -> BBox:
-        child = self.children[idx]
-        if isinstance(child, BBox):
-            return child
-        if isinstance(child, _Node):
-            return child.bbox
-        return BBox(math.inf, math.inf, -math.inf, -math.inf)
-
-    def recalc_bbox(self) -> None:
-        bboxes: list[BBox] = []
-        for child in self.children:
-            if isinstance(child, BBox):
-                bboxes.append(child)
-            elif isinstance(child, _Node):
-                bboxes.append(child.bbox)
-        self.bbox = BBox.union_all(bboxes)
-
-
 class RTree(Generic[T]):
+    """Index two-dimensional bounding boxes for spatial queries."""
+
     def __init__(self, max_entries: int = 5, min_entries: int = 2) -> None:
+        """Initialize an empty tree with the requested node capacities."""
         if min_entries < 1:
             raise ValueError("min_entries must be >= 1")
         if max_entries < 2 * min_entries:
@@ -107,15 +29,19 @@ class RTree(Generic[T]):
 
     @property
     def size(self) -> int:
+        """Return the number of indexed values."""
         return self._size
 
     def __len__(self) -> int:
+        """Return the number of indexed values."""
         return self._size
 
     def __bool__(self) -> bool:
+        """Return whether the tree contains at least one value."""
         return self._size > 0
 
     def insert(self, bbox: BBox, data: T) -> None:
+        """Insert a value associated with a bounding box."""
         leaf = self._choose_leaf(bbox)
         leaf.children.append(bbox)
         leaf.data.append(data)
@@ -125,19 +51,23 @@ class RTree(Generic[T]):
             self._split(leaf)
 
     def search(self, query: BBox) -> list[T]:
+        """Return values whose bounding boxes intersect a query box."""
         result: list[T] = []
         self._search_rec(self._root, query, result)
         return result
 
     def search_bbox(self, query: BBox) -> list[tuple[BBox, T]]:
+        """Return intersecting bounding-box and value pairs."""
         result: list[tuple[BBox, T]] = []
         self._search_bbox_rec(self._root, query, result)
         return result
 
     def range_search(self, min_x: float, min_y: float, max_x: float, max_y: float) -> list[T]:
+        """Return values intersecting the supplied coordinate range."""
         return self.search(BBox(min_x, min_y, max_x, max_y))
 
     def nearest(self, point: tuple[float, float], k: int = 1) -> list[tuple[float, T]]:
+        """Return up to ``k`` values nearest to a point."""
         query_box = BBox(point[0], point[1], point[0], point[1])
         candidates: list[tuple[float, Any]] = [(self._root.bbox.distance_sq(query_box), self._root)]
         result: list[tuple[float, T]] = []
@@ -165,14 +95,17 @@ class RTree(Generic[T]):
         return result
 
     def contains_point(self, x: float, y: float) -> list[T]:
+        """Return values whose bounding boxes contain a point."""
         return self.search(BBox(x, y, x, y))
 
     @property
     def depth(self) -> int:
+        """Return the current tree depth."""
         return self._depth_rec(self._root)
 
     @property
     def total_nodes(self) -> int:
+        """Return the number of internal and leaf nodes."""
         return self._count_nodes(self._root)
 
     def _depth_rec(self, node: _Node[T] | None) -> int:

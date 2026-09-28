@@ -50,6 +50,7 @@ _tmp_counter = 0
 _GLOBAL_RUNTIME_STATE_NAMES = frozenset(
     {
         "gludd-block-counter.json",
+        "gludd-dispatch-outcomes.json",
         "gludd-force-dispatch.json",
         "gludd-hot-delegate.js",
         "gludd-hot-enforce-session-start.js",
@@ -159,6 +160,9 @@ def _run_ts(
     _tmp_counter += 1
     state_root = _runtime_state_root()
     false_done_path = str(state_root / f"gludd-false-done-blocks-test-{os.getpid()}-{_tmp_counter}.json")
+    dispatch_outcomes_path = str(
+        state_root / f"gludd-dispatch-outcomes-test-{os.getpid()}-{_tmp_counter}.json"
+    )
     hot_prefix = state_root / f"gludd-hot-{os.getpid()}-{_tmp_counter}-"
     with tempfile.NamedTemporaryFile(
         mode="w",
@@ -179,6 +183,7 @@ def _run_ts(
         # explicitly overrides it.
         env["GLUDD_DISENGAGE_PATH"] = str(state_root / f"gludd-disengage-hermetic-{os.getpid()}.json")
         env["GLUDD_FALSE_DONE_BLOCKS_FILE"] = false_done_path
+        env["GLUDD_DISPATCH_OUTCOMES_FILE"] = dispatch_outcomes_path
         env["GLUDD_HOT_MODULE_PREFIX"] = str(hot_prefix)
         if env_override:
             env.update(env_override)
@@ -209,7 +214,7 @@ def _run_ts(
                 continue
         return None
     finally:
-        for path in (tmp, false_done_path):
+        for path in (tmp, false_done_path, dispatch_outcomes_path):
             with contextlib.suppress(OSError):
                 os.unlink(path)
         for artifact_path in state_root.glob(f"{hot_prefix.name}*"):
@@ -832,7 +837,8 @@ try {{
             "GLUDD_MAINTHREAD_STREAK_ENFORCE": "1",
             "GLUDD_MAINTHREAD_STREAK_FILE": sf,
             "GLUDD_FORCE_DISPATCH_PATH": fd,
-            "CLAUDE_AGENT_TARGET": "6",
+            "CLAUDE_AGENT_FLOOR": "1",
+            "CLAUDE_AGENT_TARGET": "3",
         },
     )
     assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
@@ -1110,6 +1116,7 @@ console.log(JSON.stringify({{
             "GLUDD_TASKS_MD": tasks_path,
             "GLUDD_TODOWRITE_STATE": todowrite_path,
             "GLUDD_SESSION_STATE": session_state,
+            "CLAUDE_AGENT_FLOOR": "1",
         },
     )
     assert result["r1"] is None, f"Call 1 should be allowed, got: {result['r1']}"
@@ -1378,11 +1385,11 @@ def test_multitask_text_complete_blocks_thin_wave() -> None:
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
 const plugin = await mod.default({{}})
-// Build thisMessageDispatches = 3 via dispatch calls
+// Build thisMessageDispatches = 2 via dispatch calls
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'agent'}}, undefined)
-await plugin['tool.execute.before']({{tool: 'workflow'}}, undefined)
-// Call experimental.text.complete — should detect 3 < MIN_DISPATCHES=10 and blank text
+// The configured value 99 clamps to the canonical minimum/ceiling of 3.
+// Call experimental.text.complete — should detect 2 < 3 and blank text.
 let output
 let error = null
 try {{
@@ -1410,7 +1417,7 @@ console.log(JSON.stringify({{
         result = _run_ts(
             code,
             env_override={
-                "GLUDD_MIN_DISPATCHES": "10",
+                "GLUDD_MIN_DISPATCHES": "99",
                 "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
                 "GLUDD_MULTITASK_STATE_FILE": state_file,
                 "GLUDD_DISENGAGE_PATH": disengage_path,
@@ -1649,26 +1656,26 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
 
 
 # ============================================================================
-# FAILING TESTS — prove grinding-inline is not blocked correctly
+# Zero-floor behavior — inline work stays available unless the operator opts in
 # ============================================================================
 
 
-def test_multitask_grind_inline_no_prior_dispatch() -> None:
-    """Agent grinds inline without dispatching: consecutive counter catches it.
+def test_multitask_zero_floor_keeps_inline_mutation_available() -> None:
+    """A zero floor leaves inline mutation available without a dispatch.
 
     Read tools (read/grep/glob) are excluded from the consecutive non-dispatch
     counter per the plugin spec: investigation bursts should never trigger the
     grinding penalty. Non-read tools (edit/write/bash) are counted.
 
-    With MIN_DISPATCHES=0 (under-floor disabled for this test) and THRESHOLD=3,
-    makes 4 consecutive non-read non-dispatch calls without dispatching first.
-    Read tools are allowed and do not increment the counter.
+    With MIN_DISPATCHES=0, neither the minimum nor its grinding backstop is
+    active. Read tools and mutations remain available without make-work
+    delegation; the hard concurrent-dispatch ceiling is tested separately.
 
     Call 1 (read): ALLOWED — read tools exempt from counter.
     Call 2 (read): ALLOWED — read tools exempt, counter still 0.
     Call 3 (edit): consecutive=1 < threshold → ALLOWED (below threshold).
     Call 4 (write): consecutive=2 < threshold → ALLOWED (below threshold).
-    Call 5 (bash): consecutive=3 >= threshold → CONSECUTIVE NON-DISPATCH STREAK.
+    Call 5 (bash): ALLOWED — no positive floor was configured.
     """
     state_file = f"/tmp/gludd-multitask-grind-{os.getpid()}.json"
     _clean_state_files(state_file, "/tmp/gludd-watchdog-disengage.json", "/tmp/gludd-force-dispatch.json")
@@ -1709,20 +1716,20 @@ console.log(JSON.stringify({{
     assert result["r3_denied"] is False, f"Call 3 (edit) must be allowed (counter=1 < 3). Got: {result}"
     # Call 4 (write): consecutive=2 < threshold=3 → ALLOWED
     assert result["r4_denied"] is False, f"Call 4 (write) must be allowed (counter=2 < 3). Got: {result}"
-    # Call 5 (bash): consecutive=3 >= threshold → CONSECUTIVE NON-DISPATCH STREAK
-    assert result["r5_denied"] is True, f"Call 5 (bash) must be denied (counter=3 >= 3). Got: {result}"
-    assert result["r5_hasStreak"] is True, (
-        f"Call 5 (counter=3 >= threshold=3) must fire CONSECUTIVE NON-DISPATCH STREAK. Got: {result}"
+    # With no configured minimum, all inline mutation remains available.
+    assert result["r5_denied"] is False, f"Call 5 (bash) must remain allowed at floor zero. Got: {result}"
+    assert result["r5_hasStreak"] is False, (
+        f"A zero floor must not emit CONSECUTIVE NON-DISPATCH STREAK. Got: {result}"
     )
     _clean_state_files(state_file)
 
 
 def test_multitask_text_only_response_next_tool_blocked() -> None:
-    """After floor is satisfied (15 dispatches), consecutive counter blocks grinding.
+    """After the capped floor is satisfied, consecutive counter blocks grinding.
 
-    With MIN_DISPATCHES=10 and THRESHOLD=3, dispatches 15 agents to satisfy
-    the floor, then makes 4 non-dispatch calls using non-read tools (edit/write/bash).
-    Since the floor IS satisfied (15 >= 10), the under-floor block does NOT fire.
+    With MIN_DISPATCHES=99 clamped to 3 and THRESHOLD=3, dispatches three agents
+    to satisfy the floor, then makes four non-dispatch calls using non-read tools.
+    Since the floor is satisfied (3 >= 3), the under-floor block does not fire.
     Read tools (read/grep/glob) are excluded from the consecutive counter per plugin spec.
     Instead, the consecutive counter catches the grinding pattern with non-read tools:
 
@@ -1736,8 +1743,8 @@ def test_multitask_text_only_response_next_tool_blocked() -> None:
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
 const plugin = await mod.default({{}})
-// Satisfy the floor: 15 dispatches so thisMessageDispatches >= MIN_DISPATCHES
-for (let i = 0; i < 15; i++) {{
+// Satisfy the capped floor: 3 dispatches.
+for (let i = 0; i < 3; i++) {{
     await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 }}
 // Now make non-dispatch calls with non-read tools — grinding after floor satisfied
@@ -1761,14 +1768,14 @@ console.log(JSON.stringify({{
         code,
         env_override={
             "GLUDD_MULTITASK_STATE_FILE": state_file,
-            "GLUDD_MIN_DISPATCHES": "10",
-            "GLUDD_MULTITASK_MAX_DISPATCHES": "20",
+            "GLUDD_MIN_DISPATCHES": "99",
+            "GLUDD_MULTITASK_MAX_DISPATCHES": "99",
             "GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD": "3",
             "GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS": "60000",
             "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
         },
     )
-    # Calls 1-2 are allowed: floor satisfied (15 >= 10), counter below threshold
+    # Calls 1-2 are allowed: capped floor satisfied (3 >= 3), counter below threshold
     assert result["r1_allowed"] is True, f"Call 1 (edit) must be ALLOWED: floor satisfied, counter=1 < 3. Got: {result}"
     assert result["r2_allowed"] is True, (
         f"Call 2 (write) must be ALLOWED: floor satisfied, counter=2 < 3. Got: {result}"
@@ -3470,6 +3477,21 @@ def test_objective_runtime_hook_invocation() -> None:
         "await plugin['tool.execute.before']({tool: 'read', args: {}}, {args: {}})",
     )
     result = _run_ts(code, env_override={"GLUDD_OBJECTIVE_ENFORCE": "0"})
+    assert result is None or isinstance(result, dict)
+
+
+# ---------------------------------------------------------------------------
+# enforce-pipeline-kickoff.ts  —  real proxy-hook invocation
+# ---------------------------------------------------------------------------
+
+
+def test_pipeline_kickoff_runtime_hook_invocation() -> None:
+    code = _factory_plugin_code(
+        "enforce-pipeline-kickoff.ts",
+        "tool.execute.before",
+        "await plugin['tool.execute.before']({tool: 'read', args: {}}, {args: {}})",
+    )
+    result = _run_ts(code, env_override={"GLUDD_PIPELINE_KICKOFF_ENFORCE": "0"})
     assert result is None or isinstance(result, dict)
 
 

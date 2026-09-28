@@ -28,7 +28,7 @@ def upgrade() -> None:
             "created_at",
             sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.text("(strftime('%Y-%m-%dT%H:%M:%f', 'now'))"),
+            server_default=sa.func.now(),
         ),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("attempts", sa.Integer(), nullable=False, server_default=sa.text("0")),

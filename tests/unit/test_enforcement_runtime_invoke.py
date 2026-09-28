@@ -569,7 +569,7 @@ console.log(JSON.stringify({{type: state.wave[0]?.type}}))
 
 
 def test_delegate_streak_at_threshold_denied() -> None:
-    """Streak >= threshold + live agents below target = deny.
+    """An opted-in floor denies a streak below its configured target.
     Uses unique state files to avoid xdist race conditions with disengage files."""
     pid = os.getpid()
     sf = f"/tmp/gludd-mainthread-streak-invoke-{pid}.json"
@@ -598,7 +598,8 @@ try {{
         result = _run_ts(code, env_override={
             "GLUDD_LIVE_AGENTS_COUNT": "0",
             "GLUDD_TASKS_MD": tasks_path,
-            "CLAUDE_AGENT_TARGET": "10",
+            "CLAUDE_AGENT_FLOOR": "1",
+            "CLAUDE_AGENT_TARGET": "3",
             "GLUDD_MAINTHREAD_STREAK_FILE": sf,
             "GLUDD_DISENGAGE_PATH": df,
         })
@@ -696,11 +697,14 @@ console.log(JSON.stringify({allowed: r === undefined || r === null}))
 
 
 def test_floor_streak_at_max_plus_one_denied() -> None:
-    """3 non-dispatch calls with open work = 3rd call denied (MAX_STREAK=2)."""
+    """With an opted-in floor, call 3 is denied after MAX_STREAK=2."""
     tasks_path = f"/tmp/gludd-test-tasks-floor-invoke-{os.getpid()}.md"
     todowrite_path = f"/tmp/gludd-todowrite-state-invoke-{os.getpid()}.json"
     session_state = f"/tmp/gludd-session-start-invoke-{os.getpid()}.json"
+    floor_override = f"/tmp/gludd-floor-override-invoke-{os.getpid()}"
+    load_throttle = f"/tmp/gludd-load-throttle-invoke-{os.getpid()}"
     _clean_state_files(tasks_path, todowrite_path, session_state,
+                       floor_override, load_throttle,
                        "/tmp/gludd-watchdog-disengage.json")
     with open(tasks_path, "w") as f:
         f.write("- [ ] floor test\n")
@@ -722,6 +726,9 @@ console.log(JSON.stringify({{
 }}))
 """
         result = _run_ts(code, env_override={
+            "CLAUDE_AGENT_FLOOR": "1",
+            "GLUDD_FLOOR_OVERRIDE_PATH": floor_override,
+            "GLUDD_LOAD_THROTTLE_PATH": load_throttle,
             "GLUDD_TASKS_MD": tasks_path,
             "GLUDD_TODOWRITE_STATE": todowrite_path,
             "GLUDD_SESSION_STATE": session_state,
@@ -730,7 +737,13 @@ console.log(JSON.stringify({{
         assert result["r2_ok"] is True, f"Call 2 should be allowed: {result}"
         assert result["r3_deny"] is True, f"Call 3 should be denied: {result}"
     finally:
-        _clean_state_files(tasks_path, todowrite_path, session_state)
+        _clean_state_files(
+            tasks_path,
+            todowrite_path,
+            session_state,
+            floor_override,
+            load_throttle,
+        )
 
 
 def test_floor_read_tools_allowed() -> None:

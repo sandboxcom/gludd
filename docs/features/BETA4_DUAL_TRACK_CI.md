@@ -231,6 +231,65 @@ requiring an uncut tag. A GitHub tag-triggered run, or an explicit local
 tag and requires it to be the newest semantic-version tag. This preserves the
 post-publication invariant without making pre-publication validation impossible.
 
+### Release version assertion ownership
+
+The 2026-09-26 v0.1.1 exact-head gate exposed a second form of release-version
+drift: the package and CLI correctly reported `0.1.1`, but multiple unit,
+guardrail, and E2E tests still required the copied literal `0.1.0`. The first
+gate found one assertion in batch 10. A replacement gate proved that repair and
+then found another in batch 11. A targeted audit reproduced five failures across
+four files and found one additional weak assertion that could pass on the product
+name while ignoring a wrong version. Production metadata consistency alone could
+not detect those duplicate test authorities before the complete release gate
+reached each file.
+
+Behavioral tests of the current release now import the package's canonical
+`general_ludd.__version__` and assert the complete CLI rendering. The repository
+skeleton separately parses that canonical value as a package version. Tests do
+not copy the current release number or weaken the contract to an arbitrary
+substring. Historical-version literals remain valid only in fixtures explicitly
+testing parsers, migrations, artifact names, or compatibility behavior.
+
+This follows practitioner experience rather than assuming the failure is unique
+to Gludd. [setuptools-scm issue #1231](https://github.com/pypa/setuptools-scm/issues/1231)
+records a CI build failure caused by two simultaneous version authorities, and
+the long-running [setuptools-scm issue #804](https://github.com/pypa/setuptools-scm/issues/804)
+records a fallback-version mismatch that survived from 2023 into later releases.
+The operational rule is therefore strict: one owner supplies the version, every
+runtime and test consumer derives from it, and the exact-head gate verifies the
+observable command before any tag is created.
+
+### Pending stable release ownership
+
+The next exact-head replay exposed the complementary lifecycle defect in
+`unit-1b` batch 25. Two objective-plugin tests assumed that a pending release
+must carry a prerelease suffix. Changing those assertions to `0.1.1` would have
+hidden the production problem: the guard itself used the same suffix heuristic,
+so an unpublished stable candidate could accumulate unpushed work without the
+release-focused dispatch denial. A non-collected test-package initializer also
+retained a stale beta3 assertion that the ordinary test runner never executed.
+
+The pyproject value now identifies the candidate, while Git evidence determines
+its local release state. The guard considers that value pending until an exact
+`v<version>` annotated tag resolves to the current commit. A missing tag, a
+lightweight tag, or a tag on an older commit remains pending. Git is invoked with
+an argument vector after a conservative ref-component check; no shell or network
+lookup is involved, and each read has a ten-second bound. This is an admission
+guard only: it does not mutate refs, restart services, or touch deployment
+resources, so it preserves ZDD. Rollback is the atomic guardrail commit followed
+by the required OpenCode restart.
+
+Real-hook tests create isolated repositories with an upstream and an unpushed
+candidate. They prove all four lifecycle states rather than mirroring the
+TypeScript predicate in Python. The version-consistency suite also forbids the
+non-collected package marker from becoming another version owner. This follows
+the workflow experience in [setuptools-scm issue #460](https://github.com/pypa/setuptools-scm/issues/460),
+where release-branch topology made tags invisible to direct history, and
+[issue #767](https://github.com/pypa/setuptools-scm/issues/767), where operators
+observed different version state before and after tagging. The practical rule is
+that a stable-looking string is not release evidence; the immutable tag and its
+target commit are.
+
 Replacement candidate `f71a84dced1febed7c40fb8e5027d92194dee102` passed the
 repaired batch 36, then batch 37 exposed a second AF_UNIX path-budget defect.
 The runner already assigned every batch a compact, owned `TMPDIR`, but pytest's
@@ -539,6 +598,29 @@ The following evidence is invalid:
 - hosted coverage whose artifact, size, digest, or Python identity is unbound; or
 - a locally compensated cleanup that hides an application-owned resource leak.
 
+The commit-preflight gate is deliberately not a release lane. `make gate` must
+test the candidate before a commit exists, so it invokes the serial runner's
+explicit dirty-worktree mode. That mode still requires the expected HEAD, hashes
+the complete worktree before and after the shard run, and fails if any candidate
+content changes while tests execute. Its terminal shard attestation retains
+`clean: false` and can never satisfy release verification. The runner rejects any
+attempt to combine the dirty-worktree option with release-policy attestation.
+After the gate passes, the signed gate status binds that same worktree identity
+to the staged index; the commit guard rejects a partial or subsequently changed
+index. Canonical local and hosted dual-track producers remain clean-only.
+
+This split avoids a long-lived practitioner failure mode without hiding user
+changes behind an implicit stash. pre-commit issue
+[#2127](https://github.com/pre-commit/pre-commit/issues/2127) reproduces a
+commit-time dirty-tree transition that fails without restoring every change, and
+issue [#1418](https://github.com/pre-commit/pre-commit/issues/1418) shows a
+checkout hook breaking the framework's hidden stash/restore sequence. GSD issue
+[#3141](https://github.com/gsd-build/gsd-2/issues/3141) reports an automated
+work-to-commit state machine halting permanently after dirty-tree, stash, and
+cleanup assumptions cascade. Gludd therefore observes an immutable content
+identity directly during preflight and reserves clean-commit identity for actual
+release evidence.
+
 Every bounded shard batch contains at most 16 files, uses one worker, disables
 worker restarts, has a unique base temporary directory, emits heartbeats, and
 terminates its owned process group with bounded TERM-to-KILL cleanup. The 16-file
@@ -701,7 +783,7 @@ updated and rerun through both lanes.
 - [download-artifact v8 Buffer warning report](https://github.com/actions/upload-artifact/issues/811)
 - [actions/toolkit artifact release notes](https://github.com/actions/toolkit/blob/main/packages/artifact/RELEASES.md)
 
-## Paired-lane fail-fast and coverage source boundary
+## Paired-lane failure collection and coverage source boundary
 
 Candidate `41a6d38e50a381ac077e433b6394592c77df716a` and hosted run
 `32962870788` verified the hidden-file repair: all eight hosted shards uploaded
@@ -711,14 +793,38 @@ later shards; on GitHub, the coverage audit correctly enforced independent 75%
 line and branch floors but graded four measured collection files outside its
 declared `src/general_ludd` source tree along with 111 genuine source gaps.
 
-Pytest documents `-x` as the immediate stop contract. A long-lived practitioner
-request specifically calls out the hosted-time cost of continuing after failure,
-and xdist issue 868 records that process-level `--maxfail` behavior has cleanup
-edge cases. Gludd therefore owns fail-fast at the serial shard boundary after the
-failed child's cleanup, rather than delegating cross-process policy to xdist.
+Pytest documents `-x` as the immediate stop contract, but an all-shard release
+diagnostic has a different responsibility: retain every independent ordinary
+test, collection, and no-tests outcome without allowing a damaged runner to
+start more work. A long-lived practitioner request calls out the hosted-time
+cost of continuing after failure, while pytest discussion 13213 shows that
+`--continue-on-collection-errors` does not cover stale explicit node arguments:
+pytest classifies those as usage errors. Gludd therefore owns the boundary
+between child processes. Exit results 1, 2, 5, and the supported plugin result 6
+are collected only when that batch also produced a readable, hash-preserved
+coverage database and completed cleanup; later batches and shards then run.
 
 - [pytest practitioner request for hosted fail-fast behavior](https://github.com/pytest-dev/pytest/issues/9515)
+- [pytest practitioner report: collection continuation does not cover stale nodes](https://github.com/pytest-dev/pytest/discussions/13213)
 - [xdist maxfail cleanup report](https://github.com/pytest-dev/pytest-xdist/issues/868)
+
+Cancellation, worker death, no-progress timeout, interpreter drift, disk
+headroom loss, empty plans, workspace or temporary-root setup errors, missing or
+malformed coverage, and cleanup failure remain terminal. This distinction is
+intentionally stricter than the child's numeric result alone. A 2026 xdist
+practitioner report reproduces a receiver thread hanging indefinitely after
+workers exit, and a long-lived pytest-cov report shows coverage databases
+failing with a missing SQLite table. The serial owner therefore terminates and
+reaps its process group, validates coverage through coverage.py before copying
+it, compares source and destination digests, classifies destination I/O errors,
+cleans partially created resources, and records every reached setup, test,
+coverage, and cleanup phase in the terminal summary. Setup or cleanup safety
+faults override ordinary pytest and coverage results; an established safety
+stop remains authoritative, and an operator signal retains strongest
+precedence.
+
+- [xdist practitioner report: dead-worker cleanup can hang](https://github.com/pytest-dev/pytest-xdist/issues/1313)
+- [pytest-cov practitioner report: malformed coverage database](https://github.com/pytest-dev/pytest-cov/issues/385)
 
 Coverage.py defines `source` as the file trees eligible for measurement and its
 JSON reporting interface provides explicit include/omit selection. Gludd's audit
@@ -729,11 +835,13 @@ floors; filtering cannot turn a genuine low-coverage source file green.
 - [coverage.py source contract](https://github.com/coveragepy/coveragepy/blob/main/coverage/control.py)
 - [coverage.py JSON include/omit contract](https://github.com/coveragepy/coveragepy/blob/main/doc/python-coverage.1.txt)
 
-The zero-downtime response is candidate invalidation: after either lane fails,
-the producer stops later shards, completes only owner cleanup, emits the terminal
-failure, and creates no tag or deployment. Rollback is one commit per contract;
-rolling back source filtering intentionally restores the false-positive files,
-while rolling back fail-fast restores wasted work but cannot make a release green.
+The zero-downtime response is still candidate invalidation: any collected or
+terminal failure prevents a successful attestation, tag, or deployment. Ordinary
+failures may finish the immutable diagnostic plan and aggregate intact coverage;
+a safety fault starts no later work and completes only owner cleanup. Rollback is
+one commit per contract and changes no service, database, daemon, or external
+model process; rolling it back restores incomplete failure evidence but cannot
+make a failed candidate release-eligible.
 
 ## Diagnostic artifact workspace isolation
 
@@ -2292,8 +2400,10 @@ evidence.
 
 The stable release is bound to the exact ledger declarations S83.157 through
 S83.168. The checker rejects a missing or partial task set, even if every beta4
-task is complete, and reports only unchecked members of that exact set. S83.166
-is the terminal publish/promotion action, so it must be declared but is excluded
+task is complete, and reports every member that is not effectively complete.
+A checked marker cannot close a task whose explicit status remains `pending` or
+`in_progress`, while an unchecked task always remains open. S83.166 is the
+terminal publish/promotion action, so it must be declared but is excluded
 from the pre-publication readiness cycle just as beta4's terminal release action
 is. Post-publication verification remains responsible for completing it.
 
@@ -2328,3 +2438,137 @@ branch mutation, and the stable tag must pass the existing immutable evidence
 path before publication. It starts no process, service, or cleanup task. Rollback
 is the isolated checker, test, and documentation commit; the previously supported
 beta tag and its task mapping remain unchanged.
+
+### Exact-SHA tag validation reuse (2026-09-27)
+
+The tag workflow previously repeated five heavyweight validation families after
+the identical development commit had already completed them: the two-version
+FreeLLMAPI upstream build, eight canonical coverage shards, coverage aggregation,
+four Molecule shards, and game-building validation. GitHub treats a branch push
+and a tag push as separate events, so this was a second execution rather than a
+continuation of the already-green run.
+
+The tag workflow now has a bounded `release_source_proof` job. It checks out the
+immutable event SHA and invokes the existing fail-closed CI verdict helper with
+both the full `GITHUB_SHA` and the explicit `development` branch. The helper now
+queries the exact commit and `Build and Release` workflow without GitHub's
+server-side branch filter, requests `headBranch` and `event`, then locally requires
+the full SHA, bare `development` ref name, workflow name, and `push` event before
+selecting the newest run. Only terminal `success` prints the source run ID.
+Missing identity fields, pending, cancelled, skipped, failed, differently named,
+or differently addressed runs cannot authorize reuse.
+
+Only validations already covered by that complete source workflow are skipped in
+the tag run. The two-version gate still executes on the tag's exact checkout.
+Linux, macOS, Windows, Termux, container, and Ansible execution-environment jobs
+still rebuild and smoke the release-versioned artifacts. The release fan-in still
+generates the SBOM, wheel and sdist, checksums, source-SHA manifest, complete asset
+matrix, published-release verification, downloadable binary smoke, and rollback
+evidence. Its condition enumerates every direct dependency result: source proof,
+gate, and artifact producers must be `success`, while only the five reused job
+families may be `skipped`. A cancellation, new dependency state, or condition
+drift remains fail closed.
+
+This changes the configured tag critical-path ceiling before publication from the
+120-minute test-shard lane to the 45-minute tag-specific artifact lane, a bounded
+75-minute reduction. It also avoids up to 16 duplicate hosted jobs per release
+(two upstream legs, eight test shards, one coverage aggregation, four Molecule
+shards, and one game job). These are configuration-bound ceilings, not an
+assertion that every run consumes its entire timeout; hosted timing remains
+observable in the source and tag workflow records.
+
+Practitioner and platform evidence reviewed 2026-09-27:
+
+- [GitHub Community discussion #27031](https://github.com/orgs/community/discussions/27031),
+  opened 2021-07-02, records the long-lived branch-then-tag duplicate-run problem
+  for one commit and recommends an exact-commit pre-job before skipping duplicate
+  work. Gludd uses its owned verdict helper rather than adding an unpinned generic
+  skip action.
+- [GitHub Community discussion #44396](https://github.com/orgs/community/discussions/44396),
+  opened 2023-01-15, reports duplicate compile, deploy, and release work for the
+  same branch/tag SHA and explains why concurrency cancellation is not a safe
+  substitute. Gludd preserves separate SHA-scoped runs and reuses only an already
+  terminal source result.
+- GitHub's [workflow trigger documentation](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
+  states that multiple triggering events create multiple workflow runs. Its
+  [job dependency documentation](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-jobs)
+  documents skipped dependency propagation, and the
+  [contexts reference](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#needs-context)
+  defines the `success`, `failure`, `cancelled`, and `skipped` results used by the
+  explicit release fan-in.
+- The official [`gh run list` reference](https://cli.github.com/manual/gh_run_list)
+  documents the commit and workflow filters plus the `headBranch`, `headSha`,
+  `event`, and `workflowName` JSON fields. The long-lived empty-result failures in
+  [GitHub CLI issue #5474](https://github.com/cli/cli/issues/5474) and
+  [GitHub Community discussion #24626](https://github.com/orgs/community/discussions/24626)
+  make server-side branch filtering unsuitable as release evidence; Gludd reduces
+  the query by immutable commit/workflow and repeats every authorization check
+  locally.
+
+The rollout is ZDD: no running Gludd service, database, tag, or published artifact
+is changed by the proof job. Old and new application workers are unaffected, and
+an invalid proof stops before publication. Rollback is one workflow/test/doc
+revert; the next tag returns to rerunning every heavy validation while the prior
+release and its immutable artifacts remain available.
+
+### Exact-identity release wait (2026-09-27)
+
+The publication commands previously waited for the release artifact with fixed
+retry loops. `release-recut` stopped after about five minutes and `release-cut`
+stopped after about ten, even though the workflow itself documents a 30–60 minute
+cold build. This created a false operator failure while a healthy release was
+still queued or building. The loops also asked only whether an artifact existed;
+they did not first prove that the terminal workflow belonged to the new tag, its
+full commit SHA, the `Build and Release` workflow, and the `push` event.
+
+Both publication paths now snapshot the newest matching workflow run before tag
+mutation, then delegate to the existing `ci-await` owner with that baseline and
+four-part identity. Re-cuts therefore cannot mistake the prior failed or green
+run for the new tag push. Exact-SHA lookup deliberately omits GitHub's server-side
+branch filter, requests up to 50 commit matches, and locally requires the tag ref,
+SHA, workflow, event, and a run ID newer than the snapshot before choosing the
+newest run. GitHub reports `headBranch` using the bare tag name (`v0.1.1`), not
+the full Git ref (`refs/tags/v0.1.1`), so the selector and its regression fixture
+use that API representation. Every lookup emits a heartbeat. Success requires
+`completed/success`; cancelled, failed, skipped,
+neutral, stale, action-required, startup-failure, timed-out, or an unknown
+completed conclusion fails closed. Lookup errors and an absent run retry within
+one bounded 90-minute window, after which timeout remains non-success.
+
+The poll interval falls from 60 seconds to 10 seconds. This cuts average discovery latency
+from at most 60 seconds to at most 10 seconds (and, under a uniform event arrival
+assumption, from 30 seconds to 5 seconds). The timeout ceiling rises from
+5–10 minutes to 90 minutes so it covers the existing 60-minute cold-build budget
+plus queue margin. This does not weaken the final checks: only after the exact run
+is green do `verify-release-artifact` and `verify-release-completeness` inspect
+the immutable published matrix.
+
+Practitioner and platform evidence reviewed 2026-09-27:
+
+- [GitHub CLI issue #5474](https://github.com/cli/cli/issues/5474), opened
+  2022-04-17, records `gh run list --branch` returning empty JSON and identifies
+  local `headBranch` filtering as the working remedy. Gludd uses commit filtering
+  for query reduction and repeats all identity checks locally.
+- [GitHub Community discussion #24626](https://github.com/orgs/community/discussions/24626),
+  opened 2021-03-01 with years of follow-up, reports the Actions workflow-run API
+  returning no results for branch-filtered queries even when runs are visible.
+  An empty query result is therefore pending evidence, never release permission.
+- [GitHub Community discussion #5673](https://github.com/orgs/community/discussions/5673),
+  opened 2021-09-16 and active through 2026, documents persistent demand for
+  bounded, configurable deployment waits as queued approvals and runner capacity
+  can outlast short client timeouts. Gludd owns an explicit bounded timeout rather
+  than treating one short retry loop as platform truth.
+- [GitHub Community discussion #158805](https://github.com/orgs/community/discussions/158805)
+  records an observed tag-triggered workflow payload in which `head_branch`
+  contains the triggering job's `ref_name`: a bare tag name for a tag and a bare
+  branch name for a branch, with no full ref or ref type. Exact wait therefore
+  compares the bare tag name and rejects an assumed `refs/tags/...` value.
+- The official [`gh run list` manual](https://cli.github.com/manual/gh_run_list)
+  defines the commit, branch, workflow, event, limit, and JSON fields used here.
+  No new polling dependency or custom API client was introduced.
+
+This is ZDD by construction: waiting and verification mutate no application,
+database, service, or release asset. A failed or timed-out exact run stops before
+any success claim; previously published releases keep serving. Rollback is one
+script/Makefile/test/doc commit and restores the shorter loops without changing a
+tag, artifact, or deployment.

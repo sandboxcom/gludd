@@ -437,8 +437,10 @@ class TestBehavioralInvariants:
     """Cross-cutting checks that ensure coherent behavior."""
 
     def test_min_dispatch_is_explicit_opt_in_with_hard_max(self, plugin_src):
-        """Default to adaptive delegation while preserving the ten-agent ceiling."""
-        assert "const HARD_MAX_DISPATCHES = 10" in plugin_src
+        """Default to adaptive delegation with the canonical three-agent ceiling."""
+        assert "../lib/multitask_config.ts" in plugin_src
+        assert "HARD_MAX_DISPATCHES" in plugin_src
+        assert "clampDispatchCount" in plugin_src
         assert "HAS_CONFIGURED_MIN_DISPATCHES" in plugin_src
         assert (
             "process.env.GLUDD_SESSION_START_MIN_DISPATCHES !== undefined"
@@ -446,7 +448,7 @@ class TestBehavioralInvariants:
         )
         assert re.search(
             r"EFFECTIVE_MIN\s*=\s*HAS_CONFIGURED_MIN_DISPATCHES[\s\S]+?"
-            r"Math\.max\(0,\s*Math\.min\([\s\S]+?MAX_DISPATCHES\)\)[\s\S]+?:\s*0",
+            r"clampDispatchCount\([\s\S]+?\)[\s\S]+?:\s*0",
             plugin_src,
         )
 

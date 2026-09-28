@@ -11,10 +11,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
+from general_ludd.db.repository import TodoRepository
 from general_ludd.event_loop.lease import reclaim_expired_leases
 from general_ludd.event_loop.loop import EventLoop
 from general_ludd.schemas.task_decision import TaskDecision
@@ -57,6 +58,8 @@ class TestClaimPhaseSkipsWhenNoRunnableTodos:
     async def test_claim_phase_skips_when_no_runnable_todos(self):
         loop, mocks = _make_loop()
         mocks["todo_repo"].claim_runnable.return_value = []
+        mocks["todo_repo"].count_active.return_value = 0
+        mocks["todo_repo"].recover_queued_legacy_self_improve.return_value = []
         loop._active_session = mocks["session"]
         loop._tick_project_id = "proj-test"
 
@@ -65,6 +68,226 @@ class TestClaimPhaseSkipsWhenNoRunnableTodos:
         assert loop._tick_state["claimed_todos"] == []
         assert loop._tick_metrics is not None
         mocks["todo_repo"].claim_runnable.assert_awaited_once()
+
+
+class TestSqlBackedReturnClaimOwnership:
+    """SQL-backed review claims advance only the exact project-owned todo."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("status", "transitioned", "reviewable"),
+        [
+            (TodoStatus.ACTIVE.value, True, True),
+            (TodoStatus.AWAITING_RESULT.value, True, True),
+            (TodoStatus.REVIEWING_RETURN.value, False, True),
+            (TodoStatus.COMPLETE.value, False, False),
+        ],
+    )
+    async def test_claim_advances_only_reviewable_todo_lifecycle(
+        self,
+        status: str,
+        transitioned: bool,
+        reviewable: bool,
+    ) -> None:
+        session = AsyncMock()
+        todo_repo = TodoRepository(session)
+        todo = SimpleNamespace(
+            todo_id="TODO-REVIEW",
+            project_id="project-a",
+            status=status,
+            version=7,
+        )
+        todo_repo.get_by_id = AsyncMock(return_value=todo)  # type: ignore[method-assign]
+        todo_repo.transition = AsyncMock()  # type: ignore[method-assign]
+        task_return = SimpleNamespace(
+            return_id="RETURN-1",
+            todo_id=todo.todo_id,
+            project_id="project-a",
+            status="claimed_for_review",
+            updated_at=None,
+        )
+        return_repo = AsyncMock()
+        return_repo.claim_unreviewed.return_value = [task_return]
+        loop = EventLoop(
+            session=session,
+            todo_repo=todo_repo,
+            task_return_repo=return_repo,
+        )
+        loop._active_session = session
+        loop._tick_project_id = "project-a"
+
+        await loop._phase_claim_unreviewed_task_returns()
+
+        todo_repo.get_by_id.assert_awaited_once_with(
+            todo.todo_id,
+            project_id="project-a",
+        )
+        if transitioned:
+            todo_repo.transition.assert_awaited_once_with(
+                todo.todo_id,
+                TodoStatus.REVIEWING_RETURN,
+                7,
+                project_id="project-a",
+            )
+        else:
+            todo_repo.transition.assert_not_awaited()
+        assert loop._tick_state["claimed_returns"] == (
+            [task_return] if reviewable else []
+        )
+        assert task_return.status == (
+            "claimed_for_review" if reviewable else "created"
+        )
+        session.flush.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_claim_without_return_scope_uses_tick_scope_and_fails_closed(
+        self,
+    ) -> None:
+        session = AsyncMock()
+        todo_repo = TodoRepository(session)
+        todo_repo.get_by_id = AsyncMock(return_value=None)  # type: ignore[method-assign]
+        todo_repo.transition = AsyncMock()  # type: ignore[method-assign]
+        task_return = SimpleNamespace(
+            return_id="RETURN-MISSING",
+            todo_id="TODO-MISSING",
+            project_id=None,
+            status="claimed_for_review",
+        )
+        return_repo = AsyncMock()
+        return_repo.claim_unreviewed.return_value = [task_return]
+        loop = EventLoop(
+            session=session,
+            todo_repo=todo_repo,
+            task_return_repo=return_repo,
+        )
+        loop._active_session = session
+        loop._tick_project_id = "project-a"
+
+        await loop._phase_claim_unreviewed_task_returns()
+
+        todo_repo.get_by_id.assert_awaited_once_with(
+            "TODO-MISSING",
+            project_id="project-a",
+        )
+        todo_repo.transition.assert_not_awaited()
+        assert task_return.status == "created"
+        assert loop._tick_state["claimed_returns"] == []
+        session.flush.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_claim_without_active_session_preserves_reviewable_result(
+        self,
+    ) -> None:
+        session = AsyncMock()
+        todo_repo = TodoRepository(session)
+        todo = SimpleNamespace(
+            todo_id="TODO-DETACHED",
+            status=TodoStatus.REVIEWING_RETURN.value,
+            version=3,
+        )
+        todo_repo.get_by_id = AsyncMock(return_value=todo)  # type: ignore[method-assign]
+        todo_repo.transition = AsyncMock()  # type: ignore[method-assign]
+        task_return = SimpleNamespace(
+            return_id="RETURN-DETACHED",
+            todo_id=todo.todo_id,
+            project_id="project-a",
+            status="claimed_for_review",
+        )
+        return_repo = AsyncMock()
+        return_repo.claim_unreviewed.return_value = [task_return]
+        loop = EventLoop(
+            session=session,
+            todo_repo=todo_repo,
+            task_return_repo=return_repo,
+        )
+        loop._active_session = None
+        loop._tick_project_id = "project-a"
+
+        await loop._phase_claim_unreviewed_task_returns()
+
+        assert loop._tick_state["claimed_returns"] == [task_return]
+        session.flush.assert_not_awaited()
+
+
+class TestReviewClaimFallbackBranches:
+    @pytest.mark.asyncio
+    async def test_release_scoped_todo_blocks_only_exact_project(self) -> None:
+        loop, mocks = _make_loop()
+        loop._active_session = mocks["session"]
+        todo = SimpleNamespace(todo_id="TODO-SCOPED", version=9)
+        mocks["todo_repo"].get_by_id.return_value = todo
+        task_return = SimpleNamespace(
+            return_id="RETURN-SCOPED",
+            todo_id=todo.todo_id,
+            project_id="project-a",
+            status="claimed_for_review",
+        )
+
+        await loop._release_review_claim(task_return, "review transport failed")
+
+        mocks["todo_repo"].get_by_id.assert_awaited_once_with(
+            todo.todo_id,
+            project_id="project-a",
+        )
+        mocks["todo_repo"].transition.assert_awaited_once_with(
+            todo.todo_id,
+            TodoStatus.BLOCKED,
+            9,
+            project_id="project-a",
+        )
+
+    @pytest.mark.asyncio
+    async def test_release_unscoped_missing_todo_stops_without_transition(
+        self,
+    ) -> None:
+        loop, mocks = _make_loop()
+        loop._active_session = mocks["session"]
+        mocks["todo_repo"].get_by_id.return_value = None
+        task_return = SimpleNamespace(
+            return_id="RETURN-MISSING",
+            todo_id="TODO-MISSING",
+            project_id=None,
+            status="claimed_for_review",
+        )
+
+        await loop._release_review_claim(task_return, "review transport failed")
+
+        mocks["todo_repo"].get_by_id.assert_awaited_once_with(
+            "TODO-MISSING",
+            project_id=None,
+        )
+        mocks["todo_repo"].transition.assert_not_awaited()
+        assert task_return.status == "created"
+
+    @pytest.mark.asyncio
+    async def test_unscoped_review_without_transport_returns_before_dispatch(
+        self,
+    ) -> None:
+        loop = EventLoop(http_client=None, runner=None)
+        task_return = SimpleNamespace(
+            return_id="RETURN-NO-TRANSPORT",
+            todo_id="TODO-NO-TRANSPORT",
+            project_id=None,
+            queue="model",
+            plan_artifact=None,
+        )
+
+        await loop._dispatch_review_job(task_return)
+
+    @pytest.mark.asyncio
+    async def test_scoped_review_without_transport_preserves_project_identity(
+        self,
+    ) -> None:
+        loop = EventLoop(http_client=None, runner=None)
+        task_return = SimpleNamespace(
+            return_id="RETURN-SCOPED-NO-TRANSPORT",
+            todo_id="TODO-SCOPED-NO-TRANSPORT",
+            project_id="project-a",
+            queue="model",
+            plan_artifact=None,
+        )
+
+        await loop._dispatch_review_job(task_return)
 
 
 class TestDispatchPhaseAdvancesOnSuccess:
@@ -479,52 +702,151 @@ class TestInterruptedDispatchRecoveryBranches:
         manager.filter_actionable_sync.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_status_lookup_and_phase_fallback_feed_actionable_filter(self):
+    async def test_status_lookup_is_project_scoped_and_fail_closed(self):
         manager = MagicMock()
         snapshots = [
             SimpleNamespace(
                 task_id="TODO-RESUME-1",
-                dispatch_state=SimpleNamespace(phase_marker="post-model"),
+                dispatch_state=SimpleNamespace(
+                    todo_id="TODO-RESUME-1",
+                    phase_marker="post-model",
+                    project_id="project-a",
+                    resume_shard_id="project-a:TODO-RESUME-1",
+                    todo_version=4,
+                ),
             ),
-            SimpleNamespace(task_id="TODO-RESUME-2", dispatch_state=None),
-            SimpleNamespace(task_id="TODO-RESUME-3", dispatch_state=None),
+            SimpleNamespace(
+                task_id="TODO-RESUME-2",
+                dispatch_state=SimpleNamespace(
+                    todo_id="TODO-RESUME-2",
+                    phase_marker="pre_model",
+                    project_id="project-b",
+                    resume_shard_id="project-b:TODO-RESUME-2",
+                    todo_version=7,
+                ),
+            ),
         ]
         manager.list_interrupted.return_value = snapshots
-        manager.filter_actionable_sync.return_value = snapshots[:2]
+        manager.claim_resume.return_value = True
         loop, mocks = _make_loop(checkpoint_manager=manager)
         mocks["todo_repo"].get_by_id.side_effect = [
-            SimpleNamespace(status="active"),
-            None,
+            SimpleNamespace(status="queued", version=4, project_id="project-a"),
             RuntimeError("lookup failed"),
         ]
 
         await loop._resume_interrupted_dispatches()
 
-        manager.filter_actionable_sync.assert_called_once_with(
-            snapshots,
-            statuses={"TODO-RESUME-1": "active"},
+        assert mocks["todo_repo"].get_by_id.await_args_list[0].kwargs == {
+            "project_id": "project-a",
+        }
+        assert mocks["todo_repo"].get_by_id.await_args_list[1].kwargs == {
+            "project_id": "project-b",
+        }
+        manager.mark_resumed.assert_called_once_with(
+            "TODO-RESUME-1",
+            phase="post-model",
         )
-        manager.mark_resumed.assert_any_call("TODO-RESUME-1", phase="post-model")
-        manager.mark_resumed.assert_any_call("TODO-RESUME-2", phase="pre_model")
-        assert manager.mark_resumed.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_unwired_repository_assumes_checkpoint_is_actionable(self):
+    async def test_unwired_repository_fails_checkpoint_closed(self):
         manager = MagicMock()
-        snapshot = SimpleNamespace(task_id="TODO-RESUME", dispatch_state=None)
+        snapshot = SimpleNamespace(
+            task_id="TODO-RESUME",
+            dispatch_state=SimpleNamespace(
+                todo_id="TODO-RESUME",
+                phase_marker="pre_model",
+                project_id="project-a",
+                resume_shard_id="project-a:TODO-RESUME",
+                todo_version=1,
+            ),
+        )
         manager.list_interrupted.return_value = [snapshot]
-        manager.filter_actionable_sync.return_value = [snapshot]
         loop, _ = _make_loop(todo_repo=None, checkpoint_manager=manager)
         loop._todo_repo = None
 
         await loop._resume_interrupted_dispatches()
 
-        manager.filter_actionable_sync.assert_called_once_with(
-            [snapshot], statuses={}
+        manager.claim_resume.assert_not_called()
+        manager.mark_resumed.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_only_owned_resume_shard_is_marked_resumed(self):
+        manager = MagicMock()
+        owned = SimpleNamespace(
+            task_id="TODO-OWNED",
+            dispatch_state=SimpleNamespace(
+                phase_marker="pre_model",
+                project_id="project-a",
+                resume_shard_id="project-a:TODO-OWNED",
+            ),
         )
+        contended = SimpleNamespace(
+            task_id="TODO-CONTENDED",
+            dispatch_state=SimpleNamespace(
+                phase_marker="mid_tool_loop",
+                project_id="project-a",
+                resume_shard_id="project-a:TODO-CONTENDED",
+            ),
+        )
+        manager.list_interrupted.return_value = [owned, contended]
+        manager.claim_resume.side_effect = [True, False]
+        loop, mocks = _make_loop(checkpoint_manager=manager)
+        mocks["todo_repo"].get_by_id.side_effect = [
+            SimpleNamespace(status="queued", version=4, project_id="project-a"),
+            SimpleNamespace(status="queued", version=4, project_id="project-a"),
+        ]
+        owned.dispatch_state.todo_id = "TODO-OWNED"
+        owned.dispatch_state.todo_version = 4
+        contended.dispatch_state.todo_id = "TODO-CONTENDED"
+        contended.dispatch_state.todo_version = 4
+
+        await loop._resume_interrupted_dispatches()
+
+        assert manager.claim_resume.call_count == 2
         manager.mark_resumed.assert_called_once_with(
-            "TODO-RESUME", phase="pre_model"
+            "TODO-OWNED",
+            phase="pre_model",
         )
+
+    @pytest.mark.asyncio
+    async def test_resume_rejects_missing_scope_and_stale_active_version(self):
+        manager = MagicMock()
+        missing_scope = SimpleNamespace(
+            task_id="TODO-LEGACY",
+            dispatch_state=SimpleNamespace(
+                todo_id="TODO-LEGACY",
+                phase_marker="pre_model",
+                project_id=None,
+                resume_shard_id=None,
+                todo_version=1,
+            ),
+        )
+        stale = SimpleNamespace(
+            task_id="TODO-STALE",
+            dispatch_state=SimpleNamespace(
+                todo_id="TODO-STALE",
+                phase_marker="pre_model",
+                project_id="project-a",
+                resume_shard_id="project-a:TODO-STALE",
+                todo_version=3,
+            ),
+        )
+        manager.list_interrupted.return_value = [missing_scope, stale]
+        loop, mocks = _make_loop(checkpoint_manager=manager)
+        mocks["todo_repo"].get_by_id.return_value = SimpleNamespace(
+            status="active",
+            version=4,
+            project_id="project-a",
+        )
+
+        await loop._resume_interrupted_dispatches()
+
+        mocks["todo_repo"].get_by_id.assert_awaited_once_with(
+            "TODO-STALE",
+            project_id="project-a",
+        )
+        manager.claim_resume.assert_not_called()
+        manager.mark_resumed.assert_not_called()
 
 
 class TestLegacyClaimRecoveryBranches:
@@ -564,11 +886,18 @@ class TestLegacyClaimRecoveryBranches:
         mocks["todo_repo"].transition.assert_awaited_once_with(
             "TODO-REAPED", TodoStatus.QUEUED, 4, project_id="project-1"
         )
-        release.assert_awaited_once_with(
-            mocks["session"],
-            "repair:TODO-REAPED",
-            holder_id=loop._lease_owner_id,
-        )
+        assert release.await_args_list == [
+            call(
+                mocks["session"],
+                "project:project-1:queue:repair:todo:TODO-REAPED",
+                holder_id=loop._lease_owner_id,
+            ),
+            call(
+                mocks["session"],
+                "repair:TODO-REAPED",
+                holder_id=loop._lease_owner_id,
+            ),
+        ]
         acquire.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -626,9 +955,20 @@ class TestPidClaimTrimBranches:
 
         assert kept == [keep]
         mocks["todo_repo"].transition.assert_awaited_once_with(
-            "TODO-EXCESS", TodoStatus.QUEUED, 3
+            "TODO-EXCESS", TodoStatus.QUEUED, 3, project_id=None
         )
-        release.assert_awaited_once_with(mocks["session"], "batch:TODO-EXCESS")
+        assert release.await_args_list == [
+            call(
+                mocks["session"],
+                "unowned:queue:batch:todo:TODO-EXCESS",
+                holder_id=loop._lease_owner_id,
+            ),
+            call(
+                mocks["session"],
+                "batch:TODO-EXCESS",
+                holder_id=loop._lease_owner_id,
+            ),
+        ]
 
     @pytest.mark.asyncio
     async def test_requeue_failure_skips_lease_release_and_continues(self):
@@ -650,7 +990,18 @@ class TestPidClaimTrimBranches:
             kept = await loop._trim_claimed_to_pid_cap([first, second])
 
         assert kept == []
-        release.assert_awaited_once_with(mocks["session"], "core:TODO-SECOND")
+        assert release.await_args_list == [
+            call(
+                mocks["session"],
+                "unowned:queue:core:todo:TODO-SECOND",
+                holder_id=loop._lease_owner_id,
+            ),
+            call(
+                mocks["session"],
+                "core:TODO-SECOND",
+                holder_id=loop._lease_owner_id,
+            ),
+        ]
 
     @pytest.mark.asyncio
     async def test_lease_release_failure_is_contained(self):

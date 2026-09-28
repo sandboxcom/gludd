@@ -47,10 +47,11 @@ class TestFloorExplicitOptIn:
         assert "REQUIRED_DISPATCHES = HAS_CONFIGURED_MIN_DISPATCHES" in src
         assert re.search(r"REQUIRED_DISPATCHES[\s\S]{0,300}?:\s*0", src)
 
-    def test_min_dispatches_recommendation_is_3(self) -> None:
+    def test_min_dispatches_default_is_opt_in_zero_with_hard_max_three(self) -> None:
         cfg = _config_source()
-        assert _extract_env_default(cfg, "GLUDD_MIN_DISPATCHES") == 3
-        assert _extract_env_default(cfg, "GLUDD_MULTITASK_MIN_DISPATCHES") == 3
+        assert _extract_env_default(cfg, "GLUDD_MIN_DISPATCHES") == 0
+        assert _extract_env_default(cfg, "GLUDD_MULTITASK_MIN_DISPATCHES") == 0
+        assert re.search(r"HARD_MAX_DISPATCHES\s*=\s*3\b", cfg)
 
     def test_required_dispatches_uses_min_dispatches(self) -> None:
         src = PLUGIN_PATH.read_text()

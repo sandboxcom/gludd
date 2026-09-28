@@ -14,6 +14,7 @@ from general_ludd.execution.universal_task import (
     AdapterDecision,
     CandidateAssessment,
     ExecutionTarget,
+    PinnedProfileOriginVerifier,
     TaskStatus,
     UniversalTaskExecutor,
     UniversalTaskRequest,
@@ -222,7 +223,7 @@ def test_universal_task_e2e_uses_one_right_sized_service_plan(
     service_planner = UniversalModelServicePlanner(
         lambda _request, _target: snapshot
     )
-    target = ExecutionTarget(
+    target = ExecutionTarget.bind_origin(
         profile_id="gateway-e2e",
         provider="azure",
         accelerator_sku="observed-azure-vm-gpu",
@@ -236,13 +237,21 @@ def test_universal_task_e2e_uses_one_right_sized_service_plan(
         privacy_evidence="public-data-policy",
         offline=False,
         model_runner_id="vllm-e2e",
+        origin_source="operator-configured",
+        origin_protocol="gludd-native-profile-v1",
+        origin_evidence_sha256="4" * 64,
     )
+    origin = target.profile_origin
+    assert origin is not None
     executor = UniversalTaskExecutor(
         gateway=gateway,
         scheduler=scheduler,
         accelerator_planner=_RouteInventory(),
         target_source=lambda: (target,),
         model_service_planner=service_planner,
+        profile_origin_verifier=PinnedProfileOriginVerifier.from_origins(
+            (origin,)
+        ),
     )
     request = UniversalTaskRequest(
         task_id=f"task:{capability}",
@@ -269,8 +278,8 @@ def test_universal_task_e2e_uses_one_right_sized_service_plan(
     launch = payload["launch"]
     assert isinstance(selection, dict)
     assert isinstance(launch, dict)
-    assert selection["topology"]["model_parallel_devices"] == 2  # type: ignore[index]
-    assert selection["topology"]["data_parallel_replicas"] == 2  # type: ignore[index]
+    assert selection["topology"]["model_parallel_devices"] == 2
+    assert selection["topology"]["data_parallel_replicas"] == 2
     assert launch["replica_count"] == 2
     assert launch["devices_per_replica"] == 2
     assert launch["command"][-6:] == [

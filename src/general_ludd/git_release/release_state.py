@@ -31,6 +31,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from enum import StrEnum
 
+from general_ludd.git_release.provenance import (
+    ArtifactVerificationReceipt,
+    ReceiptPurpose,
+    verify_artifact_receipt,
+)
+
 __all__ = [
     "AdvanceResult",
     "ReleaseState",
@@ -86,6 +92,7 @@ class AdvanceResult:
     __slots__ = ("blocked", "reasons", "state")
 
     def __init__(self, *, blocked: bool, reasons: Sequence[str], state: ReleaseState) -> None:
+        """Record whether a requested transition advanced or was blocked."""
         self.blocked = blocked
         self.reasons = list(reasons)
         self.state = state
@@ -100,11 +107,26 @@ class ReleaseStateMachine:
     :class:`AdvanceResult` and leaves ``state`` unchanged.
     """
 
-    def __init__(self, *, source_sha: str, artifact_digest: str) -> None:
+    def __init__(
+        self,
+        *,
+        source_sha: str,
+        artifact_digest: str,
+        release_id: str | None = None,
+        deployment_target: str | None = None,
+    ) -> None:
+        """Pin release identity, artifact digest, and optional receipt context."""
         if not source_sha or not artifact_digest:
             raise ValueError("source_sha and artifact_digest are required")
+        if (release_id is None) != (deployment_target is None):
+            raise ValueError(
+                "release_id and deployment_target must be provided together",
+            )
         self._source_sha = source_sha
         self._artifact_digest = artifact_digest
+        self._release_id = release_id
+        self._deployment_target = deployment_target
+        self._receipts_required = release_id is not None
         self.state: ReleaseState = ReleaseState.DISCOVER
         # Digest currently being served. Updated on STAGE (new build promoted)
         # and on ROLLBACK (prior known-good restored).
@@ -117,10 +139,12 @@ class ReleaseStateMachine:
 
     @property
     def serving_digest(self) -> str | None:
+        """Return the digest currently known to be serving, if any."""
         return self._serving_digest
 
     @property
     def source_sha(self) -> str:
+        """Return the immutable source commit pinned for this release."""
         return self._source_sha
 
     # -- forward transitions -------------------------------------------------
@@ -135,6 +159,7 @@ class ReleaseStateMachine:
         health_gate_passed: bool = False,
         prior_digest: str | None = None,
         release_page_proven: bool = False,
+        artifact_receipt: ArtifactVerificationReceipt | None = None,
     ) -> AdvanceResult:
         """Move to ``target`` if the spec preconditions hold.
 
@@ -175,6 +200,29 @@ class ReleaseStateMachine:
                     reasons=["GRC-ZDD-001", "artifact-digest-mismatch"],
                     state=self.state,
                 )
+            if self._receipts_required:
+                assert self._release_id is not None
+                assert self._deployment_target is not None
+                receipt_result = verify_artifact_receipt(
+                    artifact_receipt,
+                    expected_purpose=ReceiptPurpose.DEPLOY,
+                    expected_authorization_id=self._release_id,
+                    expected_authorization_source_sha=self._source_sha,
+                    expected_deployment_target=self._deployment_target,
+                    expected_artifact_digest=self._artifact_digest,
+                )
+                if not receipt_result.ok:
+                    receipt_reasons = [
+                        "missing-deploy-receipt"
+                        if reason == "artifact-receipt-missing"
+                        else reason
+                        for reason in receipt_result.reasons
+                    ]
+                    return AdvanceResult(
+                        blocked=True,
+                        reasons=["GRC-SEC-005", *receipt_reasons],
+                        state=self.state,
+                    )
         elif target is ReleaseState.CANARY:
             if not health_gate_passed:
                 return AdvanceResult(
@@ -213,7 +261,12 @@ class ReleaseStateMachine:
 
     # -- rollback (spec §8 "Canary regression") ------------------------------
 
-    def rollback(self, *, reason: str) -> None:
+    def rollback(
+        self,
+        *,
+        reason: str,
+        artifact_receipt: ArtifactVerificationReceipt | None = None,
+    ) -> None:
         """Roll back to the prior known-good digest.
 
         Allowed from CANARY and PROMOTE. Forbidden from RELEASED (recovery is
@@ -227,6 +280,21 @@ class ReleaseStateMachine:
             )
         if self._prior_digest is None:
             raise TransitionError("no prior digest captured; cannot roll back")
+        if self._receipts_required:
+            assert self._release_id is not None
+            assert self._deployment_target is not None
+            receipt_result = verify_artifact_receipt(
+                artifact_receipt,
+                expected_purpose=ReceiptPurpose.ROLLBACK,
+                expected_authorization_id=self._release_id,
+                expected_authorization_source_sha=self._source_sha,
+                expected_deployment_target=self._deployment_target,
+                expected_artifact_digest=self._prior_digest,
+            )
+            if not receipt_result.ok:
+                raise TransitionError(
+                    "rollback receipt invalid: " + ",".join(receipt_result.reasons),
+                )
         self.state = ReleaseState.ROLLBACK
         self._serving_digest = self._prior_digest
         # reason is recorded for observability; callers may emit GRC event

@@ -740,7 +740,11 @@ async def test_event_loop_recovers_legacy_queue_before_claiming() -> None:
         limit=10,
         project_id=None,
     )
-    repo.claim_runnable.assert_awaited_once_with(limit=10, project_id=None)
+    repo.claim_runnable.assert_awaited_once_with(
+        limit=10,
+        max_active=10,
+        project_id=None,
+    )
     assert loop._tick_state["recovered_legacy_self_improve"] == 1
 
 
@@ -766,7 +770,11 @@ async def test_event_loop_recovery_failure_remains_fail_closed() -> None:
     await loop._phase_claim_runnable_todos()
 
     assert loop._tick_state["recovered_legacy_self_improve"] == 0
-    repo.claim_runnable.assert_awaited_once_with(limit=10, project_id=None)
+    repo.claim_runnable.assert_awaited_once_with(
+        limit=10,
+        max_active=10,
+        project_id=None,
+    )
 
 
 @pytest.mark.asyncio

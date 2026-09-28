@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 from collections.abc import AsyncGenerator, Callable, Generator
 from datetime import UTC, datetime, timedelta
 from typing import Any, ClassVar, cast
@@ -47,6 +48,26 @@ from general_ludd.schemas.todo import TodoStatus
 # itself capped at this value so a single query can never load an unbounded
 # result set into memory. ``offset`` enables forward pagination.
 _DEFAULT_LIST_LIMIT = 1000
+
+
+def _todo_dependency_ids(raw: object) -> tuple[str, ...] | None:
+    """Decode persisted todo dependencies; ``None`` means malformed."""
+    if raw is None or raw == "":
+        return ()
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(raw, list):
+        return None
+    dependencies: list[str] = []
+    for value in raw:
+        if not isinstance(value, str) or not value:
+            return None
+        if value not in dependencies:
+            dependencies.append(value)
+    return tuple(dependencies)
 
 
 # C.3 / S27: scoped_to context manager for explicit tenant-scoped operations.
@@ -625,7 +646,13 @@ class TodoRepository:
         await self._session.flush()
         return recovered
 
-    async def claim_runnable(self, limit: int = 10, project_id: str | None = None) -> list[TodoModel]:
+    async def claim_runnable(
+        self,
+        limit: int = 10,
+        project_id: str | None = None,
+        *,
+        max_active: int | None = None,
+    ) -> list[TodoModel]:
         """Claim QUEUED todos for execution with a guarded conditional UPDATE.
 
         SQLite has no row-level locking (``with_for_update`` is silently dropped),
@@ -636,9 +663,46 @@ class TodoRepository:
         the row, so every todo is returned to exactly one caller -> no double
         claim / double dispatch.
         """
-        from sqlalchemy import update
+        from sqlalchemy import func, update
 
         _pid = self._resolve_pid(project_id)
+        claim_limit = max(0, min(limit, _DEFAULT_LIST_LIMIT))
+        if max_active is not None:
+            if (
+                not isinstance(max_active, int)
+                or isinstance(max_active, bool)
+                or not 0 <= max_active <= 10_000
+            ):
+                raise ValueError("max_active must be an integer between 0 and 10000")
+            # A project row is the stable serialization point shared by every
+            # worker claiming for that project. PostgreSQL honors this row lock;
+            # SQLite's single-writer lock plus the guarded updates below retains
+            # the same fail-closed loser behavior.
+            if _pid is not None:
+                project_lock = (
+                    select(ProjectModel.project_id)
+                    .where(ProjectModel.project_id == _pid)
+                    .with_for_update()
+                )
+                if (await self._session.execute(project_lock)).scalar_one_or_none() is None:
+                    return []
+            active_stmt = select(func.count()).select_from(TodoModel).where(
+                TodoModel.status == TodoStatus.ACTIVE.value,
+            )
+            if _pid is None:
+                active_stmt = active_stmt.where(TodoModel.project_id.is_(None))
+            else:
+                active_stmt = active_stmt.where(TodoModel.project_id == _pid)
+            active_count = (await self._session.execute(active_stmt)).scalar_one()
+            if (
+                not isinstance(active_count, int)
+                or isinstance(active_count, bool)
+                or active_count < 0
+            ):
+                return []
+            claim_limit = min(claim_limit, max(0, max_active - active_count))
+        if claim_limit == 0:
+            return []
         stmt = select(TodoModel).where(
             TodoModel.status == TodoStatus.QUEUED.value,
             (TodoModel.work_type != "self_improve")
@@ -654,16 +718,46 @@ class TodoRepository:
         # possible under load. id is a deterministic tiebreaker for same-instant
         # created_at (e.g. todos inserted within the same microsecond in tests).
         stmt = stmt.order_by(TodoModel.priority.desc(), TodoModel.created_at, TodoModel.id)
-        # P12: cap even an explicit caller limit so a huge value can't load an
-        # unbounded result set (claim semantics are per-batch, so a cap is safe).
-        stmt = stmt.limit(min(limit, _DEFAULT_LIST_LIMIT))
+        # Scan one bounded page so a high-priority dependent cannot hide an
+        # older ready candidate behind the requested WIP count. ``claim_limit``
+        # still caps writes; the page bound caps memory and database work.
+        stmt = stmt.limit(_DEFAULT_LIST_LIMIT)
         with contextlib.suppress(Exception):
             stmt = stmt.with_for_update(skip_locked=True)
         result = await self._session.execute(stmt)
         candidates = list(result.scalars().all())
+        dependencies_by_id = {
+            todo.todo_id: _todo_dependency_ids(todo.dependencies)
+            for todo in candidates
+        }
+        dependency_ids = {
+            dependency_id
+            for dependencies in dependencies_by_id.values()
+            if dependencies is not None
+            for dependency_id in dependencies
+        }
+        dependency_statuses: dict[str, str] = {}
+        if dependency_ids:
+            dependency_stmt = select(TodoModel.todo_id, TodoModel.status).where(
+                TodoModel.todo_id.in_(dependency_ids)
+            )
+            if _pid is not None:
+                dependency_stmt = dependency_stmt.where(TodoModel.project_id == _pid)
+            dependency_rows = await self._session.execute(dependency_stmt)
+            dependency_statuses = {
+                todo_id: status
+                for todo_id, status in dependency_rows.all()
+            }
         now = datetime.now(UTC)
         claimed: list[TodoModel] = []
         for todo in candidates:
+            dependencies = dependencies_by_id[todo.todo_id]
+            if dependencies is None or any(
+                dependency_statuses.get(dependency_id)
+                != TodoStatus.COMPLETE.value
+                for dependency_id in dependencies
+            ):
+                continue
             old_status = todo.status
             old_version = todo.version
             # Guarded conditional claim: transition only if the row is STILL
@@ -678,6 +772,21 @@ class TodoRepository:
                 )
                 .values(status=TodoStatus.ACTIVE.value, version=old_version + 1, updated_at=now)
             )
+            if max_active is not None:
+                live_active_count = select(func.count()).select_from(TodoModel).where(
+                    TodoModel.status == TodoStatus.ACTIVE.value,
+                )
+                if _pid is None:
+                    live_active_count = live_active_count.where(
+                        TodoModel.project_id.is_(None),
+                    )
+                else:
+                    live_active_count = live_active_count.where(
+                        TodoModel.project_id == _pid,
+                    )
+                guard = guard.where(
+                    live_active_count.scalar_subquery() < max_active,
+                )
             try:
                 res = await self._session.execute(guard)
             except OperationalError as exc:
@@ -710,6 +819,8 @@ class TodoRepository:
             )
             self._session.add(evt)
             claimed.append(todo)
+            if len(claimed) >= claim_limit:
+                break
         await self._session.flush()
         return claimed
 

@@ -16,6 +16,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import FrameType
 from typing import Any
 
 from general_ludd.schemas.project_identity import ProjectResourceIdentity, validate_project_id
@@ -64,6 +65,10 @@ class ResourceLifecycleManager:
         self._poll_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._destroy_fn: Callable[[str, str], None] | None = None
+        self._previous_signal_handlers: dict[
+            int,
+            Callable[[int, FrameType | None], object] | int | None,
+        ] = {}
 
     # ------------------------------------------------------------------
     # Registration
@@ -433,9 +438,15 @@ class ResourceLifecycleManager:
         except Exception:
             logger.exception("Guaranteed cleanup failed")
 
-    def _handle_signal(self, signum: int, _frame: object) -> None:
+    def _handle_signal(self, signum: int, frame: FrameType | None) -> None:
         logger.warning("Received signal %d — guaranteed cleanup", signum)
         self._guaranteed_cleanup()
+        previous_handler = self._previous_signal_handlers.get(signum, signal.SIG_DFL)
+        if callable(previous_handler):
+            previous_handler(signum, frame)
+            return
+        if previous_handler == signal.SIG_IGN:
+            return
         signal.signal(signum, signal.SIG_DFL)
         os.kill(os.getpid(), signum)
 
@@ -462,10 +473,32 @@ def _install_signal_handlers(manager: ResourceLifecycleManager) -> bool:
     if threading.current_thread() is not threading.main_thread():
         logger.debug("Deferring lifecycle signal handlers to the main thread")
         return False
+    installed: list[int] = []
+    captured: list[int] = []
     try:
-        signal.signal(signal.SIGTERM, manager._handle_signal)
-        signal.signal(signal.SIGINT, manager._handle_signal)
-    except ValueError:
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            manager._previous_signal_handlers[signum] = signal.getsignal(signum)
+            captured.append(signum)
+            signal.signal(signum, manager._handle_signal)
+            installed.append(signum)
+    except (OSError, RuntimeError, ValueError):
+        # Signal installation is a two-handler transaction. If the second
+        # install fails, leaving the first installed would make the next retry
+        # capture our own handler as its predecessor and recurse on delivery.
+        for installed_signum in reversed(installed):
+            previous = manager._previous_signal_handlers.get(
+                installed_signum,
+                signal.SIG_DFL,
+            )
+            try:
+                signal.signal(installed_signum, previous)
+            except (OSError, RuntimeError, ValueError):
+                logger.exception(
+                    "Failed to roll back lifecycle signal handler %d",
+                    installed_signum,
+                )
+        for captured_signum in captured:
+            manager._previous_signal_handlers.pop(captured_signum, None)
         logger.debug(
             "Deferring lifecycle signal handlers outside the main interpreter",
             exc_info=True,

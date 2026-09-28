@@ -99,11 +99,15 @@ class TestReleaseRecut:
             "release-recut must verify the local tag exists before re-pushing"
         )
 
-    def test_polls_with_verify_vars(self):
+    def test_awaits_exact_tag_workflow_before_verification(self):
         recipe = _recipe("release-recut")
-        assert "$(VERIFY_POLLS)" in recipe, (
-            "release-recut must use the VERIFY_POLLS variable for its poll loop"
+        assert "ci-await" in recipe, (
+            "release-recut must await the exact tag workflow before verification"
         )
+        assert 'BRANCH="$(TAG)"' in recipe
+        assert "RELEASE_AWAIT_TIMEOUT" in recipe
+        assert "RELEASE_AWAIT_INTERVAL" in recipe
+        assert "$(VERIFY_POLLS)" not in recipe
 
 
 class TestGitTagPushCommitParam:

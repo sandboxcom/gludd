@@ -4,9 +4,20 @@
 from __future__ import annotations
 
 import re
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
-TASK_ID_RE = re.compile(r"^\s*-\s*\[ \]\s+([^ —|]+)", re.MULTILINE)
+if TYPE_CHECKING:
+    from validate_task_ledger import task_is_effectively_complete
+elif __package__:
+    from .validate_task_ledger import task_is_effectively_complete
+else:  # pragma: no cover - direct script import
+    from validate_task_ledger import task_is_effectively_complete
+
+TASK_LINE_RE = re.compile(
+    r"^\s*-\s*\[(?P<marker>[ x])\]\s+(?P<task_id>[^ —|]+)(?P<body>.*)$",
+    re.MULTILINE,
+)
+STATUS_RE = re.compile(r"status:\s*(\S+)")
 _MILESTONE_RANGE_RE = re.compile(
     r"\b(?P<label>v\d+\.\d+\.\d+)\s+milestone\s+is\s+the\s+exact\s+task\s+set\s+"
     r"(?P<prefix>[A-Za-z]+\d+)\.(?P<start>\d+)\s*[-\u2013]\s*"
@@ -60,7 +71,19 @@ def task_inventory(tasks: str) -> TaskInventory:
     active scope because current sessions are kept at the top of the ledger.
     Ledgers without a valid declaration fail safely to repository-wide scope.
     """
-    all_open_task_ids = list(dict.fromkeys(TASK_ID_RE.findall(tasks)))
+    all_open_task_ids: list[str] = []
+    for task_match in TASK_LINE_RE.finditer(tasks):
+        status_match = STATUS_RE.search(task_match.group("body"))
+        task = {
+            "status": status_match.group(1) if status_match is not None else None,
+        }
+        if not task_is_effectively_complete(
+            task,
+            checked=task_match.group("marker") == "x",
+        ):
+            task_id = task_match.group("task_id")
+            if task_id not in all_open_task_ids:
+                all_open_task_ids.append(task_id)
     milestone = _MILESTONE_RANGE_RE.search(tasks)
     if milestone is None or milestone.group("prefix") != milestone.group(
         "end_prefix"
@@ -77,8 +100,8 @@ def task_inventory(tasks: str) -> TaskInventory:
     open_task_ids: list[str] = []
     backlog_task_ids: list[str] = []
     for task_id in all_open_task_ids:
-        task_match = scoped_id.fullmatch(task_id)
-        if task_match is not None and start <= int(task_match.group(1)) <= end:
+        scoped_match = scoped_id.fullmatch(task_id)
+        if scoped_match is not None and start <= int(scoped_match.group(1)) <= end:
             open_task_ids.append(task_id)
         else:
             backlog_task_ids.append(task_id)
