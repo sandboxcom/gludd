@@ -257,13 +257,13 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 1070,
-      "column": 12,
+      "line": 1344,
+      "column": 16,
       "kind": "temp-artifact",
       "owner": "run",
       "acquisition": "tempfile.mkdtemp(prefix=f'gludd-gate-{shard}-', dir=workspace_parent)",
       "teardown": "shutil.rmtree(workspace, ignore_errors=True)",
-      "source_hash": "c1ba38fb012189e70a3cff108bb703669c332cc6fd2630099e47bf0e3b267ef0",
+      "source_hash": "267ac502531de8f2343e25be012e05961dccd8dcae4557d1818835475811b0e8",
       "owned": true
     },
     {

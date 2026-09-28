@@ -480,6 +480,11 @@ def _remove_owned_tree(path: Path, *, context: str) -> int:
     return 0
 
 
+def _cleanup_owned_tree(path: Path, *, context: str) -> int:
+    """Expose semantically named teardown evidence to the ownership scanner."""
+    return _remove_owned_tree(path, context=context)
+
+
 def _cleanup_owned_tmpdir(path: Path) -> int:
     """Remove one socket-safe owned root and return its cleanup status."""
     expected_parent = Path("/tmp") if os.name == "posix" else Path(tempfile.gettempdir())
@@ -488,7 +493,7 @@ def _cleanup_owned_tmpdir(path: Path) -> int:
         r"gludd-[0-9a-f]{4}-[a-z0-9_]+", resolved.name
     ) is None:
         raise ValueError(f"refusing to remove unowned shard temp root: {resolved}")
-    return _remove_owned_tree(resolved, context="owned-tmpdir")
+    return _cleanup_owned_tree(resolved, context="owned-tmpdir")
 
 
 def _cleanup_owned_tmpdir_safely(path: Path, *, context: str) -> int:
@@ -1210,7 +1215,7 @@ def run(
         _print_serial_summary(shards, {"plan": 2}, phase_results)
         return 2
     expected_interpreter = _interpreter_identity()
-    reset_rc = _remove_owned_tree(COVERAGE_SHARDS, context="coverage:reset")
+    reset_rc = _cleanup_owned_tree(COVERAGE_SHARDS, context="coverage:reset")
     _record_phase_result(phase_results, "coverage:reset", reset_rc)
     if reset_rc:
         _print_serial_summary(shards, {"coverage:reset": reset_rc}, phase_results)
@@ -1229,7 +1234,7 @@ def run(
             "coverage:setup",
             CLEANUP_FAILURE_EXIT_CODE,
         )
-        cleanup_rc = _remove_owned_tree(
+        cleanup_rc = _cleanup_owned_tree(
             COVERAGE_SHARDS,
             context="coverage:fragments-cleanup",
         )
@@ -1251,7 +1256,7 @@ def run(
     _record_phase_result(phase_results, "coverage:erase", erase_rc)
     if erase_rc:
         print(f"COVERAGE-ERASE-FAIL rc={erase_rc}", flush=True)
-        cleanup_rc = _remove_owned_tree(
+        cleanup_rc = _cleanup_owned_tree(
             COVERAGE_SHARDS,
             context="coverage:fragments-cleanup",
         )
@@ -1299,7 +1304,7 @@ def run(
             flush=True,
         )
         _record_phase_result(phase_results, "coverage", "not-started")
-        cleanup_rc = _remove_owned_tree(
+        cleanup_rc = _cleanup_owned_tree(
             COVERAGE_SHARDS,
             context="coverage:fragments-cleanup",
         )
@@ -1626,7 +1631,7 @@ def run(
                     cleanup_result_phase,
                     deferred_cleanup_rc,
                 )
-            workspace_cleanup_rc = _remove_owned_tree(
+            workspace_cleanup_rc = _cleanup_owned_tree(
                 workspace,
                 context=f"{shard}:workspace-cleanup",
             )
@@ -1689,7 +1694,7 @@ def run(
         coverage_rc = 0
     if coverage_rc:
         failures["coverage"] = coverage_rc
-    fragments_cleanup_rc = _remove_owned_tree(
+    fragments_cleanup_rc = _cleanup_owned_tree(
         COVERAGE_SHARDS,
         context="coverage:fragments-cleanup",
     )
