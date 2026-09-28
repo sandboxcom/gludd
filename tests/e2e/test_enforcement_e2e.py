@@ -60,12 +60,12 @@ PLUGIN_REGISTRATION_ORDER = [
     "enforce-branch-discipline.ts",
     "enforce-test-integrity.ts",
     "enforce-worktree.ts",
-    "enforce-audit.ts",
-    "enforce-context.ts",
     "enforce-deliverable.ts",
     "enforce-no-ci-poll.ts",
     "enforce-release-deadline.ts",
     "enforce-task-tracking.ts",
+    "enforce-audit.ts",
+    "enforce-context.ts",
 ]
 
 _STATE_FILES = [
