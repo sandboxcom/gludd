@@ -1725,25 +1725,22 @@ jobs:
     # exact-SHA development run. Every tag-specific producer must still pass.
     # !cancelled() avoids always()'s cancellation/hang semantics while the
     # explicit result matrix remains fail-closed on every other state.
-    if: >-
-      ${{
-        !cancelled() &&
-        startsWith(github.ref, 'refs/tags/v') &&
-        needs.version.result == 'success' &&
-        needs.gate.result == 'success' &&
-        needs.release_source_proof.result == 'success' &&
-        needs['freellmapi-upstream-build'].result == 'skipped' &&
-        needs['test-shard'].result == 'skipped' &&
-        needs.coverage.result == 'skipped' &&
-        needs.molecule.result == 'skipped' &&
-        needs['game-building'].result == 'skipped' &&
-        needs.linux.result == 'success' &&
-        needs.macos.result == 'success' &&
-        needs.windows.result == 'success' &&
-        needs.termux.result == 'success' &&
-        needs.container.result == 'success' &&
-        needs['ansible-ee'].result == 'success'
-      }}
+    if: startsWith(github.ref, 'refs/tags/v') &&
+      !cancelled() &&
+      needs.version.result == 'success' &&
+      needs.gate.result == 'success' &&
+      needs.release_source_proof.result == 'success' &&
+      needs['freellmapi-upstream-build'].result == 'skipped' &&
+      needs['test-shard'].result == 'skipped' &&
+      needs.coverage.result == 'skipped' &&
+      needs.molecule.result == 'skipped' &&
+      needs['game-building'].result == 'skipped' &&
+      needs.linux.result == 'success' &&
+      needs.macos.result == 'success' &&
+      needs.windows.result == 'success' &&
+      needs.termux.result == 'success' &&
+      needs.container.result == 'success' &&
+      needs['ansible-ee'].result == 'success'
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:

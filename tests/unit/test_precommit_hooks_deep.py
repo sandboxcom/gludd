@@ -127,7 +127,7 @@ class TestLocalHookEntryPoints:
         "ruff-lint": "uv run ruff check src tests",
         "mypy": "make _precommit-mypy",
         "check-tdd-compliance": "uv run python scripts/check_tdd_compliance.py",
-        "check-disk": "uv run python scripts/check_disk_usage.py",
+        "check-disk": "make check-disk CHECK_DISK_VALIDATE_ONLY=0",
         "collect-check": "make collect-check",
         "verify-secrets": "make verify-secrets",
     }
