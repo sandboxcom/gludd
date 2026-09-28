@@ -72,6 +72,7 @@ general capabilities.
   Makefile
   docs/audit/CAPABILITY_AUDIT_2026-07-06.md
   docs/audit/blocking_process_fix.md
+  docs/CONFIG_REFERENCE.md
   docs/design/SYMBIOTIC_AGENT_INTEGRATION.md
   docs/ENFORCEMENT_PLUGIN_REGISTRY.md
   docs/features/MULTITASK_MINIMUM_OPT_IN.md
@@ -332,6 +333,15 @@ general capabilities.
   passes 5/5; Python and Markdown lint are green; and full collection reports
   117,018/117,019 with one intentional deselection. The exact merged candidate
   still requires a complete gate replay.
+
+  The collect-all base-candidate replay then reached `unit-1b:batch-028` and
+  correctly exposed one undocumented live enforcement variable:
+  `GLUDD_PIPELINE_KICKOFF_ENFORCE`. The canonical configuration reference now
+  documents its enabled-by-default semantics, the exact `0` disable boundary,
+  and the checkout-freeze, duplicate-launch, bounded-dispatch, and isolated-
+  worktree protections it controls. The formerly failing audit passes 1/1,
+  Markdown lint is green, and task-ledger validation and path integrity pass;
+  the collect-all replay continues so later failures can be repaired together.
 
 - [ ] S91.2 — **Reconcile every active v0.1.1 release-completeness contract with the live fail-closed verifier** across `AGENTS.md`, `README.md`, `docs/CLAUDE.md`, `docs/MERGE_PLAN.md`, `docs/RELEASE_CHECKLIST.md`, `docs/RELEASE_RUNBOOK.md`, `docs/STABILIZATION_PLAN.md`, `docs/architecture.md`, `docs/index.md`, `docs/specs/BEHAVIORAL_SPECS.md`, `docs/specs/COMPREHENSIVE_SPECS_20K.md`, `docs/specs/OPERATIONAL_DISCIPLINE_SPECS.md`, `scripts/README.md`, `scripts/generate_specs_to_4000.py`, `tests/unit/test_documentation_integrity.py`, and `tests/unit/test_pipeline_priority.py`: require all 28 mandatory categories and the 30-asset minimum already enforced by `scripts/verify_release_completeness.py`, preserve historical 12-category release records as history, and prevent release guidance from regressing independently of the executable gate. | evidence: the fresh full gate passed integration and all earlier `unit-1d` batches before the final documentation batch rejected `docs/RELEASE_RUNBOOK.md`; investigation found the test itself still required an obsolete 12-category phrase while the live verifier and its focused tests structurally pin 28 mandatory categories and `MIN_ASSETS == 30`; the corrected integrity assertion failed first against the stale runbook; active operator docs, generated-spec input/output, and policy guidance now mirror the executable 28-category/30-asset contract while historical 12-category release records remain unchanged; the combined release-verifier/documentation/pipeline replay passes 175/175, the cross-document mirror regression passes 1/1, Markdown lint passes 15 files, Python lint is green after repairing all eight touched-generator findings, spec lint passes 220/220, generated-artifact hygiene, runbook currency, version consistency, README version, task integrity, ledger validation, and 107-path registration are green; the next exact-candidate gate cleared the formerly failing final `unit-1d` documentation batch before stopping later in unrelated `unit-2` pending-work structural coverage; exact complete gate and commit evidence remain pending | priority: critical | effort: XS | status: in_progress
 
