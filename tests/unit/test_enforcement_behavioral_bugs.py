@@ -15,6 +15,7 @@ from tests.unit._plugin_contract import plugin_contract_source
 
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
+SHARED_HELPERS = ROOT / ".opencode" / "lib" / "shared.ts"
 
 
 def _read_plugin(name: str) -> str:
@@ -82,21 +83,19 @@ class TestBug4_EnforceNoWaitBashCommand:
 
     def test_bash_command_reads_from_input_args_not_input_directly(self):
         src = _read_plugin("enforce-no-wait.ts")
-        # Bug 4 fix: command extraction lives in _extractBashCommand helper,
-        # which reads from envelope.args?.command and other candidates.
-        # Verify the helper exists and reads from input.args?.command.
-        assert "_extractBashCommand" in src, "must have _extractBashCommand helper"
-        # find the helper function body
-        func_idx = src.index("function _extractBashCommand")
-        helper_body = src[func_idx:]
+        assert "extractBashCommand" in src, "must import the shared command extractor"
+        assert 'from "../lib/shared.ts"' in src
+        assert "const cmd = extractBashCommand(input, output)" in src, (
+            "tool.execute.before must use extractBashCommand for command extraction"
+        )
+
+        shared_src = SHARED_HELPERS.read_text(encoding="utf-8")
+        func_idx = shared_src.index("export function extractBashCommand")
+        helper_body = shared_src[func_idx:]
         close_brace = helper_body.index("\n}\n") if "\n}\n" in helper_body else len(helper_body)
         helper_body = helper_body[:close_brace]
         assert "envelope.args?.command" in helper_body, (
-            "BUG STILL PRESENT: _extractBashCommand must read from envelope.args?.command"
-        )
-        # Verify the tool.execute.before delegates to the helper
-        assert "const cmd = _extractBashCommand(input, output)" in src, (
-            "tool.execute.before must use _extractBashCommand for command extraction"
+            "BUG STILL PRESENT: extractBashCommand must read from envelope.args?.command"
         )
 
 
