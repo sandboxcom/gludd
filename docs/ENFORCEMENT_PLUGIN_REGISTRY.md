@@ -31,7 +31,7 @@
 | 17 | `enforce-deletion-gate.ts` | `tool.execute.before` | Edit/write that deletes files (wholesale file removal requires explicit operator approval). | `GLUDD_DELETION_GATE_ENFORCE=0` |
 | 18 | `enforce-batch-push.ts` | `tool.execute.before` | Bash push targets (`git-push-sandboxcom`, `git-push-branch`, `batch-push`, `development-push`) while a CI run is in-flight on the same branch (prevents CI cancellation thrash). | `GLUDD_BATCH_PUSH_ENFORCE=0` |
 | 19 | `enforce-depth.ts` | `tool.execute.before` | Task/agent/workflow dispatch exceeding the configured nesting depth limit (prevents infinite subagent recursion). | `GLUDD_DEPTH_ENFORCE=0` |
-| 20 | `enforce-directives.ts` | `tool.execute.before`, `experimental.text.complete` | Enforces explicit numeric, prohibition, completion, and all-items user directives; blocks commit/push or completion claims while a matched directive remains unmet. | `GLUDD_DIRECTIVE_ENFORCE=0` |
+| 20 | `enforce-directives.ts` | `experimental.chat.messages.transform`, `tool.execute.before`, `experimental.text.complete` | Persists explicit numeric, prohibition, completion, all-items, and delegated-pool directives across turns/restarts; decrements the active pool when results arrive, requires replacement dispatches before mutation, and honors an explicit user pause boundary until its versioned terminal release/deployment task is checked or the user explicitly resumes work. | `GLUDD_DIRECTIVE_ENFORCE=0` |
 | 21 | `enforce-tdd.ts` | `tool.execute.before` | Edit/write to `src/general_ludd/**/*.py` when no corresponding test file exists yet at `tests/unit/test_<module>.py` (or `test_general_ludd_<module>.py`). Forces test-first workflow at editor time. Allowlist: `__init__.py`, `*.pyi`, `protocols.py`, `typing.py`, `type_defs.py`, `_types.py`. | `GLUDD_TDD_ENFORCE=0` |
 | 22 | `enforce-objective.ts` | `tool.execute.before` | Edit/write/bash when the configured PRIMARY OBJECTIVE for the session is unmet (prevents tangential work from displacing the top-priority directive). | `GLUDD_OBJECTIVE_ENFORCE=0` |
 | 23 | `enforce-anti-essay.ts` | `experimental.text.complete`, `tool.execute.before` | Essay-length text (>50 words or >3 paragraphs by default) and status-summary patterns (bolded `**What changed?**`/`**Status:**` headers, "here's what was done", "session N summary") when pending work exists and the text carries no evidence. | `GLUDD_ANTI_ESSAY_ENFORCE=0` |
@@ -54,6 +54,7 @@ for one or more:
 | Hook | When it fires | Typical use |
 |------|---------------|-------------|
 | `experimental.chat.system.transform` | System prompt assembly | Inject directives into the system prompt at boot |
+| `experimental.chat.messages.transform` | Before model dispatch with the assembled message list | Ingest the latest user directive without depending on a later tool prompt |
 | `tool.execute.before` | Before every tool invocation | Block / deny / mutate tool calls |
 | `tool.execute.after` | After every tool invocation (success or error) | Release locks, record metrics |
 | `experimental.text.complete` | When the assistant finalizes a text response | Block / rewrite text-only responses |
@@ -68,9 +69,9 @@ entrypoint auditable: the entrypoint must expose the delegated functions in its
 returned hook object. `tests/unit/test_all_plugins_runtime.py` inventories that
 surface and requires an explicit mapping to a behavioral test. The extended
 runtime suite imports the real TypeScript factories and exercises floor denial,
-numeric-directive rejection, deliverable warnings, CI-poll reset, and release
-deadline allow/deny decisions. Task tracking retains its dedicated Node runtime
-suite.
+numeric-directive rejection, persistent delegated-pool refill and pause/resume,
+deliverable warnings, CI-poll reset, and release deadline allow/deny decisions.
+Task tracking retains its dedicated Node runtime suite.
 
 Long-lived upstream operator reports reinforce why source-shape checks alone
 are insufficient:
@@ -85,6 +86,18 @@ are insufficient:
   the limits of message injection and `session.idle` continuation, so tests
   assert the hook's concrete returned decision/output rather than treating a
   warning or idle callback as proof of enforcement.
+- [OpenCode #22831](https://github.com/anomalyco/opencode/issues/22831) reports
+  that `chat.message` may fire with an empty `parts` array. Directive ingestion
+  therefore uses `experimental.chat.messages.transform`, whose output contains
+  the assembled message list, and retains tool-input parsing only as a fallback.
+- [OpenCode #23503](https://github.com/anomalyco/opencode/issues/23503) records
+  the lack of a reliable turn-completed plugin event. The active-agent estimate
+  consequently changes only on an admitted dispatch or a newly observed,
+  identity-deduplicated completed dispatch tool part in the assembled history;
+  explicit result markers remain a fallback, and restart resets fail-closed.
+- [OpenCode #45367](https://github.com/anomalyco/opencode/issues/45367) reports
+  that one throwing non-blocking hook can skip later plugins. Message ingestion
+  remains non-throwing and covered by an executable runtime probe.
 
 Plugin source edits still require an OpenCode restart before the running editor
 loads the new entrypoint object.
