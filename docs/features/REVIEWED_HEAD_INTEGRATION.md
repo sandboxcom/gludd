@@ -119,14 +119,18 @@ requires an exact clean local-gate attestation, resolves every source ref,
 checks the actual commit-parent chain, verifies cherry-pick patch identity,
 and writes canonical JSON atomically. It rejects path traversal, ambiguous
 JSON, stale source refs, synthetic parent claims, failed or wrong-candidate
-gates, and unsupported patch-equivalent ancestry. `VALIDATE_ONLY=1` on the Make
+gates, post-gate repository changes, evidence or output paths inside the
+attested checkout, and unsupported patch-equivalent ancestry. Keeping the
+manifest, review records, gate attestation, and generated receipt under the
+namespaced external resource root prevents evidence creation from dirtying and
+invalidating the clean candidate it describes. `VALIDATE_ONLY=1` on the Make
 target prints the bounded execution plan without reading or writing evidence.
 
 ```sh
 make reviewed-head-receipt \
-  REVIEWED_HEAD_RECEIPT_MANIFEST=artifacts/reviewed-head-manifest.json \
+  REVIEWED_HEAD_RECEIPT_MANIFEST=/tmp/gludd-resources/gludd-v0.1.1/reviewed-head-manifest.json \
   REVIEWED_HEAD_GATE_ATTESTATION=/tmp/gludd-resources/gludd/ci-shards/attestation.json \
-  REVIEWED_HEAD_RECEIPT_OUTPUT=artifacts/reviewed-head-receipt.json \
+  REVIEWED_HEAD_RECEIPT_OUTPUT=/tmp/gludd-resources/gludd-v0.1.1/reviewed-head-receipt.json \
   REVIEWED_HEAD_RECEIPT_REPO_ROOT=. \
   REVIEWED_HEAD_RECEIPT_VALIDATE_ONLY=0
 ```

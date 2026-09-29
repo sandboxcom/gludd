@@ -56,7 +56,7 @@ def _merge_fixture(tmp_path: Path) -> tuple[Path, dict[str, object], dict[str, o
         "verdict": "approved",
         "focused_validation_ids": ["test-hook-runtime", "test-release-readiness"],
     }
-    review_path = repo / "review.json"
+    review_path = tmp_path / "review.json"
     review_path.write_text(json.dumps(review, sort_keys=True) + "\n", encoding="utf-8")
     manifest = {
         "schema_version": 1,
@@ -130,7 +130,7 @@ def _cherry_pick_fixture(
         "verdict": "approved",
         "focused_validation_ids": ["test-release-readiness"],
     }
-    (repo / "review.json").write_text(
+    (tmp_path / "review.json").write_text(
         json.dumps(review, sort_keys=True) + "\n", encoding="utf-8"
     )
     manifest = {
@@ -186,12 +186,12 @@ def test_builds_canonical_receipt_from_real_merge_and_gate_evidence(
     repo, manifest, attestation = _merge_fixture(tmp_path)
     receipt = builder.build_receipt_from_manifest(
         manifest,
-        manifest_dir=repo,
+        manifest_dir=repo.parent,
         gate_attestation=attestation,
         repo_root=repo,
     )
 
-    output = repo / "receipt.json"
+    output = repo.parent / "receipt.json"
     builder.write_receipt(output, receipt)
     parsed = load_reviewed_head_integration_receipt(
         output,
@@ -199,7 +199,9 @@ def test_builds_canonical_receipt_from_real_merge_and_gate_evidence(
     )
 
     assert parsed.final_sha == _git(repo, "rev-parse", "HEAD")
-    expected_digest = hashlib.sha256((repo / "review.json").read_bytes()).hexdigest()
+    expected_digest = hashlib.sha256(
+        (repo.parent / "review.json").read_bytes()
+    ).hexdigest()
     assert parsed.plan.heads[0].review_receipt_sha256 == expected_digest
 
 
@@ -210,7 +212,7 @@ def test_builds_receipt_only_when_cherry_pick_patch_identity_matches(
 
     receipt = builder.build_receipt_from_manifest(
         manifest,
-        manifest_dir=repo,
+        manifest_dir=repo.parent,
         gate_attestation=attestation,
         repo_root=repo,
     )
@@ -237,7 +239,7 @@ def test_rejects_ineligible_gate_attestation(
     with pytest.raises(ValueError, match=match):
         builder.build_receipt_from_manifest(
             manifest,
-            manifest_dir=repo,
+            manifest_dir=repo.parent,
             gate_attestation=attestation,
             repo_root=repo,
         )
@@ -249,7 +251,7 @@ def test_rejects_nonlocal_gate_evidence(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="local exact gate"):
         builder.build_receipt_from_manifest(
             manifest,
-            manifest_dir=repo,
+            manifest_dir=repo.parent,
             gate_attestation=attestation,
             repo_root=repo,
         )
@@ -277,7 +279,7 @@ def test_rejects_wrong_candidate_gate_identity(
     with pytest.raises(ValueError, match="exact clean candidate"):
         builder.build_receipt_from_manifest(
             manifest,
-            manifest_dir=repo,
+            manifest_dir=repo.parent,
             gate_attestation=attestation,
             repo_root=repo,
         )
@@ -285,7 +287,7 @@ def test_rejects_wrong_candidate_gate_identity(
 
 def test_rejects_review_receipt_identity_drift(tmp_path: Path) -> None:
     repo, manifest, attestation = _merge_fixture(tmp_path)
-    review_path = repo / "review.json"
+    review_path = repo.parent / "review.json"
     review = json.loads(review_path.read_text(encoding="utf-8"))
     review["source_sha"] = "f" * 40
     review_path.write_text(json.dumps(review), encoding="utf-8")
@@ -293,7 +295,7 @@ def test_rejects_review_receipt_identity_drift(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="review receipt identity"):
         builder.build_receipt_from_manifest(
             manifest,
-            manifest_dir=repo,
+            manifest_dir=repo.parent,
             gate_attestation=attestation,
             repo_root=repo,
         )
@@ -313,7 +315,7 @@ def test_rejects_unapproved_or_anonymous_review_receipt(
     match: str,
 ) -> None:
     repo, manifest, attestation = _merge_fixture(tmp_path)
-    review_path = repo / "review.json"
+    review_path = repo.parent / "review.json"
     review = json.loads(review_path.read_text(encoding="utf-8"))
     review[field] = value
     review_path.write_text(json.dumps(review), encoding="utf-8")
@@ -321,7 +323,7 @@ def test_rejects_unapproved_or_anonymous_review_receipt(
     with pytest.raises(ValueError, match=match):
         builder.build_receipt_from_manifest(
             manifest,
-            manifest_dir=repo,
+            manifest_dir=repo.parent,
             gate_attestation=attestation,
             repo_root=repo,
         )
@@ -335,7 +337,7 @@ def test_rejects_manifest_parent_claim_that_breaks_attribution(tmp_path: Path) -
     with pytest.raises(ValueError, match="parent attribution"):
         builder.build_receipt_from_manifest(
             manifest,
-            manifest_dir=repo,
+            manifest_dir=repo.parent,
             gate_attestation=attestation,
             repo_root=repo,
         )
@@ -349,7 +351,7 @@ def test_rejects_source_ref_drift_and_unintegrated_repository_head(
     with pytest.raises(ValueError, match="source ref"):
         builder.build_receipt_from_manifest(
             manifest,
-            manifest_dir=repo,
+            manifest_dir=repo.parent,
             gate_attestation=attestation,
             repo_root=repo,
         )
@@ -360,7 +362,7 @@ def test_rejects_source_ref_drift_and_unintegrated_repository_head(
     with pytest.raises(ValueError, match="repository HEAD"):
         builder.build_receipt_from_manifest(
             manifest,
-            manifest_dir=repo,
+            manifest_dir=repo.parent,
             gate_attestation=attestation,
             repo_root=repo,
         )
@@ -374,7 +376,20 @@ def test_rejects_unsupported_patch_equivalent_prerequisite(tmp_path: Path) -> No
     with pytest.raises(ValueError, match="patch-equivalent"):
         builder.build_receipt_from_manifest(
             manifest,
-            manifest_dir=repo,
+            manifest_dir=repo.parent,
+            gate_attestation=attestation,
+            repo_root=repo,
+        )
+
+
+def test_rejects_repository_mutation_after_clean_gate(tmp_path: Path) -> None:
+    repo, manifest, attestation = _merge_fixture(tmp_path)
+    (repo / "post-gate.txt").write_text("mutation\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="changed after the exact clean gate"):
+        builder.build_receipt_from_manifest(
+            manifest,
+            manifest_dir=repo.parent,
             gate_attestation=attestation,
             repo_root=repo,
         )
@@ -382,9 +397,9 @@ def test_rejects_unsupported_patch_equivalent_prerequisite(tmp_path: Path) -> No
 
 def test_main_validate_only_never_writes_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo, manifest, attestation = _merge_fixture(tmp_path)
-    manifest_path = repo / "manifest.json"
-    gate_path = repo / "gate.json"
-    output = repo / "receipt.json"
+    manifest_path = repo.parent / "manifest.json"
+    gate_path = repo.parent / "gate.json"
+    output = repo.parent / "receipt.json"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     gate_path.write_text(json.dumps(attestation), encoding="utf-8")
 
@@ -407,9 +422,9 @@ def test_main_validate_only_never_writes_output(tmp_path: Path, capsys: pytest.C
 
 def test_main_writes_validated_receipt_atomically(tmp_path: Path) -> None:
     repo, manifest, attestation = _merge_fixture(tmp_path)
-    manifest_path = repo / "manifest.json"
-    gate_path = repo / "gate.json"
-    output = repo / "receipt.json"
+    manifest_path = repo.parent / "manifest.json"
+    gate_path = repo.parent / "gate.json"
+    output = tmp_path / "receipt.json"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     gate_path.write_text(json.dumps(attestation), encoding="utf-8")
 
@@ -431,6 +446,29 @@ def test_main_writes_validated_receipt_atomically(tmp_path: Path) -> None:
     )
 
 
+def test_main_rejects_output_inside_attested_repository(tmp_path: Path) -> None:
+    repo, manifest, attestation = _merge_fixture(tmp_path)
+    manifest_path = repo.parent / "manifest.json"
+    gate_path = repo.parent / "gate.json"
+    output = repo / "receipt.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    gate_path.write_text(json.dumps(attestation), encoding="utf-8")
+
+    assert builder.main(
+        [
+            "--manifest",
+            str(manifest_path),
+            "--gate-attestation",
+            str(gate_path),
+            "--repo-root",
+            str(repo),
+            "--output",
+            str(output),
+        ]
+    ) == 2
+    assert not output.exists()
+
+
 def test_main_rejects_ambiguous_manifest_without_writing(tmp_path: Path) -> None:
     output = tmp_path / "receipt.json"
     manifest = tmp_path / "manifest.json"
@@ -445,7 +483,7 @@ def test_main_rejects_ambiguous_manifest_without_writing(tmp_path: Path) -> None
             "--gate-attestation",
             str(gate),
             "--repo-root",
-            str(tmp_path),
+            str(tmp_path / "repo"),
             "--output",
             str(output),
         ]
@@ -472,7 +510,7 @@ def test_main_rejects_missing_or_empty_manifest(
             "--gate-attestation",
             str(gate),
             "--repo-root",
-            str(tmp_path),
+            str(tmp_path / "repo"),
             "--output",
             str(output),
         ]
@@ -484,7 +522,7 @@ def test_write_receipt_rejects_symbolic_link_output(tmp_path: Path) -> None:
     repo, manifest, attestation = _merge_fixture(tmp_path)
     receipt = builder.build_receipt_from_manifest(
         manifest,
-        manifest_dir=repo,
+        manifest_dir=repo.parent,
         gate_attestation=attestation,
         repo_root=repo,
     )
@@ -506,7 +544,7 @@ def test_review_receipt_path_cannot_escape_manifest_directory(tmp_path: Path) ->
     with pytest.raises(ValueError, match="review receipt path"):
         builder.build_receipt_from_manifest(
             manifest,
-            manifest_dir=repo,
+            manifest_dir=repo.parent,
             gate_attestation=attestation,
             repo_root=repo,
         )
@@ -517,22 +555,22 @@ def test_review_receipt_path_rejects_absolute_and_resolved_escape(
 ) -> None:
     repo, manifest, attestation = _merge_fixture(tmp_path)
     head = manifest["heads"][0]  # type: ignore[index]
-    head["review_receipt_file"] = str((repo / "review.json").resolve())
+    head["review_receipt_file"] = str((repo.parent / "review.json").resolve())
     with pytest.raises(ValueError, match="relative"):
         builder.build_receipt_from_manifest(
             manifest,
-            manifest_dir=repo,
+            manifest_dir=repo.parent,
             gate_attestation=attestation,
             repo_root=repo,
         )
 
-    outside = tmp_path / "outside.json"
+    outside = tmp_path.parent / f"outside-{tmp_path.name}.json"
     outside.write_text("{}", encoding="utf-8")
-    head["review_receipt_file"] = "../outside.json"
+    head["review_receipt_file"] = f"../{outside.name}"
     with pytest.raises(ValueError, match="escapes"):
         builder.build_receipt_from_manifest(
             manifest,
-            manifest_dir=repo,
+            manifest_dir=repo.parent,
             gate_attestation=attestation,
             repo_root=repo,
         )

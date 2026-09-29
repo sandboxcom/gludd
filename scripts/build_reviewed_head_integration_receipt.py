@@ -100,6 +100,14 @@ def _owned_evidence_path(manifest_dir: Path, value: object) -> Path:
     return candidate
 
 
+def _require_external_path(path: Path, repo_root: Path, label: str) -> None:
+    """Keep post-gate evidence from invalidating the attested checkout."""
+    repository = repo_root.resolve()
+    candidate = path.resolve(strict=False)
+    if candidate == repository or candidate.is_relative_to(repository):
+        raise ValueError(f"{label} must be outside the attested repository")
+
+
 def _git(repo_root: Path, *arguments: str, input_bytes: bytes | None = None) -> bytes:
     try:
         completed = subprocess.run(
@@ -200,6 +208,13 @@ def _verify_repository_topology(
     heads: tuple[ReviewedHead, ...],
     applications: tuple[AppliedHeadEvidence, ...],
 ) -> None:
+    if _git(
+        repo_root,
+        "status",
+        "--porcelain",
+        "--untracked-files=all",
+    ).strip():
+        raise ValueError("repository changed after the exact clean gate")
     final_sha = applications[-1].after_sha
     head_sha = _git(repo_root, "rev-parse", "HEAD").decode("ascii").strip()
     if head_sha != final_sha:
@@ -390,6 +405,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--validate-only", action="store_true")
     args = parser.parse_args(argv)
     try:
+        _require_external_path(args.manifest, args.repo_root, "integration manifest")
+        _require_external_path(
+            args.gate_attestation,
+            args.repo_root,
+            "gate attestation",
+        )
+        _require_external_path(args.output, args.repo_root, "receipt output")
         manifest, _ = _read_bounded_json(args.manifest, "integration manifest")
         gate, _ = _read_bounded_json(args.gate_attestation, "gate attestation")
         receipt = build_receipt_from_manifest(
