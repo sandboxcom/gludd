@@ -112,6 +112,25 @@ immutable candidate artifact rather than editing it by hand. The checked
 fixture at `tests/fixtures/reviewed_head_integration_receipt.json` is a shape
 example, not release evidence.
 
+The operator-safe builder is `make reviewed-head-receipt`. Its manifest names
+each reviewed source, review receipt, focused command ID, application result,
+and prerequisite resolution. The builder hashes the bounded review receipts,
+requires an exact clean local-gate attestation, resolves every source ref,
+checks the actual commit-parent chain, verifies cherry-pick patch identity,
+and writes canonical JSON atomically. It rejects path traversal, ambiguous
+JSON, stale source refs, synthetic parent claims, failed or wrong-candidate
+gates, and unsupported patch-equivalent ancestry. `VALIDATE_ONLY=1` on the Make
+target prints the bounded execution plan without reading or writing evidence.
+
+```sh
+make reviewed-head-receipt \
+  REVIEWED_HEAD_RECEIPT_MANIFEST=artifacts/reviewed-head-manifest.json \
+  REVIEWED_HEAD_GATE_ATTESTATION=/tmp/gludd-resources/gludd/ci-shards/attestation.json \
+  REVIEWED_HEAD_RECEIPT_OUTPUT=artifacts/reviewed-head-receipt.json \
+  REVIEWED_HEAD_RECEIPT_REPO_ROOT=. \
+  REVIEWED_HEAD_RECEIPT_VALIDATE_ONLY=0
+```
+
 For v0.1.1, `release-readiness` is the consuming release boundary:
 
 ```sh

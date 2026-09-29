@@ -275,6 +275,17 @@
       "behavior": "make ci-run-summary RUN=123 CI_RUN_SUMMARY_REPO=sandboxcom/gludd CI_RUN_SUMMARY_VALIDATE_ONLY=1"
     },
     {
+      "name": "reviewed-head-receipt",
+      "make_variables": [
+        "REVIEWED_HEAD_RECEIPT_MANIFEST",
+        "REVIEWED_HEAD_GATE_ATTESTATION",
+        "REVIEWED_HEAD_RECEIPT_OUTPUT",
+        "REVIEWED_HEAD_RECEIPT_REPO_ROOT",
+        "REVIEWED_HEAD_RECEIPT_VALIDATE_ONLY"
+      ],
+      "behavior": "make reviewed-head-receipt REVIEWED_HEAD_RECEIPT_MANIFEST=/tmp/gludd-reviewed-head-manifest.json REVIEWED_HEAD_GATE_ATTESTATION=/tmp/gludd-gate-attestation.json REVIEWED_HEAD_RECEIPT_OUTPUT=/tmp/gludd-reviewed-head-receipt.json REVIEWED_HEAD_RECEIPT_REPO_ROOT=. REVIEWED_HEAD_RECEIPT_VALIDATE_ONLY=1"
+    },
+    {
       "name": "release-readiness",
       "make_variables": [
         "TAG",
