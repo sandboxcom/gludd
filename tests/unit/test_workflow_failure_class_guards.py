@@ -81,6 +81,17 @@ def test_batch_push_blocks_single_commit_threshold_override() -> None:
         assert "COMMIT_THRESHOLD=1 to override" not in block
 
 
+def test_batch_push_propagates_push_failure_before_success_side_effects() -> None:
+    block = _target_block("batch-push")
+    push_line = next(line.strip() for line in block.splitlines() if " git push " in line)
+
+    assert "||" in push_line or push_line.startswith("if ! "), (
+        "batch-push must stop when git push fails instead of claiming success"
+    )
+    assert block.index("git push ") < block.index("Pushed $$BRANCH")
+    assert block.index("Pushed $$BRANCH") < block.index("_record-push-verdict")
+
+
 def test_ci_trigger_delegates_to_idempotent_exact_sha_signal() -> None:
     line = _target_line("ci-trigger")
     block = _target_block("ci-trigger")

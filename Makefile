@@ -3871,7 +3871,7 @@ batch-push: check-clean-tree _no-bypass-guard _stash-before-push-guard _pull-bef
 	fi; \
 	echo "$$COUNT unpushed commits, threshold met. Pushing..."; \
 	BRANCH=$$(git branch --show-current); \
-	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom HEAD:$$BRANCH; \
+	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom HEAD:$$BRANCH || { PUSH_RC=$$?; echo "Push failed for $$BRANCH (exit $$PUSH_RC); success was not recorded." >&2; exit $$PUSH_RC; }; \
 	echo "Pushed $$BRANCH to sandboxcom/gludd ($$COUNT commits)"; \
 	$(MAKE) --no-print-directory _record-push-verdict
 

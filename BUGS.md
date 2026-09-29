@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-29 — (resolved locally; push and exact-candidate gate required) Batch push reported success after Git rejected the push
+
+- **What happened**: `make batch-push` reached the pre-push secret scan, which refreshed `.secrets.baseline` line metadata and returned nonzero. Git correctly left the remote unchanged, but the Make recipe continued through its semicolon-separated shell, printed `Pushed development`, and recorded a successful push verdict.
+- **Root cause**: The direct `git push` invocation and its success-only side effects shared one shell recipe without an explicit failure edge. The recipe's final command therefore determined success even when the network operation failed.
+- **Fix applied**: The push command now preserves and returns Git's nonzero exit status before either the success message or `_record-push-verdict` can execute. A failing-first structural regression pins both failure propagation and side-effect ordering.
+- **Evidence**: The new regression reproduced the false-success path 1/1 before the repair. The complete workflow-failure suite passes 29/29, the broader push-discipline surface passes 576/576 with 12 intentional skips, and Make target-contract and duplicate-target checks are green. The secrets baseline is being refreshed and independently verified before the next push.
+- **Practitioner evidence**: detect-secrets issues [#149](https://github.com/Yelp/detect-secrets/issues/149) and [#212](https://github.com/Yelp/detect-secrets/issues/212) document the long-lived behavior in which the hook updates baseline line metadata and exits nonzero. pre-commit issue [#1489](https://github.com/pre-commit/pre-commit/issues/1489) and its implementation contract confirm that hooks which modify files are failures even if the hook process itself exits zero.
+- **Lesson**: A publication recipe must branch on the publication command itself. Logging and verdict persistence are commit points and may run only after Git returns success; an expected hook rewrite is still a failed push until the rewritten evidence is reviewed and committed.
+
 ### 2026-09-28 — (contained locally; upstream fix pending) RunPod provider exposed invalid generated data-source schemas
 
 - **What happened**: The exhaustive v0.1.1 gate completed every shard, cleared the repository coverage floor, and passed smoke after 3,398 integration tests, but Terraform validation failed for both `runpod-llamacpp` and `runpod-vllm`. The streamed summary was truncated; extraction from the retained gate log identified both failures before any retry or release claim.

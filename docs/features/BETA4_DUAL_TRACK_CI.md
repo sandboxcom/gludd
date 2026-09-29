@@ -2332,6 +2332,36 @@ owned by `collect-check`; no daemon or cleanup task is introduced. Rollback is
 the isolated hook/test/documentation commit, restoring the prior entry without
 rewriting Git history or touching a release ref.
 
+#### Push failure propagation and mutable secret evidence (2026-09-29)
+
+The v0.1.1 development push exposed a distinct ownership edge after every earlier
+pre-push phase had passed. `detect-secrets` refreshed line metadata in
+`.secrets.baseline` and returned nonzero, so Git correctly rejected the push. The
+`batch-push` shell recipe nevertheless continued, emitted a success message, and
+persisted a successful verdict because the direct `git push` result was separated
+from later commands only by semicolons.
+
+`batch-push` now captures and returns the push failure before any success-only
+side effect. Its regression requires the failure edge to occur before both the
+operator message and `_record-push-verdict`. Baseline refresh remains an explicit,
+reviewable commit followed by the read-only `secrets-scan` and live-secret
+verification paths; a hook rewrite is never silently published.
+
+This behavior is not Gludd-specific. detect-secrets issues
+[#149](https://github.com/Yelp/detect-secrets/issues/149) and
+[#212](https://github.com/Yelp/detect-secrets/issues/212) document baseline
+metadata updates causing hook failure and requiring the baseline to be staged.
+pre-commit issue
+[#1489](https://github.com/pre-commit/pre-commit/issues/1489) and the upstream
+runner implementation establish that a hook-modified worktree is a failure even
+when the hook exits zero. Gludd therefore treats Git's exit status, not subsequent
+recipe output, as the publication boundary.
+
+The path remains ZDD: a failed push cannot advance the remote SHA, trigger hosted
+CI, or write a success verdict. Rollback is the isolated Makefile, regression,
+ledger, and documentation commit; it does not rewrite history or touch a tag,
+artifact, deployment, or running service.
+
 ### Cleanup validation and apply parity (2026-08-31)
 
 Stopping an invalidated local dual-track producer exposed a second operational
