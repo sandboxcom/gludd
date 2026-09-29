@@ -215,6 +215,14 @@ def test_coverage_files_target_preserves_aggregate_and_per_file_floors() -> None
     assert '--per-file-threshold="$(COVERAGE_PER_FILE_MIN)"' in recipe
 
 
+def test_coverage_files_target_namespaces_ansible_temp_under_owned_basetemp() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    recipe = makefile.split("coverage-files:", 1)[1].split("gate-async:", 1)[0]
+
+    assert 'mkdir -p "$$BT/ansible-local"' in recipe
+    assert 'ANSIBLE_LOCAL_TEMP="$$BT/ansible-local"' in recipe
+
+
 def test_local_and_hosted_named_shards_use_one_bounded_runner() -> None:
     """GHA and local release evidence must execute the same shard owner."""
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")

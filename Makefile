@@ -1159,10 +1159,10 @@ coverage-files:
 		COVERAGE_RC="$$(cd "$$(dirname "$(COVERAGE_CONFIG)")" && pwd)/$$(basename "$(COVERAGE_CONFIG)")"; \
 		DATA_FILE="$(CURDIR)/.gate-logs/coverage-files-data-$${ID:-$$$$}"; \
 		REPORT_WORK="$(COVERAGE_REPORT).tmp.$${ID:-$$$$}"; \
-		rm -rf "$$BT"; rm -f "$$REPORT_WORK"; \
+		rm -rf "$$BT"; mkdir -p "$$BT/ansible-local"; rm -f "$$REPORT_WORK"; \
 		cleanup() { RC=$$?; trap - EXIT INT TERM; rm -rf "$$BT"; rm -f "$$REPORT_WORK" "$$DATA_FILE" "$$DATA_FILE".*; exit $$RC; }; \
 		trap cleanup EXIT INT TERM; \
-		export GLUDD_COVERAGE_RC="$$COVERAGE_RC" GLUDD_COVERAGE_DATA="$$DATA_FILE" GLUDD_COVERAGE_BT="$$BT" GLUDD_COVERAGE_REPORT_WORK="$$REPORT_WORK"; \
+		export ANSIBLE_LOCAL_TEMP="$$BT/ansible-local" GLUDD_COVERAGE_RC="$$COVERAGE_RC" GLUDD_COVERAGE_DATA="$$DATA_FILE" GLUDD_COVERAGE_BT="$$BT" GLUDD_COVERAGE_REPORT_WORK="$$REPORT_WORK"; \
 		$(UV) run python scripts/stream_command.py --root "$(OBSERVED_ROOT)" --label coverage-files \
 			--heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" --quiet-secs "$(OBSERVED_QUIET_SECS)" \
 			--max-secs "$(OBSERVED_MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)" --pytest-trace -- /bin/sh -c 'set -e; \
