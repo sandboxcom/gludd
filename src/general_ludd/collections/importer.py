@@ -54,6 +54,21 @@ __all__ = ("_iter_provider_entries",)
 _DENY_REASSIGN_RE = re.compile(r"deny\s*[-+]?=")
 
 
+def _default_operator_trust_data_path() -> Path:
+    """Locate operator trust data without depending on the process CWD."""
+    package_root = Path(__file__).resolve().parents[1]
+    candidates = (
+        Path(__file__).resolve().parents[3]
+        / "infra"
+        / "terraform"
+        / "policies"
+        / "data.json",
+        package_root / "terraform_assets" / "policies" / "data.json",
+        package_root / "terraform" / "policies" / "data.json",
+    )
+    return next((candidate for candidate in candidates if candidate.is_file()), candidates[0])
+
+
 @dataclass(frozen=True, slots=True)
 class ImportIssue:
     severity: str
@@ -64,10 +79,14 @@ class TerraformCollectionImporter:
     def __init__(
         self,
         collection_path: Path,
-        operator_trust_data_path: Path = Path("infra/terraform/policies/data.json"),
+        operator_trust_data_path: Path | None = None,
     ) -> None:
         self.collection_path = collection_path
-        self.operator_trust_data_path = operator_trust_data_path
+        self.operator_trust_data_path = (
+            operator_trust_data_path
+            if operator_trust_data_path is not None
+            else _default_operator_trust_data_path()
+        )
 
     def import_collection(self) -> list[ImportIssue]:
         issues: list[ImportIssue] = []

@@ -6,6 +6,8 @@ import contextlib
 import json
 from pathlib import Path
 
+import pytest
+
 from general_ludd.collections.importer import (
     ImportIssue,
     TerraformCollectionImporter,
@@ -36,11 +38,17 @@ class TestImportIssue:
 
 
 class TestTerraformCollectionImporterInstantiation:
-    def test_default_trust_data_path(self, tmp_path: Path) -> None:
+    def test_default_trust_data_path_is_cwd_independent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
         importer = TerraformCollectionImporter(collection_path=tmp_path)
 
         assert importer.collection_path == tmp_path
-        assert importer.operator_trust_data_path == Path("infra/terraform/policies/data.json")
+        assert importer.operator_trust_data_path.is_absolute()
+        assert importer.operator_trust_data_path.is_file()
+        assert importer.operator_trust_data_path.name == "data.json"
+        assert importer._load_operator_trust_list()
 
     def test_custom_trust_data_path(self, tmp_path: Path) -> None:
         custom = tmp_path / "custom" / "trust.json"
