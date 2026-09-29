@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-29 — (resolved locally; exact-candidate gate required) Resource-owning repairs omitted their exact inventory entries
+
+- **What happened**: The complete preflight wave found three new temporary-artifact acquisitions in the Ansible runtime refresh, CI failure ledger, and PyInstaller graph receipt writers. Each implementation already used atomic replacement and failure-path cleanup, but their exact hashes were absent from the tracked resource-ownership inventory.
+- **Root cause**: The three features and their focused tests were committed without regenerating the same-commit ownership inventory. Their cleanup was correct, but the repository-wide fail-closed baseline correctly treated unreviewed acquisitions as release blockers.
+- **Fix applied**: The acquisition/teardown pairs were reviewed first, then the checker alone regenerated the counted inventory. The inventory now binds all three owners, source hashes, atomic acquisitions, and teardown evidence; read-only validation remains the default and passes with 212 resources.
+- **Evidence**: `make check-resource-ownership` passes with 28 async tasks, 72 clients, 31 processes, nine services, and 72 temporary artifacts. The checker regression suite passes 32/32. The interrupted exact-candidate gate reached 56% of integration after retaining this as its only observed preflight failure; because the process was interrupted, that partial run is not a gate verdict and a complete replay remains required.
+- **Practitioner evidence**: The detect-secrets [baseline identity design](https://github.com/Yelp/detect-secrets/blob/master/docs/design.md#potentialsecret) and issue [#212](https://github.com/Yelp/detect-secrets/issues/212) show why semantic evidence and generated baselines must move together without using line coordinates as identity. CPython issue [#79325](https://github.com/python/cpython/issues/79325) documents long-lived temporary-directory cleanup failures that justify retaining exact owner-side teardown evidence.
+- **Lesson**: A resource-owning code change and its exact ownership inventory are one review unit. Focused behavior tests cannot substitute for the repository-wide acquisition-to-teardown admission gate.
+
 ### 2026-09-29 — (resolved locally; exact-candidate gate required) Gate prerequisites hid every failure after the first one
 
 - **What happened**: The replacement release gate encountered generated third-party collection files during task registration and stopped immediately. None of the remaining preflights, lint, type checking, full test suite, or smoke phase ran, so the hour-long attempt returned one defect instead of the complete repair set it was supposed to collect.
