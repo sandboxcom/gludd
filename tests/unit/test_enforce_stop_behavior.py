@@ -23,6 +23,8 @@ Tests:
       future unchecked task, verify release allowed
   17. release_shipping_blocks_active_milestone — unchecked active task, verify release blocked
   18. release_shipping_without_scope_fails_safe — malformed scope + unchecked task, verify release blocked
+  19. release_promote_delegates_terminal_task — terminal publish task remains open,
+      verify the canonical release readiness path may run
 """
 
 from __future__ import annotations
@@ -981,7 +983,7 @@ def test_release_shipping_ignores_future_backlog(hook_plugin_env: HookEnv):
 
     _parsed, raw, stderr, rc = _invoke_make_before(
         hook_plugin_env,
-        "make release-promote TAG=v0.1.1",
+        "make git-push-branch BRANCH=development",
     )
 
     assert rc == 0, (
@@ -1002,7 +1004,7 @@ def test_release_shipping_blocks_active_milestone(hook_plugin_env: HookEnv):
 
     _parsed, _raw, stderr, rc = _invoke_make_before(
         hook_plugin_env,
-        "make release-promote TAG=v0.1.1",
+        "make git-push-branch BRANCH=development",
     )
 
     assert rc == 1
@@ -1021,9 +1023,34 @@ def test_release_shipping_without_valid_scope_fails_safe(hook_plugin_env: HookEn
 
     _parsed, _raw, stderr, rc = _invoke_make_before(
         hook_plugin_env,
-        "make release-promote TAG=v0.1.1",
+        "make git-push-branch BRANCH=development",
     )
 
     assert rc == 1
     assert "STOP-LIKE TOOL BLOCKED" in stderr
     assert "TASKS.md unchecked: yes" in stderr
+
+
+def test_release_promote_delegates_terminal_task_to_readiness(
+    hook_plugin_env: HookEnv,
+):
+    """The publish task cannot require its own completion before promotion."""
+    _clean_leaked_state_files()
+    (hook_plugin_env.cwd / "TASKS.md").write_text(
+        "v0.1.1 milestone is the exact task set S83.157-S83.168\n\n"
+        "- [x] S83.157 Active predecessor complete\n"
+        "- [ ] S83.166 Promote, publish, deploy, and verify v0.1.1\n"
+        "- [x] S83.168 Final predecessor complete\n"
+    )
+    _seed_ci_cache("SUCCESS")
+
+    _parsed, raw, stderr, rc = _invoke_make_before(
+        hook_plugin_env,
+        "make release-promote TAG=v0.1.1",
+    )
+
+    assert rc == 0, (
+        "release-promote must reach its canonical release-readiness preflight "
+        "while the terminal publication task remains open; otherwise that task "
+        f"can never complete. stdout={raw!r} stderr={stderr!r}"
+    )

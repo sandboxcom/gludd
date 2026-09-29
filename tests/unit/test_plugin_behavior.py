@@ -471,6 +471,20 @@ class TestEnforceStopTasksMdUnchecked:
             "countTasksMdUnchecked duplicates the canonical milestone parser"
         )
 
+    def test_canonical_release_targets_delegate_terminal_task_exception(self):
+        """Release promotion must reach the readiness check that owns its task."""
+        src = ENFORCE_STOP.read_text()
+        assert re.search(
+            r"CANONICAL_RELEASE_PREFLIGHT_TARGET_RE\s*=\s*/\^make\\s\+"
+            r"\(release-cut\|release-promote\)",
+            src,
+        )
+        assert re.search(
+            r"const taskMd\s*=\s*CANONICAL_RELEASE_PREFLIGHT_TARGET_RE\.test"
+            r"\(command\)\s*\?\s*false\s*:\s*tasksMdHasUnchecked\(\)",
+            src,
+        ), "release targets must delegate TASKS policy to release-readiness"
+
     def test_tasks_md_has_unchecked_wired_into_has_pending_work(self):
         """TASKS.md state participates in the unified pending-work state."""
         src = ENFORCE_STOP.read_text()

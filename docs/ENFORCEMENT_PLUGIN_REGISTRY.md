@@ -18,7 +18,7 @@
 | 4 | `enforce-delegate.ts` | `tool.execute.before` | Edit/write/bash after 2 consecutive non-dispatch calls (mainthread streak); serial read-only investigations past `GLUDD_READ_GRIND_DENY_COUNT` (default 10). | `GLUDD_MAINTHREAD_STREAK_ENFORCE=0` (streak), `GLUDD_MODEL_UTIL_ENFORCE=0` (utilization), `GLUDD_READ_GRIND_*` tunables |
 | 5 | `enforce-multitask.ts` | `tool.execute.before`, `experimental.text.complete` | Enforces an operator-configured dispatch minimum while pending work exists; ten remains the recommendation and hard ceiling, and unconfigured sessions may work inline. | `GLUDD_MULTITASK_FLOOR_ENFORCE=0` |
 | 6 | `enforce-floor-v2.ts` | `tool.execute.before`, `experimental.text.complete` | Tracks session-wide dispatched-minus-completed work and denies non-dispatch tools while the configured cumulative floor is deficient. | `GLUDD_FLOOR_V2_ENFORCE=0` |
-| 7 | `enforce-stop.ts` | `experimental.text.complete`, `experimental.chat.system.transform`, `tool.execute.before`, `event` | Text-only responses (0 tool calls) when `hasRealPendingWork()` is true (active-milestone TASKS.md items, non-empty ratchet.yml, red gate, unreleased tags, CI not green). The `text.complete` block is UNBYPASSABLE — `GLUDD_STOP_ENFORCE=0` disables only the non-text hooks. Stop-pattern make targets (commit/push/release) use the same fail-safe milestone scope, so future-version backlog stays visible without blocking a completed release; `session.idle` is handled through `event`. | `GLUDD_STOP_ENFORCE=0` (non-text hooks only) |
+| 7 | `enforce-stop.ts` | `experimental.text.complete`, `experimental.chat.system.transform`, `tool.execute.before`, `event` | Text-only responses (0 tool calls) when `hasRealPendingWork()` is true (active-milestone TASKS.md items, non-empty ratchet.yml, red gate, unreleased tags, CI not green). The `text.complete` block is UNBYPASSABLE — `GLUDD_STOP_ENFORCE=0` disables only the non-text hooks. Commit/push targets use the same fail-safe milestone scope, while `release-cut` and `release-promote` delegate task policy to their canonical `release-readiness` preflight so the terminal publication task cannot block the command required to complete itself; `session.idle` is handled through `event`. | `GLUDD_STOP_ENFORCE=0` (non-text hooks only) |
 | 8 | `enforce-deadline.ts` | `tool.execute.before` | Task/agent/workflow dispatch whose elapsed wall-clock exceeds `GLUDD_TASK_TIMEOUT_MS` (default 300000ms = 5min); emits `TASK DEADLINE EXCEEDED` warning and records to `/tmp/gludd-task-stale.json`. | `GLUDD_TASK_DEADLINE_ENFORCE=0` (block), `GLUDD_TASK_DEADLINE_ENABLED=0` (detection) |
 | 9 | `enforce-enhancement-ratio.ts` | `tool.execute.before`, `experimental.text.complete` | Task/agent/workflow dispatch waves with >50% fix dispatches when ≥2 dispatches are in the wave (forces ≥50% enhancement work per wave). | `GLUDD_ENHANCEMENT_RATIO_ENFORCE=0` |
 | 10 | `enforce-additive-task.ts` | `tool.execute.before` | Rejects all-new-task dispatch waves while at least two TASKS.md items remain unchecked; at least one dispatch must reference an existing task ID. | `GLUDD_ADDITIVE_TASK_ENFORCE=0` (`GLUDD_ADDITIVE_TASK_BLOCK=0` for warning-only mode) |
@@ -116,8 +116,11 @@ The release stop guard applies one ownership rule everywhere: an exact declared
 milestone is release-blocking, future-version backlog is not, and a missing or
 malformed declaration falls back to repository-wide blocking. Runtime tests
 exercise all three cases against the real TypeScript hook, including
-`release-promote`, so a second unscoped checkbox reader cannot silently restore
-the deployment deadlock.
+ordinary shipping. `release-cut` and `release-promote` instead reach the
+fail-closed `release-readiness` preflight, which excludes only the version's
+terminal publication action. This prevents both an unscoped backlog regression
+and the circular requirement that publication be complete before publication
+may start.
 
 Plugin source edits still require an OpenCode restart before the running editor
 loads the new entrypoint object.
