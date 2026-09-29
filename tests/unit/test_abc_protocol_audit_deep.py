@@ -95,7 +95,10 @@ def _find_concrete_subclasses(abc_cls: type, modules: list[str]) -> list[str]:
     return concrete
 
 
-def _find_abstract_instantiations(filepath: Path) -> list[tuple[int, str, str]]:
+def _find_abstract_instantiations(
+    filepath: Path,
+    candidate_names: frozenset[str],
+) -> list[tuple[int, str, str]]:
     try:
         with open(filepath) as f:
             source = f.read()
@@ -109,7 +112,7 @@ def _find_abstract_instantiations(filepath: Path) -> list[tuple[int, str, str]]:
         if not isinstance(node.func, ast.Name):
             continue
         name = node.func.id
-        if name == "super":
+        if name not in candidate_names:
             continue
         line = ast.get_source_segment(source, node)
         if line:
@@ -260,6 +263,27 @@ class TestNoAbstractInstantiation:
         }
     )
 
+    def test_scan_renders_only_candidate_abc_calls(self, tmp_path, monkeypatch):
+        """Large trees must not render source for every unrelated call."""
+        source_path = tmp_path / "many_calls.py"
+        source_path.write_text(
+            "\n".join([*("unrelated()" for _ in range(500)), "SpeakerSelector()"]),
+            encoding="utf-8",
+        )
+        original_get_source_segment = ast.get_source_segment
+        rendered_names: list[str] = []
+
+        def counting_get_source_segment(source, node):
+            rendered_names.append(node.func.id)
+            return original_get_source_segment(source, node)
+
+        monkeypatch.setattr(ast, "get_source_segment", counting_get_source_segment)
+
+        calls = _find_abstract_instantiations(source_path, self.KNOWN_ABC_CLASS_NAMES)
+
+        assert rendered_names == ["SpeakerSelector"]
+        assert calls == [(501, "SpeakerSelector", "SpeakerSelector()")]
+
     @pytest.mark.timeout(600)
     def test_no_direct_abc_instantiation(self):
         # Whole-tree AST scan; CI runners on cold disks exceed the 180s
@@ -269,7 +293,7 @@ class TestNoAbstractInstantiation:
         for py_file in SRC_ROOT.rglob("*.py"):
             if py_file.name == "__init__.py" and py_file.stat().st_size < 10:
                 continue
-            calls = _find_abstract_instantiations(py_file)
+            calls = _find_abstract_instantiations(py_file, self.KNOWN_ABC_CLASS_NAMES)
             for lineno, class_name, line_text in calls:
                 if class_name in self.KNOWN_ABC_CLASS_NAMES:
                     rel = py_file.relative_to(SRC_ROOT.parents[1])
