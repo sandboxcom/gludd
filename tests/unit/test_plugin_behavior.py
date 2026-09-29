@@ -418,16 +418,13 @@ class TestEnforceStopRepoPendingWork:
 
 
 # --------------------------------------------------------------------------- #
-# 3e. enforce-stop.ts — tasksMdHasUnchecked (2026-06-30 fix)
+# 3e. enforce-stop.ts — milestone-scoped tasksMdHasUnchecked
 # --------------------------------------------------------------------------- #
-# The ratchet-only proxy was broken: it tracked test failures but not
-# agent-acknowledged work in TASKS.md. An agent with all-green tests and a
-# clean git tree but unchecked TASKS.md rows could stop undetected. This
-# function reads TASKS.md for `- [ ]` / `* [ ]` rows and gates hasPendingWork
-# on them, closing the gap that caused the 2026-06-30 incident.
+# The stop-like shipping path must share the canonical milestone parser used by
+# hasRealPendingWork(). A duplicate raw checkbox scan made future-version
+# backlog block a completed active release indefinitely.
 class TestEnforceStopTasksMdUnchecked:
-    """tasksMdHasUnchecked must exist, be wired into hasPendingWork, and
-    detect unchecked markdown task boxes."""
+    """Shipping uses canonical task ownership rather than a raw checkbox scan."""
 
     def test_tasks_md_has_unchecked_function_exists(self):
         src = ENFORCE_STOP.read_text()
@@ -436,50 +433,42 @@ class TestEnforceStopTasksMdUnchecked:
             "2026-06-30 incident fix (TASKS.md unchecked work) is absent"
         )
 
-    def test_tasks_md_has_unchecked_uses_exists_sync(self):
-        """Must guard the read with fs.existsSync (fail-open on absent file)."""
+    def test_tasks_md_has_unchecked_uses_canonical_scope_parser(self):
+        """The shipping path must delegate to the shared milestone parser."""
         src = ENFORCE_STOP.read_text()
         m = re.search(r"function tasksMdHasUnchecked\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
         assert m, "could not extract tasksMdHasUnchecked body"
         body = m.group(1)
-        assert "existsSync" in body, (
-            "tasksMdHasUnchecked must guard with fs.existsSync so absent "
-            "TASKS.md does not throw"
+        assert "tasksMdPendingStats" in body, (
+            "tasksMdHasUnchecked must use the canonical milestone-aware parser; "
+            "a raw scan incorrectly makes future backlog release-blocking"
         )
 
-    def test_tasks_md_has_unchecked_uses_default_path(self):
-        """Default path must be <cwd>/TASKS.md."""
+    def test_tasks_md_has_unchecked_uses_project_root(self):
+        """The task ledger path must come from the canonical project root."""
         src = ENFORCE_STOP.read_text()
         m = re.search(r"function tasksMdHasUnchecked\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
         assert m, "could not extract tasksMdHasUnchecked body"
         body = m.group(1)
-        assert "TASKS.md" in body, (
-            "tasksMdHasUnchecked must use TASKS.md as the default path"
+        assert 'path.join(getProjectRoot(), "TASKS.md")' in body, (
+            "tasksMdHasUnchecked must read TASKS.md from getProjectRoot()"
         )
 
-    def test_tasks_md_has_unchecked_detects_dash_checkbox(self):
-        """Must detect `- [ ]` dash-marked unchecked boxes."""
+    def test_tasks_md_has_unchecked_has_no_duplicate_raw_scan(self):
+        """A local checkbox regex would bypass milestone ownership again."""
         src = ENFORCE_STOP.read_text()
         m = re.search(r"function tasksMdHasUnchecked\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
         assert m, "could not extract tasksMdHasUnchecked body"
         body = m.group(1)
-        # The body contains regex literals like /-\s+\[\s*\]/ — verify the
-        # box-matching tokens appear. Use the same flexible assertion as
-        # enforce-floor's openWorkExists scan (substring triple: \[, \s, \]).
-        assert "\\[" in body and "\\s" in body and "\\]" in body, (
-            "tasksMdHasUnchecked must contain box-matching tokens for "
-            "unchecked markdown checkboxes ([ ])"
-        )
+        assert "readFileSync" not in body
+        assert "content.match" not in body
+        assert "content.test" not in body
 
-    def test_tasks_md_has_unchecked_fails_open(self):
-        """Function must return false on any error (fail-open)."""
+    def test_legacy_unscoped_count_checker_is_removed(self):
+        """No second repository-wide counter may disagree with task ownership."""
         src = ENFORCE_STOP.read_text()
-        m = re.search(r"function tasksMdHasUnchecked\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
-        assert m, "could not extract tasksMdHasUnchecked body"
-        body = m.group(1)
-        assert "catch" in body, (
-            "tasksMdHasUnchecked must wrap in try/catch and return false on "
-            "error (fail-open)"
+        assert "function countTasksMdUnchecked" not in src, (
+            "countTasksMdUnchecked duplicates the canonical milestone parser"
         )
 
     def test_tasks_md_has_unchecked_wired_into_has_pending_work(self):

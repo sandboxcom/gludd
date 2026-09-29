@@ -899,25 +899,15 @@ function stopLikeDenyMessage(taskMd: boolean, ratchetEntries: number, extraReaso
   ].join("\n")
 }
 
-// ── Legacy checkers (used by tool.execute.before for backwards compat) ──────
+// ── Stop-like tool checkers ─────────────────────────────────────────────────
 
 function tasksMdHasUnchecked(): boolean {
-  try {
-    const tasksPath = path.join(process.cwd(), "TASKS.md")
-    if (!fs.existsSync(tasksPath)) return false
-    const content = fs.readFileSync(tasksPath, "utf8")
-    return /-\s+\[\s*\]/.test(content) || /\*\s+\[\s*\][^xX]/i.test(content)
-  } catch { return false }
-}
-
-function countTasksMdUnchecked(): number {
-  try {
-    const tasksPath = path.join(process.cwd(), "TASKS.md")
-    if (!fs.existsSync(tasksPath)) return 0
-    const content = fs.readFileSync(tasksPath, "utf8")
-    const matches = content.match(/^[-*]\s+\[ \]/gm)
-    return matches ? matches.length : 0
-  } catch { return 0 }
+  // Shipping must use the same ownership boundary as text completion. A
+  // completed active release may coexist with visible future-version backlog;
+  // malformed or absent milestone metadata still falls back to repository-wide
+  // blocking inside tasksMdPendingStats().
+  const tasksPath = path.join(getProjectRoot(), "TASKS.md")
+  return tasksMdPendingStats(tasksPath).pending
 }
 
 function ratchetHasEntries(): number {
