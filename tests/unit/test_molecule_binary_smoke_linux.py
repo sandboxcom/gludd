@@ -190,6 +190,15 @@ class TestScenarioShape:
         }
         assert names == {"ansible.posix", "community.docker"}
 
+    def test_downloaded_collections_use_ephemeral_path_before_project_source(self) -> None:
+        with open(_MAKEFILE) as fh:
+            makefile = fh.read()
+
+        assert (
+            'export ANSIBLE_COLLECTIONS_PATH="$$ANSIBLE_STATE_DIR/collections:'
+            '$$PROJECT_COLLECTIONS:/usr/share/ansible/collections"'
+        ) in makefile
+
     def test_molecule_uses_container_driver(self) -> None:
         data = _load_yaml_mapping("molecule.yml")
         driver = _mapping_key(data, "driver", "molecule.yml")
@@ -225,8 +234,8 @@ class TestScenarioShape:
         assert 'MOLECULE_GLOB="molecule/playbooks/*/molecule.yml"' in makefile
         assert 'PROJECT_COLLECTIONS="$$(pwd)/collections"' in makefile
         assert (
-            'export ANSIBLE_COLLECTIONS_PATH="$$PROJECT_COLLECTIONS:'
-            '$$ANSIBLE_STATE_DIR/collections:'
+            'export ANSIBLE_COLLECTIONS_PATH="$$ANSIBLE_STATE_DIR/collections:'
+            '$$PROJECT_COLLECTIONS:'
         ) in makefile
         assert 'DOCKER_CONFIG_VALUE="$$ANSIBLE_STATE_DIR/docker"' in makefile
         assert 'export DOCKER_CONFIG="$$DOCKER_CONFIG_VALUE"' in makefile

@@ -2733,3 +2733,57 @@ database, service, or release asset. A failed or timed-out exact run stops befor
 any success claim; previously published releases keep serving. Rollback is one
 script/Makefile/test/doc commit and restores the shorter loops without changing a
 tag, artifact, or deployment.
+
+### Complete gate preflights and ephemeral Molecule dependencies (2026-09-29)
+
+The first real exact-SHA `binary_smoke_linux` replay completed successfully: it
+built the reviewed aarch64 ELF, exercised the packaged CLI and daemon, submitted a
+job, verified failure paths, and tore the service down. It also exposed an
+ownership defect. Galaxy had installed 929 third-party Ansible and Community
+files beneath Gludd's project `collections/` directory. The following gate then
+rejected those paths during task registration, as it should.
+
+The dependency path listed the writable project collection root before the
+Molecule run's ephemeral collection root. Ansible Galaxy deliberately installs
+into the first configured collection path; a lookup order therefore became a
+write destination. The order is now ephemeral dependencies first and Gludd's
+owned collection second. The scenario's existing trap removes the ephemeral root
+on success or failure, while project code remains resolvable without accepting
+generated vendor content into source ownership.
+
+That gate exposed a second process defect: its independent checks were ordinary
+Make prerequisites. The first failure prevented the gate recipe, later
+preflights, and every subsequent phase from running. `--keep-going` can continue
+independent siblings but still cannot execute a target whose prerequisite failed;
+`--ignore-errors` would continue by discarding the failure truth. Neither option
+implements a trustworthy complete verdict.
+
+The gate now owns an explicit preflight ledger. It runs all named checks in a
+stable order, streams every start and result, retains one PASS/FAIL row per check,
+makes any failure sticky in the final status, and continues through all remaining
+gate phases. An executable pass/fail/pass fixture proves that a middle failure is
+retained while the later check still runs. This converts a build attempt from a
+one-error-at-a-time loop into a complete repair set without weakening the final
+nonzero result.
+
+Practitioner and implementation evidence reviewed 2026-09-29:
+
+- Ansible's [`galaxy.py`](https://github.com/ansible/ansible/blob/devel/lib/ansible/cli/galaxy.py)
+  selects the first collection path as the installation destination.
+- Ansible issues [#68621](https://github.com/ansible/ansible/issues/68621) and
+  [#72628](https://github.com/ansible/ansible/issues/72628) document long-lived
+  confusion and unusable collection installs caused by path selection.
+- Molecule issue [#3999](https://github.com/ansible/molecule/issues/3999)
+  recommends explicitly owning `ANSIBLE_COLLECTIONS_PATH` when generated
+  configuration does not provide the required project and dependency paths.
+- The Stack Overflow discussions on
+  [`--ignore-errors` versus `--keep-going`](https://stackoverflow.com/questions/53039550/makefile-ignore-errors-vs-keep-going)
+  and [target-local continue-on-error policy](https://stackoverflow.com/questions/53760185/define-continue-if-error-policy-directly-in-target-dependencies)
+  show why global flags cannot both retain failures and guarantee the parent
+  recipe executes.
+
+Both repairs preserve ZDD. Molecule dependencies live only in a run-scoped path
+and are removed by the owner without touching an installed Gludd service. Gate
+aggregation changes validation control flow only: it performs read-only checks,
+retains their complete evidence, and still fails before publication whenever any
+check is red.

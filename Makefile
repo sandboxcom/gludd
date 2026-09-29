@@ -1822,10 +1822,85 @@ _gate-run-lock-acquire:
 
 .NOTPARALLEL: gate gate-refresh
 
-gate: _gate-run-lock-acquire disk-cleanup-preflight check-generated-artifact-hygiene _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-resource-ownership check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets check-no-prompt-prone-edit-tools check-pyinstaller-warning-reviews validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning integration-health check-runbook-currency check-version-bump-atomicity
+GATE_PREFLIGHT_TARGETS := \
+	disk-cleanup-preflight \
+	check-generated-artifact-hygiene \
+	_dead-code-baseline-refresh \
+	_check-windows-tracked-paths \
+	check-opencode-integrity \
+	check-plugin-hooks \
+	opencode-boot-smoke \
+	validate-task-ledger \
+	check-task-registration \
+	check-task-integrity \
+	check-make-target-contract \
+	check-dispatch-dedup \
+	check-subagent-guards \
+	verify-plugin-manifest \
+	check-skills-frontmatter \
+	check-coverage-gaps \
+	check-resource-ownership \
+	check-plugin-syntax \
+	check-plugin-runtime \
+	check-plugin-imports \
+	check-node-v26-compat \
+	check-duplicate-targets \
+	check-no-prompt-prone-edit-tools \
+	check-pyinstaller-warning-reviews \
+	validate-aws-iam \
+	validate-azure-iam \
+	check-azure-actions-crossref \
+	validate-gcp-iam \
+	validate-all-cloud-iam \
+	check-dependency-pinning \
+	integration-health \
+	check-runbook-currency \
+	check-version-bump-atomicity
+GATE_PREFLIGHT_STATUS ?= .gate-logs/gate-preflights.status
+GATE_PREFLIGHT_GATE_STATUS ?= .gate-status.next
+GATE_PREFLIGHT_FAILED_FILE ?= .gate-failed
+
+.PHONY: _gate-preflights _gate-preflight-fixture-pass-one _gate-preflight-fixture-fail _gate-preflight-fixture-pass-two
+
+_gate-preflight-fixture-pass-one _gate-preflight-fixture-pass-two:
+	@:
+
+_gate-preflight-fixture-fail:
+	@exit 7
+
+_gate-preflights:
+	@mkdir -p "$(dir $(GATE_PREFLIGHT_STATUS))" "$(dir $(GATE_PREFLIGHT_GATE_STATUS))" "$(dir $(GATE_PREFLIGHT_FAILED_FILE))"
+	@: > "$(GATE_PREFLIGHT_STATUS)"
+	@PREFLIGHT_FAILURES=0; PREFLIGHT_TOTAL=0; \
+	for target in $(GATE_PREFLIGHT_TARGETS); do \
+		PREFLIGHT_TOTAL=$$((PREFLIGHT_TOTAL + 1)); \
+		echo "=== GATE PREFLIGHT: $$target ==="; \
+		if $(MAKE) --no-print-directory "$$target"; then \
+			RESULT="$$target PASS"; \
+		else \
+			RC=$$?; \
+			RESULT="$$target FAIL $$RC"; \
+			PREFLIGHT_FAILURES=$$((PREFLIGHT_FAILURES + 1)); \
+			touch "$(GATE_PREFLIGHT_FAILED_FILE)"; \
+		fi; \
+		echo "$$RESULT"; \
+		echo "$$RESULT" >> "$(GATE_PREFLIGHT_STATUS)"; \
+	done; \
+	if [ "$$PREFLIGHT_FAILURES" -eq 0 ]; then \
+		echo "PASS $$PREFLIGHT_TOTAL" >> "$(GATE_PREFLIGHT_GATE_STATUS)"; \
+	else \
+		echo "FAIL $$PREFLIGHT_FAILURES log=$(GATE_PREFLIGHT_STATUS)" >> "$(GATE_PREFLIGHT_GATE_STATUS)"; \
+		echo "[gate] $$PREFLIGHT_FAILURES preflight failures retained; continuing remaining phases"; \
+	fi
+
+gate: _gate-run-lock-acquire
 	@rm -f .gate-failed .gate-status.next .gate-status.running
+	@mkdir -p .gate-logs
 	@printf "RUNNING %s %s\n" "$$(date +%s)" "$$PPID" > .gate-status.running && mv .gate-status.running .gate-status
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status.next
+	@echo "=== GATE PHASE: preflights ==="
+	@printf "preflights " >> .gate-status.next
+	@$(MAKE) --no-print-directory _gate-preflights
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
 	@# emits a timestamped stdout marker as it STARTS, so a running gate (even
 	@# backgrounded) is visibly advancing through phases — never a silent black box.
@@ -3183,7 +3258,7 @@ molecule-test:
 	chmod 700 "$$DOCKER_CONFIG_VALUE"; \
 	export DOCKER_CONFIG="$$DOCKER_CONFIG_VALUE"; \
 	PROJECT_COLLECTIONS="$$(pwd)/collections"; \
-	export ANSIBLE_COLLECTIONS_PATH="$$PROJECT_COLLECTIONS:$$ANSIBLE_STATE_DIR/collections:/usr/share/ansible/collections"; \
+	export ANSIBLE_COLLECTIONS_PATH="$$ANSIBLE_STATE_DIR/collections:$$PROJECT_COLLECTIONS:/usr/share/ansible/collections"; \
 	echo "Using Ansible collections: $$ANSIBLE_COLLECTIONS_PATH"; \
 	DOCKER_HOST_VALUE="$${DOCKER_HOST:-}"; \
 	if [ -z "$$DOCKER_HOST_VALUE" ] && command -v limactl >/dev/null 2>&1; then \
