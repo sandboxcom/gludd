@@ -58,6 +58,17 @@
       "owned": true
     },
     {
+      "path": "scripts/build_reviewed_head_integration_receipt.py",
+      "line": 385,
+      "column": 33,
+      "kind": "temp-artifact",
+      "owner": "write_receipt",
+      "acquisition": "tempfile.mkstemp(prefix=f'.{destination.name}.', suffix='.tmp', dir=destination.parent)",
+      "teardown": "temporary.unlink(missing_ok=True)",
+      "source_hash": "01d6841e9e0ed713d0259569c58e3eb9394acd02b4e543a7ad580d2b7997c95c",
+      "owned": true
+    },
+    {
       "path": "scripts/check_integration_health.py",
       "line": 253,
       "column": 15,
@@ -224,7 +235,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 290,
+      "line": 300,
       "column": 33,
       "kind": "temp-artifact",
       "owner": "_write_terminal_attestation",
@@ -235,7 +246,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 443,
+      "line": 453,
       "column": 16,
       "kind": "temp-artifact",
       "owner": "_owned_socket_safe_tmpdir",
@@ -246,7 +257,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 706,
+      "line": 749,
       "column": 14,
       "kind": "process",
       "owner": "_run_owned_pytest",
@@ -257,12 +268,12 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 1344,
+      "line": 1349,
       "column": 16,
       "kind": "temp-artifact",
       "owner": "run",
       "acquisition": "tempfile.mkdtemp(prefix=f'gludd-gate-{shard}-', dir=workspace_parent)",
-      "teardown": "shutil.rmtree(workspace, ignore_errors=True)",
+      "teardown": "ownership-transfer:_cleanup_owned_tree(workspace, context=f'{shard}:workspace-cleanup')",
       "source_hash": "267ac502531de8f2343e25be012e05961dccd8dcae4557d1818835475811b0e8",
       "owned": true
     },
@@ -1291,7 +1302,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 1046,
+      "line": 979,
       "column": 22,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1302,7 +1313,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 1058,
+      "line": 991,
       "column": 27,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1313,7 +1324,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 1072,
+      "line": 1005,
       "column": 32,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1324,7 +1335,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 2578,
+      "line": 2514,
       "column": 29,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job_isolated",
@@ -1335,7 +1346,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3724,
+      "line": 3662,
       "column": 26,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -1346,7 +1357,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3782,
+      "line": 3720,
       "column": 27,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
