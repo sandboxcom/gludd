@@ -872,6 +872,7 @@ const STOP_LIKE_TARGETS_RE = /^make\s+(git-commit|commit-no-verify|ship-commit|g
 const COMMIT_TARGET_RE = /^make\s+(git-commit|commit-no-verify|git-commit-file|test-and-commit|repo-commit|feature-done|git-merge)(\s|$)/
 const PUSH_TARGET_RE = /^make\s+(git-push-branch|git-push-branch-nv|git-push-sandboxcom|git-push-sandboxcom-main|git-push-master|git-tag-push|release-cut|release-promote|ship-commit|release-recut|release-branch-new)(\s|$)/
 const GIT_SHIPPING_TARGETS_RE = /^make\s+(ship-commit|batch-push|git-push-sandboxcom|git-tag-push)(\s|$)/
+const CANONICAL_RELEASE_PREFLIGHT_TARGET_RE = /^make\s+(release-cut|release-promote)(\s|$)/
 
 function issueStopChallenge(): string {
   const challenge_token = randomUUID().replace(/-/g, "").slice(0, 16)
@@ -899,25 +900,15 @@ function stopLikeDenyMessage(taskMd: boolean, ratchetEntries: number, extraReaso
   ].join("\n")
 }
 
-// ── Legacy checkers (used by tool.execute.before for backwards compat) ──────
+// ── Stop-like tool checkers ─────────────────────────────────────────────────
 
 function tasksMdHasUnchecked(): boolean {
-  try {
-    const tasksPath = path.join(process.cwd(), "TASKS.md")
-    if (!fs.existsSync(tasksPath)) return false
-    const content = fs.readFileSync(tasksPath, "utf8")
-    return /-\s+\[\s*\]/.test(content) || /\*\s+\[\s*\][^xX]/i.test(content)
-  } catch { return false }
-}
-
-function countTasksMdUnchecked(): number {
-  try {
-    const tasksPath = path.join(process.cwd(), "TASKS.md")
-    if (!fs.existsSync(tasksPath)) return 0
-    const content = fs.readFileSync(tasksPath, "utf8")
-    const matches = content.match(/^[-*]\s+\[ \]/gm)
-    return matches ? matches.length : 0
-  } catch { return 0 }
+  // Shipping must use the same ownership boundary as text completion. A
+  // completed active release may coexist with visible future-version backlog;
+  // malformed or absent milestone metadata still falls back to repository-wide
+  // blocking inside tasksMdPendingStats().
+  const tasksPath = path.join(getProjectRoot(), "TASKS.md")
+  return tasksMdPendingStats(tasksPath).pending
 }
 
 function ratchetHasEntries(): number {
@@ -1644,7 +1635,13 @@ const defaultImpl: HotModule = {
       const args = (output as Record<string, unknown> | undefined)?.args as { command?: string } | undefined
       const command = typeof args?.command === "string" ? args.command.trim() : ""
       if (command.startsWith("make ") && STOP_LIKE_TARGETS_RE.test(command)) {
-        const taskMd = tasksMdHasUnchecked()
+        // release-cut and release-promote run the canonical release-readiness
+        // preflight, which owns the terminal publication-task exception. If
+        // this generic guard also required that terminal task to be complete,
+        // the command needed to complete it could never start.
+        const taskMd = CANONICAL_RELEASE_PREFLIGHT_TARGET_RE.test(command)
+          ? false
+          : tasksMdHasUnchecked()
         const ratchetCount = ratchetHasEntries()
         const bugsOpen = bugsMdHasOpenIncidents()
         const gateRed = gateStatusIsRed()

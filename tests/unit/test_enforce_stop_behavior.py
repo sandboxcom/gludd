@@ -19,6 +19,12 @@ Tests:
   13. tasksmd_milestone_inside_range_pending — milestone declaration + unchecked inside range, verify pending
   14. tasksmd_milestone_outside_range_not_pending — milestone declaration + unchecked outside range, verify not pending
   15. tasksmd_no_milestone_declaration_any_unchecked_pending — no milestone declaration + any unchecked, verify pending
+  16. release_shipping_ignores_future_backlog — completed active milestone +
+      future unchecked task, verify release allowed
+  17. release_shipping_blocks_active_milestone — unchecked active task, verify release blocked
+  18. release_shipping_without_scope_fails_safe — malformed scope + unchecked task, verify release blocked
+  19. release_promote_delegates_terminal_task — terminal publish task remains open,
+      verify the canonical release readiness path may run
 """
 
 from __future__ import annotations
@@ -121,6 +127,30 @@ def _invoke_tool_before(
         "tool.execute.before",
         input={"tool": tool},
         output={},
+        env_overrides=overrides,
+        timeout=15,
+    )
+    stdout_raw = result.stdout.strip()
+    parsed = None
+    if stdout_raw:
+        with contextlib.suppress(json.JSONDecodeError):
+            parsed = json.loads(stdout_raw)
+    return parsed, stdout_raw, result.stderr, result.returncode
+
+
+def _invoke_make_before(
+    env: HookEnv,
+    command: str,
+    env_overrides: dict[str, str] | None = None,
+) -> tuple[dict | None, str, str, int]:
+    """Invoke the real bash pre-hook with the command in OpenCode's output args."""
+    overrides = (env_overrides or {}).copy()
+    overrides.setdefault(PERSIST_BLOCK_ENV, str(env.cwd / "persist-stop-block.json"))
+    result = env.invoke(
+        "enforce-stop.ts",
+        "tool.execute.before",
+        input={"tool": "bash"},
+        output={"args": {"command": command}},
         env_overrides=overrides,
         timeout=15,
     )
@@ -931,3 +961,96 @@ def test_tasksmd_no_milestone_declaration_any_unchecked_pending(
     else:
         block_text = parsed.get("text", "")
         assert "BLOCKED" in block_text.upper(), f"No-milestone: text must be blanked. raw={raw[:300]}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TESTS 16-18: stop-like release actions use the same milestone scope as the
+# text-completion guard. Future-version backlog must remain visible without
+# deadlocking a completed release; absent or malformed scope remains fail-safe.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def test_release_shipping_ignores_future_backlog(hook_plugin_env: HookEnv):
+    """A completed active milestone may ship while future backlog remains open."""
+    _clean_leaked_state_files()
+    (hook_plugin_env.cwd / "TASKS.md").write_text(
+        "v0.1.1 milestone is the exact task set S83.157-S83.168\n\n"
+        "- [x] S83.157 Active release task complete\n"
+        "- [x] S83.168 Final active release task complete\n"
+        "- [ ] S83.169 Future v0.1.2 backlog item\n"
+    )
+    _seed_ci_cache("SUCCESS")
+
+    _parsed, raw, stderr, rc = _invoke_make_before(
+        hook_plugin_env,
+        "make git-push-branch BRANCH=development",
+    )
+
+    assert rc == 0, (
+        "Future-version backlog must not deadlock release promotion after the "
+        f"declared milestone is complete. stdout={raw!r} stderr={stderr!r}"
+    )
+
+
+def test_release_shipping_blocks_active_milestone(hook_plugin_env: HookEnv):
+    """An unchecked task inside the declared milestone blocks release shipping."""
+    _clean_leaked_state_files()
+    (hook_plugin_env.cwd / "TASKS.md").write_text(
+        "v0.1.1 milestone is the exact task set S83.157-S83.168\n\n"
+        "- [ ] S83.157 Active release task remains\n"
+        "- [ ] S83.169 Future v0.1.2 backlog item\n"
+    )
+    _seed_ci_cache("SUCCESS")
+
+    _parsed, _raw, stderr, rc = _invoke_make_before(
+        hook_plugin_env,
+        "make git-push-branch BRANCH=development",
+    )
+
+    assert rc == 1
+    assert "STOP-LIKE TOOL BLOCKED" in stderr
+    assert "TASKS.md unchecked: yes" in stderr
+
+
+def test_release_shipping_without_valid_scope_fails_safe(hook_plugin_env: HookEnv):
+    """Malformed milestone metadata falls back to repository-wide blocking."""
+    _clean_leaked_state_files()
+    (hook_plugin_env.cwd / "TASKS.md").write_text(
+        "v0.1.1 milestone includes selected release work\n\n"
+        "- [ ] S83.169 Unscoped pending task\n"
+    )
+    _seed_ci_cache("SUCCESS")
+
+    _parsed, _raw, stderr, rc = _invoke_make_before(
+        hook_plugin_env,
+        "make git-push-branch BRANCH=development",
+    )
+
+    assert rc == 1
+    assert "STOP-LIKE TOOL BLOCKED" in stderr
+    assert "TASKS.md unchecked: yes" in stderr
+
+
+def test_release_promote_delegates_terminal_task_to_readiness(
+    hook_plugin_env: HookEnv,
+):
+    """The publish task cannot require its own completion before promotion."""
+    _clean_leaked_state_files()
+    (hook_plugin_env.cwd / "TASKS.md").write_text(
+        "v0.1.1 milestone is the exact task set S83.157-S83.168\n\n"
+        "- [x] S83.157 Active predecessor complete\n"
+        "- [ ] S83.166 Promote, publish, deploy, and verify v0.1.1\n"
+        "- [x] S83.168 Final predecessor complete\n"
+    )
+    _seed_ci_cache("SUCCESS")
+
+    _parsed, raw, stderr, rc = _invoke_make_before(
+        hook_plugin_env,
+        "make release-promote TAG=v0.1.1",
+    )
+
+    assert rc == 0, (
+        "release-promote must reach its canonical release-readiness preflight "
+        "while the terminal publication task remains open; otherwise that task "
+        f"can never complete. stdout={raw!r} stderr={stderr!r}"
+    )

@@ -75,6 +75,11 @@ RELEASE_READINESS_VALIDATE_ONLY ?= 0
 RELEASE_COMPLETED_STAGES ?=
 RELEASE_OBSERVATIONS ?=
 REVIEWED_HEAD_INTEGRATION_RECEIPT ?=
+REVIEWED_HEAD_RECEIPT_MANIFEST ?=
+REVIEWED_HEAD_GATE_ATTESTATION ?=
+REVIEWED_HEAD_RECEIPT_OUTPUT ?=
+REVIEWED_HEAD_RECEIPT_REPO_ROOT ?= .
+REVIEWED_HEAD_RECEIPT_VALIDATE_ONLY ?= 0
 RELEASE_CANDIDATE_SHA ?=
 RELEASE_FAILURE_LEDGER ?= docs/releases/beta-release-failures.json
 SELF_IMPROVE_MODEL_PATH ?=
@@ -625,6 +630,7 @@ help:
 	@echo ""
 	@echo "  --- Release ---"
 	@echo "  release-list          List all GitHub releases"
+	@echo "  reviewed-head-receipt ...  Build exact-topology integration evidence after the final gate"
 	@echo "  release-readiness TAG=..  Fail-closed blockers + exact reviewed-head receipt for v0.1.1"
 	@echo "  check-release-failure-ledger RELEASE_FAILURE_LEDGER=..  Validate immutable beta failure mappings"
 	@echo "  release-branch-new    Cut a release/* branch from a CI-green base (NAME, BASE, RELEASE_BRANCH_VALIDATE_ONLY)"
@@ -4272,6 +4278,23 @@ release-checklist:
 check-release-failure-ledger:
 	@[ -n "$(RELEASE_FAILURE_LEDGER)" ] || { echo "Usage: make check-release-failure-ledger RELEASE_FAILURE_LEDGER=docs/releases/beta-release-failures.json"; exit 2; }
 	@$(UV) run python scripts/check_release_failure_ledger.py --ledger "$(RELEASE_FAILURE_LEDGER)" --repository-root .
+
+.PHONY: reviewed-head-receipt
+reviewed-head-receipt:
+	@[ -n "$(REVIEWED_HEAD_RECEIPT_MANIFEST)" ] || { echo "Usage: make reviewed-head-receipt REVIEWED_HEAD_RECEIPT_MANIFEST=path REVIEWED_HEAD_GATE_ATTESTATION=path REVIEWED_HEAD_RECEIPT_OUTPUT=path REVIEWED_HEAD_RECEIPT_REPO_ROOT=. REVIEWED_HEAD_RECEIPT_VALIDATE_ONLY=0|1"; exit 2; }
+	@[ -n "$(REVIEWED_HEAD_GATE_ATTESTATION)" ] || { echo "ERROR: REVIEWED_HEAD_GATE_ATTESTATION is required"; exit 2; }
+	@[ -n "$(REVIEWED_HEAD_RECEIPT_OUTPUT)" ] || { echo "ERROR: REVIEWED_HEAD_RECEIPT_OUTPUT is required"; exit 2; }
+	@[ -n "$(REVIEWED_HEAD_RECEIPT_REPO_ROOT)" ] || { echo "ERROR: REVIEWED_HEAD_RECEIPT_REPO_ROOT is required"; exit 2; }
+	@case "$(REVIEWED_HEAD_RECEIPT_VALIDATE_ONLY)" in 0|1) ;; *) echo "ERROR: REVIEWED_HEAD_RECEIPT_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@if [ "$(REVIEWED_HEAD_RECEIPT_VALIDATE_ONLY)" = "1" ]; then \
+		echo "REVIEWED-HEAD-RECEIPT-PLAN manifest=$(REVIEWED_HEAD_RECEIPT_MANIFEST) gate=$(REVIEWED_HEAD_GATE_ATTESTATION) output=$(REVIEWED_HEAD_RECEIPT_OUTPUT) repo=$(REVIEWED_HEAD_RECEIPT_REPO_ROOT)"; \
+	else \
+		$(UV) run python scripts/build_reviewed_head_integration_receipt.py \
+			--manifest "$(REVIEWED_HEAD_RECEIPT_MANIFEST)" \
+			--gate-attestation "$(REVIEWED_HEAD_GATE_ATTESTATION)" \
+			--repo-root "$(REVIEWED_HEAD_RECEIPT_REPO_ROOT)" \
+			--output "$(REVIEWED_HEAD_RECEIPT_OUTPUT)"; \
+	fi
 
 release-readiness:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-readiness TAG=v0.1.1 RELEASE_READINESS_VALIDATE_ONLY=0|1 RELEASE_COMPLETED_STAGES=stage,... RELEASE_OBSERVATIONS=stage=minutes,... REVIEWED_HEAD_INTEGRATION_RECEIPT=path RELEASE_CANDIDATE_SHA=full-sha"; exit 2; }

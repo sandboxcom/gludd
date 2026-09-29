@@ -18,7 +18,7 @@
 | 4 | `enforce-delegate.ts` | `tool.execute.before` | Edit/write/bash after 2 consecutive non-dispatch calls (mainthread streak); serial read-only investigations past `GLUDD_READ_GRIND_DENY_COUNT` (default 10). | `GLUDD_MAINTHREAD_STREAK_ENFORCE=0` (streak), `GLUDD_MODEL_UTIL_ENFORCE=0` (utilization), `GLUDD_READ_GRIND_*` tunables |
 | 5 | `enforce-multitask.ts` | `tool.execute.before`, `experimental.text.complete` | Enforces an operator-configured dispatch minimum while pending work exists; ten remains the recommendation and hard ceiling, and unconfigured sessions may work inline. | `GLUDD_MULTITASK_FLOOR_ENFORCE=0` |
 | 6 | `enforce-floor-v2.ts` | `tool.execute.before`, `experimental.text.complete` | Tracks session-wide dispatched-minus-completed work and denies non-dispatch tools while the configured cumulative floor is deficient. | `GLUDD_FLOOR_V2_ENFORCE=0` |
-| 7 | `enforce-stop.ts` | `experimental.text.complete`, `experimental.chat.system.transform`, `tool.execute.before`, `event` | Text-only responses (0 tool calls) when `hasRealPendingWork()` is true (unchecked TASKS.md items, non-empty ratchet.yml, red gate, unreleased tags, CI not green). The `text.complete` block is UNBYPASSABLE — `GLUDD_STOP_ENFORCE=0` disables only the non-text hooks. Stop-pattern make targets (commit/push/release) with pending work are also blocked; `session.idle` is handled through `event`. | `GLUDD_STOP_ENFORCE=0` (non-text hooks only) |
+| 7 | `enforce-stop.ts` | `experimental.text.complete`, `experimental.chat.system.transform`, `tool.execute.before`, `event` | Text-only responses (0 tool calls) when `hasRealPendingWork()` is true (active-milestone TASKS.md items, non-empty ratchet.yml, red gate, unreleased tags, CI not green). The `text.complete` block is UNBYPASSABLE — `GLUDD_STOP_ENFORCE=0` disables only the non-text hooks. Commit/push targets use the same fail-safe milestone scope, while `release-cut` and `release-promote` delegate task policy to their canonical `release-readiness` preflight so the terminal publication task cannot block the command required to complete itself; `session.idle` is handled through `event`. | `GLUDD_STOP_ENFORCE=0` (non-text hooks only) |
 | 8 | `enforce-deadline.ts` | `tool.execute.before` | Task/agent/workflow dispatch whose elapsed wall-clock exceeds `GLUDD_TASK_TIMEOUT_MS` (default 300000ms = 5min); emits `TASK DEADLINE EXCEEDED` warning and records to `/tmp/gludd-task-stale.json`. | `GLUDD_TASK_DEADLINE_ENFORCE=0` (block), `GLUDD_TASK_DEADLINE_ENABLED=0` (detection) |
 | 9 | `enforce-enhancement-ratio.ts` | `tool.execute.before`, `experimental.text.complete` | Task/agent/workflow dispatch waves with >50% fix dispatches when ≥2 dispatches are in the wave (forces ≥50% enhancement work per wave). | `GLUDD_ENHANCEMENT_RATIO_ENFORCE=0` |
 | 10 | `enforce-additive-task.ts` | `tool.execute.before` | Rejects all-new-task dispatch waves while at least two TASKS.md items remain unchecked; at least one dispatch must reference an existing task ID. | `GLUDD_ADDITIVE_TASK_ENFORCE=0` (`GLUDD_ADDITIVE_TASK_BLOCK=0` for warning-only mode) |
@@ -40,7 +40,7 @@
 | 26 | `enforce-worktree.ts` | `tool.execute.before` | Bash push/merge/tag operations issued from inside a git worktree (broader than `enforce-branch-discipline` — blocks any shared-branch mutation from an isolated checkout). | `GLUDD_WORKTREE_ENFORCE=0` |
 | 27 | `enforce-deliverable.ts` | `tool.execute.before` | Task/agent/workflow dispatch whose prompt lacks a concrete deliverable directive (must end with "Do NOT just report problems. Fix them." or equivalent — prevents status-check subagents from consuming floor slots). | `GLUDD_DELIVERABLE_ENFORCE=0` |
 | 28 | `enforce-no-ci-poll.ts` | `tool.execute.before` | More than `GLUDD_CI_POLL_MAX` (default 3) consecutive CI-poll make targets (`ci-status`, `ci-verdict`, `ci-view`, `ci-await`, `ci-verdict-safe`, `gate-status-check`, `verify-release-completeness`, `release-view`) without an intervening productive mutation. Also: more than `GLUDD_STAGNANT_MAX` (default 5) consecutive stagnant read-only operations (incl. direct `read`/`glob`/`grep` tool calls). | `GLUDD_STAGNANT_ENFORCE=0` (stagnant detector); CI-poll detector has no env disable (intentional — polling is always an anti-pattern) |
-| 29 | `enforce-release-deadline.ts` | `tool.execute.before` | Bash release operations (`release-cut`, `git-tag-push`, `release-create`, `release-deploy`) issued after the configured release deadline window has elapsed. | `GLUDD_RELEASE_DEADLINE_ENFORCE=0` |
+| 29 | `enforce-release-deadline.ts` | `tool.execute.before`, `experimental.text.complete` | Pure status-only make targets after the configured release deadline window has elapsed. Validation, diagnostics, repairs, and release advancement remain allowed so time pressure cannot weaken deployment evidence. | `GLUDD_RELEASE_DEADLINE_ENFORCE=0` |
 | 30 | `enforce-task-tracking.ts` | `tool.execute.before`, `experimental.text.complete`, `experimental.chat.system.transform` | Denies implementation edits until TASKS.md has been updated for the work, then emits escalating stale-task reminders and injects the task-tracking directive. | `GLUDD_TASK_TRACKING_ENFORCE=0` |
 | 31 | `enforce-audit.ts` | `experimental.text.complete` | Text containing done-words when TASKS.md has unchecked items OR `config/ratchet.yml` has entries AND the text lacks machine-produced evidence (commit hash, test counts, gate-pass marker, CI verdict). Companion to `enforce-verified-claims.ts`. | `GLUDD_AUDIT_ENFORCE=0` |
 | 32 | `enforce-context.ts` | `tool.execute.before` | All non-read tools when `SESSION.md` has not been updated in >24h (stale session context — forces a session-persistence refresh before further mutations). Read/grep/glob excluded. | `GLUDD_CONTEXT_ENFORCE=0` |
@@ -98,6 +98,29 @@ are insufficient:
 - [OpenCode #45367](https://github.com/anomalyco/opencode/issues/45367) reports
   that one throwing non-blocking hook can skip later plugins. Message ingestion
   remains non-throwing and covered by an executable runtime probe.
+- [OpenCode #21534](https://github.com/anomalyco/opencode/issues/21534) describes
+  agents stopping during long multi-step work after printing status or a todo
+  list. Release-deadline enforcement therefore preserves every command that can
+  validate, diagnose, repair, or advance the active release candidate.
+- [OpenCode #21770](https://github.com/anomalyco/opencode/issues/21770) records
+  long-running plugin commands being killed by a generic command timeout. The
+  deadline guard consequently treats elapsed time as a focus signal, not proof
+  that a required long-running validation should be terminated or skipped.
+- [GitHub Community #26729](https://github.com/orgs/community/discussions/26729)
+  reports a trigger-and-wait action polling for 30 minutes and then failing even
+  though the downstream workflow completed quickly. Gludd blocks repeated
+  status-only loops after the release deadline while retaining diagnostic log
+  access and receipt-based release advancement.
+
+The release stop guard applies one ownership rule everywhere: an exact declared
+milestone is release-blocking, future-version backlog is not, and a missing or
+malformed declaration falls back to repository-wide blocking. Runtime tests
+exercise all three cases against the real TypeScript hook, including
+ordinary shipping. `release-cut` and `release-promote` instead reach the
+fail-closed `release-readiness` preflight, which excludes only the version's
+terminal publication action. This prevents both an unscoped backlog regression
+and the circular requirement that publication be complete before publication
+may start.
 
 Plugin source edits still require an OpenCode restart before the running editor
 loads the new entrypoint object.

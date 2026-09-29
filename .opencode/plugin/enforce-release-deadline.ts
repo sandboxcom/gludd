@@ -6,32 +6,29 @@ import { isSubagent, reportAlive, getProjectRoot } from "../lib/shared.ts"
 // enforce-release-deadline.ts — release-task elapsed-time enforcement (RP.19/BP.4).
 //
 // PROBLEM: release work (cut a version, verify artifacts, promote master) had no
-// time-box. A release task sat in_progress for hours with no surfaced heartbeat,
-// blocking every other lane of work. AGENTS.md "Release Pipeline Must Be CI-Green"
-// codified the PROCEDURE but not the DEADLINE — this plugin makes the deadline
-// observable and mechanically enforced.
+// time-box. A release task sat in_progress for hours while the agent repeatedly
+// reported status instead of advancing the same candidate. An earlier version of
+// this guard then made convergence worse by blocking gate/test/lint/security after
+// three hours. The deadline must focus work without disabling release validation.
 //
 // WHAT IT DOES:
 //   * tool.execute.before (ANY tool)   -> scan TASKS.md for a release task marked
 //                                          status: in_progress; if found, record
 //                                          start timestamp (once) into STATE_FILE.
 //                                          If elapsed > WARN  -> inject directive.
-//                                          If elapsed > BLOCK -> deny non-release
-//                                          bash targets (test/lint/typecheck/
-//                                          ci-status/ci-view), ALLOWING only
-//                                          release-critical ops (release-cut,
-//                                          verify-release-completeness, pushes,
-//                                          tags, edits).
+//                                          If elapsed > BLOCK -> deny status-only
+//                                          bash targets, while ALWAYS allowing
+//                                          validation, diagnostics, repairs,
+//                                          promotion, pushes, tags, and edits.
 //   * experimental.text.complete       -> inject the warning directive into the
 //                                          outgoing text so the orchestrator sees
 //                                          it without reading a state file.
 //
 // ALLOWED (never blocked) past the hard deadline:
-//   release-cut, verify-release-completeness, verify-release-artifact,
-//   git-push-*, git-tag-push, verify-remote, release-view, release-create,
-//   release-branch-new, release-promote, release-recut, ci-verdict*,
-//   require-ci-green, edits/writes (the agent must be free to complete the
-//   release), task/agent/workflow dispatch (keep the pipeline primed).
+//   gate/test/lint/typecheck/security and every diagnostic or repair command;
+//   release-cut, verify-release-completeness, verify-release-artifact, pushes,
+//   tags, edits/writes, and task/agent/workflow dispatch. Time pressure must
+//   never weaken the evidence required to deploy.
 //
 // FAIL-OPEN: every code path is wrapped so an internal error NEVER wedges the
 // session. Worst case = no deadline enforcement (back to old behavior), never
@@ -54,31 +51,15 @@ const RELEASE_DEADLINE_BLOCK_MS = parseInt(
 const STATE_FILE =
   process.env.GLUDD_RELEASE_DEADLINE_STATE || "/tmp/gludd-release-deadline.json"
 const ENFORCE = process.env.GLUDD_RELEASE_DEADLINE_ENFORCE !== "0"
-// Bash targets that become DENIED once the hard deadline elapses.
-// Release-critical targets (release-cut, verify-release-*, pushes, tags) are
-// intentionally absent so the agent can still complete the release.
-const BLOCKED_TARGETS = Object.freeze([
-  "test-unit",
-  "lint",
-  "typecheck",
+// Pure status targets that become DENIED once the hard deadline elapses. These
+// do not expose failure details or advance a candidate. Diagnostic targets such
+// as ci-view/gate-tail and all validation targets are intentionally absent.
+const STALLING_TARGETS = Object.freeze([
   "ci-status",
-  "ci-view",
-  "test",
-  "test-integration",
-  "test-e2e",
-  "qa",
-  "gate",
-  "gate-lite",
-  "preflight",
-  "validate",
-  "ansible-syntax",
-  "molecule-test",
-  "security",
-  "sast",
-  "sbom",
-  "pip-audit",
-  "collect-check",
-  "healthcheck",
+  "pipeline-status",
+  "status-heartbeat",
+  "gate-status",
+  "active-work-status",
 ])
 // ============================================================================
 // STATE FILE
@@ -171,8 +152,8 @@ function extractMakeTarget(cmd: unknown): string {
     return ""
   }
 }
-function isBlockedTarget(target: string): boolean {
-  return BLOCKED_TARGETS.includes(target)
+function isStallingTarget(target: string): boolean {
+  return STALLING_TARGETS.includes(target)
 }
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
@@ -199,7 +180,7 @@ const defaultImpl: HotModule = {
       }
       const elapsed = Date.now() - (state.start_ms as number)
       const elapsedMin = Math.round(elapsed / 60000)
-      // HARD BLOCK at 3h: deny non-release bash targets.
+      // HARD FOCUS at 3h: deny status-only loops, never validation or repairs.
       if (elapsed > RELEASE_DEADLINE_BLOCK_MS) {
         const tool = typeof input?.tool === "string" ? input.tool : ""
         if (tool === "bash") {
@@ -207,16 +188,17 @@ const defaultImpl: HotModule = {
             typeof input?.args?.command === "string" ? input.args.command :
             typeof input?.command === "string" ? input.command : ""
           const target = extractMakeTarget(cmd)
-          if (target && isBlockedTarget(target)) {
+          if (target && isStallingTarget(target)) {
             return {
               permissionDecision: "deny",
               message:
-                `RELEASE DEADLINE BLOCK: release task ${state.release_task} has ` +
+                `RELEASE DEADLINE CONTINUITY BLOCK: release task ${state.release_task} has ` +
                 `been in_progress for ${elapsedMin}min (hard limit ` +
                 `${Math.round(RELEASE_DEADLINE_BLOCK_MS / 60000)}min). ` +
-                `"${target}" is not release-critical. Allowed: release-cut, ` +
-                `verify-release-completeness, git-push-*, git-tag-push, edits. ` +
-                `Complete or cancel the release task to resume normal work.`,
+                `"${target}" only reports status and does not advance the candidate. ` +
+                `Run the exact validation or diagnostic needed, repair the complete ` +
+                `failure set, then continue through push, hosted CI, live proof, ` +
+                `publish, and deployment verification.`,
             }
           }
         }
@@ -229,8 +211,8 @@ const defaultImpl: HotModule = {
         const line =
           `RELEASE DEADLINE WARNING: release task ${state.release_task} has ` +
           `been in_progress for ${elapsedMin}min (warn threshold ` +
-          `${Math.round(RELEASE_DEADLINE_WARN_MS / 60000)}min). Hard block on ` +
-          `non-release bash commands in ` +
+          `${Math.round(RELEASE_DEADLINE_WARN_MS / 60000)}min). Status-only ` +
+          `commands become blocked in ` +
           `${Math.round((RELEASE_DEADLINE_BLOCK_MS - elapsed) / 60000)}min.`
         console.warn(line)
       }
@@ -262,11 +244,11 @@ const defaultImpl: HotModule = {
         const directive =
           `\n\n⚠ RELEASE DEADLINE ${verb}: release task ${task} has been ` +
           `in_progress for ${elapsedMin}min. ${remainMin > 0
-            ? `Hard block on non-release bash in ${remainMin}min. `
-            : `Non-release bash commands are BLOCKED. `
+            ? `Status-only commands become blocked in ${remainMin}min. `
+            : `Status-only commands are BLOCKED; validation and diagnostics remain allowed. `
           }` +
-          `Complete the release (release-cut + verify-release-completeness) or ` +
-          `cancel the task to resume normal work.`
+          `Keep ownership of the same candidate and advance it through validation, ` +
+          `push, hosted CI, live proof, publish, and deployment verification.`
         if (_output && typeof _output === "object") {
           (_output as Record<string, unknown>).text = text + directive
         }
