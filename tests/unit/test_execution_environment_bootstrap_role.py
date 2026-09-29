@@ -412,6 +412,7 @@ def test_present_and_absent_lifecycle_runs_with_isolated_engine_contract(tmp_pat
         "execution_environment_bootstrap_build_timeout_seconds": 300,
         "execution_environment_bootstrap_poll_seconds": 1,
     }
+    machine_required = sys.platform == "darwin"
 
     def run(state: str) -> subprocess.CompletedProcess[str]:
         extra_vars = {**common_vars, "execution_environment_bootstrap_state": state}
@@ -440,7 +441,7 @@ def test_present_and_absent_lifecycle_runs_with_isolated_engine_contract(tmp_pat
     assert "OpenTofu v1.12.6" in present.stdout
     assert "ANSIBLE_EE_IMPORT_OK" in present.stdout
     assert '"verified": true' in present.stdout
-    assert engine_state.exists()
+    assert engine_state.exists() is machine_required
 
     absent = run("absent")
     assert absent.returncode == 0, absent.stdout + absent.stderr
@@ -448,8 +449,14 @@ def test_present_and_absent_lifecycle_runs_with_isolated_engine_contract(tmp_pat
     assert '"state": "absent"' in absent.stdout
     assert not engine_state.exists()
     calls = [json.loads(line) for line in engine_log.read_text(encoding="utf-8").splitlines()]
-    for expected in (["machine", "init"], ["image", "inspect"], ["image", "rm"], ["machine", "rm"]):
+    for expected in (["image", "inspect"], ["image", "rm"]):
         assert any(call[:2] == expected for call in calls)
+    machine_calls = [call[:2] for call in calls if call[:1] == ["machine"]]
+    if machine_required:
+        assert ["machine", "init"] in machine_calls
+        assert ["machine", "rm"] in machine_calls
+    else:
+        assert machine_calls == []
 
     driver.write_text(
         "import sys\nprint('ANSIBLE_EE_BUILD_START fake_failure=1', flush=True)\nsys.exit(7)\n",
