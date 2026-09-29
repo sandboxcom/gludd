@@ -109,6 +109,17 @@ pressure remaining at the pass bound returns nonzero. Skipping an active or
 protected worktree is expected, and residual pressure still blocks the gate when
 safe candidates cannot converge it automatically.
 
+The recovery tiers are operationally independent. If Git worktree or integration
+proof discovery fails, Gludd disables only worktree-cache retirement and evidence
+relocation, records `worktree-discovery:inspection-failed`, and still runs the
+generated-scratch, shared-uv-cache, and owned Terraform-provider reclaimers.
+Their safely removed bytes remain in the result, but the discovery error keeps
+the preflight fail-closed. This prevents one unavailable control-plane signal
+from suppressing unrelated, independently proven cleanup while ensuring a gate
+cannot report success until every required inspection is healthy. Unit fixtures
+pin their integration point explicitly, so detached hosted checkouts do not
+accidentally change the behavior under test.
+
 ## Zero-downtime operation and observability
 
 The active-workstream lease and retained `.venv` protect model-owned work that

@@ -1521,54 +1521,59 @@ def _automatic_cleanup(
         ValueError,
         subprocess.SubprocessError,
     ):
-        return CleanupResult((), (), ("worktree-discovery:inspection-failed",))
-
-    def leases() -> dict[str, WorkstreamLease]:
-        return _active_workstream_leases(registry)
-
-    def lifecycle(
-        record: prune_worktrees_safe.WorktreeRecord,
-        lease: WorkstreamLease,
-    ) -> LifecycleDecision:
-        return _completion_proof(
-            record,
-            lease,
-            integration_points=integration_points,
-            now_epoch=int(time.time()),
-            receipt_grace_seconds=receipt_grace_seconds,
+        relocation_result = CleanupResult((), (), ())
+        worktree_result = CleanupResult(
+            (), (), ("worktree-discovery:inspection-failed",)
         )
+    else:
 
-    roots = (main / ".claude/worktrees", DEFAULT_TMP_WORKTREE_ROOT)
-    try:
-        relocation_result = relocate_preserved_evidence(
-            leases=leases(),
+        def leases() -> dict[str, WorkstreamLease]:
+            return _active_workstream_leases(registry)
+
+        def lifecycle(
+            record: prune_worktrees_safe.WorktreeRecord,
+            lease: WorkstreamLease,
+        ) -> LifecycleDecision:
+            return _completion_proof(
+                record,
+                lease,
+                integration_points=integration_points,
+                now_epoch=int(time.time()),
+                receipt_grace_seconds=receipt_grace_seconds,
+            )
+
+        roots = (main / ".claude/worktrees", DEFAULT_TMP_WORKTREE_ROOT)
+        try:
+            relocation_result = relocate_preserved_evidence(
+                leases=leases(),
+                approved_roots=roots,
+                canonical_root=evidence_archive_root,
+                dry_run=dry_run,
+            )
+        except (OSError, RuntimeError, ValueError):
+            relocation_result = CleanupResult(
+                (), (), ("release-evidence-relocation:inspection-failed",)
+            )
+        worktree_result = clean_inactive_worktree_caches(
+            records=records,
             approved_roots=roots,
-            canonical_root=evidence_archive_root,
+            protected_paths=frozenset({main, current}),
+            active_branches=lambda: frozenset(leases()),
+            active_workstream_leases=leases,
+            lifecycle_proof=lifecycle,
+            refresh_records=_registered_worktrees,
+            remove_materialization=lambda record, is_dry_run: (
+                _remove_worktree_materialization(
+                    record,
+                    is_dry_run,
+                    evidence_archive_root=evidence_archive_root,
+                )
+            ),
+            max_materializations=MAX_WORKTREE_MATERIALIZATIONS,
             dry_run=dry_run,
         )
-    except (OSError, RuntimeError, ValueError):
-        relocation_result = CleanupResult(
-            (), (), ("release-evidence-relocation:inspection-failed",)
-        )
+
     scratch_result = clean_stale_generated_scratch(dry_run=dry_run)
-    worktree_result = clean_inactive_worktree_caches(
-        records=records,
-        approved_roots=roots,
-        protected_paths=frozenset({main, current}),
-        active_branches=lambda: frozenset(leases()),
-        active_workstream_leases=leases,
-        lifecycle_proof=lifecycle,
-        refresh_records=_registered_worktrees,
-        remove_materialization=lambda record, is_dry_run: (
-            _remove_worktree_materialization(
-                record,
-                is_dry_run,
-                evidence_archive_root=evidence_archive_root,
-            )
-        ),
-        max_materializations=MAX_WORKTREE_MATERIALIZATIONS,
-        dry_run=dry_run,
-    )
     uv_result = prune_shared_uv_cache(
         dry_run=dry_run,
         missing_is_clean=True,

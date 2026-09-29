@@ -2145,6 +2145,17 @@ def test_default_cleanup_discovers_and_preserves_git_worktrees(
     monkeypatch.setattr(automatic_disk_cleanup, "DEFAULT_TMP_WORKTREE_ROOT", root)
     monkeypatch.setattr(automatic_disk_cleanup, "_registered_worktrees", lambda: records)
     monkeypatch.setattr(
+        automatic_disk_cleanup,
+        "_integration_points",
+        lambda _records: (automatic_disk_cleanup.IntegrationPoint("main-head", 1),),
+    )
+    evidence_archive = tmp_path / "git-common" / "gludd-release-evidence"
+    monkeypatch.setattr(
+        automatic_disk_cleanup,
+        "_canonical_evidence_archive_root",
+        lambda: evidence_archive,
+    )
+    monkeypatch.setattr(
         automatic_disk_cleanup.workstream_registry,
         "default_registry_path",
         lambda: registry_path,
@@ -2226,6 +2237,38 @@ def test_default_cleanup_and_recheck_inspection_fail_closed(
     captured = capsys.readouterr()
     assert "action=skip" in captured.out
     assert "phase=recheck status=failed" in captured.err
+
+
+def test_default_cleanup_runs_independent_reclaimers_after_discovery_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def fail_discovery() -> list[WorktreeRecord]:
+        raise automatic_disk_cleanup.DiskInspectionError("git unavailable")
+
+    stale = tmp_path / "stale-scratch"
+    uv_cache = tmp_path / "uv-cache"
+    providers = tmp_path / "providers"
+    monkeypatch.setattr(automatic_disk_cleanup, "_registered_worktrees", fail_discovery)
+    monkeypatch.setattr(
+        automatic_disk_cleanup,
+        "clean_stale_generated_scratch",
+        lambda **_kwargs: automatic_disk_cleanup.CleanupResult((str(stale),), (), ()),
+    )
+    monkeypatch.setattr(
+        automatic_disk_cleanup,
+        "prune_shared_uv_cache",
+        lambda **_kwargs: automatic_disk_cleanup.CleanupResult((str(uv_cache),), (), ()),
+    )
+    monkeypatch.setattr(
+        automatic_disk_cleanup,
+        "clean_owned_terraform_provider_caches",
+        lambda **_kwargs: automatic_disk_cleanup.CleanupResult((str(providers),), (), ()),
+    )
+
+    result = automatic_disk_cleanup._automatic_cleanup()
+
+    assert result.removed == (str(stale), str(uv_cache), str(providers))
+    assert result.errors == ("worktree-discovery:inspection-failed",)
 
 
 def test_main_delegates_to_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
