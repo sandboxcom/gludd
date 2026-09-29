@@ -549,7 +549,7 @@ console.log(JSON.stringify({{
     assert "CI POLLING IS NOT WORK" in result["secondMessage"]
 
 
-def test_enforce_release_deadline_blocks_non_release_but_allows_release(tmp_path: Path):
+def test_enforce_release_deadline_blocks_status_polling_but_allows_progress(tmp_path: Path):
     project = tmp_path / "project"
     project.mkdir()
     (project / "TASKS.md").write_text(
@@ -570,15 +570,27 @@ def test_enforce_release_deadline_blocks_non_release_but_allows_release(tmp_path
     code = f"""
 const mod = await import('{_plugin("enforce-release-deadline.ts")}')
 const plugin = await mod.default({{}})
-const blocked = await plugin['tool.execute.before'](
+const stalled = await plugin['tool.execute.before'](
+  {{tool: 'bash', args: {{command: 'make pipeline-status'}}}}, undefined
+)
+const gate = await plugin['tool.execute.before'](
+  {{tool: 'bash', args: {{command: 'make gate'}}}}, undefined
+)
+const lint = await plugin['tool.execute.before'](
   {{tool: 'bash', args: {{command: 'make lint'}}}}, undefined
+)
+const security = await plugin['tool.execute.before'](
+  {{tool: 'bash', args: {{command: 'make security'}}}}, undefined
 )
 const allowed = await plugin['tool.execute.before'](
   {{tool: 'bash', args: {{command: 'make release-cut'}}}}, undefined
 )
 console.log(JSON.stringify({{
-  blockedDecision: blocked?.permissionDecision,
-  blockedMessage: blocked?.message,
+  stalledDecision: stalled?.permissionDecision,
+  stalledMessage: stalled?.message,
+  gateAllowed: gate == null,
+  lintAllowed: lint == null,
+  securityAllowed: security == null,
   releaseAllowed: allowed == null
 }}))
 """
@@ -594,6 +606,9 @@ console.log(JSON.stringify({{
         },
     )
     assert isinstance(result, dict)
-    assert result["blockedDecision"] == "deny"
-    assert "RELEASE DEADLINE BLOCK" in result["blockedMessage"]
+    assert result["stalledDecision"] == "deny"
+    assert "RELEASE DEADLINE CONTINUITY BLOCK" in result["stalledMessage"]
+    assert result["gateAllowed"] is True
+    assert result["lintAllowed"] is True
+    assert result["securityAllowed"] is True
     assert result["releaseAllowed"] is True
