@@ -6364,7 +6364,7 @@ TARBALL_NAME = general-ludd-agent-$(VERSION)-$(PLATFORM)
 TARBALL_DIR = dist/$(TARBALL_NAME)
 
 build-executable:
-	@$(UV) run pyinstaller gludd.spec --clean --noconfirm
+	@$(UV) run --frozen --extra azure pyinstaller gludd.spec --clean --noconfirm
 	@echo "Built dist/gludd"
 
 LINUX_BINARY_IMAGE ?= ghcr.io/astral-sh/uv:python3.12-bookworm-slim@sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261ba1b7147afa78e58
@@ -6475,7 +6475,7 @@ build-linux-executable: ## Build and verify a real Linux PyInstaller executable
 				cat /tmp/gludd-apt-after.txt; \
 				grep -Fq "0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded." /tmp/gludd-apt-after.txt; \
 				rm -rf /var/lib/apt/lists/*; \
-				uv sync --frozen; \
+				uv sync --frozen --extra azure; \
 				pyinstaller_version=$$(uv run pyinstaller --version); \
 				test "$$pyinstaller_version" = "6.20.0"; \
 				architecture=$$(uname -m); \

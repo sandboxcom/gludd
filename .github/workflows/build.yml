@@ -812,8 +812,8 @@ jobs:
         timeout-minutes: 15
         run: |
           echo "=== CI PHASE: build-linux-x86_64 ==="
-          uv sync
-          uv run pyinstaller gludd.spec --clean --noconfirm || {
+          uv sync --frozen --extra azure
+          uv run --frozen --extra azure pyinstaller gludd.spec --clean --noconfirm || {
             echo "::error::LINUX BUILD FAILED — pyinstaller failed for linux-x86_64. Check gludd.spec."
             exit 1
           }
@@ -985,8 +985,8 @@ jobs:
         timeout-minutes: 15
         run: |
           echo "=== CI PHASE: build-macos-arm64 ==="
-          uv sync
-          uv run pyinstaller gludd.spec --clean --noconfirm || {
+          uv sync --frozen --extra azure
+          uv run --frozen --extra azure pyinstaller gludd.spec --clean --noconfirm || {
             echo "::error::MACOS BUILD FAILED — pyinstaller failed for macos-arm64. Check gludd.spec."
             exit 1
           }
@@ -1148,9 +1148,9 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "=== CI PHASE: build-windows-x86_64 ==="
-          uv sync --frozen --python 3.12
+          uv sync --frozen --extra azure --python 3.12
           uv run --frozen --python 3.12 python -W error scripts/smoke_sphincs_backend.py
-          uv run --frozen --python 3.12 pyinstaller gludd.spec --clean --noconfirm
+          uv run --frozen --extra azure --python 3.12 pyinstaller gludd.spec --clean --noconfirm
           if ($LASTEXITCODE -ne 0) {
             Write-Host "::error::WINDOWS BUILD FAILED — pyinstaller failed for windows-x86_64. Check gludd.spec."
             exit 1

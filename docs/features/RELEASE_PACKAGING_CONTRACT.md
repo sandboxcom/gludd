@@ -56,6 +56,19 @@ explicit spec-file exclusion. Together they justify checking both sides of the
 bundle boundary rather than treating a successful PyInstaller process as proof
 of a runnable artifact.
 
+Reviewed 2026-09-28. Astral's practitioner issue
+[#6729](https://github.com/astral-sh/uv/issues/6729) documents the easily missed
+distinction between resolving optional dependencies into `uv.lock` and actually
+installing an extra into the synchronized environment. A later workspace report,
+[#14645](https://github.com/astral-sh/uv/issues/14645), records the same operational
+surprise: the expected optional runtime was absent until the caller supplied the
+extra explicitly. PyInstaller hidden imports do not install distributions; they
+only tell analysis to collect an import that is already available. Gludd therefore
+uses `uv sync --frozen --extra azure` and `uv run --frozen --extra azure` on every
+frozen-binary path. This keeps ordinary source installs modular while ensuring the
+universal release executable really contains the Azure SDK required by its Azure
+roles, model lifecycle, and self-improvement backend.
+
 GitHub Actions upload-artifact
 [#290](https://github.com/actions/upload-artifact/issues/290), opened in 2022
 and reviewed 2026-08-29, records long-lived practitioner trouble with artifact

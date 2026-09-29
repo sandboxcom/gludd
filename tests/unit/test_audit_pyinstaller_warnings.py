@@ -204,6 +204,19 @@ def test_linux_policy_pins_exact_controller_runtime_boundary_edges() -> None:
     assert actual == _CONTROLLER_RUNTIME_EDGES
 
 
+def test_linux_policy_does_not_allow_missing_bundled_azure_sdk() -> None:
+    """The frozen release installs Azure; missing Azure imports are defects."""
+    policy = json.loads(_LINUX_POLICY.read_text(encoding="utf-8"))
+
+    azure_edges = [
+        entry
+        for entry in policy["allowed_missing_imports"]
+        if entry["module"] == "azure" or entry["module"].startswith("azure.")
+    ]
+
+    assert azure_edges == []
+
+
 def test_exact_reviewed_conditional_and_optional_edges_pass(tmp_path: Path) -> None:
     warnings = (
         "missing module named 'org.python' - "

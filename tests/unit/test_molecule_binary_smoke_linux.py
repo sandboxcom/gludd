@@ -39,6 +39,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 _SCENARIO_DIR = os.path.join(_ROOT, "molecule", "playbooks", "binary_smoke_linux")
 _MAKEFILE = os.path.join(_ROOT, "Makefile")
 _PYPROJECT = os.path.join(_ROOT, "pyproject.toml")
+_BUILD_WORKFLOW = os.path.join(_ROOT, ".github", "workflows", "build.yml")
 _MAKE_TARGET_CONTRACT = os.path.join(_ROOT, "config", "make_target_contract.json")
 _LIMA_LIFECYCLE_DOC = os.path.join(_ROOT, "docs", "features", "LIMA_DOCKER_LIFECYCLE.md")
 
@@ -828,3 +829,27 @@ class TestPrepare:
         assert 'exit "$$build_status"' in makefile
         assert "file \"$(LINUX_BINARY_OUTPUT)\"" in makefile
         assert "ELF" in makefile
+
+    def test_frozen_binary_builds_install_the_azure_runtime(self) -> None:
+        """Every frozen artifact must contain the Azure SDK used by Gludd."""
+        with open(_MAKEFILE) as fh:
+            makefile = fh.read()
+        with open(_BUILD_WORKFLOW) as fh:
+            workflow = fh.read()
+
+        build_target = makefile.split("build-executable:", 1)[1].split("\n\n", 1)[0]
+        linux_target = makefile.split("build-linux-executable:", 1)[1].split("\n\n", 1)[0]
+
+        assert "$(UV) run --frozen --extra azure pyinstaller gludd.spec" in build_target
+        assert "uv sync --frozen --extra azure" in linux_target
+        assert workflow.count("uv sync --frozen --extra azure") >= 2
+        azure_pyinstaller_commands = re.findall(
+            r"uv run --frozen --extra azure(?: --python 3\.12)? "
+            r"pyinstaller gludd\.spec",
+            workflow,
+        )
+        assert len(azure_pyinstaller_commands) >= 3
+        assert (
+            "uv run --frozen --extra azure --python 3.12 "
+            "pyinstaller gludd.spec"
+        ) in workflow
