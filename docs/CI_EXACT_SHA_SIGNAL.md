@@ -83,6 +83,38 @@ make ci-trigger-committed-head EXAMPLE=1 REF=release/beta3-candidate REMOTE=sand
 The safe example must print both `GHA-SIGNAL-EXISTING` and an example
 `GHA_RUN_URL`.
 
+## All-workflow terminal verdict
+
+Signalling one workflow is not a release verdict. After a push, use the
+fail-closed collector for the exact remote branch tip:
+
+```text
+make pipeline-status PIPELINE_STATUS_REPO=sandboxcom/gludd PIPELINE_STATUS_BRANCH=development PIPELINE_STATUS_REMOTE=sandboxcom PIPELINE_STATUS_SHA= PIPELINE_STATUS_VALIDATE_ONLY=0
+```
+
+The collector resolves `refs/heads/<branch>` when no SHA is supplied, queries
+all runs for that full commit with `gh run list --commit`, and chooses the
+newest run independently for every required workflow. A release verdict is
+green only when both `Build and Release` and `Molecule Tests` have a terminal
+`success` conclusion for that exact SHA. A missing workflow, an active run, a
+failed run, an empty remote ref, or a GitHub API error is a non-green result.
+It never substitutes the newest run on the branch and never reduces the result
+set to the first workflow returned by GitHub.
+
+`make verify-state` delegates its CI section to this same collector, and
+`make require-ci-green` consumes the collector's pure evaluator and fetch
+adapter as the release precondition. This keeps interactive status, automation,
+and release evidence on one implementation and prevents a status path from
+claiming green while another required workflow is red.
+
+The regression suite covers multiple workflows for one SHA, superseded runs,
+missing and pending workflows, API failures, remote-ref resolution, and the
+network-free validation contract. Its focused coverage gate is:
+
+```text
+make coverage-files COVERAGE_TESTFILES='tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_require_ci_green.py tests/unit/test_require_ci_green_detect_branch.py' COVERAGE_CONFIG=config/coverage_pipeline_status.ini COVERAGE_REPORT=.gate-logs/coverage-pipeline-status.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=1 OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=300 OBSERVED_RETAIN_RUNS=20
+```
+
 ## Long-lived platform findings
 
 - A long-running [GitHub Community discussion about pushes from Actions not
@@ -95,6 +127,12 @@ The safe example must print both `GHA-SIGNAL-EXISTING` and an example
   commit](https://github.com/orgs/community/discussions/46775). Therefore the
   signal queries by full SHA before dispatching and gives the ordinary push
   event time to appear.
+- Users report that `gh run list --branch` can be misleading when several
+  workflows run for the same branch, and the CLI has a long-lived request for
+  a single view spanning workflow runs and their jobs
+  ([cli/cli#6221](https://github.com/cli/cli/issues/6221)). Therefore Gludd does
+  not interpret the first list row as the branch verdict: it collects the
+  newest exact-SHA run for every required workflow and reports each result.
 - The GitHub CLI documents that [`gh workflow run` creates a dispatch and
   returns the created run URL when available](https://cli.github.com/manual/gh_workflow_run).
   It also documents that [`gh run list` supports `--commit` and exposes

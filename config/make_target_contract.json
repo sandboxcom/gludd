@@ -275,6 +275,17 @@
       "behavior": "make ci-run-summary RUN=123 CI_RUN_SUMMARY_REPO=sandboxcom/gludd CI_RUN_SUMMARY_VALIDATE_ONLY=1"
     },
     {
+      "name": "pipeline-status",
+      "make_variables": [
+        "PIPELINE_STATUS_REPO",
+        "PIPELINE_STATUS_BRANCH",
+        "PIPELINE_STATUS_REMOTE",
+        "PIPELINE_STATUS_SHA",
+        "PIPELINE_STATUS_VALIDATE_ONLY"
+      ],
+      "behavior": "make pipeline-status PIPELINE_STATUS_REPO=sandboxcom/gludd PIPELINE_STATUS_BRANCH=development PIPELINE_STATUS_REMOTE=sandboxcom PIPELINE_STATUS_SHA= PIPELINE_STATUS_VALIDATE_ONLY=1"
+    },
+    {
       "name": "reviewed-head-receipt",
       "make_variables": [
         "REVIEWED_HEAD_RECEIPT_MANIFEST",

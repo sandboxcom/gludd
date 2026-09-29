@@ -782,7 +782,7 @@ help:
 	@echo "  check-version-consistencyverify version matches across pyproject.toml, __init__.py, and README"
 	@echo "  check-gate-fresh        validate .gate-status is fresh and all phases pass — replaces broken _gate-fresh-check inline shell"
 	@echo "  pipeline-health         verify both local and remote pipelines are actually running (not stalled/zombie)"
-	@echo "  pipeline-status         show both local gate + remote CI status in one view"
+	@echo "  pipeline-status         exact pushed-SHA local/all-workflow status (PIPELINE_STATUS_*)"
 	@echo "  gate-all-background     run gate-all in background, poll with gate-status-check"
 	@echo "  target-two              Second test target"
 	@echo "  target-one              First test target"
@@ -4140,7 +4140,8 @@ verify-state:
 	@echo "Branch: $$(git branch --show-current)"
 	@echo ""
 	@echo "--- Remote ---"
-	@REMOTE=$$(GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom refs/heads/master 2>/dev/null | cut -f1); \
+	@BRANCH=$$(git branch --show-current); \
+	REMOTE=$$(GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom refs/heads/$$BRANCH 2>/dev/null | cut -f1); \
 	if [ -z "$$REMOTE" ]; then echo "UNREACHABLE"; \
 	elif [ "$$REMOTE" = "$$(git rev-parse HEAD)" ]; then echo "SYNCED: $$REMOTE"; \
 	else echo "DIVERGED: local=$$(git rev-parse --short HEAD) remote=$$(echo $$REMOTE | cut -c1-12)"; \
@@ -4150,15 +4151,9 @@ verify-state:
 	@git log --oneline -5
 	@echo ""
 	@echo "--- CI ---"
-	@SHA=$$(git rev-parse HEAD); \
-	RUN=$$(gh run list --commit=$$SHA --json databaseId,conclusion,headSha,status --jq '.[0]' 2>/dev/null || echo "{}"); \
-	CONCLUSION=$$(echo $$RUN | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('conclusion',''))" 2>/dev/null); \
-	STATUS=$$(echo $$RUN | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null); \
-	RUN_ID=$$(echo $$RUN | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('databaseId',''))" 2>/dev/null); \
-	if [ "$$CONCLUSION" = "success" ]; then echo "GREEN: run $$RUN_ID"; \
-	elif [ "$$STATUS" = "in_progress" ] || [ "$$STATUS" = "queued" ]; then echo "PENDING: run $$RUN_ID status=$$STATUS"; \
-	elif [ -n "$$CONCLUSION" ]; then echo "RED: run $$RUN_ID conclusion=$$CONCLUSION"; \
-	else echo "NO RUN for $$(echo $$SHA | cut -c1-12)"; fi
+	@SHA=$$(git rev-parse HEAD); BRANCH=$$(git branch --show-current); \
+	$(PYTHON) scripts/pipeline_status.py status --remote-only --repo sandboxcom/gludd \
+		--remote sandboxcom --branch "$$BRANCH" --sha "$$SHA" || true
 	@echo ""
 	@echo "=== END STATE REPORT ==="
 
@@ -4189,8 +4184,8 @@ verify-release-completeness:
 	@[ -n "$(TAG)" ] || { echo "Usage: make verify-release-completeness TAG=v0.1.0-alpha.1"; exit 1; }
 	@$(PYTHON) scripts/verify_release_completeness.py "$(TAG)"
 
-# CI-green precondition for release-cut. Exit 0 only when the latest CI run for
-# the given SHA (default: HEAD) is completed + success. Fail-closed: any
+# CI-green precondition for release-cut. Exit 0 only when every required
+# workflow's newest exact-SHA push run is completed + success. Fail-closed: any
 # non-success state (pending, failure, missing run) aborts the release.
 # Usage: make require-ci-green [SHA=<full-sha>]
 require-ci-green:
@@ -9520,8 +9515,18 @@ worktree-health-check:
 worktree-merge-all:
 	@$(UV) run python scripts/worktree_merge_all.py
 
+PIPELINE_STATUS_REPO ?= sandboxcom/gludd
+PIPELINE_STATUS_BRANCH ?= development
+PIPELINE_STATUS_REMOTE ?= sandboxcom
+PIPELINE_STATUS_SHA ?=
+PIPELINE_STATUS_VALIDATE_ONLY ?= 0
 pipeline-status:
-	@$(UV) run python scripts/pipeline_status.py status
+	@case "$(PIPELINE_STATUS_VALIDATE_ONLY)" in 0|1) ;; *) echo "PIPELINE_STATUS_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@$(UV) run python scripts/pipeline_status.py status \
+		--repo "$(PIPELINE_STATUS_REPO)" --branch "$(PIPELINE_STATUS_BRANCH)" \
+		--remote "$(PIPELINE_STATUS_REMOTE)" \
+		$(if $(PIPELINE_STATUS_SHA),--sha "$(PIPELINE_STATUS_SHA)",) \
+		$(if $(filter 1,$(PIPELINE_STATUS_VALIDATE_ONLY)),--validate-only,)
 
 # Emit an auditable pipeline heartbeat at a five-minute cadence by default.
 # Use COUNT=0 for a continuous loop; artifacts are project-namespaced.
