@@ -91,6 +91,14 @@ def _run_grind_test_harness(
             "GLUDD_STOP_STATE_FILE": tmp["stop"],
             "GLUDD_SESSION_STATE": tmp["session"],
             "GLUDD_READ_GRIND_FILE": tmp["grind"],
+            # The production dispatch floor is intentionally opt-in.  These
+            # runtime tests exercise floor enforcement, so their isolated
+            # harness must opt in explicitly rather than inherit developer or
+            # CI environment state.
+            "CLAUDE_AGENT_FLOOR": "1",
+            "CLAUDE_AGENT_CEILING": "3",
+            "GLUDD_FLOOR_OVERRIDE_PATH": str(tmp_path / "floor-override"),
+            "GLUDD_LOAD_THROTTLE_PATH": str(tmp_path / "load-throttle"),
             "GLUDD_MESSAGE_BOUNDARY_MS": "100",
         }.items()
     )

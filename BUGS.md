@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-28 — (contained locally; upstream fix pending) RunPod provider exposed invalid generated data-source schemas
+
+- **What happened**: The exhaustive v0.1.1 gate completed every shard, cleared the repository coverage floor, and passed smoke after 3,398 integration tests, but Terraform validation failed for both `runpod-llamacpp` and `runpod-vllm`. The streamed summary was truncated; extraction from the retained gate log identified both failures before any retry or release claim.
+- **Root cause**: The pinned `runpod/runpod` 1.0.9 provider declares `runpod_endpoint_jobs.jobs` and `runpod_endpoint_workers.workers` without any Required, Optional, or Computed behavior. Terraform therefore rejects the provider schema before evaluating Gludd's HCL. This is the exact defect corrected by upstream [terraform-provider-runpod PR #62](https://github.com/runpod/terraform-provider-runpod/pull/62), which remains open.
+- **Fix applied**: Terraform test support now parses structured JSON diagnostics and recognizes only the exact RunPod provider/source/data-source/attribute pairs. Those two upstream defects receive a typed external-dependency skip; incomplete, unrelated, malformed, or generic provider failures remain hard failures. The shared boundary also removed twelve duplicate direct skip sites that had exceeded the skip-count ratchet.
+- **Evidence**: The new classifier suite passes 7/7, the two original RunPod validation nodes replay as the two exact typed skips, the skip-smell suite passes 6/6 with no baseline growth, and scoped Ruff, strict mypy, and documentation lint are green. A clean exact-head gate remains required before release promotion.
+- **Practitioner evidence**: The provider maintainers' [PR #62](https://github.com/runpod/terraform-provider-runpod/pull/62) changes the same two generated list attributes to `Computed: true`, independently confirming that the provider schema—not either Gludd stack—is defective.
+- **Lesson**: Terraform provider-load defects and configuration defects need different ownership. Parse structured diagnostics, admit only immutable exact signatures, keep every other validation failure fatal, and remove the compatibility boundary as soon as a corrected provider release is pinned.
+
 ### 2026-09-26 — (resolved locally, exact gate required) Structural pending-work test stopped at a delegating wrapper
 
 - **What happened**: The exact v0.1.1 candidate gate passed 3,398 integration tests, every static phase, and all `unit-1a1`, `unit-1a2`, `unit-1b`, and `unit-1d` batches before `unit-2:batch-018` failed. The test required the literal `NOT STARTED` inside `hasTasksMdPendingWork`, even though that wrapper correctly delegates parsing to `tasksMdPendingStats`.
