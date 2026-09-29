@@ -18,7 +18,10 @@ creation destination before any mutating Git command.
 Worktree creation uses the following fail-closed order:
 
 1. Branch and path values beginning with a dash are rejected, and a raw `..`
-   path component is rejected before normalization.
+   path component is rejected before normalization. This validation happens
+   before resolving or creating the configured worktree root; an invalid
+   branch cannot trigger project-state discovery, directory creation, or any
+   other filesystem side effect.
 2. The repository, its parent, and the requested destination are resolved with
    `pathlib.Path.resolve()`. The destination may be the repository, its parent,
    or a canonical descendant. A symlink redirecting outside is rejected.
@@ -49,6 +52,11 @@ The seven-year-old explanation
 documents that linked worktrees point back into the common Git directory. A
 creation destination therefore affects both filesystem content and shared
 repository metadata.
+
+Gludd applies that same path-identity lesson to operation ordering: both the
+branch-derived relative path and its namespaced storage request are validated
+before storage acquisition, so a malformed request is rejected even on a host
+where the normal worktree root has not yet been provisioned.
 
 The six-year-old symlink report
 [Git thinks a file within a symlinked directory has been deleted](https://stackoverflow.com/questions/60582087/git-thinks-a-file-within-a-symlinked-directory-has-been-deleted-after-recreating)
@@ -86,6 +94,7 @@ namespaced-only helper reintroduces the Gludd temp-root compatibility failure.
 
 The acceptance set includes the original beta.4 temp-root regression, raw
 traversal, canonical symlink escape, matching and foreign project namespaces,
+invalid branch rejection before secure-directory/project-state acquisition,
 the adjacent Git automation suites under warnings-as-errors, line-and-branch
 coverage floors, Ruff, strict mypy, source docstrings, Markdown/spec lint, task
 ledger integrity, full collection, and the guarded commit gate.

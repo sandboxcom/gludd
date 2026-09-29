@@ -125,11 +125,6 @@ def worktree_create(
     except ValueError as exc:
         return WorktreeResult(path="", branch=branch, success=False, message=str(exc))
 
-    root = (
-        project_state(project_root=repo_path).directory("worktrees")
-        if worktree_root is None
-        else secure_directory(worktree_root)
-    )
     branch_path = Path(branch)
     if branch_path.is_absolute() or ".." in branch_path.parts:
         return WorktreeResult(
@@ -138,6 +133,11 @@ def worktree_create(
             success=False,
             message=f"refusing branch path that escapes worktree root: {branch!r}",
         )
+    root = (
+        project_state(project_root=repo_path).directory("worktrees")
+        if worktree_root is None
+        else secure_directory(worktree_root)
+    )
     worktree_path = str(root.joinpath(*branch_path.parts))
     try:
         _reject_leading_dash(worktree_path, "worktree path")

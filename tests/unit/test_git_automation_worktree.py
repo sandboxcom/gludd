@@ -128,11 +128,13 @@ class TestWorktreeCreate:
         assert result.success is False
         assert "-" in result.message
 
-    def test_rejects_branch_path_escape_via_fn(self) -> None:
-        result = worktree_create("/tmp/gludd-worktrees", "../escape", base_branch=None)
+    @patch("general_ludd.git_automation.worktree.secure_directory")
+    def test_rejects_branch_path_escape_via_fn(self, mock_secure_directory: MagicMock) -> None:
+        result = worktree_create("/path/that/does/not/exist", "../escape", base_branch=None)
 
         assert result.success is False
         assert "escapes worktree root" in result.message
+        mock_secure_directory.assert_not_called()
 
     @patch("general_ludd.git_automation.worktree._run_git")
     def test_creates_worktree_via_git(self, mock_run: MagicMock):
