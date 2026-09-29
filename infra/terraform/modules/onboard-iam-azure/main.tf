@@ -85,7 +85,7 @@ resource "azurerm_role_definition" "accelerator_deployer" {
 # running outside Azure with AZURE_* service-principal credentials.
 resource "azurerm_role_assignment" "accelerator_deployer" {
   scope                            = local.resource_group_scope
-  role_definition_id              = azurerm_role_definition.accelerator_deployer.role_definition_resource_id
+  role_definition_id               = azurerm_role_definition.accelerator_deployer.role_definition_resource_id
   principal_id                     = local.operator_principal_id
   skip_service_principal_aad_check = true
 }

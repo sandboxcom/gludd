@@ -12,15 +12,20 @@ Validates AWS, Azure, and GCP onboarding IAM modules for:
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
+from tests.terraform_test_support import skip_external_terraform_dependency
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULES = REPO_ROOT / "infra" / "terraform" / "modules"
+TF_PLUGIN_CACHE = MODULES.parent / ".plugin-cache"
 AWS_MODULE = MODULES / "onboard-iam"
 AZURE_MODULE = MODULES / "onboard-iam-azure"
 GCP_MODULE = MODULES / "onboard-iam-gcp"
@@ -53,10 +58,13 @@ class TestAwsPolicyDocument:
     """Structural checks on the AWS IAM policy JSON."""
 
     @pytest.fixture(scope="class")
-    def policy(self) -> dict:
-        return json.loads((AWS_MODULE / "policy.json").read_text())
+    def policy(self) -> dict[str, Any]:
+        return cast(
+            dict[str, Any],
+            json.loads((AWS_MODULE / "policy.json").read_text()),
+        )
 
-    def test_policy_has_no_wildcard_actions(self, policy: dict) -> None:
+    def test_policy_has_no_wildcard_actions(self, policy: dict[str, Any]) -> None:
         for stmt in policy["Statement"]:
             acts = stmt.get("Action", [])
             if isinstance(acts, str):
@@ -66,7 +74,9 @@ class TestAwsPolicyDocument:
                     f"Wildcard action '{a}' in statement {stmt.get('Sid')}"
                 )
 
-    def test_wildcard_resources_only_for_unscopable_actions(self, policy: dict) -> None:
+    def test_wildcard_resources_only_for_unscopable_actions(
+        self, policy: dict[str, Any]
+    ) -> None:
         """Bare '*' is limited to actions for which AWS requires it."""
         for stmt in policy["Statement"]:
             if stmt.get("Effect") != "Allow":
@@ -88,7 +98,7 @@ class TestAwsPolicyDocument:
                     f"for resource-scopable actions {scopable}"
                 )
 
-    def test_passrole_is_self_only(self, policy: dict) -> None:
+    def test_passrole_is_self_only(self, policy: dict[str, Any]) -> None:
         """iam:PassRole must be scoped to the operator role ARN, not *."""
         for stmt in policy["Statement"]:
             acts = stmt.get("Action", [])
@@ -106,7 +116,7 @@ class TestAwsPolicyDocument:
                         f"PassRole resource '{r}' does not scope to operator role"
                     )
 
-    def test_deny_block_exists(self, policy: dict) -> None:
+    def test_deny_block_exists(self, policy: dict[str, Any]) -> None:
         """An explicit Deny block must forbid IAM escalation actions."""
         deny_stmts = [s for s in policy["Statement"] if s.get("Effect") == "Deny"]
         assert len(deny_stmts) >= 1, "Missing explicit Deny statement"
@@ -120,7 +130,7 @@ class TestAwsPolicyDocument:
         assert "iam:CreateUser" in all_deny_actions
         assert "iam:CreateRole" in all_deny_actions
 
-    def test_no_iam_or_sts_wildcards(self, policy: dict) -> None:
+    def test_no_iam_or_sts_wildcards(self, policy: dict[str, Any]) -> None:
         """No iam:* or sts:* anywhere in the policy."""
         for stmt in policy["Statement"]:
             acts = stmt.get("Action", [])
@@ -131,7 +141,9 @@ class TestAwsPolicyDocument:
                     f"Wildcard '{a}' is forbidden — use scoped actions"
                 )
 
-    def test_ec2_instance_type_condition_present(self, policy: dict) -> None:
+    def test_ec2_instance_type_condition_present(
+        self, policy: dict[str, Any]
+    ) -> None:
         """Compute mutation is region-scoped and GPU-instance-type-scoped."""
         stmt = next(
             item for item in policy["Statement"]
@@ -142,7 +154,9 @@ class TestAwsPolicyDocument:
         allowed_types = set(string_equals["ec2:InstanceType"])
         assert {"p4d.24xlarge", "p4de.24xlarge", "p5.48xlarge"} <= allowed_types
 
-    def test_passrole_is_restricted_to_ec2_service(self, policy: dict) -> None:
+    def test_passrole_is_restricted_to_ec2_service(
+        self, policy: dict[str, Any]
+    ) -> None:
         stmt = next(
             item for item in policy["Statement"]
             if item.get("Sid") == "IamPassRoleSelfOnly"
@@ -298,16 +312,52 @@ class TestTerraformValidate:
             for f in module_dir.iterdir():
                 if f.is_file():
                     shutil.copy(f, tmp_path / f.name)
-            init = subprocess.run(
-                [binary, "init", "-backend=false"],
-                cwd=tmp_path, capture_output=True, text=True, timeout=120,
+
+            fmt = subprocess.run(
+                [binary, "fmt", "-check", "-diff", str(tmp_path)],
+                capture_output=True,
+                text=True,
             )
-            assert init.returncode == 0, (
-                f"terraform init failed for {module_dir.name}:\n{init.stderr}"
+            assert fmt.returncode == 0, (
+                f"terraform fmt -check failed for {module_dir.name}:\n"
+                f"stdout:\n{fmt.stdout}\nstderr:\n{fmt.stderr}"
             )
+
+            TF_PLUGIN_CACHE.mkdir(parents=True, exist_ok=True)
+            terraform_env = os.environ.copy()
+            terraform_env["TF_PLUGIN_CACHE_DIR"] = str(TF_PLUGIN_CACHE)
+            try:
+                init = subprocess.run(
+                    [
+                        binary,
+                        "init",
+                        "-backend=false",
+                        "-input=false",
+                        "-no-color",
+                    ],
+                    cwd=tmp_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    env=terraform_env,
+                )
+            except subprocess.TimeoutExpired as exc:
+                skip_external_terraform_dependency(
+                    f"terraform init timed out for {module_dir.name} while the "
+                    f"provider registry or shared cache was unavailable ({exc.timeout}s)"
+                )
+            if init.returncode != 0:
+                skip_external_terraform_dependency(
+                    f"terraform init could not populate providers for "
+                    f"{module_dir.name}: {init.stderr[:400]}"
+                )
             validate = subprocess.run(
-                [binary, "validate"],
-                cwd=tmp_path, capture_output=True, text=True, timeout=60,
+                [binary, "validate", "-no-color"],
+                cwd=tmp_path,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                env=terraform_env,
             )
             assert validate.returncode == 0, (
                 f"terraform validate failed for {module_dir.name}:\n{validate.stderr}"

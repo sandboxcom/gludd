@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -19,9 +20,12 @@ from typing import Any
 
 import pytest
 
+from tests.terraform_test_support import skip_external_terraform_dependency
+
 _PROJECT = Path(__file__).resolve().parent.parent.parent
 _POLICIES = _PROJECT / "infra" / "terraform" / "policies"
 _FIXTURES = _PROJECT / "tests" / "fixtures" / "terraform"
+_TF_PLUGIN_CACHE = _PROJECT / "infra" / "terraform" / ".plugin-cache"
 
 
 # ---------------------------------------------------------------------------
@@ -167,26 +171,58 @@ def test_core_policies_do_not_block_compliant_stack(tmp_path: Path) -> None:
 
     stack = _VSPHERE_STACK
     (stack / "testing.auto.tfvars").write_text(_DUMMY_TFVARS, encoding="utf-8")
+    _TF_PLUGIN_CACHE.mkdir(parents=True, exist_ok=True)
+    terraform_env = os.environ.copy()
+    terraform_env["TF_PLUGIN_CACHE_DIR"] = str(_TF_PLUGIN_CACHE)
     try:
-        init = subprocess.run(
-            ["terraform", "init", "-backend=false", "-input=false"],
-            cwd=str(stack),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            init = subprocess.run(
+                [
+                    "terraform",
+                    "init",
+                    "-backend=false",
+                    "-input=false",
+                    "-no-color",
+                ],
+                cwd=str(stack),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60,
+                env=terraform_env,
+            )
+        except subprocess.TimeoutExpired as exc:
+            skip_external_terraform_dependency(
+                "terraform init timed out while the provider registry or "
+                f"shared cache was unavailable ({exc.timeout}s)"
+            )
         if init.returncode != 0:
-            pytest.skip(f"terraform init failed (no provider cache / offline):\n{init.stderr}")
+            skip_external_terraform_dependency(
+                f"terraform init failed (no provider cache / offline):\n{init.stderr}"
+            )
         plan_path = tmp_path / "vs.tfplan"
-        plan = subprocess.run(
-            ["terraform", "plan", f"-out={plan_path}", "-input=false"],
-            cwd=str(stack),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            plan = subprocess.run(
+                [
+                    "terraform",
+                    "plan",
+                    f"-out={plan_path}",
+                    "-input=false",
+                    "-no-color",
+                ],
+                cwd=str(stack),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60,
+                env=terraform_env,
+            )
+        except subprocess.TimeoutExpired as exc:
+            skip_external_terraform_dependency(
+                f"terraform plan timed out after {exc.timeout}s"
+            )
         if plan.returncode != 0:
-            pytest.skip(
+            skip_external_terraform_dependency(
                 f"terraform plan failed (no vSphere credentials in CI):\n{plan.stderr}"
             )
         json_path = tmp_path / "vs.tfplan.json"
@@ -195,6 +231,8 @@ def test_core_policies_do_not_block_compliant_stack(tmp_path: Path) -> None:
             capture_output=True,
             text=True,
             check=True,
+            timeout=60,
+            env=terraform_env,
         )
         json_path.write_text(show.stdout, encoding="utf-8")
     finally:
