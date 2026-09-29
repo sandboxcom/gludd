@@ -38,6 +38,7 @@ import yaml
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _SCENARIO_DIR = os.path.join(_ROOT, "molecule", "playbooks", "binary_smoke_linux")
 _MAKEFILE = os.path.join(_ROOT, "Makefile")
+_GITIGNORE = os.path.join(_ROOT, ".gitignore")
 _PYPROJECT = os.path.join(_ROOT, "pyproject.toml")
 _BUILD_WORKFLOW = os.path.join(_ROOT, ".github", "workflows", "build.yml")
 _MAKE_TARGET_CONTRACT = os.path.join(_ROOT, "config", "make_target_contract.json")
@@ -750,6 +751,13 @@ class TestVerifyAssertions:
 
 
 class TestPrepare:
+    def test_generated_linux_artifacts_do_not_dirty_the_candidate_tree(self) -> None:
+        with open(_GITIGNORE) as fh:
+            ignored_paths = {line.strip() for line in fh if line.strip() and not line.startswith("#")}
+
+        assert "dist/linux/gludd" in ignored_paths
+        assert "dist/linux/warn-gludd.txt" in ignored_paths
+
     def test_make_target_builds_a_real_linux_binary_before_molecule(self) -> None:
         out = _load("default/prepare.yml")
         assert "dist/linux/gludd" in out
