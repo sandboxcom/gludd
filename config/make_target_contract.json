@@ -499,6 +499,29 @@
       "behavior": "make audit-linux-pyinstaller-warnings PYINSTALLER_WARNING_FILE_LINUX=dist/linux/warn-gludd.txt PYINSTALLER_WARNING_ALLOWLIST_LINUX=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_VERSION_LINUX=6.20.0 PYINSTALLER_WARNING_ARCHITECTURE_LINUX=x86_64 PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=1"
     },
     {
+      "name": "compare-linux-pyinstaller-warnings",
+      "make_variables": [
+        "PYINSTALLER_WARNING_BEFORE",
+        "PYINSTALLER_WARNING_AFTER",
+        "PYINSTALLER_WARNING_ALLOWLIST_LINUX",
+        "PYINSTALLER_VERSION_LINUX",
+        "PYINSTALLER_WARNING_ARCHITECTURE_LINUX",
+        "PYINSTALLER_WARNING_REVIEW_RECEIPT",
+        "PYINSTALLER_WARNING_COMPARE_VALIDATE_ONLY"
+      ],
+      "behavior": "make compare-linux-pyinstaller-warnings PYINSTALLER_WARNING_BEFORE=/tmp/gludd-warning-before.txt PYINSTALLER_WARNING_AFTER=/tmp/gludd-warning-after.txt PYINSTALLER_WARNING_ALLOWLIST_LINUX=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_VERSION_LINUX=6.20.0 PYINSTALLER_WARNING_ARCHITECTURE_LINUX=aarch64 PYINSTALLER_WARNING_REVIEW_RECEIPT=artifacts/pyinstaller-warning-review.json PYINSTALLER_WARNING_COMPARE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "check-pyinstaller-warning-reviews",
+      "make_variables": [
+        "PYINSTALLER_WARNING_REVIEW_POLICY",
+        "PYINSTALLER_WARNING_REVIEW_DIR",
+        "PYINSTALLER_WARNING_REVIEW_BASE_POLICY",
+        "PYINSTALLER_WARNING_REVIEW_CHECK_VALIDATE_ONLY"
+      ],
+      "behavior": "make check-pyinstaller-warning-reviews PYINSTALLER_WARNING_REVIEW_POLICY=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_WARNING_REVIEW_DIR=config/pyinstaller-warning-reviews PYINSTALLER_WARNING_REVIEW_BASE_POLICY= PYINSTALLER_WARNING_REVIEW_CHECK_VALIDATE_ONLY=1"
+    },
+    {
       "name": "molecule-test",
       "make_variables": ["SCENARIO"],
       "behavior": "make molecule-test SCENARIO=test_gludd_observe"
@@ -1058,6 +1081,25 @@
       "name": "submodule-init",
       "make_variables": ["SUBMODULE_INIT_VALIDATE_ONLY"],
       "behavior": "make submodule-init SUBMODULE_INIT_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "build-linux-binary-image",
+      "variables": [
+        "LIMA_INSTANCE",
+        "LIMA_DOCKER_CONFIG",
+        "LIMA_DOCKER_TEMPLATE",
+        "LIMA_DOCKER_START_TIMEOUT_SECS",
+        "LIMA_DOCKER_VALIDATE_ONLY",
+        "LINUX_BINARY_IMAGE",
+        "LINUX_BINARY_DOCKERFILE",
+        "LINUX_BINARY_IMAGE_BUILD_VALIDATE_ONLY",
+        "DOCKER_BUILDX_BIN",
+        "DOCKER_BUILDX_AUTO_INSTALL",
+        "DOCKER_BUILDX_FORMULA",
+        "PYINSTALLER_PYTHON_VERSION_LINUX",
+        "PYINSTALLER_UV_VERSION_LINUX"
+      ],
+      "behavior": "make build-linux-binary-image LIMA_INSTANCE=gludd-docker LIMA_DOCKER_CONFIG=/tmp/gludd-lima-docker-config LIMA_DOCKER_TEMPLATE=template:docker LIMA_DOCKER_START_TIMEOUT_SECS=180 LIMA_DOCKER_VALIDATE_ONLY=1 LINUX_BINARY_IMAGE=gludd-linux-binary-build:python3.12.14-uv0.12.19 LINUX_BINARY_DOCKERFILE=config/containers/linux-binary.Dockerfile LINUX_BINARY_IMAGE_BUILD_VALIDATE_ONLY=1 DOCKER_BUILDX_BIN= DOCKER_BUILDX_AUTO_INSTALL=0 DOCKER_BUILDX_FORMULA=docker-buildx PYINSTALLER_PYTHON_VERSION_LINUX=3.12.14 PYINSTALLER_UV_VERSION_LINUX=0.12.19"
     },
     {
       "name": "lima-docker-ensure",

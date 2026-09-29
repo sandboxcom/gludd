@@ -759,16 +759,17 @@ class TestPrepare:
             makefile = fh.read()
         assert 'if [ "$(SCENARIO)" = "binary_smoke_linux" ]' in makefile
         assert "$(MAKE) --no-print-directory build-linux-executable" in makefile
-        assert "build-linux-executable:" in makefile
+        assert "build-linux-executable: worktree-guard" in makefile
+        assert "$(MAKE) --no-print-directory build-linux-binary-image" in makefile
         assert "UV_PROJECT_ENVIRONMENT=/tmp/gludd-linux-venv" in makefile
-        assert "git archive HEAD" in makefile
+        assert 'source_sha=$$(git rev-parse HEAD)' in makefile
+        assert 'echo "LINUX_BINARY_SOURCE sha=$$source_sha"' in makefile
+        assert 'git archive "$$source_sha"' in makefile
         assert (
             "LINUX_BINARY_IMAGE ?= "
-            "ghcr.io/astral-sh/uv:python3.12-bookworm-slim@"
-            "sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261"
-            "ba1b7147afa78e58"
+            "gludd-linux-binary-build:python3.12.14-uv0.12.19"
         ) in makefile
-        assert "--pull=always" in makefile
+        assert "--pull=never" in makefile
         assert "LINUX_BINARY_SCRATCH_ROOT ?= $(HOME)/tmp/gludd-linux-build" in makefile
         assert "DEBIAN_SNAPSHOT ?= 20260729T000000Z" in makefile
         assert "LINUX_BINUTILS_VERSION ?=" in makefile
@@ -807,7 +808,11 @@ class TestPrepare:
         assert "/tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt" in makefile
         assert "--spec gludd.spec" in makefile
         assert ":/workspace:ro" in makefile
-        assert '@set -e; if [ "$$(uname -s)" = "Linux" ]' in makefile
+        assert (
+            '@set -e; source_sha=$$(git rev-parse HEAD); '
+            'echo "LINUX_BINARY_SOURCE sha=$$source_sha"; '
+            'if [ "$$(uname -s)" = "Linux" ]'
+        ) in makefile
         assert "output_dir=$$(mktemp" not in makefile
         assert 'rm -rf "$$source_dir"' in makefile
         assert '-v "$$output_dir:/out"' not in makefile

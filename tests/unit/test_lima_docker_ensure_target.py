@@ -20,6 +20,8 @@ def _run_ensure(
     state: str,
     *,
     instance: str = "gludd-test",
+    target: str = "lima-docker-ensure",
+    docker_build_status: int = 0,
 ) -> tuple[subprocess.CompletedProcess[str], Path]:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -57,10 +59,30 @@ fi
         fake_bin / "docker",
         """#!/bin/sh
 set -eu
-printf 'docker %s host=%s config=%s\n' "$*" "$DOCKER_HOST" "$DOCKER_CONFIG" >> "$LIMA_FAKE_CALLS"
+printf 'docker %s host=%s config=%s buildkit=%s\n' \
+  "$*" "$DOCKER_HOST" "$DOCKER_CONFIG" "${DOCKER_BUILDKIT:-}" >> "$LIMA_FAKE_CALLS"
 if [ "$1" = "info" ]; then
     printf 'server=fake containers=0 images=0\n'
     exit 0
+fi
+if [ "$1" = "run" ]; then
+    printf '3.12.14|uv 0.12.19\n'
+    exit 0
+fi
+exit 64
+""",
+    )
+    _write_executable(
+        fake_bin / "docker-buildx",
+        """#!/bin/sh
+set -eu
+printf 'docker-buildx %s host=%s config=%s\n' "$*" "$DOCKER_HOST" "$DOCKER_CONFIG" >> "$LIMA_FAKE_CALLS"
+if [ "$1" = "version" ]; then
+    printf 'github.com/docker/buildx v0.37.1\n'
+    exit 0
+fi
+if [ "$1" = "build" ]; then
+    exit "$LIMA_FAKE_DOCKER_BUILD_STATUS"
 fi
 exit 64
 """,
@@ -72,6 +94,7 @@ exit 64
     env.update(
         {
             "LIMA_FAKE_CALLS": str(calls_file),
+            "LIMA_FAKE_DOCKER_BUILD_STATUS": str(docker_build_status),
             "LIMA_FAKE_SOCKET": str(socket_path),
             "LIMA_FAKE_STATE": str(state_file),
             "PATH": os.pathsep.join(
@@ -79,17 +102,30 @@ exit 64
             ),
         }
     )
-    result = subprocess.run(
-        [
+    command = [
             "make",
             "--no-print-directory",
-            "lima-docker-ensure",
+            target,
             f"LIMA_INSTANCE={instance}",
             f"LIMA_DOCKER_CONFIG={tmp_path / 'docker-config'}",
             "LIMA_DOCKER_TEMPLATE=template:docker",
             "LIMA_DOCKER_START_TIMEOUT_SECS=180",
             "LIMA_DOCKER_VALIDATE_ONLY=0",
-        ],
+    ]
+    if target == "build-linux-binary-image":
+        command.extend(
+            [
+                "LINUX_BINARY_IMAGE=gludd-linux-binary-build:test",
+                "LINUX_BINARY_DOCKERFILE=config/containers/linux-binary.Dockerfile",
+                "LINUX_BINARY_IMAGE_BUILD_VALIDATE_ONLY=0",
+                "PYINSTALLER_PYTHON_VERSION_LINUX=3.12.14",
+                "PYINSTALLER_UV_VERSION_LINUX=0.12.19",
+                f"DOCKER_BUILDX_BIN={fake_bin / 'docker-buildx'}",
+                "DOCKER_BUILDX_AUTO_INSTALL=0",
+            ]
+        )
+    result = subprocess.run(
+        command,
         cwd=_ROOT,
         env=env,
         capture_output=True,
@@ -139,4 +175,20 @@ def test_non_namespaced_instance_is_rejected_before_any_tool_call(tmp_path: Path
 def test_linux_build_automatically_ensures_lima_engine() -> None:
     makefile = (_ROOT / "Makefile").read_text()
 
-    assert "build-linux-executable: lima-docker-ensure" in makefile
+    assert "build-linux-executable: worktree-guard" in makefile
+    assert "$(MAKE) --no-print-directory build-linux-binary-image" in makefile
+
+
+def test_builder_failure_stops_before_identity_run(tmp_path: Path) -> None:
+    result, calls_file = _run_ensure(
+        tmp_path,
+        "Running",
+        target="build-linux-binary-image",
+        docker_build_status=23,
+    )
+
+    assert result.returncode != 0
+    calls = calls_file.read_text()
+    assert "docker-buildx build --load --progress=plain" in calls
+    assert "docker build" not in calls
+    assert "docker run" not in calls

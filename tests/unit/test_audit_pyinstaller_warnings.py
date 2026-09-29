@@ -19,6 +19,7 @@ _BUILD_WORKFLOW = _ROOT / ".github" / "workflows" / "build.yml"
 _MOLECULE_WORKFLOW = _ROOT / ".github" / "workflows" / "molecule.yml"
 _SCRIPT = _ROOT / "scripts" / "audit_pyinstaller_warnings.py"
 _LINUX_POLICY = _ROOT / "config" / "pyinstaller-warning-allowlist-linux.json"
+_LINUX_BUILDER_DOCKERFILE = _ROOT / "config" / "containers" / "linux-binary.Dockerfile"
 _CONNECTOR_REGISTRY = _ROOT / "src" / "general_ludd" / "connectors" / "registry.py"
 _PRICING_SOURCES = _ROOT / "src" / "general_ludd" / "pricing_intel" / "sources.py"
 _PYINSTALLER_VERSION = "6.20.0"
@@ -158,10 +159,10 @@ def test_makefile_exposes_replayable_linux_warning_audit() -> None:
 
 def test_molecule_binary_smoke_uses_release_builder_python_minor() -> None:
     """The hosted artifact smoke must analyze the same locked Python graph."""
-    makefile = _MAKEFILE.read_text(encoding="utf-8")
+    dockerfile = _LINUX_BUILDER_DOCKERFILE.read_text(encoding="utf-8")
     workflow = _MOLECULE_WORKFLOW.read_text(encoding="utf-8")
 
-    builder = re.search(r"LINUX_BINARY_IMAGE \?=.*python(?P<minor>\d+\.\d+)-", makefile)
+    builder = re.search(r"python:(?P<minor>\d+\.\d+)\.\d+-", dockerfile)
     hosted = re.search(
         r'python-version: "(?P<minor>\d+\.\d+)(?:\.\d+)?"',
         workflow,
@@ -170,6 +171,27 @@ def test_molecule_binary_smoke_uses_release_builder_python_minor() -> None:
     assert hosted is not None
     assert hosted.group("minor") == builder.group("minor")
     assert "uv sync --frozen" in workflow
+
+
+def test_linux_builder_combines_exact_python_and_uv_images() -> None:
+    """One cached builder must pin both interpreter and package-manager identity."""
+    dockerfile = _LINUX_BUILDER_DOCKERFILE.read_text(encoding="utf-8")
+    makefile = _MAKEFILE.read_text(encoding="utf-8")
+
+    assert (
+        "FROM docker.io/library/python:3.12.14-slim-bookworm@"
+        "sha256:392307d22300de8b5986851a12d9176dfc0fc073e65bf6523ebd7dcbeb23564e"
+    ) in dockerfile
+    assert (
+        "FROM ghcr.io/astral-sh/uv:0.12.19@"
+        "sha256:04d046b13e60d6bcec73cbc5e1cad25d680dea90c8573340950a0ac2d1aef424"
+        " AS uv"
+    ) in dockerfile
+    assert "COPY --from=uv /uv /uvx /bin/" in dockerfile
+    assert "LINUX_BINARY_IMAGE ?= gludd-linux-binary-build:python3.12.14-uv0.12.19" in makefile
+    assert "build-linux-binary-image: lima-docker-ensure" in makefile
+    assert "build-linux-executable: worktree-guard" in makefile
+    assert "$(MAKE) --no-print-directory build-linux-binary-image" in makefile
 
 
 def test_molecule_binary_smoke_pins_hosted_python_patch() -> None:
@@ -213,7 +235,7 @@ def test_linux_policy_pins_hosted_and_container_architectures() -> None:
 
     assert policy["schema_version"] == 3
     assert policy["transitive_warning_sha256_by_architecture"] == {
-        "aarch64": ("b1f5847aeb5bf530dba2b4ef58b0890b5b7a2e409b458fdfe7d0ccbd6a218e02"),
+        "aarch64": ("183b6e569e7b39b185d6ad522c147de657e9a4aff00867a8126494e4cc076f2f"),
         "x86_64": ("d4fcb35befd9c6ec6a1890e25f9fe9c0f96e3cdff393cb9bcca4c8952fe51e2d"),
     }
 

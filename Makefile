@@ -654,6 +654,9 @@ help:
 	@echo "  dist                  Build distribution tarball"
 	@echo "  build-executable      Build standalone executable (pyinstaller)"
 	@echo "  audit-linux-pyinstaller-warnings  Validate/replay the Linux PyInstaller warning policy"
+	@echo "  compare-linux-pyinstaller-warnings  Emit an exact old/new warning-graph review receipt"
+	@echo "  check-pyinstaller-warning-reviews  Require an exact receipt for every newly accepted graph"
+	@echo "  build-linux-binary-image  Build the digest-pinned Python/uv artifact environment (LINUX_BINARY_*, DOCKER_BUILDX_*, LIMA_*)"
 	@echo "  lima-docker-ensure    Provision/reuse a namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_TEMPLATE, LIMA_DOCKER_START_TIMEOUT_SECS, LIMA_DOCKER_VALIDATE_ONLY)"
 	@echo "  lima-docker-start     Start an existing namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_START_TIMEOUT_SECS, LIMA_DOCKER_VALIDATE_ONLY)"
 	@echo "  lima-docker-stop      Gracefully stop an existing namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_STOP_TIMEOUT_SECS, LIMA_DOCKER_STOP_KILL_AFTER_SECS, LIMA_DOCKER_VALIDATE_ONLY)"
@@ -1819,7 +1822,7 @@ _gate-run-lock-acquire:
 
 .NOTPARALLEL: gate gate-refresh
 
-gate: _gate-run-lock-acquire disk-cleanup-preflight check-generated-artifact-hygiene _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-resource-ownership check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets check-no-prompt-prone-edit-tools validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning integration-health check-runbook-currency check-version-bump-atomicity
+gate: _gate-run-lock-acquire disk-cleanup-preflight check-generated-artifact-hygiene _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-resource-ownership check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets check-no-prompt-prone-edit-tools check-pyinstaller-warning-reviews validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning integration-health check-runbook-currency check-version-bump-atomicity
 	@rm -f .gate-failed .gate-status.next .gate-status.running
 	@printf "RUNNING %s %s\n" "$$(date +%s)" "$$PPID" > .gate-status.running && mv .gate-status.running .gate-status
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status.next
@@ -6456,7 +6459,12 @@ build-executable:
 	@$(UV) run --frozen --extra azure pyinstaller gludd.spec --clean --noconfirm
 	@echo "Built dist/gludd"
 
-LINUX_BINARY_IMAGE ?= ghcr.io/astral-sh/uv:python3.12-bookworm-slim@sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261ba1b7147afa78e58
+LINUX_BINARY_IMAGE ?= gludd-linux-binary-build:python3.12.14-uv0.12.19
+LINUX_BINARY_DOCKERFILE ?= config/containers/linux-binary.Dockerfile
+LINUX_BINARY_IMAGE_BUILD_VALIDATE_ONLY ?= 0
+DOCKER_BUILDX_BIN ?=
+DOCKER_BUILDX_AUTO_INSTALL ?= 1
+DOCKER_BUILDX_FORMULA ?= docker-buildx
 LINUX_BINARY_OUTPUT ?= dist/linux/gludd
 LINUX_BINARY_SCRATCH_ROOT ?= $(HOME)/tmp/gludd-linux-build
 DEBIAN_SNAPSHOT ?= 20260729T000000Z
@@ -6466,8 +6474,17 @@ PYINSTALLER_WARNING_ALLOWLIST_LINUX ?= config/pyinstaller-warning-allowlist-linu
 PYINSTALLER_WARNING_FILE_LINUX ?= dist/linux/warn-gludd.txt
 PYINSTALLER_VERSION_LINUX ?= 6.20.0
 PYINSTALLER_PYTHON_VERSION_LINUX ?= 3.12.14
+PYINSTALLER_UV_VERSION_LINUX ?= 0.12.19
 PYINSTALLER_WARNING_ARCHITECTURE_LINUX ?=
 PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY ?= 0
+PYINSTALLER_WARNING_BEFORE ?=
+PYINSTALLER_WARNING_AFTER ?=
+PYINSTALLER_WARNING_REVIEW_RECEIPT ?= artifacts/pyinstaller-warning-review.json
+PYINSTALLER_WARNING_COMPARE_VALIDATE_ONLY ?= 0
+PYINSTALLER_WARNING_REVIEW_POLICY ?= config/pyinstaller-warning-allowlist-linux.json
+PYINSTALLER_WARNING_REVIEW_DIR ?= config/pyinstaller-warning-reviews
+PYINSTALLER_WARNING_REVIEW_BASE_POLICY ?=
+PYINSTALLER_WARNING_REVIEW_CHECK_VALIDATE_ONLY ?= 0
 
 .PHONY: audit-linux-pyinstaller-warnings
 audit-linux-pyinstaller-warnings: ## Re-audit a retained Linux PyInstaller warning report
@@ -6486,12 +6503,93 @@ audit-linux-pyinstaller-warnings: ## Re-audit a retained Linux PyInstaller warni
 			--spec gludd.spec; \
 	fi
 
-build-linux-executable: lima-docker-ensure ## Build and verify a real Linux PyInstaller executable
+.PHONY: compare-linux-pyinstaller-warnings
+compare-linux-pyinstaller-warnings: ## Compare accepted/candidate warning graphs without editing policy
+	@case "$(PYINSTALLER_WARNING_COMPARE_VALIDATE_ONLY)" in 0|1) ;; *) echo "PYINSTALLER_WARNING_COMPARE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@case "$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX)" in ''|*[!A-Za-z0-9_-]*) echo "PYINSTALLER_WARNING_ARCHITECTURE_LINUX must be explicit and safe"; exit 2;; esac
+	@case "$(PYINSTALLER_WARNING_BEFORE)" in ''|*..*) echo "Refusing unsafe PYINSTALLER_WARNING_BEFORE: $(PYINSTALLER_WARNING_BEFORE)"; exit 2;; /*) case "$(PYINSTALLER_WARNING_BEFORE)" in /tmp/gludd-*) ;; *) echo "Absolute before path must be namespaced under /tmp/gludd-"; exit 2;; esac;; esac
+	@case "$(PYINSTALLER_WARNING_AFTER)" in ''|*..*) echo "Refusing unsafe PYINSTALLER_WARNING_AFTER: $(PYINSTALLER_WARNING_AFTER)"; exit 2;; /*) case "$(PYINSTALLER_WARNING_AFTER)" in /tmp/gludd-*) ;; *) echo "Absolute after path must be namespaced under /tmp/gludd-"; exit 2;; esac;; esac
+	@case "$(PYINSTALLER_WARNING_REVIEW_RECEIPT)" in ''|/*|*..*) echo "PYINSTALLER_WARNING_REVIEW_RECEIPT must be a safe repository-relative path"; exit 2;; esac
+	@if [ "$(PYINSTALLER_WARNING_COMPARE_VALIDATE_ONLY)" = "1" ]; then \
+		echo "PYINSTALLER_WARNING_COMPARE_VALID before=$(PYINSTALLER_WARNING_BEFORE) after=$(PYINSTALLER_WARNING_AFTER) architecture=$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX) receipt=$(PYINSTALLER_WARNING_REVIEW_RECEIPT)"; \
+	else \
+		$(UV) run python scripts/compare_pyinstaller_warning_graphs.py \
+			--before "$(PYINSTALLER_WARNING_BEFORE)" \
+			--after "$(PYINSTALLER_WARNING_AFTER)" \
+			--allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" \
+			--platform linux \
+			--architecture "$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX)" \
+			--pyinstaller-version "$(PYINSTALLER_VERSION_LINUX)" \
+			--spec gludd.spec \
+			--receipt "$(PYINSTALLER_WARNING_REVIEW_RECEIPT)"; \
+	fi
+
+.PHONY: check-pyinstaller-warning-reviews
+check-pyinstaller-warning-reviews: ## Reject newly accepted warning graphs without complete exact-delta evidence
+	@case "$(PYINSTALLER_WARNING_REVIEW_CHECK_VALIDATE_ONLY)" in 0|1) ;; *) echo "PYINSTALLER_WARNING_REVIEW_CHECK_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@case "$(PYINSTALLER_WARNING_REVIEW_POLICY)" in ''|/*|*..*) echo "PYINSTALLER_WARNING_REVIEW_POLICY must be a safe repository-relative path"; exit 2;; esac
+	@case "$(PYINSTALLER_WARNING_REVIEW_DIR)" in ''|/*|*..*) echo "PYINSTALLER_WARNING_REVIEW_DIR must be a safe repository-relative path"; exit 2;; esac
+	@case "$(PYINSTALLER_WARNING_REVIEW_BASE_POLICY)" in /*|*..*) echo "PYINSTALLER_WARNING_REVIEW_BASE_POLICY must be empty or repository-relative"; exit 2;; esac
+	@if [ "$(PYINSTALLER_WARNING_REVIEW_CHECK_VALIDATE_ONLY)" = "1" ]; then \
+		echo "PYINSTALLER_WARNING_REVIEW_CHECK_VALID policy=$(PYINSTALLER_WARNING_REVIEW_POLICY) receipt_dir=$(PYINSTALLER_WARNING_REVIEW_DIR)"; \
+	else \
+		before_args=""; \
+		if [ -n "$(PYINSTALLER_WARNING_REVIEW_BASE_POLICY)" ]; then before_args="--before-policy $(PYINSTALLER_WARNING_REVIEW_BASE_POLICY)"; fi; \
+		$(UV) run python scripts/check_pyinstaller_warning_reviews.py \
+			--policy "$(PYINSTALLER_WARNING_REVIEW_POLICY)" \
+			--receipt-dir "$(PYINSTALLER_WARNING_REVIEW_DIR)" \
+			$$before_args; \
+	fi
+
+.PHONY: build-linux-binary-image
+build-linux-binary-image: lima-docker-ensure ## Build the exact Python and uv environment used by Linux artifact analysis
+	@case "$(LINUX_BINARY_IMAGE_BUILD_VALIDATE_ONLY)" in 0|1) ;; *) echo "LINUX_BINARY_IMAGE_BUILD_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@case "$(DOCKER_BUILDX_AUTO_INSTALL)" in 0|1) ;; *) echo "DOCKER_BUILDX_AUTO_INSTALL must be 0 or 1"; exit 2;; esac
+	@case "$(DOCKER_BUILDX_FORMULA)" in docker-buildx) ;; *) echo "Refusing unreviewed Buildx formula: $(DOCKER_BUILDX_FORMULA)"; exit 2;; esac
+	@case "$(DOCKER_BUILDX_BIN)" in ""|/*) ;; *) echo "DOCKER_BUILDX_BIN must be empty or absolute"; exit 2;; esac
+	@case "$(LINUX_BINARY_DOCKERFILE)" in /*|*..*) echo "Refusing unsafe LINUX_BINARY_DOCKERFILE: $(LINUX_BINARY_DOCKERFILE)"; exit 2;; esac
+	@case "$(LINUX_BINARY_IMAGE)" in gludd-*:* ) ;; *) echo "Refusing non-Gludd Linux builder image: $(LINUX_BINARY_IMAGE)"; exit 2;; esac
+	@set -eu; \
+	if [ "$(LINUX_BINARY_IMAGE_BUILD_VALIDATE_ONLY)" = "1" ]; then \
+		test -f "$(LINUX_BINARY_DOCKERFILE)"; \
+		echo "LINUX_BINARY_IMAGE_BUILD_VALID image=$(LINUX_BINARY_IMAGE) dockerfile=$(LINUX_BINARY_DOCKERFILE) python=$(PYINSTALLER_PYTHON_VERSION_LINUX) uv=$(PYINSTALLER_UV_VERSION_LINUX) buildx_auto_install=$(DOCKER_BUILDX_AUTO_INSTALL)"; \
+		exit 0; \
+	fi; \
+	buildx_bin="$(DOCKER_BUILDX_BIN)"; \
+	if [ -z "$$buildx_bin" ]; then \
+		command -v brew >/dev/null 2>&1 || { echo "Homebrew is required to provision Docker Buildx"; exit 1; }; \
+		brew_prefix=$$(brew --prefix); \
+		buildx_bin="$$brew_prefix/bin/docker-buildx"; \
+		if [ ! -x "$$buildx_bin" ]; then \
+			if [ "$(DOCKER_BUILDX_AUTO_INSTALL)" != "1" ]; then echo "Docker Buildx is missing and automatic installation is disabled"; exit 1; fi; \
+			echo "Installing maintained Docker Buildx via Homebrew formula $(DOCKER_BUILDX_FORMULA)"; \
+			brew install "$(DOCKER_BUILDX_FORMULA)"; \
+		fi; \
+	fi; \
+	test -x "$$buildx_bin" || { echo "Docker Buildx executable is unavailable: $$buildx_bin"; exit 1; }; \
+	socket=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Dir}}/sock/docker.sock' 2>/dev/null || true); \
+	if [ -z "$$socket" ]; then echo "Lima Docker socket unavailable for $(LIMA_INSTANCE): $$socket"; exit 1; fi; \
+	mkdir -p "$(LIMA_DOCKER_CONFIG)"; \
+	chmod 700 "$(LIMA_DOCKER_CONFIG)"; \
+	DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" "$$buildx_bin" version; \
+	echo "Building digest-pinned Linux artifact environment $(LINUX_BINARY_IMAGE)"; \
+	DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" "$$buildx_bin" build \
+		--load \
+		--progress=plain \
+		--file "$(LINUX_BINARY_DOCKERFILE)" \
+		--tag "$(LINUX_BINARY_IMAGE)" \
+		config/containers; \
+	identity=$$(DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker run --rm "$(LINUX_BINARY_IMAGE)" sh -eu -c 'set -- $$(uv --version); printf "%s|%s %s\n" "$$(python -c "import platform; print(platform.python_version())")" "$$1" "$$2"'); \
+	test "$$identity" = "$(PYINSTALLER_PYTHON_VERSION_LINUX)|uv $(PYINSTALLER_UV_VERSION_LINUX)" || { echo "Unexpected Linux builder identity: $$identity"; exit 1; }; \
+	echo "LINUX_BINARY_IMAGE_BUILD_READY image=$(LINUX_BINARY_IMAGE) identity=$$identity"
+
+build-linux-executable: worktree-guard ## Build and verify a real Linux PyInstaller executable
 	@case "$(LINUX_BINARY_OUTPUT)" in /*|*..*) echo "Refusing unsafe LINUX_BINARY_OUTPUT: $(LINUX_BINARY_OUTPUT)"; exit 1;; esac
 	@case "$(LINUX_BINARY_SCRATCH_ROOT)" in "$(HOME)"/*) ;; *) echo "Refusing scratch root outside HOME: $(LINUX_BINARY_SCRATCH_ROOT)"; exit 1;; esac
+	@$(MAKE) --no-print-directory build-linux-binary-image
 	@mkdir -p "$$(dirname "$(LINUX_BINARY_OUTPUT)")"
 	@rm -f "$(LINUX_BINARY_OUTPUT)" "$(dir $(LINUX_BINARY_OUTPUT))warn-gludd.txt"
-	@set -e; if [ "$$(uname -s)" = "Linux" ]; then \
+	@set -e; source_sha=$$(git rev-parse HEAD); echo "LINUX_BINARY_SOURCE sha=$$source_sha"; if [ "$$(uname -s)" = "Linux" ]; then \
 		echo "Building Linux executable natively"; \
 		python_version=$$($(UV) run python -c 'import platform; print(platform.python_version())'); \
 		test "$$python_version" = "$(PYINSTALLER_PYTHON_VERSION_LINUX)" || { echo "Expected Python $(PYINSTALLER_PYTHON_VERSION_LINUX) for deterministic Linux PyInstaller analysis, found $$python_version"; exit 1; }; \
@@ -6523,11 +6621,11 @@ build-linux-executable: lima-docker-ensure ## Build and verify a real Linux PyIn
 			DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker rm -f "$$container_name" >/dev/null 2>&1 || true; \
 		}; \
 		trap cleanup_build EXIT INT TERM; \
-		git archive HEAD | tar -x -C "$$source_dir"; \
+		git archive "$$source_sha" | tar -x -C "$$source_dir"; \
 		echo "Building Linux executable in namespaced Lima Docker VM $(LIMA_INSTANCE)"; \
 		build_status=0; \
 		DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker run \
-			--pull=always \
+			--pull=never \
 			--name "$$container_name" \
 			-e HOME=/tmp/gludd-home \
 			-e UV_CACHE_DIR=/tmp/gludd-uv-cache \

@@ -3,7 +3,7 @@
   "platform": "linux",
   "pyinstaller_version": "6.20.0",
   "transitive_warning_sha256_by_architecture": {
-    "aarch64": "b1f5847aeb5bf530dba2b4ef58b0890b5b7a2e409b458fdfe7d0ccbd6a218e02",
+    "aarch64": "183b6e569e7b39b185d6ad522c147de657e9a4aff00867a8126494e4cc076f2f",
     "x86_64": "d4fcb35befd9c6ec6a1890e25f9fe9c0f96e3cdff393cb9bcca4c8952fe51e2d"
   },
   "reviewed_transitive_warning_sha256_alternates_by_architecture": {

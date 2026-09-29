@@ -42,6 +42,66 @@ imports changing between ostensibly similar environments. PyInstaller's
 recommends a distinct, controlled build environment for each Python and
 dependency combination.
 
+### Exact local builder composition
+
+The first real local replay after the workflow repair rejected its own former
+builder before PyInstaller started: the digest-pinned
+`ghcr.io/astral-sh/uv:python3.12-bookworm-slim` image contained Python 3.12.12,
+while the release graph requires 3.12.14. The digest was immutable; the incorrect
+assumption was that a minor-only image tag also proved a patch version.
+
+Gludd now builds one cacheable, project-namespaced artifact environment from two
+independent immutable inputs. `config/containers/linux-binary.Dockerfile` uses
+the official multi-architecture Python 3.12.14 Bookworm manifest and copies the
+UV 0.12.19 binaries from UV's digest-pinned distroless manifest. Both versions
+are asserted during the image build and again by `build-linux-binary-image`
+before PyInstaller work. The expensive dependency layer can be reused locally,
+but a stale or wrongly tagged cache cannot satisfy the runtime identity check.
+
+UV's official [Docker integration guide](https://docs.astral.sh/uv/guides/integration/docker/)
+recommends digest pinning and documents copying UV into a separately selected
+Python base. Long-lived issue
+[#7029](https://github.com/astral-sh/uv/issues/7029) records a mismatch between
+documented and published image tags, and issue
+[#11084](https://github.com/astral-sh/uv/issues/11084) records architecture
+availability differing for the same image family. Those reports are why Gludd
+pins multi-architecture manifests and verifies identity inside the resulting
+image instead of deriving it from a tag string.
+
+This is ZDD: the image is built under the isolated local Lima engine and cannot
+replace a serving Gludd process. A wrong identity fails before artifact output;
+the prior builder cache remains removable and no release ref changes. Rollback
+selects the preceding builder Dockerfile and invalidates only this local tag.
+
+The first corrected aarch64 replay also exposed an evidence gap in the old
+process: the accepted `b1f5847a…` hash had no retained normalized graph, so a
+new hash could not be reviewed from repository evidence alone. Gludd reproduced
+that graph from its exact introducing commit (`1ac734e75`) and compared its
+1,275 transitive edges with the corrected 1,329-edge graph. The deterministic
+receipt records all 62 additions and eight removals; they cover the newly frozen
+Azure SDK surface, optional third-party backends, and reviewed Pydantic
+module-attribute source moves. The unchanged fail-closed audit found no new
+actionable or unreviewed project import.
+
+`make compare-linux-pyinstaller-warnings` now creates this complete receipt but
+never edits policy. `make check-pyinstaller-warning-reviews` runs in every gate
+and compares the working or just-committed policy with its Git predecessor. A
+new primary or alternate digest is rejected unless an architecture-and-digest
+named receipt starts from a previously accepted graph, binds both raw artifacts,
+contains sorted complete edge lists, and reconciles every count. This turns a
+future hash-only update into a mechanical failure instead of another forensic
+guess.
+
+The release builder also refuses a dirty working tree before it provisions the
+Linux engine. Its source bundle is intentionally produced from one resolved
+commit, and the target prints that full SHA before the operating-system branch.
+This prevents a local edit from being mistaken for the code under test and
+avoids paying for an old-commit replay. Stack Overflow users have documented
+this `git archive HEAD` boundary since 2010 in
+[“Git archive of repository with uncommitted changes”](https://stackoverflow.com/questions/2766600/git-archive-of-repository-with-uncommitted-changes),
+and Buildx issue [#3917](https://github.com/docker/buildx/issues/3917) records the
+same need to distinguish a committed local ref from the mutable checkout.
+
 ### Self-provisioning local Linux builder
 
 The 2026-09-29 committed-source replay found that
