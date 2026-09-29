@@ -42,6 +42,37 @@ imports changing between ostensibly similar environments. PyInstaller's
 recommends a distinct, controlled build environment for each Python and
 dependency combination.
 
+### Self-provisioning local Linux builder
+
+The 2026-09-29 committed-source replay found that
+`make build-linux-executable` assumed the namespaced `gludd-docker` Lima VM had
+already been created. A clean host therefore failed before it could exercise the
+pinned Python and dependency boundary. `lima-docker-ensure` now owns all three
+valid lifecycle paths: it creates a missing `gludd-*` instance from the explicit
+`template:docker` template, starts a stopped instance, or reuses a running one.
+Every path then resolves the instance-scoped socket and proves Docker engine
+readiness. Unknown lifecycle states, non-Gludd instance names, ambiguous list
+records, and unreviewed templates fail closed. Lima's `--progress` stream keeps
+first-time provisioning observable, and the Linux build invokes this owner
+automatically instead of relying on remembered workstation setup.
+
+This follows Lima's official
+[named Docker-template example](https://github.com/lima-vm/lima/blob/master/cmd/limactl/start.go)
+and its [template catalog](https://github.com/lima-vm/lima/blob/master/templates/README.md).
+It also accounts for long-lived practitioner reports: discussion
+[#1647](https://github.com/lima-vm/lima/discussions/1647) records confusion and
+wrong-template creation when a removed instance is started by name, while issue
+[#2252](https://github.com/lima-vm/lima/issues/2252) records a VM reported as
+running while its Docker socket remained unavailable after host startup. Gludd
+therefore names the creation template explicitly and treats engine readiness,
+not VM status alone, as the terminal condition.
+
+The path preserves ZDD: provisioning changes only the project-namespaced local
+builder and never a serving Gludd deployment. Existing running builders are
+reused, missing builders are created once, and failure stops before an artifact
+or release ref is published. Rollback removes the ensure dependency and its
+isolated local VM; it does not touch a running application service.
+
 ## Incident
 
 The failed candidate at commit

@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-29 — (resolved locally; full build replay required) Linux artifact build assumed a pre-created Lima VM
+
+- **What happened**: The committed-source `make build-linux-executable` replay stopped immediately because the namespaced `gludd-docker` VM and its Docker socket did not exist. The build could be correct only on a workstation carrying undocumented state from an earlier run.
+- **Root cause**: Gludd owned bounded start, stop, status, and pull operations for an existing Lima instance, but no operation owned first-use provisioning. The artifact target consumed the socket directly instead of depending on a lifecycle owner.
+- **Fix applied**: `lima-docker-ensure` creates a missing `gludd-*` instance from the explicit `template:docker` template, starts a stopped instance, reuses a running instance, and always proves the namespaced Docker engine ready. It rejects ambiguous records, unknown states, foreign names, and unreviewed templates. `build-linux-executable` now depends on that target.
+- **Evidence**: Failing-first hermetic tests reproduced all five missing behaviors. The repaired suite exercises missing, stopped, running, and foreign instances with fake Lima/Docker boundaries, and target-contract validation pins the complete validate-only invocation. A real first-use build replay remains required before the release claim is terminal.
+- **Practitioner evidence**: Lima discussion [#1647](https://github.com/lima-vm/lima/discussions/1647) records wrong-template creation after an instance was removed, and issue [#2252](https://github.com/lima-vm/lima/issues/2252) records Docker socket absence despite a running VM. The official start implementation documents explicit named creation from `template:docker`.
+- **Lesson**: A reproducible build must own creation and readiness of its execution engine. VM status and remembered workstation setup are not build evidence.
+
 ### 2026-09-29 — (resolved locally; exact hosted replay required) Failed CI work could be forgotten or rerun unchanged
 
 - **What happened**: Run `36524447124` failed eight `Build and Release` jobs and sibling run `36524447101` failed `Molecule Tests`, but the process had no durable ownership record for the nine failure families. A later status lookup, retry, or agent handoff could therefore omit a sibling failure, repeat work already repaired, or rerun the unchanged failed SHA.

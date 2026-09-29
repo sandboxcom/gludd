@@ -1060,6 +1060,17 @@
       "behavior": "make submodule-init SUBMODULE_INIT_VALIDATE_ONLY=1"
     },
     {
+      "name": "lima-docker-ensure",
+      "variables": [
+        "LIMA_INSTANCE",
+        "LIMA_DOCKER_CONFIG",
+        "LIMA_DOCKER_TEMPLATE",
+        "LIMA_DOCKER_START_TIMEOUT_SECS",
+        "LIMA_DOCKER_VALIDATE_ONLY"
+      ],
+      "behavior": "make lima-docker-ensure LIMA_INSTANCE=gludd-docker LIMA_DOCKER_CONFIG=/tmp/gludd-lima-docker-config LIMA_DOCKER_TEMPLATE=template:docker LIMA_DOCKER_START_TIMEOUT_SECS=180 LIMA_DOCKER_VALIDATE_ONLY=1"
+    },
+    {
       "name": "lima-docker-start",
       "make_variables": [
         "LIMA_INSTANCE",

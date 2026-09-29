@@ -654,6 +654,7 @@ help:
 	@echo "  dist                  Build distribution tarball"
 	@echo "  build-executable      Build standalone executable (pyinstaller)"
 	@echo "  audit-linux-pyinstaller-warnings  Validate/replay the Linux PyInstaller warning policy"
+	@echo "  lima-docker-ensure    Provision/reuse a namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_TEMPLATE, LIMA_DOCKER_START_TIMEOUT_SECS, LIMA_DOCKER_VALIDATE_ONLY)"
 	@echo "  lima-docker-start     Start an existing namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_START_TIMEOUT_SECS, LIMA_DOCKER_VALIDATE_ONLY)"
 	@echo "  lima-docker-stop      Gracefully stop an existing namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_STOP_TIMEOUT_SECS, LIMA_DOCKER_STOP_KILL_AFTER_SECS, LIMA_DOCKER_VALIDATE_ONLY)"
 	@echo "  lima-docker-status    Inspect the namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_VALIDATE_ONLY)"
@@ -6485,7 +6486,7 @@ audit-linux-pyinstaller-warnings: ## Re-audit a retained Linux PyInstaller warni
 			--spec gludd.spec; \
 	fi
 
-build-linux-executable: ## Build and verify a real Linux PyInstaller executable
+build-linux-executable: lima-docker-ensure ## Build and verify a real Linux PyInstaller executable
 	@case "$(LINUX_BINARY_OUTPUT)" in /*|*..*) echo "Refusing unsafe LINUX_BINARY_OUTPUT: $(LINUX_BINARY_OUTPUT)"; exit 1;; esac
 	@case "$(LINUX_BINARY_SCRATCH_ROOT)" in "$(HOME)"/*) ;; *) echo "Refusing scratch root outside HOME: $(LINUX_BINARY_SCRATCH_ROOT)"; exit 1;; esac
 	@mkdir -p "$$(dirname "$(LINUX_BINARY_OUTPUT)")"
@@ -7566,6 +7567,7 @@ sandbox-state-clean:
 LIMA_INSTANCE ?= gludd-docker
 LIMA_IMAGE ?= ubuntu:24.04
 LIMA_DOCKER_CONFIG ?= /tmp/gludd-lima-docker-config
+LIMA_DOCKER_TEMPLATE ?= template:docker
 LIMA_DOCKER_VALIDATE_ONLY ?= 0
 LIMA_DOCKER_START_TIMEOUT_SECS ?= 180
 LIMA_DOCKER_STOP_TIMEOUT_SECS ?= 200
@@ -7575,6 +7577,42 @@ VDISK ?= 20
 PODMAN_LEGACY_MACHINE ?= podman-machine-default
 PODMAN_LEGACY_DELETE_VALIDATE_ONLY ?= 1
 PODMAN_LEGACY_DELETE_TIMEOUT_SECS ?= 120
+
+.PHONY: lima-docker-ensure
+lima-docker-ensure: ## Provision, start, or reuse one namespaced Lima Docker VM and prove engine readiness
+	@case "$(LIMA_DOCKER_VALIDATE_ONLY)" in 0|1) ;; *) echo "LIMA_DOCKER_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@[ "$(LIMA_DOCKER_START_TIMEOUT_SECS)" -ge 1 ] 2>/dev/null || { echo "LIMA_DOCKER_START_TIMEOUT_SECS must be a positive integer"; exit 2; }
+	@case "$(LIMA_INSTANCE)" in \
+		""|*[!A-Za-z0-9._-]*|.|..) echo "Refusing invalid Lima instance name: $(LIMA_INSTANCE)"; exit 2;; \
+		gludd-*) ;; \
+		*) echo "Refusing non-Gludd Lima instance: $(LIMA_INSTANCE)"; exit 2;; \
+	esac
+	@case "$(LIMA_DOCKER_TEMPLATE)" in template:docker) ;; *) echo "Refusing unreviewed Lima Docker template: $(LIMA_DOCKER_TEMPLATE)"; exit 2;; esac
+	@if [ "$(LIMA_DOCKER_VALIDATE_ONLY)" = "1" ]; then \
+		echo "LIMA_DOCKER_ENSURE_VALID instance=$(LIMA_INSTANCE) template=$(LIMA_DOCKER_TEMPLATE) config=$(LIMA_DOCKER_CONFIG) timeout_secs=$(LIMA_DOCKER_START_TIMEOUT_SECS)"; \
+		exit 0; \
+	fi; \
+	record=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Name}}|{{.Status}}' 2>/dev/null || true); \
+	if [ -z "$$record" ]; then \
+		echo "LIMA_DOCKER_ENSURE_CREATE instance=$(LIMA_INSTANCE) template=$(LIMA_DOCKER_TEMPLATE)"; \
+		limactl start --name "$(LIMA_INSTANCE)" --timeout "$(LIMA_DOCKER_START_TIMEOUT_SECS)s" --progress "$(LIMA_DOCKER_TEMPLATE)"; \
+	else \
+		name=$${record%%|*}; status=$${record#*|}; \
+		if [ "$$name" != "$(LIMA_INSTANCE)" ] || [ "$$record" = "$$status" ]; then \
+			echo "Refusing ambiguous Lima instance record: $$record"; exit 2; \
+		fi; \
+		case "$$status" in \
+			Running) echo "LIMA_DOCKER_ENSURE_REUSE instance=$(LIMA_INSTANCE) status=$$status";; \
+			Stopped) echo "LIMA_DOCKER_ENSURE_START instance=$(LIMA_INSTANCE)"; limactl start --timeout "$(LIMA_DOCKER_START_TIMEOUT_SECS)s" --progress "$(LIMA_INSTANCE)";; \
+			*) echo "Refusing Lima instance in nonterminal lifecycle state: $$record"; exit 1;; \
+		esac; \
+	fi; \
+	socket=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Dir}}/sock/docker.sock' 2>/dev/null || true); \
+	if [ -z "$$socket" ]; then echo "Lima Docker socket path unavailable after ensure for $(LIMA_INSTANCE)"; exit 1; fi; \
+	mkdir -p "$(LIMA_DOCKER_CONFIG)"; \
+	chmod 700 "$(LIMA_DOCKER_CONFIG)"; \
+	DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker info --format 'server={{.ServerVersion}} containers={{.Containers}} images={{.Images}}'; \
+	echo "LIMA_DOCKER_ENSURE_READY instance=$(LIMA_INSTANCE) socket=$$socket"
 
 lima-docker-start: ## Start only an existing namespaced Lima Docker VM and prove engine readiness
 	@case "$(LIMA_DOCKER_VALIDATE_ONLY)" in 0|1) ;; *) echo "LIMA_DOCKER_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac

@@ -8,6 +8,8 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ---
 
+S83.166 local-builder continuation: the committed-source Linux artifact replay found that `build-linux-executable` depended on an undocumented pre-created `gludd-docker` Lima VM. Failing-first hermetic coverage now pins missing, stopped, running, foreign-name, and automatic-build-dependency behavior. `lima-docker-ensure` owns explicit `template:docker` creation, bounded observable startup, reuse, socket resolution, and engine-readiness proof. A real first-use build, repair-branch gate, hosted exact-SHA replay, publication, deployment, and rollback remain open.
+
 ## Session 87 — v0.1.1 universal Gludd release (2026-09-16)
 
 The fail-closed v0.1.1 milestone is the exact task set S83.157–S83.168. It
