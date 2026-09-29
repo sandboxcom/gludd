@@ -39,6 +39,33 @@ reviewable in Git.
 - Live OpenCode data and active Lima virtual machines are outside this feature's
   deletion boundary.
 
+The 2026-09-28 release gate exposed an idempotence defect in that boundary. Pass
+one legitimately ran `uv cache clean`, which removed the now-empty shared cache
+root; pass two then treated that successful postcondition as an inspection
+failure and stopped before tests. The convergent automatic caller now identifies
+the exact approved absent root as `uv-cache-absent` and continues, while direct
+or differently rooted cleanup calls still fail closed. Regression coverage pins
+both halves so an absent cache cannot authorize a broader path and a successful
+cleanup cannot make the next bounded pass fail. This is the local counterpart to
+the long-lived cache-growth pressure reported in
+[uv issue #5731](https://github.com/astral-sh/uv/issues/5731): reclamation must be
+both explicit and safely repeatable.
+
+The same gate cycle found roughly 735 MiB of provider binaries in two destroyed
+Azure proof workspaces. Automatic cleanup now examines only the two exact
+Gludd-owned Terraform roots, accepts only a 24-character digest directory with
+the protected v1 ownership marker, checks process ownership twice, and
+revalidates the marker and canonical provider path immediately before mutation.
+It removes only `.terraform/providers`; Terraform state, plans, module source,
+and release evidence remain intact. Missing caches are converged postconditions,
+while malformed markers, broad or symlinked paths, process-inspection failures,
+and more than 16 candidate workspaces fail closed. The narrow boundary responds
+to long-lived practitioner reports of per-workspace provider duplication in
+[Terraform issue #26144](https://github.com/hashicorp/terraform/issues/26144)
+and accumulated obsolete providers in
+[Terraform issue #28286](https://github.com/hashicorp/terraform/issues/28286)
+without adopting an unsafe broad-directory deletion.
+
 ## Practitioner evidence
 
 Long-lived reports show that this is an operational contract rather than a
@@ -55,6 +82,10 @@ one-off workstation issue:
   operational need to control cache placement. Gludd therefore inventories the
   download cache separately and never treats the active VM directory as a
   regenerable cache.
+- Terraform users have reported project trees reaching 20 GB from duplicated
+  providers and multi-version provider histories reaching 1.8 GB in a single
+  provider namespace. Gludd treats that evidence as justification for reclaiming
+  only verified provider binaries after a proof run, never its state or plans.
 
 ## Security and resource limits
 
@@ -73,7 +104,9 @@ may cause a later tool invocation to redownload or rebuild data, but it does not
 restart services or remove durable project state. Rollback is the normal Git
 revert of the Make target, script, tests, and contract. Removed cache contents
 are intentionally not recoverable from Gludd; operators must regenerate or
-redownload them from their authoritative source.
+redownload them from their authoritative source. Azure proof workspaces remain
+usable after provider-cache cleanup because their pinned lock files and module
+source allow the normal initialization phase to restore the exact provider.
 
 ## Verification
 

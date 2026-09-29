@@ -1182,7 +1182,7 @@ def test_materialization_removal_archives_ignored_release_evidence(
         assert check is False
         if "status" in args:
             ignored = (
-                "!! .gate-logs/proof.json\x00"
+                "!! .gate-logs/\x00!! .gate-logs/proof.json\x00"
                 if "--ignored=matching" in args
                 else ""
             )
@@ -1355,6 +1355,160 @@ def test_preserved_evidence_relocation_refuses_ambiguous_manifest(
 
     assert result.errors == (f"{archive}:evidence-manifest-invalid",)
     assert archive.exists()
+
+
+def _owned_terraform_workspace(root: Path, name: str = "a" * 24) -> Path:
+    workspace = root / name
+    providers = workspace / ".terraform" / "providers"
+    providers.mkdir(parents=True)
+    (providers / "provider.bin").write_bytes(b"regenerable")
+    marker = workspace / ".gludd-azure-containerapp-live-proof.json"
+    marker.write_text(
+        json.dumps(
+            {
+                "operation_digest": name + ("b" * (64 - len(name))),
+                "protocol": "gludd-azure-containerapp-live-proof-v1",
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    marker.chmod(0o600)
+    (workspace / "terraform.tfstate").write_text("{}\n", encoding="utf-8")
+    return workspace
+
+
+def test_owned_terraform_provider_cleanup_preserves_state_and_proof(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "gludd-azure-containerapp-live-proof"
+    workspace = _owned_terraform_workspace(root)
+    providers = workspace / ".terraform" / "providers"
+    marker = workspace / ".gludd-azure-containerapp-live-proof.json"
+    process_checks: list[Path] = []
+
+    result = automatic_disk_cleanup.clean_owned_terraform_provider_caches(
+        roots=(root,),
+        active_process_pids=lambda path: process_checks.append(path) or [],
+    )
+
+    assert result == automatic_disk_cleanup.CleanupResult(
+        removed=(str(providers),), skipped=(), errors=()
+    )
+    assert process_checks == [workspace.resolve(), workspace.resolve()]
+    assert not providers.exists()
+    assert marker.is_file()
+    assert (workspace / "terraform.tfstate").read_text(encoding="utf-8") == "{}\n"
+
+
+def test_owned_terraform_provider_cleanup_preserves_active_and_dry_run_workspaces(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "gludd-azure-containerapp-live-proof"
+    workspace = _owned_terraform_workspace(root)
+    providers = workspace / ".terraform" / "providers"
+
+    active = automatic_disk_cleanup.clean_owned_terraform_provider_caches(
+        roots=(root,), active_process_pids=lambda _path: [8123]
+    )
+    dry_run = automatic_disk_cleanup.clean_owned_terraform_provider_caches(
+        roots=(root,), active_process_pids=lambda _path: [], dry_run=True
+    )
+
+    assert active.skipped == (f"{workspace}:active-pids=8123",)
+    assert dry_run.skipped == (f"{providers}:would remove terraform provider cache",)
+    assert providers.is_dir()
+
+
+def test_owned_terraform_provider_cleanup_rejects_invalid_marker_and_symlink(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "gludd-azure-containerapp-live-proof"
+    invalid = _owned_terraform_workspace(root, "c" * 24)
+    marker = invalid / ".gludd-azure-containerapp-live-proof.json"
+    marker.write_text('{"protocol":"wrong"}\n', encoding="utf-8")
+    marker.chmod(0o600)
+    linked = _owned_terraform_workspace(root, "d" * 24)
+    providers = linked / ".terraform" / "providers"
+    automatic_disk_cleanup._remove_tree(providers)
+    external = tmp_path / "external-providers"
+    external.mkdir()
+    (external / "keep.bin").write_bytes(b"keep")
+    providers.symlink_to(external, target_is_directory=True)
+
+    result = automatic_disk_cleanup.clean_owned_terraform_provider_caches(
+        roots=(root,), active_process_pids=lambda _path: []
+    )
+
+    assert result.errors == tuple(
+        sorted(
+            (
+                f"{invalid}:terraform-ownership-invalid",
+                f"{providers}:unsafe-terraform-provider-cache",
+            )
+        )
+    )
+    assert (invalid / ".terraform" / "providers").is_dir()
+    assert (external / "keep.bin").read_bytes() == b"keep"
+
+
+def test_owned_terraform_provider_cleanup_treats_absent_root_as_converged(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "gludd-azure-containerapp-live-proof"
+
+    result = automatic_disk_cleanup.clean_owned_terraform_provider_caches(
+        roots=(root,), active_process_pids=lambda _path: []
+    )
+
+    assert result == automatic_disk_cleanup.CleanupResult(
+        removed=(), skipped=(f"{root}:terraform-root-absent",), errors=()
+    )
+
+
+def test_owned_terraform_provider_cleanup_bounds_and_late_failures(
+    tmp_path: Path,
+) -> None:
+    invalid_limit = automatic_disk_cleanup.clean_owned_terraform_provider_caches(
+        roots=(), max_workspaces=0
+    )
+    assert invalid_limit.errors == ("terraform-provider-cache:invalid-limit",)
+
+    absent_root = tmp_path / "absent-provider"
+    absent_workspace = _owned_terraform_workspace(absent_root, "e" * 24)
+    absent_providers = absent_workspace / ".terraform" / "providers"
+    automatic_disk_cleanup._remove_tree(absent_providers)
+    absent = automatic_disk_cleanup.clean_owned_terraform_provider_caches(
+        roots=(absent_root,), active_process_pids=lambda _path: []
+    )
+    assert absent.skipped == (
+        f"{absent_providers}:terraform-provider-cache-absent",
+    )
+
+    raced_root = tmp_path / "late-process"
+    raced_workspace = _owned_terraform_workspace(raced_root, "f" * 24)
+    process_reads = iter(([], [7331]))
+    raced = automatic_disk_cleanup.clean_owned_terraform_provider_caches(
+        roots=(raced_root,), active_process_pids=lambda _path: next(process_reads)
+    )
+    assert raced.skipped == (f"{raced_workspace}:active-pids=7331",)
+    assert (raced_workspace / ".terraform" / "providers").is_dir()
+
+    failed_root = tmp_path / "failed-removal"
+    failed_workspace = _owned_terraform_workspace(failed_root, "1" * 24)
+    failed_providers = failed_workspace / ".terraform" / "providers"
+
+    def refuse_removal(_path: Path) -> None:
+        raise PermissionError("refused")
+
+    failed = automatic_disk_cleanup.clean_owned_terraform_provider_caches(
+        roots=(failed_root,),
+        active_process_pids=lambda _path: [],
+        remove_tree=refuse_removal,
+    )
+    assert failed.errors == (f"{failed_providers}:removal-failed",)
+    assert failed_providers.is_dir()
 
 
 def test_shared_uv_cache_prunes_only_after_two_idle_checks(tmp_path: Path) -> None:
@@ -1962,6 +2116,22 @@ def test_shared_uv_cache_additional_fail_closed_paths(tmp_path: Path) -> None:
     assert clean_failure.errors == (f"{cache}:uv-cache-clean-failed",)
 
 
+def test_shared_uv_cache_missing_is_clean_only_for_convergent_cleanup(
+    tmp_path: Path,
+) -> None:
+    missing = tmp_path / "missing"
+
+    result = automatic_disk_cleanup.prune_shared_uv_cache(
+        cache_root=missing,
+        approved_cache_root=missing,
+        missing_is_clean=True,
+    )
+
+    assert result.removed == ()
+    assert result.skipped == (f"{missing}:uv-cache-absent",)
+    assert result.errors == ()
+
+
 def test_default_cleanup_discovers_and_preserves_git_worktrees(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -1990,6 +2160,28 @@ def test_default_cleanup_discovers_and_preserves_git_worktrees(
         "clean_ci_shard_scratch",
         lambda **kwargs: {"removed": [str(stale_file)], "skipped": []},
     )
+    uv_cleanup_calls: list[tuple[bool, bool]] = []
+    terraform_cleanup_calls: list[bool] = []
+
+    def uv_cleanup(
+        *, dry_run: bool = False, missing_is_clean: bool = False
+    ) -> automatic_disk_cleanup.CleanupResult:
+        uv_cleanup_calls.append((dry_run, missing_is_clean))
+        return automatic_disk_cleanup.CleanupResult((), (), ())
+
+    monkeypatch.setattr(automatic_disk_cleanup, "prune_shared_uv_cache", uv_cleanup)
+
+    def terraform_cleanup(
+        *, dry_run: bool = False
+    ) -> automatic_disk_cleanup.CleanupResult:
+        terraform_cleanup_calls.append(dry_run)
+        return automatic_disk_cleanup.CleanupResult((), (), ())
+
+    monkeypatch.setattr(
+        automatic_disk_cleanup,
+        "clean_owned_terraform_provider_caches",
+        terraform_cleanup,
+    )
 
     result = automatic_disk_cleanup._automatic_cleanup()
 
@@ -1998,6 +2190,8 @@ def test_default_cleanup_discovers_and_preserves_git_worktrees(
     assert cache.exists()
     assert finished.path.exists()
     assert main.path.exists()
+    assert uv_cleanup_calls == [(False, True)]
+    assert terraform_cleanup_calls == [False]
 
 
 def test_default_cleanup_and_recheck_inspection_fail_closed(

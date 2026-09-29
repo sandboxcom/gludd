@@ -15,11 +15,13 @@ import importlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from itertools import islice
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -49,6 +51,14 @@ GENERATED_CACHE_DIR_NAMES = (
 )
 DEFAULT_TMP_WORKTREE_ROOT = Path("/tmp/gludd-worktrees")
 SHARED_UV_CACHE_ROOT = Path("/tmp/gludd-uv-cache-public-v2")
+OWNED_TERRAFORM_CACHE_ROOTS = (
+    Path("/tmp/gludd-azure-containerapp-live-proof"),
+    Path("/tmp/gludd-azure-containerapp-environments"),
+)
+AZURE_TERRAFORM_OWNERSHIP_MARKER = ".gludd-azure-containerapp-live-proof.json"
+AZURE_TERRAFORM_OWNERSHIP_PROTOCOL = "gludd-azure-containerapp-live-proof-v1"
+MAX_AZURE_TERRAFORM_MARKER_BYTES = 4096
+MAX_OWNED_TERRAFORM_WORKSPACES = 16
 WORKSTREAM_LEASE_SECONDS = 24 * 60 * 60
 MIN_COMMIT_RECEIPT_GRACE_SECONDS = 30 * 60
 DEFAULT_COMMIT_RECEIPT_GRACE_SECONDS = MIN_COMMIT_RECEIPT_GRACE_SECONDS
@@ -576,6 +586,211 @@ def _remove_worktree_materialization(
 def _remove_tree(path: Path) -> None:
     """Remove one verified generated directory without following symlinks."""
     shutil.rmtree(path)
+
+
+def _validated_owned_terraform_workspace(
+    workspace: Path,
+    *,
+    resolved_root: Path,
+) -> Path | None:
+    """Return one exact marker-owned Terraform workspace or fail closed."""
+    try:
+        workspace_metadata = workspace.lstat()
+        resolved_workspace = workspace.resolve(strict=True)
+        marker = workspace / AZURE_TERRAFORM_OWNERSHIP_MARKER
+        marker_metadata = marker.lstat()
+        marker_raw = marker.read_bytes()
+        marker_payload = json.loads(marker_raw.decode("utf-8"))
+    except (OSError, RuntimeError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    digest = (
+        marker_payload.get("operation_digest")
+        if isinstance(marker_payload, dict)
+        else None
+    )
+    return (
+        resolved_workspace
+        if (
+            stat.S_ISDIR(workspace_metadata.st_mode)
+            and not workspace.is_symlink()
+            and resolved_workspace.parent == resolved_root
+            and len(resolved_workspace.name) == 24
+            and all(character in "0123456789abcdef" for character in resolved_workspace.name)
+            and stat.S_ISREG(marker_metadata.st_mode)
+            and stat.S_IMODE(marker_metadata.st_mode) == 0o600
+            and 0 < len(marker_raw) <= MAX_AZURE_TERRAFORM_MARKER_BYTES
+            and isinstance(marker_payload, dict)
+            and set(marker_payload) == {"operation_digest", "protocol"}
+            and marker_payload.get("protocol") == AZURE_TERRAFORM_OWNERSHIP_PROTOCOL
+            and isinstance(digest, str)
+            and len(digest) == 64
+            and all(character in "0123456789abcdef" for character in digest)
+            and digest.startswith(resolved_workspace.name)
+        )
+        else None
+    )
+
+
+def _validated_terraform_provider_cache(
+    workspace: Path,
+    *,
+    resolved_workspace: Path,
+) -> Path | None:
+    """Return the exact non-symlink provider cache inside one workspace."""
+    terraform_dir = workspace / ".terraform"
+    providers = terraform_dir / "providers"
+    try:
+        terraform_metadata = terraform_dir.lstat()
+        provider_metadata = providers.lstat()
+        resolved_terraform = terraform_dir.resolve(strict=True)
+        resolved_providers = providers.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None
+    if (
+        not stat.S_ISDIR(terraform_metadata.st_mode)
+        or terraform_dir.is_symlink()
+        or resolved_terraform != resolved_workspace / ".terraform"
+        or not stat.S_ISDIR(provider_metadata.st_mode)
+        or providers.is_symlink()
+        or resolved_providers != resolved_terraform / "providers"
+    ):
+        return None
+    return providers
+
+
+def clean_owned_terraform_provider_caches(
+    *,
+    roots: Sequence[Path] = OWNED_TERRAFORM_CACHE_ROOTS,
+    active_process_pids: ActiveProcessPids = clean_ci_shard_scratch._active_process_pids,
+    remove_tree: RemoveTree = _remove_tree,
+    max_workspaces: int = MAX_OWNED_TERRAFORM_WORKSPACES,
+    dry_run: bool = False,
+) -> CleanupResult:
+    """Remove only idle, marker-owned Azure Terraform provider binaries."""
+    removed: list[str] = []
+    skipped: list[str] = []
+    errors: list[str] = []
+    if isinstance(max_workspaces, bool) or max_workspaces < 1:
+        return CleanupResult((), (), ("terraform-provider-cache:invalid-limit",))
+    for root in dict.fromkeys(roots):
+        if not root.exists() and not root.is_symlink():
+            skipped.append(f"{root}:terraform-root-absent")
+            continue
+        try:
+            root_metadata = root.lstat()
+            resolved_root = root.resolve(strict=True)
+            workspaces = list(islice(root.iterdir(), max_workspaces + 1))
+        except (OSError, RuntimeError):
+            errors.append(f"{root}:terraform-root-inspection-failed")
+            continue
+        if (
+            not stat.S_ISDIR(root_metadata.st_mode)
+            or root.is_symlink()
+            or len(workspaces) > max_workspaces
+        ):
+            errors.append(
+                f"{root}:terraform-workspace-limit-exceeded"
+                if len(workspaces) > max_workspaces
+                else f"{root}:unsafe-terraform-root"
+            )
+            continue
+        for workspace in sorted(workspaces, key=lambda path: path.name):
+            resolved_workspace = _validated_owned_terraform_workspace(
+                workspace, resolved_root=resolved_root
+            )
+            if resolved_workspace is None:
+                errors.append(f"{workspace}:terraform-ownership-invalid")
+                continue
+            providers = workspace / ".terraform" / "providers"
+            if not providers.exists() and not providers.is_symlink():
+                skipped.append(f"{providers}:terraform-provider-cache-absent")
+                continue
+            validated_providers = _validated_terraform_provider_cache(
+                workspace,
+                resolved_workspace=resolved_workspace,
+            )
+            if validated_providers is None:
+                errors.append(f"{providers}:unsafe-terraform-provider-cache")
+                continue
+            try:
+                initial_pids = active_process_pids(resolved_workspace)
+            except (OSError, ProcessInspectionError, RuntimeError):
+                errors.append(f"{workspace}:process-inspection-failed")
+                continue
+            if initial_pids:
+                skipped.append(
+                    f"{workspace}:active-pids="
+                    + ",".join(str(pid) for pid in initial_pids)
+                )
+                continue
+            revalidated_workspace = _validated_owned_terraform_workspace(
+                workspace, resolved_root=resolved_root
+            )
+            revalidated_providers = (
+                _validated_terraform_provider_cache(
+                    workspace,
+                    resolved_workspace=revalidated_workspace,
+                )
+                if revalidated_workspace is not None
+                else None
+            )
+            if (
+                revalidated_workspace != resolved_workspace
+                or revalidated_providers != validated_providers
+            ):
+                errors.append(f"{providers}:terraform-provider-cache-changed")
+                continue
+            try:
+                final_pids = active_process_pids(resolved_workspace)
+            except (OSError, ProcessInspectionError, RuntimeError):
+                errors.append(f"{workspace}:process-revalidation-failed")
+                continue
+            if final_pids:
+                skipped.append(
+                    f"{workspace}:active-pids=" + ",".join(str(pid) for pid in final_pids)
+                )
+                continue
+            final_workspace = _validated_owned_terraform_workspace(
+                workspace, resolved_root=resolved_root
+            )
+            final_providers = (
+                _validated_terraform_provider_cache(
+                    workspace,
+                    resolved_workspace=final_workspace,
+                )
+                if final_workspace is not None
+                else None
+            )
+            if final_workspace != resolved_workspace or final_providers != providers:
+                errors.append(f"{providers}:terraform-provider-cache-changed")
+                continue
+            if dry_run:
+                skipped.append(f"{providers}:would remove terraform provider cache")
+                continue
+            print(
+                "phase=cleanup action=terraform-provider-cache status=starting "
+                f"path={json.dumps(str(providers))}",
+                flush=True,
+            )
+            try:
+                remove_tree(providers)
+            except OSError:
+                errors.append(f"{providers}:removal-failed")
+                continue
+            if providers.exists() or providers.is_symlink():
+                errors.append(f"{providers}:removal-verification-failed")
+                continue
+            removed.append(str(providers))
+            print(
+                "phase=cleanup action=terraform-provider-cache status=complete "
+                f"path={json.dumps(str(providers))}",
+                flush=True,
+            )
+    return CleanupResult(
+        removed=tuple(sorted(removed)),
+        skipped=tuple(sorted(skipped)),
+        errors=tuple(sorted(errors)),
+    )
 
 
 def relocate_preserved_evidence(
@@ -1125,11 +1340,29 @@ def prune_shared_uv_cache(
     run_prune: Callable[[Path], bool] = _run_uv_cache_prune,
     run_clean: Callable[[Path], bool] = _run_uv_cache_clean,
     dry_run: bool = False,
+    missing_is_clean: bool = False,
 ) -> CleanupResult:
     """Prune the exact shared uv cache only after two system-wide idle checks."""
     try:
         approved = approved_cache_root.resolve()
+    except (OSError, RuntimeError):
+        return CleanupResult((), (), (f"{cache_root}:uv-cache-inspection-failed",))
+    try:
         candidate = cache_root.resolve(strict=True)
+    except FileNotFoundError:
+        try:
+            absent_candidate = cache_root.resolve()
+        except (OSError, RuntimeError):
+            return CleanupResult(
+                (), (), (f"{cache_root}:uv-cache-inspection-failed",)
+            )
+        if (
+            missing_is_clean
+            and absent_candidate == approved
+            and not cache_root.is_symlink()
+        ):
+            return CleanupResult((), (f"{cache_root}:uv-cache-absent",), ())
+        return CleanupResult((), (), (f"{cache_root}:uv-cache-inspection-failed",))
     except (OSError, RuntimeError):
         return CleanupResult((), (), (f"{cache_root}:uv-cache-inspection-failed",))
     if (
@@ -1336,12 +1569,19 @@ def _automatic_cleanup(
         max_materializations=MAX_WORKTREE_MATERIALIZATIONS,
         dry_run=dry_run,
     )
-    uv_result = prune_shared_uv_cache(dry_run=dry_run)
+    uv_result = prune_shared_uv_cache(
+        dry_run=dry_run,
+        missing_is_clean=True,
+    )
+    terraform_provider_result = clean_owned_terraform_provider_caches(
+        dry_run=dry_run,
+    )
     return _combine_cleanup_results(
         relocation_result,
         scratch_result,
         worktree_result,
         uv_result,
+        terraform_provider_result,
     )
 
 
