@@ -23,7 +23,13 @@ def test_ci_job_failure_context_is_authenticated_bounded_and_fail_closed() -> No
     assert "gh run view -R sandboxcom/gludd" in block
     assert "--json jobs" in block
     assert "--log --job=" in block
-    assert ".gate-logs/ci-job-" in block
+    assert "scripts/resource_arbiter.py root" in block
+    assert 'mkdir -p "$$RESOURCE_ROOT"' in block
+    assert 'mktemp "$$RESOURCE_ROOT/ci-job-$(RUN)-$(JOB).log.XXXXXX"' in block
+    assert '--artifact-root "$$RESOURCE_ROOT"' in block
+    assert '--artifact-file "$$(basename "$$LOG")"' in block
+    assert '--log "$$LOG"' not in block
+    assert ".gate-logs/ci-job-" not in block
     assert "scripts/ci_shards_log_context.py" in block
     for variable in (
         "$(RUN)",
@@ -354,3 +360,39 @@ def test_molecule_failure_artifact_retains_raw_pyinstaller_warning_graph() -> No
     assert "/tmp/gludd-molecule-*.log" in upload
     assert "dist/linux/warn-gludd.txt" in upload
     assert "if-no-files-found: error" in upload
+
+
+def test_ci_pyinstaller_warning_audit_replays_the_exact_downloaded_graph() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    block = _target_block(makefile, "ci-pyinstaller-warning-audit")
+
+    assert "scripts/resource_arbiter.py root" in block
+    assert 'ci-artifacts/run-$(RUN)/$(ARTIFACT)' in block
+    assert "warn-gludd.txt" in block
+    assert "scripts/audit_pyinstaller_warnings.py" in block
+    assert "CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY" in block
+    assert "PYINSTALLER_WARNING_ARCHITECTURE_LINUX" in block
+    assert "PYINSTALLER_VERSION_LINUX" in block
+    assert "|| true" not in block
+
+    payload = json.loads(
+        (ROOT / "config" / "make_target_contract.json").read_text(encoding="utf-8")
+    )
+    contracts = {item["name"]: item for item in payload["targets"]}
+    assert contracts["ci-pyinstaller-warning-audit"] == {
+        "name": "ci-pyinstaller-warning-audit",
+        "make_variables": [
+            "RUN",
+            "ARTIFACT",
+            "PYINSTALLER_WARNING_ARCHITECTURE_LINUX",
+            "PYINSTALLER_VERSION_LINUX",
+            "CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY",
+        ],
+        "behavior": (
+            "make ci-pyinstaller-warning-audit RUN=1 "
+            "ARTIFACT=molecule-logs-shard-1 "
+            "PYINSTALLER_WARNING_ARCHITECTURE_LINUX=x86_64 "
+            "PYINSTALLER_VERSION_LINUX=6.20.0 "
+            "CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=1"
+        ),
+    }

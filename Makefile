@@ -274,7 +274,7 @@ endif
 PYTEST_VERBOSITY ?= -v
 
 .PHONY: \
-        init sync uv-cache-path migrate-up relock node-deps-sync node-deps-relock node-deps-audit install-pip lint lint-files lint-markdown lint-docstrings lint-fix test test-unit test-unit-shards test-ci-dual-track-local test-specific test-specific-pyver test-files test-count test-integration test-e2e \
+        init sync uv-cache-path migrate-up relock node-deps-sync node-deps-relock node-deps-audit check-ansible-base-image refresh-ansible-base-image install-pip lint lint-files lint-markdown lint-docstrings lint-fix test test-unit test-unit-shards test-ci-dual-track-local test-specific test-specific-pyver test-files test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
          test-games test-multi-model-pipeline test-local-model-pipeline test-project-type-pipeline game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
         typecheck _precommit-mypy setup-dirs setup-venv clean healthcheck \
@@ -331,7 +331,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         deck deck-serve deck-preview deck-data deck-honesty \
         script-count strip-enforce-stop test-hooks-live test-hook-runtime e2e-setup-test-project test-opencode-e2e test-opencode-e2e-hour \
         verify-enforcement \
-ci-view ci-rerun ci-trigger ci-active ci-job-log ci-job-failure-context ci-artifact-download ci-artifact-context ci-coverage-artifact-audit ci-coverage-gap-plan ci-shards-log-context \
+    ci-view ci-rerun ci-failure-status ci-failure-repair ci-failure-push-guard ci-trigger ci-active ci-job-log ci-job-failure-context ci-artifact-download ci-artifact-context ci-pyinstaller-warning-audit ci-coverage-artifact-audit ci-coverage-gap-plan ci-shards-log-context \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
 log-agent-result disk-guard disk-check disk-cleanup-preflight check-disk check-disk-classification check-system-load disk tmp-gludd-usage tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
         tmp-gludd-worktree-usage clean-worktree-venvs clean-worktree-caches \
@@ -340,7 +340,7 @@ log-agent-result disk-guard disk-check disk-cleanup-preflight check-disk check-d
         networking-healthcheck \
         install-bats test-install check-subagent-guards verify-plugin-manifest \
          check-task-ledger \
-         check-task-integrity check-make-target-contract active-work-status \
+         check-task-integrity check-make-target-contract check-dispatch-dedup active-work-status \
          codex-stop-guard \
          codex-stop-confirm \
          test-service-discovery service-discover service-catalog \
@@ -370,6 +370,8 @@ help:
 	@echo "  check-collection-python-boundary Enforce exact/strict-zero collection migration inventory"
 	@echo "  check-resource-ownership Enforce exact application acquisition-to-teardown evidence (RESOURCE_OWNERSHIP_*)"
 	@echo "  update-ansible-runtime-lock Refresh deterministic EE input hashes"
+	@echo "  check-ansible-base-image Prove the exact EE base manifest is still served (ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=0|1)"
+	@echo "  refresh-ansible-base-image Resolve, verify, and atomically pin the supported EE base (ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY=0|1)"
 	@echo "  update-collection-python-boundary-inventory Refresh exact legacy migration inventory"
 	@echo "  deps-audit            Fail-closed Python dependency truth audit"
 	@echo "  node-deps-sync        Install locked Node deps (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY, NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false)"
@@ -516,6 +518,7 @@ help:
 	@echo "  iam-headless-smoke    Validate least-privilege provider manifests without credentials"
 	@echo "  check-task-integrity  Require changed files to map to registered tasks"
 	@echo "  validate-task-ledger  Validate TASKS.md metadata and completion evidence"
+	@echo "  check-dispatch-dedup Validate the persistent content-addressed dispatch ledger"
 	@echo "  test-and-commit       Run tests then commit if green (MSG='msg')"
 	@echo "  audit-coverage        Run coverage audit: pytest --cov + per-file threshold check"
 	@echo "  test-live-zai         Live GLM model test (requires API key)"
@@ -539,6 +542,7 @@ help:
 	@echo "  git-staged            Show staged changes"
 	@echo "  git-log               Show recent commits"
 	@echo "  git-show-commit C=<sha>  Show hash, parents, committer time, subject, and files"
+	@echo "  git-show-full SHA=<sha>  Show a host-independent canonical patch"
 	@echo "  git-patch-equivalence PATCH_UPSTREAM=<ref> PATCH_HEAD=<ref> PATCH_LIMIT=<n>  Compare patch identity"
 	@echo "  branches-unmerged-development  List every local branch tip not reachable from development"
 	@echo "  branch-reconciliation-inventory RECONCILE_TARGET=<ref> RECONCILE_LIMIT=<n> RECONCILE_AFTER=<ref|empty>  Page bounded local branch reconciliation state as JSON"
@@ -694,15 +698,20 @@ help:
 	@echo "  ci-job-failure-context  bounded authenticated failure context (RUN, JOB, PATTERN)"
 	@echo "  ci-artifact-download    atomically download one exact run-bound GHA artifact (RUN, ARTIFACT, CI_ARTIFACT_OUTPUT_ROOT, CI_ARTIFACT_HEARTBEAT_SECS, CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY)"
 	@echo "  ci-artifact-context     bounded context from one downloaded exact-run artifact (RUN, ARTIFACT, CI_ARTIFACT_FILE, PATTERN, BEFORE, AFTER, MAX_MATCHES, CI_ARTIFACT_CONTEXT_VALIDATE_ONLY)"
+	@echo "  ci-pyinstaller-warning-audit replay the complete warning graph from one exact-run artifact (RUN, ARTIFACT, PYINSTALLER_WARNING_*, CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY)"
 	@echo "  ci-coverage-artifact-audit audit one externally stored hosted Cobertura report (CI_COVERAGE_*)"
 	@echo "  ci-coverage-gap-plan       print a bounded exact-run line/branch remediation plan (CI_COVERAGE_*)"
 	@echo "  ci-run-summary RUN=<id> show one immutable CI run; CI_RUN_SUMMARY_VALIDATE_ONLY=0|1"
+	@echo "  ci-failure-status        Show every durable hosted failure family"
+	@echo "  ci-failure-repair        Run make-based evidence and receipt selected repairs"
+	@echo "  ci-failure-push-guard    Block pushes with open or non-ancestral repairs"
 	@echo "  ci-await BRANCH=<ref> TIMEOUT=<s> [SHA=.. CI_AWAIT_*]  Await one exact CI identity"
 	@echo "  ci-verdict-safe        Cooldown-enforced CI check (prefer over bare ci-verdict)"
 	@echo "  ci-dashboard           One-shot compact CI run listing"
 	@echo "  ci-diagnose            Fetch CI failure annotations and group by root cause"
 	@echo "  ci-cooldown-status     Show remaining cooldown seconds"
 	@echo "  ci-view RUN=<id>       Show CI run details (jobs, steps, failures)"
+	@echo "  ci-rerun RUN=<id>      Guard and rerun one observed immutable CI run"
 	@echo "  ci-active              List active/in-flight CI runs"
 	@echo "  ci-greenness           CI reliability ratio (green / total completed)"
 	@echo "  ci-trigger-committed-head [REF=<b>]  Idempotently signal + return exact-SHA GHA run URL"
@@ -920,6 +929,16 @@ validate-ansible-runtime-boundary:
 
 update-ansible-runtime-lock:
 	@$(UV) run python scripts/ansible_runtime_artifacts.py write-lock
+
+ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY ?= 1
+check-ansible-base-image:
+	@case "$(ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY)" in 0|1) ;; *) echo "ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@if [ "$(ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY)" = "1" ]; then echo "ANSIBLE_BASE_IMAGE_CHECK_VALIDATED source=quay.io/centos/centos:stream9"; else $(UV) run python scripts/ansible_runtime_artifacts.py check-base-image; fi
+
+ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY ?= 1
+refresh-ansible-base-image:
+	@case "$(ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY)" in 0|1) ;; *) echo "ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@if [ "$(ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY)" = "1" ]; then echo "ANSIBLE_BASE_IMAGE_REFRESH_VALIDATED source=quay.io/centos/centos:stream9"; else $(UV) run python scripts/ansible_runtime_artifacts.py refresh-base-image; fi
 
 build-ansible-execution-environment:
 	@case "$(ANSIBLE_EE_VALIDATE_ONLY)" in 0|1) ;; *) echo "ANSIBLE_EE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
@@ -1500,7 +1519,7 @@ check-test-coverage:
 # AA081 — _subagent-dedup-guard: hashes task descriptions and rejects dispatches that
 # match a recently-completed or in-progress task.
 _subagent-dedup-guard:
-	@true
+	@$(UV) run python scripts/check_dispatch_dedup.py
 
 # AA090 — _merge-strategy-doc: documents -X theirs as canonical merge strategy.
 _merge-strategy-doc:
@@ -3201,7 +3220,7 @@ git-show:
 
 git-show-full:
 	@test -n "$(SHA)" || (echo "Usage: make git-show-full SHA=<sha>"; exit 1)
-	git show $(SHA)
+	git show --no-ext-diff --no-textconv --no-color --no-color-moved --no-renames --no-indent-heuristic --diff-algorithm=myers --default-prefix --unified=3 "$(SHA)"
 
 git-show-file-to:
 	@test -n "$(SHA)" || { echo "Usage: make git-show-file-to SHA=<sha> FILE=path OUT=path"; exit 1; }
@@ -3749,7 +3768,7 @@ _test-disabled-guard:
 	@if ! grep -A1 '^  release:' .github/workflows/build.yml | grep -q 'test-shard'; then \
 		echo "BLOCKED: test-shard missing from release job needs: in build.yml. Tests cannot be removed from release pipeline. Restore it."; exit 1; fi
 
-_push-rate-guard:
+_push-rate-guard: ci-failure-push-guard
 	@# Force-push tracker: prevent GLUDD_FORCE_PUSH abuse (max 5 consecutive bypasses in 12h window)
 	@if [ "$$GLUDD_FORCE_PUSH" = "1" ]; then \
 		$(PYTHON) scripts/push_rate_guard.py check-bypass || exit 1; \
@@ -4121,6 +4140,38 @@ ci-run-summary:
 	@[ -n "$(RUN)" ] || { echo "Usage: make ci-run-summary RUN=<id> [CI_RUN_SUMMARY_REPO=owner/repo] [CI_RUN_SUMMARY_VALIDATE_ONLY=0|1]"; exit 2; }
 	@case "$(CI_RUN_SUMMARY_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_RUN_SUMMARY_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
 	@$(PYTHON) scripts/ci_run_summary.py --run "$(RUN)" --repo "$(CI_RUN_SUMMARY_REPO)" $(if $(filter 1,$(CI_RUN_SUMMARY_VALIDATE_ONLY)),--validate-only,)
+
+# Durable all-failure ownership.  The observer binds terminal evidence to one
+# immutable run/SHA; the central push guard makes the ledger non-optional.
+CI_FAILURE_LEDGER ?= .gludd/ci-failure-ledger.json
+CI_FAILURE_REPOSITORY ?= sandboxcom/gludd
+CI_FAILURE_VALIDATE_ONLY ?= 0
+CI_FAILURE_BRANCH ?=
+CI_FAILURE_HEAD ?=
+CI_FAILURE_FAMILIES ?=
+CI_REPAIR_ALL_OPEN ?= 0
+CI_REPAIR_SHA ?=
+CI_REPAIR_EVIDENCE_TARGET ?=
+CI_REPAIR_EVIDENCE_VARS ?=
+CI_RERUN_ALLOW_UNCHANGED ?= 0
+CI_RERUN_REASON ?=
+
+ci-failure-status:
+	@case "$(CI_FAILURE_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_FAILURE_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@$(PYTHON) scripts/ci_failure_ledger.py status --ledger "$(CI_FAILURE_LEDGER)" $(if $(filter 1,$(CI_FAILURE_VALIDATE_ONLY)),--validate-only,)
+
+ci-failure-repair:
+	@case "$(CI_FAILURE_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_FAILURE_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@case "$(CI_REPAIR_ALL_OPEN)" in 0|1) ;; *) echo "CI_REPAIR_ALL_OPEN must be 0 or 1"; exit 2 ;; esac
+	@$(PYTHON) scripts/ci_failure_ledger.py repair --ledger "$(CI_FAILURE_LEDGER)" --sha "$(CI_REPAIR_SHA)" --evidence-target "$(CI_REPAIR_EVIDENCE_TARGET)" $(foreach FAMILY,$(CI_FAILURE_FAMILIES),--family "$(FAMILY)") $(if $(filter 1,$(CI_REPAIR_ALL_OPEN)),--all-open,) $(foreach EVIDENCE_VAR,$(CI_REPAIR_EVIDENCE_VARS),--evidence-var "$(EVIDENCE_VAR)") $(if $(filter 1,$(CI_FAILURE_VALIDATE_ONLY)),--validate-only,)
+
+ci-failure-push-guard:
+	@case "$(CI_FAILURE_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_FAILURE_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@BRANCH_VALUE='$(CI_FAILURE_BRANCH)'; \
+	if [ -z "$$BRANCH_VALUE" ]; then BRANCH_VALUE='$(PUSH_BRANCH)'; fi; \
+	if [ -z "$$BRANCH_VALUE" ]; then BRANCH_VALUE="$$(git branch --show-current)"; fi; \
+	[ -n "$$BRANCH_VALUE" ] || { echo "CI failure push guard requires a branch"; exit 2; }; \
+	$(PYTHON) scripts/ci_failure_ledger.py guard-push --ledger "$(CI_FAILURE_LEDGER)" --branch "$$BRANCH_VALUE" --head "$(CI_FAILURE_HEAD)" $(if $(filter 1,$(CI_FAILURE_VALIDATE_ONLY)),--validate-only,)
 
 # Consolidated, read-only state report for pre-claim verification. Prints the
 # working tree (CLEAN/DIRTY), HEAD identity + branch, remote sync state
@@ -4826,8 +4877,9 @@ ci-job-failure-context:
 	@case "$(RUN):$(JOB):$(or $(BEFORE),10):$(or $(AFTER),30):$(CI_JOB_CONTEXT_VALIDATE_ONLY)" in *[!0-9:]*) echo "RUN, JOB, BEFORE, AFTER, and CI_JOB_CONTEXT_VALIDATE_ONLY must be numeric"; exit 2 ;; esac
 	@case "$(CI_JOB_CONTEXT_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_JOB_CONTEXT_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
 	@if [ "$(CI_JOB_CONTEXT_VALIDATE_ONLY)" = "1" ]; then echo "CI-JOB-CONTEXT VALIDATED run=$(RUN) job=$(JOB) before=$(or $(BEFORE),10) after=$(or $(AFTER),30)"; exit 0; fi; \
-	mkdir -p .gate-logs; \
-	LOG=".gate-logs/ci-job-$(RUN)-$(JOB).log"; \
+	RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
+	mkdir -p "$$RESOURCE_ROOT"; \
+	LOG=$$(mktemp "$$RESOURCE_ROOT/ci-job-$(RUN)-$(JOB).log.XXXXXX"); \
 	trap 'rm -f "$$LOG"' EXIT INT TERM; \
 	BOUND=$$(gh run view -R sandboxcom/gludd "$(RUN)" --json jobs --jq '.jobs[] | select(.databaseId == $(JOB)) | .databaseId'); \
 	RC=$$?; if [ $$RC -ne 0 ]; then echo "ci-job-failure-context: job lookup failed rc=$$RC"; exit $$RC; fi; \
@@ -4835,7 +4887,7 @@ ci-job-failure-context:
 	gh run view -R sandboxcom/gludd --log --job="$(JOB)" > "$$LOG"; \
 	RC=$$?; if [ $$RC -ne 0 ]; then echo "ci-job-failure-context: log fetch failed rc=$$RC"; exit $$RC; fi; \
 	if ! grep -F -q -- "$(PATTERN)" "$$LOG"; then echo "ci-job-failure-context: pattern not found: $(PATTERN)"; exit 1; fi; \
-	$(PYTHON) scripts/ci_shards_log_context.py --log "$$LOG" --pattern "$(PATTERN)" --before "$(or $(BEFORE),10)" --after "$(or $(AFTER),30)" --max-matches 1
+	$(PYTHON) scripts/ci_shards_log_context.py --artifact-root "$$RESOURCE_ROOT" --artifact-file "$$(basename "$$LOG")" --pattern "$(PATTERN)" --before "$(or $(BEFORE),10)" --after "$(or $(AFTER),30)" --max-matches 1
 
 CI_ARTIFACT_OUTPUT_ROOT ?= RESOURCE_ROOT
 CI_ARTIFACT_HEARTBEAT_SECS ?= 10
@@ -4880,6 +4932,23 @@ ci-artifact-context:
 	if [ "$(CI_ARTIFACT_CONTEXT_VALIDATE_ONLY)" = "1" ]; then echo "CI-ARTIFACT-CONTEXT VALIDATED run=$(RUN) artifact=$(ARTIFACT) file=$(CI_ARTIFACT_FILE) before=$(or $(BEFORE),20) after=$(or $(AFTER),80) matches=$(or $(MAX_MATCHES),5)"; exit 0; fi; \
 	if [ ! -d "$$ARTIFACT_ROOT" ]; then echo "Downloaded artifact root not found: $$ARTIFACT_ROOT"; exit 1; fi; \
 	$(PYTHON) scripts/ci_shards_log_context.py --artifact-root "$$ARTIFACT_ROOT" --artifact-file "$(CI_ARTIFACT_FILE)" --pattern "$(PATTERN)" --before "$(or $(BEFORE),20)" --after "$(or $(AFTER),80)" --max-matches "$(or $(MAX_MATCHES),5)"
+
+CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY ?= 0
+ci-pyinstaller-warning-audit:
+	@case "$(RUN)" in ''|*[!0-9]*) echo "RUN must be a numeric GitHub Actions run ID"; exit 2 ;; esac
+	@case "$(ARTIFACT)" in ''|*[!A-Za-z0-9._-]*) echo "Refusing unsafe ARTIFACT: $(ARTIFACT)"; exit 2 ;; esac
+	@case "$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX)" in ''|*[!A-Za-z0-9_-]*) echo "PYINSTALLER_WARNING_ARCHITECTURE_LINUX must be explicit and safe"; exit 2 ;; esac
+	@case "$(PYINSTALLER_VERSION_LINUX)" in ''|*[!0-9.]*) echo "PYINSTALLER_VERSION_LINUX must be explicit and numeric"; exit 2 ;; esac
+	@case "$(CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
+	ARTIFACT_ROOT="$$RESOURCE_ROOT/ci-artifacts/run-$(RUN)/$(ARTIFACT)"; \
+	if [ "$(CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY)" = "1" ]; then echo "CI-PYINSTALLER-WARNING-AUDIT VALIDATED run=$(RUN) artifact=$(ARTIFACT) architecture=$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX) PyInstaller=$(PYINSTALLER_VERSION_LINUX)"; exit 0; fi; \
+	if [ ! -d "$$ARTIFACT_ROOT" ]; then echo "Downloaded artifact root not found: $$ARTIFACT_ROOT"; exit 1; fi; \
+	COUNT=$$(/usr/bin/find "$$ARTIFACT_ROOT" -type f -name warn-gludd.txt -print | /usr/bin/wc -l | /usr/bin/tr -d ' '); \
+	if [ "$$COUNT" != "1" ]; then echo "Expected exactly one warn-gludd.txt in $$ARTIFACT_ROOT, found $$COUNT"; exit 1; fi; \
+	WARNING=$$(/usr/bin/find "$$ARTIFACT_ROOT" -type f -name warn-gludd.txt -print -quit); \
+	echo "CI-PYINSTALLER-WARNING-AUDIT START run=$(RUN) artifact=$(ARTIFACT) warning=$$WARNING"; \
+	$(UV) run python scripts/audit_pyinstaller_warnings.py --warnings "$$WARNING" --allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" --platform linux --architecture "$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX)" --pyinstaller-version "$(PYINSTALLER_VERSION_LINUX)" --spec gludd.spec
 
 CI_COVERAGE_RUN ?=
 CI_COVERAGE_ARTIFACT ?= coverage-merged
@@ -4939,23 +5008,24 @@ ci-failed-tests:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-failed-tests RUN=<run-id>"; exit 1; fi
 	@gh run view -R sandboxcom/gludd $(RUN) --log-failed 2>/dev/null | grep -E 'FAILED tests/|ERROR tests/|= .*(failed|error).* =' | sort -u || echo "no-failed-test-lines-found"
 
-# Authenticated job-level breakdown of a run: per-job status/conclusion/timing
-# plus every non-success/non-skipped step, so a CANCELLED run's cause (which
-# job, which step, how long it ran before being cut) is visible without
-# guessing. Usage: make ci-view RUN=<run-id>
+# Authenticated job-level breakdown plus durable ownership of every failed job
+# and non-success step. Usage: make ci-view RUN=<run-id>
 ci-view:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-view RUN=<run-id>"; exit 1; fi
-	@gh run view -R sandboxcom/gludd $(RUN) --json databaseId,status,conclusion,event,displayTitle,headSha,createdAt,updatedAt,jobs \
-		--jq '{databaseId,status,conclusion,event,displayTitle,headSha,createdAt,updatedAt,jobs:[.jobs[]|{name,status,conclusion,startedAt,completedAt,steps:[.steps[]|select(.conclusion!="success" and .conclusion!="skipped")|{name,conclusion,number}]}]}' 2>&1 || echo "ci-view-failed"
+	@case "$(CI_FAILURE_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_FAILURE_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@$(PYTHON) scripts/ci_failure_ledger.py observe --run "$(RUN)" --repo "$(CI_FAILURE_REPOSITORY)" --ledger "$(CI_FAILURE_LEDGER)" $(if $(filter 1,$(CI_FAILURE_VALIDATE_ONLY)),--validate-only,)
 
 ci-run-view:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-run-view RUN=<id>"; exit 1; fi
 	@gh run view "$(RUN)" -R sandboxcom/gludd --json jobs,conclusion,headSha,status 2>&1 || echo "ci-run-view-failed"
 
-# Re-run a specific (e.g. cancelled) run's failed/cancelled jobs. Usage: make ci-rerun RUN=<run-id>
-ci-rerun:
+# Re-run a specific failed run only after observing every failure. An unchanged
+# rerun needs both an explicit allow bit and an auditable reason.
+ci-rerun: ci-view
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-rerun RUN=<run-id>"; exit 1; fi
-	@gh run rerun -R sandboxcom/gludd $(RUN) 2>&1 || echo "ci-rerun-failed"
+	@case "$(CI_RERUN_ALLOW_UNCHANGED)" in 0|1) ;; *) echo "CI_RERUN_ALLOW_UNCHANGED must be 0 or 1"; exit 2 ;; esac
+	@$(PYTHON) scripts/ci_failure_ledger.py guard-rerun --run "$(RUN)" --ledger "$(CI_FAILURE_LEDGER)" $(if $(filter 1,$(CI_RERUN_ALLOW_UNCHANGED)),--allow-unchanged --reason "$(CI_RERUN_REASON)",) $(if $(filter 1,$(CI_FAILURE_VALIDATE_ONLY)),--validate-only,)
+	@if [ "$(CI_FAILURE_VALIDATE_ONLY)" = "1" ]; then echo "CI_RERUN_VALIDATE_ONLY_PASS"; else gh run rerun -R "$(CI_FAILURE_REPOSITORY)" "$(RUN)"; fi
 # Guard remote CI dispatch: the local tree must be clean and sandboxcom/<branch> must equal HEAD.
 ci-remote-head-guard:
 	@REF="$(REF)"; if [ -z "$$REF" ]; then REF="$$(git branch --show-current)"; fi; \
@@ -6394,6 +6464,7 @@ LINUX_APT_UTILS_VERSION ?= 2.6.1
 PYINSTALLER_WARNING_ALLOWLIST_LINUX ?= config/pyinstaller-warning-allowlist-linux.json
 PYINSTALLER_WARNING_FILE_LINUX ?= dist/linux/warn-gludd.txt
 PYINSTALLER_VERSION_LINUX ?= 6.20.0
+PYINSTALLER_PYTHON_VERSION_LINUX ?= 3.12.14
 PYINSTALLER_WARNING_ARCHITECTURE_LINUX ?=
 PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY ?= 0
 
@@ -6421,6 +6492,8 @@ build-linux-executable: ## Build and verify a real Linux PyInstaller executable
 	@rm -f "$(LINUX_BINARY_OUTPUT)" "$(dir $(LINUX_BINARY_OUTPUT))warn-gludd.txt"
 	@set -e; if [ "$$(uname -s)" = "Linux" ]; then \
 		echo "Building Linux executable natively"; \
+		python_version=$$($(UV) run python -c 'import platform; print(platform.python_version())'); \
+		test "$$python_version" = "$(PYINSTALLER_PYTHON_VERSION_LINUX)" || { echo "Expected Python $(PYINSTALLER_PYTHON_VERSION_LINUX) for deterministic Linux PyInstaller analysis, found $$python_version"; exit 1; }; \
 		$(MAKE) --no-print-directory build-executable; \
 		pyinstaller_version=$$($(UV) run pyinstaller --version); \
 		architecture=$$(uname -m); \
@@ -6494,6 +6567,8 @@ build-linux-executable: ## Build and verify a real Linux PyInstaller executable
 				grep -Fq "0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded." /tmp/gludd-apt-after.txt; \
 				rm -rf /var/lib/apt/lists/*; \
 				uv sync --frozen --extra azure; \
+				python_version=$$(uv run python -c "import platform; print(platform.python_version())"); \
+				test "$$python_version" = "$(PYINSTALLER_PYTHON_VERSION_LINUX)" || { echo "Expected Python $(PYINSTALLER_PYTHON_VERSION_LINUX) for deterministic Linux PyInstaller analysis, found $$python_version"; exit 1; }; \
 				pyinstaller_version=$$(uv run pyinstaller --version); \
 				test "$$pyinstaller_version" = "6.20.0"; \
 				architecture=$$(uname -m); \
@@ -9520,13 +9595,23 @@ PIPELINE_STATUS_BRANCH ?= development
 PIPELINE_STATUS_REMOTE ?= sandboxcom
 PIPELINE_STATUS_SHA ?=
 PIPELINE_STATUS_VALIDATE_ONLY ?= 0
+PIPELINE_STATUS_FAILURE_LEDGER ?= .gludd/ci-failure-ledger.json
 pipeline-status:
 	@case "$(PIPELINE_STATUS_VALIDATE_ONLY)" in 0|1) ;; *) echo "PIPELINE_STATUS_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
-	@$(UV) run python scripts/pipeline_status.py status \
+	@OBSERVE_RC=0; STATUS_RC=0; \
+	$(UV) run python scripts/ci_failure_ledger.py observe-sha \
+		--repo "$(PIPELINE_STATUS_REPO)" --branch "$(PIPELINE_STATUS_BRANCH)" \
+		--remote "$(PIPELINE_STATUS_REMOTE)" --ledger "$(PIPELINE_STATUS_FAILURE_LEDGER)" \
+		$(if $(PIPELINE_STATUS_SHA),--sha "$(PIPELINE_STATUS_SHA)",) \
+		$(if $(filter 1,$(PIPELINE_STATUS_VALIDATE_ONLY)),--validate-only,) || OBSERVE_RC=$$?; \
+	$(UV) run python scripts/pipeline_status.py status \
 		--repo "$(PIPELINE_STATUS_REPO)" --branch "$(PIPELINE_STATUS_BRANCH)" \
 		--remote "$(PIPELINE_STATUS_REMOTE)" \
 		$(if $(PIPELINE_STATUS_SHA),--sha "$(PIPELINE_STATUS_SHA)",) \
-		$(if $(filter 1,$(PIPELINE_STATUS_VALIDATE_ONLY)),--validate-only,)
+		$(if $(filter 1,$(PIPELINE_STATUS_VALIDATE_ONLY)),--validate-only,) || STATUS_RC=$$?; \
+	if [ $$OBSERVE_RC -ne 0 ]; then echo "pipeline-status: failure-ledger observation failed rc=$$OBSERVE_RC"; fi; \
+	if [ $$OBSERVE_RC -ne 0 ]; then exit $$OBSERVE_RC; fi; \
+	exit $$STATUS_RC
 
 # Emit an auditable pipeline heartbeat at a five-minute cadence by default.
 # Use COUNT=0 for a continuous loop; artifacts are project-namespaced.

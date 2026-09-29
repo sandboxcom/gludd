@@ -54,3 +54,14 @@ jobs:
       - name: Run molecule test shard ${{ matrix.shard }}/${{ env.SHARD_COUNT }}
         run: |
           make molecule-test-shard SHARD=${{ matrix.shard }}/${{ env.SHARD_COUNT }}
+      - name: Verify Linux PyInstaller warning graph artifact
+        if: always() && matrix.shard == 1
+        run: test -s dist/linux/warn-gludd.txt
+      - name: Upload Linux PyInstaller warning graph
+        if: always() && matrix.shard == 1 && hashFiles('dist/linux/warn-gludd.txt') != ''
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+        with:
+          name: molecule-linux-pyinstaller-warning-shard-1
+          path: dist/linux/warn-gludd.txt
+          if-no-files-found: error
+          retention-days: 7

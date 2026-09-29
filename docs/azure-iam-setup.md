@@ -295,6 +295,18 @@ Azure CLI issues [#31995][azure-cli-31995] and [#31579][azure-cli-31579] are
 tracked because service-principal/RBAC behavior and warnings have changed across
 CLI releases. Pin the CI toolchain and keep the hermetic fake-CLI tests green.
 
+The credential renderer's stdout is the byte-exact interface; Make's trailing
+stderr diagnostic is not. GNU Make may render a failed recipe as either
+`[target] Error 2` or `[Makefile:line: target] Error 2`, and recursive invocations
+may identify themselves as `make[N]`. The
+[GNU Make diagnostics reference](https://www.gnu.org/software/make/manual/html_node/Error-Messages.html)
+documents file/line prefixes, while a long-lived
+[user report](https://stackoverflow.com/questions/69293212/error-no-source-files-when-using-command-substitution)
+shows the older two-line `recipe for target ... failed` plus `[target]` form.
+The hermetic test therefore requires the exact target, exit status, empty stdout,
+and redacted application error while accepting only those documented diagnostic
+wrappers. It does not pin a platform-specific Makefile line number.
+
 ## Operational evidence and forum findings
 
 Operators have reported GPU apps that never start on T4, long A100 cold starts

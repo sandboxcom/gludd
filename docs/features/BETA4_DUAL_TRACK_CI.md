@@ -2,6 +2,46 @@
 
 Status: implemented for the `v0.1.0-beta.4` candidate pipeline on 2026-08-26.
 
+## Exact build-environment identity
+
+The 2026-09-29 v0.1.1 candidate proved that an exact source SHA is necessary
+but insufficient for reproducible binary analysis. `Build and Release` run
+`36524447124` and `Molecule Tests` run `36524447101` both evaluated
+`49c5492ff6b6a590b8f130d1fb87b1a71cdd8077`, yet their Linux PyInstaller
+warning graphs differed:
+
+| Workflow | Python/lock boundary | Graph digest | Edges |
+| --- | --- | --- | ---: |
+| Build and Release / molecule | floated patch, mutable sync | `d43f728237fa2e15debbb2bd03dfb6d06ecfeaa6ed1cc516b7602d25e6d2e853` | 1,319 |
+| Molecule Tests / shard 1 | Python 3.12.14, frozen sync | `d4fcb35befd9c6ec6a1890e25f9fe9c0f96e3cdff393cb9bcca4c8952fe51e2d` | 1,317 |
+
+Complete replay of both raw warning files found no actionable or unreviewed
+project edge. The failure was still correct: accepting either digest would have
+made the policy depend on which workflow happened to run it. The owner repair
+now pins Linux PyInstaller and both molecule producers to Python 3.12.14,
+requires `uv sync --frozen`, asserts the interpreter patch immediately before
+the build, audits `warn-gludd.txt`, and uploads the raw warning graph even when
+a later job step fails. `make ci-pyinstaller-warning-audit` replays exactly one
+downloaded graph from an exact run-scoped artifact root so truncated console
+logs are never the only forensic evidence.
+
+The x86_64 policy accepts the graph from the pinned/frozen environment. A new
+hosted run must reproduce it; the historical run is diagnosis, not release
+evidence. If a future Python or lock update intentionally changes the graph,
+the update must land as one reviewed source change with the new raw artifact,
+complete audit, and rollback to the preceding pin. Running services are not
+replaced until the new candidate passes both tracks, preserving zero downtime.
+
+This follows long-running practitioner reports rather than treating Gludd's
+failure as unique. PyInstaller issue
+[#7719](https://github.com/pyinstaller/pyinstaller/issues/7719) identifies mixed
+Python environments as a common source of missing imports. Issue
+[#3452](https://github.com/pyinstaller/pyinstaller/issues/3452) records frozen
+imports changing between ostensibly similar environments. PyInstaller's
+[multiple-environment guidance](https://github.com/pyinstaller/pyinstaller/blob/develop/doc/usage.rst)
+recommends a distinct, controlled build environment for each Python and
+dependency combination.
+
 ## Incident
 
 The failed candidate at commit
