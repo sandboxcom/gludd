@@ -173,9 +173,9 @@ def test_phony_targets_have_no_file() -> None:
     for line in content.split("\n"):
         stripped = line.strip()
         if stripped.startswith(".PHONY:"):
-            in_phony = True
             tokens = stripped.split(":", 1)[1].split()
             phony_names.update(t.rstrip("\\") for t in tokens if t.rstrip("\\"))
+            in_phony = line.rstrip().endswith("\\")
             continue
         if in_phony:
             tokens = stripped.split()

@@ -2,6 +2,137 @@
 
 Status: implemented for the `v0.1.0-beta.4` candidate pipeline on 2026-08-26.
 
+## Exact build-environment identity
+
+The 2026-09-29 v0.1.1 candidate proved that an exact source SHA is necessary
+but insufficient for reproducible binary analysis. `Build and Release` run
+`36524447124` and `Molecule Tests` run `36524447101` both evaluated
+`49c5492ff6b6a590b8f130d1fb87b1a71cdd8077`, yet their Linux PyInstaller
+warning graphs differed:
+
+| Workflow | Python/lock boundary | Graph digest | Edges |
+| --- | --- | --- | ---: |
+| Build and Release / molecule | floated patch, mutable sync | `d43f728237fa2e15debbb2bd03dfb6d06ecfeaa6ed1cc516b7602d25e6d2e853` | 1,319 |
+| Molecule Tests / shard 1 | Python 3.12.14, frozen sync | `d4fcb35befd9c6ec6a1890e25f9fe9c0f96e3cdff393cb9bcca4c8952fe51e2d` | 1,317 |
+
+Complete replay of both raw warning files found no actionable or unreviewed
+project edge. The failure was still correct: accepting either digest would have
+made the policy depend on which workflow happened to run it. The owner repair
+now pins Linux PyInstaller and both molecule producers to Python 3.12.14,
+requires `uv sync --frozen`, asserts the interpreter patch immediately before
+the build, audits `warn-gludd.txt`, and uploads the raw warning graph even when
+a later job step fails. `make ci-pyinstaller-warning-audit` replays exactly one
+downloaded graph from an exact run-scoped artifact root so truncated console
+logs are never the only forensic evidence.
+
+The x86_64 policy accepts the graph from the pinned/frozen environment. A new
+hosted run must reproduce it; the historical run is diagnosis, not release
+evidence. If a future Python or lock update intentionally changes the graph,
+the update must land as one reviewed source change with the new raw artifact,
+complete audit, and rollback to the preceding pin. Running services are not
+replaced until the new candidate passes both tracks, preserving zero downtime.
+
+This follows long-running practitioner reports rather than treating Gludd's
+failure as unique. PyInstaller issue
+[#7719](https://github.com/pyinstaller/pyinstaller/issues/7719) identifies mixed
+Python environments as a common source of missing imports. Issue
+[#3452](https://github.com/pyinstaller/pyinstaller/issues/3452) records frozen
+imports changing between ostensibly similar environments. PyInstaller's
+[multiple-environment guidance](https://github.com/pyinstaller/pyinstaller/blob/develop/doc/usage.rst)
+recommends a distinct, controlled build environment for each Python and
+dependency combination.
+
+### Exact local builder composition
+
+The first real local replay after the workflow repair rejected its own former
+builder before PyInstaller started: the digest-pinned
+`ghcr.io/astral-sh/uv:python3.12-bookworm-slim` image contained Python 3.12.12,
+while the release graph requires 3.12.14. The digest was immutable; the incorrect
+assumption was that a minor-only image tag also proved a patch version.
+
+Gludd now builds one cacheable, project-namespaced artifact environment from two
+independent immutable inputs. `config/containers/linux-binary.Dockerfile` uses
+the official multi-architecture Python 3.12.14 Bookworm manifest and copies the
+UV 0.12.19 binaries from UV's digest-pinned distroless manifest. Both versions
+are asserted during the image build and again by `build-linux-binary-image`
+before PyInstaller work. The expensive dependency layer can be reused locally,
+but a stale or wrongly tagged cache cannot satisfy the runtime identity check.
+
+UV's official [Docker integration guide](https://docs.astral.sh/uv/guides/integration/docker/)
+recommends digest pinning and documents copying UV into a separately selected
+Python base. Long-lived issue
+[#7029](https://github.com/astral-sh/uv/issues/7029) records a mismatch between
+documented and published image tags, and issue
+[#11084](https://github.com/astral-sh/uv/issues/11084) records architecture
+availability differing for the same image family. Those reports are why Gludd
+pins multi-architecture manifests and verifies identity inside the resulting
+image instead of deriving it from a tag string.
+
+This is ZDD: the image is built under the isolated local Lima engine and cannot
+replace a serving Gludd process. A wrong identity fails before artifact output;
+the prior builder cache remains removable and no release ref changes. Rollback
+selects the preceding builder Dockerfile and invalidates only this local tag.
+
+The first corrected aarch64 replay also exposed an evidence gap in the old
+process: the accepted `b1f5847a…` hash had no retained normalized graph, so a
+new hash could not be reviewed from repository evidence alone. Gludd reproduced
+that graph from its exact introducing commit (`1ac734e75`) and compared its
+1,275 transitive edges with the corrected 1,329-edge graph. The deterministic
+receipt records all 62 additions and eight removals; they cover the newly frozen
+Azure SDK surface, optional third-party backends, and reviewed Pydantic
+module-attribute source moves. The unchanged fail-closed audit found no new
+actionable or unreviewed project import.
+
+`make compare-linux-pyinstaller-warnings` now creates this complete receipt but
+never edits policy. `make check-pyinstaller-warning-reviews` runs in every gate
+and compares the working or just-committed policy with its Git predecessor. A
+new primary or alternate digest is rejected unless an architecture-and-digest
+named receipt starts from a previously accepted graph, binds both raw artifacts,
+contains sorted complete edge lists, and reconciles every count. This turns a
+future hash-only update into a mechanical failure instead of another forensic
+guess.
+
+The release builder also refuses a dirty working tree before it provisions the
+Linux engine. Its source bundle is intentionally produced from one resolved
+commit, and the target prints that full SHA before the operating-system branch.
+This prevents a local edit from being mistaken for the code under test and
+avoids paying for an old-commit replay. Stack Overflow users have documented
+this `git archive HEAD` boundary since 2010 in
+[“Git archive of repository with uncommitted changes”](https://stackoverflow.com/questions/2766600/git-archive-of-repository-with-uncommitted-changes),
+and Buildx issue [#3917](https://github.com/docker/buildx/issues/3917) records the
+same need to distinguish a committed local ref from the mutable checkout.
+
+### Self-provisioning local Linux builder
+
+The 2026-09-29 committed-source replay found that
+`make build-linux-executable` assumed the namespaced `gludd-docker` Lima VM had
+already been created. A clean host therefore failed before it could exercise the
+pinned Python and dependency boundary. `lima-docker-ensure` now owns all three
+valid lifecycle paths: it creates a missing `gludd-*` instance from the explicit
+`template:docker` template, starts a stopped instance, or reuses a running one.
+Every path then resolves the instance-scoped socket and proves Docker engine
+readiness. Unknown lifecycle states, non-Gludd instance names, ambiguous list
+records, and unreviewed templates fail closed. Lima's `--progress` stream keeps
+first-time provisioning observable, and the Linux build invokes this owner
+automatically instead of relying on remembered workstation setup.
+
+This follows Lima's official
+[named Docker-template example](https://github.com/lima-vm/lima/blob/master/cmd/limactl/start.go)
+and its [template catalog](https://github.com/lima-vm/lima/blob/master/templates/README.md).
+It also accounts for long-lived practitioner reports: discussion
+[#1647](https://github.com/lima-vm/lima/discussions/1647) records confusion and
+wrong-template creation when a removed instance is started by name, while issue
+[#2252](https://github.com/lima-vm/lima/issues/2252) records a VM reported as
+running while its Docker socket remained unavailable after host startup. Gludd
+therefore names the creation template explicitly and treats engine readiness,
+not VM status alone, as the terminal condition.
+
+The path preserves ZDD: provisioning changes only the project-namespaced local
+builder and never a serving Gludd deployment. Existing running builders are
+reused, missing builders are created once, and failure stops before an artifact
+or release ref is published. Rollback removes the ensure dependency and its
+isolated local VM; it does not touch a running application service.
+
 ## Incident
 
 The failed candidate at commit
@@ -2602,3 +2733,132 @@ database, service, or release asset. A failed or timed-out exact run stops befor
 any success claim; previously published releases keep serving. Rollback is one
 script/Makefile/test/doc commit and restores the shorter loops without changing a
 tag, artifact, or deployment.
+
+### Complete gate preflights and ephemeral Molecule dependencies (2026-09-29)
+
+The first real exact-SHA `binary_smoke_linux` replay completed successfully: it
+built the reviewed aarch64 ELF, exercised the packaged CLI and daemon, submitted a
+job, verified failure paths, and tore the service down. It also exposed an
+ownership defect. Galaxy had installed 929 third-party Ansible and Community
+files beneath Gludd's project `collections/` directory. The following gate then
+rejected those paths during task registration, as it should.
+
+The dependency path listed the writable project collection root before the
+Molecule run's ephemeral collection root. Ansible Galaxy deliberately installs
+into the first configured collection path; a lookup order therefore became a
+write destination. The order is now ephemeral dependencies first and Gludd's
+owned collection second. The scenario's existing trap removes the ephemeral root
+on success or failure, while project code remains resolvable without accepting
+generated vendor content into source ownership.
+
+That gate exposed a second process defect: its independent checks were ordinary
+Make prerequisites. The first failure prevented the gate recipe, later
+preflights, and every subsequent phase from running. `--keep-going` can continue
+independent siblings but still cannot execute a target whose prerequisite failed;
+`--ignore-errors` would continue by discarding the failure truth. Neither option
+implements a trustworthy complete verdict.
+
+The gate now owns an explicit preflight ledger. It runs all named checks in a
+stable order, streams every start and result, retains one PASS/FAIL row per check,
+makes any failure sticky in the final status, and continues through all remaining
+gate phases. An executable pass/fail/pass fixture proves that a middle failure is
+retained while the later check still runs. This converts a build attempt from a
+one-error-at-a-time loop into a complete repair set without weakening the final
+nonzero result.
+
+Practitioner and implementation evidence reviewed 2026-09-29:
+
+- Ansible's [`galaxy.py`](https://github.com/ansible/ansible/blob/devel/lib/ansible/cli/galaxy.py)
+  selects the first collection path as the installation destination.
+- Ansible issues [#68621](https://github.com/ansible/ansible/issues/68621) and
+  [#72628](https://github.com/ansible/ansible/issues/72628) document long-lived
+  confusion and unusable collection installs caused by path selection.
+- Molecule issue [#3999](https://github.com/ansible/molecule/issues/3999)
+  recommends explicitly owning `ANSIBLE_COLLECTIONS_PATH` when generated
+  configuration does not provide the required project and dependency paths.
+- The Stack Overflow discussions on
+  [`--ignore-errors` versus `--keep-going`](https://stackoverflow.com/questions/53039550/makefile-ignore-errors-vs-keep-going)
+  and [target-local continue-on-error policy](https://stackoverflow.com/questions/53760185/define-continue-if-error-policy-directly-in-target-dependencies)
+  show why global flags cannot both retain failures and guarantee the parent
+  recipe executes.
+
+Both repairs preserve ZDD. Molecule dependencies live only in a run-scoped path
+and are removed by the owner without touching an installed Gludd service. Gate
+aggregation changes validation control flow only: it performs read-only checks,
+retains their complete evidence, and still fails before publication whenever any
+check is red.
+
+### Diagnostic artifacts are not release assets (2026-09-29)
+
+The first complete exact-SHA gate exposed structural tests that treated every
+`actions/upload-artifact` step as a publishable binary. That assumption would
+force failure evidence to disappear: the Linux PyInstaller warning graph is
+intentionally uploaded with `if: always()` before binary and daemon smoke tests,
+while the distributable archive is uploaded only with `if: success()` after all
+smoke and packaging checks pass.
+
+Artifact admission is now explicit. Names beginning with `gludd-*` are release
+assets and must remain success-gated behind smoke tests; other names are
+diagnostics and must survive failures without entering the release job's
+`gludd-*` download fan-in. Gate-wiring tests likewise inspect the canonical
+`GATE_PREFLIGHT_TARGETS` list and the non-short-circuit runner instead of the old
+direct-prerequisite header. The Molecule action allowlist also includes the
+pinned Node 24 `upload-artifact` action used for retained scenario evidence.
+
+Practitioner and implementation evidence reviewed 2026-09-29:
+
+- The official [upload-artifact metadata](https://github.com/actions/upload-artifact/blob/main/action.yml)
+  declares its Node 24 runtime, while GitHub's
+  [always() documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions)
+  explicitly describes retaining logs after failure.
+- Long-running reports [actions/upload-artifact#585](https://github.com/actions/upload-artifact/issues/585)
+  and [#328](https://github.com/actions/upload-artifact/issues/328) show why
+  failure diagnostics need explicit unconditional upload behavior.
+- GitHub Community discussion
+  [#206753](https://github.com/orgs/community/discussions/206753) records the
+  important boundary between workflow artifacts and release assets: release jobs
+  must explicitly download and republish the artifacts they admit.
+- Runner issue [#4295](https://github.com/actions/runner/issues/4295) and the
+  runner's [Node action guidance](https://github.com/actions/runner/blob/main/docs/checks/nodejs.md)
+  document the long-lived runtime-version ambiguity avoided by pinning actions
+  whose metadata natively selects Node 24.
+
+This is ZDD by construction. Diagnostic retention and test classification do not
+modify a running service or published release. A rollback removes one test/doc
+commit; the success-gated release uploads and previously published artifacts stay
+unchanged throughout.
+
+### Durable plugin state is explicit test input (2026-09-29)
+
+The next complete candidate gate reduced the repair surface to one failure. The
+delegate streak E2E gave its streak counter and disengage signal function-scoped
+paths, but left the newly durable dispatch ownership ledger at the repository
+default. A synthetic `task` with prompt `do work` therefore found a legitimate
+owner from an earlier process and was denied before the streak-reset assertion
+could execute.
+
+The test now binds `GLUDD_DISPATCH_DEDUP_STATE` to the same function-scoped
+temporary root as its other state. The three synthetic tool variants still share
+one ledger within that test, but no run reads or mutates live project ownership.
+This is isolation, not a deduplication bypass: the separate runtime contract still
+proves exact-prompt and tracked-task collisions, lock ownership, retry after a
+failed dispatch, and permanent denial after completion.
+
+Practitioner and implementation evidence reviewed 2026-09-29:
+
+- Pytest issue [#11790](https://github.com/pytest-dev/pytest/issues/11790)
+  documents collisions when a supposedly unique temporary boundary is reused by
+  concurrent invocations.
+- The pytest-xdist discussion
+  [#1213](https://github.com/pytest-dev/pytest-xdist/discussions/1213) recommends
+  temporary files with file locking when cross-worker state is deliberately
+  shared.
+- Pytest's
+  [temporary-path documentation](https://github.com/pytest-dev/pytest/blob/main/doc/en/how-to/tmp_path.rst)
+  defines `tmp_path` as function-scoped; that isolation applies only to resources
+  actually rooted there.
+
+The full gate ledger contained exactly one `SHARD-FAIL`; the repaired node passes
+1/1 and the combined delegate/dedup replay passes 21/21. No running service,
+published artifact, or live dispatch owner changes, so the repair is ZDD and its
+rollback is the single test-state binding.

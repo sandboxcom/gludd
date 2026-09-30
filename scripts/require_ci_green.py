@@ -8,11 +8,17 @@ network access; ``verdict_for`` is the small ``gh`` adapter used by Make.
 
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
 from collections.abc import Sequence
 from typing import Any
+
+try:
+    import pipeline_status
+except ModuleNotFoundError as exc:
+    if exc.name != "pipeline_status":
+        raise
+    from scripts import pipeline_status
 
 
 def _detect_branch() -> str:
@@ -89,6 +95,17 @@ def verdict_from_runs(
     )
 
 
+def all_workflow_verdict_from_runs(
+    runs: Sequence[dict[str, Any]],
+    sha: str,
+    *,
+    branch: str,
+) -> tuple[int, str]:
+    """Return the shared exact-SHA verdict for every required workflow."""
+    summary = pipeline_status.evaluate_runs(runs, sha, branch=branch)
+    return summary.exit_code, "\n".join(summary.lines())
+
+
 def _fetch_runs(sha: str, branch: str) -> list[dict[str, Any]]:
     """Fetch exact-commit candidates; branch identity is enforced locally.
 
@@ -97,37 +114,11 @@ def _fetch_runs(sha: str, branch: str) -> list[dict[str, Any]]:
     runs, so it must not decide whether source evidence exists.
     """
     del branch
-    result = subprocess.run(
-        [
-            "gh",
-            "run",
-            "list",
-            "--commit",
-            sha,
-            "--workflow",
-            "Build and Release",
-            "-R",
-            "sandboxcom/gludd",
-            "--json",
-            (
-                "conclusion,databaseId,status,headSha,headBranch,workflowName,"
-                "event,displayTitle"
-            ),
-            "--limit",
-            "20",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=10,
-        check=False,
+    return pipeline_status.fetch_runs(
+        sha,
+        repo=pipeline_status.DEFAULT_REPO,
+        runner=subprocess.run,
     )
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout or "gh run list failed").strip()
-        raise RuntimeError(detail)
-    payload = json.loads(result.stdout or "[]")
-    if not isinstance(payload, list):
-        raise ValueError("gh run list returned a non-list payload")
-    return [item for item in payload if isinstance(item, dict)]
 
 
 def verdict_for(
@@ -151,12 +142,10 @@ def verdict_for(
     sha = source
     selected_branch = branch or sha_or_branch or _detect_branch()
     try:
-        code, message = verdict_from_runs(
+        code, message = all_workflow_verdict_from_runs(
             _fetch_runs(sha, selected_branch),
             sha,
             branch=selected_branch,
-            workflow="Build and Release",
-            event="push",
         )
     except Exception as exc:
         print(f"CI ERROR: {exc}")

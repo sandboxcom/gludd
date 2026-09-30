@@ -728,6 +728,9 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
         with:
           ref: ${{ github.sha }}
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0 (node24)
+        with:
+          python-version: "3.12.14"
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
       - name: Run molecule shard ${{ matrix.shard }}/4
         id: molecule-run
@@ -742,7 +745,7 @@ jobs:
         # split into 4 contiguous groups by molecule-test-shard.
         run: |
           echo "=== CI PHASE: molecule-shard-${{ matrix.shard }} ==="
-          uv sync
+          uv sync --frozen
           make molecule-test-shard SHARD=${{ matrix.shard }}/4
         env:
           GLUDD_AUTH_PSK: ""
@@ -803,6 +806,9 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
         with:
           ref: ${{ github.sha }}
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0 (node24)
+        with:
+          python-version: "3.12.14"
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
       - name: Inject version
         run: |
@@ -817,6 +823,21 @@ jobs:
             echo "::error::LINUX BUILD FAILED — pyinstaller failed for linux-x86_64. Check gludd.spec."
             exit 1
           }
+      - name: Audit Linux PyInstaller warning graph
+        run: |
+          make audit-linux-pyinstaller-warnings \
+            PYINSTALLER_WARNING_FILE_LINUX=build/gludd/warn-gludd.txt \
+            PYINSTALLER_WARNING_ARCHITECTURE_LINUX=x86_64 \
+            PYINSTALLER_VERSION_LINUX=6.20.0 \
+            PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=0
+      - name: Upload Linux PyInstaller warning graph
+        if: always() && hashFiles('build/gludd/warn-gludd.txt') != ''
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+        with:
+          name: linux-pyinstaller-warning-x86_64
+          path: build/gludd/warn-gludd.txt
+          if-no-files-found: error
+          retention-days: 7
       - name: Smoke test binary
         # Fail closed before packaging: a binary that cannot start must never
         # become a publishable artifact.

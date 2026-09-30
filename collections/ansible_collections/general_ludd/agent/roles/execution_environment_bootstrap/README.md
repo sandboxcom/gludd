@@ -8,6 +8,13 @@ it, and publishes the sanitized `gludd_execution_environment` fact. Calling the
 same role with `execution_environment_bootstrap_state: absent` tears down only
 that exact image, content-addressed context, and machine.
 
+Linux uses its native Podman engine and therefore never creates, starts,
+inspects, or removes a Podman machine. The lifecycle test derives this boundary
+from the host platform: it requires the full machine lifecycle on macOS and
+requires zero machine commands on Linux, while both platforms must build,
+verify, and remove the exact content-addressed image. This keeps hosted Linux
+evidence from falsely asserting the macOS VM contract.
+
 The build remains zero-downtime: a candidate name contains the runtime-lock
 digest, existing images are never pruned, and the fact is not published as
 `verified: true` until both offline smoke tests pass. `ephemeral: true` provides

@@ -199,3 +199,13 @@ semantic inventory entry is intentional failure evidence: regenerate it only
 after reviewing the changed acquisition and teardown pair. Coordinate-only moves
 require no inventory rewrite and therefore do not invalidate an otherwise tested
 release head.
+
+The 2026-09-29 release replay demonstrated the intended fail-closed behavior.
+Three new atomic writers already had `finally` cleanup, but their Ansible-runtime,
+CI-failure-ledger, and PyInstaller-receipt acquisitions had not landed with the
+matching inventory entries. The complete preflight ledger retained all three
+hashes while continuing later checks. After reviewing the actual acquisition and
+teardown pairs, the canonical writer admitted them as one counted inventory
+update; read-only validation now reports 212 owned resources and the checker
+suite passes 32/32. This is not a baseline bypass: code and inventory remain one
+commit, and a future source-hash change fails closed again.

@@ -30,6 +30,7 @@ def _load_module():
 require_ci_green = _load_module()
 verdict_for = require_ci_green.verdict_for
 verdict_from_runs = require_ci_green.verdict_from_runs
+all_workflow_verdict_from_runs = require_ci_green.all_workflow_verdict_from_runs
 
 
 # ---------------------------------------------------------------------------
@@ -67,6 +68,44 @@ SHA = "abc123def456"  # pragma: allowlist secret  (dummy test fixture, not a rea
 
 
 class TestCiGreen:
+    def test_release_verdict_requires_every_required_workflow(self):
+        runs = [
+            _run(10, SHA, "completed", "success"),
+            _run(11, SHA, "completed", "failure", workflow="Molecule Tests"),
+        ]
+
+        code, message = all_workflow_verdict_from_runs(
+            runs, SHA, branch="development"
+        )
+
+        assert code == 1
+        assert "Build and Release" in message
+        assert "Molecule Tests" in message
+        assert "1 failed" in message
+
+    def test_release_verdict_fails_closed_when_a_workflow_is_missing(self):
+        code, message = all_workflow_verdict_from_runs(
+            [_run(10, SHA, "completed", "success")],
+            SHA,
+            branch="development",
+        )
+
+        assert code == 2
+        assert "missing required workflow: Molecule Tests" in message
+
+    def test_release_verdict_accepts_only_complete_all_workflow_success(self):
+        code, message = all_workflow_verdict_from_runs(
+            [
+                _run(10, SHA, "completed", "success"),
+                _run(11, SHA, "completed", "success", workflow="Molecule Tests"),
+            ],
+            SHA,
+            branch="development",
+        )
+
+        assert code == 0
+        assert "2 passed" in message
+
     def test_success_returns_0(self):
         runs = [_run(1, SHA, "completed", "success")]
         code, msg = verdict_for(runs, SHA)

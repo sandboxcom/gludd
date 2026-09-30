@@ -394,6 +394,31 @@ baseline before the local proposal is exposed. The matrix consumes only
 reference facts: file/test sets, changed lines, elapsed seconds, test and gate
 results, and stable patch ID.
 
+### Host-independent Git patch contract
+
+Changed-line evidence is derived only from `make git-show-full SHA=<sha>`. That
+target pins `--diff-algorithm=myers`, disables the indent heuristic, rename
+detection, text conversion, external diff drivers, moved-line coloring, and
+color, and fixes the ordinary prefixes and three-line context. These flags are
+part of the evidence interface: a developer's global Git configuration and a
+hosted runner's Git version must not choose how reference lines are paired or
+rendered. A regression test poisons representative global settings and requires
+the byte-for-byte patch to remain unchanged.
+
+This was added after the same immutable `AM-REFACTOR-01` commit rendered as 189
+changed lines on one workstation and 190 on the hosted runner. The canonical
+pinned rendering is 190. Git's
+[diff documentation](https://git-scm.com/docs/git-diff) confirms that the
+algorithm and indent heuristic change patch generation, while its
+[attributes documentation](https://git-scm.com/docs/gitattributes) explains
+that per-path algorithms, text converters, and external drivers also affect
+user-facing `git show` output. The long-lived practitioner request in
+[VS Code issue 93534](https://github.com/microsoft/vscode/issues/93534)
+documents users setting `diff.algorithm=histogram` globally, and
+[Git Extensions issue 6991](https://github.com/gitextensions/gitextensions/issues/6991)
+shows the same persistent demand across another client. Those settings are
+useful interactively but cannot alter Gludd's evidence.
+
 Case acceptance is the conjunction of the pass predicates above and an empty
 `compare_with_codex` blocker set. The existing numeric `score` may be retained
 for backward-compatible storage, but this matrix neither displays nor ranks by

@@ -275,6 +275,71 @@
       "behavior": "make ci-run-summary RUN=123 CI_RUN_SUMMARY_REPO=sandboxcom/gludd CI_RUN_SUMMARY_VALIDATE_ONLY=1"
     },
     {
+      "name": "ci-view",
+      "make_variables": [
+        "RUN",
+        "CI_FAILURE_REPOSITORY",
+        "CI_FAILURE_LEDGER",
+        "CI_FAILURE_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-view RUN=123 CI_FAILURE_REPOSITORY=sandboxcom/gludd CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_FAILURE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "ci-rerun",
+      "make_variables": [
+        "RUN",
+        "CI_FAILURE_REPOSITORY",
+        "CI_FAILURE_LEDGER",
+        "CI_RERUN_ALLOW_UNCHANGED",
+        "CI_RERUN_REASON",
+        "CI_FAILURE_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-rerun RUN=123 CI_FAILURE_REPOSITORY=sandboxcom/gludd CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_RERUN_ALLOW_UNCHANGED=0 CI_RERUN_REASON=none CI_FAILURE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "ci-failure-status",
+      "make_variables": [
+        "CI_FAILURE_LEDGER",
+        "CI_FAILURE_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-failure-status CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_FAILURE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "ci-failure-repair",
+      "make_variables": [
+        "CI_FAILURE_LEDGER",
+        "CI_FAILURE_FAMILIES",
+        "CI_REPAIR_ALL_OPEN",
+        "CI_REPAIR_SHA",
+        "CI_REPAIR_EVIDENCE_TARGET",
+        "CI_REPAIR_EVIDENCE_VARS",
+        "CI_FAILURE_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-failure-repair CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_FAILURE_FAMILIES= CI_REPAIR_ALL_OPEN=1 CI_REPAIR_SHA=0000000000000000000000000000000000000000 CI_REPAIR_EVIDENCE_TARGET=test-count CI_REPAIR_EVIDENCE_VARS= CI_FAILURE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "ci-failure-push-guard",
+      "make_variables": [
+        "CI_FAILURE_LEDGER",
+        "CI_FAILURE_BRANCH",
+        "CI_FAILURE_HEAD",
+        "CI_FAILURE_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-failure-push-guard CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_FAILURE_BRANCH=development CI_FAILURE_HEAD=0000000000000000000000000000000000000000 CI_FAILURE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "pipeline-status",
+      "make_variables": [
+        "PIPELINE_STATUS_REPO",
+        "PIPELINE_STATUS_BRANCH",
+        "PIPELINE_STATUS_REMOTE",
+        "PIPELINE_STATUS_SHA",
+        "PIPELINE_STATUS_FAILURE_LEDGER",
+        "PIPELINE_STATUS_VALIDATE_ONLY"
+      ],
+      "behavior": "make pipeline-status PIPELINE_STATUS_REPO=sandboxcom/gludd PIPELINE_STATUS_BRANCH=development PIPELINE_STATUS_REMOTE=sandboxcom PIPELINE_STATUS_SHA= PIPELINE_STATUS_FAILURE_LEDGER=.gludd/ci-failure-ledger.json PIPELINE_STATUS_VALIDATE_ONLY=1"
+    },
+    {
       "name": "reviewed-head-receipt",
       "make_variables": [
         "REVIEWED_HEAD_RECEIPT_MANIFEST",
@@ -350,6 +415,17 @@
       "behavior": "make ci-artifact-context RUN=1 ARTIFACT=diagnostics CI_ARTIFACT_FILE=failure.log PATTERN=FAILED BEFORE=2 AFTER=4 MAX_MATCHES=1 CI_ARTIFACT_CONTEXT_VALIDATE_ONLY=1"
     },
     {
+      "name": "ci-pyinstaller-warning-audit",
+      "make_variables": [
+        "RUN",
+        "ARTIFACT",
+        "PYINSTALLER_WARNING_ARCHITECTURE_LINUX",
+        "PYINSTALLER_VERSION_LINUX",
+        "CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-pyinstaller-warning-audit RUN=1 ARTIFACT=molecule-logs-shard-1 PYINSTALLER_WARNING_ARCHITECTURE_LINUX=x86_64 PYINSTALLER_VERSION_LINUX=6.20.0 CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=1"
+    },
+    {
       "name": "ci-coverage-artifact-audit",
       "make_variables": [
         "CI_COVERAGE_RUN",
@@ -421,6 +497,29 @@
         "PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY"
       ],
       "behavior": "make audit-linux-pyinstaller-warnings PYINSTALLER_WARNING_FILE_LINUX=dist/linux/warn-gludd.txt PYINSTALLER_WARNING_ALLOWLIST_LINUX=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_VERSION_LINUX=6.20.0 PYINSTALLER_WARNING_ARCHITECTURE_LINUX=x86_64 PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "compare-linux-pyinstaller-warnings",
+      "make_variables": [
+        "PYINSTALLER_WARNING_BEFORE",
+        "PYINSTALLER_WARNING_AFTER",
+        "PYINSTALLER_WARNING_ALLOWLIST_LINUX",
+        "PYINSTALLER_VERSION_LINUX",
+        "PYINSTALLER_WARNING_ARCHITECTURE_LINUX",
+        "PYINSTALLER_WARNING_REVIEW_RECEIPT",
+        "PYINSTALLER_WARNING_COMPARE_VALIDATE_ONLY"
+      ],
+      "behavior": "make compare-linux-pyinstaller-warnings PYINSTALLER_WARNING_BEFORE=/tmp/gludd-warning-before.txt PYINSTALLER_WARNING_AFTER=/tmp/gludd-warning-after.txt PYINSTALLER_WARNING_ALLOWLIST_LINUX=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_VERSION_LINUX=6.20.0 PYINSTALLER_WARNING_ARCHITECTURE_LINUX=aarch64 PYINSTALLER_WARNING_REVIEW_RECEIPT=artifacts/pyinstaller-warning-review.json PYINSTALLER_WARNING_COMPARE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "check-pyinstaller-warning-reviews",
+      "make_variables": [
+        "PYINSTALLER_WARNING_REVIEW_POLICY",
+        "PYINSTALLER_WARNING_REVIEW_DIR",
+        "PYINSTALLER_WARNING_REVIEW_BASE_POLICY",
+        "PYINSTALLER_WARNING_REVIEW_CHECK_VALIDATE_ONLY"
+      ],
+      "behavior": "make check-pyinstaller-warning-reviews PYINSTALLER_WARNING_REVIEW_POLICY=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_WARNING_REVIEW_DIR=config/pyinstaller-warning-reviews PYINSTALLER_WARNING_REVIEW_BASE_POLICY= PYINSTALLER_WARNING_REVIEW_CHECK_VALIDATE_ONLY=1"
     },
     {
       "name": "molecule-test",
@@ -833,6 +932,11 @@
       "behavior": "make check-make-target-contract"
     },
     {
+      "name": "check-dispatch-dedup",
+      "make_variables": [],
+      "behavior": "make check-dispatch-dedup"
+    },
+    {
       "name": "ci-trigger-committed-head",
       "make_variables": [
         "EXAMPLE",
@@ -964,6 +1068,11 @@
       "behavior": "make git-show-commit C=e4c9b68aea0ff59cab77a06747471e248e9e0601"
     },
     {
+      "name": "git-show-full",
+      "make_variables": ["SHA"],
+      "behavior": "make git-show-full SHA=e4c9b68aea0ff59cab77a06747471e248e9e0601"
+    },
+    {
       "name": "git-patch-equivalence",
       "make_variables": ["PATCH_UPSTREAM", "PATCH_HEAD", "PATCH_LIMIT"],
       "behavior": "make git-patch-equivalence PATCH_UPSTREAM=development PATCH_HEAD=master PATCH_LIMIT=3"
@@ -972,6 +1081,36 @@
       "name": "submodule-init",
       "make_variables": ["SUBMODULE_INIT_VALIDATE_ONLY"],
       "behavior": "make submodule-init SUBMODULE_INIT_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "build-linux-binary-image",
+      "variables": [
+        "LIMA_INSTANCE",
+        "LIMA_DOCKER_CONFIG",
+        "LIMA_DOCKER_TEMPLATE",
+        "LIMA_DOCKER_START_TIMEOUT_SECS",
+        "LIMA_DOCKER_VALIDATE_ONLY",
+        "LINUX_BINARY_IMAGE",
+        "LINUX_BINARY_DOCKERFILE",
+        "LINUX_BINARY_IMAGE_BUILD_VALIDATE_ONLY",
+        "DOCKER_BUILDX_BIN",
+        "DOCKER_BUILDX_AUTO_INSTALL",
+        "DOCKER_BUILDX_FORMULA",
+        "PYINSTALLER_PYTHON_VERSION_LINUX",
+        "PYINSTALLER_UV_VERSION_LINUX"
+      ],
+      "behavior": "make build-linux-binary-image LIMA_INSTANCE=gludd-docker LIMA_DOCKER_CONFIG=/tmp/gludd-lima-docker-config LIMA_DOCKER_TEMPLATE=template:docker LIMA_DOCKER_START_TIMEOUT_SECS=180 LIMA_DOCKER_VALIDATE_ONLY=1 LINUX_BINARY_IMAGE=gludd-linux-binary-build:python3.12.14-uv0.12.19 LINUX_BINARY_DOCKERFILE=config/containers/linux-binary.Dockerfile LINUX_BINARY_IMAGE_BUILD_VALIDATE_ONLY=1 DOCKER_BUILDX_BIN= DOCKER_BUILDX_AUTO_INSTALL=0 DOCKER_BUILDX_FORMULA=docker-buildx PYINSTALLER_PYTHON_VERSION_LINUX=3.12.14 PYINSTALLER_UV_VERSION_LINUX=0.12.19"
+    },
+    {
+      "name": "lima-docker-ensure",
+      "variables": [
+        "LIMA_INSTANCE",
+        "LIMA_DOCKER_CONFIG",
+        "LIMA_DOCKER_TEMPLATE",
+        "LIMA_DOCKER_START_TIMEOUT_SECS",
+        "LIMA_DOCKER_VALIDATE_ONLY"
+      ],
+      "behavior": "make lima-docker-ensure LIMA_INSTANCE=gludd-docker LIMA_DOCKER_CONFIG=/tmp/gludd-lima-docker-config LIMA_DOCKER_TEMPLATE=template:docker LIMA_DOCKER_START_TIMEOUT_SECS=180 LIMA_DOCKER_VALIDATE_ONLY=1"
     },
     {
       "name": "lima-docker-start",
@@ -1101,6 +1240,16 @@
       "name": "update-ansible-runtime-lock",
       "make_variables": [],
       "behavior": "make update-ansible-runtime-lock"
+    },
+    {
+      "name": "refresh-ansible-base-image",
+      "make_variables": ["ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY"],
+      "behavior": "make refresh-ansible-base-image ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "check-ansible-base-image",
+      "make_variables": ["ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY"],
+      "behavior": "make check-ansible-base-image ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=1"
     },
     {
       "name": "build-ansible-execution-environment",

@@ -369,7 +369,10 @@ def test_make_target_is_public_and_delegates_to_the_single_checker() -> None:
 def test_checker_follows_disk_preflight_and_precedes_fast_quality_work() -> None:
     makefile = MAKEFILE.read_text(encoding="utf-8")
     fast = _target_prerequisites(makefile, "gate-fast")
-    full = _target_prerequisites(makefile, "gate")
+    full = makefile.split("GATE_PREFLIGHT_TARGETS :=", 1)[1].split(
+        "GATE_PREFLIGHT_STATUS", 1
+    )[0]
+    gate = makefile.split("\ngate:", 1)[1].split("\n\n", 1)[0]
     refresh = _target_prerequisites(makefile, "gate-refresh")
     release_full = _target_prerequisites(makefile, "gate-full")
 
@@ -385,6 +388,7 @@ def test_checker_follows_disk_preflight_and_precedes_fast_quality_work() -> None
     assert full.index("check-generated-artifact-hygiene") < full.index(
         "check-opencode-integrity",
     )
+    assert "_gate-preflights" in gate
     assert refresh.index("check-generated-artifact-hygiene") < len(refresh)
     assert release_full == ["gate-refresh"]
 

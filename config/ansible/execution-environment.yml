@@ -5,7 +5,7 @@ images:
     # Ansible Builder 3.x supports RPM/dnf bases; Debian-family bases are not
     # supported. This immutable CentOS Stream 9 index is resolved independently
     # of the managed-host Python lock and the Gludd core interpreter.
-    name: quay.io/centos/centos:stream9@sha256:64e5a212e4f2e7b706dbd822968914bb8def7de0a7fdfd3bf248241f8758101c
+    name: quay.io/centos/centos:stream9@sha256:0996d37c69b3a8c33042932d415ad7bf5a8122270264e835e5c0153615aef0e4
 dependencies:
   galaxy: requirements.yml
   python: requirements.txt

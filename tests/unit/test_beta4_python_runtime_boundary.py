@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SHA256_IMAGE = "registry.example/gludd-ee:beta4@sha256:" + "a" * 64
 CENTOS_STREAM9_INDEX = (
     "quay.io/centos/centos:stream9@sha256:"
-    "64e5a212e4f2e7b706dbd822968914bb8def7de0a7fdfd3bf248241f8758101c"
+    "0996d37c69b3a8c33042932d415ad7bf5a8122270264e835e5c0153615aef0e4"
 )
 
 

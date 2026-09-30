@@ -15,9 +15,11 @@ from scripts import audit_pyinstaller_warnings as warning_audit
 
 _ROOT = Path(__file__).resolve().parents[2]
 _MAKEFILE = _ROOT / "Makefile"
+_BUILD_WORKFLOW = _ROOT / ".github" / "workflows" / "build.yml"
 _MOLECULE_WORKFLOW = _ROOT / ".github" / "workflows" / "molecule.yml"
 _SCRIPT = _ROOT / "scripts" / "audit_pyinstaller_warnings.py"
 _LINUX_POLICY = _ROOT / "config" / "pyinstaller-warning-allowlist-linux.json"
+_LINUX_BUILDER_DOCKERFILE = _ROOT / "config" / "containers" / "linux-binary.Dockerfile"
 _CONNECTOR_REGISTRY = _ROOT / "src" / "general_ludd" / "connectors" / "registry.py"
 _PRICING_SOURCES = _ROOT / "src" / "general_ludd" / "pricing_intel" / "sources.py"
 _PYINSTALLER_VERSION = "6.20.0"
@@ -145,18 +147,22 @@ def test_makefile_exposes_replayable_linux_warning_audit() -> None:
 
     assert "PYINSTALLER_WARNING_FILE_LINUX ?= dist/linux/warn-gludd.txt" in makefile
     assert "PYINSTALLER_WARNING_ARCHITECTURE_LINUX ?=" in makefile
+    assert "PYINSTALLER_PYTHON_VERSION_LINUX ?= 3.12.14" in makefile
     assert "\naudit-linux-pyinstaller-warnings:" in makefile
     assert '--warnings "$(PYINSTALLER_WARNING_FILE_LINUX)"' in makefile
     assert 'architecture="$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX)"' in makefile
     assert makefile.count('--architecture "$$architecture"') == 3
+    assert makefile.count(
+        'test "$$python_version" = "$(PYINSTALLER_PYTHON_VERSION_LINUX)"'
+    ) == 2
 
 
 def test_molecule_binary_smoke_uses_release_builder_python_minor() -> None:
     """The hosted artifact smoke must analyze the same locked Python graph."""
-    makefile = _MAKEFILE.read_text(encoding="utf-8")
+    dockerfile = _LINUX_BUILDER_DOCKERFILE.read_text(encoding="utf-8")
     workflow = _MOLECULE_WORKFLOW.read_text(encoding="utf-8")
 
-    builder = re.search(r"LINUX_BINARY_IMAGE \?=.*python(?P<minor>\d+\.\d+)-", makefile)
+    builder = re.search(r"python:(?P<minor>\d+\.\d+)\.\d+-", dockerfile)
     hosted = re.search(
         r'python-version: "(?P<minor>\d+\.\d+)(?:\.\d+)?"',
         workflow,
@@ -167,11 +173,52 @@ def test_molecule_binary_smoke_uses_release_builder_python_minor() -> None:
     assert "uv sync --frozen" in workflow
 
 
+def test_linux_builder_combines_exact_python_and_uv_images() -> None:
+    """One cached builder must pin both interpreter and package-manager identity."""
+    dockerfile = _LINUX_BUILDER_DOCKERFILE.read_text(encoding="utf-8")
+    makefile = _MAKEFILE.read_text(encoding="utf-8")
+
+    assert (
+        "FROM docker.io/library/python:3.12.14-slim-bookworm@"
+        "sha256:392307d22300de8b5986851a12d9176dfc0fc073e65bf6523ebd7dcbeb23564e"
+    ) in dockerfile
+    assert (
+        "FROM ghcr.io/astral-sh/uv:0.12.19@"
+        "sha256:04d046b13e60d6bcec73cbc5e1cad25d680dea90c8573340950a0ac2d1aef424"
+        " AS uv"
+    ) in dockerfile
+    assert "COPY --from=uv /uv /uvx /bin/" in dockerfile
+    assert "LINUX_BINARY_IMAGE ?= gludd-linux-binary-build:python3.12.14-uv0.12.19" in makefile
+    assert "build-linux-binary-image: lima-docker-ensure" in makefile
+    assert "build-linux-executable: worktree-guard" in makefile
+    assert "$(MAKE) --no-print-directory build-linux-binary-image" in makefile
+
+
 def test_molecule_binary_smoke_pins_hosted_python_patch() -> None:
     """Hosted PyInstaller analysis must not float to a new patch graph."""
     workflow = _MOLECULE_WORKFLOW.read_text(encoding="utf-8")
 
     assert 'python-version: "3.12.14"' in workflow
+
+
+def test_every_hosted_linux_warning_graph_uses_one_python_and_frozen_lock() -> None:
+    """Build, release, and dedicated Molecule lanes must analyze one graph."""
+    build = _BUILD_WORKFLOW.read_text(encoding="utf-8")
+    molecule = _MOLECULE_WORKFLOW.read_text(encoding="utf-8")
+    build_molecule = build.split("\n  molecule:", 1)[1].split("\n  linux:", 1)[0]
+    build_linux = build.split("\n  linux:", 1)[1].split("\n  macos:", 1)[0]
+
+    assert 'python-version: "3.12.14"' in build_molecule
+    assert 'python-version: "3.12.14"' in build_linux
+    assert "uv sync\n" not in build_molecule
+    assert "uv sync --frozen" in build_molecule
+    assert "uv sync\n" not in build_linux
+    assert "uv sync --frozen" in build_linux
+    assert 'python-version: "3.12.14"' in molecule
+    assert "uv sync --frozen" in molecule
+    assert "Audit Linux PyInstaller warning graph" in build
+    assert "Upload Linux PyInstaller warning graph" in build
+    assert "Upload Linux PyInstaller warning graph" in molecule
 
 
 def test_linux_policy_reviews_current_ghe_x86_64_graph() -> None:
@@ -188,8 +235,8 @@ def test_linux_policy_pins_hosted_and_container_architectures() -> None:
 
     assert policy["schema_version"] == 3
     assert policy["transitive_warning_sha256_by_architecture"] == {
-        "aarch64": ("b1f5847aeb5bf530dba2b4ef58b0890b5b7a2e409b458fdfe7d0ccbd6a218e02"),
-        "x86_64": ("2c13f6587ccf3c51c1f8474df595895b028796abd584aedbfdc30b907cc02e59"),
+        "aarch64": ("183b6e569e7b39b185d6ad522c147de657e9a4aff00867a8126494e4cc076f2f"),
+        "x86_64": ("d4fcb35befd9c6ec6a1890e25f9fe9c0f96e3cdff393cb9bcca4c8952fe51e2d"),
     }
 
 

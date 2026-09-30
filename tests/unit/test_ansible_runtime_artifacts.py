@@ -18,6 +18,115 @@ from scripts import ansible_runtime_artifacts as artifacts
 PINNED_IMAGE = "registry.example/gludd-ee:beta4@sha256:" + "b" * 64
 
 
+class _RegistryResponse:
+    def __init__(self, digest: str | None) -> None:
+        self.headers = {} if digest is None else {"Docker-Content-Digest": digest}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args) -> None:
+        return None
+
+
+def test_resolve_base_image_digest_uses_official_manifest_api() -> None:
+    digest = "sha256:" + "c" * 64
+    calls: list[tuple[object, int]] = []
+
+    def opener(request, *, timeout):
+        calls.append((request, timeout))
+        return _RegistryResponse(digest)
+
+    assert artifacts.resolve_base_image_digest(opener=opener) == (
+        f"{artifacts.BASE_IMAGE_TAG}@{digest}"
+    )
+    request, timeout = calls[0]
+    assert request.full_url == artifacts.BASE_IMAGE_MANIFEST_URL
+    assert request.get_method() == "HEAD"
+    assert "manifest.list.v2+json" in request.get_header("Accept")
+    assert timeout == 30
+
+
+@pytest.mark.parametrize("digest", [None, "sha256:short", "sha256:" + "G" * 64])
+def test_resolve_base_image_digest_rejects_missing_or_invalid_header(digest) -> None:
+    with pytest.raises(RuntimeError, match="Docker-Content-Digest"):
+        artifacts.resolve_base_image_digest(
+            opener=lambda *_args, **_kwargs: _RegistryResponse(digest)
+        )
+
+
+def test_refresh_base_image_updates_definition_and_lock_together(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    old_image = f"{artifacts.BASE_IMAGE_TAG}@sha256:" + "a" * 64
+    new_image = f"{artifacts.BASE_IMAGE_TAG}@sha256:" + "b" * 64
+    definition = tmp_path / "execution-environment.yml"
+    lock = tmp_path / "runtime-lock.json"
+    definition.write_text(
+        f"version: 3\nimages:\n  base_image:\n    name: {old_image}\n",
+        encoding="utf-8",
+    )
+    lock.write_text(
+        json.dumps({"schema_version": 1, "base_image": old_image, "inputs": {}}) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(artifacts, "DEFINITION", definition)
+    monkeypatch.setattr(artifacts, "LOCK", lock)
+    monkeypatch.setattr(artifacts, "resolve_base_image_digest", lambda: new_image)
+    monkeypatch.setattr(
+        artifacts,
+        "expected_input_hashes",
+        lambda: {"definition": "sha256:" + "d" * 64},
+    )
+
+    assert artifacts.refresh_base_image() == new_image
+
+    assert new_image in definition.read_text(encoding="utf-8")
+    refreshed = json.loads(lock.read_text(encoding="utf-8"))
+    assert refreshed["base_image"] == new_image
+    assert refreshed["inputs"] == {"definition": "sha256:" + "d" * 64}
+
+
+def test_check_configured_base_image_verifies_the_exact_pinned_digest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    digest = "sha256:" + "e" * 64
+    image = f"{artifacts.BASE_IMAGE_TAG}@{digest}"
+    definition = tmp_path / "execution-environment.yml"
+    definition.write_text(
+        f"images:\n  base_image:\n    name: {image}\n",
+        encoding="utf-8",
+    )
+    requests: list[object] = []
+
+    def opener(request, *, timeout):
+        assert timeout == 30
+        requests.append(request)
+        return _RegistryResponse(digest)
+
+    monkeypatch.setattr(artifacts, "DEFINITION", definition)
+
+    assert artifacts.check_configured_base_image(opener=opener) == image
+    assert requests[0].full_url.endswith(f"/manifests/{digest}")
+
+
+def test_check_configured_base_image_rejects_a_registry_identity_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    digest = "sha256:" + "e" * 64
+    definition = tmp_path / "execution-environment.yml"
+    definition.write_text(
+        f"images:\n  base_image:\n    name: {artifacts.BASE_IMAGE_TAG}@{digest}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(artifacts, "DEFINITION", definition)
+
+    with pytest.raises(RuntimeError, match="identity mismatch"):
+        artifacts.check_configured_base_image(
+            opener=lambda *_args, **_kwargs: _RegistryResponse("sha256:" + "f" * 64)
+        )
+
+
 def test_tracked_runtime_artifacts_validate() -> None:
     assert artifacts.validate_files() == []
 
@@ -243,11 +352,37 @@ def test_build_reports_missing_tools(
     assert message in capsys.readouterr().err
 
 
+def test_build_stops_before_collection_when_pinned_base_disappears(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(artifacts, "validate_files", lambda: [])
+    monkeypatch.setattr(artifacts, "find_spec", lambda _name: object())
+    monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(
+        artifacts,
+        "check_configured_base_image",
+        MagicMock(side_effect=RuntimeError("manifest unknown")),
+    )
+    monkeypatch.setattr(
+        artifacts,
+        "_build_collection_artifacts",
+        lambda: pytest.fail("collection builds must not start for a dead base image"),
+    )
+
+    assert artifacts.build_environment("podman", "gludd-ee:beta4", tmp_path, False) == 1
+    error = capsys.readouterr().err
+    assert "manifest unknown" in error
+    assert "make refresh-ansible-base-image" in error
+
+
 def test_build_streams_ansible_builder_with_bounded_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[list[str], Path | None]] = []
     monkeypatch.setattr(artifacts, "validate_files", lambda: [])
     monkeypatch.setattr(artifacts, "find_spec", lambda _name: object())
     monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(artifacts, "check_configured_base_image", lambda: PINNED_IMAGE)
     collection_artifacts = tuple(
         (tmp_path / f"source-{index}", tmp_path / "dist" / f"collection-{index}.tar.gz")
         for index in range(3)
@@ -282,6 +417,7 @@ def test_build_fails_closed_when_collection_artifact_is_missing(
     output = tmp_path / "dist" / "collection.tar.gz"
     monkeypatch.setattr(artifacts, "validate_files", lambda: [])
     monkeypatch.setattr(shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(artifacts, "check_configured_base_image", lambda: PINNED_IMAGE)
     monkeypatch.setattr(artifacts, "COLLECTION_ARTIFACTS", ((source, output),))
     monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(returncode=0))
 
@@ -371,3 +507,51 @@ def test_cli_write_lock_and_validation_failure(monkeypatch: pytest.MonkeyPatch) 
     write.assert_called_once_with()
     monkeypatch.setattr(artifacts, "validate_files", lambda: ["broken"])
     assert artifacts.main(["validate"]) == 1
+
+
+def test_cli_refreshes_and_checks_the_base_image(monkeypatch: pytest.MonkeyPatch) -> None:
+    refreshed = MagicMock(return_value=PINNED_IMAGE)
+    checked = MagicMock(return_value=PINNED_IMAGE)
+    monkeypatch.setattr(artifacts, "refresh_base_image", refreshed)
+    monkeypatch.setattr(artifacts, "check_configured_base_image", checked)
+
+    assert artifacts.main(["refresh-base-image"]) == 0
+    assert artifacts.main(["check-base-image"]) == 0
+    refreshed.assert_called_once_with()
+    checked.assert_called_once_with()
+
+
+def test_base_image_refresh_make_target_is_safe_and_contract_registered() -> None:
+    makefile = (artifacts.ROOT / "Makefile").read_text(encoding="utf-8")
+    target = makefile.split("refresh-ansible-base-image:", 1)[1].split("\n\n", 1)[0]
+    assert "ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY" in target
+    assert "refresh-base-image" in target
+    assert "scripts/ansible_runtime_artifacts.py" in target
+
+    payload = json.loads(
+        (artifacts.ROOT / "config" / "make_target_contract.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    contracts = {item["name"]: item for item in payload["targets"]}
+    assert contracts["refresh-ansible-base-image"] == {
+        "name": "refresh-ansible-base-image",
+        "make_variables": ["ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY"],
+        "behavior": (
+            "make refresh-ansible-base-image "
+            "ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY=1"
+        ),
+    }
+    check_target = makefile.split("check-ansible-base-image:", 1)[1].split(
+        "\n\n", 1
+    )[0]
+    assert "ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY" in check_target
+    assert "check-base-image" in check_target
+    assert contracts["check-ansible-base-image"] == {
+        "name": "check-ansible-base-image",
+        "make_variables": ["ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY"],
+        "behavior": (
+            "make check-ansible-base-image "
+            "ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=1"
+        ),
+    }

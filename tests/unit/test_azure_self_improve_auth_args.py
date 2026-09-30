@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -299,7 +300,12 @@ def test_make_target_missing_input_has_no_partial_argument_stream() -> None:
     assert result.stderr.startswith(
         b"azure-self-improve-auth-args: AZURE_SELF_IMPROVE_SP_NAME is required\n"
     )
-    assert result.stderr.endswith(b"[azure-self-improve-auth-args] Error 2\n")
+    make_error = result.stderr.splitlines()[-1]
+    assert re.fullmatch(
+        rb"make(?:\[\d+\])?: \*\*\* "
+        rb"\[(?:Makefile:\d+: )?azure-self-improve-auth-args\] Error 2",
+        make_error,
+    )
 
 
 def test_make_function_shaped_input_is_never_evaluated(tmp_path: Path) -> None:

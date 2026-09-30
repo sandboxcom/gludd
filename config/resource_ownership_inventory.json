@@ -25,6 +25,17 @@
       "owned": true
     },
     {
+      "path": "scripts/ansible_runtime_artifacts.py",
+      "line": 181,
+      "column": 13,
+      "kind": "temp-artifact",
+      "owner": "_atomic_write_text",
+      "acquisition": "tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent, prefix=f'.{path.name}.', delete=False)",
+      "teardown": "context-manager-exit",
+      "source_hash": "1856ccddf5a24a36fd22246ad72e0013f01f7f9c1fc4d6204de577d6e356d96c",
+      "owned": true
+    },
+    {
       "path": "scripts/bisect_pytest_collection_polluter.py",
       "line": 119,
       "column": 13,
@@ -77,6 +88,28 @@
       "acquisition": "subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=PROJECT_ROOT, bufsize=1)",
       "teardown": "proc.kill(); proc.terminate(); proc.wait(timeout=5)",
       "source_hash": "9a4cc7d5c77b59c0af9cda2f258d0a182d87ba51cda25af7698f1dedd302c422",
+      "owned": true
+    },
+    {
+      "path": "scripts/ci_failure_ledger.py",
+      "line": 120,
+      "column": 13,
+      "kind": "temp-artifact",
+      "owner": "write_ledger",
+      "acquisition": "tempfile.NamedTemporaryFile(mode='wb', prefix=f'.{path.name}.', dir=path.parent, delete=False)",
+      "teardown": "context-manager-exit",
+      "source_hash": "380eeaa9ba122b847e5bfcdf962f7df0bafa4e09668d743935a0e26468f9bd9a",
+      "owned": true
+    },
+    {
+      "path": "scripts/compare_pyinstaller_warning_graphs.py",
+      "line": 150,
+      "column": 33,
+      "kind": "temp-artifact",
+      "owner": "write_receipt",
+      "acquisition": "tempfile.mkstemp(prefix=f'.{path.name}.', suffix='.tmp', dir=path.parent)",
+      "teardown": "temporary_path.unlink()",
+      "source_hash": "6e9f41548c23e7b6a3eef2daa1e68a0677dad0d713e4a953a31e31e43b32ee57",
       "owned": true
     },
     {

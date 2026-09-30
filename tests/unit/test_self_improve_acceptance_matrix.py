@@ -110,7 +110,7 @@ EXPECTED_REFERENCE_ELAPSED_SECONDS = {
 EXPECTED_REFERENCE_CHANGED_LINES = {
     "AM-BUG-01": 29,
     "AM-FEATURE-01": 93,
-    "AM-REFACTOR-01": 189,
+    "AM-REFACTOR-01": 190,
     "AM-TEST-01": 117,
     "AM-REVIEW-01": 55,
     "AM-DOC-01": 437,
@@ -829,6 +829,63 @@ def test_git_show_commit_exposes_stable_boundary_metadata_additively() -> None:
     }
 
 
+def test_git_show_full_pins_host_independent_patch_rendering() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    target = _target_block(makefile, "git-show-full")
+
+    assert (
+        "git show --no-ext-diff --no-textconv --no-color --no-color-moved "
+        "--no-renames --no-indent-heuristic --diff-algorithm=myers "
+        "--default-prefix --unified=3 \"$(SHA)\""
+    ) in target
+
+    contract = json.loads(
+        (ROOT / "config/make_target_contract.json").read_text(encoding="utf-8")
+    )
+    entry = next(item for item in contract["targets"] if item["name"] == "git-show-full")
+    assert entry == {
+        "name": "git-show-full",
+        "make_variables": ["SHA"],
+        "behavior": (
+            "make git-show-full "
+            "SHA=e4c9b68aea0ff59cab77a06747471e248e9e0601"
+        ),
+    }
+
+
+def test_git_show_full_ignores_host_diff_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reference_sha = EXPECTED_REFERENCE_PAIRS["AM-REFACTOR-01"][1]
+    baseline = MakeRunner(ROOT).run(
+        "git-show-full",
+        {"SHA": reference_sha},
+        read_only=True,
+    )
+    assert baseline.returncode == 0
+
+    poisoned_config = {
+        "diff.algorithm": "histogram",
+        "diff.indentHeuristic": "true",
+        "diff.renames": "copies",
+        "diff.noprefix": "true",
+        "color.ui": "always",
+    }
+    monkeypatch.setenv("GIT_CONFIG_COUNT", str(len(poisoned_config)))
+    for index, (key, value) in enumerate(poisoned_config.items()):
+        monkeypatch.setenv(f"GIT_CONFIG_KEY_{index}", key)
+        monkeypatch.setenv(f"GIT_CONFIG_VALUE_{index}", value)
+
+    poisoned = MakeRunner(ROOT).run(
+        "git-show-full",
+        {"SHA": reference_sha},
+        read_only=True,
+    )
+
+    assert poisoned.returncode == 0
+    assert poisoned.stdout == baseline.stdout
+
+
 def test_make_target_is_pinned_safe_by_default_and_explicitly_live() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     target = _target_block(makefile, "test-self-improve-acceptance-matrix")
@@ -896,6 +953,9 @@ def test_document_routes_execution_to_manifest_and_existing_practitioner_evidenc
         "committer Unix timestamp",
         "conservative end-to-end upper bound",
         "not an inference-only benchmark",
+        "Host-independent Git patch contract",
+        "--diff-algorithm=myers",
+        "microsoft/vscode/issues/93534",
     ):
         assert fact in document
 

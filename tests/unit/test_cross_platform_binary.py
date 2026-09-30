@@ -62,14 +62,18 @@ def test_tracked_paths_are_windows_checkout_compatible() -> None:
 def test_gate_checks_tracked_paths_before_platform_fanout() -> None:
     """The Linux gate must reject Windows-invalid paths before build fanout."""
     makefile = MAKEFILE_PATH.read_text(encoding="utf-8")
-    gate_line = next(line for line in makefile.splitlines() if line.startswith("gate:"))
+    gate = makefile.split("\ngate:", 1)[1].split("\n\n", 1)[0]
+    gate_preflights = makefile.split("GATE_PREFLIGHT_TARGETS :=", 1)[1].split(
+        "GATE_PREFLIGHT_STATUS", 1
+    )[0]
     check_match = re.search(
         r"^_check-windows-tracked-paths:\n(?P<body>(?:\t.*\n)+)",
         makefile,
         re.MULTILINE,
     )
 
-    assert "_check-windows-tracked-paths" in gate_line
+    assert "_check-windows-tracked-paths" in gate_preflights
+    assert "_gate-preflights" in gate
     assert check_match is not None
     assert "test_tracked_paths_are_windows_checkout_compatible" in check_match.group("body")
 

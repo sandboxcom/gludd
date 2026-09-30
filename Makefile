@@ -274,7 +274,7 @@ endif
 PYTEST_VERBOSITY ?= -v
 
 .PHONY: \
-        init sync uv-cache-path migrate-up relock node-deps-sync node-deps-relock node-deps-audit install-pip lint lint-files lint-markdown lint-docstrings lint-fix test test-unit test-unit-shards test-ci-dual-track-local test-specific test-specific-pyver test-files test-count test-integration test-e2e \
+        init sync uv-cache-path migrate-up relock node-deps-sync node-deps-relock node-deps-audit check-ansible-base-image refresh-ansible-base-image install-pip lint lint-files lint-markdown lint-docstrings lint-fix test test-unit test-unit-shards test-ci-dual-track-local test-specific test-specific-pyver test-files test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
          test-games test-multi-model-pipeline test-local-model-pipeline test-project-type-pipeline game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
         typecheck _precommit-mypy setup-dirs setup-venv clean healthcheck \
@@ -331,7 +331,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         deck deck-serve deck-preview deck-data deck-honesty \
         script-count strip-enforce-stop test-hooks-live test-hook-runtime e2e-setup-test-project test-opencode-e2e test-opencode-e2e-hour \
         verify-enforcement \
-ci-view ci-rerun ci-trigger ci-active ci-job-log ci-job-failure-context ci-artifact-download ci-artifact-context ci-coverage-artifact-audit ci-coverage-gap-plan ci-shards-log-context \
+    ci-view ci-rerun ci-failure-status ci-failure-repair ci-failure-push-guard ci-trigger ci-active ci-job-log ci-job-failure-context ci-artifact-download ci-artifact-context ci-pyinstaller-warning-audit ci-coverage-artifact-audit ci-coverage-gap-plan ci-shards-log-context \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
 log-agent-result disk-guard disk-check disk-cleanup-preflight check-disk check-disk-classification check-system-load disk tmp-gludd-usage tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
         tmp-gludd-worktree-usage clean-worktree-venvs clean-worktree-caches \
@@ -340,7 +340,7 @@ log-agent-result disk-guard disk-check disk-cleanup-preflight check-disk check-d
         networking-healthcheck \
         install-bats test-install check-subagent-guards verify-plugin-manifest \
          check-task-ledger \
-         check-task-integrity check-make-target-contract active-work-status \
+         check-task-integrity check-make-target-contract check-dispatch-dedup active-work-status \
          codex-stop-guard \
          codex-stop-confirm \
          test-service-discovery service-discover service-catalog \
@@ -370,6 +370,8 @@ help:
 	@echo "  check-collection-python-boundary Enforce exact/strict-zero collection migration inventory"
 	@echo "  check-resource-ownership Enforce exact application acquisition-to-teardown evidence (RESOURCE_OWNERSHIP_*)"
 	@echo "  update-ansible-runtime-lock Refresh deterministic EE input hashes"
+	@echo "  check-ansible-base-image Prove the exact EE base manifest is still served (ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=0|1)"
+	@echo "  refresh-ansible-base-image Resolve, verify, and atomically pin the supported EE base (ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY=0|1)"
 	@echo "  update-collection-python-boundary-inventory Refresh exact legacy migration inventory"
 	@echo "  deps-audit            Fail-closed Python dependency truth audit"
 	@echo "  node-deps-sync        Install locked Node deps (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY, NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false)"
@@ -516,6 +518,7 @@ help:
 	@echo "  iam-headless-smoke    Validate least-privilege provider manifests without credentials"
 	@echo "  check-task-integrity  Require changed files to map to registered tasks"
 	@echo "  validate-task-ledger  Validate TASKS.md metadata and completion evidence"
+	@echo "  check-dispatch-dedup Validate the persistent content-addressed dispatch ledger"
 	@echo "  test-and-commit       Run tests then commit if green (MSG='msg')"
 	@echo "  audit-coverage        Run coverage audit: pytest --cov + per-file threshold check"
 	@echo "  test-live-zai         Live GLM model test (requires API key)"
@@ -539,6 +542,7 @@ help:
 	@echo "  git-staged            Show staged changes"
 	@echo "  git-log               Show recent commits"
 	@echo "  git-show-commit C=<sha>  Show hash, parents, committer time, subject, and files"
+	@echo "  git-show-full SHA=<sha>  Show a host-independent canonical patch"
 	@echo "  git-patch-equivalence PATCH_UPSTREAM=<ref> PATCH_HEAD=<ref> PATCH_LIMIT=<n>  Compare patch identity"
 	@echo "  branches-unmerged-development  List every local branch tip not reachable from development"
 	@echo "  branch-reconciliation-inventory RECONCILE_TARGET=<ref> RECONCILE_LIMIT=<n> RECONCILE_AFTER=<ref|empty>  Page bounded local branch reconciliation state as JSON"
@@ -650,6 +654,10 @@ help:
 	@echo "  dist                  Build distribution tarball"
 	@echo "  build-executable      Build standalone executable (pyinstaller)"
 	@echo "  audit-linux-pyinstaller-warnings  Validate/replay the Linux PyInstaller warning policy"
+	@echo "  compare-linux-pyinstaller-warnings  Emit an exact old/new warning-graph review receipt"
+	@echo "  check-pyinstaller-warning-reviews  Require an exact receipt for every newly accepted graph"
+	@echo "  build-linux-binary-image  Build the digest-pinned Python/uv artifact environment (LINUX_BINARY_*, DOCKER_BUILDX_*, LIMA_*)"
+	@echo "  lima-docker-ensure    Provision/reuse a namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_TEMPLATE, LIMA_DOCKER_START_TIMEOUT_SECS, LIMA_DOCKER_VALIDATE_ONLY)"
 	@echo "  lima-docker-start     Start an existing namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_START_TIMEOUT_SECS, LIMA_DOCKER_VALIDATE_ONLY)"
 	@echo "  lima-docker-stop      Gracefully stop an existing namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_STOP_TIMEOUT_SECS, LIMA_DOCKER_STOP_KILL_AFTER_SECS, LIMA_DOCKER_VALIDATE_ONLY)"
 	@echo "  lima-docker-status    Inspect the namespaced Lima Docker engine (LIMA_INSTANCE, LIMA_DOCKER_CONFIG, LIMA_DOCKER_VALIDATE_ONLY)"
@@ -694,15 +702,20 @@ help:
 	@echo "  ci-job-failure-context  bounded authenticated failure context (RUN, JOB, PATTERN)"
 	@echo "  ci-artifact-download    atomically download one exact run-bound GHA artifact (RUN, ARTIFACT, CI_ARTIFACT_OUTPUT_ROOT, CI_ARTIFACT_HEARTBEAT_SECS, CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY)"
 	@echo "  ci-artifact-context     bounded context from one downloaded exact-run artifact (RUN, ARTIFACT, CI_ARTIFACT_FILE, PATTERN, BEFORE, AFTER, MAX_MATCHES, CI_ARTIFACT_CONTEXT_VALIDATE_ONLY)"
+	@echo "  ci-pyinstaller-warning-audit replay the complete warning graph from one exact-run artifact (RUN, ARTIFACT, PYINSTALLER_WARNING_*, CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY)"
 	@echo "  ci-coverage-artifact-audit audit one externally stored hosted Cobertura report (CI_COVERAGE_*)"
 	@echo "  ci-coverage-gap-plan       print a bounded exact-run line/branch remediation plan (CI_COVERAGE_*)"
 	@echo "  ci-run-summary RUN=<id> show one immutable CI run; CI_RUN_SUMMARY_VALIDATE_ONLY=0|1"
+	@echo "  ci-failure-status        Show every durable hosted failure family"
+	@echo "  ci-failure-repair        Run make-based evidence and receipt selected repairs"
+	@echo "  ci-failure-push-guard    Block pushes with open or non-ancestral repairs"
 	@echo "  ci-await BRANCH=<ref> TIMEOUT=<s> [SHA=.. CI_AWAIT_*]  Await one exact CI identity"
 	@echo "  ci-verdict-safe        Cooldown-enforced CI check (prefer over bare ci-verdict)"
 	@echo "  ci-dashboard           One-shot compact CI run listing"
 	@echo "  ci-diagnose            Fetch CI failure annotations and group by root cause"
 	@echo "  ci-cooldown-status     Show remaining cooldown seconds"
 	@echo "  ci-view RUN=<id>       Show CI run details (jobs, steps, failures)"
+	@echo "  ci-rerun RUN=<id>      Guard and rerun one observed immutable CI run"
 	@echo "  ci-active              List active/in-flight CI runs"
 	@echo "  ci-greenness           CI reliability ratio (green / total completed)"
 	@echo "  ci-trigger-committed-head [REF=<b>]  Idempotently signal + return exact-SHA GHA run URL"
@@ -782,7 +795,7 @@ help:
 	@echo "  check-version-consistencyverify version matches across pyproject.toml, __init__.py, and README"
 	@echo "  check-gate-fresh        validate .gate-status is fresh and all phases pass — replaces broken _gate-fresh-check inline shell"
 	@echo "  pipeline-health         verify both local and remote pipelines are actually running (not stalled/zombie)"
-	@echo "  pipeline-status         show both local gate + remote CI status in one view"
+	@echo "  pipeline-status         exact pushed-SHA local/all-workflow status (PIPELINE_STATUS_*)"
 	@echo "  gate-all-background     run gate-all in background, poll with gate-status-check"
 	@echo "  target-two              Second test target"
 	@echo "  target-one              First test target"
@@ -920,6 +933,16 @@ validate-ansible-runtime-boundary:
 
 update-ansible-runtime-lock:
 	@$(UV) run python scripts/ansible_runtime_artifacts.py write-lock
+
+ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY ?= 1
+check-ansible-base-image:
+	@case "$(ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY)" in 0|1) ;; *) echo "ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@if [ "$(ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY)" = "1" ]; then echo "ANSIBLE_BASE_IMAGE_CHECK_VALIDATED source=quay.io/centos/centos:stream9"; else $(UV) run python scripts/ansible_runtime_artifacts.py check-base-image; fi
+
+ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY ?= 1
+refresh-ansible-base-image:
+	@case "$(ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY)" in 0|1) ;; *) echo "ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@if [ "$(ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY)" = "1" ]; then echo "ANSIBLE_BASE_IMAGE_REFRESH_VALIDATED source=quay.io/centos/centos:stream9"; else $(UV) run python scripts/ansible_runtime_artifacts.py refresh-base-image; fi
 
 build-ansible-execution-environment:
 	@case "$(ANSIBLE_EE_VALIDATE_ONLY)" in 0|1) ;; *) echo "ANSIBLE_EE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
@@ -1500,7 +1523,7 @@ check-test-coverage:
 # AA081 — _subagent-dedup-guard: hashes task descriptions and rejects dispatches that
 # match a recently-completed or in-progress task.
 _subagent-dedup-guard:
-	@true
+	@$(UV) run python scripts/check_dispatch_dedup.py
 
 # AA090 — _merge-strategy-doc: documents -X theirs as canonical merge strategy.
 _merge-strategy-doc:
@@ -1799,10 +1822,85 @@ _gate-run-lock-acquire:
 
 .NOTPARALLEL: gate gate-refresh
 
-gate: _gate-run-lock-acquire disk-cleanup-preflight check-generated-artifact-hygiene _dead-code-baseline-refresh _check-windows-tracked-paths check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-resource-ownership check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets check-no-prompt-prone-edit-tools validate-aws-iam 	validate-azure-iam check-azure-actions-crossref validate-gcp-iam validate-all-cloud-iam check-dependency-pinning integration-health check-runbook-currency check-version-bump-atomicity
+GATE_PREFLIGHT_TARGETS := \
+	disk-cleanup-preflight \
+	check-generated-artifact-hygiene \
+	_dead-code-baseline-refresh \
+	_check-windows-tracked-paths \
+	check-opencode-integrity \
+	check-plugin-hooks \
+	opencode-boot-smoke \
+	validate-task-ledger \
+	check-task-registration \
+	check-task-integrity \
+	check-make-target-contract \
+	check-dispatch-dedup \
+	check-subagent-guards \
+	verify-plugin-manifest \
+	check-skills-frontmatter \
+	check-coverage-gaps \
+	check-resource-ownership \
+	check-plugin-syntax \
+	check-plugin-runtime \
+	check-plugin-imports \
+	check-node-v26-compat \
+	check-duplicate-targets \
+	check-no-prompt-prone-edit-tools \
+	check-pyinstaller-warning-reviews \
+	validate-aws-iam \
+	validate-azure-iam \
+	check-azure-actions-crossref \
+	validate-gcp-iam \
+	validate-all-cloud-iam \
+	check-dependency-pinning \
+	integration-health \
+	check-runbook-currency \
+	check-version-bump-atomicity
+GATE_PREFLIGHT_STATUS ?= .gate-logs/gate-preflights.status
+GATE_PREFLIGHT_GATE_STATUS ?= .gate-status.next
+GATE_PREFLIGHT_FAILED_FILE ?= .gate-failed
+
+.PHONY: _gate-preflights _gate-preflight-fixture-pass-one _gate-preflight-fixture-fail _gate-preflight-fixture-pass-two
+
+_gate-preflight-fixture-pass-one _gate-preflight-fixture-pass-two:
+	@:
+
+_gate-preflight-fixture-fail:
+	@exit 7
+
+_gate-preflights:
+	@mkdir -p "$(dir $(GATE_PREFLIGHT_STATUS))" "$(dir $(GATE_PREFLIGHT_GATE_STATUS))" "$(dir $(GATE_PREFLIGHT_FAILED_FILE))"
+	@: > "$(GATE_PREFLIGHT_STATUS)"
+	@PREFLIGHT_FAILURES=0; PREFLIGHT_TOTAL=0; \
+	for target in $(GATE_PREFLIGHT_TARGETS); do \
+		PREFLIGHT_TOTAL=$$((PREFLIGHT_TOTAL + 1)); \
+		echo "=== GATE PREFLIGHT: $$target ==="; \
+		if $(MAKE) --no-print-directory "$$target"; then \
+			RESULT="$$target PASS"; \
+		else \
+			RC=$$?; \
+			RESULT="$$target FAIL $$RC"; \
+			PREFLIGHT_FAILURES=$$((PREFLIGHT_FAILURES + 1)); \
+			touch "$(GATE_PREFLIGHT_FAILED_FILE)"; \
+		fi; \
+		echo "$$RESULT"; \
+		echo "$$RESULT" >> "$(GATE_PREFLIGHT_STATUS)"; \
+	done; \
+	if [ "$$PREFLIGHT_FAILURES" -eq 0 ]; then \
+		echo "PASS $$PREFLIGHT_TOTAL" >> "$(GATE_PREFLIGHT_GATE_STATUS)"; \
+	else \
+		echo "FAIL $$PREFLIGHT_FAILURES log=$(GATE_PREFLIGHT_STATUS)" >> "$(GATE_PREFLIGHT_GATE_STATUS)"; \
+		echo "[gate] $$PREFLIGHT_FAILURES preflight failures retained; continuing remaining phases"; \
+	fi
+
+gate: _gate-run-lock-acquire
 	@rm -f .gate-failed .gate-status.next .gate-status.running
+	@mkdir -p .gate-logs
 	@printf "RUNNING %s %s\n" "$$(date +%s)" "$$PPID" > .gate-status.running && mv .gate-status.running .gate-status
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status.next
+	@echo "=== GATE PHASE: preflights ==="
+	@printf "preflights " >> .gate-status.next
+	@$(MAKE) --no-print-directory _gate-preflights
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
 	@# emits a timestamped stdout marker as it STARTS, so a running gate (even
 	@# backgrounded) is visibly advancing through phases — never a silent black box.
@@ -3160,7 +3258,7 @@ molecule-test:
 	chmod 700 "$$DOCKER_CONFIG_VALUE"; \
 	export DOCKER_CONFIG="$$DOCKER_CONFIG_VALUE"; \
 	PROJECT_COLLECTIONS="$$(pwd)/collections"; \
-	export ANSIBLE_COLLECTIONS_PATH="$$PROJECT_COLLECTIONS:$$ANSIBLE_STATE_DIR/collections:/usr/share/ansible/collections"; \
+	export ANSIBLE_COLLECTIONS_PATH="$$ANSIBLE_STATE_DIR/collections:$$PROJECT_COLLECTIONS:/usr/share/ansible/collections"; \
 	echo "Using Ansible collections: $$ANSIBLE_COLLECTIONS_PATH"; \
 	DOCKER_HOST_VALUE="$${DOCKER_HOST:-}"; \
 	if [ -z "$$DOCKER_HOST_VALUE" ] && command -v limactl >/dev/null 2>&1; then \
@@ -3201,7 +3299,7 @@ git-show:
 
 git-show-full:
 	@test -n "$(SHA)" || (echo "Usage: make git-show-full SHA=<sha>"; exit 1)
-	git show $(SHA)
+	git show --no-ext-diff --no-textconv --no-color --no-color-moved --no-renames --no-indent-heuristic --diff-algorithm=myers --default-prefix --unified=3 "$(SHA)"
 
 git-show-file-to:
 	@test -n "$(SHA)" || { echo "Usage: make git-show-file-to SHA=<sha> FILE=path OUT=path"; exit 1; }
@@ -3749,7 +3847,7 @@ _test-disabled-guard:
 	@if ! grep -A1 '^  release:' .github/workflows/build.yml | grep -q 'test-shard'; then \
 		echo "BLOCKED: test-shard missing from release job needs: in build.yml. Tests cannot be removed from release pipeline. Restore it."; exit 1; fi
 
-_push-rate-guard:
+_push-rate-guard: ci-failure-push-guard
 	@# Force-push tracker: prevent GLUDD_FORCE_PUSH abuse (max 5 consecutive bypasses in 12h window)
 	@if [ "$$GLUDD_FORCE_PUSH" = "1" ]; then \
 		$(PYTHON) scripts/push_rate_guard.py check-bypass || exit 1; \
@@ -4122,6 +4220,38 @@ ci-run-summary:
 	@case "$(CI_RUN_SUMMARY_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_RUN_SUMMARY_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
 	@$(PYTHON) scripts/ci_run_summary.py --run "$(RUN)" --repo "$(CI_RUN_SUMMARY_REPO)" $(if $(filter 1,$(CI_RUN_SUMMARY_VALIDATE_ONLY)),--validate-only,)
 
+# Durable all-failure ownership.  The observer binds terminal evidence to one
+# immutable run/SHA; the central push guard makes the ledger non-optional.
+CI_FAILURE_LEDGER ?= .gludd/ci-failure-ledger.json
+CI_FAILURE_REPOSITORY ?= sandboxcom/gludd
+CI_FAILURE_VALIDATE_ONLY ?= 0
+CI_FAILURE_BRANCH ?=
+CI_FAILURE_HEAD ?=
+CI_FAILURE_FAMILIES ?=
+CI_REPAIR_ALL_OPEN ?= 0
+CI_REPAIR_SHA ?=
+CI_REPAIR_EVIDENCE_TARGET ?=
+CI_REPAIR_EVIDENCE_VARS ?=
+CI_RERUN_ALLOW_UNCHANGED ?= 0
+CI_RERUN_REASON ?=
+
+ci-failure-status:
+	@case "$(CI_FAILURE_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_FAILURE_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@$(PYTHON) scripts/ci_failure_ledger.py status --ledger "$(CI_FAILURE_LEDGER)" $(if $(filter 1,$(CI_FAILURE_VALIDATE_ONLY)),--validate-only,)
+
+ci-failure-repair:
+	@case "$(CI_FAILURE_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_FAILURE_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@case "$(CI_REPAIR_ALL_OPEN)" in 0|1) ;; *) echo "CI_REPAIR_ALL_OPEN must be 0 or 1"; exit 2 ;; esac
+	@$(PYTHON) scripts/ci_failure_ledger.py repair --ledger "$(CI_FAILURE_LEDGER)" --sha "$(CI_REPAIR_SHA)" --evidence-target "$(CI_REPAIR_EVIDENCE_TARGET)" $(foreach FAMILY,$(CI_FAILURE_FAMILIES),--family "$(FAMILY)") $(if $(filter 1,$(CI_REPAIR_ALL_OPEN)),--all-open,) $(foreach EVIDENCE_VAR,$(CI_REPAIR_EVIDENCE_VARS),--evidence-var "$(EVIDENCE_VAR)") $(if $(filter 1,$(CI_FAILURE_VALIDATE_ONLY)),--validate-only,)
+
+ci-failure-push-guard:
+	@case "$(CI_FAILURE_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_FAILURE_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@BRANCH_VALUE='$(CI_FAILURE_BRANCH)'; \
+	if [ -z "$$BRANCH_VALUE" ]; then BRANCH_VALUE='$(PUSH_BRANCH)'; fi; \
+	if [ -z "$$BRANCH_VALUE" ]; then BRANCH_VALUE="$$(git branch --show-current)"; fi; \
+	[ -n "$$BRANCH_VALUE" ] || { echo "CI failure push guard requires a branch"; exit 2; }; \
+	$(PYTHON) scripts/ci_failure_ledger.py guard-push --ledger "$(CI_FAILURE_LEDGER)" --branch "$$BRANCH_VALUE" --head "$(CI_FAILURE_HEAD)" $(if $(filter 1,$(CI_FAILURE_VALIDATE_ONLY)),--validate-only,)
+
 # Consolidated, read-only state report for pre-claim verification. Prints the
 # working tree (CLEAN/DIRTY), HEAD identity + branch, remote sync state
 # (SYNCED/DIVERGED/UNREACHABLE with unpushed commits), recent commits, and the
@@ -4140,7 +4270,8 @@ verify-state:
 	@echo "Branch: $$(git branch --show-current)"
 	@echo ""
 	@echo "--- Remote ---"
-	@REMOTE=$$(GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom refs/heads/master 2>/dev/null | cut -f1); \
+	@BRANCH=$$(git branch --show-current); \
+	REMOTE=$$(GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom refs/heads/$$BRANCH 2>/dev/null | cut -f1); \
 	if [ -z "$$REMOTE" ]; then echo "UNREACHABLE"; \
 	elif [ "$$REMOTE" = "$$(git rev-parse HEAD)" ]; then echo "SYNCED: $$REMOTE"; \
 	else echo "DIVERGED: local=$$(git rev-parse --short HEAD) remote=$$(echo $$REMOTE | cut -c1-12)"; \
@@ -4150,15 +4281,9 @@ verify-state:
 	@git log --oneline -5
 	@echo ""
 	@echo "--- CI ---"
-	@SHA=$$(git rev-parse HEAD); \
-	RUN=$$(gh run list --commit=$$SHA --json databaseId,conclusion,headSha,status --jq '.[0]' 2>/dev/null || echo "{}"); \
-	CONCLUSION=$$(echo $$RUN | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('conclusion',''))" 2>/dev/null); \
-	STATUS=$$(echo $$RUN | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',''))" 2>/dev/null); \
-	RUN_ID=$$(echo $$RUN | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('databaseId',''))" 2>/dev/null); \
-	if [ "$$CONCLUSION" = "success" ]; then echo "GREEN: run $$RUN_ID"; \
-	elif [ "$$STATUS" = "in_progress" ] || [ "$$STATUS" = "queued" ]; then echo "PENDING: run $$RUN_ID status=$$STATUS"; \
-	elif [ -n "$$CONCLUSION" ]; then echo "RED: run $$RUN_ID conclusion=$$CONCLUSION"; \
-	else echo "NO RUN for $$(echo $$SHA | cut -c1-12)"; fi
+	@SHA=$$(git rev-parse HEAD); BRANCH=$$(git branch --show-current); \
+	$(PYTHON) scripts/pipeline_status.py status --remote-only --repo sandboxcom/gludd \
+		--remote sandboxcom --branch "$$BRANCH" --sha "$$SHA" || true
 	@echo ""
 	@echo "=== END STATE REPORT ==="
 
@@ -4189,8 +4314,8 @@ verify-release-completeness:
 	@[ -n "$(TAG)" ] || { echo "Usage: make verify-release-completeness TAG=v0.1.0-alpha.1"; exit 1; }
 	@$(PYTHON) scripts/verify_release_completeness.py "$(TAG)"
 
-# CI-green precondition for release-cut. Exit 0 only when the latest CI run for
-# the given SHA (default: HEAD) is completed + success. Fail-closed: any
+# CI-green precondition for release-cut. Exit 0 only when every required
+# workflow's newest exact-SHA push run is completed + success. Fail-closed: any
 # non-success state (pending, failure, missing run) aborts the release.
 # Usage: make require-ci-green [SHA=<full-sha>]
 require-ci-green:
@@ -4831,8 +4956,9 @@ ci-job-failure-context:
 	@case "$(RUN):$(JOB):$(or $(BEFORE),10):$(or $(AFTER),30):$(CI_JOB_CONTEXT_VALIDATE_ONLY)" in *[!0-9:]*) echo "RUN, JOB, BEFORE, AFTER, and CI_JOB_CONTEXT_VALIDATE_ONLY must be numeric"; exit 2 ;; esac
 	@case "$(CI_JOB_CONTEXT_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_JOB_CONTEXT_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
 	@if [ "$(CI_JOB_CONTEXT_VALIDATE_ONLY)" = "1" ]; then echo "CI-JOB-CONTEXT VALIDATED run=$(RUN) job=$(JOB) before=$(or $(BEFORE),10) after=$(or $(AFTER),30)"; exit 0; fi; \
-	mkdir -p .gate-logs; \
-	LOG=".gate-logs/ci-job-$(RUN)-$(JOB).log"; \
+	RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
+	mkdir -p "$$RESOURCE_ROOT"; \
+	LOG=$$(mktemp "$$RESOURCE_ROOT/ci-job-$(RUN)-$(JOB).log.XXXXXX"); \
 	trap 'rm -f "$$LOG"' EXIT INT TERM; \
 	BOUND=$$(gh run view -R sandboxcom/gludd "$(RUN)" --json jobs --jq '.jobs[] | select(.databaseId == $(JOB)) | .databaseId'); \
 	RC=$$?; if [ $$RC -ne 0 ]; then echo "ci-job-failure-context: job lookup failed rc=$$RC"; exit $$RC; fi; \
@@ -4840,7 +4966,7 @@ ci-job-failure-context:
 	gh run view -R sandboxcom/gludd --log --job="$(JOB)" > "$$LOG"; \
 	RC=$$?; if [ $$RC -ne 0 ]; then echo "ci-job-failure-context: log fetch failed rc=$$RC"; exit $$RC; fi; \
 	if ! grep -F -q -- "$(PATTERN)" "$$LOG"; then echo "ci-job-failure-context: pattern not found: $(PATTERN)"; exit 1; fi; \
-	$(PYTHON) scripts/ci_shards_log_context.py --log "$$LOG" --pattern "$(PATTERN)" --before "$(or $(BEFORE),10)" --after "$(or $(AFTER),30)" --max-matches 1
+	$(PYTHON) scripts/ci_shards_log_context.py --artifact-root "$$RESOURCE_ROOT" --artifact-file "$$(basename "$$LOG")" --pattern "$(PATTERN)" --before "$(or $(BEFORE),10)" --after "$(or $(AFTER),30)" --max-matches 1
 
 CI_ARTIFACT_OUTPUT_ROOT ?= RESOURCE_ROOT
 CI_ARTIFACT_HEARTBEAT_SECS ?= 10
@@ -4885,6 +5011,23 @@ ci-artifact-context:
 	if [ "$(CI_ARTIFACT_CONTEXT_VALIDATE_ONLY)" = "1" ]; then echo "CI-ARTIFACT-CONTEXT VALIDATED run=$(RUN) artifact=$(ARTIFACT) file=$(CI_ARTIFACT_FILE) before=$(or $(BEFORE),20) after=$(or $(AFTER),80) matches=$(or $(MAX_MATCHES),5)"; exit 0; fi; \
 	if [ ! -d "$$ARTIFACT_ROOT" ]; then echo "Downloaded artifact root not found: $$ARTIFACT_ROOT"; exit 1; fi; \
 	$(PYTHON) scripts/ci_shards_log_context.py --artifact-root "$$ARTIFACT_ROOT" --artifact-file "$(CI_ARTIFACT_FILE)" --pattern "$(PATTERN)" --before "$(or $(BEFORE),20)" --after "$(or $(AFTER),80)" --max-matches "$(or $(MAX_MATCHES),5)"
+
+CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY ?= 0
+ci-pyinstaller-warning-audit:
+	@case "$(RUN)" in ''|*[!0-9]*) echo "RUN must be a numeric GitHub Actions run ID"; exit 2 ;; esac
+	@case "$(ARTIFACT)" in ''|*[!A-Za-z0-9._-]*) echo "Refusing unsafe ARTIFACT: $(ARTIFACT)"; exit 2 ;; esac
+	@case "$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX)" in ''|*[!A-Za-z0-9_-]*) echo "PYINSTALLER_WARNING_ARCHITECTURE_LINUX must be explicit and safe"; exit 2 ;; esac
+	@case "$(PYINSTALLER_VERSION_LINUX)" in ''|*[!0-9.]*) echo "PYINSTALLER_VERSION_LINUX must be explicit and numeric"; exit 2 ;; esac
+	@case "$(CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
+	ARTIFACT_ROOT="$$RESOURCE_ROOT/ci-artifacts/run-$(RUN)/$(ARTIFACT)"; \
+	if [ "$(CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY)" = "1" ]; then echo "CI-PYINSTALLER-WARNING-AUDIT VALIDATED run=$(RUN) artifact=$(ARTIFACT) architecture=$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX) PyInstaller=$(PYINSTALLER_VERSION_LINUX)"; exit 0; fi; \
+	if [ ! -d "$$ARTIFACT_ROOT" ]; then echo "Downloaded artifact root not found: $$ARTIFACT_ROOT"; exit 1; fi; \
+	COUNT=$$(/usr/bin/find "$$ARTIFACT_ROOT" -type f -name warn-gludd.txt -print | /usr/bin/wc -l | /usr/bin/tr -d ' '); \
+	if [ "$$COUNT" != "1" ]; then echo "Expected exactly one warn-gludd.txt in $$ARTIFACT_ROOT, found $$COUNT"; exit 1; fi; \
+	WARNING=$$(/usr/bin/find "$$ARTIFACT_ROOT" -type f -name warn-gludd.txt -print -quit); \
+	echo "CI-PYINSTALLER-WARNING-AUDIT START run=$(RUN) artifact=$(ARTIFACT) warning=$$WARNING"; \
+	$(UV) run python scripts/audit_pyinstaller_warnings.py --warnings "$$WARNING" --allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" --platform linux --architecture "$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX)" --pyinstaller-version "$(PYINSTALLER_VERSION_LINUX)" --spec gludd.spec
 
 CI_COVERAGE_RUN ?=
 CI_COVERAGE_ARTIFACT ?= coverage-merged
@@ -4944,23 +5087,24 @@ ci-failed-tests:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-failed-tests RUN=<run-id>"; exit 1; fi
 	@gh run view -R sandboxcom/gludd $(RUN) --log-failed 2>/dev/null | grep -E 'FAILED tests/|ERROR tests/|= .*(failed|error).* =' | sort -u || echo "no-failed-test-lines-found"
 
-# Authenticated job-level breakdown of a run: per-job status/conclusion/timing
-# plus every non-success/non-skipped step, so a CANCELLED run's cause (which
-# job, which step, how long it ran before being cut) is visible without
-# guessing. Usage: make ci-view RUN=<run-id>
+# Authenticated job-level breakdown plus durable ownership of every failed job
+# and non-success step. Usage: make ci-view RUN=<run-id>
 ci-view:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-view RUN=<run-id>"; exit 1; fi
-	@gh run view -R sandboxcom/gludd $(RUN) --json databaseId,status,conclusion,event,displayTitle,headSha,createdAt,updatedAt,jobs \
-		--jq '{databaseId,status,conclusion,event,displayTitle,headSha,createdAt,updatedAt,jobs:[.jobs[]|{name,status,conclusion,startedAt,completedAt,steps:[.steps[]|select(.conclusion!="success" and .conclusion!="skipped")|{name,conclusion,number}]}]}' 2>&1 || echo "ci-view-failed"
+	@case "$(CI_FAILURE_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_FAILURE_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@$(PYTHON) scripts/ci_failure_ledger.py observe --run "$(RUN)" --repo "$(CI_FAILURE_REPOSITORY)" --ledger "$(CI_FAILURE_LEDGER)" $(if $(filter 1,$(CI_FAILURE_VALIDATE_ONLY)),--validate-only,)
 
 ci-run-view:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-run-view RUN=<id>"; exit 1; fi
 	@gh run view "$(RUN)" -R sandboxcom/gludd --json jobs,conclusion,headSha,status 2>&1 || echo "ci-run-view-failed"
 
-# Re-run a specific (e.g. cancelled) run's failed/cancelled jobs. Usage: make ci-rerun RUN=<run-id>
-ci-rerun:
+# Re-run a specific failed run only after observing every failure. An unchanged
+# rerun needs both an explicit allow bit and an auditable reason.
+ci-rerun: ci-view
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-rerun RUN=<run-id>"; exit 1; fi
-	@gh run rerun -R sandboxcom/gludd $(RUN) 2>&1 || echo "ci-rerun-failed"
+	@case "$(CI_RERUN_ALLOW_UNCHANGED)" in 0|1) ;; *) echo "CI_RERUN_ALLOW_UNCHANGED must be 0 or 1"; exit 2 ;; esac
+	@$(PYTHON) scripts/ci_failure_ledger.py guard-rerun --run "$(RUN)" --ledger "$(CI_FAILURE_LEDGER)" $(if $(filter 1,$(CI_RERUN_ALLOW_UNCHANGED)),--allow-unchanged --reason "$(CI_RERUN_REASON)",) $(if $(filter 1,$(CI_FAILURE_VALIDATE_ONLY)),--validate-only,)
+	@if [ "$(CI_FAILURE_VALIDATE_ONLY)" = "1" ]; then echo "CI_RERUN_VALIDATE_ONLY_PASS"; else gh run rerun -R "$(CI_FAILURE_REPOSITORY)" "$(RUN)"; fi
 # Guard remote CI dispatch: the local tree must be clean and sandboxcom/<branch> must equal HEAD.
 ci-remote-head-guard:
 	@REF="$(REF)"; if [ -z "$$REF" ]; then REF="$$(git branch --show-current)"; fi; \
@@ -6390,7 +6534,12 @@ build-executable:
 	@$(UV) run --frozen --extra azure pyinstaller gludd.spec --clean --noconfirm
 	@echo "Built dist/gludd"
 
-LINUX_BINARY_IMAGE ?= ghcr.io/astral-sh/uv:python3.12-bookworm-slim@sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261ba1b7147afa78e58
+LINUX_BINARY_IMAGE ?= gludd-linux-binary-build:python3.12.14-uv0.12.19
+LINUX_BINARY_DOCKERFILE ?= config/containers/linux-binary.Dockerfile
+LINUX_BINARY_IMAGE_BUILD_VALIDATE_ONLY ?= 0
+DOCKER_BUILDX_BIN ?=
+DOCKER_BUILDX_AUTO_INSTALL ?= 1
+DOCKER_BUILDX_FORMULA ?= docker-buildx
 LINUX_BINARY_OUTPUT ?= dist/linux/gludd
 LINUX_BINARY_SCRATCH_ROOT ?= $(HOME)/tmp/gludd-linux-build
 DEBIAN_SNAPSHOT ?= 20260729T000000Z
@@ -6399,8 +6548,18 @@ LINUX_APT_UTILS_VERSION ?= 2.6.1
 PYINSTALLER_WARNING_ALLOWLIST_LINUX ?= config/pyinstaller-warning-allowlist-linux.json
 PYINSTALLER_WARNING_FILE_LINUX ?= dist/linux/warn-gludd.txt
 PYINSTALLER_VERSION_LINUX ?= 6.20.0
+PYINSTALLER_PYTHON_VERSION_LINUX ?= 3.12.14
+PYINSTALLER_UV_VERSION_LINUX ?= 0.12.19
 PYINSTALLER_WARNING_ARCHITECTURE_LINUX ?=
 PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY ?= 0
+PYINSTALLER_WARNING_BEFORE ?=
+PYINSTALLER_WARNING_AFTER ?=
+PYINSTALLER_WARNING_REVIEW_RECEIPT ?= artifacts/pyinstaller-warning-review.json
+PYINSTALLER_WARNING_COMPARE_VALIDATE_ONLY ?= 0
+PYINSTALLER_WARNING_REVIEW_POLICY ?= config/pyinstaller-warning-allowlist-linux.json
+PYINSTALLER_WARNING_REVIEW_DIR ?= config/pyinstaller-warning-reviews
+PYINSTALLER_WARNING_REVIEW_BASE_POLICY ?=
+PYINSTALLER_WARNING_REVIEW_CHECK_VALIDATE_ONLY ?= 0
 
 .PHONY: audit-linux-pyinstaller-warnings
 audit-linux-pyinstaller-warnings: ## Re-audit a retained Linux PyInstaller warning report
@@ -6419,13 +6578,96 @@ audit-linux-pyinstaller-warnings: ## Re-audit a retained Linux PyInstaller warni
 			--spec gludd.spec; \
 	fi
 
-build-linux-executable: ## Build and verify a real Linux PyInstaller executable
+.PHONY: compare-linux-pyinstaller-warnings
+compare-linux-pyinstaller-warnings: ## Compare accepted/candidate warning graphs without editing policy
+	@case "$(PYINSTALLER_WARNING_COMPARE_VALIDATE_ONLY)" in 0|1) ;; *) echo "PYINSTALLER_WARNING_COMPARE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@case "$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX)" in ''|*[!A-Za-z0-9_-]*) echo "PYINSTALLER_WARNING_ARCHITECTURE_LINUX must be explicit and safe"; exit 2;; esac
+	@case "$(PYINSTALLER_WARNING_BEFORE)" in ''|*..*) echo "Refusing unsafe PYINSTALLER_WARNING_BEFORE: $(PYINSTALLER_WARNING_BEFORE)"; exit 2;; /*) case "$(PYINSTALLER_WARNING_BEFORE)" in /tmp/gludd-*) ;; *) echo "Absolute before path must be namespaced under /tmp/gludd-"; exit 2;; esac;; esac
+	@case "$(PYINSTALLER_WARNING_AFTER)" in ''|*..*) echo "Refusing unsafe PYINSTALLER_WARNING_AFTER: $(PYINSTALLER_WARNING_AFTER)"; exit 2;; /*) case "$(PYINSTALLER_WARNING_AFTER)" in /tmp/gludd-*) ;; *) echo "Absolute after path must be namespaced under /tmp/gludd-"; exit 2;; esac;; esac
+	@case "$(PYINSTALLER_WARNING_REVIEW_RECEIPT)" in ''|/*|*..*) echo "PYINSTALLER_WARNING_REVIEW_RECEIPT must be a safe repository-relative path"; exit 2;; esac
+	@if [ "$(PYINSTALLER_WARNING_COMPARE_VALIDATE_ONLY)" = "1" ]; then \
+		echo "PYINSTALLER_WARNING_COMPARE_VALID before=$(PYINSTALLER_WARNING_BEFORE) after=$(PYINSTALLER_WARNING_AFTER) architecture=$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX) receipt=$(PYINSTALLER_WARNING_REVIEW_RECEIPT)"; \
+	else \
+		$(UV) run python scripts/compare_pyinstaller_warning_graphs.py \
+			--before "$(PYINSTALLER_WARNING_BEFORE)" \
+			--after "$(PYINSTALLER_WARNING_AFTER)" \
+			--allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" \
+			--platform linux \
+			--architecture "$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX)" \
+			--pyinstaller-version "$(PYINSTALLER_VERSION_LINUX)" \
+			--spec gludd.spec \
+			--receipt "$(PYINSTALLER_WARNING_REVIEW_RECEIPT)"; \
+	fi
+
+.PHONY: check-pyinstaller-warning-reviews
+check-pyinstaller-warning-reviews: ## Reject newly accepted warning graphs without complete exact-delta evidence
+	@case "$(PYINSTALLER_WARNING_REVIEW_CHECK_VALIDATE_ONLY)" in 0|1) ;; *) echo "PYINSTALLER_WARNING_REVIEW_CHECK_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@case "$(PYINSTALLER_WARNING_REVIEW_POLICY)" in ''|/*|*..*) echo "PYINSTALLER_WARNING_REVIEW_POLICY must be a safe repository-relative path"; exit 2;; esac
+	@case "$(PYINSTALLER_WARNING_REVIEW_DIR)" in ''|/*|*..*) echo "PYINSTALLER_WARNING_REVIEW_DIR must be a safe repository-relative path"; exit 2;; esac
+	@case "$(PYINSTALLER_WARNING_REVIEW_BASE_POLICY)" in /*|*..*) echo "PYINSTALLER_WARNING_REVIEW_BASE_POLICY must be empty or repository-relative"; exit 2;; esac
+	@if [ "$(PYINSTALLER_WARNING_REVIEW_CHECK_VALIDATE_ONLY)" = "1" ]; then \
+		echo "PYINSTALLER_WARNING_REVIEW_CHECK_VALID policy=$(PYINSTALLER_WARNING_REVIEW_POLICY) receipt_dir=$(PYINSTALLER_WARNING_REVIEW_DIR)"; \
+	else \
+		before_args=""; \
+		if [ -n "$(PYINSTALLER_WARNING_REVIEW_BASE_POLICY)" ]; then before_args="--before-policy $(PYINSTALLER_WARNING_REVIEW_BASE_POLICY)"; fi; \
+		$(UV) run python scripts/check_pyinstaller_warning_reviews.py \
+			--policy "$(PYINSTALLER_WARNING_REVIEW_POLICY)" \
+			--receipt-dir "$(PYINSTALLER_WARNING_REVIEW_DIR)" \
+			$$before_args; \
+	fi
+
+.PHONY: build-linux-binary-image
+build-linux-binary-image: lima-docker-ensure ## Build the exact Python and uv environment used by Linux artifact analysis
+	@case "$(LINUX_BINARY_IMAGE_BUILD_VALIDATE_ONLY)" in 0|1) ;; *) echo "LINUX_BINARY_IMAGE_BUILD_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@case "$(DOCKER_BUILDX_AUTO_INSTALL)" in 0|1) ;; *) echo "DOCKER_BUILDX_AUTO_INSTALL must be 0 or 1"; exit 2;; esac
+	@case "$(DOCKER_BUILDX_FORMULA)" in docker-buildx) ;; *) echo "Refusing unreviewed Buildx formula: $(DOCKER_BUILDX_FORMULA)"; exit 2;; esac
+	@case "$(DOCKER_BUILDX_BIN)" in ""|/*) ;; *) echo "DOCKER_BUILDX_BIN must be empty or absolute"; exit 2;; esac
+	@case "$(LINUX_BINARY_DOCKERFILE)" in /*|*..*) echo "Refusing unsafe LINUX_BINARY_DOCKERFILE: $(LINUX_BINARY_DOCKERFILE)"; exit 2;; esac
+	@case "$(LINUX_BINARY_IMAGE)" in gludd-*:* ) ;; *) echo "Refusing non-Gludd Linux builder image: $(LINUX_BINARY_IMAGE)"; exit 2;; esac
+	@set -eu; \
+	if [ "$(LINUX_BINARY_IMAGE_BUILD_VALIDATE_ONLY)" = "1" ]; then \
+		test -f "$(LINUX_BINARY_DOCKERFILE)"; \
+		echo "LINUX_BINARY_IMAGE_BUILD_VALID image=$(LINUX_BINARY_IMAGE) dockerfile=$(LINUX_BINARY_DOCKERFILE) python=$(PYINSTALLER_PYTHON_VERSION_LINUX) uv=$(PYINSTALLER_UV_VERSION_LINUX) buildx_auto_install=$(DOCKER_BUILDX_AUTO_INSTALL)"; \
+		exit 0; \
+	fi; \
+	buildx_bin="$(DOCKER_BUILDX_BIN)"; \
+	if [ -z "$$buildx_bin" ]; then \
+		command -v brew >/dev/null 2>&1 || { echo "Homebrew is required to provision Docker Buildx"; exit 1; }; \
+		brew_prefix=$$(brew --prefix); \
+		buildx_bin="$$brew_prefix/bin/docker-buildx"; \
+		if [ ! -x "$$buildx_bin" ]; then \
+			if [ "$(DOCKER_BUILDX_AUTO_INSTALL)" != "1" ]; then echo "Docker Buildx is missing and automatic installation is disabled"; exit 1; fi; \
+			echo "Installing maintained Docker Buildx via Homebrew formula $(DOCKER_BUILDX_FORMULA)"; \
+			brew install "$(DOCKER_BUILDX_FORMULA)"; \
+		fi; \
+	fi; \
+	test -x "$$buildx_bin" || { echo "Docker Buildx executable is unavailable: $$buildx_bin"; exit 1; }; \
+	socket=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Dir}}/sock/docker.sock' 2>/dev/null || true); \
+	if [ -z "$$socket" ]; then echo "Lima Docker socket unavailable for $(LIMA_INSTANCE): $$socket"; exit 1; fi; \
+	mkdir -p "$(LIMA_DOCKER_CONFIG)"; \
+	chmod 700 "$(LIMA_DOCKER_CONFIG)"; \
+	DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" "$$buildx_bin" version; \
+	echo "Building digest-pinned Linux artifact environment $(LINUX_BINARY_IMAGE)"; \
+	DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" "$$buildx_bin" build \
+		--load \
+		--progress=plain \
+		--file "$(LINUX_BINARY_DOCKERFILE)" \
+		--tag "$(LINUX_BINARY_IMAGE)" \
+		config/containers; \
+	identity=$$(DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker run --rm "$(LINUX_BINARY_IMAGE)" sh -eu -c 'set -- $$(uv --version); printf "%s|%s %s\n" "$$(python -c "import platform; print(platform.python_version())")" "$$1" "$$2"'); \
+	test "$$identity" = "$(PYINSTALLER_PYTHON_VERSION_LINUX)|uv $(PYINSTALLER_UV_VERSION_LINUX)" || { echo "Unexpected Linux builder identity: $$identity"; exit 1; }; \
+	echo "LINUX_BINARY_IMAGE_BUILD_READY image=$(LINUX_BINARY_IMAGE) identity=$$identity"
+
+build-linux-executable: worktree-guard ## Build and verify a real Linux PyInstaller executable
 	@case "$(LINUX_BINARY_OUTPUT)" in /*|*..*) echo "Refusing unsafe LINUX_BINARY_OUTPUT: $(LINUX_BINARY_OUTPUT)"; exit 1;; esac
 	@case "$(LINUX_BINARY_SCRATCH_ROOT)" in "$(HOME)"/*) ;; *) echo "Refusing scratch root outside HOME: $(LINUX_BINARY_SCRATCH_ROOT)"; exit 1;; esac
+	@$(MAKE) --no-print-directory build-linux-binary-image
 	@mkdir -p "$$(dirname "$(LINUX_BINARY_OUTPUT)")"
 	@rm -f "$(LINUX_BINARY_OUTPUT)" "$(dir $(LINUX_BINARY_OUTPUT))warn-gludd.txt"
-	@set -e; if [ "$$(uname -s)" = "Linux" ]; then \
+	@set -e; source_sha=$$(git rev-parse HEAD); echo "LINUX_BINARY_SOURCE sha=$$source_sha"; if [ "$$(uname -s)" = "Linux" ]; then \
 		echo "Building Linux executable natively"; \
+		python_version=$$($(UV) run python -c 'import platform; print(platform.python_version())'); \
+		test "$$python_version" = "$(PYINSTALLER_PYTHON_VERSION_LINUX)" || { echo "Expected Python $(PYINSTALLER_PYTHON_VERSION_LINUX) for deterministic Linux PyInstaller analysis, found $$python_version"; exit 1; }; \
 		$(MAKE) --no-print-directory build-executable; \
 		pyinstaller_version=$$($(UV) run pyinstaller --version); \
 		architecture=$$(uname -m); \
@@ -6454,11 +6696,11 @@ build-linux-executable: ## Build and verify a real Linux PyInstaller executable
 			DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker rm -f "$$container_name" >/dev/null 2>&1 || true; \
 		}; \
 		trap cleanup_build EXIT INT TERM; \
-		git archive HEAD | tar -x -C "$$source_dir"; \
+		git archive "$$source_sha" | tar -x -C "$$source_dir"; \
 		echo "Building Linux executable in namespaced Lima Docker VM $(LIMA_INSTANCE)"; \
 		build_status=0; \
 		DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker run \
-			--pull=always \
+			--pull=never \
 			--name "$$container_name" \
 			-e HOME=/tmp/gludd-home \
 			-e UV_CACHE_DIR=/tmp/gludd-uv-cache \
@@ -6499,6 +6741,8 @@ build-linux-executable: ## Build and verify a real Linux PyInstaller executable
 				grep -Fq "0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded." /tmp/gludd-apt-after.txt; \
 				rm -rf /var/lib/apt/lists/*; \
 				uv sync --frozen --extra azure; \
+				python_version=$$(uv run python -c "import platform; print(platform.python_version())"); \
+				test "$$python_version" = "$(PYINSTALLER_PYTHON_VERSION_LINUX)" || { echo "Expected Python $(PYINSTALLER_PYTHON_VERSION_LINUX) for deterministic Linux PyInstaller analysis, found $$python_version"; exit 1; }; \
 				pyinstaller_version=$$(uv run pyinstaller --version); \
 				test "$$pyinstaller_version" = "6.20.0"; \
 				architecture=$$(uname -m); \
@@ -7496,6 +7740,7 @@ sandbox-state-clean:
 LIMA_INSTANCE ?= gludd-docker
 LIMA_IMAGE ?= ubuntu:24.04
 LIMA_DOCKER_CONFIG ?= /tmp/gludd-lima-docker-config
+LIMA_DOCKER_TEMPLATE ?= template:docker
 LIMA_DOCKER_VALIDATE_ONLY ?= 0
 LIMA_DOCKER_START_TIMEOUT_SECS ?= 180
 LIMA_DOCKER_STOP_TIMEOUT_SECS ?= 200
@@ -7505,6 +7750,42 @@ VDISK ?= 20
 PODMAN_LEGACY_MACHINE ?= podman-machine-default
 PODMAN_LEGACY_DELETE_VALIDATE_ONLY ?= 1
 PODMAN_LEGACY_DELETE_TIMEOUT_SECS ?= 120
+
+.PHONY: lima-docker-ensure
+lima-docker-ensure: ## Provision, start, or reuse one namespaced Lima Docker VM and prove engine readiness
+	@case "$(LIMA_DOCKER_VALIDATE_ONLY)" in 0|1) ;; *) echo "LIMA_DOCKER_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@[ "$(LIMA_DOCKER_START_TIMEOUT_SECS)" -ge 1 ] 2>/dev/null || { echo "LIMA_DOCKER_START_TIMEOUT_SECS must be a positive integer"; exit 2; }
+	@case "$(LIMA_INSTANCE)" in \
+		""|*[!A-Za-z0-9._-]*|.|..) echo "Refusing invalid Lima instance name: $(LIMA_INSTANCE)"; exit 2;; \
+		gludd-*) ;; \
+		*) echo "Refusing non-Gludd Lima instance: $(LIMA_INSTANCE)"; exit 2;; \
+	esac
+	@case "$(LIMA_DOCKER_TEMPLATE)" in template:docker) ;; *) echo "Refusing unreviewed Lima Docker template: $(LIMA_DOCKER_TEMPLATE)"; exit 2;; esac
+	@if [ "$(LIMA_DOCKER_VALIDATE_ONLY)" = "1" ]; then \
+		echo "LIMA_DOCKER_ENSURE_VALID instance=$(LIMA_INSTANCE) template=$(LIMA_DOCKER_TEMPLATE) config=$(LIMA_DOCKER_CONFIG) timeout_secs=$(LIMA_DOCKER_START_TIMEOUT_SECS)"; \
+		exit 0; \
+	fi; \
+	record=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Name}}|{{.Status}}' 2>/dev/null || true); \
+	if [ -z "$$record" ]; then \
+		echo "LIMA_DOCKER_ENSURE_CREATE instance=$(LIMA_INSTANCE) template=$(LIMA_DOCKER_TEMPLATE)"; \
+		limactl start --name "$(LIMA_INSTANCE)" --timeout "$(LIMA_DOCKER_START_TIMEOUT_SECS)s" --progress "$(LIMA_DOCKER_TEMPLATE)"; \
+	else \
+		name=$${record%%|*}; status=$${record#*|}; \
+		if [ "$$name" != "$(LIMA_INSTANCE)" ] || [ "$$record" = "$$status" ]; then \
+			echo "Refusing ambiguous Lima instance record: $$record"; exit 2; \
+		fi; \
+		case "$$status" in \
+			Running) echo "LIMA_DOCKER_ENSURE_REUSE instance=$(LIMA_INSTANCE) status=$$status";; \
+			Stopped) echo "LIMA_DOCKER_ENSURE_START instance=$(LIMA_INSTANCE)"; limactl start --timeout "$(LIMA_DOCKER_START_TIMEOUT_SECS)s" --progress "$(LIMA_INSTANCE)";; \
+			*) echo "Refusing Lima instance in nonterminal lifecycle state: $$record"; exit 1;; \
+		esac; \
+	fi; \
+	socket=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Dir}}/sock/docker.sock' 2>/dev/null || true); \
+	if [ -z "$$socket" ]; then echo "Lima Docker socket path unavailable after ensure for $(LIMA_INSTANCE)"; exit 1; fi; \
+	mkdir -p "$(LIMA_DOCKER_CONFIG)"; \
+	chmod 700 "$(LIMA_DOCKER_CONFIG)"; \
+	DOCKER_CONFIG="$(LIMA_DOCKER_CONFIG)" DOCKER_HOST="unix://$$socket" docker info --format 'server={{.ServerVersion}} containers={{.Containers}} images={{.Images}}'; \
+	echo "LIMA_DOCKER_ENSURE_READY instance=$(LIMA_INSTANCE) socket=$$socket"
 
 lima-docker-start: ## Start only an existing namespaced Lima Docker VM and prove engine readiness
 	@case "$(LIMA_DOCKER_VALIDATE_ONLY)" in 0|1) ;; *) echo "LIMA_DOCKER_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
@@ -9520,8 +9801,28 @@ worktree-health-check:
 worktree-merge-all:
 	@$(UV) run python scripts/worktree_merge_all.py
 
+PIPELINE_STATUS_REPO ?= sandboxcom/gludd
+PIPELINE_STATUS_BRANCH ?= development
+PIPELINE_STATUS_REMOTE ?= sandboxcom
+PIPELINE_STATUS_SHA ?=
+PIPELINE_STATUS_VALIDATE_ONLY ?= 0
+PIPELINE_STATUS_FAILURE_LEDGER ?= .gludd/ci-failure-ledger.json
 pipeline-status:
-	@$(UV) run python scripts/pipeline_status.py status
+	@case "$(PIPELINE_STATUS_VALIDATE_ONLY)" in 0|1) ;; *) echo "PIPELINE_STATUS_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@OBSERVE_RC=0; STATUS_RC=0; \
+	$(UV) run python scripts/ci_failure_ledger.py observe-sha \
+		--repo "$(PIPELINE_STATUS_REPO)" --branch "$(PIPELINE_STATUS_BRANCH)" \
+		--remote "$(PIPELINE_STATUS_REMOTE)" --ledger "$(PIPELINE_STATUS_FAILURE_LEDGER)" \
+		$(if $(PIPELINE_STATUS_SHA),--sha "$(PIPELINE_STATUS_SHA)",) \
+		$(if $(filter 1,$(PIPELINE_STATUS_VALIDATE_ONLY)),--validate-only,) || OBSERVE_RC=$$?; \
+	$(UV) run python scripts/pipeline_status.py status \
+		--repo "$(PIPELINE_STATUS_REPO)" --branch "$(PIPELINE_STATUS_BRANCH)" \
+		--remote "$(PIPELINE_STATUS_REMOTE)" \
+		$(if $(PIPELINE_STATUS_SHA),--sha "$(PIPELINE_STATUS_SHA)",) \
+		$(if $(filter 1,$(PIPELINE_STATUS_VALIDATE_ONLY)),--validate-only,) || STATUS_RC=$$?; \
+	if [ $$OBSERVE_RC -ne 0 ]; then echo "pipeline-status: failure-ledger observation failed rc=$$OBSERVE_RC"; fi; \
+	if [ $$OBSERVE_RC -ne 0 ]; then exit $$OBSERVE_RC; fi; \
+	exit $$STATUS_RC
 
 # Emit an auditable pipeline heartbeat at a five-minute cadence by default.
 # Use COUNT=0 for a continuous loop; artifacts are project-namespaced.
