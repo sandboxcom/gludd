@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-09-30 — (resolved locally; exact-candidate gate required) Warning review checker treated a feature-parent graph as merge-new
+
+- **What happened**: The exact feature-branch gate passed, but the post-merge `development` gate retained one otherwise isolated preflight failure: `check-pyinstaller-warning-reviews` demanded a new x86_64 receipt for digest `d4fcb35b…`. That graph was already accepted on the feature parent and therefore was not introduced by the merge.
+- **Root cause**: The checker used only `HEAD^`, Git's first parent, when the working policy matched `HEAD`. On a two-parent merge this erased accepted identities carried by the second parent and converted ordinary inherited state into a false “new digest” finding.
+- **Fix applied**: The checker now enumerates every immutable parent SHA, validates each parent policy, and unions their accepted primary and alternate graph identities before calculating additions. Single-parent, working-tree, root-commit, malformed-policy, and complete-receipt behavior is unchanged; a digest absent from every parent still fails closed.
+- **Evidence**: The merge-parent regression failed first by omitting the first parent's accepted digest from history. The repaired focused suite passes 25/25, and the real `check-pyinstaller-warning-reviews` preflight now passes on merge commit `3d142a90937f68722827ed93f044ba2e57d0acb3`. A replacement exact-candidate gate remains required because source changed after the prior gate.
+- **Practitioner evidence**: GitHub Community [discussion #56153](https://github.com/orgs/community/discussions/56153) identifies multiple parents as the defining merge property. The CodeQL paper [Tracking Static Analysis Violations over Time](https://codeql.github.com/publications/tracking-analysis-violations.pdf) states the corresponding analysis invariant: a merge introduces a violation only when every parent lacks it.
+- **Lesson**: Any “new at this commit” admission check must quantify over all merge parents. First-parent history is useful for mainline presentation, but it is not sufficient provenance for inherited policy state.
+
 ### 2026-09-29 — (resolved locally; exact-candidate gate required) Delegate E2E inherited the live durable dispatch ledger
 
 - **What happened**: The complete non-short-circuit candidate gate passed every preflight, static phase, integration test, later unit batch, coverage aggregation, and smoke check, but retained one failure: `tests/e2e/test_delegate_e2e.py::test_dispatch_resets_streak`. Its synthetic `task` dispatch was denied as a duplicate of an earlier `task\ndo work` owner in the repository's durable `.gludd/dispatch-ledger.json`.

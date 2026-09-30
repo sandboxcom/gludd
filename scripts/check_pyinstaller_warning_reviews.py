@@ -203,14 +203,55 @@ def _git_json(ref: str, policy_path: Path) -> dict[str, Any] | None:
     return value
 
 
+def _git_parent_refs(ref: str = "HEAD") -> list[str]:
+    result = subprocess.run(
+        ["git", "rev-list", "--parents", "--max-count=1", ref],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise ReviewCheckError(f"cannot inspect parents for {ref}: {result.stderr.strip()}")
+    fields = result.stdout.strip().split()
+    if not fields:
+        raise ReviewCheckError(f"cannot inspect parents for {ref}: empty git response")
+    return fields[1:]
+
+
+def _union_parent_acceptance(policies: list[dict[str, Any]]) -> dict[str, Any]:
+    accepted_by_architecture: dict[str, set[str]] = {}
+    for policy in policies:
+        for architecture, digests in _accepted(policy).items():
+            accepted_by_architecture.setdefault(architecture, set()).update(digests)
+
+    merged = dict(policies[0])
+    merged["transitive_warning_sha256_by_architecture"] = {
+        architecture: sorted(digests)[0]
+        for architecture, digests in sorted(accepted_by_architecture.items())
+    }
+    merged["reviewed_transitive_warning_sha256_alternates_by_architecture"] = {
+        architecture: sorted(digests)[1:]
+        for architecture, digests in sorted(accepted_by_architecture.items())
+    }
+    return merged
+
+
 def _historical_policy(policy_path: Path, current: dict[str, Any]) -> dict[str, Any]:
     head = _git_json("HEAD", policy_path)
     if head is None:
         return current
     if head != current:
         return head
-    parent = _git_json("HEAD^", policy_path)
-    return parent if parent is not None else current
+    parents = [
+        parent
+        for ref in _git_parent_refs()
+        if (parent := _git_json(ref, policy_path)) is not None
+    ]
+    if not parents:
+        return current
+    if len(parents) == 1:
+        return parents[0]
+    return _union_parent_acceptance(parents)
 
 
 def _build_parser() -> argparse.ArgumentParser:

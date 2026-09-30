@@ -92,6 +92,19 @@ contains sorted complete edge lists, and reconciles every count. This turns a
 future hash-only update into a mechanical failure instead of another forensic
 guess.
 
+For a merge commit, “predecessor” means the union of accepted graph identities
+from every parent, not only `HEAD^1`. A graph already accepted on either side of
+the merge is inherited rather than newly introduced; a graph absent from every
+parent still requires the same complete receipt. This matches the GitHub
+Community explanation that multiple parents define a merge commit in
+[discussion #56153](https://github.com/orgs/community/discussions/56153) and the
+CodeQL introduction rule that a merge can introduce a violation only when it is
+absent from all parents, described in
+[Tracking Static Analysis Violations over Time](https://codeql.github.com/publications/tracking-analysis-violations.pdf).
+The checker enumerates immutable parent SHAs with `git rev-list --parents`,
+unions only their accepted identities, and retains the existing working-tree,
+single-parent, root-commit, and malformed-policy fail-closed behavior.
+
 The release builder also refuses a dirty working tree before it provisions the
 Linux engine. Its source bundle is intentionally produced from one resolved
 commit, and the target prints that full SHA before the operating-system branch.

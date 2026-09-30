@@ -288,11 +288,27 @@ def test_git_json_handles_missing_malformed_and_valid_objects(
     assert review_check._git_json("HEAD", Path("policy.json")) == {"ok": True}
 
 
+def test_git_parent_refs_returns_every_merge_parent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "scripts.check_pyinstaller_warning_reviews.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="head first-parent second-parent\n",
+            stderr="",
+        ),
+    )
+
+    assert review_check._git_parent_refs() == ["first-parent", "second-parent"]
+
+
 def test_historical_policy_uses_worktree_then_parent_then_bootstrap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     current = {"current": True}
     calls: list[str] = []
+    monkeypatch.setattr(review_check, "_git_parent_refs", lambda _ref="HEAD": ["HEAD^"])
 
     def first(ref: str, _path: Path) -> dict[str, object] | None:
         calls.append(ref)
@@ -307,6 +323,37 @@ def test_historical_policy_uses_worktree_then_parent_then_bootstrap(
 
     monkeypatch.setattr(review_check, "_git_json", lambda ref, _path: current if ref == "HEAD" else {"parent": True})
     assert review_check._historical_policy(Path("policy.json"), current) == {"parent": True}
+
+
+def test_historical_policy_unions_every_merge_parent_accepted_graph(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current = _policy(_NEW, alternates=["b" * 64])
+    first_parent = _policy(_OLD)
+    second_parent = _policy(_NEW, alternates=["b" * 64])
+    policies = {
+        "HEAD": current,
+        "first-parent": first_parent,
+        "second-parent": second_parent,
+    }
+    monkeypatch.setattr(
+        review_check,
+        "_git_json",
+        lambda ref, _path: policies.get(ref),
+    )
+    monkeypatch.setattr(
+        review_check,
+        "_git_parent_refs",
+        lambda _ref="HEAD": ["first-parent", "second-parent"],
+        raising=False,
+    )
+
+    historical = review_check._historical_policy(Path("policy.json"), current)
+
+    assert review_check._accepted(historical) == {
+        "aarch64": {_OLD, _NEW, "b" * 64},
+    }
+    assert review_check.validate_policy_change(historical, current, Path("receipts")) == []
 
 
 def test_cli_accepts_explicit_before_policy_and_reports_failures(
