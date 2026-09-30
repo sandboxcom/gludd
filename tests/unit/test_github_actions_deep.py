@@ -18,6 +18,7 @@ ACTIONS_DIR = pathlib.Path(__file__).parent.parent.parent / ".github" / "actions
 MOLECULE_NODE24_ACTIONS = {
     "actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd",
     "actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405",
+    "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
     "astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39",
 }
 

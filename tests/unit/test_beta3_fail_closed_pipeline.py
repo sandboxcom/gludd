@@ -58,6 +58,15 @@ def _upload_steps(job: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def _release_upload_steps(job: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return publishable uploads, excluding failure-diagnostic evidence."""
+    return [
+        step
+        for step in _upload_steps(job)
+        if str(step.get("with", {}).get("name", "")).startswith("gludd-")
+    ]
+
+
 def test_tag_pipeline_has_no_false_green_escape_hatches() -> None:
     source = WORKFLOW_PATH.read_text(encoding="utf-8")
     assert "continue-on-error: true" not in source
@@ -171,6 +180,7 @@ def test_molecule_and_platform_artifacts_fail_when_missing() -> None:
 def test_every_platform_smokes_binary_before_upload() -> None:
     for name in PLATFORM_JOBS:
         steps = _job(name).get("steps", [])
+        release_uploads = _release_upload_steps(_job(name))
         smoke_index = next(
             index
             for index, step in enumerate(steps)
@@ -179,7 +189,7 @@ def test_every_platform_smokes_binary_before_upload() -> None:
         upload_index = next(
             index
             for index, step in enumerate(steps)
-            if str(step.get("uses", "")).startswith("actions/upload-artifact@")
+            if step in release_uploads
         )
         assert smoke_index < upload_index, name
         assert steps[smoke_index].get("continue-on-error", False) is False

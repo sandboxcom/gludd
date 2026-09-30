@@ -131,8 +131,12 @@ def test_unchanged_accepted_digest_set_needs_no_new_receipt(tmp_path: Path) -> N
 def test_make_gate_runs_review_checker() -> None:
     makefile = (Path(__file__).resolve().parents[2] / "Makefile").read_text(encoding="utf-8")
 
-    gate_header = makefile.split("\ngate:", 1)[1].split("\n", 1)[0]
-    assert "check-pyinstaller-warning-reviews" in gate_header
+    gate = makefile.split("\ngate:", 1)[1].split("\n\n", 1)[0]
+    gate_preflights = makefile.split("GATE_PREFLIGHT_TARGETS :=", 1)[1].split(
+        "GATE_PREFLIGHT_STATUS", 1
+    )[0]
+    assert "check-pyinstaller-warning-reviews" in gate_preflights
+    assert "_gate-preflights" in gate
     assert "\ncheck-pyinstaller-warning-reviews:" in makefile
 
 

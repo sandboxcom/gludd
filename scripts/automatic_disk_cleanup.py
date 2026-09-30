@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Automatically reclaim proven-idle Gludd storage under disk pressure.
 
-Generated caches are removed only from inactive worktrees. A complete, clean
-checkout may also be dematerialized after its exact branch and commit are proven
-durable. The shared uv cache is pruned through uv only after ownership is idle.
+Generated caches are removed from an idle invoking worktree or from inactive
+worktrees. This includes the invoking checkout's exact regenerable Terraform
+provider cache while preserving state. A complete, clean checkout may also be
+dematerialized after its exact branch and commit are proven durable. The shared
+uv cache is pruned through uv only after ownership is idle.
 """
 
 from __future__ import annotations
@@ -42,6 +44,12 @@ DISPOSABLE_CACHE_DIR_NAMES = (
     ".pytest_cache",
     ".ruff_cache",
 )
+TERRAFORM_PLUGIN_CACHE_PATH = Path("infra/terraform/.plugin-cache")
+TERRAFORM_PLUGIN_CACHE_MARKER = ".gitkeep"
+INVOKING_DISPOSABLE_CACHE_PATHS = (
+    *(Path(name) for name in DISPOSABLE_CACHE_DIR_NAMES),
+    TERRAFORM_PLUGIN_CACHE_PATH,
+)
 TOOL_ENVIRONMENT_DIR_NAMES = (
     ".venv",
 )
@@ -65,6 +73,7 @@ DEFAULT_COMMIT_RECEIPT_GRACE_SECONDS = MIN_COMMIT_RECEIPT_GRACE_SECONDS
 MAX_WORKTREE_MATERIALIZATIONS = 4
 MAX_EVIDENCE_RELOCATIONS = 16
 MAX_PREFLIGHT_CLEANUP_PASSES = 8
+MAX_CLEANUP_DETAILS_PER_KIND = 20
 REGENERABLE_IGNORED_DIR_NAMES = frozenset(
     {".hypothesis", "__pycache__", "node_modules", *GENERATED_CACHE_DIR_NAMES}
 )
@@ -129,6 +138,7 @@ class LifecycleDecision:
 
 ActiveBranches = Callable[[], frozenset[str]]
 ActiveProcessPids = Callable[[Path], list[int]]
+OwnedProcessPids = Callable[[], frozenset[int]]
 RefreshRecords = Callable[[], list[prune_worktrees_safe.WorktreeRecord]]
 RemoveTree = Callable[[Path], None]
 InspectUsage = Callable[[], DiskSnapshot]
@@ -962,6 +972,262 @@ def _matching_refreshed_record(
     )
 
 
+def _invoking_cache_is_safe(worktree: Path, relative_cache: Path) -> bool:
+    """Validate every component of one exact invoking-worktree cache path."""
+    if relative_cache.is_absolute() or not relative_cache.parts:
+        return False
+    candidate = worktree / relative_cache
+    try:
+        for index in range(1, len(relative_cache.parts) + 1):
+            component = worktree.joinpath(*relative_cache.parts[:index])
+            metadata = component.lstat()
+            if (
+                not stat.S_ISDIR(metadata.st_mode)
+                or component.is_symlink()
+                or component.resolve(strict=True) != component
+            ):
+                return False
+    except (OSError, RuntimeError):
+        return False
+    return candidate.parent.resolve(strict=True) == candidate.parent
+
+
+def _clear_terraform_plugin_cache(cache: Path, remove_tree: RemoveTree) -> None:
+    """Remove generated provider entries while preserving the tracked marker."""
+    children = list(cache.iterdir())
+    for child in children:
+        metadata = child.lstat()
+        if child.name == TERRAFORM_PLUGIN_CACHE_MARKER:
+            if child.is_symlink() or not stat.S_ISREG(metadata.st_mode):
+                raise OSError("unsafe Terraform plugin-cache marker")
+            continue
+        if not (
+            child.is_symlink()
+            or stat.S_ISREG(metadata.st_mode)
+            or stat.S_ISDIR(metadata.st_mode)
+        ):
+            raise OSError("unsafe Terraform plugin-cache entry")
+
+    for child in children:
+        if child.name == TERRAFORM_PLUGIN_CACHE_MARKER:
+            continue
+        metadata = child.lstat()
+        if child.is_symlink() or stat.S_ISREG(metadata.st_mode):
+            child.unlink()
+        elif stat.S_ISDIR(metadata.st_mode):
+            remove_tree(child)
+        else:
+            raise OSError("Terraform plugin-cache entry changed")
+
+
+def _current_process_ancestry_pids() -> frozenset[int]:
+    """Return this cleanup controller's live parent chain, excluding PID 1."""
+    try:
+        completed = subprocess.run(
+            ["/bin/ps", "-axo", "pid=,ppid="],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=clean_ci_shard_scratch.PROCESS_INSPECTION_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ProcessInspectionError("controller process inspection failed") from exc
+
+    parents: dict[int, int] = {}
+    for line in completed.stdout.splitlines():
+        fields = line.strip().split()
+        if len(fields) != 2:
+            continue
+        try:
+            pid, parent_pid = (int(field) for field in fields)
+        except ValueError:
+            continue
+        parents[pid] = parent_pid
+
+    current_pid = os.getpid()
+    if current_pid not in parents:
+        raise ProcessInspectionError("cleanup controller missing from process table")
+    ancestry = {current_pid}
+    while True:
+        next_parent_pid = parents.get(current_pid)
+        if next_parent_pid is None or next_parent_pid <= 1:
+            break
+        if next_parent_pid in ancestry:
+            raise ProcessInspectionError("cleanup controller ancestry cycle")
+        ancestry.add(next_parent_pid)
+        current_pid = next_parent_pid
+    return frozenset(ancestry)
+
+
+def _blocking_invoking_process_pids(
+    *,
+    worktree: Path,
+    active_process_pids: ActiveProcessPids,
+    owned_process_pids: OwnedProcessPids,
+) -> list[int]:
+    """Return worktree users outside the synchronous cleanup controller chain."""
+    active_pids = active_process_pids(worktree)
+    if not active_pids:
+        return []
+    owned_pids = owned_process_pids()
+    return sorted(set(active_pids).difference(owned_pids))
+
+
+def clean_invoking_worktree_disposable_caches(
+    *,
+    worktree: Path,
+    records: Sequence[prune_worktrees_safe.WorktreeRecord],
+    approved_roots: Sequence[Path],
+    approved_worktrees: Sequence[Path] = (),
+    cache_paths: Sequence[Path] = INVOKING_DISPOSABLE_CACHE_PATHS,
+    refresh_records: RefreshRecords = _registered_worktrees,
+    active_process_pids: ActiveProcessPids = clean_ci_shard_scratch._active_process_pids,
+    owned_process_pids: OwnedProcessPids = _current_process_ancestry_pids,
+    remove_tree: RemoveTree = _remove_tree,
+    dry_run: bool = False,
+) -> CleanupResult:
+    """Remove exact regenerable caches absent an unrelated active process."""
+    removed: list[str] = []
+    skipped: list[str] = []
+    errors: list[str] = []
+    if worktree.is_symlink():
+        return CleanupResult((), (), (f"{worktree}:unsafe-invoking-worktree",))
+    try:
+        path = worktree.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return CleanupResult((), (), (f"{worktree}:invoking-worktree-unavailable",))
+    exact_approved = False
+    for approved_worktree in approved_worktrees:
+        try:
+            exact_approved = exact_approved or approved_worktree.resolve(strict=True) == path
+        except (OSError, RuntimeError):
+            continue
+    if not path.is_dir() or not (
+        exact_approved or _inside_approved_root(path, approved_roots)
+    ):
+        return CleanupResult((), (f"{path}:outside approved namespace",), ())
+
+    selected_cache_paths = tuple(dict.fromkeys(cache_paths))
+    if any(
+        cache_path not in INVOKING_DISPOSABLE_CACHE_PATHS
+        for cache_path in selected_cache_paths
+    ):
+        return CleanupResult((), (), (f"{path}:invalid-cache-selection",))
+
+    matching_records: list[prune_worktrees_safe.WorktreeRecord] = []
+    for record in records:
+        try:
+            if record.path.resolve(strict=True) == path:
+                matching_records.append(record)
+        except (OSError, RuntimeError):
+            continue
+    if len(matching_records) != 1:
+        return CleanupResult((), (), (f"{path}:invoking-registration-ambiguous",))
+    record = matching_records[0]
+    if record.locked:
+        return CleanupResult((), (f"{path}:git worktree lock",), ())
+    if record.prunable:
+        return CleanupResult((), (f"{path}:prunable registration",), ())
+    if record.branch is None:
+        return CleanupResult((), (f"{path}:detached worktree",), ())
+
+    try:
+        initial_pids = _blocking_invoking_process_pids(
+            worktree=path,
+            active_process_pids=active_process_pids,
+            owned_process_pids=owned_process_pids,
+        )
+    except ProcessInspectionError:
+        return CleanupResult((), (), (f"{path}:process-inspection-failed",))
+    if initial_pids:
+        return CleanupResult(
+            (),
+            (f"{path}:active-pids={','.join(str(pid) for pid in initial_pids)}",),
+            (),
+        )
+
+    for relative_cache in selected_cache_paths:
+        cache = path / relative_cache
+        if cache.is_symlink():
+            errors.append(f"{cache}:unsafe-cache")
+            continue
+        if not cache.exists():
+            continue
+        if not _invoking_cache_is_safe(path, relative_cache):
+            errors.append(f"{cache}:unsafe-cache")
+            continue
+        try:
+            refreshed = _matching_refreshed_record(record, refresh_records())
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+            errors.append(f"{cache}:ownership-revalidation-failed")
+            continue
+        if refreshed is None:
+            skipped.append(f"{cache}:registration changed")
+            continue
+        try:
+            refreshed_pids = _blocking_invoking_process_pids(
+                worktree=path,
+                active_process_pids=active_process_pids,
+                owned_process_pids=owned_process_pids,
+            )
+        except ProcessInspectionError:
+            errors.append(f"{cache}:process-revalidation-failed")
+            continue
+        if refreshed_pids:
+            skipped.append(
+                f"{cache}:active-pids={','.join(str(pid) for pid in refreshed_pids)}"
+            )
+            continue
+        if cache.is_symlink() or not cache.is_dir():
+            errors.append(f"{cache}:unsafe-cache")
+            continue
+        if dry_run:
+            skipped.append(f"{cache}:would remove invoking cache")
+            print(
+                "phase=cleanup action=invoking-cache status=dry-run "
+                f"path={json.dumps(str(cache))}",
+                flush=True,
+            )
+            continue
+        print(
+            "phase=cleanup action=invoking-cache status=starting "
+            f"path={json.dumps(str(cache))}",
+            flush=True,
+        )
+        try:
+            if relative_cache == TERRAFORM_PLUGIN_CACHE_PATH:
+                _clear_terraform_plugin_cache(cache, remove_tree)
+            else:
+                remove_tree(cache)
+        except OSError:
+            errors.append(f"{cache}:removal-failed")
+            continue
+        if relative_cache == TERRAFORM_PLUGIN_CACHE_PATH:
+            try:
+                remaining_entries = tuple(cache.iterdir())
+            except OSError:
+                remaining_entries = (cache,)
+            removal_failed = any(
+                child.name != TERRAFORM_PLUGIN_CACHE_MARKER
+                or child.is_symlink()
+                or not child.is_file()
+                for child in remaining_entries
+            )
+        else:
+            removal_failed = cache.exists() or cache.is_symlink()
+        if removal_failed:
+            errors.append(f"{cache}:removal-verification-failed")
+            continue
+        removed.append(str(cache))
+        print(
+            "phase=cleanup action=invoking-cache status=complete "
+            f"path={json.dumps(str(cache))}",
+            flush=True,
+        )
+
+    return CleanupResult(tuple(removed), tuple(skipped), tuple(errors))
+
+
 def clean_inactive_worktree_caches(
     *,
     records: Sequence[prune_worktrees_safe.WorktreeRecord],
@@ -1522,6 +1788,8 @@ def _automatic_cleanup(
         subprocess.SubprocessError,
     ):
         relocation_result = CleanupResult((), (), ())
+        invoking_result = CleanupResult((), (), ())
+        main_cache_result = CleanupResult((), (), ())
         worktree_result = CleanupResult(
             (), (), ("worktree-discovery:inspection-failed",)
         )
@@ -1543,6 +1811,26 @@ def _automatic_cleanup(
             )
 
         roots = (main / ".claude/worktrees", DEFAULT_TMP_WORKTREE_ROOT)
+        invoking_result = clean_invoking_worktree_disposable_caches(
+            worktree=current,
+            records=records,
+            approved_roots=roots,
+            refresh_records=_registered_worktrees,
+            dry_run=dry_run,
+        )
+        main_cache_result = (
+            CleanupResult((), (), ())
+            if main == current
+            else clean_invoking_worktree_disposable_caches(
+                worktree=main,
+                records=records,
+                approved_roots=(),
+                approved_worktrees=(main,),
+                cache_paths=(TERRAFORM_PLUGIN_CACHE_PATH,),
+                refresh_records=_registered_worktrees,
+                dry_run=dry_run,
+            )
+        )
         try:
             relocation_result = relocate_preserved_evidence(
                 leases=leases(),
@@ -1583,6 +1871,8 @@ def _automatic_cleanup(
     )
     return _combine_cleanup_results(
         relocation_result,
+        invoking_result,
+        main_cache_result,
         scratch_result,
         worktree_result,
         uv_result,
@@ -1649,16 +1939,33 @@ def run_preflight(
                 flush=True,
             )
             return 1
-        for item in cleanup_result.skipped:
+        for item in cleanup_result.skipped[:MAX_CLEANUP_DETAILS_PER_KIND]:
             print(
                 "phase=cleanup action=skip "
                 f"pass={pass_number} detail={json.dumps(item)}",
                 flush=True,
             )
-        for item in cleanup_result.errors:
+        skipped_omitted = len(cleanup_result.skipped) - MAX_CLEANUP_DETAILS_PER_KIND
+        if skipped_omitted > 0:
+            print(
+                "phase=cleanup action=skip-summary "
+                f"pass={pass_number} shown={MAX_CLEANUP_DETAILS_PER_KIND} "
+                f"omitted={skipped_omitted}",
+                flush=True,
+            )
+        for item in cleanup_result.errors[:MAX_CLEANUP_DETAILS_PER_KIND]:
             print(
                 "phase=cleanup action=refuse "
                 f"pass={pass_number} detail={json.dumps(item)}",
+                file=sys.stderr,
+                flush=True,
+            )
+        errors_omitted = len(cleanup_result.errors) - MAX_CLEANUP_DETAILS_PER_KIND
+        if errors_omitted > 0:
+            print(
+                "phase=cleanup action=refuse-summary "
+                f"pass={pass_number} shown={MAX_CLEANUP_DETAILS_PER_KIND} "
+                f"omitted={errors_omitted}",
                 file=sys.stderr,
                 flush=True,
             )

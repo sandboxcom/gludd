@@ -252,6 +252,7 @@ try {{
         result = _run_plugin(code, env_override={
             "GLUDD_MAINTHREAD_STREAK_FILE": streak_file,
             "GLUDD_DISENGAGE_PATH": str(tmp_path / "disengage.json"),
+            "GLUDD_DISPATCH_DEDUP_STATE": str(tmp_path / "dispatch-ledger.json"),
             "GLUDD_MAINTHREAD_THRESHOLD": "2",
             "GLUDD_LIVE_AGENTS_COUNT": "0",
         })

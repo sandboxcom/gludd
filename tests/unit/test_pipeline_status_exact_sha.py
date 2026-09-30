@@ -15,8 +15,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import pipeline_status  # noqa: E402
 
-SHA = "49c5492ff6b6a590b8f130d1fb87b1a71cdd8077"
-OTHER_SHA = "9bb6f30df343f573ff400c62feb6e93e0ae9769e"
+SHA = "a" * 40
+OTHER_SHA = "b" * 40
 
 
 def _run(
@@ -354,6 +354,7 @@ def test_make_target_forwards_explicit_identity_and_has_safe_contract() -> None:
     assert "PIPELINE_STATUS_BRANCH" in block
     assert "PIPELINE_STATUS_REMOTE" in block
     assert "PIPELINE_STATUS_SHA" in block
+    assert "PIPELINE_STATUS_FAILURE_LEDGER" in block
     assert "PIPELINE_STATUS_VALIDATE_ONLY" in block
 
     payload = json.loads(
@@ -367,6 +368,7 @@ def test_make_target_forwards_explicit_identity_and_has_safe_contract() -> None:
         "PIPELINE_STATUS_BRANCH",
         "PIPELINE_STATUS_REMOTE",
         "PIPELINE_STATUS_SHA",
+        "PIPELINE_STATUS_FAILURE_LEDGER",
         "PIPELINE_STATUS_VALIDATE_ONLY",
     ]
     assert "PIPELINE_STATUS_VALIDATE_ONLY=1" in contract["behavior"]

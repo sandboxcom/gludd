@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -116,6 +117,355 @@ def test_cleanup_protects_locked_and_current_worktrees(
     assert not result.removed
     expected = "git worktree lock" if protected_reason == "locked" else "current/main checkout"
     assert any(expected in item for item in result.skipped)
+
+
+def test_cleanup_reclaims_only_idle_invoking_worktree_disposable_caches(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "gludd-worktrees"
+    current = _record(root / "current", "fix/current")
+    (current.path / ".git").write_text("gitdir: protected\n", encoding="utf-8")
+    (current.path / "src").mkdir()
+    (current.path / "src" / "keep.py").write_text("keep\n", encoding="utf-8")
+    for cache_name in automatic_disk_cleanup.GENERATED_CACHE_DIR_NAMES:
+        (current.path / cache_name).mkdir()
+        (current.path / cache_name / "generated.bin").write_bytes(b"generated")
+    terraform_root = current.path / "infra" / "terraform"
+    terraform_cache = terraform_root / ".plugin-cache"
+    terraform_cache.mkdir(parents=True)
+    terraform_marker = terraform_cache / ".gitkeep"
+    terraform_marker.write_text("", encoding="utf-8")
+    (terraform_cache / "provider.bin").write_bytes(b"regenerable")
+    terraform_state = terraform_root / "stacks" / "azure-vllm" / "terraform.tfstate"
+    terraform_state.parent.mkdir(parents=True)
+    terraform_state.write_text("{}\n", encoding="utf-8")
+
+    process_scans: list[Path] = []
+
+    def active_process_pids(path: Path) -> list[int]:
+        process_scans.append(path)
+        return []
+
+    result = automatic_disk_cleanup.clean_invoking_worktree_disposable_caches(
+        worktree=current.path,
+        records=[current],
+        approved_roots=(root,),
+        refresh_records=lambda: [current],
+        active_process_pids=active_process_pids,
+    )
+
+    expected = {
+        str(current.path / cache_name)
+        for cache_name in automatic_disk_cleanup.DISPOSABLE_CACHE_DIR_NAMES
+    }
+    expected.add(str(terraform_cache))
+    assert set(result.removed) == expected
+    assert result.skipped == ()
+    assert result.errors == ()
+    assert len(process_scans) >= 2
+    assert set(process_scans) == {current.path}
+    assert (current.path / ".venv").exists()
+    assert terraform_state.read_text(encoding="utf-8") == "{}\n"
+    assert terraform_cache.is_dir()
+    assert terraform_marker.is_file()
+    assert list(terraform_cache.iterdir()) == [terraform_marker]
+    assert (current.path / "src" / "keep.py").read_text(encoding="utf-8") == "keep\n"
+
+
+def test_invoking_cleanup_stops_when_a_process_appears_during_revalidation(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "gludd-worktrees"
+    current = _record(root / "current", "fix/current")
+    cache = current.path / ".pytest_cache"
+    cache.mkdir()
+    process_reads = iter(([], [8123]))
+
+    result = automatic_disk_cleanup.clean_invoking_worktree_disposable_caches(
+        worktree=current.path,
+        records=[current],
+        approved_roots=(root,),
+        refresh_records=lambda: [current],
+        active_process_pids=lambda _path: next(process_reads),
+        owned_process_pids=lambda: frozenset(),
+    )
+
+    assert result.removed == ()
+    assert result.skipped == (f"{cache}:active-pids=8123",)
+    assert result.errors == ()
+    assert cache.exists()
+
+
+def test_invoking_cleanup_ignores_only_owned_controller_processes(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "gludd-worktrees"
+    current = _record(root / "current", "fix/current")
+    cache = current.path / ".pytest_cache"
+    cache.mkdir()
+
+    allowed = automatic_disk_cleanup.clean_invoking_worktree_disposable_caches(
+        worktree=current.path,
+        records=[current],
+        approved_roots=(root,),
+        refresh_records=lambda: [current],
+        active_process_pids=lambda _path: [8123],
+        owned_process_pids=lambda: frozenset({8123}),
+    )
+
+    assert allowed.removed == (str(cache),)
+    assert allowed.skipped == ()
+    assert allowed.errors == ()
+
+    cache.mkdir()
+    blocked = automatic_disk_cleanup.clean_invoking_worktree_disposable_caches(
+        worktree=current.path,
+        records=[current],
+        approved_roots=(root,),
+        refresh_records=lambda: [current],
+        active_process_pids=lambda _path: [8123, 9001],
+        owned_process_pids=lambda: frozenset({8123}),
+    )
+
+    assert blocked.removed == ()
+    assert blocked.skipped == (f"{current.path}:active-pids=9001",)
+    assert blocked.errors == ()
+    assert cache.is_dir()
+
+
+def test_current_process_ancestry_excludes_children_and_pid_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    completed = subprocess.CompletedProcess(
+        ["/bin/ps", "-axo", "pid=,ppid="],
+        0,
+        "10 9\n9 4\n4 1\n88 10\n",
+        "",
+    )
+    monkeypatch.setattr(automatic_disk_cleanup.os, "getpid", lambda: 10)
+    monkeypatch.setattr(
+        automatic_disk_cleanup.subprocess,
+        "run",
+        lambda *_args, **_kwargs: completed,
+    )
+
+    assert automatic_disk_cleanup._current_process_ancestry_pids() == frozenset(
+        {4, 9, 10}
+    )
+
+
+def test_exact_approved_main_worktree_reclaims_only_terraform_provider_cache(
+    tmp_path: Path,
+) -> None:
+    main = _record(tmp_path / "main", "development")
+    terraform_root = main.path / "infra" / "terraform"
+    terraform_cache = terraform_root / ".plugin-cache"
+    terraform_cache.mkdir(parents=True)
+    marker = terraform_cache / ".gitkeep"
+    marker.write_text("", encoding="utf-8")
+    (terraform_cache / "registry.terraform.io").mkdir()
+    state = terraform_root / "stacks" / "azure-vllm" / "terraform.tfstate"
+    state.parent.mkdir(parents=True)
+    state.write_text("{}\n", encoding="utf-8")
+
+    result = automatic_disk_cleanup.clean_invoking_worktree_disposable_caches(
+        worktree=main.path,
+        records=[main],
+        approved_roots=(),
+        approved_worktrees=(main.path,),
+        cache_paths=(automatic_disk_cleanup.TERRAFORM_PLUGIN_CACHE_PATH,),
+        refresh_records=lambda: [main],
+        active_process_pids=lambda _path: [],
+    )
+
+    assert result.removed == (str(terraform_cache),)
+    assert tuple(terraform_cache.iterdir()) == (marker,)
+    assert state.read_text(encoding="utf-8") == "{}\n"
+
+
+def test_invoking_cache_selection_and_registration_fail_closed(tmp_path: Path) -> None:
+    root = tmp_path / "gludd-worktrees"
+    current = _record(root / "current", "fix/current")
+    cache = current.path / ".pytest_cache"
+    cache.mkdir()
+
+    assert not automatic_disk_cleanup._invoking_cache_is_safe(
+        current.path, Path("/absolute-cache")
+    )
+    assert not automatic_disk_cleanup._invoking_cache_is_safe(
+        current.path, Path("missing-cache")
+    )
+    invalid = automatic_disk_cleanup.clean_invoking_worktree_disposable_caches(
+        worktree=current.path,
+        records=[current],
+        approved_roots=(root,),
+        cache_paths=(Path("source"),),
+        active_process_pids=lambda _path: [],
+    )
+    assert invalid.errors == (f"{current.path}:invalid-cache-selection",)
+
+    states = (
+        (WorktreeRecord(current.path, current.branch, True), "git worktree lock"),
+        (
+            WorktreeRecord(current.path, current.branch, False, prunable=True),
+            "prunable registration",
+        ),
+        (WorktreeRecord(current.path, None, False), "detached worktree"),
+    )
+    for record, reason in states:
+        result = automatic_disk_cleanup.clean_invoking_worktree_disposable_caches(
+            worktree=current.path,
+            records=[record],
+            approved_roots=(root,),
+            active_process_pids=lambda _path: [],
+        )
+        assert result.skipped == (f"{current.path}:{reason}",)
+    assert cache.is_dir()
+
+
+def test_invoking_cleanup_reports_each_late_safety_failure(tmp_path: Path) -> None:
+    root = tmp_path / "gludd-worktrees"
+    current = _record(root / "current", "fix/current")
+    cache = current.path / ".pytest_cache"
+    cache.mkdir()
+
+    def inspect_failure(_path: Path) -> list[int]:
+        raise automatic_disk_cleanup.ProcessInspectionError("ps unavailable")
+
+    initial_failure = automatic_disk_cleanup.clean_invoking_worktree_disposable_caches(
+        worktree=current.path,
+        records=[current],
+        approved_roots=(root,),
+        active_process_pids=inspect_failure,
+    )
+    assert initial_failure.errors == (f"{current.path}:process-inspection-failed",)
+    active = automatic_disk_cleanup.clean_invoking_worktree_disposable_caches(
+        worktree=current.path,
+        records=[current],
+        approved_roots=(root,),
+        active_process_pids=lambda _path: [42],
+        owned_process_pids=lambda: frozenset(),
+    )
+    assert active.skipped == (f"{current.path}:active-pids=42",)
+
+    refresh_failure = automatic_disk_cleanup.clean_invoking_worktree_disposable_caches(
+        worktree=current.path,
+        records=[current],
+        approved_roots=(root,),
+        refresh_records=lambda: (_ for _ in ()).throw(OSError("git unavailable")),
+        active_process_pids=lambda _path: [],
+    )
+    assert refresh_failure.errors == (f"{cache}:ownership-revalidation-failed",)
+
+    process_reads = iter(([], automatic_disk_cleanup.ProcessInspectionError("late")))
+
+    def late_inspection(_path: Path) -> list[int]:
+        value = next(process_reads)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    late_failure = automatic_disk_cleanup.clean_invoking_worktree_disposable_caches(
+        worktree=current.path,
+        records=[current],
+        approved_roots=(root,),
+        refresh_records=lambda: [current],
+        active_process_pids=late_inspection,
+    )
+    assert late_failure.errors == (f"{cache}:process-revalidation-failed",)
+
+    removal_failure = automatic_disk_cleanup.clean_invoking_worktree_disposable_caches(
+        worktree=current.path,
+        records=[current],
+        approved_roots=(root,),
+        refresh_records=lambda: [current],
+        active_process_pids=lambda _path: [],
+        remove_tree=lambda _path: (_ for _ in ()).throw(OSError("refused")),
+    )
+    assert removal_failure.errors == (f"{cache}:removal-failed",)
+    verification_failure = automatic_disk_cleanup.clean_invoking_worktree_disposable_caches(
+        worktree=current.path,
+        records=[current],
+        approved_roots=(root,),
+        refresh_records=lambda: [current],
+        active_process_pids=lambda _path: [],
+        remove_tree=lambda _path: None,
+    )
+    assert verification_failure.errors == (f"{cache}:removal-verification-failed",)
+    assert cache.is_dir()
+
+
+def test_terraform_plugin_cache_refuses_marker_and_special_entry(tmp_path: Path) -> None:
+    cache = tmp_path / ".plugin-cache"
+    cache.mkdir()
+    (cache / ".gitkeep").mkdir()
+    with pytest.raises(OSError, match="unsafe Terraform plugin-cache marker"):
+        automatic_disk_cleanup._clear_terraform_plugin_cache(
+            cache, automatic_disk_cleanup._remove_tree
+        )
+
+    (cache / ".gitkeep").rmdir()
+    (cache / ".gitkeep").write_text("", encoding="utf-8")
+    fifo = cache / "provider.pipe"
+    os.mkfifo(fifo)
+    with pytest.raises(OSError, match="unsafe Terraform plugin-cache entry"):
+        automatic_disk_cleanup._clear_terraform_plugin_cache(
+            cache, automatic_disk_cleanup._remove_tree
+        )
+    assert fifo.exists()
+
+
+def test_invoking_cleanup_refuses_changed_registration_and_unsafe_cache_shapes(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "gludd-worktrees"
+    current = _record(root / "current", "fix/current")
+    changed_cache = current.path / ".pytest_cache"
+    changed_cache.mkdir()
+    changed = automatic_disk_cleanup.clean_invoking_worktree_disposable_caches(
+        worktree=current.path,
+        records=[current],
+        approved_roots=(root,),
+        refresh_records=lambda: [],
+        active_process_pids=lambda _path: [],
+    )
+    assert changed.skipped == (f"{changed_cache}:registration changed",)
+    assert changed_cache.exists()
+
+    changed_cache.rmdir()
+    external = tmp_path / "external"
+    external.mkdir()
+    symlink_cache = current.path / ".pytest_cache"
+    symlink_cache.symlink_to(external, target_is_directory=True)
+    file_cache = current.path / ".mypy_cache"
+    file_cache.write_text("not a directory\n", encoding="utf-8")
+    dry_run_cache = current.path / ".ruff_cache"
+    dry_run_cache.mkdir()
+    external_terraform = tmp_path / "external-terraform"
+    external_terraform_cache = external_terraform / "terraform" / ".plugin-cache"
+    external_terraform_cache.mkdir(parents=True)
+    (current.path / "infra").symlink_to(external_terraform, target_is_directory=True)
+    terraform_cache = current.path / "infra" / "terraform" / ".plugin-cache"
+    dry_run = automatic_disk_cleanup.clean_invoking_worktree_disposable_caches(
+        worktree=current.path,
+        records=[current],
+        approved_roots=(root,),
+        refresh_records=lambda: [current],
+        active_process_pids=lambda _path: [],
+        dry_run=True,
+    )
+
+    assert dry_run.removed == ()
+    assert dry_run.skipped == (f"{dry_run_cache}:would remove invoking cache",)
+    assert set(dry_run.errors) == {
+        f"{symlink_cache}:unsafe-cache",
+        f"{file_cache}:unsafe-cache",
+        f"{terraform_cache}:unsafe-cache",
+    }
+    assert symlink_cache.is_symlink()
+    assert file_cache.is_file()
+    assert dry_run_cache.is_dir()
+    assert (external_terraform_cache).is_dir()
 
 
 def test_cleanup_revalidates_workstream_and_process_state_before_mutation(
@@ -1754,6 +2104,29 @@ def test_preflight_stops_fail_closed_when_cleanup_makes_no_measurable_progress(
     assert "phase=recheck status=failed pass=1 reason=no-progress" in captured.err
 
 
+def test_preflight_bounds_repetitive_cleanup_details(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    high = DiskSnapshot(scratch_mb=114.5, disk_pct=92.0)
+    detail_count = automatic_disk_cleanup.MAX_CLEANUP_DETAILS_PER_KIND + 5
+
+    result = automatic_disk_cleanup.run_preflight(
+        inspect_usage=lambda: high,
+        cleanup=lambda: automatic_disk_cleanup.CleanupResult(
+            removed=(),
+            skipped=tuple(f"/tmp/gludd-test-{index}:recent" for index in range(detail_count)),
+            errors=(),
+        ),
+    )
+
+    assert result == 1
+    output = capsys.readouterr().out
+    assert output.count("action=skip pass=1 detail=") == (
+        automatic_disk_cleanup.MAX_CLEANUP_DETAILS_PER_KIND
+    )
+    assert "action=skip-summary pass=1 shown=20 omitted=5" in output
+
+
 def test_preflight_stops_at_bounded_cleanup_pass_limit(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -2173,6 +2546,20 @@ def test_default_cleanup_discovers_and_preserves_git_worktrees(
     )
     uv_cleanup_calls: list[tuple[bool, bool]] = []
     terraform_cleanup_calls: list[bool] = []
+    invoking_cleanup_calls: list[dict[str, object]] = []
+    invoking_cache = tmp_path / "invoking" / ".pytest_cache"
+    main_cache = main.path / automatic_disk_cleanup.TERRAFORM_PLUGIN_CACHE_PATH
+
+    def invoking_cleanup(**kwargs: object) -> automatic_disk_cleanup.CleanupResult:
+        invoking_cleanup_calls.append(kwargs)
+        removed = main_cache if kwargs["worktree"] == main.path else invoking_cache
+        return automatic_disk_cleanup.CleanupResult((str(removed),), (), ())
+
+    monkeypatch.setattr(
+        automatic_disk_cleanup,
+        "clean_invoking_worktree_disposable_caches",
+        invoking_cleanup,
+    )
 
     def uv_cleanup(
         *, dry_run: bool = False, missing_is_clean: bool = False
@@ -2196,13 +2583,26 @@ def test_default_cleanup_discovers_and_preserves_git_worktrees(
 
     result = automatic_disk_cleanup._automatic_cleanup()
 
-    assert result.removed == (str(stale_file),)
+    assert result.removed == (str(invoking_cache), str(main_cache), str(stale_file))
     assert any("completion proof required" in item for item in result.skipped)
     assert cache.exists()
     assert finished.path.exists()
     assert main.path.exists()
     assert uv_cleanup_calls == [(False, True)]
     assert terraform_cleanup_calls == [False]
+    assert len(invoking_cleanup_calls) == 2
+    assert invoking_cleanup_calls[0]["records"] == records
+    assert invoking_cleanup_calls[0]["approved_roots"] == (
+        main.path / ".claude/worktrees",
+        root,
+    )
+    assert invoking_cleanup_calls[0]["dry_run"] is False
+    assert invoking_cleanup_calls[1]["worktree"] == main.path
+    assert invoking_cleanup_calls[1]["approved_worktrees"] == (main.path,)
+    assert invoking_cleanup_calls[1]["cache_paths"] == (
+        automatic_disk_cleanup.TERRAFORM_PLUGIN_CACHE_PATH,
+    )
+    assert invoking_cleanup_calls[1]["dry_run"] is False
 
 
 def test_default_cleanup_and_recheck_inspection_fail_closed(
@@ -2342,7 +2742,10 @@ def test_make_and_precommit_gates_run_the_automatic_preflight() -> None:
     target = makefile.split("\ndisk-cleanup-preflight:\n", 1)[1].split(
         "\ncheck-disk:", 1
     )[0]
-    gate = makefile.split("\ngate:", 1)[1].split("\n", 1)[0]
+    gate = makefile.split("\ngate:", 1)[1].split("\n\n", 1)[0]
+    gate_preflights = makefile.split("GATE_PREFLIGHT_TARGETS :=", 1)[1].split(
+        "GATE_PREFLIGHT_STATUS", 1
+    )[0]
     gate_fast = makefile.split("\ngate-fast:", 1)[1].split("\n", 1)[0]
     gate_lite = makefile.split("\ngate-lite:", 1)[1].split("\n", 1)[0]
 
@@ -2352,7 +2755,8 @@ def test_make_and_precommit_gates_run_the_automatic_preflight() -> None:
     assert "--receipt-grace-seconds" in target
     assert "--dry-run" in target
     assert "$(UV) run" not in target
-    assert "disk-cleanup-preflight" in gate
+    assert "disk-cleanup-preflight" in gate_preflights
+    assert "_gate-preflights" in gate
     assert "disk-cleanup-preflight" in gate_fast
     assert "disk-cleanup-preflight" in gate_lite
     assert "entry: make check-disk CHECK_DISK_VALIDATE_ONLY=0" in hooks

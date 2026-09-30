@@ -139,6 +139,7 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_DISENGAGE_AUDIT_PATH` | Auto-indexed (see source) | — | optional | `scripts/run_ci_shards_parallel.py:58` |
 | `GLUDD_DISENGAGE_PATH` | Auto-indexed (see source) | — | optional | `scripts/run_ci_shards_parallel.py:57` |
 | `GLUDD_DISK_FREE_OVERRIDE` | Auto-indexed (see source) | — | optional | `scripts/test_worktree_disk_guard.py:49` |
+| `GLUDD_DISPATCH_DEDUP_STATE` | Override the durable content-addressed dispatch ownership ledger. Use a unique repository-scoped path only when isolating concurrent test sessions. | `.gludd/dispatch-ledger.json` | optional | `scripts/check_dispatch_dedup.py:30` |
 | `GLUDD_DISPATCH_OUTCOMES_FILE` | Override the atomic JSON state file used to track empty dispatches and bounded pressure-release recovery. Use a unique path for isolated test or concurrent project sessions. | `/tmp/gludd-dispatch-outcomes.json` | optional | `.opencode/lib/shared.ts:486` |
 | `GLUDD_DISPATCH_FLOOR` | Auto-indexed (see source) | `10` | optional | `scripts/dispatch_tracker.py:30` |
 | `GLUDD_DISPATCH_STATE_FILE` | Auto-indexed (see source) | — | optional | `scripts/dispatch_tracker.py:28` |

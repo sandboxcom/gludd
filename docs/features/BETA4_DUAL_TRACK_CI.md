@@ -2787,3 +2787,78 @@ and are removed by the owner without touching an installed Gludd service. Gate
 aggregation changes validation control flow only: it performs read-only checks,
 retains their complete evidence, and still fails before publication whenever any
 check is red.
+
+### Diagnostic artifacts are not release assets (2026-09-29)
+
+The first complete exact-SHA gate exposed structural tests that treated every
+`actions/upload-artifact` step as a publishable binary. That assumption would
+force failure evidence to disappear: the Linux PyInstaller warning graph is
+intentionally uploaded with `if: always()` before binary and daemon smoke tests,
+while the distributable archive is uploaded only with `if: success()` after all
+smoke and packaging checks pass.
+
+Artifact admission is now explicit. Names beginning with `gludd-*` are release
+assets and must remain success-gated behind smoke tests; other names are
+diagnostics and must survive failures without entering the release job's
+`gludd-*` download fan-in. Gate-wiring tests likewise inspect the canonical
+`GATE_PREFLIGHT_TARGETS` list and the non-short-circuit runner instead of the old
+direct-prerequisite header. The Molecule action allowlist also includes the
+pinned Node 24 `upload-artifact` action used for retained scenario evidence.
+
+Practitioner and implementation evidence reviewed 2026-09-29:
+
+- The official [upload-artifact metadata](https://github.com/actions/upload-artifact/blob/main/action.yml)
+  declares its Node 24 runtime, while GitHub's
+  [always() documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions)
+  explicitly describes retaining logs after failure.
+- Long-running reports [actions/upload-artifact#585](https://github.com/actions/upload-artifact/issues/585)
+  and [#328](https://github.com/actions/upload-artifact/issues/328) show why
+  failure diagnostics need explicit unconditional upload behavior.
+- GitHub Community discussion
+  [#206753](https://github.com/orgs/community/discussions/206753) records the
+  important boundary between workflow artifacts and release assets: release jobs
+  must explicitly download and republish the artifacts they admit.
+- Runner issue [#4295](https://github.com/actions/runner/issues/4295) and the
+  runner's [Node action guidance](https://github.com/actions/runner/blob/main/docs/checks/nodejs.md)
+  document the long-lived runtime-version ambiguity avoided by pinning actions
+  whose metadata natively selects Node 24.
+
+This is ZDD by construction. Diagnostic retention and test classification do not
+modify a running service or published release. A rollback removes one test/doc
+commit; the success-gated release uploads and previously published artifacts stay
+unchanged throughout.
+
+### Durable plugin state is explicit test input (2026-09-29)
+
+The next complete candidate gate reduced the repair surface to one failure. The
+delegate streak E2E gave its streak counter and disengage signal function-scoped
+paths, but left the newly durable dispatch ownership ledger at the repository
+default. A synthetic `task` with prompt `do work` therefore found a legitimate
+owner from an earlier process and was denied before the streak-reset assertion
+could execute.
+
+The test now binds `GLUDD_DISPATCH_DEDUP_STATE` to the same function-scoped
+temporary root as its other state. The three synthetic tool variants still share
+one ledger within that test, but no run reads or mutates live project ownership.
+This is isolation, not a deduplication bypass: the separate runtime contract still
+proves exact-prompt and tracked-task collisions, lock ownership, retry after a
+failed dispatch, and permanent denial after completion.
+
+Practitioner and implementation evidence reviewed 2026-09-29:
+
+- Pytest issue [#11790](https://github.com/pytest-dev/pytest/issues/11790)
+  documents collisions when a supposedly unique temporary boundary is reused by
+  concurrent invocations.
+- The pytest-xdist discussion
+  [#1213](https://github.com/pytest-dev/pytest-xdist/discussions/1213) recommends
+  temporary files with file locking when cross-worker state is deliberately
+  shared.
+- Pytest's
+  [temporary-path documentation](https://github.com/pytest-dev/pytest/blob/main/doc/en/how-to/tmp_path.rst)
+  defines `tmp_path` as function-scoped; that isolation applies only to resources
+  actually rooted there.
+
+The full gate ledger contained exactly one `SHARD-FAIL`; the repaired node passes
+1/1 and the combined delegate/dedup replay passes 21/21. No running service,
+published artifact, or live dispatch owner changes, so the repair is ZDD and its
+rollback is the single test-state binding.

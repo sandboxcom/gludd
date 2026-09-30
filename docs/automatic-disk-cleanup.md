@@ -9,9 +9,9 @@ limit from `scripts/check_disk_usage.py`.
 ## Safety boundary
 
 Cleanup starts only when either limit is already exceeded. Candidate discovery
-comes from Git's stable porcelain worktree registry. A candidate must be a
-strict descendant of `/tmp/gludd-worktrees` or the main checkout's
-`.claude/worktrees`, and all of these checks must pass:
+comes from Git's stable porcelain worktree registry. An inactive-worktree
+candidate must be a strict descendant of `/tmp/gludd-worktrees` or the main
+checkout's `.claude/worktrees`, and all of these checks must pass:
 
 - it is not the main or invoking checkout;
 - it is not locked, prunable, or detached;
@@ -35,18 +35,43 @@ worktree without that receipt remains protected. Dirty work is always protected.
 A renewed or missing lease, new process, registration change, or dirtying race
 detected during any reinspection cancels cleanup.
 
-The first recovery tier distinguishes disposable caches from dependency
-environments. Direct-child `.pytest_cache`, `.mypy_cache`, and `.ruff_cache`
-directories may be removed after the cache-safe ownership checks. A `.venv` is a
-tool environment, not an ordinary cache: it is preserved for active,
-receipt-only, and unregistered completion-unproven worktrees. It becomes eligible
-only with the same non-cache-only completed/idle lease proof required for
-materialization retirement. Immediately before `.venv` removal, the preflight
-again verifies the unchanged registration and lease, full lifecycle proof, and
-absence of matching processes. Symlinks, files with an allowlisted name, changed
-registrations, proof downgrades, and inspection failures are refused. An inactive
-unregistered worktree can use the disposable-cache tier, but never qualifies for
-`.venv` or checkout removal because it has no completion-lease proof.
+The first recovery tier closes the measurement/cleanup boundary for the invoking
+worktree itself. The disk checker counts direct-child `.pytest_cache`,
+`.mypy_cache`, and `.ruff_cache` directories in every registered worktree, so the
+cleanup owns those same three disposable directories. Repository-volume pressure
+also makes the exact `infra/terraform/.plugin-cache` eligible; that directory is
+the project's declared `TF_PLUGIN_CACHE_DIR` and contains downloaded provider
+binaries, not Terraform state. When a linked worktree invokes the preflight, the
+same narrow provider-cache action may target the exact Git-registered main
+checkout, but no other main-checkout path is eligible. Generated provider entries
+are cleared while the tracked `.gitkeep` marker and cache directory remain.
+Eligibility requires an exact, unlocked, non-prunable, attached registration
+under an approved worktree namespace or an exact main-checkout identity. The tier
+validates every path component, performs an initial process scan, refreshes the
+exact Git registration, and repeats the process scan immediately before each
+removal. The invoking tier recognizes only the cleanup process and its freshly
+inspected synchronous parent chain as controller-owned; this prevents the
+`make`/pre-commit caller from blocking its own deterministic cleanup. A sibling,
+child, or unrelated path-matching PID remains an external owner and blocks the
+candidate. A new owner, changed registration, symlink, non-directory, ambiguous
+process ancestry or inspection, or removal failure stops that candidate
+fail-closed. `.venv`,
+Terraform state and lock files, source, `.gate-logs`, `.gludd`, `dist`, and release
+artifacts are never selected by this tier.
+
+The inactive-worktree tier likewise distinguishes disposable caches from
+dependency environments. Direct-child `.pytest_cache`, `.mypy_cache`, and
+`.ruff_cache` directories may be removed after the cache-safe ownership checks.
+A `.venv` is a tool environment, not an ordinary cache: it is preserved for
+active, receipt-only, and unregistered completion-unproven worktrees. It becomes
+eligible only with the same non-cache-only completed/idle lease proof required
+for materialization retirement. Immediately before `.venv` removal, the
+preflight again verifies the unchanged registration and lease, full lifecycle
+proof, and absence of matching processes. Symlinks, files with an allowlisted
+name, changed registrations, proof downgrades, and inspection failures are
+refused. An inactive unregistered worktree can use the disposable-cache tier,
+but never qualifies for `.venv` or checkout removal because it has no
+completion-lease proof.
 
 Under continuing pressure, at most four proven-complete materializations are
 removed per cleanup pass. The preflight remeasures both canonical limits after
@@ -122,9 +147,13 @@ accidentally change the behavior under test.
 
 ## Zero-downtime operation and observability
 
-The active-workstream lease and retained `.venv` protect model-owned work that
-cannot be inferred from operating-system PIDs, including a no-PID thinking interval.
-Git cleanliness,
+The invoking tier removes only regenerable caches after exact registration and
+two-stage process ownership checks. It filters only its observed synchronous
+controller ancestry and never exempts descendants or other path users; it never
+treats the active checkout itself as complete and never removes its environment
+or durable state. The
+active-workstream lease and retained `.venv` protect model-owned work that cannot
+be inferred from operating-system PIDs, including a no-PID thinking interval. Git cleanliness,
 integration ancestry/patch identity, and integration timestamps provide the
 automatic completion signal. An exact-head commit receipt provides the immediate
 cache-safe signal, and its unchanged age plus the configurable minimum grace
@@ -136,8 +165,11 @@ completed environments can be regenerated by the next `uv` run.
 
 Every phase emits a visible marker: initial inspection, pressure detection,
 the bounded pass number, each candidate removal or uv-prune start/completion,
-every refusal, and every recheck. This makes a multi-pass recovery distinguishable
-from a stalled gate without a model polling the filesystem. The implementation
+bounded refusal/skip details, omitted-detail counts, and every recheck. At most 20
+skip details and 20 refusal details are printed per kind and pass, so hundreds of
+equivalent stale-scratch protections cannot flood a gate log. This makes a
+multi-pass recovery distinguishable from a stalled gate without a model polling
+the filesystem. The implementation
 keeps no cross-run convergence state; all authority comes from fresh Git,
 namespaced workstream-lease, process, and disk observations on each pass. A
 non-mutating preview is available with
@@ -185,8 +217,14 @@ required. Do not weaken the fail-closed threshold recheck as a rollback shortcut
 - [pytest discussion 10325](https://github.com/pytest-dev/pytest/discussions/10325)
   documents long-lived operational demand to remove retained temporary test
   directories on automated hosts. Gludd therefore owns bounded cleanup for its
-  explicit test namespaces, while using age, process, type, and identity proofs
-  rather than deleting arbitrary `/tmp` content.
+  explicit test namespaces and its own registered disposable worktree caches,
+  while using registration, process, age, type, and identity proofs rather than
+  deleting arbitrary `/tmp` content.
+- [Terraform issue 38376](https://github.com/hashicorp/terraform/issues/38376)
+  records sustained demand to reuse providers across modules without repeated
+  downloads. Gludd retains that supported shared-cache design during normal use,
+  but treats the cache as regenerable under measured volume pressure while
+  preserving dependency locks and every state path.
 - The official
   [Git worktree documentation](https://git-scm.com/docs/git-worktree) distinguishes
   worktree removal from pruning missing-worktree metadata and documents locks as
