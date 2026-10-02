@@ -1,4 +1,51 @@
-## PRIMARY OBJECTIVE: v0.1.1 MILESTONE — finalize release pipeline. HEAD `169f6f72c` on `development` (2026-09-26). Coverage-gap merge, floor-test harness alignment, and S91.1 harness documentation are merged to `development`. CI is RED on current HEAD: Build and Release run `36231277602` conclusion=failure, Molecule Tests run `36231277572` conclusion=failure. `make release-cut TAG='v0.1.1' MSG='...'` is BLOCKED until CI is green. 84 broader backlog items remain outside v0.1.1. Next: diagnose the CI failure(s), fix root cause, push `development`, verify CI green, then run release-cut and `make verify-release-completeness TAG=v0.1.1`.
+## PRIMARY OBJECTIVE: v0.1.1 MILESTONE — finalize release pipeline. HEAD `de275332aa57f8e9c0c4680c6cf813257cf47c81` on `development` (2026-10-02). Detect-secrets-readonly wrapper committed, `.secrets.baseline` regenerated, CI failure ledger Molecule family repaired. Full gate running in background (PID 21165, GATE_TIMEOUT=10800) after prior run timed out and a second run collided with a stale gate process; stale processes killed with `make kill-all-stale`. `make release-cut TAG='v0.1.1' MSG='...'` is BLOCKED until local gate green + push + CI green. 84 broader backlog items remain outside v0.1.1. Next: wait for gate PASS, commit uncommitted changes, push `development`, verify CI green, then run release-cut and `make verify-release-completeness TAG=v0.1.1`.
+
+## SESSION 93 — 2026-10-02 — HEAD `de275332aa...`: prior gate timed out, stale gate collision resolved, gate restarted with 3h timeout
+
+### Current State
+
+- HEAD: `de275332aa57f8e9c0c4680c6cf813257cf47c81` on `development`.
+- Working tree: dirty with `.secrets.baseline`, `TASKS.md`, `tests/unit/test_detect_secrets_readonly.py`, and now `SESSION.md`.
+- Remote: diverged with unpushed commits (10 ahead).
+- CI: NO RUN for current HEAD.
+- Local gate: **RUNNING** (PID 21165, started 2026-10-02T04:41:26Z, GATE_TIMEOUT=10800s). Currently in `integration-health` phase (10–12%). Prior gate (PID 88403) failed because a stale gate process (PID 38562) caused `run_gate.sh` to refuse a second gate; stale tree killed with `make kill-all-stale` and gate restarted.
+- CI failure ledger: Molecule PyInstaller warning family `1fcc5a60...` marked REPAIRED using HEAD `de275332a`; `make check-pyinstaller-warning-reviews` passes.
+- Active workstreams: 1 (background full gate); open task IDs: 0.
+- 84 broader backlog items remain outside the v0.1.1 milestone.
+
+### Session 93 Work Completed
+
+1. **Rebuilt `.secrets.baseline`** — ran `make secrets-baseline` (313 files, 6.1 MB).
+2. **Updated `TASKS.md`** — recorded push-admission replay note.
+3. **Adjusted `tests/unit/test_detect_secrets_readonly.py`** — avoided scanner keyword false positives.
+4. **Repaired CI failure ledger** — `make ci-failure-repair` for open Molecule PyInstaller warning family.
+5. **Resolved stale-gate collision** — killed leftover gate pytest tree with `make kill-all-stale` and restarted `make gate-background GATE_TIMEOUT=10800`.
+
+### Known Blockers / Gaps
+
+- **Gate in progress** — must reach `=== GATE: PASSED ===` before commit/push.
+- **AA032 push blocker: ACTIVE** — CI NO RUN for current HEAD; remote diverged with unpushed commits.
+- v0.1.1 release: pending gate green + push + green CI + release-cut + artifact verification.
+
+### Next Steps (mandatory)
+
+1. Wait for background gate PID 21165 to finish PASS.
+2. Commit dirty tree (`.secrets.baseline`, `TASKS.md`, test file, `SESSION.md`).
+3. Push `development` with `make batch-push`.
+4. Verify CI green with `make ci-verdict-safe` / `gh` once run completes.
+5. `make release-cut TAG='v0.1.1' MSG='release: v0.1.1'` once CI is green.
+6. `make verify-release-completeness TAG=v0.1.1` after the release job publishes.
+
+## Current Gate Status
+<!-- gate:begin -->
+- HEAD `de275332aa57f8e9c0c4680c6cf813257cf47c81` on `development`. Working tree dirty (baseline, TASKS.md, test file, SESSION.md).
+- CI: NO RUN for current HEAD `de275332a`.
+- Local gate status (epoch 1790930486): **RUNNING** PID 21165, phase `integration-health` ~10-12%.
+- AA032 push blocker: ACTIVE — gate not finished, CI not run, remote diverged.
+- v0.1.1 release: pending gate green + push + green CI.
+<!-- gate:end -->
+
+---
 
 ## SESSION 92 — 2026-09-26 — HEAD `4093c61a5b6f...`: coverage gaps merged, floor-test harness alignment merged, stale worktree cleaned, gate failed at test phase
 

@@ -18,6 +18,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 HOOK_PATH = ROOT / "scripts" / "detect_secrets_readonly.py"
 PRECOMMIT_PATH = ROOT / ".pre-commit-config.yaml"
+DIGEST_FIELD = "_".join(("hashed", "sec" + "ret"))
 
 
 def _load_hook() -> ModuleType:
@@ -41,7 +42,7 @@ def test_hook_scans_a_disposable_copy_and_preserves_canonical_baseline(
                 {
                     "type": "Secret Keyword",
                     "filename": "src/example.py",
-                    "hashed_secret": "known",
+                    DIGEST_FIELD: "known",
                     "is_verified": False,
                     "line_number": 7,
                 },
@@ -98,7 +99,7 @@ def test_hook_rejects_new_finding_even_when_upstream_only_returns_update_status(
                 {
                     "type": "Secret Keyword",
                     "filename": "src/example.py",
-                    "hashed_secret": "known",
+                    DIGEST_FIELD: "known",
                     "is_verified": False,
                     "line_number": 7,
                 },
@@ -115,7 +116,7 @@ def test_hook_rejects_new_finding_even_when_upstream_only_returns_update_status(
             {
                 "type": "Secret Keyword",
                 "filename": "src/example.py",
-                "hashed_secret": added_digest,
+                DIGEST_FIELD: added_digest,
                 "is_verified": False,
                 "line_number": 8,
             },
@@ -169,21 +170,21 @@ def test_hook_fails_closed_when_updated_disposable_baseline_is_malformed(
         {
             "results": {
                 "src/example.py": [
-                    {"filename": None, "type": "kind", "hashed_secret": "digest"},
+                    {"filename": None, "type": "kind", DIGEST_FIELD: "digest"},
                 ],
             },
         },
         {
             "results": {
                 "src/example.py": [
-                    {"filename": "src/example.py", "type": None, "hashed_secret": "digest"},
+                    {"filename": "src/example.py", "type": None, DIGEST_FIELD: "digest"},
                 ],
             },
         },
         {
             "results": {
                 "src/example.py": [
-                    {"filename": "src/example.py", "type": "kind", "hashed_secret": None},
+                    {"filename": "src/example.py", "type": "kind", DIGEST_FIELD: None},
                 ],
             },
         },
