@@ -2827,12 +2827,17 @@ molecule-test-shard:
 	SIZE=$$(( (COUNT + denominator - 1) / denominator )); \
 	START=$$(( (numerator - 1) * SIZE + 1 )); \
 	END=$$(( START + SIZE - 1 )); \
+	HOST_OS=$$(uname -s); \
 	echo "  Total scenarios: $$COUNT, shard $$numerator/$$denominator → slice $$START-$$END"; \
-	INDEX=0; FAILED=""; PASSED=""; \
+	INDEX=0; FAILED=""; PASSED=""; SKIPPED=""; \
 	for d in $$ALL; do \
 		INDEX=$$((INDEX + 1)); \
 		if [ $$INDEX -lt $$START ] || [ $$INDEX -gt $$END ]; then continue; fi; \
 		s=$$(basename "$$d"); \
+		if [ "$$s" = "binary_smoke_macos" ] && [ "$$HOST_OS" != "Darwin" ]; then \
+			SKIPPED="$$SKIPPED $$s"; echo "    SKIP $$s (macOS-only scenario on $$HOST_OS)"; \
+			continue; \
+		fi; \
 		echo "--- running scenario: $$s ($$INDEX/$$COUNT) ---"; \
 		if $(MAKE) --no-print-directory molecule-test SCENARIO="$$s" > "/tmp/gludd-molecule-$$s.log" 2>&1; then \
 			PASSED="$$PASSED $$s"; echo "    PASS $$s"; \
@@ -2844,6 +2849,7 @@ molecule-test-shard:
 		fi; \
 	done; \
 	echo ""; echo "SHARD-PASSED:$$PASSED"; \
+	if [ -n "$$SKIPPED" ]; then echo "SHARD-SKIPPED:$$SKIPPED"; fi; \
 	if [ -n "$$FAILED" ]; then echo "SHARD-FAILED:$$FAILED"; exit 1; fi; \
 	echo "=== molecule-test-shard: ALL passed ==="
 
@@ -6661,13 +6667,13 @@ build-linux-binary-image: lima-docker-ensure ## Build the exact Python and uv en
 build-linux-executable: worktree-guard ## Build and verify a real Linux PyInstaller executable
 	@case "$(LINUX_BINARY_OUTPUT)" in /*|*..*) echo "Refusing unsafe LINUX_BINARY_OUTPUT: $(LINUX_BINARY_OUTPUT)"; exit 1;; esac
 	@case "$(LINUX_BINARY_SCRATCH_ROOT)" in "$(HOME)"/*) ;; *) echo "Refusing scratch root outside HOME: $(LINUX_BINARY_SCRATCH_ROOT)"; exit 1;; esac
-	@$(MAKE) --no-print-directory build-linux-binary-image
 	@mkdir -p "$$(dirname "$(LINUX_BINARY_OUTPUT)")"
 	@rm -f "$(LINUX_BINARY_OUTPUT)" "$(dir $(LINUX_BINARY_OUTPUT))warn-gludd.txt"
 	@set -e; source_sha=$$(git rev-parse HEAD); echo "LINUX_BINARY_SOURCE sha=$$source_sha"; if [ "$$(uname -s)" = "Linux" ]; then \
 		echo "Building Linux executable natively"; \
 		python_version=$$($(UV) run python -c 'import platform; print(platform.python_version())'); \
 		test "$$python_version" = "$(PYINSTALLER_PYTHON_VERSION_LINUX)" || { echo "Expected Python $(PYINSTALLER_PYTHON_VERSION_LINUX) for deterministic Linux PyInstaller analysis, found $$python_version"; exit 1; }; \
+		$(UV) sync --frozen --extra azure; \
 		$(MAKE) --no-print-directory build-executable; \
 		pyinstaller_version=$$($(UV) run pyinstaller --version); \
 		architecture=$$(uname -m); \
@@ -6681,6 +6687,7 @@ build-linux-executable: worktree-guard ## Build and verify a real Linux PyInstal
 			--spec gludd.spec; \
 		cp dist/gludd "$(LINUX_BINARY_OUTPUT)"; \
 	else \
+		$(MAKE) --no-print-directory build-linux-binary-image; \
 		socket=$$(limactl list "$(LIMA_INSTANCE)" --format '{{.Dir}}/sock/docker.sock' 2>/dev/null || true); \
 		if [ -z "$$socket" ] || [ ! -S "$$socket" ]; then \
 			echo "Lima Docker socket unavailable for $(LIMA_INSTANCE): $$socket"; \
