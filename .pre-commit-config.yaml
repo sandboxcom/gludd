@@ -21,6 +21,10 @@ repos:
     hooks:
       - id: detect-secrets
         args: [--baseline, .secrets.baseline]
+        # Upstream intentionally refreshes baseline line metadata. Keep that
+        # mutating maintenance path explicit; normal gates use the local
+        # disposable-copy wrapper below.
+        stages: [manual]
         exclude: >
           (?x)^(
             uv.lock|
@@ -37,6 +41,26 @@ repos:
 
   - repo: local
     hooks:
+      - id: detect-secrets-readonly
+        name: Detect secrets
+        entry: uv run python scripts/detect_secrets_readonly.py
+        language: system
+        pass_filenames: true
+        require_serial: true
+        exclude: >
+          (?x)^(
+            uv.lock|
+            .secrets.baseline|
+            \.opencode/plugin-hashes\.json|
+            dist/.*|
+            \.venv/.*|
+            \.opencode/node_modules/.*|
+            \.mypy_cache/.*|
+            \.pytest_cache/.*|
+            \.ruff_cache/.*|
+            __pycache__/.*
+          )$
+
       - id: scan-conflicts
         name: scan for git conflict markers
         entry: python scripts/scan_conflicts.py

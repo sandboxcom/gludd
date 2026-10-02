@@ -13,6 +13,30 @@ values cannot be copied into terminal, agent, or CI logs. This follows the
 which keeps hashed findings in a baseline and uses `detect-secrets-hook` for new
 findings. The wrapper does not parse or reimplement secret detection.
 
+Normal commit and push gates run `scripts/detect_secrets_readonly.py`. It copies
+the canonical baseline to a namespaced temporary file, delegates detection to
+the upstream `detect-secrets-hook`, and removes the copy on both success and
+failure. Non-update statuses propagate unchanged. For upstream status 3, the
+wrapper compares counted filename, detector, and hashed-secret identities in
+the canonical and disposable baselines. It returns success only when the update
+adds no identity; a new or duplicated finding, malformed scanner output, or
+operational error remains fail-closed. Line numbers and generation timestamps
+are deliberately excluded because they are presentation metadata, not secret
+identity. The upstream hook remains available only at the explicit `manual`
+pre-commit stage for baseline maintenance. This keeps the gate zero-downtime:
+scanning can reject a candidate, but it cannot mutate the candidate or force a
+gate/commit/push retry. Rollback is limited to removing the wrapper and restoring
+the prior hook stage; detection remains owned by the upstream scanner.
+
+This boundary follows upstream's documented design: the hook automatically
+keeps baselines current, while line numbers are presentation metadata rather
+than secret identity. Long-lived practitioner reports
+[#149](https://github.com/Yelp/detect-secrets/issues/149) and
+[#212](https://github.com/Yelp/detect-secrets/issues/212) document the resulting
+baseline rewrites and failed commit loops. Gludd therefore preserves upstream
+detection but confines its intentional mutation to a disposable copy during
+admission gates.
+
 Bandit remains the SAST engine. Its documented
 [JSON formatter](https://bandit.readthedocs.io/en/1.7.3/formatters/json.html)
 feeds `scripts/summarize_sast.py`; the summary intentionally excludes source

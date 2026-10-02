@@ -113,6 +113,17 @@
       "owned": true
     },
     {
+      "path": "scripts/detect_secrets_readonly.py",
+      "line": 34,
+      "column": 27,
+      "kind": "temp-artifact",
+      "owner": "run_readonly_scan",
+      "acquisition": "tempfile.mkstemp(prefix='gludd-secrets-baseline.', suffix='.json')",
+      "teardown": "disposable.unlink(missing_ok=True)",
+      "source_hash": "ba241f7abb6040cd1ffeb09fc7cb091de278c807f9170b2effed4ca9a7f10f6b",
+      "owned": true
+    },
+    {
       "path": "scripts/dogfood.py",
       "line": 98,
       "column": 13,

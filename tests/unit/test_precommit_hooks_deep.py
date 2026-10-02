@@ -122,6 +122,7 @@ class TestPinnedVersions:
 
 class TestLocalHookEntryPoints:
     LOCAL_ENTRIES: ClassVar[dict[str, str]] = {
+        "detect-secrets-readonly": "uv run python scripts/detect_secrets_readonly.py",
         "scan-conflicts": "python scripts/scan_conflicts.py",
         "workflow-yaml": "scripts/hooks/pre-commit-workflow-yaml",
         "ruff-lint": "uv run ruff check src tests",
@@ -133,6 +134,7 @@ class TestLocalHookEntryPoints:
     }
 
     _PYTHON_SCRIPT_ID_TO_PATH: ClassVar[dict[str, str]] = {
+        "detect-secrets-readonly": "scripts/detect_secrets_readonly.py",
         "scan-conflicts": "scripts/scan_conflicts.py",
         "check-tdd-compliance": "scripts/check_tdd_compliance.py",
         "check-disk": "scripts/check_disk_usage.py",
