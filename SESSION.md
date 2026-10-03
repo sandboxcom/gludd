@@ -1,21 +1,22 @@
-## PRIMARY OBJECTIVE: v0.1.1 MILESTONE — finalize release pipeline. HEAD `3fb09bbc389260630561cce87adeeb69079987b9` on `development` (2026-10-02). Hosted Molecule failures diagnosed and patched locally (`Makefile` native-Linux binary build gating, skip `binary_smoke_macos` on Linux, retry-based zombie probe in `daemon_lifecycle`). Full gate running in background (PID 13234, epoch 1790958186). `make release-cut TAG='v0.1.1' MSG='...'` is BLOCKED until local gate green + push + CI green + reviewed-head integration receipt exists. 84 broader backlog items remain outside v0.1.1. Next: wait for gate PASS, commit Molecule fixes, push `development`, verify CI green, then resolve reviewed-head receipt and run release-cut and `make verify-release-completeness TAG=v0.1.1`.
+## PRIMARY OBJECTIVE: v0.1.1 MILESTONE — finalize release pipeline. HEAD `c4fc7ad61e0397f53958a58c574c651b2e718018` on `development` (2026-10-02). Hosted Molecule failures diagnosed and patched locally (`Makefile` native-Linux binary build gating, skip `binary_smoke_macos` on Linux, retry-based zombie probe in `daemon_lifecycle`). Full local gate PASSED (epoch 1790972185, attestation state `a4edbe3e7a50440748d1df1c92beba77da2d3a836cb3541482b2f44644d150db`). Molecule fixes committed and pushed to sandboxcom/development at `c4fc7ad61`. Hosted CI **PENDING** for `c4fc7ad61` (run 37087617120 queued). `make release-cut TAG='v0.1.1' MSG='...'` remains BLOCKED until hosted CI green + reviewed-head integration receipt exists. 84 broader backlog items remain outside v0.1.1. Next: monitor CI to green, build reviewed-head integration receipt, merge `development`→`master`, run release-cut, and `make verify-release-completeness TAG=v0.1.1`.
 
-## SESSION 94 — 2026-10-02 — HEAD `3fb09bbc3...`: Molecule CI failures diagnosed and patched; gate validating
+## SESSION 94 — 2026-10-02 — HEAD `c4fc7ad61...`: Molecule fixes committed/pushed; local gate green; hosted CI pending; reviewed-head receipt in progress
 
 ### Current State
 
-- HEAD: `3fb09bbc389260630561cce87adeeb69079987b9` on `development`.
-- Working tree: dirty with `Makefile` and `molecule/playbooks/daemon_lifecycle/default/verify.yml` (Molecule fixes).
-- Remote: diverged with unpushed commits (10 ahead).
-- CI: NO RUN for current HEAD; prior hosted Molecule run `37030433661` FAILED.
-- Local gate: **RUNNING** (PID 13234, started epoch 1790958186). Currently at ~44% of test phase.
-- Molecule fixes applied:
+- HEAD: `c4fc7ad61e0397f53958a58c574c651b2e718018` on `development`.
+- Working tree: clean.
+- Remote: `development` pushed to sandboxcom at `c4fc7ad61`; verified with `make verify-remote`.
+- CI: **PENDING** for current HEAD `c4fc7ad61` (run 37087617120 queued) — `make ci-verdict-safe BRANCH=development` returned `CI PENDING`.
+- Local gate: **PASSED** (epoch 1790972185, attestation state `a4edbe3e7a50440748d1df1c92beba77da2d3a836cb3541482b2f44644d150db`) after running with `GATE_TIMEOUT=10800`.
+- Molecule fixes committed:
   - `build-linux-executable` now gates `build-linux-binary-image` (Lima) to non-native-Linux hosts and runs `uv sync --frozen --extra azure` on native Linux.
   - `molecule-test-shard` skips `binary_smoke_macos` on non-Darwin hosts.
   - `molecule/playbooks/daemon_lifecycle/default/verify.yml` zombie probe is now retry-based.
 - Focused unit tests pass for Molecule/Makefile changes.
 - `make molecule-test SCENARIO=daemon_lifecycle` passes locally.
-- Active workstreams: 1 (background full gate); open task IDs: 0.
+- **Reviewed-head integration receipt** — `make release-readiness TAG=v0.1.1` requires `REVIEWED_HEAD_INTEGRATION_RECEIPT=artifacts/reviewed-head-receipt.json`; building the manifest/receipts is the active next work while CI runs.
+- Active workstreams: 1 (background CI observation); open task IDs: S83.166.
 - 84 broader backlog items remain outside the v0.1.1 milestone.
 
 ### Session 94 Work Completed
@@ -28,16 +29,17 @@
 
 ### Known Blockers / Gaps
 
-- **Gate in progress** — must reach `=== GATE: PASSED ===` before commit/push.
-- **AA032 push blocker: ACTIVE** — CI NO RUN for current HEAD; remote diverged with unpushed commits.
-- **Reviewed-head integration receipt** — `make release-readiness TAG=v0.1.1` requires `REVIEWED_HEAD_INTEGRATION_RECEIPT=artifacts/reviewed-head-receipt.json`. No receipt exists for current `development` history.
-- v0.1.1 release: pending gate green + push + green CI + reviewed-head receipt + release-cut + artifact verification.
+- **Hosted CI pending** — must reach `conclusion: success` for `c4fc7ad61` before merge/release.
+- **Reviewed-head integration receipt** — `make release-readiness TAG=v0.1.1` requires `REVIEWED_HEAD_INTEGRATION_RECEIPT=artifacts/reviewed-head-receipt.json`. No receipt exists for current `development` history; manifest and review receipts must be built.
+- v0.1.1 release: pending green CI + reviewed-head receipt + merge development→master + release-cut + artifact verification.
 
 ### Next Steps (mandatory)
 
-1. Wait for background gate PID 13234 to finish PASS.
-2. Commit dirty tree (`Makefile`, `molecule/.../verify.yml`).
-3. Push `development` with `make batch-push`.
+1. Build reviewed-head integration manifest and review receipts for v0.1.1.
+2. Check hosted CI at natural breaks with `make ci-verdict-safe BRANCH=development`.
+3. Once CI green, merge `development`→`master` with `make development-merge-to-master`.
+4. Run `make release-cut TAG='v0.1.1' MSG='release: v0.1.1'`.
+5. Verify `make verify-release-completeness TAG=v0.1.1` after release job publishes.
 4. Verify CI green with `make ci-verdict-safe BRANCH=development` once run completes.
 5. Resolve reviewed-head integration receipt for v0.1.1 (requires manifest of reviewed heads; see `docs/features/REVIEWED_HEAD_INTEGRATION.md`).
 6. `make release-cut TAG='v0.1.1' MSG='release: v0.1.1'` once CI and receipt are green.
