@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-04 — (resolved locally; exact-candidate gate required) Stale `gate-background` timeout killers caused false `GATE_TIMEOUT`
+
+- **What happened**: A fresh `make gate-background GATE_TIMEOUT=7200` was terminated after roughly five minutes with `.gate-status` showing `GATE_TIMEOUT`, even though the new timeout killer was configured to sleep for 7200s and the default is 3600s.
+- **Root cause**: Each `make gate-background` invocation spawns a detached timeout-killer shell that sleeps for `GATE_TIMEOUT` seconds and then kills the PID currently recorded in `.gate-background.pid`. Because the PID file is overwritten by every new launch, an old killer from a prior session woke up, found the current gate's PID, sent `SIGTERM`, and wrote `GATE_TIMEOUT` to `.gate-status`.
+- **Fix applied**: Before launching the replacement gate, manually identify and terminate all lingering `gate-background` timeout-killer shells and their `sleep` children from prior invocations (`ps aux | grep gate-background`), launch with an explicit `GATE_TIMEOUT`, and verify only the current killer remains.
+- **Evidence**: After killing stale killers (PIDs 33999, 34000, 65208, 65209, 97243, 97244) and launching a fresh gate, `make gate-wait` ran for roughly 2h50m and the gate completed with `=== GATE: PASSED ===` and attestation state `cabb5b1601cd6d7ab8dc20c56ff223dc8f08a08c35c7367e3f4f9a05e2f75e16`.
+- **Lesson**: `make gate-kill` terminates the active gate tree but does not reap detached timeout-killer processes from earlier launches. A background gate launch must either use a per-run killer identity or proactively kill prior killers before starting a new one.
+
 ### 2026-09-30 — (resolved locally; exact-candidate gate required) Warning review checker treated a feature-parent graph as merge-new
 
 - **What happened**: The exact feature-branch gate passed, but the post-merge `development` gate retained one otherwise isolated preflight failure: `check-pyinstaller-warning-reviews` demanded a new x86_64 receipt for digest `d4fcb35b…`. That graph was already accepted on the feature parent and therefore was not introduced by the merge.

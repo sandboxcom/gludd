@@ -8417,10 +8417,11 @@ gate-background:
 	fi
 	@nohup $(MAKE) gate > .gate-logs/gate-$$(date +%Y%m%d%H%M%S).log 2>&1 & echo $$! | tee .gate-background.pid; \
 	GATE_TIMEOUT_VAL=$${GATE_TIMEOUT:-3600}; \
+	EXPECTED_PID=$$(cat .gate-background.pid 2>/dev/null); \
 	( sleep $$GATE_TIMEOUT_VAL; \
 	  if [ -f .gate-background.pid ]; then \
 	    PID_TO_KILL=$$(cat .gate-background.pid 2>/dev/null); \
-	    if [ -n "$$PID_TO_KILL" ] && kill -0 "$$PID_TO_KILL" 2>/dev/null; then \
+	    if [ -n "$$PID_TO_KILL" ] && [ "$$PID_TO_KILL" = "$$EXPECTED_PID" ] && kill -0 "$$PID_TO_KILL" 2>/dev/null; then \
 	      echo "GATE_TIMEOUT" > .gate-status; \
 	      echo "=== GATE: ABORTED (timeout $$GATE_TIMEOUT_VAL s) ===" >> .gate-logs/gate-$$(ls -t .gate-logs/gate-*.log 2>/dev/null | head -1); \
 	      kill -TERM "$$PID_TO_KILL" 2>/dev/null; \
@@ -8456,10 +8457,11 @@ gate-lite-background:
 	fi
 	@nohup $(MAKE) gate-lite > .gate-logs/gate-lite-$$(date +%Y%m%d%H%M%S).log 2>&1 & echo $$! | tee .gate-lite-background.pid; \
 	GATE_TIMEOUT_VAL=$${GATE_LITE_TIMEOUT:-1800}; \
+	EXPECTED_PID=$$(cat .gate-lite-background.pid 2>/dev/null); \
 	( sleep $$GATE_TIMEOUT_VAL; \
 	  if [ -f .gate-lite-background.pid ]; then \
 	    PID_TO_KILL=$$(cat .gate-lite-background.pid 2>/dev/null); \
-	    if [ -n "$$PID_TO_KILL" ] && kill -0 "$$PID_TO_KILL" 2>/dev/null; then \
+	    if [ -n "$$PID_TO_KILL" ] && [ "$$PID_TO_KILL" = "$$EXPECTED_PID" ] && kill -0 "$$PID_TO_KILL" 2>/dev/null; then \
 	      echo "GATE_TIMEOUT" > .gate-lite-status; \
 	      echo "=== GATE-LITE: ABORTED (timeout $$GATE_TIMEOUT_VAL s) ===" >> .gate-logs/gate-lite-$$(ls -t .gate-logs/gate-lite-*.log 2>/dev/null | head -1); \
 	      kill -TERM "$$PID_TO_KILL" 2>/dev/null; \
