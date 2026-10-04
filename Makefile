@@ -1291,6 +1291,15 @@ ci-shards-log-context:
 	@[ -n "$(LOG)" ] && [ -n "$(PATTERN)" ] || { echo "Usage: make ci-shards-log-context LOG=.gate-logs/ci-shards.log PATTERN=FAILED [BEFORE=20] [AFTER=80]"; exit 1; }
 	@$(PYTHON) scripts/ci_shards_log_context.py --log "$(LOG)" --pattern "$(PATTERN)" --before "$(or $(BEFORE),20)" --after "$(or $(AFTER),80)" $(if $(MAX_MATCHES),--max-matches "$(MAX_MATCHES)")
 
+# Fetch failure context for one job selected by name substring. Internal helper;
+# not listed in help because it is only useful once a CI view has already been
+# observed and a failing job name is known.
+ci-job-log-by-name:
+	@[ -n "$(RUN)" ] && [ -n "$(JOB_NAME)" ] && [ -n "$(PATTERN)" ] || { echo "Usage: make ci-job-log-by-name RUN=<run-id> JOB_NAME=<substring> PATTERN=<literal> [BEFORE=10] [AFTER=30]"; exit 2; }
+	@JOB_ID=$$(gh run view -R sandboxcom/gludd "$(RUN)" --json jobs --jq '.jobs[] | select(.name | contains("$(JOB_NAME)")) | .databaseId' | head -1); \
+	[ -n "$$JOB_ID" ] || { echo "ci-job-log-by-name: no job matching '$(JOB_NAME)'"; exit 1; }; \
+	$(MAKE) --no-print-directory ci-job-failure-context RUN="$(RUN)" JOB="$$JOB_ID" PATTERN="$(PATTERN)" BEFORE="$(or $(BEFORE),10)" AFTER="$(or $(AFTER),30)"
+
 repro-caplog-secrets:
 	$(UV) run python -m pytest tests/unit/test_secrets_log_sanitization.py::test_resolve_exc_message_sanitized -n 2 --dist loadgroup -v -s
 

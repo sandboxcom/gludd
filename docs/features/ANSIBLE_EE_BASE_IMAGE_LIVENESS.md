@@ -25,8 +25,8 @@ builds collection artifacts. A missing manifest therefore fails early with
 the precise refresh command instead of consuming most of the job and failing
 inside the container build. Validate-only builds stay offline.
 
-As of 2026-09-29, the resolved multi-architecture index is
-`sha256:0996d37c69b3a8c33042932d415ad7bf5a8122270264e835e5c0153615aef0e4`.
+As of 2026-10-04, the resolved multi-architecture index is
+`sha256:63e8d0c2a4a4b67c8bd7456283d12106bedf815d8c27d1a72498ebcf173baf09`.
 The value is evidence, not a permanent constant; the resolver is the durable
 part of the fix.
 

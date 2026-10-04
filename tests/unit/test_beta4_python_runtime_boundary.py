@@ -20,8 +20,7 @@ from general_ludd.ansible.isolation import ProcessIsolationConfig
 ROOT = Path(__file__).resolve().parents[2]
 SHA256_IMAGE = "registry.example/gludd-ee:beta4@sha256:" + "a" * 64
 CENTOS_STREAM9_INDEX = (
-    "quay.io/centos/centos:stream9@sha256:"
-    "0996d37c69b3a8c33042932d415ad7bf5a8122270264e835e5c0153615aef0e4"
+    "quay.io/centos/centos:stream9@sha256:63e8d0c2a4a4b67c8bd7456283d12106bedf815d8c27d1a72498ebcf173baf09"
 )
 
 
@@ -62,7 +61,7 @@ class BlockAnsible(importlib.abc.MetaPathFinder):
             raise ModuleNotFoundError(fullname)
         return None
 sys.meta_path.insert(0, BlockAnsible())
-sys.path.insert(0, {str(ROOT / 'src')!r})
+sys.path.insert(0, {str(ROOT / "src")!r})
 import general_ludd.cli
 print('CORE_IMPORT_OK')
 """
@@ -207,16 +206,14 @@ def test_game_module_reuses_authenticated_stdlib_model_client() -> None:
 
 
 def test_collection_model_transport_has_no_core_gateway_fallback() -> None:
-    shim = (
-        ROOT
-        / "collections/ansible_collections/general_ludd/agent/plugins/module_utils/gludd.py"
-    ).read_text(encoding="utf-8")
-    module = (
-        ROOT
-        / "collections/ansible_collections/general_ludd/agent/plugins/modules/game_build.py"
-    ).read_text(encoding="utf-8")
+    shim = (ROOT / "collections/ansible_collections/general_ludd/agent/plugins/module_utils/gludd.py").read_text(
+        encoding="utf-8"
+    )
+    module = (ROOT / "collections/ansible_collections/general_ludd/agent/plugins/modules/game_build.py").read_text(
+        encoding="utf-8"
+    )
     assert "general_ludd.models" not in shim
     assert "local_model_call" not in shim
     assert "local_model_call" not in module
     assert "client.call_model(" in module
-    assert 'no_log=True' in module
+    assert "no_log=True" in module

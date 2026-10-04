@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
   "release": "0.1.0-beta.4",
-  "base_image": "quay.io/centos/centos:stream9@sha256:0996d37c69b3a8c33042932d415ad7bf5a8122270264e835e5c0153615aef0e4",
+  "base_image": "quay.io/centos/centos:stream9@sha256:63e8d0c2a4a4b67c8bd7456283d12106bedf815d8c27d1a72498ebcf173baf09",
   "inputs": {
     "galaxy": "sha256:7d382e9a9b24b62b5a2c11a5b89454efb902601827ee77ff36b85c7695015369",
     "python": "sha256:bd37e115cde6af95ceaf3a279f24b4408851b6882af34785b6ee4f1c5d1dfb01",
     "system": "sha256:169c6e6eac8268ef576f7bcb44b149e3dffa7854435678c185cbce0fd4c952c9",
-    "definition": "sha256:7904bc0b872e57faa7c0a2f1b89b850592eff8be5e256a702f2a4d4839b33aa0"
+    "definition": "sha256:cfce8e051a5ed6d06a9b7cdb2492698c902514cf5a5ea60ea2eb9d4d94f0d780"
   },
   "promotion": "build-and-warm-beside-active-then-switch-new-jobs",
   "rollback": "switch-new-jobs-to-previous-digest-and-drain-in-flight-jobs",
