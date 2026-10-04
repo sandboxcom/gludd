@@ -52,9 +52,7 @@ class ArchiveClient(Protocol):
 class BuildExecutor(Protocol):
     """Narrow command runner for fixed upstream build argv."""
 
-    def output(
-        self, argv: tuple[str, ...], *, cwd: Path, env: dict[str, str]
-    ) -> str:
+    def output(self, argv: tuple[str, ...], *, cwd: Path, env: dict[str, str]) -> str:
         """Return one bounded tool version."""
         ...
 
@@ -73,9 +71,7 @@ class BuildExecutor(Protocol):
 class SubprocessBuildExecutor:
     """Execute fixed argv without a shell or inherited credentials."""
 
-    def output(
-        self, argv: tuple[str, ...], *, cwd: Path, env: dict[str, str]
-    ) -> str:
+    def output(self, argv: tuple[str, ...], *, cwd: Path, env: dict[str, str]) -> str:
         """Return a bounded version string."""
         try:
             result = subprocess.run(
@@ -88,14 +84,10 @@ class SubprocessBuildExecutor:
                 timeout=_VERSION_TIMEOUT_SECONDS,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
-            raise FreeLLMAPIUpstreamBuildError(
-                FreeLLMAPIUpstreamBuildFault.TOOLCHAIN_INVALID
-            ) from exc
+            raise FreeLLMAPIUpstreamBuildError(FreeLLMAPIUpstreamBuildFault.TOOLCHAIN_INVALID) from exc
         output = result.stdout.strip()
         if result.returncode != 0 or not output or len(output) > 128:
-            raise FreeLLMAPIUpstreamBuildError(
-                FreeLLMAPIUpstreamBuildFault.TOOLCHAIN_INVALID
-            )
+            raise FreeLLMAPIUpstreamBuildError(FreeLLMAPIUpstreamBuildFault.TOOLCHAIN_INVALID)
         return output
 
     def run(
@@ -153,17 +145,13 @@ def _load_json(path: Path) -> dict[str, object]:
     try:
         raw = path.read_bytes()
     except OSError as exc:
-        raise FreeLLMAPIUpstreamBuildError(
-            FreeLLMAPIUpstreamBuildFault.IO_FAILED
-        ) from exc
+        raise FreeLLMAPIUpstreamBuildError(FreeLLMAPIUpstreamBuildFault.IO_FAILED) from exc
     if not raw or len(raw) > _MAX_JSON_BYTES:
         _raise(FreeLLMAPIUpstreamBuildFault.INPUT_INVALID)
     try:
         value: object = json.loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise FreeLLMAPIUpstreamBuildError(
-            FreeLLMAPIUpstreamBuildFault.INPUT_INVALID
-        ) from exc
+        raise FreeLLMAPIUpstreamBuildError(FreeLLMAPIUpstreamBuildFault.INPUT_INVALID) from exc
     if not isinstance(value, dict):
         _raise(FreeLLMAPIUpstreamBuildFault.INPUT_INVALID)
     return cast(dict[str, object], value)
@@ -203,9 +191,7 @@ def _verify_archive(candidate: Mapping[str, object], archive: bytes) -> None:
     try:
         inspect_upstream_archive(archive, max_archive_bytes=_MAX_ARCHIVE_BYTES)
     except FreeLLMAPIAdmissionError as exc:
-        raise FreeLLMAPIUpstreamBuildError(
-            FreeLLMAPIUpstreamBuildFault.ARCHIVE_INVALID
-        ) from exc
+        raise FreeLLMAPIUpstreamBuildError(FreeLLMAPIUpstreamBuildFault.ARCHIVE_INVALID) from exc
 
 
 def _member_parts(name: str) -> tuple[str, ...]:
@@ -260,9 +246,7 @@ def _materialize_archive(archive_bytes: bytes, destination: Path) -> Path:
     except FreeLLMAPIUpstreamBuildError:
         raise
     except (OSError, tarfile.TarError, EOFError) as exc:
-        raise FreeLLMAPIUpstreamBuildError(
-            FreeLLMAPIUpstreamBuildFault.ARCHIVE_INVALID
-        ) from exc
+        raise FreeLLMAPIUpstreamBuildError(FreeLLMAPIUpstreamBuildFault.ARCHIVE_INVALID) from exc
     return destination
 
 
@@ -280,10 +264,7 @@ def _verify_upstream_scripts(source_root: Path) -> None:
     for name in ("test", "test:migrations", "lint", "build"):
         if not isinstance(root_scripts.get(name), str) or not root_scripts[name]:
             _raise(FreeLLMAPIUpstreamBuildFault.SCRIPTS_INVALID)
-    if (
-        not isinstance(server_scripts.get("test:coverage"), str)
-        or not server_scripts["test:coverage"]
-    ):
+    if not isinstance(server_scripts.get("test:coverage"), str) or not server_scripts["test:coverage"]:
         _raise(FreeLLMAPIUpstreamBuildFault.SCRIPTS_INVALID)
 
 
@@ -309,9 +290,7 @@ def _execution_environment(source_root: Path) -> dict[str, str]:
 
 def safe_report_path(report: Path, repository_root: Path) -> Path:
     """Allow reports only in tracked config or a Gludd-namespaced temp path."""
-    resolved = (
-        report if report.is_absolute() else repository_root / report
-    ).resolve(strict=False)
+    resolved = (report if report.is_absolute() else repository_root / report).resolve(strict=False)
     config_root = (repository_root / "config/freellmapi").resolve(strict=False)
     if resolved.is_relative_to(config_root):
         return resolved
@@ -349,9 +328,7 @@ def write_report(report: Path, evidence: Mapping[str, object]) -> None:
     except FreeLLMAPIUpstreamBuildError:
         raise
     except (OSError, TypeError, ValueError) as exc:
-        raise FreeLLMAPIUpstreamBuildError(
-            FreeLLMAPIUpstreamBuildFault.IO_FAILED
-        ) from exc
+        raise FreeLLMAPIUpstreamBuildError(FreeLLMAPIUpstreamBuildFault.IO_FAILED) from exc
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
@@ -371,21 +348,21 @@ def _run_steps(
     failed = False
     for step_id, argv in planned:
         if failed:
-            results.append(
-                {"step_id": step_id, "status": "not_run", "exit_code": None}
-            )
+            results.append({"step_id": step_id, "status": "not_run", "exit_code": None})
             continue
+        # The exact-pinned upstream source gates synchronous performance by
+        # wall-clock caps. Its test file relaxes those caps when COVERAGE=1
+        # because v8 coverage instrumentation slows execution 2-3x. We must
+        # advertise that the server_coverage step is instrumented, otherwise
+        # the Node 22 coverage leg flakes on shared CI runners.
+        step_env = {**environment, "COVERAGE": "1"} if step_id == "server_coverage" else environment
         raw_exit_code = executor.run(
             argv,
             cwd=source_root,
-            env=environment,
+            env=step_env,
             timeout_seconds=timeout_seconds,
         )
-        exit_code = (
-            min(255, 128 + abs(raw_exit_code))
-            if raw_exit_code < 0
-            else min(255, raw_exit_code)
-        )
+        exit_code = min(255, 128 + abs(raw_exit_code)) if raw_exit_code < 0 else min(255, raw_exit_code)
         failed = exit_code != 0
         results.append(
             {
@@ -416,12 +393,8 @@ def run_live_build(
         source_root = _materialize_archive(archive, Path(temporary) / "source")
         _verify_upstream_scripts(source_root)
         environment = _execution_environment(source_root)
-        node_version = executor.output(
-            ("node", "--version"), cwd=source_root, env=environment
-        )
-        npm_version = executor.output(
-            ("npm", "--version"), cwd=source_root, env=environment
-        )
+        node_version = executor.output(("node", "--version"), cwd=source_root, env=environment)
+        npm_version = executor.output(("npm", "--version"), cwd=source_root, env=environment)
         validate_upstream_toolchain(
             node_version,
             npm_version,
@@ -458,18 +431,13 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _validation_summary(
-    candidate: Mapping[str, object], plan: Mapping[str, object]
-) -> dict[str, object]:
+def _validation_summary(candidate: Mapping[str, object], plan: Mapping[str, object]) -> dict[str, object]:
     validated = validate_upstream_build_plan(candidate, plan)
     return {
         "archive_sha256": validated["archive_sha256"],
         "candidate_id": validated["candidate_id"],
         "decision": "validated_not_run",
-        "toolchains": [
-            {"node_version": node, "npm_version": npm}
-            for node, npm in validated["toolchains"]
-        ],
+        "toolchains": [{"node_version": node, "npm_version": npm} for node, npm in validated["toolchains"]],
         "plan_id": validated["plan_id"],
         "runtime_admitted": False,
     }

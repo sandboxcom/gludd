@@ -25,10 +25,7 @@ _ARCHIVE_DIGEST = "9f5156164cfc9b98416014b1ed1a9a49bb0005b32ae64b7a21e4afd8c467a
 
 def _files() -> dict[str, bytes]:
     return {
-        "LICENSE": (
-            b"MIT License\nPermission is hereby granted, free of charge\n"
-            b'THE SOFTWARE IS PROVIDED "AS IS"\n'
-        ),
+        "LICENSE": (b'MIT License\nPermission is hereby granted, free of charge\nTHE SOFTWARE IS PROVIDED "AS IS"\n'),
         "package-lock.json": json.dumps(
             {
                 "name": "@freellmapi/monorepo",
@@ -85,11 +82,7 @@ def _archive(
 
 
 def _candidate(archive: bytes) -> dict[str, object]:
-    value: object = json.loads(
-        (_ROOT / "config/freellmapi/upstream_candidate.json").read_text(
-            encoding="utf-8"
-        )
-    )
+    value: object = json.loads((_ROOT / "config/freellmapi/upstream_candidate.json").read_text(encoding="utf-8"))
     assert isinstance(value, dict)
     candidate = cast(dict[str, object], value)
     candidate["archive"] = {
@@ -102,11 +95,7 @@ def _candidate(archive: bytes) -> dict[str, object]:
 
 
 def _plan(candidate: dict[str, object]) -> dict[str, object]:
-    value: object = json.loads(
-        (_ROOT / "config/freellmapi/upstream_build_plan.json").read_text(
-            encoding="utf-8"
-        )
-    )
+    value: object = json.loads((_ROOT / "config/freellmapi/upstream_build_plan.json").read_text(encoding="utf-8"))
     assert isinstance(value, dict)
     plan = cast(dict[str, object], value)
     archive = candidate["archive"]
@@ -222,9 +211,7 @@ def test_live_mode_fetches_exact_commit_runs_fixed_steps_and_cleans_up(
     )
 
     assert result == 0
-    assert client.endpoints == [
-        f"repos/tashfeenahmed/freellmapi/tarball/{_COMMIT}"
-    ]
+    assert client.endpoints == [f"repos/tashfeenahmed/freellmapi/tarball/{_COMMIT}"]
     assert executor.calls == [
         ("node", "--version"),
         ("npm", "--version"),
@@ -236,6 +223,16 @@ def test_live_mode_fetches_exact_commit_runs_fixed_steps_and_cleans_up(
         ("npm", "run", "test:coverage", "-w", "server"),
     ]
     assert all("PROVIDER_SECRET" not in env for env in executor.environments)
+    step_envs = executor.environments[2:]
+    for step_id, env in zip(
+        ["install", "migrations", "root_tests", "lint", "workspace_build", "server_coverage"],
+        step_envs,
+        strict=True,
+    ):
+        if step_id == "server_coverage":
+            assert env["COVERAGE"] == "1", step_id
+        else:
+            assert "COVERAGE" not in env, step_id
     assert all(not cwd.exists() for cwd in executor.working_directories)
     evidence = json.loads(report.read_text(encoding="utf-8"))
     assert evidence["decision"] == "upstream_build_verified"
@@ -278,8 +275,7 @@ def test_unplanned_node_is_rejected_before_install_or_upstream_scripts(
         build_cli.run_live_build(
             candidate_path=candidate_path,
             plan_path=plan_path,
-            report_path=tmp_path
-            / "gludd-freellmapi-build-toolchain/evidence.json",
+            report_path=tmp_path / "gludd-freellmapi-build-toolchain/evidence.json",
             client=_Client(archive),
             executor=executor,
         )
@@ -392,9 +388,5 @@ def test_make_and_gha_contracts_pin_node_matrix_and_release_dependency() -> None
 
 
 def test_public_helpers_are_content_free_hashes_only() -> None:
-    assert build_cli.sha256_hex(b"private input") == hashlib.sha256(
-        b"private input"
-    ).hexdigest()
-    assert build_cli.canonical_sha256({"b": 2, "a": 1}) == hashlib.sha256(
-        b'{"a":1,"b":2}'
-    ).hexdigest()
+    assert build_cli.sha256_hex(b"private input") == hashlib.sha256(b"private input").hexdigest()
+    assert build_cli.canonical_sha256({"b": 2, "a": 1}) == hashlib.sha256(b'{"a":1,"b":2}').hexdigest()
