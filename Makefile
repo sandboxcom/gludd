@@ -10226,3 +10226,39 @@ release-promote:
 	$(MAKE) --no-print-directory release-readiness TAG="$(TAG)" RELEASE_READINESS_VALIDATE_ONLY=0 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= REVIEWED_HEAD_INTEGRATION_RECEIPT="$(REVIEWED_HEAD_INTEGRATION_RECEIPT)" RELEASE_CANDIDATE_SHA="$$DEV_SHA"; \
 	git -C "$$MAIN_PATH" merge --ff-only "$$DEV_SHA"; \
 	$(MAKE) --no-print-directory -C "$$MAIN_PATH" release-cut TAG="$(TAG)" MSG="$(MSG)" REVIEWED_HEAD_INTEGRATION_RECEIPT="$(if $(strip $(REVIEWED_HEAD_INTEGRATION_RECEIPT)),$(abspath $(REVIEWED_HEAD_INTEGRATION_RECEIPT)),)" RELEASE_CANDIDATE_SHA="$$DEV_SHA" RELEASE_CI_BRANCH=development RELEASE_LOCAL_ATTESTATION="$$LOCAL_ATTESTATION"
+
+# Background the long local dual-track CI evidence producer so the orchestrator
+# does not hold the main thread for hours. Not listed in help because it is an
+# internal pipeline helper paired with test-ci-dual-track-local-status.
+test-ci-dual-track-local-bg:
+	@mkdir -p .gate-logs
+	@PID_FILE=".gate-logs/ci-dual-track-local.pid"; \
+	STALE_PID=$$(cat "$$PID_FILE" 2>/dev/null || echo ""); \
+	if [ -n "$$STALE_PID" ] && kill -0 "$$STALE_PID" 2>/dev/null; then \
+		echo "CI-DUAL-TRACK-LOCAL-BG already running pid=$$STALE_PID"; \
+		exit 0; \
+	fi; \
+	rm -f "$$PID_FILE"; \
+	LOG=".gate-logs/ci-dual-track-local-$$(date +%Y%m%d%H%M%S).log"; \
+	nohup $(MAKE) test-ci-dual-track-local PYTEST_ARGS='' MAX_FILES_PER_BATCH=64 > "$$LOG" 2>&1 & echo $$! | tee "$$PID_FILE"; \
+	echo "CI-DUAL-TRACK-LOCAL-BG pid=$$(cat $$PID_FILE) log=$$LOG"
+
+test-ci-dual-track-local-status:
+	@PID_FILE=".gate-logs/ci-dual-track-local.pid"; \
+	PID=$$(cat "$$PID_FILE" 2>/dev/null || echo ""); \
+	RUNNING=false; \
+	if [ -n "$$PID" ] && kill -0 "$$PID" 2>/dev/null; then RUNNING=true; fi; \
+	if [ "$$RUNNING" = "true" ]; then \
+		echo "CI-DUAL-TRACK-LOCAL-BG running pid=$$PID"; \
+		LOG=$$(ls -t .gate-logs/ci-dual-track-local-*.log 2>/dev/null | head -1); \
+		if [ -n "$$LOG" ]; then \
+			echo "latest log: $$LOG"; \
+			tail -20 "$$LOG"; \
+		fi; \
+	else \
+		echo "CI-DUAL-TRACK-LOCAL-BG not running"; \
+		if [ -n "$$PID" ]; then rm -f "$$PID_FILE"; fi; \
+	fi; \
+	RESOURCE_ROOT="$$($(PYTHON) scripts/resource_arbiter.py root)"; \
+	ATTESTATION="$$RESOURCE_ROOT/ci-shards/attestation.json"; \
+	if [ -f "$$ATTESTATION" ]; then echo "ATTESTATION present: $$ATTESTATION"; else echo "ATTESTATION missing: $$ATTESTATION"; fi
