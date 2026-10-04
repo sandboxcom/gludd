@@ -23,6 +23,7 @@ dependencies = [
     "pydantic-settings>=2.14.2",
     "annotated-types>=0.7.0",
     "sqlalchemy>=2.0.0",
+    "greenlet>=3.0.0",
     "cryptography>=49.0.0,<51",
     "pqcrypto>=0.4.0,<1",
     "msgpack>=1.2.1",
