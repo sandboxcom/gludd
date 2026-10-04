@@ -451,11 +451,21 @@ jobs:
         run: uv sync --frozen
       - name: Build and test exact-pinned FreeLLMAPI source
         run: |
-          make freellmapi-upstream-build \
-            FREELLMAPI_BUILD_LIVE=1 \
-            FREELLMAPI_BUILD_CANDIDATE=config/freellmapi/upstream_candidate.json \
-            FREELLMAPI_BUILD_PLAN=config/freellmapi/upstream_build_plan.json \
-            FREELLMAPI_BUILD_REPORT=/tmp/gludd-freellmapi-upstream-build-${{ matrix.node-version }}/evidence.json
+          # The upstream suite includes a tight synchronous performance budget
+          # that can flake on heavily-loaded GitHub-hosted runners. Retry the
+          # whole bounded suite a small number of times before treating the
+          # failure as a real upstream regression.
+          for attempt in 1 2 3; do
+            echo "=== FreeLLMAPI upstream build attempt $attempt ==="
+            if make freellmapi-upstream-build \
+              FREELLMAPI_BUILD_LIVE=1 \
+              FREELLMAPI_BUILD_CANDIDATE=config/freellmapi/upstream_candidate.json \
+              FREELLMAPI_BUILD_PLAN=config/freellmapi/upstream_build_plan.json \
+              FREELLMAPI_BUILD_REPORT=/tmp/gludd-freellmapi-upstream-build-${{ matrix.node-version }}/evidence.json; then
+              exit 0
+            fi
+          done
+          exit 1
         env:
           GH_TOKEN: ${{ github.token }}
           GLUDD_AUTH_PSK: ""
