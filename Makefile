@@ -19,6 +19,7 @@ OPENCODE_MAINTENANCE_FORCE ?= 0
 GLUDD_TASK_TIMEOUT ?= 300
 TIMEOUT ?= 3600
 GATE_POLL_INTERVAL ?= 60
+GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY ?= 0
 INTERVAL ?= 300
 RELEASE_AWAIT_TIMEOUT ?= 5400
 RELEASE_AWAIT_INTERVAL ?= 10
@@ -434,6 +435,7 @@ help:
 	@echo "  edit-makefile-target  Edit a Makefile target definition via a file"
 	@echo "  validate-makefile     Validate Makefile targets for duplicates"
 	@echo "  gate                  Full gate: lint + typecheck + collect-check + test"
+	@echo "  gate-background-observed  Launch the detached gate and keep its automation owner alive while polling"
 	@echo "  gate-refresh          Refresh fast phases; stream fallback test node IDs (GATE_REFRESH_VALIDATE_ONLY=0|1)"
 	@echo "  gate-lite             Local validation (lint+typecheck+collect+smoke+unit@2w); no OOM"
 	@echo "  gate-audit            Gate + coverage audit (85% per-file threshold)"
@@ -8527,6 +8529,20 @@ gate-background:
 	      echo "[gate-background-timeout] killed PID $$PID_TO_KILL after $$GATE_TIMEOUT_VAL s timeout"; \
 	    fi; \
 	  fi ) > /dev/null 2>&1 &
+
+# Managed command runners may reap detached descendants as soon as their root
+# command exits. Keep that root Make invocation alive while the ordinary
+# non-blocking launcher owns the gate; gate-wait streams bounded phase
+# heartbeats and preserves the terminal result.
+.PHONY: gate-background-observed
+gate-background-observed:
+	@case "$(GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY)" in 0|1) ;; *) echo "GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac; \
+	if [ "$(GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY)" = "1" ]; then \
+		echo "gate-background-observed: VALIDATE launch timeout=$${GATE_TIMEOUT:-3600}s poll=$(GATE_POLL_INTERVAL)s"; \
+		exit 0; \
+	fi; \
+	$(MAKE) --no-print-directory gate-background GATE_TIMEOUT="$(GATE_TIMEOUT)" || exit $$?; \
+	$(MAKE) --no-print-directory gate-wait GATE_POLL_INTERVAL="$(GATE_POLL_INTERVAL)"
 
 # Launch gate-lite detached via nohup; returns PID immediately (<1s).
 # Writes output to .gate-logs/gate-lite-<ts>.log, PID to .gate-lite-background.pid.

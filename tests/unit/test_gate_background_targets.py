@@ -15,32 +15,32 @@ def _content() -> str:
     return MAKEFILE.read_text()
 
 
-def test_gate_background_target_exists():
+def test_gate_background_target_exists() -> None:
     content = _content()
     assert "gate-background:" in content, "Makefile missing 'gate-background:' target"
 
 
-def test_gate_status_check_target_exists():
+def test_gate_status_check_target_exists() -> None:
     content = _content()
     assert "gate-status-check:" in content, "Makefile missing 'gate-status-check:' target"
 
 
-def test_gate_tail_target_exists():
+def test_gate_tail_target_exists() -> None:
     content = _content()
     assert "gate-tail:" in content, "Makefile missing 'gate-tail:' target"
 
 
-def test_gate_kill_target_exists():
+def test_gate_kill_target_exists() -> None:
     content = _content()
     assert "gate-kill:" in content, "Makefile missing 'gate-kill:' target"
 
 
-def test_gate_logs_target_exists():
+def test_gate_logs_target_exists() -> None:
     content = _content()
     assert "gate-logs:" in content, "Makefile missing 'gate-logs:' target"
 
 
-def test_gate_writes_phase_markers():
+def test_gate_writes_phase_markers() -> None:
     """Gate recipe emits unambiguous per-phase markers for status-check to grep."""
     content = _content()
     for phase in ("lint", "typecheck", "collect", "smoke", "test"):
@@ -50,7 +50,7 @@ def test_gate_writes_phase_markers():
         )
 
 
-def test_gate_writes_terminal_marker():
+def test_gate_writes_terminal_marker() -> None:
     """Gate recipe emits a terminal PASSED/FAILED marker status-check can detect."""
     content = _content()
     assert "=== GATE: PASSED ===" in content, (
@@ -61,7 +61,7 @@ def test_gate_writes_terminal_marker():
     )
 
 
-def test_gate_background_uses_nohup():
+def test_gate_background_uses_nohup() -> None:
     """gate-background must use nohup so the launched gate survives shell exit."""
     content = _content()
     # Isolate the gate-background recipe block.
@@ -76,7 +76,7 @@ def test_gate_background_uses_nohup():
     )
 
 
-def test_gate_background_writes_pid_file():
+def test_gate_background_writes_pid_file() -> None:
     """gate-background must write a PID file (.gate-background.pid) for status-check."""
     content = _content()
     idx = content.find("gate-background:")
@@ -86,7 +86,7 @@ def test_gate_background_writes_pid_file():
     )
 
 
-def test_gate_status_check_reads_pid_file():
+def test_gate_status_check_reads_pid_file() -> None:
     """gate-status-check reads the same PID file gate-background writes."""
     content = _content()
     idx = content.find("gate-status-check:")
@@ -94,3 +94,20 @@ def test_gate_status_check_reads_pid_file():
     assert ".gate-background.pid" in recipe_block, (
         "gate-status-check must reference .gate-background.pid"
     )
+
+
+def test_gate_background_observed_keeps_the_launch_owner_alive() -> None:
+    """Automation gets one observable command that launches and waits."""
+    content = _content()
+    idx = content.find("gate-background-observed:")
+    assert idx != -1, "Makefile missing 'gate-background-observed:' target"
+    recipe_block = content[idx : idx + 800]
+
+    launch = "$(MAKE) --no-print-directory gate-background"
+    wait = "$(MAKE) --no-print-directory gate-wait"
+    assert launch in recipe_block
+    assert wait in recipe_block
+    assert recipe_block.index(launch) < recipe_block.index(wait)
+    assert 'GATE_TIMEOUT="$(GATE_TIMEOUT)"' in recipe_block
+    assert 'GATE_POLL_INTERVAL="$(GATE_POLL_INTERVAL)"' in recipe_block
+    assert "GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY" in recipe_block

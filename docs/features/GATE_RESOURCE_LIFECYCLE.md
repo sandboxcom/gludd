@@ -276,6 +276,40 @@ wrong-process selection in [psutil issue #2335](https://github.com/giampaolo/psu
 and durable process-group ownership in
 [psutil issue #2534](https://github.com/giampaolo/psutil/issues/2534).
 
+#### Automation-owned background gates
+
+`gate-background` remains useful from an interactive terminal because it returns
+immediately after `nohup` creates the recursive Make owner. That is not a safe
+ownership transfer in every automation environment. During the v0.1.1 release,
+two clean launches returned a PID and then lost it before the first gate byte;
+the newest logs were empty and the prior status remained in place. The second
+reproduction occurred with no other project process. The runner's exact reaper
+was not observable, so this contract is based on the demonstrated lifecycle
+boundary rather than attributing a signal without evidence.
+
+`make gate-background-observed` is the automation entrypoint. Its root Make
+process launches the unchanged nonblocking target and immediately enters the
+existing `gate-wait` heartbeat loop. The managed runner therefore continues to
+own a visible parent until the child writes PASS, FAIL, ABORTED, or timeout
+evidence. `GATE_TIMEOUT` and `GATE_POLL_INTERVAL` are forwarded explicitly; a
+launch failure stops before polling, and the terminal child result becomes the
+composite target's result. `GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY=1` verifies
+the bounded plan without starting a gate.
+
+This is ZDD for application services: it changes only the release-control
+process tree, creates no listener or schema, and leaves the interactive target
+compatible. Existing gates are neither restarted nor adopted. Rollback removes
+the composite target after any live observed owner exits; operators can still
+use `gate-background` interactively or a foreground `gate` while accepting that
+their caller must remain authoritative. GNU Make's
+[POSIX jobserver documentation](https://www.gnu.org/software/make/manual/html_node/POSIX-Jobserver.html)
+records recursive children's dependency on calling-Make resources. GitHub
+Actions runner [issue #4601](https://github.com/actions/runner/issues/4601)
+documents explicit orphan-process cleanup, and runner
+[issue #1309](https://github.com/actions/runner/issues/1309) records externally
+selected termination signals. Those practitioner reports reinforce the rule:
+`nohup` changes terminal behavior; it does not prove durable runner ownership.
+
 This division follows years of upstream practitioner discussion. The
 pytest-timeout session-timeout request distinguishes an external CI deadline
 from a stuck individual test, while the still-open child-cleanup report shows
