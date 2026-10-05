@@ -265,6 +265,10 @@ check, then cut the next prerelease tag.
   into a red step when the smoke itself succeeded.
 - Never repair a release with locally rebuilt files. Re-run CI from the exact
   tagged SHA when safe, or fix forward and cut a new prerelease.
+- If concurrent automation replaces uncommitted release work, stop writing to
+  the canonical checkout, create an isolated worktree, and follow
+  [Codex file-change recovery](features/CODEX_FILE_CHANGE_RECOVERY.md). Replay
+  only an audited thread/ordinal range; never use a broad restore or reset.
 
 ## Long-lived practitioner failure history
 

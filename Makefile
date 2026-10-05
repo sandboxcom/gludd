@@ -773,6 +773,7 @@ help:
 	@echo "  --- Recovery ---"
 	@echo "  reap-orphan-pytest    Report stale orphan pytest trees (APPLY=1 to terminate)"
 	@echo "  reap-stale-collection-locks  Reap only old project-owned collection/gate-refresh locks (APPLY=1)"
+	@echo "  replay-codex-file-changes  Atomically validate/replay a bounded Codex file-change range"
 	@echo "  backup-opencode       Backup .opencode/ -> .opencode.orig/ (excludes node_modules/)"
 	@echo "  check-opencode-backup  Warn if .opencode.orig/ is stale (>24h older than .opencode/)"
 	@echo "  restore-opencode      Restore .opencode/ (backup then git fallback) + clear cache"
@@ -8349,6 +8350,20 @@ db-sample-part:
 
 db-tables:
 	@sqlite3 $(OPENCODE_DB) ".tables" 2>/dev/null
+
+# Recover a bounded set of completed Codex file-change events. Validation is
+# the default; CODEX_REPLAY_APPLY=1 publishes only after the entire batch has
+# replayed successfully in an isolated temporary tree.
+replay-codex-file-changes:
+	@[ -n "$(CODEX_REPLAY_DB)" ] && [ -n "$(CODEX_REPLAY_RECORDED_REPO)" ] && [ -n "$(CODEX_REPLAY_THREAD_ID)" ] && [ -n "$(CODEX_REPLAY_START)" ] && [ -n "$(CODEX_REPLAY_END)" ] || { echo "Usage: make replay-codex-file-changes CODEX_REPLAY_DB=path CODEX_REPLAY_RECORDED_REPO=path CODEX_REPLAY_THREAD_ID=uuid CODEX_REPLAY_START=n CODEX_REPLAY_END=n CODEX_REPLAY_APPLY=0|1"; exit 2; }
+	@case "$(CODEX_REPLAY_APPLY)" in 0|1) ;; *) echo "CODEX_REPLAY_APPLY must be 0 or 1"; exit 2;; esac
+	@case "$(CODEX_REPLAY_VALIDATE_ONLY)" in 0|1) ;; *) echo "CODEX_REPLAY_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@if [ "$(CODEX_REPLAY_VALIDATE_ONLY)" = "1" ]; then \
+		test -f scripts/replay_codex_file_changes.py; \
+		echo "CODEX_REPLAY_CONFIG_OK apply=$(CODEX_REPLAY_APPLY) range=$(CODEX_REPLAY_START)-$(CODEX_REPLAY_END)"; \
+	else \
+		$(UV) run python scripts/replay_codex_file_changes.py --database "$(CODEX_REPLAY_DB)" --repo . --recorded-repo "$(CODEX_REPLAY_RECORDED_REPO)" --thread-id "$(CODEX_REPLAY_THREAD_ID)" --start-ordinal "$(CODEX_REPLAY_START)" --end-ordinal "$(CODEX_REPLAY_END)" $(if $(filter 1,$(CODEX_REPLAY_APPLY)),--apply,); \
+	fi
 
 db-count:
 	@sqlite3 $(OPENCODE_DB) "SELECT COUNT(*) FROM message;" 2>/dev/null
