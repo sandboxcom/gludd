@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-05 — (resolved locally; exact-candidate gate required) Linked-worktree watchdogs could terminate another checkout's gate
+
+- **What happened**: A complete local v0.1.1 gate received external `SIGTERM` twice while its integration and unit shards were making progress. The interrupted unit batch passed 411/411 when replayed alone. No current kill receipt survived, so that specific signal cannot be attributed conclusively, but inspection exposed a deterministic cross-worktree ownership defect in the only watchdog designed to send the same signal to old test processes.
+- **Root cause**: `scripts/task_watchdog.py` scans the host-global process table when the host-global deadline ledger contains a stale entry, but protected only `.gate-background.pid` and `.gate-logs/gate-run.lock` beneath its own `GLUDD_WORKSPACE_ROOT`. A watchdog launched from any linked checkout could therefore classify a healthy gate owned by another registered checkout as an unrelated old `make gate` or `pytest` process.
+- **Fix applied**: Before any destructive scan, the watchdog consumes the existing Git-porcelain repository inventory used by active-work status and passes every registered root to process classification. It excludes the union of every live foreground/background gate tree. If repository discovery fails, it sends no signal; malformed individual gate records still grant no exemption, and unrelated stale processes remain eligible.
+- **Evidence**: The failing-first regression raised `TypeError` because the scanner had no repository ownership input. The repaired suite passes 42/42, including linked-worktree exclusion, production poll propagation, direct-script imports, malformed records, unrelated stale work, and fail-safe inventory failure. Exact-candidate gate replay remains required.
+- **Practitioner evidence**: pytest-timeout [issue #159](https://github.com/pytest-dev/pytest-timeout/issues/159) documents orphaned subprocesses and recommends an owning wrapper. psutil [issue #2335](https://github.com/giampaolo/psutil/issues/2335) warns that command-line heuristics can kill the wrong process, and [issue #2534](https://github.com/giampaolo/psutil/issues/2534) explains why process-group ownership survives intermediate exits. Git's [worktree porcelain contract](https://git-scm.com/docs/git-worktree#_porcelain_format) provides the maintained repository membership boundary.
+- **Lesson**: A destructive controller's ownership domain must be at least as broad as its observation and trigger domains. Host-global deadlines plus a host-global process scan cannot be paired with checkout-local exemptions.
+
 ### 2026-10-04 — (resolved locally; exact-candidate gate required) Stale `gate-background` timeout killers caused false `GATE_TIMEOUT`
 
 - **What happened**: A fresh `make gate-background GATE_TIMEOUT=7200` was terminated after roughly five minutes with `.gate-status` showing `GATE_TIMEOUT`, even though the new timeout killer was configured to sleep for 7200s and the default is 3600s.

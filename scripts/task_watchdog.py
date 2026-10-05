@@ -63,6 +63,11 @@ else:
     except ModuleNotFoundError:  # pragma: no cover - direct launch from scripts/
         import gludd_env_defaults
 
+if TYPE_CHECKING or __package__:
+    from scripts.active_work_status import _repository_roots
+else:  # pragma: no cover - direct script execution
+    from active_work_status import _repository_roots
+
 DEADLINES_FILE = os.environ.get(
     "GLUDD_TASK_DEADLINE_STATE", "/tmp/gludd-task-deadlines.json"
 )
@@ -290,12 +295,14 @@ def find_hung_processes(
     timeout_secs: float = TIMEOUT_SECS,
     gate_pid_file: str = str(GATE_PID_FILE),
     gate_run_lock_file: str = str(GATE_RUN_LOCK_FILE),
+    repository_roots: tuple[Path, ...] = (),
 ) -> list[HungProcess]:
     """Scan ``ps`` for processes older than timeout matching task patterns.
 
     Returns ``[{pid, etime_secs, command}, ...]``. Excludes:
     - The watchdog itself (``_SELF_PID``)
-    - Active foreground and background gates, which own their process trees
+    - Active foreground and background gates in every registered worktree,
+      which own their process trees
     - Processes matching ``EXCLUDE_PATTERNS`` (watchdogs, daemons)
 
     Only processes matching ``TASK_PROCESS_PATTERNS`` are candidates — this is
@@ -317,6 +324,15 @@ def find_hung_processes(
         )
         if pid is not None
     }
+    for root in repository_roots:
+        gate_pids.update(
+            pid
+            for pid in (
+                _read_gate_pid(str(root / ".gate-background.pid")),
+                _read_gate_run_lock_pid(str(root / ".gate-logs" / "gate-run.lock")),
+            )
+            if pid is not None
+        )
     hung: list[HungProcess] = []
     lines = result.stdout.splitlines()[1:]  # skip header
     gate_tree: set[int] = set()
@@ -500,7 +516,15 @@ def run_once(
         if stale_from_plugin:
             _log(f"  plugin-flagged stale: {len(stale_from_plugin)} IDs")
 
-        hung = find_hung_processes(timeout_secs=timeout_ms / 1000.0)
+        # The deadline file is host-global, so the destructive scan must honor
+        # gate ownership across the repository's complete registered worktree
+        # set.  If Git cannot establish that set, fail safe without killing an
+        # ambiguously owned process.
+        repository_roots = _repository_roots()
+        hung = find_hung_processes(
+            timeout_secs=timeout_ms / 1000.0,
+            repository_roots=repository_roots,
+        )
         killed = 0
 
         for proc in hung:
