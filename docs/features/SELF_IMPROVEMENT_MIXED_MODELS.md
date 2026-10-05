@@ -1158,6 +1158,55 @@ support bounded empirical failover; they are not capacity guarantees. Repeating 
 same paid East US T4 placement without newer availability evidence is therefore not
 an admissible next step.
 
+#### Next bounded alternate-region T4 proof (decision, 2026-10-05)
+
+The next live proof is one owner-tagged `westus` T4 app/environment placement, not
+another East US retry. It must pin one task identifier, model revision, and container
+image digest, set `minReplicas=1` and `maxReplicas=1`, and remain inside one $5 spend
+ceiling and one 60-minute acquisition-to-absence lease. Azure's
+[serverless GPU overview](https://learn.microsoft.com/en-us/azure/container-apps/gpu-serverless-overview)
+lists West US, West US 2, and Canada Central as T4 regions, while the
+[quota contract](https://learn.microsoft.com/en-us/azure/container-apps/quotas)
+makes quota region- and environment-scoped. Those checks are admission evidence,
+not promises that a GPU can actually be placed.
+
+Before any model-quality score is permitted, the proof must bind every observation
+to the exact immutable revision and retain its provisioning, running, replica, and
+health state; startup and readiness probe results; app- and environment-scoped
+system events; in-container CUDA driver/runtime/device attestation; and the Azure
+Monitor `GpuUtilizationPercentage` sample for the exact revision and pod. The
+[revision readiness contract](https://learn.microsoft.com/en-us/azure/container-apps/revisions),
+[GPU-specific probe rules](https://learn.microsoft.com/en-us/azure/container-apps/health-probes),
+and [Container Apps metric dimensions](https://learn.microsoft.com/en-us/azure/azure-monitor/reference/supported-metrics/microsoft-app-containerapps-metrics)
+make a successful ARM write, desired replica count, or healthy-looking app summary
+insufficient on its own.
+
+Every terminal path must destroy all owner-tagged app and environment resources and
+independently poll ARM until exact absence is proven within the same lease. Only one
+placement may be live at a time. After a cleaned `westus` placement failure, the T4
+fallback order is `westus2`, then
+`canadacentral`; no A100 attempt is admissible until at least two preceding
+placements have both failed and completed destroy-plus-absence proof. This bounded
+regional recovery follows the operator report that an Australia East allocation
+stall recovered after moving regions
+([Microsoft Q&A 5572527](https://learn.microsoft.com/en-us/answers/questions/5572527/container-app-using-serverless-gpu-stuck-assigning)),
+without treating that anecdote as an availability guarantee.
+
+The diagnostic boundary is deliberately strict. Issue
+[#1511](https://github.com/microsoft/azure-container-apps/issues/1511) reports only
+an intermittent T4 sequence that stopped after assignment/create and before image
+pull; issue [#1705](https://github.com/microsoft/azure-container-apps/issues/1705)
+reports only a desired replica paired with `WorkLoad Profile Full`, zero ready
+replicas, and an empty container inventory. Separate reports record a T4 container
+falling back to CPU after CUDA initialization failure
+([#1682](https://github.com/microsoft/azure-container-apps/issues/1682)) and an A100
+job waiting 25 minutes between image pull and container creation
+([#1763](https://github.com/microsoft/azure-container-apps/issues/1763)). Gludd must
+therefore classify placement, image, probe, CUDA, metric, timeout, and cleanup
+evidence only in the operational channel. None of those outcomes may be scored as
+model quality; quality evaluation begins only after exact-revision readiness, CUDA
+attestation, a GPU metric observation, and the pinned inference request all succeed.
+
 Bootstrap now records only an exact, digest-bound operational tuple after resource
 cleanup: region, workload-profile type, immutable container-image digest, deployment
 identity digest, lifecycle phase, fixed failure class, and timestamp. Prompts, model
