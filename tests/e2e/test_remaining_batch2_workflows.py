@@ -267,7 +267,11 @@ class TestSSLCertificate:
         from general_ludd.ssl.certificate import generate_csr, generate_key, self_sign, sign_csr
 
         ca_key = generate_key("rsa", 2048)
-        ca_csr = generate_csr(ca_key, {"CN": "My CA"})
+        ca_csr = generate_csr(
+            ca_key,
+            {"CN": "My CA"},
+            key_usage=["key_cert_sign", "crl_sign"],
+        )
         ca_cert = self_sign(ca_csr, ca_key, 3650)
 
         leaf_key = generate_key("ecdsa", 256)
@@ -296,7 +300,11 @@ class TestSSLCertificate:
         )
 
         ca_key = generate_key("rsa", 2048)
-        ca_csr = generate_csr(ca_key, {"CN": "Root CA"})
+        ca_csr = generate_csr(
+            ca_key,
+            {"CN": "Root CA"},
+            key_usage=["key_cert_sign", "crl_sign"],
+        )
         ca_cert = self_sign(ca_csr, ca_key, 3650)
 
         leaf_key = generate_key("rsa", 2048)
@@ -323,7 +331,11 @@ class TestSSLCertificate:
         )
 
         ca_key = generate_key("rsa", 2048)
-        ca_csr = generate_csr(ca_key, {"CN": "Root"})
+        ca_csr = generate_csr(
+            ca_key,
+            {"CN": "Root"},
+            key_usage=["key_cert_sign", "crl_sign"],
+        )
         ca_cert = self_sign(ca_csr, ca_key, 3650)
         leaf_key = generate_key("rsa", 2048)
         leaf_csr = generate_csr(leaf_key, {"CN": "leaf"})
@@ -340,7 +352,11 @@ class TestSSLCertificate:
         )
 
         ca_key = generate_key("rsa", 2048)
-        ca_csr = generate_csr(ca_key, {"CN": "Root CA"})
+        ca_csr = generate_csr(
+            ca_key,
+            {"CN": "Root CA"},
+            key_usage=["key_cert_sign", "crl_sign"],
+        )
         ca_cert = self_sign(ca_csr, ca_key, 3650)
         leaf_key = generate_key("ecdsa", 256)
         leaf_csr = generate_csr(leaf_key, {"CN": "leaf"})
