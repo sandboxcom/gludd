@@ -905,6 +905,19 @@ graph TD
   <p class="honest-note" style="font-size:0.48em;">Runs 37363551133 and 37363666474 lost hosted legs before repository code ran. Capacity is bounded, not coverage; unresolved attempt-2 failure requires a topology or platform change.</p>
   <p class="cite">Sources: docs/features/HOSTED_RUNNER_CAPACITY.md &middot; .github/workflows/build.yml &middot; .github/workflows/molecule.yml &middot; TASKS.md</p>
   </div>
+  <!-- HOSTED RUNNER ACQUISITION RECOVERY SUBSECTION -->
+  <div data-contract="runner-acquisition-recovery">
+  <h3>Bounded acquisition recovery &mdash; ledger before rerun</h3>
+  <ol class="bullets-tight" style="font-size:0.68em;">
+    <li><strong>Record first:</strong> <code>ci-view</code> persists the complete terminal attempt before admission, keyed by run ID/attempt + full SHA.</li>
+    <li><strong>Prove exact acquisition:</strong> every non-successful job must have no executed failing step and the exact annotation <code>The job was not acquired by Runner of type hosted even after multiple attempts</code>.</li>
+    <li><strong>Rerun coherently:</strong> <code>ci-recover-runner-acquisition</code> admits attempt 1 only and requests a full same-SHA rerun, so dependent jobs and artifacts remain one coherent candidate proof.</li>
+    <li><strong>Stop at attempt 2:</strong> attempt 2 is a hard stop that requires diagnosis instead of an automatic loop.</li>
+    <li><strong>Keep recovery control-plane only:</strong> admission precedes the rerun; there is no live restart, traffic shift, tag move, artifact upload, or credential mutation.</li>
+  </ol>
+  <p class="honest-note" style="font-size:0.48em;">Conclusion alone never authorizes retry. Practitioner reports #27083, #52505, #17854, #186208, #165291, #166283, and #126539 remain tied to the exact guardrails in the source contract.</p>
+  <p class="cite">Sources: docs/features/CI_FAILURE_LEDGER.md &middot; Makefile <code>ci-recover-runner-acquisition</code> &middot; tests/unit/test_ci_failure_ledger.py</p>
+  </div>
 </section>
 
 <!-- ============================================================ -->
