@@ -14,14 +14,23 @@ The repaired contract is deliberately explicit:
 
 - a CSR requesting `key_cert_sign` also receives critical
   `BasicConstraints(ca=True, path_length=None)`;
+- issuance verifies the CSR proof-of-possession signature, requires the signing
+  key to match the named issuer certificate, and rejects an issuer without
+  critical CA basic constraints or an applicable `key_cert_sign` usage;
+- unknown key-use names and non-positive validity windows are rejected instead
+  of silently producing a certificate with weaker or nonsensical policy;
 - an ordinary CSR receives no CA constraint and cannot become a CA merely by
   being placed in the middle of a chain;
 - every leaf-first link must match issuer-to-subject and pass signature
   verification for its actual key family;
 - every non-leaf certificate must assert CA basic constraints; when `KeyUsage`
   is present, it must allow `key_cert_sign`;
-- validity is checked in UTC against either the caller's explicit instant or the
-  current time, and path-length constraints are enforced;
+- validity is checked in UTC against either the caller's timezone-aware instant
+  or the current time, and path-length constraints count subordinate,
+  non-self-issued CAs below each issuer;
+- unrecognized critical extensions fail closed, and unordered chain building
+  selects an issuer by verified signature rather than subject name alone while
+  refusing certificate cycles;
 - the last certificate is the caller-supplied trust boundary. This API does not
   discover system trust or silently download a missing issuer; and
 - `verify_chain` remains a structural direct-issuance check. Callers that need
@@ -43,7 +52,7 @@ validity, basic-constraint, key-use, and path-length checks instead of duplicati
 RSA, ECDSA, and EdDSA verification code.
 
 Cryptography's higher-level
-[`PolicyBuilder` and `Store`](https://cryptography.io/en/46.0.5/x509/verification/)
+[`PolicyBuilder` and `Store`](https://cryptography.io/en/stable/x509/verification/)
 are the mature choice when a protocol has a separate trust store and a concrete
 server or client identity policy. This local API instead receives an ordered
 chain whose terminal certificate is the explicit trust input, so it does not
@@ -62,11 +71,13 @@ release.
 
 ## Security and resource boundaries
 
-Malformed PEM, unsupported signatures, mismatched issuers, invalid signatures,
-expired or future certificates, unauthorized issuers, and exceeded path lengths
-all fail closed. Validation never fetches AIA URLs, consults ambient host trust,
-or accepts a missing intermediate. Error strings identify the chain position and
-failed policy without exposing key material or raw certificate bytes.
+Malformed PEM, unsupported signatures, mismatched issuers or signing keys,
+invalid CSR or certificate signatures, expired or future certificates, naïve
+validation instants, unauthorized issuers, unrecognized critical extensions,
+certificate cycles, and exceeded path lengths all fail closed. Validation never
+fetches AIA URLs, consults ambient host trust, or accepts a missing intermediate.
+Error strings identify the chain position and failed policy without exposing key
+material or raw certificate bytes.
 
 Each PEM certificate is parsed once per operation and the ordered chain is walked
 linearly. Work is `O(n)` in chain length with `O(n)` parsed-certificate state; the
@@ -86,6 +97,9 @@ than being grandfathered in.
 Observe chain-validation success and the bounded error categories by certificate
 position during the canary. A rise in missing-basic-constraints errors identifies
 external or previously issued CA material that must be reissued, not bypassed.
+Monitor issuance rejections separately for invalid CSR signatures, CA/key
+mismatches, unauthorized issuers, and path-length violations; these identify
+previously latent bad inputs rather than transient rollout failures.
 The validator performs no hidden asynchronous work, so request completion is the
 deployment drain boundary.
 
