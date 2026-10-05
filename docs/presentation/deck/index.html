@@ -855,31 +855,31 @@ graph TD
 <!-- SLIDE 19f: S83.163 FREELLMAPI FROZEN-DELTA HOLD -->
 <!-- ============================================================ -->
 <section data-contract="s83-163-frozen-delta-hold">
-  <p class="stage-kicker">Decision &middot; 2026-10-05 &middot; frozen-delta review</p>
+  <p class="stage-kicker">Decision &middot; 2026-10-05 &middot; exact three-arm replay</p>
   <h2>S83.163 &mdash; FreeLLMAPI promotion remains <span class="badge-yellow">HOLD</span></h2>
   <div class="two-col">
     <div>
-      <h3>Evidence we have vs. need</h3>
+      <h3>Exact evidence executed</h3>
       <ul class="bullets-tight">
-        <li><strong>Current evidence:</strong> <code>v0.9.9 synthetic</code>; four fixtures, not a promotion corpus</li>
-        <li><strong>Missing:</strong> exact v0.11.1 frozen replay; upstream <code>v0.12.0</code> waits for the next serial review</li>
+        <li><strong>Current evidence:</strong> exact v0.11.1 executed from signed 4191d8e7</li>
         <li><strong>Paired arms:</strong> native Gludd / <code>v0.9.9</code> / exact <code>v0.11.1</code></li>
         <li><strong>Corpus:</strong> 32 route groups &times; 3 = 96 observations, plus 8 exclusions frozen before scoring</li>
+        <li><strong>Next serial review:</strong> upstream <code>v0.12.0</code>; no retargeting here</li>
       </ul>
     </div>
     <div>
-      <h3>Every gate must clear</h3>
+      <h3>Why HOLD is mandatory</h3>
       <ul class="bullets-tight">
-        <li>Brier LCB &ge; +0.02 versus both comparators</li>
-        <li>Exact two-sided McNemar <code>p &lt; 0.05</code></li>
-        <li>No stratum worse by &gt;0.02 Brier loss</li>
-        <li>p95 latency &le; 5 ms; RSS &le; 32 MiB; cost = $0; zero faults</li>
+        <li><strong>vs native:</strong> LCB +0.5166; McNemar p = 4.66e-10</li>
+        <li><strong>vs v0.9.9:</strong> LCB 0.0; McNemar p = 1.0 &rarr; two gates fail</li>
+        <li><strong>Resources:</strong> 0.244458 ms max; 0.015625 MiB RSS delta</li>
+        <li><strong>Isolation:</strong> Node = QuickJS; network/cost/faults = 0</li>
       </ul>
     </div>
   </div>
   <p class="honest-note">
-    No retargeting: evaluate the reviewed v0.11.1 identity. A pass permits later
-    build/provenance/ZDD review only; a miss leaves v0.9.9 serving and runtime admission false.
+    No retargeting and no promotion: v0.9.9 stays serving, runtime admission remains false,
+    and even an all-green replay could only enter a separate build/provenance/ZDD review.
   </p>
   <p class="cite">Practitioner inputs: #456, discussion #533, #608, #666, #880, #1210, #1262 &middot; Source: docs/design/FREELLMAPI_UPSTREAM_INTEGRATION.md</p>
 </section>
