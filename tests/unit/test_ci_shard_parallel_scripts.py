@@ -127,9 +127,7 @@ def test_parallel_shard_runner_does_not_use_sigterm_cleanup() -> None:
 
 
 def test_background_shard_runner_forwards_the_finite_deadline() -> None:
-    source = (ROOT / "scripts" / "start_ci_shards_parallel_bg.py").read_text(
-        encoding="utf-8"
-    )
+    source = (ROOT / "scripts" / "start_ci_shards_parallel_bg.py").read_text(encoding="utf-8")
 
     assert "type=parse_positive_int" in source
     assert source.count('"--max-runtime-seconds"') == 2
@@ -141,9 +139,7 @@ def test_background_shard_runner_forwards_the_finite_deadline() -> None:
 
 
 def test_parallel_shard_deadline_has_practitioner_evidence() -> None:
-    contract = (ROOT / "docs" / "features" / "GATE_RESOURCE_LIFECYCLE.md").read_text(
-        encoding="utf-8"
-    )
+    contract = (ROOT / "docs" / "features" / "GATE_RESOURCE_LIFECYCLE.md").read_text(encoding="utf-8")
 
     assert "SHARD-TIMEOUT" in contract
     assert "pytest-dev/pytest-xdist/issues/1313" in contract
@@ -409,9 +405,7 @@ def test_run_times_out_and_reaps_a_pending_shard(
 
     output = capsys.readouterr().out
     assert "SHARD-TIMEOUT shard=pending elapsed_seconds=11 limit_seconds=10" in output
-    assert '"returncode": 124' in (summary_dir / "pending.json").read_text(
-        encoding="utf-8"
-    )
+    assert '"returncode": 124' in (summary_dir / "pending.json").read_text(encoding="utf-8")
     assert len(terminated) == 1
 
 
@@ -484,6 +478,7 @@ def test_main_forwards_parsed_arguments(monkeypatch: pytest.MonkeyPatch) -> None
         workers_per_shard: int,
         heartbeat_seconds: int,
         max_runtime_seconds: int,
+        **kwargs: object,
     ) -> int:
         observed.update(
             shards=shards,
@@ -491,6 +486,7 @@ def test_main_forwards_parsed_arguments(monkeypatch: pytest.MonkeyPatch) -> None
             workers_per_shard=workers_per_shard,
             heartbeat_seconds=heartbeat_seconds,
             max_runtime_seconds=max_runtime_seconds,
+            **kwargs,
         )
         return 7
 
@@ -519,4 +515,6 @@ def test_main_forwards_parsed_arguments(monkeypatch: pytest.MonkeyPatch) -> None
         "workers_per_shard": 2,
         "heartbeat_seconds": 9,
         "max_runtime_seconds": 123,
+        "max_files_per_batch": 16,
+        "resume_path": None,
     }
