@@ -9,7 +9,7 @@ those expectations into persistent, executable policy.
 
 The operational ledger lives at `.gludd/ci-failure-ledger.json`. It is ignored
 by Git, written atomically with mode `0600`, capped at 2 MiB, and bound to
-immutable GitHub Actions run IDs and full 40-character commit SHAs.
+immutable GitHub Actions run ID/attempt pairs and full 40-character commit SHAs.
 
 ## Enforced state machine
 
@@ -29,7 +29,9 @@ terminal failure -> open -> repaired -> resolved
 - `resolved` means a later hosted run at a different exact SHA completed the
   matching workflow/job successfully.
 - Observing the same terminal run again is an idempotent no-op. Different data
-  for an already-recorded terminal run is rejected as contradictory evidence.
+  for an already-recorded terminal attempt is rejected as contradictory
+  evidence. GitHub reuses the run ID for a rerun, so attempts after the first
+  are stored as `<run-id>:<attempt>` rather than corrupting attempt 1 evidence.
 - A later recurrence of the same family removes its stale repair receipt and
   reopens it.
 
@@ -53,6 +55,15 @@ running `ci-view` for it.
 failed SHA. The only exception is an explicit operational experiment with both
 `CI_RERUN_ALLOW_UNCHANGED=1` and a non-empty `CI_RERUN_REASON`. This override
 does not mark any failure repaired.
+
+`make ci-recover-runner-acquisition` is the no-prompt recovery path for the
+specific GitHub-hosted failure “The job was not acquired by Runner of type
+hosted even after multiple attempts.” It first records the complete terminal
+attempt, fetches the Check Run annotations for every non-successful job, rejects
+any job that executed a failing step or lacks that exact annotation, and permits
+one full same-SHA rerun only from attempt 1. Attempt 2 is a hard recovery limit;
+it requires diagnosis instead of an automatic loop. A full rerun is deliberate:
+dependent jobs and artifacts remain part of one coherent candidate proof.
 
 Every repository push route already converges on `_push-rate-guard`.
 `ci-failure-push-guard` is now a prerequisite of that central guard, so direct,
@@ -114,6 +125,21 @@ This design addresses failure modes reported by GitHub Actions users:
   ([GitHub Community #27031](https://github.com/orgs/community/discussions/27031)).
 - Branch/ref names are insufficient when exact PR head identity matters
   ([GitHub Community #25191](https://github.com/orgs/community/discussions/25191)).
+- Users have reported the exact runner-acquisition annotation on unchanged,
+  simple workflows and observed that a later retry may succeed, identifying it
+  as hosted infrastructure rather than a repository test failure
+  ([GitHub Community #186208](https://github.com/orgs/community/discussions/186208),
+  [#165291](https://github.com/orgs/community/discussions/165291), and
+  [#166283](https://github.com/orgs/community/discussions/166283)).
+- A 13-job user report describes randomly cancelled hosted jobs and GitHub staff
+  confirmed a platform-side incident, so a cancelled job is never classified
+  from conclusion alone
+  ([GitHub Community #126539](https://github.com/orgs/community/discussions/126539)).
+- GitHub documents that matrix jobs maximize parallelism by default and that
+  `max-parallel` is an explicit throughput control. Gludd retains full shard
+  parallelism and bounds only this proven infrastructure retry instead of
+  permanently slowing every healthy run
+  ([GitHub matrix documentation](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/run-job-variations#defining-the-maximum-number-of-concurrent-jobs)).
 
 Consequently, Gludd records the first terminal evidence before any retry,
 keys it by immutable run ID and exact SHA, and treats a retry as an exception
@@ -122,7 +148,8 @@ rather than a repair.
 ## Verification
 
 `tests/unit/test_ci_failure_ledger.py` covers all-failure collection,
-idempotence, terminal-run immutability, recurrence, repair ancestry, complete
-blocker output, guarded reruns, atomic permissions, CLI wiring, and malformed
-state. `config/coverage_ci_failure_ledger.ini` measures the implementation
-directly under the repository's 85% aggregate and 75% per-file requirements.
+idempotence, terminal-attempt immutability, retry identity, bounded
+runner-acquisition recovery, recurrence, repair ancestry, complete blocker
+output, guarded reruns, atomic permissions, CLI wiring, and malformed state.
+`config/coverage_ci_failure_ledger.ini` measures the implementation directly
+under the repository's 85% aggregate and 75% per-file requirements.

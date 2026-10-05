@@ -297,6 +297,16 @@
       "behavior": "make ci-rerun RUN=123 CI_FAILURE_REPOSITORY=sandboxcom/gludd CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_RERUN_ALLOW_UNCHANGED=0 CI_RERUN_REASON=none CI_FAILURE_VALIDATE_ONLY=1"
     },
     {
+      "name": "ci-recover-runner-acquisition",
+      "make_variables": [
+        "RUN",
+        "CI_FAILURE_REPOSITORY",
+        "CI_FAILURE_LEDGER",
+        "CI_FAILURE_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-recover-runner-acquisition RUN=123 CI_FAILURE_REPOSITORY=sandboxcom/gludd CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_FAILURE_VALIDATE_ONLY=1"
+    },
+    {
       "name": "ci-failure-status",
       "make_variables": [
         "CI_FAILURE_LEDGER",

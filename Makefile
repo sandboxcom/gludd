@@ -331,7 +331,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         deck deck-serve deck-preview deck-data deck-honesty \
         script-count strip-enforce-stop test-hooks-live test-hook-runtime e2e-setup-test-project test-opencode-e2e test-opencode-e2e-hour \
         verify-enforcement \
-    ci-view ci-rerun ci-failure-status ci-failure-repair ci-failure-push-guard ci-trigger ci-active ci-job-log ci-job-failure-context ci-artifact-download ci-artifact-context ci-pyinstaller-warning-audit ci-coverage-artifact-audit ci-coverage-gap-plan ci-shards-log-context \
+    ci-view ci-rerun ci-recover-runner-acquisition ci-failure-status ci-failure-repair ci-failure-push-guard ci-trigger ci-active ci-job-log ci-job-failure-context ci-artifact-download ci-artifact-context ci-pyinstaller-warning-audit ci-coverage-artifact-audit ci-coverage-gap-plan ci-shards-log-context \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
 log-agent-result disk-guard disk-check disk-cleanup-preflight check-disk check-disk-classification check-system-load disk tmp-gludd-usage tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
         tmp-gludd-worktree-usage clean-worktree-venvs clean-worktree-caches \
@@ -716,6 +716,7 @@ help:
 	@echo "  ci-cooldown-status     Show remaining cooldown seconds"
 	@echo "  ci-view RUN=<id>       Show CI run details (jobs, steps, failures)"
 	@echo "  ci-rerun RUN=<id>      Guard and rerun one observed immutable CI run"
+	@echo "  ci-recover-runner-acquisition RUN=<id>  Retry attempt 1 only when every failure is hosted-runner acquisition"
 	@echo "  ci-active              List active/in-flight CI runs"
 	@echo "  ci-greenness           CI reliability ratio (green / total completed)"
 	@echo "  ci-trigger-committed-head [REF=<b>]  Idempotently signal + return exact-SHA GHA run URL"
@@ -5151,6 +5152,14 @@ ci-rerun: ci-view
 	@case "$(CI_RERUN_ALLOW_UNCHANGED)" in 0|1) ;; *) echo "CI_RERUN_ALLOW_UNCHANGED must be 0 or 1"; exit 2 ;; esac
 	@$(PYTHON) scripts/ci_failure_ledger.py guard-rerun --run "$(RUN)" --ledger "$(CI_FAILURE_LEDGER)" $(if $(filter 1,$(CI_RERUN_ALLOW_UNCHANGED)),--allow-unchanged --reason "$(CI_RERUN_REASON)",) $(if $(filter 1,$(CI_FAILURE_VALIDATE_ONLY)),--validate-only,)
 	@if [ "$(CI_FAILURE_VALIDATE_ONLY)" = "1" ]; then echo "CI_RERUN_VALIDATE_ONLY_PASS"; else gh run rerun -R "$(CI_FAILURE_REPOSITORY)" "$(RUN)"; fi
+
+# Recover one exact-SHA run only when all non-success jobs never started and
+# GitHub annotated each with its hosted-runner acquisition failure. The guard
+# admits attempt 1 only, making this a bounded retry rather than a churn loop.
+ci-recover-runner-acquisition: ci-view
+	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-recover-runner-acquisition RUN=<run-id>"; exit 1; fi
+	@$(PYTHON) scripts/ci_failure_ledger.py guard-runner-acquisition-rerun --run "$(RUN)" --repo "$(CI_FAILURE_REPOSITORY)" --ledger "$(CI_FAILURE_LEDGER)" $(if $(filter 1,$(CI_FAILURE_VALIDATE_ONLY)),--validate-only,)
+	@if [ "$(CI_FAILURE_VALIDATE_ONLY)" = "1" ]; then echo "CI_RECOVER_RUNNER_ACQUISITION_VALIDATE_ONLY_PASS"; else gh run rerun -R "$(CI_FAILURE_REPOSITORY)" "$(RUN)"; fi
 # Guard remote CI dispatch: the local tree must be clean and sandboxcom/<branch> must equal HEAD.
 ci-remote-head-guard:
 	@REF="$(REF)"; if [ -z "$$REF" ]; then REF="$$(git branch --show-current)"; fi; \
