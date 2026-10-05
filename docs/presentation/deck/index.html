@@ -981,7 +981,38 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19i: SERVICE RELIABILITY BOUNDARIES -->
+<!-- SLIDE 19i: S83.117 AUTHENTICATED TLS 1.3 STATE -->
+<!-- ============================================================ -->
+<section data-contract="s83-117-authenticated-tls13-state">
+  <p class="stage-kicker">Security contract &middot; authenticated records to reversible rollout</p>
+  <h2>S83.117 &mdash; Authenticated TLS 1.3 <span class="badge-green">Fail closed</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Authenticate before transition</h3>
+      <ul class="bullets-tight">
+        <li>Decrypt the AEAD record, then validate its <strong>exact handshake frame</strong> before changing the transcript or state.</li>
+        <li><code>CertificateVerify</code> signs the RFC server context plus transcript digest; <strong>server Finished</strong> must authenticate before client Finished.</li>
+        <li>An invalid tag, signature, or Finished value <strong>poisons</strong> the inbound protector; application traffic starts with independent read/write protectors only after client Finished.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Measured and bounded</h3>
+      <ul class="bullets-tight">
+        <li><strong>Tests:</strong> 79/79 warning-strict TLS + public-error adjacency</li>
+        <li><strong>Coverage:</strong> 89% aggregate; production module = 92.2% line / 76.3% branch</li>
+        <li><strong>Resources:</strong> constant state per connection, monotonic directional nonces, and zero network or background processes</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">
+    ZDD uses rolling replacement and sanitized authentication-failure metrics; drain in-flight handshakes
+    before a source-only rollback; reconnect instead of transferring keys, nonces, or poisoned state.
+  </p>
+  <p class="cite">Sources: docs/features/TLS13_AUTHENTICATED_STATE.md &middot; RFC 9846 &middot; cryptography AEAD guidance &middot; long-lived CPython #91826 trust-boundary report</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19j: SERVICE RELIABILITY BOUNDARIES -->
 <!-- ============================================================ -->
 <section data-contract="service-reliability-boundaries">
   <p class="stage-kicker">Reliability sequence &middot; input to teardown</p>
