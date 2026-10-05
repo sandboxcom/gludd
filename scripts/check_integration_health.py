@@ -17,6 +17,7 @@ Output:
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
@@ -35,6 +36,7 @@ OUTPUT_FILE = Path("/tmp/gludd-integration-failures.json")
 TIMEOUT_SEC = 1800
 INTERMEDIATE_INTERVAL_SEC = 30
 PROGRESS_INTERVAL_FILES = 5
+WATCHDOG_OWNED_GATE_MARKER = "watchdog-owned-gate"
 
 XDIST_FAILURE_RE = re.compile(
     r"^(?:\[[^\]\n]*\]\s+)*FAILED\s+"
@@ -153,21 +155,21 @@ signal.signal(signal.SIGTERM, _signal_handler)
 signal.signal(signal.SIGINT, _signal_handler)
 
 
-def main() -> int:
-    test_files = _find_integration_test_files()
-    if not test_files:
-        print("No integration test files found.")
-        return 0
-
-    file_paths = [str(f) for f in test_files]
-    workers = os.environ.get("GLUDD_INTEGRATION_HEALTH_WORKERS", "1")
-    cmd = [
+def _build_pytest_command(
+    test_files: list[Path],
+    *,
+    workers: str,
+    watchdog_owned_gate: bool,
+    temp_root: Path,
+) -> list[str]:
+    """Build a pytest command whose ownership remains visible to old watchdogs."""
+    command = [
         "uv",
         "run",
         "python",
         "-m",
         "pytest",
-        *file_paths,
+        *(str(path) for path in test_files),
         "-n",
         workers,
         "--dist",
@@ -176,6 +178,37 @@ def main() -> int:
         "-q",
         "--no-header",
     ]
+    if watchdog_owned_gate:
+        command.extend(
+            [
+                "--override-ini",
+                f"cache_dir={temp_root / WATCHDOG_OWNED_GATE_MARKER / 'pytest-cache'}",
+            ]
+        )
+    return command
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--watchdog-owned-gate",
+        action="store_true",
+        help="mark the gate-owned wrapper and pytest child for legacy watchdog exclusion",
+    )
+    args = parser.parse_args([] if argv is None else argv)
+    test_files = _find_integration_test_files()
+    if not test_files:
+        print("No integration test files found.")
+        return 0
+
+    workers = os.environ.get("GLUDD_INTEGRATION_HEALTH_WORKERS", "1")
+    temp_root = Path(os.environ.get("TMPDIR", "/tmp"))
+    cmd = _build_pytest_command(
+        test_files,
+        workers=workers,
+        watchdog_owned_gate=args.watchdog_owned_gate,
+        temp_root=temp_root,
+    )
 
     start = time.time()
     global _test_file_count, _start_time
@@ -350,4 +383,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

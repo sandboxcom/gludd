@@ -1903,7 +1903,7 @@ GATE_PREFLIGHT_TARGETS := \
 	validate-gcp-iam \
 	validate-all-cloud-iam \
 	check-dependency-pinning \
-	integration-health \
+	_integration-health-watchdog-owned-gate \
 	check-runbook-currency \
 	check-version-bump-atomicity
 GATE_PREFLIGHT_STATUS ?= .gate-logs/gate-preflights.status
@@ -7498,6 +7498,12 @@ integration-health:
 	BT="/tmp/gi-$$PROJECT_KEY-$$$$"; rm -rf "$$BT"; trap 'rm -rf "$$BT"' EXIT; \
 	PYTEST_ADDOPTS="$${PYTEST_ADDOPTS:-} --basetemp=$$BT" $(UV) run python scripts/check_integration_health.py
 
+_integration-health-watchdog-owned-gate:
+	@PROJECT_NAMESPACE="$$($(PYTHON) scripts/resource_arbiter.py namespace)"; \
+	PROJECT_KEY="$$($(PYTHON) -c 'import hashlib, sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest()[:8])' "$$PROJECT_NAMESPACE")"; \
+	BT="/tmp/gi-$$PROJECT_KEY-$$$$"; rm -rf "$$BT"; trap 'rm -rf "$$BT"' EXIT; \
+	TMPDIR="$$BT" PYTEST_ADDOPTS="$${PYTEST_ADDOPTS:-} --basetemp=$$BT" $(UV) run python scripts/check_integration_health.py --watchdog-owned-gate
+
 integration-health-watch:
 	@while true; do \
 		echo "[$$(date -u +%Y-%m-%dT%H:%M:%SZ)] Running integration-health..."; \
@@ -8505,7 +8511,7 @@ gate-background:
 			rm -f .gate-background.pid; \
 		fi; \
 	fi
-	@nohup $(MAKE) gate > .gate-logs/gate-$$(date +%Y%m%d%H%M%S).log 2>&1 & echo $$! | tee .gate-background.pid; \
+	@nohup $(MAKE) gate gludd_watchdog_owned_gate=1 > .gate-logs/gate-$$(date +%Y%m%d%H%M%S).log 2>&1 & echo $$! | tee .gate-background.pid; \
 	GATE_TIMEOUT_VAL=$${GATE_TIMEOUT:-3600}; \
 	EXPECTED_PID=$$(cat .gate-background.pid 2>/dev/null); \
 	( sleep $$GATE_TIMEOUT_VAL; \

@@ -46,6 +46,25 @@ def _load_script(name: str) -> Any:
         sys.path.remove(str(SCRIPTS))
 
 
+def test_gate_owned_shard_commands_are_invisible_to_legacy_task_watchdogs(
+    tmp_path: Path,
+) -> None:
+    """The runner and every pytest child carry the legacy exclusion marker."""
+    module = _load_script("run_ci_shards_serial")
+
+    batch = module._pytest_command(
+        "unit-1b",
+        ["tests/unit/test_example.py"],
+        tmp_path,
+        [],
+        watchdog_owned_gate=True,
+    )
+    isolated = module._isolated_pytest_command([], watchdog_owned_gate=True)
+
+    assert "watchdog-owned-gate" in " ".join(batch)
+    assert "watchdog-owned-gate" in " ".join(isolated)
+
+
 def test_local_shard_names_match_beta4_ci_matrix() -> None:
     module = _load_script("ci_named_shard_files")
 
@@ -821,7 +840,10 @@ def test_release_policy_rejects_dirty_gate_override(
 def test_commit_preflight_gate_invokes_dirty_nonrelease_mode() -> None:
     source = (ROOT / "scripts" / "run_gate.sh").read_text(encoding="utf-8")
 
-    assert "run_ci_shards_serial.py --pytest-args=-q --allow-dirty-worktree" in source
+    assert (
+        "run_ci_shards_serial.py --watchdog-owned-gate "
+        "--pytest-args=-q --allow-dirty-worktree"
+    ) in source
 
 
 def test_serial_runner_rejects_nonpositive_batch_size() -> None:
@@ -2141,15 +2163,24 @@ def test_serial_runner_rejects_a_completely_empty_plan_before_setup(
 ) -> None:
     module = _load_script("run_ci_shards_serial")
     setup_calls: list[str] = []
+
+    def record_interpreter_setup() -> dict[str, object]:
+        setup_calls.append("interpreter")
+        return {}
+
+    def record_command_setup(*_args: object, **_kwargs: object) -> int:
+        setup_calls.append("command")
+        return 0
+
     monkeypatch.setattr(
         module,
         "_interpreter_identity",
-        lambda: setup_calls.append("interpreter") or {},
+        record_interpreter_setup,
     )
     monkeypatch.setattr(
         module,
         "_run_command",
-        lambda *_args, **_kwargs: setup_calls.append("command") or 0,
+        record_command_setup,
     )
 
     assert module.run([], [], run_isolated=False, aggregate_coverage=False) == 2
@@ -2735,7 +2766,9 @@ def test_save_shard_coverage_classifies_post_validation_read_failure(
         hash_calls += 1
         if hash_calls == 3:
             raise OSError("coverage source vanished")
-        return real_hash(path)
+        digest = real_hash(path)
+        assert isinstance(digest, str)
+        return digest
 
     monkeypatch.setattr(module, "_file_sha256", fail_third_hash)
 
@@ -2873,10 +2906,15 @@ def test_coverage_output_rejects_an_invalid_fragment_before_copy(
     fragment = module.COVERAGE_SHARDS / ".coverage.unit-1a2.batch-006"
     fragment.write_bytes(b"corrupt coverage database")
     commands: list[list[str]] = []
+
+    def record_command(command: list[str], **_kwargs: object) -> int:
+        commands.append(command)
+        return 0
+
     monkeypatch.setattr(
         module,
         "_run_command",
-        lambda command, **_kwargs: commands.append(command) or 0,
+        record_command,
     )
 
     assert module._combine_coverage_output(tmp_path / ".coverage.unit-1a2-3.11") == 1
@@ -2964,11 +3002,15 @@ def test_coverage_transfer_rejects_same_size_content_corruption(
         payload[-1] ^= 1
         destination.write_bytes(payload)
 
+    def record_command(command: list[str], **_kwargs: object) -> int:
+        commands.append(command)
+        return 0
+
     monkeypatch.setattr(module.shutil, "copy2", corrupt_copy)
     monkeypatch.setattr(
         module,
         "_run_command",
-        lambda command, **_kwargs: commands.append(command) or 0,
+        record_command,
     )
 
     assert module._combine_coverage_output(tmp_path / ".coverage.unit-1a2-3.11") == 1
@@ -3136,6 +3178,7 @@ def test_serial_runner_cli_forwards_explicit_resource_bounds(
         "aggregate_coverage": True,
         "coverage_output": None,
         "resume_path": None,
+        "watchdog_owned_gate": False,
     }
 
 
@@ -3272,3 +3315,232 @@ def test_serial_runner_fails_closed_after_batch_mutates_interpreter(
     assert "SHARD-INTERPRETER-DRIFT" in output
     assert "3.11.14" in output
     assert "3.14.0" in output
+
+
+def test_resume_state_round_trip_and_invalid_payload(tmp_path: Path) -> None:
+    module = _load_script("run_ci_shards_serial")
+    resume = tmp_path / "nested" / "resume.json"
+
+    assert module._load_resume_state(resume) == {}
+    resume.parent.mkdir()
+    resume.write_text("not json", encoding="utf-8")
+    assert module._load_resume_state(resume) == {}
+    resume.write_text("[]", encoding="utf-8")
+    assert module._load_resume_state(resume) == {}
+
+    expected = {"batch": {"returncode": 0}}
+    module._save_resume_state(resume, expected)
+
+    assert module._load_resume_state(resume) == expected
+
+
+def test_disk_headroom_fails_closed_when_observation_errors(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    def fail_observation(_path: Path) -> object:
+        raise OSError("disk unavailable")
+
+    assert not module._disk_headroom_available(
+        tmp_path,
+        minimum_free_bytes=1,
+        disk_usage=fail_observation,
+        context="coverage-test",
+    )
+    assert "SHARD-DISK-PREFLIGHT status=error" in capsys.readouterr().out
+
+
+def test_interpreter_probe_rejects_failure_and_malformed_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    class Result:
+        returncode = 1
+        stdout = ""
+        stderr = "probe exploded"
+
+    monkeypatch.setattr(module.subprocess, "run", lambda *_args, **_kwargs: Result())
+    with pytest.raises(RuntimeError, match="probe exploded"):
+        module._interpreter_identity()
+
+    Result.returncode = 0
+    Result.stdout = "[]"
+    Result.stderr = ""
+    with pytest.raises(RuntimeError, match="malformed evidence"):
+        module._interpreter_identity()
+
+    monkeypatch.setattr(
+        module,
+        "_interpreter_identity",
+        lambda: (_ for _ in ()).throw(RuntimeError("unavailable")),
+    )
+    assert not module._interpreter_is_unchanged({}, context="coverage-test")
+    assert "SHARD-INTERPRETER-PROBE-FAIL" in capsys.readouterr().out
+
+
+def test_validate_only_plan_rejects_an_empty_expansion(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    monkeypatch.setattr(module, "_plan_shards", lambda *_args, **_kwargs: [("unit-2", [])])
+
+    assert (
+        module._validate_only_plan(
+            ["unit-2"],
+            [],
+            max_files_per_batch=4,
+            attestation_output=None,
+        )
+        == 2
+    )
+    assert "SERIAL-SHARD-VALIDATE-FAIL empty=unit-2" in capsys.readouterr().out
+
+
+def test_non_posix_process_group_helpers_use_direct_child_signals(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    class Process:
+        pid = 42
+        terminated = False
+        killed = False
+
+        @classmethod
+        def poll(cls) -> None:
+            return None
+
+        @classmethod
+        def terminate(cls) -> None:
+            cls.terminated = True
+
+        @classmethod
+        def kill(cls) -> None:
+            cls.killed = True
+
+    class NonPosixOS:
+        name = "nt"
+
+    monkeypatch.setattr(module, "os", NonPosixOS())
+
+    assert module._owned_process_group_alive(Process()) is True
+    module._signal_owned_process_group(Process(), signal.SIGTERM)
+    module._signal_owned_process_group(Process(), signal.SIGKILL)
+    assert Process.terminated is True
+    assert Process.killed is True
+
+
+def test_validate_only_plan_reports_successful_bounded_plan(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    monkeypatch.setattr(
+        module,
+        "_plan_shards",
+        lambda *_args, **_kwargs: [("unit-2", [["a.py"], ["b.py"]])],
+    )
+
+    assert (
+        module._validate_only_plan(
+            ["unit-2"],
+            ["-q"],
+            max_files_per_batch=1,
+            attestation_output=tmp_path / "attestation.json",
+        )
+        == 0
+    )
+    output = capsys.readouterr().out
+    assert "SERIAL-SHARD-VALIDATE shards=unit-2 files=2 batches=2" in output
+    assert f"attestation={tmp_path / 'attestation.json'}" in output
+
+
+def test_plan_shards_rejects_nonpositive_batch_size() -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    with pytest.raises(ValueError, match="max_files_per_batch must be positive"):
+        module._plan_shards(["unit-2"], max_files_per_batch=0)
+
+
+def test_owned_tree_cleanup_classifies_io_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    def fail_remove(_path: Path) -> None:
+        raise OSError("busy")
+
+    monkeypatch.setattr(module.shutil, "rmtree", fail_remove)
+
+    assert (
+        module._remove_owned_tree(tmp_path / "owned", context="coverage-test")
+        == module.CLEANUP_FAILURE_EXIT_CODE
+    )
+    assert "SHARD-CLEANUP-FAIL context=coverage-test" in capsys.readouterr().out
+
+
+def test_owned_tmpdir_cleanup_rejects_unowned_path(tmp_path: Path) -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    with pytest.raises(ValueError, match="refusing to remove unowned shard temp root"):
+        module._cleanup_owned_tmpdir(tmp_path)
+
+
+def test_partition_and_resume_boundaries_fail_closed(tmp_path: Path) -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    with pytest.raises(ValueError, match="max_files must be positive"):
+        module._partition_test_paths([], max_files=0)
+
+    shard = "unit-2"
+    files = ["tests/unit/test_example.py"]
+    key = module._batch_key(shard, 1, files)
+    coverage_shards = tmp_path / "coverage"
+    assert not module._resume_skip_batch({}, shard, 1, files, coverage_shards, tmp_path)
+    assert not module._resume_skip_batch(
+        {key: {"rc": 1}},
+        shard,
+        1,
+        files,
+        coverage_shards,
+        tmp_path,
+    )
+    assert not module._resume_skip_batch(
+        {key: {"rc": 0, "coverage_fragment": None}},
+        shard,
+        1,
+        files,
+        coverage_shards,
+        tmp_path,
+    )
+
+
+def test_posix_process_group_helpers_observe_and_signal_owned_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    observed: list[tuple[int, object]] = []
+
+    class PosixOS:
+        name = "posix"
+
+        @staticmethod
+        def killpg(pid: int, signum: object) -> None:
+            observed.append((pid, signum))
+
+    class Process:
+        pid = 73
+
+    monkeypatch.setattr(module, "os", PosixOS())
+
+    assert module._owned_process_group_alive(Process()) is True
+    module._signal_owned_process_group(Process(), signal.SIGTERM)
+    assert observed == [(73, 0), (73, signal.SIGTERM)]

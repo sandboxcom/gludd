@@ -451,12 +451,14 @@ def _pytest_command(
     files: list[str],
     basetemp: Path,
     pytest_args: list[str],
+    *,
+    watchdog_owned_gate: bool = False,
 ) -> list[str]:
     # Coverage.py refuses to combine statement-only and branch-aware data.
     # Every batch therefore uses the same branch-aware concurrency config,
     # including shards that do not themselves import greenlet-backed code.
     coverage_config = GREENLET_COVERAGE_CONFIG
-    return [
+    command = [
         sys.executable,
         "-m",
         "pytest",
@@ -469,6 +471,14 @@ def _pytest_command(
         *pytest_args,
         f"--basetemp={basetemp / 'pytest'}",
     ]
+    if watchdog_owned_gate:
+        command.extend(
+            [
+                "--override-ini",
+                f"cache_dir={basetemp / 'watchdog-owned-gate' / 'pytest-cache'}",
+            ]
+        )
+    return command
 
 
 def _owned_socket_safe_tmpdir(label: str) -> Path:
@@ -558,9 +568,11 @@ def _defer_termination_signals() -> Iterator[list[int]]:
             signal.signal(watched_signal, previous_handler)
 
 
-def _isolated_pytest_command(pytest_args: list[str]) -> list[str]:
+def _isolated_pytest_command(
+    pytest_args: list[str], *, watchdog_owned_gate: bool = False
+) -> list[str]:
     """Run process-heavy tests outside the long-lived coverage workers."""
-    return [
+    command = [
         sys.executable,
         "-m",
         "pytest",
@@ -568,6 +580,14 @@ def _isolated_pytest_command(pytest_args: list[str]) -> list[str]:
         "-v",
         *pytest_args,
     ]
+    if watchdog_owned_gate:
+        command.extend(
+            [
+                "--override-ini",
+                f"cache_dir={_resource_paths().root / 'watchdog-owned-gate' / 'pytest-cache'}",
+            ]
+        )
+    return command
 
 
 def _expand_test_paths(paths: list[str], *, root: Path = ROOT) -> list[str]:
@@ -1230,6 +1250,7 @@ def run(
     aggregate_coverage: bool = True,
     coverage_output: Path | None = None,
     resume_path: Path | None = None,
+    watchdog_owned_gate: bool = False,
 ) -> int:
     """Run bounded batches serially and aggregate their coverage fragments."""
     if max_files_per_batch < 1:
@@ -1328,7 +1349,9 @@ def run(
     terminal_rc = 0
     if run_isolated:
         isolated_rc = _run_owned_pytest(
-            _isolated_pytest_command(pytest_args),
+            _isolated_pytest_command(
+                pytest_args, watchdog_owned_gate=watchdog_owned_gate
+            ),
             env=_owned_test_environment(os.environ.copy()),
             label="isolated",
             heartbeat_seconds=heartbeat_seconds,
@@ -1573,7 +1596,13 @@ def run(
                     shard_failed = True
                     break
                 rc = _run_owned_pytest(
-                    _pytest_command(shard, files, owned_tmpdir, pytest_args),
+                    _pytest_command(
+                        shard,
+                        files,
+                        owned_tmpdir,
+                        pytest_args,
+                        watchdog_owned_gate=watchdog_owned_gate,
+                    ),
                     env=_owned_test_environment(env),
                     label=f"{shard}:batch-{batch_index:03d}",
                     heartbeat_seconds=heartbeat_seconds,
@@ -1843,6 +1872,11 @@ def main() -> int:
         default=None,
         help="path to the resume state file (default: <resource-root>/ci-shards/resume.json)",
     )
+    parser.add_argument(
+        "--watchdog-owned-gate",
+        action="store_true",
+        help="mark the gate runner and pytest children for legacy watchdog exclusion",
+    )
     args = parser.parse_args()
     if args.allow_dirty_worktree and args.require_release_policy:
         print(
@@ -1896,6 +1930,7 @@ def main() -> int:
                 aggregate_coverage=not args.skip_aggregate,
                 coverage_output=args.coverage_output,
                 resume_path=resume_path,
+                watchdog_owned_gate=args.watchdog_owned_gate,
             )
             error = None
             if (
