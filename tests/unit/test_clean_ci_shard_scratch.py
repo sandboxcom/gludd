@@ -4,8 +4,11 @@ import importlib.util
 import os
 import socket
 import subprocess
+import tempfile
 import time
+from collections.abc import Iterator
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -13,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "clean_ci_shard_scratch.py"
 
 
-def _load_module():
+def _load_module() -> ModuleType:
     spec = importlib.util.spec_from_file_location("clean_ci_shard_scratch_under_test", SCRIPT)
     assert spec is not None
     assert spec.loader is not None
@@ -25,6 +28,16 @@ def _load_module():
 def _age_path(path: Path, seconds: int) -> None:
     old = time.time() - seconds
     os.utime(path, (old, old))
+
+
+@pytest.fixture
+def short_socket_root() -> Iterator[Path]:
+    """Provide a namespaced root that stays below macOS AF_UNIX limits."""
+    with tempfile.TemporaryDirectory(
+        prefix=f"gludd-sock-{os.getpid()}-",
+        dir=Path(os.sep) / "tmp",
+    ) as directory:
+        yield Path(directory)
 
 
 def test_recent_ci_shard_directory_is_not_removed(tmp_path: Path) -> None:
@@ -194,11 +207,13 @@ def test_process_inspection_error_refuses_cleanup(
     assert result["skipped"] == [f"{candidate}:process-inspection-failed"]
 
 
-def test_socket_inspection_and_revalidation_errors_refuse_cleanup(tmp_path: Path) -> None:
+def test_socket_inspection_and_revalidation_errors_refuse_cleanup(
+    short_socket_root: Path,
+) -> None:
     module = _load_module()
 
     def stale_socket(name: str) -> Path:
-        path = tmp_path / name
+        path = short_socket_root / name
         owner = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         owner.bind(str(path))
         owner.close()
@@ -211,7 +226,7 @@ def test_socket_inspection_and_revalidation_errors_refuse_cleanup(tmp_path: Path
         raise module.ProcessInspectionError("lsof unavailable")
 
     result = module.clean_ci_shard_scratch(
-        tmp_root=tmp_path,
+        tmp_root=short_socket_root,
         min_age_seconds=3600,
         active_process_pids=lambda _path: [],
         active_socket_pids=fail_socket_inspection,
@@ -230,7 +245,7 @@ def test_socket_inspection_and_revalidation_errors_refuse_cleanup(tmp_path: Path
         return []
 
     result = module.clean_ci_shard_scratch(
-        tmp_root=tmp_path,
+        tmp_root=short_socket_root,
         min_age_seconds=3600,
         active_process_pids=lambda _path: [],
         active_socket_pids=fail_socket_revalidation,
@@ -355,16 +370,16 @@ def test_recent_generated_file_is_preserved(tmp_path: Path) -> None:
     assert result == {"removed": [], "skipped": [f"{recent}:recent"]}
 
 
-def test_stale_socket_with_open_owner_is_preserved(tmp_path: Path) -> None:
+def test_stale_socket_with_open_owner_is_preserved(short_socket_root: Path) -> None:
     module = _load_module()
-    socket_path = tmp_path / "gludd-test-runtime.sock"
+    socket_path = short_socket_root / "gludd-test-runtime.sock"
     owner = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
         owner.bind(str(socket_path))
         _age_path(socket_path, 7200)
 
         result = module.clean_ci_shard_scratch(
-            tmp_root=tmp_path,
+            tmp_root=short_socket_root,
             min_age_seconds=3600,
             active_process_pids=lambda _path: [],
             active_socket_pids=lambda _path: [7331],
@@ -379,16 +394,16 @@ def test_stale_socket_with_open_owner_is_preserved(tmp_path: Path) -> None:
         owner.close()
 
 
-def test_stale_unowned_socket_is_removed(tmp_path: Path) -> None:
+def test_stale_unowned_socket_is_removed(short_socket_root: Path) -> None:
     module = _load_module()
-    socket_path = tmp_path / "gludd-test-runtime.sock"
+    socket_path = short_socket_root / "gludd-test-runtime.sock"
     owner = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     owner.bind(str(socket_path))
     owner.close()
     _age_path(socket_path, 7200)
 
     result = module.clean_ci_shard_scratch(
-        tmp_root=tmp_path,
+        tmp_root=short_socket_root,
         min_age_seconds=3600,
         active_process_pids=lambda _path: [],
         active_socket_pids=lambda _path: [],
