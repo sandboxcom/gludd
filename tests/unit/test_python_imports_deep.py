@@ -23,6 +23,7 @@ from packaging.version import Version
 ROOT = Path(__file__).resolve().parents[2]
 SRC_PKG = ROOT / "src" / "general_ludd"
 PKG_NAME = "general_ludd"
+_MISSING_BINDING = object()
 
 
 def _collect_py_files() -> list[Path]:
@@ -194,6 +195,18 @@ def test_no_circular_import_isolated(path: Path) -> None:
         for name, module in sys.modules.items()
         if _subpackage_of(name, PKG_NAME)
     }
+    saved_child_bindings: dict[tuple[str, str], object] = {}
+    for name in saved_modules:
+        parent_name, separator, child_name = name.rpartition(".")
+        if not separator:
+            continue
+        parent = saved_modules.get(parent_name)
+        if isinstance(parent, ModuleType):
+            saved_child_bindings[(parent_name, child_name)] = getattr(
+                parent,
+                child_name,
+                _MISSING_BINDING,
+            )
     try:
         for name in saved_modules:
             del sys.modules[name]
@@ -205,6 +218,15 @@ def test_no_circular_import_isolated(path: Path) -> None:
             if _subpackage_of(name, PKG_NAME):
                 del sys.modules[name]
         sys.modules.update(saved_modules)
+        for (parent_name, child_name), binding in saved_child_bindings.items():
+            parent = saved_modules[parent_name]
+            if not isinstance(parent, ModuleType):
+                continue
+            if binding is _MISSING_BINDING:
+                if hasattr(parent, child_name):
+                    delattr(parent, child_name)
+            else:
+                setattr(parent, child_name, binding)
 
 
 def test_isolated_import_restores_new_qemu_descendants(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -239,6 +261,33 @@ def test_isolated_import_preserves_new_external_dependencies(
     test_no_circular_import_isolated(SRC_PKG / "infra" / "qemu_detect.py")
 
     assert sys.modules[dependency_name] is dependency
+
+
+def test_isolated_import_restores_saved_parent_child_binding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cleanup must repair a saved package object mutated by an importer."""
+    package = importlib.import_module(PKG_NAME)
+    infra_name = "general_ludd.infra"
+    qemu_name = f"{infra_name}.qemu_detect"
+    infra = importlib.import_module(infra_name)
+    replacement_infra = ModuleType(infra_name)
+    replacement_qemu = ModuleType(qemu_name)
+    monkeypatch.delitem(sys.modules, qemu_name, raising=False)
+
+    def import_with_mutated_parent(module_name: str) -> ModuleType:
+        assert module_name == qemu_name
+        monkeypatch.setattr(package, "infra", replacement_infra)
+        monkeypatch.setitem(sys.modules, infra_name, replacement_infra)
+        monkeypatch.setitem(sys.modules, qemu_name, replacement_qemu)
+        return replacement_qemu
+
+    monkeypatch.setattr(importlib, "import_module", import_with_mutated_parent)
+
+    test_no_circular_import_isolated(SRC_PKG / "infra" / "qemu_detect.py")
+
+    assert sys.modules[infra_name] is infra
+    assert package.infra is infra
 
 
 # ═══════════════════════════════════════════════════════════════════
