@@ -296,6 +296,16 @@ launch failure stops before polling, and the terminal child result becomes the
 composite target's result. `GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY=1` verifies
 the bounded plan without starting a gate.
 
+Duplicate admission and launch are one shell transaction. An admitted live PID
+returns before `nohup` or PID publication; a stale PID is removed before one new
+owner is started. Launcher recipes use a Make command expanded before recipe
+execution, avoiding GNU Make's rule that direct `$(MAKE)` recipe references run
+even under `-n`. The observed wrapper captures the PID published by its launch
+and passes it as `GATE_EXPECTED_PID` on every poll rather than following a
+replaceable shared PID file. Real behavioral tests pin both boundaries: a live
+subprocess retains its exact PID record after duplicate refusal, and a dry run
+creates neither the record nor the log directory.
+
 This is ZDD for application services: it changes only the release-control
 process tree, creates no listener or schema, and leaves the interactive target
 compatible. Existing gates are neither restarted nor adopted. Rollback removes
@@ -309,6 +319,9 @@ documents explicit orphan-process cleanup, and runner
 [issue #1309](https://github.com/actions/runner/issues/1309) records externally
 selected termination signals. Those practitioner reports reinforce the rule:
 `nohup` changes terminal behavior; it does not prove durable runner ownership.
+GNU Make's [recursive invocation contract](https://www.gnu.org/software/make/manual/html_node/MAKE-Variable.html)
+additionally explains why direct `MAKE` references require an explicit dry-run
+boundary.
 
 #### Candidate history freeze
 
