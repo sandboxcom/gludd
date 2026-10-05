@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+import logging
 import os
 import signal
 import tempfile
@@ -369,6 +371,55 @@ class TestSignalAndAtexitHandlers:
         manager.register("azure", "vm-001", "/tmp/deploy-001")
         manager._guaranteed_cleanup()
         assert "vm-001" in cleaned
+
+    def test_atexit_warning_survives_a_closed_capture_stream(
+        self,
+        monkeypatch: Any,
+        manager: ResourceLifecycleManager,
+    ) -> None:
+        """Late cleanup must remain observable after pytest closes capture."""
+        capture_stream = io.StringIO()
+        capture_handler = logging.StreamHandler(capture_stream)
+        isolated_logger = logging.Logger("resource-lifecycle-atexit-test")
+        isolated_logger.propagate = False
+        isolated_logger.addHandler(capture_handler)
+        capture_stream.close()
+
+        cleaned: list[str] = []
+        manager.set_destroy_fn(lambda instance_id, _deploy_dir: cleaned.append(instance_id))
+        manager.register("azure", "vm-after-capture", "/tmp/deploy-after-capture")
+
+        raw_stderr_write = MagicMock()
+        monkeypatch.setattr(resource_lifecycle, "logger", isolated_logger)
+        monkeypatch.setattr(os, "write", raw_stderr_write)
+
+        manager._guaranteed_cleanup()
+
+        assert cleaned == ["vm-after-capture"]
+        raw_stderr_write.assert_called_once()
+        fd, payload = raw_stderr_write.call_args.args
+        assert fd == 2
+        assert b"Guaranteed cleanup triggered" in payload
+
+    def test_late_shutdown_handler_tolerates_unavailable_stderr(
+        self,
+        monkeypatch: Any,
+    ) -> None:
+        """Cleanup logging must not mask teardown when fd 2 is unavailable."""
+        raw_stderr_write = MagicMock(side_effect=OSError("stderr unavailable"))
+        monkeypatch.setattr(os, "write", raw_stderr_write)
+        handler = resource_lifecycle._ShutdownStderrHandler()
+
+        handler.emit(logging.makeLogRecord({"msg": "late cleanup"}))
+
+        raw_stderr_write.assert_called_once()
+
+    def test_closed_stream_probe_stops_at_nonpropagating_logger(self) -> None:
+        """An isolated live logger must not inspect unrelated root handlers."""
+        isolated_logger = logging.Logger("resource-lifecycle-isolated-live")
+        isolated_logger.propagate = False
+
+        assert resource_lifecycle._has_closed_log_stream(isolated_logger) is False
 
     def test_signal_handler_cleanup_then_kill(self, monkeypatch: Any, manager: ResourceLifecycleManager) -> None:
         cleaned = []

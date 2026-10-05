@@ -18,6 +18,17 @@ public-path assertions remain independent of readiness, and each lifecycle test
 uses a per-test configuration directory and SQLite database so startup never
 opens or migrates persistent user state.
 
+Model-health endpoint tests make the complementary choice: they verify the
+real daemon factory's route registration and lazy model-gateway fallback, not
+its startup graph.  Their named xdist group keeps the matrix on one worker,
+where a class-scoped client deliberately stays outside lifespan while retaining
+the existing `_db_path_override=":memory:"` factory seam.  The empty,
+populated, unhealthy, and validation-error cases reuse that isolated owner;
+their HTTP and health assertions are unchanged.  A parallel worker can neither
+inherit a default on-disk registry nor allocate the unrelated database,
+discovery, indexing, and event-loop subsystems already covered by lifecycle
+tests.
+
 ## Upstream operational findings
 
 - [Starlette's TestClient documentation](https://www.starlette.io/testclient/#testclient)
@@ -39,6 +50,11 @@ opens or migrates persistent user state.
   inside `with TestClient(app)` and shutdown state is observable after it exits.
   Gludd therefore tests pre-startup readiness without context entry and tests
   public routes against an initialized, isolated daemon.
+- [pytest issue #11790](https://github.com/pytest-dev/pytest/issues/11790)
+  records practitioners finding that concurrent invocations can collide even
+  when a temporary path is described as unique.  The report recommends a
+  per-run namespace; Gludd goes one step further for model-health tests by using
+  a per-app in-memory database with no shared filesystem path.
 
 The focused readiness matrix covers pre-startup, live, degraded, completed, and
 cancelled states.  The auth matrix additionally proves that public paths remain
