@@ -34,20 +34,49 @@
   ansible.builtin.debug:
     msg: "Inference server already running on {{ host }}:{{ model_serve_port }}"
 
+- name: Preflight managed-host runtime for inference service
+  ansible.builtin.include_role:
+    name: general_ludd.agent.managed_python_preflight
+    tasks_from: main
+    public: false
+  vars:
+    managed_python_preflight_interpreter: "{{ ansible_python_interpreter }}"
+    managed_python_preflight_lock_sha256: "{{ gludd_managed_python_lock_sha256 }}"
+    managed_python_preflight_previous_interpreter: "{{ gludd_previous_python_interpreter | default('') }}"
+  when: _health_check_before.status != 200
+
 - name: "Setup llama.cpp server"
   when:
     - _health_check_before.status != 200
     - backend == "llama_cpp"
   block:
-    - name: "Install llama-cpp-python with server extras"
-      ansible.builtin.pip:
-        name:
-          - llama-cpp-python[server]
-        state: present
+    - name: "Verify llama.cpp server dependency in immutable environment"
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_python_interpreter }}"
+          - -c
+          - >-
+            import importlib.util;
+            raise SystemExit(not (
+            importlib.util.find_spec('llama_cpp') and
+            importlib.util.find_spec('llama_cpp.server')))
+      register: _llama_cpp_dependency
+      changed_when: false
+      failed_when: false
+
+    - name: "Fail closed when llama.cpp dependency is absent"
+      ansible.builtin.assert:
+        that:
+          - _llama_cpp_dependency.rc == 0
+        fail_msg: >-
+          Managed inference dependency is absent from the immutable environment
+          {{ ansible_python_interpreter }}. Provision a new content-addressed
+          environment and switch inventory only after its preflight succeeds;
+          the active environment is never modified in place.
 
     - name: "Start llama.cpp server"
       ansible.builtin.shell: |
-        nohup python3 -m llama_cpp.server \
+        nohup {{ ansible_python_interpreter }} -m llama_cpp.server \
           --model "{{ model_path }}" \
           --host {{ host }} \
           --port {{ model_serve_port }} \
@@ -65,15 +94,33 @@
     - _health_check_before.status != 200
     - backend == "vllm"
   block:
-    - name: "Install vllm"
-      ansible.builtin.pip:
-        name:
-          - vllm
-        state: present
+    - name: "Verify vLLM server dependency in immutable environment"
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_python_interpreter }}"
+          - -c
+          - >-
+            import importlib.util;
+            raise SystemExit(not (
+            importlib.util.find_spec('vllm') and
+            importlib.util.find_spec('vllm.entrypoints.openai.api_server')))
+      register: _vllm_dependency
+      changed_when: false
+      failed_when: false
+
+    - name: "Fail closed when vLLM dependency is absent"
+      ansible.builtin.assert:
+        that:
+          - _vllm_dependency.rc == 0
+        fail_msg: >-
+          Managed inference dependency is absent from the immutable environment
+          {{ ansible_python_interpreter }}. Provision a new content-addressed
+          environment and switch inventory only after its preflight succeeds;
+          the active environment is never modified in place.
 
     - name: "Start vllm server"
       ansible.builtin.shell: |
-        nohup python3 -m vllm.entrypoints.openai.api_server \
+        nohup {{ ansible_python_interpreter }} -m vllm.entrypoints.openai.api_server \
           --model "{{ model_path }}" \
           --host {{ host }} \
           --port {{ model_serve_port }} \

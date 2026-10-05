@@ -70,7 +70,7 @@ holds. If any drifts, re-read the surrounding function before editing.
    (`:204`) and merges live-reloadable values into `event_loop.config`
    (`:216-228`), but never touches `app.state._model_gateway`.
 6. No consumer reads `AgentTaskResult.status`. Run:
-   ```
+   ```text
    make grep Q='dispatch_one' PATH_='src'
    ```
    Expect exactly three real call sites, none of which inspect `.status`:
@@ -90,14 +90,14 @@ holds. If any drifts, re-read the surrounding function before editing.
      at `:8` (`... _noop_executor`), also change.
 8. No existing exception base in the agents package (so the new error is
    module-local):
-   ```
+   ```text
    make grep Q='class.*Error' PATH_='src/general_ludd/agents'
    ```
    Expect: no `Exception` subclass. `ExecutorNotConfiguredError` will be defined
    in `dispatcher.py`.
 9. Enumerate tests that build a dispatcher with **no** executor (they rely on the
    silent-noop default and may change behavior once it fails closed):
-   ```
+   ```text
    make grep Q='AgentDispatcher(' PATH_='tests'
    ```
    There are ~44 such construction sites. **Two traps when triaging them:**
@@ -954,4 +954,5 @@ with a failing-test-first sub-step and a `| evidence:` line in `TASKS.md`:
   `""` when unconfigured), `/readyz` status code, the reload response body, the
   worker `/jobs/return-review` status code, and `task_return.status` transitions
   on the fallback review paths. Verify each with the named tests before the gate.
+```text
 ```

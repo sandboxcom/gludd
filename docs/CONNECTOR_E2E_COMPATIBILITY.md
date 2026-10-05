@@ -68,4 +68,3 @@ and the [Grafana Pyroscope client documentation](https://grafana.com/docs/pyrosc
 4. Run the focused connector batch before the full shard runner.
 5. Record any new provider incompatibility as a task and update this note with
    the failing contract and mitigation.
-

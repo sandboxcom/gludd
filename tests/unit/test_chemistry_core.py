@@ -9,30 +9,15 @@ Covers the top 5 capabilities from
 * CHEM-007 Stoichiometry (units, molar mass, yield, uncertainty)
 * CHEM-008 Safety and compatibility (risk tier, incompatibilities)
 
-The module is loaded by file path (mirroring ``test_governance_bodies.py``) so
-the suite is robust to ``sys.path`` variations inside worktrees.
+The module is imported through its installed package path so coverage and
+runtime import behavior match the application boundary.
 """
 
 from __future__ import annotations
 
-import importlib.util
 import math
-import os
 
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-_CORE_PATH = os.path.join(_PROJECT_ROOT, "src", "general_ludd", "chemistry", "core.py")
-
-
-def _load_core():
-    spec = importlib.util.spec_from_file_location("chemistry_core_under_test", _CORE_PATH)
-    assert spec is not None and spec.loader is not None, "chemistry core spec failed"
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-core = _load_core()
-
+from general_ludd.chemistry import core
 
 # ---------------------------------------------------------------------------
 # CHEM-001 Expert router

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -55,6 +56,9 @@ class _FakeHttpClient:
         if url not in self._responses:
             raise AssertionError(f"unexpected GET {url!r}")
         return self._responses[url]
+
+    def close(self) -> None:
+        self.closed = getattr(self, "closed", 0) + 1
 
 
 class _FailingHttpClient:
@@ -126,6 +130,22 @@ class TestConstruction:
         assert ct.get_balance_threshold("openai") == pytest.approx(99.0)
         # unmodified services still fall back to default
         assert ct.get_balance_threshold("zai") == pytest.approx(DEFAULT_THRESHOLDS["zai"])
+
+    def test_close_releases_only_internally_created_client(self, monkeypatch) -> None:
+        internal = _FakeHttpClient({})
+        monkeypatch.setattr(httpx, "Client", lambda **_kwargs: internal)
+        owned = CreditTracker()
+        assert owned._get_http() is internal
+
+        owned.close()
+        owned.close()
+
+        assert internal.closed == 1
+
+        external = _FakeHttpClient({})
+        unowned = CreditTracker(http_client=external)
+        unowned.close()
+        assert not hasattr(external, "closed")
 
 
 # ──────────────────────────────────────────────────────────────────────────

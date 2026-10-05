@@ -348,11 +348,11 @@ def detect_css_framework(css_content: str) -> str | None:
         return "foundation"
     if re.search(r"\b(uk-|uk-hidden|uk-visible)", cleaned):
         return "uikit"
-    if re.search(r"\b(mui|MuiButton|makeStyles)\b", cleaned):
+    if re.search(r"\b(mui|muibutton|makestyles)\b", cleaned):
         return "mui"
-    if re.search(r"\b(chakra|ChakraProvider|useColorMode)\b", cleaned):
+    if re.search(r"\b(chakra|chakraprovider|usecolormode)\b", cleaned):
         return "chakra"
-    if re.search(r"\b(ant-btn|ant-input|AntdProvider)\b", cleaned):
+    if re.search(r"\b(ant-btn|ant-input|antdprovider)\b", cleaned):
         return "antd"
     return None
 
@@ -555,7 +555,10 @@ def parse_graphql_schema(schema_sdl: str) -> dict[str, Any]:
                 name = m.group(2)
                 current = {"name": name, "fields": []}
                 if kind == "type" and (name in ("Query", "Mutation")):
-                    current_category = name.lower() + "s"
+                    current_category = {
+                        "Query": "queries",
+                        "Mutation": "mutations",
+                    }[name]
                 elif kind == "enum":
                     current_category = "enums"
                 elif kind == "input":
@@ -575,7 +578,11 @@ def parse_graphql_schema(schema_sdl: str) -> dict[str, Any]:
             m = re.match(r"extend\s+type\s+(\w+)", stripped)
             if m:
                 current = {"name": m.group(1), "fields": []}
-                current_category = "types" if m.group(1) not in ("Query", "Mutation") else m.group(1).lower() + "s"
+                current_category = (
+                    "types"
+                    if m.group(1) not in ("Query", "Mutation")
+                    else {"Query": "queries", "Mutation": "mutations"}[m.group(1)]
+                )
                 brace_depth = stripped.count("{") - stripped.count("}")
                 continue
         else:

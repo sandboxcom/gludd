@@ -6,7 +6,7 @@ and hardware-backed signing via HSM integration.
 
 ## Architecture Overview
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────┐
 │                        Agent / Playbook                          │
 │  (FQCN: general_ludd.security.ssl_cert / general_ludd.security.hsm_*) │

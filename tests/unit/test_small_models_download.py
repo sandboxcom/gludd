@@ -200,6 +200,43 @@ class TestDownloadFallback:
         assert result.source == DownloadSource.GGUF
 
 
+class TestDownloadPeakScheduling:
+    def test_unknown_size_skips_peak_scheduling(self) -> None:
+        dl = ModelDownloader(cache_dir="/tmp/test-cache")
+        downloaded = DownloadedModel(model_id="org/unknown", local_path="/tmp/unknown")
+
+        with (
+            patch("general_ludd.small_models.cost.should_defer_download") as mock_defer,
+            patch.object(dl, "download_multi_source", return_value=None),
+            patch.object(dl, "download_huggingface", return_value=downloaded),
+        ):
+            result = dl.download("org/unknown", verify_hash=False)
+
+        assert result is downloaded
+        mock_defer.assert_not_called()
+
+    def test_known_size_checks_peak_scheduling(self) -> None:
+        dl = ModelDownloader(cache_dir="/tmp/test-cache")
+        downloaded = DownloadedModel(model_id="org/known", local_path="/tmp/known")
+
+        with (
+            patch(
+                "general_ludd.small_models.cost.should_defer_download",
+                return_value={"defer": False},
+            ) as mock_defer,
+            patch.object(dl, "download_multi_source", return_value=None),
+            patch.object(dl, "download_huggingface", return_value=downloaded),
+        ):
+            result = dl.download(
+                "org/known",
+                verify_hash=False,
+                estimated_size_gb=2.5,
+            )
+
+        assert result is downloaded
+        mock_defer.assert_called_once_with(2.5, threshold_gb=1.0)
+
+
 class TestDownloadMultiSourceEdgeCases:
     def _downloader(self) -> ModelDownloader:
         return ModelDownloader(cache_dir="/tmp/test-cache")

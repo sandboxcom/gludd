@@ -33,12 +33,12 @@ def read_depth_config(path: str) -> tuple[int, str]:
 
 def check_subagent_depth_only() -> int:
     """Check enforce-depth.ts does NOT bypass subagents in code (it's depth-only)."""
-    with open(PLUGIN_PATH) as f:
-        lines = [l for l in f if not l.strip().startswith("//")]
+    with open(PLUGIN_PATH) as plugin_file:
+        lines = [line for line in plugin_file if not line.strip().startswith("//")]
     content = "\n".join(lines)
     if "isSubagent()" in content or "OPENCODE_SUBAGENT" in content:
-        print("WARN: enforce-depth.ts code contains subagent bypass — depth check may be skipped in subagents")
-        return 0
+        print("FAIL: enforce-depth.ts contains a subagent bypass — depth checks must run in delegated contexts")
+        return 1
     print("OK: enforce-depth.ts has NO subagent bypass (uses OPENCODE_DEPTH, fires in subagents intentionally)")
     return 0
 
@@ -51,10 +51,10 @@ def main() -> int:
         print("3x dispatch (main→agent→subagent→subagent) requires MAX_DEPTH >= 3")
         return 1
     print(
-        f"OK: 3x dispatch supported (max depth {effective}, subagent at depth {effective} blocked from further dispatch)"
+        "OK: 3x dispatch supported "
+        f"(max depth {effective}, subagent at depth {effective} blocked from further dispatch)"
     )
-    check_subagent_depth_only()
-    return 0
+    return check_subagent_depth_only()
 
 
 if __name__ == "__main__":

@@ -1,1 +1,1 @@
----
+"""Chemistry collection plugin namespace."""

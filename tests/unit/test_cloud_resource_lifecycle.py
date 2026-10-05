@@ -16,6 +16,15 @@ from general_ludd.cloud.resource_lifecycle import (
     TrackedResource,
     get_lifecycle,
 )
+from general_ludd.schemas.project_identity import ProjectResourceIdentity
+
+
+def test_cloud_lifecycle_uses_the_core_project_identity() -> None:
+    assert ResourceLifecycleManager._key("project-a", "azure", "shared-id") == ProjectResourceIdentity(
+        "project-a",
+        "azure",
+        "shared-id",
+    )
 
 
 class TestTrackedResource:
@@ -92,13 +101,14 @@ class TestResourceLifecycleManagerRegistration:
         mgr = ResourceLifecycleManager()
         mgr.deregister("never-registered")
 
-    def test_register_overwrite_reuses_key(self):
+    def test_exact_identity_reregister_reuses_key(self):
         mgr = ResourceLifecycleManager()
         mgr.register("azure", "inst-1", "/tmp/d1")
-        mgr.register("aws", "inst-1", "/tmp/d2")
+        mgr.register("azure", "inst-1", "/tmp/d2")
         tracked = mgr.all_tracked()
         assert len(tracked) == 1
-        assert tracked[0].provider == "aws"
+        assert tracked[0].provider == "azure"
+        assert tracked[0].deploy_dir == "/tmp/d2"
 
 
 class TestResourceLifecycleManagerQueries:
@@ -453,6 +463,40 @@ class TestResourceLifecycleManagerSignalHandlers:
                     assert result is False
         finally:
             rl._signal_handlers_installed = saved
+
+    def test_partial_install_restores_the_first_runtime_handler(self):
+        """A failed SIGINT install must not strand Gludd's SIGTERM handler."""
+        import general_ludd.cloud.resource_lifecycle as rl
+
+        mgr = ResourceLifecycleManager()
+        previous_term = mock.Mock()
+        previous_int = mock.Mock()
+        installed = {
+            signal.SIGTERM: previous_term,
+            signal.SIGINT: previous_int,
+        }
+
+        def fake_signal(signum, handler):
+            if signum == signal.SIGINT and handler == mgr._handle_signal:
+                raise ValueError("forced partial install")
+            old = installed[signum]
+            installed[signum] = handler
+            return old
+
+        saved = rl._signal_handlers_installed
+        try:
+            rl._signal_handlers_installed = False
+            with (
+                mock.patch("signal.getsignal", side_effect=lambda signum: installed[signum]),
+                mock.patch("signal.signal", side_effect=fake_signal),
+            ):
+                assert rl._install_signal_handlers(mgr) is False
+        finally:
+            rl._signal_handlers_installed = saved
+
+        assert installed[signal.SIGTERM] is previous_term
+        assert installed[signal.SIGINT] is previous_int
+        assert mgr._previous_signal_handlers == {}
 
 
 class TestGetLifecycleSingleton:

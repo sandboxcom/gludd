@@ -1,3 +1,5 @@
+"""Pytest hooks for append-only, run-isolated progress trace events."""
+
 from __future__ import annotations
 
 import json
@@ -12,6 +14,7 @@ import pytest
 
 DEFAULT_TRACE_LOG = "/tmp/gludd-xdist-progress.log"
 _ACTIVE_TRACE_PATH: Path | None = None
+_ACTIVE_RUN_ID: str | None = None
 
 
 def _configured_trace_path() -> Path:
@@ -20,6 +23,14 @@ def _configured_trace_path() -> Path:
 
 def _trace_path() -> Path:
     return _ACTIVE_TRACE_PATH or _configured_trace_path()
+
+
+def _configured_run_id() -> str:
+    return os.environ.get("GLUDD_XDIST_TRACE_RUN_ID", "legacy")
+
+
+def _run_id() -> str:
+    return _ACTIVE_RUN_ID or _configured_run_id()
 
 
 def _worker_id() -> str:
@@ -52,10 +63,12 @@ def _is_controller(config: Any) -> bool:
 
 
 def write_event(event: str, *, nodeid: str | None = None, extra: dict[str, Any] | None = None) -> None:
+    """Append one resource-enriched event under the active observed run ID."""
     path = _trace_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     payload: dict[str, Any] = {
         "event": event,
+        "run_id": _run_id(),
         "timestamp": time.time(),
         "pid": os.getpid(),
         "ppid": os.getppid(),
@@ -72,9 +85,11 @@ def write_event(event: str, *, nodeid: str | None = None, extra: dict[str, Any] 
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:
-    global _ACTIVE_TRACE_PATH
+    """Pin run identity and initialize a controller-owned trace file."""
+    global _ACTIVE_RUN_ID, _ACTIVE_TRACE_PATH
     config = session.config
     _ACTIVE_TRACE_PATH = _configured_trace_path()
+    _ACTIVE_RUN_ID = _configured_run_id()
     path = _trace_path()
     if _is_controller(config) and os.environ.get("GLUDD_XDIST_TRACE_TRUNCATE") == "1":
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -83,12 +98,19 @@ def pytest_sessionstart(session: pytest.Session) -> None:
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Append a terminal event for a controller or worker session."""
     role = "controller" if _is_controller(session.config) else "worker"
     write_event("RUN_FINISH", extra={"exitstatus": exitstatus, "role": role})
 
 
+def pytest_collection_finish(session: pytest.Session) -> None:
+    """Record a bounded collection result without serializing every node ID."""
+    write_event("COLLECTION_FINISH", extra={"collected": len(session.items)})
+
+
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_protocol(item: pytest.Item, nextitem: pytest.Item | None) -> Any:
+    """Bracket each test protocol with durable start and finish events."""
     write_event("START", nodeid=item.nodeid)
     outcome = yield
     extra: dict[str, Any] = {"outcome": "done"}
@@ -99,6 +121,7 @@ def pytest_runtest_protocol(item: pytest.Item, nextitem: pytest.Item | None) -> 
 
 
 def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    """Persist bounded failure detail for each failed pytest phase."""
     if report.failed:
         write_event(
             "REPORT",

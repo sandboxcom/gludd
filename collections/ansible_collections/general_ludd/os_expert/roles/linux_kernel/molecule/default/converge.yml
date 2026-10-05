@@ -5,6 +5,6 @@
   tasks:
     - name: "Include linux_kernel"
       ansible.builtin.include_role:
-        name: "linux_kernel"
+        name: "general_ludd.os_expert.linux_kernel"
       vars:
         enable_git_push: false

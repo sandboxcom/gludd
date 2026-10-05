@@ -15,6 +15,8 @@ Every external boundary is mocked.
 from __future__ import annotations
 
 import importlib.util
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -24,7 +26,7 @@ import pytest
 
 ROOT = Path(__file__).parent.parent.parent
 MODULE_PATH = (
-    ROOT / "collections" / "ansible_collections" / "general_ludd" / "agent"
+    ROOT / "collections" / "ansible_collections" / "general_ludd" / "networking"
     / "plugins" / "modules" / "gludd_scapy.py"
 )
 
@@ -67,9 +69,13 @@ def _load_module() -> ModuleType:
     return mod
 
 
-def _patch_ansible_module(mod: ModuleType, fake: _FakeAnsibleModule) -> MagicMock:
-    patcher = patch.object(mod, "AnsibleModule", return_value=fake)
-    return patcher
+@contextmanager
+def _patch_ansible_module(
+    mod: ModuleType,
+    fake: _FakeAnsibleModule,
+) -> Iterator[MagicMock]:
+    with patch.object(mod, "AnsibleModule", return_value=fake) as mocked:
+        yield mocked
 
 
 @pytest.fixture
@@ -113,6 +119,14 @@ class TestCheckMode:
 
 
 class TestErrorCases:
+    def test_real_adapter_contract_is_loadable(self) -> None:
+        mod = _load_module()
+
+        adapter = mod._get_adapter()
+
+        assert adapter is not None
+        assert callable(adapter.craft_packet)
+
     def test_adapter_unavailable_returns_error(self) -> None:
         mod = _load_module()
         fake = _FakeAnsibleModule(
@@ -178,6 +192,7 @@ class TestReadOnlyActions:
         assert fake.exited is not None
         assert fake.exited.get("changed") is False
         assert "layers" in str(fake.exited.get("output", {})).lower()
+        mock_adapter.dissect_packet.assert_called_once_with(bytes.fromhex("ffff"))
 
     def test_dissect_packet_requires_fields(self, mock_adapter: MagicMock) -> None:
         mod = _load_module()
@@ -214,13 +229,13 @@ class TestMutatingActions:
         )
 
     def test_send_packet_returns_changed_true(self, mock_adapter: MagicMock) -> None:
+        packet = {"protocols": ["Ether", "IP"], "fields": {"IP": {"dst": "8.8.8.8"}}}
         mod = _load_module()
         fake = _FakeAnsibleModule(
             params={
                 **_BASE_PARAMS,
                 "action": "send_packet",
-                "protocol_stack": ["Ether", "IP"],
-                "packet_fields": {},
+                "packets": [packet],
                 "interface": "enp0s1",
                 "count": 5,
             },
@@ -231,9 +246,7 @@ class TestMutatingActions:
 
         assert fake.exited is not None
         assert fake.exited.get("changed") is True
-        mock_adapter.send_packet.assert_called_once_with(
-            ["Ether", "IP"], {}, "enp0s1", 5
-        )
+        mock_adapter.send_packet.assert_called_once_with(packet, "enp0s1", 5)
 
     def test_sniff_packets_passes_interface_count_timeout(self, mock_adapter: MagicMock) -> None:
         mod = _load_module()
@@ -252,7 +265,7 @@ class TestMutatingActions:
 
         assert fake.exited is not None
         assert fake.exited.get("changed") is True
-        mock_adapter.sniff_packets.assert_called_once_with(interface="enp0s1", count=10, timeout=15)
+        mock_adapter.sniff_packets.assert_called_once_with("", count=10, timeout=15)
 
     def test_write_pcap_returns_changed_true(self, mock_adapter: MagicMock) -> None:
         mod = _load_module()
@@ -270,7 +283,9 @@ class TestMutatingActions:
 
         assert fake.exited is not None
         assert fake.exited.get("changed") is True
-        mock_adapter.write_pcap.assert_called_once_with("/tmp/out.pcap", [{"src": "1.2.3.4"}])
+        args = mock_adapter.write_pcap.call_args.args
+        assert args[1] == "/tmp/out.pcap"
+        assert args[0][0].src_ip == "1.2.3.4"
 
     def test_write_pcap_requires_path_and_packets(self, mock_adapter: MagicMock) -> None:
         mod = _load_module()

@@ -5,6 +5,6 @@
   tasks:
     - name: "Include android_diagnose"
       ansible.builtin.include_role:
-        name: "android_diagnose"
+        name: "general_ludd.os_expert.android_diagnose"
       vars:
         enable_git_push: false

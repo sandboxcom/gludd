@@ -54,6 +54,7 @@ class Transport(Protocol):
         body: bytes | None = None,
         timeout: float = _DEFAULT_TIMEOUT,
     ) -> tuple[int, str]:
+        """Issue a request and return ``(status_code, body_text)``."""
         ...
 
 
@@ -79,7 +80,14 @@ class _CallableTransport:
         self._fn = cast("Callable[..., object]", fn)
 
     def request(self, method: str, url: str, **kwargs: object) -> tuple[int, str]:
-        result = self._fn(method, url, **kwargs)
+        call_kwargs = dict(kwargs)
+        body = call_kwargs.pop("body", None)
+        if isinstance(body, (bytes, bytearray)):
+            try:
+                call_kwargs["json"] = json.loads(body.decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                call_kwargs["body"] = body
+        result = self._fn(method, url, **call_kwargs)
         if isinstance(result, tuple) and len(result) == 2:
             status, body = result
             return int(status), body if isinstance(body, str) else json.dumps(body)
@@ -133,16 +141,13 @@ class OpenTsdbSource:
     KIND = "metrics"
 
     def __init__(self, config: dict[str, object], transport: Transport | None = None) -> None:
+        """Build the source from connector config and select the transport."""
         self.config: dict[str, object] = dict(config or {})
         self.name: str = str(self.config.get("name", "opentsdb"))
         self.allow_private: bool = bool(self.config.get("allow_private", False))
-        self.base_url: str = _guard_base_url(
-            str(self.config.get("base_url", "")), self.allow_private
-        )
+        self.base_url: str = _guard_base_url(str(self.config.get("base_url", "")), self.allow_private)
         self.timeout: float = float(cast("float | int | str", self.config.get("timeout", _DEFAULT_TIMEOUT)))
-        self.default_aggregator: str = str(
-            self.config.get("aggregator", _DEFAULT_AGGREGATOR)
-        )
+        self.default_aggregator: str = str(self.config.get("aggregator", _DEFAULT_AGGREGATOR))
         self._transport: Transport = (
             _CallableTransport(transport)
             if callable(transport) and not hasattr(transport, "request")
@@ -164,9 +169,7 @@ class OpenTsdbSource:
     def _headers(self) -> dict[str, str]:
         headers: dict[str, str] = {"Content-Type": "application/json"}
         if self._username is not None and self._password is not None:
-            token = base64.b64encode(
-                f"{self._username}:{self._password}".encode()
-            ).decode("ascii")
+            token = base64.b64encode(f"{self._username}:{self._password}".encode()).decode("ascii")
             headers["Authorization"] = f"Basic {token}"
         return headers
 
@@ -200,9 +203,7 @@ class OpenTsdbSource:
     def _post_query(self, body: dict[str, object]) -> tuple[int, str]:
         url = f"{self.base_url}/api/query"
         payload = json.dumps(body).encode("utf-8")
-        return self._transport.request(
-            "POST", url, headers=self._headers(), body=payload, timeout=self.timeout
-        )
+        return self._transport.request("POST", url, headers=self._headers(), body=payload, timeout=self.timeout)
 
     def _records_from_results(self, results: list[object]) -> list[dict[str, object]]:
         records: list[dict[str, object]] = []

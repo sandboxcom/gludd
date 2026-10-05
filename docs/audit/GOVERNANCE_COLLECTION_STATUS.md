@@ -80,7 +80,7 @@ parametrized cases are counted.
 
 ## 3. Collection Structure
 
-```
+```text
 collections/ansible_collections/general_ludd/governance/
   galaxy.yml                    Collection manifest (namespace, name, version, deps)
   README.md                     Collection overview
@@ -114,7 +114,7 @@ collections/ansible_collections/general_ludd/governance/
 
 ### Python Application Layer
 
-```
+```text
 src/general_ludd/governance/
   __init__.py                   Re-exports 14 getter functions from loader
   loader.py                     Dynamic importlib loader with process-level cache

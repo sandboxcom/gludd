@@ -138,6 +138,7 @@ class TestModelPerformanceRouterDeep:
         repo = MagicMock()
         repo.get_best_model = AsyncMock(return_value=overrides.get("best_model"))
         repo.get_ranking = AsyncMock(return_value=overrides.get("ranking", []))
+        repo.get_summary = AsyncMock(return_value=overrides.get("summary", []))
         return repo
 
     def test_select_model_with_repo_returns_historical_best(self) -> None:
@@ -199,6 +200,90 @@ class TestModelPerformanceRouterDeep:
         result = asyncio.run(router.select_model("bug_fix"))
         assert result["fallback"] is True
         assert result["reason"] == "no_historical_data"
+
+    def test_select_model_cross_task_reuse_when_task_unknown(self) -> None:
+        """A task with no local history must still use the weight DB: the
+        model that performed best on OTHER tasks wins the cross-task pick."""
+        repo = self._mock_repo(
+            best_model=None,
+            ranking=[],
+            summary=[
+                {
+                    "service": "local",
+                    "task_type": "local_factoid",
+                    "model_name": "qwen-0.5b",
+                    "total_calls": 10,
+                    "successful_calls": 9,
+                    "success_rate": 0.9,
+                    "total_cost_usd": 0.05,
+                    "avg_duration_ms": 120.0,
+                },
+                {
+                    "service": "local",
+                    "task_type": "local_factoid",
+                    "model_name": "qwen-0.5b-bad",
+                    "total_calls": 10,
+                    "successful_calls": 1,
+                    "success_rate": 0.1,
+                    "total_cost_usd": 1.0,
+                    "avg_duration_ms": 300.0,
+                },
+            ],
+        )
+        router = ModelPerformanceRouter(perf_repo=repo)
+        result = asyncio.run(router.select_model("never_seen_task"))
+        assert result["fallback"] is False
+        assert result["reason"] == "cross_task_reuse"
+        assert result["model_name"] == "qwen-0.5b"
+        assert result["service"] == "local"
+
+    def test_select_model_cross_task_empty_summary_falls_back(self) -> None:
+        repo = self._mock_repo(best_model=None, ranking=[], summary=[])
+        router = ModelPerformanceRouter(perf_repo=repo)
+        result = asyncio.run(router.select_model("never_seen_task"))
+        assert result["fallback"] is True
+        assert result["reason"] == "no_historical_data"
+
+    def test_get_global_rankings_aggregates_across_tasks(self) -> None:
+        repo = self._mock_repo(
+            summary=[
+                {
+                    "service": "local",
+                    "task_type": "task_a",
+                    "model_name": "m1",
+                    "total_calls": 8,
+                    "successful_calls": 8,
+                    "success_rate": 1.0,
+                    "total_cost_usd": 0.4,
+                    "avg_duration_ms": 100.0,
+                },
+                {
+                    "service": "local",
+                    "task_type": "task_b",
+                    "model_name": "m1",
+                    "total_calls": 2,
+                    "successful_calls": 2,
+                    "success_rate": 1.0,
+                    "total_cost_usd": 0.1,
+                    "avg_duration_ms": 100.0,
+                },
+                {
+                    "service": "local",
+                    "task_type": "task_a",
+                    "model_name": "m2",
+                    "total_calls": 10,
+                    "successful_calls": 0,
+                    "success_rate": 0.0,
+                    "total_cost_usd": 5.0,
+                    "avg_duration_ms": 900.0,
+                },
+            ],
+        )
+        router = ModelPerformanceRouter(perf_repo=repo)
+        ranking = asyncio.run(router.get_global_rankings(strategy="quality"))
+        assert ranking, "global rankings must aggregate per-model across tasks"
+        assert ranking[0]["model_name"] == "m1"
+        assert ranking[0]["sample_count"] == 10
 
     def test_select_model_repo_get_best_throws_falls_through(self) -> None:
         from unittest.mock import AsyncMock

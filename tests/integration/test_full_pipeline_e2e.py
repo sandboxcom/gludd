@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from general_ludd.db.models import Base, TaskDecisionModel, TaskReturnModel
+from general_ludd.db.models import Base, ProjectModel, TaskDecisionModel, TaskReturnModel
 from general_ludd.db.repository import TodoRepository
 from general_ludd.event_loop.loop import EventLoop
 from general_ludd.review.reviewer import ReturnReviewer
@@ -61,6 +61,9 @@ async def _create_test_infra():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        session.add(ProjectModel(project_id=_PROJECT_ID, name="Full pipeline E2E"))
+        await session.commit()
 
     from general_ludd.routers.todos import register as reg_todos
 

@@ -219,6 +219,13 @@ class TestKeyAndIVValidation:
         with pytest.raises(CBCError):
             decrypt(key, ciphertext)
 
+    def test_legacy_unauthenticated_frame_is_rejected(self) -> None:
+        key = secrets.token_bytes(32)
+        authenticated = encrypt(key, b"A" * 64, iv=bytes(16))
+        legacy_iv_and_ciphertext = authenticated[6:-32]
+        with pytest.raises(CBCError, match="Integrity verification failed"):
+            decrypt(key, legacy_iv_and_ciphertext)
+
 
 class TestTamperDetection:
     def test_wrong_key_fails(self) -> None:
@@ -251,6 +258,27 @@ class TestTamperDetection:
         with pytest.raises(CBCError):
             decrypt(key, bytes(tampered))
 
+    def test_version_header_tamper_fails_before_decryption(self) -> None:
+        key = secrets.token_bytes(32)
+        tampered = bytearray(encrypt(key, b"authenticated"))
+        tampered[0] ^= 0x01
+        with pytest.raises(CBCError, match="Integrity verification failed"):
+            decrypt(key, bytes(tampered))
+
+    def test_padding_malleability_cannot_forge_valid_frame(self) -> None:
+        """Authenticate CBC so a forged valid PKCS#7 suffix is still rejected."""
+        key = bytes(range(32))
+        plaintext = b"hosted Python 3.11 integrity regression"
+        ciphertext = encrypt(key, plaintext, iv=bytes(16))
+        original_padding = 16 - (len(plaintext) % 16)
+        tampered = bytearray(ciphertext)
+        # HMAC-SHA256 is 32 bytes; the preceding two CBC blocks demonstrate
+        # the classic chosen-ciphertext transformation from padding N to 1.
+        tampered[-49] ^= original_padding ^ 1
+
+        with pytest.raises(CBCError):
+            decrypt(key, bytes(tampered))
+
 
 class TestDeterminismAndUniqueness:
     def test_same_key_iv_same_output(self) -> None:
@@ -278,7 +306,8 @@ class TestDeterminismAndUniqueness:
         for size in range(1, 33):
             plaintext = b"A" * size
             c = encrypt(key, plaintext)
-            assert len(c) == 16 + ((size // 16) + 1) * 16
+            authenticated_frame_overhead = 6 + 16 + 32
+            assert len(c) == authenticated_frame_overhead + ((size // 16) + 1) * 16
 
 
 class TestPaddingOracleResistance:

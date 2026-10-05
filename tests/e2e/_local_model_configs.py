@@ -130,7 +130,7 @@ _MODELS: list[E2EModelEntry] = [
         category="general",
         context_size=32768,
         ci_safe=True,
-        aliases=("qwen-0.5b",),
+        aliases=("qwen-0.5b", "Qwen2.5-0.5B-Instruct"),
     ),
     E2EModelEntry(
         name="SmolLM2-360M",
@@ -297,6 +297,14 @@ def _resolve(name_or_alias: str) -> E2EModelEntry | None:
     return _MODEL_BY_NAME.get(name_or_alias) or _MODEL_BY_ALIAS.get(name_or_alias.lower())
 
 
+def require_model(name_or_alias: str) -> E2EModelEntry:
+    """Resolve one registry identity, failing closed when it is unknown."""
+    resolved = _resolve(name_or_alias)
+    if resolved is None:
+        raise ValueError(f"Unknown local model: {name_or_alias}")
+    return resolved
+
+
 def _apply_filters(models: list[E2EModelEntry]) -> list[E2EModelEntry]:
     raw = os.environ.get("LOCAL_MODEL_FILTER", "").strip()
     if not raw:
@@ -328,6 +336,20 @@ def list_models(
     if ci_safe is not None:
         models = [m for m in models if m.ci_safe == ci_safe]
     return _apply_filters(models)
+
+
+def select_models(*, ci_safe: bool, target: str = "") -> list[E2EModelEntry]:
+    """Select a bounded pipeline model set and reject unknown identities."""
+    models = list_models(ci_safe=True) if ci_safe else list_models()
+    if not target:
+        return models
+
+    resolved = require_model(target)
+
+    selected = [model for model in models if model.name == resolved.name]
+    if not selected:
+        raise ValueError(f"Local model is excluded by the active filters: {target}")
+    return selected
 
 
 def get_all_configs() -> list[LocalModelConfig]:

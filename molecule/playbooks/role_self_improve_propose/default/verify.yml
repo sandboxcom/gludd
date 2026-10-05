@@ -49,12 +49,6 @@
           git worktree at {{ proposal.candidate_worktree }}
 
     # ---- cleanup ----
-    - name: Stop mock daemon
-      ansible.builtin.shell:
-        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
-      changed_when: false
-      failed_when: false
-
     - name: Remove throwaway repo + candidate worktree + artifacts
       ansible.builtin.file:
         path: "{{ item }}"

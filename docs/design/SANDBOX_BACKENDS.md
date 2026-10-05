@@ -7,7 +7,7 @@ enforcing what the spec claims.
 
 ## Architecture
 
-```
+```text
                     ┌────────────────────────┐
                     │   PermissionSpec       │
                     │   (capabilities,       │

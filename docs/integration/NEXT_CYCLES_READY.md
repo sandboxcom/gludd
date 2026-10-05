@@ -15,16 +15,16 @@ per `make ship` — never two gates concurrently. Order chosen lowest-risk first
   - `"fs_read__ok"` → `"fs_DOT_read__ok"` (test_name_with_dot_is_normalised)
 - Verified: no other src/template references the old dispatch__ key form.
 
-### markdown_todo Fix 2B — `-->` escape + dedup
+### markdown_todo Fix 2B — `--&gt;` escape + dedup
 - `src/general_ludd/issue_sources/markdown_todo.py` update_status:
   - old:
-    ```
+    ```text
     if comment:
         marker = f" <!--gludd:{comment}-->"
         if marker.strip() not in text:
             text = f"{text}{marker}"
     ```
-  - new: escape `comment.replace("-->", "--&gt;")`, build marker from the escaped
+  - new: escape `comment.replace("--&gt;", "--&gt;")`, build marker from the escaped
     comment, dedup on the FULL marker (`if marker not in text`).
 - New test `tests/unit/test_markdown_todo.py` drafted (escape + double-call dedup).
   NOTE: reconcile the draft's dedup assertion with the final marker spacing.

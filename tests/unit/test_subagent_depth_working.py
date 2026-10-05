@@ -61,6 +61,7 @@ if (result) {{
         script_path = f.name
 
     env = os.environ.copy()
+    env["GLUDD_HOT_MODULE_PREFIX"] = f"/tmp/gludd-depth-chain-hot-{Path(script_path).stem}-"
     env["OPENCODE_DEPTH"] = str(depth)
     env["OPENCODE_SUBAGENT"] = "1" if is_subagent else "0"
     if not enforce:
@@ -68,6 +69,8 @@ if (result) {{
     else:
         env.pop("GLUDD_DEPTH_ENFORCE", None)
     env["GLUDD_MAX_DEPTH"] = str(max_depth)
+    env["GLUDD_DISENGAGE_PATH"] = f"/tmp/gludd-depth-chain-disengage-{Path(script_path).stem}"
+    env["GLUDD_DISENGAGE_NEXT_PATH"] = f"/tmp/gludd-depth-chain-next-{Path(script_path).stem}"
 
     try:
         proc = subprocess.run(

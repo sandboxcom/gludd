@@ -125,6 +125,7 @@ _HARNESS_ERROR_SIGNATURES = (
 #   GLUDD_FORCE_DELEGATE_STATE     enforce-delegate.ts  (FORCE_DELEGATE_STATE)
 #   GLUDD_MODEL_UTIL_STATE         enforce-delegate.ts  (MODEL_UTIL_STATE)
 #   GLUDD_READ_GRIND_FILE          enforce-delegate.ts  (READ_GRIND_FILE)
+#   GLUDD_DISPATCH_DEDUP_STATE     enforce-delegate.ts  (DISPATCH_DEDUP_STATE)
 #   GLUDD_SONNET_TARGET_CONFIG     enforce-delegate.ts  (config file, shadowed by
 #                                                        GLUDD_SONNET_TARGET_SHARE)
 #   GLUDD_MAIN_MODEL_FILE          enforce-delegate.ts  (main-model marker file)
@@ -142,6 +143,7 @@ STATE_FILE_ENV_VARS = [
     "GLUDD_FORCE_DELEGATE_STATE",
     "GLUDD_MODEL_UTIL_STATE",
     "GLUDD_READ_GRIND_FILE",
+    "GLUDD_DISPATCH_DEDUP_STATE",
     "GLUDD_SONNET_TARGET_CONFIG",
     "GLUDD_MAIN_MODEL_FILE",
     "GLUDD_STOP_TEXT_COMPLETE_COUNT",

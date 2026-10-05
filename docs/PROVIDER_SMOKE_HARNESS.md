@@ -36,7 +36,7 @@ keys, endpoint IDs, and budget values.
 
 When `GLUDD_INGEST_URL` is set, the harness posts an event and a log record to
 `/ingest/webhook` using the dedicated ingest token. This is intentionally
-separate from the administrative `GLUDD_PSK`; missing telemetry credentials is
+separate from the administrative `GLUDD_AUTH_PSK`; missing telemetry credentials is
 reported as a configuration error rather than silently sending unauthenticated
 data. The request body is a JSON array containing two independent records so
 Gludd's webhook parser stores the provider event and completion log separately.

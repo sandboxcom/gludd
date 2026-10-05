@@ -23,6 +23,76 @@ corresponding research date.
 | A mutable builder tag and live Debian mirrors produce different binaries from the same commit, while the slim base retains package updates. | Docker recommends [pinning base images by digest](https://docs.docker.com/build/building/best-practices/#pin-base-image-versions), and Astral documents [digest-pinned uv images](https://docs.astral.sh/uv/guides/integration/docker/#installing-uv). Debian provides [timestamped package snapshots](https://snapshot.debian.org/) for reproducible repository state. Users have reported long-lived uncertainty around when official image tags pick up base-package changes in [docker-library/official-images#12277](https://github.com/docker-library/official-images/issues/12277), opened 2022-01-20, and around stale packages in slim Python images in [docker-library/python#699](https://github.com/docker-library/python/issues/699), opened 2022-08-01. | Pin the uv Bookworm image by OCI digest and both Debian repositories to one UTC snapshot. Run fail-closed `apt-get update`, repair the slim image's stale `bash-builtins` alternative, bootstrap the exact snapshot `apt-utils` package without a configuration-time notice, show the simulated before state, perform `dist-upgrade --no-remove`, install exact `binutils`, and verify `objdump`, `objcopy`, and both package versions. Require the after simulation to report zero pending packages. The build must use `uv sync --frozen` and print the installed tool version. |
 | PyInstaller writes a warning file but the build treats its existence—or an auditor failure followed by a successful copy—as success. | PyInstaller's [build-time warning documentation](https://pyinstaller.org/en/stable/when-things-go-wrong.html#build-time-messages) says many entries are legitimate conditional or platform imports, so a blanket zero-warning rule is inaccurate. Its v6.20.0 [module graph](https://github.com/pyinstaller/pyinstaller/blob/v6.20.0/PyInstaller/lib/modulegraph/modulegraph.py) distinguishes unresolved `MissingModule` nodes from hook-created `RuntimeModule` nodes, and the bundled [`six.moves` pre-safe-import hook](https://github.com/pyinstaller/pyinstaller/blob/v6.20.0/PyInstaller/hooks/pre_safe_import_module/hook-six.moves.py) deliberately creates the latter. A user report dating to 2014 shows how ignored missing-module output becomes a broken executable ([Stack Overflow](https://stackoverflow.com/questions/25733467/no-module-named-when-using-pyinstaller)); [PyInstaller issue #3495](https://github.com/pyinstaller/pyinstaller/issues/3495), opened 2018-05-12, records `six.moves` runtime records alongside actionable missing modules, and [issue #7719](https://github.com/pyinstaller/pyinstaller/issues/7719), opened 2023-05-21, records another actionable hidden-import failure. Environment-sensitive graphs are also long-lived: [discussion #9048](https://github.com/orgs/pyinstaller/discussions/9048), opened 2025-03-05, shows the same package becoming a `MissingModule` under a different Python environment, while [issue #5640](https://github.com/pyinstaller/pyinstaller/issues/5640), opened 2020-12-18, records target-architecture validation failures during the Apple Silicon transition. | Parse every Linux warning as an exact `(status, module, importer, flags)` edge. Reject a missing file, changed syntax, unknown or stale entries, every top-level or delayed-only project-owned missing edge, and every new project-owned missing edge. Permit only exact conditional/optional project edges whose category and upstream evidence are recorded in the Linux policy. Pin the normalized third-party/PyInstaller graph—and explicitly documented module-attribute false positives such as `pydantic.BaseModel`—with a deterministic SHA-256 for each canonical build architecture (`x86_64` and `aarch64`), so architecture-expected variation is reviewed while any edge or flag drift still fails. Reject aliases and an unpinned architecture in the policy; normalize runtime aliases only at the CLI boundary. Keep spec exclusions exact and count hook-provided runtime edges separately. The replayable `audit-linux-pyinstaller-warnings` target detects the current architecture and audits a retained report without rebuilding. Keep output container-local because Lima host shares can be read-only; capture the run status, copy the warning report from the stopped container on both pass and fail, publish the ELF only after status zero, then remove the container and source scratch. Runtime binary smoke tests remain mandatory. |
 
+## Beta.4 hosted-runtime follow-up
+
+On 2026-08-21, GHE run `32448548678` passed five of six Molecule shards but
+failed `binary_smoke_linux`: that hosted job selected Python 3.11 while the
+digest-pinned Linux release builder selected Python 3.12, producing a different
+normalized PyInstaller graph. This is the environment-sensitive behavior in
+PyInstaller discussion #9048 above, not evidence for admitting an unreviewed
+digest. The Molecule artifact smoke now derives the same Python minor contract
+as the release builder, and a structural test fails if those two runtimes drift.
+
+This is a ZDD workflow change: application runtime traffic and the external
+Ansible execution plane are unaffected, existing hosted shards continue in
+parallel, and the failed artifact shard is replaced only by its green rerun.
+Rollback must move the hosted Python minor and the digest-pinned builder image
+together; changing only one recreates an unreviewed graph. Resource use remains
+bounded to the existing six hosted jobs, and the exact warning digest continues
+to fail closed.
+
+The follow-up GHE run `32456865314` on 2026-08-21 then exposed the remaining
+patch-level drift: `actions/setup-python` resolved the floating `3.12` request
+to Python 3.12.14. All project-owned, excluded-controller, and runtime warning
+edges passed the exact audit; only the normalized third-party graph changed to
+SHA-256 `346aa57c…b5814`. The hosted job now pins Python 3.12.14, and that exact
+non-project graph is recorded as a reviewed x86_64 alternate beside the
+digest-pinned Bookworm builder graph. Unknown graphs still fail closed, and a
+structural regression prevents the hosted patch version or reviewed digest from
+floating independently. The six-shard topology, application traffic, and
+external Ansible execution plane are unchanged, so deployment remains ZDD.
+Rollback restores the previous hosted patch plus policy in one commit; no live
+daemon, model server, or build container is retained by this workflow.
+
+The same date's GHE Build and Release run `32448548722` exposed three independent
+packaging assumptions. The Windows ZIP step treated PowerShell's
+[`$LASTEXITCODE`](https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_automatic_variables#lastexitcode)
+as the status of `Compress-Archive`, even though that variable represents the
+last native program. The step now uses cmdlet-native terminating errors and an
+exact output-file assertion. The release container started its non-root process
+from `/app`, so relative application state resolved into an unwritable build
+directory; its final `WORKDIR` is now the owned `${APP_HOME}` while the foreground
+Gunicorn/Tini lifecycle and health smoke remain unchanged.
+
+The EE failure was a separate controller-runtime boundary issue. Current
+[Ansible Builder 3.x definition documentation](https://docs.ansible.com/projects/builder/en/latest/definition/)
+states that only RPM package managers are supported, documents the explicit
+`ansible_core`, `ansible_runner`, and `python_interpreter` keys, and defines
+`additional_build_files` as the mechanism for staging local inputs. Beta.4 now
+uses the published CentOS Stream 9 multi-platform index by immutable digest,
+installs Python 3.11 through `dnf`, declares Core and Runner once in the EE
+definition, builds the three exact Galaxy archives through one shared artifact
+tool, and stages those archives into the Builder context. A real namespaced Lima
+build completed before this contract was accepted; YAML validation alone is not
+release evidence.
+
+GHE also reported JavaScript-action runtime deprecations. Docker's
+[setup-buildx v4 release notes](https://github.com/docker/setup-buildx-action/releases/tag/v4.0.0)
+identify Node 24 and the required runner baseline. Practitioner report
+[actions/runner #4295](https://github.com/actions/runner/issues/4295), opened
+2026-03-12, shows that forcing old Node 20 actions to Node 24 can still emit a
+misleading end-of-job warning. The workflow therefore uses immutable SHAs from
+the current Node 24 Docker action lines instead of suppressing the warning.
+
+These repairs preserve ZDD: no running Gludd or Ansible job is mutated, each new
+image is built and health-checked beside any active digest, and publication
+remains downstream of all smokes. Rollback selects the prior container/EE digest
+and prior workflow commit, then drains the failed candidate. Local Docker work
+is restricted to the existing `gludd-docker` Lima VM, one EE build, three
+collection archives, and explicit `DOCKER_CONFIG`/`DOCKER_HOST` inputs; Gludd
+owns the build outputs, while the caller-owned Qwen process is outside this
+resource boundary.
+
 The release pipeline treats an absent, cancelled, superseded, malformed, or
 partially published result as failure. Only the exact tagged commit, a green
 required workflow, successful artifact downloads, and the repository's

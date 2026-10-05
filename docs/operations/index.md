@@ -42,16 +42,16 @@ gludd models router-status   # MUST list an active profile — empty means the d
 curl http://localhost:8000/healthz
 
 # Full status with facts
-curl -H "Authorization: Bearer $GLUDD_PSK" http://localhost:8000/api/facts
+curl -H "Authorization: Bearer $GLUDD_AUTH_PSK" http://localhost:8000/api/facts
 
 # Metrics export
-curl -H "Authorization: Bearer $GLUDD_PSK" http://localhost:8000/admin/metrics/export
+curl -H "Authorization: Bearer $GLUDD_AUTH_PSK" http://localhost:8000/admin/metrics/export
 ```
 
 ### Budget Monitoring
 ```bash
 # Check current spend
-curl -H "Authorization: Bearer $GLUDD_PSK" http://localhost:8000/api/metrics | jq '.budget'
+curl -H "Authorization: Bearer $GLUDD_AUTH_PSK" http://localhost:8000/api/metrics | jq '.budget'
 
 # Budget alerts are logged at warn/80% and error/100%
 ```

@@ -63,8 +63,14 @@ class TestSingleProjectPerTick:
             task_return_repo.claim_unreviewed.side_effect = _claim_unreviewed
 
             todo_repo = AsyncMock()
+            todo_repo.count_active.return_value = 0
+            todo_repo.recover_queued_legacy_self_improve.return_value = []
 
-            async def _claim_runnable(project_id=None, limit=10):
+            async def _claim_runnable(
+                project_id=None,
+                limit=10,
+                max_active=None,
+            ):
                 seen.append(project_id)
                 return []
 

@@ -1,0 +1,26 @@
+---
+galaxy_info:
+  role_name: execution_environment_bootstrap
+  author: General Ludd Team
+  description: Bootstrap a namespaced Podman builder and verified AWX execution environment
+  company: General Ludd
+  license: MIT
+  min_ansible_version: "2.19"
+  platforms:
+    - name: Fedora
+      versions: [all]
+    - name: EL
+      versions: ["9"]
+    - name: Debian
+      versions: [bookworm]
+    - name: Ubuntu
+      versions: [jammy, noble]
+    - name: macOS
+      versions: [all]
+  galaxy_tags:
+    - automation
+    - containers
+    - executionenvironment
+    - podman
+    - opentofu
+dependencies: []

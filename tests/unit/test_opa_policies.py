@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -19,9 +20,12 @@ from typing import Any
 
 import pytest
 
+from tests.terraform_test_support import skip_external_terraform_dependency
+
 _PROJECT = Path(__file__).resolve().parent.parent.parent
 _POLICIES = _PROJECT / "infra" / "terraform" / "policies"
 _FIXTURES = _PROJECT / "tests" / "fixtures" / "terraform"
+_TF_PLUGIN_CACHE = _PROJECT / "infra" / "terraform" / ".plugin-cache"
 
 
 # ---------------------------------------------------------------------------
@@ -167,26 +171,58 @@ def test_core_policies_do_not_block_compliant_stack(tmp_path: Path) -> None:
 
     stack = _VSPHERE_STACK
     (stack / "testing.auto.tfvars").write_text(_DUMMY_TFVARS, encoding="utf-8")
+    _TF_PLUGIN_CACHE.mkdir(parents=True, exist_ok=True)
+    terraform_env = os.environ.copy()
+    terraform_env["TF_PLUGIN_CACHE_DIR"] = str(_TF_PLUGIN_CACHE)
     try:
-        init = subprocess.run(
-            ["terraform", "init", "-backend=false", "-input=false"],
-            cwd=str(stack),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            init = subprocess.run(
+                [
+                    "terraform",
+                    "init",
+                    "-backend=false",
+                    "-input=false",
+                    "-no-color",
+                ],
+                cwd=str(stack),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60,
+                env=terraform_env,
+            )
+        except subprocess.TimeoutExpired as exc:
+            skip_external_terraform_dependency(
+                "terraform init timed out while the provider registry or "
+                f"shared cache was unavailable ({exc.timeout}s)"
+            )
         if init.returncode != 0:
-            pytest.skip(f"terraform init failed (no provider cache / offline):\n{init.stderr}")
+            skip_external_terraform_dependency(
+                f"terraform init failed (no provider cache / offline):\n{init.stderr}"
+            )
         plan_path = tmp_path / "vs.tfplan"
-        plan = subprocess.run(
-            ["terraform", "plan", f"-out={plan_path}", "-input=false"],
-            cwd=str(stack),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            plan = subprocess.run(
+                [
+                    "terraform",
+                    "plan",
+                    f"-out={plan_path}",
+                    "-input=false",
+                    "-no-color",
+                ],
+                cwd=str(stack),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60,
+                env=terraform_env,
+            )
+        except subprocess.TimeoutExpired as exc:
+            skip_external_terraform_dependency(
+                f"terraform plan timed out after {exc.timeout}s"
+            )
         if plan.returncode != 0:
-            pytest.skip(
+            skip_external_terraform_dependency(
                 f"terraform plan failed (no vSphere credentials in CI):\n{plan.stderr}"
             )
         json_path = tmp_path / "vs.tfplan.json"
@@ -195,6 +231,8 @@ def test_core_policies_do_not_block_compliant_stack(tmp_path: Path) -> None:
             capture_output=True,
             text=True,
             check=True,
+            timeout=60,
+            env=terraform_env,
         )
         json_path.write_text(show.stdout, encoding="utf-8")
     finally:
@@ -253,6 +291,29 @@ def _run_opa_test() -> subprocess.CompletedProcess[str]:
     )
 
 
+def _opa_pass_markers(output: str) -> set[str]:
+    """Extract passed rule names from both supported OPA verbose formats."""
+    markers: set[str] = set()
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if line.startswith("PASS: data."):
+            markers.add(line.removeprefix("PASS: ").split()[0])
+        elif line.startswith("data.") and ": PASS" in line:
+            markers.add(line.split(": PASS", maxsplit=1)[0])
+    return markers
+
+
+@pytest.mark.parametrize(
+    ("output", "expected"),
+    [
+        ("PASS: data.example.test_rule\n", "data.example.test_rule"),
+        ("data.example.test_rule: PASS (1.2ms)\n", "data.example.test_rule"),
+    ],
+)
+def test_opa_pass_markers_supports_verbose_formats(output: str, expected: str) -> None:
+    assert _opa_pass_markers(output) == {expected}
+
+
 def test_opa_all_policies_pass() -> None:
     """opa test config/opa/ must exit 0 with all tests passing."""
     if not _opa_available():
@@ -268,6 +329,7 @@ def test_opa_config_policy_tests_pass() -> None:
     if not _opa_available():
         pytest.skip("opa not installed")
     proc = _run_opa_test()
+    passed = _opa_pass_markers(proc.stdout)
     for marker in [
         "data.hottentot.config.test_guardrail_layers_valid",
         "data.hottentot.config.test_tdd_enforced",
@@ -275,7 +337,7 @@ def test_opa_config_policy_tests_pass() -> None:
         "data.hottentot.config.test_command_patterns_valid",
         "data.hottentot.config.test_stop_conditions_valid",
     ]:
-        assert f"PASS: {marker}" in proc.stdout, (
+        assert marker in passed, (
             f"Expected PASS for {marker} not in:\n{proc.stdout}"
         )
 
@@ -285,6 +347,7 @@ def test_opa_terraform_policy_tests_pass() -> None:
     if not _opa_available():
         pytest.skip("opa not installed")
     proc = _run_opa_test()
+    passed = _opa_pass_markers(proc.stdout)
     terraform_tests = [
         "data.terraform_test.test_deny_untagged_resource",
         "data.terraform_test.test_allow_tagged_resource",
@@ -299,7 +362,7 @@ def test_opa_terraform_policy_tests_pass() -> None:
         "data.terraform_test.test_allow_iam_scoped_policy",
     ]
     for marker in terraform_tests:
-        assert f"PASS: {marker}" in proc.stdout, (
+        assert marker in passed, (
             f"Expected PASS for {marker} not in:\n{proc.stdout}"
         )
 
@@ -315,9 +378,14 @@ def test_opa_iam_policy_tests_pass() -> None:
         "data.iam_test.test_deny_wildcard_rds",
         "data.iam_test.test_deny_mfa_missing_for_create_user",
         "data.iam_test.test_allow_create_user_with_mfa",
+        "data.iam_test.test_azure_scope_is_required",
+        "data.iam_test.test_azure_scoped_assignment_is_valid",
+        "data.iam_test.test_azure_data_plane_denied",
+        "data.iam_test.test_azure_custom_role_valid",
     ]
+    passed = _opa_pass_markers(proc.stdout)
     for marker in iam_tests:
-        assert f"PASS: {marker}" in proc.stdout, (
+        assert marker in passed, (
             f"Expected PASS for {marker} not in:\n{proc.stdout}"
         )
 
@@ -327,8 +395,7 @@ def test_opa_total_pass_count() -> None:
     if not _opa_available():
         pytest.skip("opa not installed")
     proc = _run_opa_test()
-    # Count PASS lines in output
-    pass_lines = [line for line in proc.stdout.splitlines() if line.startswith("PASS:")]
-    assert len(pass_lines) >= 21, (
-        f"Expected >=21 PASS lines, got {len(pass_lines)}:\n{proc.stdout}"
+    passed = _opa_pass_markers(proc.stdout)
+    assert len(passed) >= 21, (
+        f"Expected >=21 passed rules, got {len(passed)}:\n{proc.stdout}"
     )

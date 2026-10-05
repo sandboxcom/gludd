@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 import yaml
 
 from general_ludd.daemon import build_secrets_resolver, load_model_profiles
@@ -52,13 +53,19 @@ class TestLoadModelProfiles:
                     "provider": "openai",
                     "model_name": "gpt-4",
                     "credential_alias": "OPENAI_API_KEY",
+                    "api_metered": True,
+                    "cost_per_input_token": 0.00001,
+                    "cost_per_output_token": 0.00003,
                     "enabled": True,
                 }
             )
         )
         profiles = load_model_profiles(profiles_dir=str(profiles_dir))
         assert len(profiles) >= 1
-        assert any(p.model_profile_id == "test_prof" for p in profiles)
+        profile = next(p for p in profiles if p.model_profile_id == "test_prof")
+        assert profile.api_metered is True
+        assert profile.cost_per_input_token == pytest.approx(0.00001)
+        assert profile.cost_per_output_token == pytest.approx(0.00003)
 
     def test_profile_has_credential_alias(self, tmp_path):
         profiles_dir = tmp_path / "model_profiles"

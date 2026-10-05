@@ -476,3 +476,50 @@ async def test_barrier_stress_concurrent_waiters() -> None:
     tasks = [asyncio.create_task(party()) for _ in range(20)]
     await asyncio.gather(*tasks)
     assert count == 20
+
+
+def test_barrier_and_wait_group_reject_negative_counts() -> None:
+    with pytest.raises(ValueError, match="parties must be >= 0"):
+        Barrier(-1)
+
+    wait_group = WaitGroup()
+    with pytest.raises(ValueError, match="delta must be >= 0"):
+        wait_group.add(-1)
+    with pytest.raises(ValueError, match="n must be >= 0"):
+        wait_group.done(-1)
+
+
+async def test_cancelled_waiter_breaks_barrier_for_later_participants() -> None:
+    barrier = Barrier(2)
+    waiter = asyncio.create_task(barrier.wait())
+    await asyncio.sleep(0)
+    waiter.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await waiter
+    with pytest.raises(BarrierBroken):
+        await barrier.wait()
+
+
+async def test_zero_party_reset_remains_immediately_released() -> None:
+    barrier = Barrier(0)
+    barrier.abort()
+    barrier.reset()
+
+    await barrier.wait()
+
+    assert barrier.broken is False
+    assert barrier.waiters == 0
+
+
+async def test_wait_group_zero_and_repeated_add_preserve_event_contract() -> None:
+    wait_group = WaitGroup()
+    wait_group.add(0)
+    await wait_group.wait()
+    wait_group.add(1)
+    wait_group.add(1)
+    wait_group.done(2)
+
+    await wait_group.wait()
+
+    assert wait_group.counter == 0

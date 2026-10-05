@@ -60,12 +60,16 @@ function incrementDispatchCountFile(): void {
 
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
 const DIVERSITY_ENFORCE = process.env.GLUDD_MULTITASK_DIVERSITY_ENFORCE !== "0"
+const RESULT_ARRIVAL_REFRESH_INTERVAL_MS = (() => {
+  const configured = parseInt(process.env.GLUDD_REFRESH_INTERVAL_MS || "30000", 10)
+  return Number.isFinite(configured) && configured > 0 ? configured : 30000
+})()
 const HAS_CONFIGURED_MIN_DISPATCHES =
   process.env.GLUDD_MIN_DISPATCHES !== undefined ||
   process.env.GLUDD_MULTITASK_MIN_DISPATCHES !== undefined
-// MIN_DISPATCHES is resolved by multitask_config.ts with a recommended
-// default of 10. A mandatory minimum is active only when an environment
-// variable explicitly opts in; ten remains the hard ceiling, and zero disables.
+// MIN_DISPATCHES is resolved by multitask_config.ts with a recommendation
+// of three. A mandatory minimum is active only when an environment variable
+// explicitly opts in; three remains the hard ceiling, and zero disables.
 const REQUIRED_DISPATCHES = HAS_CONFIGURED_MIN_DISPATCHES
   ? Math.max(0, Math.min(MAX_DISPATCHES, Number.isFinite(MIN_DISPATCHES) ? MIN_DISPATCHES : 0))
   : 0
@@ -267,7 +271,7 @@ function handleMessageBoundary(s: MultitaskState): void {
     s.waveHistory = s.waveHistory.slice(-WAVE_HISTORY_SIZE)
   }
   // REQUIRED_DISPATCHES is active only for an explicitly configured minimum.
-  // Ten remains the recommendation and hard ceiling; explicit zero disables.
+  // Three remains the recommendation and hard ceiling; explicit zero disables.
   if (REQUIRED_DISPATCHES > 0 && s.prevMessageDispatches < REQUIRED_DISPATCHES) {
     s.underFloorCount++
   } else {
@@ -406,6 +410,12 @@ const defaultImpl: HotModule = {
       }
       // Disabling floor/grinding policy never disables the hard dispatch cap.
       if (!FLOOR_ENFORCE) {
+        writeState(_state)
+        return
+      }
+      // The floor is opt-in. With no configured minimum, inline work must stay
+      // available; only the hard per-wave dispatch ceiling above remains active.
+      if (REQUIRED_DISPATCHES === 0) {
         writeState(_state)
         return
       }
@@ -598,6 +608,7 @@ async function handleTextComplete(_input: unknown, output: unknown): Promise<unk
         : "THIN WAVE BLOCKED"
       const _lines = [
         _blockKind + " - only " + String(_observedDispatches) + " dispatch(es) in this message.",
+        "MUST DISPATCH suitable independent work before completing this response.",
         "The configured minimum requires " + String(_tef) + " per wave.",
         "Dispatch only suitable independent work; never create agents merely to fill a quota.",
         "Your text has been blanked.",
@@ -612,6 +623,12 @@ async function handleTextComplete(_input: unknown, output: unknown): Promise<unk
           " dispatches."
         )
       }
+      if (_state.singleDispatchWaves >= 3 && _observedDispatches === 1) {
+        _lines.push(
+          "MESSAGE SHAPE VIOLATION: 3 consecutive single-dispatch waves.",
+          "Batch wider — 2+ dispatches per message."
+        )
+      }
       writeState(_state)
       return { text: _lines.join("\n") }
     }
@@ -622,10 +639,34 @@ async function handleTextComplete(_input: unknown, output: unknown): Promise<unk
       return output
     }
     const warnings: string[] = []
+    if (
+      REQUIRED_DISPATCHES > 0 &&
+      hasResultMarker &&
+      _state.lastDispatchTs > 0 &&
+      _state.estimatedInFlight < REQUIRED_DISPATCHES &&
+      Date.now() - _state.lastDispatchTs > RESULT_ARRIVAL_REFRESH_INTERVAL_MS
+    ) {
+      warnings.push(
+        "FLOOR LOW: only " + String(_state.estimatedInFlight) +
+        " estimated subagent(s) remain after " +
+        String(Math.round((Date.now() - _state.lastDispatchTs) / 1000)) +
+        " seconds. Dispatch replacements now."
+      )
+    }
     if (_state.underFloorCount >= 3) {
       warnings.push([
         "DISPATCH FLOOR VIOLATION: " + String(_state.underFloorCount) + " consecutive waves with fewer than " + String(REQUIRED_DISPATCHES) + " dispatches.",
         "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+      ].join("\n"))
+    }
+    if (
+      REQUIRED_DISPATCHES > 1 &&
+      _state.singleDispatchWaves >= 3 &&
+      _state.prevMessageDispatches === 1
+    ) {
+      warnings.push([
+        "MESSAGE SHAPE VIOLATION: 3 consecutive single-dispatch waves.",
+        "Batch wider — 2+ dispatches per message.",
       ].join("\n"))
     }
     if (warnings.length > 0) {

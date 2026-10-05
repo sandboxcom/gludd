@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 
 class ParticleConfig:
@@ -248,7 +248,7 @@ SKY_SURVEYS: dict[str, dict[str, Any]] = {
 
 
 def _copy(value: dict[str, Any]) -> dict[str, Any]:
-    return json.loads(json.dumps(value))
+    return cast(dict[str, Any], json.loads(json.dumps(value)))
 
 
 def get_experiment_info(name: str) -> dict[str, Any] | None:
@@ -336,7 +336,7 @@ def compute_cross_section(config: ParticleConfig) -> dict[str, Any]:
 
 
 def analyze_decay_chain(particle: str, lifetime_s: float, branching_ratios: dict[str, float]) -> dict[str, Any]:
-    dominant = max(branching_ratios, key=branching_ratios.get) if branching_ratios else "unknown"
+    dominant = max(branching_ratios, key=branching_ratios.__getitem__) if branching_ratios else "unknown"
     return {
         "particle": particle,
         "lifetime_s": lifetime_s,

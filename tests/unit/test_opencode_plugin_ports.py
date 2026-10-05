@@ -531,7 +531,7 @@ class TestAgentsMdOpencodeReferences:
 
 
 # ============================================================================ #
-# BEHAVIORAL TESTS — env-var disable, subagent guard, corrupt-state fail-open
+# BEHAVIORAL TESTS — env-var disable, subagent guard, corrupt-state fail-closed
 # ============================================================================ #
 # These invoke actual plugin hook functions via node --experimental-strip-types
 # and assert on runtime behavior, complementing the structural tests above.
@@ -701,6 +701,12 @@ console.log(JSON.stringify({{doesNotCrash: true, denied}}))
 class TestEnforceContextBehavioral:
     PLUGIN = ".opencode/plugin/enforce-context.ts"
 
+    def test_context_state_and_session_paths_are_env_namespaced(self):
+        """Parallel worktrees must not share context cache or fixture paths."""
+        source = (ROOT / self.PLUGIN).read_text()
+        assert "GLUDD_CONTEXT_STATE_FILE" in source
+        assert "GLUDD_CONTEXT_SESSION_FILE" in source
+
     def test_context_env_disable(self):
         """GLUDD_CONTEXT_ENFORCE=0 → stale-SESSION check skipped."""
         code = f"""\
@@ -729,13 +735,14 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
         result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
         assert result is None or result.get("permissionDecision") != "deny"
 
-    def test_context_corrupt_state_fail_open(self):
-        """Corrupt state file (invalid JSON) → does not crash, does not deny."""
-        sf = "/tmp/gludd-context-check.json"
-        with open(sf, "w") as f:
-            f.write("not valid json {{{")
-        try:
-            code = f"""\
+    def test_context_corrupt_state_fails_closed(self, tmp_path):
+        """Corrupt cache state must force a fresh stale-session check."""
+        state_file = tmp_path / "context-state.json"
+        session_file = tmp_path / "SESSION.md"
+        state_file.write_text("not valid json {{{")
+        session_file.write_text("# stale session\n")
+        os.utime(session_file, (1, 1))
+        code = f"""\
 const mod = await import('{ROOT / self.PLUGIN}')
 const plugin = await mod.default({{}})
 const result = await plugin['tool.execute.before'](
@@ -744,13 +751,17 @@ const result = await plugin['tool.execute.before'](
 )
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
-            result = _run_ts(code)
-            assert result is None or result.get("permissionDecision") != "deny", (
-                f"Corrupt state must fail-open, got: {result}"
-            )
-        finally:
-            with contextlib.suppress(OSError):
-                os.unlink(sf)
+        result = _run_ts(
+            code,
+            env_override={
+                "GLUDD_CONTEXT_SESSION_FILE": str(session_file),
+                "GLUDD_CONTEXT_STATE_FILE": str(state_file),
+                "GLUDD_CONTEXT_STALE_SECONDS": "1",
+            },
+        )
+        assert result is not None and result.get("permissionDecision") == "deny", (
+            f"Corrupt context cache must revalidate and deny stale SESSION.md, got: {result}"
+        )
 
 
 # --------------------------------------------------------------------------- #

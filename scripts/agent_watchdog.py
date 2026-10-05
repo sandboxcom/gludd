@@ -47,6 +47,11 @@ import time
 import uuid
 from collections.abc import Callable
 from contextlib import suppress
+
+try:
+    from scripts import gludd_env_defaults as gludd_env_defaults
+except ModuleNotFoundError:  # pragma: no cover - direct launch from scripts/
+    import gludd_env_defaults
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -295,7 +300,7 @@ def scan_tasks_dir(
 STREAK_FILE = "/tmp/gludd-mainthread-streak.json"
 MULTITASK_STATE_FILE = "/tmp/gludd-multitask-state.json"
 WATCHDOG_ACTIVITY_FILE = "/tmp/gludd-watchdog-last-activity.json"
-TODOWRITE_STATE = os.environ.get("GLUDD_TODOWRITE_STATE", "/tmp/gludd-todowrite-state.json")
+TODOWRITE_STATE = os.environ.get("GLUDD_TODOWRITE_STATE", gludd_env_defaults.TODOWRITE_STATE_DEFAULT)
 RESET_LOG = "/tmp/gludd-auto-reset.log"
 HIBERNATION_MARKER = Path("/tmp/gludd-watchdog-hibernating")
 POLL_SECS = 10
@@ -460,7 +465,7 @@ CI_LOOP_THRESHOLD_MINUTES = 10
 CI_TRUE_STALL_MINUTES = 45
 CI_TRUE_STALL_NO_PUSH_MINUTES = 15
 
-_WORKSPACE = Path(os.environ.get("GLUDD_WORKSPACE", os.getcwd()))
+_WORKSPACE = Path(os.environ.get("GLUDD_WORKSPACE_ROOT", os.getcwd()))
 GATE_PID_FILE = _WORKSPACE / ".gate-background.pid"
 GATE_MAX_RUNTIME_SECS = int(os.environ.get("GATE_WATCHDOG_TIMEOUT", "3600"))
 _TASKS_MD = _WORKSPACE / "TASKS.md"

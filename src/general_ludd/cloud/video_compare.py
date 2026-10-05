@@ -178,6 +178,7 @@ def download_youtube_video(
         output_path: Directory or file path for the downloaded video.
         clip_start_seconds: First source second to retain.
         clip_duration_seconds: Optional bounded duration; omitted only for legacy callers.
+        metadata_sink: Optional receiver for sanitized selected-stream metadata.
         progress_sink: Optional receiver for sanitized yt-dlp progress fields.
 
     Returns:
@@ -187,6 +188,11 @@ def download_youtube_video(
         ImportError: If yt-dlp is not installed.
         RuntimeError: If download fails.
     """
+    if clip_start_seconds < 0:
+        raise ValueError("clip_start_seconds must be non-negative")
+    if clip_duration_seconds is not None and clip_duration_seconds <= 0:
+        raise ValueError("clip_duration_seconds must be positive")
+
     ytdlp_module = _ensure_yt_dlp()
     out = Path(output_path)
     if out.suffix:
@@ -229,11 +235,7 @@ def download_youtube_video(
             )
 
         ydl_opts["progress_hooks"] = [report_progress]
-    if clip_start_seconds < 0:
-        raise ValueError("clip_start_seconds must be non-negative")
     if clip_duration_seconds is not None:
-        if clip_duration_seconds <= 0:
-            raise ValueError("clip_duration_seconds must be positive")
         clip_end_seconds = clip_start_seconds + clip_duration_seconds
         utils_module = getattr(ytdlp_module, "utils", None)
         download_range_func = getattr(utils_module, "download_range_func", None)
@@ -276,6 +278,7 @@ def download_youtube_video(
                         "channel": info.get("channel", "unknown"),
                         "channel_id": info.get("channel_id", "unknown"),
                         "license": info.get("license", "unknown"),
+                        "yt_dlp_version": _yt_dlp_version(),
                     }
                 )
             video_path = str(out_dir_path / f"{out_template}.mp4")
@@ -493,6 +496,7 @@ def _acquire_reference(
         object_sha256 = _sha256_file(downloaded_path)
         decoded_frames_sha256 = _sha256_frames(frames)
         first_shape = tuple(frames[0].shape)
+        yt_dlp_version = str(metadata.pop("yt_dlp_version", "unknown"))
         payload: dict[str, object] = {
             "schema_version": 1,
             "approval_version": spec.approval_version,
@@ -513,7 +517,7 @@ def _acquire_reference(
             "decoded_height": first_shape[0],
             "decoded_width": first_shape[1],
             "decoded_channels": first_shape[2] if len(first_shape) > 2 else 1,
-            "yt_dlp_version": _yt_dlp_version(),
+            "yt_dlp_version": yt_dlp_version,
             "ffmpeg_version": ffmpeg_version,
             "opencv_version": str(getattr(cv2, "__version__", "unknown")),
             **metadata,
@@ -765,13 +769,19 @@ def compute_ssim(frame_a: Frame, frame_b: Frame) -> float:
         pooling_factor = max(1, round(min(frame_a.shape[:2]) / 256))
         pooled_a = _average_pool_for_ssim(float_a, pooling_factor)
         pooled_b = _average_pool_for_ssim(float_b, pooling_factor)
+        spatial_extent = min(pooled_a.shape[:2])
+        if spatial_extent < 3:
+            return _global_ssim(pooled_a, pooled_b)
+        win_size = min(7, spatial_extent)
+        if win_size % 2 == 0:
+            win_size -= 1
         try:
             val: float = structural_similarity(
                 pooled_a,
                 pooled_b,
                 data_range=255.0,
                 channel_axis=2,
-                win_size=min(7, min(pooled_a.shape[0], pooled_a.shape[1]) or 7),
+                win_size=win_size,
             )
             result = float(val)
             if not np.isfinite(result):
@@ -835,13 +845,16 @@ def motion_correlation(sig_a: list[float], sig_b: list[float]) -> float:
         sig_b: Second motion signature.
 
     Returns:
-        Correlation coefficient in [-1, 1].
+        Correlation coefficient in [-1, 1], or ``0.0`` when either signature
+        is too short, constant, or contains a non-finite value.
     """
     if len(sig_a) < 2 or len(sig_b) < 2:
         return 0.0
     min_len = min(len(sig_a), len(sig_b))
     values_a = np.asarray(sig_a[:min_len], dtype=np.float64)
     values_b = np.asarray(sig_b[:min_len], dtype=np.float64)
+    if not np.all(np.isfinite(values_a)) or not np.all(np.isfinite(values_b)):
+        return 0.0
     if np.ptp(values_a) == 0 or np.ptp(values_b) == 0:
         return 0.0
     correlation = float(np.corrcoef(values_a, values_b)[0, 1])

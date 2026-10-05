@@ -1437,7 +1437,7 @@ source = ["src"]
 
 ### 7.3 Wheel Tags
 
-```
+```markdown
 # Wheel filename format: {name}-{ver}-{pyver}-{abi}-{plat}.whl
 # numpy-1.26.0-cp312-cp312-manylinux_2_17_x86_64.whl
 
@@ -1820,7 +1820,7 @@ bandit -c bandit.yaml -r src/         # With config
 
 ### 11.1 src-layout vs Flat Layout
 
-```
+```markdown
 # src-layout (RECOMMENDED for libraries):
 # Prevents accidentally importing the package from the source directory
 # Forces you to install the package to test it
@@ -1903,7 +1903,7 @@ _logger = logging.getLogger(__name__)
 
 ### 11.4 Config Files Layout
 
-```
+```markdown
 # Typical Python project config files:
 pyproject.toml           # Build, lint, typecheck, test config (PEP 621)
 setup.cfg                # Declarative setuptools config (legacy, still valid)

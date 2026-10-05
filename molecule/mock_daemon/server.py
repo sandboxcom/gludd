@@ -42,6 +42,13 @@ shape matches what each module parses:
   GET  /admin/processes/<pid>/stats   -> 200 psutil-shaped stats snapshot
                                              (gludd_process status / gludd_proc_monitor)
   POST /admin/processes/<pid>/signal  -> 200 {"ok":true,"pid":..,"signal":..} (gludd_process signal)
+  POST /admin/abtest/run              -> 200 fail-closed A/B verdict       (gludd_abtest)
+  POST /admin/git/operation           -> 200 bounded worktree/git result   (gludd_git)
+  POST /admin/make                    -> 200 allowlisted make result        (gludd_make)
+  POST /admin/skills/render           -> 200 rendered skill artifact       (gludd_skill)
+  POST /admin/reload/code             -> 200 atomic reload/rollback result (gludd_reload)
+  POST /api/observe/facade            -> 200 fan-out/timeline/correlation   (gludd_observe)
+  POST /api/language/execute           -> 200 bounded language result        (language_operation)
   GET  /admin/ornith/pairs            -> 200 {"pairs":[...],"count":N}
                                               (gludd_ornith rejected pairs)
   GET  /process-audit                  -> 200 guardrail_health/plugin_footprint/.. (gludd_audit)
@@ -62,19 +69,24 @@ endpoints fired and which did NOT:
 Usage:
     python3 server.py --port 8765 --pidfile /tmp/x.pid --logfile /tmp/x.log
 
-Run in the background from a scenario's prepare.yml and stop it in verify.yml
-(or cleanup) by killing the recorded pid. Binds 127.0.0.1 only.
+Run it only for the play that consumes it.  ``--port 0`` delegates collision-free
+loopback allocation to the kernel; ``--ready-file`` publishes the bound endpoint
+atomically, and ``--lease-seconds`` bounds cleanup after controller cancellation.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
+import shutil
+import signal
 import sys
 import threading
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -185,14 +197,14 @@ TRACES_SNAPSHOT = {
 # the real facade's defensive post-filtering is exercised.  ``broken-events``
 # returns 503 in ``do_POST`` to prove one failing connector does not abort the
 # successful fan-out.
-OBSERVE_SOURCES = [
+OBSERVE_SOURCES: list[dict[str, str]] = [
     {"name": "prod-logs", "kind": "logs"},
     {"name": "prod-metrics", "kind": "metrics"},
     {"name": "prod-traces", "kind": "traces"},
     {"name": "broken-events", "kind": "events"},
 ]
 
-OBSERVE_RECORDS = {
+OBSERVE_RECORDS: dict[str, list[dict[str, Any]]] = {
     "prod-logs": [
         {
             "ts": 20.0,
@@ -344,7 +356,7 @@ ACCOUNTING_SNAPSHOT = [
 ]
 
 
-FEATURES_SNAPSHOT = [
+FEATURES_SNAPSHOT: list[dict[str, Any]] = [
     {
         "id": "FEAT-0001",
         "project_id": None,
@@ -493,7 +505,7 @@ ENVIRONMENT_SNAPSHOT = {
 _WORKFLOW_WORK_TYPES = ("feature", "bugfix", "refactor", "review")
 
 
-def _advice_response(work_type: str) -> dict:
+def _advice_response(work_type: str) -> dict[str, Any]:
     """Per-work-type advice block, shaped like routers/environment.py AdviceBrief.
 
     use_workflow follows the real advisor's workflow set so the agent_orchestrate
@@ -534,7 +546,7 @@ def _advice_response(work_type: str) -> dict:
     }
 
 
-def _schedule_response(payload: dict) -> dict:
+def _schedule_response(payload: dict[str, Any]) -> dict[str, Any]:
     """Return a concurrency-safe batched plan for the submitted work items.
 
     Implements a minimal real scheduler so the mock genuinely exercises the
@@ -551,7 +563,7 @@ def _schedule_response(payload: dict) -> dict:
         return {"batches": []}
 
     # Build index by id.
-    by_id: dict[str, dict] = {it["id"]: it for it in items}
+    by_id: dict[str, dict[str, Any]] = {it["id"]: it for it in items}
 
     # Topological depth: max depth among depends_on predecessors + 1.
     depths: dict[str, int] = {}
@@ -625,7 +637,7 @@ DISPATCH_RECENT = [
 ]
 
 
-def _dispatch_response(payload: dict) -> dict:
+def _dispatch_response(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "result": {
             "id": "dispatch-mock-new",
@@ -638,7 +650,7 @@ def _dispatch_response(payload: dict) -> dict:
     }
 
 
-def _model_call_response(payload: dict) -> dict:
+def _model_call_response(payload: dict[str, Any]) -> dict[str, Any]:
     # The langgraph/langchain decision module sends response_format="json" (and an
     # options list) and parses resp["text"] as JSON {"decision":..,"rationale":..}.
     # For those requests return a JSON-string text the decision module can parse
@@ -655,7 +667,7 @@ def _model_call_response(payload: dict) -> dict:
     }
 
 
-def _workflow_response(payload: dict) -> dict:
+def _workflow_response(payload: dict[str, Any]) -> dict[str, Any]:
     # Mirrors POST /admin/models/workflow: the daemon runs a generate->review->retry
     # LangGraph loop server-side and returns the best content + quality metadata.
     # gludd_langgraph_workflow parses content/model/prompt_profile/quality_score/
@@ -670,7 +682,7 @@ def _workflow_response(payload: dict) -> dict:
     }
 
 
-def _message_created(payload: dict) -> dict:
+def _message_created(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": "MSG-MOCK-0001",
         "sender": payload.get("sender"),
@@ -681,7 +693,7 @@ def _message_created(payload: dict) -> dict:
     }
 
 
-def _todo_record(todo_id: str) -> dict:
+def _todo_record(todo_id: str) -> dict[str, Any]:
     return {
         "id": todo_id,
         "title": "mock todo",
@@ -706,7 +718,7 @@ _STREAM_DISPATCH_COUNTER = 0
 _STREAM_DISPATCH_LOCK = threading.Lock()
 
 
-def _stream_dispatch_response(payload: dict) -> dict:
+def _stream_dispatch_response(payload: dict[str, Any]) -> dict[str, Any]:
     """Canned stream-dispatch response (task_id + clone_path).
 
     Each call returns a DISTINCT task_id so the dual-dispatch path
@@ -776,9 +788,9 @@ MODEL_PERFORMANCE_SNAPSHOT = {
 }
 
 
-def _ranking_response(task_type: str) -> dict:
+def _ranking_response(task_type: str) -> dict[str, Any]:
     """Return rankings filtered by task_type, sorted by composite_score descending."""
-    all_rankings = [
+    all_rankings: list[dict[str, Any]] = [
         {
             "model_profile_id": "mock-profile",
             "prompt_profile_id": "default",
@@ -878,7 +890,7 @@ ORNITH_PAIRS_SNAPSHOT = [
 ]
 
 
-def _ornith_pairs_response(status_csv: str, limit: int) -> dict:
+def _ornith_pairs_response(status_csv: str, limit: int) -> dict[str, Any]:
     """Return Ornith training pairs filtered by the comma-separated statuses."""
     statuses = {s.strip() for s in (status_csv or "").split(",") if s.strip()}
     if not statuses:
@@ -887,7 +899,7 @@ def _ornith_pairs_response(status_csv: str, limit: int) -> dict:
     return {"pairs": filtered[:limit], "count": len(filtered)}
 
 
-def _human_todo_created(payload: dict) -> dict:
+def _human_todo_created(payload: dict[str, Any]) -> dict[str, Any]:
     """Shape mirrors POST /api/human-todos response (HumanTodoModel dict)."""
     return {
         "id": "HTODO-MOCK-0001",
@@ -929,7 +941,7 @@ MANAGED_PROCESSES = [
 ]
 
 
-def _managed_processes() -> list[dict]:
+def _managed_processes() -> list[dict[str, Any]]:
     procs = [dict(p) for p in MANAGED_PROCESSES]
     if _MANAGED_PID_OVERRIDE > 0 and procs:
         procs[0]["pid"] = _MANAGED_PID_OVERRIDE
@@ -937,7 +949,7 @@ def _managed_processes() -> list[dict]:
     return procs
 
 
-def _process_stats(pid: int) -> dict:
+def _process_stats(pid: int) -> dict[str, Any]:
     """psutil-shaped stats snapshot for one managed process (canned)."""
     return {
         "pid": pid,
@@ -958,7 +970,7 @@ def _process_stats(pid: int) -> dict:
     }
 
 
-def _signal_response(pid: int, payload: dict) -> dict:
+def _signal_response(pid: int, payload: dict[str, Any]) -> dict[str, Any]:
     """Acknowledge a signal delivery (gludd_process action=signal)."""
     return {
         "ok": True,
@@ -966,6 +978,293 @@ def _signal_response(pid: int, payload: dict) -> dict:
         "signal": payload.get("signal", "SIGTERM"),
         "group": bool(payload.get("group", False)),
     }
+
+
+def _abtest_response(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return deterministic fail-closed A/B evidence for module scenarios."""
+    candidate = str(payload.get("candidate_root", ""))
+    crashed = "crash" in candidate.lower()
+    baseline_result: dict[str, Any] = {
+        "ok": True,
+        "crashed": False,
+        "timed_out": False,
+        "duration_s": 0.01,
+        "error": "",
+    }
+    candidate_result: dict[str, Any] = {
+        "ok": not crashed,
+        "crashed": crashed,
+        "timed_out": False,
+        "duration_s": 0.01,
+        "error": "candidate crashed" if crashed else "",
+    }
+    promote = not crashed
+    verdict = {
+        "a": baseline_result,
+        "b": candidate_result,
+        "promote": promote,
+        "reason": "candidate crashed" if crashed else "candidate passed",
+    }
+    return {"verdict": verdict, "promote": promote}
+
+
+def _private_tmp_path(value: object) -> Path:
+    """Resolve a mock mutation target and fail closed outside private temp space."""
+    root = Path("/tmp").resolve()
+    path = Path(str(value)).resolve()
+    if path == root or root not in path.parents:
+        raise ValueError(f"mock control-plane path is outside {root}: {path}")
+    return path
+
+
+def _git_operation_response(payload: dict[str, Any]) -> dict[str, Any]:
+    """Emulate daemon-owned GitAutomation results for isolated scenario paths."""
+    operation = str(payload.get("op", ""))
+    changed = operation not in {
+        "current_branch",
+        "branch_list",
+        "worktree_list",
+        "verify_remote",
+        "state",
+        "ci_verdict",
+    }
+    result: dict[str, Any] = {"success": True, "op": operation}
+    if operation == "worktree_create":
+        worktree = _private_tmp_path(payload.get("worktree_path"))
+        worktree.mkdir(parents=True, exist_ok=True)
+        result.update(
+            {
+                "branch": str(payload.get("branch", "")),
+                "worktree_path": str(worktree),
+            }
+        )
+    elif operation == "worktree_remove":
+        worktree = _private_tmp_path(payload.get("worktree_path"))
+        shutil.rmtree(worktree, ignore_errors=False)
+        result.update({"removed": True, "worktree_path": str(worktree)})
+    elif operation in {"commit", "gated_commit"}:
+        result.update(
+            {
+                "sha": "0123456789abcdef",
+                "message": str(payload.get("message", "molecule commit")),
+            }
+        )
+    elif operation in {"branch", "current_branch"} or operation in {"push", "verify_remote"}:
+        result["branch"] = str(payload.get("branch") or "main")
+    return {"result": result, "changed": changed}
+
+
+def _make_response(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return the stable MakeRunner result contract used by module scenarios."""
+    target = str(payload.get("target", ""))
+    outputs = {
+        "hello": "hello from molecule test_gludd_make\n",
+        "versions": "make version: GNU Make 4.4\n",
+    }
+    success = target in outputs
+    return {
+        "target": target,
+        "exit_code": 0 if success else 2,
+        "success": success,
+        "duration_s": 0.01,
+        "stdout_tail": outputs.get(target, ""),
+        "stderr_tail": "" if success else f"No rule to make target '{target}'\n",
+        "timed_out": False,
+        "oom_killed": False,
+        "error": None,
+        "phases": [],
+    }
+
+
+def _skill_response(payload: dict[str, Any]) -> dict[str, Any]:
+    """Render the scenario skill through the authenticated daemon seam."""
+    variables = payload.get("variables")
+    rendered_variables = variables if isinstance(variables, dict) else {}
+    language = str(rendered_variables.get("language", "python"))
+    project = str(rendered_variables.get("project_name", "gludd"))
+    return {
+        "skill_name": str(payload.get("name") or "mock-review"),
+        "rendered_body": f"Review {language} changes for {project}.",
+        "required_vars": ["language", "project_name"],
+    }
+
+
+def _language_operation_response(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return the deterministic daemon-owned schema for one language operation."""
+    operation = str(payload.get("operation") or "")
+    operation_payload = payload.get("payload")
+    if not isinstance(operation_payload, dict):
+        raise TypeError("language operation payload must be a dictionary")
+    input_text = str(operation_payload.get("input_text") or "")
+    responses: dict[str, dict[str, Any]] = {
+        "bom_detect": {
+            "bom_detected": True,
+            "encoding": "utf-8-sig",
+            "bom_name": "UTF-8",
+        },
+        "encoding_detect": {
+            "detected_encoding": "ascii",
+            "confidence": 1.0,
+            "confidence_level": "trusted",
+        },
+        "homoglyph_scan": {
+            "input_length": len(input_text),
+            "total_findings": 0,
+            "findings": [],
+        },
+        "language_detect": {
+            "language": "en",
+            "confidence": 0.99,
+        },
+        "locale_format": {
+            "locale": str(operation_payload.get("locale") or "en-US"),
+            "formatted_value": "1.234,56",
+            "is_rtl": False,
+            "first_day_of_week": 1,
+        },
+        "phonetic_transcribe": {
+            "method": str(operation_payload.get("method") or "arpabet"),
+            "words": [{"word": "HELLO", "phonemes": ["HH", "AH0", "L", "OW1"]}],
+        },
+        "translate": {
+            "translated_text": "Bonjour",
+            "source_language": str(operation_payload.get("source_language") or "auto"),
+            "target_language": str(operation_payload.get("target_language") or "fr"),
+        },
+        "transliterate": {
+            "transliterated_text": input_text,
+            "target_script": str(operation_payload.get("target_script") or "Latin"),
+            "scheme": str(operation_payload.get("scheme") or "default"),
+        },
+        "unicode_analyze": {
+            "input_length": len(input_text),
+            "codepoints": [f"U+{ord(character):04X}" for character in input_text],
+            "normalization": {
+                "NFC": input_text,
+                "NFD": input_text,
+                "NFKC": input_text,
+                "NFKD": input_text,
+            },
+        },
+    }
+    if operation not in responses:
+        raise ValueError(f"unsupported language operation: {operation}")
+    return responses[operation]
+
+
+def _observe_facade_response(payload: dict[str, Any]) -> dict[str, Any]:
+    """Emulate daemon-side registered-source fan-out for the facade module."""
+    operation = str(payload.get("operation", ""))
+    if operation not in {"query_sources", "timeline", "correlate_incident", "topology"}:
+        raise ValueError(f"unsupported observe operation: {operation}")
+    kinds_value = payload.get("kinds")
+    kinds = set(kinds_value) if isinstance(kinds_value, list) else set()
+    selected_sources = [source for source in OBSERVE_SOURCES if source["kind"] in kinds]
+    _record_request("GET", "/api/observe/sources")
+    for _source in selected_sources:
+        _record_request("POST", "/api/observe/query")
+
+    start = payload.get("start")
+    end = payload.get("end")
+    if operation == "correlate_incident" and start is None and end is None:
+        seed_value = payload.get("seed")
+        if not isinstance(seed_value, dict) or "ts" not in seed_value:
+            raise ValueError("correlate_incident requires a timestamped seed")
+        seed_timestamp = float(seed_value["ts"])
+        window_seconds = float(payload.get("window_s", 300.0))
+        start = seed_timestamp - window_seconds
+        end = seed_timestamp + window_seconds
+    records = [
+        dict(record)
+        for source in selected_sources
+        for record in OBSERVE_RECORDS.get(str(source["name"]), [])
+        if (start is None or float(record["ts"]) >= float(start))
+        and (end is None or float(record["ts"]) <= float(end))
+    ]
+    records.sort(key=lambda record: float(record["ts"]))
+    errors: list[dict[str, str]] = []
+    if any(source["name"] == "broken-events" for source in selected_sources):
+        records.append(
+            {
+                "ts": 35.0,
+                "source": "broken-events",
+                "kind": "events",
+                "level_or_status": "error",
+                "message": "query failed",
+                "labels": {"trace_id": "incident-42"},
+            }
+        )
+        errors.append({"source": "broken-events", "message": "query failed"})
+
+    result: dict[str, Any] = {
+        "operation": operation,
+        "role": str(payload.get("role") or "observe"),
+        "errors": errors,
+    }
+    if operation in {"query_sources", "timeline"}:
+        result["records"] = records
+    elif operation == "correlate_incident":
+        seed = payload.get("seed")
+        if not isinstance(seed, dict) or not seed:
+            raise ValueError("correlate_incident requires a seed")
+        result["groups"] = {"incident-42": [dict(seed), *records]}
+    else:
+        result["topology"] = {
+            "services": {"checkout": ["web-01"]},
+            "hosts": {"web-01": ["checkout"]},
+        }
+    return {"result": result}
+
+
+def _reload_response(payload: dict[str, Any]) -> dict[str, Any]:
+    """Apply a leaf candidate atomically or preserve the live bytes on rollback."""
+    candidate = _private_tmp_path(payload.get("candidate_source_path"))
+    module_name = str(payload.get("module_name", ""))
+    if not module_name or not candidate.is_file():
+        raise ValueError("reload requires an existing candidate and module_name")
+    relative_module = Path(*module_name.split(".")).with_suffix(".py")
+    live_candidates = (
+        _private_tmp_path(candidate.parent / relative_module),
+        _private_tmp_path(candidate.parent / "src" / relative_module),
+    )
+    matching_live_files = [path for path in live_candidates if path.is_file()]
+    if len(matching_live_files) != 1:
+        raise ValueError(
+            "reload requires exactly one live module under the candidate root"
+        )
+    live = matching_live_files[0]
+    health_url = str(payload.get("health_url") or "")
+    if "degraded" in health_url:
+        return {
+            "success": False,
+            "rolled_back": True,
+            "error": "post-reload health gate degraded",
+            "details": {"live_path": str(live)},
+        }
+    _atomic_write(str(live), candidate.read_text(encoding="utf-8"))
+    return {
+        "success": True,
+        "rolled_back": False,
+        "error": None,
+        "details": {"live_path": str(live)},
+    }
+
+
+def _atomic_write(path: str, content: str) -> None:
+    """Publish one private lifecycle record without exposing partial content."""
+    directory = os.path.dirname(os.path.abspath(path))
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    temporary = f"{path}.tmp-{os.getpid()}"
+    try:
+        with open(temporary, "w", encoding="utf-8") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, path)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temporary)
 
 
 # ---------------------------------------------------------------------------
@@ -983,10 +1282,10 @@ def _agent_id_from_sts_path(path: str) -> str | None:
     return None
 
 
-def _mint_token(agent_id: str, parent_agent_id: str = "root") -> dict:
+def _mint_token(agent_id: str, parent_agent_id: str = "root") -> dict[str, Any]:
     token_id = f"tok-{agent_id}"
     role_name = f"agent-{agent_id}"
-    record = {
+    record: dict[str, Any] = {
         "token_id": token_id,
         "agent_id": agent_id,
         "parent_agent_id": parent_agent_id,
@@ -1000,7 +1299,7 @@ def _mint_token(agent_id: str, parent_agent_id: str = "root") -> dict:
     return record
 
 
-def _validate_token(agent_id: str) -> dict:
+def _validate_token(agent_id: str) -> dict[str, Any]:
     with _STS_TOKEN_LOCK:
         rec = _STS_TOKENS.get(agent_id)
     if rec is None:
@@ -1021,17 +1320,18 @@ def _validate_token(agent_id: str) -> dict:
     }
 
 
-def _get_token(agent_id: str) -> dict | None:
+def _get_token(agent_id: str) -> dict[str, Any] | None:
     with _STS_TOKEN_LOCK:
-        return dict(_STS_TOKENS.get(agent_id, {}))
+        record = _STS_TOKENS.get(agent_id)
+        return dict(record) if record is not None else None
 
 
-def _list_tokens() -> list[dict]:
+def _list_tokens() -> list[dict[str, Any]]:
     with _STS_TOKEN_LOCK:
         return [dict(v) for v in _STS_TOKENS.values()]
 
 
-def _revoke_token(agent_id: str) -> dict:
+def _revoke_token(agent_id: str) -> dict[str, Any]:
     with _STS_TOKEN_LOCK:
         rec = _STS_TOKENS.get(agent_id)
         if rec is not None:
@@ -1056,7 +1356,7 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args: object) -> None:
         sys.stderr.write("[mock-daemon] " + (fmt % args) + "\n")
 
-    def _send_json(self, status: int, body: dict) -> None:
+    def _send_json(self, status: int, body: dict[str, Any]) -> None:
         raw = json.dumps(body).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -1071,15 +1371,23 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _read_body(self) -> dict:
+    def _read_raw_body(self) -> bytes:
         length = int(self.headers.get("Content-Length", 0) or 0)
         if length <= 0:
-            return {}
-        raw = self.rfile.read(length)
+            return b""
+        return self.rfile.read(length)
+
+    def _parse_json_body(self, raw: bytes) -> dict[str, Any]:
         try:
-            return json.loads(raw.decode("utf-8"))
-        except json.JSONDecodeError:
+            decoded: object = json.loads(raw.decode("utf-8"))
+            if isinstance(decoded, dict):
+                return {str(key): value for key, value in decoded.items()}
             return {}
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return {}
+
+    def _read_body(self) -> dict[str, Any]:
+        return self._parse_json_body(self._read_raw_body())
 
     # ---- GET --------------------------------------------------------------
     def do_GET(self) -> None:
@@ -1117,6 +1425,70 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(200, dict(METRICS_SNAPSHOT))
         elif path == "/api/traces":
             self._send_json(200, dict(TRACES_SNAPSHOT))
+        elif path == "/admin/hardware/accelerators":
+            self._send_json(
+                200,
+                {
+                    "schema_version": 1,
+                    "total_count": 1,
+                    "available_count": 1,
+                    "resources": [
+                        {
+                            "kind": "gpu",
+                            "location": "local",
+                            "backend": "metal",
+                            "model": "Apple test device",
+                            "vendor": "apple",
+                            "resource_key": "local:metal:0",
+                            "total_count": 1,
+                            "available_count": 1,
+                            "memory_gb": 8.0,
+                            "source": "system_profiler",
+                            "node": None,
+                            "partitions": [],
+                        }
+                    ],
+                },
+            )
+        elif path == "/admin/slurm/hardware":
+            self._send_json(
+                200,
+                {
+                    "schema_version": 1,
+                    "total_count": 4,
+                    "available_count": 3,
+                    "resources": [
+                        {
+                            "kind": "gpu",
+                            "location": "slurm",
+                            "backend": "slurm-gres",
+                            "model": "site-gpu",
+                            "vendor": "unspecified",
+                            "resource_key": "slurm:node-01:gpu:site-gpu",
+                            "total_count": 2,
+                            "available_count": 1,
+                            "memory_gb": None,
+                            "source": "slurm-gres",
+                            "node": "node-01",
+                            "partitions": ["accelerated"],
+                        },
+                        {
+                            "kind": "tpu",
+                            "location": "slurm",
+                            "backend": "slurm-gres",
+                            "model": "site-tpu",
+                            "vendor": "unspecified",
+                            "resource_key": "slurm:node-02:tpu:site-tpu",
+                            "total_count": 2,
+                            "available_count": 2,
+                            "memory_gb": None,
+                            "source": "slurm-gres",
+                            "node": "node-02",
+                            "partitions": ["accelerated"],
+                        },
+                    ],
+                },
+            )
         elif path == "/api/observe/sources":
             self._send_json(200, {"sources": list(OBSERVE_SOURCES)})
         elif path == "/api/messages":
@@ -1299,12 +1671,83 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         path = urlparse(self.path).path
         _record_request("POST", path)
-        payload = self._read_body()
+        raw_body = self._read_raw_body()
+        payload = self._parse_json_body(raw_body)
         if path == "/__requests/reset":
             # Clear the in-memory request log so the next role invocation's
             # endpoint hits can be snapshotted in isolation.
             _reset_requests()
             self._send_json(200, {"reset": True})
+        elif path == "/admin/models/local/download":
+            self._send_json(
+                200,
+                {
+                    "downloaded": True,
+                    "model_id": payload.get("model_id", ""),
+                    "source": payload.get("source", "huggingface"),
+                    "local_path": "/tmp/gludd-molecule-model.gguf",
+                    "size_bytes": 1024,
+                },
+            )
+        elif path == "/admin/models/local/serve":
+            self._send_json(
+                201,
+                {
+                    "server_id": "mock-local-model-server",
+                    "model_id": payload.get("model_id", ""),
+                    "engine": "llamacpp",
+                    "model": payload.get("model_path", ""),
+                    "endpoint_url": "http://127.0.0.1:12001",
+                    "status": "running",
+                },
+            )
+        elif path == "/admin/models/local/consume":
+            code = (
+                "class Snake:\n"
+                "    def __init__(self):\n"
+                "        self.start()\n"
+                "    def start(self):\n"
+                "        self.snake = [(10, 10)]\n"
+                "        self.food = (15, 10)\n"
+                "        self._score = 0\n"
+                "        self.game_over = False\n"
+                "    def tick(self, direction):\n"
+                "        if self.game_over:\n"
+                "            return\n"
+                "        dx, dy = {'up': (0, -1), 'down': (0, 1), 'left': (-1, 0), 'right': (1, 0)}[direction]\n"
+                "        head = (self.snake[0][0] + dx, self.snake[0][1] + dy)\n"
+                "        if not (0 <= head[0] < 20 and 0 <= head[1] < 20) or head in self.snake:\n"
+                "            self.game_over = True\n"
+                "            return\n"
+                "        self.snake.insert(0, head)\n"
+                "        if head == self.food:\n"
+                "            self._score += 1\n"
+                "            self.food = (1, 1)\n"
+                "        else:\n"
+                "            self.snake.pop()\n"
+                "    def score(self):\n"
+                "        return self._score\n"
+                "    def is_game_over(self):\n"
+                "        return self.game_over\n"
+                "    def restart(self):\n"
+                "        self.start()\n"
+            )
+            self._send_json(
+                200,
+                {
+                    "server_id": payload.get("server_id", ""),
+                    "text": code,
+                    "usage": {"completion_tokens": 128},
+                },
+            )
+        elif path == "/admin/models/local/shutdown":
+            self._send_json(
+                200,
+                {
+                    "shutdown": True,
+                    "server_id": payload.get("server_id", ""),
+                },
+            )
         elif path == "/admin/models/call":
             self._send_json(200, _model_call_response(payload))
         elif path == "/admin/models/workflow":
@@ -1326,6 +1769,11 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(200, _schedule_response(payload))
         elif path == "/api/dispatch":
             self._send_json(200, _dispatch_response(payload))
+        elif path == "/api/observe/facade":
+            try:
+                self._send_json(200, _observe_facade_response(payload))
+            except ValueError as exc:
+                self._send_json(422, {"detail": str(exc)})
         elif path == "/api/observe/query":
             source = payload.get("source")
             if source == "broken-events":
@@ -1344,14 +1792,34 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
                 self._send_json(404, {"detail": f"bad process path {path}"})
             else:
                 self._send_json(200, _signal_response(pid, payload))
+        elif path == "/admin/abtest/run":
+            self._send_json(200, _abtest_response(payload))
+        elif path == "/admin/git/operation":
+            try:
+                self._send_json(200, _git_operation_response(payload))
+            except (OSError, ValueError) as exc:
+                self._send_json(422, {"detail": str(exc)})
+        elif path == "/admin/make":
+            self._send_json(200, _make_response(payload))
+        elif path == "/admin/skills/render":
+            self._send_json(200, _skill_response(payload))
+        elif path == "/api/language/execute":
+            try:
+                self._send_json(200, {"result": _language_operation_response(payload)})
+            except (TypeError, ValueError) as exc:
+                self._send_json(422, {"detail": str(exc)})
+        elif path == "/admin/reload/code":
+            try:
+                self._send_json(200, _reload_response(payload))
+            except (OSError, ValueError) as exc:
+                self._send_json(422, {"detail": str(exc)})
         elif path == "/v1/sys/storage/raft/restore":
             # OpenBao break-glass restore — accept the raw bytes, return 204.
             token = self.headers.get("X-Vault-Token", "")
             if not token:
                 self._send_json(403, {"detail": "missing X-Vault-Token"})
                 return
-            length = int(self.headers.get("Content-Length", 0) or 0)
-            raw = self.rfile.read(length) if length > 0 else b""
+            raw = raw_body
             global OPENBAO_RESTORE_LAST_PAYLOAD
             OPENBAO_RESTORE_LAST_PAYLOAD = {
                 "size_bytes": len(raw),
@@ -1392,6 +1860,14 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--pidfile", default="")
+    parser.add_argument("--ready-file", default="")
+    parser.add_argument("--instance-id", default="")
+    parser.add_argument(
+        "--lease-seconds",
+        type=float,
+        default=0.0,
+        help="Self-terminate after this bounded lifetime; zero disables the lease.",
+    )
     parser.add_argument(
         "--managed-pid",
         type=int,
@@ -1408,18 +1884,60 @@ def main() -> int:
         global _MANAGED_PID_OVERRIDE
         _MANAGED_PID_OVERRIDE = args.managed_pid
 
-    if args.pidfile:
-        with open(args.pidfile, "w", encoding="utf-8") as fh:
-            fh.write(str(os.getpid()))
-
     server = ThreadingHTTPServer((args.host, args.port), MockDaemonHandler)
-    sys.stderr.write(f"[mock-daemon] listening on {args.host}:{args.port}\n")
+    bound_host = str(server.server_address[0])
+    bound_port = int(server.server_address[1])
+    sys.stderr.write(f"[mock-daemon] listening on {bound_host}:{bound_port}\n")
+
+    shutdown_event = threading.Event()
+
+    def _on_sigterm(signum: int, frame: object) -> None:
+        shutdown_event.set()
+
+    signal.signal(signal.SIGTERM, _on_sigterm)
+
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_started = False
+    lease_timer: threading.Timer | None = None
     try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
+        # Ownership evidence must exist before the first request can be served.
+        # The ready manifest follows thread start, so each published signal has
+        # a strict happens-before relationship with the state it promises.
+        if args.pidfile:
+            _atomic_write(args.pidfile, str(os.getpid()))
+        server_thread.start()
+        server_started = True
+        if args.ready_file:
+            _atomic_write(
+                args.ready_file,
+                json.dumps(
+                    {
+                        "base_url": f"http://{bound_host}:{bound_port}",
+                        "host": bound_host,
+                        "instance_id": args.instance_id,
+                        "pid": os.getpid(),
+                        "port": bound_port,
+                    },
+                    sort_keys=True,
+                ),
+            )
+        if args.lease_seconds > 0:
+            lease_timer = threading.Timer(args.lease_seconds, shutdown_event.set)
+            lease_timer.daemon = True
+            lease_timer.start()
+        with contextlib.suppress(KeyboardInterrupt):
+            shutdown_event.wait()
     finally:
+        if lease_timer is not None:
+            lease_timer.cancel()
+        if server_started:
+            server.shutdown()
+            server_thread.join(timeout=5)
         server.server_close()
+        for lifecycle_file in (args.ready_file, args.pidfile):
+            if lifecycle_file:
+                with contextlib.suppress(FileNotFoundError):
+                    os.unlink(lifecycle_file)
     return 0
 
 

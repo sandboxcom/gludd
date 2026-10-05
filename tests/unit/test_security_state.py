@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import os
 import stat
+import tempfile
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
@@ -231,6 +234,20 @@ def test_secure_directory_canonical_platform_temp(
         shutil.rmtree(target, ignore_errors=True)
 
 
+def test_secure_write_text_canonical_platform_temp() -> None:
+    """Write through macOS's trusted ``/tmp`` alias without weakening checks."""
+    from general_ludd.security.state import secure_write_text
+
+    with tempfile.TemporaryDirectory(dir=Path(os.sep) / "tmp") as directory:
+        target = Path(directory) / "event.json"
+
+        written = secure_write_text(target, "{}")
+
+        assert written == target
+        assert target.read_text(encoding="utf-8") == "{}"
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600
+
+
 def test_secure_directory_creates_intermediate_dirs(tmp_path: Path) -> None:
     from general_ludd.security.state import secure_directory
 
@@ -295,3 +312,52 @@ def test_secure_write_text_rejects_directory(
         from general_ludd.security.state import secure_write_text
 
         secure_write_text(target, "should-fail")
+
+
+def test_secure_write_text_closes_descriptor_for_non_regular_file(
+    tmp_path: Path,
+) -> None:
+    from general_ludd.security.state import SecureStateError, secure_write_text
+
+    target = tmp_path / "not-regular.json"
+    with (
+        patch(
+            "general_ludd.security.state.os.fstat",
+            return_value=SimpleNamespace(st_mode=stat.S_IFDIR, st_uid=0),
+        ),
+        patch(
+            "general_ludd.security.state.os.close",
+            wraps=os.close,
+        ) as close_mock,
+        pytest.raises(SecureStateError, match="not a regular file"),
+    ):
+        secure_write_text(target, "data")
+
+    close_mock.assert_called_once()
+
+
+@pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX owner checks only")
+def test_secure_write_text_closes_descriptor_for_foreign_owner(
+    tmp_path: Path,
+) -> None:
+    from general_ludd.security.state import SecureStateError, secure_write_text
+
+    target = tmp_path / "foreign-owner.json"
+    foreign_uid = os.getuid() + 1
+    with (
+        patch(
+            "general_ludd.security.state.os.fstat",
+            return_value=SimpleNamespace(
+                st_mode=stat.S_IFREG | 0o600,
+                st_uid=foreign_uid,
+            ),
+        ),
+        patch(
+            "general_ludd.security.state.os.close",
+            wraps=os.close,
+        ) as close_mock,
+        pytest.raises(SecureStateError, match="not owned by caller"),
+    ):
+        secure_write_text(target, "data")
+
+    close_mock.assert_called_once()

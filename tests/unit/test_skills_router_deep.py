@@ -7,7 +7,9 @@ import tempfile
 from unittest.mock import MagicMock, patch
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from general_ludd.daemon import create_daemon_app
 
@@ -304,3 +306,36 @@ class TestSkillsRequestModelDefaults:
 
         req = SkillCatalogInstallRequest()
         assert req.name == ""
+
+
+class TestSkillRenderRequestValidation:
+    @pytest.mark.parametrize(
+        "payload",
+        (
+            {},
+            {"name": "one", "trigger": "two"},
+            {"name": "one", "variables": {str(index): "x" for index in range(129)}},
+        ),
+    )
+    def test_rejects_ambiguous_or_unbounded_input(self, payload: dict[str, object]) -> None:
+        from general_ludd.routers.skills import SkillRenderRequest
+
+        with pytest.raises((ValidationError, ValueError)):
+            SkillRenderRequest(**payload)
+
+    def test_accepts_trigger_selection_and_rejects_encoded_size_overflow(self) -> None:
+        from general_ludd.routers.skills import SkillRenderRequest
+
+        assert SkillRenderRequest(trigger="run review").trigger == "run review"
+        with pytest.raises((ValidationError, ValueError)):
+            SkillRenderRequest(name="one", variables={"payload": "x" * 65_537})
+
+    def test_allowed_roots_include_each_configured_daemon_scope(self, tmp_path) -> None:
+        from fastapi import FastAPI
+
+        from general_ludd.routers.skills import _allowed_skill_roots
+
+        app = FastAPI()
+        app.state._project_gludd_dir = str(tmp_path / "project")
+
+        assert _allowed_skill_roots(app) == [tmp_path / "project" / "skills"]

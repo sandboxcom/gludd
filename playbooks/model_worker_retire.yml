@@ -1,0 +1,9 @@
+---
+- name: Retire one explicit prior model worker generation
+  hosts: gludd_model_workers
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  roles:
+    - role: general_ludd.agent.model_worker
+      tasks_from: retire

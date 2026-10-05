@@ -34,7 +34,7 @@
 
     - name: "Download SMolLM2-135M model"
       ansible.builtin.include_role:
-        name: model_download
+        name: general_ludd.agent.model_download
       vars:
         model_id: "{{ pipeline_model_id }}"
         download_dir: "{{ pipeline_download_dir }}"
@@ -42,7 +42,7 @@
 
     - name: "Quantize model with llama.cpp"
       ansible.builtin.include_role:
-        name: model_quantize
+        name: general_ludd.agent.model_quantize
       vars:
         model_path: "{{ pipeline_download_dir }}/{{ pipeline_model_id | regex_replace('/', '_') }}"
         quant_type: "{{ pipeline_quant_type }}"
@@ -50,7 +50,7 @@
 
     - name: "Evaluate model on benchmark tasks"
       ansible.builtin.include_role:
-        name: model_evaluate
+        name: general_ludd.agent.model_evaluate
       vars:
         model_id: "{{ pipeline_model_id }}"
         tasks: "{{ pipeline_eval_tasks }}"
@@ -60,7 +60,7 @@
 
     - name: "Register capability evidence"
       ansible.builtin.include_role:
-        name: model_register
+        name: general_ludd.agent.model_register
       vars:
         model_name: "{{ pipeline_model_id }}"
         model_quant: "{{ pipeline_quant_type }}"
@@ -70,7 +70,7 @@
 
     - name: "Start inference server"
       ansible.builtin.include_role:
-        name: model_serve
+        name: general_ludd.agent.model_serve
       vars:
         backend: llama_cpp
         model_path: "{{ pipeline_quant_output_dir }}/{{ pipeline_model_id | regex_replace('/', '_') }}-{{ pipeline_quant_type }}.gguf"

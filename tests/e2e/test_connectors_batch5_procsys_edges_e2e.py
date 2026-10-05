@@ -7,6 +7,7 @@ disk statistics without touching the host filesystem.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 
@@ -14,7 +15,11 @@ def _source(fixtures: dict[str, str]):
     from general_ludd.connectors.proc_sys import ProcSysSource
 
     def reader(path: str) -> str:
-        return fixtures[path]
+        # The source realpath()s selectors (resolving /proc/self → the
+        # caller's PID); normalize both forms back to the fixture's
+        # canonical /proc/... key so the canned reads stay deterministic.
+        normalized = re.sub(r"/proc/(?:self|\d+)/", "/proc/", path)
+        return fixtures[normalized]
 
     return ProcSysSource({"name": "proc-sys-e2e"}, reader=reader)
 
@@ -56,4 +61,3 @@ def test_selector_keyed_and_unknown_paths_are_explicit() -> None:
     assert records[0]["labels"]["unit"] == "kB"
     assert records[1]["message"] == "HugePages_Total"
     assert records[1]["value"] == 2
-

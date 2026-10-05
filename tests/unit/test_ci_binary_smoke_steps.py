@@ -1,6 +1,7 @@
 """Structural test: build jobs in .github/workflows/build.yml MUST run a
-post-build smoke test against the freshly-built binary BEFORE any
-upload-artifact step.
+post-build smoke test against the freshly-built binary BEFORE any publishable
+release upload. Failure-diagnostic uploads may precede smoke tests so evidence
+survives a later failure.
 
 Catches the regression class where a PyInstaller build succeeds but the
 binary crashes at runtime (e.g. the "Missing base YAML definition file"
@@ -11,7 +12,9 @@ on ``version`` / ``--help`` must never reach the release artifact stage.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -21,7 +24,7 @@ BUILD_YML = REPO_ROOT / ".github" / "workflows" / "build.yml"
 
 
 @pytest.fixture(scope="module")
-def build_workflow() -> dict:
+def build_workflow() -> dict[str, Any]:
     """Load .github/workflows/build.yml with yaml.safe_load."""
     assert BUILD_YML.is_file(), f"build.yml missing at {BUILD_YML}"
     with BUILD_YML.open("r", encoding="utf-8") as fh:
@@ -31,7 +34,7 @@ def build_workflow() -> dict:
     return data
 
 
-def _job(workflow: dict, name: str) -> dict:
+def _job(workflow: dict[str, Any], name: str) -> dict[str, Any]:
     job = workflow.get("jobs", {}).get(name)
     assert isinstance(job, dict), (
         f"build.yml job '{name}' missing — required for post-build smoke test"
@@ -39,11 +42,15 @@ def _job(workflow: dict, name: str) -> dict:
     return job
 
 
-def _steps(workflow: dict, name: str) -> list[dict]:
+def _steps(workflow: dict[str, Any], name: str) -> list[dict[str, Any]]:
     return _job(workflow, name).get("steps", []) or []
 
 
-def _step_index(workflow: dict, job_name: str, predicate) -> int:
+def _step_index(
+    workflow: dict[str, Any],
+    job_name: str,
+    predicate: Callable[[str, str], bool],
+) -> int:
     """Return the index of the first step matching predicate(name, run)."""
     for idx, step in enumerate(_steps(workflow, job_name)):
         step_name = step.get("name") or ""
@@ -53,10 +60,19 @@ def _step_index(workflow: dict, job_name: str, predicate) -> int:
     return -1
 
 
-def _step_uses_uses(step: dict) -> str:
+def _step_uses_uses(step: dict[str, Any]) -> str:
     """Return the action referenced by an actions/... step, else empty."""
     uses = step.get("uses") or ""
     return uses.split("@", 1)[0] if uses else ""
+
+
+def _is_release_upload(step: dict[str, Any]) -> bool:
+    """Identify artifacts admitted to the release job's gludd-* fan-in."""
+    artifact_name = str(step.get("with", {}).get("name", ""))
+    return (
+        _step_uses_uses(step) == "actions/upload-artifact"
+        and artifact_name.startswith("gludd-")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -70,7 +86,9 @@ class TestSmokeTestStepPerPlatform:
     @pytest.mark.parametrize(
         "job_name", ["linux", "macos", "windows"], ids=lambda n: f"job:{n}"
     )
-    def test_smoke_test_step_exists(self, build_workflow: dict, job_name: str) -> None:
+    def test_smoke_test_step_exists(
+        self, build_workflow: dict[str, Any], job_name: str
+    ) -> None:
         steps = _steps(build_workflow, job_name)
         assert steps, f"build.yml job '{job_name}' has no steps"
 
@@ -88,7 +106,7 @@ class TestSmokeTestStepPerPlatform:
         "job_name", ["linux", "macos", "windows"], ids=lambda n: f"job:{n}"
     )
     def test_smoke_step_runs_binary(
-        self, build_workflow: dict, job_name: str
+        self, build_workflow: dict[str, Any], job_name: str
     ) -> None:
         combined = "\n".join(
             (s.get("run") or "") for s in _steps(build_workflow, job_name)
@@ -102,7 +120,7 @@ class TestSmokeTestStepPerPlatform:
 
 
 # ---------------------------------------------------------------------------
-# Ordering: smoke test AFTER Build executable, BEFORE upload-artifact
+# Ordering: smoke test AFTER Build executable, BEFORE release upload
 # ---------------------------------------------------------------------------
 
 
@@ -113,7 +131,7 @@ class TestSmokeTestOrdering:
         "job_name", ["linux", "macos", "windows"], ids=lambda n: f"job:{n}"
     )
     def test_smoke_after_build_before_upload(
-        self, build_workflow: dict, job_name: str
+        self, build_workflow: dict[str, Any], job_name: str
     ) -> None:
         build_idx = _step_index(
             build_workflow,
@@ -136,7 +154,7 @@ class TestSmokeTestOrdering:
 
         upload_indices = [
             i for i, s in enumerate(_steps(build_workflow, job_name))
-            if _step_uses_uses(s) == "actions/upload-artifact"
+            if _is_release_upload(s)
         ]
         assert upload_indices, (
             f"build.yml job '{job_name}' has no upload-artifact step"
@@ -144,9 +162,33 @@ class TestSmokeTestOrdering:
         first_upload = upload_indices[0]
         assert smoke_idx < first_upload, (
             f"build.yml job '{job_name}': 'Smoke test binary' (idx {smoke_idx}) "
-            f"must run BEFORE upload-artifact (idx {first_upload}) so a broken "
+            f"must run BEFORE the release upload (idx {first_upload}) so a broken "
             f"binary never reaches the published artifact"
         )
+
+
+class TestMacOSPackageSmokeLifecycle:
+    """The mounted DMG is force-detached on success and failure paths."""
+
+    def test_dmg_detach_handles_hosted_runner_resource_busy(
+        self, build_workflow: dict[str, Any]
+    ) -> None:
+        """Both teardown paths must use hdiutil's open-file override."""
+        package_steps = [
+            step
+            for step in _steps(build_workflow, "macos")
+            if (step.get("name") or "") == "Smoke packaged macOS artifacts"
+        ]
+        assert len(package_steps) == 1
+        run = package_steps[0].get("run") or ""
+
+        forced_detach = 'hdiutil detach "$mount_point" -force'
+        assert run.count(forced_detach) >= 2, (
+            "macOS packaged-artifact smoke must use force-detach in both the "
+            "normal path and EXIT cleanup because hosted Disk Arbitration can "
+            "report a transient resource-busy mount after executing the image"
+        )
+        assert 'hdiutil detach "$mount_point"\n' not in run
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +208,7 @@ class TestSmokeTestCrashDetection:
         "job_name", ["linux", "macos", "windows"], ids=lambda n: f"job:{n}"
     )
     def test_smoke_step_detects_crash_signatures(
-        self, build_workflow: dict, job_name: str
+        self, build_workflow: dict[str, Any], job_name: str
     ) -> None:
         smoke_steps = [
             s for s in _steps(build_workflow, job_name)
@@ -194,7 +236,7 @@ class TestSmokeTestCrashDetection:
 class TestLinuxDaemonSmokeTest:
     """The linux build job must additionally smoke-test daemon startup."""
 
-    def test_daemon_smoke_step_exists(self, build_workflow: dict) -> None:
+    def test_daemon_smoke_step_exists(self, build_workflow: dict[str, Any]) -> None:
         steps = _steps(build_workflow, "linux")
         daemon_steps = [
             s for s in steps
@@ -206,7 +248,7 @@ class TestLinuxDaemonSmokeTest:
             "the daemon must be verified to boot on the platform that can run it"
         )
 
-    def test_daemon_smoke_healthcheck(self, build_workflow: dict) -> None:
+    def test_daemon_smoke_healthcheck(self, build_workflow: dict[str, Any]) -> None:
         combined = "\n".join(
             (s.get("run") or "")
             for s in _steps(build_workflow, "linux")
@@ -223,7 +265,37 @@ class TestLinuxDaemonSmokeTest:
             "linux daemon smoke test must hit a /health endpoint to verify boot"
         )
 
-    def test_daemon_smoke_before_upload(self, build_workflow: dict) -> None:
+    def test_daemon_smoke_uses_current_blocking_cli_contract(
+        self, build_workflow: dict[str, Any]
+    ) -> None:
+        """The daemon command itself is the server; there is no ``start`` verb."""
+        combined = "\n".join(
+            (s.get("run") or "")
+            for s in _steps(build_workflow, "linux")
+            if "daemon" in (s.get("name") or "").lower()
+            and "smoke" in (s.get("name") or "").lower()
+        )
+
+        assert "./dist/gludd daemon start" not in combined
+        assert re.search(r"\./dist/gludd daemon\s+--host\s+127\.0\.0\.1", combined)
+        assert "/healthz" in combined
+
+    def test_daemon_smoke_fails_immediately_when_server_exits(
+        self, build_workflow: dict[str, Any]
+    ) -> None:
+        """A dead binary is surfaced with its exit status, not a blind timeout."""
+        combined = "\n".join(
+            (s.get("run") or "")
+            for s in _steps(build_workflow, "linux")
+            if "daemon" in (s.get("name") or "").lower()
+            and "smoke" in (s.get("name") or "").lower()
+        )
+
+        assert 'kill -0 "$DAEMON_PID"' in combined
+        assert 'wait "$DAEMON_PID"' in combined
+        assert "daemon exited before becoming healthy" in combined.lower()
+
+    def test_daemon_smoke_before_upload(self, build_workflow: dict[str, Any]) -> None:
         daemon_idx = _step_index(
             build_workflow,
             "linux",
@@ -234,10 +306,10 @@ class TestLinuxDaemonSmokeTest:
         )
         upload_indices = [
             i for i, s in enumerate(_steps(build_workflow, "linux"))
-            if _step_uses_uses(s) == "actions/upload-artifact"
+            if _is_release_upload(s)
         ]
-        assert upload_indices, "build.yml linux job has no upload-artifact step"
+        assert upload_indices, "build.yml linux job has no release upload step"
         assert daemon_idx < upload_indices[0], (
             f"linux 'Smoke test daemon start' (idx {daemon_idx}) must run "
-            f"BEFORE upload-artifact (idx {upload_indices[0]})"
+            f"BEFORE the release upload (idx {upload_indices[0]})"
         )

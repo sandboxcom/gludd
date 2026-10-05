@@ -172,9 +172,7 @@ def _cast_xpath_result(result: Any) -> list[ET.Element]:
     return items
 
 
-def _stdlib_xpath_fallback(
-    root: ET.Element, query: str, namespaces: dict[str, str]
-) -> list[ET.Element]:
+def _stdlib_xpath_fallback(root: ET.Element, query: str, namespaces: dict[str, str]) -> list[ET.Element]:
     """Resolve simple namespace-prefixed paths on stdlib ElementTree.
 
     Strips leading ``.//`` or ``/`` and walks children with namespace
@@ -239,23 +237,16 @@ def infer_xsd(
     ns_attr = ""
     if target_namespace:
         ns_attr = f' xmlns:tns="{target_namespace}" targetNamespace="{target_namespace}"'
-    lines.append(
-        f'<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema"{ns_attr}>'
-    )
+    lines.append(f'<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema"{ns_attr}>')
     for elem_name, info in sorted(elements.items()):
-        lines.append(
-            f'  <xsd:element name="{elem_name}">'
-        )
+        lines.append(f'  <xsd:element name="{elem_name}">')
         child_names = info.get("children", [])
         if child_names:
             lines.append("    <xsd:complexType>")
             lines.append("      <xsd:sequence>")
             for child in sorted(child_names):
                 min_occurs = info.get("required", {}).get(child, 0)
-                lines.append(
-                    f'        <xsd:element ref="{child}" '
-                    f'minOccurs="{min_occurs}"/>'
-                )
+                lines.append(f'        <xsd:element ref="{child}" minOccurs="{min_occurs}"/>')
             lines.append("      </xsd:sequence>")
             lines.append("    </xsd:complexType>")
         else:
@@ -275,9 +266,7 @@ def _collect_xsd_elements(
     children: set[str] = info["children"]
     required: dict[str, int] = info["required"]
     for child in elem:
-        child_local = (
-            child.tag.rsplit("}", 1)[-1] if "}" in child.tag else child.tag
-        )
+        child_local = child.tag.rsplit("}", 1)[-1] if "}" in child.tag else child.tag
         children.add(child_local)
         required[child_local] = required.get(child_local, 0) + 1
         _collect_xsd_elements(child, elements, tag_local)
@@ -306,9 +295,7 @@ def apply_xslt(
     lxml is not installed.
     """
     if not _LXML_AVAILABLE:
-        raise RuntimeError(
-            "apply_xslt requires lxml; install it with 'pip install lxml'"
-        )
+        raise RuntimeError("apply_xslt requires lxml; install it with 'pip install lxml'")
     xml_doc = _resolve_xml_source(xml_input)
     xslt_doc = _resolve_xml_source(xslt_file)
     access_control = lxml_etree.XSLTAccessControl(
@@ -320,9 +307,7 @@ def apply_xslt(
     )
     transform = lxml_etree.XSLT(xslt_doc, access_control=access_control)
     result = (
-        transform(xml_doc, **{k: _xslt_param_value(v) for k, v in params.items()})
-        if params
-        else transform(xml_doc)
+        transform(xml_doc, **{k: _xslt_param_value(v) for k, v in params.items()}) if params else transform(xml_doc)
     )
     return str(result)
 
@@ -422,9 +407,7 @@ def extract_namespaces(xml_string: str) -> dict[str, str]:
     return namespaces
 
 
-def register_namespaces(
-    tree: ET.ElementTree, namespaces: dict[str, str]
-) -> None:
+def register_namespaces(tree: ET.ElementTree, namespaces: dict[str, str]) -> None:
     """Register namespace prefixes on *tree* so serialisation uses them."""
     for prefix, uri in namespaces.items():
         if prefix:
@@ -465,9 +448,7 @@ def build_soap_envelope(
         body.append(payload)
     except ET.ParseError:
         body.text = body_content
-    return _pretty_print_xml(
-        ET.tostring(envelope, encoding="unicode", method="xml")
-    )
+    return _pretty_print_xml(ET.tostring(envelope, encoding="unicode", method="xml"))
 
 
 def parse_soap_response(response_xml: str) -> dict[str, Any]:
@@ -485,11 +466,7 @@ def parse_soap_response(response_xml: str) -> dict[str, Any]:
     for child in root:
         if child.tag == body_tag:
             body_children = list(child)
-            result["body"] = (
-                [xml_to_dict(c) for c in body_children]
-                if body_children
-                else (child.text or "").strip()
-            )
+            result["body"] = [xml_to_dict(c) for c in body_children] if body_children else (child.text or "").strip()
         elif child.tag == header_tag:
             result["header"] = xml_to_dict(child)
     return result
@@ -507,8 +484,12 @@ def _matches_ns(tag: str, uri: str) -> bool:
 def parse_saml_assertion(saml_xml: str) -> dict[str, Any]:
     """Extract key fields from a SAML 2.0 assertion."""
     from datetime import datetime as dt
+    from xml.parsers.expat import ExpatError
 
-    root = secure_parse_xml_string(saml_xml, source="saml-assertion")
+    try:
+        root = secure_parse_xml_string(saml_xml, source="saml-assertion")
+    except (ET.ParseError, ExpatError):
+        return {}
     ns = extract_namespaces(saml_xml)
     saml_uri = ns.get("saml", ns.get("saml2", _DEFAULT_SAML_NS))
     dsig_uri = ns.get("ds", _DEFAULT_DSIG_NS)
@@ -545,7 +526,7 @@ def parse_saml_assertion(saml_xml: str) -> dict[str, Any]:
         nameid = _find_element(subject_el, f"{{{saml_uri}}}NameID")
         if nameid is not None:
             result["subject"] = {
-                "name_id": nameid.text or "",
+                "name_id": (nameid.text or "").strip(),
                 "format": nameid.get("Format", ""),
             }
 
@@ -556,35 +537,24 @@ def parse_saml_assertion(saml_xml: str) -> dict[str, Any]:
             "not_on_or_after": conditions_el.get("NotOnOrAfter", ""),
         }
 
-    attr_statement = _find_element(
-        assertion, f"{{{saml_uri}}}AttributeStatement"
-    )
+    attr_statement = _find_element(assertion, f"{{{saml_uri}}}AttributeStatement")
     if attr_statement is not None:
         attrs: dict[str, list[str]] = {}
         for attr in attr_statement.findall(f"{{{saml_uri}}}Attribute"):
             name = attr.get("Name", "")
-            values = [
-                (val.text or "")
-                for val in attr.findall(f"{{{saml_uri}}}AttributeValue")
-            ]
+            values = [(val.text or "") for val in attr.findall(f"{{{saml_uri}}}AttributeValue")]
             attrs[name] = values
         result["attributes"] = attrs
 
-    authn_statement = _find_element(
-        assertion, f"{{{saml_uri}}}AuthnStatement"
-    )
+    authn_statement = _find_element(assertion, f"{{{saml_uri}}}AuthnStatement")
     if authn_statement is not None:
         result["authn"] = {
             "instant": authn_statement.get("AuthnInstant", ""),
             "context": "",
         }
-        context_el = _find_element(
-            authn_statement, f"{{{saml_uri}}}AuthnContext"
-        )
+        context_el = _find_element(authn_statement, f"{{{saml_uri}}}AuthnContext")
         if context_el is not None:
-            ref = _find_element(
-                context_el, f"{{{saml_uri}}}AuthnContextClassRef"
-            )
+            ref = _find_element(context_el, f"{{{saml_uri}}}AuthnContextClassRef")
             if ref is not None:
                 result["authn"]["context"] = ref.text or ""
 
@@ -619,9 +589,7 @@ def validate_saml_signature(saml_xml: str, cert_pem: str) -> bool:
     return True
 
 
-def _find_element(
-    parent: ET.Element, tag: str
-) -> ET.Element | None:
+def _find_element(parent: ET.Element, tag: str) -> ET.Element | None:
     for child in parent:
         if child.tag == tag:
             return child
@@ -633,9 +601,7 @@ def _find_element(
 # ---------------------------------------------------------------------------
 
 
-def docbook_to_html(
-    docbook_xml: str, xslt_path: str | None = None
-) -> str:
+def docbook_to_html(docbook_xml: str, xslt_path: str | None = None) -> str:
     """Convert DocBook XML to HTML.
 
     When *xslt_path* is ``None`` the transformation outputs a basic HTML
@@ -697,9 +663,7 @@ def parse_gradle_dependencies(gradle_content: str) -> list[dict[str, str]]:
     and shorthand (``'g:n:v'``) dependency notations.
     """
     deps: list[dict[str, str]] = []
-    shorthand = re.findall(
-        r"[\"']([^\"':]+:[^\"':]+:[^\"']+)[\"']", gradle_content
-    )
+    shorthand = re.findall(r"[\"']([^\"':]+:[^\"':]+:[^\"']+)[\"']", gradle_content)
     for match in shorthand:
         parts = match.split(":")
         if len(parts) >= 2:

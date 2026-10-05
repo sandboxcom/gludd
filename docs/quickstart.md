@@ -153,13 +153,13 @@ The daemon exposes a live facts snapshot that Ansible playbooks can consume:
 
 ```bash
 # Full daemon state snapshot (work/todos/models/history/messages/metrics/traces)
-curl -H "Authorization: Bearer $GLUDD_PSK" http://localhost:8000/api/facts
+curl -H "Authorization: Bearer $GLUDD_AUTH_PSK" http://localhost:8000/api/facts
 
 # Metrics only
-curl -H "Authorization: Bearer $GLUDD_PSK" http://localhost:8000/api/metrics
+curl -H "Authorization: Bearer $GLUDD_AUTH_PSK" http://localhost:8000/api/metrics
 
 # Recent execution traces
-curl -H "Authorization: Bearer $GLUDD_PSK" http://localhost:8000/api/traces
+curl -H "Authorization: Bearer $GLUDD_AUTH_PSK" http://localhost:8000/api/traces
 ```
 
 In a playbook, use `gludd_facts` to branch on live data:

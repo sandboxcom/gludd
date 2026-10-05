@@ -13,6 +13,8 @@ Run: make test-iso TESTFILE='tests/security/test_gateway_redteam.py'
 
 from __future__ import annotations
 
+import datetime
+
 import httpx
 import pytest
 
@@ -159,7 +161,17 @@ def test_missing_token_keys_meter_as_free():
             usage={"prompt_tokens": 5000, "completion_tokens": 5000},
         )
 
-    gw = _gateway_with(chat, [_profile()])
+    gw = _gateway_with(
+        chat,
+        [_profile()],
+        billing_clock=lambda: datetime.datetime(
+            2026,
+            8,
+            2,
+            12,
+            tzinfo=datetime.UTC,
+        ),
+    )
     resp = gw.call_model("p1", [{"role": "user", "content": "hi"}])
     # (5000 * 0.00001 + 5000 * 0.00002) * 0.75 == 0.1125
     assert resp.cost_estimate == pytest.approx(0.1125)

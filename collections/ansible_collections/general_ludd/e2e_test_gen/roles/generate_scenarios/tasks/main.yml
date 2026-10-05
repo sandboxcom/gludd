@@ -1,85 +1,34 @@
 ---
-# generate_scenarios — map code-path symbols to E2E test scenarios
-#
-# Matches public functions/classes against the scenario catalog (CRUD, auth,
-# timeout, concurrent, daemon). Produces GeneratedScenario records with step
-# sequences and coverage targets.
+- name: Validate scenario generation input
+  ansible.builtin.assert:
+    that:
+      - symbols_artifact | length > 0 or target_module | length > 0
+    fail_msg: "Set symbols_artifact or target_module before generating scenarios."
 
-- name: Create artifact directory
-  ansible.builtin.file:
-    path: "{{ artifact_dir }}"
-    state: directory
-    mode: "0755"
-
-# ── Resolve symbols input ───────────────────────────────────────────────
-
-- name: Load symbols from provided artifact
-  ansible.builtin.slurp:
-    src: "{{ symbols_artifact }}"
-  register: _gs_symbols_raw
-  when: symbols_artifact | length > 0
-
-- name: Parse provided symbols artifact
-  ansible.builtin.set_fact:
-    _gs_module_symbols: "{{ _gs_symbols_raw.content | b64decode | from_json }}"
-  when:
-    - symbols_artifact | length > 0
-    - _gs_symbols_raw.content | default('') | length > 0
-
-- name: Run analyze_code_paths as fallback
+- name: Analyze target module when no symbols artifact was supplied
   ansible.builtin.include_role:
     name: general_ludd.e2e_test_gen.analyze_code_paths
+    public: false
+    rolespec_validate: true
   vars:
     target_module: "{{ target_module }}"
     artifact_dir: "{{ artifact_dir }}"
-  when:
-    - symbols_artifact | length == 0
-    - target_module | length > 0
+  when: symbols_artifact | length == 0
 
-- name: Load fallback symbols artifact
-  ansible.builtin.slurp:
-    src: "{{ artifact_dir }}/module_symbols.json"
-  register: _gs_fb_raw
-  when:
-    - symbols_artifact | length == 0
-    - target_module | length > 0
+- name: Generate scenarios through the packaged controller action
+  general_ludd.e2e_test_gen.e2e_pipeline:
+    operation: generate
+    symbols_file: >-
+      {{ symbols_artifact if symbols_artifact | length > 0
+         else artifact_dir + '/module_symbols.json' }}
+    output: "{{ artifact_dir }}/{{ scenarios_artifact_name }}"
+    timeout: 360
+  register: _gs_pipeline
 
-- name: Parse fallback symbols
+- name: Publish generated scenario facts
   ansible.builtin.set_fact:
-    _gs_module_symbols: "{{ _gs_fb_raw.content | b64decode | from_json }}"
-  when:
-    - symbols_artifact | length == 0
-    - target_module | length > 0
-    - _gs_fb_raw.content | default('') | length > 0
-
-- name: Fail if no symbols available
-  ansible.builtin.fail:
-    msg: "No symbols input provided. Set symbols_artifact or target_module."
-  when: _gs_module_symbols is not defined
-
-# ── Scenario generation via Python module ───────────────────────────────
-
-- name: Write symbols JSON to temp file for Python consumption
-  ansible.builtin.copy:
-    content: "{{ _gs_module_symbols | to_json }}"
-    dest: "{{ artifact_dir }}/_symbols_input.json"
-    mode: "0644"
-
-- name: Run generate_scenarios script
-  ansible.builtin.command:
-    cmd: >-
-      python3 "{{ generate_script }}"
-      --symbols-file "{{ artifact_dir }}/_symbols_input.json"
-      --output "{{ artifact_dir }}/{{ scenarios_artifact_name }}"
-  register: _gs_script_result
-  changed_when: false
-
-- name: Parse generated scenarios output
-  ansible.builtin.set_fact:
-    _gs_output: "{{ (lookup('file', artifact_dir + '/' + scenarios_artifact_name) | from_json) }}"
-    _gs_scenarios: "{{ (lookup('file', artifact_dir + '/' + scenarios_artifact_name) | from_json).get('scenarios', []) }}"
-
-# ── Report completion ──────────────────────────────────────────────────
+    _gs_output: "{{ _gs_pipeline.artifact }}"
+    _gs_scenarios: "{{ _gs_pipeline.artifact.scenarios }}"
 
 - name: Report completion
   ansible.builtin.debug:

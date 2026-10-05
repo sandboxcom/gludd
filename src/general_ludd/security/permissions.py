@@ -38,6 +38,14 @@ _RESOURCE_CONSTRAINTS: dict[str, tuple[str, ...]] = {
 }
 
 
+def _path_prefix_matches(path: str, pattern: str) -> bool:
+    """Match a glob or a literal path prefix on a segment boundary."""
+    if fnmatch.fnmatchcase(path, pattern):
+        return True
+    literal_prefix = pattern.rstrip("/")
+    return bool(literal_prefix) and path.startswith(f"{literal_prefix}/")
+
+
 class PermissionDeniedError(RuntimeError):
     """Raised when a subject spec requests capabilities its issuer lacks."""
 
@@ -147,7 +155,7 @@ class PermissionSpec:
                 if isinstance(patterns, list) and patterns:
                     if not any(fnmatch.fnmatchcase(path, str(p)) for p in patterns):
                         continue
-                elif isinstance(prefix, str) and prefix and not fnmatch.fnmatchcase(path, prefix):
+                elif isinstance(prefix, str) and prefix and not _path_prefix_matches(path, prefix):
                     continue
             return True
         return False
@@ -360,6 +368,7 @@ class PermissionSpecParser:
 
     @staticmethod
     def parse(yaml_str: str) -> PermissionSpec:
+        """Parse a YAML permission document into a permission specification."""
         data = yaml.safe_load(yaml_str) or {}
         capabilities = [
             Capability(
@@ -396,10 +405,12 @@ class PermissionSpecParser:
 
     @staticmethod
     def parse_file(path: str | Path) -> PermissionSpec:
+        """Parse a permission specification from a UTF-8 YAML file."""
         return PermissionSpecParser.parse(Path(path).read_text())
 
     @staticmethod
     def validate(spec: PermissionSpec) -> list[str]:
+        """Return all structural and constraint errors in a specification."""
         errors: list[str] = []
         for cap in spec.capabilities:
             family = PermissionSpecParser._family(cap.resource)
@@ -436,6 +447,7 @@ class PermissionSpecParser:
 
     @staticmethod
     def is_subset(requested: PermissionSpec, issuer: PermissionSpec) -> bool:
+        """Return whether requested authority is contained by issuer authority."""
         for r in requested.capabilities:
             family = PermissionSpecParser._family(r.resource)
             if family is None:

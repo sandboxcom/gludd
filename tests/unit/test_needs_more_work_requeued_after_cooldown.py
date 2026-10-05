@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest_asyncio
-from sqlalchemy import event, text
+from sqlalchemy import DateTime, bindparam, event, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -20,6 +20,10 @@ from sqlalchemy.pool import StaticPool
 from general_ludd.db.models import Base, TodoModel
 from general_ludd.db.repository import TodoRepository
 from general_ludd.schemas.todo import TodoStatus
+
+_SET_UPDATED_AT = text(
+    "UPDATE todos SET updated_at = :ts WHERE id = :id"
+).bindparams(bindparam("ts", type_=DateTime(timezone=True)))
 
 
 def _make_async_engine():
@@ -81,7 +85,7 @@ async def _seed_needs_more_work(
     )
     old_stamp = datetime.now(UTC) - timedelta(hours=hours_ago)
     await repo._session.execute(
-        text("UPDATE todos SET updated_at = :ts WHERE id = :id"),
+        _SET_UPDATED_AT,
         {"ts": old_stamp, "id": todo.id},
     )
     await repo._session.flush()
@@ -162,7 +166,7 @@ class TestNeedsMoreWorkRequeuedAfterCooldown:
         )
         old_stamp = datetime.now(UTC) - timedelta(hours=48)
         await session.execute(
-            text("UPDATE todos SET updated_at = :ts WHERE id = :id"),
+            _SET_UPDATED_AT,
             {"ts": old_stamp, "id": todo.id},
         )
         await session.flush()

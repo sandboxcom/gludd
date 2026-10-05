@@ -7,6 +7,7 @@ from collections.abc import Callable
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from general_ludd.models.gateway import (
@@ -219,7 +220,7 @@ def test_retry_chain_shares_one_cumulative_payload_budget(
     health = MagicMock()
     health.is_healthy.return_value = True
     gateway, _, chat_model = _gateway(
-        _profile(**overrides),
+        _profile("limited", **overrides),
         response,
         request_token_counter=counter,
         response_cache=cache,
@@ -703,11 +704,17 @@ def test_get_chat_model_uses_aliases_and_binds_tools_without_invocation() -> Non
 
     assert isinstance(returned, _LimitedChatModel)
     assert returned._inner is bound_model
-    provider_factory.assert_called_once_with(
-        model="test-model",
-        api_key="secret-value",
-        base_url="https://api.openai.com/v1",
-    )
+    provider_factory.assert_called_once()
+    init_kwargs = dict(provider_factory.call_args.kwargs)
+    timeout = init_kwargs.pop("request_timeout")
+    assert isinstance(timeout, httpx.Timeout)
+    assert timeout.connect == 10.0
+    assert timeout.read == 60.0
+    assert init_kwargs == {
+        "model": "test-model",
+        "api_key": "secret-value",
+        "base_url": "https://api.openai.com/v1",
+    }
     raw_model.bind_tools.assert_called_once_with(tools)
     raw_model.invoke.assert_not_called()
 
@@ -769,7 +776,13 @@ def test_get_chat_model_omits_unresolved_aliases_and_warns_for_unbound_tools(
 
     assert isinstance(returned, _LimitedChatModel)
     assert returned._inner is raw_model
-    provider_factory.assert_called_once_with(model="test-model")
+    provider_factory.assert_called_once()
+    init_kwargs = dict(provider_factory.call_args.kwargs)
+    timeout = init_kwargs.pop("request_timeout")
+    assert isinstance(timeout, httpx.Timeout)
+    assert timeout.connect == 10.0
+    assert timeout.read == 60.0
+    assert init_kwargs == {"model": "test-model"}
     assert "does not support bind_tools" in caplog.text
 
 
@@ -786,7 +799,13 @@ def test_get_chat_model_constructs_minimal_model_without_aliases_or_tools() -> N
 
     assert isinstance(returned, _LimitedChatModel)
     assert returned._inner is raw_model
-    provider_factory.assert_called_once_with(model="test-model")
+    provider_factory.assert_called_once()
+    init_kwargs = dict(provider_factory.call_args.kwargs)
+    timeout = init_kwargs.pop("request_timeout")
+    assert isinstance(timeout, httpx.Timeout)
+    assert timeout.connect == 10.0
+    assert timeout.read == 60.0
+    assert init_kwargs == {"model": "test-model"}
 
 
 def test_add_remove_profile_exposes_limits_and_notifies_without_payloads() -> None:

@@ -1,15 +1,28 @@
 ---
-- name: Converge — run local_game_gen role behavioral pipeline
+- name: Converge - run local_game_gen through the Gludd daemon
   hosts: localhost
   connection: local
   gather_facts: false
+  force_handlers: true
   vars:
+    molecule_mock_daemon_psk: "molecule-local-game-gen-psk"
     game_name: "snake"
     model_repo: "bartowski/Qwen2.5-0.5B-Instruct-GGUF"
     model_file: "Qwen2.5-0.5B-Instruct-Q5_K_M.gguf"
+  handlers:
+    - name: Stop scenario-owned mock daemon
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_stop.yml"
   tasks:
+    - name: Start scenario-owned mock daemon
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_start.yml"
+
     - name: Invoke local_game_gen role
       ansible.builtin.include_role:
         name: general_ludd.agent.local_game_gen
       vars:
         game_name: "snake"
+        daemon_url: "{{ mock_daemon_url }}"
+        psk: "{{ molecule_mock_daemon_psk }}"
+        max_attempts: 3
+        fail_on_rejection: true
+        use_acceptance_engine: true

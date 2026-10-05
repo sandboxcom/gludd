@@ -19,7 +19,7 @@ LIB_DIR = PROJECT_ROOT / ".opencode" / "lib"
 
 # ── 1. Identify all enforcement plugins ──────────────────────────────────────
 
-def test_enforcement_plugins_exist():
+def test_enforcement_plugins_exist() -> None:
     """All enforcement plugins should be present on disk."""
     expected = [
         "enforce-stop.ts",
@@ -57,7 +57,7 @@ def _read_plugin(name: str) -> str:
     return (PLUGIN_DIR / name).read_text()
 
 
-def test_task_tracking_references_in_enforce_stop():
+def test_task_tracking_references_in_enforce_stop() -> None:
     """enforce-stop.ts impl MUST reference TASKS.md for pending-work detection."""
     impl_path = PLUGIN_DIR / "impl" / "enforce_stop_impl.ts"
     assert impl_path.exists(), "enforce_stop_impl.ts must exist"
@@ -67,7 +67,7 @@ def test_task_tracking_references_in_enforce_stop():
     assert "tasksMdUnchecked" in content, "must track tasksMdUnchecked"
 
 
-def test_task_tracking_references_in_enforce_session_start():
+def test_task_tracking_references_in_enforce_session_start() -> None:
     """enforce-session-start.ts MUST force reading TASKS.md, BUGS.md, ratchet.yml, SESSION.md."""
     content = _read_plugin("enforce-session-start.ts")
     assert "TASKS.md" in content
@@ -76,7 +76,7 @@ def test_task_tracking_references_in_enforce_session_start():
         "must detect stale TASKS.md read"
 
 
-def test_task_tracking_references_in_enforce_multitask():
+def test_task_tracking_references_in_enforce_multitask() -> None:
     """enforce-multitask.ts checks TASKS.md unchecked items as part of hasPendingWork()."""
     content = _read_plugin("enforce-multitask.ts")
     assert "TASKS.md" in content
@@ -84,7 +84,7 @@ def test_task_tracking_references_in_enforce_multitask():
     assert re.search(r"\[\s*\]", content), "must check for unchecked checkbox pattern"
 
 
-def test_task_tracking_references_in_enforce_floor():
+def test_task_tracking_references_in_enforce_floor() -> None:
     """enforce-floor.ts checks TASKS.md in openWorkExists() and _buildDispatchCommands()."""
     content = _read_plugin("enforce-floor.ts")
     assert "TASKS.md" in content
@@ -92,7 +92,7 @@ def test_task_tracking_references_in_enforce_floor():
     assert "_buildDispatchCommands" in content, "must build dispatch commands from TASKS.md"
 
 
-def test_task_tracking_references_in_enforce_verified_claims():
+def test_task_tracking_references_in_enforce_verified_claims() -> None:
     """The plugin delegates done-claim matching to its testable helper module.
 
     The matcher constants intentionally live in ``plugin_test_exports.ts`` so
@@ -122,7 +122,7 @@ GAP_DESCRIPTIONS = {
 }
 
 
-def test_gap_inventory_is_complete():
+def test_gap_inventory_is_complete() -> None:
     """All known task-tracking gaps must be documented."""
     assert len(GAP_DESCRIPTIONS) >= 5, f"Expected >=5 gaps, found {len(GAP_DESCRIPTIONS)}"
     for key, desc in GAP_DESCRIPTIONS.items():
@@ -136,13 +136,13 @@ def _grep_plugins(pattern: str) -> list[str]:
         try:
             content = f.read_text()
             if re.search(pattern, content):
-                matches.append(f.name)
+                matches.append(f.relative_to(PLUGIN_DIR).as_posix())
         except Exception:
             pass
     return matches
 
 
-def test_no_plugin_tracks_user_prompt_to_tasks_update():
+def test_no_plugin_tracks_user_prompt_to_tasks_update() -> None:
     """Gap-1: No plugin forces adding user prompts as TASKS.md entries."""
     # Search for patterns that WOULD indicate prompt→TASKS tracking
     indicators = _grep_plugins(r"user.?prompt|user.?message|last.?prompt|prompt.?timestamp")
@@ -161,7 +161,7 @@ def test_no_plugin_tracks_user_prompt_to_tasks_update():
     assert "gap-1" in GAP_DESCRIPTIONS
 
 
-def test_no_plugin_cross_references_prompts_to_tasks():
+def test_no_plugin_cross_references_prompts_to_tasks() -> None:
     """Gap-2: No plugin cross-references user prompts against TASKS.md entries."""
     # Look for any plugin that compares user message content to TASKS.md content
     cross_ref = _grep_plugins(r"cross.?ref|compare.*tasks|match.*user.*task")
@@ -171,7 +171,7 @@ def test_no_plugin_cross_references_prompts_to_tasks():
     ), "No plugin should cross-reference user prompts to TASKS.md entries (gap exists)"
 
 
-def test_no_plugin_detects_stale_tasks_items():
+def test_no_plugin_detects_stale_tasks_items() -> None:
     """Gap-3: No plugin detects committed-but-unticked TASKS.md items."""
     # Check for "git log" + "TASKS.md" coupling — would indicate staleness detection.
     # Must also contain actual TASKS.md logic, not just a variable name with "stale".
@@ -182,7 +182,7 @@ def test_no_plugin_detects_stale_tasks_items():
         f"No plugin should detect stale TASKS.md items (gap exists). Found: {stale_checkers}"
 
 
-def test_no_plugin_tracks_prompt_vs_tasks_mtime():
+def test_no_plugin_tracks_prompt_vs_tasks_mtime() -> None:
     """Gap-4: No plugin compares last user prompt timestamp to last TASKS.md mtime."""
     mtime_comparers = _grep_plugins(
         r"mtime.*TASKS|TASKS.*mtime|lastPrompt|last_prompt|userMsg|user_msg"
@@ -199,7 +199,7 @@ def test_no_plugin_tracks_prompt_vs_tasks_mtime():
     assert "gap-4" in GAP_DESCRIPTIONS
 
 
-def test_no_plugin_verifies_tasks_updated_after_prompt():
+def test_no_plugin_verifies_tasks_updated_after_prompt() -> None:
     """Gap-5: No plugin verifies TASKS.md was modified since last user prompt."""
     update_verifiers = _grep_plugins(
         r"tasks.*updated|updated.*since|modified.*since|last_modified|fs\.statSync.*tasks"
@@ -223,13 +223,13 @@ def test_no_plugin_verifies_tasks_updated_after_prompt():
 
 # ── 4. TASKS.md structural checks ────────────────────────────────────────────
 
-def test_tasks_md_exists():
+def test_tasks_md_exists() -> None:
     """TASKS.md must exist at project root."""
     tasks_path = PROJECT_ROOT / "TASKS.md"
     assert tasks_path.exists(), "TASKS.md must exist"
 
 
-def test_tasks_md_contains_behavioral_guardrail_entry():
+def test_tasks_md_contains_behavioral_guardrail_entry() -> None:
     """TASKS.md must contain an entry for behavioral guardrail work."""
     tasks_content = (PROJECT_ROOT / "TASKS.md").read_text()
     guardrail_indicators = [
@@ -245,7 +245,7 @@ def test_tasks_md_contains_behavioral_guardrail_entry():
     )
 
 
-def test_tasks_md_has_unchecked_items_or_is_clean():
+def test_tasks_md_has_unchecked_items_or_is_clean() -> None:
     """TASKS.md should either have unchecked items or be fully clean."""
     tasks_content = (PROJECT_ROOT / "TASKS.md").read_text()
     unchecked = re.findall(r"^\s*[-*]\s+\[\s*\]", tasks_content, re.MULTILINE)
@@ -258,7 +258,7 @@ def test_tasks_md_has_unchecked_items_or_is_clean():
 
 # ── 5. Session start protocol — TASKS.md read enforcement ────────────────────
 
-def test_session_start_forces_tasks_read():
+def test_session_start_forces_tasks_read() -> None:
     """enforce-session-start.ts must force TASKS.md read at session start."""
     content = _read_plugin("enforce-session-start.ts")
     assert "TASK_FILES" in content
@@ -270,7 +270,7 @@ def test_session_start_forces_tasks_read():
         "must register system.transform hook to inject directive"
 
 
-def test_session_start_tracks_tasks_read_mtime():
+def test_session_start_tracks_tasks_read_mtime() -> None:
     """enforce-session-start.ts should track TASKS.md read mtime for staleness."""
     content = _read_plugin("enforce-session-start.ts")
     assert "_lastTasksReadMtime" in content or "TASKS_STALE_MINUTES" in content, \
@@ -279,14 +279,14 @@ def test_session_start_tracks_tasks_read_mtime():
 
 # ── 6. Todowrite state tracking ──────────────────────────────────────────────
 
-def test_todowrite_state_is_checked_by_plugins():
+def test_todowrite_state_is_checked_by_plugins() -> None:
     """enforce-multitask.ts should check todowrite state for pending work."""
     content = _read_plugin("enforce-multitask.ts")
     assert "todowrite" in content.lower() or "todowrite-state" in content, \
         "enforce-multitask.ts must check todowrite state"
 
 
-def test_todowrite_state_in_floor_plugin():
+def test_todowrite_state_in_floor_plugin() -> None:
     """enforce-floor.ts checks todowrite state in openWorkExists()."""
     content = _read_plugin("enforce-floor.ts")
     assert "todowrite" in content.lower() or "todoState" in content, \
@@ -295,7 +295,7 @@ def test_todowrite_state_in_floor_plugin():
 
 # ── 7. Spec file existence ──────────────────────────────────────────────────
 
-def test_task_tracking_enforcement_spec_exists():
+def test_task_tracking_enforcement_spec_exists() -> None:
     """The SPEC_TASK_TRACKING_ENFORCEMENT.md spec must exist."""
     spec_path = PROJECT_ROOT / "docs" / "specs" / "SPEC_TASK_TRACKING_ENFORCEMENT.md"
     assert spec_path.exists(), (
@@ -303,7 +303,7 @@ def test_task_tracking_enforcement_spec_exists():
     )
 
 
-def test_gap_analysis_doc_exists():
+def test_gap_analysis_doc_exists() -> None:
     """The TASK_TRACKING_GAP_ANALYSIS.md doc must exist."""
     doc_path = PROJECT_ROOT / "docs" / "TASK_TRACKING_GAP_ANALYSIS.md"
     assert doc_path.exists(), (
@@ -313,7 +313,7 @@ def test_gap_analysis_doc_exists():
 
 # ── 8. AGENTS.md references ──────────────────────────────────────────────────
 
-def test_agents_md_has_task_tracking_section():
+def test_agents_md_has_task_tracking_section() -> None:
     """AGENTS.md must reference task self-tracking."""
     agents = (PROJECT_ROOT / "AGENTS.md").read_text()
     assert "Task Self-Tracking" in agents or "task ledger" in agents.lower(), \
@@ -323,7 +323,7 @@ def test_agents_md_has_task_tracking_section():
 
 # ── 9. Dedup check script ───────────────────────────────────────────────────
 
-def test_dedup_script_references_tasks():
+def test_dedup_script_references_tasks() -> None:
     """check_dispatch_dedup.py must reference TASKS.md."""
     dedup_path = PROJECT_ROOT / "scripts" / "check_dispatch_dedup.py"
     if dedup_path.exists():
@@ -331,7 +331,7 @@ def test_dedup_script_references_tasks():
         assert "TASKS.md" in content, "dedup script must reference TASKS.md"
 
 
-def test_task_ledger_validation_exists():
+def test_task_ledger_validation_exists() -> None:
     """validate_task_ledger.py must exist."""
     validate_path = PROJECT_ROOT / "scripts" / "validate_task_ledger.py"
     if validate_path.exists():

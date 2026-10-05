@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
@@ -28,6 +29,8 @@ from general_ludd.security.permissions import (
 from general_ludd.security.sts import StsAuditLog, StsIssuer
 
 logger = logging.getLogger(__name__)
+
+_PORTABLE_FILENAME_COMPONENT_BYTES = 255
 
 
 def _get_issuer(app: FastAPI) -> StsIssuer:
@@ -215,8 +218,7 @@ async def _sync_escalation_from_human_todo(
     human_resolver: str | None,
     human_resolution: str | None,
 ) -> None:
-    """If a resolved HumanTodo carries an ``escalation:N`` tag, propagate the
-    resolution to the in-memory escalation row.
+    """Propagate a resolved ``escalation:N`` HumanTodo to its escalation row.
 
     Fired after a successful PATCH /api/human-todos/{id}. done → approved,
     dismissed → denied. Idempotent — only acts on rows still pending.
@@ -297,15 +299,27 @@ def _is_strict_subset_of_both(
 
 def _perms_dir(app: FastAPI) -> Path:
     """Return the permissions directory Path, creating it if needed."""
-    import os
-
     config_dir = getattr(app.state, "_config_dir", None) or os.getcwd()
     perms = Path(config_dir) / "permissions"
     perms.mkdir(parents=True, exist_ok=True)
     return perms
 
 
+def _permission_spec_path(perms: Path, agent_type: str) -> Path | None:
+    """Return a portable permission-spec path, or ``None`` when unpersistable."""
+    filename = f"{agent_type}.yml"
+    if (
+        not agent_type
+        or agent_type in {".", ".."}
+        or any(separator in agent_type for separator in ("/", "\\", "\0"))
+        or len(os.fsencode(filename)) > _PORTABLE_FILENAME_COMPONENT_BYTES
+    ):
+        return None
+    return perms / filename
+
+
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register security administration routes on ``app``."""
 
     @app.post("/admin/sts/issue")
     async def admin_sts_issue(req: dict[str, object]) -> object:
@@ -406,13 +420,18 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             if errors:
                 return JSONResponse(status_code=400, content={"error": "validation failed", "details": errors})
             perms = _perms_dir(app)
-            path = perms / f"{agent_type}.yml"
+            path = _permission_spec_path(perms, agent_type)
+            if path is None:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "agent_type cannot be represented by a portable filename"},
+                )
             path.write_text(spec_yaml)
             return {"status": "saved", "agent_type": agent_type, "path": str(path)}
 
         perms = _perms_dir(app)
-        path = perms / f"{agent_type}.yml"
-        if not path.exists():
+        path = _permission_spec_path(perms, agent_type)
+        if path is None or not path.exists():
             spec = default_spec(agent_type)
             spec_yaml = yaml.safe_dump(
                 {

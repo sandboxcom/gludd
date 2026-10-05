@@ -21,7 +21,9 @@ import logging
 import os
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
-from typing import Any, TypedDict, cast
+from typing import TypedDict
+
+from general_ludd.connectors.cursor_adapter import IterableCursor, adapt_iterable_cursor
 
 logger = logging.getLogger(__name__)
 
@@ -133,18 +135,14 @@ class MysqlStatsSource:
         config: Mapping[str, object] | None = None,
         executor: Executor | None = None,
         *,
-        cursor: object | None = None,
+        cursor: IterableCursor[MysqlRow] | None = None,
     ) -> None:
+        """Build the source from connector config; executor and cursor are mutually exclusive."""
+        if executor is not None and cursor is not None:
+            raise ValueError("provide exactly one of executor or cursor, not both")
         self.config: dict[str, object] = dict(config or {})
         self._executor: Executor | None
-        if cursor is not None:
-            def _cursor_executor(query: str) -> Sequence[MysqlRow]:
-                cursor_obj = cast(Any, cursor)
-                cursor_obj.execute(query)
-                return list(cursor_obj)
-            self._executor = _cursor_executor
-        else:
-            self._executor = executor
+        self._executor = adapt_iterable_cursor(cursor) if cursor is not None else executor
 
     # -- credential / driver plumbing ------------------------------------
 
@@ -202,13 +200,15 @@ class MysqlStatsSource:
             executor = self._get_executor()
         except RuntimeError as exc:
             logger.warning(
-                "mysql_stats executor unavailable: %s", type(exc).__name__,
+                "mysql_stats executor unavailable: %s",
+                type(exc).__name__,
                 exc_info=False,
             )
             return {"ok": False, "detail": "executor unavailable"}
         except Exception as exc:  # health must never raise
             logger.warning(
-                "mysql_stats executor init failed: %s", type(exc).__name__,
+                "mysql_stats executor init failed: %s",
+                type(exc).__name__,
                 exc_info=False,
             )
             return {"ok": False, "detail": "executor init failed"}
@@ -217,7 +217,8 @@ class MysqlStatsSource:
             executor("SELECT 1")
         except Exception as exc:  # health must never raise
             logger.warning(
-                "mysql_stats probe failed: %s", type(exc).__name__,
+                "mysql_stats probe failed: %s",
+                type(exc).__name__,
                 exc_info=False,
             )
             return {"ok": False, "detail": "probe failed"}
@@ -299,8 +300,7 @@ class MysqlStatsSource:
                     ),
                     labels={
                         "io_running": running,
-                        "source_host": row.get("Source_Host")
-                        or row.get("Master_Host"),
+                        "source_host": row.get("Source_Host") or row.get("Master_Host"),
                     },
                     raw=row,
                     status="ok" if ok else "degraded",
@@ -318,9 +318,7 @@ class MysqlStatsSource:
         which = (spec or "status").strip().lower()
         sql = _SPECS.get(which)
         if sql is None:
-            raise ValueError(
-                f"unknown spec {which!r}; expected one of {sorted(_SPECS)}"
-            )
+            raise ValueError(f"unknown spec {which!r}; expected one of {sorted(_SPECS)}")
 
         executor = self._get_executor()
         rows = executor(sql)

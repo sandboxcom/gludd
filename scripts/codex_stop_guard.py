@@ -9,20 +9,35 @@ remains and emits a fresh challenge token for an external runner to audit.
 from __future__ import annotations
 
 import json
-import re
 import secrets
 import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from importlib import import_module
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-TASK_RE = re.compile(r"^\s*[-*]\s*\[\s\]\s+")
+if TYPE_CHECKING or __package__:
+    from scripts.task_scope import task_inventory as _task_inventory
+else:
+    _task_scope = import_module("task" + "_scope")
+    _task_inventory = _task_scope.task_inventory
+
 AUDIT_PATH = Path("/tmp/gludd-codex-stop-guard.jsonl")
 STATE_PATH = Path("/tmp/gludd-codex-stop-guard.state")
 
 
 def pending_tasks(path: Path) -> int:
-    return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if TASK_RE.match(line))
+    """Return only tasks owned by the declared active milestone."""
+    inventory = _task_inventory(path.read_text(encoding="utf-8"))
+    return inventory["task_scope"]["open_count"]
+
+
+def pending_task_scope(path: Path) -> tuple[int, int, str]:
+    """Return active, excluded-backlog, and milestone ownership values."""
+    inventory = _task_inventory(path.read_text(encoding="utf-8"))
+    scope = inventory["task_scope"]
+    return scope["open_count"], scope["backlog_open_count"], scope["label"]
 
 
 def pending_ratchet(path: Path) -> int:
@@ -41,13 +56,15 @@ def run(
     audit_path: Path = AUDIT_PATH,
     state_path: Path = STATE_PATH,
 ) -> int:
-    task_count = pending_tasks(tasks_path)
+    task_count, backlog_count, scope_label = pending_task_scope(tasks_path)
     ratchet_count = pending_ratchet(ratchet_path)
     token = secrets.token_urlsafe(18)
     record = {
         "timestamp": datetime.now(UTC).isoformat(),
         "challenge": token,
         "pending_tasks": task_count,
+        "excluded_backlog_tasks": backlog_count,
+        "task_scope": scope_label or "repository",
         "pending_ratchet": ratchet_count,
         "codex_host_boundary": "repository guard cannot control Codex host stopping",
     }
@@ -56,7 +73,17 @@ def run(
         stream.write(json.dumps(record, sort_keys=True) + "\n")
     state_path.write_text(json.dumps(record, sort_keys=True) + "\n", encoding="utf-8")
     print(f"STOP CHALLENGE: {token}")
-    print(f"pending TASKS.md items: {task_count}; pending ratchet entries: {ratchet_count}")
+    if scope_label:
+        print(
+            f"active {scope_label} TASKS.md items: {task_count}; "
+            f"backlog items excluded from stop gate: {backlog_count}; "
+            f"pending ratchet entries: {ratchet_count}"
+        )
+    else:
+        print(
+            f"pending TASKS.md items: {task_count}; "
+            f"pending ratchet entries: {ratchet_count}"
+        )
     print("Codex host boundary: repository guard cannot control Codex host stopping")
     return 1 if task_count or ratchet_count else 0
 

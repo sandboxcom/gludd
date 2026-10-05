@@ -1,9 +1,8 @@
 """
 RAG pipeline — thin Ansible wrapper delegating to core modules.
 
-Embeddings  → general_ludd.skills.embeddings (HashEmbedder, cosine_similarity)
-LLM calls   → general_ludd.models.gateway (ModelGateway, route_for_task+
-               call_model_with_retry)
+Embeddings  → authenticated daemon embedding endpoint
+LLM calls   → authenticated daemon model endpoint
 Store       → in-memory VectorStore following general_ludd.memory.embedding_store
                pattern (dict-backed, cosine-similarity search)
 Doc loading → document_loader (Document, DocumentLoader)
@@ -28,7 +27,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from general_ludd.skills.embeddings import HashEmbedder, cosine_similarity
+from ansible_collections.general_ludd.agent.plugins.module_utils.embeddings import (
+    HashEmbedder,
+    cosine_similarity,
+)
+from ansible_collections.general_ludd.agent.plugins.module_utils.model_client import (
+    ModelClient,
+)
 
 if TYPE_CHECKING:
     from ansible_collections.general_ludd.agent.plugins.module_utils.document_loader import (
@@ -188,7 +193,7 @@ class RAGPipeline:
     ----------
     model_client:
         Optional HTTP model client (backward-compat). When absent, delegates
-        to :class:`general_ludd.models.gateway.ModelGateway`.
+        to the shared daemon model service.
     embedder:
         A pluggable embedder (defaults to ``HashEmbedder(dim=256)``).
     chunk_size:
@@ -204,9 +209,15 @@ class RAGPipeline:
         embedder: Any = None,
         chunk_size: int = 1000,
         chunk_overlap: int = 200,
+        daemon_url: str = "http://localhost:8000",
+        psk: str = "",
     ) -> None:
-        self._model = model_client
-        self._embedder = embedder if embedder is not None else HashEmbedder(dim=256)
+        self._model = model_client or ModelClient(daemon_url=daemon_url, psk=psk)
+        self._embedder = embedder if embedder is not None else HashEmbedder(
+            dim=256,
+            daemon_url=daemon_url,
+            psk=psk,
+        )
         self._chunker = Chunker(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
         self._store = VectorStore()
 
@@ -284,10 +295,14 @@ class RAGPipeline:
         results = self._store.search(query_vec, top_k=top_k)
         prompt = _build_prompt(question, results)
 
-        if self._model is not None:
-            return self._model.chat(messages=[{"role": "user", "content": prompt}])
-
-        return self._gateway_chat(prompt)
+        response = self._model.chat(messages=[{"role": "user", "content": prompt}])
+        if isinstance(response, str):
+            return response
+        if isinstance(response, dict):
+            response_text = response.get("text")
+            if isinstance(response_text, str):
+                return response_text
+        raise RuntimeError("daemon model response omitted text")
 
     @property
     def stored_count(self) -> int:
@@ -297,17 +312,3 @@ class RAGPipeline:
     def clear(self) -> None:
         """Remove all stored entries."""
         self._store = VectorStore()
-
-    # -- delegated model calls ------------------------------------------------
-
-    def _gateway_chat(self, prompt: str) -> str:
-        """Delegate to ModelGateway for LLM call."""
-        from general_ludd.models.gateway import ModelGateway
-
-        gw = ModelGateway()
-        profile_id = gw.route_for_task("general")
-        resp = gw.call_model_with_retry(
-            profile_id,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return resp.content

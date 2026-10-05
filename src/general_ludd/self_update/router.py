@@ -48,7 +48,6 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Literal
 
 __all__ = [
     "DEFAULT_SUBSYSTEM_MAP",
@@ -58,156 +57,22 @@ __all__ = [
     "UpdateTarget",
 ]
 
-TargetKind = Literal["config", "yaml", "role", "code"]
-RiskLevel = Literal["low", "medium", "high"]
-
-# Capability strings handed to the executor: each maps to a distinct write
-# scope so the self-update can be gated/audited per capability.
-CAP_CONFIG_WRITE = "config_write"
-CAP_COLLECTIONS_SELF_MODIFY = "collections_self_modify"
-CAP_CODE_SELF_MODIFY = "code_self_modify"
-
-# Priority bands (higher = sooner). Config/yaml low-risk edits are fast-tracked;
-# role edits sit in the middle; code edits get a low auto-priority because they
-# require human review.
-PRIORITY_CONFIG = 8
-PRIORITY_ROLE = 5
-PRIORITY_CODE = 3
-
-# Base directory for self-modifiable Ansible roles (verified against the real
-# repo layout: collections/ansible_collections/general_ludd/agent/roles/<name>).
-ROLES_BASE = "collections/ansible_collections/general_ludd/agent/roles"
-
-# Verbs/phrases that signal a BEHAVIOURAL change — something a config key cannot
-# express, so the request must be a code edit (with review).
-_CODE_BEHAVIOUR_MARKERS = (
-    "how the",
-    "how it",
-    "the way",
-    "rewrite",
-    "reimplement",
-    "re-implement",
-    "refactor",
-    "change the logic",
-    "change the algorithm",
-    "implement",
-    "new behaviour",
-    "new behavior",
-    "dispatch logic",
-    "picks the next",
-    "selection logic",
+from general_ludd.self_update.router_catalog import (
+    CAP_CODE_SELF_MODIFY,
+    CAP_COLLECTIONS_SELF_MODIFY,
+    CAP_CONFIG_WRITE,
+    CODE_BEHAVIOUR_MARKERS,
+    DEFAULT_SUBSYSTEM_MAP,
+    PRIORITY_CODE,
+    PRIORITY_CONFIG,
+    PRIORITY_ROLE,
+    ROLES_BASE,
+    RiskLevel,
+    SubsystemSpec,
+    TargetKind,
 )
 
-
-# A SubsystemSpec describes one routable subsystem. ``kind`` is the *default*
-# target kind for that subsystem; it can still be escalated to ``code`` when the
-# request carries a behavioural marker AND the subsystem has a code path.
-SubsystemSpec = dict[str, object]
-
-
-# Curated map built from the REAL repo layout (paths verified to exist).
-#   - spend/budget/cost            -> budget config + spend_limiter.py (code)
-#   - model/profile/provider/api   -> model_profiles config + gateway.py (code)
-#   - role/playbook                -> collections roles (resolved per request)
-#   - connector/log source/observ. -> observability package (code)
-#   - lint/gate/ci/xdist/ratchet   -> config/ratchet.yml + Makefile
-#   - secret/vault                 -> secrets config + secrets package (code)
-#   - scheduler/parallel/dispatch  -> event_loop scheduling (code)
-DEFAULT_SUBSYSTEM_MAP: dict[str, SubsystemSpec] = {
-    "budget": {
-        "kind": "config",
-        "keywords": [
-            "spend",
-            "budget",
-            "cost",
-            "ceiling",
-            "cap",
-            "limit",
-            "window",
-        ],
-        # Config-first: the budget/spend knobs live in config; the limiter
-        # module is the code path only used when behaviour itself must change.
-        "paths": ["config/ratchet.yml", "config"],
-        "code_paths": ["src/general_ludd/controllers/spend_limiter.py"],
-    },
-    "model": {
-        "kind": "config",
-        "keywords": [
-            "model",
-            "profile",
-            "provider",
-            "api base",
-            "api",
-            "gateway",
-            "llm",
-        ],
-        "paths": ["config/model_profiles", "config"],
-        "code_paths": ["src/general_ludd/models/gateway.py"],
-    },
-    "lint": {
-        "kind": "config",
-        "keywords": [
-            "lint",
-            "gate",
-            "ratchet",
-            "ci",
-            "xdist",
-            "mypy",
-            "ruff",
-        ],
-        "paths": ["config/ratchet.yml", "Makefile"],
-        "code_paths": [],
-    },
-    "secret": {
-        "kind": "config",
-        "keywords": [
-            "secret",
-            "vault",
-            "openbao",
-            "credential",
-            "alias",
-        ],
-        "paths": ["src/general_ludd/secrets/config.py", "config"],
-        "code_paths": ["src/general_ludd/secrets/config.py"],
-    },
-    "connector": {
-        "kind": "config",
-        "keywords": [
-            "connector",
-            "log source",
-            "log sources",
-            "observability",
-            "tracing",
-            "trace",
-            "telemetry",
-        ],
-        "paths": ["src/general_ludd/observability"],
-        "code_paths": ["src/general_ludd/observability"],
-    },
-    "scheduler": {
-        "kind": "code",
-        "keywords": [
-            "scheduler",
-            "schedule",
-            "parallel",
-            "dispatch",
-            "concurrency",
-            "next task",
-        ],
-        "paths": ["src/general_ludd/event_loop/loop.py"],
-        "code_paths": ["src/general_ludd/event_loop/loop.py"],
-    },
-    "role": {
-        "kind": "role",
-        "keywords": [
-            "role",
-            "playbook",
-        ],
-        # Resolved dynamically to the named role's directory at route time.
-        "paths": [ROLES_BASE],
-        "code_paths": [],
-    },
-}
+_CODE_BEHAVIOUR_MARKERS = CODE_BEHAVIOUR_MARKERS
 
 
 @dataclass(frozen=True)
@@ -279,6 +144,7 @@ class UpdateRequestRouter:
         subsystem_map: dict[str, SubsystemSpec] | None = None,
         path_exists: Callable[[str], bool] = os.path.exists,
     ) -> None:
+        """Initialize routing data and the injected path predicate."""
         self._map: dict[str, SubsystemSpec] = (
             subsystem_map if subsystem_map is not None else DEFAULT_SUBSYSTEM_MAP
         )

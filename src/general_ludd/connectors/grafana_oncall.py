@@ -22,7 +22,7 @@ import ipaddress
 import logging
 import os
 import socket
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Protocol, TypedDict, cast
 from urllib.parse import urlsplit
 
@@ -92,7 +92,9 @@ class CallableTransport(Protocol):
         *,
         headers: dict[str, str],
         timeout: float,
-    ) -> tuple[int, object]: ...
+    ) -> tuple[int, object]:
+        """Send an HTTP request and return its status and decoded body."""
+        ...
 
 
 class GrafanaOnCallSource:
@@ -109,6 +111,7 @@ class GrafanaOnCallSource:
         config: Mapping[str, object] | None = None,
         transport: httpx.BaseTransport | CallableTransport | None = None,
     ) -> None:
+        """Initialize a ``GrafanaOnCallSource`` instance."""
         config = dict(config or {})
         self.name: str = str(config.get("name", "grafana_oncall"))
         self._token_env: str = str(config.get("token_env", _DEFAULT_TOKEN_ENV))
@@ -267,7 +270,8 @@ class _CallableClient:
         return None
 
     def get(self, url: str, **kwargs: object) -> _TupleResponse:
-        result = self._transport("GET", url, **kwargs)  # type: ignore[operator]
+        transport = cast(Callable[..., object], self._transport)
+        result = transport("GET", url, **kwargs)
         if isinstance(result, tuple) and len(result) == 2:
             return _TupleResponse(result[0], result[1])
         return cast(_TupleResponse, result)

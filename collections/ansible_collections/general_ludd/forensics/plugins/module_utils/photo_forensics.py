@@ -21,6 +21,7 @@ import hashlib
 import math
 import re
 import struct
+import zlib
 from typing import Any
 
 # ═══════════════════════════════════════════════════════════════════
@@ -155,9 +156,8 @@ def _find_exif_app1(data: bytes) -> int:
         marker = data[pos + 1]
         if marker == 0xDA:
             break
-        if marker == 0xE1:
-            if pos + 4 < len(data) and data[pos + 4:pos + 10] == b"Exif\x00\x00":
-                return pos
+        if marker == 0xE1 and pos + 4 < len(data) and data[pos + 4:pos + 10] == b"Exif\x00\x00":
+            return pos
         if marker in (0xD8, 0xD9):
             break
         length = struct.unpack(">H", data[pos + 2:pos + 4])[0]
@@ -390,13 +390,7 @@ def compute_ela(image_bytes: bytes, quality: int = 85) -> dict[str, Any]:
     data_hash = _compute_hash(image_bytes)
     data_size = len(image_bytes)
 
-    try:
-        import io
-        import zlib
-    except ImportError:
-        pass
-
-    compressed = zlib.compress(image_bytes) if "zlib" in globals() else image_bytes
+    compressed = zlib.compress(image_bytes)
     size_ratio = len(compressed) / max(data_size, 1)
 
     ela_score: float
@@ -463,10 +457,7 @@ def detect_modifications(
     if len(image_bytes) == 0:
         raise ValueError("Empty image data")
 
-    if _is_jpeg(image_bytes):
-        pixel_data = _extract_approximate_pixels(image_bytes)
-    else:
-        pixel_data = image_bytes
+    pixel_data = _extract_approximate_pixels(image_bytes) if _is_jpeg(image_bytes) else image_bytes
 
     data_size = len(pixel_data)
     pixel_count = data_size // 3
@@ -510,7 +501,7 @@ def detect_modifications(
             "confidence": min(splice_boundary_count / 10.0, 1.0),
         })
 
-    compression_ratio = len(zlib.compress(pixel_data)) / max(data_size, 1) if "zlib" in globals() else 0.5
+    compression_ratio = len(zlib.compress(pixel_data)) / max(data_size, 1)
     if compression_ratio < 0.3 or compression_ratio > 0.9:
         resampling = {"detected": True, "confidence": round(abs(0.6 - compression_ratio), 2),
                        "type": "upsampled" if compression_ratio < 0.3 else "downsampled",
@@ -548,7 +539,6 @@ def _extract_approximate_pixels(jpeg_bytes: bytes) -> bytes:
     data_len = len(jpeg_bytes)
     sos_pos = jpeg_bytes.find(b"\xff\xda")
     if sos_pos > 0:
-        raw_len = data_len - sos_pos - 2
         return jpeg_bytes[sos_pos + 2:]
     return jpeg_bytes[: min(data_len, 256 * 256 * 3)]
 

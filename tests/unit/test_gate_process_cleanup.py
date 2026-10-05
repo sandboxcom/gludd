@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
+GITIGNORE = ROOT / ".gitignore"
 
 
 def _makefile_content() -> str:
@@ -51,6 +52,22 @@ def test_gate_cleanup_removes_old_logs():
     assert "gate-*.log" in recipe_block, (
         "gate-cleanup must target gate-*.log files"
     )
+
+
+def test_gate_cleanup_removes_atomic_publication_scratch() -> None:
+    content = _makefile_content()
+    idx = content.find("gate-cleanup:")
+    recipe_block = content[idx : idx + 800]
+
+    assert ".gate-status.next" in recipe_block
+    assert ".gate-status.running" in recipe_block
+
+
+def test_gate_atomic_publication_scratch_is_ignored() -> None:
+    ignored = set(GITIGNORE.read_text(encoding="utf-8").splitlines())
+
+    assert ".gate-status.next" in ignored
+    assert ".gate-status.running" in ignored
 
 
 def test_gate_kill_waits_10s_before_sigkill():

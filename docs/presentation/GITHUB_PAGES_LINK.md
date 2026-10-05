@@ -19,7 +19,7 @@ README snippet for the orchestrator to paste in after the meta-commit.
 
 ## 1. Canonical URL (planned)
 
-```
+```text
 https://sandboxcom.github.io/gludd/
 ```
 
@@ -36,7 +36,7 @@ above URL loads the presentation directly.
 
 The deck design (`DESIGN_revealjs_deck.md` §3) specifies:
 
-```
+```text
 docs/presentation/
 └── build/index.html    # GENERATED final deck, gitignored
 ```

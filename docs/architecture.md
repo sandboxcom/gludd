@@ -4,7 +4,7 @@
 
 General Ludd is an autonomous agentic SDLC daemon. The core flow:
 
-```
+```text
 User adds task → Daemon queue → Event Loop → Ansible Runner → general_ludd.agent collection → AI Model → Result
 ```
 
@@ -163,7 +163,7 @@ Configuration changes are picked up without restarting:
 
 ### Task States
 
-```
+```text
 pending → in_progress → completed → reviewed
                                         ↓
                                    reconciled
@@ -208,7 +208,7 @@ will fail if scenarios are removed.
 
 The daemon locates its config directory in this order:
 
-```
+```bash
 $GLUDD_CONFIG_DIR  →  ~/.config/general-ludd  →  /etc/general-ludd
 ```
 
@@ -222,7 +222,7 @@ daemon runs but agents do nothing" — set `GLUDD_CONFIG_DIR` when running from 
 
 ### Value layering (within the discovered directory)
 
-```
+```text
 Environment Variables (highest priority)
     ↓
 ~/.config/general-ludd/user.yml
@@ -254,9 +254,10 @@ GitHub Actions (`.github/workflows/build.yml`):
 3. **linux / macos / windows** — PyInstaller binary + tarball, timestamped alpha version on push;
    stable version on tag (`v*`)
 4. **release** (tag builds only) — publishes the GitHub Release, then runs
-   `scripts/verify_release_completeness.py` as a **blocking** final step: 12 artifact
-   categories, the prerelease-flag-vs-tag-shape rule, version-stamped asset names, and no
-   zero-size assets. An incomplete release fails the workflow.
+   `scripts/verify_release_completeness.py` as a **blocking** final step: 28 artifact
+   categories, at least 30 assets, the prerelease-flag-vs-tag-shape rule,
+   version-stamped asset names, and no zero-size assets. An incomplete release
+   fails the workflow.
 
 A cold tag-triggered matrix build takes **30–60 minutes**. See
 [RELEASE_RUNBOOK.md](RELEASE_RUNBOOK.md) for the operator procedure.

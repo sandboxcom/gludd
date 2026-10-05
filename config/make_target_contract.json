@@ -2,14 +2,493 @@
   "version": 1,
   "targets": [
     {
+      "name": "uv-cache-path",
+      "make_variables": [],
+      "behavior": "make uv-cache-path"
+    },
+    {
+      "name": "local-accelerator-inventory",
+      "make_variables": [],
+      "behavior": "make local-accelerator-inventory"
+    },
+    {
+      "name": "azure-accelerator-role-apply",
+      "make_variables": [
+        "AZURE_ACCELERATOR_SUBSCRIPTION_ID",
+        "AZURE_ACCELERATOR_RESOURCE_GROUP",
+        "AZURE_ACCELERATOR_LOCATION",
+        "AZURE_ACCELERATOR_OPERATOR_AUTH",
+        "AZURE_ACCELERATOR_PRINCIPAL_OBJECT_ID",
+        "AZURE_ACCELERATOR_ROLE_APPLY_LIVE"
+      ],
+      "behavior": "make azure-accelerator-role-apply AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus AZURE_ACCELERATOR_LOCATION=eastus AZURE_ACCELERATOR_OPERATOR_AUTH=cli AZURE_ACCELERATOR_PRINCIPAL_OBJECT_ID= AZURE_ACCELERATOR_ROLE_APPLY_LIVE=0"
+    },
+    {
+      "name": "azure-accelerator-role-args",
+      "make_variables": [
+        "AZURE_ACCELERATOR_SUBSCRIPTION_ID",
+        "AZURE_ACCELERATOR_RESOURCE_GROUP"
+      ],
+      "behavior": "make azure-accelerator-role-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus"
+    },
+    {
+      "name": "azure-accelerator-role-update-args",
+      "make_variables": [
+        "AZURE_ACCELERATOR_SUBSCRIPTION_ID",
+        "AZURE_ACCELERATOR_RESOURCE_GROUP"
+      ],
+      "behavior": "make azure-accelerator-role-update-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus"
+    },
+    {
+      "name": "azure-accelerator-auth-args",
+      "make_variables": [
+        "AZURE_ACCELERATOR_SUBSCRIPTION_ID",
+        "AZURE_ACCELERATOR_RESOURCE_GROUP",
+        "AZURE_ACCELERATOR_SP_NAME"
+      ],
+      "behavior": "make azure-accelerator-auth-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus AZURE_ACCELERATOR_SP_NAME=gludd-accelerator-contract"
+    },
+    {
+      "name": "azure-accelerator-auth-store",
+      "make_variables": [
+        "AZURE_ACCELERATOR_AUTH_FILE",
+        "AZURE_ACCELERATOR_AUTH_SOURCE_FILE",
+        "AZURE_ACCELERATOR_SUBSCRIPTION_ID",
+        "AZURE_ACCELERATOR_AUTH_STORE_VALIDATE_ONLY"
+      ],
+      "behavior": "make azure-accelerator-auth-store AZURE_ACCELERATOR_AUTH_FILE= AZURE_ACCELERATOR_AUTH_SOURCE_FILE= AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_AUTH_STORE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "azure-accelerator-auth-check",
+      "make_variables": [
+        "AZURE_ACCELERATOR_AUTH_FILE",
+        "AZURE_ACCELERATOR_SUBSCRIPTION_ID",
+        "AZURE_ACCELERATOR_AUTH_VALIDATE_ONLY"
+      ],
+      "behavior": "make azure-accelerator-auth-check AZURE_ACCELERATOR_AUTH_FILE=/tmp/gludd-contract-absent.json AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_AUTH_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "azure-containerapp-environment-bootstrap-args",
+      "make_variables": [
+        "AZURE_ACCELERATOR_SUBSCRIPTION_ID",
+        "AZURE_ACCELERATOR_RESOURCE_GROUP",
+        "AZURE_CONTAINERAPP_ENVIRONMENT",
+        "AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME",
+        "AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE",
+        "AZURE_CONTAINERAPP_LOCATION"
+      ],
+      "behavior": "make azure-containerapp-environment-bootstrap-args AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_ACCELERATOR_RESOURCE_GROUP=gludd-models-eastus AZURE_CONTAINERAPP_ENVIRONMENT=gludd-gpu-environment AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME=gpu-t4 AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE=Consumption-GPU-NC8as-T4 AZURE_CONTAINERAPP_LOCATION=eastus"
+    },
+    {
+      "name": "azure-containerapp-preflight",
+      "make_variables": [
+        "AZURE_ACCELERATOR_AUTH_FILE",
+        "AZURE_ACCELERATOR_SUBSCRIPTION_ID",
+        "AZURE_CONTAINERAPP_RESOURCE_GROUP",
+        "AZURE_CONTAINERAPP_ENVIRONMENT",
+        "AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME",
+        "AZURE_CONTAINERAPP_LOCATION",
+        "AZURE_CONTAINERAPP_MODEL_ID",
+        "AZURE_CONTAINERAPP_MODEL_REVISION",
+        "AZURE_CONTAINERAPP_PARAMETER_COUNT",
+        "AZURE_CONTAINERAPP_WEIGHT_BITS",
+        "AZURE_CONTAINERAPP_KV_CACHE_MIB",
+        "AZURE_CONTAINERAPP_RUNTIME_OVERHEAD_MIB",
+        "AZURE_CONTAINERAPP_PREFLIGHT_LIVE"
+      ],
+      "behavior": "make azure-containerapp-preflight AZURE_ACCELERATOR_AUTH_FILE=/tmp/gludd-contract-absent.json AZURE_ACCELERATOR_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_CONTAINERAPP_RESOURCE_GROUP=gludd-models-eastus AZURE_CONTAINERAPP_ENVIRONMENT=gludd-gpu-environment AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME=gpu-t4 AZURE_CONTAINERAPP_LOCATION=eastus AZURE_CONTAINERAPP_MODEL_ID=Qwen/Qwen2.5-0.5B-Instruct AZURE_CONTAINERAPP_MODEL_REVISION=7ae557604adf67be50417f59c2c2f167def9a775 AZURE_CONTAINERAPP_PARAMETER_COUNT=494032768 AZURE_CONTAINERAPP_WEIGHT_BITS=16 AZURE_CONTAINERAPP_KV_CACHE_MIB=2048 AZURE_CONTAINERAPP_RUNTIME_OVERHEAD_MIB=3072 AZURE_CONTAINERAPP_PREFLIGHT_LIVE=0"
+    },
+    {
+      "name": "azure-containerapp-terraform-phase",
+      "make_variables": [
+        "AZURE_CONTAINERAPP_TF_PHASE",
+        "AZURE_CONTAINERAPP_TF_DIR",
+        "AZURE_CONTAINERAPP_TF_PLAN_FILE",
+        "AZURE_CONTAINERAPP_TF_JSON_FILE",
+        "AZURE_CONTAINERAPP_TF_VALIDATE_ONLY"
+      ],
+      "behavior": "make azure-containerapp-terraform-phase AZURE_CONTAINERAPP_TF_PHASE=plan AZURE_CONTAINERAPP_TF_DIR=/tmp/gludd-azure-containerapp-live-proof/aaaaaaaaaaaaaaaaaaaaaaaa AZURE_CONTAINERAPP_TF_PLAN_FILE=/tmp/gludd-azure-containerapp-live-proof/aaaaaaaaaaaaaaaaaaaaaaaa/gludd.tfplan AZURE_CONTAINERAPP_TF_JSON_FILE=/tmp/gludd-azure-containerapp-live-proof/aaaaaaaaaaaaaaaaaaaaaaaa/gludd.plan.json AZURE_CONTAINERAPP_TF_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "azure-containerapp-live-proof",
+      "make_variables": [
+        "AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_WORKLOAD_PROFILE_NAME",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_LIVE",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_PROJECT_ROOT",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS"
+      ],
+      "behavior": "make azure-containerapp-live-proof AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE=file AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE=/tmp/gludd-contract-absent.json AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE= AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID= AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID= AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP=gludd-models-eastus AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT=gludd-gpu-environment AZURE_CONTAINERAPP_LIVE_PROOF_WORKLOAD_PROFILE_NAME=gpu-t4 AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION=eastus AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR=203.0.113.7/32 AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD=5 AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES=60 AZURE_CONTAINERAPP_LIVE_PROOF_LIVE=0 AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT=dry-run AZURE_CONTAINERAPP_LIVE_PROOF_PROJECT_ROOT=. AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH=src/general_ludd/__init__.py AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET=always_destroy AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS=21600"
+    },
+    {
+      "name": "test-azure-containerapp-coverage",
+      "make_variables": [],
+      "behavior": "make test-azure-containerapp-coverage"
+    },
+    {
+      "name": "azure-self-improve-live-proof",
+      "make_variables": [
+        "TARGET",
+        "SELF_IMPROVE_MODEL_PATH",
+        "SELF_IMPROVE_BASELINE_REF",
+        "SELF_IMPROVE_REFERENCE_REF",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_LIVE",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET",
+        "AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS",
+        "AZURE_SELF_IMPROVE_MODEL_POLICY",
+        "AZURE_SELF_IMPROVE_MODEL_CATALOG",
+        "AZURE_SELF_IMPROVE_EVIDENCE_FILE",
+        "AZURE_SELF_IMPROVE_REGISTRY_CACHE",
+        "AZURE_SELF_IMPROVE_TASK_FILE"
+      ],
+      "behavior": "make azure-self-improve-live-proof TARGET=acceptance-am-bug SELF_IMPROVE_MODEL_PATH= SELF_IMPROVE_BASELINE_REF=0af495b60a60c05b2ea6a011fd5b4beb6272b846 SELF_IMPROVE_REFERENCE_REF=e4c9b68aea0ff59cab77a06747471e248e9e0601 AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE=file AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE=/tmp/gludd-contract-absent.json AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE= AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID= AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID= AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP=gludd-models-eastus AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT=gludd-gpu-environment AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION=eastus AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR=203.0.113.7/32 AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD=5 AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES=60 AZURE_CONTAINERAPP_LIVE_PROOF_LIVE=0 AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT=DEPLOY_ONE_CONTAINER_APP_AND_DESTROY AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET=always_destroy AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS=21600 AZURE_SELF_IMPROVE_MODEL_POLICY=config/self-improve/azure-model-selection-policy.json AZURE_SELF_IMPROVE_MODEL_CATALOG=config/self-improve/azure-model-catalog-ci.json AZURE_SELF_IMPROVE_EVIDENCE_FILE=/tmp/gludd-self-improve-contract-evidence.json AZURE_SELF_IMPROVE_REGISTRY_CACHE=/tmp/gludd-self-improve-contract-cache AZURE_SELF_IMPROVE_TASK_FILE=config/self-improve/acceptance-am-bug-01.json"
+    },
+    {
+      "name": "azure-self-improve-auth-args",
+      "make_variables": [
+        "AZURE_SELF_IMPROVE_SUBSCRIPTION_ID",
+        "AZURE_SELF_IMPROVE_RESOURCE_GROUP",
+        "AZURE_SELF_IMPROVE_ACCOUNT",
+        "AZURE_SELF_IMPROVE_SP_NAME"
+      ],
+      "behavior": "make azure-self-improve-auth-args AZURE_SELF_IMPROVE_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 AZURE_SELF_IMPROVE_RESOURCE_GROUP=gludd-models AZURE_SELF_IMPROVE_ACCOUNT=gludd-self-improve AZURE_SELF_IMPROVE_SP_NAME=gludd-self-improve-contract"
+    },
+    {
+      "name": "test-self-improve-private-policy",
+      "make_variables": [],
+      "behavior": "make test-self-improve-private-policy"
+    },
+    {
+      "name": "test-self-improve-acceptance-matrix",
+      "make_variables": [
+        "SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE",
+        "SELF_IMPROVE_ACCEPTANCE_MATRIX_MODEL_PATH",
+        "SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE"
+      ],
+      "behavior": "make test-self-improve-acceptance-matrix SELF_IMPROVE_ACCEPTANCE_MATRIX_FILE=config/self-improve/acceptance-matrix.json SELF_IMPROVE_ACCEPTANCE_MATRIX_MODEL_PATH= SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE=0"
+    },
+    {
+      "name": "test-self-improve-failure-corpus",
+      "make_variables": ["SELF_IMPROVE_FAILURE_CORPUS_FILE"],
+      "behavior": "make test-self-improve-failure-corpus SELF_IMPROVE_FAILURE_CORPUS_FILE=config/self-improve/failure-corpus.json"
+    },
+    {
+      "name": "test-self-improve-catalog-truth",
+      "make_variables": ["SELF_IMPROVE_CATALOG_LIVE"],
+      "behavior": "make test-self-improve-catalog-truth SELF_IMPROVE_CATALOG_LIVE=0"
+    },
+    {
+      "name": "test-self-improve-multifile",
+      "make_variables": ["SELF_IMPROVE_MULTIFILE_LIVE"],
+      "behavior": "make test-self-improve-multifile SELF_IMPROVE_MULTIFILE_LIVE=0"
+    },
+    {
+      "name": "self-improve-promotion-marker",
+      "make_variables": [
+        "SELF_IMPROVE_PROMOTION_ARTIFACT_DIGEST",
+        "SELF_IMPROVE_PROMOTION_PLAN_DIGEST",
+        "SELF_IMPROVE_PROMOTION_ATTEMPT_DIGEST",
+        "SELF_IMPROVE_PROMOTION_VALIDATE_ONLY"
+      ],
+      "behavior": "make self-improve-promotion-marker SELF_IMPROVE_PROMOTION_ARTIFACT_DIGEST=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa SELF_IMPROVE_PROMOTION_PLAN_DIGEST=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb SELF_IMPROVE_PROMOTION_ATTEMPT_DIGEST=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc SELF_IMPROVE_PROMOTION_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "test-self-improve",
+      "make_variables": [
+        "TARGET",
+        "SELF_IMPROVE_MODEL_PATH",
+        "SELF_IMPROVE_BASELINE_REF",
+        "SELF_IMPROVE_REFERENCE_REF",
+        "SELF_IMPROVE_TASK_FILE",
+        "SELF_IMPROVE_CONFIG_FILE",
+        "SELF_IMPROVE_MAX_ATTEMPTS",
+        "SELF_IMPROVE_VALIDATE_ONLY"
+      ],
+      "behavior": "make test-self-improve TARGET=dependency-floor SELF_IMPROVE_MODEL_PATH= SELF_IMPROVE_CONFIG_FILE= SELF_IMPROVE_BASELINE_REF=df6c84a5da10b11e0e1407b0c5699073b7523b8e SELF_IMPROVE_REFERENCE_REF=3e8b9a275f70dcd84d75940a64042d3113f0f8fe SELF_IMPROVE_TASK_FILE=config/self-improve/codex-parity-smoke.json SELF_IMPROVE_MAX_ATTEMPTS=1 SELF_IMPROVE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "self-improve-local-proposal",
+      "make_variables": [
+        "SELF_IMPROVE_MODEL_PATH",
+        "SELF_IMPROVE_PROMPT_FILE",
+        "SELF_IMPROVE_PROPOSAL_FILE",
+        "SELF_IMPROVE_CONTRACT_FILE",
+        "SELF_IMPROVE_ENVELOPE_FILE",
+        "SELF_IMPROVE_WORKER_VALIDATE_ONLY"
+      ],
+      "behavior": "make self-improve-local-proposal SELF_IMPROVE_MODEL_PATH=/tmp/gludd-qwen-e2e-model/example.gguf SELF_IMPROVE_PROMPT_FILE=/tmp/gludd-self-improve-example/prompt.txt SELF_IMPROVE_PROPOSAL_FILE=/tmp/gludd-self-improve-example/proposal.json SELF_IMPROVE_CONTRACT_FILE= SELF_IMPROVE_ENVELOPE_FILE=/tmp/gludd-self-improve-example/envelope.json SELF_IMPROVE_WORKER_VALIDATE_ONLY=1"
+    },
+    {
       "name": "test-specific",
       "make_variables": ["TESTFILE", "PYTEST_ARGS"],
       "behavior": "make test-specific TESTFILE=tests/unit/test_make_target_contract.py::test_make_target_contract_is_valid PYTEST_ARGS=-q"
     },
     {
+      "name": "test-specific-pyver",
+      "make_variables": ["TESTFILE", "PYTHON_VERSION", "PYTEST_ARGS"],
+      "behavior": "make test-specific-pyver TESTFILE=tests/unit/test_ci_hosted_failure_tooling.py PYTHON_VERSION=3.11 PYTEST_ARGS=-q"
+    },
+    {
       "name": "test-files",
       "make_variables": ["TESTFILES", "PYTEST_ARGS"],
       "behavior": "make test-files TESTFILES=tests/unit/test_make_target_contract.py PYTEST_ARGS=-q"
+    },
+    {
+      "name": "migrate-up",
+      "make_variables": ["MIGRATE_DATABASE_URL", "MIGRATE_REVISION"],
+      "behavior": "make migrate-up MIGRATE_DATABASE_URL=sqlite:// MIGRATE_REVISION=head"
+    },
+    {
+      "name": "ci-run-summary",
+      "make_variables": [
+        "RUN",
+        "CI_RUN_SUMMARY_REPO",
+        "CI_RUN_SUMMARY_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-run-summary RUN=123 CI_RUN_SUMMARY_REPO=sandboxcom/gludd CI_RUN_SUMMARY_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "ci-view",
+      "make_variables": [
+        "RUN",
+        "CI_FAILURE_REPOSITORY",
+        "CI_FAILURE_LEDGER",
+        "CI_FAILURE_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-view RUN=123 CI_FAILURE_REPOSITORY=sandboxcom/gludd CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_FAILURE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "ci-rerun",
+      "make_variables": [
+        "RUN",
+        "CI_FAILURE_REPOSITORY",
+        "CI_FAILURE_LEDGER",
+        "CI_RERUN_ALLOW_UNCHANGED",
+        "CI_RERUN_REASON",
+        "CI_FAILURE_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-rerun RUN=123 CI_FAILURE_REPOSITORY=sandboxcom/gludd CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_RERUN_ALLOW_UNCHANGED=0 CI_RERUN_REASON=none CI_FAILURE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "ci-recover-runner-acquisition",
+      "make_variables": [
+        "RUN",
+        "CI_FAILURE_REPOSITORY",
+        "CI_FAILURE_LEDGER",
+        "CI_FAILURE_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-recover-runner-acquisition RUN=123 CI_FAILURE_REPOSITORY=sandboxcom/gludd CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_FAILURE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "ci-failure-status",
+      "make_variables": [
+        "CI_FAILURE_LEDGER",
+        "CI_FAILURE_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-failure-status CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_FAILURE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "ci-failure-repair",
+      "make_variables": [
+        "CI_FAILURE_LEDGER",
+        "CI_FAILURE_FAMILIES",
+        "CI_REPAIR_ALL_OPEN",
+        "CI_REPAIR_SHA",
+        "CI_REPAIR_EVIDENCE_TARGET",
+        "CI_REPAIR_EVIDENCE_VARS",
+        "CI_FAILURE_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-failure-repair CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_FAILURE_FAMILIES= CI_REPAIR_ALL_OPEN=1 CI_REPAIR_SHA=0000000000000000000000000000000000000000 CI_REPAIR_EVIDENCE_TARGET=test-count CI_REPAIR_EVIDENCE_VARS= CI_FAILURE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "ci-failure-push-guard",
+      "make_variables": [
+        "CI_FAILURE_LEDGER",
+        "CI_FAILURE_BRANCH",
+        "CI_FAILURE_HEAD",
+        "CI_FAILURE_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-failure-push-guard CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_FAILURE_BRANCH=development CI_FAILURE_HEAD=0000000000000000000000000000000000000000 CI_FAILURE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "pipeline-status",
+      "make_variables": [
+        "PIPELINE_STATUS_REPO",
+        "PIPELINE_STATUS_BRANCH",
+        "PIPELINE_STATUS_REMOTE",
+        "PIPELINE_STATUS_SHA",
+        "PIPELINE_STATUS_FAILURE_LEDGER",
+        "PIPELINE_STATUS_VALIDATE_ONLY"
+      ],
+      "behavior": "make pipeline-status PIPELINE_STATUS_REPO=sandboxcom/gludd PIPELINE_STATUS_BRANCH=development PIPELINE_STATUS_REMOTE=sandboxcom PIPELINE_STATUS_SHA= PIPELINE_STATUS_FAILURE_LEDGER=.gludd/ci-failure-ledger.json PIPELINE_STATUS_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "reviewed-head-receipt",
+      "make_variables": [
+        "REVIEWED_HEAD_RECEIPT_MANIFEST",
+        "REVIEWED_HEAD_GATE_ATTESTATION",
+        "REVIEWED_HEAD_RECEIPT_OUTPUT",
+        "REVIEWED_HEAD_RECEIPT_REPO_ROOT",
+        "REVIEWED_HEAD_RECEIPT_VALIDATE_ONLY"
+      ],
+      "behavior": "make reviewed-head-receipt REVIEWED_HEAD_RECEIPT_MANIFEST=/tmp/gludd-reviewed-head-manifest.json REVIEWED_HEAD_GATE_ATTESTATION=/tmp/gludd-gate-attestation.json REVIEWED_HEAD_RECEIPT_OUTPUT=/tmp/gludd-reviewed-head-receipt.json REVIEWED_HEAD_RECEIPT_REPO_ROOT=. REVIEWED_HEAD_RECEIPT_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "release-readiness",
+      "make_variables": [
+        "TAG",
+        "RELEASE_READINESS_VALIDATE_ONLY",
+        "RELEASE_COMPLETED_STAGES",
+        "RELEASE_OBSERVATIONS",
+        "REVIEWED_HEAD_INTEGRATION_RECEIPT",
+        "RELEASE_CANDIDATE_SHA"
+      ],
+      "behavior": "make release-readiness TAG=v0.1.1 RELEASE_READINESS_VALIDATE_ONLY=1 RELEASE_COMPLETED_STAGES= RELEASE_OBSERVATIONS= REVIEWED_HEAD_INTEGRATION_RECEIPT=tests/fixtures/reviewed_head_integration_receipt.json RELEASE_CANDIDATE_SHA=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    {
+      "name": "check-release-failure-ledger",
+      "make_variables": ["RELEASE_FAILURE_LEDGER"],
+      "behavior": "make check-release-failure-ledger RELEASE_FAILURE_LEDGER=docs/releases/beta-release-failures.json"
+    },
+    {
+      "name": "release-promote",
+      "make_variables": [
+        "TAG",
+        "MSG",
+        "RELEASE_PROMOTE_VALIDATE_ONLY",
+        "REVIEWED_HEAD_INTEGRATION_RECEIPT"
+      ],
+      "behavior": "make release-promote TAG=v0.1.0-beta.4 MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=1 REVIEWED_HEAD_INTEGRATION_RECEIPT="
+    },
+    {
+      "name": "replay-codex-file-changes",
+      "make_variables": [
+        "CODEX_REPLAY_DB",
+        "CODEX_REPLAY_RECORDED_REPO",
+        "CODEX_REPLAY_THREAD_ID",
+        "CODEX_REPLAY_START",
+        "CODEX_REPLAY_END",
+        "CODEX_REPLAY_APPLY",
+        "CODEX_REPLAY_VALIDATE_ONLY"
+      ],
+      "behavior": "make replay-codex-file-changes CODEX_REPLAY_DB=/tmp/gludd-codex-history.sqlite CODEX_REPLAY_RECORDED_REPO=. CODEX_REPLAY_THREAD_ID=00000000-0000-0000-0000-000000000000 CODEX_REPLAY_START=1 CODEX_REPLAY_END=1 CODEX_REPLAY_APPLY=0 CODEX_REPLAY_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "ci-job-failure-context",
+      "make_variables": [
+        "RUN",
+        "JOB",
+        "PATTERN",
+        "BEFORE",
+        "AFTER",
+        "CI_JOB_CONTEXT_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-job-failure-context RUN=1 JOB=1 PATTERN=FAILED BEFORE=2 AFTER=4 CI_JOB_CONTEXT_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "ci-artifact-download",
+      "make_variables": [
+        "RUN",
+        "ARTIFACT",
+        "CI_ARTIFACT_OUTPUT_ROOT",
+        "CI_ARTIFACT_HEARTBEAT_SECS",
+        "CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-artifact-download RUN=1 ARTIFACT=diagnostics CI_ARTIFACT_OUTPUT_ROOT=RESOURCE_ROOT CI_ARTIFACT_HEARTBEAT_SECS=1 CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "ci-artifact-context",
+      "make_variables": [
+        "RUN",
+        "ARTIFACT",
+        "CI_ARTIFACT_FILE",
+        "PATTERN",
+        "BEFORE",
+        "AFTER",
+        "MAX_MATCHES",
+        "CI_ARTIFACT_CONTEXT_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-artifact-context RUN=1 ARTIFACT=diagnostics CI_ARTIFACT_FILE=failure.log PATTERN=FAILED BEFORE=2 AFTER=4 MAX_MATCHES=1 CI_ARTIFACT_CONTEXT_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "ci-pyinstaller-warning-audit",
+      "make_variables": [
+        "RUN",
+        "ARTIFACT",
+        "PYINSTALLER_WARNING_ARCHITECTURE_LINUX",
+        "PYINSTALLER_VERSION_LINUX",
+        "CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-pyinstaller-warning-audit RUN=1 ARTIFACT=molecule-logs-shard-1 PYINSTALLER_WARNING_ARCHITECTURE_LINUX=x86_64 PYINSTALLER_VERSION_LINUX=6.20.0 CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "ci-coverage-artifact-audit",
+      "make_variables": [
+        "CI_COVERAGE_RUN",
+        "CI_COVERAGE_ARTIFACT",
+        "CI_COVERAGE_INPUT",
+        "CI_COVERAGE_SOURCE",
+        "CI_COVERAGE_AGGREGATE_MIN",
+        "CI_COVERAGE_PER_FILE_MIN",
+        "CI_COVERAGE_AUDIT_VALIDATE_ONLY",
+        "CI_COVERAGE_HEARTBEAT_SECS"
+      ],
+      "behavior": "make ci-coverage-artifact-audit CI_COVERAGE_RUN=1 CI_COVERAGE_ARTIFACT=coverage-merged CI_COVERAGE_INPUT=xml CI_COVERAGE_SOURCE=src/general_ludd CI_COVERAGE_AGGREGATE_MIN=85 CI_COVERAGE_PER_FILE_MIN=75 CI_COVERAGE_AUDIT_VALIDATE_ONLY=1 CI_COVERAGE_HEARTBEAT_SECS=1"
+    },
+    {
+      "name": "ci-coverage-gap-plan",
+      "make_variables": [
+        "CI_COVERAGE_RUN",
+        "CI_COVERAGE_ARTIFACT",
+        "CI_COVERAGE_SOURCE",
+        "CI_COVERAGE_PER_FILE_MIN",
+        "CI_COVERAGE_GAP_LIMIT",
+        "CI_COVERAGE_GAP_PLAN_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-coverage-gap-plan CI_COVERAGE_RUN=1 CI_COVERAGE_ARTIFACT=coverage-merged CI_COVERAGE_SOURCE=src/general_ludd CI_COVERAGE_PER_FILE_MIN=75 CI_COVERAGE_GAP_LIMIT=20 CI_COVERAGE_GAP_PLAN_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "test-e2e",
+      "make_variables": [
+        "E2E_TEST_TIMEOUT",
+        "E2E_STALL_SECS",
+        "E2E_FILE_MAX_SECS",
+        "E2E_WORKERS",
+        "E2E_FILE_WORKERS",
+        "E2E_FILE_GLOB",
+        "E2E_HEARTBEAT_SECS",
+        "E2E_SHARD",
+        "E2E_TOTAL",
+        "PYTEST_ARGS"
+      ],
+      "behavior": "make test-e2e E2E_TEST_TIMEOUT=1 E2E_STALL_SECS=1 E2E_FILE_MAX_SECS=1 E2E_WORKERS=1 E2E_FILE_WORKERS=1 E2E_FILE_GLOB=__make_contract_no_tests__.py E2E_HEARTBEAT_SECS=1 E2E_SHARD=1 E2E_TOTAL=1 PYTEST_ARGS='-q -W error'"
     },
     {
       "name": "typecheck-scope",
@@ -37,9 +516,33 @@
         "PYINSTALLER_WARNING_FILE_LINUX",
         "PYINSTALLER_WARNING_ALLOWLIST_LINUX",
         "PYINSTALLER_VERSION_LINUX",
+        "PYINSTALLER_WARNING_ARCHITECTURE_LINUX",
         "PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY"
       ],
-      "behavior": "make audit-linux-pyinstaller-warnings PYINSTALLER_WARNING_FILE_LINUX=dist/linux/warn-gludd.txt PYINSTALLER_WARNING_ALLOWLIST_LINUX=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_VERSION_LINUX=6.20.0 PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=1"
+      "behavior": "make audit-linux-pyinstaller-warnings PYINSTALLER_WARNING_FILE_LINUX=dist/linux/warn-gludd.txt PYINSTALLER_WARNING_ALLOWLIST_LINUX=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_VERSION_LINUX=6.20.0 PYINSTALLER_WARNING_ARCHITECTURE_LINUX=x86_64 PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "compare-linux-pyinstaller-warnings",
+      "make_variables": [
+        "PYINSTALLER_WARNING_BEFORE",
+        "PYINSTALLER_WARNING_AFTER",
+        "PYINSTALLER_WARNING_ALLOWLIST_LINUX",
+        "PYINSTALLER_VERSION_LINUX",
+        "PYINSTALLER_WARNING_ARCHITECTURE_LINUX",
+        "PYINSTALLER_WARNING_REVIEW_RECEIPT",
+        "PYINSTALLER_WARNING_COMPARE_VALIDATE_ONLY"
+      ],
+      "behavior": "make compare-linux-pyinstaller-warnings PYINSTALLER_WARNING_BEFORE=/tmp/gludd-warning-before.txt PYINSTALLER_WARNING_AFTER=/tmp/gludd-warning-after.txt PYINSTALLER_WARNING_ALLOWLIST_LINUX=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_VERSION_LINUX=6.20.0 PYINSTALLER_WARNING_ARCHITECTURE_LINUX=aarch64 PYINSTALLER_WARNING_REVIEW_RECEIPT=artifacts/pyinstaller-warning-review.json PYINSTALLER_WARNING_COMPARE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "check-pyinstaller-warning-reviews",
+      "make_variables": [
+        "PYINSTALLER_WARNING_REVIEW_POLICY",
+        "PYINSTALLER_WARNING_REVIEW_DIR",
+        "PYINSTALLER_WARNING_REVIEW_BASE_POLICY",
+        "PYINSTALLER_WARNING_REVIEW_CHECK_VALIDATE_ONLY"
+      ],
+      "behavior": "make check-pyinstaller-warning-reviews PYINSTALLER_WARNING_REVIEW_POLICY=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_WARNING_REVIEW_DIR=config/pyinstaller-warning-reviews PYINSTALLER_WARNING_REVIEW_BASE_POLICY= PYINSTALLER_WARNING_REVIEW_CHECK_VALIDATE_ONLY=1"
     },
     {
       "name": "molecule-test",
@@ -62,19 +565,49 @@
       "behavior": "make sync-llama-cpp SYNC_LLAMA_CPP_VALIDATE_ONLY=1"
     },
     {
+      "name": "test-local-model-inference",
+      "make_variables": ["LOCAL_MODEL_INFERENCE_MODEL_PATH", "LOCAL_MODEL_INFERENCE_VALIDATE_ONLY"],
+      "behavior": "make test-local-model-inference LOCAL_MODEL_INFERENCE_MODEL_PATH=/tmp/gludd-qwen-e2e-model/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf LOCAL_MODEL_INFERENCE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "test-e2e-game-pipeline",
+      "make_variables": ["CI_SAFE", "GAME_DEV_MODEL", "GAME_DEV_GAME", "PYTEST_ARGS"],
+      "behavior": "make test-e2e-game-pipeline CI_SAFE=1 GAME_DEV_MODEL=Qwen2.5-0.5B-Instruct GAME_DEV_GAME=snake PYTEST_ARGS='-q -W error'"
+    },
+    {
+      "name": "clean-e2e-small-model",
+      "make_variables": ["E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY"],
+      "behavior": "make clean-e2e-small-model E2E_SMALL_MODEL_CLEAN_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "clean-hf-cache",
+      "make_variables": ["CLEAN_HF_CACHE_ROOT", "CLEAN_HF_CACHE_REQUIRED_BYTES", "CLEAN_HF_CACHE_VALIDATE_ONLY"],
+      "behavior": "make clean-hf-cache CLEAN_HF_CACHE_ROOT=/tmp/gludd-clean-hf-cache-contract CLEAN_HF_CACHE_REQUIRED_BYTES=0 CLEAN_HF_CACHE_VALIDATE_ONLY=1"
+    },
+    {
       "name": "node-deps-sync",
-      "make_variables": ["NODE_DEPS_VALIDATE_ONLY", "NODE_DEPS_NPM_USERCONFIG", "NODE_DEPS_NPM_CACHE", "NODE_DEPS_NPM_REGISTRY"],
-      "behavior": "make node-deps-sync NODE_DEPS_VALIDATE_ONLY=1 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org"
+      "make_variables": ["NODE_DEPS_VALIDATE_ONLY", "NODE_DEPS_NPM_USERCONFIG", "NODE_DEPS_NPM_CACHE", "NODE_DEPS_NPM_REGISTRY", "NODE_DEPS_NPM_UPDATE_NOTIFIER"],
+      "behavior": "make node-deps-sync NODE_DEPS_VALIDATE_ONLY=1 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_NPM_UPDATE_NOTIFIER=false"
     },
     {
       "name": "node-deps-relock",
-      "make_variables": ["NODE_DEPS_VALIDATE_ONLY", "NODE_DEPS_NPM_USERCONFIG", "NODE_DEPS_NPM_CACHE", "NODE_DEPS_NPM_REGISTRY"],
-      "behavior": "make node-deps-relock NODE_DEPS_VALIDATE_ONLY=1 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org"
+      "make_variables": ["NODE_DEPS_VALIDATE_ONLY", "NODE_DEPS_NPM_USERCONFIG", "NODE_DEPS_NPM_CACHE", "NODE_DEPS_NPM_REGISTRY", "NODE_DEPS_NPM_UPDATE_NOTIFIER"],
+      "behavior": "make node-deps-relock NODE_DEPS_VALIDATE_ONLY=1 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_NPM_UPDATE_NOTIFIER=false"
     },
     {
       "name": "node-deps-audit",
-      "make_variables": ["NODE_DEPS_VALIDATE_ONLY", "NODE_DEPS_NPM_USERCONFIG", "NODE_DEPS_NPM_CACHE", "NODE_DEPS_NPM_REGISTRY", "NODE_DEPS_AUDIT_LEVEL"],
-      "behavior": "make node-deps-audit NODE_DEPS_VALIDATE_ONLY=1 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_AUDIT_LEVEL=moderate"
+      "make_variables": ["NODE_DEPS_VALIDATE_ONLY", "NODE_DEPS_NPM_USERCONFIG", "NODE_DEPS_NPM_CACHE", "NODE_DEPS_NPM_REGISTRY", "NODE_DEPS_NPM_UPDATE_NOTIFIER", "NODE_DEPS_AUDIT_LEVEL"],
+      "behavior": "make node-deps-audit NODE_DEPS_VALIDATE_ONLY=1 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_NPM_UPDATE_NOTIFIER=false NODE_DEPS_AUDIT_LEVEL=moderate"
+    },
+    {
+      "name": "freellmapi-upstream-admission",
+      "make_variables": ["FREELLMAPI_ADMISSION_TAG", "FREELLMAPI_ADMISSION_COMMIT", "FREELLMAPI_ADMISSION_LIVE", "FREELLMAPI_ADMISSION_OUTPUT"],
+      "behavior": "make freellmapi-upstream-admission FREELLMAPI_ADMISSION_TAG=v0.11.1 FREELLMAPI_ADMISSION_COMMIT=4191d8e7abef39fcd93fab009123467036f39750 FREELLMAPI_ADMISSION_LIVE=0 FREELLMAPI_ADMISSION_OUTPUT=config/freellmapi/upstream_candidate.json"
+    },
+    {
+      "name": "freellmapi-upstream-build",
+      "make_variables": ["FREELLMAPI_BUILD_LIVE", "FREELLMAPI_BUILD_CANDIDATE", "FREELLMAPI_BUILD_PLAN", "FREELLMAPI_BUILD_REPORT"],
+      "behavior": "make freellmapi-upstream-build FREELLMAPI_BUILD_LIVE=0 FREELLMAPI_BUILD_CANDIDATE=config/freellmapi/upstream_candidate.json FREELLMAPI_BUILD_PLAN=config/freellmapi/upstream_build_plan.json FREELLMAPI_BUILD_REPORT=/tmp/gludd-freellmapi-upstream-build/evidence.json"
     },
     {
       "name": "pip-audit-gate",
@@ -133,6 +666,11 @@
       "behavior": "make test-e2e-games-local PYTEST_ARGS=-q"
     },
     {
+      "name": "test-e2e-games-local-model",
+      "make_variables": ["LOCAL_MODEL_E2E_MODE", "LOCAL_MODEL_BASE_URL", "LOCAL_MODEL_NAME", "LOCAL_MODEL_KEY", "LOCAL_MODEL_GAME", "LOCAL_MODEL_PATH", "PYTEST_ARGS"],
+      "behavior": "make test-e2e-games-local-model LOCAL_MODEL_E2E_MODE=hermetic LOCAL_MODEL_BASE_URL= LOCAL_MODEL_NAME=gludd-hermetic-game-e2e LOCAL_MODEL_KEY=local-hermetic LOCAL_MODEL_GAME=snake LOCAL_MODEL_PATH= PYTEST_ARGS=-q"
+    },
+    {
       "name": "grep",
       "make_variables": ["Q", "SEARCH_PATH"],
       "behavior": "make grep Q=GAME_E2E SEARCH_PATH=docs"
@@ -143,9 +681,24 @@
       "behavior": "make check-disk CHECK_DISK_VALIDATE_ONLY=1"
     },
     {
+      "name": "disk-cleanup-preflight",
+      "make_variables": ["DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY", "DISK_CLEANUP_PREFLIGHT_DRY_RUN", "DISK_CLEANUP_RECEIPT_GRACE_SECONDS"],
+      "behavior": "make disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=1 DISK_CLEANUP_PREFLIGHT_DRY_RUN=0 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800"
+    },
+    {
       "name": "check-disk-classification",
       "make_variables": [],
       "behavior": "make check-disk-classification"
+    },
+    {
+      "name": "cache-resource-inventory",
+      "make_variables": ["CACHE_RESOURCE_ROOT", "CACHE_RESOURCE_LIMIT", "CACHE_RESOURCE_VALIDATE_ONLY"],
+      "behavior": "make cache-resource-inventory CACHE_RESOURCE_ROOT=/Users/shawnwilson/Library/Caches CACHE_RESOURCE_LIMIT=20 CACHE_RESOURCE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "cache-resource-remove",
+      "make_variables": ["CACHE_RESOURCE_ROOT", "CACHE_RESOURCE_CANDIDATE", "CACHE_RESOURCE_VALIDATE_ONLY"],
+      "behavior": "make cache-resource-remove CACHE_RESOURCE_ROOT=/Users/shawnwilson/Library/Caches CACHE_RESOURCE_CANDIDATE=/Users/shawnwilson/Library/Caches/pip CACHE_RESOURCE_VALIDATE_ONLY=1"
     },
     {
       "name": "tmp-gludd-clean-ci-shards-now",
@@ -156,6 +709,11 @@
       "name": "tmp-gludd-clean-orphan-worktrees-now",
       "make_variables": ["TMP_GLUDD_ORPHAN_CLEAN_VALIDATE_ONLY"],
       "behavior": "make tmp-gludd-clean-orphan-worktrees-now TMP_GLUDD_ORPHAN_CLEAN_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "clean-worktree-venvs",
+      "make_variables": ["CLEAN_WORKTREE_VENVS_VALIDATE_ONLY"],
+      "behavior": "make clean-worktree-venvs CLEAN_WORKTREE_VENVS_VALIDATE_ONLY=1"
     },
     {
       "name": "opencode-disk",
@@ -397,6 +955,11 @@
       "behavior": "make check-make-target-contract"
     },
     {
+      "name": "check-dispatch-dedup",
+      "make_variables": [],
+      "behavior": "make check-dispatch-dedup"
+    },
+    {
       "name": "ci-trigger-committed-head",
       "make_variables": [
         "EXAMPLE",
@@ -411,9 +974,30 @@
       "behavior": "make ci-trigger-committed-head EXAMPLE=1 REF=release/beta3-candidate REMOTE=sandboxcom REPO=sandboxcom/gludd WORKFLOW='Build and Release' DISCOVERY_POLLS=1 CONFIRM_POLLS=1 POLL_INTERVAL=0"
     },
     {
+      "name": "ci-record-verdict",
+      "make_variables": ["VERDICT", "SHA"],
+      "behavior": "make ci-record-verdict VERDICT=failure SHA=<40-hex-sha>"
+    },
+    {
+      "name": "deploy-and-forget",
+      "make_variables": ["BRANCH", "DEPLOY_AND_FORGET_VALIDATE_ONLY"],
+      "behavior": "make deploy-and-forget BRANCH=feature/hermetic-ci DEPLOY_AND_FORGET_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "_record-push-verdict",
+      "make_variables": [],
+      "not_for_direct_use": true,
+      "behavior": "make _record-push-verdict"
+    },
+    {
       "name": "active-work-status",
       "make_variables": [],
       "behavior": "make active-work-status"
+    },
+    {
+      "name": "ps",
+      "make_variables": [],
+      "behavior": "make ps"
     },
     {
       "name": "clean",
@@ -431,6 +1015,11 @@
       "behavior": "make terminate-project-process-tree PROCESS_ROOT_PID=1 PROCESS_NAMESPACE=/tmp/gludd-contract PROCESS_CLEANUP_APPLY=0 PROCESS_CLEANUP_VALIDATE_ONLY=1"
     },
     {
+      "name": "kill-worktree-e2e",
+      "make_variables": ["PID", "KILL_WORKTREE_E2E_VALIDATE_ONLY"],
+      "behavior": "make kill-worktree-e2e PID=1 KILL_WORKTREE_E2E_VALIDATE_ONLY=1"
+    },
+    {
       "name": "status-snapshot",
       "make_variables": ["STATUS_SNAPSHOT_VALIDATE_ONLY"],
       "behavior": "make status-snapshot STATUS_SNAPSHOT_VALIDATE_ONLY=1"
@@ -439,6 +1028,16 @@
       "name": "branches-unmerged-development",
       "make_variables": [],
       "behavior": "make branches-unmerged-development"
+    },
+    {
+      "name": "branch-reconciliation-inventory",
+      "make_variables": ["RECONCILE_TARGET", "RECONCILE_LIMIT", "RECONCILE_AFTER"],
+      "behavior": "make branch-reconciliation-inventory RECONCILE_TARGET=development RECONCILE_LIMIT=20 RECONCILE_AFTER="
+    },
+    {
+      "name": "branch-reconciliation-summary",
+      "make_variables": ["RECONCILE_TARGET", "RECONCILE_LIMIT", "RECONCILE_DETAILS", "RECONCILE_CURRENT_ONLY", "RECONCILE_QUIET_PROGRESS", "RECONCILE_HEAD_SEMANTICS"],
+      "behavior": "make branch-reconciliation-summary RECONCILE_TARGET=development RECONCILE_LIMIT=100 RECONCILE_DETAILS=0 RECONCILE_CURRENT_ONLY=0 RECONCILE_QUIET_PROGRESS=0 RECONCILE_HEAD_SEMANTICS=0"
     },
     {
       "name": "development-merge-forward",
@@ -487,9 +1086,74 @@
       "behavior": "make resolve-development-conflicts MERGE_SOURCE=master APPLY=0"
     },
     {
+      "name": "git-show-commit",
+      "make_variables": ["C"],
+      "behavior": "make git-show-commit C=e4c9b68aea0ff59cab77a06747471e248e9e0601"
+    },
+    {
+      "name": "git-show-full",
+      "make_variables": ["SHA"],
+      "behavior": "make git-show-full SHA=e4c9b68aea0ff59cab77a06747471e248e9e0601"
+    },
+    {
       "name": "git-patch-equivalence",
       "make_variables": ["PATCH_UPSTREAM", "PATCH_HEAD", "PATCH_LIMIT"],
       "behavior": "make git-patch-equivalence PATCH_UPSTREAM=development PATCH_HEAD=master PATCH_LIMIT=3"
+    },
+    {
+      "name": "submodule-init",
+      "make_variables": ["SUBMODULE_INIT_VALIDATE_ONLY"],
+      "behavior": "make submodule-init SUBMODULE_INIT_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "build-linux-binary-image",
+      "variables": [
+        "LIMA_INSTANCE",
+        "LIMA_DOCKER_CONFIG",
+        "LIMA_DOCKER_TEMPLATE",
+        "LIMA_DOCKER_START_TIMEOUT_SECS",
+        "LIMA_DOCKER_VALIDATE_ONLY",
+        "LINUX_BINARY_IMAGE",
+        "LINUX_BINARY_DOCKERFILE",
+        "LINUX_BINARY_IMAGE_BUILD_VALIDATE_ONLY",
+        "DOCKER_BUILDX_BIN",
+        "DOCKER_BUILDX_AUTO_INSTALL",
+        "DOCKER_BUILDX_FORMULA",
+        "PYINSTALLER_PYTHON_VERSION_LINUX",
+        "PYINSTALLER_UV_VERSION_LINUX"
+      ],
+      "behavior": "make build-linux-binary-image LIMA_INSTANCE=gludd-docker LIMA_DOCKER_CONFIG=/tmp/gludd-lima-docker-config LIMA_DOCKER_TEMPLATE=template:docker LIMA_DOCKER_START_TIMEOUT_SECS=180 LIMA_DOCKER_VALIDATE_ONLY=1 LINUX_BINARY_IMAGE=gludd-linux-binary-build:python3.12.14-uv0.12.19 LINUX_BINARY_DOCKERFILE=config/containers/linux-binary.Dockerfile LINUX_BINARY_IMAGE_BUILD_VALIDATE_ONLY=1 DOCKER_BUILDX_BIN= DOCKER_BUILDX_AUTO_INSTALL=0 DOCKER_BUILDX_FORMULA=docker-buildx PYINSTALLER_PYTHON_VERSION_LINUX=3.12.14 PYINSTALLER_UV_VERSION_LINUX=0.12.19"
+    },
+    {
+      "name": "lima-docker-ensure",
+      "variables": [
+        "LIMA_INSTANCE",
+        "LIMA_DOCKER_CONFIG",
+        "LIMA_DOCKER_TEMPLATE",
+        "LIMA_DOCKER_START_TIMEOUT_SECS",
+        "LIMA_DOCKER_VALIDATE_ONLY"
+      ],
+      "behavior": "make lima-docker-ensure LIMA_INSTANCE=gludd-docker LIMA_DOCKER_CONFIG=/tmp/gludd-lima-docker-config LIMA_DOCKER_TEMPLATE=template:docker LIMA_DOCKER_START_TIMEOUT_SECS=180 LIMA_DOCKER_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "lima-docker-start",
+      "make_variables": [
+        "LIMA_INSTANCE",
+        "LIMA_DOCKER_CONFIG",
+        "LIMA_DOCKER_START_TIMEOUT_SECS",
+        "LIMA_DOCKER_VALIDATE_ONLY"
+      ],
+      "behavior": "make lima-docker-start LIMA_INSTANCE=gludd-docker LIMA_DOCKER_CONFIG=/tmp/gludd-lima-docker-config LIMA_DOCKER_START_TIMEOUT_SECS=180 LIMA_DOCKER_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "lima-docker-stop",
+      "make_variables": [
+        "LIMA_INSTANCE",
+        "LIMA_DOCKER_STOP_KILL_AFTER_SECS",
+        "LIMA_DOCKER_STOP_TIMEOUT_SECS",
+        "LIMA_DOCKER_VALIDATE_ONLY"
+      ],
+      "behavior": "make lima-docker-stop LIMA_INSTANCE=gludd-docker LIMA_DOCKER_STOP_KILL_AFTER_SECS=10 LIMA_DOCKER_STOP_TIMEOUT_SECS=200 LIMA_DOCKER_VALIDATE_ONLY=1"
     },
     {
       "name": "lima-docker-status",
@@ -525,15 +1189,165 @@
       "behavior": "make install-workflow-hook INSTALL_WORKFLOW_HOOK_VALIDATE_ONLY=1"
     },
     {
+      "name": "ci-await",
+      "make_variables": [
+        "BRANCH",
+        "TIMEOUT",
+        "SHA",
+        "CI_AWAIT_WORKFLOW",
+        "CI_AWAIT_EVENT",
+        "CI_AWAIT_INTERVAL",
+        "CI_AWAIT_VALIDATE_ONLY",
+        "CI_AWAIT_AFTER_RUN_ID",
+        "CI_AWAIT_SNAPSHOT_ONLY"
+      ],
+      "behavior": "make ci-await BRANCH=v0.1.1 TIMEOUT=5400 SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa CI_AWAIT_WORKFLOW='Build and Release' CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL=10 CI_AWAIT_AFTER_RUN_ID=0 CI_AWAIT_VALIDATE_ONLY=1 CI_AWAIT_SNAPSHOT_ONLY=0"
+    },
+    {
       "name": "coverage-files",
       "make_variables": [
         "COVERAGE_TESTFILES",
         "COVERAGE_CONFIG",
         "COVERAGE_REPORT",
         "COVERAGE_AGGREGATE_MIN",
-        "COVERAGE_PER_FILE_MIN"
+        "COVERAGE_PER_FILE_MIN",
+        "OBSERVED_ROOT",
+        "OBSERVED_HEARTBEAT_SECS",
+        "OBSERVED_QUIET_SECS",
+        "OBSERVED_MAX_SECS",
+        "OBSERVED_RETAIN_RUNS"
       ],
-      "behavior": "make coverage-files COVERAGE_TESTFILES='scripts/test_hook_runtime.py tests/unit/test_floor_controller.py tests/unit/test_opencode_integrity.py tests/unit/test_w22_opencode_integrity.py' COVERAGE_CONFIG=config/coverage_gate_runtime.ini COVERAGE_REPORT=.gate-logs/coverage-files.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75"
+      "behavior": "make coverage-files COVERAGE_TESTFILES='tests/unit/test_observed_command.py tests/unit/test_xdist_trace_diagnostics.py tests/unit/test_gate_refresh_streaming.py tests/unit/test_observability_guardrails.py tests/unit/test_active_work_status.py tests/unit/test_active_work_resource_observability.py' COVERAGE_CONFIG=config/coverage_observed_command.ini COVERAGE_REPORT=.gate-logs/coverage-observed-command.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=1 OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=300 OBSERVED_RETAIN_RUNS=20"
+    },
+    {
+      "name": "observed-status",
+      "make_variables": ["OBSERVED_LABEL", "RUN_ID", "OBSERVED_ROOT", "OBSERVED_STALE_SECS"],
+      "behavior": "make observed-status OBSERVED_LABEL=run-watched RUN_ID=contract-run-watched OBSERVED_ROOT=.gate-logs/observed OBSERVED_STALE_SECS=90"
+    },
+    {
+      "name": "observed-tail",
+      "make_variables": ["OBSERVED_LABEL", "RUN_ID", "OBSERVED_ROOT", "OBSERVED_TAIL_LINES"],
+      "behavior": "make observed-tail OBSERVED_LABEL=run-watched RUN_ID=contract-run-watched OBSERVED_ROOT=.gate-logs/observed OBSERVED_TAIL_LINES=80"
+    },
+    {
+      "name": "run-watched",
+      "make_variables": ["CMD", "OBSERVED_LABEL", "RUN_ID", "STALL_SECS", "MAX_SECS", "LOG", "OBSERVED_ROOT", "OBSERVED_HEARTBEAT_SECS", "OBSERVED_RETAIN_RUNS"],
+      "behavior": "make run-watched CMD='printf observed-contract' OBSERVED_LABEL=run-watched RUN_ID=contract-run-watched STALL_SECS=180 MAX_SECS=3600 LOG=.gate-logs/observed/run-watched/contract.log OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 OBSERVED_RETAIN_RUNS=20"
+    },
+    {
+      "name": "test-count",
+      "make_variables": ["OBSERVED_ROOT", "OBSERVED_HEARTBEAT_SECS", "OBSERVED_QUIET_SECS", "OBSERVED_MAX_SECS", "OBSERVED_RETAIN_RUNS"],
+      "behavior": "make test-count OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 OBSERVED_QUIET_SECS=900 OBSERVED_MAX_SECS=3600 OBSERVED_RETAIN_RUNS=20"
+    },
+    {
+      "name": "collect-check",
+      "make_variables": ["OBSERVED_ROOT", "OBSERVED_HEARTBEAT_SECS", "OBSERVED_QUIET_SECS", "OBSERVED_MAX_SECS", "OBSERVED_RETAIN_RUNS", "OBSERVED_TAIL_LINES"],
+      "behavior": "make collect-check OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 OBSERVED_QUIET_SECS=900 OBSERVED_MAX_SECS=3600 OBSERVED_RETAIN_RUNS=20 OBSERVED_TAIL_LINES=80"
+    },
+    {
+      "name": "test-xdist-trace",
+      "make_variables": ["LOG", "TESTPATH", "PYTEST_ARGS", "RUN_ID"],
+      "behavior": "make test-xdist-trace LOG=/tmp/gludd-xdist-contract.jsonl TESTPATH=tests/unit/test_xdist_trace_diagnostics.py PYTEST_ARGS='-k summary_filters_an_append_only_trace_by_run_id' RUN_ID=contract-run"
+    },
+    {
+      "name": "test-xdist-trace-summary",
+      "make_variables": ["LOG", "RUN_ID"],
+      "behavior": "make test-xdist-trace-summary LOG=/tmp/gludd-xdist-contract.jsonl RUN_ID=contract-run"
+    },
+    {
+      "name": "validate-ansible-runtime-boundary",
+      "make_variables": [],
+      "behavior": "make validate-ansible-runtime-boundary"
+    },
+    {
+      "name": "update-ansible-runtime-lock",
+      "make_variables": [],
+      "behavior": "make update-ansible-runtime-lock"
+    },
+    {
+      "name": "refresh-ansible-base-image",
+      "make_variables": ["ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY"],
+      "behavior": "make refresh-ansible-base-image ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "check-ansible-base-image",
+      "make_variables": ["ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY"],
+      "behavior": "make check-ansible-base-image ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "build-ansible-execution-environment",
+      "make_variables": ["ANSIBLE_EE_VALIDATE_ONLY", "ANSIBLE_EE_RUNTIME", "ANSIBLE_EE_IMAGE", "ANSIBLE_EE_CONTEXT", "ANSIBLE_EE_DOCKER_CONFIG", "ANSIBLE_EE_DOCKER_HOST"],
+      "behavior": "make build-ansible-execution-environment ANSIBLE_EE_VALIDATE_ONLY=1 ANSIBLE_EE_RUNTIME=docker ANSIBLE_EE_IMAGE=gludd-ansible-ee:0.1.0-beta.4 ANSIBLE_EE_CONTEXT=/tmp/gludd-ansible-ee-contract ANSIBLE_EE_DOCKER_CONFIG=/tmp/gludd-docker-config ANSIBLE_EE_DOCKER_HOST=unix:///tmp/gludd-docker.sock"
+    },
+    {
+      "name": "verify-ansible-execution-environment",
+      "make_variables": ["ANSIBLE_EE_VALIDATE_ONLY", "ANSIBLE_EE_RUNTIME", "ANSIBLE_EE_IMAGE"],
+      "behavior": "make verify-ansible-execution-environment ANSIBLE_EE_VALIDATE_ONLY=1 ANSIBLE_EE_RUNTIME=podman ANSIBLE_EE_IMAGE=registry.example/gludd-ee:beta4@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "check-collection-python-boundary",
+      "make_variables": ["COLLECTION_PYTHON_BOUNDARY_ROOT", "COLLECTION_PYTHON_BOUNDARY_INVENTORY", "COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO"],
+      "behavior": "make check-collection-python-boundary COLLECTION_PYTHON_BOUNDARY_ROOT=collections/ansible_collections COLLECTION_PYTHON_BOUNDARY_INVENTORY=config/ansible/collection-python-boundary-inventory.json COLLECTION_PYTHON_BOUNDARY_STRICT_ZERO=0"
+    },
+    {
+      "name": "check-resource-ownership",
+      "make_variables": ["RESOURCE_OWNERSHIP_ROOT", "RESOURCE_OWNERSHIP_PATHS", "RESOURCE_OWNERSHIP_INVENTORY", "RESOURCE_OWNERSHIP_WRITE"],
+      "behavior": "make check-resource-ownership RESOURCE_OWNERSHIP_ROOT=. RESOURCE_OWNERSHIP_PATHS='src/general_ludd scripts' RESOURCE_OWNERSHIP_INVENTORY=config/resource_ownership_inventory.json RESOURCE_OWNERSHIP_WRITE=0"
+    },
+    {
+      "name": "check-generated-artifact-hygiene",
+      "make_variables": [],
+      "behavior": "make check-generated-artifact-hygiene"
+    },
+    {
+      "name": "update-collection-python-boundary-inventory",
+      "make_variables": ["COLLECTION_PYTHON_BOUNDARY_ROOT", "COLLECTION_PYTHON_BOUNDARY_INVENTORY"],
+      "behavior": "make update-collection-python-boundary-inventory COLLECTION_PYTHON_BOUNDARY_ROOT=collections/ansible_collections COLLECTION_PYTHON_BOUNDARY_INVENTORY=/tmp/gludd-collection-python-boundary-contract.json"
+    },
+    {
+      "name": "pre-commit-check",
+      "make_variables": [],
+      "behavior": "make pre-commit-check"
+    },
+    {
+      "name": "list-plugins",
+      "make_variables": [],
+      "behavior": "make list-plugins"
+    },
+    {
+      "name": "release-branch-new",
+      "make_variables": ["NAME", "BASE", "RELEASE_BRANCH_VALIDATE_ONLY"],
+      "behavior": "make release-branch-new NAME=release/contract-validation BASE=development RELEASE_BRANCH_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "test-ci-dual-track-local",
+      "make_variables": ["DUAL_TRACK_LOCAL_VALIDATE_ONLY", "PYTEST_ARGS", "MAX_FILES_PER_BATCH"],
+      "behavior": "make test-ci-dual-track-local DUAL_TRACK_LOCAL_VALIDATE_ONLY=1 PYTEST_ARGS='' MAX_FILES_PER_BATCH=64"
+    },
+    {
+      "name": "require-dual-track-green",
+      "make_variables": ["SHA", "DUAL_TRACK_CI_VALIDATE_ONLY"],
+      "behavior": "make require-dual-track-green SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa DUAL_TRACK_CI_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "workstream-register",
+      "make_variables": ["BRANCH", "WORKTREE", "ACTIVE_WORKSTREAM_REGISTRY"],
+      "behavior": "make workstream-register BRANCH=contract/workstream WORKTREE=/tmp/gludd-workstream-contract ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json"
+    },
+    {
+      "name": "workstream-unregister",
+      "make_variables": ["BRANCH", "ACTIVE_WORKSTREAM_REGISTRY"],
+      "behavior": "make workstream-unregister BRANCH=contract/workstream ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json"
+    },
+    {
+      "name": "wt-prune-safe",
+      "make_variables": ["ACTIVE_WORKSTREAM_REGISTRY", "WT_PRUNE_VALIDATE_ONLY"],
+      "behavior": "make wt-prune-safe ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json WT_PRUNE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "test-failures",
+      "make_variables": ["TEST_FAILURES_CACHE", "TEST_FAILURES_LIMIT"],
+      "behavior": "make test-failures TEST_FAILURES_CACHE=/tmp/gludd-no-prior-failures-contract.json TEST_FAILURES_LIMIT=5"
     }
   ]
 }

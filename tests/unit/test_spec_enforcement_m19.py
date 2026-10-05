@@ -1,9 +1,9 @@
 """M19: Release-promote is ff-only merge into master.
 
-`make release-promote TAG=<tag>` MUST use ff-only merge to advance
-master. The release-branch-new and release-promote workflow ensures
-tags are pushed before the ff-merge, so master always advances in
-lockstep with the tagged release.
+`make release-promote TAG=<tag>` MUST bind exact-SHA dual-track evidence
+and readiness before an ff-only merge advances canonical master. Publication
+then delegates to the single `release-cut` owner so tagging, pushing, and
+artifact verification cannot drift across promotion paths.
 """
 
 import re
@@ -26,7 +26,7 @@ def _find_target_recipe(content: str, target: str) -> str:
 class TestM19ReleasePromoteFfOnly:
     """M19 — release-promote is ff-only merge into master."""
 
-    def test_release_promote_target_exists_or_is_documented(self):
+    def test_release_promote_target_exists_or_is_documented(self) -> None:
         content = MAKEFILE.read_text()
         target_names = set()
         for line in content.split("\n"):
@@ -34,11 +34,14 @@ class TestM19ReleasePromoteFfOnly:
             if m:
                 target_names.add(m.group(1))
 
-        has_target = "release-promote" in target_names
-        if not has_target:
-            pass  # Target may be planned but not yet built
+        assert "release-promote" in target_names, "M19: release-promote target missing from Makefile"
+        recipe = _find_target_recipe(content, "release-promote")
+        assert "require-dual-track-green" in recipe, "M19: promotion must bind exact dual-track evidence"
+        assert "release-readiness" in recipe, "M19: promotion must re-run release readiness"
+        assert "merge --ff-only" in recipe, "M19: promotion must refuse divergent master history"
+        assert "RELEASE_PROMOTE_VALIDATE_ONLY" in recipe, "M19: promotion needs a no-side-effect contract mode"
 
-    def test_check_green_branch_guard_documents_promote(self):
+    def test_check_green_branch_guard_documents_promote(self) -> None:
         guard_path = SCRIPTS_DIR / "check_green_branch_guard.py"
         if not guard_path.exists():
             return
@@ -48,7 +51,7 @@ class TestM19ReleasePromoteFfOnly:
             "M19: check_green_branch_guard.py must document ff-only merge"
         )
 
-    def test_ship_async_uses_ff_only(self):
+    def test_ship_async_uses_ff_only(self) -> None:
         content = MAKEFILE.read_text()
         recipe = _find_target_recipe(content, "ship-async")
         if not recipe:
@@ -60,7 +63,7 @@ class TestM19ReleasePromoteFfOnly:
                 "M19: ship_async.sh must enforce ff-only or fast-forward merge"
             )
 
-    def test_release_branch_new_checks_ci_green(self):
+    def test_release_branch_new_checks_ci_green(self) -> None:
         content = MAKEFILE.read_text()
         target_names = set()
         for line in content.split("\n"):

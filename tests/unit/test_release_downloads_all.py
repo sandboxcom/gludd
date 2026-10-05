@@ -1,12 +1,9 @@
 """Structural test: release job downloads artifacts from ALL build jobs.
 
-Verifies that the release job's download-artifact step covers every build
-job's uploaded artifact (linux, macos, windows, termux). Prevents orphan
-uploads — a build job producing an artifact the release never downloads.
-
-The container job pushes directly to GHCR (docker/build-push-action) and has
-no upload-artifact step, so it is excluded from the orphan check — but a test
-pins that expectation so a future upload-artifact addition is caught.
+Verifies that the release job's download-artifact step covers every publishable
+gludd-* artifact (platform builds, container metadata, and the locked Ansible
+execution environment). Failure-diagnostic artifacts intentionally stay outside
+release fan-in.
 """
 from __future__ import annotations
 
@@ -17,10 +14,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 BUILD_YML = ROOT / ".github" / "workflows" / "build.yml"
 
-# Build jobs that produce distributable artifacts via actions/upload-artifact.
-# The container job pushes to GHCR (no upload-artifact) and is intentionally
-# absent — see test_container_excluded_because_no_upload_artifact.
-BUILD_JOBS: list[str] = ["linux", "macos", "windows", "termux"]
+# Every build job that produces distributable release assets through
+# actions/upload-artifact. Container and execution-environment images are
+# represented by digest-addressed metadata plus fail-closed smoke attestations.
+BUILD_JOBS: list[str] = [
+    "linux",
+    "macos",
+    "windows",
+    "termux",
+    "container",
+    "ansible-ee",
+]
 
 
 def _workflow_source() -> str:
@@ -107,7 +111,7 @@ def _extract_release_download_config(src: str) -> dict[str, str]:
 class TestReleaseDownloadsAllBuildArtifacts:
     """The release job MUST download artifacts from every build job."""
 
-    def test_release_has_download_artifact_step(self):
+    def test_release_has_download_artifact_step(self) -> None:
         """Requirement 1: at least one download-artifact step exists."""
         src = _workflow_source()
         sections = _extract_job_sections(src)
@@ -116,7 +120,7 @@ class TestReleaseDownloadsAllBuildArtifacts:
             "release job must have at least one download-artifact step"
         )
 
-    def test_download_uses_gludd_pattern_or_explicit_names(self):
+    def test_download_uses_gludd_pattern_or_explicit_names(self) -> None:
         """Requirement 2: download uses a gludd-* pattern or lists each name."""
         src = _workflow_source()
         config = _extract_release_download_config(src)
@@ -133,26 +137,30 @@ class TestReleaseDownloadsAllBuildArtifacts:
                 "download-artifact must use pattern: or name:"
             )
 
-    def test_every_build_job_artifact_is_downloaded(self):
+    def test_every_build_job_artifact_is_downloaded(self) -> None:
         """Requirement 3: no orphan uploads.
 
-        Every artifact uploaded by a build job (linux/macos/windows/termux)
-        must be matched by the release download pattern.
+        Every publishable artifact uploaded by a release-producing build job
+        must be matched by the release download pattern. Diagnostic evidence is
+        deliberately excluded.
         """
         src = _workflow_source()
         sections = _extract_job_sections(src)
         config = _extract_release_download_config(src)
 
-        uploaded: dict[str, str] = {}  # artifact_name -> job_name
+        uploaded: dict[str, str] = {}  # release artifact_name -> job_name
+        diagnostics: dict[str, str] = {}
         for job in BUILD_JOBS:
             section = sections.get(job, "")
             for art_name in _extract_upload_artifact_names(section):
-                uploaded[art_name] = job
+                destination = uploaded if art_name.startswith("gludd-") else diagnostics
+                destination[art_name] = job
 
         assert uploaded, (
-            f"Expected at least one upload-artifact across {BUILD_JOBS} — "
+            f"Expected at least one gludd-* release artifact across {BUILD_JOBS} — "
             f"found none"
         )
+        assert "linux-pyinstaller-warning-x86_64" in diagnostics
 
         if "pattern" in config:
             pattern = config["pattern"]
@@ -171,8 +179,8 @@ class TestReleaseDownloadsAllBuildArtifacts:
                 f"Release downloads '{explicit}' but no build job uploads it"
             )
 
-    def test_expected_build_jobs_upload_gludd_artifacts(self):
-        """Each of linux/macos/windows/termux uploads a gludd-* artifact."""
+    def test_expected_build_jobs_upload_gludd_artifacts(self) -> None:
+        """Every release-producing job uploads a gludd-* artifact."""
         src = _workflow_source()
         sections = _extract_job_sections(src)
         missing: list[str] = []
@@ -187,17 +195,15 @@ class TestReleaseDownloadsAllBuildArtifacts:
             f"Every job in {BUILD_JOBS} must upload a gludd-* artifact."
         )
 
-    def test_container_excluded_because_no_upload_artifact(self):
-        """The container job pushes to GHCR (no upload-artifact step).
-
-        This test documents WHY container is excluded from BUILD_JOBS. If
-        container ever gains an upload-artifact step, it MUST be added to
-        BUILD_JOBS so its artifact is covered by the orphan check.
-        """
+    def test_container_and_ansible_ee_are_release_prerequisites(self) -> None:
+        """Image metadata lanes must remain in the release fan-in."""
         src = _workflow_source()
         sections = _extract_job_sections(src)
-        container = sections.get("container", "")
-        assert "actions/upload-artifact" not in container, (
-            "container job now has an upload-artifact step — add 'container' "
-            "to BUILD_JOBS so its artifact is covered by the orphan check"
-        )
+        release = sections.get("release", "")
+        for job in ("container", "ansible-ee"):
+            assert "actions/upload-artifact" in sections.get(job, ""), (
+                f"{job} must upload digest metadata and smoke attestations"
+            )
+            assert re.search(rf"\b{re.escape(job)}\b", release), (
+                f"release job must require {job} before publishing"
+            )

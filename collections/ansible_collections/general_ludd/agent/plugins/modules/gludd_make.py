@@ -133,9 +133,13 @@ RETURN:
 
 from __future__ import annotations
 
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
+from typing import Any
 
-from general_ludd.commands.make import MakeResult, MakeRunner
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
+    GluddClient,
+    error_result,
+)
 
 
 def main() -> None:
@@ -148,6 +152,8 @@ def main() -> None:
             env_extra=dict(type="dict", default=None),
             stream=dict(type="bool", default=False),
             no_log=dict(type="bool", default=False),
+            daemon_url=dict(type="str", default="http://localhost:8000"),
+            psk=dict(type="str", default="", no_log=True),
         ),
         supports_check_mode=False,
     )
@@ -156,7 +162,7 @@ def main() -> None:
     extra_args: list[str] = module.params["extra_args"] or []
     cwd: str | None = module.params["cwd"]
     timeout_s: int | None = module.params["timeout_s"]
-    env_extra: dict | None = module.params["env_extra"]
+    env_extra: dict[str, Any] | None = module.params["env_extra"]
     stream: bool = module.params["stream"]
     no_log: bool = module.params["no_log"]
 
@@ -164,34 +170,30 @@ def main() -> None:
         module.no_log_values.add(target)
         module.no_log_values.update(extra_args)
 
-    runner = MakeRunner(
-        cwd=cwd,
-        default_timeout_s=timeout_s if timeout_s is not None else 300,
+    client = GluddClient(
+        base_url=module.params["daemon_url"],
+        psk=module.params["psk"],
+        timeout=timeout_s if timeout_s is not None else 300,
     )
-
-    result: MakeResult
-    if stream:
-        phases_seen: list[str] = []
-
-        def _phase_callback(phase: str) -> None:
-            phases_seen.append(phase)
-
-        result = runner.run(
-            target,
-            extra_args=extra_args,
-            timeout_s=timeout_s,
-            env_extra=env_extra,
-            stream=True,
-            stream_callback=_phase_callback,
+    result = client.post(
+        "/admin/make",
+        {
+            "target": target,
+            "extra_args": extra_args,
+            "cwd": cwd,
+            "timeout_s": timeout_s,
+            "env_extra": env_extra,
+            "stream": stream,
+        },
+    )
+    if result.get("_error") or result.get("_status") != 200:
+        module.fail_json(
+            **error_result(
+                str(result.get("detail") or result.get("_error") or "daemon make request failed"),
+                status=result.get("_status", 0),
+            )
         )
-        result.phases = phases_seen or result.phases
-    else:
-        result = runner.run(
-            target,
-            extra_args=extra_args,
-            timeout_s=timeout_s,
-            env_extra=env_extra,
-        )
+        return
 
     # Ansible-style: mask secret-like environment values from no_log.
     # env_extra is applied before the subprocess runs, but by the time
@@ -199,23 +201,23 @@ def main() -> None:
     # params. If no_log was set, ansible-core suppresses the params block
     # and result block via no_log=True, so this is belt-and-suspenders.
     if no_log:
-        module.no_log_values.add(str(result.exit_code))
-        module.no_log_values.add(result.stdout_tail[:200])
-        module.no_log_values.add(result.stderr_tail[:200])
+        module.no_log_values.add(str(result.get("exit_code")))
+        module.no_log_values.add(str(result.get("stdout_tail", ""))[:200])
+        module.no_log_values.add(str(result.get("stderr_tail", ""))[:200])
 
     module.exit_json(
-        target=result.target,
-        exit_code=result.exit_code,
-        success=result.success,
-        duration_s=result.duration_s,
-        stdout_tail=result.stdout_tail,
-        stderr_tail=result.stderr_tail,
-        timed_out=result.timed_out,
-        oom_killed=result.oom_killed,
-        error=result.error,
-        phases=result.phases,
+        target=result.get("target", target),
+        exit_code=result.get("exit_code"),
+        success=bool(result.get("success", False)),
+        duration_s=result.get("duration_s", 0.0),
+        stdout_tail=result.get("stdout_tail", ""),
+        stderr_tail=result.get("stderr_tail", ""),
+        timed_out=bool(result.get("timed_out", False)),
+        oom_killed=bool(result.get("oom_killed", False)),
+        error=result.get("error"),
+        phases=result.get("phases", []),
         changed=False,
-        failed=not result.success and not result.timed_out,
+        failed=not bool(result.get("success", False)) and not bool(result.get("timed_out", False)),
     )
 
 

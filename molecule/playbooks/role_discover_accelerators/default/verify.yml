@@ -1,0 +1,48 @@
+---
+- name: Verify - local and Slurm facts preserve normalized resources
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    artifact_path: >-
+      {{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/accelerator-facts.json
+    request_artifact_path: >-
+      {{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/accelerator-requests.json
+  tasks:
+    - name: Load persisted accelerator facts
+      ansible.builtin.slurp:
+        src: "{{ artifact_path }}"
+      register: accelerator_raw
+
+    - name: Load persisted request evidence
+      ansible.builtin.slurp:
+        src: "{{ request_artifact_path }}"
+      register: requests_raw
+
+    - name: Decode persisted accelerator facts
+      ansible.builtin.set_fact:
+        accelerator_facts: >-
+          {{ accelerator_raw.content | b64decode | from_json }}
+        request_ledger: >-
+          {{ requests_raw.content | b64decode | from_json }}
+
+    - name: Prove the role aggregated both read-only control planes
+      ansible.builtin.assert:
+        that:
+          - accelerator_facts.schema_version | int == 1
+          - accelerator_facts.scope == 'all'
+          - accelerator_facts.total_count | int == 5
+          - accelerator_facts.available_count | int == 4
+          - accelerator_facts.resources | length == 3
+          - accelerator_facts.inventories.local.total_count | int == 1
+          - accelerator_facts.inventories.slurm.total_count | int == 4
+          - accelerator_facts.resources | selectattr('kind', 'equalto', 'tpu') | list | length == 1
+          - accelerator_facts.resources | selectattr('location', 'equalto', 'local') | list | length == 1
+        fail_msg: "accelerator fact aggregation did not preserve the exact inventory"
+
+    - name: Prove both inventory endpoints were exercised
+      ansible.builtin.assert:
+        that:
+          - "'GET /admin/hardware/accelerators' in request_ledger.requests"
+          - "'GET /admin/slurm/hardware' in request_ledger.requests"
+        fail_msg: "accelerator role did not query both configured sources"

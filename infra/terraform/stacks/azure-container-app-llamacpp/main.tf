@@ -33,8 +33,3 @@ module "vllm_server" {
   max_cost_usd    = var.max_cost_usd
   timeout_minutes = var.timeout_minutes
 }
-
-output "watchdog_user_data" {
-  description = "Cloud-init fragment from the gpu-cost-watchdog module."
-  value       = module.gpu_cost_watchdog.user_data
-}

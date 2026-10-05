@@ -24,8 +24,13 @@ import time
 from pathlib import Path
 from typing import Optional, TypedDict
 
+try:
+    from scripts import gludd_env_defaults as gludd_env_defaults
+except ModuleNotFoundError:  # pragma: no cover - direct launch from scripts/
+    import gludd_env_defaults
 
-WORKSPACE = Path(os.environ.get("GLUDD_WORKSPACE", os.getcwd()))
+
+WORKSPACE = Path(os.environ.get("GLUDD_WORKSPACE_ROOT", os.getcwd()))
 ALIVE_PATH = Path(os.environ.get("GLUDD_ALIVE_PATH", "/tmp/gludd-plugin-alive.json"))
 HOOK_FIRES_PATH = Path("/tmp/gludd-hook-fires.jsonl")
 DISENGAGE_PATH = Path("/tmp/gludd-watchdog-disengage.json")
@@ -37,7 +42,7 @@ ENHANCEMENT_RATIO_PATH = Path("/tmp/gludd-enhancement-ratio.json")
 CI_CHECK_PATH = Path("/tmp/gludd-ci-check-state.json")
 HEARTBEAT_DIR = Path("/tmp")
 RESULT_PATH = Path("/tmp/gludd-plugin-health.json")
-MAX_AGE_SECS = int(os.environ.get("GLUDD_LIVENESS_MAX_AGE", "300"))
+MAX_AGE_SECS = int(os.environ.get("GLUDD_LIVENESS_MAX_AGE", gludd_env_defaults.LIVENESS_MAX_AGE_DEFAULT))
 
 
 # ── Typed results ────────────────────────────────────────────────────────────

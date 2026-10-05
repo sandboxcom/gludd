@@ -60,10 +60,7 @@ def _require_aware(name: str, value: datetime) -> None:
 
 def _json_compatible(value: object) -> object:
     if isinstance(value, Mapping):
-        return {
-            str(key): _json_compatible(item)
-            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
-        }
+        return {str(key): _json_compatible(item) for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))}
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         return [_json_compatible(item) for item in value]
     if isinstance(value, datetime):
@@ -75,13 +72,17 @@ def _json_compatible(value: object) -> object:
 
 
 def _canonical_json(value: object) -> str:
-    return json.dumps(
-        _json_compatible(value),
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=True,
-        allow_nan=False,
-    )
+    compatible = _json_compatible(value)
+    try:
+        return json.dumps(
+            compatible,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        )
+    except ValueError as exc:
+        raise ValueError("Azure cost payload contains a non-finite float value (NaN or infinity)") from exc
 
 
 def _fingerprint(payload: str) -> str:
@@ -157,9 +158,7 @@ class AzureCostReconciliationRepository:
                 identity_fingerprint=identity_fingerprint,
                 identity_payload=identity_payload,
                 state=AzureCostLedgerState.PREDICTED.value,
-                state_rank=AZURE_COST_LEDGER_STATE_RANKS[
-                    AzureCostLedgerState.PREDICTED
-                ],
+                state_rank=AZURE_COST_LEDGER_STATE_RANKS[AzureCostLedgerState.PREDICTED],
                 not_before=not_before,
                 lease_owner=None,
                 lease_expires_at=None,
@@ -169,9 +168,7 @@ class AzureCostReconciliationRepository:
                 created_at=now,
                 updated_at=now,
             )
-            .on_conflict_do_nothing(
-                index_elements=["prediction_id", "prediction_version"]
-            )
+            .on_conflict_do_nothing(index_elements=["prediction_id", "prediction_version"])
         )
         await self._session.execute(stmt)
         row = await self._load_prediction(
@@ -181,9 +178,7 @@ class AzureCostReconciliationRepository:
         if row is None:
             raise RuntimeError("prediction insert did not produce a readable row")
         if row.identity_fingerprint != identity_fingerprint:
-            raise ImmutableAzureCostIdentityError(
-                "prediction identity is immutable for a prediction ID and version"
-            )
+            raise ImmutableAzureCostIdentityError("prediction identity is immutable for a prediction ID and version")
         await self._ensure_outbox_event(
             row,
             AzureCostLedgerState.PREDICTED,
@@ -248,8 +243,7 @@ class AzureCostReconciliationRepository:
                 update(AzureCostPredictionModel)
                 .where(
                     AzureCostPredictionModel.prediction_id == row.prediction_id,
-                    AzureCostPredictionModel.prediction_version
-                    == row.prediction_version,
+                    AzureCostPredictionModel.prediction_version == row.prediction_version,
                     AzureCostPredictionModel.fencing_token == previous_token,
                     or_(
                         AzureCostPredictionModel.lease_expires_at.is_(None),
@@ -337,10 +331,7 @@ class AzureCostReconciliationRepository:
         row = (
             await self._session.execute(
                 select(AzureCostObservationModel).where(
-                    *(
-                        getattr(AzureCostObservationModel, name) == value
-                        for name, value in identity_columns.items()
-                    )
+                    *(getattr(AzureCostObservationModel, name) == value for name, value in identity_columns.items())
                 )
             )
         ).scalar_one()
@@ -380,13 +371,9 @@ class AzureCostReconciliationRepository:
                 f"Azure cost finality is monotonic: {current.value} cannot become {state.value}"
             )
         if state is AzureCostLedgerState.FINAL and current is not AzureCostLedgerState.STABLE:
-            raise NonMonotonicAzureCostStateError(
-                "Azure cost finality is monotonic: FINAL requires STABLE"
-            )
+            raise NonMonotonicAzureCostStateError("Azure cost finality is monotonic: FINAL requires STABLE")
         if state is AzureCostLedgerState.ADJUSTED and current is not AzureCostLedgerState.FINAL:
-            raise NonMonotonicAzureCostStateError(
-                "Azure cost finality is monotonic: ADJUSTED requires FINAL"
-            )
+            raise NonMonotonicAzureCostStateError("Azure cost finality is monotonic: ADJUSTED requires FINAL")
         if current in (AzureCostLedgerState.FINAL, AzureCostLedgerState.ADJUSTED):
             raise NonMonotonicAzureCostStateError(
                 f"Azure cost finality is monotonic: {current.value} cannot become {state.value}"
@@ -417,8 +404,7 @@ class AzureCostReconciliationRepository:
             await self._session.execute(
                 select(AzureCostPredictionModel).where(
                     AzureCostPredictionModel.prediction_id == prediction_id,
-                    AzureCostPredictionModel.prediction_version
-                    == prediction_version,
+                    AzureCostPredictionModel.prediction_version == prediction_version,
                 )
             )
         ).scalar_one_or_none()
@@ -431,13 +417,10 @@ class AzureCostReconciliationRepository:
     ) -> AzureCostPredictionModel:
         _require_aware("claim.expires_at", claim.expires_at)
         if claim.expires_at <= now:
-            raise StaleAzureCostLeaseError(
-                "Azure cost lease is stale, expired, or superseded by a newer fencing token"
-            )
+            raise StaleAzureCostLeaseError("Azure cost lease is stale, expired, or superseded by a newer fencing token")
         stmt = select(AzureCostPredictionModel).where(
             AzureCostPredictionModel.prediction_id == claim.prediction_id,
-            AzureCostPredictionModel.prediction_version
-            == claim.prediction_version,
+            AzureCostPredictionModel.prediction_version == claim.prediction_version,
             AzureCostPredictionModel.lease_owner == claim.owner,
             AzureCostPredictionModel.fencing_token == claim.fencing_token,
             AzureCostPredictionModel.lease_expires_at == claim.expires_at,
@@ -447,9 +430,7 @@ class AzureCostReconciliationRepository:
             stmt = stmt.with_for_update()
         row = (await self._session.execute(stmt)).scalar_one_or_none()
         if row is None:
-            raise StaleAzureCostLeaseError(
-                "Azure cost lease is stale, expired, or superseded by a newer fencing token"
-            )
+            raise StaleAzureCostLeaseError("Azure cost lease is stale, expired, or superseded by a newer fencing token")
         return row
 
     async def _ensure_outbox_event(
@@ -463,17 +444,13 @@ class AzureCostReconciliationRepository:
         detail: Mapping[str, object] | None = None,
     ) -> None:
         event_type = f"COST_RECONCILIATION_{state.value}"
-        deduplication_key = (
-            f"{row.prediction_id}:{row.prediction_version}:{event_type}"
-        )
+        deduplication_key = f"{row.prediction_id}:{row.prediction_version}:{event_type}"
         payload = _canonical_json(
             {
                 "prediction_id": row.prediction_id,
                 "prediction_version": row.prediction_version,
                 "state": state.value,
-                "previous_state": (
-                    previous_state.value if previous_state is not None else None
-                ),
+                "previous_state": (previous_state.value if previous_state is not None else None),
                 "fencing_token": fencing_token,
                 "detail": detail or {},
             }

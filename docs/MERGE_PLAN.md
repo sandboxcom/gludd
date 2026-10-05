@@ -1,22 +1,22 @@
 # Development → master merge plan
 
 Condensed copy-paste plan for promoting `development` → `master` and cutting
-`v0.1.0-beta.2` once CI goes green. Canonical reference:
+`v0.1.1` once CI goes green. Canonical reference:
 `docs/RELEASE_RUNBOOK.md` (this file is a quick-reference, not a replacement).
 
 ## Preconditions
 
 - Working tree clean: `make git-status` shows nothing.
-- Version bumped to `0.1.0-beta.2` in `pyproject.toml`,
+- Version bumped to `0.1.1` in `pyproject.toml`,
   `src/general_ludd/__init__.py`, `CHANGELOG.md`, and the README status table
-  (`**Status as of v0.1.0-beta.2 — <date>**`).
-- `make check-readme-status TAG=v0.1.0-beta.2` exits 0.
+  (`**Status as of v0.1.1 — <date>**`).
+- `make check-readme-status TAG=v0.1.1` exits 0.
 
 ## Execution order (run on the main checkout `/Users/shawnwilson/gludd`)
 
 ### 1. Verify CI is GREEN on `development`
 
-```
+```text
 make ci-verdict-safe BRANCH=development
 ```
 
@@ -27,14 +27,14 @@ proceed.
 
 ### 2. Merge `development` → `master`
 
-```
+```text
 make development-merge-to-master
 ```
 
 Performs a `--no-ff` merge on the main checkout (never inside a worktree).
 Requires CI green on `development`. After completion, verify the push landed:
 
-```
+```text
 make verify-remote BRANCH=master SHA=$(make git-rev-parse REF=HEAD)
 ```
 
@@ -43,8 +43,8 @@ proceed.
 
 ### 3. Cut the release
 
-```
-make release-cut TAG=v0.1.0-beta.2 MSG='v0.1.0-beta.2: <one-line summary>'
+```text
+make release-cut TAG=v0.1.1 MSG='v0.1.1: <one-line summary>'
 ```
 
 The only sanctioned release path. Fail-closed at every step:
@@ -60,16 +60,16 @@ not failure. Proceed to step 4.
 
 ### 4. Verify completeness (the real gate)
 
-```
-make verify-release-completeness TAG=v0.1.0-beta.2
+```text
+make verify-release-completeness TAG=v0.1.1
 ```
 
-Requires all 12 artifact categories (4 platform binaries, 4 packages, 4
-metadata), prerelease flag matching `-beta`, version-stamped asset names, no
-zero-size assets. Expect:
+Requires all 28 artifact categories and at least 30 assets, the stable-release
+flag (`isPrerelease: false`), version-stamped asset names, and no zero-size
+assets. Expect:
 
-```
-COMPLETENESS CHECK: PASS — all 16 checks passed.
+```text
+COMPLETENESS CHECK: PASS — all 32 checks passed.
 ```
 
 If CI is still building → wait and re-run. If CI is complete and assets
@@ -77,11 +77,11 @@ missing → broken release; see runbook §"If CI is red for the tag".
 
 ### 5. Confirm + record evidence
 
-```
-make release-view TAG=v0.1.0-beta.2
+```text
+make release-view TAG=v0.1.1
 ```
 
-Expect `isDraft: false`, `isPrerelease: true`, ≥12 assets. Paste the release
+Expect `isDraft: false`, `isPrerelease: false`, ≥30 assets. Paste the release
 URL **and** the `COMPLETENESS CHECK: PASS` line into TASKS.md — without both,
 the release task is not done.
 
@@ -89,5 +89,5 @@ the release task is not done.
 
 Tagged SHA turned red after tagging, or assets incomplete on completed CI:
 **do not back-fill locally-built binaries.** Either
-`make release-recut TAG=v0.1.0-beta.2` (requires CI-green on the tag) or cut
-`v0.1.0-beta.3` from a green SHA and mark beta.2 superseded in its notes.
+`make release-recut TAG=v0.1.1` (requires CI-green on the tag) or fix forward
+to a new patch release from a green SHA and mark v0.1.1 superseded in its notes.

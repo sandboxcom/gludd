@@ -100,6 +100,11 @@ class TestDebounceV2Trailing:
         with pytest.raises(ValueError, match="wait"):
             DebounceV2(lambda: None, wait=-0.1, trailing=True)
 
+    @pytest.mark.parametrize("wait", [float("nan"), float("inf")])
+    def test_rejects_non_finite_wait(self, wait: float) -> None:
+        with pytest.raises(ValueError, match="wait"):
+            DebounceV2(lambda: None, wait=wait, trailing=True)
+
     def test_rejects_no_edge(self) -> None:
         with pytest.raises(ValueError, match="at least one"):
             DebounceV2(lambda: None, wait=1.0, leading=False, trailing=False)
@@ -212,6 +217,11 @@ class TestDebounceV2MaxWait:
         with pytest.raises(ValueError, match="max_wait"):
             DebounceV2(lambda: None, wait=3.0, max_wait=0.0, trailing=True)
 
+    @pytest.mark.parametrize("max_wait", [float("nan"), float("inf")])
+    def test_max_wait_must_be_finite(self, max_wait: float) -> None:
+        with pytest.raises(ValueError, match="max_wait"):
+            DebounceV2(lambda: None, wait=3.0, max_wait=max_wait, trailing=True)
+
     def test_max_wait_single_call_still_waits(self) -> None:
         calls: list[int] = []
         clock = SimulatedClock(0.0)
@@ -309,6 +319,23 @@ class TestAsyncDebounceV2:
             d(2)
             await asyncio.sleep(0.1)
             assert calls == [1, 2]
+
+        asyncio.run(run())
+
+    def test_aclose_cancels_and_awaits_leading_and_trailing_tasks(self) -> None:
+        async def fn(_value: int) -> None:
+            await asyncio.Event().wait()
+
+        async def run() -> None:
+            d = AsyncDebounceV2(fn, wait=60.0, leading=True, trailing=True)
+            d(1)
+            d(2)
+            await asyncio.sleep(0)
+
+            await d.aclose()
+
+            assert d._task is None
+            assert not d._leading_tasks
 
         asyncio.run(run())
 

@@ -6,6 +6,8 @@ import random
 import threading
 from unittest.mock import patch
 
+import pytest
+
 from general_ludd.algorithms.skip_list_v2 import (
     IndexedSkipList,
     LockFreeSkipList,
@@ -133,6 +135,24 @@ class TestSkipListBasics:
         for k in [9, 3, 7, 1, 5]:
             sl.insert(k, str(k))
         assert list(sl) == [1, 3, 5, 7, 9]
+
+    def test_logically_deleted_nodes_are_filtered_from_views(self) -> None:
+        sl: SkipList[int, str] = SkipList()
+        with patch(
+            "general_ludd.algorithms.skip_list_v2._random_level",
+            return_value=0,
+        ):
+            assert sl.insert(1, "one")
+            assert sl.insert(2, "two")
+
+        first = sl._head.forward[0]
+        assert first is not None
+        first.marked = True
+
+        assert len(sl) == 1
+        assert list(sl) == [2]
+        assert sl.items() == [(2, "two")]
+        assert sl.min() == (2, "two")
 
 
 class TestSkipListConcurrency:
@@ -265,6 +285,43 @@ class TestLockFreeSkipListBasics:
         for k in [8, 3, 5, 1]:
             sl.insert(k, str(k))
         assert list(sl) == [1, 3, 5, 8]
+
+    def test_missing_keys_and_collection_views(self) -> None:
+        sl: LockFreeSkipList[int, str] = LockFreeSkipList()
+        assert sl.items() == []
+        assert sl.keys() == []
+        assert sl.values() == []
+        assert not sl.delete(99)
+        with pytest.raises(KeyError):
+            _ = sl[99]
+        with pytest.raises(KeyError):
+            del sl[99]
+
+        sl[2] = "two"
+        sl[2] = "TWO"
+        assert sl.items() == [(2, "TWO")]
+        assert sl.keys() == [2]
+        assert sl.values() == ["TWO"]
+        assert sl.range(3, 1) == []
+
+    def test_logically_deleted_nodes_are_filtered_from_views(self) -> None:
+        sl: LockFreeSkipList[int, str] = LockFreeSkipList()
+        with patch(
+            "general_ludd.algorithms.skip_list_v2._random_level",
+            return_value=0,
+        ):
+            assert sl.insert(1, "one")
+            assert sl.insert(2, "two")
+
+        first = sl._head.forward[0]
+        assert first is not None
+        first.marked = True
+
+        assert len(sl) == 1
+        assert list(sl) == [2]
+        assert sl.items() == [(2, "two")]
+        assert sl.min() == (2, "two")
+        assert sl.range(0, 2) == [(2, "two")]
 
 
 class TestLockFreeConcurrency:
@@ -445,3 +502,36 @@ class TestIndexedSkipListBasics:
         assert not sl.insert(1, "b")
         assert sl[1] == "b"
         assert len(sl) == 1
+
+    def test_missing_keys_defaults_and_collection_views(self) -> None:
+        sl: IndexedSkipList[int, str] = IndexedSkipList()
+        assert sl.get(99, "missing") == "missing"
+        assert sl.keys() == []
+        assert sl.values() == []
+        assert not sl.delete(99)
+        with pytest.raises(KeyError):
+            _ = sl[99]
+        with pytest.raises(KeyError):
+            del sl[99]
+
+        for key in [3, 1, 2]:
+            assert sl.insert(key, str(key))
+        assert sl.keys() == [1, 2, 3]
+        assert sl.values() == ["1", "2", "3"]
+        assert sl.get(1) == "1"
+        assert sl.range(4, 9) == []
+        assert sl.range(-5, 0) == []
+
+    def test_delete_repairs_higher_level_crossing_spans(self) -> None:
+        sl: IndexedSkipList[int, int] = IndexedSkipList()
+        with patch(
+            "general_ludd.algorithms.skip_list_v2._random_level",
+            side_effect=[2, 2, 0, 0],
+        ):
+            for key in [0, 3, 1, 2]:
+                assert sl.insert(key, key)
+
+        assert sl.delete(1)
+        assert sl.items() == [(0, 0), (2, 2), (3, 3)]
+        assert [sl.select(rank)[0] for rank in range(3)] == [0, 2, 3]
+        assert [sl.rank(key) for key in [0, 2, 3]] == [0, 1, 2]

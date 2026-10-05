@@ -12,6 +12,7 @@ Covers:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import time
 
@@ -121,8 +122,21 @@ async def test_healthz_has_no_sensitive_budget_fields(app):
 
 @pytest.mark.asyncio
 async def test_readyz_healthy(app):
-    async with await _make_client(app) as client:
-        resp = await client.get("/readyz")
+    # H.3: /readyz returns 200 only once the event loop task is running;
+    # a bare app with no task is 503 daemon_not_initialized.
+    async def _run_forever() -> None:
+        while True:
+            await asyncio.sleep(3600)
+
+    task = asyncio.create_task(_run_forever())
+    app.state._event_loop_task = task
+    try:
+        async with await _make_client(app) as client:
+            resp = await client.get("/readyz")
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
     assert resp.status_code == 200
     assert resp.json() == {"status": "ready"}

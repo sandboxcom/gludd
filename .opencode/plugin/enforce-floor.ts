@@ -2,6 +2,7 @@ import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
+import { HARD_MAX_DISPATCHES, MIN_DISPATCHES, clampDispatchCount } from "../lib/multitask_config.ts"
 import { createRequire } from "node:module"
 import { isSubagent, isDisengaged, reportAlive, readJsonFile, writeJsonFile, isDispatchTool, isReadTool, ALIVE_PATH, DISENGAGE_PATH, updateSharedStreak, writeHeartbeat, getProjectRoot, getSessionStartMtimeMs, isInPressureRelease, isInInlineRecovery, readDispatchOutcomes, hasTasksMdPendingWork } from "../lib/shared.ts"
 const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
@@ -23,19 +24,36 @@ function _tunable(overridePath: string, envVar: string, dflt: string): number {
   } catch {}
   return base
 }
-const FLOOR = _tunable("/tmp/gludd-floor-override", "CLAUDE_AGENT_FLOOR", "10")
-const CEILING = _tunable("/tmp/gludd-ceiling-override", "CLAUDE_AGENT_CEILING", "10")
+const FLOOR_OVERRIDE_PATH = process.env.GLUDD_FLOOR_OVERRIDE_PATH || "/tmp/gludd-floor-override"
+const CEILING = clampDispatchCount(
+  _tunable("/tmp/gludd-ceiling-override", "CLAUDE_AGENT_CEILING", String(HARD_MAX_DISPATCHES)),
+  1,
+)
+const FLOOR = Math.min(
+  CEILING,
+  clampDispatchCount(
+    _tunable(FLOOR_OVERRIDE_PATH, "CLAUDE_AGENT_FLOOR", String(MIN_DISPATCHES)),
+  ),
+)
 const TARGET = Math.min(
-  parseInt(process.env.CLAUDE_AGENT_TARGET || "10", 10),
+  clampDispatchCount(
+    parseInt(process.env.CLAUDE_AGENT_TARGET || String(HARD_MAX_DISPATCHES), 10),
+  ),
   CEILING,
 )
 // A wave is the complete set of parallel dispatches in one assistant message.
 // Keep this independently tunable for plugin e2e tests, but default to the
-// project-wide ten-agent ceiling.
-const WAVE_WIDTH = _tunable(
-  "/tmp/gludd-dispatch-wave-width",
-  "GLUDD_DISPATCH_WAVE_WIDTH",
-  "10",
+// project-wide three-agent ceiling.
+const WAVE_WIDTH = Math.min(
+  CEILING,
+  clampDispatchCount(
+    _tunable(
+      "/tmp/gludd-dispatch-wave-width",
+      "GLUDD_DISPATCH_WAVE_WIDTH",
+      String(HARD_MAX_DISPATCHES),
+    ),
+    1,
+  ),
 )
 const FLOOR_ENFORCE = process.env.GLUDD_FLOOR_ENFORCE !== "0"
 const STREAK_PLUGIN_NAME = "enforce-floor"
@@ -80,12 +98,12 @@ function maybeRemindMissedCommitDispatch(): void {
     if (state.misses < MISSED_COMMIT_THRESHOLD) return
     if (now - state.last_reminder_ts < MISSED_COMMIT_REMINDER_MS) return
     console.warn(
-      "DP.1: Use one dispatch slot for make ship-commit — keeps 9 productive tasks running.",
+      "DP.1: Keep release orchestration on the main thread; do not spend a dispatch slot on it.",
     )
     writeJsonFile(MISSED_COMMIT_FILE, { ...state, last_reminder_ts: now })
   } catch {}
 }
-// Shared state filenames used through shared.ts: gludd-tool-streak.json, gludd-watchdog-disengage.json.
+// Shared state filenames used through shared.ts: gludd-tool-streak.json, watchdog disengage state.
 // ── Time-based message boundary detection ──────────────────────────────────
 // Inter-call gap that marks a new agent message. Env-tunable so e2e tests can
 // drive the real boundary logic without 5s sleeps; production default unchanged.
@@ -94,7 +112,7 @@ const MESSAGE_BOUNDARY_MS = parseInt(
 )
 const POST_DISPATCH_GRACE_MS = 15000
 const RESULT_PHASE_READ_LIMIT = 3
-const THROTTLE_PATH = "/tmp/gludd-load-throttle"
+const THROTTLE_PATH = process.env.GLUDD_LOAD_THROTTLE_PATH || "/tmp/gludd-load-throttle"
 const THROTTLE_ACTIVE_MS = 120_000
 const THROTTLE_STALE_MS = 300_000
 function getEffectiveFloor(): { floor: number; waveWidth: number; target: number; throttled: boolean } {
@@ -394,7 +412,7 @@ function _buildFloorBreachBlock(streakCount: number, effectiveMax: number, comma
   lines.push("█  == SPECIFIC DISPATCH COMMANDS ==" + (" ".repeat(44)))
   lines.push(sep)
   if (commands.length === 0) {
-    lines.push("█  (no TASKS.md/ratchet/gate items found — dispatch RESEARCH tasks)" + (" ".repeat(9)))
+    lines.push("█  (no suitable independent task found — never manufacture filler work)" + (" ".repeat(5)))
   } else {
     for (const c of commands) {
       const item = `  ${c.index}. tool="${c.tool}" | ${c.task_item}`
@@ -410,7 +428,7 @@ function _buildFloorBreachBlock(streakCount: number, effectiveMax: number, comma
 // DEFAULT IMPLEMENTATION (tool.execute.before only — self-contained)
 // ============================================================================
 const defaultImpl: HotModule = {
-  "tool.execute.before": async (input: any, output: any) => {
+  "tool.execute.before": async (input: any, output: any,t=Date.now()) => {
     if (isSubagent()) return
     reportAlive("enforce-floor")
     writeHeartbeat("enforce-floor")
@@ -418,10 +436,13 @@ const defaultImpl: HotModule = {
       _resetFloorState()
     }
     const eff = getEffectiveFloor()
+    const dispatchCeiling = eff.waveWidth > 0
+      ? Math.min(CEILING, eff.waveWidth)
+      : CEILING
     try {
       if (!FLOOR_ENFORCE) return
       const tool = (input?.tool ?? "") as string
-      const now = Date.now()
+      const now = t
       if (isDisengaged()) {
         _streakCount = 0
         _readStreak = 0
@@ -442,17 +463,16 @@ const defaultImpl: HotModule = {
         _thisMessageDispatchCount = 0
         _thisMessageTotalCalls = 0
       }
-      _lastCallTs = now
       // ── Time-based result-processing phase detection ─────────────────
       const msSinceDispatch = now - _lastDispatchTs
       const inResultPhase = _dispatchCount > 0 && msSinceDispatch < POST_DISPATCH_GRACE_MS && msSinceDispatch > 2000
-      if (isDispatchTool(tool) && _thisMessageDispatchCount >= eff.waveWidth && openWorkExists()) {
+      if (isDispatchTool(tool) && _thisMessageDispatchCount >= dispatchCeiling && openWorkExists()) {
         return {
           permissionDecision: "deny" as const,
           message: [
             "⛔ WAVE WIDTH VIOLATION — DISPATCH BLOCKED",
             "",
-            `This wave already contains ${_thisMessageDispatchCount} dispatches; the required width is ${eff.waveWidth}.`,
+            `This wave already contains ${_thisMessageDispatchCount} dispatches; the allowed ceiling is ${dispatchCeiling}.`,
             "Do not exceed the configured concurrent-agent ceiling.",
           ].join("\n"),
         }
@@ -471,16 +491,25 @@ const defaultImpl: HotModule = {
         _sessionDispatchCount++
         if (_dispatchCount > _dispatchPeak) _dispatchPeak = _dispatchCount
         _consecutiveReadsInResultPhase = 0
-        if (_thisMessageDispatchCount === eff.waveWidth) {
+        if (_thisMessageDispatchCount === dispatchCeiling) {
           recordDispatchWaveComplete(_thisMessageDispatchCount)
         }
         return
       }
-      // A completed assistant message containing dispatches must be an exact
-      // ten-wide wave before the main thread can resume inline activity.
+      // With no operator-configured floor, inline ownership is valid. Keep the
+      // resource-safe dispatch ceiling above, but do not manufacture agents or
+      // block useful serial work merely to satisfy a quota.
+      if (eff.floor === 0) {
+        _streakCount = 0
+        _readStreak = 0
+        _consecutiveReadsInResultPhase = 0
+        return
+      }
+      // A completed assistant message containing dispatches must meet the
+      // configured wave width before the main thread can resume inline activity.
       if (
         _prevMessageDispatchCount > 0 &&
-        _prevMessageDispatchCount < eff.waveWidth &&
+        _prevMessageDispatchCount < eff.floor &&
         openWorkExists()
       ) {
         return {
@@ -488,8 +517,8 @@ const defaultImpl: HotModule = {
           message: [
             "⛔ WAVE WIDTH VIOLATION — INLINE WORK BLOCKED",
             "",
-            `Previous message dispatched ${_prevMessageDispatchCount}; required wave width is ${eff.waveWidth}.`,
-            "Run the pre-dispatch audit and submit one parallel wave of exactly 10 concrete tasks.",
+            `Previous message dispatched ${_prevMessageDispatchCount}; configured minimum is ${eff.floor}.`,
+            `Run the pre-dispatch audit and submit only the ${eff.floor} independently useful task(s) required by configuration.`,
             "Do not resume reads, edits, or bash calls after an undersized wave.",
           ].join("\n"),
         }
@@ -619,7 +648,11 @@ const defaultImpl: HotModule = {
         return
       }
       // Message-shape enforcement (prev message had exactly 1 dispatch)
-      if (_prevMessageDispatchCount === 1 && openWorkExists({ isCommitTool: commitToolMode })) {
+      if (
+        eff.floor > 1 &&
+        _prevMessageDispatchCount === 1 &&
+        openWorkExists({ isCommitTool: commitToolMode })
+      ) {
         return {
           permissionDecision: "deny" as const,
           message: [
@@ -676,11 +709,11 @@ const defaultImpl: HotModule = {
       // FLOOR BREACH is gated by _streakCount > MAX_STREAK in normal sessions.
       if (_streakCount <= effectiveMax) {
         // Refill-needed nudge (console only, not a block)
-        if (_streakCount > 0 && msSinceDispatch > 15000 && _dispatchPeak >= 5 && openWorkExists()) {
+        if (_streakCount > 0 && msSinceDispatch > 15000 && _dispatchPeak >= HARD_MAX_DISPATCHES && openWorkExists()) {
           console.warn(
             `REFILL NEEDED: ${_streakCount} non-dispatch calls since last dispatch ` +
             `${Math.round(msSinceDispatch / 1000)}s ago. Dispatch peak was ${_dispatchPeak}. ` +
-            "DISPATCH ≥2 subagents now."
+              "Delegate another independently useful task only when one exists."
           )
         }
         return
@@ -696,6 +729,11 @@ const defaultImpl: HotModule = {
       }
     } catch {
       return
+    } finally {
+      // Measure message boundaries from the completion of the previous hook.
+      // Dispatch preflight work can be non-trivial on hosted runners and must
+      // never be mistaken for time between assistant tool calls.
+      _lastCallTs = Date.now()
     }
   },
 }
@@ -733,6 +771,16 @@ export default (({ }) => {
       const impl = loadHotModule("floor", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input, output) : undefined
+    },
+    // opencode 1.17.9 only registers the experimental key. Declared as a
+    // pass-through so the pinned plugin contract (supported-hooks surface)
+    // holds while the actual enforcement stays self-contained in
+    // tool.execute.before.
+    "experimental.text.complete": async (_input: unknown, output: unknown) => {
+      if (isSubagent()) return output
+      const impl = loadHotModule("floor", defaultImpl)
+      const fn = impl["text.complete"] || impl["experimental.text.complete"]
+      return fn ? await fn(_input, output) : output
     },
   }
 }) satisfies Plugin

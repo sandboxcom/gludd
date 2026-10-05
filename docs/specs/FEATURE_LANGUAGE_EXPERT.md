@@ -131,7 +131,7 @@ ISO/IEC JTC 1/SC 2 (coded character sets), CLDR technical committee.
 
 ## 6. Files (Actual — Built)
 
-```
+```text
 collections/ansible_collections/general_ludd/language/
 ├── galaxy.yml                         (model_capabilities 11, role_capabilities 11, capability tags 11)
 ├── README.md

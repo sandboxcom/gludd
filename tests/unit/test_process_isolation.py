@@ -13,6 +13,8 @@ from general_ludd.ansible.action_policy import (
 from general_ludd.ansible.isolation import ProcessIsolationConfig
 from general_ludd.ansible.runner import AnsibleRunnerAdapter
 
+PINNED_EE_IMAGE = "registry.example/gludd-ee:test@sha256:" + "a" * 64
+
 
 class TestProcessIsolationConfigDefaults:
     def test_defaults_disabled(self):
@@ -50,6 +52,7 @@ class TestToRunnerKwargs:
     def test_enabled_produces_correct_kwargs(self):
         cfg = ProcessIsolationConfig(
             enabled=True,
+            container_image=PINNED_EE_IMAGE,
             executable="bwrap",
             isolation_path="/tmp/sandbox",
             hide_paths=["/secret"],
@@ -130,7 +133,7 @@ class TestBlockLocalTools:
 
 class TestRunnerAdapterIsolation:
     def test_adapter_accepts_isolation_config(self) -> None:
-        iso = ProcessIsolationConfig(enabled=True, executable="bwrap")
+        iso = ProcessIsolationConfig(enabled=True, executable="bwrap", container_image=PINNED_EE_IMAGE)
         with tempfile.TemporaryDirectory() as tmp:
             adapter = AnsibleRunnerAdapter(
                 private_data_dir=tmp,
@@ -155,6 +158,7 @@ class TestRunnerAdapterIsolation:
 
         iso = ProcessIsolationConfig(
             enabled=True,
+            container_image=PINNED_EE_IMAGE,
             executable="bwrap",
             hide_paths=["/secret"],
         )
@@ -196,6 +200,7 @@ class TestActionPolicyIsolation:
     def test_policy_accepts_process_isolation(self):
         iso = ProcessIsolationConfig(
             enabled=True,
+            container_image=PINNED_EE_IMAGE,
             block_local_tools=["bash"],
         )
         policy = ActionPolicyConfig(process_isolation=iso)
@@ -205,6 +210,7 @@ class TestActionPolicyIsolation:
     def test_validate_action_blocks_isolated_tool(self):
         iso = ProcessIsolationConfig(
             enabled=True,
+            container_image=PINNED_EE_IMAGE,
             block_local_tools=["bash"],
         )
         policy = ActionPolicyConfig(process_isolation=iso)
@@ -228,6 +234,7 @@ class TestActionPolicyIsolation:
     def test_validate_action_allows_non_blocked_tool(self):
         iso = ProcessIsolationConfig(
             enabled=True,
+            container_image=PINNED_EE_IMAGE,
             block_local_tools=["docker"],
         )
         policy = ActionPolicyConfig(process_isolation=iso)

@@ -6,11 +6,13 @@ A fake transport returns canned payloads so no real network is touched.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 
-from general_ludd.connectors.circleci import CircleCiSource
+import general_ludd.connectors.circleci as circleci
+from general_ludd.connectors.circleci import CircleCiSource, _parse_ts
 
 _SLUG = "gh/acme/widgets"
 
@@ -178,6 +180,16 @@ def test_health_never_raises() -> None:
     assert h["detail"] == "health check failed"
 
 
+def test_query_and_workflow_fetch_never_raise_on_transport_failure() -> None:
+    def boom(_url: str, _headers: dict[str, str]) -> tuple[int, Any]:
+        raise RuntimeError("network failed")
+
+    src = CircleCiSource({"project_slug": _SLUG}, http_get=boom)
+
+    assert src.query({}) == []
+    assert src.fetch_workflows("pipeline") == []
+
+
 def test_query_empty_on_non_dict_body() -> None:
     src = _make(_FakeTransport(200, [1, 2, 3]))
     assert src.query({}) == []
@@ -201,3 +213,76 @@ def test_fetch_workflows_normalizes() -> None:
 def test_fetch_workflows_empty_on_error() -> None:
     src = _make(_FakeTransport(500, None))
     assert src.fetch_workflows("pipe-1") == []
+
+
+@pytest.mark.parametrize("value", (None, 0, object(), "not-a-timestamp"))
+def test_parse_ts_rejects_empty_non_string_and_invalid_values(value: object) -> None:
+    assert _parse_ts(value) is None
+
+
+def test_parse_ts_bounds_fraction_and_preserves_negative_timezone() -> None:
+    parsed = _parse_ts("2026-06-10T08:00:00.123456789-04:00")
+
+    assert parsed == datetime.fromisoformat("2026-06-10T08:00:00.123456-04:00").timestamp()
+
+
+def test_parse_ts_accepts_fraction_without_timezone_marker() -> None:
+    assert _parse_ts("2026-06-10T08:00:00.123") == datetime.fromisoformat(
+        "2026-06-10T08:00:00.123"
+    ).timestamp()
+
+
+def test_parse_ts_drops_non_digit_fraction_before_timezone() -> None:
+    assert _parse_ts("2026-06-10T08:00:00.nope+00:00") == datetime.fromisoformat(
+        "2026-06-10T08:00:00+00:00"
+    ).timestamp()
+
+
+def test_query_and_workflow_filter_malformed_items() -> None:
+    query = _make(_FakeTransport(200, {"items": [None, {"id": "ok", "vcs": []}]})).query({})
+    workflows = _make(_FakeTransport(200, {"items": [None, {"id": "wf"}]})).fetch_workflows("p")
+
+    assert [record["labels"]["id"] for record in query] == ["ok"]
+    assert [record["labels"]["id"] for record in workflows] == ["wf"]
+
+
+def test_query_and_workflow_reject_non_list_items() -> None:
+    assert _make(_FakeTransport(200, {"items": "invalid"})).query({}) == []
+    assert _make(_FakeTransport(200, {"items": "invalid"})).fetch_workflows("p") == []
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    (
+        (b'{"ok": true}', {"ok": True}),
+        (b"not-json", None),
+        (b"", None),
+    ),
+)
+def test_default_transport_bounds_json_decoding(
+    monkeypatch: pytest.MonkeyPatch,
+    content: bytes,
+    expected: object,
+) -> None:
+    response = SimpleNamespace(status_code=200, content=content)
+
+    class Client:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def __enter__(self) -> Client:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def get(self, _url: str, *, headers: dict[str, str]) -> object:
+            assert headers["Accept"] == "application/json"
+            return response
+
+    monkeypatch.setattr(circleci.httpx, "Client", Client)
+
+    assert circleci._default_http_get("https://circleci.com", {"Accept": "application/json"}) == (
+        200,
+        expected,
+    )

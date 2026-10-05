@@ -1,0 +1,7 @@
+---
+requires_ansible: ">=2.15.0"
+plugin_routing:
+  modules:
+    gludd_scapy:
+      redirect: general_ludd.networking.gludd_scapy
+

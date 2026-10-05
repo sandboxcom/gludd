@@ -114,6 +114,19 @@ def _validate_secure_directory_if_exists(path: Path) -> None:
         raise SandboxStateError(f"sandbox state directory is not mode 0700: {path}")
 
 
+def _rollback_empty_directory(path: Path) -> None:
+    """Remove a newly allocated empty directory without masking the cause."""
+    try:
+        _reject_symlink_components(path)
+        _assert_owner(path)
+        path.rmdir()
+    except (FileNotFoundError, OSError, SandboxStateError):
+        # A concurrent writer, replacement, or ownership change makes rollback
+        # unsafe. Preserve that evidence and re-raise the original allocation
+        # failure instead of deleting a path whose identity is now uncertain.
+        return
+
+
 def safe_state_component(value: str) -> str:
     """Return a deterministic safe component for an untrusted identifier."""
     if _COMPONENT_RE.fullmatch(value) and value not in {".", ".."}:
@@ -205,6 +218,7 @@ class SandboxState:
         state_dir_env: str = STATE_DIR_ENV,
         default_prefix: str = DEFAULT_STATE_PREFIX,
     ) -> SandboxState:
+        """Resolve project state and atomically allocate it when requested."""
         root = _resolve_project_root(project_root)
         raw_base = os.environ.get(state_dir_env)
         base = (
@@ -215,8 +229,17 @@ class SandboxState:
         namespace = _project_namespace(root)
         project_dir = base / namespace
         if create:
-            _secure_directory(base)
-            _secure_directory(project_dir)
+            base_existed = base.exists()
+            project_existed = project_dir.exists()
+            try:
+                _secure_directory(base)
+                _secure_directory(project_dir)
+            except Exception:
+                if not project_existed:
+                    _rollback_empty_directory(project_dir)
+                if not base_existed:
+                    _rollback_empty_directory(base)
+                raise
         else:
             _validate_secure_directory_if_exists(base)
             _validate_secure_directory_if_exists(project_dir)
@@ -237,6 +260,7 @@ class SandboxState:
         )
 
     def path(self, *components: str) -> Path:
+        """Return a validated path contained by the project namespace."""
         if not components:
             return self.project_dir
         safe = tuple(_validate_component(value) for value in components)
@@ -245,6 +269,7 @@ class SandboxState:
         return candidate
 
     def directory(self, *components: str) -> Path:
+        """Securely create and return a contained owner-only directory."""
         if not components:
             return _secure_directory(self.project_dir)
         candidate = self.path(*components)
@@ -263,6 +288,7 @@ class SandboxState:
         return _secure_directory(allocated)
 
     def cleanup_path(self, candidate: str | Path) -> bool:
+        """Remove a contained path after rejecting symlink traversal."""
         target = Path(candidate)
         _reject_symlink_components(target)
         self._assert_contained(target)
@@ -280,9 +306,11 @@ class SandboxState:
         return True
 
     def cleanup_backend(self, backend: str) -> bool:
+        """Remove one backend's confined state tree if it exists."""
         return self.cleanup_path(self.path(backend))
 
     def cleanup_project(self) -> bool:
+        """Remove the project namespace after validating its full tree."""
         _reject_symlink_components(self.project_dir)
         self._assert_contained(self.project_dir)
         if not self.project_dir.exists():

@@ -13,10 +13,14 @@ Covers the SandboxEnforcer with behavioral tests for:
 
 from __future__ import annotations
 
+import gc
 import os
 import socket
 import subprocess
+import tempfile
+import weakref
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -111,6 +115,59 @@ class TestPathConfinement:
         ))
         result = enforcer.confine_path(str(tmp_path / "x"))
         assert result == str(tmp_path / "x")
+
+    def test_auto_jail_is_removed_on_close_but_external_jail_is_preserved(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        owned = SandboxEnforcer(SandboxConfig())
+        owned.verify_ready()
+        owned_path = Path(owned.jail_dir)
+        assert owned_path.is_dir()
+        owned.close()
+        owned.close()
+        assert not owned_path.exists()
+
+        external_path = tmp_path / "external-jail"
+        external_path.mkdir()
+        external = SandboxEnforcer(SandboxConfig(jail_dir=str(external_path)))
+        external.verify_ready()
+        external.close()
+        assert external_path.is_dir()
+
+    def test_auto_jail_owner_release_is_warning_free(self) -> None:
+        enforcer = SandboxEnforcer(SandboxConfig())
+        enforcer.verify_ready()
+        jail = Path(enforcer.jail_dir)
+        owner_ref = weakref.ref(enforcer)
+
+        del enforcer
+        gc.collect()
+
+        assert owner_ref() is None
+        assert not jail.exists()
+
+    def test_failed_auto_jail_verification_rolls_back_directory(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        enforcer = SandboxEnforcer(SandboxConfig())
+        created: list[Path] = []
+        real_temporary_directory = tempfile.TemporaryDirectory
+
+        def temporary_directory(
+            *args: Any, **kwargs: Any
+        ) -> tempfile.TemporaryDirectory[str]:
+            owner = real_temporary_directory(*args, **kwargs)
+            created.append(Path(owner.name))
+            return owner
+
+        monkeypatch.setattr("general_ludd.sandbox.enforcer.tempfile.TemporaryDirectory", temporary_directory)
+        monkeypatch.setattr("general_ludd.sandbox.enforcer.os.access", lambda *_args: False)
+
+        with pytest.raises(SandboxNotAvailableError, match="not writable"):
+            enforcer.verify_ready()
+
+        assert created and not created[0].exists()
 
 
 class TestNetworkIsolation:
@@ -446,8 +503,8 @@ class TestAutoJail:
         assert enforcer.jail_dir
         assert "gludd-sandbox-" in enforcer.jail_dir
         assert os.path.isdir(enforcer.jail_dir)
-        if enforcer._jail_path:
-            enforcer._jail_path.rmdir()
+        enforcer.close()
+        assert not enforcer.jail_dir
 
     def test_explicit_jail_dir_not_overwritten(self, tmp_path: Path) -> None:
         jail = tmp_path / "my-jail"
@@ -470,8 +527,8 @@ class TestAutoJail:
         assert enforcer.is_ready
         assert enforcer.jail_dir
         assert os.path.isdir(enforcer.jail_dir)
-        if enforcer._jail_path:
-            enforcer._jail_path.rmdir()
+        enforcer.close()
+        assert not enforcer.is_ready
 
 
 class TestErrorTypes:

@@ -5,6 +5,6 @@
   tasks:
     - name: "Include macos_diagnose"
       ansible.builtin.include_role:
-        name: "macos_diagnose"
+        name: "general_ludd.os_expert.macos_diagnose"
       vars:
         enable_git_push: false

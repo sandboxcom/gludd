@@ -126,19 +126,19 @@ class TestLoadAuthPosture:
         assert ap.require_auth is False
 
     def test_with_psk_no_require_auth(self) -> None:
-        ap = load_auth_posture("worker", {"GLUDD_PSK": "mykey", "GLUDD_REQUIRE_AUTH": "0"})
+        ap = load_auth_posture("worker", {"GLUDD_AUTH_PSK": "mykey", "GLUDD_REQUIRE_AUTH": "0"})
         assert ap.psk == "mykey"
         assert ap.no_auth is False
         assert ap.require_auth is False
 
     def test_with_psk_and_require_auth(self) -> None:
-        ap = load_auth_posture("daemon", {"GLUDD_PSK": "mykey", "GLUDD_REQUIRE_AUTH": "1"})
+        ap = load_auth_posture("daemon", {"GLUDD_AUTH_PSK": "mykey", "GLUDD_REQUIRE_AUTH": "1"})
         assert ap.psk == "mykey"
         assert ap.no_auth is False
         assert ap.require_auth is True
 
     def test_psk_stripped(self) -> None:
-        ap = load_auth_posture("worker", {"GLUDD_PSK": "  key  "})
+        ap = load_auth_posture("worker", {"GLUDD_AUTH_PSK": "  key  "})
         assert ap.psk == "key"
 
     def test_surface_preserved(self) -> None:

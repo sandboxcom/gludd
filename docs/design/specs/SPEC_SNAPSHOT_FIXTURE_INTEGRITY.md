@@ -1,7 +1,7 @@
 # Snapshot Fixture Integrity Specification
 
-Status: implemented  
-Contract version: `snapshot-fixture/v1`  
+Status: implemented
+Contract version: `snapshot-fixture/v1`
 Scope: `tests/unit/test_snapshot_deep.py` and `tests/snapshots/*.json`
 
 ## Problem and practitioner evidence

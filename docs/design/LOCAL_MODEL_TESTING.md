@@ -1,6 +1,6 @@
 # Local Model Testing & E2E Validation
 
-**Status:** design (2026-08-07)
+**Status:** beta4 validated (2026-08-21)
 **Source:** `tests/e2e/test_ci_multi_model_pipeline.py`, `tests/e2e/test_model_matrix_pipeline.py`,
 `tests/e2e/_local_model_configs.py`, `src/general_ludd/local_model/_local_model_configs.py`
 
@@ -61,12 +61,74 @@ lines of code, per-phase latency, token counts, feature/lifecycle failures).
 ### Prerequisites
 
 ```bash
-# Install llama.cpp Python bindings + server support
-make sync-llama-cpp
+# Download the pinned, already-quantized Qwen2.5 0.5B test artifact (~398 MB)
+make e2e-download-small-model
+
+# Prove that the artifact loads and produces tokens with the locked optional runtime
+make test-local-model-inference \
+  LOCAL_MODEL_INFERENCE_MODEL_PATH=/tmp/gludd-qwen-e2e-model/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf \
+  LOCAL_MODEL_INFERENCE_VALIDATE_ONLY=0
 
 # Build llama-quantize CLI (optional, for quantizing models)
 make build-llamacpp-tools
 ```
+
+`e2e-download-small-model` does not require `llama-quantize`: its source GGUF is
+already Q4_K_M. It pins the Hugging Face revision and atomically hard-links the
+download cache into `/tmp/gludd-qwen-e2e-model` (falling back to a copy only when
+the cache and temporary directory are on different filesystems). Repeated setup is
+therefore deterministic and avoids an unnecessary second 398 MB allocation.
+`test-local-model-inference` requests the locked `local-inference` extra itself;
+`llama-cpp-python` is intentionally absent from Gludd's core runtime. Validation
+mode (`LOCAL_MODEL_INFERENCE_VALIDATE_ONLY=1`) checks the optional dependency
+resolution without loading a model. The smoke uses the GGUF's native context so
+llama.cpp does not emit the misleading reduced-context capacity warning.
+
+### Dated upstream user evidence
+
+Reviewed on 2026-08-20; these reports remain useful because they describe failure
+classes at the tool and network boundaries, not a single Gludd release:
+
+- A llama.cpp user reported a missing `quantize.exe` on 2023-03-24
+  ([llama.cpp #479](https://github.com/ggml-org/llama.cpp/issues/479)). Gludd therefore
+  treats converter and quantizer discovery as bounded optional probes: filesystem or
+  `PATH` errors disable the local method instead of crashing startup.
+- A Hugging Face Hub user reported on 2023-12-13 that a timed-out snapshot download
+  restarted instead of resuming
+  ([huggingface_hub #1903](https://github.com/huggingface/huggingface_hub/issues/1903)).
+  The beta4 Qwen fixture consequently keeps the Hub cache, pins a revision, and
+  atomically materializes the artifact rather than repeatedly downloading it.
+- An embeddings user reported intermittent 600-second responses after idle periods
+  on 2023-04-13
+  ([openai-python #392](https://github.com/openai/openai-python/issues/392)). Gludd's
+  skill matcher keeps the deterministic local hash embedder as its default and makes
+  remote embeddings opt-in.
+- An embeddings user reported an authentication failure with an empty diagnostic on
+  2023-05-25
+  ([openai-python #464](https://github.com/openai/openai-python/issues/464)). A missing
+  optional OpenAI package may use the deterministic local fallback, but configured
+  authentication or pricing-data errors are surfaced rather than silently downgraded.
+- **OIDC cache concurrency.** Reviewed 2026-08-21. Python's current
+  [`RLock` documentation](https://docs.python.org/3/library/threading.html#rlock-objects)
+  recommends context-managed re-entrant locking and specifies that another thread blocks
+  until the owning thread releases the lock. A long-running practitioner thread opened in
+  2008 documents duplicate cache construction despite the GIL and recommends locking the
+  complete cache lookup/create/store transaction
+  ([Stack Overflow #213455](https://stackoverflow.com/questions/213455/python-threadsafe-object-cache));
+  a separate 2014 thread explains why the GIL does not make multi-instruction logic free of
+  races
+  ([Stack Overflow #23855138](https://stackoverflow.com/questions/23855138/can-you-race-condition-in-python-while-there-is-a-gil)).
+  `HfOidcAuth` therefore owns one instance-local `RLock` across cache inspection, bounded
+  provider acquisition, publication, refresh, invalidation, and validity checks. Concurrent
+  misses produce one acquisition, and an invalidation that overlaps acquisition returns only
+  after it has cleared the acquired token. Re-entrancy is required because `refresh()` calls
+  the ordinary `get_token()` path while retaining the same lifecycle boundary.
+
+  The lock is intentionally instance-local: an OIDC refresh cannot pause unrelated models,
+  endpoints, or tenants, preserving zero-downtime service for already healthy paths.
+  Rollback is code-only and never restores, persists, or logs token material. Each auth object
+  adds one in-memory lock and creates no thread, process, descriptor, or temporary artifact;
+  serializing cache misses reduces duplicate provider network work instead of adding it.
 
 Dependency check (`_deps_reason()` in `test_model_matrix_pipeline.py`):
 - `llama-cpp-python` must be importable
@@ -111,27 +173,191 @@ a development workstation.
 ### Running local model tests
 
 ```bash
-# Single CI-safe model (fastest path for dev)
-E2E_LOCAL_MODEL=Qwen2.5-Coder-0.5B make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
+# Single CI-safe model (fastest live path for dev)
+GLUDD_LIVE_MODEL_E2E=1 E2E_LOCAL_MODEL=Qwen2.5-Coder-0.5B \
+  make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
 
 # All CI-safe models (6 models, runs in CI)
-CI_SAFE_ONLY=1 make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
+GLUDD_LIVE_MODEL_E2E=1 CI_SAFE_ONLY=1 \
+  make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
 
 # All 24 local models (development workstation only)
-make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
+GLUDD_LIVE_MODEL_E2E=1 \
+  make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
 
 # Single model by alias
-E2E_LOCAL_MODEL=qwen-coder-0.5b make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
+GLUDD_LIVE_MODEL_E2E=1 E2E_LOCAL_MODEL=qwen-coder-0.5b \
+  make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
 
 # Filter with LOCAL_MODEL_FILTER (AND logic)
-LOCAL_MODEL_FILTER=coding,ci-safe make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
+GLUDD_LIVE_MODEL_E2E=1 LOCAL_MODEL_FILTER=coding,ci-safe \
+  make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
 
-# Ollama-based local model (self-hosted endpoint)
+# Hermetic random-port endpoint (default, no model download or API cost)
 make test-e2e-games-local-model
 
 # Fail fast — stop on first model failure
-MATRIX_FAIL_FAST=1 make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
+GLUDD_LIVE_MODEL_E2E=1 MATRIX_FAIL_FAST=1 \
+  make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py
 ```
+
+### Beta4 endpoint and game E2E layers
+
+The default endpoint lifecycle suite is hermetic and has no external model or API
+cost. It binds an OpenAI-compatible test server to `127.0.0.1` on an OS-assigned port,
+tests chat and text completions through the production `ChatSession`, covers auth,
+malformed requests, invalid response contracts, HTTP 503 propagation, early server
+exit, and then proves idempotent teardown. It never assumes a fixed port and its
+named server thread must be stopped before the fixture returns.
+
+The heavyweight transformer, real-model game-generation, full
+game-development, and model-matrix pipelines are explicitly opt-in to prevent
+ordinary collection or `make test-e2e` from downloading models. Their
+structural tests remain active in the generic E2E suite. The dedicated game
+target sets the live opt-in itself and resolves the locked `local-inference`
+extra, while Gludd core remains free of `llama-cpp-python`:
+
+```bash
+GLUDD_LIVE_MODEL_E2E=1 make test-files \
+  TESTFILES=tests/e2e/test_small_model_pipeline_real.py \
+  PYTEST_ARGS='-q -W error'
+
+make test-e2e-game-pipeline \
+  CI_SAFE=1 \
+  GAME_DEV_MODEL=Qwen2.5-0.5B-Instruct \
+  GAME_DEV_GAME=snake \
+  PYTEST_ARGS='-q -W error'
+```
+
+`GAME_DEV_MODEL` resolves a registry name or declared alias, including the
+OpenAI-compatible identity returned by the selected server. An unknown identity,
+or a model excluded by `CI_SAFE`, fails closed before downloads begin. Selecting
+one model narrows inference only; the always-on structural assertions still
+validate the complete 24-model registry and both capability categories.
+
+The selected model performs planning and coding, while the stable Qwen registry
+entry reviews the result. Roles with the same GGUF and context share one
+download and one loopback server; the Qwen target therefore uses a single
+runtime for all three roles. Generation stays bounded to 1,024 output tokens
+inside an 8,192-token context. Gludd's production `GameGenerator`, rather than
+the E2E harness, owns the deterministic lifecycle normalization. It may add only
+the mechanically specified `start()` transition to an AST-valid generated game
+with one unambiguous top-level class, or to an explicitly named class in the
+multi-model seam. Existing methods, malformed source, ambiguous classes, and
+classless output are unchanged and continue to fail the import/lifecycle
+verifier. The E2E suite observes this application behavior and performs no
+separate source repair.
+
+On 2026-08-20, the exact Qwen/Snake command above passed 10/10 tests in 118.46
+seconds. The generated 68-line module was AST-valid, importable, and passed the
+full lifecycle check. The focused local-model measurement passed 384 tests with
+3 intentional live-download skips at 94 percent aggregate branch coverage;
+all five measured files were 84–99 percent.
+
+With no variables, `test-e2e-games-local-model` owns a deterministic hermetic
+OpenAI-compatible endpoint on an OS-assigned loopback port, runs the production
+dispatch/policy path for Snake, and verifies teardown. Managed mode instead starts
+an actual llama.cpp server through Gludd's `LocalInferenceManager`, using one
+random loopback port and the exact readable GGUF supplied by the operator. Start,
+test, startup-failure, and test-failure paths all call the manager's normal
+`stop_all()` cleanup, wait for the child, and remove its captured stderr file:
+
+```bash
+make sync-llama-cpp SYNC_LLAMA_CPP_VALIDATE_ONLY=0
+make test-e2e-games-local-model \
+  LOCAL_MODEL_E2E_MODE=managed \
+  LOCAL_MODEL_PATH=/path/to/Qwen2.5-0.5B-Instruct-Q5_K_M.gguf \
+  LOCAL_MODEL_NAME=gludd-managed-qwen \
+  LOCAL_MODEL_GAME=snake \
+  PYTEST_ARGS='-q -W error'
+```
+
+Application shutdown follows the same ownership rule: the FastAPI lifespan calls
+`stop_all()` on its application-owned manager on normal and exceptional exit.
+External endpoints never enter that registry. To use an already-running model,
+select `external` mode with its loopback URL explicitly:
+
+After a managed server stops, live inventory never retains its process object,
+PID, or stderr path. Callers that need the outcome use the manager's immutable
+terminal-status snapshots instead. Each error keeps only its final 4,096
+characters and the manager retains at most 128 snapshots, so repeated crash loops
+cannot create unbounded memory or disk growth. A failed server is restarted by
+creating a new managed instance; rollback never resurrects or re-owns the dead
+process. This preserves zero-downtime operation for unrelated running endpoints
+while keeping the failed instance's exit code and diagnostic tail available.
+
+```bash
+make test-e2e-games-local-model \
+  LOCAL_MODEL_E2E_MODE=external \
+  LOCAL_MODEL_BASE_URL=http://127.0.0.1:9999/v1 \
+  LOCAL_MODEL_NAME=qwen2.5:0.5b \
+  LOCAL_MODEL_KEY=local-only \
+  LOCAL_MODEL_GAME=snake \
+  PYTEST_ARGS='-q -W error'
+```
+
+External mode requires an explicit `http` or `https` `/v1` URL whose host is
+`127.0.0.1`, `localhost`, or `::1`. Those endpoints are still represented by the
+existing `local-` model-profile allowlist; the runner and suite do not disable the
+production SSRF guard. Gludd does not claim or stop an external endpoint's PID,
+including a user-managed server on port 9999. A generation receives at most the
+task policy's configured attempt ceiling. Syntax repair feeds back a bounded excerpt
+of the prior response, keeping context growth predictable on small models.
+
+#### Why beta4 keeps these safeguards
+
+Reviewed 2026-08-20. These upstream practitioner reports document recurring failure modes;
+they do not imply that Gludd inherits every historical upstream bug:
+
+- **Ephemeral ports and verified teardown.** An open llama-cpp-python report from
+  2024-04-18 describes a configured port being ignored and a subsequent collision with an
+  existing service ([issue #1359](https://github.com/abetlen/llama-cpp-python/issues/1359)).
+  Hermetic and managed suites therefore ask the OS for a free port. Managed acceptance
+  additionally proves that the real child is waited, its stderr artifact is removed, and
+  no owned process remains, so parallel projects do not share a fixed endpoint.
+- **Side-effect-free optional-runtime discovery.** Reviewed 2026-08-21. The current
+  [llama-cpp-python null-stream helper](https://github.com/abetlen/llama-cpp-python/blob/main/llama_cpp/_utils.py)
+  allocates null streams at module import, and a user report opened on 2023-12-23 shows
+  those streams participating in an import/runtime failure
+  ([issue #1041](https://github.com/abetlen/llama-cpp-python/issues/1041)). Python's
+  [importlib guidance](https://docs.python.org/3/library/importlib.html#checking-if-a-module-can-be-imported)
+  prescribes `find_spec()` when availability must be checked without importing. Gludd
+  therefore probes the locked optional runtime by specification only; the managed child,
+  not test collection, owns runtime initialization. A skipped E2E run owns no child or
+  runtime file handles, so unrelated endpoints stay online during zero-downtime operation.
+  The probe retains no module, process, or descriptor state and performs one bounded
+  metadata lookup. Rollback is code-only, changes no model or cache state, and never
+  restarts or stops a managed or external endpoint.
+- **Bounded post-reap diagnostics.** A llama.cpp user reported on 2026-01-02 that
+  `llama-server` printed model metadata and then exited without a useful error indication
+  ([issue #18546](https://github.com/ggml-org/llama.cpp/issues/18546)); another report on
+  2026-03-26 captured a multi-shard GGUF load error that ended in process exit
+  ([issue #21016](https://github.com/ggml-org/llama.cpp/issues/21016)). The upstream server
+  source also returns a non-zero status after model-loading failure
+  ([server.cpp](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/server.cpp)).
+  Reviewed 2026-08-20, this evidence supports retaining the bounded diagnostic tail and
+  concrete return code after cleanup, without retaining the process or its temporary log.
+- **Immutable revisions and a reusable offline cache.** Hugging Face users have tracked
+  expensive unchanged-file downloads since 2023
+  ([issue #1738](https://github.com/huggingface/huggingface_hub/issues/1738)), while a
+  2025-04-15 report showed that an interrupted snapshot resume could fall back to unsafe
+  cached state ([issue #3007](https://github.com/huggingface/huggingface_hub/issues/3007)).
+  Beta4 pins the model revision, materializes it atomically from the shared cache, and then
+  exercises the local artifact instead of treating a mutable remote branch as test evidence.
+- **Deterministic assertions and explicit bounds.** A 2023-07-04 llama.cpp discussion shows
+  that the same seed can still diverge across operating-system builds
+  ([discussion #2100](https://github.com/ggml-org/llama.cpp/discussions/2100)); an open
+  2023-12-07 llama-cpp-python report shows an unset `max_tokens` turning context overflow into
+  HTTP 500 ([issue #983](https://github.com/abetlen/llama-cpp-python/issues/983)). The suite
+  checks stable API and code properties rather than byte-identical prose, and every repair or
+  generation path has an explicit attempt, context, or output ceiling.
+- **Loopback-only serving and hostile-input coverage.** A llama.cpp report opened
+  2024-05-07 demonstrated that malformed chat JSON could crash the server
+  ([issue #7133](https://github.com/ggml-org/llama.cpp/issues/7133)), and practitioners advised
+  against public exposure in a 2024-08-18 deployment thread
+  ([discussion #9079](https://github.com/ggml-org/llama.cpp/discussions/9079)). The beta4 tests
+  bind only to loopback and retain production SSRF checks while covering authentication,
+  malformed input, invalid contracts, and upstream service failures.
 
 ### What happens during a local model test
 
@@ -141,7 +367,9 @@ For each model in `TestLocalModelMatrixDownloadServe`, the test:
    (respects `HF_HOME` / `HF_HUB_CACHE` env vars). Skips download if already cached.
 2. **Serve** — `LocalInferenceManager` spawns a llama.cpp server on a random port via
    `LocalServer`. The server exposes an OpenAI-compatible `/v1/chat/completions` endpoint.
-   Waits up to 60s for `/health` 200 + warm-up inference.
+   Readiness uses llama.cpp's supported `/v1/models` route (`/health` remains the
+   contract for other engines), ignores ambient proxy variables, and writes stderr
+   to a namespaced temporary file so an unread pipe cannot deadlock a healthy server.
 3. **Generate** — calls the model through `ModelGateway` with a snake-game coding prompt.
    Records latency, token counts, error category.
 4. **Verify** — `_verify_snake_code()`: AST parse → class detection → method checks
@@ -318,16 +546,17 @@ Expected: prints the aggregated matrix report if prior runs populated
 | Target | Purpose |
 |--------|---------|
 | `make sync-llama-cpp` | Install llama-cpp-python[server] |
+| `make e2e-download-small-model` | Materialize the pinned Qwen2.5 0.5B GGUF artifact |
 | `make build-llamacpp-tools` | Build llama-quantize from source |
 | `make test-e2e-multi-model` | Cloud multi-model pipeline (DeepSeek + OpenRouter) |
-| `make test-e2e-games-local-model` | Local model game E2E via SmallModelTaskPolicy |
+| `make test-e2e-games-local-model` | Hermetic, manager-owned llama.cpp, or external-loopback game E2E |
 | `make test-e2e TESTFILE=tests/e2e/test_model_matrix_pipeline.py` | Full model matrix (env-controlled) |
 | `make local-model-ollama` | Start Ollama server, pull OLLAMA_MODEL |
 | `make local-model-stop` | Stop Ollama server |
 | `make local-model-status` | Check if Ollama is running |
 | `make verify-local-model-quality` | Quality benchmark script |
 | `make benchmark-local-model` | Full local model benchmark |
-| `make test-local-model-inference` | Direct llama.cpp inference smoke test |
+| `make test-local-model-inference` | Direct inference using the locked optional runtime and explicit GGUF |
 
 ### Environment variable reference
 
@@ -341,7 +570,14 @@ Expected: prints the aggregated matrix report if prior runs populated
 | `DEEPSEEK_API_KEY` | DeepSeek API key (env or `.deepseek.key`) | — |
 | `OPENROUTER_API_KEY` | OpenRouter API key (env or `.openrouter.key`) | — |
 | `ANTHROPIC_API_KEY` | Anthropic API key (env or `.anthropic.key`) | — |
-| `LOCAL_MODEL_BASE_URL` | Self-hosted OpenAI-compat endpoint | `http://localhost:11434/v1` |
-| `LOCAL_MODEL_NAME` | Ollama model name | `qwen2.5:0.5b` |
-| `LOCAL_MODEL_KEY` | Optional auth key for self-hosted endpoint | empty |
+| `LOCAL_MODEL_E2E_MODE` | `hermetic`, manager-owned `managed`, or non-owning `external` endpoint | `hermetic` |
+| `LOCAL_MODEL_BASE_URL` | Required OpenAI-compatible `/v1` URL in external mode | empty |
+| `LOCAL_MODEL_PATH` | Exact readable GGUF required in managed mode | empty |
+| `LOCAL_MODEL_NAME` | Model ID sent to the selected endpoint | `gludd-hermetic-game-e2e` |
+| `LOCAL_MODEL_KEY` | Optional external auth key; hermetic mode supplies a local-only token | empty |
+| `LOCAL_MODEL_GAME` | Game selected by the bounded local smoke | `snake` |
+| `GAME_DEV_MODEL` | Registry name or alias selected for the live game-development pipeline | all eligible models |
+| `GAME_DEV_GAME` | Game selected for the live game-development pipeline | all 4 |
+| `LOCAL_MODEL_INFERENCE_MODEL_PATH` | Exact readable GGUF used by direct inference | pinned Qwen artifact path |
+| `LOCAL_MODEL_INFERENCE_VALIDATE_ONLY` | Resolve the locked optional runtime without loading the model | `0` |
 | `HF_HOME` / `HF_HUB_CACHE` | HuggingFace cache directory | HF defaults |

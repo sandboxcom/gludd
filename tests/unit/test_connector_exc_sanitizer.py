@@ -50,7 +50,9 @@ class TestSanitizeExcForHealth:
         with patch.object(logger, "warning") as mock_warn:
             sanitize_exc_for_health(KeyError("missing-key"))
         mock_warn.assert_called_once()
-        assert mock_warn.call_args[1].get("exc_info") is True
+        # No traceback attachment: exc_info would embed the secret-bearing
+        # message in the log record (H20 no-leak contract).
+        assert mock_warn.call_args[1].get("exc_info") is None
 
     def test_custom_exception_class(self) -> None:
         exc = SSRFError("http://127.0.0.1:8080 blocked")
@@ -106,7 +108,9 @@ class TestSanitizeExcForQuery:
         with patch.object(logger, "warning") as mock_warn:
             sanitize_exc_for_query(TimeoutError("timed out"))
         mock_warn.assert_called_once()
-        assert mock_warn.call_args[1].get("exc_info") is True
+        # No traceback attachment: exc_info would embed the secret-bearing
+        # message in the log record (H20 no-leak contract).
+        assert mock_warn.call_args[1].get("exc_info") is None
 
     def test_never_returns_str_of_exc(self) -> None:
         exc = ValueError("https://admin:pass@leak.local/secrets")

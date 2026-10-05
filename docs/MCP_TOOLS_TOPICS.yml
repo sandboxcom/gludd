@@ -41,6 +41,52 @@ general_ludd.agent.gludd_abtest:
       returned: always
       type: dict
   module: gludd_abtest
+general_ludd.agent.gludd_accelerator_facts:
+  DOCUMENTATION:
+    description:
+    - Reads Gludd's normalized, read-only accelerator discovery endpoints.
+    - Returns Apple Metal, Intel XPU, JAX TPU, NVIDIA, AMD, and Slurm GRES inventory
+      under C(ansible_facts.gludd_accelerators).
+    - Hardware models are returned as observed values rather than schema keys.
+    - Performs no provisioning and is safe in check mode.
+    module: gludd_accelerator_facts
+    options:
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the Gludd daemon.
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon authentication.
+        no_log: true
+        type: str
+      scope:
+        choices:
+        - local
+        - slurm
+        - all
+        default: all
+        description: Inventory sources to query.
+        type: str
+      timeout:
+        default: 30
+        description: Per-request timeout in seconds.
+        type: int
+    short_description: Expose Gludd local and Slurm accelerator inventory as facts
+  EXAMPLES:
+  - general_ludd.agent.gludd_accelerator_facts:
+      scope: all
+    name: Discover every usable accelerator
+  - ansible.builtin.debug:
+      msg: '{{ ansible_facts.gludd_accelerators.resources }}'
+    name: Schedule only when a Slurm accelerator is free
+    when: ansible_facts.gludd_accelerators.available_count | int > 0
+  RETURN:
+    ansible_facts:
+      description: Facts containing the normalized accelerator inventory.
+      returned: always
+      type: dict
+  module: gludd_accelerator_facts
 general_ludd.agent.gludd_accounting:
   DOCUMENTATION:
     description:
@@ -837,94 +883,64 @@ general_ludd.agent.gludd_gate_check:
 general_ludd.agent.gludd_git:
   DOCUMENTATION:
     description:
-    - Exposes gludd's hardened C(general_ludd.git_automation.GitAutomation)
-    - control plane to roles/playbooks so an agent-authored job can perform git
-    - operations WITHOUT reimplementing the safety logic.
-    - This is a thin B(delegating wrapper) — it does not reimplement git. The
-    - 'Python core provides per-repo C(.git/index.lock) serialization (issue #63),'
-    - a bounded subprocess timeout, a non-interactive git environment,
-    - leading-dash ref rejection, C(--) end-of-options separators, worktree-path
-    - traversal guards, and typed results the daemon also consumes synchronously.
-    - Keeping that core in Python (rather than a pure role) preserves those
-    - guarantees; this module simply makes the same operations available on the
-    - Ansible execution seam.
-    - 'Idempotent where git is: C(branch) is a no-op if the branch already exists;'
-    - C(commit) reports C(changed=false) when there is nothing to commit.
-    - Check-mode safe — read-only C(worktree_list) runs; mutating ops are skipped
-    - in check mode and report the change they WOULD make.
+    - Sends a typed, authenticated request to the daemon-owned GitAutomation service.
+    - Collection Python never imports Gludd core or launches git itself.
+    - Mutations remain check-mode safe and preserve the historical result schema.
     module: gludd_git
     options:
-      branch: {}
-      clone_allow_local: {}
-      clone_url: {}
-      files: {}
-      gate_cmd: {}
-      git_clone_timeout: {}
-      message: {}
-      op: {}
-      path: {}
-      remote: {}
-      sha: {}
-      source: {}
-      state_reconciled_preserve_head_file: {}
-      state_reconciled_preserve_heads: {}
-      strategy: {}
-      tag: {}
-      target: {}
-      target_dir: {}
-      todo_id: {}
-      worktree_path: {}
-    short_description: Git control-plane ops (commit/branch/worktree/merge/push) via
-      git_automation
+      daemon_url:
+        default: http://localhost:8000
+        type: str
+      op:
+        choices:
+        - init
+        - clone
+        - commit
+        - gated_commit
+        - current_branch
+        - branch
+        - branch_list
+        - branch_delete
+        - worktree_list
+        - worktree_create
+        - worktree_remove
+        - merge
+        - gated_merge
+        - push
+        - verify_remote
+        - tag_release
+        - tag_checkpoint
+        - release_tag
+        - checkpoint_tag
+        - state
+        - batch_push
+        - release_cut
+        - release_delete
+        - release_recut
+        - ci_verdict
+        - ci_cancel
+        required: true
+        type: str
+      path:
+        required: true
+        type: str
+      psk:
+        default: ''
+        no_log: true
+        type: str
+    short_description: Run hardened git control-plane operations through Gludd
   EXAMPLES:
   - general_ludd.agent.gludd_git:
-      message: 'auto: apply model-suggested fix'
-      op: commit
-      path: /tmp/worktrees/fix-auto-20260612
-    name: Commit changes in worktree
-    register: git_result
-  - general_ludd.agent.gludd_git:
-      branch: fix/auto-20260612
+      branch: feature/example
       op: branch
-      path: /workspace/myrepo
-    name: Create branch
-  - general_ludd.agent.gludd_git:
-      op: worktree_list
-      path: /workspace/myrepo
-    name: List worktrees
-    register: wts
-  - general_ludd.agent.gludd_git:
-      branch: agent/TODO-1234/feature
-      op: worktree_create
-      path: /workspace/myrepo
-      worktree_path: /workspace/myrepo-wt-1234
-    name: Add an agent worktree on a new branch
-  - general_ludd.agent.gludd_git:
-      op: merge
-      path: /workspace/myrepo
-      source: agent/TODO-1234/feature
-      strategy: ff
-      target: main
-    name: Fast-forward merge a green branch
-  - general_ludd.agent.gludd_git:
-      branch: main
-      op: push
-      path: /workspace/myrepo
-    name: Push a branch to origin (bounded by the control-plane timeout)
+      path: /workspace/repo
+      psk: '{{ vault_gludd_psk }}'
+    name: Create a branch through the daemon control plane
   RETURN:
-    branch:
-      description: Branch name (op=branch/current_branch).
-      returned: when op=branch/current_branch
-      type: str
     result:
-      description: Typed result dict for worktree/merge/push ops.
-      returned: when op in (worktree_list, worktree_create, worktree_remove, merge,
-        push)
+      description: Typed daemon result for the selected operation.
+      returned: always
       type: dict
-    sha:
-      description: Commit SHA (op=commit only).
-      returned: when op=commit and changed=true
-      type: str
   module: gludd_git
 general_ludd.agent.gludd_human_todo:
   DOCUMENTATION:
@@ -1346,11 +1362,96 @@ general_ludd.agent.gludd_langgraph_workflow:
       description: Number of retries the graph performed.
       returned: success
       type: int
-    warnings:
+    workflow_warnings:
       description: Any warnings emitted by the workflow.
       returned: success
       type: list
   module: gludd_langgraph_workflow
+general_ludd.agent.gludd_local_model:
+  DOCUMENTATION:
+    description:
+    - Delegates download, serve, consume, and shutdown to the Gludd daemon.
+    - Never installs packages or launches a model process inside the collection.
+    - The daemon LocalInferenceManager owns process groups, diagnostics, and teardown.
+    module: gludd_local_model
+    options:
+      action:
+        choices:
+        - download
+        - serve
+        - consume
+        - shutdown
+        required: true
+        type: str
+      context_size:
+        default: 2048
+        type: int
+      daemon_url:
+        default: http://127.0.0.1:8000
+        type: str
+      filename:
+        default: ''
+        type: str
+      gpu_layers:
+        default: 0
+        type: int
+      host:
+        default: 127.0.0.1
+        type: str
+      max_tokens:
+        default: 1024
+        type: int
+      model_id:
+        default: ''
+        type: str
+      model_path:
+        default: ''
+        type: str
+      port:
+        default: 9999
+        type: int
+      prompt:
+        default: ''
+        type: str
+      psk:
+        default: ''
+        no_log: true
+        type: str
+      server_id:
+        default: ''
+        type: str
+      source:
+        default: huggingface
+        type: str
+      startup_timeout:
+        default: 120
+        type: int
+      timeout:
+        default: 180
+        type: int
+    short_description: Manage a daemon-owned local inference lifecycle
+  EXAMPLES:
+  - general_ludd.agent.gludd_local_model:
+      action: serve
+      model_id: bartowski/Qwen2.5-0.5B-Instruct-GGUF
+      model_path: /srv/models/qwen.gguf
+      startup_timeout: 120
+    name: Start a daemon-owned local model
+    register: local_model
+  RETURN:
+    local_path:
+      description: Downloaded model path.
+      returned: download
+      type: str
+    server_id:
+      description: Daemon-issued server identifier.
+      returned: serve, consume, shutdown
+      type: str
+    text:
+      description: Generated text.
+      returned: consume
+      type: str
+  module: gludd_local_model
 general_ludd.agent.gludd_make:
   DOCUMENTATION:
     description:
@@ -1769,45 +1870,118 @@ general_ludd.agent.gludd_model_call:
       returned: success
       type: dict
   module: gludd_model_call
+general_ludd.agent.gludd_model_worker_attest:
+  DOCUMENTATION:
+    description:
+    - Uses Gludd's provider-neutral model-worker attestation engine.
+    - Observes maintained NVIDIA NVML or AMD SMI interfaces on the managed host.
+    - Supports additional accelerator backends through the engine probe registry.
+    - Returns only content-free digests, readiness booleans, and refusal codes.
+    - Performs no provisioning and is safe in check mode.
+    module: gludd_model_worker_attest
+    options:
+      backend:
+        description: Accelerator probe backend identifier.
+        required: true
+        type: str
+      expected_runtime_version_digest:
+        description: Expected content-free digest of the runtime probe output.
+        required: true
+        type: str
+      expected_topology_digest:
+        description: Exact SHA-256 digest of the selected host topology.
+        required: true
+        type: str
+      minimum_device_count:
+        description: Minimum devices visible to the candidate service.
+        required: true
+        type: int
+      minimum_memory_mib:
+        description: Minimum memory required on every visible device.
+        required: true
+        type: int
+      required_interconnect:
+        description: Required interconnect class or C(any).
+        required: true
+        type: str
+      runner_id:
+        description: Attested model-runner profile identifier.
+        required: true
+        type: str
+      runtime_probe:
+        description: Tokenized, read-only runner version probe.
+        elements: str
+        required: true
+        type: list
+      source_revision:
+        description: Immutable observed runner-profile revision.
+        required: true
+        type: str
+      timeout_seconds:
+        default: 15
+        description: Bounded runner probe timeout.
+        type: int
+    short_description: Attest a model worker's accelerator topology and runtime
+  EXAMPLES:
+  - general_ludd.agent.gludd_model_worker_attest:
+      backend: nvidia
+      expected_runtime_version_digest: '{{ selected_runtime_version_digest }}'
+      expected_topology_digest: '{{ selected_topology_digest }}'
+      minimum_device_count: 2
+      minimum_memory_mib: 80000
+      required_interconnect: nvlink
+      runner_id: vllm-observed
+      runtime_probe:
+      - vllm
+      - --version
+      source_revision: vllm-profile-v1
+    name: Attest a two-device NVIDIA vLLM worker
+  RETURN:
+    ansible_facts:
+      description: Content-free model-worker attestation evidence.
+      returned: always
+      type: dict
+  module: gludd_model_worker_attest
 general_ludd.agent.gludd_observe:
   DOCUMENTATION:
-    author:
-    - Agentic Harness
     description:
-    - Discovers operator-configured sources through the Gludd daemon.
-    - Adapts those named sources to C(GluddObserve) without accepting arbitrary URLs.
-    - Runs query, timeline, incident-correlation, and topology workflows.
-    - Isolates a failing source so healthy source results still return.
-    - All operations are read-only and check-mode safe.
+    - Provides the Ansible seam for the cross-source C(GluddObserve) facade.
+    - Discovers only operator-registered sources from C(GET /api/observe/sources)
+      and queries them by registered name through C(POST /api/observe/query). Callers
+      cannot supply connector URLs, preserving the daemon's SSRF boundary.
+    - Supports merged queries, timelines, incident correlation, and service/host topology
+      without duplicating the canonical normalization logic.
+    - Read-only and check-mode safe. A failing connector is isolated into the returned
+      C(errors) list instead of aborting successful sources.
     module: gludd_observe
     options:
       by:
         default: trace_id
-        description: Canonical join key used for incident correlation.
-        type: str
-      correlate_by:
-        default: ''
-        description: Optional join key used to group C(query_sources) records.
+        description: Canonical join key for C(correlate_incident).
         type: str
       daemon_url:
         default: http://localhost:8000
         description: Base URL of the Gludd daemon.
         type: str
       end:
-        description: Optional inclusive end time as epoch seconds.
+        description: Optional inclusive end epoch for query and timeline operations.
         type: float
       kinds:
-        default: []
-        description: Connector kinds selected for query, topology, or incident correlation.
+        default:
+        - logs
+        - traces
+        - metrics
+        - events
+        description: Connector kinds admitted to the operation.
         elements: str
         type: list
       op:
         choices:
         - query_sources
-        - correlate_incident
         - timeline
+        - correlate_incident
         - topology
-        description: Cross-source observability operation.
+        description: Cross-source operation to run.
         required: true
         type: str
       psk:
@@ -1816,65 +1990,60 @@ general_ludd.agent.gludd_observe:
         no_log: true
         type: str
       role:
-        default: ''
-        description:
-        - Calling capability role, returned as result metadata.
-        - The default-deny policy must grant access to the daemon host.
+        default: observe
+        description: Capability identity recorded with the result for operator attribution.
         type: str
       seed:
         default: {}
-        description: Normalized incident record for C(correlate_incident).
+        description: Normalized incident record used by C(correlate_incident).
         type: dict
       spec:
         default: {}
-        description: Bounded connector query specification.
+        description: Backend query specification forwarded to each registered source.
         type: dict
       start:
-        description: Optional inclusive start time as epoch seconds.
+        description: Optional inclusive start epoch for query and timeline operations.
         type: float
       timeout:
         default: 30
         description: Per-request timeout in seconds.
         type: int
-      window:
-        default: []
-        description: Connector kinds selected for a timeline operation.
-        elements: str
-        type: list
       window_s:
         default: 300.0
-        description: Seconds before and after the incident seed to query.
+        description: Half-window around the incident seed timestamp, in seconds.
         type: float
-    short_description: Correlate telemetry across daemon-registered observability
-      sources
+    short_description: Correlate registered observability sources through the Gludd
+      daemon
   EXAMPLES:
   - general_ludd.agent.gludd_observe:
-      end: 1750000300
-      op: timeline
-      spec:
-        service: checkout
-      start: 1750000000
-      window:
-      - logs
-      - traces
-    name: Build a bounded telemetry timeline
-    register: timeline
-  - general_ludd.agent.gludd_observe:
-      by: trace_id
+      end: 1785581100
       kinds:
       - logs
       - traces
+      - metrics
+      op: timeline
+      psk: '{{ vault_gludd_psk }}'
+      start: 1785580800
+    name: Build a time-ordered incident timeline
+    register: timeline
+  - general_ludd.agent.gludd_observe:
+      by: trace_id
       op: correlate_incident
-      seed: '{{ incident_seed }}'
+      seed:
+        labels:
+          trace_id: trace-123
+        ts: 1785580950
     name: Correlate an incident by trace ID
   RETURN:
     ansible_facts:
       contains:
         gludd_observe:
-          description: Records, groups, topology, isolated errors, and operation metadata.
+          description:
+          - Result payload. It contains C(records), C(groups), or C(topology) depending
+            on C(op), plus isolated connector C(errors).
           returned: always
           type: dict
-      description: Cross-source observability result.
+      description: Facts containing the selected C(gludd_observe) operation result.
       returned: always
       type: dict
   module: gludd_observe
@@ -2010,7 +2179,7 @@ general_ludd.agent.gludd_open_code:
 general_ludd.agent.gludd_ornith:
   DOCUMENTATION:
     description:
-    - Bidirectional seam for the gludd × Ornith symbiotic loop. Two states: null
+    - Bidirectional seam for the gludd x Ornith symbiotic loop. Two states: null
     - C(state=pairs) — fetch the most-recent training pairs whose outcome matches
       a comma-separated status list (e.g. C(rejected_by_gate,rejected_by_review,reverted)).
       These are the artifacts that NEED improvement. Hits the daemon's C(GET /admin/ornith/pairs)
@@ -2144,7 +2313,9 @@ general_ludd.agent.gludd_osquery:
     options:
       daemon_url:
         default: http://localhost:8000
-        description: Base URL of the daemon (reserved for future remote resolution).
+        description:
+        - Reserved for future controller-backed resolution.
+        - Non-default values emit a warning and are not used on the managed host.
         type: str
       osquery_path:
         default: ''
@@ -2154,7 +2325,9 @@ general_ludd.agent.gludd_osquery:
         type: str
       psk:
         default: ''
-        description: Pre-shared key for daemon auth.
+        description:
+        - Reserved pre-shared key for future daemon auth.
+        - Non-empty values emit a warning and are not used on the managed host.
         no_log: true
         type: str
       query:
@@ -2515,10 +2688,111 @@ general_ludd.agent.gludd_push_guard:
       returned: when state is 'check'
       type: float
   module: gludd_push_guard
+general_ludd.agent.gludd_rag:
+  DOCUMENTATION:
+    description:
+    - With C(op=add_document) ingests text into an in-memory vector store backed by
+      the L(rag module_utils,ansible_collections.general_ludd.agent.plugins.module_utils.rag).
+    - With C(op=query) embeds a question, retrieves the top-k closest chunks, builds
+      a prompt with them as context, and asks the daemon model gateway for an answer.
+    - The pipeline uses the pluggable embedder from C(rag.py) (HashEmbedder by default,
+      or a daemon-backed embedder when the daemon is reachable).
+    - Check-mode safe for C(op=query) — returns a placeholder answer.
+    module: gludd_rag
+    options:
+      chunk_overlap:
+        default: 200
+        description: Overlap between chunks in characters.
+        type: int
+      chunk_size:
+        default: 1000
+        description: Target chunk size in characters.
+        type: int
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon (for model calls in C(op=query)).
+        type: str
+      metadata:
+        default: {}
+        description: Key-value metadata attached to the document (C(op=add_document)
+          only).
+        type: dict
+      op:
+        choices:
+        - add_document
+        - query
+        default: query
+        description: Which RAG operation to run.
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      text:
+        description:
+        - Document text to ingest when C(op=add_document), or the question to answer
+          when C(op=query).
+        required: true
+        type: str
+      timeout:
+        default: 120
+        description: Request timeout in seconds.
+        type: int
+      top_k:
+        default: 5
+        description: Number of closest chunks to retrieve for context (C(op=query)
+          only).
+        type: int
+    short_description: Retrieval-Augmented Generation pipeline via module_utils.rag
+  EXAMPLES:
+  - general_ludd.agent.gludd_rag:
+      metadata:
+        destination: Paris
+        region: Europe
+        source: travel_brochure
+      op: add_document
+      text: 'Paris: The City of Light. Visit the Eiffel Tower, Louvre Museum,
+
+        and Notre-Dame Cathedral. Best visited April-June or September-October.
+
+        Famous for croissants, café culture, and the Seine river cruises.
+
+        '
+    name: Add travel brochures to the RAG store
+    register: paris_doc
+  - general_ludd.agent.gludd_rag:
+      op: query
+      text: What are the best cities in Europe for art museums?
+      top_k: 3
+    name: Query the RAG pipeline for travel recommendations
+    register: rag_answer
+  - ansible.builtin.debug:
+      msg: '{{ rag_answer.answer }}'
+    name: Display the answer
+  RETURN:
+    answer:
+      description: Model-generated answer using retrieved context (C(op=query)).
+      returned: when op=query
+      type: str
+    chunk_count:
+      description: Number of chunks created from the document (C(op=add_document)).
+      returned: when op=add_document
+      type: int
+    retrieved_chunks:
+      description: The context chunks that were retrieved and fed to the model.
+      returned: when op=query
+      type: list
+    stored_total:
+      description: Total vector entries in the store after the operation.
+      returned: always
+      type: int
+  module: gludd_rag
 general_ludd.agent.gludd_reload:
   DOCUMENTATION:
     description:
-    - 'Wraps C(general_ludd.reload.hot_reloader.HotReloader.reload_code_module):'
+    - Calls the authenticated Gludd daemon reload endpoint, which wraps
+    - 'C(general_ludd.reload.hot_reloader.HotReloader.reload_code_module):'
     - snapshots the live module bytes, C(os.replace)s the candidate source over
     - the live path, C(importlib.reload)s the module, then runs a health gate
     - (a C(/readyz) poll). If the health gate fails or the reload raises, the
@@ -2526,7 +2800,8 @@ general_ludd.agent.gludd_reload:
     - module ends up exactly as it started.
     - 'Fail-closed: a missing/non-importable target, a missing candidate, or a'
     - failed health gate all yield C(success=false).
-    - Runs in-process (same venv as C(general_ludd)).
+    - The collection validates and hashes the candidate but never imports the
+    - Gludd core runtime; daemon authentication is explicit.
     module: gludd_reload
     options:
       candidate_source_path: {}
@@ -2554,114 +2829,6 @@ general_ludd.agent.gludd_reload:
       returned: always
       type: bool
   module: gludd_reload
-general_ludd.agent.gludd_scapy:
-  DOCUMENTATION:
-    description:
-    - Wraps the C(general_ludd.networking.scapy_adapter) so networking playbooks can
-      craft, send, sniff, and analyze packets directly.
-    - Read-only actions (C(read_pcap), C(analyze_pcap), C(dissect_packet)) are check-mode
-      safe and return C(changed=False).
-    - Mutating actions (C(write_pcap), C(craft_packet), C(send_packet), C(sniff_packets))
-      require the adapter binary (C(scapy)) and return C(changed=True) on success.
-    - All actions run via the adapter's Python API (never C(shell=True)).
-    module: gludd_scapy
-    options:
-      action:
-        choices:
-        - read_pcap
-        - write_pcap
-        - craft_packet
-        - send_packet
-        - sniff_packets
-        - analyze_pcap
-        - dissect_packet
-        description: The Scapy operation to perform.
-        required: true
-        type: str
-      count:
-        default: 1
-        description: Packet count for C(sniff_packets) or repeat count for C(send_packet).
-        type: int
-      interface:
-        default: eth0
-        description: Network interface for C(send_packet) or C(sniff_packets).
-        type: str
-      output_format:
-        choices:
-        - json
-        - hex
-        default: json
-        description: Output format for C(dissect_packet) — C(json) or C(hex).
-        type: str
-      packet_fields:
-        description: Per-layer field overrides for C(craft_packet) or C(dissect_packet).
-        type: dict
-      packets:
-        description: List of packet dicts for C(craft_packet) batch construction.
-        elements: dict
-        type: list
-      pcap_path:
-        description: Filesystem path to a pcap file for read/write/analyze actions.
-        type: str
-      protocol_stack:
-        description: Ordered protocol layers for C(craft_packet), e.g. C(["Ether",
-          "IP", "TCP"]).
-        elements: str
-        type: list
-      timeout:
-        default: 30
-        description: Sniff timeout in seconds.
-        type: int
-    short_description: Packet crafting, sniffing, and pcap manipulation via Scapy
-  EXAMPLES:
-  - general_ludd.agent.gludd_scapy:
-      action: dissect_packet
-      packet_fields:
-        raw_hex: 00010203040506deadbeef00010800...
-    name: Decode a packet from hex
-    register: decoded
-  - general_ludd.agent.gludd_scapy:
-      action: craft_packet
-      packet_fields:
-        ICMP:
-          type: 8
-        IP:
-          dst: 8.8.8.8
-      protocol_stack:
-      - Ether
-      - IP
-      - ICMP
-    name: Craft an ICMP echo request
-    register: crafted
-  - general_ludd.agent.gludd_scapy:
-      action: sniff_packets
-      count: 5
-      interface: eth0
-      timeout: 10
-    name: Sniff DNS queries on eth0 for 10s
-    register: sniffed
-  - general_ludd.agent.gludd_scapy:
-      action: analyze_pcap
-      pcap_path: /tmp/capture.pcap
-    name: Read and summarize a pcap
-    register: analysis
-  RETURN:
-    result:
-      contains:
-        action:
-          description: The action that was executed.
-          type: str
-        output:
-          description: Action-specific output (packet hex/dicts, sniffed packets,
-            analysis summary).
-          type: raw
-        summary:
-          description: Human-readable summary when applicable.
-          type: str
-      description: Action-specific result payload.
-      returned: always
-      type: dict
-  module: gludd_scapy
 general_ludd.agent.gludd_schedule:
   DOCUMENTATION:
     description:

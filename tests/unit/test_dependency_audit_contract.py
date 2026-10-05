@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import subprocess
 import tomllib
@@ -17,13 +18,8 @@ def test_dependency_audit_target_is_fail_closed_and_contract_tracked() -> None:
     assert "|| true" not in target
     assert "deptry src" in target
 
-    contract = json.loads(
-        (ROOT / "config" / "make_target_contract.json").read_text(encoding="utf-8")
-    )
-    entry = next(
-        item for item in contract["targets"]
-        if item["name"] == "deps-audit"
-    )
+    contract = json.loads((ROOT / "config" / "make_target_contract.json").read_text(encoding="utf-8"))
+    entry = next(item for item in contract["targets"] if item["name"] == "deps-audit")
     assert entry["make_variables"] == []
     assert entry["behavior"] == "make deps-audit"
 
@@ -42,10 +38,67 @@ def test_deptry_models_dev_groups_namespaces_and_import_names() -> None:
     assert mappings["azure-identity"] == "azure"
 
 
+def test_hindsight_optional_dependency_is_statically_auditable() -> None:
+    """Keep the optional Hindsight import visible without a DEP002 suppression."""
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    ignored = project["tool"]["deptry"]["per_rule_ignores"]["DEP002"]
+    assert "hindsight-client" not in ignored
+
+    source = (ROOT / "src" / "general_ludd" / "memory" / "hindsight_adapter.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    assert any(isinstance(node, ast.ImportFrom) and node.module == "hindsight_client" for node in ast.walk(tree))
+
+    stub = ROOT / "typings" / "hindsight_client" / "__init__.pyi"
+    assert stub.is_file()
+    assert "class Hindsight" in stub.read_text(encoding="utf-8")
+
+
+def test_quickjs_runtime_dependency_is_statically_auditable() -> None:
+    """Keep the lazy QuickJS engine visible without a DEP002 suppression."""
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    deptry = project["tool"]["deptry"]
+    assert deptry["package_module_name_map"]["quickjs-ng"] == "quickjs"
+    assert "quickjs-ng" not in deptry["per_rule_ignores"]["DEP002"]
+
+    source = (ROOT / "src" / "general_ludd" / "models" / "freellmapi_scoring_kernel.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    assert any(
+        isinstance(node, ast.Import) and any(alias.name == "quickjs" for alias in node.names) for node in ast.walk(tree)
+    )
+
+    evidence = (ROOT / "docs" / "features" / "DEPENDENCY_TRUTH_AUDIT.md").read_text(encoding="utf-8")
+    assert "quickjs-ng" in evidence
+    assert "lazy static import" in evidence
+
+
+def test_ansible_builder_module_entrypoint_is_explicitly_adjudicated() -> None:
+    """Keep controller-only builder ownership narrow and documented."""
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    ignored = project["tool"]["deptry"]["per_rule_ignores"]["DEP002"]
+    assert "ansible-builder" in ignored
+
+    source = (ROOT / "scripts" / "ansible_runtime_artifacts.py").read_text(encoding="utf-8")
+    assert 'find_spec("ansible_builder")' in source
+    assert "sys.executable" in source
+    assert '"ansible_builder"' in source
+
+    evidence = (ROOT / "docs" / "features" / "DEPENDENCY_TRUTH_AUDIT.md").read_text(encoding="utf-8")
+    assert "`python -m ansible_builder`" in evidence
+
+
+def test_greenlet_async_driver_is_explicitly_adjudicated() -> None:
+    """Keep greenlet's SQLAlchemy asyncio ownership visible in the ignore list and docs."""
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    ignored = project["tool"]["deptry"]["per_rule_ignores"]["DEP002"]
+    assert "greenlet" in ignored
+
+    evidence = (ROOT / "docs" / "features" / "DEPENDENCY_TRUTH_AUDIT.md").read_text(encoding="utf-8")
+    assert "greenlet" in evidence
+    assert "SQLAlchemy" in evidence
+
+
 def test_dependency_audit_evidence_documents_practitioner_and_zdd_contracts() -> None:
-    evidence = (
-        ROOT / "docs" / "features" / "DEPENDENCY_TRUTH_AUDIT.md"
-    ).read_text(encoding="utf-8")
+    evidence = (ROOT / "docs" / "features" / "DEPENDENCY_TRUTH_AUDIT.md").read_text(encoding="utf-8")
 
     assert "https://github.com/python-poetry/poetry/issues/4135" in evidence
     assert "https://www.reddit.com/r/Python/comments/x911kg" in evidence

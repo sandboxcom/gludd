@@ -1041,7 +1041,12 @@ class TestWatchdogSourceInvariants:
         assert "GLUDD_TASK_WATCHDOG_LOG" in self.src
 
     def test_default_source_values(self):
-        assert '"300000"' in self.src
+        # The default timeout is the shared gludd_env_defaults constant (single
+        # source of truth); pin both the watchdog's use of it and its value.
+        assert "gludd_env_defaults.TASK_TIMEOUT_MS_DEFAULT" in self.src
+        defaults_path = Path(__file__).resolve().parents[2] / "scripts/gludd_env_defaults.py"
+        defaults_src = defaults_path.read_text()
+        assert 'TASK_TIMEOUT_MS_DEFAULT = "300000"' in defaults_src
         assert '"/tmp/gludd-task-deadlines.json"' in self.src
         assert '"/tmp/gludd-task-stale.json"' in self.src
         assert '"/tmp/gludd-task-killed.json"' in self.src

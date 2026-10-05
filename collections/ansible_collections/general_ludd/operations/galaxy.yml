@@ -16,4 +16,5 @@ tags:
   - ci-pipeline
   - model-server
   - deployment
-dependencies: {}
+dependencies:
+  general_ludd.agent: ">=0.2.0"

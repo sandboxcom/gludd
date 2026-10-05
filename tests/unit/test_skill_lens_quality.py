@@ -837,6 +837,11 @@ class TestInvariants:
         assert "DEADLOCK" not in tokens
         assert "asyncio" in tokens or "deadlock" in tokens
 
+    def test_tokenize_bounds_pathological_single_word(self):
+        """Subword features stay bounded even for attacker-controlled long tokens."""
+        tokens = _tokenize("x" * 10_000)
+        assert len(tokens) <= 260
+
     def test_parse_sections_preserves_section_body_final_newline(self):
         """Section bodies should not have trailing whitespace issues."""
         text = "## Section A\n\nline1\n\nline2\n"

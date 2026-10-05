@@ -58,6 +58,22 @@ class TestTokenStoreStore:
         sf.begin.assert_called_once()
         session.add.assert_called_once_with(token)
 
+    @pytest.mark.asyncio
+    async def test_store_awaits_async_session_add(self):
+        sf = _make_session_factory()
+        session = MagicMock()
+
+        async def add(_token: AgentTokenModel) -> None:
+            return None
+
+        session.add = MagicMock(side_effect=add)
+        sf.begin.return_value.__aenter__ = AsyncMock(return_value=session)
+        sf.begin.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        await TokenStore(sf).store(_make_token())
+
+        session.add.assert_called_once()
+
 
 class TestTokenStoreGet:
     @pytest.mark.asyncio
@@ -135,6 +151,28 @@ class TestTokenStoreRevoke:
 
         session.add.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_revoke_awaits_async_session_add(self):
+        sf = _make_session_factory()
+        token = _make_token()
+        session = MagicMock()
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = token
+        session.execute = AsyncMock(return_value=result_mock)
+
+        async def add(_token: AgentTokenModel) -> None:
+            return None
+
+        session.add = MagicMock(side_effect=add)
+        sf.return_value.__aenter__ = AsyncMock(return_value=session)
+        sf.return_value.__aexit__ = AsyncMock(return_value=None)
+        sf.begin.return_value.__aenter__ = AsyncMock(return_value=session)
+        sf.begin.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        await TokenStore(sf).revoke(token.token_id)
+
+        assert token.revoked_at is not None
+
 
 class TestTokenStoreIncrementHydration:
     @pytest.mark.asyncio
@@ -172,6 +210,26 @@ class TestTokenStoreIncrementHydration:
         await store.increment_hydration("nonexistent")
 
         session.add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_increment_hydration_awaits_async_session_add(self):
+        sf = _make_session_factory()
+        token = _make_token()
+        session = MagicMock()
+        result_mock = MagicMock()
+        result_mock.scalar_one_or_none.return_value = token
+        session.execute = AsyncMock(return_value=result_mock)
+
+        async def add(_token: AgentTokenModel) -> None:
+            return None
+
+        session.add = MagicMock(side_effect=add)
+        sf.begin.return_value.__aenter__ = AsyncMock(return_value=session)
+        sf.begin.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        await TokenStore(sf).increment_hydration(token.agent_id)
+
+        assert token.hydration_count == 1
 
 
 class TestTokenStoreListExpired:

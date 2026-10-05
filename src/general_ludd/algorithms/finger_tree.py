@@ -15,55 +15,74 @@ T = TypeVar("T")
 
 
 class Node2(Generic[T]):
+    """Store a measured two-element internal finger-tree node."""
+
     __slots__ = ("a", "b")
 
     def __init__(self, a: T, b: T) -> None:
+        """Initialize a two-element node."""
         self.a = a
         self.b = b
 
     def to_list(self) -> list[T]:
+        """Return the node's elements in order."""
         return [self.a, self.b]
 
     def __repr__(self) -> str:
+        """Return a developer representation."""
         return f"Node2({self.a!r}, {self.b!r})"
 
 
 class Node3(Generic[T]):
+    """Store a measured three-element internal finger-tree node."""
+
     __slots__ = ("a", "b", "c")
 
     def __init__(self, a: T, b: T, c: T) -> None:
+        """Initialize a three-element node."""
         self.a = a
         self.b = b
         self.c = c
 
     def to_list(self) -> list[T]:
+        """Return the node's elements in order."""
         return [self.a, self.b, self.c]
 
     def __repr__(self) -> str:
+        """Return a developer representation."""
         return f"Node3({self.a!r}, {self.b!r}, {self.c!r})"
 
 
 class Empty:
+    """Represent the singleton empty finger tree."""
+
     __slots__ = ()
     _instance: Empty | None = None
 
     def __new__(cls) -> Empty:
+        """Return the process-local empty-tree singleton."""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
 
     def __bool__(self) -> bool:
+        """Return ``False`` for the empty tree."""
         return False
 
 
 class Single(Generic[T]):
+    """Represent a finger tree containing one value."""
+
     __slots__ = ("v",)
 
     def __init__(self, v: T) -> None:
+        """Initialize a one-value tree."""
         self.v = v
 
 
 class Deep(Generic[T]):
+    """Represent a finger tree with prefix, middle, and suffix digits."""
+
     __slots__ = ("_size", "middle", "prefix", "suffix")
 
     def __init__(
@@ -72,12 +91,14 @@ class Deep(Generic[T]):
         middle: Empty | Single[Any] | Deep[Any],
         suffix: list[T],
     ) -> None:
+        """Initialize a deep tree from its three measured regions."""
         self.prefix = prefix
         self.middle = middle
         self.suffix = suffix
         self._size: int = -1
 
     def size(self) -> int:
+        """Return and cache the recursively measured element count."""
         if self._size < 0:
             self._size = len(self.prefix) + _deep_size(self.middle) + len(self.suffix)
         return self._size
@@ -92,22 +113,6 @@ def _elem_count(x: object) -> int:
     if isinstance(x, Node3):
         return _elem_count(x.a) + _elem_count(x.b) + _elem_count(x.c)
     return 1
-
-
-def _deconstruct_first(item: object) -> tuple[object, list[Any]]:
-    if isinstance(item, Node2):
-        return item.a, [item.b]
-    if isinstance(item, Node3):
-        return item.a, [item.b, item.c]
-    return item, []
-
-
-def _deconstruct_last(item: object) -> tuple[object, list[Any]]:
-    if isinstance(item, Node3):
-        return item.c, [item.a, item.b]
-    if isinstance(item, Node2):
-        return item.b, [item.a]
-    return item, []
 
 
 def _deep_size(m: Empty | Single[Any] | Deep[Any]) -> int:
@@ -179,6 +184,7 @@ def _nodes_of(prefix: list[Any], suffix: list[Any]) -> list[Any]:
 
 
 def size(z: FingerTree) -> int:
+    """Return the recursively measured number of leaf elements."""
     if isinstance(z, Empty):
         return 0
     if isinstance(z, Single):
@@ -189,6 +195,7 @@ def size(z: FingerTree) -> int:
 
 
 def is_empty(z: FingerTree) -> bool:
+    """Return whether a finger tree is empty."""
     return isinstance(z, Empty)
 
 
@@ -210,6 +217,7 @@ def _digit_to_leaves(items: list[Any]) -> list[Any]:
 
 
 def push_left(z: FingerTree, v: T) -> Single[T] | Deep[T]:
+    """Return a tree with ``v`` prepended."""
     if isinstance(z, Empty):
         return Single(v)
     if isinstance(z, Single):
@@ -246,6 +254,7 @@ def _push_left_deep(
 
 
 def pop_left(z: FingerTree) -> tuple[Any, FingerTree]:
+    """Remove and return the leftmost value and remaining tree."""
     return _pop_left_atomic(z)
 
 
@@ -284,6 +293,7 @@ def _parts_to_tree(parts: list[Any]) -> FingerTree:
 
 
 def peek_left(z: FingerTree) -> Any:
+    """Return the leftmost leaf value without changing the tree."""
     if isinstance(z, Empty):
         raise IndexError("peek from empty finger tree")
     if isinstance(z, Single):
@@ -309,6 +319,7 @@ def peek_left(z: FingerTree) -> Any:
 
 
 def push_right(z: FingerTree, v: T) -> Single[T] | Deep[T]:
+    """Return a tree with ``v`` appended."""
     if isinstance(z, Empty):
         return Single(v)
     if isinstance(z, Single):
@@ -345,6 +356,7 @@ def _push_right_deep(
 
 
 def pop_right(z: FingerTree) -> tuple[Any, FingerTree]:
+    """Remove and return the rightmost value and remaining tree."""
     return _pop_right_atomic(z)
 
 
@@ -373,6 +385,7 @@ def _absorb_right(prefix: list[Any], m: Empty | Single[Any] | Deep[Any]) -> Fing
 
 
 def peek_right(z: FingerTree) -> Any:
+    """Return the rightmost leaf value without changing the tree."""
     if isinstance(z, Empty):
         raise IndexError("peek from empty finger tree")
     if isinstance(z, Single):
@@ -398,6 +411,7 @@ def peek_right(z: FingerTree) -> Any:
 
 
 def concat(t1: FingerTree, t2: FingerTree) -> FingerTree:
+    """Concatenate two finger trees while preserving order."""
     if isinstance(t1, Empty):
         return t2
     if isinstance(t2, Empty):
@@ -459,6 +473,7 @@ def _merge_trees(
 
 
 def get(z: FingerTree, idx: int) -> Any:
+    """Return a leaf by positive or negative index."""
     sz = size(z)
     if idx < 0:
         idx += sz
@@ -524,6 +539,7 @@ def _get_deep(z: Deep[Any], idx: int) -> Any:
 
 
 def split_at_index(z: FingerTree, idx: int) -> tuple[FingerTree, FingerTree]:
+    """Split a tree immediately before the normalized index."""
     sz = size(z)
     if idx < 0:
         idx += sz
@@ -625,34 +641,43 @@ def _build_deep(prefix: list[Any], middle: Empty | Single[Any] | Deep[Any], suff
 
 
 class Deque(Generic[T]):
+    """Provide a double-ended queue backed by a finger tree."""
+
     __slots__ = ("_len", "_root")
 
     def __init__(self) -> None:
+        """Initialize an empty deque."""
         self._root: FingerTree = Empty()
         self._len = 0
 
     @classmethod
     def from_iter(cls, items: list[T]) -> Deque[T]:
+        """Build a deque from ordered items."""
         dq: Deque[T] = cls()
         for v in items:
             dq.push(v)
         return dq
 
     def __len__(self) -> int:
+        """Return the number of elements."""
         return self._len
 
     def __bool__(self) -> bool:
+        """Return whether the deque contains any elements."""
         return self._len > 0
 
     def push(self, v: T) -> None:
+        """Append a value at the right end."""
         self._root = push_right(self._root, v)
         self._len += 1
 
     def push_left(self, v: T) -> None:
+        """Prepend a value at the left end."""
         self._root = push_left(self._root, v)
         self._len += 1
 
     def pop(self) -> T:
+        """Remove and return the rightmost value."""
         if self._len == 0:
             raise IndexError("pop from empty deque")
         v, self._root = pop_right(self._root)
@@ -660,6 +685,7 @@ class Deque(Generic[T]):
         return cast(T, v)
 
     def pop_left(self) -> T:
+        """Remove and return the leftmost value."""
         if self._len == 0:
             raise IndexError("pop from empty deque")
         v, self._root = pop_left(self._root)
@@ -667,32 +693,40 @@ class Deque(Generic[T]):
         return cast(T, v)
 
     def peek(self) -> T:
+        """Return the rightmost value without removal."""
         return cast(T, peek_right(self._root))
 
     def peek_left(self) -> T:
+        """Return the leftmost value without removal."""
         return cast(T, peek_left(self._root))
 
     def extend(self, items: list[T]) -> None:
+        """Append ordered items at the right end."""
         for v in items:
             self.push(v)
 
     def extend_left(self, items: list[T]) -> None:
+        """Prepend ordered items at the left end."""
         for v in reversed(items):
             self.push_left(v)
 
     def rotate(self, n: int = 1) -> None:
+        """Rotate right by ``n`` positions."""
         if self._len == 0:
             return
         for _ in range(n % self._len):
             self.push_left(self.pop())
 
     def to_list(self) -> list[T]:
+        """Return all values in deque order."""
         return _tree_to_list(self._root)
 
     def __iter__(self) -> Iterator[T]:
+        """Iterate over values in deque order."""
         return iter(self.to_list())
 
     def __repr__(self) -> str:
+        """Return a developer representation."""
         return f"Deque({self.to_list()!r})"
 
 
@@ -702,37 +736,47 @@ class Deque(Generic[T]):
 
 
 class Sequence(Generic[T]):
+    """Provide an indexed sequence backed by a finger tree."""
+
     __slots__ = ("_root", "_size")
 
     def __init__(self) -> None:
+        """Initialize an empty sequence."""
         self._root: FingerTree = Empty()
         self._size = 0
 
     @classmethod
     def from_iter(cls, items: list[T]) -> Sequence[T]:
+        """Build a sequence from ordered items."""
         seq: Sequence[T] = cls()
         for v in items:
             seq.push(v)
         return seq
 
     def __len__(self) -> int:
+        """Return the number of elements."""
         return self._size
 
     def __bool__(self) -> bool:
+        """Return whether the sequence contains any elements."""
         return self._size > 0
 
     def __getitem__(self, idx: int) -> T:
+        """Return a value by positive or negative index."""
         return cast(T, get(self._root, idx))
 
     def push(self, v: T) -> None:
+        """Append a value."""
         self._root = push_right(self._root, v)
         self._size += 1
 
     def push_left(self, v: T) -> None:
+        """Prepend a value."""
         self._root = push_left(self._root, v)
         self._size += 1
 
     def pop(self) -> T:
+        """Remove and return the final value."""
         if self._size == 0:
             raise IndexError("pop from empty sequence")
         v, self._root = pop_right(self._root)
@@ -740,6 +784,7 @@ class Sequence(Generic[T]):
         return cast(T, v)
 
     def pop_left(self) -> T:
+        """Remove and return the first value."""
         if self._size == 0:
             raise IndexError("pop from empty sequence")
         v, self._root = pop_left(self._root)
@@ -747,20 +792,25 @@ class Sequence(Generic[T]):
         return cast(T, v)
 
     def peek(self) -> T:
+        """Return the final value without removal."""
         return cast(T, peek_right(self._root))
 
     def peek_left(self) -> T:
+        """Return the first value without removal."""
         return cast(T, peek_left(self._root))
 
     def extend(self, items: list[T]) -> None:
+        """Append ordered items."""
         for v in items:
             self.push(v)
 
     def concat(self, other: Sequence[T]) -> None:
+        """Append another sequence in place."""
         self._root = concat(self._root, other._root)
         self._size += len(other)
 
     def split_at(self, idx: int) -> tuple[Sequence[T], Sequence[T]]:
+        """Return independent sequences split before ``idx``."""
         left, r = split_at_index(self._root, idx)
         ls = Sequence[T]()
         ls._root = left
@@ -771,12 +821,15 @@ class Sequence(Generic[T]):
         return ls, rs
 
     def to_list(self) -> list[T]:
+        """Return all values in sequence order."""
         return _tree_to_list(self._root)
 
     def __iter__(self) -> Iterator[T]:
+        """Iterate over values in sequence order."""
         return iter(self.to_list())
 
     def __repr__(self) -> str:
+        """Return a developer representation."""
         return f"Sequence({self.to_list()!r})"
 
 
@@ -786,24 +839,31 @@ class Sequence(Generic[T]):
 
 
 class PriorityDeque(Generic[T]):
+    """Provide a two-ended priority deque for ordered insertions."""
+
     __slots__ = ("_root", "_size")
 
     def __init__(self) -> None:
+        """Initialize an empty priority deque."""
         self._root: FingerTree = Empty()
         self._size = 0
 
     def __len__(self) -> int:
+        """Return the number of elements."""
         return self._size
 
     def push_min(self, v: T) -> None:
+        """Insert a new minimum at the left end."""
         self._root = push_left(self._root, v)
         self._size += 1
 
     def push_max(self, v: T) -> None:
+        """Insert a new maximum at the right end."""
         self._root = push_right(self._root, v)
         self._size += 1
 
     def pop_min(self) -> T:
+        """Remove and return the minimum value."""
         if self._size == 0:
             raise IndexError("pop from empty priority deque")
         v, self._root = pop_left(self._root)
@@ -811,6 +871,7 @@ class PriorityDeque(Generic[T]):
         return cast(T, v)
 
     def pop_max(self) -> T:
+        """Remove and return the maximum value."""
         if self._size == 0:
             raise IndexError("pop from empty priority deque")
         v, self._root = pop_right(self._root)
@@ -818,13 +879,17 @@ class PriorityDeque(Generic[T]):
         return cast(T, v)
 
     def peek_min(self) -> T:
+        """Return the minimum value without removal."""
         return cast(T, peek_left(self._root))
 
     def peek_max(self) -> T:
+        """Return the maximum value without removal."""
         return cast(T, peek_right(self._root))
 
     def to_list(self) -> list[T]:
+        """Return all values from minimum to maximum."""
         return _tree_to_list(self._root)
 
     def __repr__(self) -> str:
+        """Return a developer representation."""
         return f"PriorityDeque({self.to_list()!r})"

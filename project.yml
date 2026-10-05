@@ -30,7 +30,7 @@ allowed_exec:
 # commands. PATH/HOME/LANG are already in the runner's sanitized base env (see
 # runner._build_env); listing them is harmless and self-documenting. PYTHONPATH
 # is forwarded so the in-repo `src/` layout resolves under `python3 -m` direct
-# invocations. Gludd's secrets (ZAI_API_KEY, GLUDD_PSK, tokens) are NEVER listed
+# invocations. Gludd's secrets (ZAI_API_KEY, GLUDD_AUTH_PSK, tokens) are NEVER listed
 # here — they are stripped by _build_env regardless.
 env_passthrough:
   - PATH

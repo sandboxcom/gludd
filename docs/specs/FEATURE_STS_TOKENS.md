@@ -48,7 +48,7 @@ Tokens are capability-narrowed (intersection of parent's lattice), ephemeral
 
 ## 4. Token Lifecycle
 
-```
+```text
 mint(dispatch) → use(agent runtime) → expire(TTL) | revoke(completion/death)
 → revive(hydration: fresh secret_id, same role) → revoke(dehydration)
 ```

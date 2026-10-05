@@ -60,7 +60,7 @@ def test_gludd_profile_env_passthrough_excludes_secrets():
         "GH_TOKEN",
         "GITHUB_TOKEN",
         "DB_PASSWORD",
-        "GLUDD_PSK",
+        "GLUDD_AUTH_PSK",
     }
     leaked = secret_shaped.intersection(profile.env_passthrough)
     assert not leaked, f"project.yml env_passthrough leaks secret vars: {leaked}"

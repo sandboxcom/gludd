@@ -1,9 +1,7 @@
-"""Windows Defender connector — Get-MpComputerStatus, Get-MpPreference,
-Get-MpThreatDetection, Start-MpScan wrappers.
+"""Collect Windows Defender state through safe PowerShell argv calls.
 
-Self-contained source: imports nothing from sibling connectors. All subprocess
-calls use a LIST argv (never ``shell=True``) and an injectable runner so unit
-tests never need the real binaries.
+Supports Get-MpComputerStatus, Get-MpPreference, Get-MpThreatDetection, and
+Start-MpScan through an injectable, non-shell runner.
 
 Security: all caller-supplied values are validated to reject leading-dash
 (option-injection guard) and shell metacharacters before they touch argv.
@@ -11,135 +9,36 @@ Security: all caller-supplied values are validated to reject leading-dash
 
 from __future__ import annotations
 
-import json
-import subprocess
 import time
-from collections.abc import Callable
 from typing import Any
 
-RunnerResult = tuple[int, str, str] | str
-Runner = Callable[[list[str]], RunnerResult]
-
-_SHELL_METACHARS: frozenset[str] = frozenset(";&|`$<>(){}[]!*?#~\n\r\t \"'")
-
-_DEFAULT_TIMEOUT = 30.0
-
-_VALID_TARGETS = frozenset(
-    {
-        "status",
-        "computer_status",
-        "preferences",
-        "mp_preference",
-        "threats",
-        "threat_detection",
-        "scan",
-        "start_scan",
-        "exclusions",
-        "get_exclusions",
-    }
+from general_ludd.connectors.windows_defender_support import (
+    VALID_SCAN_TYPES as _VALID_SCAN_TYPES,
 )
-
-_VALID_SCAN_TYPES = frozenset({"QuickScan", "FullScan"})
-
-
-def _validate_arg(value: str, field: str) -> str:
-    """Validate a caller-supplied arg or raise ValueError.
-
-    Rejects non-strings, empty values, a leading dash (option-injection
-    guard), and any shell metacharacter / control character.
-    """
-    if not isinstance(value, str):
-        raise ValueError(f"{field} must be a string, got {type(value).__name__}")
-    if value == "":
-        raise ValueError(f"{field} must not be empty")
-    if value.startswith("-"):
-        raise ValueError(f"{field} must not start with '-': {value!r}")
-    bad = sorted(set(value) & _SHELL_METACHARS)
-    if bad:
-        raise ValueError(f"{field} contains disallowed characters {bad!r}: {value!r}")
-    return value
-
-
-def _default_runner(argv: list[str]) -> tuple[int, str, str]:
-    """Run argv as a discrete LIST, never ``shell=True``, always time-bound."""
-    try:
-        proc = subprocess.run(
-            argv,
-            capture_output=True,
-            text=True,
-            timeout=_DEFAULT_TIMEOUT,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        return (124, "", f"timeout after {_DEFAULT_TIMEOUT}s")
-    except (OSError, ValueError) as exc:
-        return (127, "", str(exc))
-    return (proc.returncode, proc.stdout, proc.stderr)
-
-
-def _ps_command(cmdlet: str) -> list[str]:
-    """Build a PowerShell argv for a cmdlet piped to ConvertTo-Json."""
-    return [
-        "powershell",
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        f"{cmdlet} | ConvertTo-Json -Depth 5",
-    ]
-
-
-def _parse_json_stdout(stdout: str) -> list[dict[str, Any]]:
-    """Parse stdout as JSON; wrap a single object in a list."""
-    text = (stdout or "").strip()
-    if not text:
-        return []
-    parsed = json.loads(text)
-    if isinstance(parsed, dict):
-        return [parsed]
-    if isinstance(parsed, list):
-        return [item for item in parsed if isinstance(item, dict)]
-    return []
-
-
-def _run(runner: Runner, argv: list[str]) -> tuple[int, str, str]:
-    """Normalize injected runners while keeping the production tuple contract.
-
-    E2E callers commonly provide a function returning canned stdout directly;
-    production runners return ``(returncode, stdout, stderr)``.  Treat a string
-    result as successful stdout and retain the strict list-argv invocation.
-    """
-    try:
-        result = runner(argv)
-    except Exception as exc:
-        return 127, "", f"{type(exc).__name__}: {exc}"
-    if isinstance(result, str):
-        return 0, result, ""
-    if isinstance(result, tuple) and len(result) == 3:
-        rc, stdout, stderr = result
-        return int(rc), str(stdout or ""), str(stderr or "")
-    raise TypeError("runner must return stdout or (returncode, stdout, stderr)")
-
-
-def _normalize_record(
-    raw_item: dict[str, Any],
-    ts: float,
-    source: str,
-    kind: str,
-    *,
-    level_or_status: str = "info",
-    message: str = "",
-    command: str = "",
-) -> dict[str, Any]:
-    return {
-        "ts": ts,
-        "source": source,
-        "kind": kind,
-        "level_or_status": level_or_status,
-        "message": message or str(raw_item.get("message", json.dumps(raw_item))),
-        "value": None,
-        "labels": dict(raw_item),
-        "raw": {"command": command, "raw": raw_item},
-    }
+from general_ludd.connectors.windows_defender_support import (
+    VALID_TARGETS as _VALID_TARGETS,
+)
+from general_ludd.connectors.windows_defender_support import (
+    Runner,
+)
+from general_ludd.connectors.windows_defender_support import (
+    default_runner as _default_runner,
+)
+from general_ludd.connectors.windows_defender_support import (
+    normalize_record as _normalize_record,
+)
+from general_ludd.connectors.windows_defender_support import (
+    parse_json_stdout as _parse_json_stdout,
+)
+from general_ludd.connectors.windows_defender_support import (
+    ps_command as _ps_command,
+)
+from general_ludd.connectors.windows_defender_support import (
+    run as _run,
+)
+from general_ludd.connectors.windows_defender_support import (
+    validate_arg as _validate_arg,
+)
 
 
 class WindowsDefenderConnector:
@@ -161,6 +60,7 @@ class WindowsDefenderConnector:
         config: dict[str, Any] | None = None,
         runner: Runner | None = None,
     ) -> None:
+        """Initialize connector configuration and its injectable runner."""
         self.config: dict[str, Any] = dict(config or {})
         self.name: str = str(self.config.get("name", "windows_defender"))
         self._runner: Runner = runner if runner is not None else _default_runner

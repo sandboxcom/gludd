@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import enum
+import json
 import logging
 import re
 import subprocess
@@ -83,7 +84,7 @@ def _require_extra_arg(value: str) -> str:
 
 
 def _require_output(value: str) -> str:
-    """Fail-closed validation for the ``#SBATCH --output=`` path.
+    r"""Fail-closed validation for the ``#SBATCH --output=`` path.
 
     Unlike name/partition/etc. an output path is intentionally not charset-
     restricted (paths can legitimately contain ``/``, ``.``, ``%`` patterns and
@@ -152,6 +153,8 @@ class SlurmConnectionError(Exception):
 
 
 class SlurmJobState(enum.Enum):
+    """Normalize scheduler job states used by local and REST adapters."""
+
     PENDING = "PENDING"
     RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
@@ -164,6 +167,7 @@ class SlurmJobState(enum.Enum):
 
     @classmethod
     def from_string(cls, raw: str) -> SlurmJobState:
+        """Parse a scheduler state while preserving unknown values safely."""
         raw = raw.strip().upper()
         try:
             return cls(raw)
@@ -173,6 +177,8 @@ class SlurmJobState(enum.Enum):
 
 @dataclass
 class SlurmJobInfo:
+    """Record normalized job state, exit status, cost, and resubmission data."""
+
     job_id: str
     state: SlurmJobState
     exit_code: int | None = None
@@ -202,6 +208,8 @@ class SlurmJobConfig:
 
 @dataclass
 class SlurmAdapter:
+    """Operate Slurm through its REST API or installed command-line client."""
+
     _api_url: str | None = field(default=None, repr=False)
     _auth_token: str | None = field(default=None, repr=False)
 
@@ -210,6 +218,7 @@ class SlurmAdapter:
         api_url: str | None = None,
         auth_token: str | None = None,
     ) -> None:
+        """Configure an optional REST endpoint and bearer token."""
         self._api_url = api_url
         self._auth_token = auth_token
 
@@ -272,6 +281,7 @@ class SlurmAdapter:
         output: str | None = None,
         extra_args: list[str] | None = None,
     ) -> str:
+        """Validate and submit one bounded job through the selected transport."""
         # Validate every config-derived value fail-closed BEFORE it is embedded
         # in argv or in the generated batch script. This guards both the local
         # CLI path and the REST path (a hostile job_name/partition could inject
@@ -358,16 +368,19 @@ class SlurmAdapter:
                 _require_extra_arg(arg)
 
     def status(self, job_id: str) -> SlurmJobInfo:
+        """Return normalized status for one job identifier."""
         if self._is_remote:
             return self._remote_status(job_id)
         return self._local_status(job_id)
 
     def cancel(self, job_id: str) -> None:
+        """Cancel one validated job through the selected transport."""
         if self._is_remote:
             return self._remote_cancel(job_id)
         return self._local_cancel(job_id)
 
     def elapsed_seconds(self, job_id: str) -> float | None:
+        """Return local scheduler elapsed time when available."""
         if self._is_remote:
             return None
         return self._local_elapsed_seconds(job_id)
@@ -402,14 +415,31 @@ class SlurmAdapter:
         return None
 
     def available(self) -> bool:
+        """Return whether the selected scheduler transport is reachable."""
         if self._is_remote:
             return self._remote_available()
         return self._local_available()
 
     def list_jobs(self) -> list[SlurmJobInfo]:
+        """Return all visible jobs as normalized records."""
         if self._is_remote:
             return self._remote_list_jobs()
         return self._local_list_jobs()
+
+    def list_nodes(self) -> list[dict[str, object]]:
+        """Return scheduler node inventory without allocating resources."""
+        if self._is_remote:
+            return self._remote_list_nodes()
+        return self._local_list_nodes()
+
+    @staticmethod
+    def _node_payload(payload: object) -> list[dict[str, object]]:
+        if not isinstance(payload, dict):
+            raise RuntimeError("Slurm node inventory response must be an object")
+        nodes = payload.get("nodes")
+        if not isinstance(nodes, list) or any(not isinstance(node, dict) for node in nodes):
+            raise RuntimeError("Slurm node inventory response has an invalid nodes schema")
+        return [dict(node) for node in nodes]
 
     def _remote_submit(
         self,
@@ -536,6 +566,45 @@ class SlurmAdapter:
             )
             for j in jobs
         ]
+
+    def _remote_list_nodes(self) -> list[dict[str, object]]:
+        resp = self._request(
+            "GET",
+            f"{self._api_base()}/nodes",
+            headers=self._headers(),
+            timeout=15.0,
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"Slurm REST node inventory failed (rc={resp.status_code})"
+            )
+        try:
+            payload = resp.json()
+        except ValueError as exc:
+            raise RuntimeError("Slurm REST node inventory returned invalid JSON") from exc
+        return self._node_payload(payload)
+
+    def _local_list_nodes(self) -> list[dict[str, object]]:
+        try:
+            result = subprocess.run(
+                ["sinfo", "--json"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except FileNotFoundError as exc:
+            raise SlurmNotInstalledError("sinfo command not found") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("Slurm node inventory timed out") from exc
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Slurm local node inventory failed (rc={result.returncode})"
+            )
+        try:
+            payload = json.loads(result.stdout)
+        except (json.JSONDecodeError, TypeError) as exc:
+            raise RuntimeError("Slurm local node inventory returned invalid JSON") from exc
+        return self._node_payload(payload)
 
     def _local_submit(
         self,
@@ -785,6 +854,7 @@ class SlurmJobMonitor:
         activity_checker: Callable[[], bool] | None = None,
         poll_interval: float = 30.0,
     ) -> None:
+        """Configure one namespaced job monitor and its bounded polling cadence."""
         self._adapter = adapter
         self._job_id = _require_job_id(job_id)
         self._config = config
@@ -800,22 +870,26 @@ class SlurmJobMonitor:
 
     @property
     def cost_incurred(self) -> float:
+        """Return the latest calculated job cost."""
         with self._lock:
             return self._cost_incurred
 
     @property
     def cancelled(self) -> bool:
+        """Return whether this monitor cancelled its owned job."""
         with self._lock:
             return self._cancelled
 
     @property
     def cancel_reason(self) -> str | None:
+        """Return the bounded cancellation reason, if cancellation occurred."""
         with self._lock:
             return self._cancel_reason
 
     # -- lifecycle --------------------------------------------------------
 
     def start(self) -> None:
+        """Start the namespaced daemon monitor once."""
         if self._thread is not None:
             return
         self._thread = threading.Thread(
@@ -826,6 +900,7 @@ class SlurmJobMonitor:
         self._thread.start()
 
     def stop(self) -> None:
+        """Request monitor shutdown and join its thread briefly."""
         self._stop_event.set()
         if self._thread is not None:
             self._thread.join(timeout=5.0)

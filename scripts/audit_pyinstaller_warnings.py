@@ -3,11 +3,13 @@
 
 PyInstaller's warning file contains one edge per missing module and importer.
 Project-owned edges stay individually reviewed and fail closed; top-level and
-delayed-only project imports are always actionable. The much larger transitive
-third-party/PyInstaller graph is normalized and pinned by SHA-256 so any drift
-still blocks the build without pretending every optional dependency edge is a
-Gludd defect. ``runtime`` nodes are separately counted because PyInstaller
-hooks deliberately create them for modules supplied by runtime machinery.
+delayed-only project imports are actionable unless an exact edge belongs to a
+module tree that the active spec excludes at the controller-runtime boundary.
+The much larger transitive third-party/PyInstaller graph is normalized and
+pinned by SHA-256 so any drift still blocks the build without pretending every
+optional dependency edge is a Gludd defect. ``runtime`` nodes are separately
+counted because PyInstaller hooks deliberately create them for modules supplied
+by runtime machinery.
 """
 
 from __future__ import annotations
@@ -33,8 +35,10 @@ _ARCHITECTURE_ALIASES = {
     "arm64": "aarch64",
     "x86_64": "x86_64",
 }
+_TRANSITIVE_DIAGNOSTIC_LIMIT = 50
 _CATEGORIES = frozenset(
     {
+        "controller-runtime-boundary",
         "interpreter-specific",
         "optional-dependency",
         "platform-specific",
@@ -81,17 +85,14 @@ class MissingImportEdge:
     flags: tuple[str, ...]
 
     def render(self) -> str:
+        """Render the edge in the stable digest and diagnostic format."""
         flags = ", ".join(self.flags)
         return f"{self.kind} {self.module} <- {self.importer} ({flags})"
 
 
 def _normalize_module(raw_module: str) -> str:
     module = raw_module.strip()
-    if (
-        len(module) >= 2
-        and module[0] in {"'", '"'}
-        and module[-1] == module[0]
-    ):
+    if len(module) >= 2 and module[0] in {"'", '"'} and module[-1] == module[0]:
         module = module[1:-1]
     if not module:
         raise AuditError("missing module name is empty")
@@ -111,10 +112,7 @@ def _parse_importers(
     edges: list[MissingImportEdge] = []
     for match in matches:
         if match.start() != cursor:
-            raise AuditError(
-                f"unrecognized importer syntax for missing module {module!r}: "
-                f"{raw_importers[cursor:]!r}"
-            )
+            raise AuditError(f"unrecognized importer syntax for missing module {module!r}: {raw_importers[cursor:]!r}")
         cursor = match.end()
         importer = match.group("importer").strip()
         raw_flags = [flag.strip() for flag in match.group("flags").split(",")]
@@ -124,9 +122,7 @@ def _parse_importers(
         unknown_flags = set(flags) - _KNOWN_FLAGS
         if unknown_flags:
             rendered = ", ".join(sorted(unknown_flags))
-            raise AuditError(
-                f"unknown PyInstaller import flags for {module!r}: {rendered}"
-            )
+            raise AuditError(f"unknown PyInstaller import flags for {module!r}: {rendered}")
         if len(flags) != len(set(flags)):
             raise AuditError(f"duplicate import flags for missing module {module!r}")
         edges.append(
@@ -139,10 +135,7 @@ def _parse_importers(
         )
 
     if cursor != len(raw_importers):
-        raise AuditError(
-            f"unrecognized importer syntax for missing module {module!r}: "
-            f"{raw_importers[cursor:]!r}"
-        )
+        raise AuditError(f"unrecognized importer syntax for missing module {module!r}: {raw_importers[cursor:]!r}")
     return edges
 
 
@@ -171,9 +164,7 @@ def _parse_warning_file(path: Path) -> list[MissingImportEdge]:
             continue
         if line in _HEADER_LINES:
             continue
-        raise AuditError(
-            f"unrecognized warning-file line {line_number}: {line!r}"
-        )
+        raise AuditError(f"unrecognized warning-file line {line_number}: {line!r}")
 
     duplicates = {edge for edge in edges if edges.count(edge) > 1}
     if duplicates:
@@ -185,9 +176,7 @@ def _parse_warning_file(path: Path) -> list[MissingImportEdge]:
 def _require_string(entry: dict[str, Any], key: str, index: int) -> str:
     value = entry.get(key)
     if not isinstance(value, str) or not value.strip():
-        raise AuditError(
-            f"allowlist entry {index} requires a non-empty {key}"
-        )
+        raise AuditError(f"allowlist entry {index} requires a non-empty {key}")
     return value.strip()
 
 
@@ -204,7 +193,7 @@ def _parse_allowlist(
     platform: str,
     architecture: str,
     pyinstaller_version: str,
-) -> tuple[list[MissingImportEdge], set[str], str]:
+) -> tuple[list[MissingImportEdge], set[str], str, set[str], set[MissingImportEdge]]:
     if not path.is_file():
         raise AuditError(f"allowlist file does not exist: {path}")
     try:
@@ -218,37 +207,25 @@ def _parse_allowlist(
         "baseline_pinned_project_modules",
         "platform",
         "pyinstaller_version",
+        "reviewed_transitive_warning_sha256_alternates_by_architecture",
         "schema_version",
         "transitive_warning_sha256_by_architecture",
     }
     if set(data) != expected_root_keys:
-        raise AuditError(
-            "allowlist root keys must be exactly: "
-            + ", ".join(sorted(expected_root_keys))
-        )
+        raise AuditError("allowlist root keys must be exactly: " + ", ".join(sorted(expected_root_keys)))
     if data["schema_version"] != _SCHEMA_VERSION:
-        raise AuditError(
-            f"unsupported allowlist schema_version: {data['schema_version']!r}"
-        )
+        raise AuditError(f"unsupported allowlist schema_version: {data['schema_version']!r}")
     if data["platform"] != platform:
-        raise AuditError(
-            f"allowlist platform mismatch: expected {platform!r}, "
-            f"found {data['platform']!r}"
-        )
+        raise AuditError(f"allowlist platform mismatch: expected {platform!r}, found {data['platform']!r}")
     if data["pyinstaller_version"] != pyinstaller_version:
         raise AuditError(
             "allowlist PyInstaller version mismatch: "
             f"expected {pyinstaller_version!r}, "
             f"found {data['pyinstaller_version']!r}"
         )
-    raw_architecture_digests = data[
-        "transitive_warning_sha256_by_architecture"
-    ]
+    raw_architecture_digests = data["transitive_warning_sha256_by_architecture"]
     if not isinstance(raw_architecture_digests, dict) or not raw_architecture_digests:
-        raise AuditError(
-            "transitive_warning_sha256_by_architecture must be a non-empty "
-            "JSON object"
-        )
+        raise AuditError("transitive_warning_sha256_by_architecture must be a non-empty JSON object")
     architecture_digests: dict[str, str] = {}
     for raw_architecture, raw_digest in raw_architecture_digests.items():
         if not isinstance(raw_architecture, str):
@@ -259,10 +236,7 @@ def _parse_allowlist(
                 "architecture digest keys must use canonical names: "
                 f"{raw_architecture!r} should be {normalized_architecture!r}"
             )
-        if (
-            not isinstance(raw_digest, str)
-            or not _SHA256_RE.fullmatch(raw_digest)
-        ):
+        if not isinstance(raw_digest, str) or not _SHA256_RE.fullmatch(raw_digest):
             raise AuditError(
                 "transitive_warning_sha256_by_architecture digest for "
                 "architecture "
@@ -271,17 +245,39 @@ def _parse_allowlist(
         architecture_digests[normalized_architecture] = raw_digest
     normalized_architecture = _normalize_architecture(architecture)
     if normalized_architecture not in architecture_digests:
-        raise AuditError(
-            "no transitive warning digest for architecture "
-            f"{normalized_architecture!r}"
-        )
+        raise AuditError(f"no transitive warning digest for architecture {normalized_architecture!r}")
     transitive_warning_sha256 = architecture_digests[normalized_architecture]
+
+    # Reviewed alternates: consecutive CI builds of identical code can flip
+    # between two observed transitive graphs (rounds 18/19: 2c13f658... vs
+    # eb32d56c... from the same lockfile) — both digests are reviewed and
+    # valid; any OTHER digest still fails closed.
+    raw_alternates = data["reviewed_transitive_warning_sha256_alternates_by_architecture"]
+    if not isinstance(raw_alternates, dict):
+        raise AuditError("reviewed_transitive_warning_sha256_alternates_by_architecture must be a JSON object")
+    alternate_digests: set[str] = set()
+    for raw_architecture, raw_digest_list in raw_alternates.items():
+        if not isinstance(raw_architecture, str):
+            raise AuditError("alternate digest keys must be strings")
+        normalized = _normalize_architecture(raw_architecture)
+        if raw_architecture != normalized:
+            raise AuditError(
+                f"alternate digest keys must use canonical names: {raw_architecture!r} should be {normalized!r}"
+            )
+        if not isinstance(raw_digest_list, list) or any(
+            not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest) for digest in raw_digest_list
+        ):
+            raise AuditError(
+                f"alternate digests for architecture {raw_architecture!r} must be a list of lowercase SHA-256 digests"
+            )
+        alternate_digests.update(raw_digest_list)
 
     raw_entries = data["allowed_missing_imports"]
     if not isinstance(raw_entries, list):
         raise AuditError("allowed_missing_imports must be a JSON list")
 
     edges: list[MissingImportEdge] = []
+    controller_runtime_edges: set[MissingImportEdge] = set()
     expected_entry_keys = {
         "category",
         "evidence",
@@ -293,10 +289,7 @@ def _parse_allowlist(
         if not isinstance(raw_entry, dict):
             raise AuditError(f"allowlist entry {index} must be a JSON object")
         if set(raw_entry) != expected_entry_keys:
-            raise AuditError(
-                f"allowlist entry {index} keys must be exactly: "
-                + ", ".join(sorted(expected_entry_keys))
-            )
+            raise AuditError(f"allowlist entry {index} keys must be exactly: " + ", ".join(sorted(expected_entry_keys)))
         module = _require_string(raw_entry, "module", index)
         importer = _require_string(raw_entry, "importer", index)
         raw_category = raw_entry.get("category")
@@ -307,19 +300,13 @@ def _parse_allowlist(
             or not isinstance(raw_evidence, str)
             or not raw_evidence.strip()
         ):
-            raise AuditError(
-                f"allowlist entry {index} requires non-empty category and evidence"
-            )
+            raise AuditError(f"allowlist entry {index} requires non-empty category and evidence")
         category = raw_category.strip()
         evidence = raw_evidence.strip()
         if category not in _CATEGORIES:
-            raise AuditError(
-                f"allowlist entry {index} has unsupported category {category!r}"
-            )
+            raise AuditError(f"allowlist entry {index} has unsupported category {category!r}")
         if not evidence.startswith("https://"):
-            raise AuditError(
-                f"allowlist entry {index} evidence must be an https URL"
-            )
+            raise AuditError(f"allowlist entry {index} evidence must be an https URL")
 
         raw_flags = raw_entry["flags"]
         if (
@@ -327,26 +314,23 @@ def _parse_allowlist(
             or not raw_flags
             or any(not isinstance(flag, str) or not flag for flag in raw_flags)
         ):
-            raise AuditError(
-                f"allowlist entry {index} flags must be a non-empty string list"
-            )
+            raise AuditError(f"allowlist entry {index} flags must be a non-empty string list")
         flags = tuple(sorted(raw_flags))
         if len(flags) != len(set(flags)):
             raise AuditError(f"allowlist entry {index} has duplicate flags")
         unknown_flags = set(flags) - _KNOWN_FLAGS
         if unknown_flags:
             rendered = ", ".join(sorted(unknown_flags))
-            raise AuditError(
-                f"allowlist entry {index} has unknown flags: {rendered}"
-            )
-        edges.append(
-            MissingImportEdge(
-                kind="missing",
-                module=module,
-                importer=importer,
-                flags=flags,
-            )
+            raise AuditError(f"allowlist entry {index} has unknown flags: {rendered}")
+        edge = MissingImportEdge(
+            kind="missing",
+            module=module,
+            importer=importer,
+            flags=flags,
         )
+        edges.append(edge)
+        if category == "controller-runtime-boundary":
+            controller_runtime_edges.add(edge)
 
     duplicates = {edge for edge in edges if edges.count(edge) > 1}
     if duplicates:
@@ -359,33 +343,37 @@ def _parse_allowlist(
     expected_baseline_keys = {"category", "evidence", "module"}
     for index, raw_entry in enumerate(raw_baseline_modules):
         if not isinstance(raw_entry, dict):
-            raise AuditError(
-                f"baseline-pinned module entry {index} must be a JSON object"
-            )
+            raise AuditError(f"baseline-pinned module entry {index} must be a JSON object")
         if set(raw_entry) != expected_baseline_keys:
             raise AuditError(
                 f"baseline-pinned module entry {index} keys must be exactly: "
                 + ", ".join(sorted(expected_baseline_keys))
             )
-        module = raw_entry.get("module")
-        category = raw_entry.get("category")
-        evidence = raw_entry.get("evidence")
+        baseline_module = raw_entry.get("module")
+        baseline_category = raw_entry.get("category")
+        baseline_evidence = raw_entry.get("evidence")
         if (
-            not isinstance(module, str)
-            or not module.strip()
-            or not isinstance(category, str)
-            or category not in _BASELINE_CATEGORIES
-            or not isinstance(evidence, str)
-            or not evidence.startswith("https://")
+            not isinstance(baseline_module, str)
+            or not baseline_module.strip()
+            or not isinstance(baseline_category, str)
+            or baseline_category not in _BASELINE_CATEGORIES
+            or not isinstance(baseline_evidence, str)
+            or not baseline_evidence.startswith("https://")
         ):
             raise AuditError(
                 f"baseline-pinned module entry {index} requires a non-empty "
                 "module, supported category, and https evidence URL"
             )
-        baseline_modules.append(module.strip())
+        baseline_modules.append(baseline_module.strip())
     if len(baseline_modules) != len(set(baseline_modules)):
         raise AuditError("duplicate baseline-pinned project modules")
-    return edges, set(baseline_modules), transitive_warning_sha256
+    return (
+        edges,
+        set(baseline_modules),
+        transitive_warning_sha256,
+        alternate_digests,
+        controller_runtime_edges,
+    )
 
 
 def _literal_string_list(
@@ -409,9 +397,7 @@ def _literal_string_list(
             node.left,
             variables,
         ) + _literal_string_list(node.right, variables)
-    raise AuditError(
-        "Analysis.excludes must resolve to literal lists and named literal lists"
-    )
+    raise AuditError("Analysis.excludes must resolve to literal lists and named literal lists")
 
 
 def _sys_platform_value(platform: str) -> str:
@@ -482,24 +468,16 @@ def _active_analysis_excludes(path: Path, platform: str) -> set[str]:
             if not isinstance(function, ast.Name) or function.id != "Analysis":
                 continue
             excludes_keyword = next(
-                (
-                    keyword
-                    for keyword in statement.value.keywords
-                    if keyword.arg == "excludes"
-                ),
+                (keyword for keyword in statement.value.keywords if keyword.arg == "excludes"),
                 None,
             )
             if excludes_keyword is None:
                 raise AuditError("Analysis call has no excludes keyword")
-            analysis_excludes.append(
-                _literal_string_list(excludes_keyword.value, variables)
-            )
+            analysis_excludes.append(_literal_string_list(excludes_keyword.value, variables))
 
     process(tree.body)
     if len(analysis_excludes) != 1:
-        raise AuditError(
-            "PyInstaller spec must contain exactly one Analysis(excludes=...) call"
-        )
+        raise AuditError("PyInstaller spec must contain exactly one Analysis(excludes=...) call")
     excludes = analysis_excludes[0]
     if len(excludes) != len(set(excludes)):
         raise AuditError("active Analysis.excludes contains duplicate modules")
@@ -526,11 +504,7 @@ def _project_missing_edges(
     return {
         edge
         for edge in warning_edges
-        if (
-            edge.kind == "missing"
-            and edge.module not in baseline_modules
-            and _is_project_importer(edge.importer)
-        )
+        if (edge.kind == "missing" and edge.module not in baseline_modules and _is_project_importer(edge.importer))
     }
 
 
@@ -538,11 +512,7 @@ def _spec_excluded_edges(
     warning_edges: set[MissingImportEdge],
     active_excludes: set[str],
 ) -> set[MissingImportEdge]:
-    return {
-        edge
-        for edge in warning_edges
-        if edge.kind == "excluded" and edge.module in active_excludes
-    }
+    return {edge for edge in warning_edges if edge.kind == "excluded" and edge.module in active_excludes}
 
 
 def _transitive_edges(
@@ -554,18 +524,8 @@ def _transitive_edges(
     return {
         edge
         for edge in warning_edges
-        if (
-            edge.kind == "missing"
-            and (
-                edge.module in baseline_modules
-                or not _is_project_importer(edge.importer)
-            )
-        )
-        or (
-            edge.kind == "excluded"
-            and edge.module not in active_excludes
-            and not _is_project_importer(edge.importer)
-        )
+        if (edge.kind == "missing" and (edge.module in baseline_modules or not _is_project_importer(edge.importer)))
+        or (edge.kind == "excluded" and edge.module not in active_excludes and not _is_project_importer(edge.importer))
     }
 
 
@@ -574,12 +534,19 @@ def _warning_digest(edges: set[MissingImportEdge]) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
+def _is_covered_by_active_exclude(module: str, active_excludes: set[str]) -> bool:
+    """Return whether an exact module lives below an active excluded root."""
+    return any(module == excluded or module.startswith(f"{excluded}.") for excluded in active_excludes)
+
+
 def _audit(
     warning_edges: list[MissingImportEdge],
     allowed_edges: list[MissingImportEdge],
     active_excludes: set[str],
     baseline_modules: set[str],
     transitive_warning_sha256: str,
+    alternate_digests: set[str],
+    controller_runtime_edges: set[MissingImportEdge],
 ) -> list[str]:
     warning_set = set(warning_edges)
     allowed_set = set(allowed_edges)
@@ -593,18 +560,19 @@ def _audit(
 
     for edge in sorted(warning_set):
         if edge.kind == "excluded":
-            if (
-                edge.module not in active_excludes
-                and _is_project_importer(edge.importer)
-            ):
-                failures.append(
-                    "excluded module is not in active Analysis.excludes: "
-                    f"{edge.render()}"
-                )
+            if edge.module not in active_excludes and _is_project_importer(edge.importer):
+                failures.append(f"excluded module is not in active Analysis.excludes: {edge.render()}")
             continue
         if edge.kind == "runtime":
             continue
         if edge not in project_missing:
+            continue
+        if edge in controller_runtime_edges:
+            if not _is_covered_by_active_exclude(edge.module, active_excludes):
+                failures.append(
+                    "controller runtime edge is not covered by active "
+                    f"Analysis.excludes: {edge.render()}"
+                )
             continue
         if _is_actionable(edge):
             failures.append(f"actionable import edge: {edge.render()}")
@@ -612,18 +580,28 @@ def _audit(
             failures.append(f"unreviewed missing-import edge: {edge.render()}")
     for edge in sorted(allowed_set - project_missing):
         failures.append(f"stale allowlist edge: {edge.render()}")
-    present_baseline_modules = {
-        edge.module for edge in transitive if edge.module in baseline_modules
-    }
+    present_baseline_modules = {edge.module for edge in transitive if edge.module in baseline_modules}
     for module in sorted(baseline_modules - present_baseline_modules):
         failures.append(f"stale baseline-pinned project module: {module}")
     actual_transitive_sha256 = _warning_digest(transitive)
-    if actual_transitive_sha256 != transitive_warning_sha256:
+    if actual_transitive_sha256 != transitive_warning_sha256 and actual_transitive_sha256 not in alternate_digests:
         failures.append(
             "transitive warning digest mismatch: "
             f"expected {transitive_warning_sha256}, "
             f"found {actual_transitive_sha256}"
         )
+        diagnostic_edges = sorted(transitive)[:_TRANSITIVE_DIAGNOSTIC_LIMIT]
+        failures.append(
+            "transitive warning graph: "
+            f"total={len(transitive)} shown={len(diagnostic_edges)} "
+            f"limit={_TRANSITIVE_DIAGNOSTIC_LIMIT}"
+        )
+        failures.extend(
+            f"transitive warning edge: {edge.render()}" for edge in diagnostic_edges
+        )
+        omitted = len(transitive) - len(diagnostic_edges)
+        if omitted:
+            failures.append(f"transitive warning graph omitted={omitted}")
     return failures
 
 
@@ -639,6 +617,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    """Audit one warning graph against its platform and architecture policy."""
     args = _build_parser().parse_args()
     try:
         warning_edges = _parse_warning_file(args.warnings)
@@ -646,6 +625,8 @@ def main() -> int:
             allowed_edges,
             baseline_modules,
             transitive_warning_sha256,
+            alternate_digests,
+            controller_runtime_edges,
         ) = _parse_allowlist(
             args.allowlist,
             platform=args.platform,
@@ -663,6 +644,8 @@ def main() -> int:
         active_excludes,
         baseline_modules,
         transitive_warning_sha256,
+        alternate_digests,
+        controller_runtime_edges,
     )
     if failures:
         for failure in failures:

@@ -35,6 +35,7 @@ class QuantMethod(StrEnum):
     FP16 = "f16"
 
     def bits(self) -> int:
+        """Return the nominal bit width for this quantization method."""
         _BITS: dict[str, int] = {
             "q4_0": 4,
             "q4_K_M": 4,
@@ -44,6 +45,7 @@ class QuantMethod(StrEnum):
         return _BITS.get(self.value, 16)
 
     def quality_score(self) -> float:
+        """Return a normalized heuristic quality score for this method."""
         _SCORES: dict[str, float] = {
             "q4_0": 0.55,
             "q4_K_M": 0.65,
@@ -54,6 +56,7 @@ class QuantMethod(StrEnum):
 
     @classmethod
     def from_string(cls, raw: str) -> QuantMethod:
+        """Parse a supported quantization method name or alias."""
         normalized = raw.strip().lower()
         _MAP: dict[str, QuantMethod] = {
             "q4_0": cls.Q4_0,
@@ -70,6 +73,8 @@ class QuantMethod(StrEnum):
 
 @dataclass(frozen=True)
 class HardwareCapacity:
+    """Detected accelerator memory capacity used for quant selection."""
+
     memory_kind: str
     total_memory_gb: float
     backend: str
@@ -77,6 +82,7 @@ class HardwareCapacity:
 
     @classmethod
     def from_probe(cls, backend: str | None = None) -> HardwareCapacity:
+        """Build capacity information from the bounded hardware probe."""
         mem: MemoryInfo = detect_memory(backend)
         gb = (mem.total_bytes or 0) / (1024**3)
         kind = "discrete" if mem.kind == "vram" else "unified" if mem.kind == "unified" else "unknown"
@@ -90,12 +96,15 @@ class HardwareCapacity:
 
 @dataclass(frozen=True)
 class QuantSelection:
+    """Result of matching a model footprint to available hardware."""
+
     method: QuantMethod | None
     fits: bool
     reason: str
     bits: int
 
     def as_dict(self) -> dict[str, object]:
+        """Return a JSON-compatible representation of the selection."""
         return {
             "method": self.method.value if self.method else None,
             "fits": self.fits,
@@ -119,6 +128,7 @@ def select_quant_for_hardware(
     *,
     reserve_fraction: float = _RESERVE_FRACTION,
 ) -> QuantSelection:
+    """Choose the highest-quality quantization that fits usable memory."""
     if capacity.total_memory_gb <= 0 or capacity.memory_kind == "unknown":
         return QuantSelection(
             method=None,
@@ -153,6 +163,8 @@ def select_quant_for_hardware(
 
 
 class ModelQuantizer:
+    """Convert model checkpoints to GGUF and invoke llama.cpp quantization."""
+
     _GGUF_CONVERT_SCRIPT: str = "convert_hf_to_gguf.py"
     _LLAMA_QUANTIZE_BIN: str = "llama-quantize"
     _QUANT_MAP: ClassVar[dict[QuantMethod, str]] = {
@@ -160,6 +172,15 @@ class ModelQuantizer:
         QuantMethod.Q4_K_M: "q4_K_M",
         QuantMethod.Q8_0: "q8_0",
     }
+
+    @staticmethod
+    def _find_on_path(executable: str) -> str | None:
+        """Return an executable path without letting host probe errors escape."""
+        try:
+            return shutil.which(executable)
+        except OSError as exc:
+            logger.warning("Executable probe failed for %s: %s", executable, exc)
+            return None
 
     @staticmethod
     def _find_bundled_llama_quantize() -> str | None:
@@ -175,9 +196,12 @@ class ModelQuantizer:
             "llama-quantize",
         )
         bundled = os.path.abspath(bundled)
-        if os.path.isfile(bundled) and os.access(bundled, os.X_OK):
-            return bundled
-        return shutil.which(ModelQuantizer._LLAMA_QUANTIZE_BIN)
+        try:
+            if os.path.isfile(bundled) and os.access(bundled, os.X_OK):
+                return bundled
+        except OSError as exc:
+            logger.warning("Bundled llama-quantize probe failed: %s", exc)
+        return ModelQuantizer._find_on_path(ModelQuantizer._LLAMA_QUANTIZE_BIN)
 
     def __init__(
         self,
@@ -185,10 +209,14 @@ class ModelQuantizer:
         convert_script_path: str | None = None,
         llama_cpp_quantize_path: str | None = None,
     ) -> None:
-        self.convert_script_path = convert_script_path or shutil.which(self._GGUF_CONVERT_SCRIPT)
+        """Resolve optional converter and quantizer executables fail-soft."""
+        self.convert_script_path = convert_script_path or self._find_on_path(
+            self._GGUF_CONVERT_SCRIPT
+        )
         self.llama_cpp_quantize_path = llama_cpp_quantize_path or self._find_bundled_llama_quantize()
 
     def available_methods(self) -> set[QuantMethod]:
+        """Return methods available with the resolved local tools."""
         methods: set[QuantMethod] = {QuantMethod.FP16}
         if self._can_quantize_locally():
             methods.update(self._QUANT_MAP.keys())
@@ -198,6 +226,7 @@ class ModelQuantizer:
         return bool(self.llama_cpp_quantize_path)
 
     def convert_to_gguf(self, input_path: str, output_path: str) -> bool:
+        """Convert a model checkpoint to FP16 GGUF within a bounded process."""
         if not input_path:
             raise ValueError("input_path must not be empty")
         if not os.path.isdir(input_path) and not os.path.isfile(input_path):
@@ -243,6 +272,7 @@ class ModelQuantizer:
         *,
         threads: int | None = None,
     ) -> bool:
+        """Quantize an existing GGUF model with a bounded llama.cpp process."""
         if method == QuantMethod.FP16:
             raise ValueError("FP16 is not a llama.cpp quantize target — use convert_to_gguf instead")
         if not self._can_quantize_locally():

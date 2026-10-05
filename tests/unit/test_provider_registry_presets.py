@@ -39,7 +39,7 @@ EXPECTED_PRESET_PROVIDERS = [
 ]
 
 
-def test_from_presets_includes_all_known_providers():
+def test_from_presets_includes_all_known_providers() -> None:
     registry = ProviderRegistry.from_presets()
 
     registered = set(registry.list_providers())
@@ -50,7 +50,7 @@ def test_from_presets_includes_all_known_providers():
     assert registered == set(PROVIDER_PRESETS.keys())
 
 
-def test_from_presets_has_twenty_four_providers():
+def test_from_presets_has_twenty_four_providers() -> None:
     """The documented provider list has exactly 24 entries."""
     assert len(EXPECTED_PRESET_PROVIDERS) == 24
     assert len(PROVIDER_PRESETS) == 24
@@ -59,19 +59,19 @@ def test_from_presets_has_twenty_four_providers():
     assert len(registry.list_providers()) == 24
 
 
-def test_from_profiles_empty_returns_presets_populated_registry():
+def test_from_profiles_empty_returns_presets_populated_registry() -> None:
     registry = ProviderRegistry.from_profiles([])
 
     assert set(registry.list_providers()) == set(PROVIDER_PRESETS.keys())
 
 
-def test_from_profiles_none_returns_presets_populated_registry():
+def test_from_profiles_none_returns_presets_populated_registry() -> None:
     registry = ProviderRegistry.from_profiles(None)
 
     assert set(registry.list_providers()) == set(PROVIDER_PRESETS.keys())
 
 
-def test_from_profiles_with_baseten_registers_baseten_once():
+def test_from_profiles_with_baseten_registers_baseten_once() -> None:
     """A profile referencing baseten does not duplicate the preset entry."""
     profile = {
         "provider": "baseten",
@@ -85,7 +85,7 @@ def test_from_profiles_with_baseten_registers_baseten_once():
     assert isinstance(info, ProviderInfo)
 
 
-def test_get_provider_info_for_baseten_returns_preset_metadata():
+def test_get_provider_info_for_baseten_returns_preset_metadata() -> None:
     registry = ProviderRegistry.from_presets()
 
     info = registry.get_provider_info("baseten")
@@ -96,7 +96,7 @@ def test_get_provider_info_for_baseten_returns_preset_metadata():
     assert info.name == "baseten"
 
 
-def test_from_profiles_does_not_override_preset_metadata():
+def test_from_profiles_does_not_override_preset_metadata() -> None:
     """A profile cannot override the package/class a preset registered."""
     profile = {
         "provider": "baseten",
@@ -112,19 +112,19 @@ def test_from_profiles_does_not_override_preset_metadata():
     assert info.class_hint == "ChatOpenAI"
 
 
-def test_from_profiles_adds_provider_absent_from_presets():
-    """A custom provider not in PROVIDER_PRESETS is layered on top."""
+def test_from_profiles_adds_provider_absent_from_presets() -> None:
+    """The reviewed air-gapped vLLM profile is layered on top of presets."""
     custom = {
-        "provider": "custom-internal",
-        "provider_package": "langchain_some_custom",
-        "provider_class_hint": "ChatCustom",
+        "provider": "vllm",
+        "provider_package": "langchain_community",
+        "provider_class_hint": "ChatVLLM",
     }
     registry = ProviderRegistry.from_profiles([custom])
 
-    assert "custom-internal" in registry.list_providers()
-    info = registry.get_provider_info("custom-internal")
+    assert "vllm" in registry.list_providers()
+    info = registry.get_provider_info("vllm")
     assert info is not None
-    assert info.package_name == "langchain_some_custom"
-    assert info.class_hint == "ChatCustom"
+    assert info.package_name == "langchain_community"
+    assert info.class_hint == "ChatVLLM"
     # Presets are still all present.
     assert set(PROVIDER_PRESETS.keys()).issubset(set(registry.list_providers()))

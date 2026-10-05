@@ -29,22 +29,14 @@ def test_sync_llama_cpp_uses_locked_extra_and_dry_run_contract() -> None:
     assert "SYNC_LLAMA_CPP_VALIDATE_ONLY" in target
 
     contract = load_contract(ROOT / "config/make_target_contract.json")
-    entry = next(
-        item for item in contract["targets"]
-        if item["name"] == "sync-llama-cpp"
-    )
+    entry = next(item for item in contract["targets"] if item["name"] == "sync-llama-cpp")
     assert entry["make_variables"] == ["SYNC_LLAMA_CPP_VALIDATE_ONLY"]
-    assert entry["behavior"] == (
-        "make sync-llama-cpp SYNC_LLAMA_CPP_VALIDATE_ONLY=1"
-    )
+    assert entry["behavior"] == ("make sync-llama-cpp SYNC_LLAMA_CPP_VALIDATE_ONLY=1")
 
 
 def test_typecheck_scope_keeps_errors_but_drops_global_unused_override_noise() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-    command = next(
-        line for line in makefile.splitlines()
-        if "run mypy" in line and "$(FILES)" in line
-    )
+    command = next(line for line in makefile.splitlines() if "run mypy" in line and "$(FILES)" in line)
 
     assert "--no-warn-unused-configs" in command
     assert "--no-incremental" in command
@@ -52,10 +44,7 @@ def test_typecheck_scope_keeps_errors_but_drops_global_unused_override_noise() -
     assert "|| true" not in command
 
     contract = load_contract(ROOT / "config/make_target_contract.json")
-    entry = next(
-        item for item in contract["targets"]
-        if item["name"] == "typecheck-scope"
-    )
+    entry = next(item for item in contract["targets"] if item["name"] == "typecheck-scope")
     assert entry["make_variables"] == ["FILES"]
     assert entry["behavior"] == "make typecheck-scope FILES=scripts/status_snapshot.py"
 
@@ -108,6 +97,19 @@ def test_development_conflict_recovery_is_tracked_and_dry_runnable() -> None:
         text=True,
         timeout=60,
     )
+    branch = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    ).stdout.strip()
+    if branch != "development":
+        # CI shards check out detached HEADs; the target must REFUSE there.
+        assert result.returncode != 0, result.stdout + result.stderr
+        assert "Refusing conflict resolution on branch" in result.stdout
+        assert "expected development" in result.stdout
+        return
     assert result.returncode == 0, result.stdout + result.stderr
     assert "DRY RUN" in result.stdout
 

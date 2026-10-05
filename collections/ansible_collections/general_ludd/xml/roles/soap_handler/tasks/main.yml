@@ -51,9 +51,9 @@
             def strip_ns(tag):
                 return tag.split("}", 1)[1] if "}" in tag else tag
 
-            body = tree.find(f"{{{env_ns}}}Body")
-            fault = tree.find(f"{{{env_ns}}}Body/{{{env_ns}}}Fault") if body is not None else None
-            header = tree.find(f"{{{env_ns}}}Header")
+            body = tree.find("{" + env_ns + "}Body")
+            fault = tree.find("{" + env_ns + "}Body/{" + env_ns + "}Fault") if body is not None else None
+            header = tree.find("{" + env_ns + "}Header")
 
             result = {
                 "mode": "parse",

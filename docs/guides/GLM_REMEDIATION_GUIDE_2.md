@@ -126,7 +126,7 @@ This is the structural fix for "≤116 = PASS":
 - `init` ends by running `install-hooks` (graceful no-op message if pre-commit unavailable). Test: Makefile content assertion + a temp-clone test that `.git/hooks/pre-commit` exists after init.
 
 ### V1.5 Generated status — stop hand-writing numbers
-- New target `make status-snapshot`: regenerates the "Current Gate Status" block of `SESSION.md` and the "Key numbers" block of `README.md` **from `.gate-status` and the pytest summary file**, between HTML marker comments (`<!-- gate:begin -->`/`<!-- gate:end -->`). Hand-edited numbers between the markers get overwritten.
+- New target `make status-snapshot`: regenerates the "Current Gate Status" block of `SESSION.md` and the "Key numbers" block of `README.md` **from `.gate-status` and the pytest summary file**, between HTML marker comments (`&lt;!-- gate:begin --&gt;`/`&lt;!-- gate:end --&gt;`). Hand-edited numbers between the markers get overwritten.
 - `make preflight` fails if the blocks' numbers disagree with `.gate-status` (drift detector). README alternative: remove live numbers entirely and link to CI badges once V1.7 lands — choose one, don't keep two sources of truth.
 
 ### V1.6 Evidence-rot audit
@@ -218,7 +218,7 @@ Hard do-nots: never raise a ratchet value; never delete a failing test to go gre
 
 ## 8. Checklist (mirror into TASKS.md as you go)
 
-```
+```bash
 Phase V0 — honest green gate
 [ ] V0.1  136 failures triaged: fixed or strict-xfail'd; BASELINE.md re-dated; zai-skip proof test passes
 [ ] V0.2  make smoke green; daemon always cleaned up on failure

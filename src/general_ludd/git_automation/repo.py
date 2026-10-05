@@ -84,6 +84,7 @@ _NON_INTERACTIVE_GIT_ENV = {
 _FORCE_PUSH_PATTERN = re.compile(
     r"\s+(-f\s+|--force\b|--force-with-lease\b)"
 )
+_GLUDD_TEMP_WORKTREE_ROOT = re.compile(r"gludd-worktree-[0-9a-f]{32}\Z")
 
 
 def _reject_leading_dash(value: str, *, kind: str) -> str:
@@ -227,7 +228,10 @@ def _reject_clone_url(url: str, *, allow_local: bool = True) -> str:
 
 
 class GitAutomation:
+    """Provide bounded, option-safe Git repository automation."""
+
     def __init__(self, repo_path: str = ".") -> None:
+        """Bind automation operations to ``repo_path`` by default."""
         self.repo_path = repo_path
 
     def _run_git(
@@ -343,6 +347,7 @@ class GitAutomation:
             return {"status": status, "rc": rc, "events": []}
 
     def init_repo(self, path: str | None = None) -> InitResult:
+        """Initialize a usable repository and report whether it was created."""
         target = path or self.repo_path
         git_dir = os.path.join(target, ".git")
         created = not os.path.isdir(git_dir)
@@ -364,6 +369,7 @@ class GitAutomation:
         return InitResult(path=target, created=created, message="initialized" if created else "already exists")
 
     def is_repo(self) -> bool:
+        """Return whether the configured path is a Git repository."""
         try:
             self._run_git("rev-parse", "--git-dir")
             return True
@@ -654,6 +660,7 @@ class GitAutomation:
         assert_no_unintegrated_worktrees: bool = False,
         assert_no_unintegrated_branches: bool = False,
     ) -> GitStateResult:
+        """Collect repository state and evaluate requested workflow assertions."""
         branch = self._git_stdout_or_empty("branch", "--show-current") or "DETACHED"
         head = self._run_git("rev-parse", "--verify", "HEAD").stdout.strip()
         status_result = self._run_git(
@@ -779,6 +786,7 @@ class GitAutomation:
         )
 
     def create_branch(self, name: str, *, use_ansible: bool = False) -> str:
+        """Create and check out a new branch after validating its name."""
         _reject_leading_dash(name, kind="branch name")
         if use_ansible:
             result = self._invoke_role(
@@ -803,6 +811,7 @@ class GitAutomation:
         return name
 
     def list_branches(self) -> list[str]:
+        """Return local branch names."""
         result = self._run_git("branch", "--format=%(refname:short)")
         return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
@@ -860,16 +869,19 @@ class GitAutomation:
         return result.stdout.strip()
 
     def tag_release(self, tag: str) -> str:
+        """Create an annotated release tag and return its name."""
         _reject_leading_dash(tag, kind="tag name")
         self._run_git("tag", "-a", "-m", f"Release {tag}", "--", tag)
         return tag
 
     def tag_checkpoint(self, tag: str) -> str:
+        """Create a lightweight checkpoint tag and return its name."""
         _reject_leading_dash(tag, kind="tag name")
         self._run_git("tag", "--", tag)
         return tag
 
     def push(self, remote: str = "origin", branch: str = "main", *, use_ansible: bool = False) -> bool:
+        """Push a branch and return whether the operation succeeded."""
         _reject_leading_dash(remote, kind="remote name")
         _reject_leading_dash(branch, kind="branch name")
         if use_ansible:
@@ -912,9 +924,11 @@ class GitAutomation:
         return proc.stdout.strip()
 
     def reject_force_push(self) -> bool:
+        """Return the invariant that force pushes are never authorized."""
         return False
 
     def get_current_commit(self) -> str:
+        """Return the current commit SHA."""
         result = self._run_git("rev-parse", "HEAD")
         return result.stdout.strip()
 
@@ -1075,6 +1089,7 @@ class GitAutomation:
         return CloneResult(path=target, url=url, success=True)
 
     def create_worktree(self, repo_path: str, branch_name: str, worktree_path: str) -> WorktreeResult:
+        """Create a worktree only at an authorized canonical destination."""
         # Fail closed on dash-leading branch/path (would be parsed as a git
         # option) and on a path that escapes the repo parent via `..`.
         try:
@@ -1123,17 +1138,23 @@ class GitAutomation:
                 f"refusing worktree path containing '..' traversal: {worktree_path!r}"
             )
         repo_abs = os.path.abspath(repo_path)
-        parent = os.path.dirname(repo_abs) or os.sep
-        if os.path.isabs(worktree_path):
-            target = os.path.abspath(worktree_path)
-        else:
-            target = os.path.abspath(os.path.join(repo_abs, worktree_path))
-        # Allowed roots: the repo itself or its immediate parent directory.
-        for root in (repo_abs, parent):
-            root_prefix = root.rstrip(os.sep) + os.sep
-            if target == root or target.startswith(root_prefix):
+        repo_root = Path(repo_abs).resolve(strict=False)
+        parent = repo_root.parent
+        target_path = (
+            Path(worktree_path)
+            if os.path.isabs(worktree_path)
+            else Path(repo_abs) / worktree_path
+        )
+        target = target_path.resolve(strict=False)
+        # Compare canonical filesystem identities, not lexical spellings. This
+        # keeps a symlink below the repo parent from redirecting Git elsewhere.
+        for root in (repo_root, parent):
+            if target == root or target.is_relative_to(root):
                 return
-        if GitAutomation._is_gludd_temp_worktree_path(target, project_root=repo_abs):
+        if GitAutomation._is_gludd_temp_worktree_path(
+            str(target_path),
+            project_root=str(repo_root),
+        ):
             return
         raise ValueError(
             f"refusing worktree path that escapes the repo parent: {worktree_path!r}"
@@ -1145,15 +1166,35 @@ class GitAutomation:
         *,
         project_root: str | None = None,
     ) -> bool:
-        real_target = os.path.realpath(path)
+        """Return whether ``path`` belongs to an authorized Gludd namespace."""
+        candidate = Path(path).expanduser()
+        if not candidate.is_absolute():
+            return False
+        real_target = candidate.resolve(strict=False)
         try:
             state = project_state(project_root=project_root, create=False)
-            root = os.path.realpath(state.path("worktrees"))
-            return os.path.commonpath([root, real_target]) == root
+            root = state.path("worktrees").resolve(strict=False)
+            if real_target == root or real_target.is_relative_to(root):
+                return True
         except (OSError, ValueError, SecureStateError):
+            pass
+
+        # Compatibility boundary for the established ephemeral allocator used
+        # by callers and tests. Only an exact UUID-shaped Gludd root directly
+        # below the canonical platform temp directory is accepted. Resolving
+        # both sides first rejects a planted root symlink that escapes temp.
+        try:
+            temp_root = Path(tempfile.gettempdir()).resolve(strict=True)
+            relative = real_target.relative_to(temp_root)
+        except (FileNotFoundError, OSError, ValueError):
             return False
+        return bool(
+            relative.parts
+            and _GLUDD_TEMP_WORKTREE_ROOT.fullmatch(relative.parts[0])
+        )
 
     def remove_worktree(self, repo_path: str, worktree_path: str) -> bool:
+        """Remove a worktree and report whether Git accepted the removal."""
         _reject_leading_dash(worktree_path, kind="worktree path")
         try:
             # `--force`: a worktree being torn down by the orchestrator
@@ -1173,6 +1214,7 @@ class GitAutomation:
             return False
 
     def list_worktrees(self, repo_path: str) -> list[WorktreeInfo]:
+        """Return parsed linked-worktree metadata for ``repo_path``."""
         result = self._run_git("worktree", "list", "--porcelain", _cwd=repo_path)
         worktrees: list[WorktreeInfo] = []
         current: dict[str, str] = {}
@@ -1207,6 +1249,7 @@ class GitAutomation:
         self, repo_path: str, source: str, target: str,
         strategy: str = "ff", *, use_ansible: bool = False,
     ) -> MergeResult:
+        """Merge ``source`` into ``target`` with the requested strategy."""
         _reject_leading_dash(source, kind="merge source ref")
         _reject_leading_dash(target, kind="merge target ref")
 
@@ -1415,6 +1458,7 @@ class GitAutomation:
             )
 
     def create_release_tag(self, repo_path: str, fmt: str = "YYYYMMDDHHMMSS") -> str:
+        """Create and return a timestamped annotated release tag."""
         now = datetime.now(tz=UTC)
         tag = now.strftime("%Y%m%d%H%M%S")
         _reject_leading_dash(tag, kind="tag name")
@@ -1422,6 +1466,7 @@ class GitAutomation:
         return tag
 
     def create_checkpoint_tag(self, repo_path: str, todo_id: str, sha: str) -> str:
+        """Create and return a timestamped task checkpoint tag."""
         ts = datetime.now(tz=UTC).strftime("%Y%m%d%H%M%S")
         short_sha = sha[:7]
         tag = f"agent/{todo_id}/{ts}/{short_sha}"
@@ -1430,6 +1475,7 @@ class GitAutomation:
         return tag
 
     def push_to_remote(self, repo_path: str, remote: str = "origin", branch: str | None = None) -> PushResult:
+        """Push an optional branch with bounded non-interactive execution."""
         _reject_leading_dash(remote, kind="remote name")
         if branch:
             _reject_leading_dash(branch, kind="branch name")
@@ -1490,8 +1536,7 @@ class GitAutomation:
     # ── staging / mutation operations ──────────────────────────────────
 
     def stash(self, message: str = "") -> bool:
-        """Push working-tree changes onto the stash stack. Returns True if
-        anything was stashed, False if the tree was already clean."""
+        """Stash working-tree changes and report whether anything was saved."""
         # Keep the staged index intact while shelving worktree edits.  This
         # mirrors the Makefile workflow used before commits and preserves
         # newly staged files (which ``git stash push`` otherwise removes).
@@ -1505,6 +1550,7 @@ class GitAutomation:
             return False
 
     def stash_pop(self) -> bool:
+        """Restore the newest stash entry and report success."""
         try:
             self._run_git("stash", "pop", check=True)
             return True
@@ -1512,49 +1558,59 @@ class GitAutomation:
             return False
 
     def reset_mixed(self) -> None:
+        """Reset the index to ``HEAD`` while preserving working-tree changes."""
         self._run_git("reset", check=True)
 
     def reset_soft(self, *, ref: str) -> None:
+        """Move ``HEAD`` to ``ref`` while retaining staged changes."""
         _reject_leading_dash(ref, kind="reset ref")
         # ``--`` terminates options and starts a pathspec; refs such as
         # ``HEAD~1`` must remain positional revision arguments.
         self._run_git("reset", "--soft", ref, check=True)
 
     def reset_hard(self, *, ref: str) -> None:
+        """Reset the repository and working tree to ``ref``."""
         _reject_leading_dash(ref, kind="reset ref")
         self._run_git("reset", "--hard", ref, check=True)
 
     def add(self, files: Sequence[str]) -> None:
+        """Stage the supplied file paths."""
         if not files:
             return
         self._run_git("add", "--", *files, check=True)
 
     def add_all(self) -> None:
+        """Stage all repository changes."""
         self._run_git("add", "-A", check=True)
 
     def rm(self, files: Sequence[str]) -> None:
+        """Remove the supplied paths from the index and working tree."""
         if not files:
             return
         self._run_git("rm", "-r", "--", *files, check=True)
 
     def rm_cached(self, files: Sequence[str]) -> None:
+        """Remove the supplied paths from the index only."""
         if not files:
             return
         self._run_git("rm", "--cached", "--", *files, check=True)
 
     def mv(self, old: str, new: str) -> None:
+        """Move a tracked path after validating both positional arguments."""
         _reject_leading_dash(old, kind="mv source path")
         _reject_leading_dash(new, kind="mv destination path")
         os.makedirs(os.path.dirname(os.path.join(self.repo_path, new)) or self.repo_path, exist_ok=True)
         self._run_git("mv", "--", old, new, check=True)
 
     def ls_tracked(self) -> list[str]:
+        """Return tracked repository paths."""
         result = self._git_stdout_or_empty("ls-files")
         if not result:
             return []
         return [line.strip() for line in result.splitlines() if line.strip()]
 
     def restore(self, path: str) -> bool:
+        """Restore a path from the index and report success."""
         _reject_leading_dash(path, kind="restore path")
         try:
             self._run_git("restore", "--", path, check=True)
@@ -1563,6 +1619,7 @@ class GitAutomation:
             return False
 
     def create_local_bare_mirror(self, repo_path: str, mirror_path: str) -> str:
+        """Create a bounded local bare mirror and return its path."""
         with git_repo_lock(repo_path):
             subprocess.run(
                 ["git", "clone", "--bare", "--", repo_path, mirror_path],
@@ -1576,10 +1633,12 @@ class GitAutomation:
 
     @staticmethod
     def is_force_push(command: str) -> bool:
+        """Return whether a command string requests a force push."""
         return bool(_FORCE_PUSH_PATTERN.search(command))
 
     @staticmethod
     def generate_branch_name(todo_id: str, slug: str) -> str:
+        """Return a unique task branch name."""
         ts = datetime.now(tz=UTC).strftime("%Y%m%d%H%M%S")
         uid = uuid.uuid4().hex[:8]
         return f"agent/TODO-{todo_id}/{slug}-{ts}-{uid}"

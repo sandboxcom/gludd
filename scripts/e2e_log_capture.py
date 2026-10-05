@@ -136,10 +136,16 @@ def capture(
         timed_out = False
         try:
             if tee:
-                stream_proc = subprocess.Popen(
-                    cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env={**os.environ, **(env or {})}
-                )
-                exit_code, full_output, timed_out = _tee_with_timeout(stream_proc, f, timeout_seconds)
+                with subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    env={**os.environ, **(env or {})},
+                ) as stream_proc:
+                    exit_code, full_output, timed_out = _tee_with_timeout(
+                        stream_proc, f, timeout_seconds
+                    )
             else:
                 completed = subprocess.run(
                     cmd,

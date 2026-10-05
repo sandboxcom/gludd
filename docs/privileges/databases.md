@@ -77,7 +77,7 @@ Verify (read-only): `health()` runs `SELECT 1`; then `SHOW GLOBAL STATUS;`.
 The connector runs only `INFO`, `SLOWLOG GET`, and `PING`. Create a Redis 6+ ACL
 user limited to exactly those commands, no keyspace access.
 
-```
+```markdown
 # redis-cli (or in redis.conf as a `user` line):
 ACL SETUSER gludd_mon on >CHANGE_ME_STRONG ~* &* -@all +info +slowlog|get +ping
 # (~* needs no key reads here; restrict further with allkeys off if desired)

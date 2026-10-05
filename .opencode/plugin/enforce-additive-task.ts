@@ -2,6 +2,7 @@ import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
+import { HARD_MAX_DISPATCHES } from "../lib/multitask_config.ts"
 import { isSubagent, reportAlive, writeHeartbeat, getProjectRoot } from "../lib/shared.ts"
 
 // enforce-additive-task.ts — per-wave additive task enforcement.
@@ -15,9 +16,8 @@ import { isSubagent, reportAlive, writeHeartbeat, getProjectRoot } from "../lib/
 //     "continuation" (prompt references a TASKS.md task ID like SEC.1, D-13)
 //     or "new-task" (no task ID reference).  Reads TASKS.md to count
 //     unchecked items.
-//   * Rule 1: ≥2 unchecked items AND 0 continuation-classified dispatches
-//     in the wave → DENY.
-//   * Rule 2: ≥10 dispatches AND 100% new-task → DENY.
+//   * At a complete canonical wave, ≥2 unchecked items AND 0
+//     continuation-classified dispatches → DENY the final slot.
 //
 // STATE FILE: /tmp/gludd-additive-task.json
 // DISABLE: GLUDD_ADDITIVE_TASK_ENFORCE=0
@@ -33,6 +33,7 @@ import { isSubagent, reportAlive, writeHeartbeat, getProjectRoot } from "../lib/
 const STATE_FILE = process.env.GLUDD_ADDITIVE_TASK_STATE || "/tmp/gludd-additive-task.json"
 const ENABLED = (process.env.GLUDD_ADDITIVE_TASK_ENFORCE || "1") !== "0"
 const BLOCK = (process.env.GLUDD_ADDITIVE_TASK_BLOCK || "1") !== "0"
+const COMPLETE_WAVE_SIZE = HARD_MAX_DISPATCHES
 
 const TASK_ID_RE = /\b[A-Z]+[.-]\d+\b/
 
@@ -141,7 +142,12 @@ const defaultImpl: HotModule = {
       const newCount = s.wave.filter(e => e.type === "new-task").length
       const total = s.wave.length
 
-      if (unchecked >= 2 && cCount === 0 && total > 0) {
+      if (
+        total >= COMPLETE_WAVE_SIZE &&
+        unchecked >= 2 &&
+        cCount === 0 &&
+        newCount === total
+      ) {
         s.wave = []
         saveState(s)
         if (BLOCK) {
@@ -155,22 +161,7 @@ const defaultImpl: HotModule = {
         }
       }
 
-      if (total >= 10 && newCount === total) {
-        const newPct = ((newCount / total) * 100).toFixed(0)
-        s.wave = []
-        saveState(s)
-        if (BLOCK) {
-          return {
-            permissionDecision: "deny",
-            message: `ADDITIVE TASK RATIO VIOLATION: ${newPct}% new-task dispatches (${newCount}/${total}). All slots are new tasks with 0 continuations. Include ≥1 continuation slot referencing an existing TASKS.md task ID.`
-          }
-        } else {
-          console.warn(`ADDITIVE TASK RATIO WARNING: ${newPct}% new-task dispatches (${newCount}/${total}).`)
-          return
-        }
-      }
-
-      if (total >= 10) s.wave = []
+      if (total >= COMPLETE_WAVE_SIZE) s.wave = []
       saveState(s)
     } catch { // fail open
   }

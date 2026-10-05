@@ -46,7 +46,9 @@ class TestSanitizeExcMessage:
             sanitize_exc_message(RuntimeError("boom"))
         mock_warn.assert_called_once()
         call_kwargs = mock_warn.call_args[1]
-        assert call_kwargs.get("exc_info") is True
+        # The sanitizer must NOT attach the traceback: exc_info would embed
+        # the secret-bearing message in the log record (H20 no-leak contract).
+        assert call_kwargs.get("exc_info") is None
 
     def test_never_leaks_message_content(self) -> None:
         exc = ValueError("/etc/passwd token=abc123def456ghi")

@@ -16,6 +16,7 @@ from general_ludd.security.secure_xml import parse_xml_file
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).parent.parent.parent.parent
+TASK_TICK_FORBIDDEN_WORDS = frozenset({"pending", "partial", "groundwork"})
 
 # Path to the bundled ansible-galaxy collection's terraform plugins. The
 # importer is run on this tree during preflight so layout/provider/policy
@@ -30,6 +31,7 @@ _BUNDLED_COLLECTION = (
 
 
 def check_coverage(threshold: float = 85.0, coverage_xml: Path | None = None) -> dict[str, object]:
+    """Return the XML coverage verdict for the configured threshold."""
     coverage_xml = coverage_xml if coverage_xml is not None else REPO_ROOT / "coverage.xml"
     passed = False
     coverage_pct = 0.0
@@ -48,6 +50,7 @@ def check_coverage(threshold: float = 85.0, coverage_xml: Path | None = None) ->
 
 
 def check_lint() -> dict[str, object]:
+    """Run the repository lint check and return its bounded result."""
     try:
         result = subprocess.run(
             ["uv", "run", "ruff", "check", "src", "tests"],
@@ -62,6 +65,7 @@ def check_lint() -> dict[str, object]:
 
 
 def check_mypy() -> dict[str, object]:
+    """Run the source type check and return its bounded result."""
     try:
         result = subprocess.run(
             ["uv", "run", "mypy", "src"],
@@ -76,6 +80,7 @@ def check_mypy() -> dict[str, object]:
 
 
 def check_templates() -> dict[str, object]:
+    """Verify that every supported work type has a prompt template."""
     templates_dir = REPO_ROOT / "templates" / "prompts"
     expected = {
         "code": "implementation.md.j2",
@@ -100,6 +105,7 @@ def check_templates() -> dict[str, object]:
 
 
 def check_playbooks() -> dict[str, object]:
+    """Verify that the repository ships at least one playbook."""
     pb_dir = REPO_ROOT / "playbooks"
     if not pb_dir.is_dir():
         return {"passed": False, "found": [], "error": "playbooks dir missing"}
@@ -134,6 +140,7 @@ MIN_MOLECULE_SCENARIOS = 49
 
 
 def check_molecule_scenarios() -> dict[str, object]:
+    """Enforce the ratcheted minimum number of Molecule scenarios."""
     mol_dir = REPO_ROOT / "molecule" / "playbooks"
     if not mol_dir.is_dir():
         return {"passed": False, "scenario_count": 0}
@@ -146,6 +153,7 @@ def check_molecule_scenarios() -> dict[str, object]:
 
 
 def check_filestore() -> dict[str, object]:
+    """Verify that the configured file store can be initialized."""
     try:
         store = FileStore()
         return {"passed": True, "root_path": store.root_path, "exists": os.path.isdir(store.root_path)}
@@ -154,6 +162,7 @@ def check_filestore() -> dict[str, object]:
 
 
 def check_sprint_boxes() -> dict[str, object]:
+    """Report unchecked boxes remaining in internal sprint documents."""
     sprint_dir = REPO_ROOT / "docs" / "internal"
     unchecked = 0
     if sprint_dir.is_dir():
@@ -166,6 +175,7 @@ def check_sprint_boxes() -> dict[str, object]:
 
 
 def check_tasks_ticks(lines: list[str] | None = None) -> dict[str, object]:
+    """Validate that completed task rows carry admissible evidence."""
     if lines is None:
         tasks_path = REPO_ROOT / "TASKS.md"
         if not tasks_path.exists():
@@ -181,7 +191,7 @@ def check_tasks_ticks(lines: list[str] | None = None) -> dict[str, object]:
     violations: list[str] = []
     checked = 0
     legacy_audited_ledger = any("Evidence-Integrity Audit" in line for line in lines)
-    forbidden = {"pending", "partial", "groundwork"}
+    forbidden = TASK_TICK_FORBIDDEN_WORDS
     file_paths = (
         "tests/", "test_", ".gate-status", "src/", ".github/", ".opencode/",
         "Makefile", "TASKS.md", "AGENTS.md", "scripts/", "molecule/",
@@ -260,6 +270,7 @@ def check_tasks_ticks(lines: list[str] | None = None) -> dict[str, object]:
 
 
 def check_session_drift() -> dict[str, object]:
+    """Detect gate phases missing from the recorded session evidence block."""
     session_path = REPO_ROOT / "SESSION.md"
     gate_path = REPO_ROOT / ".gate-status"
     if not session_path.exists() or not gate_path.exists():
@@ -271,7 +282,9 @@ def check_session_drift() -> dict[str, object]:
     if begin == -1 or end == -1:
         return {"passed": False, "violations": ["SESSION.md missing gate markers"]}
     terminal_markers = ("=== GATE: PASSED ===", "=== GATE: FAILED ===")
-    if not any(marker in gate_text for marker in terminal_markers):
+    if gate_text.lstrip().startswith("=== GATE ") and not any(
+        marker in gate_text for marker in terminal_markers
+    ):
         return {
             "passed": True,
             "violations": [],
@@ -286,9 +299,14 @@ def check_session_drift() -> dict[str, object]:
         key = stripped.split()[0] if stripped else ""
         if key and key not in block:
             violations.append(f"SESSION.md gate block missing: {stripped}")
+    if violations:
+        return {
+            "passed": False,
+            "violations": violations,
+        }
     return {
-        "passed": len(violations) == 0,
-        "violations": violations,
+        "passed": True,
+        "violations": [],
     }
 
 
@@ -375,6 +393,7 @@ def check_readme_no_hardcoded_metrics() -> dict[str, object]:
 
 
 def run_preflight(strict_terraform_import: bool = False) -> dict[str, object]:
+    """Run the complete preflight check set and aggregate its verdict."""
     checks: list[dict[str, object]] = [
         {"name": "coverage_85pct", **check_coverage(threshold=85.0)},
         {"name": "lint_clean", **check_lint()},
@@ -406,6 +425,7 @@ def verify_task_completion(
     criteria: list[str],
     evidence: dict[str, object],
 ) -> dict[str, object]:
+    """Evaluate task completion criteria against machine evidence."""
     if not criteria:
         return {
             "complete": False,
@@ -458,6 +478,7 @@ def verify_task_completion(
 
 
 def run_completion_audit() -> dict[str, object]:
+    """Return an isolated copy of the cached completion audit."""
     return copy.deepcopy(_run_completion_audit_cached(str(REPO_ROOT)))
 
 
@@ -520,6 +541,7 @@ def _run_completion_audit_cached(repo_root_raw: str) -> dict[str, object]:
 
 
 def generate_backlog_from_audit(audit: dict[str, object]) -> list[dict[str, object]]:
+    """Convert completion-audit findings into actionable backlog rows."""
     todos: list[dict[str, object]] = []
     for f in cast(list[dict[str, object]], audit.get("findings", [])):
         name = f.get("class_name") or f.get("function_name", "unknown")

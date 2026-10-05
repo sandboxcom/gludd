@@ -2,9 +2,33 @@
 
 from __future__ import annotations
 
+from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 from general_ludd.routing_roles.roles import TaskRole
+
+# ``importlib.reload`` re-executes a module without clearing its dictionary.
+# Drop cached exports and import-created submodule attributes before rebuilding
+# the lazy contract so a reload behaves exactly like a fresh import.
+for _stale_lazy_name in (
+    "CapabilityEvidence",
+    "CompletionAction",
+    "CompletionEvidence",
+    "DispatchAction",
+    "ModelIdentity",
+    "PolicyConfig",
+    "RoleWeights",
+    "SmallModelTaskPolicy",
+    "SmallModelTaskSpec",
+    "TaskContract",
+    "TaskImpact",
+    "small_model_policy",
+    "task_weights",
+    "weights",
+    "weights_for",
+):
+    globals().pop(_stale_lazy_name, None)
+del _stale_lazy_name
 
 if TYPE_CHECKING:
     from general_ludd.routing_roles.small_model_policy import (
@@ -64,13 +88,26 @@ _POLICY_LAZY = {
 }
 
 
+def _load_lazy_group(module_path: str, names: set[str], requested: str) -> Any:
+    """Import and cache one complete export group deterministically."""
+    module = import_module(module_path)
+    namespace = globals()
+    for export_name in sorted(names):
+        namespace[export_name] = getattr(module, export_name)
+    return namespace[requested]
+
+
 def __getattr__(name: str) -> Any:
     if name in _WEIGHT_LAZY:
-        from general_ludd.routing_roles import weights
-
-        return getattr(weights, name)
+        return _load_lazy_group(
+            "general_ludd.routing_roles.weights",
+            _WEIGHT_LAZY,
+            name,
+        )
     if name in _POLICY_LAZY:
-        from general_ludd.routing_roles import small_model_policy
-
-        return getattr(small_model_policy, name)
+        return _load_lazy_group(
+            "general_ludd.routing_roles.small_model_policy",
+            _POLICY_LAZY,
+            name,
+        )
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

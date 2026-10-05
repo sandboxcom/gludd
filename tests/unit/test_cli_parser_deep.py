@@ -18,19 +18,18 @@ def _build() -> tuple[argparse.ArgumentParser, dict[str, argparse.ArgumentParser
 
 
 def _top_choices(parser: argparse.ArgumentParser) -> dict[str, argparse.ArgumentParser]:
-    try:
-        return parser._subparsers._group_actions[0].choices
-    except (AttributeError, IndexError):
-        for action in parser._actions:
-            if hasattr(action, "choices") and action.dest == "command":
-                return action.choices
-        return {}
+    return _sub_choices(parser, "command")
 
 
 def _sub_choices(subparser: argparse.ArgumentParser, dest: str) -> dict[str, argparse.ArgumentParser]:
     for action in subparser._actions:
-        if hasattr(action, "choices") and action.dest == dest:
-            return action.choices
+        choices = getattr(action, "choices", None)
+        if action.dest == dest and isinstance(choices, dict):
+            return {
+                str(name): choice
+                for name, choice in choices.items()
+                if isinstance(choice, argparse.ArgumentParser)
+            }
     return {}
 
 
@@ -109,6 +108,39 @@ def test_build_parser_returns_tuple() -> None:
     parser, sub_map = _build()
     assert isinstance(parser, argparse.ArgumentParser)
     assert isinstance(sub_map, dict)
+
+
+def test_build_parser_reuses_graph_without_parse_state_leak() -> None:
+    """Repeated parses must not rebuild and retain the full command graph."""
+    parser, sub_map = _build()
+    first = parser.parse_args(["status", "todo-1"])
+    next_parser, next_sub_map = _build()
+    second = next_parser.parse_args(["status"])
+
+    assert next_parser is parser
+    assert next_sub_map is sub_map
+    assert first.todo_id == "todo-1"
+    assert second.todo_id is None
+
+
+def test_parser_cache_does_not_retain_patched_handlers() -> None:
+    """A temporary handler replacement must receive and release its own graph."""
+    import general_ludd.cli as cli_mod
+
+    canonical, _ = cli_mod.build_parser()
+
+    def _replacement_status(_args: argparse.Namespace) -> None:
+        return None
+
+    with pytest.MonkeyPatch.context() as patcher:
+        patcher.setattr(cli_mod, "_cmd_status", _replacement_status)
+        isolated, _ = cli_mod.build_parser()
+        assert isolated is not canonical
+        assert isolated.parse_args(["status"]).func is _replacement_status
+
+    restored, _ = cli_mod.build_parser()
+    assert restored is canonical
+    assert restored.parse_args(["status"]).func is cli_mod._cmd_status
 
 
 def test_all_top_level_subcommands_registered() -> None:

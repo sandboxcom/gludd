@@ -81,9 +81,10 @@ class TestSessionStartSystemInjection:
         )
 
     def test_directive_requires_immediate_dispatch(self):
-        """The directive must demand a ≥10-wide subagent wave as action 2."""
+        """The directive must require an immediate delegation assessment."""
         src = PLUGIN.read_text()
-        assert "10" in src, "Directive must reference the 10-agent floor."
+        assert "No mandatory dispatch minimum" in src
+        assert "HARD_MAX_DISPATCHES" in src
         lower = src.lower()
         assert "dispatch" in lower, "Directive must use the word 'dispatch'."
         assert "first" in lower, (
@@ -194,34 +195,23 @@ class TestSessionStartConstants:
     """The config constants must be present and within expected bounds."""
 
     def test_min_dispatches_constant_exists(self):
-        """MIN_DISPATCHES must be declared with env override and default >= 5."""
+        """MIN_DISPATCHES must use the canonical opt-in default."""
         src = PLUGIN.read_text()
         assert "MIN_DISPATCHES" in src, (
             "MIN_DISPATCHES constant missing — the session-start dispatch "
             "floor has no configurable minimum."
         )
-        m = re.search(
-            r'GLUDD_SESSION_START_MIN_DISPATCHES\s*\|\|\s*["\'](\d+)["\']',
-            src,
-        )
-        assert m, "MIN_DISPATCHES default literal not found in env-var chain."
-        default = int(m.group(1))
-        assert default >= 5, (
-            f"MIN_DISPATCHES default is {default}, expected >= 5. The "
-            "session-start dispatch floor must be at least 5 parallel agents "
-            "(the message-shape wave minimum from AGENTS.md)."
-        )
+        assert "../lib/multitask_config.ts" in src
+        assert "GLUDD_SESSION_START_MIN_DISPATCHES || String(DEFAULT_MIN_DISPATCHES)" in src
+        assert "clampDispatchCount" in src
 
     def test_effective_min_bounded(self):
-        """EFFECTIVE_MIN is hardcoded to 10 (floor raised 2026-06-22). The
-        original Math.max/min derivation was simplified when the floor became a
-        user mandate. Both forms are acceptable."""
+        """An explicit minimum is bounded to the supported 0..3 range."""
         src = PLUGIN.read_text()
         assert "EFFECTIVE_MIN" in src, "EFFECTIVE_MIN constant not found."
-        assert (
-            "Math.max(MIN_DISPATCHES, Math.min(FLOOR, 7))" in src
-            or "EFFECTIVE_MIN = 10" in src
-        ), "EFFECTIVE_MIN must be derived via Math.max/min or hardcoded to 10."
+        assert "EFFECTIVE_MIN = HAS_CONFIGURED_MIN_DISPATCHES" in src
+        assert "clampDispatchCount(" in src
+        assert re.search(r"\n\s*: 0", src), "Unconfigured sessions must not force needless agents."
 
     def test_fresh_secs_constant_exists(self):
         """FRESH_SECS must be declared with env override and sane default."""
@@ -239,7 +229,7 @@ class TestSessionStartConstants:
         )
 
     def test_floor_env_var_override(self):
-        """The floor must reference a configurable env var with '10' default.
+        """The floor must reference a configurable env var and canonical cap.
 
         enforce-session-start uses GLUDD_SESSION_START_MIN_DISPATCHES (not
         CLAUDE_AGENT_FLOOR, which belongs to enforce-floor.ts)."""
@@ -248,9 +238,8 @@ class TestSessionStartConstants:
             "CLAUDE_AGENT_FLOOR" in src
             or "GLUDD_SESSION_START_MIN_DISPATCHES" in src
         ), "Floor must read from a configurable env var."
-        assert '"10"' in src or "'10'" in src, (
-            "Floor default must be '10' (the user directive from 2026-06-22)."
-        )
+        assert "String(DEFAULT_MIN_DISPATCHES)" in src
+        assert "clampDispatchCount" in src
 
 
 class TestSessionStartPluginTemplate:

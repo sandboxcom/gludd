@@ -192,10 +192,12 @@ class TestPyInstallerSpec:
             content = f.read()
         assert "('templates'" in content
 
-    def test_spec_file_includes_playbooks(self):
+    def test_frozen_core_excludes_ansible_playbooks(self):
         with open(self.SPEC_PATH) as f:
             content = f.read()
-        assert "('playbooks'" in content
+        assert "('playbooks'" not in content
+        assert "'ansible'" in content
+        assert "execution-environment artifact" in content
 
     def test_spec_file_has_hidden_imports(self):
         with open(self.SPEC_PATH) as f:

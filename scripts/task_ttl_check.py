@@ -29,7 +29,12 @@ import sys
 import time
 from pathlib import Path
 
-DEFAULT_TIMEOUT_S = int(os.environ.get("GLUDD_TASK_TIMEOUT_MS", "300000")) // 1000
+try:
+    from scripts import gludd_env_defaults as gludd_env_defaults
+except ModuleNotFoundError:  # pragma: no cover - direct launch from scripts/
+    import gludd_env_defaults
+
+DEFAULT_TIMEOUT_S = int(os.environ.get("GLUDD_TASK_TIMEOUT_MS", gludd_env_defaults.TASK_TIMEOUT_MS_DEFAULT)) // 1000
 DEFAULT_STATE = os.environ.get(
     "GLUDD_TASK_DEADLINE_STATE", "/tmp/gludd-task-deadlines.json"
  )

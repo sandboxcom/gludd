@@ -119,7 +119,7 @@ class TestProcessCapability:
     def test_zero_sigma_fails_closed(self):
         out = process_capability(spec_lower=9.7, spec_upper=10.3, sigma=0.0)
         assert out["state"] == "fail_closed"
-        assert "sigma must be positive" in out["reason"]
+        assert "sigma must be a positive finite number" in out["reason"]
 
 
 # ─── Assembly clearance / interference ─────────────────────────────────────────

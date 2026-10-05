@@ -19,6 +19,8 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 ROOT = Path(__file__).parent.parent.parent
 
 
@@ -873,6 +875,26 @@ class TestTaskWatchdogKillRecordDeep:
         data = json.loads(f.read_text())
         assert len(data) == 1
         assert data[0]["task_id"] == "recovery"
+
+    def test_kill_record_replace_failure_preserves_existing(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from scripts import task_watchdog
+
+        f = tmp_path / "killed.json"
+        original = [{"task_id": "prior", "pid": 1}]
+        f.write_text(json.dumps(original))
+
+        def fail_replace(_source, _destination):
+            raise OSError("injected replace failure")
+
+        monkeypatch.setattr(task_watchdog.os, "replace", fail_replace)
+        record_kill("new", pid=2, elapsed_ms=100_000, reason="timeout", killed_file=str(f))
+
+        assert json.loads(f.read_text()) == original
+        assert list(tmp_path.glob(".killed.json.*.tmp")) == []
 
 
 class TestTaskWatchdogConfiguration:

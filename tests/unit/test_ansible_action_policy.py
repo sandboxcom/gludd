@@ -166,6 +166,7 @@ class TestValidateActionProcessIsolation:
     def test_isolation_blocks_shell_module(self) -> None:
         iso = ProcessIsolationConfig(
             enabled=True,
+            container_image="registry.example/gludd-ee:test@sha256:" + "a" * 64,
             block_local_tools=["bash"],
         )
         policy = ActionPolicyConfig(process_isolation=iso)
@@ -178,6 +179,7 @@ class TestValidateActionProcessIsolation:
     def test_isolation_allows_non_blocked_module(self) -> None:
         iso = ProcessIsolationConfig(
             enabled=True,
+            container_image="registry.example/gludd-ee:test@sha256:" + "a" * 64,
             block_local_tools=["bash"],
         )
         policy = ActionPolicyConfig(process_isolation=iso)
@@ -204,6 +206,7 @@ class TestValidateActionProcessIsolation:
     def test_isolation_blocks_file_write_module(self) -> None:
         iso = ProcessIsolationConfig(
             enabled=True,
+            container_image="registry.example/gludd-ee:test@sha256:" + "a" * 64,
             block_local_tools=["file_write"],
         )
         policy = ActionPolicyConfig(process_isolation=iso)
@@ -237,6 +240,7 @@ class TestValidateActionCombinedViolations:
     def test_isolation_plus_disabled_list(self) -> None:
         iso = ProcessIsolationConfig(
             enabled=True,
+            container_image="registry.example/gludd-ee:test@sha256:" + "a" * 64,
             block_local_tools=["bash"],
         )
         policy = ActionPolicyConfig(

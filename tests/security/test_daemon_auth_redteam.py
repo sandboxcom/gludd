@@ -10,7 +10,7 @@ A read-only red-team found three daemon-auth weaknesses:
        and a 4-char crib otherwise. FIX: never log any portion of the PSK;
        log only a boolean `psk_configured`.
 
-  A-3  When GLUDD_PSK is unset/empty, ALL auth is skipped silently and the
+  A-3  When GLUDD_AUTH_PSK is unset/empty, ALL auth is skipped silently and the
        entire /admin surface is open.
        FIX (P1): FAIL-CLOSED by default — no PSK → 503 on non-public paths.
        GLUDD_ALLOW_NO_AUTH=1 is the explicit dev/test opt-out that restores
@@ -72,7 +72,7 @@ class TestA1ConstantTime:
 
     @pytest.mark.asyncio
     async def test_wrong_token_still_rejected(self):
-        with patch.dict(os.environ, {"GLUDD_PSK": _PSK}):
+        with patch.dict(os.environ, {"GLUDD_AUTH_PSK": _PSK}):
             app = create_daemon_app(tick_interval=0.01)
         async with _client(app) as c:
             resp = await c.get(
@@ -83,7 +83,7 @@ class TestA1ConstantTime:
 
     @pytest.mark.asyncio
     async def test_correct_token_authorized(self):
-        with patch.dict(os.environ, {"GLUDD_PSK": _PSK}):
+        with patch.dict(os.environ, {"GLUDD_AUTH_PSK": _PSK}):
             app = create_daemon_app(tick_interval=0.01)
         async with _client(app) as c:
             resp = await c.get(
@@ -116,7 +116,7 @@ class TestA3NoAuthDegraded:
     async def test_healthz_reports_no_auth_when_psk_unset_allow_no_auth(self):
         """With GLUDD_ALLOW_NO_AUTH=1 (dev opt-out), healthz reports auth_degraded."""
         env = dict(os.environ)
-        env.pop("GLUDD_PSK", None)
+        env.pop("GLUDD_AUTH_PSK", None)
         env.pop("GLUDD_REQUIRE_AUTH", None)
         env["GLUDD_ALLOW_NO_AUTH"] = "1"
         with patch.dict(os.environ, env, clear=True):
@@ -133,7 +133,7 @@ class TestA3NoAuthDegraded:
 
     @pytest.mark.asyncio
     async def test_healthz_not_degraded_when_psk_set(self):
-        with patch.dict(os.environ, {"GLUDD_PSK": _PSK}):
+        with patch.dict(os.environ, {"GLUDD_AUTH_PSK": _PSK}):
             app = create_daemon_app(tick_interval=0.01)
         async with _client(app) as c:
             resp = await c.get("/healthz")
@@ -146,7 +146,7 @@ class TestA3NoAuthDegraded:
         import logging
 
         env = dict(os.environ)
-        env.pop("GLUDD_PSK", None)
+        env.pop("GLUDD_AUTH_PSK", None)
         env.pop("GLUDD_REQUIRE_AUTH", None)
         env.pop("GLUDD_ALLOW_NO_AUTH", None)
         records: list[logging.LogRecord] = []
@@ -189,14 +189,14 @@ class TestA3NoAuthDegraded:
         joined = " ".join(r.getMessage() for r in records).lower()
         assert "gludd_psk" in joined and (
             "refuse" in joined or "fail-closed" in joined or "fail_closed" in joined
-        ), "P1: a LOUD startup WARNING must fire when GLUDD_PSK is unset (fail-closed mode)."
+        ), "P1: a LOUD startup WARNING must fire when GLUDD_AUTH_PSK is unset (fail-closed mode)."
 
     def test_no_psk_allow_no_auth_logs_loud_warning(self, caplog):
         """With GLUDD_ALLOW_NO_AUTH=1, a loud warning fires that auth is disabled."""
         import logging
 
         env = dict(os.environ)
-        env.pop("GLUDD_PSK", None)
+        env.pop("GLUDD_AUTH_PSK", None)
         env.pop("GLUDD_REQUIRE_AUTH", None)
         env["GLUDD_ALLOW_NO_AUTH"] = "1"
         records: list[logging.LogRecord] = []
@@ -226,7 +226,7 @@ class TestA3NoAuthDegraded:
     @pytest.mark.asyncio
     async def test_default_no_psk_fails_closed(self, monkeypatch):
         """P1: default posture (no PSK, no opt-out) is FAIL-CLOSED → 503."""
-        monkeypatch.delenv("GLUDD_PSK", raising=False)
+        monkeypatch.delenv("GLUDD_AUTH_PSK", raising=False)
         monkeypatch.delenv("GLUDD_REQUIRE_AUTH", raising=False)
         monkeypatch.delenv("GLUDD_ALLOW_NO_AUTH", raising=False)
         app = create_daemon_app(tick_interval=0.01)
@@ -239,7 +239,7 @@ class TestA3NoAuthDegraded:
     @pytest.mark.asyncio
     async def test_allow_no_auth_opt_out_grants_access(self, monkeypatch):
         """P1: GLUDD_ALLOW_NO_AUTH=1 opt-out keeps admin open (dev mode)."""
-        monkeypatch.delenv("GLUDD_PSK", raising=False)
+        monkeypatch.delenv("GLUDD_AUTH_PSK", raising=False)
         monkeypatch.delenv("GLUDD_REQUIRE_AUTH", raising=False)
         monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
         app = create_daemon_app(tick_interval=0.01)
@@ -253,7 +253,7 @@ class TestA3NoAuthDegraded:
     @pytest.mark.asyncio
     async def test_require_auth_without_psk_fails_closed(self):
         env = dict(os.environ)
-        env.pop("GLUDD_PSK", None)
+        env.pop("GLUDD_AUTH_PSK", None)
         env["GLUDD_REQUIRE_AUTH"] = "1"
         env.pop("GLUDD_ALLOW_NO_AUTH", None)
         with patch.dict(os.environ, env, clear=True):
@@ -267,7 +267,7 @@ class TestA3NoAuthDegraded:
     @pytest.mark.asyncio
     async def test_require_auth_overrides_allow_no_auth(self, monkeypatch):
         """GLUDD_REQUIRE_AUTH=1 forces fail-closed even when GLUDD_ALLOW_NO_AUTH=1."""
-        monkeypatch.delenv("GLUDD_PSK", raising=False)
+        monkeypatch.delenv("GLUDD_AUTH_PSK", raising=False)
         monkeypatch.setenv("GLUDD_REQUIRE_AUTH", "1")
         monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
         app = create_daemon_app(tick_interval=0.01)
@@ -280,7 +280,7 @@ class TestA3NoAuthDegraded:
     @pytest.mark.asyncio
     async def test_require_auth_keeps_public_paths_open(self):
         env = dict(os.environ)
-        env.pop("GLUDD_PSK", None)
+        env.pop("GLUDD_AUTH_PSK", None)
         env["GLUDD_REQUIRE_AUTH"] = "1"
         env.pop("GLUDD_ALLOW_NO_AUTH", None)
         with patch.dict(os.environ, env, clear=True):
@@ -309,7 +309,7 @@ class TestHealthzBudgetLeak:
         from general_ludd.controllers.budget_manager import BudgetManager
 
         env = dict(os.environ)
-        env.pop("GLUDD_PSK", None)
+        env.pop("GLUDD_AUTH_PSK", None)
         env.pop("GLUDD_REQUIRE_AUTH", None)
         with patch.dict(os.environ, env, clear=True):
             app = create_daemon_app(tick_interval=0.01)
@@ -395,7 +395,7 @@ class TestAuthParsingHygiene:
     @pytest.mark.asyncio
     async def test_header_casing_holds(self):
         """HTTP header names are case-insensitive — lowercase must still auth."""
-        with patch.dict(os.environ, {"GLUDD_PSK": _PSK}):
+        with patch.dict(os.environ, {"GLUDD_AUTH_PSK": _PSK}):
             app = create_daemon_app(tick_interval=0.01)
         async with _client(app) as c:
             resp = await c.get(
@@ -410,7 +410,7 @@ class TestAuthParsingHygiene:
     @pytest.mark.asyncio
     async def test_trailing_data_rejected(self):
         """A token with extra trailing bytes must NOT authenticate."""
-        with patch.dict(os.environ, {"GLUDD_PSK": _PSK}):
+        with patch.dict(os.environ, {"GLUDD_AUTH_PSK": _PSK}):
             app = create_daemon_app(tick_interval=0.01)
         async with _client(app) as c:
             resp = await c.get(

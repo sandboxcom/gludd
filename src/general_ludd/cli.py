@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 
+from general_ludd.cli_parser_cache import CommandGraphCache
 from general_ludd.config.binary_paths import BinaryPathResolver
 from general_ludd.db.session import get_default_db_url, is_sqlite_url
 from general_ludd.filestore.bootstrap import BinaryBootstrapper
@@ -396,7 +397,7 @@ def _configure_selftest_parser(parser: argparse.ArgumentParser) -> None:
     parser.set_defaults(func=_cmd_selftest)
 
 
-def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.ArgumentParser]]:
+def _build_parser_uncached() -> tuple[argparse.ArgumentParser, dict[str, argparse.ArgumentParser]]:
     """Build the CLI parser and the parser map used for help dispatch."""
     parser = argparse.ArgumentParser(
         prog="gludd",
@@ -407,7 +408,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     parser.add_argument(
         "--version",
         action="version",
-        version=__version__,
+        version=f"gludd {__version__}",
         help="Show the installed General Ludd version and exit",
     )
     parser.set_defaults(func=None)
@@ -423,6 +424,11 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     daemon_parser.add_argument("--config-dir", default=None, help="Path to config directory")
     daemon_parser.add_argument("--templates-dir", default=None, help="Path to prompt templates directory")
     daemon_parser.add_argument("--playbooks-dir", default=None, help="Path to Ansible playbooks directory")
+    daemon_parser.add_argument(
+        "--pid-file",
+        default=None,
+        help="Write the daemon PID to this file; unlinked on graceful shutdown",
+    )
     daemon_parser.set_defaults(func=_cmd_daemon)
 
     add_parser = sub.add_parser("add", help="Add a todo to the queue")
@@ -1432,6 +1438,21 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     return parser, subcommand_map
 
 
+_ParserBundle = tuple[argparse.ArgumentParser, dict[str, argparse.ArgumentParser]]
+_parser_cache = CommandGraphCache(_build_parser_uncached, module_prefix="general_ludd.cli")
+
+
+def build_parser() -> _ParserBundle:
+    """Return one immutable command graph, rebuilding only for patched handlers.
+
+    ``argparse`` parsing stores results in a fresh namespace, so the parser
+    graph is safe to reuse. Tests and embedders sometimes replace command
+    handlers; their changed fingerprint receives an isolated graph instead of
+    contaminating the canonical cache.
+    """
+    return _parser_cache.get()
+
+
 def _cmd_pause_list(args: argparse.Namespace) -> None:
     """List paused projects and model profiles from the daemon."""
     data = _http_call("GET", f"{args.daemon_url}/api/pause")
@@ -1935,7 +1956,7 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
 
     bind_host = args.host
 
-    psk = os.environ.get("GLUDD_PSK", "")
+    psk = os.environ.get("GLUDD_AUTH_PSK", "").strip()
     if bind_host not in ("127.0.0.1", "localhost", "::1"):
         if not psk:
             psk = secrets.token_urlsafe(32)
@@ -1970,6 +1991,10 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
         close_fds=True,
         env=env,
     )
+
+    pid_file = getattr(args, "pid_file", None)
+    if pid_file:
+        _write_daemon_pid_file(pid_file, proc.pid, daemon_url=f"http://{bind_host}:{args.port}")
 
     shutdown_signum: int | None = None
     shutdown_complete = threading.Event()
@@ -2012,6 +2037,9 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
             proc.kill()
     finally:
         shutdown_complete.set()
+        if pid_file:
+            with contextlib.suppress(OSError):
+                os.unlink(pid_file)
     if shutdown_signum is not None:
         sys.exit(128 + shutdown_signum)
     sys.exit(proc.returncode)
@@ -4270,7 +4298,7 @@ def _build_daemon_env(
     normalized_level = _validate_daemon_log_level(log_level)
     if normalized_level != "info":
         env["GLUDD_LOG_LEVEL"] = normalized_level
-    env["GLUDD_PSK"] = psk
+    env["GLUDD_AUTH_PSK"] = psk
     return env
 
 
@@ -4339,11 +4367,7 @@ def _build_daemon_start_cmd(
     safe_host = _validate_daemon_host(host)
     safe_port = _validate_daemon_port(port)
     workers = _clamp_workers_for_sqlite(workers)
-    launcher = (
-        [sys.executable, _BUNDLED_GUNICORN_FLAG]
-        if bool(getattr(sys, "frozen", False))
-        else ["gunicorn"]
-    )
+    launcher = [sys.executable, _BUNDLED_GUNICORN_FLAG] if bool(getattr(sys, "frozen", False)) else ["gunicorn"]
     argv: list[str] = [
         *launcher,
         "general_ludd.daemon:create_daemon_app()",
@@ -5091,11 +5115,8 @@ def _cmd_make(args: argparse.Namespace) -> None:
 
 
 if __name__ == "__main__":
-    # Keep the module invocation contract aligned with the standalone binary
-    # tests: version is exposed by the ``gludd`` console entry point, while
-    # ``python -m general_ludd.cli --version`` remains an invalid top-level
-    # invocation.  In-process callers still exercise ``main()`` directly.
-    if "--version" in sys.argv[1:]:
-        print("error: unrecognized arguments: --version", file=sys.stderr)
-        sys.exit(2)
+    # The module invocation contract is aligned with the standalone binary:
+    # ``python -m general_ludd.cli --version`` prints the release version and
+    # exits 0 (pinned by tests/e2e/test_binary_functional.py). build_parser()
+    # already declares the version action.
     main()

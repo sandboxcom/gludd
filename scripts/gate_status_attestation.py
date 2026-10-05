@@ -124,9 +124,18 @@ def repository_state_id(repo_root: Path, *, source: str = "worktree") -> str:
             continue
         path = os.fsdecode(raw_path)
         full_path = root / path
+        indexed_mode, indexed_object_id = index.get(path, ("", ""))
+        if indexed_mode == "160000":
+            submodule_marker = full_path / ".git"
+            object_id = indexed_object_id
+            if full_path.is_dir() and submodule_marker.exists():
+                object_id = (
+                    _run_git(full_path, "rev-parse", "HEAD").decode("ascii").strip()
+                )
+            entries[path] = (indexed_mode, object_id)
+            continue
         if not full_path.exists() and not full_path.is_symlink():
             continue
-        indexed_mode = index.get(path, ("", ""))[0]
         if full_path.is_symlink():
             data = os.fsencode(os.readlink(full_path))
             mode = "120000"
@@ -136,12 +145,6 @@ def repository_state_id(repo_root: Path, *, source: str = "worktree") -> str:
                 mode = indexed_mode
             else:
                 mode = "100755" if full_path.stat().st_mode & stat.S_IXUSR else "100644"
-        elif indexed_mode == "160000":
-            data = b""
-            mode = indexed_mode
-            object_id = _run_git(full_path, "rev-parse", "HEAD").decode("ascii").strip()
-            entries[path] = (mode, object_id)
-            continue
         else:
             raise RuntimeError(f"unsupported repository entry: {path}")
         entries[path] = (mode, _git_blob_id(data, object_format))

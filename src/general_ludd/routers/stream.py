@@ -37,7 +37,7 @@ from general_ludd.stream import (
 logger = logging.getLogger(__name__)
 
 # Playbook env allowlist — subprocess children must never inherit daemon
-# secrets (ZAI_API_KEY, AWS_*, DATABASE_URL, GLUDD_PSK, …).  Mirrors
+# secrets (ZAI_API_KEY, AWS_*, DATABASE_URL, GLUDD_AUTH_PSK, …).  Mirrors
 # AnsibleCoreRunner._PLAYBOOK_ENV_ALLOWLIST.
 _STREAM_PLAYBOOK_ENV_ALLOWLIST: frozenset[str] = frozenset(
     {
@@ -158,6 +158,8 @@ def _kill_and_reap(
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register the admin stream-dispatch endpoint for cloned role instances."""
+
     @app.post(
         "/admin/stream/dispatch",
         summary="Dispatch a stream chunk to a cloned role instance",

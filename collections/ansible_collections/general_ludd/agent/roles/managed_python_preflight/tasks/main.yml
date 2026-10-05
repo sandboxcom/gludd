@@ -1,0 +1,72 @@
+---
+- name: Validate immutable managed-host interpreter identity
+  ansible.builtin.assert:
+    that:
+      - managed_python_preflight_lock_sha256 is match('^[0-9a-f]{64}$')
+      - managed_python_preflight_interpreter == '/opt/gludd/role-envs/' + managed_python_preflight_lock_sha256 + '/bin/python'
+      - >-
+        managed_python_preflight_previous_interpreter | length == 0 or
+        managed_python_preflight_previous_interpreter is match(
+          '^/opt/gludd/role-envs/[0-9a-f]{64}/bin/python$'
+        )
+      - >-
+        managed_python_preflight_previous_interpreter | length == 0 or
+        managed_python_preflight_previous_interpreter != managed_python_preflight_interpreter
+    fail_msg: >-
+      Managed-host runtime preflight rejected the selected interpreter.
+      Expected /opt/gludd/role-envs/<lock-sha>/bin/python with lock digest
+      {{ managed_python_preflight_lock_sha256 | default('<missing>') }}, got
+      {{ managed_python_preflight_interpreter | default('<missing>') }}.
+      Build and verify the immutable role environment beside the active one,
+      select it through inventory for a new play, and retain the prior path for
+      rollback. Ambient or in-place dependency installation is not supported.
+
+- name: Verify selected interpreter is executable without interpreter discovery
+  ansible.builtin.raw: >-
+    test -x {{ managed_python_preflight_interpreter | quote }}
+  register: _managed_python_preflight_current
+  changed_when: false
+  failed_when: false
+
+- name: Fail closed when selected interpreter is unavailable
+  ansible.builtin.assert:
+    that:
+      - _managed_python_preflight_current.rc == 0
+    fail_msg: >-
+      Managed-host dependency preflight failed: executable
+      {{ managed_python_preflight_interpreter }} for lock
+      {{ managed_python_preflight_lock_sha256 }} is unavailable. Provision and
+      verify the content-addressed environment before starting a new play; do
+      not fall back to a system or Gludd-core runtime.
+
+- name: Inspect verified managed-host interpreter
+  ansible.builtin.stat:
+    path: "{{ managed_python_preflight_interpreter }}"
+  register: _managed_python_preflight_stat
+
+- name: Verify rollback interpreter remains executable
+  ansible.builtin.raw: >-
+    test -x {{ managed_python_preflight_previous_interpreter | quote }}
+  register: _managed_python_preflight_previous
+  changed_when: false
+  failed_when: false
+  when: managed_python_preflight_previous_interpreter | length > 0
+
+- name: Fail closed when rollback interpreter was not retained
+  ansible.builtin.assert:
+    that:
+      - _managed_python_preflight_previous.rc == 0
+    fail_msg: >-
+      ZDD rollback preflight failed because retained interpreter
+      {{ managed_python_preflight_previous_interpreter }} is unavailable.
+      Keep both immutable environments until all jobs on the prior digest drain.
+  when: managed_python_preflight_previous_interpreter | length > 0
+
+- name: Publish managed-host runtime and rollback evidence
+  ansible.builtin.set_fact:
+    gludd_managed_python_runtime:
+      interpreter: "{{ managed_python_preflight_interpreter }}"
+      lock_sha256: "{{ managed_python_preflight_lock_sha256 }}"
+      executable: "{{ _managed_python_preflight_stat.stat.executable | bool }}"
+      rollback_interpreter: "{{ managed_python_preflight_previous_interpreter }}"
+      activation: new-play-only

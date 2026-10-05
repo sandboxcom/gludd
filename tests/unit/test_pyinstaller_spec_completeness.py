@@ -18,6 +18,12 @@ Background:
          not miss ansible's dynamic imports.
       3. ``ansible`` (the executor stack) must NOT appear in ``excludes=``;
          only ``ansible.cli`` is excluded (Windows cp1252 locale issue).
+      4. Every ``general_ludd.compat`` submodule must be listed as a
+         hiddenimport — ``src/general_ludd/__init__.py`` loads
+         ``general_ludd.compat.annotated_types`` through a dynamic
+         ``importlib.import_module`` call at package init, so the static
+         analyzer drops it and the frozen CLI crashes with
+         ``ModuleNotFoundError: No module named 'general_ludd.compat'``.
 
     The other libraries gludd depends on (jinja2, pydantic, sqlalchemy,
     uvicorn) ship their own non-.py data files. PyInstaller ships built-in
@@ -81,11 +87,7 @@ def _string_literals(node: ast.AST | None) -> set[str]:
     """Collect string literals contained in an AST expression."""
     if node is None:
         return set()
-    return {
-        child.value
-        for child in ast.walk(node)
-        if isinstance(child, ast.Constant) and isinstance(child.value, str)
-    }
+    return {child.value for child in ast.walk(node) if isinstance(child, ast.Constant) and isinstance(child.value, str)}
 
 
 def _excludes_from_spec(spec_text: str) -> set[str]:
@@ -125,9 +127,7 @@ def _collect_submodule_calls(spec_text: str) -> list[ast.Call]:
     return [
         node
         for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "collect_submodules"
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "collect_submodules"
     ]
 
 
@@ -163,156 +163,82 @@ def _find_runtime_data_files(package_name: str) -> list[Path]:
     return runtime_files
 
 
-class TestAnsibleDataCollection:
-    """The gludd binary crashed on macOS because ``ansible/config/base.yml``
-    wasn't bundled. These tests verify the spec collects ALL ansible data."""
+def _hiddenimports_from_spec(spec_text: str) -> set[str]:
+    """Parse literal entries passed to ``Analysis(hiddenimports=...)``."""
+    return _string_literals(_analysis_keyword_node(spec_text, "hiddenimports"))
 
-    def test_spec_uses_collect_data_files(self, spec_text: str) -> None:
-        """Verify gludd.spec calls ``collect_data_files('ansible')``.
 
-        Without this call, PyInstaller's static analyzer misses every
-        non-.py file under the ansible package — including
-        ``ansible/config/base.yml`` (the crash file), the plugin YAML
-        definitions, and the module-utils data files.
-        """
-        assert re.search(
-            r"collect_data_files\(\s*['\"]ansible['\"]\s*\)", spec_text
-        ), (
-            "gludd.spec must call collect_data_files('ansible') to bundle "
-            "ansible/config/base.yml and the rest of ansible's YAML data. "
-            "Without it the binary crashes on startup with "
-            "'Missing base YAML definition file (bad install?)'."
-        )
+def _compat_submodules() -> set[str]:
+    """Every importable module under ``src/general_ludd/compat/``.
 
-    def test_ansible_datas_actually_passed_to_analysis(self, spec_text: str) -> None:
-        """The ``collect_data_files('ansible')`` result MUST reach Analysis.
+    The dynamic import in ``src/general_ludd/__init__.py`` (and any future
+    shim added there) must be mirrored by a spec hiddenimport. Discovering
+    the module list from disk means a new compat shim that forgets to update
+    ``gludd.spec`` fails this test instead of crashing the frozen binary.
+    """
+    compat_root = REPO_ROOT / "src" / "general_ludd" / "compat"
+    submodules: set[str] = {"general_ludd.compat"}
+    for p in sorted(compat_root.rglob("*.py")):
+        rel = p.relative_to(compat_root.parent)
+        if rel.name == "__init__.py":
+            continue
+        module = "general_ludd." + str(rel.with_suffix("")).replace("/", ".")
+        submodules.add(module)
+    return submodules
 
-        PyInstaller only bundles what is in ``Analysis(datas=[...])``. A
-        module-level ``datas = [...] + _ansible_datas`` variable is computed
-        but IGNORED unless it is the same object passed to ``Analysis``.
-        The v0.1.0-beta.1 crash returned because the spec computed the data
-        and then handed Analysis a different (ansible-less) inline list.
 
-        This test pins the fix: the Analysis ``datas=`` body must reference
-        the ansible-data variable (or contain the collect_data_files call
-        inline).
-        """
+class TestAnsibleArtifactBoundary:
+    """The beta4 frozen core excludes the separately shipped controller EE."""
+
+    def test_spec_does_not_collect_ansible_data(self, spec_text: str) -> None:
+        assert re.search(r"collect_data_files\(\s*['\"]ansible['\"]\s*\)", spec_text) is None
+        assert "_ansible_datas" not in spec_text
+
+    def test_core_datas_are_passed_to_analysis(self, spec_text: str) -> None:
         body = _analysis_datas_body(spec_text)
-        assert body is not None, (
-            "gludd.spec must have an Analysis(...) block with a datas=[...] argument"
-        )
-        # Accept either (a) the module-level variable pattern, or (b) an
-        # inline collect_data_files('ansible') call inside Analysis(datas=).
-        uses_module_var = bool(re.search(r"\b_ansible_datas\b", body))
+        assert body is not None, "gludd.spec must have an Analysis(...) block with a datas=[...] argument"
         uses_module_datas_var = bool(re.search(r"\bdatas\b", body)) and bool(
             re.search(r"^datas\s*=\s*\[", spec_text, re.MULTILINE)
         )
-        inline_collect = bool(
-            re.search(r"collect_data_files\(\s*['\"]ansible['\"]\s*\)", body)
-        )
-        assert uses_module_var or uses_module_datas_var or inline_collect, (
-            "Analysis(datas=[...]) must include the ansible data — either by "
-            "appending _ansible_datas, by passing the module-level `datas` "
-            "variable, or by calling collect_data_files('ansible') inline. "
-            "The current spec computes _ansible_datas but drops it before "
-            "Analysis, so ansible/config/base.yml is NOT bundled. This is "
-            "the root cause of the 'Missing base YAML definition file' crash."
-        )
+        assert uses_module_datas_var
 
-    def test_spec_uses_collect_submodules(self, spec_text: str) -> None:
-        """Verify gludd.spec calls ``collect_submodules('ansible.module_utils')``.
-
-        ansible performs dynamic imports inside module_utils, plugins,
-        template, and galaxy. PyInstaller's static analyzer cannot follow
-        importlib.import_module() calls, so each must be collected
-        explicitly. Without this, the bundle's executor path silently
-        fails the first time ansible resolves a module/action.
-        """
+    def test_spec_does_not_collect_ansible_submodules(self, spec_text: str) -> None:
         packages = _collect_submodule_packages(spec_text)
-        assert "ansible.module_utils" in packages, (
-            "gludd.spec must call collect_submodules('ansible.module_utils') "
-            "to bundle ansible's dynamically-imported subpackage. The static "
-            "analyzer misses these imports otherwise."
-        )
-        # The spec should also collect the other dynamically-loaded ansible
-        # subpackages (plugins, template, galaxy) — these are the ones
-        # core_runner.py and the executor touch at runtime.
-        for sub in ("ansible.plugins", "ansible.template", "ansible.galaxy"):
-            assert sub in packages, (
-                f"gludd.spec must call collect_submodules('{sub}') — used at "
-                f"runtime by ansible's executor path."
-            )
+        assert not any(package == "ansible" or package.startswith("ansible.") for package in packages)
 
-    def test_spec_does_not_exclude_ansible(self, spec_text: str) -> None:
-        """Verify ansible is NOT in the excludes list (only ansible.cli is).
-
-        ``ansible.cli`` is excluded because ``ansible.cli.initialize_locale()``
-        hard-fails on Windows' cp1252 locale. The executor stack
-        (ansible.parsing, ansible.executor, ansible.inventory, ansible.vars,
-        ansible.template, ansible.plugins) MUST be bundled — core_runner.py
-        drives it at runtime.
-        """
+    def test_spec_excludes_controller_packages(self, spec_text: str) -> None:
         excluded = _excludes_from_spec(spec_text)
-        # The whole 'ansible' package must NOT be excluded.
-        assert "ansible" not in excluded, (
-            "ansible must NOT be in excludes — gludd drives ansible-core's "
-            "executor API (src/general_ludd/ansible/core_runner.py:77-83) at "
-            "runtime. Excluding it strips the entire executor stack."
-        )
-        # Sanity: ansible.cli SHOULD remain excluded (Windows cp1252 issue).
-        assert "ansible.cli" in excluded, (
-            "ansible.cli MUST remain in excludes — "
-            "ansible.cli.initialize_locale() hard-fails on Windows cp1252 "
-            "locale ('Ansible requires UTF-8; Detected 1252')."
-        )
+        assert {"ansible", "ansible.cli", "ansible_runner"} <= excluded
 
-    def test_spec_filters_nonexistent_ansible_distro_children(
-        self, spec_text: str
-    ) -> None:
-        """Ansible's distro compatibility package advertises two absent children."""
-        assert "filter=_is_collectable_ansible_submodule" in spec_text
-        assert "ansible.module_utils.distro.__main__" in spec_text
-        assert "ansible.module_utils.distro.distro" in spec_text
+    def test_spec_excludes_collection_and_playbook_payloads(self, spec_text: str) -> None:
+        assert "('collections', 'collections')" not in spec_text
+        assert "('playbooks', 'playbooks')" not in spec_text
 
 
 class TestBuildWarningPrevention:
     """Intentional optional/platform imports must not pollute release builds."""
 
-    def test_windows_ansible_collection_ignores_posix_import_failures(
-        self, spec_text: str
-    ) -> None:
-        """Windows discovery skips warnings from unsupported Ansible internals."""
+    def test_recursive_ansible_discovery_is_absent(self, spec_text: str) -> None:
         calls = _collect_submodule_calls(spec_text)
-        assert calls
-        for call in calls:
-            on_error = next(
-                (item.value for item in call.keywords if item.arg == "on_error"),
-                None,
-            )
-            assert isinstance(on_error, ast.Name)
-            assert on_error.id == "_ansible_collect_error_mode"
+        assert not calls
+        assert "_ansible_collect_error_mode" not in spec_text
 
-        assert 'sys.platform == "win32"' in spec_text
-        assert '_ansible_collect_error_mode = "ignore"' in spec_text
-
-    def test_windows_excludes_posix_only_stdlib_modules(
-        self, spec_text: str
-    ) -> None:
+    def test_windows_excludes_posix_only_stdlib_modules(self, spec_text: str) -> None:
         """Static analysis must not warn for stdlib modules absent on Windows."""
         assert 'sys.platform == "win32"' in spec_text
         for module in ("fcntl", "grp", "pty", "pwd", "resource", "termios", "tty"):
             assert f"'{module}'" in spec_text
 
-    def test_unused_sqlalchemy_drivers_are_explicitly_excluded(
-        self, spec_text: str
-    ) -> None:
+    def test_unused_sqlalchemy_drivers_are_explicitly_excluded(self, spec_text: str) -> None:
         excluded = _excludes_from_spec(spec_text)
         assert {"pysqlite2", "MySQLdb"} <= excluded
 
-    def test_non_windows_modules_have_platform_excludes(
-        self, spec_text: str
-    ) -> None:
-        assert "sys.platform != \"win32\"" in spec_text
+    def test_generated_pycparser_tables_are_explicitly_excluded(self, spec_text: str) -> None:
+        excluded = _excludes_from_spec(spec_text)
+        assert {"pycparser.lextab", "pycparser.yacctab"} <= excluded
+
+    def test_non_windows_modules_have_platform_excludes(self, spec_text: str) -> None:
+        assert 'sys.platform != "win32"' in spec_text
         for module in (
             "appdirs",
             "click._winconsole",
@@ -346,8 +272,7 @@ class TestOtherLibraryDataFiles:
         """
         excluded = _excludes_from_spec(spec_text)
         assert "jinja2" not in excluded, (
-            "jinja2 must not be excluded — ansible's Templar uses jinja2 "
-            "for playbook rendering at runtime."
+            "jinja2 must not be excluded — ansible's Templar uses jinja2 for playbook rendering at runtime."
         )
         critical = _find_runtime_data_files("jinja2")
         assert not critical, (
@@ -403,17 +328,14 @@ class TestOtherLibraryDataFiles:
         """
         excluded = _excludes_from_spec(spec_text)
         assert "uvicorn" not in excluded, (
-            "uvicorn must not be excluded — gludd's worker uses uvicorn "
-            "to serve the FastAPI app at runtime."
+            "uvicorn must not be excluded — gludd's worker uses uvicorn to serve the FastAPI app at runtime."
         )
         # Verify uvicorn's dynamic-import subpackages are in hiddenimports.
         # uvicorn uses importlib to load loops/protocols/lifespan based on
         # the --loop/--http/--lifespan flags; PyInstaller's static analyzer
         # misses these. The spec MUST list each as a hiddenimport.
         for required_hidden in ("uvicorn.loops", "uvicorn.protocols", "uvicorn.lifespan"):
-            assert re.search(
-                r"['\"]" + re.escape(required_hidden) + r"['\"]", spec_text
-            ), (
+            assert re.search(r"['\"]" + re.escape(required_hidden) + r"['\"]", spec_text), (
                 f"gludd.spec must list '{required_hidden}' as a hiddenimport — "
                 f"uvicorn resolves these dynamically at startup."
             )
@@ -423,3 +345,64 @@ class TestOtherLibraryDataFiles:
             f"built-in hook may miss: {critical}. gludd.spec must add "
             "collect_data_files('uvicorn') to bundle them."
         )
+
+
+class TestCompatHiddenImports:
+    """``general_ludd.compat`` shims are loaded dynamically at package init.
+
+    ``src/general_ludd/__init__.py:19`` calls
+    ``importlib.import_module("general_ludd.compat.annotated_types")`` to
+    apply the Annotated-types runtime patch. PyInstaller's static analyzer
+    does not follow ``importlib.import_module``, so the frozen CLI crashed
+    with ``ModuleNotFoundError: No module named 'general_ludd.compat'``.
+
+    These tests pin the fix: every module under ``src/general_ludd/compat/``
+    must be listed in ``Analysis(hiddenimports=[...])``.
+    """
+
+    def test_compat_package_is_hiddenimport(self, spec_text: str) -> None:
+        hidden = _hiddenimports_from_spec(spec_text)
+        assert "general_ludd.compat" in hidden, (
+            "gludd.spec must list 'general_ludd.compat' as a hiddenimport — "
+            "src/general_ludd/__init__.py imports it dynamically at package "
+            "init via importlib.import_module, which PyInstaller's static "
+            "analyzer cannot follow. Without it the frozen CLI crashes with "
+            "'ModuleNotFoundError: No module named general_ludd.compat'."
+        )
+
+    def test_every_compat_submodule_is_hiddenimport(self, spec_text: str) -> None:
+        """Every shim on disk under src/general_ludd/compat/ must be declared.
+
+        The discovery mirrors the spec's own semantics: any .py file in the
+        compat package that is not an ``__init__.py`` is a submodule that
+        must appear as a hiddenimport. A future shim added without updating
+        the spec fails here instead of shipping a frozen-CLI crash.
+        """
+        hidden = _hiddenimports_from_spec(spec_text)
+        missing = _compat_submodules() - hidden
+        assert not missing, (
+            "gludd.spec is missing hiddenimports for compat submodules: "
+            f"{sorted(missing)}. Every module under src/general_ludd/compat/ "
+            "must be declared in Analysis(hiddenimports=[...]) because the "
+            "package is loaded via dynamic importlib.import_module calls "
+            "(see src/general_ludd/__init__.py)."
+        )
+
+
+class TestDynamicCoreRuntimeDrivers:
+    """Core drivers selected by URL schemes remain in the frozen artifact."""
+
+    def test_aiosqlite_driver_is_hiddenimport(self, spec_text: str) -> None:
+        """SQLAlchemy imports the configured async SQLite dialect dynamically."""
+        hidden = _hiddenimports_from_spec(spec_text)
+        assert "aiosqlite" in hidden, (
+            "gludd.spec must list 'aiosqlite' as a hiddenimport — SQLAlchemy "
+            "loads the sqlite+aiosqlite driver from the configured URL at "
+            "runtime, which PyInstaller's static graph does not discover. "
+            "Without it the frozen daemon starts but /healthz is degraded."
+        )
+
+    def test_controller_runtime_is_not_hiddenimported(self, spec_text: str) -> None:
+        """Fixing a core driver must not collapse the core/EE boundary."""
+        hidden = _hiddenimports_from_spec(spec_text)
+        assert not {name for name in hidden if name == "ansible" or name.startswith("ansible.")}

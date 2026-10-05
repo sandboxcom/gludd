@@ -1,3 +1,5 @@
+"""Admin router for file-integrity scanning, sign-change, and log auditing."""
+
 from __future__ import annotations
 
 import os
@@ -39,7 +41,7 @@ def _scan_roots(app: FastAPI) -> list[str]:
     state_root = project_state().project_dir
     roots = [
         os.getcwd(),
-        os.environ.get("GLUDD_WORKSPACE", ""),
+        os.environ.get("GLUDD_WORKSPACE_ROOT", ""),
         str(getattr(app.state, "_config_dir", "") or ""),
         os.path.expanduser("~/.config/gludd"),
         os.path.expanduser("~/.local/share/general-ludd"),
@@ -70,6 +72,7 @@ def _confine_scan_paths(app: FastAPI, paths: list[object]) -> list[str]:
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register the admin integrity-scan and log-audit endpoints."""
 
     @app.post("/admin/integrity/scan")
     async def admin_integrity_scan(req: dict[str, object] | None = None) -> dict[str, object]:
@@ -105,9 +108,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         startup_config = getattr(app.state, "_startup_config", {}) or {}
         _uc = startup_config.get("user_config")
         _si_cfg = getattr(_uc, "self_improve", None)
-        warn_if_overlay_unmonitored(
-            paths, exclude_patterns, resolve_self_improve_enabled(_si_cfg)
-        )
+        warn_if_overlay_unmonitored(paths, exclude_patterns, resolve_self_improve_enabled(_si_cfg))
 
         result = scanner.scan(paths, exclude_patterns=exclude_patterns)
         _integrity_changes[:] = cast(list[dict[str, object]], result.get("changes", []))
@@ -133,10 +134,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
         # Find the pending change record for this path (unapproved).
         matched_change = next(
-            (
-                c for c in _integrity_changes
-                if c.get("file") == path and not c.get("approved", False)
-            ),
+            (c for c in _integrity_changes if c.get("file") == path and not c.get("approved", False)),
             None,
         )
         if matched_change is not None:
@@ -187,16 +185,18 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             matched_change["approved"] = True
             matched_change["signature"] = result.get("signature")
 
-        _integrity_log.append({
-            "action": "approved",
-            "path": path,
-            "reason": req.get("reason"),
-            "signer": req.get("signer"),
-            "old_hash": sign_old_hash,
-            "new_hash": sign_new_hash,
-            "timestamp": result.get("timestamp"),
-            "signature": result.get("signature"),
-        })
+        _integrity_log.append(
+            {
+                "action": "approved",
+                "path": path,
+                "reason": req.get("reason"),
+                "signer": req.get("signer"),
+                "old_hash": sign_old_hash,
+                "new_hash": sign_new_hash,
+                "timestamp": result.get("timestamp"),
+                "signature": result.get("signature"),
+            }
+        )
         return result
 
     @app.post("/admin/integrity/reject")
@@ -205,13 +205,15 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         # cannot be polluted with / referenced against out-of-root paths.
         raw_path = req.get("path", "")
         (path,) = _confine_scan_paths(app, [raw_path]) if raw_path else ("",)
-        _integrity_log.append({
-            "action": "rejected",
-            "path": path,
-            "reason": req.get("reason", ""),
-            "signer": req.get("signer", "admin"),
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        })
+        _integrity_log.append(
+            {
+                "action": "rejected",
+                "path": path,
+                "reason": req.get("reason", ""),
+                "signer": req.get("signer", "admin"),
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            }
+        )
         return {"path": path, "status": "rejected"}
 
     @app.get("/admin/integrity/log")
@@ -240,12 +242,14 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 if not os.path.isdir(scenario_path):
                     continue
                 if not podman_available and scenario in ("runtime_validate",):
-                    results.append({
-                        "scenario": scenario,
-                        "passed": None,
-                        "skipped": True,
-                        "reason": "podman not available",
-                    })
+                    results.append(
+                        {
+                            "scenario": scenario,
+                            "passed": None,
+                            "skipped": True,
+                            "reason": "podman not available",
+                        }
+                    )
                     continue
                 try:
                     result = await asyncio.to_thread(
@@ -260,11 +264,13 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                     passed = result.returncode == 0
                     if passed:
                         scenarios_passed += 1
-                    results.append({
-                        "scenario": scenario,
-                        "passed": passed,
-                        "returncode": result.returncode,
-                    })
+                    results.append(
+                        {
+                            "scenario": scenario,
+                            "passed": passed,
+                            "returncode": result.returncode,
+                        }
+                    )
                     if not passed:
                         errors.append(f"{scenario}: {result.stderr[:200]}")
                 except Exception as exc:

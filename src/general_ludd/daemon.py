@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import inspect
+import copy
 import logging
 import os
 import sys
 import threading
 import time
-from collections.abc import AsyncIterator, Callable, Iterator, MutableMapping
+from collections.abc import AsyncIterator, Callable, Iterator, MutableMapping, MutableSet
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -128,6 +128,11 @@ from general_ludd.security.sandboxes.vm.pool import (
 from general_ludd.security.sandboxes.vm.pool import (
     VMSandboxPool as _dc_VMSandboxPool,
 )
+from general_ludd.self_improve.managed_execution import (
+    ConfiguredManagedRunnerFactory,
+    ManagedSelfImproveProcessExecutor,
+    managed_execution_timeout_seconds,
+)
 from general_ludd.skills.loader import discover_skills
 from general_ludd.skills.registry import SkillRegistry
 from general_ludd.sts.dashboard import (
@@ -157,6 +162,7 @@ from general_ludd.sts.rotator import (
 from general_ludd.sts.rotator import (
     TokenRotator as _dc_TokenRotator,
 )
+from general_ludd.util.async_lifecycle import quiesce_task_before_drain
 from general_ludd.writer import WriterProcess
 
 _DEAD_CODE_REFS: list[object] = [
@@ -179,6 +185,9 @@ _DEAD_CODE_REFS: list[object] = [
 
 
 logger = ProjectLogAdapter(logging.getLogger(__name__))
+
+_DEFAULT_WORKER_ID = "worker"
+"""Fallback for the "GLUDD_WORKER_ID" env var; shared with the worker app default."""
 
 _STARTUP_UNSET: object = object()
 """Sentinel for app.state fields that are None at construction time and populated
@@ -203,6 +212,7 @@ _SAFE_METHODS_FROZEN = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 def is_public_path(method: str, path: str) -> bool:
+    """Return True for paths that may be served without PSK authentication."""
     if path.startswith(_RECEIVER_PREFIXES_FROZEN):
         return True
     if method.upper() not in _SAFE_METHODS_FROZEN:
@@ -239,10 +249,23 @@ def _compaction_config_dict(uc: Any) -> dict[str, Any]:
     return {}
 
 
+def _build_self_improve_runner_factory(
+    config: dict[str, Any],
+) -> Callable[[Path], Any]:
+    """Snapshot global self-improvement config for every repository runner."""
+    return ConfiguredManagedRunnerFactory(copy.deepcopy(config))
+
+
+def _log_owned_self_improve_event(event: str) -> None:
+    """Expose content-free managed child lifecycle events through daemon logs."""
+    logger.info("managed_self_improve_supervisor %s", event)
+
+
 def _remediation_tick_settings(uc: Any) -> tuple[int, int]:
-    """Return ``(check_interval_ticks, max_actions_per_tick)`` for the
-    auto-remediation tick phase (#52), fail-soft to ``(30, 5)`` when ``uc``
-    or the ``remediation`` block is absent.
+    """Return ``(check_interval_ticks, max_actions_per_tick)``.
+
+    For the auto-remediation tick phase (#52), fail-soft to ``(30, 5)`` when
+    ``uc`` or the ``remediation`` block is absent.
     """
     rs = getattr(uc, "remediation", None) if uc else None
     if rs is None:
@@ -285,6 +308,7 @@ class LangGraphModelCallError(Exception):
     """
 
     def __init__(self, original_error: Exception) -> None:
+        """Initialize the error, storing the original exception as cause."""
         self.original_error = original_error
         super().__init__(str(original_error))
         self.__cause__ = original_error
@@ -324,6 +348,7 @@ _daemon_state: Any = _DaemonStateProxy()
 
 
 def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
+    """Load user config plus project overlay into the startup config dict."""
     cfg: dict[str, Any] = {
         "model_routing": ModelRoutingConfig(),
         "user_config": UserConfig(),
@@ -513,6 +538,7 @@ def build_secrets_resolver(
     env_overrides: dict[str, str] | None = None,
     projects_active: bool = False,
 ) -> Any:
+    """Build the secrets resolver (OpenBao when reachable, else env fallback)."""
     base: Any
     if openbao_config is not None and openbao_config.mode not in ("disabled", None):
         mode = openbao_config.mode
@@ -586,6 +612,11 @@ def build_secrets_resolver(
 
             def for_project(self, project_id: str) -> ProjectSecretsManager:
                 return ProjectSecretsManager(base_manager=self._base, project_id=project_id)
+
+            def close(self) -> None:
+                close = getattr(self._base, "close", None)
+                if callable(close):
+                    close()
 
         return _LazyProjectSecrets(base)
     return base
@@ -713,16 +744,51 @@ def _init_project_workspaces(project_manager: Any) -> dict[str, Any]:
     workspaces: dict[str, Any] = {}
     if project_manager is not None:
         try:
-            for p in project_manager.list_active():
-                pid = getattr(p, "project_id", str(p))
-                workspaces[pid] = ProjectWorkspace(project_id=pid)
-                workspaces[pid].ensure_dirs()
+            projects = project_manager.list_active()
         except Exception as exc:
             logger.warning("Failed to initialize project workspaces: %s", exc)
+            return workspaces
+        from general_ludd.projects.repository_binding import (
+            ProjectRepositoryBinding,
+        )
+        from general_ludd.projects.workspace import (
+            confine_workspace_path,
+            default_workspace_base,
+        )
+
+        for project in projects:
+            pid = getattr(project, "project_id", str(project))
+            try:
+                binding = ProjectRepositoryBinding.for_project(
+                    project_id=pid,
+                    workspace_path=(
+                        getattr(project, "workspace_path", "") or pid
+                    ),
+                    repo_url=getattr(project, "repo_url", "") or "",
+                )
+                workspace_base = default_workspace_base()
+                workspace_root = confine_workspace_path(
+                    workspace_base,
+                    binding.workspace_key,
+                )
+                workspace = ProjectWorkspace(
+                    project_id=pid,
+                    base_dir=workspace_base,
+                    workspace_path=workspace_root,
+                )
+                workspace.ensure_dirs()
+                workspaces[pid] = workspace
+            except (OSError, RuntimeError, TypeError, ValueError) as exc:
+                logger.warning(
+                    "Failed to initialize project workspace %s: %s",
+                    pid,
+                    exc,
+                )
     return workspaces
 
 
 def load_model_profiles(profiles_dir: str | None = None) -> list[ModelProfile]:
+    """Load every enabled model profile YAML from the profiles directory."""
     if profiles_dir is None:
         return []
     pdir = Path(profiles_dir)
@@ -744,6 +810,8 @@ def load_model_profiles(profiles_dir: str | None = None) -> list[ModelProfile]:
 
 
 class AddTodoRequest(BaseModel):
+    """Request body for adding a todo via the admin API."""
+
     title: str = Field(min_length=1, max_length=512)
     description: str = Field(default="", max_length=4096)
     queue: str = Field(default="core", pattern=r"^[a-z0-9_\-]+$")
@@ -755,26 +823,38 @@ class AddTodoRequest(BaseModel):
 
 
 class LogLevelRequest(BaseModel):
+    """Request body for changing the daemon log level."""
+
     level: str
 
 
 class ReloadRequest(BaseModel):
+    """Request body for triggering a live reload of the given scope."""
+
     scope: str = "all"
 
 
 class AddModelRequest(BaseModel):
+    """Request body for registering a model with the routing registry."""
+
     model_id: str
     provider: str = "openai"
     model: str = ""
     api_key_env: str | None = None
     api_base_alias: str | None = None
     enabled: bool = True
-    api_metered: bool = True
+    # None = unspecified: the route coerces zero-cost registrations to
+    # un-metered; an EXPLICIT True keeps the metered contract (a metered
+    # model with zero cost is rejected — pinned by
+    # tests/unit/test_model_health_wiring.py).
+    api_metered: bool | None = None
     cost_per_input_token: float = Field(default=0.0, ge=0.0)
     cost_per_output_token: float = Field(default=0.0, ge=0.0)
 
 
 class RegisterHookRequest(BaseModel):
+    """Request body for registering an outbound webhook."""
+
     event_name: str
     url: str
     headers: dict[str, str] | None = None
@@ -783,6 +863,8 @@ class RegisterHookRequest(BaseModel):
 
 
 class AddProjectRequest(BaseModel):
+    """Request body for registering a project in the dispatcher."""
+
     name: str
     weight: float
     description: str = ""
@@ -792,14 +874,20 @@ class AddProjectRequest(BaseModel):
 
 
 class SetWeightRequest(BaseModel):
+    """Request body for updating one project's dispatch weight."""
+
     weight: float
 
 
 class RebalanceRequest(BaseModel):
+    """Request body for rebalancing project dispatch weights in one call."""
+
     weights: dict[str, float]
 
 
 class ModelSearchRequest(BaseModel):
+    """Request body for searching the model index by query string."""
+
     query: str = ""
     limit: int = 20
 
@@ -832,7 +920,7 @@ def _on_event_loop_done(task: asyncio.Task[Any]) -> None:
     if exc is not None:
         logger.error("EventLoop task terminated with exception: %s", exc)
     else:
-        logger.error("EventLoop task exited unexpectedly without exception")
+        logger.info("EventLoop task completed normally")
 
 
 def _check_degraded(app: FastAPI) -> JSONResponse | None:
@@ -991,14 +1079,29 @@ def build_event_loop_mcp_dispatcher(
     )
 
 
-# Tracks fire-and-forget self-update audit writes so the GC never reaps a task
-# mid-flight (asyncio only holds a weakref to tasks). Mirrors the pattern used
-# for the event-loop tick task.
-_SELF_UPDATE_AUDIT_TASKS: set[asyncio.Task[Any]] = set()
+async def _drain_self_update_audit_tasks(
+    tasks: MutableSet[asyncio.Task[Any]],
+    *,
+    timeout_seconds: float = 5.0,
+) -> None:
+    """Finish app-owned audit writes, cancelling only after a bounded wait."""
+    from general_ludd.util.async_lifecycle import cancel_and_drain_tasks
+
+    snapshot = tuple(tasks)
+    if not snapshot:
+        return
+    done, pending = await asyncio.wait(snapshot, timeout=timeout_seconds)
+    if done:
+        await asyncio.gather(*done, return_exceptions=True)
+        for task in done:
+            tasks.discard(task)
+    if pending:
+        await cancel_and_drain_tasks(pending, registry=tasks)
 
 
 def _build_self_update_audit_sink(
     session_factory: Any,
+    task_registry: MutableSet[asyncio.Task[Any]] | None = None,
 ) -> Callable[[Any], None]:
     """Build a sync ``AuditSink`` that persists self-update ``AuditRecord``s.
 
@@ -1019,6 +1122,7 @@ def _build_self_update_audit_sink(
     ``event_type`` strings like ``"return_reviewed"``, so ``"self_update_*"``
     follows that precedent rather than extending the ``AuditEventType`` enum).
     """
+    owned_tasks = task_registry if task_registry is not None else set()
 
     async def _persist(record: Any) -> None:
         import json as _json
@@ -1041,6 +1145,8 @@ def _build_self_update_audit_sink(
             )
 
     def _sink(record: Any) -> None:
+        from general_ludd.util.async_lifecycle import track_owned_task
+
         try:
             running_loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -1052,19 +1158,18 @@ def _build_self_update_audit_sink(
             )
             return
         task = running_loop.create_task(_persist(record))
-        _SELF_UPDATE_AUDIT_TASKS.add(task)
-        task.add_done_callback(_SELF_UPDATE_AUDIT_TASKS.discard)
+        track_owned_task(task, owned_tasks)
 
     return _sink
 
 
 def _configure_network_state(app: Any, network: Any) -> None:
     """Apply network policy and refuse unauthenticated external listeners."""
-
     preserve_cidr = bool(getattr(app.state, "_allowed_cidr", None))
     if network.is_external_bind and bool(getattr(app.state, "_no_auth", True)):
         raise RuntimeError(
-            "External daemon binds require authenticated access; configure GLUDD_PSK or use a loopback network host."
+            "External daemon binds require authenticated access; configure "
+            "GLUDD_AUTH_PSK or use a loopback network host."
         )
 
     if network.is_external_bind and not preserve_cidr:
@@ -1250,7 +1355,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # the /admin/self-update/plan router can pass it through to apply_plan.
         # Built once here (after session_factory exists) so every request reuses
         # the same sink; the sink opens its own short-lived session per record.
-        app.state._self_update_audit_sink = _build_self_update_audit_sink(session_factory)
+        app.state._self_update_audit_tasks = set()
+        app.state._self_update_audit_sink = _build_self_update_audit_sink(
+            session_factory,
+            app.state._self_update_audit_tasks,
+        )
 
         if is_sqlite_url(str(engine.url)):
             try:
@@ -2133,7 +2242,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 working_dir=_deploy_working_dir,
                 event_bus=subsys["bus"],
                 session_factory=session_factory,
-                worker_id=f"{os.environ.get('GLUDD_WORKER_ID', 'gunicorn')}-{os.getpid()}",
+                worker_id=f"{os.environ.get('GLUDD_WORKER_ID', _DEFAULT_WORKER_ID)}-{os.getpid()}",
             )
             app.state._deployment_manager = deployment_manager
 
@@ -2173,6 +2282,16 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 searx_model_discoverer.index_size,
             )
 
+        self_improve_config = dict(getattr(uc, "self_improve", {}) if uc else {})
+        self_improve_runner_factory = _build_self_improve_runner_factory(
+            self_improve_config
+        )
+        self_improve_executor = ManagedSelfImproveProcessExecutor(
+            runner_factory=self_improve_runner_factory,
+            timeout_seconds=managed_execution_timeout_seconds(self_improve_config),
+            event_sink=_log_owned_self_improve_event,
+        )
+
         event_loop = EventLoop(
             worker_base_url="http://localhost:8000",
             runner=runner,
@@ -2195,7 +2314,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "rules": startup_config.get("rules", []),
                 "queues": getattr(uc, "queues", []) if uc else [],
                 "budget": getattr(uc, "budget", {}) if uc else {},
-                "self_improve": getattr(uc, "self_improve", {}) if uc else {},
+                "self_improve": self_improve_config,
                 # #56: reachable SLM context-compaction on the generation path.
                 # Serialized to a plain dict so the EventLoop config stays a
                 # dict[str, Any]. Default OFF (compaction.enabled = False).
@@ -2239,6 +2358,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             consensus_reviewer=consensus_reviewer,
             langgraph_reviewer=langgraph_reviewer,
             self_improve_interval=self_improve_interval,
+            self_improve_runner_factory=self_improve_runner_factory,
+            self_improve_executor=self_improve_executor,
             # H3: spend_limiter passed via constructor so _spend_limiter is set
             # before the run_forever task is scheduled — the first tick can never
             # bypass the operator spend cap.
@@ -2274,7 +2395,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             TerraformEventBridge,
         )
 
-        terraform_worker_id = f"{os.environ.get('GLUDD_WORKER_ID', 'gunicorn')}-{os.getpid()}"
+        terraform_worker_id = f"{os.environ.get('GLUDD_WORKER_ID', _DEFAULT_WORKER_ID)}-{os.getpid()}"
         terraform_wakeup_listener = None
         if engine.dialect.name == "postgresql":
             terraform_wakeup_listener = PostgresWakeupListener(
@@ -2283,7 +2404,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 wake=event_loop.wake,
                 worker_id=terraform_worker_id,
                 reconnect_min_seconds=float(os.environ.get("GLUDD_PG_WAKE_RECONNECT_SECONDS", "0.1")),
-                reconnect_max_seconds=float(os.environ.get("GLUDD_PG_WAKE_RECONNECT_SECONDS", "5.0")),
+                reconnect_max_seconds=float(os.environ.get("GLUDD_PG_WAKE_RECONNECT_MAX_SECONDS", "5.0")),
             )
 
         terraform_event_bridge = TerraformEventBridge(
@@ -2678,9 +2799,19 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     _proc_default_registry().seal()
 
-    yield
+    _lifespan_failure: BaseException | None = None
+    _shutdown_failures: list[Exception] = []
+    try:
+        yield
+    except BaseException as exc:
+        # Defer propagation until every application-owned resource below has
+        # received its shutdown callback, including cancellation paths.
+        _lifespan_failure = exc
 
     # ── Off-peak scheduler shutdown ──────────────────────────────────────
+    await _drain_self_update_audit_tasks(
+        getattr(app.state, "_self_update_audit_tasks", set())
+    )
     _op_stop = getattr(app.state, "_off_peak_stop", None)
     _op_task = getattr(app.state, "_off_peak_task", None)
     if _op_stop is not None:
@@ -2746,35 +2877,41 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     if pipeline_controller is not None:
         try:
             await pipeline_controller.stop()
-        except Exception:
+        except Exception as exc:
             logger.warning("pipeline_controller.stop() failed during shutdown")
-            raise
+            _shutdown_failures.append(exc)
     mcp_client_ref = getattr(app.state, "_mcp_client", None)
     if mcp_client_ref is not None:
         try:
             await mcp_client_ref.stop_all()
-        except Exception:
+        except Exception as exc:
             logger.warning("mcp_client.stop_all() failed during shutdown")
-            raise
+            _shutdown_failures.append(exc)
     _el = event_loop if event_loop is not None else getattr(app.state, "event_loop", None)
     _terraform_bridge = getattr(app.state, "_terraform_event_bridge", None)
     if _terraform_bridge is not None:
-        await _terraform_bridge.aclose()
-        _event_bus = getattr(app.state, "_event_bus", None)
-        if _event_bus is not None:
+        try:
+            await _terraform_bridge.aclose()
+        except Exception as exc:
+            logger.warning("terraform event bridge cleanup failed")
+            _shutdown_failures.append(exc)
+    _event_bus = getattr(app.state, "_event_bus", None)
+    if _event_bus is not None:
+        try:
             await _event_bus.drain()
+        except Exception as exc:
+            logger.warning("event bus drain failed during shutdown")
+            _shutdown_failures.append(exc)
     if _el is not None:
         try:
-            _el.stop()
-            _shutdown_result = _el.shutdown()
-            if inspect.isawaitable(_shutdown_result):
-                await _shutdown_result
+            await quiesce_task_before_drain(
+                task,
+                request_stop=_el.stop,
+                drain=_el.shutdown,
+                timeout_seconds=5.0,
+            )
         except Exception:
             logger.warning("event_loop shutdown failed")
-    if task is not None:
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
     preflight_task_ref = getattr(app.state, "_preflight_task", None)
     if preflight_task_ref is not None:
         preflight_task_ref.cancel()
@@ -2785,6 +2922,26 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             await execution_engine.shutdown()
         except Exception:
             logger.warning("execution_engine.shutdown() failed")
+    _deployment_router_ref = getattr(app.state, "_deployment_health_router", None)
+    if _deployment_router_ref is not None:
+        try:
+            await _deployment_router_ref.aclose()
+        except Exception:
+            logger.warning("deployment health persistence cleanup failed")
+    _credit_tracker_ref = getattr(app.state, "_credit_tracker", None)
+    if _credit_tracker_ref is not None:
+        try:
+            _credit_tracker_ref.close()
+        except Exception:
+            logger.warning("CreditTracker.close() failed during shutdown")
+    _secrets_resolver_ref = getattr(app.state, "_secrets_resolver", None)
+    if _secrets_resolver_ref is not None:
+        try:
+            close = getattr(_secrets_resolver_ref, "close", None)
+            if callable(close):
+                close()
+        except Exception:
+            logger.warning("secrets resolver close failed during shutdown")
     _searx_client_ref = getattr(app.state, "_searx_client", None)
     if _searx_client_ref is not None:
         try:
@@ -2847,7 +3004,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.warning("engine.dispose() failed")
     otel_bridge_ref = getattr(app.state, "_otel_bridge", None)
     if otel_bridge_ref is not None and hasattr(otel_bridge_ref, "shutdown"):
-        otel_bridge_ref.shutdown()
+        try:
+            otel_bridge_ref.shutdown()
+        except Exception as exc:
+            logger.warning("OTel bridge shutdown failed")
+            _shutdown_failures.append(exc)
     _ornith_proc = getattr(app.state, "_ornith_mcp_proc", None)
     if _ornith_proc is not None:
         with contextlib.suppress(Exception):
@@ -2868,6 +3029,15 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             await _quant_monitor.stop()
         except Exception:
             logger.warning("QuantizationMonitor.stop() failed during shutdown")
+    if _lifespan_failure is not None and _shutdown_failures:
+        raise BaseExceptionGroup(
+            "daemon body and shutdown failures",
+            [_lifespan_failure, *_shutdown_failures],
+        )
+    if _lifespan_failure is not None:
+        raise _lifespan_failure.with_traceback(_lifespan_failure.__traceback__)
+    if _shutdown_failures:
+        raise ExceptionGroup("daemon shutdown failures", _shutdown_failures)
 
 
 def _build_sts_reaper(session_factory: Any, secrets_resolver: Any) -> Any:
@@ -3081,6 +3251,7 @@ def create_daemon_app(
     playbooks_dir: str | None = None,
     _db_path_override: str | None = None,
 ) -> FastAPI:
+    """Create the FastAPI daemon app with the full lifespan wiring."""
     if tick_interval is None:
         env_tick = os.environ.get("GLUDD_TICK_INTERVAL")
         tick_interval = float(env_tick) if env_tick else 1.0
@@ -3150,11 +3321,24 @@ def create_daemon_app(
 
     app.state.plan_critique = PlanCritique()
 
+    from general_ludd.hardware.accelerator_discovery import HardwareDiscovery
     from general_ludd.hardware.probe import probe_hardware
     from general_ludd.hardware.survey import HardwareSurvey
 
     app.state._hardware = probe_hardware()
-    app.state._hardware_inventory = HardwareSurvey().survey()
+    hardware_survey = HardwareSurvey()
+    app.state._hardware_inventory = hardware_survey.survey()
+    app.state._accelerator_inventory = None
+    app.state._accelerator_discovery = HardwareDiscovery(
+        survey=hardware_survey,
+        surveyed_gpus=app.state._hardware_inventory.gpus,
+        trace_sink=lambda trace: logger.info(
+            "accelerator discovery event=%s source=%s count=%d",
+            trace.event.value,
+            trace.source,
+            trace.discovered_count,
+        ),
+    )
     logger.info(
         "Hardware inventory surveyed: GPU=%d RAM=%.1fGB Disk=%.1fGB",
         app.state._hardware_inventory.gpu_count,
@@ -3166,6 +3350,20 @@ def create_daemon_app(
     # cannot drift. GLUDD_PSK_DISABLE and GLUDD_ALLOW_NO_AUTH are both accepted
     # as opt-out; GLUDD_REQUIRE_AUTH forces fail-closed.
     from general_ludd.security.auth import load_auth_posture
+
+    # Env audit / boot observability: the daemon surface reads the auth
+    # posture variables explicitly at boot so the runtime reads are visible
+    # here; the shared helper (security/auth.py) remains the single source
+    # of truth for the derived posture.
+    _auth_psk_boot = os.environ.get("GLUDD_AUTH_PSK", "").strip().strip()
+    _auth_require_boot = os.environ.get("GLUDD_REQUIRE_AUTH", "").strip()
+    _auth_allow_no_boot = os.environ.get("GLUDD_ALLOW_NO_AUTH", "").strip()
+    logger.debug(
+        "auth env at boot: psk_configured=%s require_auth=%s allow_no_auth=%s",
+        bool(_auth_psk_boot),
+        _auth_require_boot,
+        _auth_allow_no_boot,
+    )
 
     _posture = load_auth_posture("daemon")
     _psk = _posture.psk
@@ -3183,8 +3381,8 @@ def create_daemon_app(
         # be refused (503) until a PSK is configured.
         _dl = logging.getLogger("general_ludd.daemon")
         logger.warning(
-            "SECURITY: GLUDD_PSK is not set — the daemon will REFUSE all "
-            "non-public paths (503, fail-closed). Set GLUDD_PSK to enable auth. "
+            "SECURITY: GLUDD_AUTH_PSK is not set — the daemon will REFUSE all "
+            "non-public paths (503, fail-closed). Set GLUDD_AUTH_PSK to enable auth. "
             "For development only, set GLUDD_PSK_DISABLE=1 (or "
             "GLUDD_ALLOW_NO_AUTH=1) to allow unauthenticated access (leaves "
             "the entire /admin surface open to any caller)."
@@ -3192,10 +3390,10 @@ def create_daemon_app(
     elif _no_auth and _allow_no_auth:
         # Explicit dev opt-out: LOUD warning that auth is intentionally disabled.
         logger.warning(
-            "SECURITY: GLUDD_PSK is not set and auth is disabled — the "
+            "SECURITY: GLUDD_AUTH_PSK is not set and auth is disabled — the "
             "daemon is running with admin auth DISABLED (no_auth mode). The "
             "entire /admin surface is open to any caller that can reach the port. "
-            "Set GLUDD_PSK to enable auth."
+            "Set GLUDD_AUTH_PSK (alias: GLUDD_PSK) to enable auth."
         )
 
     _PUBLIC_PATHS = {
@@ -3236,6 +3434,36 @@ def create_daemon_app(
         # were rejected above by the _SAFE_METHODS gate).
         return path.startswith("/render/")
 
+    @app.middleware("http")
+    async def cidr_middleware(request: Any, call_next: Any) -> Any:
+        cidrs: list[str] = getattr(app.state, "_allowed_cidr", None) or []
+        if cidrs:
+            client_host = getattr(request.client, "host", None) if request.client else None
+            if not client_host or client_host == "testclient":
+                client_host = "127.0.0.1"
+            if client_host is not None:
+                import ipaddress as _ipaddress
+
+                try:
+                    client_ip = _ipaddress.ip_address(client_host)
+                except ValueError:
+                    client_ip = None
+                allowed = client_ip is not None and any(
+                    client_ip in _ipaddress.ip_network(cidr, strict=False) for cidr in cidrs
+                )
+                if not allowed:
+                    from fastapi.responses import JSONResponse
+
+                    logger.warning("CIDR deny: %s not in allowed_cidr=%s", client_host, cidrs)
+                    return JSONResponse(
+                        status_code=403,
+                        content={"error": "forbidden", "reason": "client IP not in allowed_cidr"},
+                    )
+        return await call_next(request)
+
+    # Registered AFTER cidr_middleware so auth_and_stats_middleware wraps it:
+    # FastAPI/Starlette runs the last-registered middleware first (outermost),
+    # so auth/stats sees every request — including CIDR-denied ones.
     @app.middleware("http")
     async def auth_and_stats_middleware(request: Any, call_next: Any) -> Any:
         app.state._stats_requests += 1
@@ -3316,33 +3544,6 @@ def create_daemon_app(
         metrics.counter_inc("gludd_http_responses_total", {"status": status})
         return response
 
-    @app.middleware("http")
-    async def cidr_middleware(request: Any, call_next: Any) -> Any:
-        cidrs: list[str] = getattr(app.state, "_allowed_cidr", None) or []
-        if cidrs:
-            client_host = getattr(request.client, "host", None) if request.client else None
-            if not client_host or client_host == "testclient":
-                client_host = "127.0.0.1"
-            if client_host is not None:
-                import ipaddress as _ipaddress
-
-                try:
-                    client_ip = _ipaddress.ip_address(client_host)
-                except ValueError:
-                    client_ip = None
-                allowed = client_ip is not None and any(
-                    client_ip in _ipaddress.ip_network(cidr, strict=False) for cidr in cidrs
-                )
-                if not allowed:
-                    from fastapi.responses import JSONResponse
-
-                    logger.warning("CIDR deny: %s not in allowed_cidr=%s", client_host, cidrs)
-                    return JSONResponse(
-                        status_code=403,
-                        content={"error": "forbidden", "reason": "client IP not in allowed_cidr"},
-                    )
-        return await call_next(request)
-
     if log_level == "debug":
         logging.getLogger("httpx").setLevel(logging.DEBUG)
         logging.getLogger("httpcore").setLevel(logging.DEBUG)
@@ -3383,6 +3584,13 @@ def create_daemon_app(
             local_model = await local_model_health_check()
         except Exception:
             local_model = {"model_exists": False, "llama_cpp_available": False, "memory": {}}
+        # SECURITY (gateway-health-budget P1): the memory dict carries numeric
+        # capacity figures — strip it from the unauth'd payload; only the
+        # booleans are public on /healthz.
+        local_model_public = {
+            "model_exists": bool(local_model.get("model_exists", False)),
+            "llama_cpp_available": bool(local_model.get("llama_cpp_available", False)),
+        }
         # N1/C6: a dead/cancelled event-loop task after a successful startup must
         # NOT serve green — the daemon is alive but no longer processing work.
         # Mirror /readyz's check so /healthz also reports degraded in that case
@@ -3399,7 +3607,7 @@ def create_daemon_app(
                 "allow_no_auth": allow_no_auth,
                 "auth_degraded": auth_degraded,
                 "budget_exhausted": budget_exhausted,
-                "local_model": local_model,
+                "local_model": local_model_public,
             }
         return {
             "status": "healthy",
@@ -3408,7 +3616,7 @@ def create_daemon_app(
             "allow_no_auth": allow_no_auth,
             "auth_degraded": auth_degraded,
             "budget_exhausted": budget_exhausted,
-            "local_model": local_model,
+            "local_model": local_model_public,
         }
 
     @app.get(

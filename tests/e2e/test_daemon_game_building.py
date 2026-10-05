@@ -34,6 +34,8 @@ import subprocess
 import sys
 import textwrap
 import traceback
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -260,11 +262,15 @@ SNAKE_PROMPT = textwrap.dedent("""\
 # ---------------------------------------------------------------------------
 
 
-async def _make_session_factory() -> Any:
+@asynccontextmanager
+async def _managed_session_factory() -> AsyncIterator[Any]:
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from sqlalchemy.pool import StaticPool
 
-    from general_ludd.db.models import Base
+    from general_ludd.db.models import Base, ProjectModel
+    from general_ludd.db.repository import ProjectRepository
+    from general_ludd.db.session import close_engine
+    from general_ludd.projects.manager import persist_project
 
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
@@ -272,9 +278,33 @@ async def _make_session_factory() -> Any:
         poolclass=StaticPool,
         connect_args={"check_same_thread": False},
     )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    return async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            await persist_project(
+                ProjectRepository(session),
+                project_id=_PROJECT_ID,
+                name="Game building E2E",
+                weight=100.0,
+                dispatch_mode="active",
+            )
+            await session.commit()
+            assert await session.get(ProjectModel, _PROJECT_ID) is not None
+        yield factory
+    finally:
+        try:
+            await engine.dispose()
+        finally:
+            close_engine(engine)
+
+
+@pytest.fixture
+async def session_factory() -> AsyncIterator[Any]:
+    """Yield one test-owned database factory and close its engine afterward."""
+    async with _managed_session_factory() as factory:
+        yield factory
 
 
 # ---------------------------------------------------------------------------
@@ -454,7 +484,7 @@ def _discover_game_class(mod: Any, preferred: str | None = None) -> type | None:
         key=lambda kv: len(
             [m for m in inspect.getmembers(kv[1], predicate=inspect.isfunction) if not m[0].startswith("_")]
         ),
-    )
+    )[1]
 
 
 def _instantiate_game(cls: type, hints: list[tuple[Any, ...]] | None = None) -> Any:
@@ -466,7 +496,7 @@ def _instantiate_game(cls: type, hints: list[tuple[Any, ...]] | None = None) -> 
     """
     import inspect
 
-    sig = inspect.signature(cls.__init__)
+    sig = inspect.signature(cls)
     params = [
         p
         for p in sig.parameters.values()
@@ -724,11 +754,38 @@ def _verify_snake_features(mod: Any) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+class TestDatabaseLifecycleOwnership:
+    """Keep test-created database resources inside an explicit owner scope."""
+
+    @pytest.mark.asyncio
+    async def test_managed_session_factory_closes_its_engine(self) -> None:
+        """The acquisition helper must dispose its engine before returning."""
+        from general_ludd.db.session import _engine_closed
+
+        async with _managed_session_factory() as session_factory:
+            engine = session_factory.kw["bind"]
+            assert not _engine_closed(engine)
+
+        assert _engine_closed(engine)
+
+    @pytest.mark.asyncio
+    async def test_managed_session_factory_closes_after_body_error(self) -> None:
+        """A failed game test must not defer connection cleanup to GC."""
+        from general_ludd.db.session import _engine_closed
+
+        with pytest.raises(RuntimeError, match="game body failed"):
+            async with _managed_session_factory() as session_factory:
+                engine = session_factory.kw["bind"]
+                raise RuntimeError("game body failed")
+
+        assert _engine_closed(engine)
+
+
 class TestDaemonGameBuilding:
     """Full daemon pipeline: claim → dispatch → execute → verify."""
 
     @pytest.mark.asyncio
-    async def test_daemon_builds_snake_game(self, tmp_path: Path) -> None:
+    async def test_daemon_builds_snake_game(self, tmp_path: Path, session_factory: Any) -> None:
         from general_ludd.db.repository import TodoRepository
         from general_ludd.event_loop.loop import EventLoop
         from general_ludd.execution.engine import ExecutionEngine
@@ -742,7 +799,6 @@ class TestDaemonGameBuilding:
 
         # ---------------------------------------------------------------- Step 1
         print("\n--- Step 1: Create in-memory SQLite DB with all tables ---")
-        session_factory = await _make_session_factory()
         print("  Base.metadata.create_all() executed on :memory:")
 
         # ---------------------------------------------------------------- Step 2
@@ -953,7 +1009,7 @@ class TestDaemonGameBuilding:
                 f"error: {ast_result.get('error')}"
             )
 
-            snake_failures: list[str] = []
+            snake_failures = []
             if ast_result["parseable"]:
                 module_name = f"snake_game_{todo_id.replace('-', '_').lower()}"
                 try:
@@ -1033,7 +1089,9 @@ class TestDaemonGameBuilding:
             print("  PASS: Full claim pipeline verified (QUEUED → ACTIVE → dispatched)")
 
     @pytest.mark.asyncio
-    async def test_full_claim_dispatch_generation_committed(self, tmp_path: Path) -> None:
+    async def test_full_claim_dispatch_generation_committed(
+        self, tmp_path: Path, session_factory: Any
+    ) -> None:
         """Shorter pipeline: claim → dispatch → ExecutionEngine → git commit → verify."""
         from general_ludd.db.repository import TodoRepository
         from general_ludd.event_loop.loop import EventLoop
@@ -1046,7 +1104,6 @@ class TestDaemonGameBuilding:
         print("FULL CLAIM→DISPATCH→GENERATION→COMMIT TEST")
         print("=" * 70)
 
-        session_factory = await _make_session_factory()
         gateway = _build_deepseek_gateway()
 
         ws = tmp_path / "game-workspace"
@@ -1135,7 +1192,9 @@ class TestDaemonGameBuilding:
         assert model_response, "Model should have been called"
 
     @pytest.mark.asyncio
-    async def test_self_improve_fires_during_game_building(self, tmp_path: Path) -> None:
+    async def test_self_improve_fires_during_game_building(
+        self, tmp_path: Path, session_factory: Any
+    ) -> None:
         """Self-improvement phase runs during game-building ticks.
 
         When gludd is used via the daemon, self-improvement is default-on
@@ -1158,7 +1217,6 @@ class TestDaemonGameBuilding:
         from general_ludd.prompts.registry import PromptRegistry
         from general_ludd.schemas.todo import TodoStatus as _TS
 
-        session_factory = await _make_session_factory()
         gateway = _build_deepseek_gateway()
         runner = _NoopRunner(str(tmp_path / "si-runner"))
         prompt_registry = PromptRegistry()

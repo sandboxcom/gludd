@@ -19,6 +19,8 @@ import re
 from pathlib import Path
 from typing import Any, cast
 
+from general_ludd.skills.embeddings import normalize_semantic_token
+
 
 class InvalidSkillError(ValueError):
     """Raised when a skill name is invalid or the skill does not exist."""
@@ -26,6 +28,8 @@ class InvalidSkillError(ValueError):
 
 _SKILLS_CACHE: dict[str, str] = {}
 _LENS_CACHE: dict[str, str] = {}
+_MAX_FEATURE_WORDS = 512
+_MAX_SUBWORD_CHARS = 128
 
 
 def _skills_dir() -> Path:
@@ -89,13 +93,14 @@ def _parse_sections(text: str) -> list[tuple[str, str]]:
 
 
 def _tokenize(text: str) -> set[str]:
-    words = re.findall(r"[a-z0-9_]+", text.lower())
+    words = re.findall(r"[a-z0-9_]+", text.lower())[:_MAX_FEATURE_WORDS]
     result: set[str] = set()
     for w in words:
         result.add(w)
-        for i in range(1, len(w)):
+        result.add(normalize_semantic_token(w))
+        for i in range(1, min(len(w), _MAX_SUBWORD_CHARS + 1)):
             result.add(w[:i])
-            result.add(w[i:])
+            result.add(w[-i:])
     for w in list(words):
         if "_" in w:
             parts = w.split("_")
@@ -145,6 +150,7 @@ def lens_raw(
     task_description: str,
     max_sections: int = 3,
 ) -> dict[str, Any]:
+    """Return structured skill sections ranked for a task description."""
     path = _skill_path(skill_name)
 
     if skill_name not in _SKILLS_CACHE:
@@ -189,6 +195,7 @@ def lens(
     task_description: str,
     max_sections: int = 3,
 ) -> str:
+    """Render the most relevant sections of a named skill as Markdown."""
     cache_key = f"{skill_name}|{task_description}|{max_sections}"
     if cache_key in _LENS_CACHE:
         return _LENS_CACHE[cache_key]
@@ -214,5 +221,6 @@ def lens(
 
 
 def clear_cache() -> None:
+    """Clear cached skill sources and rendered lens results."""
     _SKILLS_CACHE.clear()
     _LENS_CACHE.clear()

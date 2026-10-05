@@ -1,0 +1,11 @@
+---
+- name: Cleanup - remove scenario-owned evidence
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Remove refusal evidence
+      ansible.builtin.file:
+        path: >-
+          {{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/attestation-evidence.json
+        state: absent

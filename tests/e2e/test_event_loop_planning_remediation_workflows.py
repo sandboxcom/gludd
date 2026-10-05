@@ -33,7 +33,12 @@ from general_ludd.db.repository import (
     RemediationActionRepository,
     TodoRepository,
 )
-from general_ludd.event_loop.lease import acquire_lease, reclaim_expired_leases, release_lease
+from general_ludd.event_loop.lease import (
+    acquire_lease,
+    confirm_lease_termination,
+    reclaim_expired_leases,
+    release_lease,
+)
 from general_ludd.event_loop.loop import PHASE_ORDER, EventLoop
 from general_ludd.event_loop.scheduler import TodoScheduler
 from general_ludd.planning.artifact import PlanArtifact
@@ -328,13 +333,23 @@ class TestClaimDispatchReapCycle:
             priority=3, work_type="code", status=TodoStatus.ACTIVE.value,
         )
         db_session.add(todo)
+        await db_session.flush()
         lease = BucketLeaseModel(
             bucket_key="core:todo-stuck", holder_id="dead-worker",
+            todo_version=todo.version,
             expires_at=_now_minus(1),
         )
         db_session.add(lease)
         await db_session.commit()
 
+        n = await reclaim_expired_leases(db_session)
+        assert n == 0
+        assert await confirm_lease_termination(
+            db_session,
+            bucket_key="core:todo-stuck",
+            holder_id="dead-worker",
+            todo_version=todo.version,
+        )
         n = await reclaim_expired_leases(db_session)
         assert n >= 1
         await db_session.refresh(todo)

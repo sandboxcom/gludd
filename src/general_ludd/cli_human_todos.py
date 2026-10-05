@@ -3,7 +3,7 @@
 A separate interface for humans to see and resolve the requests that agents
 file against them (HumanTodo). Mirrors the daemon's ``/api/human-todos``
 endpoints. Write operations (done/dismiss/in-progress/comment) send the
-``GLUDD_PSK`` env var as a Bearer token so the daemon's PSK middleware
+``GLUDD_AUTH_PSK`` env var as a Bearer token so the daemon's PSK middleware
 authenticates them.
 """
 
@@ -20,7 +20,7 @@ import httpx
 
 
 def _psk_headers() -> dict[str, str]:
-    psk = os.environ.get("GLUDD_PSK", "")
+    psk = os.environ.get("GLUDD_AUTH_PSK", "").strip()
     headers: dict[str, str] = {"Content-Type": "application/json", "Accept": "application/json"}
     if psk:
         headers["Authorization"] = "Bearer " + psk
@@ -223,10 +223,7 @@ def _cmd_watch(args: argparse.Namespace) -> None:
                 if key in seen:
                     continue
                 seen.add(key)
-                print(
-                    f"[{r.get('updated_at')}] {r.get('id')} {r.get('status')} "
-                    f"{r.get('category')} — {r.get('title')}"
-                )
+                print(f"[{r.get('updated_at')}] {r.get('id')} {r.get('status')} {r.get('category')} — {r.get('title')}")
                 if r.get("human_resolution"):
                     print(f"    resolution: {r.get('human_resolution')}")
             if rows:
@@ -262,6 +259,7 @@ def _cmd_stats(args: argparse.Namespace) -> None:
 
 
 def add_human_todo_subparser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Register the ``human-todo`` subcommand tree for bot-to-human requests."""
     p = sub.add_parser("human-todo", help="Manage bot-to-human requests (HumanTodo)")
     p.set_defaults(func=None)
     hsub = p.add_subparsers(dest="human_todo_command")

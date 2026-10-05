@@ -15,50 +15,31 @@
 
 - name: Analyze spectroscopy data
   block:
-    - name: Simulate and analyze spectrum
-      ansible.builtin.script:
-        cmd: |
-          import json, sys
-          sys.path.insert(0, "{{ playbook_dir }}/../../..")
-          from ansible_collections.general_ludd.physics.plugins.module_utils.spectroscopy import (
-              SpectroscopyConfig, simulate_spectrum, find_peaks, write_spectroscopy_result
-          )
-          config = SpectroscopyConfig(
-              technique="{{ spectroscopy_technique }}",
-              wavelength_range_nm=({{ spectroscopy_wl_min_nm }}, {{ spectroscopy_wl_max_nm }}),
-              resolution_nm={{ spectroscopy_resolution_nm }},
-              solvent="{{ spectroscopy_solvent }}",
-              temperature_C={{ spectroscopy_temperature_c }},
-              peak_detection_threshold={{ spectroscopy_peak_threshold }},
-              peaks=[
-                  {"center_nm": 280, "amplitude": 1.0, "sigma_nm": 5.0},
-                  {"center_nm": 380, "amplitude": 0.5, "sigma_nm": 8.0},
-                  {"center_nm": 550, "amplitude": 0.3, "sigma_nm": 10.0},
-              ],
-          )
-          spectrum = simulate_spectrum(config)
-          peaks = find_peaks(spectrum["wavelengths_nm"], spectrum["intensities"],
-                             config.peak_detection_threshold)
-          result = {"spectrum": spectrum, "detected_peaks": peaks}
-          path = write_spectroscopy_result(result, "{{ spectroscopy_output_dir }}")
-          print(json.dumps({"status": "success", "path": str(path),
-                            "n_peaks_detected": len(peaks)}))
-        executable: python3
+    - name: Simulate and analyze spectrum via packaged physics module
+      general_ludd.physics.physics_analysis:
+        operation: spectroscopy
+        output_dir: "{{ spectroscopy_output_dir }}"
+        parameters:
+          technique: "{{ spectroscopy_technique }}"
+          wl_min_nm: "{{ spectroscopy_wl_min_nm }}"
+          wl_max_nm: "{{ spectroscopy_wl_max_nm }}"
+          resolution_nm: "{{ spectroscopy_resolution_nm }}"
+          solvent: "{{ spectroscopy_solvent }}"
+          temperature_c: "{{ spectroscopy_temperature_c }}"
+          peak_threshold: "{{ spectroscopy_peak_threshold }}"
       register: spectro_result
-      failed_when: false
-      changed_when: false
 
     - name: Parse spectroscopy result
       ansible.builtin.set_fact:
-        spectro_output: "{{ spectro_result.stdout | from_json }}"
-      when: spectro_result.rc == 0
+        spectro_output: "{{ spectro_result.result }}"
+      when: spectro_result.result is defined
 
   rescue:
     - name: Write failure result artifact
       ansible.builtin.copy:
         content: |
           {{ {'role': 'spectroscopy_analyst', 'status': 'failed',
-              'error': spectro_result.stderr | default('unknown error')} | to_nice_json }}
+              'error': spectro_result.msg | default('unknown error')} | to_nice_json }}
         dest: "{{ spectroscopy_output_dir }}/spectroscopy_result.json"
         mode: "0644"
       failed_when: false

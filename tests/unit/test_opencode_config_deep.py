@@ -6,7 +6,7 @@ skill path existence, agent definitions, and subagent config correctness.
 
 import json
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar, cast
 
 ROOT = Path(__file__).parent.parent.parent
 OPENCODE_JSON = ROOT / "opencode.json"
@@ -14,10 +14,9 @@ PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 PLUGINS_DIR = ROOT / ".opencode" / "plugins"
 SKILLS_DIR = ROOT / ".opencode" / "skills"
 
-REQUIRED_PERMISSION_TOOLS = {"read", "write", "edit", "glob", "grep", "bash", "external_directory"}
-ALLOWED_PATH_PREFIXES = frozenset(
+REQUIRED_PERMISSION_TOOLS = {"read", "edit", "glob", "grep", "bash", "external_directory"}
+ALLOWED_EXTERNAL_PATH_PREFIXES = frozenset(
     {
-        "/Users/shawnwilson/gludd/**",
         "/tmp/**",
         "/private/tmp/**",
         "/private/var/folders/**",
@@ -53,40 +52,64 @@ SKILL_DIRS_REQUIRE_SKILL_MD = SKILL_DIRS - {
 }
 
 
-def _load():
-    return json.loads(OPENCODE_JSON.read_text())
+def _load() -> dict[str, Any]:
+    return cast(dict[str, Any], json.loads(OPENCODE_JSON.read_text()))
 
 
 class TestPermissionRules:
-    def test_all_permission_tools_present(self):
+    def test_all_permission_tools_present(self) -> None:
         """Every required permission tool must have a rule block."""
         cfg = _load()
         perm = cfg["permission"]
         for tool in REQUIRED_PERMISSION_TOOLS:
             assert tool in perm, f"Missing permission block for tool: {tool}"
 
-    def test_deny_all_is_first_rule(self):
-        """Every tool's first rule must be '*: deny' for security."""
+    def test_permission_catchalls_match_the_supported_schema(self) -> None:
+        """Only external and command boundaries deny their catch-all.
+
+        The workspace is implicit in OpenCode's file-tool schema.  Reads are
+        allowed there except for secret files, while writes route through the
+        single ``edit`` capability.  External paths remain fail-closed in the
+        shared ``external_directory`` boundary.
+        """
         cfg = _load()
-        for tool in ("read", "write", "edit", "glob", "grep", "bash"):
-            rules = cfg["permission"][tool]
-            first_key = next(iter(rules.keys()))
+        permission = cfg["permission"]
+
+        assert permission["read"] == {
+            "*": "allow",
+            "*.env": "deny",
+            "*.env.*": "deny",
+            "*.env.example": "allow",
+        }
+        for tool in ("edit", "glob", "grep"):
+            assert permission[tool] == "allow"
+        assert "write" not in permission, "OpenCode routes writes through edit"
+        for tool in ("bash", "external_directory"):
+            rules = permission[tool]
+            first_key = next(iter(rules))
             assert first_key == "*", f"{tool}: first rule key must be '*', got '{first_key}'"
             assert rules[first_key] == "deny", f"{tool}: first rule must be 'deny', got '{rules[first_key]}'"
 
-    def test_file_tools_allow_all_required_paths(self):
-        """Read/write/edit/glob/grep must allow all required path prefixes."""
+    def test_file_tools_do_not_duplicate_external_path_rules(self) -> None:
+        """File tools must share the one external-directory allowlist."""
         cfg = _load()
-        for tool in ("read", "write", "edit", "glob", "grep"):
-            rules = cfg["permission"][tool]
-            allowed = {k for k, v in rules.items() if v == "allow"}
-            assert allowed == ALLOWED_PATH_PREFIXES, (
-                f"{tool}: allowed paths mismatch.\n"
-                f"  expected: {sorted(ALLOWED_PATH_PREFIXES)}\n"
-                f"  got:      {sorted(allowed)}"
-            )
+        permission = cfg["permission"]
+        for tool in ("read", "edit", "glob", "grep"):
+            value = permission[tool]
+            if isinstance(value, dict):
+                assert not any(rule.startswith("/") for rule in value), (
+                    f"{tool}: external paths belong only in external_directory"
+                )
+            else:
+                assert value == "allow"
+        allowed = {
+            key
+            for key, action in permission["external_directory"].items()
+            if action == "allow"
+        }
+        assert allowed == ALLOWED_EXTERNAL_PATH_PREFIXES
 
-    def test_bash_only_allows_make(self):
+    def test_bash_only_allows_make(self) -> None:
         """bash permission must only allow 'make *' patterns."""
         cfg = _load()
         bash_rules = cfg["permission"]["bash"]
@@ -94,7 +117,7 @@ class TestPermissionRules:
         allowed = {k for k, v in bash_rules.items() if v == "allow"}
         assert allowed == {"make *"}, f"bash must only allow 'make *', got: {sorted(allowed)}"
 
-    def test_external_directory_allows_system_paths(self):
+    def test_external_directory_allows_system_paths(self) -> None:
         """external_directory must allow /tmp, /private/..., .config, .local, .cache."""
         cfg = _load()
         rules = cfg["permission"]["external_directory"]
@@ -106,12 +129,12 @@ class TestPermissionRules:
         assert "/Users/shawnwilson/.local/share/opencode/**" in allowed
         assert "/Users/shawnwilson/.cache/**" in allowed
 
-    def test_doom_loop_is_denied(self):
+    def test_doom_loop_is_denied(self) -> None:
         """Doom loop execution must be explicitly denied."""
         cfg = _load()
         assert cfg["permission"].get("doom_loop") == "deny", "permission.doom_loop must be 'deny'"
 
-    def test_no_unknown_permission_tools(self):
+    def test_no_unknown_permission_tools(self) -> None:
         """No unknown/surprise permission tool blocks should exist."""
         cfg = _load()
         allowed = REQUIRED_PERMISSION_TOOLS | {"doom_loop"}
@@ -120,13 +143,13 @@ class TestPermissionRules:
 
 
 class TestPluginRegistrations:
-    def test_plugin_array_exists(self):
+    def test_plugin_array_exists(self) -> None:
         cfg = _load()
         assert "plugin" in cfg, "plugin array must exist"
         assert isinstance(cfg["plugin"], list), "plugin must be an array"
         assert len(cfg["plugin"]) > 0, "plugin array must not be empty"
 
-    def test_every_registered_plugin_file_exists(self):
+    def test_every_registered_plugin_file_exists(self) -> None:
         """Every plugin path in the array must resolve to an existing file."""
         cfg = _load()
         missing = []
@@ -136,7 +159,7 @@ class TestPluginRegistrations:
                 missing.append(rel)
         assert not missing, "Registered plugin files not found on disk:\n  " + "\n  ".join(missing)
 
-    def test_no_duplicate_plugin_registrations(self):
+    def test_no_duplicate_plugin_registrations(self) -> None:
         """No plugin should be registered more than once."""
         cfg = _load()
         seen = {}
@@ -147,13 +170,13 @@ class TestPluginRegistrations:
             seen[rel] = True
         assert not dupes, f"Duplicate plugin registrations found: {dupes}"
 
-    def test_all_plugins_are_typescript(self):
+    def test_all_plugins_are_typescript(self) -> None:
         """Every registered plugin path must end in .ts."""
         cfg = _load()
         non_ts = [p for p in cfg["plugin"] if not p.endswith(".ts")]
         assert not non_ts, f"Non-TypeScript plugins: {non_ts}"
 
-    def test_plugins_are_under_opencode_dir(self):
+    def test_plugins_are_under_opencode_dir(self) -> None:
         """Plugin paths must be under .opencode/plugin/ or .opencode/plugins/."""
         cfg = _load()
         bad = []
@@ -163,7 +186,7 @@ class TestPluginRegistrations:
                 bad.append(p)
         assert not bad, f"Plugins outside .opencode/: {bad}"
 
-    def test_plugin_count_matches_disk(self):
+    def test_plugin_count_matches_disk(self) -> None:
         """The number of registered .ts plugins should match the files on disk."""
         cfg = _load()
         registered = set(cfg["plugin"])
@@ -182,7 +205,7 @@ class TestPluginRegistrations:
             sorted(orphan_registered)
         )
 
-    def test_watchdog_plugin_registered(self):
+    def test_watchdog_plugin_registered(self) -> None:
         """watchdog.ts must be registered (it originates from plugins/, not plugin/)."""
         cfg = _load()
         watchdog_paths = [p for p in cfg["plugin"] if "watchdog" in p]
@@ -190,7 +213,7 @@ class TestPluginRegistrations:
 
 
 class TestSkills:
-    def test_registered_skills_have_skill_md(self):
+    def test_registered_skills_have_skill_md(self) -> None:
         """Every skill directory (except known exceptions) must contain a SKILL.md file."""
         if not SKILLS_DIR.is_dir():
             return
@@ -205,7 +228,7 @@ class TestSkills:
                 missing.append(f"{skill_dir}/SKILL.md (file missing)")
         assert not missing, "Skill directories missing SKILL.md:\n  " + "\n  ".join(missing)
 
-    def test_skill_dirs_exist_on_disk(self):
+    def test_skill_dirs_exist_on_disk(self) -> None:
         """Every listed skill directory must exist on disk."""
         if not SKILLS_DIR.is_dir():
             return
@@ -215,7 +238,7 @@ class TestSkills:
                 missing.append(s)
         assert not missing, f"Skill directories not found: {missing}"
 
-    def test_no_orphan_skill_dirs(self):
+    def test_no_orphan_skill_dirs(self) -> None:
         """No unexpected directories in .opencode/skills/."""
         if not SKILLS_DIR.is_dir():
             return
@@ -225,7 +248,7 @@ class TestSkills:
 
 
 class TestTopLevelConfig:
-    def test_compaction_config_valid(self):
+    def test_compaction_config_valid(self) -> None:
         """Compaction settings must be present and well-formed."""
         cfg = _load()
         comp = cfg.get("compaction", {})
@@ -233,29 +256,29 @@ class TestTopLevelConfig:
         assert isinstance(comp.get("reserved"), (int, float)), "compaction.reserved must be a number"
         assert comp["reserved"] > 0, "compaction.reserved must be positive"
 
-    def test_formatter_enabled(self):
+    def test_formatter_enabled(self) -> None:
         """formatter must be enabled (boolean true)."""
         cfg = _load()
         assert cfg.get("formatter") is True, "formatter must be true"
 
-    def test_lsp_enabled(self):
+    def test_lsp_enabled(self) -> None:
         """LSP must be enabled (boolean true)."""
         cfg = _load()
         assert cfg.get("lsp") is True, "lsp must be true"
 
-    def test_snapshot_disabled(self):
+    def test_snapshot_disabled(self) -> None:
         """snapshot should be false (opt-in only)."""
         cfg = _load()
         assert cfg.get("snapshot") is False, "snapshot must be false"
 
-    def test_schema_url_valid(self):
+    def test_schema_url_valid(self) -> None:
         """$schema must point to the official opencode config schema."""
         cfg = _load()
         assert cfg.get("$schema") == "https://opencode.ai/config.json", (
             f"$schema must be https://opencode.ai/config.json, got {cfg.get('$schema')}"
         )
 
-    def test_no_unknown_top_level_keys(self):
+    def test_no_unknown_top_level_keys(self) -> None:
         """No top-level keys outside the known schema (extended from test_opencode_json_schema.py)."""
         known = {
             "$schema",
@@ -338,7 +361,7 @@ class TestEnforcementPlugins:
         "watchdog.ts",
     ]
 
-    def test_all_critical_plugins_registered(self):
+    def test_all_critical_plugins_registered(self) -> None:
         cfg = _load()
         registered = {Path(p).name for p in cfg["plugin"]}
         missing = [p for p in self.CRITICAL_PLUGINS if p not in registered]

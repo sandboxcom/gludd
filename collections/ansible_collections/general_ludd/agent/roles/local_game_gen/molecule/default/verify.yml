@@ -173,8 +173,8 @@
     - name: "C3c. Assert health-check polling exists"
       ansible.builtin.assert:
         that:
-          - "{{ _main_slurp.content | b64decode is search('/health') }}"
-        fail_msg: "Must poll /health endpoint until server is ready"
+          - "{{ _main_slurp.content | b64decode is search('/v1/models') }}"
+        fail_msg: "Must poll /v1/models endpoint until server is ready"
 
     # -- Step 4: Generate game --
 

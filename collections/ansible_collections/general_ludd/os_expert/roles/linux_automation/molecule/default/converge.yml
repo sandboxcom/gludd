@@ -5,6 +5,6 @@
   tasks:
     - name: "Include linux_automation"
       ansible.builtin.include_role:
-        name: "linux_automation"
+        name: "general_ludd.os_expert.linux_automation"
       vars:
         enable_git_push: false

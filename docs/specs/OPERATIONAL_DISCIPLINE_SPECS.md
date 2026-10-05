@@ -6,23 +6,23 @@
 
 ---
 
-## AA100: Never Stop — Continue Dispatching Until All Work Complete
+## AA100: Never Stop — Continue Productive Work Until All Work Complete
 
-### AA100.1 — Continuous Dispatch Mandate
-When any work item exists in TASKS.md with status `pending` or `in_progress`, the agent system MUST maintain a continuous pipeline of subagent dispatch waves. Each wave MUST contain the maximum allowed number of subagents (10 by default). Between waves, the orchestrator MUST NOT pause, MUST NOT produce text-only responses, MUST NOT wait for user confirmation, and MUST NOT survey remaining work without simultaneously dispatching the next wave. The pipeline drains only when ALL TASKS.md items are `completed` or `cancelled` AND `config/ratchet.yml` is empty AND CI is GREEN on the active branch.
+### AA100.1 — Continuous Progress Mandate
+When any work item exists in TASKS.md with status `pending` or `in_progress`, the agent system MUST keep making observable progress. Inline work is valid. Delegation is optional, defaults to zero mandatory subagents, and is used only for concrete independent deliverables; a voluntary wave MUST NOT exceed three subagents. The orchestrator MUST NOT stop prematurely, wait for confirmation it does not need, or merely survey work without advancing it. Work is complete only when the task evidence is independently verified, `config/ratchet.yml` is empty, and the exact candidate passes its required local and hosted gates.
 
-**Enforcement:** Mechanical via `enforce-stop.ts` text.complete hook. Any text-only response with `hasRealPendingWork() == true` is blanked. The `enforce-multitask.ts` plugin denies non-dispatch tools when dispatch count < 10. The `enforce-floor.ts` plugin blocks non-dispatch tools after 2 consecutive calls.
+**Enforcement:** Mechanical via `enforce-stop.ts` text.complete hook. Any text-only response with `hasRealPendingWork() == true` is blanked. The concurrency plugins share the canonical zero-to-three contract and may require a positive minimum only when an operator explicitly configures one.
 
-**Evidence:** `make verify-state` output showing CLEAN tree + `make ci-verdict` showing GREEN + TASKS.md showing all items checked.
+**Evidence:** Exact-head gate output, hosted CI evidence, and task-specific proof. A checked box without matching evidence is not completion proof.
 
 ### AA100.2 — Anti-Pause Rule
-The orchestrator MUST NEVER pause between dispatch waves. When subagent results arrive, the ONLY valid next action is: (a) ingest results in ≤3 reads, (b) codify results (commit/tick TASKS.md), (c) dispatch next wave. A message containing only analysis text with 0 tool calls is a HARD VIOLATION. A message with <10 dispatches while work remains is a FLOOR BREACH. The phrase structures "let me check", "let me see", "let me survey", "let me figure out" are STOP PATTERNS and are blocked by `enforce-stop.ts`.
+The orchestrator MUST NOT pause while safe in-scope progress is available. When subagent results arrive, it ingests the result, verifies and codifies the deliverable, then advances the next concrete task inline or delegates it when independent ownership helps. A message containing only analysis text while unfinished work can advance is a HARD VIOLATION. Zero subagents is valid; filler dispatches are a violation.
 
 ### AA100.3 — No Rationalization Rule
-Finding a reason to pause (CI running, waiting for build, explaining behavior, "processing results") is itself a malfunction. There is no valid reason to pause when work remains. CI is fire-and-forget: check at natural breaks only. Background operations NEVER block dispatch. A subagent result is ingested in ≤5 seconds; the response carrying the ingestion result MUST also carry the next dispatch wave.
+Finding a reason to pause (CI running, waiting for build, explaining behavior, "processing results") is itself a malfunction when other safe work can advance. CI is fire-and-forget and checked at natural breaks. Background operations do not require a dispatch wave; the orchestrator continues the next useful inline or delegated task.
 
 ### AA100.4 — Text-Only Response Block
-Any assistant response containing zero tool calls while pending work exists is a PREMATURE STOP. This is mechanically enforced by `enforce-stop.ts` `text.complete` hook which blanks such responses before they reach the user. The only exception is a direct factual single-question answer that requires no tool calls — and even then, the next response MUST contain a dispatch wave.
+Any assistant response containing zero tool calls while pending work can still advance is a PREMATURE STOP. This is mechanically enforced by the `enforce-stop.ts` `text.complete` hook. A direct factual answer remains valid when the user asked for one; subsequent work may continue inline or through bounded delegation.
 
 ### AA100.5 — Stop Pattern Detection
 The following patterns are mechanically detected and blocked as premature stops:
@@ -36,19 +36,19 @@ The following patterns are mechanically detected and blocked as premature stops:
 - Q&A-style recaps with bolded question headers
 
 ### AA100.6 — CI Wait Productivity Rule
-During CI waits, the agent MUST dispatch subagents to: fix tests, write structural tests, update docs, investigate slow shards. Zero subagents during CI wait is a policy violation. The pipeline must stay primed at the 10-agent floor even when CI is the apparent center of attention.
+During CI waits, the agent continues useful disjoint work such as fixing tests, writing structural tests, updating docs, or investigating slow shards. Zero agents is valid when no independent deliverable exists; filler work is forbidden and the hard ceiling is three.
 
 ### AA100.7 — CI Poll Anti-Pattern Rule
-Checking ci-status more than 3 times in a row without intervening code changes is a STOP PATTERN. Each poll produces zero progress. If the agent finds itself polling, it MUST immediately dispatch a subagent that produces a concrete deliverable. CI polling subagents ("poll CI until terminal") are FORBIDDEN — they hold a floor slot for 30+ minutes doing no work.
+Checking CI status more than three times in a row without intervening progress is a STOP PATTERN. If the agent finds itself polling, it MUST advance a concrete deliverable inline or delegate one when that ownership is useful. CI polling subagents ("poll CI until terminal") are FORBIDDEN because they consume a bounded slot without producing a deliverable.
 
 ### AA100.8 — Steady-State Dispatch Rule
-The moment ANY subagent completes or fails, the orchestrator MUST immediately dispatch a replacement. Do NOT wait for the remaining batch to drain. The pipeline stays primed at 10 at all times. Process results FAST: scan in under 5 seconds and immediately dispatch the next wave. Write ZERO analysis prose between waves.
+When a subagent completes or fails, the orchestrator promptly integrates the result and reuses the slot only if another independent deliverable exists. Never exceed three and never manufacture replacement work merely to keep a pool full.
 
 ### AA100.9 — Pre-Dispatch Self-Check
-Before sending ANY message with tool calls, COUNT the number of task/agent/workflow dispatches. If count < 10 AND pending work exists, the message MUST be revised to include at least 10 dispatches. A message with 0 dispatches after 2 consecutive zero-dispatch responses is HARD DENIED by `enforce-multitask.ts`.
+Before sending a task/agent/workflow dispatch, verify that it owns a concrete independent deliverable, is not a duplicate, and does not overlap another worker's files. A voluntary wave contains one to three dispatches. Zero dispatches is valid for inline work, and no policy may manufacture tasks to fill a quota.
 
 ### AA100.10 — Post-Response Self-Audit
-After writing a response with tool calls, COUNT the dispatches. If <10 AND pending work exists, DELETE the response and add dispatches before sending. Both pre-dispatch check and post-response audit must pass.
+After composing a response with dispatches, confirm the count does not exceed three, research is serialized, no more than two coding worktrees run concurrently, and at least half of a multi-task wave is enhancement work. Both the pre-dispatch ownership check and post-response audit must pass.
 
 ---
 
@@ -185,7 +185,7 @@ When CI is RED: (a) diagnose the root cause from CI logs, (b) reproduce the fail
 CI is fire-and-forget. Do not: sleep on main thread waiting for CI, dispatch CI-poll subagents, run `make ci-wait` outside of release-cut flow. CI runs on its own schedule. Use the CI window to produce other deliverables.
 
 ### AA104.8 — Release Completeness
-A release is NOT done until `make verify-release-completeness TAG=<tag>` exits 0 with all 12 asset categories confirmed. A tag push is not done. A green CI run is not done. Only the artifact-completeness gate is done. Required: 12 asset categories (Linux .deb, Linux .rpm, Linux tarball, macOS .pkg, macOS tarball, Windows installer, Windows portable, Termux, Container, SBOM, Checksums, Provenance).
+A release is NOT done until `make verify-release-completeness TAG=<tag>` exits 0 with all 28 artifact categories and the 30-asset minimum confirmed. A tag push is not done. A green CI run is not done. Only the artifact-completeness gate is done. The canonical category inventory is owned by `scripts/verify_release_completeness.py` and mirrored in `docs/RELEASE_RUNBOOK.md`; no category is optional.
 
 ### AA104.9 — Green Branch Immutability
 Once a release branch's remote tip is CI-GREEN, no new commits may land on it. Work continues on a NEW branch. `make _push-green-guard` blocks pushes that add commits to green release branches.
@@ -257,7 +257,7 @@ Enforcement plugins MUST NOT interfere with subagent tool calls. The `OPENCODE_S
 Every subagent prompt MUST: (a) state available tools (bash, write, edit, read, glob, grep), (b) state that bash = `make <target>` only, (c) list relevant make targets, (d) be ≤20 lines, (e) ask for ≤10 lines of return output, (f) end with "Do NOT just report problems. Fix them."
 
 ### AA106.7 — Result Processing Speed
-When subagent results arrive, the orchestrator has EXACTLY one turn to process them before dispatching the next wave. That turn's message MUST contain both result ingestion AND next-wave dispatch. File inspection between waves is limited to 3 reads maximum.
+When subagent results arrive, the orchestrator promptly verifies and codifies each deliverable before assigning overlapping work. It then advances the next task inline or dispatches another independent deliverable when delegation adds value. Results never create an obligation to manufacture a replacement wave.
 
 ### AA106.8 — Completed Agent Rule
 A subagent that returns `completed` with a deliverable present is DONE — do NOT re-dispatch it. Re-dispatching completed work wastes tokens. A subagent that returns `failed` or empty SHOULD be re-dispatched with backoff (max 3 retries).
@@ -266,7 +266,7 @@ A subagent that returns `completed` with a deliverable present is DONE — do NO
 Only 1 research subagent at a time. Multiple research agents collide on the same files. Coding subagents can run in parallel with research. Research agent prompts MUST specify a concrete question and deliverable, not a vague "explore the codebase."
 
 ### AA106.10 — Agent Cap Reminder
-Maximum 10 concurrent subagents per COST-EFFICIENCY DIRECTIVE. Ceiling = floor = 10. A wave with <10 dispatches while work exists is a FLOOR BREACH. A wave with >10 dispatches is ABOVE CEILING (denied by plugin).
+Maximum three concurrent subagents per COST-EFFICIENCY DIRECTIVE, with no more than two coding worktrees and one serialized research agent. The default mandatory floor is zero. A positive one-to-three floor applies only when explicitly configured; a wave above three is denied.
 
 ---
 
@@ -291,7 +291,7 @@ Cited-but-STALE measurements are false claims: CI headSha != branch tip, `.gate-
 After every push: `make verify-remote BRANCH=<branch> SHA=<local-HEAD>`. Only when `VERIFIED <branch>@<sha>` is printed may the push be claimed successful. A push that exits 0 but whose remote tip doesn't match local HEAD is a SILENT FAILURE.
 
 ### AA107.7 — Release Verification
-After release-cut: `make verify-release-completeness TAG=<tag>`. Must exit 0 with all 12 asset categories. A release that has a tag but 0 downloadable assets is NOT shipped. The version number is not the deliverable; the artifact is.
+After release-cut: `make verify-release-completeness TAG=<tag>`. Must exit 0 with all 28 artifact categories and at least 30 assets. A release that has a tag but 0 downloadable assets is NOT shipped. The version number is not the deliverable; the artifact is.
 
 ### AA107.8 — Gate Verification
 Local gate: `make gate`. Must write `.gate-status` with PASS marker. Only `.gate-status` content is the truth — not the agent's memory of running it, not the last few lines of output, not "I think it passed."
@@ -316,10 +316,10 @@ Valid enhancement categories: new self-tests, new features from TASKS.md, docume
 Fix classification keywords: fix, bug, repair, regression, broken, incident, hotfix. Enhancement classification keywords: enhancement, feature, docs, test, tooling, script, make target, presentation, skill, guardrail, refactor, observability, codify, self-test.
 
 ### AA108.4 — Per-Wave Ratio Check
-The ratio is checked PER WAVE, not per session. Every single dispatch message must include ≥5 enhancement subagents when the wave has 10 slots. No credit for "we did enhancements earlier."
+The ratio is checked PER WAVE, not per session. In a two-task wave at least one deliverable is enhancement work; in a three-task wave at least two are enhancements. A singleton is classified on its own merits. No credit is carried forward from an earlier wave.
 
 ### AA108.5 — Fix-Only Wave Block
-A dispatch wave with all 10 subagents classified as fix when enhancements are possible is BLOCKED by `enforce-enhancement-ratio.ts`. Replace fix dispatches with enhancement dispatches until ≥50% are enhancements.
+A multi-task dispatch wave classified entirely as fixes is BLOCKED when enhancement work is available. Replace or defer work until at least half of the bounded wave is enhancement work; never invent filler merely to satisfy the ratio.
 
 ---
 
@@ -345,13 +345,13 @@ Every bug in this repository is the agent's responsibility to fix. There is no s
 ## AA110: Session Management
 
 ### AA110.1 — Session Start Protocol
-First actions of every session in STRICT ORDER: (0) `make watchdog-auto`, (1) parallel read TASKS.md + BUGS.md + ratchet.yml + SESSION.md, (2) run `make git-status` + `make git-log`, (3) IMMEDIATELY dispatch ≥10 subagents. The window between "read backlog" and "first dispatch wave" must be EXACTLY 1 turn. Enforced by `enforce-session-start.ts`.
+At session start, inspect the task ledger, bug ledger, ratchet, prior session evidence, repository state, and resource state using the narrowest Make targets. Then immediately advance the highest-priority safe task. Delegation remains optional: dispatch one to three concrete independent deliverables only when it improves ownership or throughput. Enforced by `enforce-session-start.ts` without a mandatory default floor.
 
 ### AA110.2 — SESSION.md Maintenance
 SESSION.md MUST be updated after every logical unit of work. Contents: last updated date, test suite status, last commit hash, completed objectives, known gaps, next steps. A stale SESSION.md causes context loss across restarts.
 
-### AA110.3 — Time-to-Dispatch Constraint
-≤5 minutes wall-clock from session start to first dispatch wave. If backlog reads finish and 5 minutes have elapsed with no dispatch wave, the session is in violation. Step 1 (reads) → Step 2 (dispatch) is ONE turn, not N turns.
+### AA110.3 — Time-to-Progress Constraint
+Move from the bounded startup audit to a concrete read, test, edit, or justified dispatch without repeated status-only loops. A session is in violation when it keeps surveying the backlog but produces no evidence-bearing progress.
 
 ### AA110.4 — Session End Cleanup
 A session MUST end with: (a) all worktrees merged and cleaned up, (b) tree clean (no uncommitted changes), (c) all subagent results codified, (d) TASKS.md updated, (e) SESSION.md updated. A dirty tree at session end is lost work.
@@ -367,7 +367,7 @@ If the session crashes: on restart, `make verify-state` shows the state at crash
 ## AA111: Multitasking & Pipeline
 
 ### AA111.1 — Parallel-When-Possible Rule
-Work is SERIAL only if it mutates the shared master working tree or competes for the one gate/commit/push slot. Everything else is PARALLEL — fan it out to isolated git worktrees.
+Parallelize only concrete independent work whose benefit exceeds coordination and resource cost. Shared-tree mutation, the gate/commit/push slot, research, and overlapping files stay serialized. Zero subagents remains valid for work best completed inline.
 
 ### AA111.2 — True Blockers
 True blockers: merging to master, running `make gate`/commit/push, resolving conflicts in hot files (daemon.py, routers/facts.py, db/models.py, db/repository.py). Everything else is a false blocker — parallelize.
@@ -379,7 +379,7 @@ At most ONE in-flight agent per hot file at any time. More than one is a guarant
 Work that touches distinct files reconciles cheaply. Bias each new wave toward disjoint/new-file work. When hot-file edits are unavoidable, serialize them through the integrator.
 
 ### AA111.5 — Pipeline Priming
-As soon as batch N delivers results, batch N+1 must already be running or launch immediately. Never let the active-agent count drop to zero while independent work remains.
+When a bounded wave returns, verify and integrate it before reusing ownership. Refill a slot only for another concrete independent deliverable. The active-agent count may reach zero while useful inline work continues or when delegation would add no value.
 
 ---
 
@@ -408,13 +408,13 @@ On failure, the captured log MUST be surfaced. Never swallow errors with "see lo
 Before every session start and after large subagent batches: `make clean-tmp`. `/tmp/gludd-*` files accumulate across sessions. State files with stale PIDs MUST be removed. Pre-commit check: `make check-disk` fails if `/tmp/gludd-*` >100MB or disk >90%.
 
 ### AA113.2 — Worktree Disk Cap
-Each worktree-isolated agent creates a ~320MB venv. Cap concurrent worktree agents at ~5-6 to avoid ENOSPC. When no worktree agents are live: `make clean-worktree-venvs`.
+Each worktree-isolated agent consumes material disk and process resources. Cap concurrent coding worktrees at two. When no worktree agents are live, reclaim project-owned stale environments through the documented Make target.
 
 ### AA113.3 — System Load Gate
-Before dispatch waves: check system load. If 1-min load >2x CPU count: kill background processes, trim wave to ≤5. If load >3x CPU count: halt dispatch entirely, run `make clean-tmp` and `make gate-kill`.
+Before dispatch waves, inspect system load through the documented resource target. Reduce a voluntary wave below its three-agent ceiling when load is elevated, and use zero subagents when another concurrent workload would risk resource exhaustion. Stop only verified project-owned processes through their bounded Make targets.
 
 ### AA113.4 — Background Gate Load
-A background gate + 10 subagents = multiplicative CPU load. Never run a background gate AND a full dispatch wave simultaneously. Pause one or cap the other.
+A background gate plus model agents can multiply CPU, memory, and disk pressure. Keep the gate observable and reduce or eliminate concurrent delegation when combined resource use approaches project limits.
 
 ---
 
@@ -424,7 +424,7 @@ A background gate + 10 subagents = multiplicative CPU load. Never run a backgrou
 `sonnet` is the cost-efficient default. Maintain a sonnet-dominant dispatch ratio. Use `model:'sonnet'` unless the task specifically requires a stronger model. Simple file reads and research use `sonnet` or `haiku`.
 
 ### AA114.2 — Token Efficiency
-Keep main-thread turns terse. Delegate ALL heavy reading/editing/testing to subagents. Subagents return terse summaries + file pointers, keeping detail off the main thread. Every main-thread token should buy coordination/judgment, not grunt work.
+Keep main-thread turns concise and prefer direct tools for simple reads and edits. Delegate only multi-step independent deliverables whose parallel ownership saves more work than it duplicates. Subagents return terse summaries and file pointers so verification remains auditable without context explosion.
 
 ### AA114.3 — Subagent Cost Awareness
 Subagent slots are precious. A slot filled with a bogus task is a slot stolen from real work. Research subagents must produce concrete deliverables, not placeholder outputs. Never re-dispatch completed work — check task deduplication before dispatching.

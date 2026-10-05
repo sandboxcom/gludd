@@ -83,19 +83,17 @@ class TestSubagentGuard:
 
 
 class TestKeyConstants:
-    def test_floor_default_is_7(self):
-        # Floor was raised to 10 by user mandate (2026-06-22); the test name is
-        # retained for traceability but the asserted value is the current 10.
+    def test_floor_uses_canonical_opt_in_minimum(self):
         src = _src()
-        m = re.search(r'CLAUDE_AGENT_FLOOR \|\| "(\d+)"', src)
-        assert m, "FLOOR default not found"
-        assert m.group(1) == "10"
+        assert "../lib/multitask_config.ts" in src
+        assert "MIN_DISPATCHES" in src
+        assert "clampDispatchCount" in src
+        assert "CLAUDE_AGENT_FLOOR || String(MIN_DISPATCHES)" in src
 
-    def test_target_default_is_6(self):
+    def test_target_uses_canonical_three_agent_cap(self):
         src = _src()
-        m = re.search(r'CLAUDE_AGENT_TARGET \|\| "(\d+)"', src)
-        assert m, "TARGET default not found"
-        assert m.group(1) == "6"
+        assert "CLAUDE_AGENT_TARGET || String(HARD_MAX_DISPATCHES)" in src
+        assert "clampDispatchCount" in src
 
     def test_mainthread_threshold_default_is_2(self):
         src = _src()

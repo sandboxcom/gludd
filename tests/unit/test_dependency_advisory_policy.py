@@ -16,6 +16,13 @@ def test_ansible_core_uses_stable_fixed_release() -> None:
     assert "--ignore-vuln PYSEC-2026-3458" not in MAKEFILE
 
 
+def test_pip_uses_fixed_doubly_encoded_url_release() -> None:
+    assert PYPROJECT.count('"pip>=26.2"') == 2
+    assert '"pip>=26.1.2"' not in PYPROJECT
+    assert "PYSEC-2026-3721" in SECURITY
+    assert "--ignore-vuln PYSEC-2026-3721" not in MAKEFILE
+
+
 def test_cryptography_pkcs7_vex_is_enforced() -> None:
     advisory = "PYSEC-2026-3552"
     assert f"--ignore-vuln {advisory}" in MAKEFILE

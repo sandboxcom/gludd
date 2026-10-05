@@ -9,6 +9,7 @@ explicit so future Molecule upgrades cannot silently reintroduce either class.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -39,10 +40,12 @@ _FAILED_SCENARIOS = (
     "role_write_tests",
     "test_gludd_agent_run",
 )
-_LIFECYCLE_PHASES = ("create", "side_effect", "cleanup", "destroy")
+_MOCK_DAEMON_SCENARIOS = frozenset(
+    {"role_agent_task", "role_implement_change", "role_refactor_code"}
+)
 
 
-def _config(scenario: str) -> dict:
+def _config(scenario: str) -> dict[str, Any]:
     with (_SCENARIO_ROOT / scenario / "molecule.yml").open() as stream:
         loaded = yaml.safe_load(stream)
     assert isinstance(loaded, dict)
@@ -79,13 +82,33 @@ def test_failed_agent_run_scenario_maps_every_lifecycle_playbook(
     sequence = config["scenario"]["test_sequence"]
     playbooks = config["provisioner"]["playbooks"]
 
-    for phase in _LIFECYCLE_PHASES:
+    lifecycle_files = {
+        "create": "create.yml",
+        "cleanup": (
+            "mock_daemon_cleanup.yml"
+            if scenario in _MOCK_DAEMON_SCENARIOS
+            else "cleanup.yml"
+        ),
+        "destroy": (
+            "mock_daemon_destroy.yml"
+            if scenario in _MOCK_DAEMON_SCENARIOS
+            else "destroy.yml"
+        ),
+    }
+    if scenario not in _MOCK_DAEMON_SCENARIOS:
+        lifecycle_files["side_effect"] = "side_effect.yml"
+
+    for phase, filename in lifecycle_files.items():
         assert phase in sequence
         assert playbooks[phase] == (
             "${MOLECULE_PROJECT_DIRECTORY}/molecule/shared/"
-            f"{phase}.yml"
+            f"{filename}"
         )
-        assert (_SHARED_ROOT / f"{phase}.yml").is_file()
+        assert (_SHARED_ROOT / filename).is_file()
+
+    if scenario in _MOCK_DAEMON_SCENARIOS:
+        assert "side_effect" not in sequence
+        assert "side_effect" not in playbooks
 
     assert sequence.count("cleanup") == 2
     assert sequence[-2:] == ["cleanup", "destroy"]

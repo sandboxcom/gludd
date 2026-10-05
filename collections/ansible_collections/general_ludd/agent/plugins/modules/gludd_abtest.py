@@ -72,8 +72,10 @@ RETURN:
 from __future__ import annotations
 
 import json
+import os
 
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import GluddClient
 
 
 def main() -> None:
@@ -87,31 +89,37 @@ def main() -> None:
             timeout=dict(type="float", default=60.0),
             mem_limit_mb=dict(type="int", default=512),
             verdict_path=dict(type="str", default=None),
+            daemon_url=dict(type="str", default="http://localhost:8000"),
+            psk=dict(type="str", default="", no_log=True),
         ),
         supports_check_mode=True,
     )
 
-    try:
-        from general_ludd.abtest.compare import run_ab
-        from general_ludd.abtest.workloads import import_module_workload
-    except ImportError as exc:
-        module.fail_json(msg=f"general_ludd.abtest not importable: {exc}")
-        return
-
     params = module.params
-    baseline = params["baseline_root"] or params["repo_root"]
-    workload = import_module_workload(
-        params["module"], expect_attr=params["expect_attr"]
+    baseline = os.path.abspath(params["baseline_root"] or params["repo_root"])
+    candidate = os.path.abspath(params["candidate_root"])
+    if module.check_mode:
+        module.exit_json(changed=False, failed=False, verdict={}, promote=False)
+        return
+    response = GluddClient(
+        base_url=params["daemon_url"],
+        psk=params["psk"],
+        timeout=max(30, int(params["timeout"] * 2) + 10),
+    ).post(
+        "/admin/abtest/run",
+        {
+            "baseline_root": baseline,
+            "candidate_root": candidate,
+            "module": params["module"],
+            "expect_attr": params["expect_attr"],
+            "timeout": params["timeout"],
+            "mem_limit_mb": params["mem_limit_mb"],
+        },
     )
-
-    verdict = run_ab(
-        baseline_root=baseline,
-        candidate_root=params["candidate_root"],
-        workload=workload,
-        timeout=params["timeout"],
-        mem_limit_mb=params["mem_limit_mb"],
-    )
-    verdict_dict = verdict.to_dict()
+    if response.get("_error") or response.get("_status") != 200:
+        module.fail_json(msg=str(response.get("detail") or response.get("_error") or "A/B test failed"))
+        return
+    verdict_dict = response.get("verdict", {})
 
     if params["verdict_path"]:
         try:
@@ -125,7 +133,7 @@ def main() -> None:
         changed=False,
         failed=False,
         verdict=verdict_dict,
-        promote=verdict.promote,
+        promote=bool(response.get("promote", False)),
     )
 
 

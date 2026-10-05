@@ -10,9 +10,12 @@ from __future__ import annotations
 
 import importlib
 import tomllib
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 ROOT = Path(__file__).parent.parent.parent
 PYPROJECT = ROOT / "pyproject.toml"
@@ -23,15 +26,40 @@ def _load() -> dict:
 
 
 def _dep_name(spec: str) -> str:
-    for sep in ("==", ">=", "<=", "!=", "~=", "<", ">", "["):
-        spec = spec.split(sep)[0]
-    return spec.strip().lower()
+    return canonicalize_name(Requirement(spec).name)
 
 
 def _dep_names(section: list[str] | None) -> set[str]:
     if not section:
         return set()
     return {_dep_name(s) for s in section}
+
+
+_AGGREGATE_EXTRAS = frozenset({"dev", "e2e-all"})
+
+
+def _audited_extra_pairs(
+    extras: dict[str, list[str]],
+) -> Iterator[tuple[str, list[str], str, list[str]]]:
+    """Yield pairs of standalone extras whose dependency sets must be disjoint."""
+    standalone = [(name, deps) for name, deps in extras.items() if name not in _AGGREGATE_EXTRAS]
+    for index, (left_name, left_deps) in enumerate(standalone):
+        for right_name, right_deps in standalone[index + 1 :]:
+            yield left_name, left_deps, right_name, right_deps
+
+
+def test_audited_extra_pairs_exclude_only_aggregate_environments() -> None:
+    """Development/superset extras may aggregate, standalone extras may not."""
+    extras = {
+        "dev": ["shared>=1"],
+        "e2e-all": ["shared>=1"],
+        "azure": ["shared>=1"],
+        "aws": ["shared>=1"],
+    }
+
+    pairs = list(_audited_extra_pairs(extras))
+
+    assert [(left, right) for left, _, right, _ in pairs] == [("azure", "aws")]
 
 
 # ---------------------------------------------------------------------------
@@ -122,9 +150,6 @@ _VALID_LICENSES = {
 
 # Known intentional cross-section overlaps
 _EXPECTED_CROSS_GROUP_DUPES = {"aiosqlite", "langchain-openai"}
-# e2e-all is intentionally a superset of game-e2e, azure, etc.
-_SUPERSET_EXTRAS = {"e2e-all"}
-
 # Known missing [project.urls] — this is a documented gap
 _URL_GAP_MSG = "[project.urls] section is missing — should be added (Homepage, Repository, Documentation, Bug Tracker)"
 
@@ -236,17 +261,11 @@ def test_dependency_groups_not_duplicating_core():
 def test_no_duplicate_deps_between_extras_groups():
     data = _load()
     opt = data["project"].get("optional-dependencies", {})
-    groups = list(opt.items())
-    for i, (g1, deps1) in enumerate(groups):
-        if g1 in _SUPERSET_EXTRAS:
-            continue
+    for g1, deps1, g2, deps2 in _audited_extra_pairs(opt):
         names1 = _dep_names(deps1)
-        for g2, deps2 in groups[i + 1 :]:
-            if g2 in _SUPERSET_EXTRAS:
-                continue
-            names2 = _dep_names(deps2)
-            dupes = names1 & names2
-            assert not dupes, f"Deps duplicated between [{g1}] and [{g2}]: {dupes}"
+        names2 = _dep_names(deps2)
+        dupes = names1 & names2
+        assert not dupes, f"Deps duplicated between [{g1}] and [{g2}]: {dupes}"
 
 
 def test_no_duplicate_deps_between_dependency_groups():

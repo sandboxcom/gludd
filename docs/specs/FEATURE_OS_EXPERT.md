@@ -60,7 +60,7 @@ auditd, osquery, dmesg, syslog_file) and adds new connectors for gaps.
 
 ## 6. Files
 
-```
+```text
 collections/ansible_collections/general_ludd/os_expert/
 ├── galaxy.yml
 ├── roles/{macos_diagnose,macos_security,linux_diagnose,linux_kernel,

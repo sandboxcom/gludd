@@ -334,7 +334,7 @@ from `*_env` at call time and pass through `_validate_base_url`.
   `- [ ] title` (unchecked) / `- [x] title` (checked). `external_id` is derived
   **stably** so re-parsing the same line dedups: `external_id <-
   f"{relpath}#{line_no}:{slug(title)}"` — or, preferred, an inline
-  `<!-- gludd:id=... -->` marker the adapter injects on first ingest so reorders
+  `&lt;!-- gludd:id=... --&gt;` marker the adapter injects on first ingest so reorders
   don't change ids (see idempotency note). `title <-` the text after the
   checkbox; `body <-` indented continuation lines; `gludd_status <-`
   `[x]`->complete, `[ ]`->backlog; `priority <-` `(!)`/`(!!)`/`(!!!)` markers or
@@ -342,7 +342,7 @@ from `*_env` at call time and pass through `_validate_base_url`.
   `updated_at <-` file mtime.
 - **Write-back**: rewrite the matching line in place. `COMPLETED`-> flip
   `- [ ]` to `- [x]`; `CLAIMED`-> append a `(in-progress)` tag or a
-  `<!-- gludd:status=in_progress -->` marker (no native "in progress" in
+  `&lt;!-- gludd:status=in_progress --&gt;` marker (no native "in progress" in
   Markdown checkboxes). Write is **read-modify-write** under an advisory file
   lock; the adapter re-reads, locates the line by the stable `gludd:id` marker
   (not line number, which drifts), edits, and atomically replaces (write temp +
@@ -689,4 +689,5 @@ repo tests)**
 No integration/E2E tests are specified here (design-only); the mocked-transport
 unit suite fully covers the contract, mapping tables, idempotency, conflict
 rules, and policy gates without any external dependency.
+```text
 ```

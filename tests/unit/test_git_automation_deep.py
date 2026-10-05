@@ -59,6 +59,9 @@ from general_ludd.git_automation.worktree_lease import (
     write_worktree_lease,
 )
 
+# Real repo root on THIS machine (functions under test validate the path).
+_REPO = str(Path(__file__).resolve().parents[2])
+
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 
@@ -86,12 +89,12 @@ def _mp_git_lock_worker(order_list, rp, name, hold):
         order_list.append(f"{name}:exit")
 
 
-_WT_MAIN_ONLY = """worktree /Users/shawnwilson/gludd
+_WT_MAIN_ONLY = f"""worktree {_REPO}
 HEAD abc123def4567890123456789012345678abcdef
 branch refs/heads/development
 """
 
-_WT_ONE_AGENT = """worktree /Users/shawnwilson/gludd
+_WT_ONE_AGENT = f"""worktree {_REPO}
 HEAD abc123def4567890123456789012345678abcdef
 branch refs/heads/development
 
@@ -112,7 +115,7 @@ class TestWorktreeLifecycleDeep:
         mock_run.side_effect = [
             _git_success(),  # worktree add -b (create)
         ]
-        create_result = worktree_create("/Users/shawnwilson/gludd", "agent-lifecycle")
+        create_result = worktree_create(_REPO, "agent-lifecycle")
         assert create_result.success is True
         assert create_result.branch == "agent-lifecycle"
 
@@ -122,7 +125,7 @@ class TestWorktreeLifecycleDeep:
             _git_success(),  # merge --no-ff
             _git_success("development"),  # (finally: checkout back)
         ]
-        merge_result = worktree_merge("/Users/shawnwilson/gludd", "agent-lifecycle")
+        merge_result = worktree_merge(_REPO, "agent-lifecycle")
         assert merge_result.success is True
         assert merge_result.strategy == "no-ff"
 
@@ -131,7 +134,7 @@ class TestWorktreeLifecycleDeep:
             _git_success(),  # prune
             _git_success(),  # branch -d
         ]
-        cleanup_result = worktree_cleanup("/Users/shawnwilson/gludd", "agent-lifecycle")
+        cleanup_result = worktree_cleanup(_REPO, "agent-lifecycle")
         assert cleanup_result["success"] is True
         assert cleanup_result["cleaned"] is True
         assert cleanup_result["branch_removed"] is True
@@ -140,7 +143,7 @@ class TestWorktreeLifecycleDeep:
     def test_create_worktree_from_specific_base_branch(self, mock_run: MagicMock):
         mock_run.side_effect = [_git_success()]
         result = worktree_create(
-            "/Users/shawnwilson/gludd",
+            _REPO,
             "agent-from-dev",
             base_branch="development",
         )
@@ -161,14 +164,14 @@ class TestWorktreeLifecycleDeep:
             _git_success(),  # merge --abort
             _git_success("development"),  # finally checkout
         ]
-        result = worktree_merge("/Users/shawnwilson/gludd", "agent-conflict")
+        result = worktree_merge(_REPO, "agent-conflict")
         assert result.success is False
         assert len(result.conflicts) >= 1
         assert "CONFLICT" in result.message
 
     @patch("general_ludd.git_automation.worktree._run_git")
     def test_merge_rejects_leading_dash_target_branch(self, mock_run: MagicMock):
-        result = worktree_merge("/Users/shawnwilson/gludd", "agent-ok", target_branch="--evil")
+        result = worktree_merge(_REPO, "agent-ok", target_branch="--evil")
         assert result.success is False
         assert "-" in result.message
 
@@ -181,19 +184,19 @@ class TestWorktreeLifecycleDeep:
                 _git_success(),  # prune
                 _git_success(),  # branch -d
             ]
-            result = worktree_cleanup("/Users/shawnwilson/gludd", "agent-stuck")
+            result = worktree_cleanup(_REPO, "agent-stuck")
             assert result["success"] is True
             all_first_args = [str(c.kwargs.get("cwd", "")) + ":" + str(c.args[:2]) for c in mock_run.call_args_list]
             any_unlock = any("unlock" in s for s in all_first_args)
             assert any_unlock, f"unlock not found in calls: {all_first_args}"
 
     def test_worktree_create_rejects_path_traversal(self):
-        result = worktree_create("/Users/shawnwilson/gludd", "../escape")
+        result = worktree_create(_REPO, "../escape")
         assert result.success is False
         assert "escape" in result.message.lower()
 
     def test_worktree_create_rejects_leading_dash_branch(self):
-        result = worktree_create("/Users/shawnwilson/gludd", "--upload-pack=evil")
+        result = worktree_create(_REPO, "--upload-pack=evil")
         assert result.success is False
         assert "-" in result.message
 
@@ -379,7 +382,7 @@ class TestMergeConflictDetectionDeep:
             ),
             _git_success(),  # merge --abort in except handler
         ]
-        result = worktree_merge("/Users/shawnwilson/gludd", "agent-corrupt")
+        result = worktree_merge(_REPO, "agent-corrupt")
         assert result.success is False
         assert "fatal" in result.message.lower() or "not a git repository" in result.message.lower()
 
@@ -729,7 +732,7 @@ class TestWorktreeHealthDeep:
     @patch("general_ludd.git_automation.worktree._run_git")
     def test_health_check_skips_main_checkout(self, mock_run: MagicMock):
         mock_run.return_value = _git_success(_WT_MAIN_ONLY)
-        violations = worktree_health_check("/Users/shawnwilson/gludd")
+        violations = worktree_health_check(_REPO)
         assert violations == []
 
     @patch("general_ludd.git_automation.worktree._run_git")
@@ -742,7 +745,7 @@ class TestWorktreeHealthDeep:
         ]
         with patch("general_ludd.git_automation.worktree._get_tree_age_seconds", return_value=two_days):
             violations = worktree_health_check(
-                "/Users/shawnwilson/gludd",
+                _REPO,
                 max_age_hours=24,
                 remote_name="sandboxcom",
             )
@@ -759,7 +762,7 @@ class TestWorktreeHealthDeep:
         ]
         with patch("general_ludd.git_automation.worktree._get_tree_age_seconds", return_value=one_hour):
             violations = worktree_health_check(
-                "/Users/shawnwilson/gludd",
+                _REPO,
                 max_age_hours=24,
                 remote_name="sandboxcom",
             )
@@ -775,7 +778,7 @@ class TestMergeAllDeep:
     @patch("general_ludd.git_automation.worktree._run_git")
     def test_merge_all_zero_worktrees(self, mock_run: MagicMock):
         mock_run.return_value = _git_success(_WT_MAIN_ONLY)
-        result = worktree_merge_all("/Users/shawnwilson/gludd")
+        result = worktree_merge_all(_REPO)
         assert result["total"] == 0
         assert result["merged"] == 0
         assert result["conflicts"] == 0
@@ -793,7 +796,7 @@ class TestMergeAllDeep:
             _git_success(),  # prune
             _git_success(),  # branch -d
         ]
-        result = worktree_merge_all("/Users/shawnwilson/gludd")
+        result = worktree_merge_all(_REPO)
         assert result["total"] == 1
         assert result["merged"] == 1
         assert result["conflicts"] == 0
@@ -807,7 +810,7 @@ class TestMergeAllDeep:
             _git_success(),  # prune
             _git_success(),  # branch -d
         ]
-        result = worktree_merge_all("/Users/shawnwilson/gludd")
+        result = worktree_merge_all(_REPO)
         assert result["skipped"] == 1
         assert result["merged"] == 0
         assert result["total"] == 1

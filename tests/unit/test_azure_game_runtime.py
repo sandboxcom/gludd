@@ -294,6 +294,32 @@ def test_runtime_discovers_global_runner_cidr_before_deploy(
     assert manager.configs[0].allowed_cidr == "8.8.8.8/32"
 
 
+def test_public_ip_discovery_matches_proxy_free_inference_egress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+    response = SimpleNamespace(
+        raise_for_status=lambda: None,
+        json=lambda: {"ip": "8.8.4.4"},
+    )
+
+    def fake_get(url: str, **kwargs: object) -> object:
+        calls.append({"url": url, **kwargs})
+        return response
+
+    monkeypatch.setattr(azure_game_runtime.httpx, "get", fake_get)
+
+    assert azure_game_runtime.resolve_public_ipv4_cidr() == "8.8.4.4/32"
+    assert calls == [
+        {
+            "url": "https://api4.ipify.org",
+            "params": {"format": "json"},
+            "timeout": 10.0,
+            "trust_env": False,
+        }
+    ]
+
+
 def test_runtime_rejects_non_global_discovered_cidr_before_deploy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

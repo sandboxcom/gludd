@@ -6,7 +6,7 @@
 import * as fs from "node:fs";
 import type { Plugin } from "@opencode-ai/plugin";
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
-import { isSubagent, reportAlive } from "../lib/shared.ts";
+import { extractBashCommand, isSubagent, reportAlive } from "../lib/shared.ts";
 const WAIT_PATTERNS: readonly RegExp[] = Object.freeze([
   /\bsleep\s+\d+\s*&&\s*make\b/,
   /\bsleep\s+\d+\s*$/,
@@ -94,28 +94,6 @@ function _extractDispatchText(params: unknown): string {
   }
   return parts.join("\n");
 }
-function _extractBashCommand(...sources: unknown[]): string {
-  for (const source of sources) {
-    if (!source || typeof source !== "object") continue;
-    const envelope = source as {
-      command?: unknown;
-      args?: { command?: unknown };
-      tool_input?: { command?: unknown };
-      input?: { command?: unknown; args?: { command?: unknown } };
-    };
-    const candidates = [
-      envelope.args?.command,
-      envelope.command,
-      envelope.tool_input?.command,
-      envelope.input?.args?.command,
-      envelope.input?.command,
-    ];
-    for (const candidate of candidates) {
-      if (typeof candidate === "string") return candidate;
-    }
-  }
-  return "";
-}
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
 // ============================================================================
@@ -127,7 +105,7 @@ const defaultImpl: HotModule = {
     try {
       if (process.env.GLUDD_NO_WAIT_ENFORCE === "0") return;
       if (input.tool === "bash") {
-        const cmd = _extractBashCommand(input, output);
+        const cmd = extractBashCommand(input, output);
         if (cmd) {
           for (const pattern of WAIT_PATTERNS) {
             if (pattern.test(cmd)) {

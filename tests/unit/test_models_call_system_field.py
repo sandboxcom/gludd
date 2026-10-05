@@ -39,6 +39,7 @@ def _app_with_capture(monkeypatch: pytest.MonkeyPatch) -> tuple[FastAPI, dict[st
     def _capture_call_model(profile_id: str, messages: Any, **kwargs: Any) -> Any:
         captured["profile_id"] = profile_id
         captured["messages"] = messages
+        captured["kwargs"] = kwargs
         return MagicMock(content="ok", usage_metadata=None)
 
     app = FastAPI()
@@ -116,3 +117,145 @@ def test_extra_unknown_fields_tolerated(monkeypatch: pytest.MonkeyPatch) -> None
     assert len(messages) == 1
     assert messages[0]["role"] == "user"
     assert messages[0]["content"] == "write f"
+
+
+def test_response_schema_adds_deterministic_json_nudge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A JSON schema is serialized deterministically into the system prompt."""
+    app, captured = _app_with_capture(monkeypatch)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.post(
+        "/admin/models/call",
+        json={
+            "prompt": "return an answer",
+            "system": "Keep it concise.",
+            "response_schema": {
+                "type": "object",
+                "properties": {"answer": {"type": "string"}},
+            },
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    system_message = captured["messages"][0]
+    assert system_message["role"] == "system"
+    assert system_message["content"].startswith("Keep it concise.\n\nRespond ONLY")
+    assert (
+        '{"properties": {"answer": {"type": "string"}}, "type": "object"}'
+        in system_message["content"]
+    )
+
+
+def test_json_response_format_adds_nudge_without_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """JSON response format alone creates a system nudge before the user prompt."""
+    app, captured = _app_with_capture(monkeypatch)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.post(
+        "/admin/models/call",
+        json={"prompt": "return an answer", "response_format": "JSON"},
+    )
+
+    assert response.status_code == 200, response.text
+    messages = captured["messages"]
+    assert messages[0]["role"] == "system"
+    assert messages[0]["content"].startswith("Respond ONLY")
+    assert messages[1] == {"role": "user", "content": "return an answer"}
+
+
+@pytest.mark.parametrize("max_tokens", ["not-an-integer", 0])
+def test_invalid_output_cap_falls_back_to_profile_limit(
+    monkeypatch: pytest.MonkeyPatch,
+    max_tokens: object,
+) -> None:
+    """Malformed and non-positive caps cannot under-report budgeted output."""
+    app, captured = _app_with_capture(monkeypatch)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.post(
+        "/admin/models/call",
+        json={"prompt": "write f", "max_tokens": max_tokens},
+    )
+
+    assert response.status_code == 200, response.text
+    assert captured["kwargs"]["requested_max_output_tokens"] is None
+
+
+def test_missing_budget_guard_fails_closed_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Degraded startup rejects calls when fail-closed budgeting is enabled."""
+    app, _captured = _app_with_capture(monkeypatch)
+    del app.state._budget_guard
+    monkeypatch.setenv("GLUDD_BUDGET_FAIL_CLOSED_DEGRADED", "1")
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.post("/admin/models/call", json={"prompt": "write f"})
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": (
+            "budget guard unavailable (degraded startup); "
+            "GLUDD_BUDGET_FAIL_CLOSED_DEGRADED=1"
+        )
+    }
+
+
+def test_budget_guard_exception_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Budget-provider errors remain visible as a deterministic 503 boundary."""
+    app, _captured = _app_with_capture(monkeypatch)
+    guard = MagicMock()
+    guard.check_all_limits.side_effect = RuntimeError("provider unavailable")
+    app.state._budget_guard = guard
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.post("/admin/models/call", json={"prompt": "write f"})
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "budget check failed"}
+
+
+def test_budget_guard_allows_call_after_positive_verdict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit positive verdict reaches the model gateway exactly once."""
+    app, captured = _app_with_capture(monkeypatch)
+    guard = MagicMock()
+    guard.check_all_limits.return_value = {"allowed": True}
+    app.state._budget_guard = guard
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.post("/admin/models/call", json={"prompt": "write f"})
+
+    assert response.status_code == 200, response.text
+    assert captured["messages"] == [{"role": "user", "content": "write f"}]
+    guard.check_all_limits.assert_called_once_with(estimated_cost=0.0)
+
+
+@pytest.mark.parametrize(
+    ("verdict", "detail"),
+    [
+        ({"allowed": False, "reason": "daily limit"}, "budget exhausted: daily limit"),
+        ("invalid", "budget exhausted: non-dict"),
+    ],
+)
+def test_budget_guard_denial_is_deterministic(
+    monkeypatch: pytest.MonkeyPatch,
+    verdict: object,
+    detail: str,
+) -> None:
+    """Denied and malformed guard verdicts both fail closed without ambiguity."""
+    app, _captured = _app_with_capture(monkeypatch)
+    guard = MagicMock()
+    guard.check_all_limits.return_value = verdict
+    app.state._budget_guard = guard
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.post("/admin/models/call", json={"prompt": "write f"})
+
+    assert response.status_code == 429
+    assert response.json() == {"detail": detail}

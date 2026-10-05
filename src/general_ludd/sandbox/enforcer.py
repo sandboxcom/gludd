@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+import weakref
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -21,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class SandboxConfig:
+    """Runtime confinement, network, and resource-limit settings."""
+
     jail_dir: str = ""
     backend: str = "auto"
     image_path: str = ""
@@ -61,9 +65,12 @@ class SandboxEnforcer:
     """
 
     def __init__(self, config: SandboxConfig | None = None) -> None:
+        """Create an unverified enforcer for the supplied configuration."""
         self._config = config or SandboxConfig()
         self._verified = False
         self._jail_path: Path | None = None
+        self._jail_owner: tempfile.TemporaryDirectory[str] | None = None
+        self._jail_finalizer: Callable[[], None] | None = None
 
         limits = ProcessLimits(
             memory_mb=self._config.memory_mb,
@@ -78,10 +85,12 @@ class SandboxEnforcer:
 
     @property
     def jail_dir(self) -> str:
+        """Return the active jail path, or an empty string before verification."""
         return self._config.jail_dir
 
     @property
     def is_ready(self) -> bool:
+        """Return whether sandbox readiness has been verified."""
         return self._verified
 
     def verify_ready(self) -> None:
@@ -97,7 +106,10 @@ class SandboxEnforcer:
         jail = self._config.jail_dir
         auto = not jail
         if auto:
-            jail = tempfile.mkdtemp(prefix="gludd-sandbox-")
+            owner = tempfile.TemporaryDirectory(prefix="gludd-sandbox-")
+            self._jail_owner = owner
+            self._jail_finalizer = weakref.finalize(self, owner.cleanup)
+            jail = owner.name
             self._config.jail_dir = jail
 
         jail_path = Path(jail)
@@ -115,12 +127,33 @@ class SandboxEnforcer:
             msg = f"Sandbox jail directory {jail!r} is unusable: {exc}"
             if self._config.fail_open:
                 logger.warning("%s — proceeding without sandbox", msg)
+                self.close()
                 self._verified = True
                 return
+            self.close()
             raise SandboxNotAvailableError(msg) from exc
+        except BaseException:
+            if auto:
+                self.close()
+            raise
 
         self._jail_path = jail_path
         self._verified = True
+
+    def close(self) -> None:
+        """Remove an auto-created jail; externally supplied jails stay unowned."""
+        owner = self._jail_owner
+        if owner is not None:
+            finalizer = self._jail_finalizer
+            if finalizer is not None:
+                finalizer()
+            else:
+                owner.cleanup()
+            self._jail_finalizer = None
+            self._jail_owner = None
+            self._config.jail_dir = ""
+        self._jail_path = None
+        self._verified = False
 
     def execute(
         self,

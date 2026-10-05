@@ -1,3 +1,5 @@
+"""Load and persist user and project configuration layers."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,13 +18,17 @@ def load_user_config(path: Path | None = None) -> UserConfig:
 
 
 def load_agent_config(path: Path | None = None) -> AgentConfig:
+    """Load the project agent configuration or return safe defaults."""
     if path is None:
         path = Path(".general-ludd") / "agent_config.yml"
     p = Path(path)
-    if not p.exists():
+    try:
+        if not p.exists():
+            return AgentConfig()
+        with open(p) as f:
+            data = yaml.safe_load(f) or {}
+    except PermissionError:
         return AgentConfig()
-    with open(p) as f:
-        data = yaml.safe_load(f) or {}
     return AgentConfig(**data)
 
 
@@ -31,12 +37,14 @@ def build_config_layer(
     agent_path: Path | None = None,
     defaults: dict[str, Any] | None = None,
 ) -> ConfigLayer:
+    """Build the user, agent, and default configuration layers."""
     user = load_user_config(user_path)
     agent = load_agent_config(agent_path)
     return ConfigLayer(user=user, agent=agent, defaults=defaults or {})
 
 
 def save_agent_config(config: AgentConfig, path: Path | None = None) -> None:
+    """Persist the project agent configuration as YAML."""
     if path is None:
         path = Path(".general-ludd") / "agent_config.yml"
     p = Path(path)

@@ -84,6 +84,7 @@ class TestMypyConfigGaps:
     def test_make_preserves_capable_terminals_with_deterministic_fallback(self) -> None:
         makefile = (PROJECT_ROOT / "Makefile").read_text(encoding="utf-8")
         assert "filter-out dumb unknown" in makefile
+        assert "infocmp" in makefile
         assert "override TERM := xterm-256color" in makefile
         assert "export TERM" in makefile
         assert "export TERM := dumb" not in makefile

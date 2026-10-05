@@ -8,11 +8,17 @@ network access; ``verdict_for`` is the small ``gh`` adapter used by Make.
 
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
 from collections.abc import Sequence
 from typing import Any
+
+try:
+    import pipeline_status
+except ModuleNotFoundError as exc:
+    if exc.name != "pipeline_status":
+        raise
+    from scripts import pipeline_status
 
 
 def _detect_branch() -> str:
@@ -38,7 +44,14 @@ def _run_id(run: dict[str, Any]) -> int:
         return 0
 
 
-def verdict_from_runs(runs: Sequence[dict[str, Any]], sha: str) -> tuple[int, str]:
+def verdict_from_runs(
+    runs: Sequence[dict[str, Any]],
+    sha: str,
+    *,
+    branch: str | None = None,
+    workflow: str | None = None,
+    event: str | None = None,
+) -> tuple[int, str]:
     """Return ``(exit_code, message)`` for runs against an exact full SHA.
 
     A full-string SHA comparison is intentional. Prefix matching can accept a
@@ -46,14 +59,22 @@ def verdict_from_runs(runs: Sequence[dict[str, Any]], sha: str) -> tuple[int, st
     Cancelled and skipped conclusions are red because neither is evidence of a
     successful test execution.
     """
-
-    matching = [run for run in runs if str(run.get("headSha", "")) == sha]
+    matching = [
+        run
+        for run in runs
+        if str(run.get("headSha", "")) == sha
+        and (branch is None or str(run.get("headBranch", "")) == branch)
+        and (workflow is None or str(run.get("workflowName", "")) == workflow)
+        and (event is None or str(run.get("event", "")) == event)
+    ]
     if not matching:
         return 1, f"CI RED: no run found for SHA {sha}"
 
-    preferred = [
-        run for run in matching if run.get("workflowName") == "Build and Release"
-    ]
+    preferred = (
+        [run for run in matching if run.get("workflowName") == "Build and Release"]
+        if workflow is None
+        else []
+    )
     candidates = preferred or matching
     latest = max(candidates, key=_run_id)
     run_id = latest.get("databaseId", "?")
@@ -74,53 +95,58 @@ def verdict_from_runs(runs: Sequence[dict[str, Any]], sha: str) -> tuple[int, st
     )
 
 
+def all_workflow_verdict_from_runs(
+    runs: Sequence[dict[str, Any]],
+    sha: str,
+    *,
+    branch: str,
+) -> tuple[int, str]:
+    """Return the shared exact-SHA verdict for every required workflow."""
+    summary = pipeline_status.evaluate_runs(runs, sha, branch=branch)
+    return summary.exit_code, "\n".join(summary.lines())
+
+
 def _fetch_runs(sha: str, branch: str) -> list[dict[str, Any]]:
-    result = subprocess.run(
-        [
-            "gh",
-            "run",
-            "list",
-            "--commit",
-            sha,
-            "--branch",
-            branch,
-            "-R",
-            "sandboxcom/gludd",
-            "--json",
-            "conclusion,databaseId,status,headSha,workflowName,displayTitle",
-            "--limit",
-            "20",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=10,
-        check=False,
+    """Fetch exact-commit candidates; branch identity is enforced locally.
+
+    ``branch`` remains in the signature for callers that used the prior helper.
+    GitHub's server-side branch filter can return an empty result for existing
+    runs, so it must not decide whether source evidence exists.
+    """
+    del branch
+    return pipeline_status.fetch_runs(
+        sha,
+        repo=pipeline_status.DEFAULT_REPO,
+        runner=subprocess.run,
     )
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout or "gh run list failed").strip()
-        raise RuntimeError(detail)
-    payload = json.loads(result.stdout or "[]")
-    if not isinstance(payload, list):
-        raise ValueError("gh run list returned a non-list payload")
-    return [item for item in payload if isinstance(item, dict)]
 
 
 def verdict_for(
-    source: Sequence[dict[str, Any]] | str, sha_or_branch: str | None = None
+    source: Sequence[dict[str, Any]] | str,
+    sha_or_branch: str | None = None,
+    *,
+    branch: str | None = None,
 ) -> Any:
     """Evaluate supplied runs (tests) or query ``gh`` (CLI).
 
     The sequence form returns ``(code, message)``. The string form prints the
     message and returns the process exit code for compatibility with Make.
     """
-
+    if branch is not None and sha_or_branch is not None:
+        raise TypeError("pass the branch either positionally or by keyword, not both")
     if not isinstance(source, str):
+        if branch is not None:
+            raise TypeError("branch is only valid when querying CI for a commit")
         return verdict_from_runs(source, sha_or_branch or "")
 
     sha = source
-    branch = sha_or_branch or _detect_branch()
+    selected_branch = branch or sha_or_branch or _detect_branch()
     try:
-        code, message = verdict_from_runs(_fetch_runs(sha, branch), sha)
+        code, message = all_workflow_verdict_from_runs(
+            _fetch_runs(sha, selected_branch),
+            sha,
+            branch=selected_branch,
+        )
     except Exception as exc:
         print(f"CI ERROR: {exc}")
         return 2

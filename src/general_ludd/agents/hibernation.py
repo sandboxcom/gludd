@@ -250,6 +250,10 @@ class DispatchState(BaseModel):
     tool_iterations: int = 0
     accumulated_messages: list[ContextMessage] = Field(default_factory=list)
     lease_holder_id: str | None = None
+    project_id: str | None = None
+    queue: str = "core"
+    todo_version: int | None = None
+    resume_shard_id: str | None = None
 
 
 class AgentEnvironmentSnapshot(BaseModel):

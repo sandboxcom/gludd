@@ -97,16 +97,16 @@ def test_whitespace_only_file_resets_to_empty_list() -> None:
         os.unlink(path)
 
 
-def test_non_list_json_resets_to_empty_list() -> None:
+def test_non_list_json_is_rejected_without_overwrite() -> None:
+    encoded = json.dumps({"not": "a list"}).encode()
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-        f.write(json.dumps({"not": "a list"}).encode())
+        f.write(encoded)
         path = f.name
     try:
-        store = _make_store(path)
-        assert store.list_all() == []
-        with open(path) as fh:
-            raw = json.load(fh)
-        assert raw == []
+        with pytest.raises(ValueError, match="valid JSON list"):
+            _make_store(path)
+        with open(path, "rb") as stream:
+            assert stream.read() == encoded
     finally:
         os.unlink(path)
 

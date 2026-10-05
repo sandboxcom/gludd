@@ -43,11 +43,14 @@ EXPECTED_ROUTES: list[tuple[str, str]] = [
     ("adversarial", "/admin/security/scan-text"),
     ("ansible", "/admin/ansible/search"),
     ("benchmark", "/admin/benchmark/scores"),
+    ("chat", "/api/chat/sessions"),
     ("compute", "/admin/compute/utilization"),
     ("coordination", "/api/coordination/claim"),
     ("estimation", "/admin/estimation/report"),
     ("eval", "/admin/eval/run"),
     ("filestore", "/admin/filestore/list"),
+    ("game", "/api/game/generate-multi"),
+    ("generate", "/api/generate/list-types"),
     ("human_todos", "/api/human-todos"),
     ("integrity", "/admin/integrity/scan"),
     ("mcp", "/admin/mcp/catalog/search"),
@@ -65,13 +68,23 @@ EXPECTED_ROUTES: list[tuple[str, str]] = [
     ("signing", "/admin/signing/cosign/generate"),
     ("skills", "/admin/skills/catalog/search"),
     ("slurm", "/admin/slurm/status"),
+    ("spec_quality", "/api/spec-quality/audit"),
     ("stream", "/admin/stream/dispatch"),
-    ("terraform_state", "/api/terraform/state/{stack_name}"),
+    ("terraform_state", "/api/terraform/state/{stack_name:path}"),
     ("todos", "/api/todos"),
     ("variants", "/admin/prompts/variants/report"),
     ("web_search", "/admin/web/search"),
     ("worktree", "/admin/worktree/scan"),
 ]
+
+
+def _route_paths(app: FastAPI) -> set[str]:
+    """Return concrete path strings from every route shape FastAPI exposes."""
+    return {
+        path
+        for route in app.routes
+        if isinstance(path := getattr(route, "path", None), str)
+    }
 
 
 @pytest.fixture(scope="module")
@@ -109,7 +122,7 @@ class TestRegisterAllMountsEveryRouter:
         module_name: str,
         expected_path: str,
     ) -> None:
-        paths = {route.path for route in registered_app.routes}
+        paths = _route_paths(registered_app)
         assert expected_path in paths, (
             f"router {module_name!r} did not mount {expected_path!r}; "
             f"register_all() must register every router module — a silent "
@@ -151,7 +164,7 @@ class TestRegisterAllMountsEveryRouter:
         self, registered_app: FastAPI
     ) -> None:
         """Sanity: after register_all, the app has routes from many routers."""
-        paths = {route.path for route in registered_app.routes}
+        paths = _route_paths(registered_app)
         # 29 EXPECTED_ROUTES rows means at least 29 distinct paths.
         assert len(paths) >= len(EXPECTED_ROUTES), (
             f"register_all only mounted {len(paths)} paths; expected at least "
@@ -194,16 +207,17 @@ class TestRegisterAllImportErrorPropagation:
         ``ImportError`` (the canonical signal for "this module's deps are
         broken"), ``register_all`` must let it propagate — never swallow.
         """
-        broken = types.ModuleType("general_ludd.routers.account")
+        class BrokenAccountModule(types.ModuleType):
+            """Module double whose lazy register access fails like an import."""
 
-        def _missing_register(name: str) -> Any:
-            if name == "register":
-                raise ImportError(
-                    "simulated import-time failure: account deps unavailable"
-                )
-            raise AttributeError(name)
+            def __getattr__(self, name: str) -> Any:
+                if name == "register":
+                    raise ImportError(
+                        "simulated import-time failure: account deps unavailable"
+                    )
+                raise AttributeError(name)
 
-        broken.__getattr__ = _missing_register
+        broken = BrokenAccountModule("general_ludd.routers.account")
         monkeypatch.setitem(
             sys.modules, "general_ludd.routers.account", broken
         )
@@ -262,7 +276,7 @@ class TestIncludeRouterPrefixAndTags:
         app = FastAPI()
         app.include_router(sub_router, prefix="/prefixed", tags=["test-tag"])
 
-        paths = {route.path for route in app.routes}
+        paths = _route_paths(app)
         assert "/prefixed/widget" in paths, (
             "include_router(prefix=...) did not compose with the sub-router's "
             "path — daemon routers that mount this way would silently 404"
@@ -295,5 +309,5 @@ class TestIncludeRouterPrefixAndTags:
         app = FastAPI()
         app.include_router(sub_router)
 
-        paths = {route.path for route in app.routes}
+        paths = _route_paths(app)
         assert "/unprefixed" in paths

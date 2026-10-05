@@ -1,0 +1,125 @@
+---
+- name: Derive this Molecule run's private daemon directory for cleanup
+  ansible.builtin.set_fact:
+    _gludd_mock_runtime_dir: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/gludd-mock-daemon"
+    expected_server_path: >-
+      {{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/mock_daemon/server.py
+
+- name: Derive private cleanup evidence paths
+  ansible.builtin.set_fact:
+    _gludd_mock_ready_file: "{{ _gludd_mock_runtime_dir }}/ready.json"
+    _gludd_mock_async_file: "{{ _gludd_mock_runtime_dir }}/ansible-job-id"
+
+- name: Inspect the private ready manifest
+  ansible.builtin.stat:
+    path: "{{ _gludd_mock_ready_file }}"
+    follow: false
+  register: _gludd_mock_ready_stat
+
+- name: Load a regular private ready manifest
+  ansible.builtin.slurp:
+    src: "{{ _gludd_mock_ready_file }}"
+  register: _gludd_mock_stop_raw
+  when:
+    - _gludd_mock_ready_stat.stat.exists
+    - _gludd_mock_ready_stat.stat.isreg | default(false)
+
+- name: Decode the cleanup candidate
+  ansible.builtin.set_fact:
+    _gludd_mock_stop_record: >-
+      {{ (_gludd_mock_stop_raw.content | default('') | b64decode | from_json)
+         if (_gludd_mock_stop_raw.content | default('') | length > 0) else {} }}
+
+- name: Validate the private cleanup record before inspecting its PID
+  ansible.builtin.assert:
+    that:
+      - _gludd_mock_stop_record.pid | string is match('^[1-9][0-9]*$')
+      - _gludd_mock_stop_record.host == '127.0.0.1'
+      - _gludd_mock_stop_record.port | int > 0
+      - _gludd_mock_stop_record.port | int < 65536
+    fail_msg: "refusing malformed mock-daemon cleanup record"
+  when: _gludd_mock_stop_record | length > 0
+
+- name: Inspect only the manifest-owned PID
+  ansible.builtin.command:
+    argv:
+      - /bin/ps
+      - -p
+      - "{{ _gludd_mock_stop_record.pid }}"
+      - -o
+      - command=
+  register: _gludd_mock_stop_process
+  changed_when: false
+  failed_when: _gludd_mock_stop_process.rc not in [0, 1]
+  when: _gludd_mock_stop_record | length > 0
+
+- name: Establish exact process ownership
+  ansible.builtin.set_fact:
+    _gludd_mock_owned: >-
+      {{
+        _gludd_mock_stop_process.rc == 0
+        and expected_server_path in _gludd_mock_stop_process.stdout
+        and ('--port 0') in _gludd_mock_stop_process.stdout
+        and ('--ready-file ' ~ _gludd_mock_ready_file) in _gludd_mock_stop_process.stdout
+      }}
+  when: _gludd_mock_stop_record | length > 0
+
+- name: Refuse to signal a reused or foreign PID
+  ansible.builtin.assert:
+    that:
+      - _gludd_mock_stop_process.rc != 0 or _gludd_mock_owned | bool
+    fail_msg: "mock-daemon PID exists but is not owned by this Molecule run"
+  when: _gludd_mock_stop_record | length > 0
+
+- name: Stop only the proven scenario-owned daemon
+  ansible.builtin.command:
+    argv:
+      - /bin/kill
+      - -TERM
+      - "{{ _gludd_mock_stop_record.pid }}"
+  register: _gludd_mock_stop_signal
+  changed_when: _gludd_mock_stop_signal.rc == 0
+  when:
+    - _gludd_mock_stop_record | length > 0
+    - _gludd_mock_owned | default(false) | bool
+
+- name: Prove the owned loopback endpoint is closed
+  ansible.builtin.wait_for:
+    host: "{{ _gludd_mock_stop_record.host }}"
+    port: "{{ _gludd_mock_stop_record.port | int }}"
+    state: stopped
+    timeout: 15
+  when:
+    - _gludd_mock_stop_record | length > 0
+    - _gludd_mock_owned | default(false) | bool
+
+- name: Inspect the private async job record
+  ansible.builtin.stat:
+    path: "{{ _gludd_mock_async_file }}"
+    follow: false
+  register: _gludd_mock_async_stat
+
+- name: Load the private async job identifier
+  ansible.builtin.slurp:
+    src: "{{ _gludd_mock_async_file }}"
+  register: _gludd_mock_async_raw
+  when:
+    - _gludd_mock_async_stat.stat.exists
+    - _gludd_mock_async_stat.stat.isreg | default(false)
+
+- name: Remove the exact completed Ansible async record
+  ansible.builtin.async_status:
+    jid: "{{ _gludd_mock_async_raw.content | b64decode | trim }}"
+    mode: cleanup
+  register: _gludd_mock_async_cleanup
+  changed_when: false
+  failed_when: >-
+    _gludd_mock_async_cleanup.failed | default(false)
+    and 'could not find job' not in (_gludd_mock_async_cleanup.msg | default('') | lower)
+  when: _gludd_mock_async_raw.content | default('') | length > 0
+
+- name: Remove only this run's private daemon lifecycle directory
+  ansible.builtin.file:
+    path: "{{ _gludd_mock_runtime_dir }}"
+    state: absent
+

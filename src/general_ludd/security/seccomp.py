@@ -189,9 +189,11 @@ _SYSCALL_NUMBERS: dict[str, dict[str, int]] = {
 
 
 def _native_arch() -> str:
-    """Return the syscall-table key for the running machine (``x86_64`` /
-    ``aarch64``). Defaults to ``x86_64`` for unknown machines so ``build_bpf``
-    still returns a non-empty program off-Linux (it is never installed there)."""
+    """Return the syscall-table key for the running machine.
+
+    Returns ``x86_64`` or ``aarch64`` and defaults to ``x86_64`` for unknown
+    machines so ``build_bpf`` remains testable off Linux.
+    """
     machine = platform.machine().lower()
     if machine in ("aarch64", "arm64"):
         return "aarch64"
@@ -247,6 +249,18 @@ class SeccompFilter:
             raise ValueError(f"seccomp YAML must be a mapping, got {type(raw).__name__}")
         allowed = raw.get("allowed_syscalls")
         denied = raw.get("denied_syscalls")
+        default_action = str(raw.get("default_action", "allow"))
+        deny_action = str(raw.get("deny_action", "kill"))
+        if default_action not in {"allow", "errno"}:
+            raise ValueError(
+                "seccomp default_action must be 'allow' or 'errno', "
+                f"got {default_action!r}"
+            )
+        if deny_action not in {"kill", "errno"}:
+            raise ValueError(
+                "seccomp deny_action must be 'kill' or 'errno', "
+                f"got {deny_action!r}"
+            )
         return cls(
             allowed_syscalls=(
                 frozenset(str(s) for s in allowed)
@@ -258,8 +272,8 @@ class SeccompFilter:
                 if denied is not None
                 else DEFAULT_DENIED_SYSCALLS
             ),
-            default_action=str(raw.get("default_action", "allow")),
-            deny_action=str(raw.get("deny_action", "kill")),
+            default_action=default_action,
+            deny_action=deny_action,
             errno=int(raw.get("errno", errno.EPERM)),
         )
 
@@ -281,8 +295,12 @@ class SeccompFilter:
 
     @staticmethod
     def is_supported() -> bool:
-        """True iff seccomp can be installed on this host (Linux with a usable
-        ``libc.prctl``). Fail-open everywhere else."""
+        """Return whether seccomp can be installed on this host.
+
+        Support requires Linux with a usable ``libc.prctl``. Other platforms
+        and loader failures return ``False`` so the caller can follow its
+        documented fail-open compatibility path.
+        """
         if not sys.platform.startswith("linux"):
             return False
         try:

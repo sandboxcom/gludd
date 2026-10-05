@@ -178,8 +178,9 @@ Only after WP-A3 acceptance:
    **`verify-release-artifact` is NOT the gate** — it only proves "non-draft + ≥1
    asset", which is exactly how beta.1 shipped with 1 of 12 required assets.
 3. Update SESSION.md + TASKS.md (tick the ship row with run id + tag URL).
-**Acceptance**: `verify-release-completeness` PASS output pasted (all 12 artifact
-categories present). Full procedure: `docs/RELEASE_RUNBOOK.md`.
+**Acceptance**: `verify-release-completeness` PASS output pasted (all 28 artifact
+categories and at least 30 assets present). Full procedure:
+`docs/RELEASE_RUNBOOK.md`.
 
 ---
 
