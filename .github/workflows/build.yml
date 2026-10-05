@@ -61,7 +61,7 @@ permissions:
 
 jobs:
   version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     outputs:
       version: ${{ steps.ver.outputs.version }}
@@ -82,7 +82,7 @@ jobs:
   release_source_proof:
     needs: version
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       actions: read
@@ -100,7 +100,7 @@ jobs:
 
   gate:
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Lint + typecheck + collection-check + smoke only — the full test run is
     # split across parallel shards in the `test-shard` job below so failures
     # surface at job granularity in minutes rather than after a 33-min monolith.
@@ -109,6 +109,9 @@ jobs:
       # Don't cancel the 3.12 leg when 3.11 fails (or vice-versa): we want both
       # Python versions' results on every run, not just the first failure.
       fail-fast: false
+      # Development also starts the standalone six-leg Molecule workflow. Keep
+      # startup runner requests bounded so every leg is acquired reliably.
+      max-parallel: 1
       matrix:
         python-version: ["3.11", "3.12"]
     steps:
@@ -431,12 +434,15 @@ jobs:
     # The exact-SHA development run is required before a release tag can reach
     # publication, so the tag run does not repeat this 2-version upstream suite.
     if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
     strategy:
       fail-fast: false
+      # Two Node versions remain mandatory but share one hosted slot so this
+      # supporting suite cannot amplify the larger test fan-out.
+      max-parallel: 1
       matrix:
         node-version: ["20.20.2", "22.23.2"]
     steps:
@@ -483,7 +489,7 @@ jobs:
     # Release tags reuse only an exact successful development workflow; branch,
     # PR, and dispatch runs continue to execute every canonical coverage shard.
     if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Every named shard is a release prerequisite. Failures and missing coverage
     # stay red instead of being reclassified as an informational result.
     # The old unit-3 (test_[n-z]* + secrets/) exceeded its 25m step budget on a
@@ -493,6 +499,9 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
+      # Three lanes retain broad parallel coverage without requesting all eight
+      # hosted runners in one acquisition burst.
+      max-parallel: 3
       matrix:
         # The blocking `gate` matrix above already exercises both 3.11 and
         # 3.12. Keep each named coverage shard on canonical Python 3.11 so
@@ -663,7 +672,7 @@ jobs:
   # coverage by ~75%.
   coverage:
     needs: [version, test-shard]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
@@ -720,7 +729,7 @@ jobs:
     needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
     # The exact same scenarios already passed for this SHA on development.
     if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Each shard owns one bounded pass plus cleanup/log publication. Re-running
     # a whole shard duplicated completed scenarios and exhausted this ceiling.
     timeout-minutes: 45
@@ -732,6 +741,8 @@ jobs:
       # to ~15 min (kept at the 15-min timeout below) and a failure surfaces
       # at shard granularity within minutes.
       fail-fast: false
+      # Keep real shard parallelism while halving this matrix's runner burst.
+      max-parallel: 2
       matrix:
         shard: [1, 2, 3, 4]
     steps:
@@ -805,7 +816,7 @@ jobs:
 
   linux:
     needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     # Linux binaries and packages are required release artifacts. Build,
     # smoke, packaging, and upload failures remain blocking.
@@ -1425,7 +1436,7 @@ jobs:
   # pushes and master. Gated on the same green gate+tests as the build jobs.
   container:
     needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     # The container is a required release artifact. Build and registry failures
     # remain blocking; PR builds still validate without pushing.
@@ -1580,7 +1591,7 @@ jobs:
           echo "============================================="
           echo "=== CI SUMMARY: container build ==="
           echo "============================================="
-          echo "  Platform          : linux/amd64 (ubuntu-latest)"
+          echo "  Platform          : linux/amd64 (ubuntu-24.04)"
           echo "  Registry          : ghcr.io/\${{ github.repository }}"
           echo "  Image tags        : \${{ steps.meta.outputs.tags }}"
           echo "  Push enabled      : \${{ github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master') }}"
@@ -1589,7 +1600,7 @@ jobs:
 
   ansible-ee:
     needs: [version, gate]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
     permissions:
@@ -1683,7 +1694,7 @@ jobs:
   # URLs (or opts into the spawn variant) when they want a real end-to-end run.
   e2e-providers:
     if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       VLLM_BASE_URL: ${{ inputs.vllm_base_url }}
@@ -1715,7 +1726,7 @@ jobs:
   #   Add:  DEEPSEEK_API_KEY = sk-...
   game-building:
     needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     # Skip on PRs — these tests need DEEPSEEK_API_KEY (repository secret,
     # unavailable in PR workflows from forks) and would silently skip every
@@ -1749,7 +1760,7 @@ jobs:
 
   release:
     needs: [version, gate, release_source_proof, freellmapi-upstream-build, test-shard, coverage, molecule, linux, macos, windows, termux, container, ansible-ee, game-building]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: write
