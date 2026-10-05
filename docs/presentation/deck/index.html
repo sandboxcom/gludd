@@ -832,6 +832,39 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
+<!-- SLIDE 19f: S83.163 FREELLMAPI FROZEN-DELTA HOLD -->
+<!-- ============================================================ -->
+<section data-contract="s83-163-frozen-delta-hold">
+  <p class="stage-kicker">Decision &middot; 2026-10-05 &middot; frozen-delta review</p>
+  <h2>S83.163 &mdash; FreeLLMAPI promotion remains <span class="badge-yellow">HOLD</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Evidence we have vs. need</h3>
+      <ul class="bullets-tight">
+        <li><strong>Current evidence:</strong> <code>v0.9.9 synthetic</code>; four fixtures, not a promotion corpus</li>
+        <li><strong>Missing:</strong> exact v0.11.1 frozen replay; upstream <code>v0.12.0</code> waits for the next serial review</li>
+        <li><strong>Paired arms:</strong> native Gludd / <code>v0.9.9</code> / exact <code>v0.11.1</code></li>
+        <li><strong>Corpus:</strong> 32 route groups &times; 3 = 96 observations, plus 8 exclusions frozen before scoring</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Every gate must clear</h3>
+      <ul class="bullets-tight">
+        <li>Brier LCB &ge; +0.02 versus both comparators</li>
+        <li>Exact two-sided McNemar <code>p &lt; 0.05</code></li>
+        <li>No stratum worse by &gt;0.02 Brier loss</li>
+        <li>p95 latency &le; 5 ms; RSS &le; 32 MiB; cost = $0; zero faults</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">
+    No retargeting: evaluate the reviewed v0.11.1 identity. A pass permits later
+    build/provenance/ZDD review only; a miss leaves v0.9.9 serving and runtime admission false.
+  </p>
+  <p class="cite">Practitioner inputs: #456, discussion #533, #608, #666, #880, #1210, #1262 &middot; Source: docs/design/FREELLMAPI_UPSTREAM_INTEGRATION.md</p>
+</section>
+
+<!-- ============================================================ -->
 <!-- SLIDE 20: SECURITY -->
 <!-- ============================================================ -->
 <section>

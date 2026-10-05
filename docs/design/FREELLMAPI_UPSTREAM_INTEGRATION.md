@@ -1,7 +1,9 @@
 # FreeLLMAPI Upstream Integration Decision
 
-**Status:** Accepted architecture; compatibility proof is required before enablement
+**Status:** Accepted architecture; `v0.11.1` promotion is on **HOLD** pending an
+exact frozen-delta comparison
 **Decision date:** 2026-09-15
+**Promotion review:** 2026-10-05
 **Upstream:** [`tashfeenahmed/freellmapi`][upstream]
 **Admitted artifact:** `v0.9.9`, full source commit
 `780a7d8d6dcbc818eb10ec17da210635b569ae22`
@@ -623,6 +625,86 @@ The local exact-source attempt also stopped before source execution because the
 installed Node/npm pair did not match either pinned toolchain, reporting the
 content-free `toolchain_invalid` fault.
 
+### S83.163 frozen-delta promotion decision (2026-10-05)
+
+Decision: **HOLD**. The tracked receipt is useful harness evidence, but it is not
+promotion evidence for the pending candidate. It runs the still-admitted
+`v0.9.9` kernel over four synthetic binary fixtures. The candidate lock names
+`v0.11.1`, but the receipt does not execute an exact `v0.11.1` artifact over a
+frozen route corpus. Upstream has also published `v0.12.0`. That newer release is
+discovery evidence for the next serial review; it is not permission to change
+the candidate during this experiment. The next comparison evaluates the exact,
+already reviewed `v0.11.1` source and artifact with **no retargeting**.
+
+The preregistration freezes one three-arm paired experiment before any outcomes
+are inspected:
+
+- **Corpus:** 32 route groups, each replayed from the same content-addressed
+  input and ground truth through native Gludd, the admitted `v0.9.9` export, and
+  the exact `v0.11.1` export: 96 included observations in total. Each group must
+  be complete across all three arms or the entire group fails closed.
+- **Exclusions:** 8 preregistered exclusions are named by digest and reason before
+  unblinding. Only corrupt/missing ground truth, policy-prohibited provider use,
+  or an unavailable exact three-arm input qualifies. Exclusions cannot be added,
+  removed, or rewritten after scoring and never become evidence for either arm.
+- **Strata:** provider family, authenticated health/quota state, cold versus warm
+  endpoint, and capability shape are fixed in the manifest. Every aggregate
+  claim retains the corresponding per-stratum result.
+- **Primary quality gate:** exact paired Brier improvement for `v0.11.1` must beat
+  both native Gludd and `v0.9.9`, with the 95% paired-bootstrap LCB at least
+  `+0.02` for each comparison. Lower Brier loss is better; the recorded delta is
+  comparator loss minus candidate loss.
+- **Decision agreement gate:** correct/incorrect route decisions for `v0.11.1`
+  versus each comparator must pass an exact two-sided McNemar test with
+  `p < 0.05`. A favorable Brier result cannot compensate for a nonsignificant
+  decision result.
+- **Regression gate:** No stratum may be worse by more than `0.02` absolute Brier
+  loss against either comparator. Sparse or inconclusive strata retain HOLD;
+  they are not pooled away.
+- **Resource and fault gates:** paired p95 added scoring latency is at most
+  `5 ms` (and no call exceeds 25 ms), peak RSS delta is at most `32 MiB` with no
+  monotonic replay growth, incremental provider cost is exactly `$0` because the
+  corpus is offline, and there are zero bridge faults across included
+  observations. A timeout, crash, non-finite result, schema rejection, host
+  capability request, or content leak is a fault.
+
+Every gate is conjunctive. Missing any one keeps the decision at HOLD, leaves
+`v0.9.9` serving, exercises the removal/rollback receipt, and keeps
+`runtime_admitted: false`. Passing all gates only permits the already separate
+build, provenance, ABI, live-provider, and ZDD review; it does not promote an
+artifact by itself. The existing evaluator remains the evidence owner. The run
+reuses pytest and Hypothesis for contract/property coverage, SciPy for the paired
+bootstrap and exact discordant-pair calculation, psutil for RSS, and the existing
+Vitest/Node cross-engine fixtures. It adds **no new framework**.
+
+The practitioner record explains why those gates are deliberately conservative.
+These are upstream operator reports, not a claim that the young project has a
+multi-year stability history:
+
+- [Issue #456][issue-456] reports a monthly token budget that did not scale with
+  multiple provider keys and skewed routing headroom. The corpus therefore fixes
+  per-key quota identity and treats advertised budget as a hint, never measured
+  capacity.
+- [Discussion #533][discussion-533] records `latest` following unreleased `main`
+  until the maintainer changed it to release tags. Gludd requires a full commit
+  for every arm and an immutable release identity.
+- [Issue #608][issue-608] shows a public model-list endpoint accepting a revoked
+  credential while generation returned 401. Catalog reachability and
+  authenticated readiness remain separate strata and evidence.
+- [Issue #666][issue-666] shows a Gludd-relevant failure mode where a router-wide
+  budget aborted slow local Ollama before its configured provider timeout. A
+  Gludd-owned deadline remains authoritative, and latency is measured rather than
+  imported.
+- [Issue #880][issue-880] reports more than 100 discovered models but zero usable
+  models in the client. A catalog row is not a usable route; capability and
+  envelope validation remain native Gludd gates.
+- [Issue #1210][issue-1210] reports high-frequency requests leading to AI Studio
+  key suspensions. Frozen evaluation is offline, and any later live proof keeps a
+  one-request request-rate ceiling with scoped credentials and immediate teardown.
+- [Issue #1262][issue-1262] supplies production TTFB evidence for slow-but-alive
+  endpoints that a fixed 45-second budget killed. The frozen corpus retains that
+  stratum while Gludd, not the imported scorer, owns retry and failover policy.
+
 #### Adversarial receipt hardening
 
 A content-addressed receipt proves consistency, not authorship. The tracked-chain
@@ -833,6 +915,7 @@ scans, lifecycle cleanup, full gate, and hosted CI evidence are green.
 [discussion-533]: https://github.com/tashfeenahmed/freellmapi/discussions/533
 [docker-workflow]: https://github.com/tashfeenahmed/freellmapi/blob/main/.github/workflows/docker.yml
 [dukpy]: https://pypi.org/project/dukpy/
+[issue-456]: https://github.com/tashfeenahmed/freellmapi/issues/456
 [issue-584]: https://github.com/tashfeenahmed/freellmapi/issues/584
 [issue-608]: https://github.com/tashfeenahmed/freellmapi/issues/608
 [issue-671]: https://github.com/tashfeenahmed/freellmapi/issues/671
