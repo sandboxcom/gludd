@@ -96,11 +96,11 @@ def test_session_created_fires_heartbeat(tmp_path):
     assert int(pid_file.read_text().strip()) > 0
 
 
-# ─── session.deleted → PID cleanup ──────────────────────────────────────────
+# ─── session.deleted → session-owned PID cleanup ────────────────────────────
 
 
-def test_session_deleted_cleans_pid_files(tmp_path):
-    """session.deleted removes PID_FILE and TASK_PID_FILE."""
+def test_session_deleted_cleans_session_pid_file(tmp_path):
+    """session.deleted removes only the PID file owned by this plugin."""
     pid_file = tmp_path / "wd.pid"
     pid_file.write_text("99999")
 
@@ -113,6 +113,26 @@ def test_session_deleted_cleans_pid_files(tmp_path):
     assert not pid_file.exists(), (
         f"PID_FILE {pid_file} should be unlinked after session.deleted"
     )
+
+
+def test_session_deleted_preserves_externally_owned_task_watchdog_pid(tmp_path):
+    """A session cannot erase lifecycle evidence owned by another daemon."""
+    pid_file = tmp_path / "session.pid"
+    task_pid_file = tmp_path / "task-watchdog.pid"
+    pid_file.write_text("99998")
+    task_pid_file.write_text("99999")
+
+    _run_watchdog(
+        _code("session.deleted"),
+        env_override={
+            "GLUDD_WATCHDOG_PID_FILE": str(pid_file),
+            "GLUDD_TASK_WATCHDOG_PID": str(task_pid_file),
+        },
+        cwd=str(tmp_path),
+    )
+
+    assert not pid_file.exists()
+    assert task_pid_file.read_text() == "99999"
 
 
 # ─── Subagent context: watchdog fires everywhere ────────────────────────────

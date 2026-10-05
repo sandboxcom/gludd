@@ -78,6 +78,38 @@ no data migration or service restart. During rollback, use
 `make active-work-status` as the authoritative cross-worktree snapshot rather
 than inferring idleness from the legacy main-checkout-only view.
 
+### Watchdog PID ownership and visibility
+
+The OpenCode session watchdog and the Python task watchdog have independent
+lifecycle owners. The plugin creates and removes only
+`/tmp/gludd-watchdog.pid`; it must never unlink
+`/tmp/gludd-task-watchdog.pid`, which belongs to the separately launched
+`scripts/task_watchdog.py` daemon. Ending an editor session is not evidence that
+the task watchdog exited, so deleting its record creates an unowned live
+controller and defeats PID/start-time checks. A runtime regression now creates
+an external task-watchdog record, executes the real plugin cleanup hook, and
+proves the record and its contents survive.
+
+`make ps-gludd` includes both `task_watchdog.py` and `agent_watchdog.py` in its
+namespaced, read-only process census. That does not grant ownership or broaden
+termination scope; it makes every destructive controller visible while
+retaining the repository-root and process-lineage filters described above.
+The change creates no new daemon or restart window. The plugin source itself is
+loaded by OpenCode only at startup, so an operator must restart OpenCode before
+the new cleanup behavior is active; the Make diagnostic is effective on its
+next invocation. Rollback is a single code/test/documentation revert after
+confirming neither PID file is being used to make a destructive decision.
+
+The boundary follows the same practitioner evidence as the cross-worktree
+census: [pytest-timeout issue 159](https://github.com/pytest-dev/pytest-timeout/issues/159)
+shows the consequences of split subprocess ownership;
+[psutil issue 2335](https://github.com/giampaolo/psutil/issues/2335) warns against
+inferring identity from command text; and
+[psutil issue 2534](https://github.com/giampaolo/psutil/issues/2534) explains why
+the owning process group can outlive an intermediate controller. These reports
+support explicit record ownership and observability; they do not establish the
+sender of Gludd's still-unattributed gate `SIGTERM`.
+
 ### Concurrent gate-lite evidence
 
 Two linked worktrees can safely execute their bounded two-worker `gate-lite`

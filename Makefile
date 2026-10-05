@@ -2150,7 +2150,7 @@ ps-gludd:
 	@SELF=$$$$; PARENT=$$(ps -o ppid= -p $$SELF 2>/dev/null | tr -d ' '); \
 	printf '%-8s %-8s %-10s %-7s %s\n' PID PPID ELAPSED STATE COMMAND; \
 	ps -axo pid=,ppid=,etime=,command= | \
-	grep -E 'pytest|molecule|general_ludd|gludd-gate-basetemp|ansible-playbook' | \
+	grep -E 'pytest|molecule|general_ludd|gludd-gate-basetemp|ansible-playbook|task_watchdog\.py|agent_watchdog\.py' | \
 	grep -v -E 'grep |ps-gludd|kill-stale' | \
 	while read -r pid ppid etime rest; do \
 		[ "$$pid" = "$$SELF" ] && continue; \
