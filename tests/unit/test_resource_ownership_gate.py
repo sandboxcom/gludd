@@ -327,8 +327,69 @@ def run() -> None:
 
     errors = validate_inventory(findings, {stale.key(): stale})
 
-    assert any(error.startswith("new resource:") for error in errors)
+    assert any(
+        error.startswith("owned resource awaiting inventory admission:")
+        for error in errors
+    )
     assert any(error.startswith("stale inventory:") for error in errors)
+
+
+def test_inventory_identity_survives_coordinate_only_relocation(tmp_path: Path) -> None:
+    """Moving unchanged owned code must not invalidate release evidence."""
+    original = _scan(
+        tmp_path,
+        """\
+import tempfile
+
+def run() -> None:
+    with tempfile.TemporaryDirectory() as path:
+        print(path)
+""",
+    )[0]
+    relocated = ResourceEvidence(
+        path=original.path,
+        line=original.line + 20,
+        column=original.column + 4,
+        kind=original.kind,
+        owner=original.owner,
+        acquisition=original.acquisition,
+        teardown=original.teardown,
+        source_hash=original.source_hash,
+        owned=original.owned,
+    )
+
+    assert validate_inventory([relocated], {original.key(): original}) == []
+
+
+def test_inventory_semantic_identity_preserves_duplicate_counts() -> None:
+    """Two identical acquisitions require two admitted inventory records."""
+    first = ResourceEvidence(
+        path="app/sample.py",
+        line=4,
+        column=4,
+        kind="temp-artifact",
+        owner="run",
+        acquisition="tempfile.TemporaryDirectory()",
+        teardown="context-manager-exit",
+        source_hash="a" * 64,
+        owned=True,
+    )
+    second = ResourceEvidence(
+        path=first.path,
+        line=14,
+        column=first.column,
+        kind=first.kind,
+        owner=first.owner,
+        acquisition=first.acquisition,
+        teardown=first.teardown,
+        source_hash=first.source_hash,
+        owned=True,
+    )
+
+    errors = validate_inventory([first, second], {first.key(): first})
+
+    assert len(errors) == 1
+    assert errors[0].startswith("owned resource awaiting inventory admission:")
 
 
 def test_inventory_loader_rejects_duplicate_or_unowned_entries(tmp_path: Path) -> None:

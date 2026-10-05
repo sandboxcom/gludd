@@ -7,7 +7,10 @@ import fnmatch
 import shlex
 from pathlib import Path
 
-ISOLATED_TESTS = ("tests/unit/test_all_plugins_runtime.py",)
+ISOLATED_TESTS = (
+    "tests/unit/test_all_plugins_runtime.py",
+    "tests/unit/test_makefile_audit_deep.py",
+)
 
 SHARDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "unit-1a1": (
@@ -23,7 +26,10 @@ SHARDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
         ("*/test_connector*.py", "*/test_*_e2e.py"),
     ),
     "unit-1d": (("tests/unit/test_[bd]*.py",), ("*/test_*_e2e.py",)),
-    "unit-2": (("tests/unit/test_[f-m]*.py",), ("*/test_*_e2e.py",)),
+    "unit-2": (
+        ("tests/unit/test_[f-m]*.py",),
+        ("*/test_*_e2e.py", "*/test_makefile_audit_deep.py"),
+    ),
     "unit-3a": (
         ("tests/unit/test_[n-r]*.py",),
         ("*/test_*_e2e.py",),

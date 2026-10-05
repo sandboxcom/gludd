@@ -6,13 +6,17 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import tomllib
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
+from urllib.request import Request, urlopen
 
 import yaml
 
@@ -28,10 +32,26 @@ INPUTS = {
     "definition": DEFINITION,
 }
 IMAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:+-]*@sha256:[0-9a-f]{64}$")
+DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+BASE_IMAGE_TAG = "quay.io/centos/centos:stream9"
+BASE_IMAGE_MANIFEST_ROOT = "https://quay.io/v2/centos/centos/manifests"
+BASE_IMAGE_MANIFEST_URL = f"{BASE_IMAGE_MANIFEST_ROOT}/stream9"
+MANIFEST_ACCEPT = ", ".join(
+    (
+        "application/vnd.oci.image.index.v1+json",
+        "application/vnd.docker.distribution.manifest.list.v2+json",
+        "application/vnd.oci.image.manifest.v1+json",
+        "application/vnd.docker.distribution.manifest.v2+json",
+    )
+)
 COLLECTION_ARTIFACTS = (
     (
         ROOT / "collections" / "ansible_collections" / "general_ludd" / "agent",
         ROOT / "dist" / "collections" / "general_ludd-agent-0.2.0.tar.gz",
+    ),
+    (
+        ROOT / "collections" / "ansible_collections" / "general_ludd" / "azure",
+        ROOT / "dist" / "collections" / "general_ludd-azure-0.2.0.tar.gz",
     ),
     (
         ROOT / "collections" / "ansible_collections" / "general_ludd" / "language",
@@ -60,6 +80,19 @@ EXPECTED_BUILD_FILES = [
     }
     for _source, artifact in COLLECTION_ARTIFACTS
 ]
+EXPECTED_OPENTOFU_MARKERS = (
+    "tofu_1.12.6_linux_amd64.zip",
+    "tofu_1.12.6_linux_arm64.zip",
+    "5dc43da4f750f33873dc25e94587128709e819e544b7be9016b255316153c3a8",
+    "e573979ba68a17fe7b881752051a694a7efcd970e39521f6a25775197861ed4d",
+    "github.com/opentofu/opentofu/releases/download/v1.12.6",
+    "sha256sum --check --strict",
+    "/usr/local/bin/tofu",
+)
+FORBIDDEN_HASHICORP_TERRAFORM_MARKERS = (
+    "releases.hashicorp.com",
+    "/usr/local/bin/terraform",
+)
 
 
 def _sha256(path: Path) -> str:
@@ -91,6 +124,98 @@ def _base_image_from_definition(definition: object) -> str:
         return ""
     name = base_image.get("name")
     return name if isinstance(name, str) else ""
+
+
+def _registry_manifest_digest(reference: str, *, opener: Any | None = None) -> str:
+    """Return a registry-asserted digest for one safe CentOS manifest reference."""
+    if not (reference == "stream9" or DIGEST_RE.fullmatch(reference)):
+        raise ValueError("unsupported CentOS manifest reference")
+    request = Request(
+        f"{BASE_IMAGE_MANIFEST_ROOT}/{reference}",
+        headers={"Accept": MANIFEST_ACCEPT},
+        method="HEAD",
+    )
+    open_request = urlopen if opener is None else opener
+    try:
+        with open_request(request, timeout=30) as response:
+            digest = response.headers.get("Docker-Content-Digest", "")
+    except Exception as exc:
+        raise RuntimeError(
+            f"unable to resolve supported Ansible base image: {exc}"
+        ) from exc
+    if DIGEST_RE.fullmatch(digest) is None:
+        raise RuntimeError(
+            "registry response has no valid Docker-Content-Digest header"
+        )
+    return digest
+
+
+def resolve_base_image_digest(*, opener: Any | None = None) -> str:
+    """Resolve the supported mutable source tag to its current manifest index."""
+    digest = _registry_manifest_digest("stream9", opener=opener)
+    return f"{BASE_IMAGE_TAG}@{digest}"
+
+
+def check_configured_base_image(*, opener: Any | None = None) -> str:
+    """Prove the exact configured immutable image is still served by Quay."""
+    definition = yaml.safe_load(DEFINITION.read_text(encoding="utf-8"))
+    image = _base_image_from_definition(definition)
+    expected_prefix = f"{BASE_IMAGE_TAG}@"
+    if not image.startswith(expected_prefix) or IMAGE_RE.fullmatch(image) is None:
+        raise ValueError("execution environment must use the supported digest-pinned base image")
+    expected_digest = image.removeprefix(expected_prefix)
+    observed_digest = _registry_manifest_digest(expected_digest, opener=opener)
+    if observed_digest != expected_digest:
+        raise RuntimeError(
+            "registry manifest identity mismatch: "
+            f"expected {expected_digest}, received {observed_digest}"
+        )
+    return image
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    """Replace one tracked text artifact without exposing partial content."""
+    mode = path.stat().st_mode & 0o777
+    temporary_name = ""
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            delete=False,
+        ) as temporary:
+            temporary.write(content)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+            temporary_name = temporary.name
+        os.chmod(temporary_name, mode)
+        os.replace(temporary_name, path)
+        temporary_name = ""
+    finally:
+        if temporary_name:
+            Path(temporary_name).unlink(missing_ok=True)
+
+
+def refresh_base_image() -> str:
+    """Resolve and atomically synchronize the EE definition and runtime lock."""
+    resolved = resolve_base_image_digest()
+    original_definition = DEFINITION.read_text(encoding="utf-8")
+    original_lock = LOCK.read_text(encoding="utf-8")
+    definition = yaml.safe_load(original_definition)
+    current = _base_image_from_definition(definition)
+    if IMAGE_RE.fullmatch(current) is None:
+        raise ValueError("execution environment base image must be digest-pinned")
+    if original_definition.count(current) != 1:
+        raise ValueError("execution environment base image must appear exactly once")
+    try:
+        _atomic_write_text(DEFINITION, original_definition.replace(current, resolved, 1))
+        write_lock()
+    except Exception:
+        _atomic_write_text(DEFINITION, original_definition)
+        _atomic_write_text(LOCK, original_lock)
+        raise
+    return resolved
 
 
 def write_lock() -> None:
@@ -141,6 +266,27 @@ def validate_files() -> list[str]:
         errors.append("execution environment dependencies must name the locked inputs and controller interpreter")
     if definition.get("additional_build_files") != EXPECTED_BUILD_FILES:
         errors.append("execution environment must stage the exact locked collection artifacts")
+    build_steps = definition.get("additional_build_steps", {})
+    append_final = (
+        build_steps.get("append_final", [])
+        if isinstance(build_steps, dict)
+        else []
+    )
+    rendered_steps = "\n".join(
+        step for step in append_final if isinstance(step, str)
+    )
+    if not append_final or any(
+        marker not in rendered_steps for marker in EXPECTED_OPENTOFU_MARKERS
+    ):
+        errors.append(
+            "execution environment must install the checksum-pinned OpenTofu CLI"
+        )
+    if any(
+        marker in rendered_steps for marker in FORBIDDEN_HASHICORP_TERRAFORM_MARKERS
+    ):
+        errors.append(
+            "execution environment must not install HashiCorp Terraform"
+        )
 
     lock = json.loads(LOCK.read_text(encoding="utf-8"))
     if lock.get("schema_version") != 1 or lock.get("release") != "0.1.0-beta.4":
@@ -203,18 +349,30 @@ def build_environment(runtime: str, image: str, context: Path, validate_only: bo
     if validate_only:
         print(f"ANSIBLE_EE_BUILD_VALIDATED definition={DEFINITION.relative_to(ROOT)} context={context}")
         return 0
-    if shutil.which("ansible-builder") is None:
+    if find_spec("ansible_builder") is None:
         print("ansible-builder is unavailable; sync the dev/controller dependencies", file=sys.stderr)
         return 2
     if shutil.which(runtime) is None:
         print(f"container runtime is unavailable: {runtime}", file=sys.stderr)
         return 2
+    try:
+        base_image = check_configured_base_image()
+    except (RuntimeError, ValueError) as exc:
+        print(
+            f"Ansible base image is unavailable: {exc}; "
+            "run make refresh-ansible-base-image ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY=0",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"ANSIBLE_BASE_IMAGE_AVAILABLE image={base_image}", flush=True)
     collection_status = _build_collection_artifacts()
     if collection_status != 0:
         return collection_status
     context.mkdir(parents=True, exist_ok=True)
     command = [
-        "ansible-builder",
+        sys.executable,
+        "-m",
+        "ansible_builder",
         "build",
         "--file",
         str(DEFINITION),
@@ -232,7 +390,7 @@ def build_environment(runtime: str, image: str, context: Path, validate_only: bo
 
 
 def verify_environment(runtime: str, image: str, validate_only: bool) -> int:
-    """Verify a digest-addressed EE and its controller imports."""
+    """Verify a digest-addressed EE, OpenTofu CLI, and controller imports."""
     try:
         _require_image(image)
     except ValueError as exc:
@@ -252,26 +410,62 @@ def verify_environment(runtime: str, image: str, validate_only: bool) -> int:
     inspect = subprocess.run([runtime, "image", "inspect", image], check=False)
     if inspect.returncode != 0:
         return inspect.returncode
-    command = [
-        runtime,
-        "run",
-        "--rm",
-        "--network=none",
-        image,
-        "python3",
-        "-c",
-        "import ansible, ansible_runner; print('ANSIBLE_EE_IMPORT_OK')",
-    ]
-    print(f"ANSIBLE_EE_SMOKE_START runtime={runtime} image={image}", flush=True)
-    result = subprocess.run(command, check=False)
-    print(f"ANSIBLE_EE_SMOKE_END rc={result.returncode}", flush=True)
-    return result.returncode
+    smoke_commands = (
+        (
+            "opentofu",
+            [
+                runtime,
+                "run",
+                "--rm",
+                "--network=none",
+                image,
+                "/usr/local/bin/tofu",
+                "version",
+            ],
+        ),
+        (
+            "python",
+            [
+                runtime,
+                "run",
+                "--rm",
+                "--network=none",
+                image,
+                "python3",
+                "-c",
+                "import ansible, ansible_runner; print('ANSIBLE_EE_IMPORT_OK')",
+            ],
+        ),
+    )
+    for phase, command in smoke_commands:
+        print(
+            f"ANSIBLE_EE_SMOKE_START phase={phase} runtime={runtime} image={image}",
+            flush=True,
+        )
+        result = subprocess.run(command, check=False)
+        print(
+            f"ANSIBLE_EE_SMOKE_END phase={phase} rc={result.returncode}",
+            flush=True,
+        )
+        if result.returncode != 0:
+            return result.returncode
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run the artifact CLI."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("build", "validate", "verify", "write-lock"))
+    parser.add_argument(
+        "mode",
+        choices=(
+            "build",
+            "check-base-image",
+            "refresh-base-image",
+            "validate",
+            "verify",
+            "write-lock",
+        ),
+    )
     parser.add_argument("--runtime", choices=("podman", "docker"), default="podman")
     parser.add_argument("--image", default="gludd-ansible-ee:0.1.0-beta.4")
     parser.add_argument("--context", type=Path, default=Path("/tmp/gludd-ansible-ee-context"))
@@ -280,6 +474,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.mode == "write-lock":
         write_lock()
         print(f"ANSIBLE_RUNTIME_LOCK_UPDATED path={LOCK.relative_to(ROOT)}")
+        return 0
+    if args.mode == "refresh-base-image":
+        image = refresh_base_image()
+        print(f"ANSIBLE_BASE_IMAGE_REFRESHED image={image}")
+        return 0
+    if args.mode == "check-base-image":
+        image = check_configured_base_image()
+        print(f"ANSIBLE_BASE_IMAGE_AVAILABLE image={image}")
         return 0
     if args.mode == "build":
         return build_environment(args.runtime, args.image, args.context, args.validate_only)

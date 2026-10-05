@@ -62,18 +62,21 @@ def test_workflow_matrix_delegates_shard_plans_to_canonical_registry() -> None:
     assert all("testpaths" not in item and "exclude" not in item for item in include)
 
 
-def test_local_unit_1a1_excludes_isolated_node_runtime_suite() -> None:
+def test_local_shards_exclude_fresh_process_suites() -> None:
     module = _load_script("ci_named_shard_files")
     workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "build.yml").read_text())
     unit_1a1 = next(
-        item
-        for item in workflow["jobs"]["test-shard"]["strategy"]["matrix"]["include"]
-        if item["shard"] == "unit-1a1"
+        item for item in workflow["jobs"]["test-shard"]["strategy"]["matrix"]["include"] if item["shard"] == "unit-1a1"
     )
 
     assert "tests/unit/test_all_plugins_runtime.py" not in module.expand_shard("unit-1a1")
     assert "*/test_all_plugins_runtime.py" in module.SHARDS["unit-1a1"][1]
-    assert module.ISOLATED_TESTS == ("tests/unit/test_all_plugins_runtime.py",)
+    assert "tests/unit/test_makefile_audit_deep.py" not in module.expand_shard("unit-2")
+    assert "*/test_makefile_audit_deep.py" in module.SHARDS["unit-2"][1]
+    assert module.ISOLATED_TESTS == (
+        "tests/unit/test_all_plugins_runtime.py",
+        "tests/unit/test_makefile_audit_deep.py",
+    )
     assert tuple(str(unit_1a1["isolated_testpaths"]).split()) == module.ISOLATED_TESTS
 
 
@@ -210,18 +213,22 @@ def test_coverage_files_target_preserves_aggregate_and_per_file_floors() -> None
     assert '--per-file-threshold="$(COVERAGE_PER_FILE_MIN)"' in recipe
 
 
+def test_coverage_files_target_namespaces_ansible_temp_under_owned_basetemp() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    recipe = makefile.split("coverage-files:", 1)[1].split("gate-async:", 1)[0]
+
+    assert 'mkdir -p "$$BT/ansible-local"' in recipe
+    assert 'ANSIBLE_LOCAL_TEMP="$$BT/ansible-local"' in recipe
+
+
 def test_local_and_hosted_named_shards_use_one_bounded_runner() -> None:
     """GHA and local release evidence must execute the same shard owner."""
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-    workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(
-        encoding="utf-8"
-    )
-    local_recipe = makefile.split("test-ci-shard:", 1)[1].split(
-        "test-ci-shard-summary:", 1
+    workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+    local_recipe = makefile.split("test-ci-shard:", 1)[1].split("test-ci-shard-summary:", 1)[0]
+    hosted_recipe = workflow.split("- name: Test (shard ${{ matrix.shard }}", 1)[1].split(
+        "- name: Collect failure diagnostics", 1
     )[0]
-    hosted_recipe = workflow.split(
-        "- name: Test (shard ${{ matrix.shard }}", 1
-    )[1].split("- name: Collect failure diagnostics", 1)[0]
 
     assert "scripts/run_ci_shards_serial.py" in local_recipe
     assert "scripts/run_ci_shards_serial.py" in hosted_recipe
@@ -248,11 +255,7 @@ def test_hosted_coverage_artifact_includes_hidden_coverage_database() -> None:
     """The shard artifact must contain the dot-prefixed coverage database."""
     workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "build.yml").read_text())
     steps = workflow["jobs"]["test-shard"]["steps"]
-    upload = next(
-        step
-        for step in steps
-        if str(step.get("name", "")).startswith("Upload coverage data")
-    )
+    upload = next(step for step in steps if str(step.get("name", "")).startswith("Upload coverage data"))
 
     assert upload["with"]["include-hidden-files"] is True
 
@@ -261,15 +264,11 @@ def test_local_and_hosted_shard_batches_share_safe_file_bound() -> None:
     """Hosted workers must not retain a 64-file process lifetime."""
     module = _load_script("run_ci_shards_serial")
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-    workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(
-        encoding="utf-8"
-    )
-    local_recipe = makefile.split("test-ci-shard:", 1)[1].split(
-        "test-ci-shard-summary:", 1
-    )[0]
+    workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+    local_recipe = makefile.split("test-ci-shard:", 1)[1].split("test-ci-shard-summary:", 1)[0]
 
     assert module.MAX_FILES_PER_BATCH == 16
-    assert '$(or $(MAX_FILES_PER_BATCH),16)' in local_recipe
+    assert "$(or $(MAX_FILES_PER_BATCH),16)" in local_recipe
     assert "--max-files-per-batch 16" in workflow
 
 
@@ -356,9 +355,7 @@ def test_terminal_attestation_is_atomic_and_contains_exact_identity(
     assert plan["path_count"] == len(plan["paths"])
     assert plan["sha256"] == module.canonical_json_sha256(plan["paths"])
     assert payload["execution_policy"]["pytest_args"] == ["-W", "error"]
-    assert payload["execution_policy_sha256"] == module.canonical_json_sha256(
-        payload["execution_policy"]
-    )
+    assert payload["execution_policy_sha256"] == module.canonical_json_sha256(payload["execution_policy"])
     assert not destination.with_suffix(".json.tmp").exists()
 
 
@@ -376,9 +373,7 @@ def test_terminal_attestation_uses_precomputed_pairing_without_rescan(
     monkeypatch.setattr(
         module,
         "_attestation_pairing",
-        lambda *_args, **_kwargs: pytest.fail(
-            "terminal publication must not rescan the tested checkout"
-        ),
+        lambda *_args, **_kwargs: pytest.fail("terminal publication must not rescan the tested checkout"),
     )
 
     module._write_terminal_attestation(
@@ -493,6 +488,65 @@ def test_cli_publishes_failed_attestation_when_runner_raises(
     payload = json.loads(destination.read_text(encoding="utf-8"))
     assert payload["status"] == "fail"
     assert payload["error"] == "RuntimeError: boom"
+
+
+def test_cli_attests_exact_collected_failure_without_stale_coverage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    explicit = tmp_path / "explicit-failure.json"
+    stale_coverage = tmp_path / ".coverage.previous"
+    stale_coverage.write_bytes(b"must-not-be-attested")
+    resource_paths = module.ResourcePaths(
+        root=tmp_path / "resources",
+        coverage_shards=tmp_path / "resources" / "coverage-fragments",
+        coverage_json=tmp_path / "resources" / "coverage.json",
+        coverage_audit=tmp_path / "resources" / "coverage-audit.json",
+        attestation=tmp_path / "default-failure.json",
+    )
+    identity = {
+        "head_sha": "abc123",
+        "expected_sha": "abc123",
+        "branch": "feature",
+        "clean": True,
+        "exact_sha": True,
+        "queries_ok": True,
+    }
+    pairing = {
+        "shard_plans": {"unit-2": {"paths": ["tests/unit/a.py"]}},
+        "execution_policy": {"pytest_args": []},
+        "execution_policy_sha256": "policy-digest",
+    }
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setattr(module, "_resource_paths", lambda: resource_paths)
+    monkeypatch.setattr(module, "_repository_identity", lambda **_kwargs: identity)
+    monkeypatch.setattr(module, "_attestation_pairing", lambda *_args, **_kwargs: pairing)
+    monkeypatch.setattr(module, "run", lambda *_args, **_kwargs: 6)
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "run_ci_shards_serial.py",
+            "--shards=unit-2",
+            "--skip-isolated",
+            "--skip-aggregate",
+            f"--coverage-output={stale_coverage}",
+            f"--attestation-output={explicit}",
+        ],
+    )
+
+    assert module.main() == 6
+    for destination in (resource_paths.attestation, explicit):
+        payload = json.loads(destination.read_text(encoding="utf-8"))
+        assert payload["status"] == "fail"
+        assert payload["returncode"] == 6
+        assert payload["lane"] == "hosted"
+        assert payload["identity"] == identity
+        assert payload["shards"] == ["unit-2"]
+        assert payload["execution_policy_sha256"] == "policy-digest"
+        assert "coverage" not in payload
+        assert "error" not in payload
 
 
 @pytest.mark.parametrize(
@@ -642,6 +696,134 @@ def test_cli_rejects_non_release_eligible_identity_before_running(
     assert payload["error"] == "repository identity is not release eligible"
 
 
+def test_cli_allows_stable_dirty_identity_only_for_nonrelease_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A commit-preflight gate may test dirty content without blessing a release."""
+    module = _load_script("run_ci_shards_serial")
+    destination = tmp_path / "dirty-gate.json"
+    resource_paths = module.ResourcePaths(
+        root=tmp_path,
+        coverage_shards=tmp_path / "coverage-fragments",
+        coverage_json=tmp_path / "coverage.json",
+        coverage_audit=tmp_path / "coverage-audit.json",
+        attestation=tmp_path / "default-attestation.json",
+    )
+    identity = {
+        "head_sha": "abc123",
+        "expected_sha": "abc123",
+        "branch": "feature",
+        "clean": False,
+        "exact_sha": True,
+        "queries_ok": True,
+    }
+    calls: list[str] = []
+
+    def fake_run(*_args: object, **_kwargs: object) -> int:
+        calls.append("run")
+        return 0
+
+    states = iter(("candidate-state", "candidate-state"))
+    monkeypatch.setattr(module, "_resource_paths", lambda: resource_paths)
+    monkeypatch.setattr(module, "_repository_identity", lambda **_kwargs: identity)
+    monkeypatch.setattr(module, "_worktree_state_id", lambda: next(states))
+    monkeypatch.setattr(
+        module,
+        "run",
+        fake_run,
+    )
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "run_ci_shards_serial.py",
+            "--shards=unit-2",
+            "--allow-dirty-worktree",
+            f"--attestation-output={destination}",
+        ],
+    )
+
+    assert module.main() == 0
+    assert calls == ["run"]
+    payload = json.loads(destination.read_text(encoding="utf-8"))
+    assert payload["status"] == "pass"
+    assert payload["identity"]["clean"] is False
+    assert payload["identity"]["worktree_state_id"] == "candidate-state"
+    assert module._identity_is_release_eligible(payload["identity"]) is False
+
+
+def test_dirty_gate_rejects_worktree_mutation_during_test_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    destination = tmp_path / "mutated-dirty-gate.json"
+    resource_paths = module.ResourcePaths(
+        root=tmp_path,
+        coverage_shards=tmp_path / "coverage-fragments",
+        coverage_json=tmp_path / "coverage.json",
+        coverage_audit=tmp_path / "coverage-audit.json",
+        attestation=tmp_path / "default-attestation.json",
+    )
+    monkeypatch.setattr(module, "_resource_paths", lambda: resource_paths)
+    monkeypatch.setattr(
+        module,
+        "_repository_identity",
+        lambda **_kwargs: {
+            "head_sha": "abc123",
+            "expected_sha": "abc123",
+            "branch": "feature",
+            "clean": False,
+            "exact_sha": True,
+            "queries_ok": True,
+        },
+    )
+    states = iter(("candidate-state", "mutated-state"))
+    monkeypatch.setattr(module, "_worktree_state_id", lambda: next(states))
+    monkeypatch.setattr(module, "run", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "run_ci_shards_serial.py",
+            "--shards=unit-2",
+            "--allow-dirty-worktree",
+            f"--attestation-output={destination}",
+        ],
+    )
+
+    assert module.main() == module.RUNNER_EXCEPTION_EXIT_CODE
+    payload = json.loads(destination.read_text(encoding="utf-8"))
+    assert payload["status"] == "fail"
+    assert payload["error"] == "repository state changed during dirty gate"
+
+
+def test_release_policy_rejects_dirty_gate_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        [
+            "run_ci_shards_serial.py",
+            "--shards=unit-2",
+            "--allow-dirty-worktree",
+            "--require-release-policy",
+            "--pytest-args=-W error",
+        ],
+    )
+
+    assert module.main() == 2
+
+
+def test_commit_preflight_gate_invokes_dirty_nonrelease_mode() -> None:
+    source = (ROOT / "scripts" / "run_gate.sh").read_text(encoding="utf-8")
+
+    assert "run_ci_shards_serial.py --pytest-args=-q --allow-dirty-worktree" in source
+
+
 def test_serial_runner_rejects_nonpositive_batch_size() -> None:
     module = _load_script("run_ci_shards_serial")
 
@@ -660,12 +842,8 @@ def test_serial_pytest_command_uses_one_fail_closed_worker_and_isolated_basetemp
 ) -> None:
     module = _load_script("run_ci_shards_serial")
 
-    command = module._pytest_command(
-        "unit-2", ["tests/unit/test_alpha.py"], tmp_path, ["-q"]
-    )
-    greenlet_command = module._pytest_command(
-        "unit-3b", ["tests/unit/test_zeta.py"], tmp_path, ["-q"]
-    )
+    command = module._pytest_command("unit-2", ["tests/unit/test_alpha.py"], tmp_path, ["-q"])
+    greenlet_command = module._pytest_command("unit-3b", ["tests/unit/test_zeta.py"], tmp_path, ["-q"])
 
     assert command[0] == sys.executable
     assert command[1:3] == ["-m", "pytest"]
@@ -903,7 +1081,162 @@ def test_serial_runner_stops_the_whole_plan_after_one_interrupted_batch(
     assert started == ["unit-1b:batch-001"]
 
 
-def test_serial_runner_stops_the_whole_plan_after_one_failed_shard(
+def test_serial_runner_stops_after_failed_batch_without_coverage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
+    workspaces = tmp_path / "workspaces"
+    compact_roots = tmp_path / "compact-roots"
+    started: list[str] = []
+
+    def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
+        del dir
+        parent = workspaces if prefix.startswith("gludd-gate-") else compact_roots
+        path = parent / prefix
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
+
+    def failed_run(*_args: object, label: str, **_kwargs: object) -> int:
+        started.append(label)
+        return 1
+
+    monkeypatch.setattr(module.tempfile, "mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr(
+        module,
+        "expand_shard",
+        lambda shard: [f"tests/unit/test_{shard}.py"],
+    )
+    monkeypatch.setattr(module, "_run_owned_pytest", failed_run)
+    monkeypatch.setattr(module, "_save_shard_coverage", lambda *_args: False)
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", lambda _path: 0)
+
+    assert (
+        module.run(
+            ["unit-1b", "unit-1d"],
+            [],
+            run_isolated=False,
+            aggregate_coverage=False,
+        )
+        == 1
+    )
+    assert started == ["unit-1b:batch-001"]
+    assert (
+        "SHARD-COVERAGE-INTEGRITY-FAIL shard=unit-1b batch=1 rc=1; later-batches=not-started" in capsys.readouterr().out
+    )
+
+
+def test_serial_runner_collects_independent_failures_with_coverage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
+    workspaces = tmp_path / "workspaces"
+    compact_roots = tmp_path / "compact-roots"
+    started: list[str] = []
+
+    def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
+        del dir
+        parent = workspaces if prefix.startswith("gludd-gate-") else compact_roots
+        path = parent / prefix
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
+
+    def failed_run(*_args: object, label: str, **_kwargs: object) -> int:
+        started.append(label)
+        return 1
+
+    monkeypatch.setattr(module.tempfile, "mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr(
+        module,
+        "expand_shard",
+        lambda shard: [f"tests/unit/test_{shard}.py"],
+    )
+    monkeypatch.setattr(module, "_run_owned_pytest", failed_run)
+    monkeypatch.setattr(module, "_save_shard_coverage", lambda *_args: True)
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", lambda _path: 0)
+
+    assert (
+        module.run(
+            ["unit-1b", "unit-1d"],
+            [],
+            run_isolated=False,
+            aggregate_coverage=False,
+        )
+        == 1
+    )
+    assert started == ["unit-1b:batch-001", "unit-1d:batch-001"]
+    output = capsys.readouterr().out
+    assert output.count("later-shards=continuing") == 2
+
+
+def test_serial_runner_runs_coverage_after_collecting_ordinary_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
+    outcomes = iter((1, 5))
+    launched: list[str] = []
+    aggregate_calls = 0
+    temp_index = 0
+
+    def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
+        nonlocal temp_index
+        del dir
+        temp_index += 1
+        path = tmp_path / f"{prefix}{temp_index}"
+        path.mkdir()
+        return str(path)
+
+    def run_owned(*_args: object, label: str, **_kwargs: object) -> int:
+        launched.append(label)
+        return next(outcomes)
+
+    def aggregate() -> int:
+        nonlocal aggregate_calls
+        aggregate_calls += 1
+        return 0
+
+    monkeypatch.setattr(module.tempfile, "mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr(module, "expand_shard", lambda shard: [f"tests/{shard}.py"])
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(module, "_run_owned_pytest", run_owned)
+    monkeypatch.setattr(module, "_save_shard_coverage", lambda *_args: True)
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", lambda _path: 0)
+    monkeypatch.setattr(module, "_aggregate_coverage", aggregate)
+
+    result = module.run(
+        ["unit-1a1", "unit-1a2"],
+        [],
+        run_isolated=False,
+    )
+
+    assert result == 5
+    assert launched == ["unit-1a1:batch-001", "unit-1a2:batch-001"]
+    assert aggregate_calls == 1
+    output = capsys.readouterr().out
+    assert '"coverage:aggregate": 0' in output
+    assert '"unit-1a1:batch-001": 1' in output
+    assert '"unit-1a1:batch-001:cleanup": 0' in output
+    assert '"unit-1a1:batch-001:coverage": 0' in output
+    assert '"unit-1a2:batch-001": 5' in output
+    assert '"unit-1a2:batch-001:cleanup": 0' in output
+    assert '"unit-1a2:batch-001:coverage": 0' in output
+
+
+def test_serial_runner_stops_the_whole_plan_after_internal_runner_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -943,10 +1276,35 @@ def test_serial_runner_stops_the_whole_plan_after_one_failed_shard(
         == 3
     )
     assert started == ["unit-2:batch-001"]
-    assert (
-        "SERIAL-SHARD-FAILED shard=unit-2 rc=3; later-shards=not-started"
-        in capsys.readouterr().out
-    )
+    assert "SERIAL-SHARD-FAILED shard=unit-2 rc=3; later-shards=not-started" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("returncode", "expected"),
+    [
+        (0, False),
+        (1, True),
+        (2, True),
+        (3, False),
+        (4, False),
+        (5, True),
+        (6, True),
+        (70, False),
+        (73, False),
+        (78, False),
+        (124, False),
+        (125, False),
+        (128 + signal.SIGINT, False),
+        (128 + signal.SIGTERM, False),
+    ],
+)
+def test_serial_runner_classifies_collect_all_and_safety_results(
+    returncode: int,
+    expected: bool,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    assert module._is_collect_all_pytest_returncode(returncode) is expected
 
 
 def test_serial_runner_reserves_xdist_and_test_name_socket_budget(
@@ -959,11 +1317,7 @@ def test_serial_runner_reserves_xdist_and_test_name_socket_budget(
     owned = module._owned_socket_safe_tmpdir(hosted_label)
     try:
         socket_path = (
-            owned.resolve()
-            / "pytest"
-            / "popen-gw0"
-            / "test_release_issues_ctrl_alt_del_via_api0"
-            / "fc-api.sock"
+            owned.resolve() / "pytest" / "popen-gw0" / "test_release_issues_ctrl_alt_del_via_api0" / "fc-api.sock"
         )
         assert len(str(socket_path).encode()) < 104
     finally:
@@ -1060,8 +1414,7 @@ def test_xdist_worker_death_parser_accepts_complete_control_lines(line: str) -> 
 @pytest.mark.parametrize(
     "line",
     [
-        "tests/unit/test_adaptive_test.py::test_is_oom_exit_output_markers"
-        "[[gw2] node down: Not properly terminated]",
+        "tests/unit/test_adaptive_test.py::test_is_oom_exit_output_markers[[gw2] node down: Not properly terminated]",
         "payload=[gw2] node down: Not properly terminated",
         "stdout says worker gw2 crashed and worker restarting disabled",
         "assert 'maximum crashed workers reached: 0' in output",
@@ -1287,11 +1640,7 @@ def test_serial_runner_places_pytest_basetemp_under_compact_socket_root(
     captured: dict[str, str] = {}
 
     def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
-        path = (
-            compact
-            if re.fullmatch(r"gludd-[0-9a-f]{4}-", prefix)
-            else workspace
-        )
+        path = compact if re.fullmatch(r"gludd-[0-9a-f]{4}-", prefix) else workspace
         path.mkdir(parents=True, exist_ok=True)
         return str(path)
 
@@ -1303,9 +1652,7 @@ def test_serial_runner_places_pytest_basetemp_under_compact_socket_root(
     ) -> int:
         if "tests/unit/test_all_plugins_runtime.py" not in command:
             captured["basetemp"] = next(
-                argument.removeprefix("--basetemp=")
-                for argument in command
-                if argument.startswith("--basetemp=")
+                argument.removeprefix("--basetemp=") for argument in command if argument.startswith("--basetemp=")
             )
             captured["tmpdir"] = env["TMPDIR"]
         return 0
@@ -1333,12 +1680,13 @@ def test_serial_runner_uses_a_fresh_non_coverage_process_for_isolated_tests() ->
         "-m",
         "pytest",
         "tests/unit/test_all_plugins_runtime.py",
+        "tests/unit/test_makefile_audit_deep.py",
         "-v",
     ]
     assert all(not argument.startswith("--cov") for argument in command)
 
 
-def test_serial_runner_does_not_continue_after_a_failed_shard(
+def test_serial_runner_collects_later_shards_after_test_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1356,9 +1704,7 @@ def test_serial_runner_does_not_continue_after_a_failed_shard(
         path.mkdir()
         return str(path)
 
-    def fake_run(
-        command: list[str], *, env: dict[str, str] | None = None
-    ) -> int:
+    def fake_run(command: list[str], *, env: dict[str, str] | None = None) -> int:
         return 0
 
     def fake_run_owned(command: list[str], **_kwargs: object) -> int:
@@ -1385,7 +1731,755 @@ def test_serial_runner_does_not_continue_after_a_failed_shard(
     result = module.run(["unit-1a1", "unit-1a2"], [])
 
     assert result == 1
-    assert launched == ["unit-1a1"]
+    assert launched == ["unit-1a1", "unit-1a2"]
+
+
+def test_serial_runner_collects_later_batches_after_collection_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
+    launched: list[str] = []
+    temp_index = 0
+
+    def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
+        nonlocal temp_index
+        del dir
+        temp_index += 1
+        path = tmp_path / f"{prefix}{temp_index}"
+        path.mkdir()
+        return str(path)
+
+    def fake_run_owned(*_args: object, label: str, **_kwargs: object) -> int:
+        launched.append(label)
+        return 2 if label == "unit-1a1:batch-001" else 0
+
+    monkeypatch.setattr(module.tempfile, "mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", lambda _path: None)
+    monkeypatch.setattr(
+        module,
+        "expand_shard",
+        lambda shard: [f"tests/{shard}-a.py", f"tests/{shard}-b.py"],
+    )
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(module, "_run_owned_pytest", fake_run_owned)
+    monkeypatch.setattr(module, "_save_shard_coverage", lambda *_args: True)
+    monkeypatch.setattr(module, "_aggregate_coverage", lambda: 0)
+
+    result = module.run(
+        ["unit-1a1", "unit-1a2"],
+        [],
+        max_files_per_batch=1,
+        run_isolated=False,
+    )
+
+    assert result == 2
+    assert launched == [
+        "unit-1a1:batch-001",
+        "unit-1a1:batch-002",
+        "unit-1a2:batch-001",
+        "unit-1a2:batch-002",
+    ]
+
+
+def test_serial_runner_retains_every_failing_batch_and_shard(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
+    outcomes = {
+        "unit-1a1:batch-001": 1,
+        "unit-1a1:batch-002": 2,
+        "unit-1a2:batch-001": 5,
+        "unit-1a2:batch-002": 6,
+    }
+    launched: list[str] = []
+    temp_index = 0
+
+    def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
+        nonlocal temp_index
+        del dir
+        temp_index += 1
+        path = tmp_path / f"{prefix}{temp_index}"
+        path.mkdir()
+        return str(path)
+
+    def run_owned(*_args: object, label: str, **_kwargs: object) -> int:
+        launched.append(label)
+        return outcomes[label]
+
+    monkeypatch.setattr(module.tempfile, "mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", lambda _path: 0)
+    monkeypatch.setattr(
+        module,
+        "expand_shard",
+        lambda shard: [f"tests/{shard}-a.py", f"tests/{shard}-b.py"],
+    )
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(module, "_run_owned_pytest", run_owned)
+    monkeypatch.setattr(module, "_save_shard_coverage", lambda *_args: True)
+
+    result = module.run(
+        ["unit-1a1", "unit-1a2"],
+        [],
+        max_files_per_batch=1,
+        run_isolated=False,
+        aggregate_coverage=False,
+    )
+
+    output = capsys.readouterr().out
+    assert result == 6
+    assert launched == list(outcomes)
+    assert "failed=4" in output
+    for phase, returncode in outcomes.items():
+        assert f"'{phase}': {returncode}" in output
+
+
+def test_terminal_safety_rc_overrides_higher_collected_failure_rc(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
+    outcomes = iter((6, 3, 0))
+    launched: list[str] = []
+    temp_index = 0
+
+    def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
+        nonlocal temp_index
+        del dir
+        temp_index += 1
+        path = tmp_path / f"{prefix}{temp_index}"
+        path.mkdir()
+        return str(path)
+
+    def run_owned(*_args: object, label: str, **_kwargs: object) -> int:
+        launched.append(label)
+        return next(outcomes)
+
+    monkeypatch.setattr(module.tempfile, "mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", lambda _path: 0)
+    monkeypatch.setattr(
+        module,
+        "expand_shard",
+        lambda shard: [f"tests/{shard}-{index}.py" for index in range(3)],
+    )
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(module, "_run_owned_pytest", run_owned)
+    monkeypatch.setattr(module, "_save_shard_coverage", lambda *_args: True)
+
+    result = module.run(
+        ["unit-1a1", "unit-1a2"],
+        [],
+        max_files_per_batch=1,
+        run_isolated=False,
+        aggregate_coverage=False,
+    )
+
+    output = capsys.readouterr().out
+    assert result == 3
+    assert launched == ["unit-1a1:batch-001", "unit-1a1:batch-002"]
+    assert "'unit-1a1:batch-001': 6" in output
+    assert "'unit-1a1:batch-002': 3" in output
+
+
+@pytest.mark.parametrize(
+    ("scenario", "expected_rc", "expected_batches", "expected_phase"),
+    [
+        ("disk", 73, 1, "unit-1a1:batch-002"),
+        ("interpreter", 78, 1, "unit-1a1:batch-002"),
+        ("worker", 70, 2, "unit-1a1:batch-002"),
+        ("worker-cleanup", 70, 2, "unit-1a1:batch-002"),
+        ("no-progress", 124, 2, "unit-1a1:batch-002"),
+        ("cancellation", 130, 2, "unit-1a1:batch-002"),
+        ("cleanup", 9, 2, "unit-1a1:cleanup"),
+    ],
+)
+def test_collected_failure_never_masks_later_terminal_safety_stop(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    scenario: str,
+    expected_rc: int,
+    expected_batches: int,
+    expected_phase: str,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    resources = module.ResourcePaths(
+        root=tmp_path / "resources",
+        coverage_shards=tmp_path / "resources" / "coverage-fragments",
+        coverage_json=tmp_path / "resources" / "coverage.json",
+        coverage_audit=tmp_path / "resources" / "coverage-audit.json",
+        attestation=tmp_path / "resources" / "attestation.json",
+    )
+    module.COVERAGE_SHARDS = resources.coverage_shards
+    module.COVERAGE_JSON = resources.coverage_json
+    module.COVERAGE_AUDIT = resources.coverage_audit
+    launched: list[str] = []
+    disk_checks = 0
+    interpreter_checks = 0
+    cleanup_calls = 0
+    temp_index = 0
+
+    def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
+        nonlocal temp_index
+        del dir
+        temp_index += 1
+        path = tmp_path / f"{prefix}{temp_index}"
+        path.mkdir()
+        return str(path)
+
+    def disk_available(*_args: object, **_kwargs: object) -> bool:
+        nonlocal disk_checks
+        disk_checks += 1
+        return scenario != "disk" or disk_checks != 2
+
+    def interpreter_unchanged(*_args: object, **_kwargs: object) -> bool:
+        nonlocal interpreter_checks
+        interpreter_checks += 1
+        return scenario != "interpreter" or interpreter_checks != 3
+
+    def run_owned(*_args: object, label: str, **_kwargs: object) -> int:
+        launched.append(label)
+        if len(launched) == 1:
+            return 6
+        return int(
+            {
+                "worker": module.WORKER_DEATH_EXIT_CODE,
+                "worker-cleanup": module.WORKER_DEATH_EXIT_CODE,
+                "no-progress": module.NO_PROGRESS_EXIT_CODE,
+                "cancellation": 128 + signal.SIGINT,
+            }.get(scenario, 0)
+        )
+
+    def cleanup(_path: Path) -> int:
+        nonlocal cleanup_calls
+        cleanup_calls += 1
+        if cleanup_calls == 2 and scenario in {
+            "cleanup",
+            "cancellation",
+            "worker-cleanup",
+        }:
+            return 9
+        return 0
+
+    monkeypatch.setattr(module, "_resource_paths", lambda: resources)
+    monkeypatch.setattr(module.tempfile, "mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr(
+        module,
+        "expand_shard",
+        lambda shard: [f"tests/{shard}-{index}.py" for index in range(3)],
+    )
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(module, "_disk_headroom_available", disk_available)
+    monkeypatch.setattr(module, "_interpreter_is_unchanged", interpreter_unchanged)
+    monkeypatch.setattr(module, "_run_owned_pytest", run_owned)
+    monkeypatch.setattr(module, "_save_shard_coverage", lambda *_args: True)
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", cleanup)
+
+    result = module.run(
+        ["unit-1a1", "unit-1a2"],
+        [],
+        max_files_per_batch=1,
+        run_isolated=False,
+        aggregate_coverage=False,
+    )
+
+    output = capsys.readouterr().out
+    assert result == expected_rc
+    assert launched == [f"unit-1a1:batch-{index:03d}" for index in range(1, expected_batches + 1)]
+    assert "'unit-1a1:batch-001': 6" in output
+    assert f"'{expected_phase}': {expected_rc}" in output
+    if scenario in {"cancellation", "worker-cleanup"}:
+        assert "'unit-1a1:cleanup': 9" in output
+
+
+def test_failed_batch_without_coverage_fragment_stops_before_later_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
+    launched: list[str] = []
+    saved: list[int] = []
+    aggregate_called = False
+    temp_index = 0
+
+    def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
+        nonlocal temp_index
+        del dir
+        temp_index += 1
+        path = tmp_path / f"{prefix}{temp_index}"
+        path.mkdir()
+        return str(path)
+
+    def run_owned(*_args: object, label: str, **_kwargs: object) -> int:
+        launched.append(label)
+        return 2 if label.endswith("batch-001") else 0
+
+    def save_coverage(_shard: str, batch: int, *_args: object) -> bool:
+        saved.append(batch)
+        return batch != 1
+
+    def aggregate() -> int:
+        nonlocal aggregate_called
+        aggregate_called = True
+        return 0
+
+    monkeypatch.setattr(module.tempfile, "mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", lambda _path: 0)
+    monkeypatch.setattr(
+        module,
+        "expand_shard",
+        lambda _shard: ["tests/a.py", "tests/b.py"],
+    )
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(module, "_run_owned_pytest", run_owned)
+    monkeypatch.setattr(module, "_save_shard_coverage", save_coverage)
+    monkeypatch.setattr(module, "_aggregate_coverage", aggregate)
+
+    result = module.run(
+        ["unit-1a1"],
+        [],
+        max_files_per_batch=1,
+        run_isolated=False,
+    )
+
+    assert result == 2
+    assert launched == ["unit-1a1:batch-001"]
+    assert saved == [1]
+    assert aggregate_called is False
+
+
+def test_serial_runner_collects_shards_after_isolated_test_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
+    launched: list[str] = []
+
+    def fake_run_owned(command: list[str], *, label: str, **_kwargs: object) -> int:
+        del command
+        launched.append(label)
+        return 1 if label == "isolated" else 0
+
+    monkeypatch.setattr(module, "expand_shard", lambda shard: [f"tests/{shard}.py"])
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(module, "_run_owned_pytest", fake_run_owned)
+    monkeypatch.setattr(module, "_save_shard_coverage", lambda *_args: True)
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", lambda _path: None)
+    monkeypatch.setattr(module, "_aggregate_coverage", lambda: 0)
+
+    result = module.run(["unit-1a1", "unit-1a2"], [])
+
+    assert result == 1
+    assert launched == ["isolated", "unit-1a1:batch-001", "unit-1a2:batch-001"]
+
+
+def test_serial_runner_stops_on_empty_shard_plan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
+    launched: list[str] = []
+    identity = {
+        "implementation": "cpython",
+        "version": "3.11.14",
+        "executable": "/opt/python/3.11/bin/python3.11",
+    }
+
+    monkeypatch.setattr(module, "_interpreter_identity", lambda: identity)
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(
+        module,
+        "expand_shard",
+        lambda shard: [] if shard == "unit-1a1" else ["tests/later.py"],
+    )
+
+    def run_owned(*_args: object, label: str, **_kwargs: object) -> int:
+        launched.append(label)
+        return 0
+
+    monkeypatch.setattr(
+        module,
+        "_run_owned_pytest",
+        run_owned,
+    )
+
+    result = module.run(
+        ["unit-1a1", "unit-1a2"],
+        [],
+        run_isolated=False,
+        aggregate_coverage=False,
+    )
+
+    assert result == 2
+    assert launched == []
+
+
+def test_serial_runner_rejects_a_completely_empty_plan_before_setup(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    setup_calls: list[str] = []
+    monkeypatch.setattr(
+        module,
+        "_interpreter_identity",
+        lambda: setup_calls.append("interpreter") or {},
+    )
+    monkeypatch.setattr(
+        module,
+        "_run_command",
+        lambda *_args, **_kwargs: setup_calls.append("command") or 0,
+    )
+
+    assert module.run([], [], run_isolated=False, aggregate_coverage=False) == 2
+    assert setup_calls == []
+    output = capsys.readouterr().out
+    assert "SERIAL-SHARD-PLAN-EMPTY rc=2" in output
+    assert 'phases={"plan": 2}' in output
+
+
+def test_serial_runner_validate_only_rejects_a_completely_empty_plan(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+
+    assert (
+        module._validate_only_plan(
+            [],
+            [],
+            max_files_per_batch=1,
+            attestation_output=None,
+        )
+        == 2
+    )
+    assert "SERIAL-SHARD-VALIDATE-FAIL empty=<plan>" in capsys.readouterr().out
+
+
+def test_serial_runner_classifies_workspace_creation_io_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    resources = module.ResourcePaths(
+        root=tmp_path / "resources",
+        coverage_shards=tmp_path / "resources" / "coverage-fragments",
+        coverage_json=tmp_path / "resources" / "coverage.json",
+        coverage_audit=tmp_path / "resources" / "coverage-audit.json",
+        attestation=tmp_path / "resources" / "attestation.json",
+    )
+    module.COVERAGE_SHARDS = resources.coverage_shards
+    module.COVERAGE_AUDIT = resources.coverage_audit
+    monkeypatch.setattr(module, "_resource_paths", lambda: resources)
+    monkeypatch.setattr(module, "expand_shard", lambda _shard: ["tests/test_one.py"])
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+
+    def fail_workspace(*_args: object, **_kwargs: object) -> str:
+        raise OSError("workspace volume is unavailable")
+
+    monkeypatch.setattr(module.tempfile, "mkdtemp", fail_workspace)
+
+    assert (
+        module.run(
+            ["unit-1a1"],
+            [],
+            run_isolated=False,
+            aggregate_coverage=False,
+        )
+        == module.CLEANUP_FAILURE_EXIT_CODE
+    )
+    output = capsys.readouterr().out
+    assert "SHARD-RESOURCE-SETUP-FAIL" in output
+    assert f'"unit-1a1:workspace-setup": {module.CLEANUP_FAILURE_EXIT_CODE}' in output
+
+
+def test_serial_runner_classifies_batch_workspace_io_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    resources = module.ResourcePaths(
+        root=tmp_path / "resources",
+        coverage_shards=tmp_path / "resources" / "coverage-fragments",
+        coverage_json=tmp_path / "resources" / "coverage.json",
+        coverage_audit=tmp_path / "resources" / "coverage-audit.json",
+        attestation=tmp_path / "resources" / "attestation.json",
+    )
+    module.COVERAGE_SHARDS = resources.coverage_shards
+    module.COVERAGE_AUDIT = resources.coverage_audit
+    monkeypatch.setattr(module, "_resource_paths", lambda: resources)
+    monkeypatch.setattr(module, "expand_shard", lambda _shard: ["tests/test_one.py"])
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+
+    def occupied_batch(*, prefix: str, dir: str | Path) -> str:
+        workspace = Path(dir) / f"{prefix}owned"
+        workspace.mkdir()
+        (workspace / "batch-001").write_text("not a directory")
+        return str(workspace)
+
+    monkeypatch.setattr(module.tempfile, "mkdtemp", occupied_batch)
+
+    assert (
+        module.run(
+            ["unit-1a1"],
+            [],
+            run_isolated=False,
+            aggregate_coverage=False,
+        )
+        == module.CLEANUP_FAILURE_EXIT_CODE
+    )
+    output = capsys.readouterr().out
+    assert "SHARD-RESOURCE-SETUP-FAIL" in output
+    assert f'"unit-1a1:batch-001:setup": {module.CLEANUP_FAILURE_EXIT_CODE}' in output
+
+
+def test_serial_runner_classifies_socket_tmpdir_io_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    resources = module.ResourcePaths(
+        root=tmp_path / "resources",
+        coverage_shards=tmp_path / "resources" / "coverage-fragments",
+        coverage_json=tmp_path / "resources" / "coverage.json",
+        coverage_audit=tmp_path / "resources" / "coverage-audit.json",
+        attestation=tmp_path / "resources" / "attestation.json",
+    )
+    module.COVERAGE_SHARDS = resources.coverage_shards
+    module.COVERAGE_AUDIT = resources.coverage_audit
+    monkeypatch.setattr(module, "_resource_paths", lambda: resources)
+    monkeypatch.setattr(module, "expand_shard", lambda _shard: ["tests/test_one.py"])
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(module, "_disk_headroom_available", lambda *_args, **_kwargs: True)
+
+    def fail_socket_root(*, prefix: str, dir: str | Path) -> str:
+        if prefix.startswith("gludd-gate-"):
+            workspace = Path(dir) / f"{prefix}owned"
+            workspace.mkdir()
+            return str(workspace)
+        raise OSError("socket temp volume is unavailable")
+
+    monkeypatch.setattr(module.tempfile, "mkdtemp", fail_socket_root)
+
+    assert (
+        module.run(
+            ["unit-1a1"],
+            [],
+            run_isolated=False,
+            aggregate_coverage=False,
+        )
+        == module.CLEANUP_FAILURE_EXIT_CODE
+    )
+    output = capsys.readouterr().out
+    assert "SHARD-RESOURCE-SETUP-FAIL" in output
+    assert f'"unit-1a1:batch-001:tmpdir-setup": {module.CLEANUP_FAILURE_EXIT_CODE}' in output
+
+
+def test_coverage_setup_failure_cleans_partially_created_fragments(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-fragments"
+    occupied_parent = tmp_path / "occupied-audit-parent"
+    occupied_parent.write_text("not a directory")
+    module.COVERAGE_AUDIT = occupied_parent / "coverage.json"
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+
+    assert (
+        module.run(
+            ["unit-1a1"],
+            [],
+            run_isolated=False,
+            aggregate_coverage=False,
+        )
+        == module.CLEANUP_FAILURE_EXIT_CODE
+    )
+    assert not module.COVERAGE_SHARDS.exists()
+    output = capsys.readouterr().out
+    assert f'"coverage:setup": {module.CLEANUP_FAILURE_EXIT_CODE}' in output
+    assert '"coverage:fragments-cleanup": 0' in output
+
+
+def test_coverage_erase_failure_yields_to_cleanup_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-fragments"
+    module.COVERAGE_AUDIT = tmp_path / "coverage-audit.json"
+    cleanup_results = iter((0, module.CLEANUP_FAILURE_EXIT_CODE))
+    monkeypatch.setattr(
+        module,
+        "_remove_owned_tree",
+        lambda *_args, **_kwargs: next(cleanup_results),
+    )
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 5)
+
+    assert (
+        module.run(
+            ["unit-1a1"],
+            [],
+            run_isolated=False,
+            aggregate_coverage=False,
+        )
+        == module.CLEANUP_FAILURE_EXIT_CODE
+    )
+    output = capsys.readouterr().out
+    assert '"coverage:erase": 5' in output
+    assert f'"coverage:fragments-cleanup": {module.CLEANUP_FAILURE_EXIT_CODE}' in output
+
+
+def test_serial_runner_converts_cleanup_io_error_without_masking_test_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-shards"
+    module.COVERAGE_JSON = tmp_path / "coverage.json"
+    module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
+    temp_index = 0
+
+    def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
+        nonlocal temp_index
+        del dir
+        temp_index += 1
+        path = tmp_path / f"{prefix}{temp_index}"
+        path.mkdir()
+        return str(path)
+
+    def cleanup_failure(_path: Path) -> int:
+        raise OSError("owned cleanup denied")
+
+    monkeypatch.setattr(module.tempfile, "mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr(module, "expand_shard", lambda _shard: ["tests/failing.py"])
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(module, "_run_owned_pytest", lambda *_args, **_kwargs: 1)
+    monkeypatch.setattr(module, "_save_shard_coverage", lambda *_args: True)
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", cleanup_failure)
+
+    result = module.run(
+        ["unit-1a1"],
+        [],
+        run_isolated=False,
+        aggregate_coverage=False,
+    )
+
+    assert result == module.CLEANUP_FAILURE_EXIT_CODE
+    output = capsys.readouterr().out
+    assert "SHARD-CLEANUP-FAIL" in output
+    assert '"unit-1a1:batch-001": 1' in output
+    assert f'"unit-1a1:batch-001:cleanup": {module.CLEANUP_FAILURE_EXIT_CODE}' in output
+
+
+@pytest.mark.parametrize(
+    ("scenario", "expected_rc", "expected_batches"),
+    [
+        ("disk", 73, []),
+        ("interpreter", 78, []),
+        ("coverage", 1, ["unit-1a1:batch-001"]),
+    ],
+)
+def test_serial_runner_preserves_immediate_resource_safety_stops(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    scenario: str,
+    expected_rc: int,
+    expected_batches: list[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    resources = module.ResourcePaths(
+        root=tmp_path / "resources",
+        coverage_shards=tmp_path / "resources" / "coverage-fragments",
+        coverage_json=tmp_path / "resources" / "coverage.json",
+        coverage_audit=tmp_path / "resources" / "coverage-audit.json",
+        attestation=tmp_path / "resources" / "attestation.json",
+    )
+    module.COVERAGE_SHARDS = resources.coverage_shards
+    module.COVERAGE_JSON = resources.coverage_json
+    module.COVERAGE_AUDIT = resources.coverage_audit
+    identity = {
+        "implementation": "cpython",
+        "version": "3.11.14",
+        "executable": "/opt/python/3.11/bin/python3.11",
+    }
+    launched: list[str] = []
+    temp_index = 0
+
+    def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
+        nonlocal temp_index
+        del dir
+        temp_index += 1
+        path = tmp_path / f"{prefix}{temp_index}"
+        path.mkdir(parents=True)
+        return str(path)
+
+    def cleanup(path: Path) -> int:
+        shutil.rmtree(path, ignore_errors=True)
+        return 0
+
+    def run_owned(*_args: object, label: str, **_kwargs: object) -> int:
+        launched.append(label)
+        return 0
+
+    monkeypatch.setattr(module, "_resource_paths", lambda: resources)
+    monkeypatch.setattr(module, "_interpreter_identity", lambda: identity)
+    monkeypatch.setattr(module.tempfile, "mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr(module, "expand_shard", lambda shard: [f"tests/{shard}.py"])
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(
+        module,
+        "_disk_headroom_available",
+        lambda *_args, **_kwargs: scenario != "disk",
+    )
+    monkeypatch.setattr(
+        module,
+        "_interpreter_is_unchanged",
+        lambda *_args, **_kwargs: scenario != "interpreter",
+    )
+    monkeypatch.setattr(module, "_run_owned_pytest", run_owned)
+    monkeypatch.setattr(
+        module,
+        "_save_shard_coverage",
+        lambda *_args: scenario != "coverage",
+    )
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", cleanup)
+
+    result = module.run(
+        ["unit-1a1", "unit-1a2"],
+        [],
+        run_isolated=False,
+        aggregate_coverage=False,
+    )
+
+    assert result == expected_rc
+    assert launched == expected_batches
 
 
 def test_serial_runner_records_isolated_failure_and_stops_before_shards(
@@ -1398,9 +2492,7 @@ def test_serial_runner_records_isolated_failure_and_stops_before_shards(
     module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
     shard_launched = False
 
-    def fake_run(
-        command: list[str], *, env: dict[str, str] | None = None
-    ) -> int:
+    def fake_run(command: list[str], *, env: dict[str, str] | None = None) -> int:
         return 0
 
     def fake_run_owned(command: list[str], **_kwargs: object) -> int:
@@ -1507,19 +2599,19 @@ def test_shard_coverage_fragment_and_aggregate_preserve_failure(
     batchtemp = tmp_path / "batch"
     batchtemp.mkdir()
     coverage_file = batchtemp / ".coverage"
-    coverage_file.write_bytes(b"coverage-data")
+    source = str(ROOT / "src" / "general_ludd" / "__init__.py")
+    data = CoverageData(basename=str(coverage_file))
+    data.add_lines({source: {1}})
+    data.write()
+    expected_coverage = coverage_file.read_bytes()
     env = {"COVERAGE_FILE": str(coverage_file)}
 
     assert module._save_shard_coverage("unit-3", 2, batchtemp, env) is True
-    assert (module.COVERAGE_SHARDS / ".coverage.unit-3.batch-002").read_bytes() == (
-        b"coverage-data"
-    )
+    assert (module.COVERAGE_SHARDS / ".coverage.unit-3.batch-002").read_bytes() == (expected_coverage)
 
     commands: list[list[str]] = []
 
-    def run_command(
-        command: list[str], *, env: dict[str, str] | None = None
-    ) -> int:
+    def run_command(command: list[str], *, env: dict[str, str] | None = None) -> int:
         commands.append(command)
         return 3 if "xml" in command else 0
 
@@ -1527,11 +2619,137 @@ def test_shard_coverage_fragment_and_aggregate_preserve_failure(
 
     assert module._aggregate_coverage() == 3
     assert len(commands) == 5
-    assert "--max-worker-restart=0" not in " ".join(
-        argument for command in commands for argument in command
-    )
+    assert "--max-worker-restart=0" not in " ".join(argument for command in commands for argument in command)
     assert any("--threshold=85" in command for command in commands)
     assert any("--per-file-threshold=75" in command for command in commands)
+
+
+def test_save_shard_coverage_rejects_corrupt_nonempty_database(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "fragments"
+    module.COVERAGE_SHARDS.mkdir()
+    batchtemp = tmp_path / "batch"
+    batchtemp.mkdir()
+    coverage_file = batchtemp / ".coverage"
+    coverage_file.write_bytes(b"not-a-coverage-sqlite-database")
+
+    assert (
+        module._save_shard_coverage(
+            "unit-1a1",
+            1,
+            batchtemp,
+            {"COVERAGE_FILE": str(coverage_file)},
+        )
+        is False
+    )
+    assert not (module.COVERAGE_SHARDS / ".coverage.unit-1a1.batch-001").exists()
+    assert "SHARD-COVERAGE-INVALID" in capsys.readouterr().out
+
+
+def test_coverage_database_validator_rejects_symlink_and_missing_file(
+    tmp_path: Path,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    missing = tmp_path / "missing.coverage"
+    empty = tmp_path / "empty.coverage"
+    empty.write_bytes(b"")
+    symlink = tmp_path / "symlink.coverage"
+    symlink.symlink_to(missing)
+
+    assert module._coverage_data_error(symlink) == "symbolic links are not accepted"
+    assert module._coverage_data_error(missing).startswith("FileNotFoundError:")
+    assert module._coverage_data_error(empty) == "file is missing or empty"
+
+
+def test_coverage_database_validator_classifies_hash_io_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    coverage_file = tmp_path / ".coverage"
+    coverage_file.write_bytes(b"nonempty")
+
+    def fail_hash(_path: Path) -> str:
+        raise OSError("coverage read failed")
+
+    monkeypatch.setattr(module, "_file_sha256", fail_hash)
+
+    assert module._coverage_data_error(coverage_file).startswith("OSError:")
+
+
+def test_save_shard_coverage_classifies_copy_io_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "fragments"
+    module.COVERAGE_SHARDS.mkdir()
+    batchtemp = tmp_path / "batch"
+    batchtemp.mkdir()
+    coverage_file = batchtemp / ".coverage"
+    data = CoverageData(basename=str(coverage_file))
+    data.add_lines({str(ROOT / "src" / "general_ludd" / "__init__.py"): {1}})
+    data.write()
+
+    def fail_copy(_source: Path, _destination: Path) -> None:
+        raise OSError("disk became read-only")
+
+    monkeypatch.setattr(module.shutil, "copy2", fail_copy)
+
+    assert (
+        module._save_shard_coverage(
+            "unit-1a1",
+            1,
+            batchtemp,
+            {"COVERAGE_FILE": str(coverage_file)},
+        )
+        is False
+    )
+    assert not (module.COVERAGE_SHARDS / ".coverage.unit-1a1.batch-001").exists()
+    assert "SHARD-COVERAGE-TRANSFER-FAIL" in capsys.readouterr().out
+
+
+def test_save_shard_coverage_classifies_post_validation_read_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "fragments"
+    module.COVERAGE_SHARDS.mkdir()
+    batchtemp = tmp_path / "batch"
+    batchtemp.mkdir()
+    coverage_file = batchtemp / ".coverage"
+    data = CoverageData(basename=str(coverage_file))
+    data.add_lines({str(ROOT / "src" / "general_ludd" / "__init__.py"): {1}})
+    data.write()
+    real_hash = module._file_sha256
+    hash_calls = 0
+
+    def fail_third_hash(path: Path) -> str:
+        nonlocal hash_calls
+        hash_calls += 1
+        if hash_calls == 3:
+            raise OSError("coverage source vanished")
+        return real_hash(path)
+
+    monkeypatch.setattr(module, "_file_sha256", fail_third_hash)
+
+    assert (
+        module._save_shard_coverage(
+            "unit-1a1",
+            1,
+            batchtemp,
+            {"COVERAGE_FILE": str(coverage_file)},
+        )
+        is False
+    )
+    assert not (module.COVERAGE_SHARDS / ".coverage.unit-1a1.batch-001").exists()
+    assert "SHARD-COVERAGE-TRANSFER-FAIL" in capsys.readouterr().out
 
 
 def test_save_shard_coverage_unions_controller_and_worker_data(
@@ -1630,7 +2848,10 @@ def test_coverage_transfer_mismatch_removes_owned_alias(
     module.COVERAGE_SHARDS = tmp_path / "coverage-fragments"
     module.COVERAGE_SHARDS.mkdir()
     fragment = module.COVERAGE_SHARDS / ".coverage.unit-1a2.batch-006"
-    fragment.write_bytes(b"valid fragment")
+    source = str(ROOT / "src" / "general_ludd" / "__init__.py")
+    data = CoverageData(basename=str(fragment))
+    data.add_lines({source: {1}})
+    data.write()
 
     def truncated_copy(_source: Path, destination: Path) -> None:
         destination.write_bytes(b"")
@@ -1639,6 +2860,121 @@ def test_coverage_transfer_mismatch_removes_owned_alias(
 
     assert module._combine_coverage_output(tmp_path / ".coverage.unit-1a2-3.11") == 1
     assert not list(module.COVERAGE_SHARDS.glob(".coverage.unit-1a2-3.11.fragment-*"))
+
+
+def test_coverage_output_rejects_an_invalid_fragment_before_copy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-fragments"
+    module.COVERAGE_SHARDS.mkdir()
+    fragment = module.COVERAGE_SHARDS / ".coverage.unit-1a2.batch-006"
+    fragment.write_bytes(b"corrupt coverage database")
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        module,
+        "_run_command",
+        lambda command, **_kwargs: commands.append(command) or 0,
+    )
+
+    assert module._combine_coverage_output(tmp_path / ".coverage.unit-1a2-3.11") == 1
+    assert commands == []
+    assert "SHARD-COVERAGE-FRAGMENT-INVALID" in capsys.readouterr().out
+
+
+def test_coverage_output_classifies_destination_setup_io_failure(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-fragments"
+    module.COVERAGE_SHARDS.mkdir()
+    fragment = module.COVERAGE_SHARDS / ".coverage.unit-1a2.batch-006"
+    data = CoverageData(basename=str(fragment))
+    data.add_lines({str(ROOT / "src" / "general_ludd" / "__init__.py"): {1}})
+    data.write()
+    occupied_parent = tmp_path / "occupied-parent"
+    occupied_parent.write_text("not a directory")
+
+    assert module._combine_coverage_output(occupied_parent / ".coverage") == 1
+    assert "SHARD-COVERAGE-OUTPUT-SETUP-FAIL" in capsys.readouterr().out
+
+
+def test_coverage_output_classifies_fragment_copy_io_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-fragments"
+    module.COVERAGE_SHARDS.mkdir()
+    fragment = module.COVERAGE_SHARDS / ".coverage.unit-1a2.batch-006"
+    data = CoverageData(basename=str(fragment))
+    data.add_lines({str(ROOT / "src" / "general_ludd" / "__init__.py"): {1}})
+    data.write()
+
+    def fail_copy(_source: Path, _destination: Path) -> None:
+        raise OSError("coverage destination is read-only")
+
+    monkeypatch.setattr(module.shutil, "copy2", fail_copy)
+
+    assert module._combine_coverage_output(tmp_path / ".coverage.unit-1a2-3.11") == 1
+    assert not list(module.COVERAGE_SHARDS.glob(".coverage.unit-1a2-3.11.fragment-*"))
+    assert "SHARD-COVERAGE-TRANSFER-FAIL" in capsys.readouterr().out
+
+
+def test_coverage_output_requires_combine_to_create_destination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-fragments"
+    module.COVERAGE_SHARDS.mkdir()
+    fragment = module.COVERAGE_SHARDS / ".coverage.unit-1a2.batch-006"
+    data = CoverageData(basename=str(fragment))
+    data.add_lines({str(ROOT / "src" / "general_ludd" / "__init__.py"): {1}})
+    data.write()
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+
+    assert module._combine_coverage_output(tmp_path / ".coverage.unit-1a2-3.11") == 1
+    assert not list(module.COVERAGE_SHARDS.glob(".coverage.unit-1a2-3.11.fragment-*"))
+    assert "SHARD-COVERAGE-OUTPUT-MISSING" in capsys.readouterr().out
+
+
+def test_coverage_transfer_rejects_same_size_content_corruption(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("run_ci_shards_serial")
+    module.COVERAGE_SHARDS = tmp_path / "coverage-fragments"
+    module.COVERAGE_SHARDS.mkdir()
+    fragment = module.COVERAGE_SHARDS / ".coverage.unit-1a2.batch-006"
+    source = str(ROOT / "src" / "general_ludd" / "__init__.py")
+    data = CoverageData(basename=str(fragment))
+    data.add_lines({source: {1}})
+    data.write()
+    commands: list[list[str]] = []
+
+    def corrupt_copy(source_path: Path, destination: Path) -> None:
+        payload = bytearray(source_path.read_bytes())
+        payload[-1] ^= 1
+        destination.write_bytes(payload)
+
+    monkeypatch.setattr(module.shutil, "copy2", corrupt_copy)
+    monkeypatch.setattr(
+        module,
+        "_run_command",
+        lambda command, **_kwargs: commands.append(command) or 0,
+    )
+
+    assert module._combine_coverage_output(tmp_path / ".coverage.unit-1a2-3.11") == 1
+    assert commands == []
+    assert not list(module.COVERAGE_SHARDS.glob(".coverage.unit-1a2-3.11.fragment-*"))
+    assert "SHARD-COVERAGE-TRANSFER-MISMATCH" in capsys.readouterr().out
 
 
 def test_coverage_output_evidence_is_hash_bound_and_python_specific(
@@ -1799,6 +3135,7 @@ def test_serial_runner_cli_forwards_explicit_resource_bounds(
         "run_isolated": True,
         "aggregate_coverage": True,
         "coverage_output": None,
+        "resume_path": None,
     }
 
 
@@ -1856,9 +3193,7 @@ def test_release_execution_policy_binds_python_runtime() -> None:
 
     policy = module.execution_policy(["-W", "error"])
 
-    assert policy["python_version"] == (
-        f"{sys.version_info.major}.{sys.version_info.minor}"
-    )
+    assert policy["python_version"] == (f"{sys.version_info.major}.{sys.version_info.minor}")
     assert policy["python_implementation"] == sys.implementation.name
 
 

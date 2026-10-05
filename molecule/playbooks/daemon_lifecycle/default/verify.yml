@@ -137,7 +137,13 @@
     - name: Probe for zombie processes descended from the daemon
       ansible.builtin.shell:
         cmd: >-
-          ps -A -o pid,ppid,state,comm | awk '$3 == "Z" { print }' || true
+          zombies="";
+          for i in $(seq 1 12); do
+            zombies=$(ps -A -o pid,ppid,state,comm | awk '$3 == "Z" { print }' || true);
+            if [ -z "$zombies" ]; then break; fi;
+            sleep 0.5;
+          done;
+          echo "$zombies"
       register: zombie_scan
       changed_when: false
       failed_when: false

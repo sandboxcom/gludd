@@ -65,11 +65,31 @@ def test_push_paths_have_ci_busy_or_rate_guard() -> None:
         assert guard in _target_line(target) or guard in _target_block(target), target
 
 
+def test_shared_branch_pull_uses_current_branch_merge_forward() -> None:
+    block = _target_block("git-pull-sandboxcom")
+
+    assert "git pull --rebase" not in block
+    assert "git branch --show-current" in block
+    assert 'git fetch sandboxcom "$$BRANCH"' in block
+    assert 'git merge --no-ff --no-edit "sandboxcom/$$BRANCH"' in block
+
+
 def test_batch_push_blocks_single_commit_threshold_override() -> None:
     for target in ["batch-push", "batch-push-nv"]:
         block = _target_block(target)
         assert "COMMIT_THRESHOLD=1 bypass is disabled" in block
         assert "COMMIT_THRESHOLD=1 to override" not in block
+
+
+def test_batch_push_propagates_push_failure_before_success_side_effects() -> None:
+    block = _target_block("batch-push")
+    push_line = next(line.strip() for line in block.splitlines() if " git push " in line)
+
+    assert "||" in push_line or push_line.startswith("if ! "), (
+        "batch-push must stop when git push fails instead of claiming success"
+    )
+    assert block.index("git push ") < block.index("Pushed $$BRANCH")
+    assert block.index("Pushed $$BRANCH") < block.index("_record-push-verdict")
 
 
 def test_ci_trigger_delegates_to_idempotent_exact_sha_signal() -> None:
@@ -315,7 +335,10 @@ def test_workflow_state_targets_do_not_dirty_lockfile_with_uv_run() -> None:
     assert "GLUDD_XDIST_WORKERS=\"$(GLUDD_XDIST_WORKERS)\" $(SYSTEM_PYTHON) -c" not in makefile
     assert "GLUDD_XDIST_WORKERS=\"$(GLUDD_XDIST_WORKERS)\" python3 -c" not in makefile
     assert "VERSION := $(shell $(UV) run python" not in makefile
-    assert "VERSION = $(shell $(UV) run python" in makefile
+    assert (
+        'VERSION = $(shell UV_CACHE_DIR="$(GLUDD_UV_CACHE_DIR)" $(UV) run python'
+        in makefile
+    )
     no_uv_goals = makefile.split("_NO_UV_SYNC_GOALS :=", 1)[1].split("ifneq", 1)[0]
     for goal in [
         *guard_targets,

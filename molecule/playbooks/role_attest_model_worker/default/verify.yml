@@ -1,0 +1,28 @@
+---
+- name: Verify - inspect content-free fail-closed evidence
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    evidence_path: >-
+      {{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/attestation-evidence.json
+  tasks:
+    - name: Load refusal evidence
+      ansible.builtin.slurp:
+        src: "{{ evidence_path }}"
+      register: refusal_raw
+
+    - name: Decode refusal evidence
+      ansible.builtin.set_fact:
+        refusal: "{{ refusal_raw.content | b64decode | from_json }}"
+      changed_when: false
+
+    - name: Verify no unavailable backend was admitted
+      ansible.builtin.assert:
+        that:
+          - not refusal.facts_attested | bool
+          - not refusal.driver_ready | bool
+          - not refusal.runtime_ready | bool
+          - not refusal.topology_ready | bool
+          - refusal.reason_codes == ['probe_unavailable']
+          - refusal.device_count | int == 0

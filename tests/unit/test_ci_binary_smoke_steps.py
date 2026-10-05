@@ -1,6 +1,7 @@
 """Structural test: build jobs in .github/workflows/build.yml MUST run a
-post-build smoke test against the freshly-built binary BEFORE any
-upload-artifact step.
+post-build smoke test against the freshly-built binary BEFORE any publishable
+release upload. Failure-diagnostic uploads may precede smoke tests so evidence
+survives a later failure.
 
 Catches the regression class where a PyInstaller build succeeds but the
 binary crashes at runtime (e.g. the "Missing base YAML definition file"
@@ -65,6 +66,15 @@ def _step_uses_uses(step: dict[str, Any]) -> str:
     return uses.split("@", 1)[0] if uses else ""
 
 
+def _is_release_upload(step: dict[str, Any]) -> bool:
+    """Identify artifacts admitted to the release job's gludd-* fan-in."""
+    artifact_name = str(step.get("with", {}).get("name", ""))
+    return (
+        _step_uses_uses(step) == "actions/upload-artifact"
+        and artifact_name.startswith("gludd-")
+    )
+
+
 # ---------------------------------------------------------------------------
 # Smoke test step exists per platform
 # ---------------------------------------------------------------------------
@@ -110,7 +120,7 @@ class TestSmokeTestStepPerPlatform:
 
 
 # ---------------------------------------------------------------------------
-# Ordering: smoke test AFTER Build executable, BEFORE upload-artifact
+# Ordering: smoke test AFTER Build executable, BEFORE release upload
 # ---------------------------------------------------------------------------
 
 
@@ -144,7 +154,7 @@ class TestSmokeTestOrdering:
 
         upload_indices = [
             i for i, s in enumerate(_steps(build_workflow, job_name))
-            if _step_uses_uses(s) == "actions/upload-artifact"
+            if _is_release_upload(s)
         ]
         assert upload_indices, (
             f"build.yml job '{job_name}' has no upload-artifact step"
@@ -152,7 +162,7 @@ class TestSmokeTestOrdering:
         first_upload = upload_indices[0]
         assert smoke_idx < first_upload, (
             f"build.yml job '{job_name}': 'Smoke test binary' (idx {smoke_idx}) "
-            f"must run BEFORE upload-artifact (idx {first_upload}) so a broken "
+            f"must run BEFORE the release upload (idx {first_upload}) so a broken "
             f"binary never reaches the published artifact"
         )
 
@@ -296,10 +306,10 @@ class TestLinuxDaemonSmokeTest:
         )
         upload_indices = [
             i for i, s in enumerate(_steps(build_workflow, "linux"))
-            if _step_uses_uses(s) == "actions/upload-artifact"
+            if _is_release_upload(s)
         ]
-        assert upload_indices, "build.yml linux job has no upload-artifact step"
+        assert upload_indices, "build.yml linux job has no release upload step"
         assert daemon_idx < upload_indices[0], (
             f"linux 'Smoke test daemon start' (idx {daemon_idx}) must run "
-            f"BEFORE upload-artifact (idx {upload_indices[0]})"
+            f"BEFORE the release upload (idx {upload_indices[0]})"
         )

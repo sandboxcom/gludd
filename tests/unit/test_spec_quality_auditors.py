@@ -129,9 +129,12 @@ def test_audit_main_reports_draft_and_pass(
     assert audit_spec_entry.main() == 1
     assert "1/1 specs are DRAFT" in capsys.readouterr().out
 
-    specs_file.write_text(SPECS.read_text(encoding="utf-8"), encoding="utf-8")
+    specs_text = SPECS.read_text(encoding="utf-8")
+    expected_count = len(parse_specs(specs_text))
+    assert expected_count > 0
+    specs_file.write_text(specs_text, encoding="utf-8")
     assert audit_spec_entry.main() == 0
-    assert "All 200 specs pass" in capsys.readouterr().out
+    assert f"All {expected_count} specs pass quality gate. PASS" in capsys.readouterr().out
 
 
 def test_ratio_main_handles_missing_empty_failing_and_passing(

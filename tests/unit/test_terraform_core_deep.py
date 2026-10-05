@@ -52,6 +52,20 @@ def _config(**overrides: object) -> ComputeConfig:
         "model_name": "meta-llama/Llama-2-7b-hf",
         "allowed_cidr": "0.0.0.0/0",
     }
+    if overrides.get("deploy_type") == "containerapp":
+        defaults.update(
+            {
+                "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+                "container_image": "vllm/vllm-openai@sha256:" + "a" * 64,
+                "allowed_cidr": "198.51.100.10/32",
+                "max_cost_usd": 2,
+                "timeout_minutes": 45,
+                "azure_subscription_id": "11111111-2222-3333-4444-555555555555",
+                "azure_resource_group": "gludd-models-eastus",
+                "azure_containerapp_environment": "gludd-models-env",
+                "azure_workload_profile_name": "gludd-gpu-t4",
+            }
+        )
     defaults.update(overrides)
     return ComputeConfig(**defaults)  # type: ignore[arg-type]
 
@@ -715,7 +729,9 @@ class TestBuildAzureContainerAppTfvars:
             deploy_type="containerapp",
             deployment_profile={"context_length": 65536},
         )
-        tfvars = gen.build_azure_containerapp_tfvars(cfg, deployment_name="d")
+        tfvars = gen.build_azure_containerapp_tfvars(
+            cfg, deployment_name="deep-test"
+        )
         assert "vllm_context_length = 65536" in tfvars
 
     def test_propagates_profile_quantization(self) -> None:
@@ -726,7 +742,9 @@ class TestBuildAzureContainerAppTfvars:
             deploy_type="containerapp",
             deployment_profile={"quantization": "awq"},
         )
-        tfvars = gen.build_azure_containerapp_tfvars(cfg, deployment_name="d")
+        tfvars = gen.build_azure_containerapp_tfvars(
+            cfg, deployment_name="deep-test"
+        )
         assert "vllm_quantization" in tfvars
         assert "awq" in tfvars
 
@@ -737,7 +755,9 @@ class TestBuildAzureContainerAppTfvars:
             gpu_type=GPUType.T4,
             deploy_type="containerapp",
         )
-        tfvars = gen.build_azure_containerapp_tfvars(cfg, deployment_name="d")
+        tfvars = gen.build_azure_containerapp_tfvars(
+            cfg, deployment_name="deep-test"
+        )
         assert "vllm_quantization" in tfvars
 
 
@@ -898,8 +918,8 @@ class TestMaterializeAzureContainerApp:
             main_tf = (dest / "main.tf").read_text(encoding="utf-8")
 
             assert 'source = "./modules/azure-container-app-vllm"' in main_tf
-            assert 'source = "./modules/gpu-cost-watchdog"' in main_tf
             assert (dest / "modules" / "azure-container-app-vllm").is_dir()
+            assert 'source = "./modules/gpu-cost-watchdog"' in main_tf
             assert (dest / "modules" / "gpu-cost-watchdog").is_dir()
 
     def test_materialize_non_azure_does_not_create_tfvars(self) -> None:

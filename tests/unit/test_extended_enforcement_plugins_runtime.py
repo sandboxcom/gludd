@@ -81,6 +81,205 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
     assert "FLOOR DEFICIT: 2" in result["message"]
 
 
+def test_default_zero_floor_allows_inline_ownership_across_plugins(tmp_path: Path):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "TASKS.md").write_text("# Tasks\n\n- [ ] OWN.1 pending\n", encoding="utf-8")
+    code = f"""
+const paths = [
+  '{_plugin("enforce-floor.ts")}',
+  '{_plugin("enforce-floor-v2.ts")}',
+  '{_plugin("enforce-multitask.ts")}',
+  '{_plugin("enforce-delegate.ts")}',
+]
+const denied = []
+for (const pluginPath of paths) {{
+  const mod = await import(pluginPath)
+  const plugin = await mod.default({{}})
+  const hook = plugin['tool.execute.before']
+  for (let i = 0; i < 8; i++) {{
+    const result = await hook({{tool: 'edit'}}, undefined)
+    if (result?.permissionDecision === 'deny') denied.push([pluginPath, result.message])
+  }}
+}}
+const sessionMod = await import('{_plugin("enforce-session-start.ts")}')
+const session = await sessionMod.default({{}})
+const sessionHook = session['tool.execute.before']
+await sessionHook({{tool: 'read', args: {{path: 'TASKS.md'}}}}, undefined)
+const sessionResult = await sessionHook({{tool: 'edit'}}, undefined)
+console.log(JSON.stringify({{denied, sessionAllowed: sessionResult === undefined}}))
+"""
+    result = _run_ts(
+        code,
+        tmp_path,
+        {
+            "GLUDD_PROJECT_ROOT": str(project),
+            "CLAUDE_AGENT_FLOOR": "0",
+            "GLUDD_MIN_DISPATCHES": "0",
+            "GLUDD_MULTITASK_MIN_DISPATCHES": "0",
+            "GLUDD_DISPATCH_FLOOR": "0",
+            "GLUDD_FLOOR_ENFORCE": "1",
+            "GLUDD_FLOOR_V2_ENFORCE": "1",
+            "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+            "GLUDD_SESSION_START_MIN_DISPATCHES": "0",
+            "GLUDD_SESSION_STATE": str(tmp_path / "session.json"),
+            "GLUDD_MULTITASK_STATE_FILE": str(tmp_path / "multitask.json"),
+            "GLUDD_MULTITASK_DISPATCH_COUNT_FILE": str(tmp_path / "dispatch-count.json"),
+            "GLUDD_DISPATCH_STATE_FILE": str(tmp_path / "floor-v2.json"),
+            "GLUDD_STREAK_FILE": str(tmp_path / "floor-streak.json"),
+            "GLUDD_MAINTHREAD_STREAK_FILE": str(tmp_path / "delegate-streak.json"),
+            "GLUDD_READ_GRIND_FILE": str(tmp_path / "read-grind.json"),
+        },
+    )
+    assert result == {"denied": [], "sessionAllowed": True}
+
+
+def test_enforce_floor_explicit_one_accepts_one_dispatch_wave(tmp_path: Path):
+    project = tmp_path / "floor-one-project"
+    project.mkdir()
+    (project / "TASKS.md").write_text("- [ ] OWN.1 pending\n", encoding="utf-8")
+    code = f"""
+const mod = await import('{_plugin("enforce-floor.ts")}')
+const plugin = await mod.default({{}})
+const hook = plugin['tool.execute.before']
+const dispatched = await hook({{tool: 'task', args: {{prompt: 'implement OWN.1'}}}}, undefined)
+const inline = await hook({{tool: 'edit'}}, undefined)
+console.log(JSON.stringify({{
+  dispatchAllowed: dispatched === undefined,
+  inlineAllowed: inline === undefined,
+  inlineMessage: inline?.message ?? '',
+}}))
+"""
+    result = _run_ts(
+        code,
+        tmp_path,
+        {
+            "GLUDD_PROJECT_ROOT": str(project),
+            "CLAUDE_AGENT_FLOOR": "1",
+            "CLAUDE_AGENT_CEILING": "3",
+            "GLUDD_MESSAGE_BOUNDARY_MS": "-1",
+            "GLUDD_FLOOR_ENFORCE": "1",
+            "GLUDD_STREAK_FILE": str(tmp_path / "floor-one-streak.json"),
+            "GLUDD_READ_GRIND_FILE": str(tmp_path / "floor-one-read.json"),
+        },
+    )
+    assert result == {
+        "dispatchAllowed": True,
+        "inlineAllowed": True,
+        "inlineMessage": "",
+    }
+
+
+def test_multitask_zero_floor_does_not_request_refill_after_voluntary_dispatch(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "multitask-zero-project"
+    project.mkdir()
+    (project / "TASKS.md").write_text("- [ ] OWN.1 pending\n", encoding="utf-8")
+    result_text = (
+        "Subagent result: delivered a concrete implementation with focused tests, "
+        "documentation, and reproducible validation evidence for the assigned work. "
+        "The result is intentionally long enough to represent useful work."
+    )
+    code = f"""
+const mod = await import('{_plugin("enforce-multitask.ts")}')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before']({{tool: 'task', args: {{prompt: 'implement OWN.1'}}}})
+await new Promise(resolve => setTimeout(resolve, 5))
+const output = await plugin['experimental.text.complete'](
+  {{}}, {{text: {json.dumps(result_text)}}}
+)
+console.log(JSON.stringify(output))
+"""
+    result = _run_ts(
+        code,
+        tmp_path,
+        {
+            "GLUDD_PROJECT_ROOT": str(project),
+            "GLUDD_MULTITASK_MIN_DISPATCHES": "0",
+            "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+            "GLUDD_REFRESH_INTERVAL_MS": "1",
+            "GLUDD_MULTITASK_STATE_FILE": str(tmp_path / "multitask-zero.json"),
+            "GLUDD_MULTITASK_DISPATCH_COUNT_FILE": str(
+                tmp_path / "multitask-zero-count.json"
+            ),
+        },
+    )
+    assert result == {"text": result_text}
+
+
+def test_additive_guard_evaluates_only_at_three_slot_boundary(tmp_path: Path):
+    project = tmp_path / "additive-project"
+    project.mkdir()
+    (project / "TASKS.md").write_text(
+        "# Tasks\n\n- [ ] OWN.1 pending\n- [ ] OWN.2 pending\n",
+        encoding="utf-8",
+    )
+    code = f"""
+const mod = await import('{_plugin("enforce-additive-task.ts")}')
+const plugin = await mod.default({{}})
+const hook = plugin['tool.execute.before']
+const first = await hook({{tool: 'task', args: {{prompt: 'new feature alpha'}}}}, undefined)
+const second = await hook({{tool: 'task', args: {{prompt: 'new feature beta'}}}}, undefined)
+const third = await hook({{tool: 'task', args: {{prompt: 'new feature gamma'}}}}, undefined)
+const continuation = await hook({{tool: 'task', args: {{prompt: 'continue OWN.1'}}}}, undefined)
+const mixedSecond = await hook({{tool: 'task', args: {{prompt: 'new feature delta'}}}}, undefined)
+const mixedThird = await hook({{tool: 'task', args: {{prompt: 'new feature epsilon'}}}}, undefined)
+console.log(JSON.stringify({{
+  firstAllowed: first === undefined,
+  secondAllowed: second === undefined,
+  thirdDenied: third?.permissionDecision === 'deny',
+  mixedAllowed: [continuation, mixedSecond, mixedThird].every(x => x === undefined),
+}}))
+"""
+    result = _run_ts(
+        code,
+        tmp_path,
+        {
+            "GLUDD_PROJECT_ROOT": str(project),
+            "GLUDD_ADDITIVE_TASK_STATE": str(tmp_path / "additive.json"),
+            "GLUDD_ADDITIVE_TASK_ENFORCE": "1",
+            "GLUDD_ADDITIVE_TASK_BLOCK": "1",
+        },
+    )
+    assert result == {
+        "firstAllowed": True,
+        "secondAllowed": True,
+        "thirdDenied": True,
+        "mixedAllowed": True,
+    }
+
+
+def test_directives_plugin_discards_legacy_hardcoded_floor_state(tmp_path: Path):
+    state = tmp_path / "directives-legacy.json"
+    code = f"""
+const fs = await import('node:fs')
+fs.writeFileSync(process.env.GLUDD_DIRECTIVE_STATE, JSON.stringify({{
+  directives: [{{
+    id: 'floor-10', kind: 'floor', subject: 'subagent floor', target: 10,
+    source: 'legacy', pattern: 'floor', active: true,
+    created_ts: 0, updated_ts: 0
+  }}],
+  last_dispatch_count: 0, last_dispatch_ts: 0, pid: process.pid
+}}))
+const mod = await import('{_plugin("enforce-directives.ts")}')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before'](
+  {{tool: 'bash', args: {{command: 'make git-commit'}}}}, undefined
+)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_ts(
+        code,
+        tmp_path,
+        {
+            "GLUDD_DIRECTIVE_STATE": str(state),
+            "GLUDD_DIRECTIVE_ENFORCE": "1",
+        },
+    )
+    assert result == {"allowed": True}
+
+
 def test_enforce_directives_rejects_under_target_completion_claim(tmp_path: Path):
     state = tmp_path / "directives.json"
     code = f"""
@@ -112,6 +311,181 @@ console.log(JSON.stringify(result))
     assert result["text"].startswith("DIRECTIVE VIOLATION:")
     assert "requires >85%" in result["text"]
     assert "claims 72%" in result["text"]
+
+
+def test_directives_persist_pool_intent_and_refill_completed_agents(tmp_path: Path):
+    state = tmp_path / "directives-pool.json"
+    code = f"""
+const mod = await import('{_plugin("enforce-directives.ts")}')
+const plugin = await mod.default({{}})
+const messages = plugin['experimental.chat.messages.transform']
+await messages({{}}, {{messages: [{{
+  info: {{role: 'user'}},
+  parts: [{{
+    type: 'text',
+    text: 'Keep 3x subagents running; if there are fewer, use spare slots for v0.1.2 work.',
+  }}]
+}}]}})
+for (const name of ['alpha', 'beta', 'gamma']) {{
+  await plugin['tool.execute.before']({{tool: 'task'}}, {{args: {{prompt: name}}}})
+}}
+const completedMessages = {{messages: [
+  {{info: {{role: 'user'}}, parts: [{{
+    type: 'text',
+    text: 'Keep 3x subagents running; if there are fewer, use spare slots for v0.1.2 work.',
+  }}]}},
+  {{info: {{role: 'assistant'}}, parts: [
+    {{
+      id: 'part-alpha', type: 'tool', callID: 'call-alpha', tool: 'task',
+      state: {{status: 'completed', output: 'alpha done'}},
+    }},
+    {{
+      id: 'part-beta', type: 'tool', callID: 'call-beta', tool: 'task',
+      state: {{status: 'completed', output: 'beta done'}},
+    }},
+  ]}},
+]}}
+await messages({{}}, completedMessages)
+await messages({{}}, completedMessages)
+const blocked = await plugin['tool.execute.before'](
+  {{tool: 'bash'}}, {{args: {{command: 'make gate'}}}}
+)
+await plugin['tool.execute.before']({{tool: 'task'}}, {{args: {{prompt: 'delta'}}}})
+await plugin['tool.execute.before']({{tool: 'task'}}, {{args: {{prompt: 'epsilon'}}}})
+const allowed = await plugin['tool.execute.before'](
+  {{tool: 'bash'}}, {{args: {{command: 'make gate'}}}}
+)
+const persisted = JSON.parse((await import('node:fs')).readFileSync(process.env.GLUDD_DIRECTIVE_STATE, 'utf8'))
+console.log(JSON.stringify({{
+  blocked: blocked?.permissionDecision === 'deny',
+  blockedMessage: blocked?.message ?? '',
+  allowed: allowed === undefined,
+  active: persisted.active_dispatch_count,
+  target: persisted.directives.find((item) => item.kind === 'floor')?.target,
+}}))
+"""
+    result = _run_ts(
+        code,
+        tmp_path,
+        {
+            "GLUDD_DIRECTIVE_STATE": str(state),
+            "GLUDD_DIRECTIVE_ENFORCE": "1",
+        },
+    )
+    assert result == {
+        "blocked": True,
+        "blockedMessage": (
+            "DIRECTIVE VIOLATION: active subagent pool 1/3; dispatch 2 "
+            "replacement agent(s) before continuing mutation work."
+        ),
+        "allowed": True,
+        "active": 3,
+        "target": 3,
+    }
+
+
+def test_directives_survive_restart_but_transient_agent_count_does_not(tmp_path: Path):
+    state = tmp_path / "directives-restart.json"
+    code = f"""
+const fs = await import('node:fs')
+fs.writeFileSync(process.env.GLUDD_DIRECTIVE_STATE, JSON.stringify({{
+  directives: [{{
+    id: 'floor-standing', kind: 'floor', subject: 'subagent floor', target: 3,
+    source: 'user-directive', pattern: 'subagents', active: true,
+    created_ts: 1, updated_ts: 1
+  }}],
+  last_dispatch_count: 3, active_dispatch_count: 3,
+  last_dispatch_ts: Date.now(), pid: process.pid + 1000
+}}))
+const mod = await import('{_plugin("enforce-directives.ts")}')
+const plugin = await mod.default({{}})
+const blocked = await plugin['tool.execute.before'](
+  {{tool: 'write'}}, {{args: {{filePath: 'example.py'}}}}
+)
+const persisted = JSON.parse(fs.readFileSync(process.env.GLUDD_DIRECTIVE_STATE, 'utf8'))
+console.log(JSON.stringify({{
+  blocked: blocked?.permissionDecision === 'deny',
+  active: persisted.active_dispatch_count,
+  target: persisted.directives.find((item) => item.kind === 'floor')?.target,
+  pidRefreshed: persisted.pid === process.pid,
+}}))
+"""
+    result = _run_ts(
+        code,
+        tmp_path,
+        {
+            "GLUDD_DIRECTIVE_STATE": str(state),
+            "GLUDD_DIRECTIVE_ENFORCE": "1",
+        },
+    )
+    assert result == {
+        "blocked": True,
+        "active": 0,
+        "target": 3,
+        "pidRefreshed": True,
+    }
+
+
+def test_directives_honor_explicit_release_pause_before_pool_refill(tmp_path: Path):
+    state = tmp_path / "directives-pause.json"
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "TASKS.md").write_text(
+        "- [ ] S83.166 - Deploy and release v0.1.1 with rollback proof.\n",
+        encoding="utf-8",
+    )
+    code = f"""
+const fs = await import('node:fs')
+const path = await import('node:path')
+const mod = await import('{_plugin("enforce-directives.ts")}')
+const plugin = await mod.default({{}})
+const messages = plugin['experimental.chat.messages.transform']
+await messages({{}}, {{messages: [{{
+  info: {{role: 'user'}},
+  parts: [{{type: 'text', text: 'Keep 3x subagents running and use spare slots.'}}]
+}}]}})
+await messages({{}}, {{messages: [{{
+  info: {{role: 'user'}},
+  parts: [{{type: 'text', text: 'Wait until the v0.1.1 deployment is finished to resume the subagent work.'}}]
+}}]}})
+const dispatchWhilePaused = await plugin['tool.execute.before'](
+  {{tool: 'task'}}, {{args: {{prompt: 'future work'}}}}
+)
+const gateWhilePaused = await plugin['tool.execute.before'](
+  {{tool: 'bash'}}, {{args: {{command: 'make gate'}}}}
+)
+fs.writeFileSync(
+  path.join(process.env.GLUDD_PROJECT_ROOT, 'TASKS.md'),
+  '- [x] S83.166 - Deploy and release v0.1.1 with rollback proof.\\n'
+)
+const dispatchAfterResume = await plugin['tool.execute.before'](
+  {{tool: 'task'}}, {{args: {{prompt: 'future work'}}}}
+)
+console.log(JSON.stringify({{
+  pausedDenied: dispatchWhilePaused?.permissionDecision === 'deny',
+  pauseMessage: dispatchWhilePaused?.message ?? '',
+  gateAllowed: gateWhilePaused === undefined,
+  resumedAllowed: dispatchAfterResume === undefined,
+}}))
+"""
+    result = _run_ts(
+        code,
+        tmp_path,
+        {
+            "GLUDD_DIRECTIVE_STATE": str(state),
+            "GLUDD_DIRECTIVE_ENFORCE": "1",
+            "GLUDD_PROJECT_ROOT": str(project),
+        },
+    )
+    assert result == {
+        "pausedDenied": True,
+        "pauseMessage": (
+            "DIRECTIVE PAUSE: subagent dispatch is paused until the v0.1.1 "
+            "deployment is finished."
+        ),
+        "gateAllowed": True,
+        "resumedAllowed": True,
+    }
 
 
 def test_enforce_deliverable_warns_for_check_only_and_oversized_prompt(tmp_path: Path):
@@ -175,7 +549,7 @@ console.log(JSON.stringify({{
     assert "CI POLLING IS NOT WORK" in result["secondMessage"]
 
 
-def test_enforce_release_deadline_blocks_non_release_but_allows_release(tmp_path: Path):
+def test_enforce_release_deadline_blocks_status_polling_but_allows_progress(tmp_path: Path):
     project = tmp_path / "project"
     project.mkdir()
     (project / "TASKS.md").write_text(
@@ -196,15 +570,27 @@ def test_enforce_release_deadline_blocks_non_release_but_allows_release(tmp_path
     code = f"""
 const mod = await import('{_plugin("enforce-release-deadline.ts")}')
 const plugin = await mod.default({{}})
-const blocked = await plugin['tool.execute.before'](
+const stalled = await plugin['tool.execute.before'](
+  {{tool: 'bash', args: {{command: 'make pipeline-status'}}}}, undefined
+)
+const gate = await plugin['tool.execute.before'](
+  {{tool: 'bash', args: {{command: 'make gate'}}}}, undefined
+)
+const lint = await plugin['tool.execute.before'](
   {{tool: 'bash', args: {{command: 'make lint'}}}}, undefined
+)
+const security = await plugin['tool.execute.before'](
+  {{tool: 'bash', args: {{command: 'make security'}}}}, undefined
 )
 const allowed = await plugin['tool.execute.before'](
   {{tool: 'bash', args: {{command: 'make release-cut'}}}}, undefined
 )
 console.log(JSON.stringify({{
-  blockedDecision: blocked?.permissionDecision,
-  blockedMessage: blocked?.message,
+  stalledDecision: stalled?.permissionDecision,
+  stalledMessage: stalled?.message,
+  gateAllowed: gate == null,
+  lintAllowed: lint == null,
+  securityAllowed: security == null,
   releaseAllowed: allowed == null
 }}))
 """
@@ -220,6 +606,9 @@ console.log(JSON.stringify({{
         },
     )
     assert isinstance(result, dict)
-    assert result["blockedDecision"] == "deny"
-    assert "RELEASE DEADLINE BLOCK" in result["blockedMessage"]
+    assert result["stalledDecision"] == "deny"
+    assert "RELEASE DEADLINE CONTINUITY BLOCK" in result["stalledMessage"]
+    assert result["gateAllowed"] is True
+    assert result["lintAllowed"] is True
+    assert result["securityAllowed"] is True
     assert result["releaseAllowed"] is True

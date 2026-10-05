@@ -52,6 +52,16 @@ def _mock_process(responses: list[dict]) -> MagicMock:
     return proc
 
 
+def test_stdio_client_initial_state_is_available_through_public_type() -> None:
+    """The state split preserves construction, PID, and diagnostic defaults."""
+    client = MCPStdioClient(_make_config())
+
+    assert type(client) is MCPStdioClient
+    assert client.pid is None
+    assert client.stderr_diagnostics["observed_bytes"] == 0
+    assert client.stderr_diagnostics["observed_lines"] == 0
+
+
 class TestMCPStdioClient:
     async def test_stdio_client_starts_process(self):
         config = _make_config()

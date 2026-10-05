@@ -447,8 +447,8 @@ def _stderr_limit(
     return value
 
 
-class MCPStdioClient:
-    """Manages a single MCP server subprocess via stdio JSON-RPC."""
+class _MCPStdioClientState:
+    """Initialize bounded state shared by the public stdio client."""
 
     def __init__(
         self,
@@ -500,12 +500,20 @@ class MCPStdioClient:
         self._stderr_secret_values: tuple[str, ...] = ()
         self._reset_stderr_diagnostics()
 
+    def _reset_stderr_diagnostics(self) -> None:
+        self._stderr_tail: deque[str] = deque()
+        self._stderr_observed_bytes = self._stderr_observed_lines = 0
+        self._stderr_truncated_bytes = self._stderr_truncated_lines = 0
+        self._stderr_policy_reason: str | None = None
+
+
+class MCPStdioClient(_MCPStdioClientState):
+    """Manage a single MCP server subprocess via stdio JSON-RPC."""
+
     @property
     def pid(self) -> int | None:
         """Return the child process ID when a process has been started."""
-        if self._process is None:
-            return None
-        return self._process.pid
+        return None if self._process is None else self._process.pid
 
     @property
     def stderr_diagnostics(self) -> dict[str, Any]:
@@ -537,14 +545,6 @@ class MCPStdioClient:
                 "max_lines": self._stderr_max_lines,
             },
         }
-
-    def _reset_stderr_diagnostics(self) -> None:
-        self._stderr_tail: deque[str] = deque()
-        self._stderr_observed_bytes = 0
-        self._stderr_observed_lines = 0
-        self._stderr_truncated_bytes = 0
-        self._stderr_truncated_lines = 0
-        self._stderr_policy_reason: str | None = None
 
     def _raise_stderr_policy_breach(self) -> None:
         if self._stderr_policy_reason is None:

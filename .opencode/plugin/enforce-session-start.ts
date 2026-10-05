@@ -3,9 +3,10 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { isSubagent, reportAlive, isDispatchTool, isReadTool } from "../lib/shared.ts"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
+import { HARD_MAX_DISPATCHES, MIN_DISPATCHES as DEFAULT_MIN_DISPATCHES, clampDispatchCount } from "../lib/multitask_config.ts"
 // enforce-session-start.ts — guarantees the FIRST action of every session is
 // locating work. Delegation is adaptive: simple work may stay inline while
-// independent multi-step work may fan out, up to the hard ten-agent ceiling.
+// independent multi-step work may fan out, up to the hard three-agent ceiling.
 //
 // Prevents two failure modes:
 //   (a) "Q&A-style session start" — agent replies with prose instead of
@@ -26,19 +27,20 @@ import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 // check /tmp/gludd-hot-enforce-session-start.js on every invocation. Run
 // `make hot-reload-plugins` after editing this file.
 // --- Config -----------------------------------------------------------------
-// Ten remains the recommended maximum batch size. A mandatory session-start
+// Three is the recommended maximum batch size. A mandatory session-start
 // minimum is opt-in via GLUDD_SESSION_START_MIN_DISPATCHES; absent that env var,
 // reads complete the session-start protocol without forcing needless agents.
-const MIN_DISPATCHES = parseInt(
-  process.env.GLUDD_SESSION_START_MIN_DISPATCHES || "10",
-  10,
+const MIN_DISPATCHES = clampDispatchCount(
+  parseInt(
+    process.env.GLUDD_SESSION_START_MIN_DISPATCHES || String(DEFAULT_MIN_DISPATCHES),
+    10,
+  ),
 )
-const HARD_MAX_DISPATCHES = 10
 const MAX_DISPATCHES = HARD_MAX_DISPATCHES
 const HAS_CONFIGURED_MIN_DISPATCHES =
   process.env.GLUDD_SESSION_START_MIN_DISPATCHES !== undefined
 const EFFECTIVE_MIN = HAS_CONFIGURED_MIN_DISPATCHES
-  ? Math.max(0, Math.min(Number.isFinite(MIN_DISPATCHES) ? MIN_DISPATCHES : 0, MAX_DISPATCHES))
+  ? clampDispatchCount(Number.isFinite(MIN_DISPATCHES) ? MIN_DISPATCHES : 0)
   : 0
 // Hard-deny mode (mirrors GLUDD_FLOOR_ENFORCE / GLUDD_NO_WAIT_ENFORCE).
 // Default is ON (hard deny on premature mutations). Set
@@ -104,9 +106,10 @@ function buildSessionDirective(): string {
     EFFECTIVE_MIN > 0
       ? `           Operator-configured minimum: ${EFFECTIVE_MIN} dispatch(es).`
       : "           No mandatory dispatch minimum is configured.",
-    "DO NOT WRITE any prose between session start and the first dispatch wave.",
-    "Do not answer the user's prompt first and dispatch second — dispatch first.",
-    "No prose, no summaries, no status reports, no planning before the wave.",
+    EFFECTIVE_MIN > 0 ? "DO NOT WRITE any prose before satisfying the configured dispatch minimum."
+      : "After locating work, proceed inline or delegate based on task shape.",
+    EFFECTIVE_MIN > 0 ? "Do not answer first and dispatch second — satisfy the explicit minimum first."
+      : "Never manufacture a dispatch merely to create a wave.",
     EFFECTIVE_MIN > 0
       ? `⏱  TIME GATE: satisfy the configured minimum within ${nowSecs}s.`
       : "⏱  READ GATE: locate work before mutation; adaptive delegation is enabled.",

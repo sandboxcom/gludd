@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import math
-import time
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, ClassVar
+from typing import Any
 
 from general_ludd.infra.azure_retail_pricing import (
     AzureContainerAppsRetailPricing,
@@ -14,170 +11,26 @@ from general_ludd.infra.azure_retail_pricing import (
     AzureVirtualMachineRetailPricing,
     AzureVmBillingPhases,
 )
+from general_ludd.infra.deploy_strategy_types import (
+    CostEntry,
+    DeployUrgency,
+    ElasticTierController,
+    ElasticTierDecision,
+    ElasticWorkload,
+    PhasedDeployPlan,
+    ResourceTier,
+)
 
-
-class DeployUrgency(Enum):
-    IMMEDIATE = "immediate"
-    NORMAL = "normal"
-    BACKGROUND = "background"
-
-
-class ResourceTier:
-    CONTAINER_APP: ResourceTier
-    SPOT_VM: ResourceTier
-    DEDICATED_VM: ResourceTier
-
-    _ALL: ClassVar[list[ResourceTier]] = []
-
-    def __init__(self, tier_id: str, startup_seconds: int, cost_per_hour: float) -> None:
-        self.tier_id = tier_id
-        self.startup_seconds = startup_seconds
-        self.cost_per_hour = cost_per_hour
-        self._index = len(ResourceTier._ALL)
-        ResourceTier._ALL.append(self)
-
-    def __repr__(self) -> str:
-        return f"ResourceTier({self.tier_id!r}, startup={self.startup_seconds}s, ${self.cost_per_hour:.2f}/hr)"
-
-    @property
-    def deploy_type(self) -> str:
-        return self.tier_id
-
-
-ResourceTier.CONTAINER_APP = ResourceTier("containerapp", 600, 0.05)
-ResourceTier.SPOT_VM = ResourceTier("vm_spot", 180, 0.50)
-ResourceTier.DEDICATED_VM = ResourceTier("vm_dedicated", 120, 2.00)
-
-
-@dataclass(frozen=True)
-class ElasticWorkload:
-    """Observable demand inputs for one hysteretic Azure tier decision."""
-
-    urgency: DeployUrgency
-    queued_items: int
-    concurrent_items: int
-    estimated_runtime_minutes: float
-    latency_budget_seconds: float
-    spot_eligible: bool
-
-    def __post_init__(self) -> None:
-        for name in ("queued_items", "concurrent_items"):
-            value = getattr(self, name)
-            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-                raise ValueError(f"{name} must be a non-negative integer")
-        for name in ("estimated_runtime_minutes", "latency_budget_seconds"):
-            value = getattr(self, name)
-            if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
-                raise ValueError(f"{name} must be finite and > 0")
-
-    @property
-    def demand_score(self) -> float:
-        return (
-            float(self.queued_items)
-            + 2.0 * self.concurrent_items
-            + min(self.estimated_runtime_minutes / 30.0, 2.0)
-        )
-
-
-@dataclass(frozen=True)
-class ElasticTierDecision:
-    tier: ResourceTier
-    transition: str
-    demand_score: float
-    reason: str
-
-
-class ElasticTierController:
-    """Stateful scale controller with separate up/down demand thresholds."""
-
-    def __init__(self) -> None:
-        self._tier = ResourceTier.CONTAINER_APP
-
-    @property
-    def current_tier(self) -> ResourceTier:
-        return self._tier
-
-    def select(self, workload: ElasticWorkload) -> ElasticTierDecision:
-        score = workload.demand_score
-        previous = self._tier
-        latency_forces_dedicated = (
-            workload.urgency is DeployUrgency.IMMEDIATE
-            and workload.latency_budget_seconds <= ResourceTier.SPOT_VM.startup_seconds
-        )
-
-        if previous is ResourceTier.DEDICATED_VM:
-            if latency_forces_dedicated or score >= 6.0:
-                selected = ResourceTier.DEDICATED_VM
-            elif score >= 2.0:
-                selected = (
-                    ResourceTier.SPOT_VM
-                    if workload.spot_eligible
-                    else ResourceTier.DEDICATED_VM
-                )
-            else:
-                selected = ResourceTier.CONTAINER_APP
-        elif previous is ResourceTier.SPOT_VM:
-            if latency_forces_dedicated or score >= 10.0:
-                selected = ResourceTier.DEDICATED_VM
-            elif score >= 1.5 and workload.spot_eligible:
-                selected = ResourceTier.SPOT_VM
-            elif score >= 3.0:
-                selected = ResourceTier.DEDICATED_VM
-            else:
-                selected = ResourceTier.CONTAINER_APP
-        elif latency_forces_dedicated or score >= 10.0:
-            selected = ResourceTier.DEDICATED_VM
-        elif score >= 3.0:
-            selected = (
-                ResourceTier.SPOT_VM
-                if workload.spot_eligible
-                else ResourceTier.DEDICATED_VM
-            )
-        else:
-            selected = ResourceTier.CONTAINER_APP
-
-        if selected._index > previous._index:
-            transition = "scale_up"
-        elif selected._index < previous._index:
-            transition = "scale_down"
-        else:
-            transition = "hold"
-        self._tier = selected
-        return ElasticTierDecision(
-            tier=selected,
-            transition=transition,
-            demand_score=score,
-            reason=(
-                f"elastic {transition}: demand={score:.3f}, "
-                f"latency_budget={workload.latency_budget_seconds:.1f}s, "
-                f"spot_eligible={str(workload.spot_eligible).lower()}, "
-                f"tier={selected.tier_id}"
-            ),
-        )
-
-
-@dataclass
-class PhasedDeployPlan:
-    urgency: DeployUrgency
-    primary: ResourceTier
-    warmup: ResourceTier | None = None
-    estimated_cost_usd: float = 0.0
-    reasoning: str = ""
-    pricing_source: str = ""
-    pricing_region: str | None = None
-    meter_ids: tuple[str, ...] = ()
-    cost_components_usd: dict[str, float] = field(default_factory=dict)
-    phase_seconds: dict[str, float] = field(default_factory=dict)
-    elastic_transition: str = "hold"
-    elastic_reason: str = ""
-
-
-@dataclass
-class CostEntry:
-    tier_id: str
-    cost_usd: float
-    startup_seconds: int
-    timestamp: float = field(default_factory=time.time)
+__all__ = (
+    "CostEntry",
+    "DeployStrategist",
+    "DeployUrgency",
+    "ElasticTierController",
+    "ElasticTierDecision",
+    "ElasticWorkload",
+    "PhasedDeployPlan",
+    "ResourceTier",
+)
 
 
 class DeployStrategist:
@@ -197,6 +50,7 @@ class DeployStrategist:
         azure_vm_pricing: AzureVirtualMachineRetailPricing | None = None,
         elastic_controller: ElasticTierController | None = None,
     ) -> None:
+        """Configure exact Azure pricing sources and elastic tier state."""
         self.cost_history: list[CostEntry] = []
         self._azure_pricing = azure_pricing or AzureContainerAppsRetailPricing()
         self._azure_vm_pricing = azure_vm_pricing or AzureVirtualMachineRetailPricing(
@@ -219,6 +73,7 @@ class DeployStrategist:
         vm_disk_size_gib: int = 128,
         vm_shutdown_seconds: float = 60.0,
     ) -> PhasedDeployPlan:
+        """Build a bounded, exactly priced phased deployment plan."""
         if (
             isinstance(estimated_runtime_minutes, bool)
             or not math.isfinite(estimated_runtime_minutes)
@@ -349,6 +204,7 @@ class DeployStrategist:
         gpu_type: str,
         model_name: str,
     ) -> dict[str, Any]:
+        """Materialize the observable initial state for a phased plan."""
         result: dict[str, Any] = {
             "plan": {
                 "urgency": plan.urgency.value,
@@ -381,6 +237,7 @@ class DeployStrategist:
         from_instance: str,
         to_instance: str,
     ) -> dict[str, str]:
+        """Describe a completed handoff between two owned instances."""
         return {
             "status": "migrated",
             "from": from_instance,
@@ -394,6 +251,7 @@ class DeployStrategist:
         cost_usd: float,
         startup_seconds: int,
     ) -> None:
+        """Record an observed tier cost and startup duration."""
         self.cost_history.append(
             CostEntry(
                 tier_id=tier.tier_id,
@@ -403,6 +261,7 @@ class DeployStrategist:
         )
 
     def average_cost(self, tier: ResourceTier) -> float:
+        """Return the mean observed cost for a resource tier."""
         entries = [e for e in self.cost_history if e.tier_id == tier.tier_id]
         if not entries:
             return 0.0

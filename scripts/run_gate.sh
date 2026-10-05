@@ -208,7 +208,7 @@ else
     # coverage databases are combined before the aggregate 85% and per-file 75%
     # release floors are enforced.
     ( set +e; python3 scripts/heavy_sem.py "${HEAVY_MAX_PAR:-3}" gludd-heavy -- \
-        uv run python scripts/run_ci_shards_serial.py --pytest-args=-q; \
+        uv run python scripts/run_ci_shards_serial.py --pytest-args=-q --allow-dirty-worktree; \
       echo $? > "${RC_FILE}" ) 2>&1 | tee "${LOG_FILE}"
 fi
 

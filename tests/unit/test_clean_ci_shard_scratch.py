@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import socket
 import subprocess
 import time
 from pathlib import Path
@@ -134,6 +135,45 @@ def test_process_detector_does_not_match_path_prefix_collision(
     assert module._active_process_pids(candidate) == []
 
 
+def test_socket_owner_detector_parses_lsof_and_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_module()
+    candidate = tmp_path / "gludd-test-runtime.sock"
+    monkeypatch.setattr(module.shutil, "which", lambda _name: "/usr/sbin/lsof")
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0],
+            0,
+            f"p7331\nn{candidate}\npbad\np{os.getpid()}\n",
+            "",
+        ),
+    )
+
+    assert module._active_socket_pids(candidate) == [7331]
+
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 1, "", ""),
+    )
+    assert module._active_socket_pids(candidate) == []
+
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 2, "", "denied"),
+    )
+    with pytest.raises(module.ProcessInspectionError):
+        module._active_socket_pids(candidate)
+
+    monkeypatch.setattr(module.shutil, "which", lambda _name: None)
+    with pytest.raises(module.ProcessInspectionError):
+        module._active_socket_pids(candidate)
+
+
 def test_process_inspection_error_refuses_cleanup(
     tmp_path: Path,
 ) -> None:
@@ -154,22 +194,241 @@ def test_process_inspection_error_refuses_cleanup(
     assert result["skipped"] == [f"{candidate}:process-inspection-failed"]
 
 
-def test_matching_non_directory_and_disappeared_candidate_are_safe(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_socket_inspection_and_revalidation_errors_refuse_cleanup(tmp_path: Path) -> None:
+    module = _load_module()
+
+    def stale_socket(name: str) -> Path:
+        path = tmp_path / name
+        owner = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        owner.bind(str(path))
+        owner.close()
+        _age_path(path, 7200)
+        return path
+
+    inspection_failure = stale_socket("gludd-test-inspection.sock")
+
+    def fail_socket_inspection(_path: Path) -> list[int]:
+        raise module.ProcessInspectionError("lsof unavailable")
+
+    result = module.clean_ci_shard_scratch(
+        tmp_root=tmp_path,
+        min_age_seconds=3600,
+        active_process_pids=lambda _path: [],
+        active_socket_pids=fail_socket_inspection,
+    )
+    assert result["skipped"] == [f"{inspection_failure}:socket-inspection-failed"]
+    inspection_failure.unlink()
+
+    revalidation_failure = stale_socket("gludd-test-revalidation.sock")
+    socket_checks = 0
+
+    def fail_socket_revalidation(_path: Path) -> list[int]:
+        nonlocal socket_checks
+        socket_checks += 1
+        if socket_checks == 2:
+            raise module.ProcessInspectionError("lsof raced")
+        return []
+
+    result = module.clean_ci_shard_scratch(
+        tmp_root=tmp_path,
+        min_age_seconds=3600,
+        active_process_pids=lambda _path: [],
+        active_socket_pids=fail_socket_revalidation,
+    )
+    assert result["skipped"] == [
+        f"{revalidation_failure}:socket-revalidation-failed"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("race", "reason"),
+    [
+        ("disappear", "identity-revalidation-failed"),
+        ("change", "identity-changed"),
+        ("active", "active-pids=7331"),
+        ("inspection-error", "process-revalidation-failed"),
+    ],
+)
+def test_generated_file_revalidation_races_fail_closed(
+    tmp_path: Path, race: str, reason: str
 ) -> None:
     module = _load_module()
-    not_directory = tmp_path / "gludd-gate-unit-3-file"
-    not_directory.write_text("not a tree", encoding="utf-8")
+    candidate = tmp_path / "gludd-test-raced.json"
+    candidate.write_text("generated", encoding="utf-8")
+    _age_path(candidate, 7200)
+    process_checks = 0
+
+    def process_state(path: Path) -> list[int]:
+        nonlocal process_checks
+        process_checks += 1
+        if process_checks == 1:
+            if race == "disappear":
+                path.unlink()
+            elif race == "change":
+                path.write_text("changed after inspection", encoding="utf-8")
+            return []
+        if race == "active":
+            return [7331]
+        if race == "inspection-error":
+            raise module.ProcessInspectionError("ps raced")
+        return []
+
+    result = module.clean_ci_shard_scratch(
+        tmp_root=tmp_path,
+        min_age_seconds=3600,
+        active_process_pids=process_state,
+    )
+
+    assert result["removed"] == []
+    assert result["skipped"] == [f"{candidate}:{reason}"]
+
+
+def test_unsupported_generated_fifo_is_preserved(tmp_path: Path) -> None:
+    module = _load_module()
+    candidate = tmp_path / "gludd-test-runtime.pipe"
+    os.mkfifo(candidate)
+    _age_path(candidate, 7200)
+
+    result = module.clean_ci_shard_scratch(
+        tmp_root=tmp_path,
+        min_age_seconds=3600,
+        active_process_pids=lambda _path: [],
+    )
+
+    assert candidate.exists()
+    assert result == {
+        "removed": [],
+        "skipped": [f"{candidate}:unsupported-file-type"],
+    }
+
+
+def test_stale_generated_files_are_removed_and_disappeared_candidate_is_safe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_module()
+    stale_files = [
+        tmp_path / "gludd-test-runtime.json",
+        tmp_path / "gludd-test-plugin.js",
+        tmp_path / "gludd-test-report.md",
+    ]
+    for stale_file in stale_files:
+        stale_file.write_text("generated", encoding="utf-8")
+        _age_path(stale_file, 7200)
     disappeared = tmp_path / "gludd-gate-unit-3-gone"
     monkeypatch.setattr(
         module,
         "iter_candidates",
-        lambda _root: [disappeared, not_directory],
+        lambda _root: [disappeared, *stale_files],
     )
 
-    result = module.clean_ci_shard_scratch(tmp_root=tmp_path, min_age_seconds=0)
+    result = module.clean_ci_shard_scratch(
+        tmp_root=tmp_path,
+        min_age_seconds=3600,
+        active_process_pids=lambda _path: [],
+    )
 
-    assert result == {"removed": [], "skipped": [f"{not_directory}:not-directory"]}
+    assert all(not path.exists() for path in stale_files)
+    assert result == {
+        "removed": [str(path) for path in stale_files],
+        "skipped": [],
+    }
+    output = capsys.readouterr().out
+    assert "phase=stale-scratch-scan status=starting candidates=4" in output
+    assert "phase=stale-scratch-scan status=progress inspected=4 total=4" in output
+    assert "phase=stale-scratch-scan status=complete inspected=4" in output
+
+
+def test_recent_generated_file_is_preserved(tmp_path: Path) -> None:
+    module = _load_module()
+    recent = tmp_path / "gludd-test-runtime.json"
+    recent.write_text("active", encoding="utf-8")
+
+    result = module.clean_ci_shard_scratch(
+        tmp_root=tmp_path,
+        min_age_seconds=3600,
+        active_process_pids=lambda _path: [],
+    )
+
+    assert recent.exists()
+    assert result == {"removed": [], "skipped": [f"{recent}:recent"]}
+
+
+def test_stale_socket_with_open_owner_is_preserved(tmp_path: Path) -> None:
+    module = _load_module()
+    socket_path = tmp_path / "gludd-test-runtime.sock"
+    owner = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        owner.bind(str(socket_path))
+        _age_path(socket_path, 7200)
+
+        result = module.clean_ci_shard_scratch(
+            tmp_root=tmp_path,
+            min_age_seconds=3600,
+            active_process_pids=lambda _path: [],
+            active_socket_pids=lambda _path: [7331],
+        )
+
+        assert socket_path.exists()
+        assert result == {
+            "removed": [],
+            "skipped": [f"{socket_path}:active-socket-pids=7331"],
+        }
+    finally:
+        owner.close()
+
+
+def test_stale_unowned_socket_is_removed(tmp_path: Path) -> None:
+    module = _load_module()
+    socket_path = tmp_path / "gludd-test-runtime.sock"
+    owner = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    owner.bind(str(socket_path))
+    owner.close()
+    _age_path(socket_path, 7200)
+
+    result = module.clean_ci_shard_scratch(
+        tmp_root=tmp_path,
+        min_age_seconds=3600,
+        active_process_pids=lambda _path: [],
+        active_socket_pids=lambda _path: [],
+    )
+
+    assert not socket_path.exists()
+    assert result == {"removed": [str(socket_path)], "skipped": []}
+
+
+def test_lease_markers_and_symlinks_are_never_removed(tmp_path: Path) -> None:
+    module = _load_module()
+    lease = tmp_path / "gludd-test-runtime.lock"
+    lease.write_text("7331", encoding="utf-8")
+    unknown_evidence = tmp_path / "gludd-test-private.key"
+    unknown_evidence.write_text("unrecoverable", encoding="utf-8")
+    target = tmp_path / "outside-evidence.md"
+    target.write_text("preserve", encoding="utf-8")
+    link = tmp_path / "gludd-test-evidence.md"
+    link.symlink_to(target)
+    _age_path(lease, 7200)
+    _age_path(unknown_evidence, 7200)
+
+    result = module.clean_ci_shard_scratch(
+        tmp_root=tmp_path,
+        min_age_seconds=3600,
+        active_process_pids=lambda _path: [],
+    )
+
+    assert lease.exists()
+    assert unknown_evidence.exists()
+    assert link.is_symlink()
+    assert target.read_text(encoding="utf-8") == "preserve"
+    assert result == {
+        "removed": [],
+        "skipped": [
+            f"{link}:symlink",
+            f"{unknown_evidence}:unsupported-generated-file",
+            f"{lease}:lease-marker",
+        ],
+    }
 
 
 def test_remove_tree_tolerates_restrictive_mode_repair_failure(
@@ -190,20 +449,33 @@ def test_remove_tree_tolerates_restrictive_mode_repair_failure(
     assert not candidate.exists()
 
 
-def test_main_reports_active_refusal_and_returns_nonzero(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "active-pids=7",
+        "active-socket-pids=7",
+        "socket-inspection-failed",
+        "identity-changed",
+        "removal-failed",
+    ],
+)
+def test_main_reports_safety_refusal_and_returns_nonzero(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    reason: str,
 ) -> None:
     module = _load_module()
     active = tmp_path / "gludd-gate-unit-3-live"
     monkeypatch.setattr(
         module,
         "clean_ci_shard_scratch",
-        lambda **kwargs: {"removed": [], "skipped": [f"{active}:active-pids=7"]},
+        lambda **kwargs: {"removed": [], "skipped": [f"{active}:{reason}"]},
     )
 
     assert module.main(["--tmp-root", str(tmp_path), "--min-age-seconds", "0"]) == 1
     output = capsys.readouterr().out
-    assert f"skipped {active}:active-pids=7" in output
+    assert f"skipped {active}:{reason}" in output
     assert "removed=0 skipped=1" in output
 
 

@@ -534,14 +534,22 @@ console.log(JSON.stringify({{
             _clean(sf)
 
     def test_stale_streak_does_not_bypass_floor_breach(self):
-        """A stale streak file with streak=0 (from a prior session that just
-        dispatched) must NOT prevent the floor breach from firing. After
-        reset, 3 consecutive non-dispatch calls must trigger the deny."""
+        """A stale streak cannot bypass an explicitly opted-in floor breach."""
         tasks_path = f"/tmp/gludd-pid-stale-floor-tasks-{os.getpid()}.json"
         todowrite_path = f"/tmp/gludd-pid-stale-todo-{os.getpid()}.json"
         session_state = f"/tmp/gludd-pid-stale-session-{os.getpid()}.json"
         sf = f"/tmp/gludd-tool-streak-floor-{os.getpid()}.json"
-        _clean(tasks_path, todowrite_path, session_state, sf, "/tmp/gludd-watchdog-disengage.json")
+        floor_override = f"/tmp/gludd-floor-override-pid-{os.getpid()}"
+        load_throttle = f"/tmp/gludd-load-throttle-pid-{os.getpid()}"
+        _clean(
+            tasks_path,
+            todowrite_path,
+            session_state,
+            sf,
+            floor_override,
+            load_throttle,
+            "/tmp/gludd-watchdog-disengage.json",
+        )
         with open(tasks_path, "w") as f:
             f.write("- [ ] floor staleness test\n")
         with open(todowrite_path, "w") as f:
@@ -580,6 +588,9 @@ console.log(JSON.stringify({{
             result = _run_ts(
                 code,
                 env_override={
+                    "CLAUDE_AGENT_FLOOR": "1",
+                    "GLUDD_FLOOR_OVERRIDE_PATH": floor_override,
+                    "GLUDD_LOAD_THROTTLE_PATH": load_throttle,
                     "GLUDD_TASKS_MD": tasks_path,
                     "GLUDD_TODOWRITE_STATE": todowrite_path,
                     "GLUDD_SESSION_STATE": session_state,
@@ -591,7 +602,14 @@ console.log(JSON.stringify({{
                 f"Call 3 must be denied after stale streak reset — stale streak=0 must NOT persist. Got: {result}"
             )
         finally:
-            _clean(tasks_path, todowrite_path, session_state, sf)
+            _clean(
+                tasks_path,
+                todowrite_path,
+                session_state,
+                sf,
+                floor_override,
+                load_throttle,
+            )
 
 
 # ===========================================================================

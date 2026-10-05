@@ -1,15 +1,15 @@
-"""Structural tests for adaptive dispatch with an absolute ten-agent ceiling.
+"""Structural tests for adaptive dispatch with an absolute three-agent ceiling.
 
-Verifies that ten remains the maximum/recommended batch size while mandatory
-minimums are opt-in in:
+Verifies that the active harness enforces three as the maximum/recommended
+batch size while mandatory minimums remain opt-in in:
   - enforce-session-start.ts: configured minimum and EFFECTIVE_MIN
   - enforce-multitask.ts: configured minimum and MAX_DISPATCHES
   - shared.ts: isDispatchTool classification
-  - AGENTS.md: no sub-10 dispatch count in any directive
+  - AGENTS.md: adaptive minimum and hard three-agent ceiling documented
 
-These tests fail when a plugin re-introduces an unconditional ten-agent floor
-or allows more than ten concurrent dispatches.  Simple work may stay inline;
-larger independent work may use up to ten agents.
+These tests fail when a plugin re-introduces an unconditional three-agent floor
+or allows more than three concurrent dispatches.  Simple work may stay inline;
+larger independent work may use up to three agents.
 """
 
 from __future__ import annotations
@@ -47,26 +47,17 @@ def _read(path: Path) -> str:
     return path.read_text()
 
 
-def _env_default(src: str, env_var: str) -> int:
-    """Extract the hardcoded default from a parseInt(process.env.VAR || "N")."""
-    pat = re.compile(rf"parseInt\(\s*process\.env\.{env_var}\s*\|\|\s*\"(\d+)\"")
-    m = pat.search(src)
-    assert m, f"Env var {env_var} default not found in source"
-    return int(m.group(1))
-
-
 # ============================================================================
-# 1. enforce-session-start.ts: ten is a recommendation, not a default floor
+# 1. enforce-session-start.ts: three is the active harness recommendation
 # ============================================================================
 
 
-def test_session_start_min_dispatches_hardcoded_10():
-    """The legacy target remains ten for explicit minimum configuration."""
+def test_session_start_min_dispatches_uses_canonical_opt_in_default():
+    """Session start imports the opt-in minimum and clamps to the hard cap."""
     src = _read(SESSION_START_TS)
-    val = _env_default(src, "GLUDD_SESSION_START_MIN_DISPATCHES")
-    assert val == 10, (
-        f"enforce-session-start.ts MIN_DISPATCHES default is {val}, expected 10. Was the hardcoded fallback changed?"
-    )
+    assert "../lib/multitask_config.ts" in src
+    assert "GLUDD_SESSION_START_MIN_DISPATCHES || String(DEFAULT_MIN_DISPATCHES)" in src
+    assert "clampDispatchCount" in src
 
 
 def test_session_start_min_dispatches_env_var_name():
@@ -83,7 +74,7 @@ def test_session_start_min_dispatches_env_var_name():
 
 
 def test_session_start_effective_min_is_opt_in():
-    """A fresh session must not require ten agents unless explicitly configured."""
+    """A fresh session must not require agents unless explicitly configured."""
     src = _read(SESSION_START_TS)
     assert "EFFECTIVE_MIN" in src, "EFFECTIVE_MIN constant must exist"
     assert "HAS_CONFIGURED_MIN_DISPATCHES" in src
@@ -97,29 +88,18 @@ def test_session_start_effective_min_is_opt_in():
 
 
 # ============================================================================
-# 3. enforce-multitask.ts: recommended target 10, required minimum opt-in
+# 3. enforce-multitask.ts: recommended target 3, required minimum opt-in
 # ============================================================================
 
 
-def test_multitask_min_dispatches_hardcoded_10():
-    """MIN_DISPATCHES remains the configurable recommendation target.
-
-    The parseInt chain now goes:
-      parseInt(
-        process.env.GLUDD_MIN_DISPATCHES ||
-        process.env.GLUDD_MULTITASK_MIN_DISPATCHES ||
-        "10",
-        10,
-      )
-    The env-fallback "10" is the final default; extract it.  The radix 10
-    at the end of the parseInt call is also asserted to be 10 (the radix,
-    not the default value — they happen to coincide here).
-    """
+def test_multitask_min_dispatches_defaults_to_zero():
+    """MIN_DISPATCHES is opt-in while the maximum remains three."""
     src = _read(MULTITASK_CONFIG_TS)
-    m = re.search(r"integerFromEnv\(\s*\[.*?GLUDD_MIN_DISPATCHES.*?\][\s\S]*?,\s*(\d+)", src, re.DOTALL)
-    assert m, "MIN_DISPATCHES integerFromEnv call not found in multitask_config.ts"
-    val = int(m.group(1))
-    assert val == 10, f"multitask_config.ts MIN_DISPATCHES default fallback is {val}, expected 10."
+    assert "HARD_MAX_DISPATCHES = 3" in src
+    assert "MIN_DISPATCHES = Math.min(" in src
+    assert "MAX_DISPATCHES," in src
+    assert "\n      0," in src
+    assert '"GLUDD_MIN_DISPATCHES", "GLUDD_MULTITASK_MIN_DISPATCHES"' in src
 
 
 def test_multitask_required_dispatches_is_explicit_opt_in():
@@ -132,9 +112,9 @@ def test_multitask_required_dispatches_is_explicit_opt_in():
 
 
 def test_multitask_required_minimum_is_clamped_to_ceiling():
-    """An operator-provided minimum can never exceed the ten-agent cap."""
+    """An operator-provided minimum can never exceed the three-agent cap."""
     src = _read(MULTITASK_CONFIG_TS)
-    assert re.search(r"Math\.min\(\s*\n?\s*HARD_MAX_DISPATCHES", src)
+    assert "clampDispatchCount(" in src
 
 
 def test_multitask_floor_breach_uses_required_dispatches():
@@ -151,21 +131,21 @@ def test_multitask_floor_breach_uses_required_dispatches():
 
 
 # ============================================================================
-# 4. enforce-multitask.ts: CEILING = 10 blocks >10 dispatches per wave
+# 4. enforce-multitask.ts: canonical code ceiling is three
 # ============================================================================
 
 
 def test_multitask_has_max_dispatches_constant():
     """enforce-multitask.ts must export a MAX_DISPATCHES ceiling constant."""
     src = _read(MULTITASK_TS)
-    assert "MAX_DISPATCHES" in src, "enforce-multitask.ts must declare MAX_DISPATCHES to cap dispatches per wave at 10."
+    assert "MAX_DISPATCHES" in src, "enforce-multitask.ts must declare MAX_DISPATCHES to cap dispatches per wave."
 
 
-def test_multitask_max_dispatches_value_is_10():
-    """HARD_MAX_DISPATCHES must be 10. Declared in multitask_config.ts."""
+def test_multitask_max_dispatches_value_is_3():
+    """HARD_MAX_DISPATCHES must be three in the canonical config."""
     src = _read(MULTITASK_CONFIG_TS)
-    assert "HARD_MAX_DISPATCHES = 10" in src
-    assert re.search(r"Math\.min\(\s*\n?\s*HARD_MAX_DISPATCHES", src)
+    assert "HARD_MAX_DISPATCHES = 3" in src
+    assert "MAX_DISPATCHES = clampDispatchCount(" in src
 
 
 def test_multitask_max_dispatches_enforcement_exists():
@@ -191,11 +171,17 @@ def test_agents_md_documents_adaptive_dispatch():
     assert "Inline work preferred for simple tasks" in src
 
 
-def test_agents_md_documents_ten_as_ceiling_not_floor():
-    """The active directive must make ten a maximum rather than a minimum."""
+def test_agents_md_documents_adaptive_floor_and_three_agent_ceiling():
+    """AGENTS.md documents one adaptive minimum and hard ceiling of three."""
     src = _read(AGENTS_MD)
-    assert "Max 10 subagents per wave" in src
-    assert 'OVERRIDES all "10-agent floor" rules' in src
+    assert "Max 3 subagents per wave" in src, (
+        "AGENTS.md must document the active ceiling of 3 subagents per wave."
+    )
+    assert "OVERRIDES all higher mandatory-floor rules" in src, (
+        "AGENTS.md must state that the cost-efficiency directive overrides stale higher floors."
+    )
+    assert "HARD_MAX_DISPATCHES=3" in src
+    assert "values above 3 are clamped" in src
 
 
 # ============================================================================
@@ -259,19 +245,16 @@ def test_session_start_freshness_uses_effective_min():
     assert "MAX_DISPATCHES" in src
 
 
-def test_session_start_primed_check_requires_10():
+def test_session_start_primed_check_uses_effective_minimum():
     """The primed condition uses the effective, possibly-zero minimum."""
     src = _read(SESSION_START_TS)
     assert "dispatches >= EFFECTIVE_MIN" in src, "Primed condition must check dispatches >= EFFECTIVE_MIN."
-    # EFFECTIVE_MIN must be 10 (tested above)
 
 
-def test_session_start_freshness_warning_mentions_10():
-    """Any warning/deny message about insufficient dispatches must reference 10."""
+def test_session_start_freshness_warning_uses_effective_minimum():
+    """Warnings about insufficient dispatches use the effective minimum."""
     src = _read(SESSION_START_TS)
-    # The EFFECTIVE_MIN is used in messages — check it resolves to 10
     assert "${EFFECTIVE_MIN}" in src, "Warning/deny messages must template EFFECTIVE_MIN."
-    # Pin: the EFFECTIVE_MIN resolution is tested above at 10
 
 
 def test_session_start_hard_deny_uses_effective_min():

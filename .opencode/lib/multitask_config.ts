@@ -13,16 +13,25 @@ function integerFromEnv(names: readonly string[], fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
-export const HARD_MAX_DISPATCHES = 10
-export const MIN_DISPATCHES = integerFromEnv(
-  ["GLUDD_MIN_DISPATCHES", "GLUDD_MULTITASK_MIN_DISPATCHES"],
-  10,
-)
-export const MAX_DISPATCHES = Math.max(
+export const HARD_MAX_DISPATCHES = 3
+
+export function clampDispatchCount(value: number, minimum = 0): number {
+  const boundedMinimum = Math.max(0, Math.min(HARD_MAX_DISPATCHES, minimum))
+  const normalized = Number.isFinite(value) ? Math.trunc(value) : HARD_MAX_DISPATCHES
+  return Math.max(boundedMinimum, Math.min(HARD_MAX_DISPATCHES, normalized))
+}
+
+export const MAX_DISPATCHES = clampDispatchCount(
+  integerFromEnv(["GLUDD_MULTITASK_MAX_DISPATCHES"], HARD_MAX_DISPATCHES),
   1,
-  Math.min(
-    HARD_MAX_DISPATCHES,
-    integerFromEnv(["GLUDD_MULTITASK_MAX_DISPATCHES"], HARD_MAX_DISPATCHES),
+)
+export const MIN_DISPATCHES = Math.min(
+  MAX_DISPATCHES,
+  clampDispatchCount(
+    integerFromEnv(
+      ["GLUDD_MIN_DISPATCHES", "GLUDD_MULTITASK_MIN_DISPATCHES"],
+      0,
+    ),
   ),
 )
 export const MAX_ZERO_STREAK = 2

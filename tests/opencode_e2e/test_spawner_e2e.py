@@ -213,13 +213,15 @@ class TestSpawnerWithProject:
             spawner = _spawner_class(
                 project_dir=str(tmp),
                 prompt=(
-                    "Read TASKS.md. Dispatch EXACTLY 10 task subagents to run "
-                    "make task1 through make task10. Each subagent runs ONE make "
-                    "command. Return confirmation when all 10 are dispatched."
+                    "Read TASKS.md. Dispatch EXACTLY 3 task subagents to run "
+                    "make task1 through make task3. Each subagent runs ONE make "
+                    "command. Return confirmation when all three are dispatched."
                 ),
                 timeout_sec=60,
                 prompt_sequence=[],
                 progress_interval_sec=15,
+                minimum_dispatches=3,
+                maximum_dispatches=3,
             )
             result = spawner.run()
             log_path = Path(result.log_path)
@@ -421,7 +423,7 @@ class TestSpawnResult:
 
 @pytest.mark.skip(reason="Requires LLM API key. Run manually: make test-opencode-e2e-real")
 class TestFullE2EWithAPI:
-    """Full E2E test: launch opencode, dispatch 10 agents, complete tasks.
+    """Full E2E test: launch opencode, dispatch three-agent waves, complete tasks.
 
     Requires a valid LLM API key in environment. Run manually:
        make test-specific TESTFILE='tests/opencode_e2e/test_spawner_e2e.py::TestFullE2EWithAPI'
@@ -439,15 +441,17 @@ class TestFullE2EWithAPI:
             spawner = _spawner_class(
                 project_dir=str(tmp),
                 prompt=(
-                    "Read TASKS.md. There are 18 tasks. You MUST dispatch EXACTLY 10 "
+                    "Read TASKS.md. There are 18 tasks. You MUST dispatch EXACTLY 3 "
                     "task subagents in EACH wave. When subagent results arrive, "
-                    "immediately dispatch the NEXT wave of 10 task subagents for "
+                    "immediately dispatch the NEXT wave of 3 task subagents for "
                     "remaining unchecked tasks. Each subagent runs ONE make taskN "
                     "command. NEVER send a text-only answer while tasks remain. "
                     "When ALL 18 tasks show [x], say ALL DONE and exit."
                 ),
                 timeout_sec=300,
                 progress_interval_sec=30,
+                minimum_dispatches=3,
+                maximum_dispatches=3,
             )
             result = spawner.run()
 

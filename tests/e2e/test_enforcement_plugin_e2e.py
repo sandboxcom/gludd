@@ -7,8 +7,8 @@ session cycle to verify those state files behave correctly:
   2. Dispatch simulation: mainthread streak counter increments on non-dispatch
      tools and resets on dispatch.
   3. Gate-refresh + commit: .gate-status presence signals plugins to allow.
-  4. Disengage: floor-override relaxes enforcement.
-  5. Engage: removing override resumes enforcement.
+  4. Configured floor: a bounded override is independent of disengage.
+  5. Disengage/engage: the dedicated state file controls that lifecycle.
   6. Nag detection: DELEGATE-FIRST / MUST DISPATCH patterns are absent when
      state is healthy (fresh session, first call).
 
@@ -210,7 +210,7 @@ def _remove_floor_override() -> None:
         state_path("gludd-floor-override").unlink()
 
 
-def _read_floor_override(fallback: int = 7) -> int:
+def _read_floor_override(fallback: int = 0) -> int:
     """Check for floor-override file; fall back to env or default."""
     try:
         raw = state_path("gludd-floor-override").read_text().strip()
@@ -386,8 +386,8 @@ class TestCleanSlate:
 
     def test_floor_override_defaults_when_missing(self):
         _remove_floor_override()
-        floor = _read_floor_override(fallback=7)
-        assert floor == 7, f"Fallback floor should be 7, got {floor}"
+        floor = _read_floor_override(fallback=0)
+        assert floor == 0, f"Default floor should be opt-in, got {floor}"
 
     def test_disengaged_is_false_when_clean(self):
         _remove_disengage()
@@ -527,15 +527,15 @@ class TestGateRefreshAndCommit:
         gs = _check_gate_status()
         assert gs["is_green"]
         assert gs["is_fresh"]
-        _write_multitask_state(dispatches=5)
-        _write_session_start_state(dispatch_count=10)
-        assert _read_multitask_state()["thisMessageDispatches"] >= 5
-        assert _read_session_start_state().get("dispatches_in_session", 0) >= 10
+        _write_multitask_state(dispatches=3)
+        _write_session_start_state(dispatch_count=3)
+        assert _read_multitask_state()["thisMessageDispatches"] == 3
+        assert _read_session_start_state().get("dispatches_in_session", 0) == 3
 
     def test_clean_state_with_gate_passing_avoids_nags(self):
         _write_gate_status_passing()
-        _write_multitask_state(dispatches=5)
-        _write_session_start_state(dispatch_count=10)
+        _write_multitask_state(dispatches=3)
+        _write_session_start_state(dispatch_count=3)
         _simulate_dispatch_reset()
         assert _is_streak_healthy()
         result_text = "=== GATE: PASSED ===\ncommit landed somehash\n10 passed"
@@ -544,27 +544,27 @@ class TestGateRefreshAndCommit:
 
 
 class TestDisengageEngageCycle:
-    """Scenario 4+5: Disengage (floor-override) and re-engage."""
+    """Scenario 4+5: bounded floor configuration and disengage lifecycle."""
 
     def setup_method(self):
         _clean_state_files()
 
     def test_write_floor_override_and_read_back(self):
         _write_floor_override(3)
-        floor = _read_floor_override(fallback=7)
+        floor = _read_floor_override(fallback=0)
         assert floor == 3, f"Floor override should be 3, got {floor}"
 
-    def test_floor_override_changes_effective_floor(self):
+    def test_floor_override_enables_a_bounded_explicit_floor(self):
         _write_floor_override(3)
-        floor = _read_floor_override(fallback=7)
+        floor = _read_floor_override(fallback=0)
         assert floor == 3
-        assert floor < 7, "Override should lower the floor"
+        assert floor > 0, "Override should opt into a positive floor"
 
     def test_remove_floor_override_restores_default(self):
         _write_floor_override(3)
-        assert _read_floor_override(fallback=7) == 3
+        assert _read_floor_override(fallback=0) == 3
         _remove_floor_override()
-        assert _read_floor_override(fallback=7) == 7
+        assert _read_floor_override(fallback=0) == 0
 
     def test_disengage_allows_work_with_high_streak(self):
         """With disengage active, high streak should not prevent dispatch."""
@@ -596,8 +596,8 @@ class TestDisengageEngageCycle:
     def test_floor_override_alone_does_not_count_as_disengage(self):
         """floor-override changes the floor number but does NOT bypass the
         watchdog-disengage mechanism used by enforce-stop / enforce-delegate."""
-        _write_floor_override(7)
-        assert _read_floor_override(fallback=7) == 7
+        _write_floor_override(3)
+        assert _read_floor_override(fallback=0) == 3
         assert not _is_disengaged(), (
             "floor-override is a tunable, not a disengage bypass"
         )
@@ -606,11 +606,11 @@ class TestDisengageEngageCycle:
         _write_floor_override(3)
         future = int(time.time() * 1000) + 600_000
         _write_disengage(future)
-        assert _read_floor_override(fallback=7) == 3
+        assert _read_floor_override(fallback=0) == 3
         assert _is_disengaged()
         _remove_floor_override()
         _remove_disengage()
-        assert _read_floor_override(fallback=7) == 7
+        assert _read_floor_override(fallback=0) == 0
         assert not _is_disengaged()
 
 
@@ -624,8 +624,8 @@ class TestNagDetection:
     def test_healthy_fresh_session_has_no_nags(self):
         _simulate_dispatch_reset()
         _write_gate_status_passing()
-        _write_multitask_state(dispatches=5)
-        _write_session_start_state(dispatch_count=10)
+        _write_multitask_state(dispatches=3)
+        _write_session_start_state(dispatch_count=3)
         result = "Working on feature X. Running tests..."
         found = _has_nag_patterns(result)
         assert len(found) == 0, (
@@ -643,7 +643,7 @@ class TestNagDetection:
         texts = [
             "=== GATE: PASSED ===\n100 passed\ncommit abc1234",
             "Working on the fix for the delegate issue",
-            "First dispatch wave: 5 agents running",
+            "First dispatch wave: 3 agents running",
             "All tests passed. Continuing work.",
         ]
         for t in texts:
@@ -653,8 +653,8 @@ class TestNagDetection:
     def test_text_with_nags_is_detected(self):
         texts = [
             ("DELEGATE-FIRST: 9 consecutive non-dispatch calls", ["DELEGATE-FIRST"]),
-            ("MUST DISPATCH 5+ SUBAGENTS NOW", ["MUST DISPATCH"]),
-            ("MESSAGE-SHAPE VIOLATION — MUST DISPATCH >=5 PER WAVE", ["MESSAGE-SHAPE VIOLATION", "MUST DISPATCH"]),
+            ("MUST DISPATCH 3 SUBAGENTS NOW", ["MUST DISPATCH"]),
+            ("MESSAGE-SHAPE VIOLATION — MUST DISPATCH 3 PER WAVE", ["MESSAGE-SHAPE VIOLATION", "MUST DISPATCH"]),
         ]
         for t, expected in texts:
             found = _has_nag_patterns(t)
@@ -697,9 +697,9 @@ class TestNagDetection:
         assert s["zeroStreak"] == 0, "Multitask zeroStreak should start at 0"
 
     def test_multitask_state_writes_dispatch_count(self):
-        _write_multitask_state(dispatches=5, zero_streak=0)
+        _write_multitask_state(dispatches=3, zero_streak=0)
         s = _read_multitask_state()
-        assert s["thisMessageDispatches"] == 5
+        assert s["thisMessageDispatches"] == 3
         assert s["zeroStreak"] == 0
         _write_multitask_state(dispatches=0, zero_streak=2)
         s = _read_multitask_state()
@@ -733,16 +733,16 @@ class TestStateFileJSONIntegrity:
         assert s2["editStreak"] == 2
 
     def test_multitask_state_json_roundtrip(self):
-        _write_multitask_state(dispatches=5, zero_streak=1)
+        _write_multitask_state(dispatches=3, zero_streak=1)
         s = _read_multitask_state()
-        assert s["thisMessageDispatches"] == 5
+        assert s["thisMessageDispatches"] == 3
         assert s["zeroStreak"] == 1
         assert isinstance(s["lastTs"], (int, float))
 
     def test_session_start_json_roundtrip(self):
-        _write_session_start_state(dispatch_count=5)
+        _write_session_start_state(dispatch_count=3)
         s = _read_session_start_state()
-        assert s.get("dispatches_in_session") == 5
+        assert s.get("dispatches_in_session") == 3
         assert "session_start_ts" in s
 
 
@@ -793,8 +793,8 @@ class TestEndToEndCycle:
 
     def test_init_work_dispatch_commit_cycle(self):
         _write_gate_status_passing()
-        _write_multitask_state(dispatches=5)
-        _write_session_start_state(dispatch_count=5)
+        _write_multitask_state(dispatches=3)
+        _write_session_start_state(dispatch_count=3)
         _simulate_dispatch_reset()
         for _ in range(3):
             _simulate_non_dispatch_call("edit")
@@ -804,7 +804,7 @@ class TestEndToEndCycle:
         _write_mainthread_streak(0)
         assert _read_mainthread_streak() == 0
         assert _check_gate_status()["is_green"]
-        assert _read_session_start_state().get("dispatches_in_session", 0) >= 5
+        assert _read_session_start_state().get("dispatches_in_session", 0) == 3
         assert _is_streak_healthy()
 
     def test_disengage_mid_cycle(self):
@@ -825,10 +825,10 @@ class TestEndToEndCycle:
     def test_cleanup_at_end_drops_all_state(self):
         _write_gate_status_passing()
         _write_mainthread_streak(5)
-        _write_multitask_state(dispatches=5)
-        _write_session_start_state(dispatch_count=5)
+        _write_multitask_state(dispatches=3)
+        _write_session_start_state(dispatch_count=3)
         _write_floor_override(3)
         _clean_state_files()
         assert _count_remaining_state_files() == 0
         assert _read_mainthread_streak() == 0
-        assert _read_floor_override(fallback=7) == 7
+        assert _read_floor_override(fallback=0) == 0

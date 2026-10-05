@@ -23,6 +23,12 @@ BINS = 20
 N_SAMPLES = 10_000
 ALPHA = 0.05
 NORMAL_KS_SEED = 0x5EED
+UNIFORM_CHI2_SEED = 0xC11
+UNIFORM_MEAN_SEED = 0xC12
+NORMAL_MEAN_SEED = 0xC13
+NORMAL_STDEV_SEED = 0xC14
+EXPONENTIAL_SEED = 0xC15
+TRIANGULAR_SEED = 0xC16
 SECRETS_CHOICE_SEED = 0xC0FFEE
 OS_URANDOM_TEST_SEED = 0xA11CE
 
@@ -87,7 +93,8 @@ class TestUniformDistribution:
 
     def test_uniform_chi_squared(self) -> None:
         lo, hi = 0.0, 1.0
-        samples = [random.uniform(lo, hi) for _ in range(N_SAMPLES)]
+        rng = random.Random(UNIFORM_CHI2_SEED)
+        samples = [rng.uniform(lo, hi) for _ in range(N_SAMPLES)]
         bin_width = (hi - lo) / BINS
         observed: list[int] = [0] * BINS
         for s in samples:
@@ -100,7 +107,8 @@ class TestUniformDistribution:
 
     def test_uniform_mean_close_to_expected(self) -> None:
         lo, hi = 3.0, 7.0
-        samples = [random.uniform(lo, hi) for _ in range(N_SAMPLES)]
+        rng = random.Random(UNIFORM_MEAN_SEED)
+        samples = [rng.uniform(lo, hi) for _ in range(N_SAMPLES)]
         expected_mean = (lo + hi) / 2.0
         sample_mean = statistics.mean(samples)
         assert abs(sample_mean - expected_mean) < 0.1
@@ -114,13 +122,15 @@ class TestUniformDistribution:
 class TestNormalDistribution:
     def test_normal_mean_close_to_mu(self) -> None:
         mu, sigma = 5.0, 1.5
-        samples = [random.gauss(mu, sigma) for _ in range(N_SAMPLES)]
+        rng = random.Random(NORMAL_MEAN_SEED)
+        samples = [rng.gauss(mu, sigma) for _ in range(N_SAMPLES)]
         sample_mean = statistics.mean(samples)
         assert abs(sample_mean - mu) < 0.1
 
     def test_normal_stdev_close_to_sigma(self) -> None:
         mu, sigma = 0.0, 2.0
-        samples = [random.gauss(mu, sigma) for _ in range(N_SAMPLES)]
+        rng = random.Random(NORMAL_STDEV_SEED)
+        samples = [rng.gauss(mu, sigma) for _ in range(N_SAMPLES)]
         sample_stdev = statistics.stdev(samples)
         assert abs(sample_stdev - sigma) < 0.1
 
@@ -137,7 +147,8 @@ class TestNormalDistribution:
 class TestExponentialDistribution:
     @staticmethod
     def _exponential_samples(lambd: float = 1.0, n: int = N_SAMPLES) -> list[float]:
-        return [random.expovariate(lambd) for _ in range(n)]
+        rng = random.Random(EXPONENTIAL_SEED)
+        return [rng.expovariate(lambd) for _ in range(n)]
 
     def test_exponential_mean_reciprocal(self) -> None:
         lambd = 0.5
@@ -195,6 +206,20 @@ class TestSeedReproducibility:
         rng2 = random.Random(123)
         seq_b = [rng2.random() for _ in range(50)]
         assert seq_a == seq_b
+
+    def test_statistical_acceptance_does_not_consume_global_state(self) -> None:
+        random.seed(0xA11CE)
+        state_before = random.getstate()
+
+        TestUniformDistribution().test_uniform_chi_squared()
+        TestUniformDistribution().test_uniform_mean_close_to_expected()
+        TestNormalDistribution().test_normal_mean_close_to_mu()
+        TestNormalDistribution().test_normal_stdev_close_to_sigma()
+        TestExponentialDistribution().test_exponential_mean_reciprocal()
+        TestExponentialDistribution().test_exponential_ks_test()
+        TestAdditionalDistributions().test_triangular_mode()
+
+        assert random.getstate() == state_before
 
 
 # ---------------------------------------------------------------------------
@@ -261,7 +286,8 @@ class TestEntropyEstimation:
 class TestAdditionalDistributions:
     def test_triangular_mode(self) -> None:
         low, high, mode = 0.0, 10.0, 7.0
-        samples = [random.triangular(low, high, mode) for _ in range(N_SAMPLES)]
+        rng = random.Random(TRIANGULAR_SEED)
+        samples = [rng.triangular(low, high, mode) for _ in range(N_SAMPLES)]
         assert all(low <= s <= high for s in samples)
         sample_mean = statistics.mean(samples)
         expected_mean = (low + high + mode) / 3.0

@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
+## [0.1.1] — 2026-09-25
+
+### Added
+- S83.166 release documentation: release notes, pre-release checklist, and runbook references for v0.1.1.
+
+### Changed
+- `pyproject.toml` and `src/general_ludd/__init__.py` bumped to version `0.1.1`.
+- README.md status line updated to `Status as of v0.1.1 — 2026-09-25`.
+- `docs/RELEASE_RUNBOOK.md` updated to reference v0.1.1.
+
 ## [0.1.0-beta.4] — 2026-08-09
 
 ### Added

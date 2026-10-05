@@ -41,6 +41,7 @@ class TestErrorExports:
     EXPECTED_ERRORS: frozenset[str] = frozenset(
         {
             "DeploymentBusyError",
+            "DeploymentIdentityError",
             "ImmutableAzureCostIdentityError",
             "StaleAzureCostLeaseError",
             "NonMonotonicAzureCostStateError",

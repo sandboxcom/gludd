@@ -1,3 +1,5 @@
 # The digest-pinned Python base image already supplies the controller runtime.
 # Collection system dependencies are merged here by ansible-builder introspection.
-
+# NOTE: curl is intentionally omitted. The CentOS Stream 9 base image ships
+# curl-minimal, which conflicts with the full curl RPM. The curl binary
+# provided by curl-minimal is sufficient for the OpenTofu download step.

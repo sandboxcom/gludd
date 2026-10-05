@@ -76,6 +76,28 @@ jobs:
             echo "version=0.1.0-alpha.$(date -u +%Y%m%d%H%M)" >> "$GITHUB_OUTPUT"
           fi
 
+  # A release tag points at the same immutable commit that already completed
+  # the development workflow. Prove that exact source run before reusing its
+  # heavyweight validation; tag-specific artifact builds still run below.
+  release_source_proof:
+    needs: version
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+        with:
+          ref: ${{ github.sha }}
+      - name: Prove exact SHA already passed development CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "=== CI PHASE: release-source-proof ==="
+          python scripts/require_ci_green.py "$GITHUB_SHA" development
+
   gate:
     needs: version
     runs-on: ubuntu-latest
@@ -118,6 +140,37 @@ jobs:
         run: |
           echo "=== CI PHASE: install ==="
           uv sync --python ${{ matrix.python-version }}
+      - name: Azure Container App proof contract (hermetic)
+        run: |
+          make azure-containerapp-live-proof \
+            AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE=file \
+            AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE=/tmp/gludd-contract-absent.json \
+            AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE= \
+            AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID= \
+            AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID= \
+            AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID=11111111-2222-3333-4444-555555555555 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP=gludd-models-eastus \
+            AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT=gludd-gpu-environment \
+            AZURE_CONTAINERAPP_LIVE_PROOF_WORKLOAD_PROFILE_NAME=gpu-t4 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION=eastus \
+            AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR=203.0.113.7/32 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD=5 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES=60 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_LIVE=0 \
+            AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT=dry-run \
+            AZURE_CONTAINERAPP_LIVE_PROOF_PROJECT_ROOT=. \
+            AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH=src/general_ludd/__init__.py \
+            AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET=always_destroy \
+            AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS=21600
+        env:
+          GLUDD_AUTH_PSK: ""
+      - name: Azure Container App coverage (hermetic)
+        if: matrix.python-version == '3.11'
+        run: |
+          echo "=== CI PHASE: azure-containerapp-coverage ==="
+          make test-azure-containerapp-coverage
+        env:
+          GLUDD_AUTH_PSK: ""
       - name: Lint
         run: |
           echo "=== CI PHASE: lint ==="
@@ -373,8 +426,63 @@ jobs:
   # Every shard collects coverage data (.coverage SQLite file) and uploads it
   # as a shard-unique artifact; the downstream `coverage` job combines them
   # into a single canonical coverage.xml for the whole suite.
+  freellmapi-upstream-build:
+    needs: [version, gate]
+    # The exact-SHA development run is required before a release tag can reach
+    # publication, so the tag run does not repeat this 2-version upstream suite.
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["20.20.2", "22.23.2"]
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+        with:
+          ref: ${{ github.sha }}
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v5.0.0 (node24)
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Install locked Gludd dependencies
+        run: uv sync --frozen
+      - name: Build and test exact-pinned FreeLLMAPI source
+        run: |
+          # The upstream suite includes a tight synchronous performance budget
+          # that can flake on heavily-loaded GitHub-hosted runners. Retry the
+          # whole bounded suite a small number of times before treating the
+          # failure as a real upstream regression.
+          for attempt in 1 2 3; do
+            echo "=== FreeLLMAPI upstream build attempt $attempt ==="
+            if make freellmapi-upstream-build \
+              FREELLMAPI_BUILD_LIVE=1 \
+              FREELLMAPI_BUILD_CANDIDATE=config/freellmapi/upstream_candidate.json \
+              FREELLMAPI_BUILD_PLAN=config/freellmapi/upstream_build_plan.json \
+              FREELLMAPI_BUILD_REPORT=/tmp/gludd-freellmapi-upstream-build-${{ matrix.node-version }}/evidence.json; then
+              exit 0
+            fi
+          done
+          exit 1
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GLUDD_AUTH_PSK: ""
+      - name: Upload content-free upstream build evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+        with:
+          name: freellmapi-upstream-build-node-${{ matrix.node-version }}
+          path: /tmp/gludd-freellmapi-upstream-build-${{ matrix.node-version }}/evidence.json
+          if-no-files-found: ignore
+          retention-days: 14
+
   test-shard:
     needs: [version, gate]
+    # Release tags reuse only an exact successful development workflow; branch,
+    # PR, and dispatch runs continue to execute every canonical coverage shard.
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     # Every named shard is a release prerequisite. Failures and missing coverage
     # stay red instead of being reclassified as an informational result.
@@ -396,9 +504,9 @@ jobs:
           # every shard's paths and exclusions.  Keeping duplicate testpaths or
           # exclude data here lets hosted and local release plans drift even
           # when their shard labels match.  The only workflow-local addition is
-          # the isolated fresh-process suite owned by unit-1a1.
+          # the isolated fresh-process suites owned by unit-1a1.
           - shard: unit-1a1
-            isolated_testpaths: "tests/unit/test_all_plugins_runtime.py"
+            isolated_testpaths: "tests/unit/test_all_plugins_runtime.py tests/unit/test_makefile_audit_deep.py"
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
         with:
@@ -444,11 +552,11 @@ jobs:
         run: |
           echo "=== CI PHASE: install ==="
           uv sync --python ${{ matrix.python-version }}
-      - name: Run isolated Node plugin syntax in fresh process
+      - name: Run isolated subprocess suites in fresh process
         if: matrix.shard == 'unit-1a1'
         timeout-minutes: 5
         run: |
-          echo "=== CI PHASE: isolated-node-plugin-syntax ==="
+          echo "=== CI PHASE: isolated-subprocess-suites ==="
           uv run python -m pytest ${{ matrix.isolated_testpaths }} -q -W error
       - name: Test (shard ${{ matrix.shard }}, Python ${{ matrix.python-version }})
         id: test-run
@@ -610,6 +718,8 @@ jobs:
 
   molecule:
     needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
+    # The exact same scenarios already passed for this SHA on development.
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     # Each shard owns one bounded pass plus cleanup/log publication. Re-running
     # a whole shard duplicated completed scenarios and exhausted this ceiling.
@@ -628,6 +738,9 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
         with:
           ref: ${{ github.sha }}
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0 (node24)
+        with:
+          python-version: "3.12.14"
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
       - name: Run molecule shard ${{ matrix.shard }}/4
         id: molecule-run
@@ -642,7 +755,7 @@ jobs:
         # split into 4 contiguous groups by molecule-test-shard.
         run: |
           echo "=== CI PHASE: molecule-shard-${{ matrix.shard }} ==="
-          uv sync
+          uv sync --frozen
           make molecule-test-shard SHARD=${{ matrix.shard }}/4
         env:
           GLUDD_AUTH_PSK: ""
@@ -703,6 +816,9 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
         with:
           ref: ${{ github.sha }}
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0 (node24)
+        with:
+          python-version: "3.12.14"
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
       - name: Inject version
         run: |
@@ -712,11 +828,26 @@ jobs:
         timeout-minutes: 15
         run: |
           echo "=== CI PHASE: build-linux-x86_64 ==="
-          uv sync
-          uv run pyinstaller gludd.spec --clean --noconfirm || {
+          uv sync --frozen --extra azure
+          uv run --frozen --extra azure pyinstaller gludd.spec --clean --noconfirm || {
             echo "::error::LINUX BUILD FAILED — pyinstaller failed for linux-x86_64. Check gludd.spec."
             exit 1
           }
+      - name: Audit Linux PyInstaller warning graph
+        run: |
+          make audit-linux-pyinstaller-warnings \
+            PYINSTALLER_WARNING_FILE_LINUX=build/gludd/warn-gludd.txt \
+            PYINSTALLER_WARNING_ARCHITECTURE_LINUX=x86_64 \
+            PYINSTALLER_VERSION_LINUX=6.20.0 \
+            PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=0
+      - name: Upload Linux PyInstaller warning graph
+        if: always() && hashFiles('build/gludd/warn-gludd.txt') != ''
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+        with:
+          name: linux-pyinstaller-warning-x86_64
+          path: build/gludd/warn-gludd.txt
+          if-no-files-found: error
+          retention-days: 7
       - name: Smoke test binary
         # Fail closed before packaging: a binary that cannot start must never
         # become a publishable artifact.
@@ -885,8 +1016,8 @@ jobs:
         timeout-minutes: 15
         run: |
           echo "=== CI PHASE: build-macos-arm64 ==="
-          uv sync
-          uv run pyinstaller gludd.spec --clean --noconfirm || {
+          uv sync --frozen --extra azure
+          uv run --frozen --extra azure pyinstaller gludd.spec --clean --noconfirm || {
             echo "::error::MACOS BUILD FAILED — pyinstaller failed for macos-arm64. Check gludd.spec."
             exit 1
           }
@@ -1015,7 +1146,7 @@ jobs:
             dist/gludd-smoke-macos-${{ env.VERSION }}.json
 
   windows:
-    needs: [version, gate]  # test-shard runs in parallel (continue-on-error, non-blocking)
+    needs: [version, gate]  # Runs in parallel; release waits at the final fan-in.
     # PyInstaller artifacts are OS-specific. Pin the stable image rather than
     # inheriting windows-latest image migrations during a release.
     runs-on: windows-2022
@@ -1048,9 +1179,9 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "=== CI PHASE: build-windows-x86_64 ==="
-          uv sync --frozen --python 3.12
+          uv sync --frozen --extra azure --python 3.12
           uv run --frozen --python 3.12 python -W error scripts/smoke_sphincs_backend.py
-          uv run --frozen --python 3.12 pyinstaller gludd.spec --clean --noconfirm
+          uv run --frozen --extra azure --python 3.12 pyinstaller gludd.spec --clean --noconfirm
           if ($LASTEXITCODE -ne 0) {
             Write-Host "::error::WINDOWS BUILD FAILED — pyinstaller failed for windows-x86_64. Check gludd.spec."
             exit 1
@@ -1493,6 +1624,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "=== CI PHASE: ansible-ee-smoke ==="
+          docker run --rm --network=none "${EE_TAG}" /usr/local/bin/tofu version
           docker run --rm --network=none "${EE_TAG}"             /usr/bin/python3.11 -c "import ansible, ansible_runner; print('ANSIBLE_EE_SMOKE_PASS')"
       - name: Log in to GHCR
         if: startsWith(github.ref, 'refs/tags/v')
@@ -1534,7 +1666,7 @@ jobs:
           {"version":"${VERSION}","checks":{"ansible_ee":"passed","collections":"passed"}}
           JSON
           cat > "dist/ee-release/gludd-collections-${VERSION}.json" <<JSON
-          {"version":"${VERSION}","artifacts":["general_ludd-agent-0.2.0.tar.gz","general_ludd-language-0.1.0.tar.gz","general_ludd-networking-0.2.0.tar.gz"]}
+          {"version":"${VERSION}","artifacts":["general_ludd-agent-0.2.0.tar.gz","general_ludd-azure-0.2.0.tar.gz","general_ludd-language-0.1.0.tar.gz","general_ludd-networking-0.2.0.tar.gz"]}
           JSON
       - name: Upload execution-environment artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
@@ -1587,8 +1719,9 @@ jobs:
     timeout-minutes: 30
     # Skip on PRs — these tests need DEEPSEEK_API_KEY (repository secret,
     # unavailable in PR workflows from forks) and would silently skip every
-    # time, wasting a runner slot.  Tag, push, and workflow_dispatch only.
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
+    # time, wasting a runner slot. Release tags reuse the exact-SHA development
+    # result; non-tag pushes and workflow_dispatch still execute this job.
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v'))
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
         with:
@@ -1615,10 +1748,30 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
   release:
-    needs: [version, gate, test-shard, coverage, molecule, linux, macos, windows, termux, container, ansible-ee, game-building]
+    needs: [version, gate, release_source_proof, freellmapi-upstream-build, test-shard, coverage, molecule, linux, macos, windows, termux, container, ansible-ee, game-building]
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    if: startsWith(github.ref, 'refs/tags/v')
+    # A skipped prerequisite normally skips dependent jobs. Here skips are the
+    # expected tag state only for heavyweight validation already proved by the
+    # exact-SHA development run. Every tag-specific producer must still pass.
+    # !cancelled() avoids always()'s cancellation/hang semantics while the
+    # explicit result matrix remains fail-closed on every other state.
+    if: startsWith(github.ref, 'refs/tags/v') &&
+      !cancelled() &&
+      needs.version.result == 'success' &&
+      needs.gate.result == 'success' &&
+      needs.release_source_proof.result == 'success' &&
+      needs['freellmapi-upstream-build'].result == 'skipped' &&
+      needs['test-shard'].result == 'skipped' &&
+      needs.coverage.result == 'skipped' &&
+      needs.molecule.result == 'skipped' &&
+      needs['game-building'].result == 'skipped' &&
+      needs.linux.result == 'success' &&
+      needs.macos.result == 'success' &&
+      needs.windows.result == 'success' &&
+      needs.termux.result == 'success' &&
+      needs.container.result == 'success' &&
+      needs['ansible-ee'].result == 'success'
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:

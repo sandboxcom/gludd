@@ -75,6 +75,67 @@ class TestStatusSnapshot:
         assert "status-snapshot validation: PASS" in capsys.readouterr().out
 
 
+    def test_missing_gate_status_is_explicit(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        module = _load_status_snapshot()
+        monkeypatch.setattr(module, "GATE_STATUS", tmp_path / "missing-gate-status")
+
+        assert module.read_gate_status() == [
+            "- No .gate-status file. Run 'make gate' first."
+        ]
+
+    def test_rewrite_filters_control_lines_and_handles_marker_at_file_start(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        module = _load_status_snapshot()
+        session = tmp_path / "SESSION.md"
+        gate_status = tmp_path / ".gate-status"
+        session.write_text(
+            "<!-- gate:begin -->\n- stale\n<!-- gate:end -->\ntrailing\n",
+            encoding="utf-8",
+        )
+        gate_status.write_text(
+            "=== GATE ===\n\n---\nepoch 1\nlint PASS 0\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(module, "SESSION_MD", session)
+        monkeypatch.setattr(module, "GATE_STATUS", gate_status)
+
+        assert module.read_gate_status() == ["- lint PASS 0"]
+        assert module.main([]) == 0
+
+        updated = session.read_text(encoding="utf-8")
+        assert updated.startswith("## Current Gate Status (")
+        assert "- lint PASS 0" in updated
+        assert updated.endswith("trailing\n")
+        assert "Updated SESSION.md gate block (1 lines)" in capsys.readouterr().out
+
+    def test_rewrite_fails_closed_for_missing_session_or_markers(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        module = _load_status_snapshot()
+        session = tmp_path / "SESSION.md"
+        monkeypatch.setattr(module, "SESSION_MD", session)
+
+        with pytest.raises(SystemExit, match="1"):
+            module.rewrite_session()
+        assert "SESSION.md not found" in capsys.readouterr().err
+
+        session.write_text("# Session without gate markers\n", encoding="utf-8")
+        with pytest.raises(SystemExit, match="1"):
+            module.rewrite_session()
+        assert "Markers not found in SESSION.md" in capsys.readouterr().err
+
+
 class TestSessionDriftDetector:
     def test_matching_terminal_gate_is_not_drifted(
         self,

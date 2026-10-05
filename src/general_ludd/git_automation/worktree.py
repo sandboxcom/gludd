@@ -125,11 +125,6 @@ def worktree_create(
     except ValueError as exc:
         return WorktreeResult(path="", branch=branch, success=False, message=str(exc))
 
-    root = (
-        project_state(project_root=repo_path).directory("worktrees")
-        if worktree_root is None
-        else secure_directory(worktree_root)
-    )
     branch_path = Path(branch)
     if branch_path.is_absolute() or ".." in branch_path.parts:
         return WorktreeResult(
@@ -138,6 +133,11 @@ def worktree_create(
             success=False,
             message=f"refusing branch path that escapes worktree root: {branch!r}",
         )
+    root = (
+        project_state(project_root=repo_path).directory("worktrees")
+        if worktree_root is None
+        else secure_directory(worktree_root)
+    )
     worktree_path = str(root.joinpath(*branch_path.parts))
     try:
         _reject_leading_dash(worktree_path, "worktree path")
@@ -293,11 +293,6 @@ def worktree_cleanup(
     except ValueError as exc:
         return {"success": False, "branch": branch, "branch_removed": False, "cleaned": False, "error": str(exc)}
 
-    root = (
-        project_state(project_root=repo_path).directory("worktrees")
-        if worktree_root is None
-        else secure_directory(worktree_root)
-    )
     branch_path = Path(branch)
     if branch_path.is_absolute() or ".." in branch_path.parts:
         return {
@@ -307,6 +302,11 @@ def worktree_cleanup(
             "cleaned": False,
             "error": f"refusing branch path that escapes worktree root: {branch!r}",
         }
+    root = (
+        project_state(project_root=repo_path).directory("worktrees")
+        if worktree_root is None
+        else secure_directory(worktree_root)
+    )
     worktree_path = str(root.joinpath(*branch_path.parts))
     cleaned = False
 
@@ -409,7 +409,7 @@ def _get_tree_age_seconds(worktree_path: str) -> float | None:
         if result.returncode == 0 and result.stdout.strip():
             commit_epoch = int(result.stdout.strip())
             return time.time() - commit_epoch
-    except (ValueError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+    except (OSError, ValueError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         pass
     try:
         mtime = os.path.getmtime(worktree_path)
@@ -476,6 +476,16 @@ def worktree_health_check(
         branch = wt.branch.removeprefix("refs/heads/")
 
         age_secs = _get_tree_age_seconds(path)
+        if age_secs is None and not os.path.isdir(path):
+            violations.append(
+                WorktreeHealthViolation(
+                    worktree_path=path,
+                    branch=branch,
+                    reason="Worktree path is missing — prune the stale Git registration",
+                    severity="warning",
+                )
+            )
+            continue
         merged = _branch_is_merged(repo_path, branch, target_branch) if branch else True
         remote_ok = _branch_on_remote(repo_path, branch, remote_name) if branch else True
 

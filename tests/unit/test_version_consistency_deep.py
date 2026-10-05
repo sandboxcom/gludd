@@ -17,6 +17,7 @@ CHANGELOG = os.path.join(PROJECT_ROOT, "CHANGELOG.md")
 PYPROJECT = os.path.join(PROJECT_ROOT, "pyproject.toml")
 README = os.path.join(PROJECT_ROOT, "README.md")
 INIT = os.path.join(PROJECT_ROOT, "src", "general_ludd", "__init__.py")
+TEST_PACKAGE_INIT = os.path.join(PROJECT_ROOT, "tests", "unit", "__init__.py")
 
 SEMVER_RE = re.compile(
     r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
@@ -217,6 +218,13 @@ def test_all_version_files_agree() -> None:
     assert py_v == init_v == sv == __version__, (
         f"Version mismatch: pyproject={py_v}, __init__={init_v}, README={sv}, __version__={__version__}"
     )
+
+
+def test_test_package_init_does_not_own_release_version() -> None:
+    """A non-collected package marker must not carry a stale version assertion."""
+    text = _read(TEST_PACKAGE_INIT)
+    assert "__version__" not in text
+    assert not re.search(r"\b\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\b", text)
 
 
 def test_init_version_is_string() -> None:

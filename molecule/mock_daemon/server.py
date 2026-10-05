@@ -1425,6 +1425,70 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(200, dict(METRICS_SNAPSHOT))
         elif path == "/api/traces":
             self._send_json(200, dict(TRACES_SNAPSHOT))
+        elif path == "/admin/hardware/accelerators":
+            self._send_json(
+                200,
+                {
+                    "schema_version": 1,
+                    "total_count": 1,
+                    "available_count": 1,
+                    "resources": [
+                        {
+                            "kind": "gpu",
+                            "location": "local",
+                            "backend": "metal",
+                            "model": "Apple test device",
+                            "vendor": "apple",
+                            "resource_key": "local:metal:0",
+                            "total_count": 1,
+                            "available_count": 1,
+                            "memory_gb": 8.0,
+                            "source": "system_profiler",
+                            "node": None,
+                            "partitions": [],
+                        }
+                    ],
+                },
+            )
+        elif path == "/admin/slurm/hardware":
+            self._send_json(
+                200,
+                {
+                    "schema_version": 1,
+                    "total_count": 4,
+                    "available_count": 3,
+                    "resources": [
+                        {
+                            "kind": "gpu",
+                            "location": "slurm",
+                            "backend": "slurm-gres",
+                            "model": "site-gpu",
+                            "vendor": "unspecified",
+                            "resource_key": "slurm:node-01:gpu:site-gpu",
+                            "total_count": 2,
+                            "available_count": 1,
+                            "memory_gb": None,
+                            "source": "slurm-gres",
+                            "node": "node-01",
+                            "partitions": ["accelerated"],
+                        },
+                        {
+                            "kind": "tpu",
+                            "location": "slurm",
+                            "backend": "slurm-gres",
+                            "model": "site-tpu",
+                            "vendor": "unspecified",
+                            "resource_key": "slurm:node-02:tpu:site-tpu",
+                            "total_count": 2,
+                            "available_count": 2,
+                            "memory_gb": None,
+                            "source": "slurm-gres",
+                            "node": "node-02",
+                            "partitions": ["accelerated"],
+                        },
+                    ],
+                },
+            )
         elif path == "/api/observe/sources":
             self._send_json(200, {"sources": list(OBSERVE_SOURCES)})
         elif path == "/api/messages":

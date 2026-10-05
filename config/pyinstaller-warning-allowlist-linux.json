@@ -3,8 +3,8 @@
   "platform": "linux",
   "pyinstaller_version": "6.20.0",
   "transitive_warning_sha256_by_architecture": {
-    "aarch64": "b1f5847aeb5bf530dba2b4ef58b0890b5b7a2e409b458fdfe7d0ccbd6a218e02",
-    "x86_64": "2c13f6587ccf3c51c1f8474df595895b028796abd584aedbfdc30b907cc02e59"
+    "aarch64": "183b6e569e7b39b185d6ad522c147de657e9a4aff00867a8126494e4cc076f2f",
+    "x86_64": "d4fcb35befd9c6ec6a1890e25f9fe9c0f96e3cdff393cb9bcca4c8952fe51e2d"
   },
   "reviewed_transitive_warning_sha256_alternates_by_architecture": {
     "x86_64": [
@@ -104,46 +104,6 @@
       "evidence": "https://docs.ansible.com/projects/builder/en/stable/"
     },
     {
-      "module": "azure.identity",
-      "importer": "general_ludd.infra.azure_accelerator",
-      "flags": [
-        "delayed",
-        "optional"
-      ],
-      "category": "optional-dependency",
-      "evidence": "https://learn.microsoft.com/en-us/python/api/overview/azure/identity-readme"
-    },
-    {
-      "module": "azure.identity",
-      "importer": "general_ludd.onboard.azure",
-      "flags": [
-        "delayed",
-        "optional"
-      ],
-      "category": "optional-dependency",
-      "evidence": "https://learn.microsoft.com/en-us/python/api/overview/azure/identity-readme"
-    },
-    {
-      "module": "azure.mgmt",
-      "importer": "general_ludd.infra.azure_accelerator",
-      "flags": [
-        "delayed",
-        "optional"
-      ],
-      "category": "optional-dependency",
-      "evidence": "https://github.com/Azure/azure-sdk-for-python"
-    },
-    {
-      "module": "azure.mgmt",
-      "importer": "general_ludd.onboard.azure",
-      "flags": [
-        "delayed",
-        "optional"
-      ],
-      "category": "optional-dependency",
-      "evidence": "https://github.com/Azure/azure-sdk-for-python"
-    },
-    {
       "module": "google.cloud",
       "importer": "general_ludd.pricing_intel.sources",
       "flags": [
@@ -182,26 +142,6 @@
       ],
       "category": "optional-dependency",
       "evidence": "https://github.com/googleapis/google-api-python-client"
-    },
-    {
-      "module": "azure.identity",
-      "importer": "general_ludd.infra.azure_cost_reconciliation",
-      "flags": [
-        "delayed",
-        "optional"
-      ],
-      "category": "optional-dependency",
-      "evidence": "https://learn.microsoft.com/en-us/python/api/overview/azure/identity-readme"
-    },
-    {
-      "module": "azure.mgmt",
-      "importer": "general_ludd.infra.azure_cost_reconciliation",
-      "flags": [
-        "delayed",
-        "optional"
-      ],
-      "category": "optional-dependency",
-      "evidence": "https://github.com/Azure/azure-sdk-for-python"
     },
     {
       "module": "hindsight_client",

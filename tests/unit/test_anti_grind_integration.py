@@ -91,6 +91,14 @@ def _run_grind_test_harness(
             "GLUDD_STOP_STATE_FILE": tmp["stop"],
             "GLUDD_SESSION_STATE": tmp["session"],
             "GLUDD_READ_GRIND_FILE": tmp["grind"],
+            # The production dispatch floor is intentionally opt-in.  These
+            # runtime tests exercise floor enforcement, so their isolated
+            # harness must opt in explicitly rather than inherit developer or
+            # CI environment state.
+            "CLAUDE_AGENT_FLOOR": "1",
+            "CLAUDE_AGENT_CEILING": "3",
+            "GLUDD_FLOOR_OVERRIDE_PATH": str(tmp_path / "floor-override"),
+            "GLUDD_LOAD_THROTTLE_PATH": str(tmp_path / "load-throttle"),
             "GLUDD_MESSAGE_BOUNDARY_MS": "100",
         }.items()
     )
@@ -116,9 +124,9 @@ try {{
     const messages = [];
     const durations = [];
     for (const c of calls) {{
-        const startedAt = Date.now();
+        const startedAt = performance.now();
         const r = await hook(c.input || {{}}, c.output || {{}});
-        durations.push(Date.now() - startedAt);
+        durations.push(performance.now() - startedAt);
         results.push(r ? r.permissionDecision : null);
         messages.push(r ? r.message : null);
     }}
@@ -305,7 +313,9 @@ class TestAntiGrindRuntime:
                 {"tool": "edit", "input": {"tool": "edit"}, "output": {}},
             ],
             extra_env={"GLUDD_MESSAGE_BOUNDARY_MS": "20"},
-            pending_items=100_000,
+            # Keep the dispatch preflight decisively above the 20 ms boundary
+            # even on fast runners; the assertion must exercise a real crossing.
+            pending_items=250_000,
         )
         assert result["durations"][1] > 20, result
         assert result["results"] == [None, None, None], result

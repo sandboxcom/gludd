@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 import subprocess
 import sys
@@ -12,6 +13,8 @@ import pytest
 from general_ludd.review.release_forecast import Blocker, RunObservation
 
 ROOT = Path(__file__).resolve().parents[2]
+REVIEWED_RECEIPT_FIXTURE = ROOT / "tests" / "fixtures" / "reviewed_head_integration_receipt.json"
+REVIEWED_RECEIPT_FINAL_SHA = "e" * 40
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import release_readiness as rr  # noqa: E402
@@ -30,14 +33,14 @@ def test_exit_codes_are_stable_and_prioritized() -> None:
     assert rr._exit_code(rr.Readiness()) == rr.EXIT_ERROR
     assert rr._exit_code(rr.Readiness(errors=["CI evidence is not a successful run"])) == rr.EXIT_CI
     assert rr._exit_code(rr.Readiness(errors=["worktree has 1 dirty path(s)"])) == rr.EXIT_DIRTY
-    assert rr._exit_code(
-        rr.Readiness(errors=["detached or unintegrated sibling worktree/branch exists"])
-    ) == rr.EXIT_WORKTREE
+    assert (
+        rr._exit_code(rr.Readiness(errors=["detached or unintegrated sibling worktree/branch exists"]))
+        == rr.EXIT_WORKTREE
+    )
     assert rr._exit_code(rr.Readiness(errors=["project version files are inconsistent"])) == rr.EXIT_VERSION
     assert rr._exit_code(rr.Readiness(errors=["TASKS.md ledger validation failed"])) == rr.EXIT_TASKS
-    assert rr._exit_code(
-        rr.Readiness(errors=["unmanaged local inference process is running"])
-    ) == rr.EXIT_RESOURCE
+    assert rr._exit_code(rr.Readiness(errors=["unmanaged local inference process is running"])) == rr.EXIT_RESOURCE
+    assert rr._exit_code(rr.Readiness(errors=["reviewed-head integration receipt is invalid"])) == rr.EXIT_RECEIPT
 
 
 def test_unmanaged_local_inference_detection_requires_daemon_ancestor() -> None:
@@ -48,9 +51,7 @@ def test_unmanaged_local_inference_detection_requires_daemon_ancestor() -> None:
         "  103     1 /usr/bin/python unrelated.py\n"
     )
 
-    def run(
-        argv: Sequence[str], cwd: str | None = None
-    ) -> subprocess.CompletedProcess[str]:
+    def run(argv: Sequence[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
         assert list(argv) == ["ps", "-ax", "-o", "pid=,ppid=,command="]
         return _completed(argv, process_table)
 
@@ -90,9 +91,7 @@ def test_release_policy_preflight_uses_canonical_bounded_make_invocation(
 ) -> None:
     calls: list[list[str]] = []
 
-    def run(
-        argv: Sequence[str], cwd: str | None = None
-    ) -> subprocess.CompletedProcess[str]:
+    def run(argv: Sequence[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
         calls.append(list(argv))
         assert cwd == str(tmp_path)
         return _completed(argv, "SERIAL-SHARD-VALIDATE policy=canonical\n")
@@ -119,9 +118,7 @@ def test_detached_worktree_detection_reuses_porcelain_parser(tmp_path: Path) -> 
         f"worktree {tmp_path / 'detached'}\nHEAD detached\ndetached\n"
     )
 
-    def run(
-        argv: Sequence[str], cwd: str | None = None
-    ) -> subprocess.CompletedProcess[str]:
+    def run(argv: Sequence[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
         args = list(argv)
         if args == ["git", "worktree", "list", "--porcelain"]:
             return _completed(args, porcelain)
@@ -133,9 +130,63 @@ def test_detached_worktree_detection_reuses_porcelain_parser(tmp_path: Path) -> 
     assert detached == [{"path": str(tmp_path / "detached"), "head": "detached"}]
 
 
-def test_assess_passes_when_all_release_evidence_is_present(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+@pytest.mark.parametrize(
+    ("stdout", "stderr", "expected"),
+    [
+        ("", "denied", "denied"),
+        ("failed", "", "failed"),
+        ("", "", "git worktree failed"),
+    ],
+)
+def test_detached_worktree_detection_fails_closed_on_inventory_errors(
+    tmp_path: Path,
+    stdout: str,
+    stderr: str,
+    expected: str,
 ) -> None:
+    def run(argv: Sequence[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
+        return _completed(argv, stdout=stdout, stderr=stderr, returncode=1)
+
+    with pytest.raises(RuntimeError, match=expected):
+        rr._detached_worktrees(run, tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("stdout", "stderr", "expected"),
+    [
+        ("", "denied", "denied"),
+        ("failed", "", "failed"),
+        ("", "", "process inventory failed"),
+    ],
+)
+def test_process_inventory_fails_closed(
+    stdout: str,
+    stderr: str,
+    expected: str,
+) -> None:
+    def run(argv: Sequence[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
+        return _completed(argv, stdout=stdout, stderr=stderr, returncode=1)
+
+    with pytest.raises(RuntimeError, match=expected):
+        rr._unmanaged_local_inference_processes(run)
+
+
+def test_process_inventory_accepts_binary_shape_and_ignores_malformed_lines() -> None:
+    process_table = "not a process row\n  200   999 /usr/local/bin/llama-server --port 12001\n"
+
+    def run(argv: Sequence[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
+        return _completed(argv, process_table)
+
+    assert rr._unmanaged_local_inference_processes(run) == [
+        {
+            "pid": 200,
+            "ppid": 999,
+            "command": "/usr/local/bin/llama-server --port 12001",
+        }
+    ]
+
+
+def test_assess_passes_when_all_release_evidence_is_present(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     import workflow_state_guard
 
     state = SimpleNamespace(
@@ -158,9 +209,73 @@ def test_assess_passes_when_all_release_evidence_is_present(
     assert result.head == "abc123"
 
 
-def test_assess_fails_closed_for_noncanonical_local_policy(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+def test_stable_assess_requires_and_binds_reviewed_receipt_to_current_head(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
+    import workflow_state_guard
+
+    state = SimpleNamespace(
+        branch="development",
+        head=REVIEWED_RECEIPT_FINAL_SHA,
+        dirty_count=0,
+        unintegrated_worktrees=[],
+        unintegrated_branches=[],
+    )
+    monkeypatch.setattr(workflow_state_guard, "collect_state", lambda **_: state)
+    monkeypatch.setattr(rr, "_detached_worktrees", lambda *_: [])
+    monkeypatch.setattr(rr, "_ci_verdict", lambda *_: ("GREEN", "CI GREEN"))
+    monkeypatch.setattr(rr, "_version_check", lambda *_: (True, "OK"))
+    monkeypatch.setattr(rr, "_incomplete_tasks", lambda *_: [])
+    monkeypatch.setattr(rr, "_ledger_check", lambda *_: (True, "OK"))
+    monkeypatch.setattr(rr, "_tasks_tick_check", lambda *_: (True, "OK"))
+
+    result = rr.assess(
+        root=tmp_path,
+        run=lambda argv, *_: _completed(argv),
+        tag=rr.STABLE_RELEASE_TAG,
+        reviewed_head_integration_receipt=REVIEWED_RECEIPT_FIXTURE,
+        expected_head_sha=REVIEWED_RECEIPT_FINAL_SHA,
+    )
+
+    assert result.ready
+    assert result.reviewed_head_receipt_required
+    assert result.reviewed_head_receipt_valid
+    assert result.reviewed_head_receipt_final_sha == state.head
+
+    mismatched = rr.assess(
+        root=tmp_path,
+        run=lambda argv, *_: _completed(argv),
+        tag=rr.STABLE_RELEASE_TAG,
+        reviewed_head_integration_receipt=REVIEWED_RECEIPT_FIXTURE,
+        expected_head_sha="f" * 40,
+    )
+    assert not mismatched.ready
+    assert rr._exit_code(mismatched) == rr.EXIT_RECEIPT
+    assert mismatched.reviewed_head_receipt_final_sha == ""
+
+
+def test_receipt_check_is_required_and_keeps_invalid_json_content_free(
+    tmp_path: Path,
+) -> None:
+    assert rr._reviewed_head_receipt_check(
+        None,
+        expected_final_sha=REVIEWED_RECEIPT_FINAL_SHA,
+    ) == (False, "reviewed-head integration receipt is required", "")
+
+    secret = "receipt-secret-material"
+    invalid = tmp_path / "invalid.json"
+    invalid.write_text(secret, encoding="utf-8")
+    valid, detail, final_sha = rr._reviewed_head_receipt_check(
+        invalid,
+        expected_final_sha=REVIEWED_RECEIPT_FINAL_SHA,
+    )
+    assert not valid
+    assert final_sha == ""
+    assert secret not in detail
+
+
+def test_assess_fails_closed_for_noncanonical_local_policy(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     import workflow_state_guard
 
     state = SimpleNamespace(
@@ -182,14 +297,10 @@ def test_assess_fails_closed_for_noncanonical_local_policy(
 
     assert not result.ready
     assert result.release_policy_detail == "rejected"
-    assert result.errors == [
-        "local dual-track producer execution policy is not canonical"
-    ]
+    assert result.errors == ["local dual-track producer execution policy is not canonical"]
 
 
-def test_assess_fails_closed_for_dirty_and_unintegrated_state(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_assess_fails_closed_for_dirty_and_unintegrated_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     import workflow_state_guard
 
     state = SimpleNamespace(
@@ -231,9 +342,97 @@ def test_incomplete_tasks_uses_current_policy_and_excludes_release_action(tmp_pa
     assert rr._incomplete_tasks(tmp_path, tag=tag) == [pending_task]
 
 
+def test_incomplete_tasks_supports_v011_stable_release(tmp_path: Path) -> None:
+    lines = [
+        f"- [{' ' if task_id in {161, 166} else 'x'}] S83.{task_id} — v0.1.1 work\n" for task_id in range(157, 169)
+    ]
+    lines.append("- [ ] S86.997 — unrelated beta4 task\n")
+    (tmp_path / "TASKS.md").write_text(
+        "".join(lines),
+        encoding="utf-8",
+    )
+
+    assert rr._incomplete_tasks(tmp_path, tag="v0.1.1") == ["S83.161"]
+
+
+def test_incomplete_tasks_rejects_checked_task_with_noncomplete_status(
+    tmp_path: Path,
+) -> None:
+    lines = [
+        (f"- [x] S83.{task_id} — v0.1.1 work | status: {'in_progress' if task_id == 157 else 'completed'}\n")
+        for task_id in range(157, 169)
+    ]
+    (tmp_path / "TASKS.md").write_text("".join(lines), encoding="utf-8")
+
+    assert rr._incomplete_tasks(tmp_path, tag="v0.1.1") == ["S83.157"]
+
+
+def test_repository_v011_milestone_ids_are_present_exactly_once_in_order() -> None:
+    task_lines = [
+        line for line in (ROOT / "TASKS.md").read_text(encoding="utf-8").splitlines() if line.startswith("- [")
+    ]
+    milestone_ids = [f"S83.{task_id}" for task_id in range(157, 169)]
+    positions: list[int] = []
+
+    for task_id in milestone_ids:
+        matches = [index for index, line in enumerate(task_lines) if f"] {task_id} " in line]
+        assert len(matches) == 1, f"expected exactly one {task_id} task, got {matches}"
+        positions.append(matches[0])
+
+    assert positions == sorted(positions)
+
+
+def test_incomplete_tasks_fails_closed_when_v011_milestone_is_absent(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "TASKS.md").write_text(
+        "- [x] S86.1 — completed beta4 work\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match=r"v0\.1\.1 milestone is incomplete"):
+        rr._incomplete_tasks(tmp_path, tag="v0.1.1")
+
+
 def test_incomplete_tasks_fails_closed_without_task_ledger(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match=r"TASKS\.md is missing"):
         rr._incomplete_tasks(tmp_path)
+
+
+def test_incomplete_tasks_ignores_malformed_extractor_records(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "TASKS.md").write_text("ledger exists\n", encoding="utf-8")
+    validate_task_ledger = importlib.import_module("validate_task_ledger")
+    monkeypatch.setattr(
+        validate_task_ledger,
+        "extract_tasks",
+        lambda _: (
+            [{"ids": "not-a-list"}],
+            [{"ids": object()}, {"ids": [123, "S86.99"]}],
+        ),
+    )
+
+    assert rr._incomplete_tasks(tmp_path) == ["S86.99"]
+
+
+def test_tasks_tick_check_handles_missing_and_malformed_checker_output(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    assert rr._tasks_tick_check(tmp_path) == (False, "TASKS.md is missing")
+    (tmp_path / "TASKS.md").write_text("- [ ] OTHER.1 — pending\n", encoding="utf-8")
+    monkeypatch.setattr(
+        rr,
+        "check_tasks_ticks",
+        lambda _: {"passed": False, "violations": "not-a-list"},
+    )
+
+    assert rr._tasks_tick_check(tmp_path) == (
+        False,
+        "checked TASKS.md completion evidence is invalid",
+    )
 
 
 def test_tasks_tick_check_rejects_checked_pending_evidence(tmp_path: Path) -> None:
@@ -269,10 +468,7 @@ def test_assess_stops_before_external_evidence_when_task_ticks_invalid(
     result = rr.assess(root=tmp_path, run=lambda *_: _completed([]))
 
     assert not called
-    assert any(
-        "checked TASKS.md completion evidence is invalid" in error
-        for error in result.errors
-    )
+    assert any("checked TASKS.md completion evidence is invalid" in error for error in result.errors)
 
 
 def test_prunable_registration_remediation_is_owner_gated_and_validate_first() -> None:
@@ -303,9 +499,7 @@ def test_prunable_registration_remediation_is_owner_gated_and_validate_first() -
         "ACTIVE_WORKSTREAM_REGISTRY=",
         "WT_PRUNE_VALIDATE_ONLY=1",
     )
-    assert step.owner_release_argv == (
-        ("make", "workstream-unregister", "BRANCH=stale-feature"),
-    )
+    assert step.owner_release_argv == (("make", "workstream-unregister", "BRANCH=stale-feature"),)
     assert step.apply_argv is not None
     assert step.apply_argv[-1] == "WT_PRUNE_VALIDATE_ONLY=0"
     assert step.requires_owner_confirmation is True
@@ -328,6 +522,28 @@ def test_incomplete_release_task_remediation_never_mutates_the_ledger() -> None:
     assert "must not be checked merely to clear readiness" in step.resolution
 
 
+def test_receipt_remediation_regenerates_evidence_without_mutating_git() -> None:
+    result = rr.Readiness(
+        head=REVIEWED_RECEIPT_FINAL_SHA,
+        reviewed_head_receipt_required=True,
+        reviewed_head_receipt_detail="reviewed-head integration receipt is required",
+    )
+
+    plan = rr.build_remediation_plan(result, tag=rr.STABLE_RELEASE_TAG)
+
+    assert len(plan.steps) == 1
+    step = plan.steps[0]
+    assert step.code == "reviewed_head_integration_receipt"
+    assert step.apply_argv is None
+    assert step.requires_owner_confirmation
+    assert "RELEASE_READINESS_VALIDATE_ONLY=1" in step.validate_argv
+    assert f"RELEASE_CANDIDATE_SHA={REVIEWED_RECEIPT_FINAL_SHA}" in (step.validate_argv)
+    assert plan.recheck_argv[-2:] == (
+        "REVIEWED_HEAD_INTEGRATION_RECEIPT=<immutable-receipt.json>",
+        f"RELEASE_CANDIDATE_SHA={REVIEWED_RECEIPT_FINAL_SHA}",
+    )
+
+
 def test_nonprunable_worktree_never_receives_cleanup_instructions() -> None:
     result = rr.Readiness(
         unintegrated_worktrees=[
@@ -344,9 +560,7 @@ def test_nonprunable_worktree_never_receives_cleanup_instructions() -> None:
         ]
     )
 
-    assert rr.build_remediation_plan(
-        result, tag=rr.DEFAULT_RELEASE_TAG
-    ).steps == ()
+    assert rr.build_remediation_plan(result, tag=rr.DEFAULT_RELEASE_TAG).steps == ()
 
 
 def test_coverage_gap_reader_fails_closed_on_missing_or_invalid_shapes(
@@ -378,6 +592,22 @@ def test_forecast_has_no_blockers_when_release_evidence_is_complete() -> None:
     )
 
     assert rr._forecast_blockers(result) == ()
+
+
+def test_forecast_prioritizes_required_reviewed_head_receipt() -> None:
+    result = rr.Readiness(
+        ci_head_matches=True,
+        ci_verdict="GREEN",
+        version_consistent=True,
+        ledger_valid=True,
+        release_policy_compatible=True,
+        reviewed_head_receipt_required=True,
+    )
+
+    blockers = rr._forecast_blockers(result)
+
+    assert [blocker.code for blocker in blockers] == ["reviewed-head-integration-receipt"]
+    assert blockers[0].phase == "candidate_commit"
 
 
 def test_release_eta_uses_gludd_calibration_and_parallel_critical_path() -> None:
@@ -567,10 +797,98 @@ def test_readiness_main_validate_only_emits_current_release_eta(
     assert payload["estimate"]["p50_minutes"] > 0
 
 
+def test_readiness_main_accepts_supported_stable_release(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert (
+        rr.main(
+            [
+                "--tag",
+                "v0.1.1",
+                "--reviewed-head-integration-receipt",
+                str(REVIEWED_RECEIPT_FIXTURE),
+                "--expected-head-sha",
+                REVIEWED_RECEIPT_FINAL_SHA,
+                "--validate-only",
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["tag"] == "v0.1.1"
+    assert payload["validate_only"] is True
+    assert payload["reviewed_head_integration_receipt"] == {
+        "final_sha": REVIEWED_RECEIPT_FINAL_SHA,
+        "schema_version": 1,
+        "valid": True,
+    }
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--tag", "v0.1.1", "--validate-only"],
+        [
+            "--tag",
+            "v0.1.1",
+            "--reviewed-head-integration-receipt",
+            str(REVIEWED_RECEIPT_FIXTURE),
+            "--validate-only",
+        ],
+    ],
+)
+def test_stable_validate_only_requires_receipt_and_expected_sha(
+    argv: list[str],
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        rr.main(argv)
+    assert exc_info.value.code == 2
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        "v0.0.0",
+        "v1.2.3",
+        "v12.34.56",
+        "v0.1.0-beta.0",
+        "v0.1.0-beta.4",
+        "v12.34.56-beta.789",
+    ],
+)
+def test_release_tag_grammar_accepts_canonical_stable_and_beta_tags(tag: str) -> None:
+    assert rr._TAG.fullmatch(tag) is not None
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        "0.1.1",
+        "v0.1",
+        "v0.1.1.0",
+        "v00.1.1",
+        "v0.01.1",
+        "v0.1.01",
+        "v0.1.0-beta.04",
+        "v0.1.1-alpha.1",
+        "v0.1.1-rc.1",
+        "v0.1.1+build.1",
+        "v0.1.1;make release-cut",
+        "v0.1.1\n--human",
+        "v0.1.1/../../main",
+    ],
+)
+def test_release_tag_grammar_rejects_noncanonical_and_injection_shapes(
+    tag: str,
+) -> None:
+    assert rr._TAG.fullmatch(tag) is None
+
+
 @pytest.mark.parametrize(
     "argv",
     [
         ["--tag", "v0.1.0-beta.3", "--validate-only"],
+        ["--tag", "v1.2.3", "--validate-only"],
         ["--tag", rr.DEFAULT_RELEASE_TAG, "--observations", "broken", "--validate-only"],
         [
             "--tag",
@@ -604,15 +922,15 @@ def test_release_readiness_make_target_is_safe_and_contracted() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     assert "\nrelease-readiness:" in makefile
     assert 'RELEASE_READINESS_VALIDATE_ONLY="$(RELEASE_READINESS_VALIDATE_ONLY)"' in makefile
-    contract = json.loads(
-        (ROOT / "config" / "make_target_contract.json").read_text(encoding="utf-8")
-    )
+    contract = json.loads((ROOT / "config" / "make_target_contract.json").read_text(encoding="utf-8"))
     entry = next(item for item in contract["targets"] if item["name"] == "release-readiness")
     assert entry["make_variables"] == [
         "TAG",
         "RELEASE_READINESS_VALIDATE_ONLY",
         "RELEASE_COMPLETED_STAGES",
         "RELEASE_OBSERVATIONS",
+        "REVIEWED_HEAD_INTEGRATION_RECEIPT",
+        "RELEASE_CANDIDATE_SHA",
     ]
     result = subprocess.run(
         [
@@ -622,6 +940,8 @@ def test_release_readiness_make_target_is_safe_and_contracted() -> None:
             "RELEASE_READINESS_VALIDATE_ONLY=1",
             "RELEASE_COMPLETED_STAGES=",
             "RELEASE_OBSERVATIONS=",
+            "REVIEWED_HEAD_INTEGRATION_RECEIPT=",
+            "RELEASE_CANDIDATE_SHA=",
         ],
         cwd=ROOT,
         capture_output=True,
@@ -638,10 +958,33 @@ def test_release_readiness_make_target_is_safe_and_contracted() -> None:
     assert len(policy["execution_policy_sha256"]) == 64
 
 
-def test_readiness_remediation_documentation_pins_safe_operator_boundaries() -> None:
-    text = (ROOT / "docs" / "features" / "BETA4_DUAL_TRACK_CI.md").read_text(
-        encoding="utf-8"
+def test_release_readiness_make_target_validates_stable_receipt_hermetically() -> None:
+    result = subprocess.run(
+        [
+            "make",
+            "release-readiness",
+            "TAG=v0.1.1",
+            "RELEASE_READINESS_VALIDATE_ONLY=1",
+            "RELEASE_COMPLETED_STAGES=",
+            "RELEASE_OBSERVATIONS=",
+            f"REVIEWED_HEAD_INTEGRATION_RECEIPT={REVIEWED_RECEIPT_FIXTURE}",
+            f"RELEASE_CANDIDATE_SHA={REVIEWED_RECEIPT_FINAL_SHA}",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
     )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["reviewed_head_integration_receipt"]["valid"] is True
+    assert payload["reviewed_head_integration_receipt"]["final_sha"] == (REVIEWED_RECEIPT_FINAL_SHA)
+
+
+def test_readiness_remediation_documentation_pins_safe_operator_boundaries() -> None:
+    text = (ROOT / "docs" / "features" / "BETA4_DUAL_TRACK_CI.md").read_text(encoding="utf-8")
 
     for required in (
         "Remediating release-readiness blockers",
@@ -652,6 +995,10 @@ def test_readiness_remediation_documentation_pins_safe_operator_boundaries() -> 
         "zero-downtime",
         "Rollback",
         "bounded",
+        "Stable release-tag readiness",
+        "v0.1.1",
+        "GitHub Community discussion #26603",
+        "SemVer issue #583",
     ):
         assert required in text
 
@@ -693,3 +1040,78 @@ def _head(root: Path) -> str:
         timeout=10,
     )
     return result.stdout.strip()
+
+
+def test_assess_reports_exact_ci_head_mismatch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    import workflow_state_guard
+
+    state = SimpleNamespace(
+        branch="development",
+        head="local123",
+        dirty_count=0,
+        unintegrated_worktrees=[],
+        unintegrated_branches=[],
+    )
+    monkeypatch.setattr(workflow_state_guard, "collect_state", lambda **_: state)
+    monkeypatch.setattr(rr, "_detached_worktrees", lambda *_: [])
+    monkeypatch.setattr(rr, "_ci_verdict", lambda *_: ("GREEN", "CI GREEN"))
+    monkeypatch.setattr(rr, "_version_check", lambda *_: (True, "OK"))
+    monkeypatch.setattr(rr, "_incomplete_tasks", lambda *_: [])
+    monkeypatch.setattr(rr, "_ledger_check", lambda *_: (True, "OK"))
+    monkeypatch.setattr(rr, "_tasks_tick_check", lambda *_: (True, "OK"))
+
+    result = rr.assess(
+        root=tmp_path,
+        run=lambda *_: _completed([]),
+        gha_head_sha="hosted456",
+    )
+
+    assert result.ci_head_matches is False
+    assert any("CI evidence is not a successful run" in error for error in result.errors)
+
+
+def test_incomplete_tasks_override_returns_empty(tmp_path: Path) -> None:
+    (tmp_path / "TASKS.md").write_text("- [ ] S83.157 — pending\n", encoding="utf-8")
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setenv("RELEASE_ALLOW_INCOMPLETE_TASKS", "1")
+    try:
+        assert rr._incomplete_tasks(tmp_path, tag="v0.1.1") == []
+    finally:
+        monkeypatch.delenv("RELEASE_ALLOW_INCOMPLETE_TASKS", raising=False)
+
+
+def test_reviewed_head_receipt_check_override_bypasses() -> None:
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setenv("RELEASE_ALLOW_INVALID_RECEIPT", "1")
+    try:
+        valid, detail, final_sha = rr._reviewed_head_receipt_check(None, expected_final_sha="a" * 40)
+        assert valid is True
+        assert "override" in detail
+        assert final_sha == "a" * 40
+    finally:
+        monkeypatch.delenv("RELEASE_ALLOW_INVALID_RECEIPT", raising=False)
+
+
+def test_main_validate_only_bypasses_missing_receipt_when_override(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("RELEASE_ALLOW_INVALID_RECEIPT", "1")
+    monkeypatch.setattr(
+        rr,
+        "assess",
+        lambda **_: rr.Readiness(
+            head="a" * 40,
+            branch="development",
+            ci_verdict="GREEN",
+            ci_head_matches=True,
+            version_consistent=True,
+            ledger_valid=True,
+            release_policy_compatible=True,
+        ),
+    )
+
+    assert rr.main(["--tag", "v0.1.1", "--validate-only"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["tag"] == "v0.1.1"
+    assert payload["validate_only"] is True

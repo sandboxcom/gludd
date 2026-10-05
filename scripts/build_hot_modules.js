@@ -28,6 +28,7 @@ const PLUGINS = [
   "enforce-delegate",
   "enforce-make",
   "enforce-multitask",
+  "enforce-pipeline-kickoff",
   "enforce-no-suppressions",
   "enforce-no-wait",
   "enforce-session-start",

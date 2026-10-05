@@ -5,13 +5,16 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from general_ludd.db.repository import TodoRepository
 from general_ludd.schemas.task_decision import TaskDecision
 from general_ludd.schemas.todo import TodoStatus
+
+if TYPE_CHECKING:
+    from general_ludd.self_improve.promotion import ManagedPromotionReceipt
 
 logger = logging.getLogger(__name__)
 
@@ -43,13 +46,28 @@ _DECISION_STATUS_MAP: dict[str, TodoStatus] = {
 _LOW_CONFIDENCE_THRESHOLD = 0.5
 
 
+def _is_managed_self_improve(todo: object) -> bool:
+    """Return whether a todo carries the explicit managed approval contract."""
+    from general_ludd.self_improve.staging import (
+        MANAGED_SELF_IMPROVE_APPROVAL_POLICY,
+    )
+
+    return (
+        getattr(todo, "work_type", None) == "self_improve"
+        and getattr(todo, "approval_policy", None)
+        == MANAGED_SELF_IMPROVE_APPROVAL_POLICY
+    )
+
+
 async def apply_decision(
     decision: TaskDecision,
     todo_repo: TodoRepository,
     session: AsyncSession,
     *,
     repo_root: str | None = None,
+    managed_promotion_receipt: ManagedPromotionReceipt | None = None,
 ) -> None:
+    """Validate and apply one review decision to its bound todo."""
     if decision.decision == "complete":
         from general_ludd.review.completion_verifier import verify_completion
         decision = await asyncio.to_thread(verify_completion, decision, None, repo_root)
@@ -129,6 +147,24 @@ async def apply_decision(
     if target_status is None:
         logger.warning("Unknown decision type: %s", decision.decision)
         return
+
+    if (
+        target_status is TodoStatus.COMPLETE
+        and _is_managed_self_improve(todo)
+    ):
+        if managed_promotion_receipt is None:
+            raise ValueError(
+                "managed self-improvement COMPLETE requires a promotion receipt"
+            )
+        project_id = getattr(todo, "project_id", None)
+        if not isinstance(project_id, str) or not project_id:
+            raise ValueError("managed self-improvement todo requires a project identity")
+        managed_promotion_receipt.verify_for(
+            todo_id=decision.matched_todo_id,
+            project_id=project_id,
+            repo_root=repo_root,
+            return_id=decision.return_id,
+        )
 
     await todo_repo.transition(
         decision.matched_todo_id,

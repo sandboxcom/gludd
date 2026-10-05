@@ -1,0 +1,85 @@
+{
+  "applied_heads": [
+    {
+      "after_sha": "dddddddddddddddddddddddddddddddddddddddd",
+      "application_mode": "cherry_pick",
+      "before_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ordinal": 1,
+      "parent_shas": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "review_receipt_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "source_ref": "feature/one",
+      "source_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "after_sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "application_mode": "merge_two_parent",
+      "before_sha": "dddddddddddddddddddddddddddddddddddddddd",
+      "ordinal": 2,
+      "parent_shas": [
+        "dddddddddddddddddddddddddddddddddddddddd",
+        "cccccccccccccccccccccccccccccccccccccccc"
+      ],
+      "review_receipt_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "source_ref": "feature/two",
+      "source_sha": "cccccccccccccccccccccccccccccccccccccccc"
+    }
+  ],
+  "exact_gate": {
+    "command_id": "ci-gate-exact:3.11",
+    "passed": true,
+    "run_count": 1,
+    "tip_sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "focused_validation": {
+    "command_ids": [
+      "test-one",
+      "lint-shared",
+      "test-two"
+    ],
+    "passed": true,
+    "run_count": 1,
+    "source_shas": [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "cccccccccccccccccccccccccccccccccccccccc"
+    ],
+    "tip_sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "plan": {
+    "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "exact_gate_id": "ci-gate-exact:3.11",
+    "focused_validation_ids": [
+      "test-one",
+      "lint-shared",
+      "test-two"
+    ],
+    "heads": [
+      {
+        "application_mode": "cherry_pick",
+        "focused_validation_ids": [
+          "test-one",
+          "lint-shared"
+        ],
+        "prerequisite_ancestry": [],
+        "review_receipt_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "reviewed_base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_ref": "feature/one",
+        "source_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      {
+        "application_mode": "merge_two_parent",
+        "focused_validation_ids": [
+          "test-two",
+          "lint-shared"
+        ],
+        "prerequisite_ancestry": [],
+        "review_receipt_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "reviewed_base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_ref": "feature/two",
+        "source_sha": "cccccccccccccccccccccccccccccccccccccccc"
+      }
+    ]
+  },
+  "schema_version": 1
+}

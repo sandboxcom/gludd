@@ -267,8 +267,6 @@ src/general_ludd/connectors/azure_monitor.py:AzureMonitorSource
 src/general_ludd/connectors/azure_resource_graph.py:AzureResourceGraphSource
 src/general_ludd/connectors/base.py:run_healthcheck
 src/general_ludd/connectors/baseten.py:BasetenClient
-src/general_ludd/connectors/baseten.py:BasetenConfig
-src/general_ludd/connectors/baseten.py:BasetenModelsResponse
 src/general_ludd/connectors/bugsnag.py:BugsnagSource
 src/general_ludd/connectors/buildkite.py:BuildkiteBuild
 src/general_ludd/connectors/buildkite.py:BuildkiteLogResponse
@@ -300,7 +298,6 @@ src/general_ludd/connectors/linux_namespaces.py:LinuxNamespacesSource
 src/general_ludd/connectors/local_files.py:JsonlLogSource
 src/general_ludd/connectors/local_files.py:SyslogGrepSource
 src/general_ludd/connectors/mac_unified_log.py:MacUnifiedLogSource
-src/general_ludd/connectors/macos_security.py:MacOSSecuritySource
 src/general_ludd/connectors/monday.py:MondaySource
 src/general_ludd/connectors/mongodb_stats.py:MongoDbStatsSource
 src/general_ludd/connectors/mqtt.py:MqttSource
@@ -318,10 +315,6 @@ src/general_ludd/connectors/pagerduty.py:PagerDutyLogEntriesResponse
 src/general_ludd/connectors/pagerduty.py:PagerDutySource
 src/general_ludd/connectors/postgres_stats.py:PostgresStatsSource
 src/general_ludd/connectors/proc_sys.py:ProcSysSource
-src/general_ludd/connectors/prometheus.py:PromMatrixSeries
-src/general_ludd/connectors/prometheus.py:PromMetric
-src/general_ludd/connectors/prometheus.py:PromResponse
-src/general_ludd/connectors/prometheus.py:PromVectorSeries
 src/general_ludd/connectors/prometheus.py:PrometheusSource
 src/general_ludd/connectors/pyroscope.py:PyroscopeSource
 src/general_ludd/connectors/rabbitmq.py:RabbitMqSource
@@ -357,7 +350,6 @@ src/general_ludd/db/models.py:PermissionEscalationRequestModel
 src/general_ludd/db/session.py:close_engine
 src/general_ludd/dispatch/variable_store.py:apply_results
 src/general_ludd/distributed/eventual_consistency.py:HintedHandoff
-src/general_ludd/distributed/eventual_consistency.py:merkle_sync
 src/general_ludd/distributed/eventual_consistency.py:read_repair
 src/general_ludd/distributed/gossip.py:ensure_convergence
 src/general_ludd/distributed/gossip.py:spread_rumor
@@ -374,7 +366,6 @@ src/general_ludd/encoding_converter.py:decode_with_bom
 src/general_ludd/encoding_converter.py:guess_encoding
 src/general_ludd/encoding_converter.py:roundtrip
 src/general_ludd/entity/research_patterns.py:research_entity
-src/general_ludd/event_loop/lease.py:acquire_lease
 src/general_ludd/events/types.py:BranchEvent
 src/general_ludd/execution/engine.py:validate_extra_vars_safe
 src/general_ludd/execution/map_reduce_executor.py:map_reduce_builder
@@ -409,7 +400,6 @@ src/general_ludd/git_automation/worktree_lease.py:verify_worktree_lease
 src/general_ludd/git_automation/worktree_lease.py:worktree_lease_info
 src/general_ludd/git_automation/worktree_lease.py:write_worktree_lease
 src/general_ludd/hardware/model_fit.py:gpu_info_to_gpu_table
-src/general_ludd/hardware/model_fit.py:unified_probe
 src/general_ludd/hardware_memory_policy.py:classify_memory_kind
 src/general_ludd/hardware_memory_policy.py:evaluate_model_fit
 src/general_ludd/hardware_memory_policy.py:model_guidance
@@ -575,6 +565,7 @@ src/general_ludd/security/xmss.py:xmss_verify
 src/general_ludd/self_improve/evaluator.py:print_report
 src/general_ludd/self_improve/evaluator.py:run_all_self_improve
 src/general_ludd/self_improve/outcomes.py:analyze_eval_results
+src/general_ludd/self_improve/runtime.py:generate_local_proposal_plan
 src/general_ludd/self_update/classifier.py:llm_route
 src/general_ludd/self_update/grinding_detector.py:GrindingDetector
 src/general_ludd/self_update/module_snapshot.py:find_live_references

@@ -42,6 +42,20 @@ make validate          # Gate + ansible syntax + healthcheck
 4. Run `make test-unit` — confirm it passes
 5. Refactor if needed, keeping tests green
 
+## Coverage Reporting
+
+Keep project-specific report exclusions in `exclude_also`, not
+`exclude_lines`. Coverage.py documents that `exclude_lines` replaces its
+built-in rules, while `exclude_also` preserves them. Replacing the defaults can
+turn declarative `Protocol` bodies containing only `...` into impossible branch
+coverage obligations during the aggregate shard report.
+
+This behavior was raised by Coverage.py users and led to `exclude_also` in
+7.2.0 ([issue 1391](https://github.com/coveragepy/coveragepy/issues/1391)). The
+[current exclusion documentation](https://coverage.readthedocs.io/en/7.14.1/excluding.html)
+also records `...` and `TYPE_CHECKING` as built-in exclusions. Gludd therefore
+uses additive exclusions so dependency upgrades can safely supply new defaults.
+
 ## Commit Policy
 
 - One logical change per commit

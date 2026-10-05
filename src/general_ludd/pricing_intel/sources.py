@@ -22,7 +22,7 @@ import math
 import os
 import re
 import time
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 
 import httpx
 
@@ -47,6 +47,24 @@ class PricingSourceDataError(ValueError):
 
 class UnavailableModelPrices(list[ModelPrice]):
     """Empty list marker for a transient fetch failure that must not replace cache."""
+
+
+def _openrouter_models(response: Any) -> list[Any]:
+    """Decode and validate the model list from an OpenRouter response."""
+    try:
+        data = response.json()
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        logger.warning("OpenRouter pricing response not JSON: %s", exc)
+        raise PricingSourceDataError(
+            "invalid OpenRouter pricing response: expected JSON"
+        ) from exc
+
+    if not isinstance(data, dict) or not isinstance(data.get("data", []), list):
+        raise PricingSourceDataError(
+            "invalid OpenRouter pricing response: data must be a list"
+        )
+    return cast(list[Any], data.get("data", []))
+
 
 # ---------------------------------------------------------------------------
 # Protocol (interface) for all pricing sources
@@ -157,20 +175,7 @@ class OpenRouterSource:
             raise PricingSourceDataError(
                 f"OpenRouter pricing API returned unexpected HTTP {resp.status_code}"
             )
-        try:
-            data = resp.json()
-        except (json.JSONDecodeError, TypeError, ValueError) as exc:
-            logger.warning("OpenRouter pricing response not JSON: %s", exc)
-            raise PricingSourceDataError(
-                "invalid OpenRouter pricing response: expected JSON"
-            ) from exc
-
-        if not isinstance(data, dict) or not isinstance(data.get("data", []), list):
-            raise PricingSourceDataError(
-                "invalid OpenRouter pricing response: data must be a list"
-            )
-
-        models = data.get("data", [])
+        models = _openrouter_models(resp)
         fetched_at = time.time()
         results: list[ModelPrice] = []
 

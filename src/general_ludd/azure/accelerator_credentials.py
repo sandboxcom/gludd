@@ -1,0 +1,479 @@
+"""Race-safe loading of Azure CLI ``--json-auth`` credential files.
+
+The loader is intentionally Azure-Public-Cloud-only and never logs, renders, or
+persists credential values.  Callers receive an immutable value whose secret is
+excluded from ``repr`` and can create an isolated child-process environment.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import stat
+import uuid
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Final, Protocol, cast, runtime_checkable
+from urllib.parse import urlsplit
+
+_MAX_CREDENTIAL_BYTES: Final = 16 * 1024
+_OIDC_ASSERTION: Final = re.compile(
+    r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"
+)
+_REQUIRED_FIELDS: Final = (
+    "clientId",
+    "clientSecret",
+    "subscriptionId",
+    "tenantId",
+)
+_PUBLIC_CLOUD_ENDPOINTS: Final = {
+    "activeDirectoryEndpointUrl": "https://login.microsoftonline.com",
+    "resourceManagerEndpointUrl": "https://management.azure.com",
+}
+
+
+class AzureAcceleratorCredentialError(ValueError):
+    """Report a fixed-context credential-file refusal without sensitive data."""
+
+
+@runtime_checkable
+class AzureManagementCredential(Protocol):
+    """Minimal closeable token credential shared by Azure management clients."""
+
+    def get_token(self, *scopes: str) -> object:
+        """Acquire an SDK token for the explicit management scope."""
+        ...
+
+    def close(self) -> None:
+        """Release credential-owned transports and cached state."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class AzureAcceleratorCredentials:
+    """Validated Azure service-principal credentials for one subscription."""
+
+    client_id: str
+    client_secret: str = field(repr=False)
+    subscription_id: str
+    tenant_id: str
+
+    def arm_environment(self) -> dict[str, str]:
+        """Return the isolated Azure SDK and Terraform authentication mapping."""
+        return {
+            "ARM_CLIENT_ID": self.client_id,
+            "ARM_CLIENT_SECRET": self.client_secret,
+            "ARM_TENANT_ID": self.tenant_id,
+            "ARM_SUBSCRIPTION_ID": self.subscription_id,
+            "AZURE_CLIENT_ID": self.client_id,
+            "AZURE_CLIENT_SECRET": self.client_secret,
+            "AZURE_TENANT_ID": self.tenant_id,
+            "AZURE_SUBSCRIPTION_ID": self.subscription_id,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class AzureAcceleratorWorkloadIdentity:
+    """Validated Azure workload identity backed by one private assertion file."""
+
+    client_id: str
+    subscription_id: str
+    tenant_id: str
+    federated_token_file: str = field(repr=False)
+
+    def arm_environment(self) -> dict[str, str]:
+        """Return explicit SDK and OpenTofu workload-identity configuration."""
+        environment = {
+            "ARM_CLIENT_ID": self.client_id,
+            "ARM_SUBSCRIPTION_ID": self.subscription_id,
+            "ARM_TENANT_ID": self.tenant_id,
+            "ARM_USE_CLI": "false",
+            "ARM_USE_OIDC": "true",
+            "ARM_OIDC_TOKEN_FILE_PATH": self.federated_token_file,
+            "AZURE_AUTHORITY_HOST": "https://login.microsoftonline.com",
+            "AZURE_CLIENT_ID": self.client_id,
+            "AZURE_FEDERATED_TOKEN_FILE": self.federated_token_file,
+            "AZURE_SUBSCRIPTION_ID": self.subscription_id,
+            "AZURE_TENANT_ID": self.tenant_id,
+            "AZURE_TOKEN_CREDENTIALS": "WorkloadIdentityCredential",
+        }
+        github_request = _github_oidc_request_environment()
+        if github_request:
+            environment.pop("ARM_OIDC_TOKEN_FILE_PATH")
+            environment.update(github_request)
+        return environment
+
+
+AzureAcceleratorAuthentication = (
+    AzureAcceleratorCredentials | AzureAcceleratorWorkloadIdentity
+)
+
+
+def _github_oidc_request_environment() -> dict[str, str]:
+    request_url = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL")
+    request_token = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+    if request_url is None and request_token is None:
+        return {}
+    if not request_url or not request_token:
+        raise AzureAcceleratorCredentialError(
+            "GitHub OIDC request environment is incomplete"
+        )
+    if (
+        len(request_url) > 8192
+        or len(request_token) > _MAX_CREDENTIAL_BYTES
+        or any(ord(character) < 32 or ord(character) == 127 for character in request_url)
+        or any(ord(character) < 32 or ord(character) == 127 for character in request_token)
+    ):
+        raise AzureAcceleratorCredentialError(
+            "GitHub OIDC request environment is invalid"
+        )
+    try:
+        parsed = urlsplit(request_url)
+        port = parsed.port
+    except ValueError:
+        raise AzureAcceleratorCredentialError(
+            "GitHub OIDC request environment is invalid"
+        ) from None
+    hostname = parsed.hostname or ""
+    if (
+        parsed.scheme != "https"
+        or not hostname.endswith(".actions.githubusercontent.com")
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in (None, 443)
+        or not parsed.path
+        or parsed.fragment
+    ):
+        raise AzureAcceleratorCredentialError(
+            "GitHub OIDC request environment is invalid"
+        )
+    return {
+        "ARM_OIDC_REQUEST_TOKEN": request_token,
+        "ARM_OIDC_REQUEST_URL": request_url,
+    }
+
+
+def _reject_duplicate_fields(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise AzureAcceleratorCredentialError(
+                "credential JSON contains a duplicate field"
+            )
+        result[key] = value
+    return result
+
+
+def _open_private_regular_file(path: Path) -> tuple[int, os.stat_result]:
+    try:
+        before = path.lstat()
+    except FileNotFoundError:
+        raise AzureAcceleratorCredentialError(
+            "credential input file does not exist"
+        ) from None
+    except OSError:
+        raise AzureAcceleratorCredentialError(
+            "credential input must be an owned private regular file"
+        ) from None
+    if not stat.S_ISREG(before.st_mode):
+        raise AzureAcceleratorCredentialError(
+            "credential input must be an owned private regular file"
+        )
+
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except FileNotFoundError:
+        raise AzureAcceleratorCredentialError(
+            "credential input file does not exist"
+        ) from None
+    except OSError:
+        raise AzureAcceleratorCredentialError(
+            "credential input must be an owned private regular file"
+        ) from None
+
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode) or (
+            before.st_dev,
+            before.st_ino,
+        ) != (opened.st_dev, opened.st_ino):
+            raise AzureAcceleratorCredentialError(
+                "credential input must be an owned private regular file"
+            )
+        if hasattr(os, "getuid") and opened.st_uid != os.getuid():
+            raise AzureAcceleratorCredentialError(
+                "credential input must be owned by the current user"
+            )
+        if os.name != "nt" and stat.S_IMODE(opened.st_mode) != 0o600:
+            raise AzureAcceleratorCredentialError(
+                "credential input must have mode 0600"
+            )
+        if opened.st_size > _MAX_CREDENTIAL_BYTES:
+            raise AzureAcceleratorCredentialError("credential input is too large")
+    except BaseException:
+        os.close(descriptor)
+        raise
+    return descriptor, opened
+
+
+def _read_bounded(descriptor: int) -> bytes:
+    chunks: list[bytes] = []
+    remaining = _MAX_CREDENTIAL_BYTES + 1
+    while remaining > 0:
+        chunk = os.read(descriptor, remaining)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    payload = b"".join(chunks)
+    if len(payload) > _MAX_CREDENTIAL_BYTES:
+        raise AzureAcceleratorCredentialError("credential input is too large")
+    return payload
+
+
+def _parse_payload(raw: bytes) -> dict[str, object]:
+    try:
+        decoded = raw.decode("utf-8")
+        payload = json.loads(decoded, object_pairs_hook=_reject_duplicate_fields)
+    except AzureAcceleratorCredentialError:
+        raise
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError):
+        raise AzureAcceleratorCredentialError(
+            "credential input must contain valid JSON"
+        ) from None
+    if not isinstance(payload, dict):
+        raise AzureAcceleratorCredentialError(
+            "credential input must contain a JSON object"
+        )
+    return payload
+
+
+def _required_string(payload: dict[str, object], field_name: str) -> str:
+    value = payload.get(field_name)
+    if not isinstance(value, str) or not value or value.strip() != value:
+        raise AzureAcceleratorCredentialError(
+            "credential JSON is missing valid required fields"
+        )
+    return value
+
+
+def _canonical_uuid(value: str) -> str:
+    try:
+        parsed = uuid.UUID(value)
+    except (ValueError, AttributeError):
+        raise AzureAcceleratorCredentialError(
+            "credential identifiers must be canonical UUID values"
+        ) from None
+    canonical = str(parsed)
+    if value != canonical:
+        raise AzureAcceleratorCredentialError(
+            "credential identifiers must be canonical UUID values"
+        )
+    return canonical
+
+
+def _validate_secret(value: str) -> None:
+    if len(value) > 4096 or any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise AzureAcceleratorCredentialError(
+            "credential client secret has an invalid shape"
+        )
+
+
+def _validate_oidc_assertion(raw: bytes) -> None:
+    try:
+        assertion = raw.decode("ascii")
+    except UnicodeDecodeError:
+        raise AzureAcceleratorCredentialError(
+            "credential OIDC assertion has an invalid shape"
+        ) from None
+    if _OIDC_ASSERTION.fullmatch(assertion) is None:
+        raise AzureAcceleratorCredentialError(
+            "credential OIDC assertion has an invalid shape"
+        )
+
+
+def _validate_public_cloud_endpoints(payload: dict[str, object]) -> None:
+    for field_name, required in _PUBLIC_CLOUD_ENDPOINTS.items():
+        supplied = payload.get(field_name)
+        if supplied is None:
+            continue
+        if not isinstance(supplied, str) or supplied.rstrip("/") != required:
+            raise AzureAcceleratorCredentialError(
+                "credential endpoints must target Azure public cloud"
+            )
+
+
+def build_azure_accelerator_credentials(
+    *,
+    client_id: str,
+    client_secret: str,
+    subscription_id: str,
+    tenant_id: str,
+    expected_subscription_id: str | None = None,
+) -> AzureAcceleratorCredentials:
+    """Validate secret-engine or SDK values through the canonical contract."""
+    values = (client_id, client_secret, subscription_id, tenant_id)
+    if any(
+        not isinstance(value, str) or not value or value.strip() != value
+        for value in values
+    ):
+        raise AzureAcceleratorCredentialError(
+            "credential values are missing valid required fields"
+        )
+    validated_client_id = _canonical_uuid(client_id)
+    validated_subscription_id = _canonical_uuid(subscription_id)
+    validated_tenant_id = _canonical_uuid(tenant_id)
+    _validate_secret(client_secret)
+    if expected_subscription_id is not None:
+        expected = _canonical_uuid(expected_subscription_id)
+        if validated_subscription_id != expected:
+            raise AzureAcceleratorCredentialError("credential subscription mismatch")
+    return AzureAcceleratorCredentials(
+        client_id=validated_client_id,
+        client_secret=client_secret,
+        subscription_id=validated_subscription_id,
+        tenant_id=validated_tenant_id,
+    )
+
+
+def build_azure_workload_identity(
+    *,
+    client_id: str,
+    subscription_id: str,
+    tenant_id: str,
+    federated_token_file: str | os.PathLike[str],
+    expected_subscription_id: str | None = None,
+) -> AzureAcceleratorWorkloadIdentity:
+    """Validate a private OIDC assertion and its exact Azure identity boundary."""
+    values = (client_id, subscription_id, tenant_id)
+    if any(
+        not isinstance(value, str) or not value or value.strip() != value
+        for value in values
+    ):
+        raise AzureAcceleratorCredentialError(
+            "credential values are missing valid required fields"
+        )
+    validated_client_id = _canonical_uuid(client_id)
+    validated_subscription_id = _canonical_uuid(subscription_id)
+    validated_tenant_id = _canonical_uuid(tenant_id)
+    if expected_subscription_id is not None:
+        expected = _canonical_uuid(expected_subscription_id)
+        if validated_subscription_id != expected:
+            raise AzureAcceleratorCredentialError("credential subscription mismatch")
+
+    token_path = Path(federated_token_file).absolute()
+    descriptor, _opened = _open_private_regular_file(token_path)
+    try:
+        _validate_oidc_assertion(_read_bounded(descriptor))
+    finally:
+        os.close(descriptor)
+    return AzureAcceleratorWorkloadIdentity(
+        client_id=validated_client_id,
+        subscription_id=validated_subscription_id,
+        tenant_id=validated_tenant_id,
+        federated_token_file=str(token_path),
+    )
+
+
+def build_azure_management_credential(
+    credentials: AzureAcceleratorAuthentication,
+) -> AzureManagementCredential:
+    """Build the single hardened Microsoft SDK credential configuration."""
+    if isinstance(credentials, AzureAcceleratorWorkloadIdentity):
+        try:
+            from azure.identity import WorkloadIdentityCredential
+        except ImportError:
+            raise RuntimeError("Azure Identity dependency is unavailable") from None
+        return cast(
+            AzureManagementCredential,
+            WorkloadIdentityCredential(
+                tenant_id=credentials.tenant_id,
+                client_id=credentials.client_id,
+                token_file_path=credentials.federated_token_file,
+                authority="login.microsoftonline.com",
+                disable_instance_discovery=True,
+                retry_total=0,
+            ),
+        )
+    if not isinstance(credentials, AzureAcceleratorCredentials):
+        raise ValueError("credentials must use the accelerator credential contract")
+    try:
+        from azure.identity import ClientSecretCredential
+    except ImportError:
+        raise RuntimeError("Azure Identity dependency is unavailable") from None
+    return cast(
+        AzureManagementCredential,
+        ClientSecretCredential(
+            tenant_id=credentials.tenant_id,
+            client_id=credentials.client_id,
+            client_secret=credentials.client_secret,
+            authority="login.microsoftonline.com",
+            disable_instance_discovery=True,
+            retry_total=0,
+        ),
+    )
+
+
+def load_azure_accelerator_credentials(
+    path: str | os.PathLike[str],
+    *,
+    expected_subscription_id: str | None = None,
+) -> AzureAcceleratorCredentials:
+    """Load one private Azure CLI JSON file through a race-safe descriptor."""
+    raw = read_azure_accelerator_credential_payload(path)
+
+    return parse_azure_accelerator_credentials(
+        raw,
+        expected_subscription_id=expected_subscription_id,
+    )
+
+
+def read_azure_accelerator_credential_payload(
+    path: str | os.PathLike[str],
+) -> bytes:
+    """Read one bounded private credential payload through a stable descriptor."""
+    descriptor, _opened = _open_private_regular_file(Path(path))
+    try:
+        return _read_bounded(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def parse_azure_accelerator_credentials(
+    raw: bytes,
+    *,
+    expected_subscription_id: str | None = None,
+) -> AzureAcceleratorCredentials:
+    """Parse one bounded Azure CLI JSON payload without persisting its secret."""
+    if not isinstance(raw, bytes):
+        raise AzureAcceleratorCredentialError("credential input must be bytes")
+    if len(raw) > _MAX_CREDENTIAL_BYTES:
+        raise AzureAcceleratorCredentialError("credential input is too large")
+    payload = _parse_payload(raw)
+
+    values = {field_name: _required_string(payload, field_name) for field_name in _REQUIRED_FIELDS}
+    _validate_public_cloud_endpoints(payload)
+    return build_azure_accelerator_credentials(
+        client_id=values["clientId"],
+        client_secret=values["clientSecret"],
+        subscription_id=values["subscriptionId"],
+        tenant_id=values["tenantId"],
+        expected_subscription_id=expected_subscription_id,
+    )
+
+
+__all__ = [
+    "AzureAcceleratorAuthentication",
+    "AzureAcceleratorCredentialError",
+    "AzureAcceleratorCredentials",
+    "AzureAcceleratorWorkloadIdentity",
+    "AzureManagementCredential",
+    "build_azure_accelerator_credentials",
+    "build_azure_management_credential",
+    "build_azure_workload_identity",
+    "load_azure_accelerator_credentials",
+    "parse_azure_accelerator_credentials",
+    "read_azure_accelerator_credential_payload",
+]

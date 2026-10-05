@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import fcntl
 import json
+import os
+import shutil
 import subprocess
+import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -26,14 +30,125 @@ def test_active_work_status_is_auditable_json() -> None:
     )
     payload = json.loads(result.stdout)
     assert isinstance(payload["processes"], list)
+    assert isinstance(payload["observed_processes"], list)
     assert isinstance(payload["workstreams"], dict)
     assert all("task" in process for process in payload["processes"])
     assert isinstance(payload["open_task_ids"], list)
+    assert "all_open_task_ids" not in payload
+    assert "backlog_task_ids" not in payload
+    assert isinstance(payload["task_scope"], dict)
+    assert payload["task_scope"]["open_count"] == len(payload["open_task_ids"])
+    assert payload["task_scope"]["total_open_count"] >= len(payload["open_task_ids"])
+    assert payload["task_scope"]["ledger"] == "TASKS.md"
     assert isinstance(payload["gate"], dict)
     assert isinstance(payload["git"], dict)
     assert payload["git"]["head"]
     assert payload["audit_contract"]["ps_command"] == "make ps"
     assert payload["audit_contract"]["agent_pids"] is False
+
+
+def test_task_inventory_separates_release_milestone_from_backlog() -> None:
+    tasks = """# Tasks
+
+## Session 87 — v0.1.1 universal Gludd release
+
+The fail-closed v0.1.1 milestone is the exact task set S83.157\N{EN DASH}S83.168.
+
+- [ ] S83.156 — older work
+- [ ] S83.157 — release blocker
+- [x] S83.159 — completed release work
+- [ ] S83.168 — release blocker
+- [ ] S83.169 — future work
+- [ ] S79.2 — backlog work
+"""
+
+    inventory = active_work_status._task_inventory(tasks)
+
+    assert set(inventory) == {"open_task_ids", "task_scope"}
+    assert inventory["open_task_ids"] == ["S83.157", "S83.168"]
+    assert inventory["task_scope"] == {
+        "kind": "milestone",
+        "label": "v0.1.1",
+        "range": "S83.157-S83.168",
+        "ledger": "TASKS.md",
+        "defined_task_count": 12,
+        "open_count": 2,
+        "backlog_open_count": 3,
+        "total_open_count": 5,
+    }
+
+
+def test_task_inventory_keeps_checked_noncomplete_status_open() -> None:
+    tasks = """# Tasks
+
+The fail-closed v0.1.1 milestone is the exact task set S83.157-S83.168.
+
+- [x] S83.157 — checkbox contradicts status | status: in_progress
+- [x] S83.158 — genuinely complete | status: completed
+- [ ] S83.159 — checkbox contradicts status | status: completed
+- [ ] S83.160 — genuinely pending | status: pending
+"""
+
+    inventory = active_work_status._task_inventory(tasks)
+
+    assert inventory["open_task_ids"] == ["S83.157", "S83.159", "S83.160"]
+    assert inventory["task_scope"]["open_count"] == 3
+    assert inventory["task_scope"]["total_open_count"] == 3
+
+
+def test_task_inventory_falls_back_to_repository_scope_without_declaration() -> None:
+    inventory = active_work_status._task_inventory(
+        "- [ ] S1 — first\n- [x] S2 — done\n- [ ] S3 — third\n"
+    )
+
+    assert inventory["open_task_ids"] == ["S1", "S3"]
+    assert inventory["task_scope"] == {
+        "kind": "repository",
+        "label": "",
+        "range": "",
+        "ledger": "TASKS.md",
+        "defined_task_count": 0,
+        "open_count": 2,
+        "backlog_open_count": 0,
+        "total_open_count": 2,
+    }
+
+
+def test_collect_status_recognizes_canonical_serial_gate_supervisor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A foreground serial gate remains RUNNING without a background PID file."""
+    processes = [
+        {
+            "pid": "700",
+            "ppid": "699",
+            "command": "python scripts/run_ci_shards_serial.py --pytest-args=-q",
+            "task": "ci-shard-supervisor",
+        }
+    ]
+    monkeypatch.setattr(active_work_status, "_processes", lambda: processes)
+    monkeypatch.setattr(
+        active_work_status,
+        "_gate",
+        lambda: {
+            "status_file": "/repo/.gate-status",
+            "state": "UNKNOWN",
+            "running_pid": "",
+        },
+    )
+    monkeypatch.setattr(active_work_status, "_resource_observability", lambda _items: {})
+    monkeypatch.setattr(
+        active_work_status,
+        "_git",
+        lambda: {"branch": "development", "head": "a" * 40},
+    )
+
+    payload = active_work_status.collect_status()
+
+    gate = payload["gate"]
+    assert isinstance(gate, dict)
+    assert gate["state"] == "RUNNING"
+    assert gate["running_pid"] == "700"
 
 
 def test_process_labels_separate_test_workstreams() -> None:
@@ -153,6 +268,163 @@ def test_owned_process_inventory_keeps_tracked_supervisor_tree() -> None:
     )
 
     assert [process["pid"] for process in processes] == ["401", "402", "403"]
+
+
+def test_observer_inventory_surfaces_live_self_improve_process_tree(
+    tmp_path: Path,
+) -> None:
+    """A live observer status admits its real owner, child, and descendants."""
+
+    label = "self-improve-live"
+    status_dir = tmp_path / ".gate-logs" / "observed" / label
+    status_dir.mkdir(parents=True)
+    status_dir.joinpath("current.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "observed_command",
+                "label": label,
+                "state": "running",
+                "owner_pid": 700,
+                "child_pid": 701,
+                "agent_pid": 999,
+            }
+        ),
+        encoding="utf-8",
+    )
+    process_table = "\n".join(
+        (
+            (
+                "700 1 python scripts/stream_command.py --label self-improve-live "
+                "-- make test-self-improve TARGET=catalog"
+            ),
+            "701 700 make test-self-improve TARGET=catalog",
+            (
+                "702 701 python scripts/self_improve_local_proposal.py "
+                "--model-path /models/qwen.gguf"
+            ),
+            "703 702 python -c from multiprocessing.resource_tracker import main",
+            "704 700 python scripts/self_improve_local_proposal.py --unrecorded-sibling",
+            "999 1 opencode model-agent --name imaginary",
+        )
+    )
+
+    processes = active_work_status._observer_owned_processes_from_output(
+        process_table,
+        repository_roots=(tmp_path,),
+    )
+
+    assert [process["pid"] for process in processes] == ["700", "701", "702", "703"]
+    assert [process["task"] for process in processes] == [
+        "self-improve-observer",
+        "self-improve",
+        "self-improve-model-worker",
+        "python-worker",
+    ]
+    assert {process["observer_label"] for process in processes} == {label}
+    assert [process["observer_role"] for process in processes] == [
+        "owner",
+        "child",
+        "descendant",
+        "descendant",
+    ]
+    assert "999" not in {process["pid"] for process in processes}
+
+
+def test_observer_inventory_rejects_spoofed_or_terminal_statuses(tmp_path: Path) -> None:
+    """Status files cannot invent PIDs or retain completed command trees."""
+
+    observed_root = tmp_path / ".gate-logs" / "observed"
+    for label, state, owner_pid in (
+        ("spoofed", "running", 800),
+        ("finished", "passed", 810),
+    ):
+        status_dir = observed_root / label
+        status_dir.mkdir(parents=True)
+        status_dir.joinpath("current.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "kind": "observed_command",
+                    "label": label,
+                    "state": state,
+                    "owner_pid": owner_pid,
+                    "child_pid": owner_pid + 1,
+                }
+            ),
+            encoding="utf-8",
+        )
+    process_table = "\n".join(
+        (
+            "800 1 python unrelated.py --label spoofed",
+            "801 800 python scripts/self_improve_local_proposal.py",
+            "810 1 python scripts/stream_command.py --label finished",
+            "811 810 make test-self-improve TARGET=catalog",
+        )
+    )
+
+    assert (
+        active_work_status._observer_owned_processes_from_output(
+            process_table,
+            repository_roots=(tmp_path,),
+        )
+        == []
+    )
+
+
+def test_observer_inventory_is_bounded(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Observer discovery cannot make status output grow without bound."""
+
+    label = "self-improve-bounded"
+    status_dir = tmp_path / ".gate-logs" / "observed" / label
+    status_dir.mkdir(parents=True)
+    status_dir.joinpath("current.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "observed_command",
+                "label": label,
+                "state": "running",
+                "owner_pid": 900,
+                "child_pid": 901,
+            }
+        ),
+        encoding="utf-8",
+    )
+    process_table = "\n".join(
+        (
+            "900 1 python scripts/stream_command.py --label self-improve-bounded",
+            "901 900 make test-self-improve TARGET=catalog",
+            "902 901 python scripts/self_improve_local_proposal.py",
+        )
+    )
+    monkeypatch.setattr(active_work_status, "_OBSERVER_PROCESS_LIMIT", 2)
+
+    processes = active_work_status._observer_owned_processes_from_output(
+        process_table,
+        repository_roots=(tmp_path,),
+    )
+
+    assert [process["pid"] for process in processes] == ["900", "901"]
+
+
+def test_observer_status_bound_prefers_recent_heartbeat(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Old terminal labels cannot crowd a newer live pointer out of discovery."""
+
+    observed_root = tmp_path / ".gate-logs" / "observed"
+    old = observed_root / "aaa-old" / "current.json"
+    recent = observed_root / "zzz-recent" / "current.json"
+    old.parent.mkdir(parents=True)
+    recent.parent.mkdir(parents=True)
+    old.write_text("{}", encoding="utf-8")
+    recent.write_text("{}", encoding="utf-8")
+    os.utime(old, (1, 1))
+    os.utime(recent, (2, 2))
+    monkeypatch.setattr(active_work_status, "_OBSERVER_STATUS_LIMIT", 1)
+
+    assert active_work_status._observer_status_paths((tmp_path,)) == (recent,)
 
 
 def test_git_porcelain_discovers_main_and_linked_worktree_paths() -> None:
@@ -304,6 +576,82 @@ def test_process_table_cli_uses_shared_owned_inventory(
 
     assert active_work_status.main(["--process-table"]) == 0
     assert "101" in capsys.readouterr().out
+
+
+def test_make_status_commands_surface_live_observer_owned_pids() -> None:
+    """Both public status views expose a real observer tree while it is live."""
+
+    label = f"self-improve-ps-{os.getpid()}"
+    run_id = f"run-{os.getpid()}"
+    observed_root = ROOT / ".gate-logs" / "observed"
+    label_dir = observed_root / label
+    observer = subprocess.Popen(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "stream_command.py"),
+            "--root",
+            str(observed_root),
+            "--label",
+            label,
+            "--run-id",
+            run_id,
+            "--heartbeat-secs",
+            "0.05",
+            "--max-secs",
+            "10",
+            "--quiet",
+            "--",
+            sys.executable,
+            "-c",
+            "import time; time.sleep(5)",
+            "self-improve-model-worker",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        current = label_dir / "current.json"
+        deadline = time.monotonic() + 3
+        child_pid: int | None = None
+        while time.monotonic() < deadline:
+            if current.is_file():
+                status = json.loads(current.read_text(encoding="utf-8"))
+                if status.get("state") == "running":
+                    child_pid = status.get("child_pid")
+                    break
+            time.sleep(0.01)
+        assert isinstance(child_pid, int)
+
+        table = subprocess.run(
+            ["make", "ps"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        ).stdout
+        payload = json.loads(
+            subprocess.run(
+                ["make", "active-work-status"],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=True,
+            ).stdout
+        )
+
+        assert str(observer.pid) in table
+        assert str(child_pid) in table
+        assert "self-improve-observer" in table
+        assert {record["pid"] for record in payload["observed_processes"]}.issuperset(
+            {str(observer.pid), str(child_pid)}
+        )
+        assert payload["audit_contract"]["agent_pids"] is False
+    finally:
+        observer.terminate()
+        observer.communicate(timeout=5)
+        shutil.rmtree(label_dir, ignore_errors=True)
 
 
 def test_workstreams_group_processes_by_task() -> None:

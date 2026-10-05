@@ -15,6 +15,8 @@ Rules:
      one imported name — import-only stubs are blocked.
   5. Allowlist: __init__.py, type stubs, and explicitly listed paths are
      exempt from the test requirement.
+  6. An uncommitted merge may use exact-tree, fresh, signed gate evidence in
+     place of per-file staging checks; ordinary commits cannot use this path.
 
 Usage:
     python3 scripts/check_tdd_compliance.py
@@ -39,6 +41,9 @@ except ImportError:
     yaml = None
 
 _DEFAULT_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_GATE_ATTESTATION_SCRIPT = Path(__file__).resolve().with_name(
+    "gate_status_attestation.py"
+)
 # Mutable globals set in main() after parsing --root
 PROJECT_ROOT = _DEFAULT_PROJECT_ROOT
 SRC_DIR = PROJECT_ROOT / "src" / "general_ludd"
@@ -111,6 +116,33 @@ def _git_all_staged_files() -> set[str]:
     except Exception:
         pass
     return files
+
+
+def _verified_merge_gate() -> bool:
+    """Return true only for an exact staged merge with fresh signed evidence."""
+    merge_head = subprocess.run(
+        ["git", "rev-parse", "--verify", "-q", "MERGE_HEAD"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        check=False,
+    )
+    if merge_head.returncode != 0:
+        return False
+    verification = subprocess.run(
+        [
+            sys.executable,
+            str(_GATE_ATTESTATION_SCRIPT),
+            "verify",
+            str(PROJECT_ROOT / ".gate-status"),
+            "--repo-root",
+            str(PROJECT_ROOT),
+        ],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return verification.returncode == 0
 
 
 _yaml_patterns: list[re.Pattern[str]] | None = None
@@ -296,6 +328,9 @@ def main(argv: list[str]) -> int:
     src_files = _git_changed_source_files()
     if not src_files:
         print("OK: no source files staged for commit")
+        return 0
+    if _verified_merge_gate():
+        print("OK: exact staged merge tree has fresh signed gate evidence")
         return 0
 
     staged_set = _git_all_staged_files()

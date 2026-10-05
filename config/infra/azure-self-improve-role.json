@@ -1,0 +1,16 @@
+{
+  "Name": "Gludd Azure OpenAI Self Improvement - {account_name}",
+  "Description": "Gludd self-improvement can read one Azure OpenAI account and deployment and create non-stored Responses API output only.",
+  "Actions": [
+    "Microsoft.CognitiveServices/accounts/read",
+    "Microsoft.CognitiveServices/accounts/deployments/read"
+  ],
+  "NotActions": [],
+  "DataActions": [
+    "Microsoft.CognitiveServices/accounts/OpenAI/responses/write"
+  ],
+  "NotDataActions": [],
+  "AssignableScopes": [
+    "/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
+  ]
+}

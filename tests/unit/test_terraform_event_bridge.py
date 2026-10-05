@@ -93,6 +93,77 @@ async def test_listener_and_bridge_cleanup_are_idempotent_at_lifecycle_edges() -
 
 
 @pytest.mark.asyncio
+async def test_listener_never_emits_ready_bound_close_proof_before_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    messages: list[str] = []
+    monkeypatch.setattr(
+        "general_ludd.infra.deployment_events._emit_wakeup_progress",
+        messages.append,
+    )
+    listener = PostgresWakeupListener(
+        database_url="postgresql+psycopg://unused/gludd",
+        session_factory=Mock(),
+        wake=Mock(),
+        worker_id="worker-never-started",
+    )
+
+    listener.close()
+    await listener.aclose()
+    await listener.aclose()
+
+    assert not any("wake listener closed" in message for message in messages)
+
+
+@pytest.mark.asyncio
+async def test_listener_restart_uses_a_new_proof_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    listener = PostgresWakeupListener(
+        database_url="postgresql+psycopg://unused/gludd",
+        session_factory=Mock(),
+        wake=Mock(),
+        worker_id="worker-restart",
+    )
+
+    async def ready_until_cancelled() -> None:
+        listener._ready.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(listener, "_listen_once", ready_until_cancelled)
+    listener.start()
+    await listener.wait_ready(timeout=1)
+    first_proof_id = listener.proof_id
+    await listener.aclose()
+
+    listener.start()
+    await listener.wait_ready(timeout=1)
+    second_proof_id = listener.proof_id
+    await listener.aclose()
+
+    assert first_proof_id
+    assert second_proof_id
+    assert second_proof_id != first_proof_id
+
+
+def test_bridge_start_failure_rolls_back_event_subscription() -> None:
+    bus = EventBus()
+    listener = Mock()
+    listener.start.side_effect = RuntimeError("listener unavailable")
+    bridge = TerraformEventBridge(
+        event_bus=bus,
+        session_factory=Mock(),
+        listener=listener,
+    )
+
+    with pytest.raises(RuntimeError, match="listener unavailable"):
+        bridge.start()
+
+    assert bridge._subscription_id is None
+    assert bus._subscribers["custom"] == []
+
+
+@pytest.mark.asyncio
 async def test_bridge_persists_progress_and_wakes_on_resource_terminal_state() -> None:
     engine = create_async_engine("sqlite+aiosqlite://")
     async with engine.begin() as connection:

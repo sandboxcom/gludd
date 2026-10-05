@@ -28,6 +28,7 @@ from general_ludd.infra.compute import ComputeConfig, ComputeInstance, ComputePr
 from general_ludd.infra.deploy_strategy import ResourceTier
 from general_ludd.infra.terraform import TerraformGenerator
 from general_ludd.schemas.deployment import DeploymentRecord
+from general_ludd.schemas.project_identity import ProjectResourceIdentity, validate_project_id
 from general_ludd.security.sanitize import sanitize_error_message
 from general_ludd.security.state import project_state, secure_write_text
 
@@ -86,6 +87,7 @@ def _discover_azure_regions() -> list[str]:
             if (
                 time.time() - data.get("ts", 0) < 86400
                 and isinstance(cached_regions, list)
+                and bool(cached_regions)
                 and all(isinstance(region, str) for region in cached_regions)
             ):
                 return [str(region) for region in cached_regions]
@@ -218,9 +220,15 @@ class DeploymentManager:
         event_bus: EventPublisher | None = None,
         session_factory: async_sessionmaker[AsyncSession] | None = None,
         worker_id: str | None = None,
+        project_id: str = "default",
     ) -> None:
         """Initialize a ``DeploymentManager`` instance."""
         _install_signal_handlers()
+        self._project_id = validate_project_id(project_id)
+        self._lifecycle: ResourceLifecycleManager | None = None
+        if _LIFECYCLE_IMPORTED and get_lifecycle is not None:
+            self._lifecycle = get_lifecycle()
+            self._lifecycle.set_destroy_fn(_destroy_instance)
         self._binary_resolver = binary_paths or BinaryPathResolver()
         self._working_dir = working_dir or str(project_state().temporary_directory("terraform", prefix="gludd-tf-"))
         # The dir the NEXT terraform invocation runs in. deploy()/destroy() point
@@ -234,9 +242,14 @@ class DeploymentManager:
         self._last_config: ComputeConfig | None = None
         # W2.3 (C5/M2): instance_id -> DeploymentRecord, persisted to disk so a
         # restart still knows what is deployed and where (deploy-before-destroy).
-        self._registry: dict[str, DeploymentRecord] = {}
+        self._registry: dict[ProjectResourceIdentity, DeploymentRecord] = {}
         if self._session_factory is None:
             self._load_registry()
+
+    @property
+    def project_id(self) -> str:
+        """Return the project that owns deployments managed by this instance."""
+        return self._project_id
 
     def _publish_event(self, name: str, **payload: Any) -> None:
         """Publish deployment progress without letting observers break lifecycle work."""
@@ -279,6 +292,45 @@ class DeploymentManager:
     def _registry_path(self) -> str:
         return os.path.join(self._working_dir, _REGISTRY_FILE)
 
+    @staticmethod
+    def _record_identity(record: DeploymentRecord) -> ProjectResourceIdentity:
+        provider = record.provider or "__legacy_unspecified__"
+        return ProjectResourceIdentity(
+            record.project_id,
+            provider,
+            record.instance_id,
+        )
+
+    def _matching_local_records(
+        self,
+        instance_id: str,
+        *,
+        provider: str | None = None,
+    ) -> list[DeploymentRecord]:
+        return [
+            record
+            for record in self._registry.values()
+            if record.project_id == self._project_id
+            and record.instance_id == instance_id
+            and (provider is None or record.provider == provider)
+        ]
+
+    def _remove_local_records(
+        self,
+        instance_id: str,
+        *,
+        provider: str | None = None,
+    ) -> None:
+        keys = [
+            key
+            for key, record in self._registry.items()
+            if record.project_id == self._project_id
+            and record.instance_id == instance_id
+            and (provider is None or record.provider == provider)
+        ]
+        for key in keys:
+            del self._registry[key]
+
     def _load_registry(self) -> None:
         path = self._registry_path
         if not os.path.isfile(path):
@@ -288,36 +340,73 @@ class DeploymentManager:
                 raw = json.load(f)
         except (OSError, ValueError, json.JSONDecodeError):
             return
-        for inst_id, data in (raw or {}).items():
+        for data in (raw or {}).values():
             try:
-                self._registry[inst_id] = DeploymentRecord(**data)
+                if "project_id" not in data:
+                    data["project_id"] = self._project_id
+                record = DeploymentRecord(**data)
+                if record.project_id == self._project_id:
+                    self._registry[self._record_identity(record)] = record
             except Exception:  # pragma: no cover - skip corrupt rows
                 continue
 
     def _save_registry(self) -> None:
         os.makedirs(self._working_dir, exist_ok=True)
-        serializable = {inst_id: json.loads(record.model_dump_json()) for inst_id, record in self._registry.items()}
+        serializable = {
+            json.dumps(
+                [record.project_id, record.provider, record.instance_id],
+                separators=(",", ":"),
+            ): json.loads(record.model_dump_json())
+            for record in self._registry.values()
+        }
         with open(self._registry_path, "w") as f:
             json.dump(serializable, f)
 
-    def get_deployment(self, instance_id: str) -> DeploymentRecord | None:
+    def get_deployment(
+        self,
+        instance_id: str,
+        *,
+        provider: str | None = None,
+    ) -> DeploymentRecord | None:
         """Return get deployment."""
-        return self._registry.get(instance_id)
+        records = self._matching_local_records(
+            instance_id,
+            provider=provider,
+        )
+        if len(records) > 1:
+            raise ValueError(
+                "ambiguous deployment identity; provide provider for "
+                f"instance_id {instance_id!r}"
+            )
+        return records[0] if records else None
 
     def list_deployments(self) -> list[DeploymentRecord]:
         """List deployments."""
-        return list(self._registry.values())
+        return [
+            record
+            for record in self._registry.values()
+            if record.project_id == self._project_id
+        ]
 
-    async def get_deployment_shared(self, instance_id: str) -> DeploymentRecord | None:
+    async def get_deployment_shared(
+        self,
+        instance_id: str,
+        *,
+        provider: str | None = None,
+    ) -> DeploymentRecord | None:
         """Read the shared registry when configured, keeping the local cache coherent."""
         if self._session_factory is None:
-            return self.get_deployment(instance_id)
+            return self.get_deployment(instance_id, provider=provider)
         async with self._session_factory() as session:
-            record = await DeploymentRegistryRepository(session).get(instance_id)
+            record = await DeploymentRegistryRepository(session).get(
+                instance_id,
+                project_id=self._project_id,
+                provider=provider,
+            )
         if record is None:
-            self._registry.pop(instance_id, None)
+            self._remove_local_records(instance_id, provider=provider)
         else:
-            self._registry[instance_id] = record
+            self._registry[self._record_identity(record)] = record
         return record
 
     async def list_deployments_shared(self) -> list[DeploymentRecord]:
@@ -325,12 +414,20 @@ class DeploymentManager:
         if self._session_factory is None:
             return self.list_deployments()
         async with self._session_factory() as session:
-            records = await DeploymentRegistryRepository(session).list()
-        self._registry = {record.instance_id: record for record in records}
+            records = await DeploymentRegistryRepository(session).list(
+                project_id=self._project_id,
+            )
+        self._registry = {
+            self._record_identity(record): record for record in records
+        }
         return records
 
     async def _persist_record(self, record: DeploymentRecord) -> None:
-        self._registry[record.instance_id] = record
+        if record.project_id != self._project_id:
+            raise ValueError(
+                "deployment project ownership does not match manager project"
+            )
+        self._registry[self._record_identity(record)] = record
         if self._session_factory is None:
             self._save_registry()
             return
@@ -566,6 +663,7 @@ class DeploymentManager:
                 hourly_rate_usd=config.hourly_rate_usd,
             )
             record = DeploymentRecord(
+                project_id=self._project_id,
                 instance_id=instance_id,
                 working_dir=terraform_dir,
                 provider=config.provider.value,
@@ -581,11 +679,12 @@ class DeploymentManager:
             _DEPLOYED_INSTANCES.pop(deployment_id, None)
             _DEPLOYED_INSTANCES[instance_id] = terraform_dir
 
-            if _LIFECYCLE_IMPORTED and get_lifecycle is not None:
-                get_lifecycle().register(
+            if self._lifecycle is not None:
+                self._lifecycle.register(
                     config.provider.value,
                     instance_id,
                     terraform_dir,
+                    project_id=self._project_id,
                 )
 
             instance = ComputeInstance(
@@ -682,12 +781,20 @@ class DeploymentManager:
             env=auth_env,
         )
 
-    async def destroy(self, instance_id: str) -> None:
+    async def destroy(
+        self,
+        instance_id: str,
+        *,
+        provider: str | None = None,
+    ) -> None:
         # W2.3 (C5): refuse to destroy an instance we have no record of. Running
         # terraform destroy blind was the money-leak — it could tear down the
         # wrong state, or none, while reporting success.
         """Destroy the value."""
-        record = await self.get_deployment_shared(instance_id)
+        record = await self.get_deployment_shared(
+            instance_id,
+            provider=provider,
+        )
         if record is None:
             raise ValueError(
                 f"Refusing to destroy unknown instance_id {instance_id!r}: "
@@ -706,6 +813,8 @@ class DeploymentManager:
                     record = await DeploymentRegistryRepository(session).claim_for_destroy(
                         instance_id,
                         owner=self._worker_id,
+                        project_id=self._project_id,
+                        provider=record.provider,
                     )
                 except KeyError:
                     raise ValueError(
@@ -714,7 +823,7 @@ class DeploymentManager:
                     ) from None
                 await session.commit()
                 database_claimed = True
-            self._registry[instance_id] = record
+            self._registry[self._record_identity(record)] = record
         self._publish_event(
             "terraform_destroy_started",
             instance_id=instance_id,
@@ -742,16 +851,25 @@ class DeploymentManager:
                     await DeploymentRegistryRepository(session).finish_destroy(
                         instance_id,
                         owner=self._worker_id,
+                        project_id=record.project_id,
+                        provider=record.provider,
                     )
                     await session.commit()
                 database_claimed = False
-            self._registry.pop(instance_id, None)
+            self._remove_local_records(
+                instance_id,
+                provider=record.provider,
+            )
             _DEPLOYED_INSTANCES.pop(instance_id, None)
             if self._session_factory is None:
                 self._save_registry()
 
-            if _LIFECYCLE_IMPORTED and get_lifecycle is not None:
-                get_lifecycle().deregister(instance_id)
+            if self._lifecycle is not None:
+                self._lifecycle.deregister(
+                    instance_id,
+                    provider=record.provider,
+                    project_id=self._project_id,
+                )
             self._publish_event(
                 "terraform_destroy_completed",
                 instance_id=instance_id,
@@ -766,6 +884,8 @@ class DeploymentManager:
                         await DeploymentRegistryRepository(session).release_destroy(
                             instance_id,
                             owner=self._worker_id,
+                            project_id=record.project_id,
+                            provider=record.provider,
                         )
                         await session.commit()
                 except Exception:
@@ -783,14 +903,22 @@ class DeploymentManager:
                 )
             raise
 
-    async def _destroy_at_expiry(self, instance_id: str) -> bool:
+    async def _destroy_at_expiry(
+        self,
+        instance_id: str,
+        *,
+        provider: str | None = None,
+    ) -> bool:
         """Destroy one expired deployment, returning whether cleanup ran."""
-        record = await self.get_deployment_shared(instance_id)
+        record = await self.get_deployment_shared(
+            instance_id,
+            provider=provider,
+        )
         if record is None or record.expires_at is None:
             return False
         if record.expires_at > datetime.now(UTC):
             return False
-        await self.destroy(instance_id)
+        await self.destroy(instance_id, provider=record.provider)
         return True
 
     async def cleanup_expired(self) -> list[str]:
@@ -799,7 +927,10 @@ class DeploymentManager:
         destroyed: list[str] = []
         for record in records:
             try:
-                if await self._destroy_at_expiry(record.instance_id):
+                if await self._destroy_at_expiry(
+                    record.instance_id,
+                    provider=record.provider,
+                ):
                     destroyed.append(record.instance_id)
             except Exception:
                 record.state = "cleanup_retry"

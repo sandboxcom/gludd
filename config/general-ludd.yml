@@ -16,7 +16,7 @@
 #   Pydantic defaults from UserConfig, NetworkConfig, ModelRoutingConfig, etc.
 #   The daemon boots in an "unconfigured" but functional state: loopback bind,
 #   empty allowed_cidr (loopback-only enforcement), empty model routing
-#   (caller picks default), 4-agent pool, 10 concurrent model calls, isolation
+#   (caller picks default), 3-agent pool, 10 concurrent model calls, isolation
 #   disabled, $50 budget. To deploy, operators copy this file to
 #   ~/.config/general-ludd/general-ludd.yml (or /etc/general-ludd/) and edit.
 # =============================================================================
@@ -73,7 +73,7 @@ database:
 # agent used when a todo does not name one.
 agents:
   default_agent: build       # Agent name to use when todo.agent_name is empty.
-  max_concurrent: 4          # Max simultaneous agent instances of any one name.
+  max_concurrent: 3          # Max simultaneous agent instances of any one name.
 
 # ── orchestration ─────────────────────────────────────────────────────────────
 # Event-loop concurrency caps. These bound parallel model calls regardless of

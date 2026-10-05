@@ -22,6 +22,62 @@ def _cache_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return root
 
 
+def test_project_temp_root_is_inventory_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    root = tmp_path / "tmp"
+    root.mkdir()
+    child = root / "gludd-resources"
+    child.mkdir()
+    (child / "payload.bin").write_bytes(b"x" * 4096)
+
+    rows = inventory_cache_children(root, limit=5)
+
+    assert [row.path for row in rows] == [child]
+    with pytest.raises(CacheResourceError, match="root is not allowlisted for removal"):
+        remove_cache_child(root, child, apply=False)
+
+
+def test_project_temp_immediate_child_is_inventory_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    temp_root = tmp_path / "tmp"
+    temp_root.mkdir()
+    project_root = temp_root / "gludd-state-501"
+    project_root.mkdir()
+    payload = project_root / "sessions"
+    payload.mkdir()
+
+    rows = inventory_cache_children(project_root, limit=5)
+
+    assert [row.path for row in rows] == [payload]
+    assert inventory_cache_children(payload, limit=5) == []
+    with pytest.raises(CacheResourceError, match="root is not allowlisted for removal"):
+        remove_cache_child(project_root, payload, apply=False)
+
+
+def test_project_namespace_root_is_last_inventory_depth(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    temp_root = tmp_path / "tmp"
+    namespace = temp_root / "gludd-state-501" / "development-abc"
+    namespace.mkdir(parents=True)
+    payload = namespace / "coverage"
+    payload.mkdir()
+
+    rows = inventory_cache_children(namespace, limit=5)
+
+    assert [row.path for row in rows] == [payload]
+    with pytest.raises(CacheResourceError, match="root is not allowlisted"):
+        inventory_cache_children(payload, limit=5)
+
+
 def test_inventory_is_bounded_and_largest_first(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = _cache_root(tmp_path, monkeypatch)
     for name, size in (("small", 1), ("large", 16), ("medium", 8)):

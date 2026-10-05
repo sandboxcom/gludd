@@ -10,7 +10,7 @@ orchestrator main thread (and therefore all subagent dispatch).
 
 The orchestrator main thread is the *only* non-delegatable resource. While it
 is blocked inside a `bash` tool call, **no subagent can be dispatched** — the
-10-agent floor collapses to zero for the full wall-clock duration of that call.
+the historical fixed-width pool collapses to zero for the full wall-clock duration of that call.
 A 40-minute `make gate` is therefore not "40 minutes of slow work"; it is 40
 minutes of *zero throughput*, because the entire pipeline is starved.
 (`AGENTS.md` → "Main-thread command restriction (ANTI-STALL RULE)" and
@@ -188,7 +188,7 @@ cycle, never auto-relaunched.
 | `AGENTS.md` → "Main-thread command restriction (ANTI-STALL RULE)" | repo root | the allow-list of main-thread commands |
 | `AGENTS.md` → "Background-gate workflow" | repo root | canonical gate-background pattern |
 | `AGENTS.md` → "CRITICAL: Long-Running Operations MUST Be Backgrounded" | repo root | 30 s threshold + plugin enforcement |
-| `AGENTS.md` → "Pipeline Orchestration Model" / "Steady-state dispatch" | repo root | 10-agent floor, uniform-duration, fast result processing |
+| `AGENTS.md` → "Pipeline Orchestration Model" / "Steady-state dispatch" | repo root | Historical fixed floor (now superseded), uniform-duration, fast result processing |
 | `AGENTS.md` → "Subagent dispatch reliability rules" | repo root | 5-min deadline, two-layer kill |
 | `AGENTS.md` → "Session Start Protocol" | repo root | `make watchdog-auto` step 0 |
 | `AGENTS.md` → "No Unseen Events" | repo root | heartbeat requirement |

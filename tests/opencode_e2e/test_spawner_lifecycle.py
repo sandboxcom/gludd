@@ -22,6 +22,8 @@ def _run_script(
     timeout_sec: float = 2.0,
     progress_interval_sec: float = 30.0,
     env: dict[str, str] | None = None,
+    minimum_dispatches: int = 0,
+    maximum_dispatches: int = 3,
 ) -> SpawnResult:
     """Run a namespaced Python child through the real capture lifecycle."""
 
@@ -36,6 +38,8 @@ def _run_script(
         log_dir=str(tmp_path / "logs"),
         progress_interval_sec=progress_interval_sec,
         env=env,
+        minimum_dispatches=minimum_dispatches,
+        maximum_dispatches=maximum_dispatches,
     ).run()
 
 
@@ -171,7 +175,13 @@ def test_real_capture_loop_parses_mixed_ndjson_frames(
         "print('captured stderr', file=sys.stderr, flush=True)"
     )
 
-    result = _run_script(monkeypatch, tmp_path, script)
+    result = _run_script(
+        monkeypatch,
+        tmp_path,
+        script,
+        minimum_dispatches=3,
+        maximum_dispatches=3,
+    )
 
     assert result.verdict == "PASS"
     assert result.total_dispatch_calls == 3
@@ -189,14 +199,14 @@ def test_timeout_with_dispatch_preserves_success_verdict(
 ) -> None:
     """Timeout remains successful only when observable dispatch work preceded it."""
     events = ['{"type":"step_start"}'] + [
-        f'{{"type":"tool_use","tool":"task","id":"task-{index}"}}' for index in range(10)
+        f'{{"type":"tool_use","tool":"task","id":"task-{index}"}}' for index in range(3)
     ]
     script = f"import time\nfor line in {events!r}:\n print(line, flush=True)\ntime.sleep(2)"
 
     result = _run_script(monkeypatch, tmp_path, script, timeout_sec=0.3)
 
     assert result.killed is True
-    assert result.total_dispatch_calls == 10
+    assert result.total_dispatch_calls == 3
     assert result.verdict == "PASS"
     assert result.verdict_reason.startswith("Still dispatching when killed")
 
@@ -224,12 +234,18 @@ def test_parser_edge_cases_and_dispatch_correction() -> None:
 
 def test_analysis_records_violations_and_text_only_stops(tmp_path: Path) -> None:
     """Analysis keeps policy violations visible while preserving verdict rules."""
-    spawner = OpencodeSpawner(project_dir=str(tmp_path), prompt="analyze", log_dir=str(tmp_path / "logs"))
+    spawner = OpencodeSpawner(
+        project_dir=str(tmp_path),
+        prompt="analyze",
+        log_dir=str(tmp_path / "logs"),
+        minimum_dispatches=3,
+        maximum_dispatches=3,
+    )
     frame = ResponseFrame(
         sequence=2,
         text_content="premature stop",
-        dispatch_count=3,
-        tool_call_count=3,
+        dispatch_count=2,
+        tool_call_count=2,
         is_text_only=True,
     )
 
@@ -237,11 +253,16 @@ def test_analysis_records_violations_and_text_only_stops(tmp_path: Path) -> None
     timed_out = spawner._analyze([frame], elapsed=0.2, killed=True, depth_count=2)
 
     assert completed.verdict == "PASS"
-    assert completed.per_wave_violations[0]["dispatch_count"] == 3
+    assert completed.per_wave_violations[0]["dispatch_count"] == 2
     assert completed.text_only_stops[0]["text_preview"] == "premature stop"
     assert completed.responses[0]["sequence"] == 2
     assert timed_out.verdict == "PASS"
     assert timed_out.verdict_reason.startswith("Still dispatching when killed")
+
+    too_wide = ResponseFrame(sequence=3, dispatch_count=4, tool_call_count=4)
+    capped = spawner._analyze([too_wide], elapsed=0.1, killed=False, depth_count=1)
+    assert capped.per_wave_violations[0]["dispatch_count"] == 4
+    assert "ceiling=3" in str(capped.per_wave_violations[0]["reason"])
 
     empty_result = SpawnResult(verdict="FAIL")
     spawner._write_structured_log(empty_result, [])

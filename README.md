@@ -61,12 +61,18 @@ make typecheck       # current mypy error count (gate enforces ≤ MYPY_MAX, see
 Known-failing tests are tracked as strict xfail entries in `config/ratchet.yml` (the file
 may only shrink). The gate passes only when `make test` exits 0.
 
-**Status as of v0.1.0-beta.4 — 2026-08-09**
+**Status as of v0.1.1 — 2026-09-25**
 
-Version: `v0.1.0-beta.4` — release binaries (Linux x86_64, macOS arm64, Windows x86_64, and
+Version: `v0.1.1` — release binaries (Linux x86_64, macOS arm64, Windows x86_64, and
 more) are built as CI artifacts on every push to master, but a GitHub Release is only cut
 when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is gated on
 `startsWith(github.ref, 'refs/tags/v')`).
+
+### v0.1.1
+
+S83.166 release documentation and version bump. This patch updates the project
+version, README status line, CHANGELOG, release runbook, and release notes to
+reflect the v0.1.1 release. No functional code changes are included.
 
 ---
 
@@ -173,7 +179,7 @@ when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is
 |---|---|---|
 | S53.7-S53.11 — Prompt profiles, config audit, README config guide, 54-playbook docs, template docs | ~ 100% | **PARTIAL** *(file-refs only)*: 6 config files documented, README Configuration Guide section; commits 68da61a1, 0a912a72, 704ed529, d145ccaf |
 | S53.1-S53.3, S53.12-S53.15 — Binary fixes, smoke tests, functional tests, bundled resources, cross-platform specs | ✓ 100% | **PASS** *(file-refs only)*: macOS crash fix, smoke tests on all platforms, 21 verified assets; commits bd92fd8a..10f03137 |
-| S53.44-S53.45 — Stop-prevention codification (5 gaps, 3-layer) + CI check cooldown (machine-enforced) | ~ 100% | **PARTIAL** *(file-refs only)*: 5 anti-pattern gaps fixed, CI check cooldown 600s; commits 05d18f6f, b3878d2c, 6992be7d, ad09cc0a |
+| S53.44-S53.45 — Stop-prevention codification (5 gaps, 3-layer) + CI check cooldown (machine-enforced) | ✓ 100% | **PASS** *(file-refs only)*: 5 anti-pattern gaps fixed, CI check cooldown 600s; commits 05d18f6f, b3878d2c, 6992be7d, ad09cc0a |
 | S53.31-S53.32 — Agentic memory: embedding store, consolidation cascade, hybrid search (97 tests) | ✓ 100% | **PASS** *(file-refs only)*: Procedural + semantic + hybrid search + embedding; commit 97432526 |
 | S53.33-S53.34 — PaaS IAM least-privilege roles (AWS/GCP/Azure) + OPA policies for Terraform/IAM (32 tests) | ✗ 100% | **PENDING** *(file-refs only)*: 3 provider IAM files, 4 OPA policy files; commit b4612d1a |
 
@@ -1060,10 +1066,11 @@ the CI release job), and then verifies the published release.
 
 **A tag is not a release, and "has assets" is not "complete".**
 
-- **`make verify-release-completeness TAG=...` is the real gate.** It checks 12 artifact
-  categories — 4 platform binaries (linux-x86_64, linux-aarch64, macos-arm64,
-  windows-x86_64), `.deb`, `.rpm`, `.dmg`, `.exe` installer, checksums, SBOM, `LICENSE`,
-  `THIRD_PARTY_LICENSES` — plus: the prerelease flag must match the tag shape
+- **`make verify-release-completeness TAG=...` is the real gate.** It checks 28 artifact
+  categories spanning platform binaries, native installers, Python packages,
+  collections, the locked Ansible execution boundary, image metadata, smoke
+  attestations, manifests, checksums, SBOM, and licenses; it also requires at
+  least 30 assets. The prerelease flag must match the tag shape
   (`-alpha`/`-beta`/`-rc` ⇒ prerelease), asset names must carry the tag's version, and no
   asset may be zero-size. CI runs it as a **blocking step** on tag builds.
 - **`make verify-release-artifact` is NOT the gate.** It only proves "non-draft and at

@@ -267,8 +267,10 @@ async def _managed_session_factory() -> AsyncIterator[Any]:
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from sqlalchemy.pool import StaticPool
 
-    from general_ludd.db.models import Base
+    from general_ludd.db.models import Base, ProjectModel
+    from general_ludd.db.repository import ProjectRepository
     from general_ludd.db.session import close_engine
+    from general_ludd.projects.manager import persist_project
 
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
@@ -279,7 +281,18 @@ async def _managed_session_factory() -> AsyncIterator[Any]:
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        yield async_sessionmaker(engine, expire_on_commit=False)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            await persist_project(
+                ProjectRepository(session),
+                project_id=_PROJECT_ID,
+                name="Game building E2E",
+                weight=100.0,
+                dispatch_mode="active",
+            )
+            await session.commit()
+            assert await session.get(ProjectModel, _PROJECT_ID) is not None
+        yield factory
     finally:
         try:
             await engine.dispose()

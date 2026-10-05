@@ -40,7 +40,7 @@ class TestEnforcementDefaultsOn:
         assert '!== "0"' in line, (
             "GLUDD_FLOOR_ENFORCE must default ON (opt-out via =0). "
             "Found line did not use the opt-OUT `!== \"0\"` pattern — do not flip "
-            "the floor guardrail to opt-in. See AGENTS.md 'Minimum 10 Subagents'."
+            "the floor guardrail to opt-in. See AGENTS.md concurrency contract."
         )
         assert '=== "1"' not in line, (
             "GLUDD_FLOOR_ENFORCE must NOT be opt-in. The floor guardrail is the "
@@ -109,28 +109,9 @@ class TestEnforcementDefaultsOn:
             "GLUDD_FORCE_DELEGATE must NOT use the opt-OUT pattern — it is intentionally opt-in."
         )
 
-    def test_agent_floor_constant_is_10(self) -> None:
+    def test_agent_floor_uses_canonical_three_agent_cap(self) -> None:
         src = FLOOR_PLUGIN.read_text()
-        # 2026-07-01 refactor: the FLOOR default moved from an inline
-        # `parseInt(process.env.CLAUDE_AGENT_FLOOR || "10")` to a
-        # `_tunable("/tmp/gludd-floor-override", "CLAUDE_AGENT_FLOOR", "10")`
-        # helper (same default, adds a /tmp override read). Accept either the
-        # _tunable form or the legacy parseInt form; the env-var name + "10"
-        # default are the load-bearing parts.
-        line = next(
-            (
-                src_line
-                for src_line in src.splitlines()
-                if "CLAUDE_AGENT_FLOOR" in src_line
-                and ("_tunable" in src_line or "parseInt" in src_line)
-            ),
-            None,
-        )
-        assert line is not None, (
-            "CLAUDE_AGENT_FLOOR default line not found in enforce-floor.ts "
-            "(expected _tunable(..., \"CLAUDE_AGENT_FLOOR\", \"10\") or a parseInt form)"
-        )
-        assert '"10"' in line, (
-            "CLAUDE_AGENT_FLOOR default must be \"10\" per the active cost-efficiency "
-            "directive and machine-enforced cap. The floor must not drift."
-        )
+        assert "../lib/multitask_config.ts" in src
+        assert "CLAUDE_AGENT_FLOOR" in src
+        assert "String(HARD_MAX_DISPATCHES)" in src
+        assert "clampDispatchCount" in src

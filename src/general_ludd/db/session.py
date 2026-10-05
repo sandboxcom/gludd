@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session, with_loader_criteria
 from general_ludd.db.models import Base, QueueModel
 from general_ludd.schemas.queue import INITIAL_QUEUES
 
+# greenlet>=3.0.0 is required by SQLAlchemy asyncio.
 logger = logging.getLogger(__name__)
 
 _DEFAULT_JOURNAL_SIZE_LIMIT_BYTES = 64 * 1024 * 1024
@@ -53,9 +54,7 @@ def _bounded_int_setting(
 ) -> int:
     value = config.get(name, default)
     if type(value) is not int or not minimum <= value <= maximum:
-        raise ValueError(
-            f"database.{name} must be an integer between {minimum} and {maximum}"
-        )
+        raise ValueError(f"database.{name} must be an integer between {minimum} and {maximum}")
     return value
 
 
@@ -148,9 +147,7 @@ def is_sqlite_url(url: str | None) -> bool:
     return "sqlite" in url
 
 
-def run_wal_pragmas(
-    engine: AsyncEngine, config: dict[str, Any] | None = None
-) -> None:
+def run_wal_pragmas(engine: AsyncEngine, config: dict[str, Any] | None = None) -> None:
     """Execute ``run_wal_pragmas``."""
     if not is_sqlite_url(str(engine.url)):
         return
@@ -160,12 +157,8 @@ def run_wal_pragmas(
     def _set_sqlite_pragmas(dbapi_conn: Any, _connection_record: Any) -> None:
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute(
-            f"PRAGMA journal_size_limit={settings.journal_size_limit_bytes}"
-        )
-        cursor.execute(
-            f"PRAGMA wal_autocheckpoint={settings.wal_autocheckpoint_pages}"
-        )
+        cursor.execute(f"PRAGMA journal_size_limit={settings.journal_size_limit_bytes}")
+        cursor.execute(f"PRAGMA wal_autocheckpoint={settings.wal_autocheckpoint_pages}")
         cursor.execute(f"PRAGMA busy_timeout={settings.busy_timeout_ms}")
         cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.execute("PRAGMA foreign_keys=ON")

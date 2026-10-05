@@ -51,6 +51,54 @@ def test_codex_stop_guard_allows_clean_ledger(tmp_path, capsys):
     assert "Codex host boundary" in capsys.readouterr().out
 
 
+def test_codex_stop_guard_counts_only_declared_milestone_work(tmp_path, capsys):
+    tasks = tmp_path / "TASKS.md"
+    ratchet = tmp_path / "ratchet.yml"
+    audit = tmp_path / "audit.jsonl"
+    state = tmp_path / "state.json"
+    tasks.write_text(
+        """# Tasks
+
+The fail-closed v0.1.1 milestone is the exact task set S83.157\u2013S83.168.
+
+- [ ] S83.157 - active release work
+- [x] S83.158 - completed release work
+- [ ] S81.11 - future backlog work
+""",
+        encoding="utf-8",
+    )
+    ratchet.write_text("# no entries\n", encoding="utf-8")
+
+    assert run(tasks, ratchet, audit, state) == 1
+    output = capsys.readouterr().out
+    assert "active v0.1.1 TASKS.md items: 1" in output
+    assert "backlog items excluded from stop gate: 1" in output
+
+
+def test_codex_stop_guard_allows_stop_when_only_backlog_remains(tmp_path, capsys):
+    tasks = tmp_path / "TASKS.md"
+    ratchet = tmp_path / "ratchet.yml"
+    tasks.write_text(
+        """# Tasks
+
+The fail-closed v0.1.1 milestone is the exact task set S83.157-S83.168.
+
+- [x] S83.157 - completed release work
+- [ ] S81.11 - future backlog work
+""",
+        encoding="utf-8",
+    )
+    ratchet.write_text("# no entries\n", encoding="utf-8")
+
+    assert run(
+        tasks,
+        ratchet,
+        tmp_path / "audit.jsonl",
+        tmp_path / "state.json",
+    ) == 0
+    assert "backlog items excluded from stop gate: 1" in capsys.readouterr().out
+
+
 def test_codex_stop_guard_requires_exact_token_before_clean_stop(tmp_path, capsys):
     tasks = tmp_path / "TASKS.md"
     ratchet = tmp_path / "ratchet.yml"

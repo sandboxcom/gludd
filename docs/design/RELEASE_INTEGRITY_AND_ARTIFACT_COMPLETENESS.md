@@ -270,10 +270,11 @@ was cancelled at 19:47:16 (one second after the next push), and **never executed
 a single job**. Runs 29364608983 / 29364610894 / 29364661863 died the same way.
 
 **Consequence:** a commit can reach a tag having **never been tested**, and
-`make ci-await BRANCH=<branch>` can never return a stable verdict against a
-moving branch. A cancelled run is not a failure and not a success — it is the
-*absence* of a gate. This is precisely how v0.1.0-beta.1's SHA went out
-unvalidated.
+branch-only `make ci-await BRANCH=<branch>` can never return a stable verdict
+against a moving branch. Release callers therefore supply the tag ref, full SHA,
+workflow, and event to the exact-identity form. A cancelled run is not a success
+— it is the *absence* of a gate. This is precisely how v0.1.0-beta.1's SHA went
+out unvalidated.
 
 **Fix:** the release gate must bind to a **SHA**, not a branch. Concretely:
 (a) `require-ci-green` must fail-closed on `cancelled`/missing runs, never treat

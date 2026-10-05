@@ -90,7 +90,7 @@ class TestEventLoopFloorCap:
         todo_repo = AsyncMock()
         todos = [FakeTodo(f"todo-{i}") for i in range(10)]
 
-        async def _claim(limit=10, project_id=None):
+        async def _claim(limit=10, project_id=None, *, max_active=None):
             return todos[:limit]
 
         todo_repo.claim_runnable.side_effect = _claim
@@ -143,7 +143,7 @@ class TestEventLoopFloorCap:
         todo_repo = AsyncMock()
         todos = [FakeTodo(f"todo-{i}") for i in range(5)]
 
-        async def _claim(limit=10, project_id=None):
+        async def _claim(limit=10, project_id=None, *, max_active=None):
             return todos[:limit]
 
         todo_repo.claim_runnable.side_effect = _claim
@@ -174,7 +174,7 @@ class TestEventLoopFloorCap:
         todo_repo = AsyncMock()
         todos = [FakeTodo(f"todo-{i}") for i in range(8)]
 
-        async def _claim(limit=10, project_id=None):
+        async def _claim(limit=10, project_id=None, *, max_active=None):
             return todos[:limit]
 
         todo_repo.claim_runnable.side_effect = _claim
@@ -204,7 +204,7 @@ class TestEventLoopFloorCap:
         todo_repo = AsyncMock()
         todos = [FakeTodo(f"todo-{i}") for i in range(20)]
 
-        async def _claim(limit=10, project_id=None):
+        async def _claim(limit=10, project_id=None, *, max_active=None):
             return todos[:limit]
 
         todo_repo.claim_runnable.side_effect = _claim

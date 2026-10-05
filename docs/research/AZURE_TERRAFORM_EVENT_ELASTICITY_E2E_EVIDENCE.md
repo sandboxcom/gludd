@@ -85,11 +85,47 @@ paths miss. Primary documentation in the next sections remains authoritative.
 | [AzureRM GPU support request, opened 2024][forum-azurerm-gpu-support] | For about a year the provider rejected both serverless and dedicated Container Apps GPU profile types before the change reached AzureRM 4.55.0. | Pin and test the provider schema; a platform feature announcement is not evidence that the Terraform provider can express it. |
 | [AzureRM GPU follow-up, reported 2025][forum-azurerm-gpu-counts] | After GPU enum support merged, users found that the provider still sent zero-valued environment `minimumCount` and `maximumCount` fields that the serverless GPU API rejected. | Keep environment profile capacity distinct from app replica bounds and use an omission-preserving ARM path until a live test proves the AzureRM encoder is fixed. |
 | [Azure CLI GPU profile-name failure, opened 2025][forum-azure-cli-gpu-name] | A supported long GPU profile type was also used as the profile name and failed the name-length rule; the request body omitted `workloadProfileType`. | Use a short stable profile `name`, send the exact long string only as `workloadProfileType`, and inspect the emitted request in acceptance evidence. |
+| [Container Apps GPU revision with no container, opened 2026][forum-containerapp-profile-full] | The reporter observed revision metadata claiming one desired replica while `WorkLoad Profile Full` left the replica container list empty and the endpoint returned `504`. | A desired revision or successful ARM apply is not readiness. Poll replicas, classify the bounded system event as `capacity_exhausted`, and retry another admitted placement only under the same lease and spend cap. |
+| [Container Apps GPU job fails before image pull, opened 2025][forum-containerapp-gpu-before-pull] | T4 jobs intermittently emitted assignment/create events and then failed before `PullingImage`; the reporter suspected underlying capacity and asked for machine-readable recovery signals. | Keep capacity, image pull, and application startup as distinct failure classes. Capacity failures must not poison model-quality calibration, and bounded backoff may try another allowed region/profile. |
+| [Container Apps log endpoint shape changed, opened 2022][forum-containerapp-log-endpoint] | A CLI extension expected `logStreamEndpoint`, received a different token response, and crashed with `KeyError` instead of a typed diagnosis. | Follow the current official app-token plus `eventStreamEndpoint` flow, validate every response field, cap the read, and reduce raw lines to fixed reason classes before emitting or persisting anything. |
+| [Container Apps platform sidecar image pull stalled activation, opened 2026][forum-containerapp-identity-sidecar] | A platform-owned `identity-service` sidecar entered `ImagePullFailure` while the application revision remained `Activating`; restarting the revision moved it forward. | Read both app- and environment-scoped system events. Attribute only allowlisted reason classes, keep platform-sidecar failure separate from user-image failure, and never retry outside the existing lease, deadline, and spend cap. |
+| [Container Apps platform mount failure stayed on an unhealthy node, opened 2026][forum-containerapp-overlay-mount] | A platform-owned sidecar failed with `ContainerCreateFailure` and an overlay mount error; the reporter observed no automatic reschedule away from the unhealthy node. | A successful ARM apply and desired replica are not runtime readiness. Preserve a typed `container_create_failed` reason, stop bounded startup promptly, and permit a fresh placement only through ordinary policy. |
+| [Container Apps environment-wide provisioning stall, opened 2023][forum-containerapp-environment-stall] | Multiple apps remained stuck or failed in one environment, while recreating the environment restored service for some operators. | Correlate an app terminal state with environment-scoped events before deciding whether to recycle a retained environment. Never destroy an environment merely because one app failed. |
 | [Stopped Azure VM disk charges, opened 2022][forum-vm-disk-cost] | The author deallocated a VM but continued receiving charges; the accepted Microsoft answer confirms the retained OS and data disks still consume billable storage. | Include disk and public-IP meters through verified deletion, not merely through compute deallocation, and reconcile unexpected retained-resource rows. |
 
 Closed issues still matter as regression fixtures. They describe observable
 contracts that can recur through provider, API, regional, or configuration
 changes.
+
+The live 2026-09-15 self-improvement probes reproduced the first GPU symptom on
+both an A100-fit and a dynamically selected T4-fit candidate: the ARM app apply
+succeeded, revision metadata reported one desired replica, the replica inventory
+remained empty, and the revision eventually became `Failed`/`Unhealthy`. Both
+paid apps were then destroyed and absence was verified. This is evidence of a
+pre-container scheduling failure, but it is deliberately not labeled quota or
+capacity until the bounded system-event reader supplies that fixed class.
+
+The first canary after the 19-action role update dynamically selected T4 and
+proved both official token handshakes. The app stream returned 79 records; the
+managed-environment stream returned 101 records and app-name scoping retained 77.
+None matched a fixed failure reason at the instant the revision became terminal.
+The paid app was destroyed in 18 seconds and independently verified absent; only
+the measured-zero-cost environment was retained. Concurrent local Qwen2.5-Coder
+1.5B consumed 4,894 prompt and 778 completion tokens and produced a 1,976-byte
+two-file proposal, but syntax preflight rejected it at line 29 before any tests or
+commit. The Azure infrastructure failure was excluded from model-quality evidence.
+
+Those counts also exposed two correctness gaps in the initial reader. Reusing a
+deterministic app name means app-name filtering can include earlier revisions, and
+the terminal state can become visible before its final system event. The reader now
+requires the exact immutable revision in either the documented `RevisionName` field
+or an allowlisted detail field, counts only fixed `Type` severities, and polls both
+streams four times at five-second intervals. Every wait and poll emits a content-free
+heartbeat. A known exact-revision reason stops immediately; an exact-revision Azure
+`Error` that does not match the documented vocabulary becomes only
+`system_error_unclassified`. Provider text is never retained, and cleanup begins
+after at most 15 additional seconds. A fresh canary is required to observe the
+post-fix stream behavior.
 
 ## Event ingestion and cross-worker ownership
 
@@ -485,6 +521,11 @@ to failure.
 - [Azure Container Apps pricing][azure-container-apps-pricing]
 - [Azure Container Apps serverless GPU overview][azure-serverless-gpu]
 - [Azure Container Apps workload-profile types][azure-workload-profiles]
+- [Azure Container Apps log streaming][azure-container-log-streaming]
+- [Container Apps get-auth-token REST contract][azure-container-get-auth-token]
+- [Managed Environments get-auth-token REST contract][azure-environment-get-auth-token]
+- [Container App system-log schema][azure-container-system-log-schema]
+- [Azure CLI system-event implementation][azure-cli-system-event-source]
 - [Azure Cost Management data latency][azure-cost-latency]
 - [AzureRM Container App Environment schema][azurerm-container-app-environment]
 - [AzureRM GPU workload-profile change and release history][azurerm-gpu-pr]
@@ -507,6 +548,11 @@ to failure.
 [azure-retail-prices]: https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices
 [azure-serverless-gpu]: https://learn.microsoft.com/en-us/azure/container-apps/gpu-serverless-overview
 [azure-workload-profiles]: https://learn.microsoft.com/en-us/azure/container-apps/workload-profiles-overview
+[azure-container-log-streaming]: https://learn.microsoft.com/en-us/azure/container-apps/log-streaming
+[azure-container-get-auth-token]: https://learn.microsoft.com/en-us/rest/api/resource-manager/containerapps/container-apps/get-auth-token?view=rest-resource-manager-containerapps-2026-01-01
+[azure-environment-get-auth-token]: https://learn.microsoft.com/en-us/rest/api/resource-manager/containerapps/managed-environments/get-auth-token?view=rest-resource-manager-containerapps-2026-01-01
+[azure-container-system-log-schema]: https://learn.microsoft.com/en-us/azure/azure-monitor/reference/tables/containerappsystemlogs
+[azure-cli-system-event-source]: https://github.com/Azure/azure-cli/blob/dev/src/azure-cli/azure/cli/command_modules/containerapp/custom.py#L3243-L3283
 [azure-spot-vms]: https://learn.microsoft.com/en-us/azure/virtual-machines/spot-vms
 [azure-vm-instance-view]: https://learn.microsoft.com/en-us/rest/api/compute/virtual-machines/instance-view
 [azure-vm-states]: https://learn.microsoft.com/en-us/azure/virtual-machines/states-billing
@@ -526,6 +572,12 @@ to failure.
 [forum-azure-cli-gpu-name]: https://github.com/Azure/azure-cli/issues/31239
 [forum-azurerm-gpu-counts]: https://github.com/hashicorp/terraform-provider-azurerm/pull/30738
 [forum-azurerm-gpu-support]: https://github.com/hashicorp/terraform-provider-azurerm/issues/28117
+[forum-containerapp-profile-full]: https://github.com/microsoft/azure-container-apps/issues/1705
+[forum-containerapp-gpu-before-pull]: https://github.com/microsoft/azure-container-apps/issues/1511
+[forum-containerapp-log-endpoint]: https://github.com/Azure/azure-cli-extensions/issues/5645
+[forum-containerapp-identity-sidecar]: https://github.com/microsoft/azure-container-apps/issues/1679
+[forum-containerapp-overlay-mount]: https://github.com/microsoft/azure-container-apps/issues/1780
+[forum-containerapp-environment-stall]: https://github.com/microsoft/azure-container-apps/issues/783
 [gludd-accelerator-proof]: ../design/AZURE_ACCELERATOR_LIVE_PROOF.md
 [gludd-postgres-workers]: ../POSTGRES_MULTI_WORKER.md
 [gunicorn-design]: https://docs.gunicorn.org/en/stable/design.html

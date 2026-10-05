@@ -6,6 +6,7 @@ export default (async () => {
   if (isSubagent()) return {}
   const hooks = await impl({})
   return {
+    "experimental.chat.messages.transform": hooks["experimental.chat.messages.transform"],
     "tool.execute.before": hooks["tool.execute.before"],
     "experimental.text.complete": hooks["experimental.text.complete"],
   }

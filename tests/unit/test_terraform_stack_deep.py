@@ -74,6 +74,30 @@ OUTPUT_URL_VARIANTS: tuple[str, ...] = (
     "service_endpoint",
 )
 
+GENERIC_VLLM_ONLY_OUTPUTS: frozenset[str] = frozenset(
+    {
+        "instance_resource_id",
+        "resource_group_name",
+        "workload_profile_type",
+        "instance_ip",
+        "endpoint_url",
+    }
+)
+
+STACK_SPECIFIC_VLLM_ONLY_OUTPUTS: dict[str, frozenset[str]] = {
+    # This is the only paired stack that materializes a real Azure Container
+    # App.  Its generic llama.cpp peer renders server configuration and has no
+    # owned Azure revision or app-only cleanup boundary to expose truthfully.
+    "azure-container-app-vllm": frozenset({"cleanup_boundary", "revision_name"}),
+}
+
+# Lifecycle roots own control-plane resources, not inference instances. They
+# retain the common stack safety checks while using lifecycle-specific outputs
+# and no replica cost watchdog.
+LIFECYCLE_STACKS: frozenset[str] = frozenset(
+    {"azure-container-app-environment"}
+)
+
 
 def _stack_path(stack_name: str, *parts: str) -> Path:
     return STACKS_DIR.joinpath(stack_name, *parts)
@@ -285,7 +309,7 @@ class TestVariableDefinitions:
 
     @pytest.mark.parametrize("stack_name", STACK_NAMES)
     def test_common_variables_present(self, stack_name: str) -> None:
-        if stack_name.startswith("kubernetes-"):
+        if stack_name.startswith("kubernetes-") or stack_name in LIFECYCLE_STACKS:
             return
         vars_tf = _read_tf(stack_name, "variables.tf")
         variables = _parse_variable_blocks(vars_tf)
@@ -330,6 +354,14 @@ class TestOutputDefinitions:
         main_tf = _read_tf(stack_name, "main.tf")
         parsed = _parse_output_blocks(outputs_tf)
         parsed.update(_parse_output_blocks(main_tf))
+        if stack_name in LIFECYCLE_STACKS:
+            assert set(parsed) == {
+                "environment_id",
+                "cleanup_boundary",
+                "runtime_class",
+            }
+            assert '"control-plane"' in parsed["runtime_class"]
+            return
         id_match = set(OUTPUT_ID_VARIANTS) & set(parsed)
         url_match = set(OUTPUT_URL_VARIANTS) & set(parsed)
         assert id_match, f"{stack_name}: missing an instance-id-type output ({OUTPUT_ID_VARIANTS})"
@@ -422,7 +454,7 @@ class TestModuleReferences:
     @pytest.mark.parametrize("stack_name", STACK_NAMES)
     def test_non_vast_stacks_have_gpu_watchdog_module(self, stack_name: str) -> None:
         content = _read_tf(stack_name, "main.tf")
-        if stack_name.startswith("vast-"):
+        if stack_name.startswith("vast-") or stack_name in LIFECYCLE_STACKS:
             return
         assert 'source = "../../modules/gpu-cost-watchdog"' in content, (
             f"{stack_name}: must reference gpu-cost-watchdog module"
@@ -450,20 +482,17 @@ class TestCrossStackConsistency:
         for vllm_name, llama_name in pairs:
             vllm_keys = set(_parse_output_blocks(_read_tf(vllm_name, "outputs.tf")))
             llama_keys = set(_parse_output_blocks(_read_tf(llama_name, "outputs.tf")))
-            bonus = (
-                vllm_keys
-                - llama_keys
-                - {
-                    "instance_resource_id",
-                    "resource_group_name",
-                    "workload_profile_type",
-                    "instance_ip",
-                    "endpoint_url",
-                }
+            allowed_vllm_only = GENERIC_VLLM_ONLY_OUTPUTS | STACK_SPECIFIC_VLLM_ONLY_OUTPUTS.get(
+                vllm_name, frozenset()
             )
+            bonus = vllm_keys - llama_keys - allowed_vllm_only
             assert not bonus, f"{vllm_name} has extra outputs vs {llama_name}: {bonus}"
             missing = llama_keys - vllm_keys
             assert not missing, f"{llama_name} has extra outputs vs {vllm_name}: {missing}"
+
+    def test_container_app_vllm_exposes_real_runtime_identity_and_cleanup_outputs(self) -> None:
+        output_keys = set(_parse_output_blocks(_read_tf("azure-container-app-vllm", "outputs.tf")))
+        assert STACK_SPECIFIC_VLLM_ONLY_OUTPUTS["azure-container-app-vllm"] <= output_keys
 
     def test_no_duplicate_stack_directories(self) -> None:
         dirs = sorted(d.name for d in STACKS_DIR.iterdir() if d.is_dir())

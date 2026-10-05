@@ -2,12 +2,43 @@
 
 from __future__ import annotations
 
+import importlib.util
+from pathlib import Path
+from types import ModuleType
 from unittest.mock import MagicMock, patch
 
 import pytest
 from alembic.util.exc import CommandError
+from sqlalchemy.dialects import postgresql, sqlite
 
 from general_ludd.db.migrations import get_alembic_config, plan_migration
+
+
+def _load_event_transport_migration() -> ModuleType:
+    path = Path(__file__).resolve().parents[2] / "alembic/versions/040_add_event_work_transport.py"
+    spec = importlib.util.spec_from_file_location("migration_040_event_transport", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_event_transport_created_at_default_compiles_for_sqlite_and_postgresql() -> None:
+    """Migration 040 must never regress to SQLite-only strftime syntax."""
+    migration = _load_event_transport_migration()
+    with patch.object(migration, "op") as operation:
+        migration.upgrade()
+    columns = operation.create_table.call_args.args[1:]
+    created_at = next(column for column in columns if getattr(column, "name", None) == "created_at")
+    assert created_at.server_default is not None
+
+    sqlite_default = str(created_at.server_default.arg.compile(dialect=sqlite.dialect()))
+    postgres_default = str(created_at.server_default.arg.compile(dialect=postgresql.dialect()))
+
+    assert "strftime" not in sqlite_default.lower()
+    assert "strftime" not in postgres_default.lower()
+    assert sqlite_default.upper() == "CURRENT_TIMESTAMP"
+    assert postgres_default.lower() == "now()"
 
 
 def test_plan_migration_rejects_repository_without_head_revision() -> None:

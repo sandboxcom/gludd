@@ -17,6 +17,7 @@ import hashlib
 import json
 import re
 import sys
+from collections import Counter, defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -77,8 +78,12 @@ class ResourceEvidence:
     owned: bool
 
     def key(self) -> tuple[str, int, int, str, str]:
-        """Return the immutable inventory identity for this acquisition."""
+        """Return the exact stored identity for inventory serialization."""
         return (self.path, self.line, self.column, self.kind, self.source_hash)
+
+    def semantic_key(self) -> tuple[str, str, str, str]:
+        """Return ownership identity that is stable across source relocation."""
+        return (self.path, self.kind, self.owner, self.source_hash)
 
     def as_dict(self) -> dict[str, object]:
         """Render stable JSON-compatible evidence."""
@@ -692,19 +697,33 @@ def validate_inventory(
     findings: Sequence[ResourceEvidence],
     inventory: dict[tuple[str, int, int, str, str], ResourceEvidence],
 ) -> list[str]:
-    """Fail on unowned acquisitions or any exact inventory drift."""
+    """Fail on unowned acquisitions or count-preserving semantic drift."""
     errors = [
         f"unowned resource: {item.path}:{item.line}:{item.column} [{item.kind}] {item.acquisition}"
         for item in findings
         if not item.owned
     ]
-    actual = {item.key(): item for item in findings}
-    for key in sorted(actual.keys() - inventory.keys()):
-        item = actual[key]
-        errors.append(f"new resource: {item.path}:{item.line}:{item.column} [{item.kind}] {item.source_hash}")
-    for key in sorted(inventory.keys() - actual.keys()):
-        item = inventory[key]
-        errors.append(f"stale inventory: {item.path}:{item.line}:{item.column} [{item.kind}] {item.source_hash}")
+    actual_groups: dict[tuple[str, str, str, str], list[ResourceEvidence]] = defaultdict(list)
+    inventory_groups: dict[tuple[str, str, str, str], list[ResourceEvidence]] = defaultdict(list)
+    for item in findings:
+        actual_groups[item.semantic_key()].append(item)
+    for item in inventory.values():
+        inventory_groups[item.semantic_key()].append(item)
+
+    actual_counts = Counter({key: len(items) for key, items in actual_groups.items()})
+    inventory_counts = Counter({key: len(items) for key, items in inventory_groups.items()})
+    for key, count in sorted((actual_counts - inventory_counts).items()):
+        for item in sorted(actual_groups[key])[:count]:
+            errors.append(
+                "owned resource awaiting inventory admission: "
+                f"{item.path}:{item.line}:{item.column} [{item.kind}] {item.source_hash}"
+            )
+    for key, count in sorted((inventory_counts - actual_counts).items()):
+        for item in sorted(inventory_groups[key])[:count]:
+            errors.append(
+                f"stale inventory: {item.path}:{item.line}:{item.column} "
+                f"[{item.kind}] {item.source_hash}"
+            )
     return errors
 
 
@@ -727,7 +746,7 @@ def write_inventory(path: Path, findings: Sequence[ResourceEvidence]) -> None:
         )
     payload = {
         "schema_version": 1,
-        "policy": "exact-path-line-column-kind-and-acquisition-teardown-sha256",
+        "policy": "counted-path-kind-owner-and-acquisition-teardown-sha256",
         "resources": [item.as_dict() for item in findings],
     }
     path.parent.mkdir(parents=True, exist_ok=True)

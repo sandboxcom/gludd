@@ -1,0 +1,124 @@
+---
+- name: Discover Podman before exact-owner teardown
+  ansible.builtin.command:
+    argv:
+      - "{{ execution_environment_bootstrap_podman_executable }}"
+      - version
+      - --format
+      - json
+  register: _execution_environment_bootstrap_absent_podman
+  changed_when: false
+  failed_when: false
+  environment: "{{ _execution_environment_bootstrap_tool_environment }}"
+
+- name: Inspect the exact Gludd-owned machine before teardown
+  ansible.builtin.command:
+    argv:
+      - "{{ execution_environment_bootstrap_podman_executable }}"
+      - machine
+      - inspect
+      - "{{ execution_environment_bootstrap_machine_name }}"
+      - --format
+      - json
+  register: _execution_environment_bootstrap_absent_machine
+  changed_when: false
+  failed_when: false
+  environment: "{{ _execution_environment_bootstrap_tool_environment }}"
+  when:
+    - _execution_environment_bootstrap_absent_podman.rc == 0
+    - _execution_environment_bootstrap_machine_required | bool
+
+- name: Start the owned machine so its exact image can be removed
+  ansible.builtin.command:
+    argv:
+      - "{{ execution_environment_bootstrap_podman_executable }}"
+      - machine
+      - start
+      - "{{ execution_environment_bootstrap_machine_name }}"
+  changed_when: true
+  failed_when: false
+  environment: "{{ _execution_environment_bootstrap_tool_environment }}"
+  when:
+    - _execution_environment_bootstrap_absent_podman.rc == 0
+    - _execution_environment_bootstrap_machine_required | bool
+    - _execution_environment_bootstrap_absent_machine.rc == 0
+
+- name: Inspect only the exact Gludd-owned candidate image before removal
+  ansible.builtin.command:
+    argv:
+      - "{{ execution_environment_bootstrap_podman_executable }}"
+      - image
+      - exists
+      - "{{ _execution_environment_bootstrap_candidate_image }}"
+  environment: "{{ _execution_environment_bootstrap_tool_environment }}"
+  register: _execution_environment_bootstrap_absent_image
+  changed_when: false
+  failed_when: false
+  when:
+    - _execution_environment_bootstrap_absent_podman.rc == 0
+    - execution_environment_bootstrap_remove_image_on_absent | bool
+    - not _execution_environment_bootstrap_machine_required | bool or _execution_environment_bootstrap_absent_machine.rc == 0
+
+- name: Remove only the exact Gludd-owned candidate image
+  ansible.builtin.command:
+    argv:
+      - "{{ execution_environment_bootstrap_podman_executable }}"
+      - image
+      - rm
+      - "{{ _execution_environment_bootstrap_candidate_image }}"
+  environment: "{{ _execution_environment_bootstrap_tool_environment }}"
+  changed_when: true
+  when:
+    - _execution_environment_bootstrap_absent_podman.rc == 0
+    - execution_environment_bootstrap_remove_image_on_absent | bool
+    - _execution_environment_bootstrap_absent_image.rc == 0
+
+- name: Stop the exact Gludd-owned Podman machine
+  ansible.builtin.command:
+    argv:
+      - "{{ execution_environment_bootstrap_podman_executable }}"
+      - machine
+      - stop
+      - "{{ execution_environment_bootstrap_machine_name }}"
+  changed_when: true
+  failed_when: false
+  environment: "{{ _execution_environment_bootstrap_tool_environment }}"
+  when:
+    - _execution_environment_bootstrap_absent_podman.rc == 0
+    - _execution_environment_bootstrap_machine_required | bool
+    - _execution_environment_bootstrap_absent_machine.rc == 0
+
+- name: Remove the exact Gludd-owned Podman machine
+  ansible.builtin.command:
+    argv:
+      - "{{ execution_environment_bootstrap_podman_executable }}"
+      - machine
+      - rm
+      - --force
+      - "{{ execution_environment_bootstrap_machine_name }}"
+  changed_when: true
+  environment: "{{ _execution_environment_bootstrap_tool_environment }}"
+  when:
+    - _execution_environment_bootstrap_absent_podman.rc == 0
+    - _execution_environment_bootstrap_machine_required | bool
+    - _execution_environment_bootstrap_absent_machine.rc == 0
+
+- name: Remove only the content-addressed Gludd-owned builder context
+  ansible.builtin.file:
+    path: "{{ _execution_environment_bootstrap_candidate_context }}"
+    state: absent
+
+- name: Publish execution-environment teardown evidence
+  ansible.builtin.set_fact:
+    gludd_execution_environment:
+      state: absent
+      owner: gludd
+      machine: "{{ execution_environment_bootstrap_machine_name }}"
+      image: "{{ _execution_environment_bootstrap_candidate_image }}"
+      context: "{{ _execution_environment_bootstrap_candidate_context }}"
+      runtime_lock_sha256: "{{ _execution_environment_bootstrap_runtime_sha256 }}"
+      verified: false
+
+- name: Report execution-environment teardown evidence
+  ansible.builtin.debug:
+    var: gludd_execution_environment

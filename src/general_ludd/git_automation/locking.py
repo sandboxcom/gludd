@@ -260,6 +260,12 @@ def _git_dir(repo_path: str) -> str | None:
     return None
 
 
+def git_common_directory(repo_path: str) -> str | None:
+    """Return the shared Git directory for a checkout or linked worktree."""
+    value = _git_dir(repo_path)
+    return os.path.realpath(value) if value is not None else None
+
+
 def _break_if_stale(lock_path: str, stale_after: float) -> bool:
     """Report stale lock metadata without unlinking the mutex inode.
 

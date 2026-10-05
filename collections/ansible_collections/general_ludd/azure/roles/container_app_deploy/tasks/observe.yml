@@ -1,0 +1,142 @@
+---
+- name: Reset optional revision diagnosis for this observation pass
+  ansible.builtin.set_fact:
+    _cad_diagnosis: null
+    _cad_startup_probe: null
+
+- name: Read managed-environment inventory with the Microsoft collection
+  azure.azcollection.azure_rm_resource_info:
+    url: >-
+      /subscriptions/{{ containerapp_subscription_id
+      }}/resourceGroups/{{ containerapp_resource_group
+      }}/providers/Microsoft.App/managedEnvironments
+    api_version: "{{ containerapp_api_version }}"
+    auth_source: "{{ containerapp_auth_source }}"
+    subscription_id: "{{ containerapp_subscription_id }}"
+  register: _cad_environments
+  changed_when: false
+
+- name: Read Container App inventory with the Microsoft collection
+  azure.azcollection.azure_rm_resource_info:
+    url: >-
+      /subscriptions/{{ containerapp_subscription_id
+      }}/resourceGroups/{{ containerapp_resource_group
+      }}/providers/Microsoft.App/containerApps
+    api_version: "{{ containerapp_api_version }}"
+    auth_source: "{{ containerapp_auth_source }}"
+    subscription_id: "{{ containerapp_subscription_id }}"
+  register: _cad_apps
+  changed_when: false
+
+- name: Normalize discovery before optional environment reads
+  ansible.builtin.set_fact:
+    _cad_observation: >-
+      {{ {
+           'environments': _cad_environments,
+           'apps': _cad_apps
+         } | general_ludd.azure.containerapp_observation(_cad_contract) }}
+
+- name: Read exact Container App revision inventory
+  azure.azcollection.azure_rm_resource_info:
+    url: "{{ _cad_app_id }}/revisions"
+    api_version: "{{ containerapp_api_version }}"
+    auth_source: "{{ containerapp_auth_source }}"
+    subscription_id: "{{ containerapp_subscription_id }}"
+  register: _cad_revisions
+  changed_when: false
+  when:
+    - _cad_observation.app.exists | bool
+    - containerapp_revision_name | length > 0
+
+- name: Classify whether the exact approved revision is observable
+  ansible.builtin.set_fact:
+    _cad_startup_probe: >-
+      {{ {
+           'revisions': _cad_revisions,
+           'replicas': {}
+         } | general_ludd.azure.containerapp_startup_diagnosis({
+           'revision_name': containerapp_revision_name,
+           'requested_replicas': containerapp_required_replicas
+         }) }}
+  when:
+    - _cad_observation.app.exists | bool
+    - containerapp_revision_name | length > 0
+
+- name: Read exact approved revision replica inventory
+  azure.azcollection.azure_rm_resource_info:
+    url: >-
+      {{ _cad_app_id }}/revisions/{{ containerapp_revision_name }}/replicas
+    api_version: "{{ containerapp_api_version }}"
+    auth_source: "{{ containerapp_auth_source }}"
+    subscription_id: "{{ containerapp_subscription_id }}"
+  register: _cad_replicas
+  changed_when: false
+  when:
+    - _cad_startup_probe is mapping
+    - _cad_startup_probe.state != 'not_observed'
+
+- name: Derive content-free startup diagnosis
+  ansible.builtin.set_fact:
+    _cad_diagnosis: >-
+      {{ {
+           'revisions': _cad_revisions,
+           'replicas': _cad_replicas | default({})
+         } | general_ludd.azure.containerapp_startup_diagnosis({
+           'revision_name': containerapp_revision_name,
+           'requested_replicas': containerapp_required_replicas
+         }) }}
+  when:
+    - _cad_startup_probe is mapping
+
+- name: Read exact environment quota usage
+  azure.azcollection.azure_rm_resource_info:
+    url: "{{ _cad_environment_id }}/usages"
+    api_version: "{{ containerapp_api_version }}"
+    auth_source: "{{ containerapp_auth_source }}"
+    subscription_id: "{{ containerapp_subscription_id }}"
+  register: _cad_usages
+  changed_when: false
+  when: _cad_observation.environment.exists | bool
+
+- name: Read exact environment workload-profile state
+  azure.azcollection.azure_rm_resource_info:
+    url: "{{ _cad_environment_id }}/workloadProfileStates"
+    api_version: "{{ containerapp_api_version }}"
+    auth_source: "{{ containerapp_auth_source }}"
+    subscription_id: "{{ containerapp_subscription_id }}"
+  register: _cad_profile_states
+  changed_when: false
+  when: _cad_observation.environment.exists | bool
+
+- name: Read exact revision GPU utilization metric
+  azure.azcollection.azure_rm_resource_info:
+    url: >-
+      {{ _cad_app_id
+         ~ '/providers/microsoft.insights/metrics'
+         ~ '?metricnames=GpuUtilizationPercentage'
+         ~ '&aggregation=Maximum'
+         ~ '&interval=PT1M'
+         ~ '&timespan=' ~ (containerapp_metric_timespan | urlencode)
+         ~ '&$filter='
+         ~ (('revisionName eq ' ~ "'" ~ containerapp_revision_name ~ "'")
+            | urlencode) }}
+    api_version: "{{ containerapp_metrics_api_version }}"
+    auth_source: "{{ containerapp_auth_source }}"
+    subscription_id: "{{ containerapp_subscription_id }}"
+  register: _cad_metrics
+  changed_when: false
+  when:
+    - _cad_observation.app.exists | bool
+    - containerapp_revision_name | length > 0
+    - containerapp_metric_timespan | length > 0
+
+- name: Normalize complete content-free Azure observation
+  ansible.builtin.set_fact:
+    _cad_observation: >-
+      {{ {
+           'environments': _cad_environments,
+           'apps': _cad_apps,
+           'usages': _cad_usages | default({}),
+           'profile_states': _cad_profile_states | default({}),
+           'metrics': _cad_metrics | default({})
+         } | general_ludd.azure.containerapp_observation(_cad_contract) }}

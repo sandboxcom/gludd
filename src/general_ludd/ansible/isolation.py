@@ -10,6 +10,7 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 _DIGEST_PINNED_IMAGE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:+-]*@sha256:[0-9a-f]{64}$")
+_LOCAL_IMAGE_ID = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 def _podman_socket_paths() -> list[str]:
@@ -110,11 +111,15 @@ class ProcessIsolationConfig(BaseModel):
             raise ValueError("test-only in-process mode cannot enable process isolation")
         if self.enabled and (
             self.container_image is None
-            or _DIGEST_PINNED_IMAGE.fullmatch(self.container_image) is None
+            or (
+                _DIGEST_PINNED_IMAGE.fullmatch(self.container_image) is None
+                and _LOCAL_IMAGE_ID.fullmatch(self.container_image) is None
+            )
         ):
             raise ValueError(
                 "enabled process isolation requires a digest-pinned execution "
-                "environment image (registry/name@sha256:<64 lowercase hex>)"
+                "environment image (registry/name@sha256:<64 lowercase hex>) "
+                "or immutable local image ID (sha256:<64 lowercase hex>)"
             )
         return self
 

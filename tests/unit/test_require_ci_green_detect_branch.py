@@ -14,6 +14,7 @@ No real git or gh calls are made. All subprocess I/O is mocked.
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 from subprocess import CompletedProcess
 from typing import Any, cast
@@ -39,6 +40,7 @@ def _load_module():
 require_ci_green = _load_module()
 _detect_branch = require_ci_green._detect_branch
 verdict_for = require_ci_green.verdict_for
+FULL_SHA = "d" * 40
 
 
 # ---------------------------------------------------------------------------
@@ -108,18 +110,18 @@ class TestDetectBranchIntegration:
             # Force gh to fail fast so we only assert _detect_branch was called,
             # not on gh's result.
             with patch("subprocess.run", return_value=_proc("[]")):
-                verdict_for("abc123", branch=None)
+                verdict_for(FULL_SHA, branch=None)
             mock_det.assert_called_once()
 
     def test_not_called_when_branch_explicit(self):
         """Sanity: explicit branch bypasses _detect_branch()."""
         with patch.object(require_ci_green, "_detect_branch", return_value="development") as mock_det:
             with patch("subprocess.run", return_value=_proc("[]")):
-                verdict_for("abc123", branch="master")
+                verdict_for(FULL_SHA, branch="master")
             mock_det.assert_not_called()
 
-    def test_detected_branch_passed_to_gh(self):
-        """The branch returned by _detect_branch is passed through to the gh subprocess."""
+    def test_exact_commit_query_avoids_server_branch_filter_and_requests_identity(self):
+        """The API query stays broad enough for reliable local branch filtering."""
         captured: dict[str, Any] = {}
 
         def fake_run(cmd, *args, **kwargs):
@@ -128,14 +130,45 @@ class TestDetectBranchIntegration:
 
         with patch.object(require_ci_green, "_detect_branch", return_value="feature/rp-12"), \
              patch("subprocess.run", side_effect=fake_run):
-            verdict_for("deadbeef", branch=None)
+            verdict_for(FULL_SHA, branch=None)
 
-        # The gh command should include the detected branch name
-        assert "feature/rp-12" in captured["cmd"]
+        command = captured["cmd"]
+        assert "--commit" in command
+        assert command[command.index("--commit") + 1] == FULL_SHA
+        assert "--workflow" not in command
+        assert "--branch" not in command
+        fields = command[command.index("--json") + 1]
+        assert "headBranch" in fields
+        assert "event" in fields
+
+    def test_query_filters_branch_and_event_locally_before_authorizing_reuse(self):
+        runs = [
+            {
+                "databaseId": 3,
+                "headSha": FULL_SHA,
+                "headBranch": "master",
+                "workflowName": "Build and Release",
+                "event": "push",
+                "status": "completed",
+                "conclusion": "success",
+            },
+            {
+                "databaseId": 2,
+                "headSha": FULL_SHA,
+                "headBranch": "development",
+                "workflowName": "Build and Release",
+                "event": "workflow_dispatch",
+                "status": "completed",
+                "conclusion": "success",
+            },
+        ]
+
+        with patch("subprocess.run", return_value=_proc(json.dumps(runs))):
+            assert verdict_for(FULL_SHA, branch="development") == 2
 
     def test_rejects_ambiguous_branch_arguments(self):
         with pytest.raises(TypeError, match="either positionally or by keyword"):
-            verdict_for("deadbeef", "development", branch="master")
+            verdict_for(FULL_SHA, "development", branch="master")
 
     def test_rejects_branch_for_supplied_run_data(self):
         with pytest.raises(TypeError, match="only valid when querying CI"):
@@ -149,5 +182,5 @@ class TestDetectBranchIntegration:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         with patch("subprocess.run", return_value=_proc(stdout, returncode)):
-            assert verdict_for("deadbeef", branch="development") == 2
+            assert verdict_for(FULL_SHA, branch="development") == 2
         assert "CI ERROR:" in capsys.readouterr().out

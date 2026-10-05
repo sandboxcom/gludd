@@ -4,9 +4,9 @@ Coverage and Molecule diagnostics use ``if: always()`` so a red job retains
 evidence. Platform release assets upload only after every build and smoke step
 succeeds, preventing partial binaries from entering the release fan-in.
 
-The test parses .github/workflows/build.yml with yaml.safe_load and walks
-every job's steps; any step using `actions/upload-artifact` MUST carry an
-`if:` condition whose value contains `always()`.
+The test parses .github/workflows/build.yml with yaml.safe_load and walks every
+job's steps. Publishable gludd-* assets require success, while diagnostics
+require always().
 """
 from __future__ import annotations
 
@@ -44,6 +44,11 @@ def _upload_artifact_steps(data: dict) -> list[tuple[str, dict]]:
     return out
 
 
+def _artifact_name(step: dict) -> str:
+    """Return the upload's workflow-artifact name."""
+    return str(step.get("with", {}).get("name", ""))
+
+
 class TestUploadArtifactConditions:
     """Artifact conditions distinguish diagnostics from release assets."""
 
@@ -57,11 +62,10 @@ class TestUploadArtifactConditions:
     def test_diagnostic_uploads_have_if_always(self):
         data = _load_workflow()
         steps = _upload_artifact_steps(data)
-        diagnostic_jobs = {"test-shard", "coverage", "molecule"}
         violations = [
-            job_name
+            f"{job_name}: {_artifact_name(step)}"
             for job_name, step in steps
-            if job_name in diagnostic_jobs
+            if not _artifact_name(step).startswith("gludd-")
             and "always()" not in str(step.get("if", ""))
         ]
         assert not violations, (
@@ -72,11 +76,18 @@ class TestUploadArtifactConditions:
         data = _load_workflow()
         steps = _upload_artifact_steps(data)
         platform_jobs = {"linux", "macos", "windows", "termux"}
-        violations = [
-            f"{job_name}: {step.get('if')!r}"
+        release_steps = [
+            (job_name, step)
             for job_name, step in steps
             if job_name in platform_jobs
-            and str(step.get("if", "success()")) != "success()"
+            and _artifact_name(step).startswith("gludd-")
+        ]
+        missing = platform_jobs - {job_name for job_name, _step in release_steps}
+        assert not missing, f"platform jobs missing release assets: {sorted(missing)}"
+        violations = [
+            f"{job_name}: {step.get('if')!r}"
+            for job_name, step in release_steps
+            if str(step.get("if", "success()")) != "success()"
         ]
         assert not violations, (
             "platform release assets must not upload after failed smoke/build "

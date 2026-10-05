@@ -1,5 +1,9 @@
 """Models module."""
 
+from general_ludd.models.candidate_identity import (
+    CatalogFreeTierCandidateIdentity,
+    ModelCandidateProvider,
+)
 from general_ludd.models.cost_router import CostAwareRouter, ModelRoute, PeakPricingSchedule
 from general_ludd.models.gateway import ModelGateway, ModelProfile, ModelResponse
 from general_ludd.models.model_registry import DownloadedModel, ModelRegistry, ModelSearchResult
@@ -9,8 +13,10 @@ from general_ludd.models.router import ModelRouter
 
 __all__ = [
     "BudgetProfile",
+    "CatalogFreeTierCandidateIdentity",
     "CostAwareRouter",
     "DownloadedModel",
+    "ModelCandidateProvider",
     "ModelGateway",
     "ModelProfile",
     "ModelRegistry",

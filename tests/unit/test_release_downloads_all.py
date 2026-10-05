@@ -1,9 +1,9 @@
 """Structural test: release job downloads artifacts from ALL build jobs.
 
-Verifies that the release job's download-artifact step covers every build
-job's uploaded artifact (platform builds, container metadata, and the locked
-Ansible execution environment). Prevents orphan uploads — a build job producing
-an artifact the release never downloads.
+Verifies that the release job's download-artifact step covers every publishable
+gludd-* artifact (platform builds, container metadata, and the locked Ansible
+execution environment). Failure-diagnostic artifacts intentionally stay outside
+release fan-in.
 """
 from __future__ import annotations
 
@@ -140,23 +140,27 @@ class TestReleaseDownloadsAllBuildArtifacts:
     def test_every_build_job_artifact_is_downloaded(self) -> None:
         """Requirement 3: no orphan uploads.
 
-        Every artifact uploaded by a release-producing build job must be
-        matched by the release download pattern.
+        Every publishable artifact uploaded by a release-producing build job
+        must be matched by the release download pattern. Diagnostic evidence is
+        deliberately excluded.
         """
         src = _workflow_source()
         sections = _extract_job_sections(src)
         config = _extract_release_download_config(src)
 
-        uploaded: dict[str, str] = {}  # artifact_name -> job_name
+        uploaded: dict[str, str] = {}  # release artifact_name -> job_name
+        diagnostics: dict[str, str] = {}
         for job in BUILD_JOBS:
             section = sections.get(job, "")
             for art_name in _extract_upload_artifact_names(section):
-                uploaded[art_name] = job
+                destination = uploaded if art_name.startswith("gludd-") else diagnostics
+                destination[art_name] = job
 
         assert uploaded, (
-            f"Expected at least one upload-artifact across {BUILD_JOBS} — "
+            f"Expected at least one gludd-* release artifact across {BUILD_JOBS} — "
             f"found none"
         )
+        assert "linux-pyinstaller-warning-x86_64" in diagnostics
 
         if "pattern" in config:
             pattern = config["pattern"]

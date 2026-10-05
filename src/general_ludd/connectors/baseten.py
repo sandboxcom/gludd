@@ -24,7 +24,7 @@ Design constraints (matching the rest of the connector package):
    config values are typed as ``Mapping[str, str | int | float | bool | None]``.
 * **health() never raises.** It always returns a dict.
 
-References
+References:
 ----------
 * Inference API: https://docs.baseten.co/reference/inference-api/overview
 * Management API: https://docs.baseten.co/reference/management-api/overview
@@ -35,20 +35,31 @@ from __future__ import annotations
 import json
 import logging
 import os
-from collections.abc import Callable, Mapping
-from typing import TypedDict
+from collections.abc import Mapping
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._errors import ConnectorConfigError, SSRFError
+from general_ludd.connectors.baseten_contracts import (
+    BasetenConfig as BasetenConfig,
+)
+from general_ludd.connectors.baseten_contracts import (
+    BasetenDeployment,
+    BasetenHealthResult,
+    ConfigValue,
+    HeterogeneousConfig,
+    HttpRequest,
+    normalize_baseten_deployment,
+    normalize_baseten_deployments,
+)
+from general_ludd.connectors.baseten_contracts import (
+    BasetenModel as BasetenModel,
+)
+from general_ludd.connectors.baseten_contracts import (
+    BasetenModelsResponse as BasetenModelsResponse,
+)
 from general_ludd.security.ssrf import is_url_blocked
 
 logger = logging.getLogger(__name__)
-
-# Transport contract: (method, url, headers, body) -> (status_code, json_dict)
-HttpRequest = Callable[
-    [str, str, Mapping[str, str], "bytes | None"],
-    "tuple[int, dict[str, object]]",
-]
 
 _DEFAULT_TIMEOUT_SECONDS = 30.0
 _DEFAULT_BASE_URL = "https://inference.baseten.co/v1"
@@ -57,68 +68,6 @@ _DEFAULT_API_KEY_ENV = "BASETEN_API_KEY"  # pragma: allowlist secret (env-var NA
 
 # Connector kind — deployments + invocations are a CI/CD-ish pipeline surface.
 KIND = "pipeline"
-
-
-# --------------------------------------------------------------------------- #
-# TypedDicts — response shapes (no Any, no type: ignore)
-# --------------------------------------------------------------------------- #
-class BasetenDeployment(TypedDict, total=False):
-    """One deployment of a model, as returned by :meth:`BasetenClient.list_deployments`.
-
-    All fields optional because Baseten's management API does not guarantee every
-    key on every deployment payload.
-    """
-
-    id: str
-    model_id: str
-    name: str
-    status: str
-    environment: str
-    created_at: str
-
-
-class BasetenModel(TypedDict, total=False):
-    """Subset of the ``GET /v1/models`` item shape consumed here."""
-
-    id: str
-    name: str
-    deployments: list[BasetenDeployment]
-
-
-class BasetenModelsResponse(TypedDict, total=False):
-    """``GET /v1/models`` top-level shape (subset)."""
-
-    id: str
-    items: list[BasetenModel]
-
-
-class BasetenHealthResult(TypedDict):
-    """Shape returned by :meth:`BasetenClient.health`."""
-
-    ok: bool
-    reachable: bool
-    api_key_valid: bool
-    detail: str
-    source: str
-
-
-class BasetenConfig(TypedDict, total=False):
-    """Constructor config accepted by :class:`BasetenClient`.
-
-    ``api_key_env`` names the env var holding the Baseten API key (the secret
-    itself is never placed in config). ``base_url`` is the inference API base,
-    ``management_url`` is the management API base.
-    """
-
-    name: str
-    api_key_env: str
-    base_url: str
-    management_url: str
-
-
-# Heterogeneous config-value type — the documented shape for connector config.
-ConfigValue = str | int | float | bool | None
-HeterogeneousConfig = Mapping[str, ConfigValue]
 
 
 # --------------------------------------------------------------------------- #
@@ -209,7 +158,7 @@ class BasetenClient:
         Optional injectable transport callable. Tests inject a mock; production
         uses :func:`_default_http_request` (httpx).
 
-    Raises
+    Raises:
     ------
     BasetenConfigError
         If ``api_key_env`` names an env var that is not set, or if either URL
@@ -223,6 +172,7 @@ class BasetenClient:
         config: HeterogeneousConfig | None = None,
         http_request: HttpRequest | None = None,
     ) -> None:
+        """Build a fail-fast client around an injectable bounded transport."""
         cfg: dict[str, ConfigValue] = dict(config or {})
 
         # Resolve api_key_env (string-typed) — the env var must be present.
@@ -342,7 +292,7 @@ class BasetenClient:
         Returns a flat list of :class:`BasetenDeployment` across all models —
         each carries ``id``, ``model_id``, ``status``, ``environment``, etc.
 
-        Raises
+        Raises:
         ------
         BasetenInvocationError
             On any non-2xx response (404 unknown, 401 invalid key, 5xx outage).
@@ -361,26 +311,7 @@ class BasetenClient:
         Tolerates either ``{"items": [...]}`` (paginated) or a bare list of
         models, and tolerates per-model shapes with or without ``deployments``.
         """
-        models: list[Mapping[str, object]] = []
-        items_raw: object = payload.get("items") if isinstance(payload, Mapping) else None
-        if isinstance(items_raw, list):
-            models = [m for m in items_raw if isinstance(m, Mapping)]
-        elif isinstance(payload, list):
-            models = [m for m in payload if isinstance(m, Mapping)]
-
-        out: list[BasetenDeployment] = []
-        for model in models:
-            model_id = model.get("id")
-            model_name = model.get("name")
-            deployments_raw = model.get("deployments")
-            if not isinstance(deployments_raw, list):
-                continue
-            for dep in deployments_raw:
-                if not isinstance(dep, Mapping):
-                    continue
-                normalized = self._normalize_deployment(dep, model_id, model_name)
-                out.append(normalized)
-        return out
+        return normalize_baseten_deployments(payload)
 
     @staticmethod
     def _normalize_deployment(
@@ -389,24 +320,7 @@ class BasetenClient:
         model_name: object,
     ) -> BasetenDeployment:
         """Coerce a raw deployment Mapping into the typed shape."""
-        result: BasetenDeployment = {}
-        dep_id = dep.get("id")
-        if isinstance(dep_id, str):
-            result["id"] = dep_id
-        if isinstance(model_id, str):
-            result["model_id"] = model_id
-        if isinstance(model_name, str):
-            result["name"] = model_name
-        status = dep.get("status")
-        if isinstance(status, str):
-            result["status"] = status
-        env = dep.get("environment")
-        if isinstance(env, str):
-            result["environment"] = env
-        created = dep.get("created_at")
-        if isinstance(created, str):
-            result["created_at"] = created
-        return result
+        return normalize_baseten_deployment(dep, model_id, model_name)
 
     # -- invoke --------------------------------------------------------------
 
@@ -432,12 +346,12 @@ class BasetenClient:
             Caller-supplied body fields, merged into the request alongside
             ``model``. ``messages`` is the typical key.
 
-        Returns
+        Returns:
         -------
         dict[str, object]
             The raw chat-completion response payload.
 
-        Raises
+        Raises:
         ------
         BasetenInvocationError
             On any non-2xx response. ``404`` → unknown deployment,

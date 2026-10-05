@@ -58,11 +58,14 @@ class TestPluginSourceHasTrackingConstants:
             "maybeRemindMissedCommitDispatch function must be defined in enforce-floor.ts"
         )
 
-    def test_dp1_reminder_message_in_source(self):
+    def test_dp1_release_orchestration_reminder_in_source(self):
         src = self._src()
-        assert "Use one dispatch slot for make ship-commit" in src, (
-            "DP.1 reminder message must be in enforce-floor.ts: "
-            "'Use one dispatch slot for make ship-commit — keeps 9 productive tasks running.'"
+        assert (
+            "Keep release orchestration on the main thread; do not spend a dispatch slot on it."
+            in src
+        ), (
+            "DP.1 must keep release orchestration on the main thread instead of "
+            "consuming a constrained subagent slot"
         )
 
     def test_commit_detection_calls_record_missed(self):

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 
+from general_ludd import __version__
 from general_ludd.cli import main
 
 
@@ -332,12 +333,11 @@ class TestVersionE2E:
     def test_version_output(self, capsys):
         out, _err, code = _run_cli_output(["version"], capsys)
         assert code == 0
-        assert "general-ludd-agent" in out
-        assert "0.1.0" in out
+        assert out.strip() == f"general-ludd-agent {__version__}"
 
     def test_version_no_args(self, capsys):
         out, _err, _code = _run_cli_output(["version"], capsys)
-        assert "0.1.0" in out
+        assert out.strip() == f"general-ludd-agent {__version__}"
 
 
 class TestHealthE2E:

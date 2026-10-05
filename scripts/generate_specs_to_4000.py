@@ -11,12 +11,10 @@ Evenly distributes new specs across all 26 groups.
 from __future__ import annotations
 
 import argparse
-import os
 import re
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Callable
 
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_PATH = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
@@ -839,7 +837,10 @@ GATE_BODIES = [
 
 RELEASE_BODIES = [
     "The agent MUST gate every release on ci-green before pushing the tag.",
-    "The agent MUST verify release completeness (12 artifact categories) before claiming shipped.",
+    (
+        "The agent MUST verify release completeness (28 artifact categories "
+        "and at least 30 assets) before claiming shipped."
+    ),
     "The agent MUST not treat a draft release as a shipped release.",
     "The agent MUST verify that the release tag matches the semver version in pyproject.toml.",
     "The agent MUST ensure the README status table reflects the version being released.",
@@ -1180,7 +1181,7 @@ AUDIT_BODIES = [
     "The agent MUST verify every user-facing change has a changelog entry.",
     "The agent MUST check that the README status table is updated before release.",
     "The agent MUST verify that the version is bumped with the release, not before.",
-    "The agent MUST check artifact completeness (12 categories) before claiming release.",
+    "The agent MUST check artifact completeness (28 categories and at least 30 assets) before claiming release.",
     "The agent MUST never claim a draft release as shipped.",
     "The agent MUST verify the CI build matrix passes before release.",
     "The agent MUST rebuild hot modules after plugin edits.",
@@ -1541,7 +1542,10 @@ VERIFICATION_BODIES = [
     "The agent MUST confirm that the SBOM was generated for the correct release version.",
     "The agent MUST verify that the release is non-draft before claiming it as shipped.",
     "The agent MUST confirm that no zero-size assets exist in the release.",
-    "The agent MUST verify that all 12 artifact categories are present before marking release complete.",
+    (
+        "The agent MUST verify that all 28 artifact categories and at least "
+        "30 assets are present before marking release complete."
+    ),
     "The agent MUST confirm that the release notes are populated before publishing.",
 ]
 
@@ -1816,7 +1820,7 @@ INTENT_BODIES = [
     "The agent MUST add a CHANGELOG entry for every user-facing change.",
     "The agent MUST update the README status table before cutting a release.",
     "The agent MUST bump the version with the release, not in advance.",
-    "The agent MUST verify all 12 artifact categories before release.",
+    "The agent MUST verify all 28 artifact categories and the 30-asset minimum before release.",
     "The agent MUST never claim a draft release as shipped.",
     "The agent MUST verify the CI build matrix passes before releasing.",
     "The agent MUST rebuild hot modules after editing enforcement plugins.",
@@ -1885,7 +1889,10 @@ def generate_spec_entry(
 
     lines = [
         f"### {spec_id} — {body}",
-        f"{body} This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.",
+        (
+            f"{body} This invariant MUST be enforced mechanically at runtime — "
+            "no advisory-only, no opt-in, no silent cancellation."
+        ),
         f"**Enforcement:** {enforcement}",
         f"**Test:** `{test_id}`",
         "",
@@ -1938,14 +1945,11 @@ def main() -> None:
     specs_per_group = args.target // len(all_groups)  # ~153
     target_counts: dict[str, int] = {}
     remaining = args.target
-    groups_assigned = 0
-
     for g in all_groups:
         current = counts_copy.get(g, 0)
         target = max(current, specs_per_group)
         target_counts[g] = target
         remaining -= target
-        groups_assigned += 1
 
     # Distribute remaining to groups
     i = 0
@@ -1967,7 +1971,10 @@ def main() -> None:
             continue
 
         group_name = GROUP_NAMES[g]
-        header = f"\n## Expansion: {group_name} ({g}{current+1:02d}–{g}{target:02d}) ({to_add} specs)\n"
+        header = (
+            f"\n## Expansion: {group_name} "
+            f"({g}{current + 1:02d}-{g}{target:02d}) ({to_add} specs)\n"
+        )
         new_specs.append(header)
 
         for j in range(to_add):

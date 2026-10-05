@@ -1,13 +1,13 @@
 ---
 namespace: general_ludd
 name: azure
-version: 0.1.0
+version: 0.2.0
 readme: README.md
 description: >
-  Azure cloud operations collection — IAM, networking, container apps,
-  monitoring, cost optimization. Roles consume the typed Python service
-  API in src/general_ludd/azure/; no independent domain logic lives in
-  the task files.
+  Azure cloud operations collection — IAM, networking, Container Apps,
+  monitoring, lifecycle policy, and cost optimization. Roles compose
+  read-only Azure information modules with audited Terraform plans while
+  collection-local filters make bounded lifecycle decisions.
 license:
   - MIT
 authors:
@@ -21,4 +21,6 @@ tags:
   - containers
   - monitoring
   - cost
-dependencies: {}
+dependencies:
+  azure.azcollection: ">=3.21.0,<4.0.0"
+  cloud.terraform: ">=4.0.0,<5.0.0"

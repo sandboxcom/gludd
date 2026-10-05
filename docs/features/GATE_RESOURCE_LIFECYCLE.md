@@ -89,6 +89,33 @@ selects ignored build outputs, so Git-tracked inputs such as
 pathspecs as restricting the affected paths:
 [git-clean documentation](https://git-scm.com/docs/git-clean.html).
 
+#### Dry-run deletion incident and prevention
+
+An exact-head gate exposed a GNU Make recursion trap: the historical `clean`
+recipe put `$(MAKE)` validation and destructive cleanup in one shell recipe
+line. GNU Make intentionally executes any recipe line containing `$(MAKE)` even
+under `-n`, so the Makefile audit's `make -n clean` invocation deleted the
+gate's live `.venv` and caches. The failure was therefore repository-owned—not
+macOS cleanup—and the next unit shard could no longer import pytest.
+
+The recipe now runs the validation test directly through the repository's
+locked Python environment and contains no recursive-Make marker. A structural
+test rejects any future `$(MAKE)` in the `clean` recipe, while a behavioral test
+runs the real dry-run against a sentinel `.venv` and proves its bytes survive.
+Actual cleanup remains available only through the explicit
+`CLEAN_VALIDATE_ONLY=0` contract; cache-pressure reclamation remains separately
+bounded, observable, and lease-aware rather than being disabled. The damaged
+shared uv cache was preserved for diagnosis and a new versioned cache root was
+selected, avoiding an unreviewed deletion while restoring deterministic builds.
+
+This behavior follows GNU Make's documented special handling of recursive
+recipe lines in [How the `MAKE` Variable Works](https://www.gnu.org/software/make/manual/html_node/MAKE-Variable.html).
+Long-lived practitioner reports show the same surprising behavior in
+[recursive dry runs](https://stackoverflow.com/questions/72302726/gnu-make-recursive-dry-run-runs-commands),
+[recipes calling recipes](https://stackoverflow.com/questions/73359439/makefile-calling-a-recipe-within-another-recipe-will-not-run-dry-it),
+and the common recommendation to use `$(MAKE)` precisely because GNU Make runs
+it despite `-n` in [recursive Make guidance](https://stackoverflow.com/questions/50510278/makefile-why-always-use-make-instead-of-make).
+
 ### Adaptive shard termination
 
 The adaptive runner returns a result containing the child return code, captured
@@ -107,6 +134,36 @@ termination reason always wins over that shape:
   the configured bound;
 - every final progress record says `finished` or `terminated` and includes the
   return code plus termination reason when present.
+
+### Foreground gate ownership
+
+The task watchdog must distinguish a dispatched task process from the gate
+supervisor that owns that process tree. On 2026-09-26, an exact-head foreground
+`make gate` was visibly progressing through its 3,411-test integration phase
+when the five-minute stale-task watchdog killed the gate's `make` process after
+496 seconds. The watchdog already excluded `.gate-background.pid`, but a
+foreground gate publishes its owner atomically in
+`.gate-logs/gate-run.lock`. Ignoring that second ownership record made a healthy
+bounded gate indistinguishable from an abandoned task.
+
+`scripts/task_watchdog.py` now reads both owner records and excludes the union
+of each verified owner and its observed descendants. It still identifies and
+kills unrelated stale `pytest`, `make test`, Ansible, and Molecule processes;
+missing or malformed ownership evidence grants no exemption. This preserves
+the watchdog's bounded-resource and recovery behavior without allowing one
+control plane to cancel another control plane's observable, independently
+bounded work. The gate continues to emit progress and retains its own phase,
+no-progress, and whole-run limits, so the change does not create an unbounded
+execution path. Rollback is limited to removing the foreground-lock reader and
+its regression, with no state migration or resource mutation.
+
+The ownership requirement matches long-lived practitioner evidence. The open
+[pytest-timeout subprocess cleanup report](https://github.com/pytest-dev/pytest-timeout/issues/159)
+documents child processes surviving timeout termination and recommends an
+owning wrapper; [pytest issue #5243](https://github.com/pytest-dev/pytest/issues/5243)
+documents that `SIGTERM` does not run ordinary fixture finalizers. Those reports
+make process-tree authority—not elapsed time alone—the safe termination
+boundary.
 
 This division follows years of upstream practitioner discussion. The
 pytest-timeout session-timeout request distinguishes an external CI deadline
@@ -165,6 +222,61 @@ The long-lived practitioner report
 shows the same standalone node-down line in a real hang. Matching those
 boundaries, instead of a phrase anywhere in output, preserves real crash
 detection without treating user-controlled output as controller state.
+
+### Parallel-shard terminal deadline
+
+On 2026-09-10, a foreground `unit-3a unit-3b` replica demonstrated a
+controller-level stall that the 180-second per-test timeout could not own.
+`unit-3a` reached a durable result, while the `unit-3b` pytest controller and
+its xdist worker remained live and the wrapper emitted heartbeats indefinitely.
+No JUnit document was finalized. Recovery required the existing
+namespace-checked process-tree boundary, which found and reaped the worker,
+pytest controller, and uv child without touching another checkout.
+
+The foreground and background parallel-shard entry points now pass the same
+strictly positive `MAX_RUNTIME_SECONDS` constraint to their supervisor. The
+default is 3,600 seconds. The supervisor measures one monotonic run deadline,
+adds elapsed and limit fields to every heartbeat, and assigns exit code 124 to
+each still-pending shard when the deadline expires. Before cleanup it persists a
+bounded per-shard summary and emits `SHARD-TIMEOUT` with only the shard name,
+elapsed time, configured limit, and owned summary path. Its unconditional final
+cleanup then interrupts and, after the existing ten-second grace period, kills
+only the process groups it created. A completed peer retains its actual result;
+timed-out work is never reported as passed or retried automatically.
+
+This outer deadline is intentionally independent of a test-function alarm.
+Practitioners have documented xdist controllers waiting forever on dead worker
+pipes after tests stop producing events in
+[pytest-xdist issue 1313](https://github.com/pytest-dev/pytest-xdist/issues/1313),
+and the open request for master-side worker timeouts dates to 2017 in
+[pytest-xdist issue 220](https://github.com/pytest-dev/pytest-xdist/issues/220).
+The pytest-timeout maintainer also recommends an owning wrapper when a timed-out
+pytest process can leave child processes behind:
+[pytest-timeout issue 159](https://github.com/pytest-dev/pytest-timeout/issues/159).
+These reports do not prove the exact local root cause; they establish that an
+individual-test timeout is not a complete suite/process-lifecycle boundary.
+
+### Deterministic statistical gate checks
+
+A release gate must not fail merely because an acceptance test drew a new
+sample from process-global random state. Distribution tests that compare a
+sample statistic with a rejection threshold use named, test-local generators
+and stable seeds. They keep their original sample sizes, alpha values, critical
+values, and assertions; retrying a failed draw, widening a threshold, or
+quarantining the test is not an acceptable repair. Tests whose purpose is true
+system entropy continue to exercise the system source, while repeatable
+distribution assertions control their byte or index source explicitly.
+
+This follows the long-lived practitioner record. [pytest issue #667, opened in
+2015](https://github.com/pytest-dev/pytest/issues/667) requests reproducible
+random state so failures can be replayed. [pytest-randomly issue #600, opened in
+2024](https://github.com/pytest-dev/pytest-randomly/issues/600) describes the
+need for deterministic but distinct per-test values. NumPy's
+[testing guide](https://github.com/numpy/numpy/blob/main/doc/TESTS.rst#tests-on-random-data)
+states that random-data tests should use a local seeded generator because a
+test that fails occasionally without a code change is not a useful regression
+signal. The Gludd regression therefore fixes sample ownership instead of
+rerunning the gate until chance produces a pass.
 
 ### Hermetic gate validation state
 
@@ -281,6 +393,49 @@ and removes each batch workspace after coverage is preserved. External model
 processes and unrelated test sessions are outside that group and remain
 untouched. The fixed file bound prevents cumulative collection growth while the
 strictly serial schedule keeps peak worker count at one.
+
+### Collect-all failures versus safety stops (2026-09-27)
+
+The serial runner now separates diagnostic test evidence from unsafe execution
+state. A child pytest result of 1 (test failure), 2 (batch-local collection or
+session failure without an owner cancellation signal), 5 (nothing collected),
+or 6 (warning limit exceeded) is recorded and reported, but every independent
+later batch and named shard still runs. The terminal summary retains every
+failed phase under an exact key such as `<shard>:batch-NNN`,
+`<shard>:batch-NNN:coverage`, `<shard>:cleanup`, or `<shard>:plan`. When the
+plan contains only collected pytest failures, the runner returns their nonzero
+maximum status; it never turns a collected failure green. Coverage is not
+combined into release evidence when any such failure exists.
+
+This is intentionally different from `continue-on-error`. Practitioners have
+repeatedly needed every independent CI leg to run while keeping the aggregate
+result red; the durable recommendation in
+[GitHub Community discussion #45546](https://github.com/orgs/community/discussions/45546)
+is fail-fast disabled with errors still enforced. Pytest users also report that
+[`--continue-on-collection-errors` does not cover every stale or missing test
+selection](https://github.com/pytest-dev/pytest/discussions/13213), so Gludd's
+bounded runner continues at its own batch boundary and preserves the exact
+failing command instead of relying on one large pytest process. The older
+[`pytest` collection-hang report #6054](https://github.com/pytest-dev/pytest/issues/6054)
+documents why collection silence must remain a resource stop rather than a
+collect-all result.
+
+Safety and integrity failures still stop immediately. These include an owner
+SIGINT/SIGTERM (mapped to 130/143), disk-headroom failure (73), xdist worker
+death (70), interpreter drift (78), no-progress termination (124), runner
+exception (125), pytest internal/usage or unknown statuses, an empty shard plan,
+coverage loss after a successful batch, and any unsafe or incomplete owned-root
+cleanup. The runner performs bounded cleanup, emits `later-*=not-started`, and
+does not launch another batch or shard. Operators should therefore read
+`later-*=continuing` as complete diagnostic collection and
+`later-*=not-started` as an intentional safety boundary, never as equivalent
+release outcomes. A later terminal safety code takes precedence over any
+earlier collected pytest status even when its number is lower. Cancellation
+also takes precedence over a simultaneous cleanup failure; otherwise the first
+unsafe execution result remains terminal while cleanup is retained as a
+separate failed phase. The terminal attestation publishes that exact return
+code with `status: fail` and never binds a stale coverage artifact to a failed
+run.
 
 Hermetic fixer tests create no source-tree lock or shared mutable workspace and
 can run concurrently across xdist workers. Each invocation owns only its pytest

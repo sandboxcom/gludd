@@ -38,7 +38,9 @@ import yaml
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _SCENARIO_DIR = os.path.join(_ROOT, "molecule", "playbooks", "binary_smoke_linux")
 _MAKEFILE = os.path.join(_ROOT, "Makefile")
+_GITIGNORE = os.path.join(_ROOT, ".gitignore")
 _PYPROJECT = os.path.join(_ROOT, "pyproject.toml")
+_BUILD_WORKFLOW = os.path.join(_ROOT, ".github", "workflows", "build.yml")
 _MAKE_TARGET_CONTRACT = os.path.join(_ROOT, "config", "make_target_contract.json")
 _LIMA_LIFECYCLE_DOC = os.path.join(_ROOT, "docs", "features", "LIMA_DOCKER_LIFECYCLE.md")
 
@@ -188,6 +190,15 @@ class TestScenarioShape:
         }
         assert names == {"ansible.posix", "community.docker"}
 
+    def test_downloaded_collections_use_ephemeral_path_before_project_source(self) -> None:
+        with open(_MAKEFILE) as fh:
+            makefile = fh.read()
+
+        assert (
+            'export ANSIBLE_COLLECTIONS_PATH="$$ANSIBLE_STATE_DIR/collections:'
+            '$$PROJECT_COLLECTIONS:/usr/share/ansible/collections"'
+        ) in makefile
+
     def test_molecule_uses_container_driver(self) -> None:
         data = _load_yaml_mapping("molecule.yml")
         driver = _mapping_key(data, "driver", "molecule.yml")
@@ -223,8 +234,8 @@ class TestScenarioShape:
         assert 'MOLECULE_GLOB="molecule/playbooks/*/molecule.yml"' in makefile
         assert 'PROJECT_COLLECTIONS="$$(pwd)/collections"' in makefile
         assert (
-            'export ANSIBLE_COLLECTIONS_PATH="$$PROJECT_COLLECTIONS:'
-            '$$ANSIBLE_STATE_DIR/collections:'
+            'export ANSIBLE_COLLECTIONS_PATH="$$ANSIBLE_STATE_DIR/collections:'
+            '$$PROJECT_COLLECTIONS:'
         ) in makefile
         assert 'DOCKER_CONFIG_VALUE="$$ANSIBLE_STATE_DIR/docker"' in makefile
         assert 'export DOCKER_CONFIG="$$DOCKER_CONFIG_VALUE"' in makefile
@@ -749,6 +760,13 @@ class TestVerifyAssertions:
 
 
 class TestPrepare:
+    def test_generated_linux_artifacts_do_not_dirty_the_candidate_tree(self) -> None:
+        with open(_GITIGNORE) as fh:
+            ignored_paths = {line.strip() for line in fh if line.strip() and not line.startswith("#")}
+
+        assert "dist/linux/gludd" in ignored_paths
+        assert "dist/linux/warn-gludd.txt" in ignored_paths
+
     def test_make_target_builds_a_real_linux_binary_before_molecule(self) -> None:
         out = _load("default/prepare.yml")
         assert "dist/linux/gludd" in out
@@ -758,16 +776,17 @@ class TestPrepare:
             makefile = fh.read()
         assert 'if [ "$(SCENARIO)" = "binary_smoke_linux" ]' in makefile
         assert "$(MAKE) --no-print-directory build-linux-executable" in makefile
-        assert "build-linux-executable:" in makefile
+        assert "build-linux-executable: worktree-guard" in makefile
+        assert "$(MAKE) --no-print-directory build-linux-binary-image" in makefile
         assert "UV_PROJECT_ENVIRONMENT=/tmp/gludd-linux-venv" in makefile
-        assert "git archive HEAD" in makefile
+        assert 'source_sha=$$(git rev-parse HEAD)' in makefile
+        assert 'echo "LINUX_BINARY_SOURCE sha=$$source_sha"' in makefile
+        assert 'git archive "$$source_sha"' in makefile
         assert (
             "LINUX_BINARY_IMAGE ?= "
-            "ghcr.io/astral-sh/uv:python3.12-bookworm-slim@"
-            "sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261"
-            "ba1b7147afa78e58"
+            "gludd-linux-binary-build:python3.12.14-uv0.12.19"
         ) in makefile
-        assert "--pull=always" in makefile
+        assert "--pull=never" in makefile
         assert "LINUX_BINARY_SCRATCH_ROOT ?= $(HOME)/tmp/gludd-linux-build" in makefile
         assert "DEBIAN_SNAPSHOT ?= 20260729T000000Z" in makefile
         assert "LINUX_BINUTILS_VERSION ?=" in makefile
@@ -806,7 +825,11 @@ class TestPrepare:
         assert "/tmp/gludd-pyinstaller-build/gludd/warn-gludd.txt" in makefile
         assert "--spec gludd.spec" in makefile
         assert ":/workspace:ro" in makefile
-        assert '@set -e; if [ "$$(uname -s)" = "Linux" ]' in makefile
+        assert (
+            '@set -e; source_sha=$$(git rev-parse HEAD); '
+            'echo "LINUX_BINARY_SOURCE sha=$$source_sha"; '
+            'if [ "$$(uname -s)" = "Linux" ]'
+        ) in makefile
         assert "output_dir=$$(mktemp" not in makefile
         assert 'rm -rf "$$source_dir"' in makefile
         assert '-v "$$output_dir:/out"' not in makefile
@@ -828,3 +851,27 @@ class TestPrepare:
         assert 'exit "$$build_status"' in makefile
         assert "file \"$(LINUX_BINARY_OUTPUT)\"" in makefile
         assert "ELF" in makefile
+
+    def test_frozen_binary_builds_install_the_azure_runtime(self) -> None:
+        """Every frozen artifact must contain the Azure SDK used by Gludd."""
+        with open(_MAKEFILE) as fh:
+            makefile = fh.read()
+        with open(_BUILD_WORKFLOW) as fh:
+            workflow = fh.read()
+
+        build_target = makefile.split("build-executable:", 1)[1].split("\n\n", 1)[0]
+        linux_target = makefile.split("build-linux-executable:", 1)[1].split("\n\n", 1)[0]
+
+        assert "$(UV) run --frozen --extra azure pyinstaller gludd.spec" in build_target
+        assert "uv sync --frozen --extra azure" in linux_target
+        assert workflow.count("uv sync --frozen --extra azure") >= 2
+        azure_pyinstaller_commands = re.findall(
+            r"uv run --frozen --extra azure(?: --python 3\.12)? "
+            r"pyinstaller gludd\.spec",
+            workflow,
+        )
+        assert len(azure_pyinstaller_commands) >= 3
+        assert (
+            "uv run --frozen --extra azure --python 3.12 "
+            "pyinstaller gludd.spec"
+        ) in workflow

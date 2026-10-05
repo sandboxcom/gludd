@@ -11,6 +11,7 @@ from typing import Literal, cast
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import Field, StrictFloat, StrictInt, StrictStr, field_validator
 
+from general_ludd.hardware.accelerator_discovery import HardwareDiscovery
 from general_ludd.infra.slurm import (
     SlurmAdapter,
     SlurmConnectionError,
@@ -175,6 +176,16 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             return {"available": available}
         except Exception as exc:
             raise _slurm_http_error("status", exc) from exc
+
+    @app.get("/admin/slurm/hardware")
+    async def admin_slurm_hardware() -> dict[str, object]:
+        adapter = _make_adapter(app)
+        discovery = HardwareDiscovery(slurm=adapter)
+        try:
+            inventory = await asyncio.to_thread(discovery.discover_slurm)
+            return inventory.to_dict()
+        except Exception as exc:
+            raise _slurm_http_error("hardware discovery", exc) from exc
 
     @app.post("/admin/slurm/submit")
     async def admin_slurm_submit(req: dict[str, object]) -> dict[str, object]:

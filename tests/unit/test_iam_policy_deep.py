@@ -410,18 +410,23 @@ class TestDeniedEscalationPaths:
         assert "iam:CreateRole" in deny_actions, "Terraform policy must deny iam:CreateRole"
         assert "iam:AttachRolePolicy" in deny_actions, "Terraform policy must deny iam:AttachRolePolicy"
 
-    def test_azure_custom_role_denies_runcommand(self, azure_policy: dict) -> None:
-        not_actions = azure_policy.get("NotActions", [])
-        assert "Microsoft.Compute/virtualMachines/runCommand/action" in not_actions, (
-            "Azure custom role must deny runCommand/action"
-        )
+    def test_azure_custom_role_does_not_grant_runcommand(self, azure_policy: dict) -> None:
+        actions = azure_policy.get("Actions", [])
+        assert "Microsoft.Compute/virtualMachines/runCommand/action" not in actions
 
-    def test_azure_custom_role_denies_roleassignment_write(self, azure_policy: dict) -> None:
-        not_actions = azure_policy.get("NotActions", [])
-        assert "Microsoft.Authorization/roleAssignments/write" in not_actions
-        assert "Microsoft.Authorization/roleAssignments/delete" in not_actions
-        assert "Microsoft.Authorization/roleDefinitions/write" in not_actions
-        assert "Microsoft.Authorization/roleDefinitions/delete" in not_actions
+    def test_azure_custom_role_does_not_grant_role_administration(
+        self,
+        azure_policy: dict,
+    ) -> None:
+        actions = frozenset(azure_policy.get("Actions", []))
+        forbidden = {
+            "Microsoft.Authorization/roleAssignments/write",
+            "Microsoft.Authorization/roleAssignments/delete",
+            "Microsoft.Authorization/roleDefinitions/write",
+            "Microsoft.Authorization/roleDefinitions/delete",
+        }
+        assert actions.isdisjoint(forbidden)
+        assert azure_policy.get("NotActions") == []
 
     def test_aws_iam_roles_runtime_has_deny_statement(self, aws_roles: dict) -> None:
         rt = aws_roles["roles"]["runtime_execution"]
@@ -452,9 +457,9 @@ class TestAzureCliPolicySchema:
 
     def test_cli_policy_has_assignable_scopes(self, azure_cli_policy: dict) -> None:
         scopes = azure_cli_policy["properties"].get("assignableScopes", [])
-        assert isinstance(scopes, list) and len(scopes) > 0
-        for scope in scopes:
-            assert scope.startswith("/subscriptions/"), f"AssignableScope '{scope}' not a subscription path"
+        assert len(scopes) == 1
+        assert scopes[0].startswith("/subscriptions/")
+        assert "/resourceGroups/" in scopes[0]
 
     def test_cli_policy_has_permissions(self, azure_cli_policy: dict) -> None:
         perms = azure_cli_policy["properties"].get("permissions", [])
@@ -513,7 +518,7 @@ class TestOpaRegoPolicy:
         assert "test_deny_mfa_missing_for_create_user" in content
         assert "test_azure_scope_is_required" in content
         assert "test_azure_missing_name_denied" in content
-        assert "test_azure_runcommand_not_denied_fails" in content
+        assert "test_azure_runcommand_grant_fails" in content
         assert "test_gcp_setmetadata_is_denied" in content
 
 

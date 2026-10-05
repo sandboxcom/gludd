@@ -1,8 +1,8 @@
 """Structural + behavioral tests for enforce-release-deadline.ts (RP.19).
 
 Verifies: plugin existence, subagent guard, fail-open, hot-reload proxy
-pattern, opencode.json registration, threshold constants, blocked-target
-list, and the state-machine logic (start tracking, 2h warning, 3h block).
+pattern, opencode.json registration, threshold constants, stalled-status target
+list, and the state-machine logic (start tracking, 2h warning, 3h focus).
 """
 
 from __future__ import annotations
@@ -192,41 +192,60 @@ class TestThresholds:
 
 
 # ---------------------------------------------------------------------------
-# Blocked targets
+# Stalled-status targets and release-progress continuity
 # ---------------------------------------------------------------------------
 
 
-class TestBlockedTargets:
-    def test_blocked_targets_list_exists(self):
+class TestStalledStatusTargets:
+    def test_stalling_targets_list_exists(self):
         src = _src()
-        assert "BLOCKED_TARGETS" in src
+        assert "STALLING_TARGETS" in src
 
-    def test_blocks_test_unit(self):
-        assert '"test-unit"' in _src()
-
-    def test_blocks_lint(self):
-        assert '"lint"' in _src()
-
-    def test_blocks_typecheck(self):
-        assert '"typecheck"' in _src()
-
-    def test_blocks_ci_status(self):
-        assert '"ci-status"' in _src()
-
-    def test_blocks_ci_view(self):
-        assert '"ci-view"' in _src()
-
-    def test_does_not_block_release_cut(self):
+    def test_blocks_status_only_targets(self):
         src = _src()
-        idx = src.find("BLOCKED_TARGETS")
-        after = src[idx:idx + 300]
-        assert "release-cut" not in after
+        start = src.index("const STALLING_TARGETS")
+        end = src.index("])", start)
+        targets = src[start:end]
+        for target in (
+            "ci-status",
+            "pipeline-status",
+            "status-heartbeat",
+            "gate-status",
+        ):
+            assert f'"{target}"' in targets
 
-    def test_does_not_block_verify_release(self):
+    def test_never_blocks_release_validation_or_advancement(self):
         src = _src()
-        idx = src.find("BLOCKED_TARGETS")
-        after = src[idx:idx + 300]
-        assert "verify-release-completeness" not in after
+        start = src.index("const STALLING_TARGETS")
+        end = src.index("])", start)
+        targets = src[start:end]
+        for target in (
+            "test-unit",
+            "lint",
+            "typecheck",
+            "test",
+            "test-integration",
+            "test-e2e",
+            "qa",
+            "gate",
+            "gate-lite",
+            "preflight",
+            "validate",
+            "ansible-syntax",
+            "molecule-test",
+            "security",
+            "sast",
+            "sbom",
+            "pip-audit",
+            "collect-check",
+            "healthcheck",
+            "ci-view",
+            "gate-tail",
+            "release-cut",
+            "release-promote",
+            "verify-release-completeness",
+        ):
+            assert f'"{target}"' not in targets
 
 
 # ---------------------------------------------------------------------------
@@ -271,7 +290,7 @@ class TestStateFile:
 
 
 # ---------------------------------------------------------------------------
-# Block logic (deny returns permissionDecision)
+# Continuity logic (deny returns permissionDecision)
 # ---------------------------------------------------------------------------
 
 
@@ -285,7 +304,7 @@ class TestBlockLogic:
 
     def test_block_message_mentions_release_deadline(self):
         src = _src()
-        assert "RELEASE DEADLINE BLOCK" in src
+        assert "RELEASE DEADLINE CONTINUITY BLOCK" in src
 
 
 # ---------------------------------------------------------------------------
@@ -299,7 +318,12 @@ def _now_ms() -> int:
 
 WARN_MS = 7200000
 BLOCK_MS = 10800000
-BLOCKED = ["test-unit", "lint", "typecheck", "ci-status", "ci-view"]
+STALLING = [
+    "ci-status",
+    "pipeline-status",
+    "status-heartbeat",
+    "gate-status",
+]
 
 
 def _detect_release_task(tasks_content: str) -> str | None:
@@ -351,32 +375,42 @@ class TestThresholdBehavioral:
 
 
 class TestBlockTargetBehavioral:
-    def test_blocks_test_unit_after_3h(self):
-        cmd = "make test-unit"
+    def test_blocks_status_polling_after_3h(self):
+        cmd = "make pipeline-status"
         target = cmd[5:].split()[0]
         elapsed = BLOCK_MS + 1
-        assert target in BLOCKED
+        assert target in STALLING
         assert elapsed > BLOCK_MS
+
+    def test_allows_full_gate_after_3h(self):
+        cmd = "make gate"
+        target = cmd[5:].split()[0]
+        assert target not in STALLING
+
+    def test_allows_targeted_validation_after_3h(self):
+        for command in ("make lint", "make typecheck", "make test-e2e", "make security"):
+            target = command[5:].split()[0]
+            assert target not in STALLING
 
     def test_allows_release_cut_after_3h(self):
         cmd = "make release-cut"
         target = cmd[5:].split()[0]
-        assert target not in BLOCKED
+        assert target not in STALLING
 
     def test_allows_verify_release_after_3h(self):
         cmd = "make verify-release-completeness"
         target = cmd[5:].split()[0]
-        assert target not in BLOCKED
+        assert target not in STALLING
 
     def test_allows_git_push_after_3h(self):
         cmd = "make git-push-sandboxcom"
         target = cmd[5:].split()[0]
-        assert target not in BLOCKED
+        assert target not in STALLING
 
     def test_allows_git_tag_push_after_3h(self):
         cmd = "make git-tag-push"
         target = cmd[5:].split()[0]
-        assert target not in BLOCKED
+        assert target not in STALLING
 
     def test_no_block_before_3h(self):
         elapsed = BLOCK_MS - 1

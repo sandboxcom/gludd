@@ -38,7 +38,7 @@ def test_real_promotion_orders_evidence_before_the_only_ref_mutation() -> None:
 
     dual_track = block.index('DUAL_TRACK_CI_VALIDATE_ONLY=0')
     readiness = block.index('RELEASE_READINESS_VALIDATE_ONLY=0')
-    merge = block.index('merge --ff-only development')
+    merge = block.index('merge --ff-only "$$DEV_SHA"')
     publication = block.index('release-cut TAG="$(TAG)"')
 
     assert dual_track < readiness < merge < publication
@@ -53,7 +53,8 @@ def test_promotion_is_confined_to_the_canonical_main_checkout() -> None:
     assert "worktree-guard" in block
     assert "main-worktree-guard" in block
     assert 'git -C "$$MAIN_PATH" merge-base --is-ancestor' in block
-    assert 'git -C "$$MAIN_PATH" merge --ff-only development' in block
+    assert 'git -C "$$MAIN_PATH" merge --ff-only "$$DEV_SHA"' in block
+    assert 'git -C "$$MAIN_PATH" merge --ff-only development' not in block
     assert "git checkout" not in block
     assert "merge --no-ff" not in block
 
@@ -107,6 +108,7 @@ def test_public_help_and_make_contract_include_safe_behavior() -> None:
         "TAG",
         "MSG",
         "RELEASE_PROMOTE_VALIDATE_ONLY",
+        "REVIEWED_HEAD_INTEGRATION_RECEIPT",
     ]
     assert "RELEASE_PROMOTE_VALIDATE_ONLY=1" in entries["release-promote"]["behavior"]
 
@@ -116,6 +118,10 @@ def test_release_deploy_is_only_a_compatibility_alias() -> None:
     block = _target_block("release-deploy")
 
     assert 'release-promote TAG="$(TAG)" MSG="$(MSG)"' in block
+    assert (
+        'REVIEWED_HEAD_INTEGRATION_RECEIPT="$(REVIEWED_HEAD_INTEGRATION_RECEIPT)"'
+        in block
+    )
     for forbidden in (
         "development-merge-to-master",
         "git-push-sandboxcom",
@@ -142,11 +148,16 @@ def test_promote_carries_source_bound_evidence_across_fast_forward() -> None:
     block = _target_block("release-promote")
 
     evidence = block.index('LOCAL_ATTESTATION=')
-    merge = block.index('merge --ff-only development')
+    merge = block.index('merge --ff-only "$$DEV_SHA"')
     publication = block.index('release-cut TAG="$(TAG)"')
 
     assert evidence < merge < publication
     assert 'RELEASE_CANDIDATE_SHA="$$DEV_SHA"' in block
+    assert (
+        'REVIEWED_HEAD_INTEGRATION_RECEIPT="$(REVIEWED_HEAD_INTEGRATION_RECEIPT)"'
+        in block
+    )
+    assert "$(abspath $(REVIEWED_HEAD_INTEGRATION_RECEIPT))" in block
     assert 'RELEASE_CI_BRANCH=development' in block
     assert 'RELEASE_LOCAL_ATTESTATION="$$LOCAL_ATTESTATION"' in block
 
@@ -159,6 +170,15 @@ def test_release_cut_revalidates_explicit_source_bound_evidence() -> None:
     assert "RELEASE_CI_BRANCH" in block
     assert "RELEASE_LOCAL_ATTESTATION" in block
     assert '[ "$$HEAD_SHA" = "$$SHA_TO_VERIFY" ]' in block
+    readiness = block.index('release-readiness TAG="$(TAG)"')
+    dual_track = block.index("require-dual-track-green")
+    assert readiness < dual_track
+    assert 'RELEASE_READINESS_VALIDATE_ONLY=1' in block
+    assert (
+        'REVIEWED_HEAD_INTEGRATION_RECEIPT="$(REVIEWED_HEAD_INTEGRATION_RECEIPT)"'
+        in block
+    )
+    assert 'RELEASE_CANDIDATE_SHA="$$SHA_TO_VERIFY"' in block
     assert 'CI_BRANCH="$(RELEASE_CI_BRANCH)"' in block
     assert 'DUAL_TRACK_CI_LOCAL_ATTESTATION="$(RELEASE_LOCAL_ATTESTATION)"' in block
 

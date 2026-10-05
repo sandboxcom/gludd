@@ -14,7 +14,7 @@ import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, cast, runtime_checkable
 
 import httpx
 import tenacity
@@ -83,9 +83,30 @@ PayloadDimension = Literal[
 PayloadSource = Literal["gateway", "provider", "cache"]
 
 
-def _default_provider_request_timeout() -> httpx.Timeout:
-    """Return the gateway-owned deadline for non-streaming provider clients."""
-    return httpx.Timeout(connect=10.0, read=60.0, write=60.0, pool=10.0)
+def _default_provider_request_timeout(timeout_seconds: float | None = None) -> httpx.Timeout:
+    """Return a caller-shortenable, gateway-owned provider deadline.
+
+    The scalar per-call value is applied component-wise so it can shorten any
+    of the gateway defaults, but can never widen them.  Keeping construction in
+    this helper also means callers cannot replace the structured timeout with an
+    arbitrary provider kwarg.
+    """
+    if timeout_seconds is None:
+        return httpx.Timeout(connect=10.0, read=60.0, write=60.0, pool=10.0)
+    if (
+        isinstance(timeout_seconds, bool)
+        or not isinstance(timeout_seconds, (int, float))
+        or not math.isfinite(timeout_seconds)
+        or timeout_seconds <= 0
+    ):
+        raise ValueError("timeout_seconds must be a finite positive number")
+    timeout = float(timeout_seconds)
+    return httpx.Timeout(
+        connect=min(10.0, timeout),
+        read=min(60.0, timeout),
+        write=min(60.0, timeout),
+        pool=min(10.0, timeout),
+    )
 
 
 def _positive_profile_limit(profile: object, field_name: str, default: int) -> int:
@@ -118,6 +139,25 @@ def _coerce_token_count(value: object) -> int:
 
 class _SecretsResolver(Protocol):
     def resolve(self, alias_name: str) -> str | None: ...
+
+
+@runtime_checkable
+class _RuntimeModelGateway(Protocol):
+    """A dynamically owned model route behind one stable profile identity."""
+
+    def call_model(
+        self,
+        profile_id: str,
+        messages: list[dict[str, str]],
+        **kwargs: Any,
+    ) -> ModelResponse: ...
+
+    def call_model_stream(
+        self,
+        profile_id: str,
+        messages: list[dict[str, str]],
+        **kwargs: Any,
+    ) -> Iterator[object]: ...
 
 
 class _HealthTrackerProtocol(Protocol):
@@ -925,6 +965,8 @@ class ModelGateway:
     ) -> None:
         """Create a gateway and assume ownership of any injected response cache."""
         self._profiles: dict[str, ModelProfile] = {}
+        self._runtime_routes: dict[str, _RuntimeModelGateway] = {}
+        self._profile_lock = threading.RLock()
         if profiles:
             src = profiles.values() if isinstance(profiles, dict) else profiles
             for p in src:
@@ -1064,7 +1106,80 @@ class ModelGateway:
 
     def get_profile(self, profile_id: str) -> ModelProfile | None:
         """Return one configured profile, or None when it is unknown."""
-        return self._profiles.get(profile_id)
+        with self._profile_lock:
+            return self._profiles.get(profile_id)
+
+    def _runtime_route(self, profile_id: str) -> _RuntimeModelGateway | None:
+        """Return one atomic snapshot of a dynamically owned route."""
+        with self._profile_lock:
+            return self._runtime_routes.get(profile_id)
+
+    def register_runtime_profile(
+        self,
+        profile: ModelProfile,
+        runtime: _RuntimeModelGateway,
+    ) -> None:
+        """Atomically publish one profile and its application-owned runtime."""
+        if not isinstance(profile, ModelProfile):
+            raise ValueError("profile must be ModelProfile")
+        if runtime is self or any(
+            not callable(getattr(runtime, method, None))
+            for method in ("call_model", "call_model_stream")
+        ):
+            raise ValueError("runtime must expose buffered and streaming model calls")
+        model_id = profile.model_profile_id
+        with self._profile_lock:
+            if model_id in self._profiles or model_id in self._runtime_routes:
+                raise ValueError(f"Profile '{model_id}' is already registered")
+            self._profiles[model_id] = profile
+            self._runtime_routes[model_id] = runtime
+            try:
+                self._notify_profile_change(
+                    event=ModelAddedEvent(
+                        model_id=model_id,
+                        profile=profile.model_dump(),
+                    ),
+                    hook_name="on_model_added",
+                    hook_payload={
+                        "model_id": model_id,
+                        "profile": profile.model_dump(),
+                    },
+                    action="add",
+                    model_id=model_id,
+                    broadcast_payload=profile.model_dump(),
+                )
+            except BaseException:
+                self._runtime_routes.pop(model_id, None)
+                self._profiles.pop(model_id, None)
+                raise
+
+    def remove_runtime_profile(
+        self,
+        profile_id: str,
+        runtime: _RuntimeModelGateway,
+    ) -> bool:
+        """Remove a dynamic profile only when the exact owner still controls it."""
+        with self._profile_lock:
+            if self._runtime_routes.get(profile_id) is not runtime:
+                return False
+            profile = self._profiles.get(profile_id)
+            self._runtime_routes.pop(profile_id, None)
+            self._profiles.pop(profile_id, None)
+            try:
+                self._notify_profile_change(
+                    event=ModelRemovedEvent(model_id=profile_id),
+                    hook_name="on_model_removed",
+                    hook_payload={"model_id": profile_id},
+                    action="remove",
+                    model_id=profile_id,
+                    broadcast_payload={},
+                )
+            except BaseException:
+                self._runtime_routes[profile_id] = runtime
+                if profile is not None:
+                    self._profiles[profile_id] = profile
+                raise
+            return True
 
     @staticmethod
     def _request_utf8_bytes(
@@ -1668,7 +1783,8 @@ class ModelGateway:
 
     def list_profiles(self) -> list[ModelProfile]:
         """Return the currently configured model profiles."""
-        return list(self._profiles.values())
+        with self._profile_lock:
+            return list(self._profiles.values())
 
     def call_model(
         self,
@@ -1678,12 +1794,28 @@ class ModelGateway:
         estimated_cost: float = 0.0,
         budget_remaining: float = float("inf"),
         requested_max_output_tokens: int | None = None,
+        timeout_seconds: float | None = None,
         cancellation_event: threading.Event | None = None,
         _skip_health_check: bool = False,
         _request_payload_budget: _RequestPayloadBudget | None = None,
         **kwargs: Any,
     ) -> ModelResponse:
         """Invoke one profile after enforcing cancellation, payload, and budget limits."""
+        runtime = self._runtime_route(profile_id)
+        if runtime is not None:
+            return runtime.call_model(
+                profile_id,
+                messages,
+                estimated_cost=estimated_cost,
+                budget_remaining=budget_remaining,
+                requested_max_output_tokens=requested_max_output_tokens,
+                timeout_seconds=timeout_seconds,
+                cancellation_event=cancellation_event,
+                _skip_health_check=_skip_health_check,
+                _request_payload_budget=_request_payload_budget,
+                **kwargs,
+            )
+        provider_timeout = _default_provider_request_timeout(timeout_seconds)
         if cancellation_event is not None and cancellation_event.is_set():
             raise CallCancelledError(profile_id)
 
@@ -1770,6 +1902,7 @@ class ModelGateway:
                         request_payload_budget=request_payload_budget,
                         request_bytes=request_bytes,
                         input_tokens=input_tokens,
+                        provider_timeout=provider_timeout,
                         **kwargs,
                     )
             finally:
@@ -1783,6 +1916,7 @@ class ModelGateway:
             request_payload_budget=request_payload_budget,
             request_bytes=request_bytes,
             input_tokens=input_tokens,
+            provider_timeout=provider_timeout,
             **kwargs,
         )
 
@@ -1847,6 +1981,19 @@ class ModelGateway:
         partially delivered stream is not an atomic cache value. Billing and all
         success side effects happen only after clean upstream exhaustion.
         """
+        runtime = self._runtime_route(profile_id)
+        if runtime is not None:
+            yield from runtime.call_model_stream(
+                profile_id,
+                messages,
+                estimated_cost=estimated_cost,
+                budget_remaining=budget_remaining,
+                requested_max_output_tokens=requested_max_output_tokens,
+                tools=tools,
+                project_id=project_id,
+                **kwargs,
+            )
+            return
         profile = self._profiles.get(profile_id)
         if profile is None:
             raise ValueError(f"Profile '{profile_id}' not found")
@@ -2722,6 +2869,7 @@ class ModelGateway:
         request_payload_budget: _RequestPayloadBudget,
         request_bytes: int,
         input_tokens: int,
+        provider_timeout: httpx.Timeout,
         **kwargs: Any,
     ) -> ModelResponse:
         # Reserve all outbound dimensions atomically before provider lookup or
@@ -2849,7 +2997,7 @@ class ModelGateway:
         # request_timeout directly to httpx.Timeout, giving us a connect cap
         # (fast failure on unreachable hosts) + a generous read cap (slow
         # streaming is expected from large-context models).
-        init_kwargs["request_timeout"] = _default_provider_request_timeout()
+        init_kwargs["request_timeout"] = provider_timeout
 
         init_kwargs.update(kwargs)
 
@@ -3905,25 +4053,31 @@ class ModelGateway:
             enabled=enabled,
             **{k: v for k, v in kwargs.items() if k in ModelProfile.model_fields},
         )
-        self._profiles[model_id] = profile
-        self._notify_profile_change(
-            event=ModelAddedEvent(model_id=model_id, profile=profile.model_dump()),
-            hook_name="on_model_added",
-            hook_payload={"model_id": model_id, "profile": profile.model_dump()},
-            action="add",
-            model_id=model_id,
-            broadcast_payload=profile.model_dump(),
-        )
+        with self._profile_lock:
+            if model_id in self._runtime_routes:
+                raise ValueError(f"Profile '{model_id}' is runtime-owned")
+            self._profiles[model_id] = profile
+            self._notify_profile_change(
+                event=ModelAddedEvent(model_id=model_id, profile=profile.model_dump()),
+                hook_name="on_model_added",
+                hook_payload={"model_id": model_id, "profile": profile.model_dump()},
+                action="add",
+                model_id=model_id,
+                broadcast_payload=profile.model_dump(),
+            )
         return profile
 
     def remove_profile(self, model_id: str) -> None:
         """Remove and broadcast one model profile identifier."""
-        self._profiles.pop(model_id, None)
-        self._notify_profile_change(
-            event=ModelRemovedEvent(model_id=model_id),
-            hook_name="on_model_removed",
-            hook_payload={"model_id": model_id},
-            action="remove",
-            model_id=model_id,
-            broadcast_payload={},
-        )
+        with self._profile_lock:
+            if model_id in self._runtime_routes:
+                raise ValueError(f"Profile '{model_id}' is runtime-owned")
+            self._profiles.pop(model_id, None)
+            self._notify_profile_change(
+                event=ModelRemovedEvent(model_id=model_id),
+                hook_name="on_model_removed",
+                hook_payload={"model_id": model_id},
+                action="remove",
+                model_id=model_id,
+                broadcast_payload={},
+            )

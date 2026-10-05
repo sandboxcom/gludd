@@ -2,7 +2,7 @@
 
 Spawns opencode in a temp directory against a test project.
 Verifies:
-  1. ANY prompt results in EXACTLY 10 subagent dispatches per wave
+  1. The configured scenario uses exactly three subagent dispatches per wave
   2. opencode NEVER stops on its own (text-only response = bug)
   3. 3x depth dispatch works (main -> agent -> agent -> agent)
   4. The test harness terminates opencode externally (PASSES when killed)
@@ -29,18 +29,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 TEST_PROJECT_SRC = ROOT / "tests" / "opencode_e2e" / "_test_project"
 OPENCODE_BIN = os.environ.get("OPENCODE_BIN", "opencode")
+DISPATCH_WIDTH = 3
 
 PROMPT_SEQUENCE = [
     (
         "Read TASKS.md. There are 18 trivial tasks (each 'make taskN' writes a 1-line file). "
-        "You MUST dispatch EXACTLY 10 task subagents in EACH wave. One subagent per task. "
-        "When results return, immediately dispatch the NEXT wave of 10 for remaining tasks. "
+        "You MUST dispatch EXACTLY 3 task subagents in EACH wave. One subagent per task. "
+        "When results return, immediately dispatch the NEXT wave of 3 for remaining tasks. "
         "NEVER send a text-only answer while tasks remain. "
         "When ALL 18 tasks show [x] in TASKS.md, say ALL DONE."
     ),
-    "Keep going. Check TASKS.md. Dispatch exactly 10 more task subagents for any unchecked tasks.",
-    "Continue. Read TASKS.md. Dispatch exactly 10 task subagents for remaining unchecked tasks.",
-    "Still working. Check TASKS.md. If any tasks unchecked, dispatch exactly 10 task subagents.",
+    "Keep going. Check TASKS.md. Dispatch exactly 3 more task subagents for any unchecked tasks.",
+    "Continue. Read TASKS.md. Dispatch exactly 3 task subagents for remaining unchecked tasks.",
+    "Still working. Check TASKS.md. If any tasks unchecked, dispatch exactly 3 task subagents.",
 ]
 
 
@@ -225,7 +226,7 @@ def _spawn_and_monitor(project_dir: Path, timeout_sec: int) -> TestResult:
             if is_json and '"type":"step_finish"' in stripped:
                 in_assistant = False
                 if current.tool_call_count > 0:
-                    current.under_floor = 0 < current.dispatch_count < 10
+                    current.under_floor = 0 < current.dispatch_count < DISPATCH_WIDTH
                     waves.append(current)
                     current = WaveStats(seq=len(waves), timestamp=time.time())
                 if depth_stack and depth_stack.pop():
@@ -237,7 +238,7 @@ def _spawn_and_monitor(project_dir: Path, timeout_sec: int) -> TestResult:
             if is_json and '"type":"tool_result"' in stripped:
                 in_assistant = False
                 if current.tool_call_count > 0:
-                    current.under_floor = 0 < current.dispatch_count < 10
+                    current.under_floor = 0 < current.dispatch_count < DISPATCH_WIDTH
                     waves.append(current)
                     current = WaveStats(seq=len(waves), timestamp=time.time())
                 if depth_stack:
@@ -257,7 +258,7 @@ def _spawn_and_monitor(project_dir: Path, timeout_sec: int) -> TestResult:
             proc.wait(timeout=5)
 
         if in_assistant and (current.text_preview or current.tool_call_count > 0):
-            current.under_floor = 0 < current.dispatch_count < 10
+            current.under_floor = 0 < current.dispatch_count < DISPATCH_WIDTH
             waves.append(current)
 
     result.wave_stats = waves
@@ -268,6 +269,7 @@ def _spawn_and_monitor(project_dir: Path, timeout_sec: int) -> TestResult:
     total_tools = sum(w.tool_call_count for w in waves)
     text_only = [w for w in waves if w.is_text_only and w.text_preview.strip()]
     under_floor = [w for w in waves if w.under_floor]
+    over_ceiling = [w for w in waves if w.dispatch_count > DISPATCH_WIDTH]
 
     result.total_dispatches = total_disp
     result.total_tool_calls = total_tools
@@ -284,7 +286,16 @@ def _spawn_and_monitor(project_dir: Path, timeout_sec: int) -> TestResult:
         violations.append("CRITICAL: Stopped naturally with 0 dispatches")
 
     for w in under_floor[:10]:
-        violations.append(f"UNDER-FLOOR: wave {w.seq} had {w.dispatch_count} dispatches (floor=10)")
+        violations.append(
+            f"UNDER-FLOOR: wave {w.seq} had {w.dispatch_count} dispatches "
+            f"(configured minimum={DISPATCH_WIDTH})"
+        )
+
+    for w in over_ceiling[:10]:
+        violations.append(
+            f"OVER-CEILING: wave {w.seq} had {w.dispatch_count} dispatches "
+            f"(ceiling={DISPATCH_WIDTH})"
+        )
 
     for w in text_only[:10]:
         violations.append(f"TEXT-ONLY STOP: wave {w.seq}: {w.text_preview[:100].strip()}")
@@ -294,7 +305,9 @@ def _spawn_and_monitor(project_dir: Path, timeout_sec: int) -> TestResult:
 
     result.violations = violations
 
-    if not violations or (killed and total_disp > 0 and len(under_floor) == 0):
+    if not violations or (
+        killed and total_disp > 0 and len(under_floor) == 0 and len(over_ceiling) == 0
+    ):
         result.verdict = "PASS"
         result.reason = (
             f"Killed by timeout at {elapsed:.0f}s, {total_disp} dispatches, "

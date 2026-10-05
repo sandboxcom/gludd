@@ -118,8 +118,8 @@ class TestMoleculeMakeTarget:
         recipe = match.group(1)
         assert 'MOLECULE_GLOB="molecule/playbooks/*/molecule.yml"' in recipe
         assert (
-            'export ANSIBLE_COLLECTIONS_PATH="$$PROJECT_COLLECTIONS:'
-            '$$ANSIBLE_STATE_DIR/collections:/usr/share/ansible/collections"'
+            'export ANSIBLE_COLLECTIONS_PATH="$$ANSIBLE_STATE_DIR/collections:'
+            '$$PROJECT_COLLECTIONS:/usr/share/ansible/collections"'
         ) in recipe
         assert 'molecule test -s "$(SCENARIO)"' in recipe
         assert 'rm -rf "molecule/$(SCENARIO)"' not in recipe

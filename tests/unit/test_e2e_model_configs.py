@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from general_ludd.local_model._local_model_configs import (
+    _LOCAL_MODELS,
     LocalModelConfig,
     get_e2e_models,
 )
@@ -22,6 +23,34 @@ from tests.e2e._local_model_configs import (
 
 
 class TestModelRegistry:
+    def test_runtime_catalog_uses_verified_hugging_face_artifacts(self) -> None:
+        """Every repaired coding entry must retain its reviewed artifact identity."""
+        by_name = {model.name: model for model in _LOCAL_MODELS}
+
+        deepseek = by_name["deepseek-coder-1.3b"]
+        assert deepseek.repo == "TheBloke/deepseek-coder-1.3b-instruct-GGUF"
+        assert deepseek.filename == "deepseek-coder-1.3b-instruct.Q4_K_M.gguf"
+
+        starcoder = by_name["starcoder2-3b"]
+        assert starcoder.repo == "QuantFactory/starcoder2-3b-instruct-GGUF"
+        assert starcoder.filename == "starcoder2-3b-instruct.Q4_K_M.gguf"
+
+        identities = {(model.repo, model.filename) for model in _LOCAL_MODELS}
+        assert (
+            "bartowski/DeepSeek-Coder-1.3B-Instruct-GGUF",
+            "DeepSeek-Coder-1.3B-Instruct-Q4_K_M.gguf",
+        ) not in identities
+        assert (
+            "bartowski/StarCoder2-3B-Instruct-GGUF",
+            "StarCoder2-3B-Instruct-Q4_K_M.gguf",
+        ) not in identities
+
+    def test_smollm2_1_7b_context_matches_native_limit(self) -> None:
+        """Catalog maintenance must not inflate SmolLM2 beyond its native context."""
+        smollm = next(model for model in _LOCAL_MODELS if model.name == "smollm2-1.7b")
+
+        assert smollm.context_size == 8192
+
     def test_runtime_registry_filter_and_quant_detection(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

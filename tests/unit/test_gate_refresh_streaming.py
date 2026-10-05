@@ -29,6 +29,15 @@ def test_gate_refresh_streams_verbose_nodeids_to_a_durable_log() -> None:
     assert 'mv "$$STATUS_WORK" .gate-status' in body
 
 
+def test_gate_refresh_signs_the_current_repository_state_before_publish() -> None:
+    body = _gate_refresh_body()
+
+    sign = "scripts/gate_status_attestation.py sign \"$$STATUS_WORK\""
+    publish = 'mv "$$STATUS_WORK" .gate-status'
+    assert sign in body
+    assert body.index(sign) < body.rindex(publish)
+
+
 def test_stream_command_forwards_a_nodeid_before_the_child_exits(
     tmp_path: Path,
 ) -> None:

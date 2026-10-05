@@ -59,11 +59,11 @@ ALLOWED_TOP_LEVEL_KEYS = {
 
 
 class TestOpencodeJsonSchema:
-    def test_opencode_json_parses(self):
+    def test_opencode_json_parses(self) -> None:
         assert OPENCODE_JSON.exists(), "opencode.json must exist"
         json.loads(OPENCODE_JSON.read_text())
 
-    def test_opencode_json_top_level_keys_are_schema_allowed(self):
+    def test_opencode_json_top_level_keys_are_schema_allowed(self) -> None:
         """Every top-level key must appear in the opencode config schema.
 
         Regression guard: agents have invented top-level keys like `env` (which
@@ -83,7 +83,7 @@ class TestOpencodeJsonSchema:
             f"ALLOWED_TOP_LEVEL_KEYS in this test.)"
         )
 
-    def test_known_bad_keys_are_rejected(self):
+    def test_known_bad_keys_are_rejected(self) -> None:
         """Direct regression: an `env` top-level key MUST fail the check.
 
         This pins the specific incident that motivated the test: an agent added
@@ -99,7 +99,7 @@ class TestOpencodeJsonSchema:
             "until then it is the canonical regression."
         )
 
-    def test_current_config_has_no_env_top_level(self):
+    def test_current_config_has_no_env_top_level(self) -> None:
         """The live opencode.json must NOT have an `env` top-level key.
 
         This is the narrow assertion that would have caught the 2026-06-28

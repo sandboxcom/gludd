@@ -1,0 +1,39 @@
+---
+- name: Cleanup - remove an interrupted model worker fixture
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    live_model_worker: "{{ lookup('env', 'MOLECULE_LIVE_MODEL_WORKER') == '1' }}"
+    scenario_root: >-
+      {{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/worker-runtime
+    fixture_release_id: >-
+      {{ ('model-worker-' ~ lookup('env', 'MOLECULE_PROJECT_DIRECTORY')) | hash('sha256') }}
+    fixture_service: "gludd-model-worker-{{ fixture_release_id[:12] }}.service"
+  tasks:
+    - name: Stop an interrupted live fixture
+      when: live_model_worker | bool
+      become: true
+      ansible.builtin.systemd_service:
+        name: "{{ fixture_service }}"
+        enabled: false
+        state: stopped
+      failed_when: false
+
+    - name: Remove an interrupted live fixture unit
+      when: live_model_worker | bool
+      become: true
+      ansible.builtin.file:
+        path: "/etc/systemd/system/{{ fixture_service }}"
+        state: absent
+
+    - name: Reload the service manager after interrupted cleanup
+      when: live_model_worker | bool
+      become: true
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Remove scenario-owned runtime state
+      ansible.builtin.file:
+        path: "{{ scenario_root }}"
+        state: absent

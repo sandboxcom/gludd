@@ -9,9 +9,9 @@ contract and its behavioral example is `make deps-audit`.
 
 The first authoritative replay reported 109 findings while the old target still
 returned success. Configuring PEP 621 development groups and import-name
-mappings reduced that to nine intentional dynamic/entrypoint cases. Those cases
-are explicitly adjudicated in `[tool.deptry.per_rule_ignores]`, after which the
-audit reports zero findings.
+mappings reduced that to a narrow set of intentional dynamic/entrypoint cases.
+Those cases are explicitly adjudicated in `[tool.deptry.per_rule_ignores]`, after
+which the audit reports zero findings.
 
 ## Dependency model
 
@@ -50,14 +50,12 @@ not controller or managed-host runtime ownership. Any added, removed, moved, or
 stale consumer therefore makes the normal unit suite fail with an exact path
 diff.
 
-The replay found no additional package that can safely leave the core lock.
 Every direct dependency has at least one static core production consumer except
-four exact runtime-selected dependencies: `aiosqlite` is named by the default
-SQLAlchemy URL, `langchain-openai` by the default provider registry, `msgpack`
-by the safe-cache importlib seam, and `uvicorn-worker` by Gunicorn's worker-class
-string. Those four references are pinned by path and token rather than hidden
-behind a broad unused-dependency allowlist. Because all packages remain proven
-core requirements, `pyproject.toml` and `uv.lock` are intentionally unchanged.
+five exact runtime-selected dependencies: `aiosqlite` is named by the default
+SQLAlchemy URL, `greenlet` by the SQLAlchemy asyncio implementation, `langchain-openai`
+by the default provider registry, `msgpack` by the safe-cache importlib seam, and
+`uvicorn-worker` by Gunicorn's worker-class string. Those five references are pinned
+by path and token rather than hidden behind a broad unused-dependency allowlist.
 
 ## Dynamic and entrypoint adjudications
 
@@ -65,7 +63,11 @@ The narrow DEP002 list is not a blanket rule suppression:
 
 - Gunicorn, uvicorn-worker, vLLM, and llama-cpp are executed through process or
   module entrypoints.
+- `ansible-builder` is controller-only build tooling. The artifact builder uses
+  the managed interpreter's `python -m ansible_builder` entrypoint, avoiding a
+  host wrapper while keeping Ansible imports outside Gludd's core runtime.
 - aiosqlite is selected through the SQLAlchemy URL scheme.
+- greenlet is required by SQLAlchemy's asyncio implementation.
 - boto3, msgpack, OpenTelemetry, Torch, and langchain-openai are loaded with
   guarded `importlib` calls.
 - pqcrypto selects a versioned KEM module dynamically.
@@ -80,6 +82,24 @@ produced DEP002 despite the distribution-to-module mapping. The adapter now uses
 a guarded static import, so the extra remains optional at runtime while its
 dependency truth is mechanically visible. This avoids turning a real adapter
 dependency into a permanent audit exception.
+
+`quickjs-ng` is likewise intentionally absent from the ignore list. The pinned
+FreeLLMAPI shadow-scoring engine maps that distribution to the `quickjs` module
+and uses a lazy static import inside its context factory. The import remains
+deferred until the opt-in engine is selected, preserves the content-free
+fallback when the native module is unavailable, and stays visible to deptry and
+the exact core-ownership inventory without a permanent DEP002 suppression.
+
+The `quickjs-ng==0.16.2.1` wheel follows the PEP 639 file form: its installed
+metadata declares `License-File: LICENSE` and places the MIT text under
+`.dist-info/licenses/`, but it publishes neither `License-Expression`, the
+legacy `License` field, nor a license classifier. The license gate therefore
+reads only safe relative paths declared by `License-File` through
+`importlib.metadata.Distribution`; absolute and parent-traversal paths are
+rejected. The resulting text is subjected to the same GPL/AGPL checks as field
+metadata, so this is verified package evidence rather than an allowlist or a
+missing-license suppression. A focused regression pins this behavior for the
+exact installed package.
 
 ## Practitioner evidence
 
@@ -100,6 +120,16 @@ dependency into a permanent audit exception.
   `importlib.import_module` support. Gludd uses those native capabilities and a
   statically auditable guarded import instead of adding a custom scanner or a
   Hindsight suppression.
+- The `quickjs-ng` [upstream project metadata](https://github.com/genotrance/quickjs-ng/blob/main/pyproject.toml)
+  contains no license declaration even though the repository carries an MIT
+  `LICENSE`; its issue tracker had no matching license-metadata report when
+  checked on 2026-09-17 (the sole open user report was source-build issue
+  [#11](https://github.com/genotrance/quickjs-ng/issues/11)). The long-lived
+  PyPA Hatch discussion
+  [#679](https://github.com/pypa/hatch/issues/679) documents the wider
+  practitioner confusion around wheels publishing `License-File` instead of
+  `License` or `License-Expression`. Gludd consequently implements the PEP 639
+  file path rather than inventing package-specific license metadata.
 
 The sources were revalidated on 2026-08-29. The upstream deptry reference still
 states that it derives dependency truth by comparing declared packages with

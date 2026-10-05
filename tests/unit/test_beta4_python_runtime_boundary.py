@@ -20,8 +20,7 @@ from general_ludd.ansible.isolation import ProcessIsolationConfig
 ROOT = Path(__file__).resolve().parents[2]
 SHA256_IMAGE = "registry.example/gludd-ee:beta4@sha256:" + "a" * 64
 CENTOS_STREAM9_INDEX = (
-    "quay.io/centos/centos:stream9@sha256:"
-    "64e5a212e4f2e7b706dbd822968914bb8def7de0a7fdfd3bf248241f8758101c"
+    "quay.io/centos/centos:stream9@sha256:63e8d0c2a4a4b67c8bd7456283d12106bedf815d8c27d1a72498ebcf173baf09"
 )
 
 
@@ -43,10 +42,11 @@ def test_ansible_controller_is_optional_and_available_to_tests() -> None:
     controller = "\n".join(optional["ansible-controller"])
     dev_extra = "\n".join(optional["dev"])
     dev_group = "\n".join(project["dependency-groups"]["dev"])
-    for dependency in ("ansible-core", "ansible-runner"):
+    for dependency in ("ansible-core", "ansible-runner", "ansible-builder"):
         assert dependency in controller
         assert dependency in dev_extra
         assert dependency in dev_group
+    assert "ansible-builder>=3.1.1,<3.2" in controller
     assert "ansible-builder>=3.1.1,<3.2" in dev_extra
     assert "ansible-builder>=3.1.1,<3.2" in dev_group
 
@@ -61,7 +61,7 @@ class BlockAnsible(importlib.abc.MetaPathFinder):
             raise ModuleNotFoundError(fullname)
         return None
 sys.meta_path.insert(0, BlockAnsible())
-sys.path.insert(0, {str(ROOT / 'src')!r})
+sys.path.insert(0, {str(ROOT / "src")!r})
 import general_ludd.cli
 print('CORE_IMPORT_OK')
 """
@@ -109,7 +109,12 @@ def test_execution_environment_definition_uses_locked_inputs() -> None:
             "src": f"../../dist/collections/general_ludd-{name}-{version}.tar.gz",
             "dest": "collections",
         }
-        for name, version in (("agent", "0.2.0"), ("language", "0.1.0"), ("networking", "0.2.0"))
+        for name, version in (
+            ("agent", "0.2.0"),
+            ("azure", "0.2.0"),
+            ("language", "0.1.0"),
+            ("networking", "0.2.0"),
+        )
     ]
     assert ee["options"]["package_manager_path"] == "/usr/bin/dnf"
 
@@ -164,6 +169,17 @@ def test_enabled_container_isolation_passes_digest_to_runner() -> None:
     assert kwargs["process_isolation"] is True
 
 
+def test_enabled_container_isolation_accepts_immutable_local_image_id() -> None:
+    image_id = f"sha256:{'a' * 64}"
+    config = ProcessIsolationConfig(
+        enabled=True,
+        executable="podman",
+        container_image=image_id,
+    )
+
+    assert config.to_runner_kwargs()["container_image"] == image_id
+
+
 def test_in_process_controller_requires_explicit_test_mode() -> None:
     config = ProcessIsolationConfig(test_only_in_process=True)
     assert config.enabled is False
@@ -190,16 +206,14 @@ def test_game_module_reuses_authenticated_stdlib_model_client() -> None:
 
 
 def test_collection_model_transport_has_no_core_gateway_fallback() -> None:
-    shim = (
-        ROOT
-        / "collections/ansible_collections/general_ludd/agent/plugins/module_utils/gludd.py"
-    ).read_text(encoding="utf-8")
-    module = (
-        ROOT
-        / "collections/ansible_collections/general_ludd/agent/plugins/modules/game_build.py"
-    ).read_text(encoding="utf-8")
+    shim = (ROOT / "collections/ansible_collections/general_ludd/agent/plugins/module_utils/gludd.py").read_text(
+        encoding="utf-8"
+    )
+    module = (ROOT / "collections/ansible_collections/general_ludd/agent/plugins/modules/game_build.py").read_text(
+        encoding="utf-8"
+    )
     assert "general_ludd.models" not in shim
     assert "local_model_call" not in shim
     assert "local_model_call" not in module
     assert "client.call_model(" in module
-    assert 'no_log=True' in module
+    assert "no_log=True" in module

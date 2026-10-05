@@ -6,129 +6,7 @@ gets rendered into agent system prompts at runtime.
 
 from __future__ import annotations
 
-import fnmatch
-
-from pydantic import BaseModel, Field, field_validator
-
-# Shell metacharacters that enable chaining / redirection / substitution. A
-# command containing any of these is rejected outright: the allowlist matches a
-# SINGLE command (e.g. "make test"), and these characters would let a matched
-# prefix smuggle a second, unmatched command (e.g. "make x; rm -rf /").
-_SHELL_METACHARACTERS = frozenset(";&|<>`$()\n\r")
-
-
-class GuardrailConfig(BaseModel):
-    config_layer: bool = True
-    hook_layer: bool = True
-    prompt_layer: bool = True
-
-    def layer_count(self) -> int:
-        return sum([self.config_layer, self.hook_layer, self.prompt_layer])
-
-    def ensure_valid(self) -> None:
-        if self.layer_count() == 0:
-            raise ValueError("At least one guardrail layer must be enabled")
-
-    def model_post_init(self, __context: object) -> None:
-        self.ensure_valid()
-
-
-class AgentBehavior(BaseModel):
-    role: str | None = None
-    goal: str | None = None
-    backstory: str | None = None
-    completion_policy: str = "complete_all"
-    self_directed_work: bool = True
-    tdd_enforced: bool = True
-    commit_after_green: bool = True
-    evidence_required: bool = True
-    atomic_commits: bool = True
-    session_persistence: bool = True
-    guardrail: GuardrailConfig = GuardrailConfig()
-    allowed_command_patterns: list[str] = ["make *"]
-    stop_conditions: list[str] = ["missing_credentials", "environment_change"]
-    max_retries: int = 3
-    self_improve_interval: int = 0
-    never_block_on_questions: bool = True
-    repair_not_disable: bool = True
-    prefer_automated_tools: bool = True  # write scripts/make-targets/ruff-plugins instead of manual code walks
-    research_before_build: bool = True  # dispatch research check before writing new code for data ingestion
-    assume_and_proceed: bool = True  # when True, record assumptions instead of blocking on questions
-    assumption_log: list[str] = Field(default_factory=list)
-    subagent_context_limit_lines: int = 10  # max lines subagent should return; 0 = no limit
-
-    @field_validator("max_retries")
-    @classmethod
-    def _non_negative(cls, v: int) -> int:
-        if v < 0:
-            raise ValueError("max_retries must be non-negative")
-        return v
-
-    @field_validator("self_improve_interval")
-    @classmethod
-    def _non_negative_interval(cls, v: int) -> int:
-        if v < 0:
-            raise ValueError("self_improve_interval must be non-negative")
-        return v
-
-    @property
-    def guardrail_layers(self) -> int:
-        return self.guardrail.layer_count()
-
-    def should_stop(self, condition: str) -> bool:
-        return condition in self.stop_conditions
-
-    def is_command_allowed(self, command: str) -> bool:
-        """Enforceable predicate over ``allowed_command_patterns``.
-
-        ``allowed_command_patterns`` was previously prompt-only (rendered into the
-        system prompt, never actually checked). This makes it a real gate so it CAN
-        be enforced. NOTE: the live mechanism in this repo is still EXTERNAL —
-        ``.opencode/plugin/enforce-make.ts`` and the harness permission rules deny
-        non-``make`` Bash before it runs. This predicate gives an in-process,
-        testable equivalent for callers that want to pre-check a command.
-
-        A command is allowed only if ALL hold:
-          - it is non-empty after stripping,
-          - it contains no shell metacharacter (chaining/redirect/substitution),
-          - it does not begin with ``-`` (would be parsed as an option),
-          - it carries no ``VAR=val`` env prefix (smuggles environment), and
-          - it fnmatch-matches at least one allowed pattern.
-        """
-        if not command or not command.strip():
-            return False
-        cmd = command.strip()
-        # Reject shell metacharacters: they enable chaining/redirection so a
-        # matched prefix could carry an unmatched second command.
-        if any(ch in _SHELL_METACHARACTERS for ch in cmd):
-            return False
-        first = cmd.split(" ", 1)[0]
-        # Leading-dash first token would be parsed as an option, not a command.
-        if first.startswith("-"):
-            return False
-        # An env-prefix (FOO=bar make test) smuggles environment into the call.
-        if "=" in first:
-            return False
-        return any(
-            fnmatch.fnmatch(cmd, pattern) for pattern in self.allowed_command_patterns
-        )
-
-    def record_assumption(self, question: str, assumed_answer: str) -> str:
-        """Record an assumption to the log and return a formatted string."""
-        entry = f"ASSUMPTION: {question} → assumed: {assumed_answer}"
-        self.assumption_log.append(entry)
-        return entry
-
-    def should_block_on_question(self, question: str) -> bool:
-        """Return True only when assume_and_proceed is False (i.e., blocking is needed)."""
-        return not self.assume_and_proceed
-
-    def to_dict(self) -> dict[str, object]:
-        return self.model_dump()
-
-    @classmethod
-    def from_dict(cls, data: dict[str, object]) -> AgentBehavior:
-        return cls.model_validate(data)
+from general_ludd.agents.behavior_contracts import AgentBehavior, GuardrailConfig
 
 
 class BehaviorRenderer:
@@ -144,13 +22,15 @@ class BehaviorRenderer:
     (not object identity) so distinct behaviors are never conflated and two
     equivalent behaviors share one entry. ``assumption_log`` is excluded from
     the key because :meth:`render` never reads it — including it would defeat
-    the cache as assumptions accumulate without changing the output."""
+    the cache as assumptions accumulate without changing the output.
+    """
 
     def __init__(
         self,
         prompt_enhancer: object | None = None,
         skill_context_provider: object | None = None,
     ) -> None:
+        """Create a renderer with optional prompt and skill-context adapters."""
         # Cache of rendered behavior bodies keyed by render-determining content.
         self._render_cache: dict[str, str] = {}
         self._prompt_enhancer = prompt_enhancer
@@ -162,10 +42,12 @@ class BehaviorRenderer:
 
         Excludes ``assumption_log`` (never read by render) so the cache stays
         effective as assumptions accumulate. ``model_dump_json`` with sorted
-        keys gives a deterministic, hashable representation."""
+        keys gives a deterministic, hashable representation.
+        """
         return behavior.model_dump_json(exclude={"assumption_log"})
 
     def render(self, behavior: AgentBehavior) -> str:
+        """Render the stable policy sections for one behavior contract."""
         key = self._cache_key(behavior)
         cached = self._render_cache.get(key)
         if cached is not None:
@@ -376,6 +258,7 @@ class BehaviorRenderer:
     def render_as_prompt(
         self, behavior: AgentBehavior, agent_name: str, task: str
     ) -> str:
+        """Render behavior plus the task-bound agent and optional skill context."""
         base = self.render(behavior)
         header = (
             f"You are agent **{agent_name}**. Your current task: {task}\n\n"
@@ -407,6 +290,7 @@ class BehaviorRenderer:
 
 
 def default_primary_behavior() -> AgentBehavior:
+    """Return the fail-closed behavior used by the primary orchestrator."""
     return AgentBehavior(
         role="primary orchestrator",
         goal="coordinate and complete the requested work",
@@ -426,6 +310,7 @@ def default_primary_behavior() -> AgentBehavior:
 
 
 def default_subagent_behavior() -> AgentBehavior:
+    """Return the bounded behavior used by delegated execution agents."""
     return AgentBehavior(
         role="specialized subagent",
         goal="execute the assigned task and return evidence",
@@ -442,3 +327,12 @@ def default_subagent_behavior() -> AgentBehavior:
         never_block_on_questions=True,
         repair_not_disable=True,
     )
+
+
+__all__ = (
+    "AgentBehavior",
+    "BehaviorRenderer",
+    "GuardrailConfig",
+    "default_primary_behavior",
+    "default_subagent_behavior",
+)

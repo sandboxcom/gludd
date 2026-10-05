@@ -21,6 +21,7 @@ import json
 import os
 import sys
 import time
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from types import ModuleType
 
@@ -135,7 +136,13 @@ def test_compute_nproc_caps_by_cores(idle: None) -> None:
         (12.0, 8, 3.0, 4),  # bigger per-worker budget -> fewer workers
     ],
 )
-def test_compute_nproc_mem_formula_when_idle(idle: None, avail_gb, cpu_count, per_worker, expected) -> None:
+def test_compute_nproc_mem_formula_when_idle(
+    idle: None,
+    avail_gb: float,
+    cpu_count: int,
+    per_worker: float,
+    expected: int,
+) -> None:
     assert at.compute_nproc(avail_gb, cpu_count, per_worker) == expected
 
 
@@ -203,7 +210,7 @@ def test_per_worker_gb_env_tunable() -> None:
 
 
 @pytest.mark.parametrize("rc", [-9, 137])
-def test_is_oom_exit_signal_codes(rc) -> None:
+def test_is_oom_exit_signal_codes(rc: int) -> None:
     assert at.is_oom_exit(rc, "") is True
 
 
@@ -215,7 +222,7 @@ def test_is_oom_exit_signal_codes(rc) -> None:
         "worker gw1 CRASHED while running tests/unit/test_demo.py::test_case",
     ],
 )
-def test_is_oom_exit_output_markers(output) -> None:
+def test_is_oom_exit_output_markers(output: str) -> None:
     assert at.is_oom_exit(1, output) is True
 
 
@@ -228,7 +235,7 @@ def test_is_oom_exit_output_markers(output) -> None:
         "assertion: worker gw1 crashed while running was the expected message",
     ],
 )
-def test_is_oom_exit_ignores_failure_prose(output) -> None:
+def test_is_oom_exit_ignores_failure_prose(output: str) -> None:
     assert at.is_oom_exit(1, output) is False
 
 
@@ -274,7 +281,7 @@ def test_run_retries_halving_on_oom(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(at, "decide_nproc", lambda env=None: 8)
     seen: list[int] = []
 
-    def fake_runner(cmd):
+    def fake_runner(cmd: Sequence[str]) -> tuple[int, str]:
         n = int(cmd[cmd.index("-n") + 1])
         seen.append(n)
         if n > 1:
@@ -290,7 +297,7 @@ def test_run_gives_up_at_one_worker(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(at, "decide_nproc", lambda env=None: 2)
     calls: list[int] = []
 
-    def always_oom(cmd):
+    def always_oom(cmd: Sequence[str]) -> tuple[int, str]:
         calls.append(int(cmd[cmd.index("-n") + 1]))
         return -9, ""
 
@@ -303,7 +310,7 @@ def test_run_returns_immediately_on_clean_exit(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(at, "decide_nproc", lambda env=None: 4)
     n_calls = 0
 
-    def runner(cmd):
+    def runner(cmd: Sequence[str]) -> tuple[int, str]:
         nonlocal n_calls
         n_calls += 1
         return 1, "1 failed"  # a real test failure, not OOM
@@ -319,7 +326,7 @@ def test_run_does_not_retry_failure_prose_with_crash_words(
     monkeypatch.setattr(at, "decide_nproc", lambda env=None: 4)
     n_calls = 0
 
-    def runner(cmd):
+    def runner(cmd: Sequence[str]) -> tuple[int, str]:
         nonlocal n_calls
         n_calls += 1
         return 1, 'E assert "worker crashed" in incident_text'
@@ -335,7 +342,7 @@ def test_run_never_retries_after_orchestrator_termination(
     monkeypatch.setattr(at, "decide_nproc", lambda env=None: 8)
     calls = 0
 
-    def terminated_runner(cmd):
+    def terminated_runner(cmd: Sequence[str]) -> tuple[int, str, str]:
         nonlocal calls
         calls += 1
         return 137, "", "orchestrator-signal:SIGTERM"
@@ -360,7 +367,7 @@ def test_run_retries_once_on_no_progress_timeout(
     ]
     calls = 0
 
-    def flaky_then_ok_runner(cmd):
+    def flaky_then_ok_runner(cmd: Sequence[str]) -> tuple[int, str, str | None]:
         nonlocal calls
         outcome = outcomes[min(calls, len(outcomes) - 1)]
         calls += 1
@@ -378,7 +385,7 @@ def test_run_fails_closed_after_second_no_progress_timeout(
     monkeypatch.setattr(at, "decide_nproc", lambda env=None: 8)
     calls = 0
 
-    def always_hung_runner(cmd):
+    def always_hung_runner(cmd: Sequence[str]) -> tuple[int, str, str]:
         nonlocal calls
         calls += 1
         return 124, "", "no-progress-timeout"
@@ -432,7 +439,7 @@ def test_run_injects_unique_basetemp_when_absent(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(at, "decide_nproc", lambda env=None: 1)
     seen: dict[str, list[str]] = {}
 
-    def runner(cmd):
+    def runner(cmd: Sequence[str]) -> tuple[int, str]:
         seen["cmd"] = list(cmd)
         return 0, "ok"
 
@@ -448,7 +455,7 @@ def test_run_respects_caller_basetemp(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(at, "decide_nproc", lambda env=None: 1)
     seen: dict[str, list[str]] = {}
 
-    def runner(cmd):
+    def runner(cmd: Sequence[str]) -> tuple[int, str]:
         seen["cmd"] = list(cmd)
         return 0, "ok"
 
@@ -465,7 +472,7 @@ def test_run_reuses_same_basetemp_across_oom_retries(
     monkeypatch.setattr(at, "decide_nproc", lambda env=None: 4)
     basetemps: list[str] = []
 
-    def runner(cmd):
+    def runner(cmd: Sequence[str]) -> tuple[int, str]:
         bt = next(a for a in cmd if a.startswith("--basetemp="))
         basetemps.append(bt)
         n = int(cmd[cmd.index("-n") + 1])
@@ -486,7 +493,7 @@ def test_stream_run_emits_heartbeat_and_persists_counters(
     monkeypatch.setenv("GLUDD_ADAPTIVE_PROGRESS_FILE", str(progress_file))
 
     class _QuietStream:
-        def __iter__(self):
+        def __iter__(self) -> Iterator[str]:
             time.sleep(0.03)
             yield "pytest finished\n"
 
@@ -494,10 +501,10 @@ def test_stream_run_emits_heartbeat_and_persists_counters(
         stdout = _QuietStream()
         returncode = 0
 
-        def poll(self):
+        def poll(self) -> int | None:
             return self.returncode
 
-        def wait(self):
+        def wait(self) -> int | None:
             return self.returncode
 
     monkeypatch.setattr(at.subprocess, "Popen", lambda *args, **kwargs: _Process())
@@ -529,20 +536,20 @@ def test_stream_run_terminates_at_visible_no_progress_bound(
             self.terminated = False
             self.stdout = self._quiet_stream()
 
-        def _quiet_stream(self):
+        def _quiet_stream(self) -> Iterator[str]:
             while not self.terminated:
                 time.sleep(0.002)
             if False:
                 yield ""
 
-        def poll(self):
+        def poll(self) -> int | None:
             return self.returncode
 
         def terminate(self) -> None:
             self.terminated = True
             self.returncode = -15
 
-        def wait(self):
+        def wait(self) -> int | None:
             return self.returncode
 
     process = _Process()
@@ -579,20 +586,20 @@ def test_stream_run_records_orchestrator_signal_provenance(
         def __init__(self) -> None:
             self.stdout = self._signal_stream()
 
-        def _signal_stream(self):
+        def _signal_stream(self) -> Iterator[str]:
             handler = installed_handlers[at.signal.SIGTERM]
             assert callable(handler)
             handler(at.signal.SIGTERM, None)
             if False:
                 yield ""
 
-        def poll(self):
+        def poll(self) -> int | None:
             return self.returncode
 
         def terminate(self) -> None:
             self.returncode = -15
 
-        def wait(self):
+        def wait(self) -> int | None:
             return self.returncode
 
     monkeypatch.setattr(at.subprocess, "Popen", lambda *args, **kwargs: _Process())
@@ -601,3 +608,39 @@ def test_stream_run_records_orchestrator_signal_provenance(
 
     assert result.returncode == 143
     assert result.termination_reason == "orchestrator-signal:SIGTERM"
+
+def test_memory_budget_falls_through_invalid_and_nonpositive_values() -> None:
+    """Invalid primary values fall through; no non-positive value is admitted."""
+    assert at.per_worker_gb(
+        {"PER_WORKER_GB": "invalid", "GLUDD_PER_WORKER_GB": "2.5"}
+    ) == pytest.approx(2.5)
+    assert at.per_worker_gb(
+        {"PER_WORKER_GB": "0", "GLUDD_PER_WORKER_GB": "-1"}
+    ) == pytest.approx(at.DEFAULT_PER_WORKER_GB)
+
+
+def test_progress_intervals_are_positive_bounded_and_fail_closed() -> None:
+    """Malformed or non-positive intervals retain safe defaults and upper bounds."""
+    assert at.heartbeat_interval_seconds(
+        {"GLUDD_ADAPTIVE_HEARTBEAT_SECS": "0.25"}
+    ) == pytest.approx(0.25)
+    assert at.heartbeat_interval_seconds(
+        {"GLUDD_ADAPTIVE_HEARTBEAT_SECS": "invalid"}
+    ) == pytest.approx(at.DEFAULT_HEARTBEAT_SECS)
+    assert at.heartbeat_interval_seconds(
+        {"GLUDD_ADAPTIVE_HEARTBEAT_SECS": "0"}
+    ) == pytest.approx(at.DEFAULT_HEARTBEAT_SECS)
+    assert at.no_progress_timeout_seconds(
+        {"GLUDD_ADAPTIVE_NO_PROGRESS_SECS": str(at.MAX_NO_PROGRESS_SECS + 1)}
+    ) == pytest.approx(at.MAX_NO_PROGRESS_SECS)
+    assert at.no_progress_timeout_seconds(
+        {"GLUDD_ADAPTIVE_NO_PROGRESS_SECS": "0"}
+    ) == pytest.approx(at.DEFAULT_NO_PROGRESS_SECS)
+
+
+def test_runner_result_normalization_preserves_provenance() -> None:
+    """Native and legacy runner results retain their termination provenance."""
+    native = at.StreamResult(143, "", "orchestrator-signal:SIGTERM")
+    assert at._normalize_runner_result(native) is native
+    normalized = at._normalize_runner_result((124, "", "no-progress-timeout"))
+    assert normalized == at.StreamResult(124, "", "no-progress-timeout")

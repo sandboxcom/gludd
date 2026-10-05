@@ -9,6 +9,7 @@ import logging
 import os
 from collections.abc import Awaitable, Callable
 from typing import Protocol, runtime_checkable
+from uuid import uuid4
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -79,20 +80,36 @@ class PostgresWakeupListener:
         self._task: asyncio.Task[None] | None = None
         self._ready = asyncio.Event()
         self._closed = False
+        self._proof_id: str | None = None
+        self._ready_proof_id: str | None = None
+        self._closed_proof_ids: set[str] = set()
 
     @property
     def ready(self) -> bool:
         """Return whether the PostgreSQL subscription is ready."""
         return self._ready.is_set()
 
+    @property
+    def proof_id(self) -> str | None:
+        """Return the unforgeable identity of the current listener lifecycle."""
+        return self._proof_id
+
     def start(self) -> None:
         """Start the listener task if it is not already running."""
-        if self._task is None or self._task.done():
-            self._closed = False
-            self._task = asyncio.create_task(
-                self._run(),
-                name=f"gludd-pg-wakeup-{self._worker_id}-{os.getpid()}",
+        if self._task is not None:
+            if not self._task.done() and not self._closed:
+                return
+            raise RuntimeError(
+                "PostgreSQL wake listener shutdown is incomplete; await aclose() before restart"
             )
+        self._closed = False
+        self._ready.clear()
+        self._ready_proof_id = None
+        self._proof_id = uuid4().hex
+        self._task = asyncio.create_task(
+            self._run(),
+            name=f"gludd-pg-wakeup-{self._worker_id}-{os.getpid()}",
+        )
 
     async def wait_ready(self, timeout: float = 10.0) -> None:
         """Wait up to ``timeout`` seconds for subscription readiness."""
@@ -106,21 +123,27 @@ class PostgresWakeupListener:
 
     async def aclose(self) -> None:
         """Cancel and await the listener task, leaving no owned task behind."""
+        task = self._task
         self.close()
-        if self._task is not None:
+        if task is not None:
             with contextlib.suppress(asyncio.CancelledError):
-                await self._task
+                await task
         self._task = None
         self._ready.clear()
-        logger.info(
-            "Terraform PostgreSQL wake listener closed worker=%s pid=%d",
-            self._worker_id,
-            os.getpid(),
-        )
-        _emit_wakeup_progress(
-            "Terraform PostgreSQL wake listener closed "
-            f"worker={self._worker_id} pid={os.getpid()}"
-        )
+        ready_proof_id = self._ready_proof_id
+        self._ready_proof_id = None
+        if ready_proof_id is not None and ready_proof_id not in self._closed_proof_ids:
+            self._closed_proof_ids.add(ready_proof_id)
+            logger.info(
+                "Terraform PostgreSQL wake listener closed worker=%s pid=%d proof_id=%s",
+                self._worker_id,
+                os.getpid(),
+                ready_proof_id,
+            )
+            _emit_wakeup_progress(
+                "Terraform PostgreSQL wake listener closed "
+                f"worker={self._worker_id} pid={os.getpid()} proof_id={ready_proof_id}"
+            )
 
     async def _run(self) -> None:
         delay = self._reconnect_min_seconds
@@ -134,15 +157,17 @@ class PostgresWakeupListener:
             except Exception as error:
                 self._ready.clear()
                 logger.warning(
-                    "Terraform PostgreSQL wake listener reconnecting worker=%s pid=%d delay=%.2fs error=%s",
+                    "Terraform PostgreSQL wake listener reconnecting worker=%s pid=%d proof_id=%s delay=%.2fs error=%s",
                     self._worker_id,
                     os.getpid(),
+                    self._proof_id,
                     delay,
                     type(error).__name__,
                 )
                 _emit_wakeup_progress(
                     "Terraform PostgreSQL wake listener reconnecting "
                     f"worker={self._worker_id} pid={os.getpid()} "
+                    f"proof_id={self._proof_id} "
                     f"delay={delay:.2f}s error={type(error).__name__}"
                 )
                 await asyncio.sleep(delay)
@@ -160,17 +185,22 @@ class PostgresWakeupListener:
         )
         async with connection:
             await connection.execute(f"LISTEN {_WAKEUP_CHANNEL}")
+            proof_id = self._proof_id or uuid4().hex
+            self._proof_id = proof_id
+            self._ready_proof_id = proof_id
             self._ready.set()
             caught_up = await self.catch_up()
             logger.info(
-                "Terraform PostgreSQL wake listener ready worker=%s pid=%d catchup=%d",
+                "Terraform PostgreSQL wake listener ready worker=%s pid=%d proof_id=%s catchup=%d",
                 self._worker_id,
                 os.getpid(),
+                proof_id,
                 caught_up,
             )
             _emit_wakeup_progress(
                 "Terraform PostgreSQL wake listener ready "
-                f"worker={self._worker_id} pid={os.getpid()} catchup={caught_up}"
+                f"worker={self._worker_id} pid={os.getpid()} "
+                f"proof_id={proof_id} catchup={caught_up}"
             )
             async for notification in connection.notifies():
                 if self._closed:
@@ -194,14 +224,16 @@ class PostgresWakeupListener:
         self._last_audit_event_id = audit_event_id
         self._wake()
         logger.info(
-            "Terraform PostgreSQL wake notification received worker=%s pid=%d audit_event_id=%d",
+            "Terraform PostgreSQL wake notification received worker=%s pid=%d proof_id=%s audit_event_id=%d",
             self._worker_id,
             os.getpid(),
+            self._proof_id,
             audit_event_id,
         )
         _emit_wakeup_progress(
             "Terraform PostgreSQL wake notification received "
-            f"worker={self._worker_id} pid={os.getpid()} audit_event_id={audit_event_id}"
+            f"worker={self._worker_id} pid={os.getpid()} "
+            f"proof_id={self._proof_id} audit_event_id={audit_event_id}"
         )
 
     async def catch_up(self) -> int:
@@ -219,15 +251,17 @@ class PostgresWakeupListener:
             self._last_audit_event_id = int(max_id)
             self._wake()
             logger.info(
-                "Terraform PostgreSQL wake catch-up worker=%s pid=%d events=%d latest=%d",
+                "Terraform PostgreSQL wake catch-up worker=%s pid=%d proof_id=%s events=%d latest=%d",
                 self._worker_id,
                 os.getpid(),
+                self._proof_id,
                 caught_up,
                 self._last_audit_event_id,
             )
             _emit_wakeup_progress(
                 "Terraform PostgreSQL wake catch-up "
-                f"worker={self._worker_id} pid={os.getpid()} events={caught_up} "
+                f"worker={self._worker_id} pid={os.getpid()} "
+                f"proof_id={self._proof_id} events={caught_up} "
                 f"latest={self._last_audit_event_id}"
             )
         return caught_up
@@ -266,8 +300,13 @@ class TerraformEventBridge:
                 EventType.CUSTOM,
                 self._receive,
             )
-            if self._listener is not None:
-                self._listener.start()
+            try:
+                if self._listener is not None:
+                    self._listener.start()
+            except Exception:
+                self._event_bus.unsubscribe(self._subscription_id)
+                self._subscription_id = None
+                raise
 
     def close(self) -> None:
         """Unsubscribe and request synchronous listener shutdown."""

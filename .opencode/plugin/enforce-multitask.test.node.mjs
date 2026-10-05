@@ -1,9 +1,9 @@
 // enforce-multitask.test.node.mjs — FAILING-FIRST behavioral tests (TDD).
 //
 // Verifies the five enforcement behaviors the plugin MUST provide:
-//   1. Explicit MIN_DISPATCHES=10 floor — >=10 subagent dispatches required
+//   1. An oversized explicit MIN_DISPATCHES=10 request is clamped to 3
 //      when the operator opts in and pending work exists
-//   2. Thin-wave blanking — text.complete blanks responses with 1-9 dispatches
+//   2. Thin-wave blanking — text.complete blanks responses with 1-2 dispatches
 //   3. Grinding detection — 5+ consecutive non-dispatch calls within 30s block
 //   4. Zero-dispatch streak — 2 zero-dispatch messages block ALL tools
 //   5. TASKS.md parsing — unchecked `- [ ]` / `* [ ]` items gate enforcement
@@ -39,6 +39,7 @@ const ENV_CI_CACHE_FILE = '/tmp/gludd-test-multitask-ci.json'
 const ENV_STOP_STATE_FILE = '/tmp/gludd-test-multitask-stop.json'
 const ENV_RELEASE_FILE = '/tmp/gludd-test-multitask-release.json'
 const ENV_TODOWRITE_FILE = '/tmp/gludd-test-multitask-todowrite.json'
+const ENV_DISPATCH_OUTCOMES_FILE = '/tmp/gludd-test-multitask-dispatch-outcomes.json'
 
 // The factory's tool.execute.before delegates through loadHotModule(): if a
 // hot module exists it would shadow the code under test. Park it.
@@ -68,6 +69,7 @@ process.env.GLUDD_CI_CACHE_PATH = ENV_CI_CACHE_FILE
 process.env.GLUDD_STOP_STATE_PATH = ENV_STOP_STATE_FILE
 process.env.GLUDD_RELEASE_COMPLETENESS_FILE = ENV_RELEASE_FILE
 process.env.GLUDD_TODOWRITE_STATE_PATH = ENV_TODOWRITE_FILE
+process.env.GLUDD_DISPATCH_OUTCOMES_FILE = ENV_DISPATCH_OUTCOMES_FILE
 process.env.GLUDD_PROJECT_ROOT = TASKS_DIR
 
 fs.mkdirSync(TASKS_DIR, { recursive: true })
@@ -152,6 +154,7 @@ function wipeState() {
     ENV_STOP_STATE_FILE,
     ENV_RELEASE_FILE,
     ENV_TODOWRITE_FILE,
+    ENV_DISPATCH_OUTCOMES_FILE,
   ]) {
     try { fs.rmSync(file, { force: true }) } catch {}
   }
@@ -186,10 +189,10 @@ async function freshWindowPlugin() {
   return { m, hook: instance['tool.execute.before'], tc: instance['experimental.text.complete'] }
 }
 
-async function freshRefillPlugin(refreshIntervalMs) {
+async function freshRefillPlugin(refreshIntervalMs, minimumDispatches = 0) {
   wipeState()
   process.env.GLUDD_PROJECT_ROOT = TASKS_DIR
-  process.env.GLUDD_MULTITASK_MIN_DISPATCHES = '0'
+  process.env.GLUDD_MULTITASK_MIN_DISPATCHES = String(minimumDispatches)
   process.env.GLUDD_REFRESH_INTERVAL_MS = String(refreshIntervalMs)
   delete _require.cache[_require.resolve(OUTFILE_REFILL)]
   const m = _require(OUTFILE_REFILL)
@@ -270,12 +273,12 @@ describe('enforce-multitask', { concurrency: 1 }, () => {
       assert.strictEqual(typeof instance['experimental.text.complete'], 'function')
     })
 
-    it('T2: MIN_DISPATCHES === 10 (the floor)', () => {
-      assert.strictEqual(exportsMod.MIN_DISPATCHES, 10)
+    it('T2: oversized MIN_DISPATCHES is clamped to the hard ceiling', () => {
+      assert.strictEqual(exportsMod.MIN_DISPATCHES, 3)
     })
 
-    it('T3: MAX_DISPATCHES === 10 (ceiling == floor)', () => {
-      assert.strictEqual(exportsMod.MAX_DISPATCHES, 10)
+    it('T3: MAX_DISPATCHES === 3 (the hard ceiling)', () => {
+      assert.strictEqual(exportsMod.MAX_DISPATCHES, 3)
     })
 
     it('T4: MAX_ZERO_STREAK === 2', () => {
@@ -341,37 +344,38 @@ describe('enforce-multitask', { concurrency: 1 }, () => {
   })
 
   // ==========================================================================
-  // BEHAVIOR 1 — MIN_DISPATCHES floor (=10)
+  // BEHAVIOR 1 — requested MIN_DISPATCHES=10 clamps to floor 3
   //
-  // When TASKS.md has unchecked items the agent MUST dispatch >=10 subagents.
+  // When TASKS.md has unchecked items and the operator opts in, the agent must
+  // meet the clamped three-dispatch floor.
   // Mutating tools stay denied until the current wave reaches the floor.
   // ==========================================================================
-  describe('BEHAVIOR 1: MIN_DISPATCHES=10 floor', () => {
+  describe('BEHAVIOR 1: oversized MIN_DISPATCHES clamps to three', () => {
     it('T11: denies edit at 0 dispatches with pending work (names the floor)', async () => {
       const { hook } = await freshPlugin()
       const r = await hook({ tool: 'edit' })
-      assertDeny(r, 'CONFIGURED MINIMUM', 'edit at 0/10 dispatches must be minimum-denied')
-      assert.ok(r.message.includes('10'), 'deny message must name the floor (10)')
+      assertDeny(r, 'CONFIGURED MINIMUM', 'edit at 0/3 dispatches must be minimum-denied')
+      assert.ok(r.message.includes('3'), 'deny message must name the clamped floor (3)')
     })
 
-    it('T12: keeps edit/write/bash denied mid-wave at 5/10 dispatches (floor is 10, not 1)', async () => {
+    it('T12: keeps edit/write/bash denied mid-wave at 2/3 dispatches', async () => {
       const { hook } = await freshPlugin()
-      await dispatchN(hook, 5)
+      await dispatchN(hook, 2)
 
       for (const tool of ['edit', 'write', 'bash']) {
         const r = await hook({ tool })
         assertDeny(
           r, 'CONFIGURED MINIMUM',
-          `${tool} must be DENIED at 5/10 dispatches — a single dispatch must not unlock the wave`,
+          `${tool} must be DENIED at 2/3 dispatches — a thin wave must not unlock mutation`,
         )
       }
     })
 
-    it('T13: allows edit once the wave reaches the floor (10/10 dispatches)', async () => {
+    it('T13: allows edit once the wave reaches the floor (3/3 dispatches)', async () => {
       const { hook } = await freshPlugin()
-      await dispatchN(hook, 10)
+      await dispatchN(hook, 3)
       const r = await hook({ tool: 'edit' })
-      assert.strictEqual(r, undefined, 'edit must be allowed at 10/10 dispatches')
+      assert.strictEqual(r, undefined, 'edit must be allowed at 3/3 dispatches')
     })
 
     it('T14: always allows dispatch tools (task) below the ceiling', async () => {
@@ -381,7 +385,7 @@ describe('enforce-multitask', { concurrency: 1 }, () => {
     })
 
     // TDD-FAIL: AGENTS.md "UNDER-FLOOR HARD BLOCK (2026-07-15)" — "Every
-    // non-dispatch tool call (including read/glob/grep) is blocked until >=10
+    // non-dispatch tool call (including read/glob/grep) is blocked until the
     // dispatches have been made". The plugin currently exempts read tools
     // from the under-floor gate, so "dispatch FIRST" is unenforced for the
     // read-grind pattern.
@@ -402,18 +406,18 @@ describe('enforce-multitask', { concurrency: 1 }, () => {
       }
     })
 
-    it('T16: denies the 11th dispatch (DISPATCH CEILING)', async () => {
+    it('T16: denies the fourth dispatch (DISPATCH CEILING)', async () => {
       const { hook } = await freshPlugin()
-      await dispatchN(hook, 10)
+      await dispatchN(hook, 3)
       const r = await hook({ tool: 'agent' })
-      assertDeny(r, 'DISPATCH CEILING', '11th dispatch in one message must breach the ceiling')
+      assertDeny(r, 'DISPATCH CEILING', 'fourth dispatch in one message must breach the ceiling')
     })
   })
 
   // ==========================================================================
-  // BEHAVIOR 2 — thin-wave blanking (1-9 dispatches)
+  // BEHAVIOR 2 — thin-wave blanking (1-2 dispatches)
   // ==========================================================================
-  describe('BEHAVIOR 2: thin-wave blanking (1-9 dispatches)', () => {
+  describe('BEHAVIOR 2: thin-wave blanking (1-2 dispatches)', () => {
     it('T17: blanks the response text after a 1-dispatch wave', async () => {
       const { hook, tc } = await freshPlugin()
       await dispatchN(hook, 1)
@@ -426,27 +430,27 @@ describe('enforce-multitask', { concurrency: 1 }, () => {
         'a 1-dispatch wave must be blanked with THIN WAVE BLOCKED')
       assert.ok(!result.text.includes(original),
         'the original response text must not survive blanking')
-      assert.ok(result.text.includes('10'),
-        'the blanking directive must name the floor (10)')
+      assert.ok(result.text.includes('3'),
+        'the blanking directive must name the clamped floor (3)')
     })
 
-    it('T18: blanks the response text after a 9-dispatch wave (just under floor)', async () => {
+    it('T18: blanks the response text after a 2-dispatch wave (just under floor)', async () => {
       const { hook, tc } = await freshPlugin()
-      await dispatchN(hook, 9)
+      await dispatchN(hook, 2)
 
-      const result = await tc({}, { text: 'nine dispatched' })
+      const result = await tc({}, { text: 'two dispatched' })
       assert.ok(result && typeof result.text === 'string')
       assert.ok(result.text.includes('THIN WAVE BLOCKED'))
-      assert.ok(!result.text.includes('nine dispatched'))
+      assert.ok(!result.text.includes('two dispatched'))
     })
 
-    it('T19: passes a full 10-dispatch wave response through unmodified', async () => {
+    it('T19: passes a full 3-dispatch wave response through unmodified', async () => {
       const { hook, tc } = await freshPlugin()
-      await dispatchN(hook, 10)
+      await dispatchN(hook, 3)
 
-      const output = { text: 'full wave of ten dispatched' }
+      const output = { text: 'full wave of three dispatched' }
       const result = await tc({}, output)
-      assert.strictEqual(result, output, 'a 10-wave response must pass through unmodified')
+      assert.strictEqual(result, output, 'a 3-wave response must pass through unmodified')
     })
 
     it('T20: does not blank a zero-dispatch response (streak-counted instead)', async () => {
@@ -458,22 +462,21 @@ describe('enforce-multitask', { concurrency: 1 }, () => {
 
     // TDD-FAIL: the blanking branch returns BEFORE handleMessageBoundary, so
     // the thin wave's dispatch count is never reset. When the agent obeys the
-    // directive ("Re-send with >= 10 dispatches"), the stale count (3) is
-    // still in thisMessageDispatches and the corrective wave hits the ceiling
-    // at 3+7 — dispatches 8-10 of the REQUIRED wave are denied. Blanking must
+    // directive, a stale count can consume the corrective wave's ceiling.
+    // Blanking must
     // close the message boundary.
-    it('T21: resets the wave counter after blanking so the corrective 10-wave is possible', async () => {
+    it('T21: resets the wave counter after blanking so a corrective 3-wave is possible', async () => {
       const { hook, tc } = await freshPlugin()
-      await dispatchN(hook, 3)
+      await dispatchN(hook, 1)
 
       const blanked = await tc({}, { text: 'thin wave summary' })
       assert.ok(blanked && blanked.text.includes('THIN WAVE BLOCKED'))
 
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 3; i++) {
         const r = await hook({ tool: 'task' })
         assert.strictEqual(
           r, undefined,
-          `corrective-wave dispatch ${i + 1}/10 must be allowed after a thin-wave blank — ` +
+          `corrective-wave dispatch ${i + 1}/3 must be allowed after a thin-wave blank — ` +
           'stale thisMessageDispatches from the blanked wave must not consume the ceiling',
         )
       }
@@ -481,21 +484,32 @@ describe('enforce-multitask', { concurrency: 1 }, () => {
   })
 
   describe('BEHAVIOR 2b: result-arrival refill reminder', () => {
-    it('warns after a result drains a stale pool below five', async () => {
-      const { hook, tc } = await freshRefillPlugin(1)
-      await dispatchN(hook, 4)
+    it('does not invent a refill warning when the configured minimum is zero', async () => {
+      const { hook, tc } = await freshRefillPlugin(1, 0)
+      await dispatchN(hook, 3)
+      await sleep(5)
+      const output = { text: 'task result: completed successfully' }
+
+      const result = await tc({}, output)
+
+      assert.strictEqual(result, output)
+    })
+
+    it('warns when a result drains the pool below an explicit positive minimum', async () => {
+      const { hook, tc } = await freshRefillPlugin(1, 3)
+      await dispatchN(hook, 3)
       await sleep(5)
 
       const result = await tc({}, { text: 'task result: completed successfully' })
 
       assert.ok(result && typeof result.text === 'string')
-      assert.match(result.text, /FLOOR LOW: only 3 estimated subagent\(s\) remain/)
+      assert.match(result.text, /FLOOR LOW: only 2 estimated subagent\(s\) remain/)
       assert.match(result.text, /Dispatch replacements now/)
     })
 
     it('does not warn before the configured refresh interval', async () => {
       const { hook, tc } = await freshRefillPlugin(30_000)
-      await dispatchN(hook, 4)
+      await dispatchN(hook, 3)
       const output = { text: 'task result: completed successfully' }
 
       const result = await tc({}, output)
@@ -613,7 +627,7 @@ describe('enforce-multitask', { concurrency: 1 }, () => {
 
       const edit = await hook({ tool: 'edit' })
       assertDeny(edit, 'CONFIGURED MINIMUM',
-        'edit must STILL be under-floor denied at 1/10 dispatches — the streak exit does not waive the floor')
+        'edit must STILL be under-floor denied at 1/3 dispatches — the streak exit does not waive the floor')
     })
   })
 

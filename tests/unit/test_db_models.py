@@ -440,6 +440,121 @@ class TestTodoRepository:
         backlog_claimed = [c for c in claimed if c.title == "Still in backlog"]
         assert len(backlog_claimed) == 0
 
+    async def test_claim_runnable_skips_unfinished_dependencies(
+        self,
+        async_session: AsyncSession,
+    ):
+        repo = TodoRepository(async_session)
+        parent = await repo.create(
+            {
+                "todo_id": "TODO-DEPENDENCY",
+                "title": "dependency",
+                "status": TodoStatus.QUEUED.value,
+                "priority": 1,
+            }
+        )
+        await repo.create(
+            {
+                "todo_id": "TODO-DEPENDENT",
+                "title": "dependent",
+                "status": TodoStatus.QUEUED.value,
+                "priority": 100,
+                "dependencies": '["TODO-DEPENDENCY"]',
+            }
+        )
+
+        claimed = await repo.claim_runnable(limit=10)
+
+        assert [todo.todo_id for todo in claimed] == [parent.todo_id]
+
+    async def test_claim_runnable_accepts_completed_dependencies(
+        self,
+        async_session: AsyncSession,
+    ):
+        repo = TodoRepository(async_session)
+        await repo.create(
+            {
+                "todo_id": "TODO-COMPLETE-DEPENDENCY",
+                "title": "completed dependency",
+                "status": TodoStatus.COMPLETE.value,
+            }
+        )
+        dependent = await repo.create(
+            {
+                "todo_id": "TODO-READY-DEPENDENT",
+                "title": "ready dependent",
+                "status": TodoStatus.QUEUED.value,
+                "dependencies": '["TODO-COMPLETE-DEPENDENCY"]',
+            }
+        )
+
+        claimed = await repo.claim_runnable(limit=10)
+
+        assert [todo.todo_id for todo in claimed] == [dependent.todo_id]
+
+    async def test_claim_runnable_fails_closed_for_missing_and_cyclic_dependencies(
+        self,
+        async_session: AsyncSession,
+    ):
+        repo = TodoRepository(async_session)
+        await repo.create(
+            {
+                "todo_id": "TODO-MISSING-DEPENDENCY",
+                "title": "missing dependency",
+                "status": TodoStatus.QUEUED.value,
+                "dependencies": '["DOES-NOT-EXIST"]',
+            }
+        )
+        await repo.create(
+            {
+                "todo_id": "TODO-CYCLE-A",
+                "title": "cycle a",
+                "status": TodoStatus.QUEUED.value,
+                "dependencies": '["TODO-CYCLE-B"]',
+            }
+        )
+        await repo.create(
+            {
+                "todo_id": "TODO-CYCLE-B",
+                "title": "cycle b",
+                "status": TodoStatus.QUEUED.value,
+                "dependencies": '["TODO-CYCLE-A"]',
+            }
+        )
+
+        assert await repo.claim_runnable(limit=10) == []
+
+    async def test_claim_runnable_enforces_max_active_inside_claim_transaction(
+        self,
+        async_session: AsyncSession,
+    ):
+        repo = TodoRepository(async_session)
+        await repo.create(
+            {
+                "todo_id": "TODO-ACTIVE",
+                "title": "already active",
+                "status": TodoStatus.ACTIVE.value,
+            }
+        )
+        await repo.create(
+            {
+                "todo_id": "TODO-WIP-ONE",
+                "title": "first queued",
+                "status": TodoStatus.QUEUED.value,
+            }
+        )
+        await repo.create(
+            {
+                "todo_id": "TODO-WIP-TWO",
+                "title": "second queued",
+                "status": TodoStatus.QUEUED.value,
+            }
+        )
+
+        claimed = await repo.claim_runnable(limit=10, max_active=2)
+
+        assert len(claimed) == 1
+
 
 class TestTaskReturnRepository:
     async def test_create_task_return(self, async_session: AsyncSession):

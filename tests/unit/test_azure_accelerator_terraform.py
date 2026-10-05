@@ -34,7 +34,10 @@ def test_makefile_has_state_free_azure_stack_initialization() -> None:
     assert 'TF_DATA_DIR="$$TF_LOCAL_DATA_DIR"' in makefile
     assert "scripts/resource_arbiter.py root" in makefile
     assert 'rm -rf "$$TF_LOCAL_DATA_DIR"' in makefile
-    assert "stacks/azure-vllm|stacks/azure-llamacpp" in makefile
+    assert (
+        "stacks/azure-vllm|stacks/azure-llamacpp|stacks/azure-container-app-vllm"
+        in makefile
+    )
     assert 'scripts/clean_terraform_test_artifacts.py "$(TF_ROOT)/$(STACK)"' in makefile
 
 
@@ -401,7 +404,7 @@ async def test_expired_registry_record_requests_terraform_destroy(
         new_callable=AsyncMock,
     ) as destroy:
         await manager._destroy_at_expiry("gludd-expired")
-    destroy.assert_awaited_once_with("gludd-expired")
+    destroy.assert_awaited_once_with("gludd-expired", provider="azure")
 
 
 @pytest.mark.asyncio

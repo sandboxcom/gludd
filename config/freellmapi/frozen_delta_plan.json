@@ -1,0 +1,27 @@
+{
+  "abi_version": 1,
+  "candidate_id": "sha256:69d63b09199c37f38c02c711559b15e0fd5dc5ecc0e64e2d94c597dc5e5d3998",
+  "capability_id": "score_candidate_features",
+  "confidence_z": 1.96,
+  "corpus_sha256": "3c83085fa9d5ddd694009958d5ce59481c7b28fd7f3f7574bbb30c5f3b0eab81",
+  "fixture_digests": [
+    "b8b11afb3ad40c2f8979386e4c02c1e000d9e82aa49927a0104eb483253b55ae",
+    "312910fc3501c527899087bc7d443c7fee024e676da2c40fffcf8cbec11650e3",
+    "a283a3007e56d8d3ac7fcba5962b3cfebf6666c3a05ff59e27e70791b067746b",
+    "649fb85d21008c58995f58696f4a3a40c10aa486353b677108407e5e4cb31e31"
+  ],
+  "gate": "freellmapi-frozen-delta-v1",
+  "metric": "paired-adjusted-quality-v1",
+  "minimum_adjusted_gain": 0.02,
+  "observation_window": "four-held-out-binary-provider-outcomes",
+  "owner": "general_ludd.models",
+  "penalties": {
+    "cost_usd": 1.0,
+    "failure": 0.5,
+    "latency_ms": 0.0,
+    "memory_mib": 0.0
+  },
+  "removal_condition": "remove if lower confidence bound falls below 0.02",
+  "schema_version": 1,
+  "selected_export": "expectedReliability"
+}

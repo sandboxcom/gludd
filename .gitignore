@@ -21,6 +21,8 @@ htmlcov/
 # windows-installer read them — a fresh clone cannot build the release matrix
 # without them. Build OUTPUTS are ignored below. Do not blanket-ignore dist/.
 dist/gludd
+dist/linux/gludd
+dist/linux/warn-gludd.txt
 dist/general-ludd-agent-*
 dist/build/
 dist/deb-root/
@@ -100,6 +102,9 @@ infra/terraform/.plugin-cache/*
 zai.key
 zai.api
 sandboxcom_github_rsa
+# Azure CLI output from the self-improvement service-principal bootstrap.
+gludd-azure-self-improve-auth.*
+gludd-azure-accelerator-auth.*
 
 /tmp/
 web_retriever/*

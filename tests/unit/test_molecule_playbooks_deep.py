@@ -639,3 +639,13 @@ class TestMoleculeStructuralCoherence:
                     assert canonical_shared.is_file(), (
                         f"[{scenario}] shared playbook does not exist: {canonical_shared}"
                     )
+
+    def test_ansible_lint_playbooks_delegates_to_canonical_fail_closed_lint(self) -> None:
+        makefile = (PROJECT_ROOT / "Makefile").read_text(encoding="utf-8")
+        target_body = makefile.split("ansible-lint-playbooks:", 1)[1].split(
+            "ansible-collection-test:", 1
+        )[0]
+
+        assert "ansible-lint-playbooks: yaml-lint" in makefile
+        assert "|| true" not in target_body
+        assert "playbooks/roles" not in target_body

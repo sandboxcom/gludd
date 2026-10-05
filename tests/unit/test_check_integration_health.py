@@ -7,6 +7,8 @@ import signal
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 SCRIPT = Path(__file__).parents[2] / "scripts" / "check_integration_health.py"
 
 
@@ -80,7 +82,9 @@ FAILED tests/integration/test_alpha.py::test_first - AssertionError: first
 
 
 def test_main_streams_and_reports_exact_xdist_failures(
-    monkeypatch, tmp_path: Path, capsys
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     class FakeProcess:
         stdout = io.StringIO(XDIST_OUTPUT)

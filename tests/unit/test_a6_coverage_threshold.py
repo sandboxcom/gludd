@@ -30,6 +30,21 @@ class TestPyprojectCoverageThreshold:
             f"fail_under={fail_under}; expected exactly 85 (the E1 target)"
         )
 
+    def test_custom_exclusions_preserve_coverage_defaults(self) -> None:
+        """Project exclusions must augment, not replace, Coverage.py defaults."""
+        data = tomllib.loads(Path("pyproject.toml").read_text())
+        report = data.get("tool", {}).get("coverage", {}).get("report", {})
+
+        assert "exclude_lines" not in report, (
+            "exclude_lines replaces Coverage.py defaults and counts declarative "
+            "Protocol ellipses as unreachable branches; use exclude_also"
+        )
+        assert set(report.get("exclude_also", ())) >= {
+            "pragma: no cover",
+            "if TYPE_CHECKING:",
+            "raise NotImplementedError",
+        }
+
 
 class TestBuildYmlNoFailUnderZeroWorkaround:
     def test_build_yml_exists_and_readable(self) -> None:

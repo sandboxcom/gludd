@@ -12,6 +12,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-no-suppressions.ts"
@@ -21,10 +22,10 @@ _ts_counter = 0
 
 def _run_plugin(
     ts_code: str,
-    env_override: dict | None = None,
+    env_override: dict[str, str] | None = None,
     cwd: str | None = None,
     timeout: int = 15,
-) -> dict | None:
+) -> dict[str, Any] | None:
     global _ts_counter
     _ts_counter += 1
     tmp = Path(tempfile.mktemp(suffix=".ts", prefix=f"no_supp_e2e_{_ts_counter}_"))
@@ -57,7 +58,7 @@ def _run_plugin(
             if not line:
                 continue
             try:
-                return json.loads(line)
+                return cast(dict[str, Any], json.loads(line))
             except json.JSONDecodeError:
                 continue
         return None
@@ -106,7 +107,7 @@ def _edit_code(file_path: str, new_string: str) -> str:
 # ───
 
 
-def test_noqa_blocked_on_write():
+def test_noqa_blocked_on_write() -> None:
     """Hook denies write containing # noqa in src/ file."""
     code = _write_code("src/fake.py", "# noqa: E501  # silence lint")
     result = _run_plugin(code)
@@ -117,7 +118,7 @@ def test_noqa_blocked_on_write():
     )
 
 
-def test_noqa_blocked_on_edit():
+def test_noqa_blocked_on_edit() -> None:
     """Hook denies edit containing # noqa in tests/ file."""
     code = _edit_code("tests/fake.py", "# noqa  # suppress all")
     result = _run_plugin(code)
@@ -128,7 +129,7 @@ def test_noqa_blocked_on_edit():
 # ─── # type: ignore blocked ──────────────────────────────────────────────────
 
 
-def test_type_ignore_blocked_on_write():
+def test_type_ignore_blocked_on_write() -> None:
     """Hook denies write containing # type: ignore."""
     code = _write_code("src/models.py", "# type: ignore[assignment]")
     result = _run_plugin(code)
@@ -136,7 +137,7 @@ def test_type_ignore_blocked_on_write():
     assert result.get("permissionDecision") == "deny"
 
 
-def test_type_ignore_blocked_on_edit():
+def test_type_ignore_blocked_on_edit() -> None:
     """Hook denies edit containing # type: ignore."""
     code = _edit_code("tests/test_foo.py", "# type: ignore")
     result = _run_plugin(code)
@@ -147,7 +148,7 @@ def test_type_ignore_blocked_on_edit():
 # ─── Plain comment allowed ───────────────────────────────────────────────────
 
 
-def test_plain_comment_allowed_on_write():
+def test_plain_comment_allowed_on_write() -> None:
     """Hook allows write containing plain comment (non-suppression)."""
     code = _write_code("src/utils.py", "# regular comment explaining logic")
     result = _run_plugin(code)
@@ -156,7 +157,7 @@ def test_plain_comment_allowed_on_write():
     )
 
 
-def test_plain_comment_allowed_on_edit():
+def test_plain_comment_allowed_on_edit() -> None:
     """Hook allows edit containing plain comment."""
     code = _edit_code("src/helpers.py", "# TODO: refactor this")
     result = _run_plugin(code)
@@ -165,7 +166,7 @@ def test_plain_comment_allowed_on_edit():
     )
 
 
-def test_no_comment_text_allowed():
+def test_no_comment_text_allowed() -> None:
     """Hook allows write with no comment at all."""
     code = _write_code("src/app.py", "x = 1")
     result = _run_plugin(code)
@@ -174,7 +175,7 @@ def test_no_comment_text_allowed():
     )
 
 
-def test_suppression_text_inside_string_literal_allowed():
+def test_suppression_text_inside_string_literal_allowed() -> None:
     """Suppression-shaped data inside a quoted string is not a comment."""
     code = _write_code("src/app.py", 'HASH_PREFIX = "#noqa"')
     result = _run_plugin(code)
@@ -183,7 +184,7 @@ def test_suppression_text_inside_string_literal_allowed():
     )
 
 
-def test_suppression_text_inside_docstring_allowed():
+def test_suppression_text_inside_docstring_allowed() -> None:
     """Suppression-shaped prose inside a docstring is not a comment."""
     code = _write_code("src/app.py", '"""Documentation mentions # noqa safely."""')
     result = _run_plugin(code)
@@ -195,7 +196,7 @@ def test_suppression_text_inside_docstring_allowed():
 # ─── Allowlisted file bypasses check ─────────────────────────────────────────
 
 
-def test_allowlisted_file_bypasses_noqa():
+def test_allowlisted_file_bypasses_noqa() -> None:
     """Allowlisted path (fix_not_disable.py) allows # noqa."""
     code = _write_code(
         "src/general_ludd/security/fix_not_disable.py",
@@ -207,7 +208,7 @@ def test_allowlisted_file_bypasses_noqa():
     )
 
 
-def test_allowlisted_file_bypasses_type_ignore():
+def test_allowlisted_file_bypasses_type_ignore() -> None:
     """Allowlisted path (test_type_safety_guardrails.py) allows # type: ignore."""
     code = _write_code(
         "tests/unit/test_type_safety_guardrails.py",
@@ -219,7 +220,7 @@ def test_allowlisted_file_bypasses_type_ignore():
     )
 
 
-def test_non_allowlisted_file_still_blocked():
+def test_non_allowlisted_file_still_blocked() -> None:
     """Similar path not in allowlist is still blocked."""
     code = _write_code(
         "tests/unit/test_other_guardrails.py",
@@ -234,7 +235,7 @@ def test_non_allowlisted_file_still_blocked():
 # ─── Subagent guard ──────────────────────────────────────────────────────────
 
 
-def test_subagent_skips_check():
+def test_subagent_skips_check() -> None:
     """OPENCODE_SUBAGENT=1 bypasses suppression check entirely."""
     code = _write_code("src/fake.py", "# noqa: E501  # should be blocked normally")
     result = _run_plugin(code, env_override={"OPENCODE_SUBAGENT": "1"})
@@ -246,7 +247,7 @@ def test_subagent_skips_check():
 # ─── Environment cannot disable a hard guardrail ─────────────────────────────
 
 
-def test_env_disable_cannot_bypass_check():
+def test_env_disable_cannot_bypass_check() -> None:
     """GLUDD_NO_SUPPRESSIONS_ENFORCE=0 cannot disable the hard guardrail."""
     code = _write_code("src/fake.py", "# noqa: E501  # must remain blocked")
     result = _run_plugin(code, env_override={"GLUDD_NO_SUPPRESSIONS_ENFORCE": "0"})
@@ -258,7 +259,7 @@ def test_env_disable_cannot_bypass_check():
 # ─── Fail-open: empty content ────────────────────────────────────────────────
 
 
-def test_empty_content_fails_open():
+def test_empty_content_fails_open() -> None:
     """Empty content returns void (fail-open, allows)."""
     code = _write_code("src/fake.py", "")
     result = _run_plugin(code)
@@ -270,7 +271,7 @@ def test_empty_content_fails_open():
 # ─── Non-edit/write tools not blocked ────────────────────────────────────────
 
 
-def test_read_tool_not_blocked():
+def test_read_tool_not_blocked() -> None:
     """Hook only fires on edit/write; read tool always passes through."""
     read_code = f"""\
 const mod = await import('{PLUGIN_PATH!s}')
@@ -290,7 +291,7 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
 # ─── Other suppression patterns ──────────────────────────────────────────────
 
 
-def test_pylint_disable_blocked():
+def test_pylint_disable_blocked() -> None:
     """Hook blocks # pylint: disable=..."""
     code = _write_code("src/foo.py", "# pylint: disable=missing-docstring")
     result = _run_plugin(code)
@@ -299,7 +300,7 @@ def test_pylint_disable_blocked():
     )
 
 
-def test_fmt_off_blocked():
+def test_fmt_off_blocked() -> None:
     """Hook blocks # fmt: off."""
     code = _write_code("src/bar.py", "# fmt: off")
     result = _run_plugin(code)
@@ -308,7 +309,7 @@ def test_fmt_off_blocked():
     )
 
 
-def test_isort_skip_blocked():
+def test_isort_skip_blocked() -> None:
     """Hook blocks # isort:skip."""
     code = _write_code("src/baz.py", "# isort:skip")
     result = _run_plugin(code)

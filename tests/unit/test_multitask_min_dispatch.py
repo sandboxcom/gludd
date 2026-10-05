@@ -5,7 +5,7 @@ Rewritten 2026-07-14 to match the 2026-07-13 plugin rewrite:
 - No session.idle hook
 - Single tool.execute.before hook with 5s-inter-call message boundary detection
 - Explicit configured-minimum block; no implicit mandatory floor
-- Absolute dispatch ceiling of ten
+- Absolute dispatch ceiling of three
 - CONSECUTIVE NON-DISPATCH STREAK added
 - Subagent guard via isSubagent() (shared.ts)
 - Disengage via isDisengaged() (shared.ts)
@@ -110,13 +110,14 @@ class TestMinDispatchConstants:
 
     def test_min_dispatches_default_from_env_match(self):
         src = _plugin_source()
-        assert "MIN_DISPATCHES = integerFromEnv" in src
-        assert _extract_env_default(src, "GLUDD_MIN_DISPATCHES") == 10
-        assert _extract_env_default(src, "GLUDD_MULTITASK_MIN_DISPATCHES") == 10
+        assert "MIN_DISPATCHES = Math.min(" in src
+        assert "integerFromEnv(" in src
+        assert _extract_env_default(src, "GLUDD_MIN_DISPATCHES") == 0
+        assert _extract_env_default(src, "GLUDD_MULTITASK_MIN_DISPATCHES") == 0
 
-    def test_min_dispatches_is_positive_integer(self):
+    def test_min_dispatches_is_zero_until_explicitly_configured(self):
         d = _min_dispatch_default()
-        assert d > 0, f"MIN_DISPATCHES must be positive, got {d}"
+        assert d == 0, f"MIN_DISPATCHES must be opt-in, got {d}"
 
     def test_required_dispatches_used_in_under_floor_check(self):
         src = _plugin_source()
@@ -126,9 +127,7 @@ class TestMinDispatchConstants:
 
     def test_gludd_min_dispatches_env_also_supported(self):
         src = _plugin_source()
-        assert "GLUDD_MIN_DISPATCHES" in src, (
-            "GLUDD_MIN_DISPATCHES env var must also be supported as fallback"
-        )
+        assert "GLUDD_MIN_DISPATCHES" in src, "GLUDD_MIN_DISPATCHES env var must also be supported as fallback"
 
     def test_max_zero_streak_is_2(self):
         src = _plugin_source()
@@ -136,23 +135,19 @@ class TestMinDispatchConstants:
         assert m
         assert int(m.group(1)) == 2
 
-    def test_max_dispatches_is_10(self):
+    def test_max_dispatches_is_3(self):
         src = _plugin_source()
-        assert "HARD_MAX_DISPATCHES = 10" in src
-        assert re.search(r"Math\.min\(\s*HARD_MAX_DISPATCHES", src)
-        assert _extract_env_default(src, "GLUDD_MULTITASK_MAX_DISPATCHES") == 10
+        assert "HARD_MAX_DISPATCHES = 3" in src
+        assert "MAX_DISPATCHES = clampDispatchCount(" in src
+        assert _extract_env_default(src, "GLUDD_MULTITASK_MAX_DISPATCHES") == 3
 
     def test_consecutive_non_dispatch_threshold_is_5(self):
         src = _plugin_source()
-        assert _extract_env_default(
-            src, "GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD"
-        ) == 5
+        assert _extract_env_default(src, "GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD") == 5
 
     def test_consecutive_non_dispatch_window_is_30s(self):
         src = _plugin_source()
-        assert _extract_env_default(
-            src, "GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS"
-        ) == 30000
+        assert _extract_env_default(src, "GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS") == 30000
 
     def test_wave_history_size_is_10(self):
         src = _plugin_source()
@@ -178,9 +173,15 @@ class TestStateFileRoundTrip:
     def test_state_interface_has_all_fields(self):
         fields = self._state_interface_fields()
         expected = {
-            "thisMessageDispatches", "prevMessageDispatches", "zeroStreak",
-            "estimatedInFlight", "lastTs", "lastToolCallTs",
-            "waveHistory", "consecutiveNonDispatch", "consecutiveNonDispatchStartTs",
+            "thisMessageDispatches",
+            "prevMessageDispatches",
+            "zeroStreak",
+            "estimatedInFlight",
+            "lastTs",
+            "lastToolCallTs",
+            "waveHistory",
+            "consecutiveNonDispatch",
+            "consecutiveNonDispatchStartTs",
         }
         missing = expected - fields
         assert not missing, f"MultitaskState interface missing fields: {missing}"
@@ -224,9 +225,7 @@ class TestStateFileRoundTrip:
 
     def test_state_corrupt_file_returns_fresh(self):
         src = _plugin_source()
-        assert "} catch {" in src, (
-            "readState must have catch block for corrupt files"
-        )
+        assert "} catch {" in src, "readState must have catch block for corrupt files"
 
     def test_state_write_updates_last_ts(self):
         src = _plugin_source()
@@ -240,46 +239,22 @@ class TestConfiguredMinimumBlock:
         return count < min_disp
 
     def test_1_dispatch_triggers(self):
-        min_disp = _min_dispatch_default()
-        assert self._under_floor_triggers(1, min_disp), (
-            f"1 dispatch triggers under-floor with floor={min_disp}"
-        )
+        min_disp = 3
+        assert self._under_floor_triggers(1, min_disp), f"1 dispatch triggers under-floor with floor={min_disp}"
 
     def test_2_dispatches_triggers(self):
-        min_disp = _min_dispatch_default()
-        assert self._under_floor_triggers(2, min_disp), (
-            f"2 dispatches triggers under-floor with floor={min_disp}"
-        )
+        min_disp = 3
+        assert self._under_floor_triggers(2, min_disp), f"2 dispatches triggers under-floor with floor={min_disp}"
 
-    def test_3_dispatches_triggers(self):
-        min_disp = _min_dispatch_default()
-        assert self._under_floor_triggers(3, min_disp), (
-            f"3 dispatches triggers under-floor with floor={min_disp}"
-        )
-
-    def test_7_dispatches_triggers(self):
-        min_disp = _min_dispatch_default()
-        assert self._under_floor_triggers(7, min_disp), (
-            f"7 dispatches triggers under-floor with floor={min_disp}"
-        )
-
-    def test_9_dispatches_triggers(self):
-        min_disp = _min_dispatch_default()
-        assert self._under_floor_triggers(9, min_disp), (
-            f"9 dispatches triggers under-floor with floor={min_disp}"
-        )
-
-    def test_10_dispatches_passes(self):
-        min_disp = _min_dispatch_default()
-        assert not self._under_floor_triggers(10, min_disp), (
-            f"10 dispatches does NOT trigger under-floor with floor={min_disp}"
+    def test_3_dispatches_passes(self):
+        min_disp = 3
+        assert not self._under_floor_triggers(3, min_disp), (
+            f"3 dispatches does NOT trigger under-floor with floor={min_disp}"
         )
 
     def test_0_dispatches_triggers_under_floor(self):
-        min_disp = _min_dispatch_default()
-        assert self._under_floor_triggers(0, min_disp), (
-            "0 dispatches DOES trigger under-floor hard block"
-        )
+        min_disp = 3
+        assert self._under_floor_triggers(0, min_disp), "0 dispatches DOES trigger under-floor hard block"
 
     def test_under_floor_deny_message_present(self):
         src = _plugin_source()
@@ -291,9 +266,7 @@ class TestConfiguredMinimumBlock:
 
     def test_under_floor_deny_message_mentions_dispatch_count(self):
         src = _plugin_source()
-        assert "dispatch(es) in this message" in src, (
-            "Deny must reference dispatch count in this message"
-        )
+        assert "dispatch(es) in this message" in src, "Deny must reference dispatch count in this message"
 
     def test_under_floor_blocks_edit_write_bash(self):
         src = _plugin_source()
@@ -347,15 +320,11 @@ class TestZeroStreakDenial:
 
     def test_zero_streak_checked_against_max(self):
         src = _plugin_source()
-        assert "zeroStreak >= MAX_ZERO_STREAK" in src, (
-            "Zero streak must be checked against MAX_ZERO_STREAK"
-        )
+        assert "zeroStreak >= MAX_ZERO_STREAK" in src, "Zero streak must be checked against MAX_ZERO_STREAK"
 
     def test_zero_streak_gated_on_prev_zero(self):
         src = _plugin_source()
-        assert "thisMessageDispatches === 0" in src, (
-            "Zero streak check must include thisMessageDispatches === 0 guard"
-        )
+        assert "thisMessageDispatches === 0" in src, "Zero streak check must include thisMessageDispatches === 0 guard"
 
     def test_zero_streak_block_requires_configured_minimum(self):
         src = _plugin_source()
@@ -368,13 +337,13 @@ class TestZeroStreakDenial:
     def test_zero_streak_deny_message_mentions_configured_minimum(self):
         src = _plugin_source()
         deny_start = src.find("ZERO-DISPATCH STREAK:")
-        after = src[deny_start:deny_start + 600]
+        after = src[deny_start : deny_start + 600]
         assert "operator-configured minimum" in after
 
     def test_zero_streak_preserves_hard_ceiling(self):
         src = _plugin_source()
         deny_start = src.find("ZERO-DISPATCH STREAK:")
-        after = src[deny_start:deny_start + 600]
+        after = src[deny_start : deny_start + 600]
         assert "hard ceiling remains" in after
 
 
@@ -387,9 +356,7 @@ class TestConsecutiveNonDispatchStreak:
 
     def test_consecutive_non_dispatch_field_in_state(self):
         src = _plugin_source()
-        assert "consecutiveNonDispatch: number" in src, (
-            "consecutiveNonDispatch must be in MultitaskState interface"
-        )
+        assert "consecutiveNonDispatch: number" in src, "consecutiveNonDispatch must be in MultitaskState interface"
         assert "consecutiveNonDispatchStartTs: number" in src, (
             "consecutiveNonDispatchStartTs must be in MultitaskState interface"
         )
@@ -397,23 +364,21 @@ class TestConsecutiveNonDispatchStreak:
     def test_consecutive_incremented_on_non_dispatch(self):
         src = _plugin_source()
         handler = src.split('"tool.execute.before"')[1]
-        assert "consecutiveNonDispatch++" in handler, (
-            "consecutiveNonDispatch must increment on non-dispatch calls"
-        )
+        assert "consecutiveNonDispatch++" in handler, "consecutiveNonDispatch must increment on non-dispatch calls"
 
     def test_consecutive_reset_on_dispatch(self):
         src = _plugin_source()
         handler = src.split('"tool.execute.before"')[1]
-        assert "consecutiveNonDispatch = 0" in handler, (
-            "consecutiveNonDispatch must reset on dispatch"
-        )
+        assert "consecutiveNonDispatch = 0" in handler, "consecutiveNonDispatch must reset on dispatch"
 
     def test_consecutive_does_not_block_read_tools(self):
         src = _plugin_source()
         handler = src.split('"tool.execute.before"')[1]
-        consecutive_block = handler.split(
-            "CONSECUTIVE_NON_DISPATCH_THRESHOLD"
-        )[0] if "CONSECUTIVE_NON_DISPATCH_THRESHOLD" in handler else handler
+        consecutive_block = (
+            handler.split("CONSECUTIVE_NON_DISPATCH_THRESHOLD")[0]
+            if "CONSECUTIVE_NON_DISPATCH_THRESHOLD" in handler
+            else handler
+        )
         assert "isReadTool(tool)" in consecutive_block, (
             "Read tools must be excluded from consecutive non-dispatch counting"
         )
@@ -428,14 +393,12 @@ class TestConsecutiveNonDispatchStreak:
 
     def test_consecutive_deny_message_present(self):
         src = _plugin_source()
-        assert "CONSECUTIVE NON-DISPATCH STREAK" in src, (
-            "Consecutive non-dispatch deny message must exist"
-        )
+        assert "CONSECUTIVE NON-DISPATCH STREAK" in src, "Consecutive non-dispatch deny message must exist"
 
     def test_consecutive_deny_discourages_quota_padding(self):
         src = _plugin_source()
         deny_start = src.find("CONSECUTIVE NON-DISPATCH STREAK:")
-        after = src[deny_start:deny_start + 400]
+        after = src[deny_start : deny_start + 400]
         assert "never create agents merely to fill a quota" in after
 
     def test_consecutive_gated_on_pending_work(self):
@@ -452,21 +415,17 @@ class TestDispatchCeiling:
 
     def test_ceiling_breach_deny_message_present(self):
         src = _plugin_source()
-        assert "DISPATCH CEILING BREACH" in src, (
-            "Ceiling breach deny message must exist"
-        )
+        assert "DISPATCH CEILING BREACH" in src, "Ceiling breach deny message must exist"
 
     def test_ceiling_checked_against_max_dispatches(self):
         src = _plugin_source()
         handler = src.split('"tool.execute.before"')[1]
-        assert "MAX_DISPATCHES" in handler, (
-            "Must check thisMessageDispatches >= MAX_DISPATCHES"
-        )
+        assert "MAX_DISPATCHES" in handler, "Must check thisMessageDispatches >= MAX_DISPATCHES"
 
     def test_ceiling_message_mentions_count(self):
         src = _plugin_source()
         deny_start = src.find("DISPATCH CEILING BREACH")
-        after = src[deny_start:deny_start + 300]
+        after = src[deny_start : deny_start + 300]
         assert "dispatch(es)" in after or "dispatch" in after
 
 
@@ -551,7 +510,7 @@ class TestEnvOverride:
     def test_env_default_is_integer(self):
         default = _min_dispatch_default()
         assert isinstance(default, int), f"Default must be int, got {type(default)}"
-        assert default >= 2, f"Default should be >=2, got {default}"
+        assert default == 0, f"Default should be opt-in (zero), got {default}"
 
     def test_env_override_would_change_value(self):
         src = _plugin_source()
@@ -560,21 +519,15 @@ class TestEnvOverride:
 
     def test_floor_enforce_env_var(self):
         src = _plugin_source()
-        assert "GLUDD_MULTITASK_FLOOR_ENFORCE" in src, (
-            "GLUDD_MULTITASK_FLOOR_ENFORCE env var must exist for disable"
-        )
+        assert "GLUDD_MULTITASK_FLOOR_ENFORCE" in src, "GLUDD_MULTITASK_FLOOR_ENFORCE env var must exist for disable"
 
     def test_gludd_min_dispatches_fallback(self):
         src = _plugin_source()
-        assert "GLUDD_MIN_DISPATCHES" in src, (
-            "GLUDD_MIN_DISPATCHES must be supported as fallback env var"
-        )
+        assert "GLUDD_MIN_DISPATCHES" in src, "GLUDD_MIN_DISPATCHES must be supported as fallback env var"
 
     def test_max_dispatches_env_override(self):
         src = _plugin_source()
-        assert "GLUDD_MULTITASK_MAX_DISPATCHES" in src, (
-            "GLUDD_MULTITASK_MAX_DISPATCHES env var must exist"
-        )
+        assert "GLUDD_MULTITASK_MAX_DISPATCHES" in src, "GLUDD_MULTITASK_MAX_DISPATCHES env var must exist"
 
 
 class TestTasksMdGate:
@@ -582,24 +535,16 @@ class TestTasksMdGate:
 
     def test_has_pending_work_function_present(self):
         src = _plugin_source()
-        assert "function hasPendingWork" in src, (
-            "hasPendingWork() function must exist"
-        )
+        assert "function hasPendingWork" in src, "hasPendingWork() function must exist"
 
     def test_has_pending_work_reads_tasks_md(self):
         src = _plugin_source()
-        assert "TASKS.md" in src, (
-            "hasPendingWork must reference TASKS.md"
-        )
+        assert "TASKS.md" in src, "hasPendingWork must reference TASKS.md"
 
     def test_has_pending_work_detects_unchecked(self):
         src = _plugin_source()
         fn = src.split("function hasPendingWork")[1].split("\n}", 1)[0]
-        has_unchecked = (
-            "\\s" in fn.replace("\n", "\\n")
-            or "[" in fn
-            or "]" in fn
-        )
+        has_unchecked = "\\s" in fn.replace("\n", "\\n") or "[" in fn or "]" in fn
         assert has_unchecked or "checkbox" in fn.lower() or "- [" in fn or "-[" in fn, (
             "hasPendingWork must detect unchecked checkboxes"
         )
@@ -607,9 +552,7 @@ class TestTasksMdGate:
     def test_under_floor_gated_on_pending_work(self):
         src = _plugin_source()
         exec_section = src.split('"tool.execute.before"')[1]
-        assert "hasPendingWork()" in exec_section, (
-            "tool.execute.before must call hasPendingWork()"
-        )
+        assert "hasPendingWork()" in exec_section, "tool.execute.before must call hasPendingWork()"
 
     def test_no_pending_work_no_under_floor_block(self):
         src = _plugin_source()
@@ -626,9 +569,7 @@ class TestOpencodeSubagentGuard:
 
     def test_subagent_guard_via_is_subagent(self):
         src = _plugin_source()
-        assert "isSubagent()" in src, (
-            "Subagent guard must use isSubagent() from shared.ts"
-        )
+        assert "isSubagent()" in src, "Subagent guard must use isSubagent() from shared.ts"
 
     def test_subagent_guard_returns_early_in_default_impl(self):
         src = _plugin_source()
@@ -639,9 +580,7 @@ class TestOpencodeSubagentGuard:
 
     def test_subagent_guard_in_shared_checks_env_var(self):
         shared = _shared_source()
-        assert 'OPENCODE_SUBAGENT === "1"' in shared, (
-            "shared.ts isSubagent must check OPENCODE_SUBAGENT env var"
-        )
+        assert 'OPENCODE_SUBAGENT === "1"' in shared, "shared.ts isSubagent must check OPENCODE_SUBAGENT env var"
 
     def test_subagent_no_state_modification(self):
         src = _plugin_source()
@@ -650,9 +589,7 @@ class TestOpencodeSubagentGuard:
         enforce_idx = exec1.find("FLOOR_ENFORCE")
         assert sub_idx >= 0, "isSubagent() guard must exist"
         assert enforce_idx >= 0, "FLOOR_ENFORCE check must exist"
-        assert sub_idx < enforce_idx, (
-            "isSubagent() guard must be before FLOOR_ENFORCE enforcement"
-        )
+        assert sub_idx < enforce_idx, "isSubagent() guard must be before FLOOR_ENFORCE enforcement"
 
 
 class TestDisengageEscape:
@@ -660,9 +597,7 @@ class TestDisengageEscape:
 
     def test_disengage_via_is_disengaged(self):
         src = _plugin_source()
-        assert "isDisengaged()" in src, (
-            "Disengage must use isDisengaged() from shared.ts"
-        )
+        assert "isDisengaged()" in src, "Disengage must use isDisengaged() from shared.ts"
 
     def test_under_floor_gated_by_disengaged(self):
         src = _plugin_source()
@@ -670,9 +605,7 @@ class TestDisengageEscape:
         uf_idx = exec_section.find("UNDER-FLOOR HARD BLOCK")
         if uf_idx >= 0:
             before = exec_section[:uf_idx]
-            assert "isDisengaged()" in before, (
-                "UNDER-FLOOR block must be gated by isDisengaged()"
-            )
+            assert "isDisengaged()" in before, "UNDER-FLOOR block must be gated by isDisengaged()"
 
     def test_zero_streak_gated_by_disengaged(self):
         src = _plugin_source()
@@ -680,9 +613,7 @@ class TestDisengageEscape:
         zs_idx = exec_section.find("ZERO-DISPATCH STREAK:")
         if zs_idx >= 0:
             before = exec_section[:zs_idx]
-            assert "isDisengaged()" in before, (
-                "ZERO-DISPATCH STREAK must be gated by isDisengaged()"
-            )
+            assert "isDisengaged()" in before, "ZERO-DISPATCH STREAK must be gated by isDisengaged()"
 
     def test_consecutive_non_dispatch_gated_by_disengaged(self):
         src = _plugin_source()
@@ -690,9 +621,7 @@ class TestDisengageEscape:
         cons_idx = exec_section.find("CONSECUTIVE NON-DISPATCH STREAK")
         if cons_idx >= 0:
             before = exec_section[:cons_idx]
-            assert "isDisengaged()" in before, (
-                "CONSECUTIVE NON-DISPATCH STREAK must be gated by isDisengaged()"
-            )
+            assert "isDisengaged()" in before, "CONSECUTIVE NON-DISPATCH STREAK must be gated by isDisengaged()"
 
     def test_disengage_max_default_in_shared(self):
         """The disengage escape hatch expires promptly to preserve fail-closed enforcement."""
@@ -707,15 +636,11 @@ class TestEstimatedInFlight:
     def test_inflight_incremented_on_dispatch(self):
         src = _plugin_source()
         handler = src.split('"tool.execute.before"')[1]
-        assert "estimatedInFlight++" in handler, (
-            "estimatedInFlight must increment on each dispatch"
-        )
+        assert "estimatedInFlight++" in handler, "estimatedInFlight must increment on each dispatch"
 
     def test_inflight_field_in_state(self):
         src = _plugin_source()
-        assert "estimatedInFlight: number" in src, (
-            "estimatedInFlight must be in MultitaskState interface"
-        )
+        assert "estimatedInFlight: number" in src, "estimatedInFlight must be in MultitaskState interface"
 
 
 class TestMessageBoundaryDetection:
@@ -737,9 +662,7 @@ class TestMessageBoundaryDetection:
     def test_last_tool_call_ts_updated_every_call(self):
         src = _plugin_source()
         handler = src.split('"tool.execute.before"')[1]
-        assert "lastToolCallTs = now" in handler, (
-            "Must update lastToolCallTs on every tool call"
-        )
+        assert "lastToolCallTs = now" in handler, "Must update lastToolCallTs on every tool call"
 
 
 class TestProcessPureEnforcement:
@@ -771,9 +694,7 @@ class TestHookRegistration:
 
     def test_no_session_idle_hook(self):
         src = _plugin_source()
-        assert '"session.idle"' not in src, (
-            "session.idle hook removed in 2026-07-13 rewrite"
-        )
+        assert '"session.idle"' not in src, "session.idle hook removed in 2026-07-13 rewrite"
 
     def test_return_object_only_tool_execute(self):
         src = _plugin_source()

@@ -38,6 +38,7 @@ class _HookConfig(TypedDict, total=False):
 
     id: str
     entry: str
+    exclude: str
     stages: list[str]
 
 
@@ -121,17 +122,19 @@ class TestPinnedVersions:
 
 class TestLocalHookEntryPoints:
     LOCAL_ENTRIES: ClassVar[dict[str, str]] = {
+        "detect-secrets-readonly": "uv run python scripts/detect_secrets_readonly.py",
         "scan-conflicts": "python scripts/scan_conflicts.py",
         "workflow-yaml": "scripts/hooks/pre-commit-workflow-yaml",
         "ruff-lint": "uv run ruff check src tests",
         "mypy": "make _precommit-mypy",
         "check-tdd-compliance": "uv run python scripts/check_tdd_compliance.py",
-        "check-disk": "uv run python scripts/check_disk_usage.py",
+        "check-disk": "make check-disk CHECK_DISK_VALIDATE_ONLY=0",
         "collect-check": "make collect-check",
         "verify-secrets": "make verify-secrets",
     }
 
     _PYTHON_SCRIPT_ID_TO_PATH: ClassVar[dict[str, str]] = {
+        "detect-secrets-readonly": "scripts/detect_secrets_readonly.py",
         "scan-conflicts": "scripts/scan_conflicts.py",
         "check-tdd-compliance": "scripts/check_tdd_compliance.py",
         "check-disk": "scripts/check_disk_usage.py",
@@ -256,3 +259,15 @@ class TestConfigStructure:
     def test_every_hook_has_id(self, config: _PreCommitConfig) -> None:
         for entry in _all_hooks(config):
             assert "id" in entry["hook"], f"hook missing 'id' in repo {entry['repo']['repo']!r}"
+
+    def test_byte_immutable_catalog_fixture_is_not_rewritten(
+        self,
+        config: _PreCommitConfig,
+    ) -> None:
+        hook = next(
+            entry["hook"]
+            for entry in _all_hooks(config)
+            if entry["hook"]["id"] == "end-of-file-fixer"
+        )
+
+        assert hook.get("exclude") == r"^config/self-improve/catalog-truth\.json$"

@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tomllib
 from collections import deque
+from pathlib import PurePosixPath
 
 import pytest
 from packaging.utils import canonicalize_name
@@ -103,15 +104,30 @@ def _dep_depth(graph: dict[str, set[str]], root: str) -> dict[str, int]:
 def _package_info(name: str) -> dict | None:
     """Get package metadata via importlib.metadata."""
     try:
-        from importlib.metadata import metadata
+        from importlib.metadata import distribution
 
-        meta = metadata(name)
+        dist = distribution(name)
+        meta = dist.metadata
         license_val = meta.get("License-Expression") or meta.get("License") or ""
+        license_files = list(meta.get_all("License-File") or [])
+        if not license_val:
+            texts: list[str] = []
+            for declared in license_files:
+                path = PurePosixPath(declared)
+                if path.is_absolute() or ".." in path.parts:
+                    continue
+                for candidate in (f"licenses/{path.as_posix()}", path.as_posix()):
+                    content = dist.read_text(candidate)
+                    if content:
+                        texts.append(content)
+                        break
+            license_val = "\n\n".join(texts)
         classifiers = meta.get_all("Classifier") or []
         return {
             "name": name,
             "version": meta.get("Version", ""),
             "license": license_val,
+            "license_files": license_files,
             "classifiers": list(classifiers),
             "summary": meta.get("Summary", ""),
             "home_page": meta.get("Home-page", "") or meta.get("Project-URL", ""),
@@ -427,8 +443,16 @@ def test_all_installed_deps_have_license() -> None:
     )
 
 
+def test_quickjs_ng_pep639_license_file_is_consumed() -> None:
+    """PEP 639 ``License-File`` evidence counts when SPDX fields are absent."""
+    info = _package_info("quickjs-ng")
+    assert info is not None
+    assert info["license_files"] == ["LICENSE"]
+    assert "MIT License" in (_get_license("quickjs-ng") or "")
+
+
 def test_core_deps_license_from_classifier_or_field() -> None:
-    """Core dependencies have license info via classifier or License field."""
+    """Core dependencies expose a classifier, SPDX field, or declared file."""
     data = _load_pyproject()
     core_deps_raw: list[str] = data["project"]["dependencies"]
     core_names = {d.split(">=")[0].split("==")[0].split("~=")[0].split("[")[0].strip() for d in core_deps_raw}
