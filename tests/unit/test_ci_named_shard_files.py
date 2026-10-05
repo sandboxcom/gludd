@@ -66,9 +66,7 @@ def test_local_shards_exclude_fresh_process_suites() -> None:
     module = _load_script("ci_named_shard_files")
     workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "build.yml").read_text())
     unit_1a1 = next(
-        item
-        for item in workflow["jobs"]["test-shard"]["strategy"]["matrix"]["include"]
-        if item["shard"] == "unit-1a1"
+        item for item in workflow["jobs"]["test-shard"]["strategy"]["matrix"]["include"] if item["shard"] == "unit-1a1"
     )
 
     assert "tests/unit/test_all_plugins_runtime.py" not in module.expand_shard("unit-1a1")
@@ -226,15 +224,11 @@ def test_coverage_files_target_namespaces_ansible_temp_under_owned_basetemp() ->
 def test_local_and_hosted_named_shards_use_one_bounded_runner() -> None:
     """GHA and local release evidence must execute the same shard owner."""
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-    workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(
-        encoding="utf-8"
-    )
-    local_recipe = makefile.split("test-ci-shard:", 1)[1].split(
-        "test-ci-shard-summary:", 1
+    workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+    local_recipe = makefile.split("test-ci-shard:", 1)[1].split("test-ci-shard-summary:", 1)[0]
+    hosted_recipe = workflow.split("- name: Test (shard ${{ matrix.shard }}", 1)[1].split(
+        "- name: Collect failure diagnostics", 1
     )[0]
-    hosted_recipe = workflow.split(
-        "- name: Test (shard ${{ matrix.shard }}", 1
-    )[1].split("- name: Collect failure diagnostics", 1)[0]
 
     assert "scripts/run_ci_shards_serial.py" in local_recipe
     assert "scripts/run_ci_shards_serial.py" in hosted_recipe
@@ -261,11 +255,7 @@ def test_hosted_coverage_artifact_includes_hidden_coverage_database() -> None:
     """The shard artifact must contain the dot-prefixed coverage database."""
     workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "build.yml").read_text())
     steps = workflow["jobs"]["test-shard"]["steps"]
-    upload = next(
-        step
-        for step in steps
-        if str(step.get("name", "")).startswith("Upload coverage data")
-    )
+    upload = next(step for step in steps if str(step.get("name", "")).startswith("Upload coverage data"))
 
     assert upload["with"]["include-hidden-files"] is True
 
@@ -274,15 +264,11 @@ def test_local_and_hosted_shard_batches_share_safe_file_bound() -> None:
     """Hosted workers must not retain a 64-file process lifetime."""
     module = _load_script("run_ci_shards_serial")
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-    workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(
-        encoding="utf-8"
-    )
-    local_recipe = makefile.split("test-ci-shard:", 1)[1].split(
-        "test-ci-shard-summary:", 1
-    )[0]
+    workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+    local_recipe = makefile.split("test-ci-shard:", 1)[1].split("test-ci-shard-summary:", 1)[0]
 
     assert module.MAX_FILES_PER_BATCH == 16
-    assert '$(or $(MAX_FILES_PER_BATCH),16)' in local_recipe
+    assert "$(or $(MAX_FILES_PER_BATCH),16)" in local_recipe
     assert "--max-files-per-batch 16" in workflow
 
 
@@ -369,9 +355,7 @@ def test_terminal_attestation_is_atomic_and_contains_exact_identity(
     assert plan["path_count"] == len(plan["paths"])
     assert plan["sha256"] == module.canonical_json_sha256(plan["paths"])
     assert payload["execution_policy"]["pytest_args"] == ["-W", "error"]
-    assert payload["execution_policy_sha256"] == module.canonical_json_sha256(
-        payload["execution_policy"]
-    )
+    assert payload["execution_policy_sha256"] == module.canonical_json_sha256(payload["execution_policy"])
     assert not destination.with_suffix(".json.tmp").exists()
 
 
@@ -389,9 +373,7 @@ def test_terminal_attestation_uses_precomputed_pairing_without_rescan(
     monkeypatch.setattr(
         module,
         "_attestation_pairing",
-        lambda *_args, **_kwargs: pytest.fail(
-            "terminal publication must not rescan the tested checkout"
-        ),
+        lambda *_args, **_kwargs: pytest.fail("terminal publication must not rescan the tested checkout"),
     )
 
     module._write_terminal_attestation(
@@ -741,6 +723,7 @@ def test_cli_allows_stable_dirty_identity_only_for_nonrelease_gate(
     def fake_run(*_args: object, **_kwargs: object) -> int:
         calls.append("run")
         return 0
+
     states = iter(("candidate-state", "candidate-state"))
     monkeypatch.setattr(module, "_resource_paths", lambda: resource_paths)
     monkeypatch.setattr(module, "_repository_identity", lambda **_kwargs: identity)
@@ -859,12 +842,8 @@ def test_serial_pytest_command_uses_one_fail_closed_worker_and_isolated_basetemp
 ) -> None:
     module = _load_script("run_ci_shards_serial")
 
-    command = module._pytest_command(
-        "unit-2", ["tests/unit/test_alpha.py"], tmp_path, ["-q"]
-    )
-    greenlet_command = module._pytest_command(
-        "unit-3b", ["tests/unit/test_zeta.py"], tmp_path, ["-q"]
-    )
+    command = module._pytest_command("unit-2", ["tests/unit/test_alpha.py"], tmp_path, ["-q"])
+    greenlet_command = module._pytest_command("unit-3b", ["tests/unit/test_zeta.py"], tmp_path, ["-q"])
 
     assert command[0] == sys.executable
     assert command[1:3] == ["-m", "pytest"]
@@ -1147,8 +1126,7 @@ def test_serial_runner_stops_after_failed_batch_without_coverage(
     )
     assert started == ["unit-1b:batch-001"]
     assert (
-        "SHARD-COVERAGE-INTEGRITY-FAIL shard=unit-1b batch=1 rc=1; "
-        "later-batches=not-started" in capsys.readouterr().out
+        "SHARD-COVERAGE-INTEGRITY-FAIL shard=unit-1b batch=1 rc=1; later-batches=not-started" in capsys.readouterr().out
     )
 
 
@@ -1298,10 +1276,7 @@ def test_serial_runner_stops_the_whole_plan_after_internal_runner_failure(
         == 3
     )
     assert started == ["unit-2:batch-001"]
-    assert (
-        "SERIAL-SHARD-FAILED shard=unit-2 rc=3; later-shards=not-started"
-        in capsys.readouterr().out
-    )
+    assert "SERIAL-SHARD-FAILED shard=unit-2 rc=3; later-shards=not-started" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(
@@ -1342,11 +1317,7 @@ def test_serial_runner_reserves_xdist_and_test_name_socket_budget(
     owned = module._owned_socket_safe_tmpdir(hosted_label)
     try:
         socket_path = (
-            owned.resolve()
-            / "pytest"
-            / "popen-gw0"
-            / "test_release_issues_ctrl_alt_del_via_api0"
-            / "fc-api.sock"
+            owned.resolve() / "pytest" / "popen-gw0" / "test_release_issues_ctrl_alt_del_via_api0" / "fc-api.sock"
         )
         assert len(str(socket_path).encode()) < 104
     finally:
@@ -1443,8 +1414,7 @@ def test_xdist_worker_death_parser_accepts_complete_control_lines(line: str) -> 
 @pytest.mark.parametrize(
     "line",
     [
-        "tests/unit/test_adaptive_test.py::test_is_oom_exit_output_markers"
-        "[[gw2] node down: Not properly terminated]",
+        "tests/unit/test_adaptive_test.py::test_is_oom_exit_output_markers[[gw2] node down: Not properly terminated]",
         "payload=[gw2] node down: Not properly terminated",
         "stdout says worker gw2 crashed and worker restarting disabled",
         "assert 'maximum crashed workers reached: 0' in output",
@@ -1670,11 +1640,7 @@ def test_serial_runner_places_pytest_basetemp_under_compact_socket_root(
     captured: dict[str, str] = {}
 
     def fake_mkdtemp(*, prefix: str, dir: str | Path) -> str:
-        path = (
-            compact
-            if re.fullmatch(r"gludd-[0-9a-f]{4}-", prefix)
-            else workspace
-        )
+        path = compact if re.fullmatch(r"gludd-[0-9a-f]{4}-", prefix) else workspace
         path.mkdir(parents=True, exist_ok=True)
         return str(path)
 
@@ -1686,9 +1652,7 @@ def test_serial_runner_places_pytest_basetemp_under_compact_socket_root(
     ) -> int:
         if "tests/unit/test_all_plugins_runtime.py" not in command:
             captured["basetemp"] = next(
-                argument.removeprefix("--basetemp=")
-                for argument in command
-                if argument.startswith("--basetemp=")
+                argument.removeprefix("--basetemp=") for argument in command if argument.startswith("--basetemp=")
             )
             captured["tmpdir"] = env["TMPDIR"]
         return 0
@@ -1740,9 +1704,7 @@ def test_serial_runner_collects_later_shards_after_test_failure(
         path.mkdir()
         return str(path)
 
-    def fake_run(
-        command: list[str], *, env: dict[str, str] | None = None
-    ) -> int:
+    def fake_run(command: list[str], *, env: dict[str, str] | None = None) -> int:
         return 0
 
     def fake_run_owned(command: list[str], **_kwargs: object) -> int:
@@ -2035,10 +1997,7 @@ def test_collected_failure_never_masks_later_terminal_safety_stop(
 
     output = capsys.readouterr().out
     assert result == expected_rc
-    assert launched == [
-        f"unit-1a1:batch-{index:03d}"
-        for index in range(1, expected_batches + 1)
-    ]
+    assert launched == [f"unit-1a1:batch-{index:03d}" for index in range(1, expected_batches + 1)]
     assert "'unit-1a1:batch-001': 6" in output
     assert f"'{expected_phase}': {expected_rc}" in output
     if scenario in {"cancellation", "worker-cleanup"}:
@@ -2252,10 +2211,7 @@ def test_serial_runner_classifies_workspace_creation_io_failure(
     )
     output = capsys.readouterr().out
     assert "SHARD-RESOURCE-SETUP-FAIL" in output
-    assert (
-        f'"unit-1a1:workspace-setup": {module.CLEANUP_FAILURE_EXIT_CODE}'
-        in output
-    )
+    assert f'"unit-1a1:workspace-setup": {module.CLEANUP_FAILURE_EXIT_CODE}' in output
 
 
 def test_serial_runner_classifies_batch_workspace_io_failure(
@@ -2339,10 +2295,7 @@ def test_serial_runner_classifies_socket_tmpdir_io_failure(
     )
     output = capsys.readouterr().out
     assert "SHARD-RESOURCE-SETUP-FAIL" in output
-    assert (
-        f'"unit-1a1:batch-001:tmpdir-setup": {module.CLEANUP_FAILURE_EXIT_CODE}'
-        in output
-    )
+    assert f'"unit-1a1:batch-001:tmpdir-setup": {module.CLEANUP_FAILURE_EXIT_CODE}' in output
 
 
 def test_coverage_setup_failure_cleans_partially_created_fragments(
@@ -2399,10 +2352,7 @@ def test_coverage_erase_failure_yields_to_cleanup_failure(
     )
     output = capsys.readouterr().out
     assert '"coverage:erase": 5' in output
-    assert (
-        f'"coverage:fragments-cleanup": {module.CLEANUP_FAILURE_EXIT_CODE}'
-        in output
-    )
+    assert f'"coverage:fragments-cleanup": {module.CLEANUP_FAILURE_EXIT_CODE}' in output
 
 
 def test_serial_runner_converts_cleanup_io_error_without_masking_test_failure(
@@ -2445,10 +2395,7 @@ def test_serial_runner_converts_cleanup_io_error_without_masking_test_failure(
     output = capsys.readouterr().out
     assert "SHARD-CLEANUP-FAIL" in output
     assert '"unit-1a1:batch-001": 1' in output
-    assert (
-        f'"unit-1a1:batch-001:cleanup": {module.CLEANUP_FAILURE_EXIT_CODE}'
-        in output
-    )
+    assert f'"unit-1a1:batch-001:cleanup": {module.CLEANUP_FAILURE_EXIT_CODE}' in output
 
 
 @pytest.mark.parametrize(
@@ -2545,9 +2492,7 @@ def test_serial_runner_records_isolated_failure_and_stops_before_shards(
     module.COVERAGE_AUDIT = tmp_path / "logs" / "coverage.json"
     shard_launched = False
 
-    def fake_run(
-        command: list[str], *, env: dict[str, str] | None = None
-    ) -> int:
+    def fake_run(command: list[str], *, env: dict[str, str] | None = None) -> int:
         return 0
 
     def fake_run_owned(command: list[str], **_kwargs: object) -> int:
@@ -2662,15 +2607,11 @@ def test_shard_coverage_fragment_and_aggregate_preserve_failure(
     env = {"COVERAGE_FILE": str(coverage_file)}
 
     assert module._save_shard_coverage("unit-3", 2, batchtemp, env) is True
-    assert (module.COVERAGE_SHARDS / ".coverage.unit-3.batch-002").read_bytes() == (
-        expected_coverage
-    )
+    assert (module.COVERAGE_SHARDS / ".coverage.unit-3.batch-002").read_bytes() == (expected_coverage)
 
     commands: list[list[str]] = []
 
-    def run_command(
-        command: list[str], *, env: dict[str, str] | None = None
-    ) -> int:
+    def run_command(command: list[str], *, env: dict[str, str] | None = None) -> int:
         commands.append(command)
         return 3 if "xml" in command else 0
 
@@ -2678,9 +2619,7 @@ def test_shard_coverage_fragment_and_aggregate_preserve_failure(
 
     assert module._aggregate_coverage() == 3
     assert len(commands) == 5
-    assert "--max-worker-restart=0" not in " ".join(
-        argument for command in commands for argument in command
-    )
+    assert "--max-worker-restart=0" not in " ".join(argument for command in commands for argument in command)
     assert any("--threshold=85" in command for command in commands)
     assert any("--per-file-threshold=75" in command for command in commands)
 
@@ -3196,6 +3135,7 @@ def test_serial_runner_cli_forwards_explicit_resource_bounds(
         "run_isolated": True,
         "aggregate_coverage": True,
         "coverage_output": None,
+        "resume_path": None,
     }
 
 
@@ -3253,9 +3193,7 @@ def test_release_execution_policy_binds_python_runtime() -> None:
 
     policy = module.execution_policy(["-W", "error"])
 
-    assert policy["python_version"] == (
-        f"{sys.version_info.major}.{sys.version_info.minor}"
-    )
+    assert policy["python_version"] == (f"{sys.version_info.major}.{sys.version_info.minor}")
     assert policy["python_implementation"] == sys.implementation.name
 
 

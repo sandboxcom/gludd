@@ -169,7 +169,7 @@ class ResourcePaths:
     coverage_json: Path
     coverage_audit: Path
     attestation: Path
-    resume: Path
+    resume: Path | None = None
 
 
 def _resource_paths() -> ResourcePaths:
