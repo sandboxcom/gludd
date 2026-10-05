@@ -407,6 +407,17 @@ class TestFindHungProcesses:
 
         assert [proc["pid"] for proc in procs] == [88888]
 
+    def test_gate_entrypoints_carry_legacy_watchdog_exclusion_marker(self) -> None:
+        """Every long-lived gate layer must survive an older linked-worktree watchdog."""
+        root = Path(__file__).resolve().parents[2]
+        makefile = (root / "Makefile").read_text(encoding="utf-8")
+        gate_runner = (root / "scripts" / "run_gate.sh").read_text(encoding="utf-8")
+
+        assert "_integration-health-watchdog-owned-gate" in makefile
+        assert "check_integration_health.py --watchdog-owned-gate" in makefile
+        assert "nohup $(MAKE) gate gludd_watchdog_owned_gate=1" in makefile
+        assert "run_ci_shards_serial.py --watchdog-owned-gate" in gate_runner
+
     def test_malformed_gate_lock_does_not_exempt_processes(self, tmp_path: Path) -> None:
         """Corrupt ownership evidence cannot create a broad kill exemption."""
         gate_run_lock_file = tmp_path / "gate-run.lock"
