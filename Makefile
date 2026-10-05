@@ -2303,7 +2303,7 @@ BRANCHES ?=
 MERGE_STRATEGY ?= stop-on-conflict
 MANIFEST ?= /tmp/gludd-gated-merge-manifest.txt
 
-gated-merge:
+gated-merge: _gate-mutation-guard
 	@BASE='$(BASE)' BRANCHES='$(BRANCHES)' MERGE_STRATEGY='$(MERGE_STRATEGY)' MANIFEST='$(MANIFEST)' bash scripts/gated_merge.sh
 
 STALL_SECS ?= 180
@@ -5705,7 +5705,10 @@ _gate-fresh-check: check-gate-fresh
 # when make exits, fd 9 closes and the lock auto-releases. This is LAYER 1 of the
 # commit-serialization guardrail (AGENTS.md). LAYER 2 is the enforce-commit-lock
 # plugin that wraps the ENTIRE bash tool call boundary.
-_commit-lock-acquire:
+_gate-mutation-guard:
+	@$(UV) run python scripts/gate_run_lock.py assert-inactive "$(GATE_RUN_LOCK)" "$$PPID"
+
+_commit-lock-acquire: _gate-mutation-guard
 	@exec 9>/tmp/gludd-commit.lock; \
 	flock -n 9 2>/dev/null || python3 -c "import fcntl; f=open('/tmp/gludd-commit.lock'); \
 	  fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)" 2>/dev/null || { \
@@ -5911,7 +5914,7 @@ git-branch:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-branch MSG='branch-name'"; exit 1; fi
 	@git branch "$(MSG)"
 
-git-checkout:
+git-checkout: _gate-mutation-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-checkout MSG='branch-name'"; exit 1; fi
 	@git checkout "$(MSG)"
 
@@ -5940,7 +5943,7 @@ git-reset-hard:
 	@git reset --hard "$(MSG)"
 	@echo "Hard reset to $(MSG) — all uncommitted changes discarded."
 
-git-cherry-pick:
+git-cherry-pick: _gate-mutation-guard
 	@if [ -z "$(SHA)" ]; then echo "Usage: make git-cherry-pick SHA=<commit>"; exit 1; fi
 	@git cherry-pick "$(SHA)"
 
@@ -6044,7 +6047,7 @@ agent-worktree-base:
 # Merge a subagent's worktree branch back to master. Run on the MAIN checkout
 # (never from inside a worktree). Usage:
 #   make agent-merge BRANCH=agent-fix-slurm
-agent-merge:
+agent-merge: _gate-mutation-guard
 	@[ -n "$(BRANCH)" ] || { echo "Usage: make agent-merge BRANCH=agent-<name>"; exit 1; }
 	@git merge --no-ff "$(BRANCH)" -m "merge: $(BRANCH) worktree work into master"
 	@echo "Merged $(BRANCH) into master"
@@ -7073,7 +7076,7 @@ _pre-commit-stage-guard:
 # AA011 — _merge-strategy-guard: blocks `make git-merge MSG=<sha>` when MSG looks
 # like a SHA (7-40 hex chars). Merging SHAs as branch names caused 80+ conflicts.
 # Cherry-pick must be used for single commits. FORCE=1 bypasses.
-_merge-strategy-guard:
+_merge-strategy-guard: _gate-mutation-guard
 	@MSG="$(MSG)"; \
 	if echo "$$MSG" | grep -qE '^[0-9a-f]{7,40}$$'; then \
 		if [ "$$FORCE" != "1" ]; then \

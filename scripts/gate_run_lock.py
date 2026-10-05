@@ -104,10 +104,46 @@ def release(lock_path: Path, pid: int) -> int:
     return 0
 
 
-def main(argv: list[str]) -> int:
-    if len(argv) != 4 or argv[1] not in {"acquire", "release"}:
+def assert_inactive(lock_path: Path, requester_pid: int) -> int:
+    """Fail closed when a live gate owns the checkout mutation boundary."""
+    if not lock_path.exists():
+        print(f"gate-run-lock: inactive {lock_path} requester={requester_pid}")
+        return 0
+
+    owner = _read_owner(lock_path)
+    if owner is None:
         print(
-            "Usage: gate_run_lock.py <acquire|release> <lock-path> <pid>",
+            f"gate-run-lock: {lock_path} has unreadable owner; "
+            "refusing repository mutation",
+            file=sys.stderr,
+        )
+        return 1
+    if _pid_alive(owner):
+        print(
+            f"gate-run-lock: active gate pid={owner} blocks repository mutation "
+            f"requester={requester_pid} lock={lock_path}",
+            file=sys.stderr,
+        )
+        return 1
+
+    with suppress(FileNotFoundError):
+        lock_path.unlink()
+    print(
+        f"gate-run-lock: reclaimed stale owner pid={owner} "
+        f"for requester={requester_pid} lock={lock_path}"
+    )
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 4 or argv[1] not in {
+        "acquire",
+        "release",
+        "assert-inactive",
+    }:
+        print(
+            "Usage: gate_run_lock.py "
+            "<acquire|release|assert-inactive> <lock-path> <pid>",
             file=sys.stderr,
         )
         return 2
@@ -120,6 +156,8 @@ def main(argv: list[str]) -> int:
     lock_path = Path(argv[2])
     if argv[1] == "acquire":
         return acquire(lock_path, pid)
+    if argv[1] == "assert-inactive":
+        return assert_inactive(lock_path, pid)
     return release(lock_path, pid)
 
 
