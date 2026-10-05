@@ -1,7 +1,9 @@
 # FreeLLMAPI Upstream Integration Decision
 
-**Status:** Accepted architecture; compatibility proof is required before enablement
+**Status:** Accepted architecture; exact `v0.11.1` replay completed and promotion
+remains on **HOLD** after tying the admitted `v0.9.9` arm
 **Decision date:** 2026-09-15
+**Promotion review:** 2026-10-05
 **Upstream:** [`tashfeenahmed/freellmapi`][upstream]
 **Admitted artifact:** `v0.9.9`, full source commit
 `780a7d8d6dcbc818eb10ec17da210635b569ae22`
@@ -616,12 +618,116 @@ The v0.1.1 release proof now has a mechanically replayable, non-promoting chain:
 
 These inputs are updateable without editing upstream-owned code: a new stable
 candidate replaces the candidate lock, then regenerates corpus, live-provider,
-and rollback receipts under their digest validators. The current proof cannot
-promote `v0.11.1`; a reproducible candidate bundle, exact Node 20/22 hosted build,
-CI provenance, and a successful bounded live call remain external prerequisites.
-The local exact-source attempt also stopped before source execution because the
-installed Node/npm pair did not match either pinned toolchain, reporting the
-content-free `toolchain_invalid` fault.
+and rollback receipts under their digest validators. The exact local replay below
+now supplies the reproducible candidate bundle and frozen comparison; it does not
+supply the separate hosted Node 20/22 build, CI provenance, or bounded live call.
+The earlier `toolchain_invalid` exact-source attempt remains historical evidence,
+not a promotion result.
+
+### S83.163 frozen-delta promotion decision (2026-10-05)
+
+Decision: **HOLD**. The exact three-arm replay is complete, and it does not clear
+the conjunctive promotion gate. The deterministic IIFE bundle is built with the
+locked esbuild `0.28.1` from `server/src/services/scoring.ts` at signed commit
+`4191d8e7abef39fcd93fab009123467036f39750`; its SHA-256 is
+`e9e5d87a0d1e9697e0681b52afb719b7fd1fcdd601bd7fcbaf430cc502114845`.
+The bundle and adapter expose only JSON-in/JSON-out `expectedReliability` inside
+bounded QuickJS, while a separate capability-minimal Node process cross-checks
+the same bytes. Neither path can admit the artifact. Upstream `v0.12.0` remains
+discovery evidence for the next serial review; this already reviewed `v0.11.1`
+experiment proceeds with **no retargeting**.
+
+The preregistered plan and corpus are tracked in
+`config/freellmapi/three_arm_plan.json` and
+`config/freellmapi/three_arm_corpus.json`. They freeze:
+
+- **Corpus:** 32 route groups, each replayed from the same content-addressed
+  input and ground truth through native Gludd, the admitted `v0.9.9` export, and
+  the exact `v0.11.1` export: 96 included observations in total. Each group must
+  be complete across all three arms or the entire group fails closed.
+- **Exclusions:** 8 preregistered exclusions are named by digest and reason before
+  unblinding. Only corrupt/missing ground truth, policy-prohibited provider use,
+  or an unavailable exact three-arm input qualifies. Exclusions cannot be added,
+  removed, or rewritten after scoring and never become evidence for either arm.
+- **Strata:** provider family, authenticated health/quota state, cold versus warm
+  endpoint, and capability shape are fixed in the manifest. Every aggregate
+  claim retains the corresponding per-stratum result.
+- **Primary quality gate:** exact paired Brier improvement for `v0.11.1` must beat
+  both native Gludd and `v0.9.9`, with the 95% paired-bootstrap LCB at least
+  `+0.02` for each comparison. Lower Brier loss is better; the recorded delta is
+  comparator loss minus candidate loss.
+- **Decision agreement gate:** correct/incorrect route decisions for `v0.11.1`
+  versus each comparator must pass an exact two-sided McNemar test with
+  `p < 0.05`. A favorable Brier result cannot compensate for a nonsignificant
+  decision result.
+- **Regression gate:** No stratum may be worse by more than `0.02` absolute Brier
+  loss against either comparator. Sparse or inconclusive strata retain HOLD;
+  they are not pooled away.
+- **Resource and fault gates:** paired p95 added scoring latency is at most
+  `5 ms` (and no call exceeds 25 ms), peak RSS delta is at most `32 MiB` with no
+  monotonic replay growth, incremental provider cost is exactly `$0` because the
+  corpus is offline, and there are zero bridge faults across included
+  observations. A timeout, crash, non-finite result, schema rejection, host
+  capability request, or content leak is a fault.
+
+The replay produced the content-addressed receipt
+`config/freellmapi/three_arm_replay_receipt.json`. Its measured comparisons are:
+
+| Comparator | paired Brier delta | 95% bootstrap LCB | exact McNemar | max stratum loss | p95 added latency |
+|---|---:|---:|---:|---:|---:|
+| native Gludd | `+0.5165816326530612` | `+0.5165816326530612` | `4.656612873077393e-10` | `0.0` | `0.22718605 ms` |
+| admitted `v0.9.9` | `0.0` | `0.0` | `1.0` | `0.0` | `0.0 ms` |
+
+The exact candidate therefore beats native Gludd, but it is behaviorally
+identical to the already admitted `v0.9.9` export on all 32 route groups. The
+failed gates are exactly `quality_lcb:freellmapi_v0_9_9` and
+`mcnemar:freellmapi_v0_9_9`. The Node cross-check matched QuickJS for every
+group. The maximum candidate call was `0.244458 ms`;
+RSS delta was `0.015625 MiB` without monotonic growth; all strata remained within
+`0.02`; and
+the offline run recorded zero network calls, zero incremental cost, and zero
+bridge faults across 96 included observations and 8 frozen exclusions.
+
+Every gate remains conjunctive. The two admitted-arm failures keep the decision
+at HOLD, leave bundle
+`d3078364c02f482909681e21895c4e86dc11cc66c1da7ae2007ad35b096ddf7d`
+(`v0.9.9`) serving, and keep `runtime_admitted: false`. Even an all-green replay
+could return only `HOLD_PENDING_SEPARATE_REVIEW`; it could not promote by itself.
+The model-layer evaluator reuses pytest and Hypothesis for tests, NumPy for the
+seeded paired bootstrap, a standard-library exact binomial calculation for McNemar,
+psutil for RSS, and the existing QuickJS plus Node engines.
+It adds no new framework and performs no bridge switching or hand-porting of upstream scoring
+logic. Reproduction uses `make freellmapi-three-arm-replay` with every documented
+variable explicit; any typed input, provenance, engine, schema, or result fault
+writes a content-free HOLD and preserves `v0.9.9`.
+
+The practitioner record explains why those gates are deliberately conservative.
+These are upstream operator reports, not a claim that the young project has a
+multi-year stability history:
+
+- [Issue #456][issue-456] reports a monthly token budget that did not scale with
+  multiple provider keys and skewed routing headroom. The corpus therefore fixes
+  per-key quota identity and treats advertised budget as a hint, never measured
+  capacity.
+- [Discussion #533][discussion-533] records `latest` following unreleased `main`
+  until the maintainer changed it to release tags. Gludd requires a full commit
+  for every arm and an immutable release identity.
+- [Issue #608][issue-608] shows a public model-list endpoint accepting a revoked
+  credential while generation returned 401. Catalog reachability and
+  authenticated readiness remain separate strata and evidence.
+- [Issue #666][issue-666] shows a Gludd-relevant failure mode where a router-wide
+  budget aborted slow local Ollama before its configured provider timeout. A
+  Gludd-owned deadline remains authoritative, and latency is measured rather than
+  imported.
+- [Issue #880][issue-880] reports more than 100 discovered models but zero usable
+  models in the client. A catalog row is not a usable route; capability and
+  envelope validation remain native Gludd gates.
+- [Issue #1210][issue-1210] reports high-frequency requests leading to AI Studio
+  key suspensions. Frozen evaluation is offline, and any later live proof keeps a
+  one-request request-rate ceiling with scoped credentials and immediate teardown.
+- [Issue #1262][issue-1262] supplies production TTFB evidence for slow-but-alive
+  endpoints that a fixed 45-second budget killed. The frozen corpus retains that
+  stratum while Gludd, not the imported scorer, owns retry and failover policy.
 
 #### Adversarial receipt hardening
 
@@ -833,6 +939,7 @@ scans, lifecycle cleanup, full gate, and hosted CI evidence are green.
 [discussion-533]: https://github.com/tashfeenahmed/freellmapi/discussions/533
 [docker-workflow]: https://github.com/tashfeenahmed/freellmapi/blob/main/.github/workflows/docker.yml
 [dukpy]: https://pypi.org/project/dukpy/
+[issue-456]: https://github.com/tashfeenahmed/freellmapi/issues/456
 [issue-584]: https://github.com/tashfeenahmed/freellmapi/issues/584
 [issue-608]: https://github.com/tashfeenahmed/freellmapi/issues/608
 [issue-671]: https://github.com/tashfeenahmed/freellmapi/issues/671

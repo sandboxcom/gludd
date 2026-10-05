@@ -92,7 +92,7 @@
     },
     {
       "path": "scripts/ci_failure_ledger.py",
-      "line": 120,
+      "line": 128,
       "column": 13,
       "kind": "temp-artifact",
       "owner": "write_ledger",
@@ -114,7 +114,7 @@
     },
     {
       "path": "scripts/detect_secrets_readonly.py",
-      "line": 34,
+      "line": 66,
       "column": 27,
       "kind": "temp-artifact",
       "owner": "run_readonly_scan",
@@ -224,7 +224,7 @@
     },
     {
       "path": "scripts/freellmapi_upstream_build.py",
-      "line": 338,
+      "line": 317,
       "column": 13,
       "kind": "temp-artifact",
       "owner": "write_report",
@@ -235,7 +235,7 @@
     },
     {
       "path": "scripts/freellmapi_upstream_build.py",
-      "line": 415,
+      "line": 392,
       "column": 9,
       "kind": "temp-artifact",
       "owner": "run_live_build",
@@ -256,6 +256,50 @@
       "owned": true
     },
     {
+      "path": "scripts/replay_codex_file_changes.py",
+      "line": 170,
+      "column": 37,
+      "kind": "temp-artifact",
+      "owner": "_publish",
+      "acquisition": "tempfile.mkstemp(prefix=f'.{destination.name}.codex-replay-', dir=destination.parent)",
+      "teardown": "temporary.unlink(missing_ok=True)",
+      "source_hash": "151dabfe4f5c27756a5f46f15e43832e5372ab50cb098b2293c68ea3460b28a1",
+      "owned": true
+    },
+    {
+      "path": "scripts/replay_codex_file_changes.py",
+      "line": 208,
+      "column": 9,
+      "kind": "temp-artifact",
+      "owner": "replay_changes",
+      "acquisition": "tempfile.TemporaryDirectory(prefix='gludd-codex-replay-')",
+      "teardown": "context-manager-exit",
+      "source_hash": "0dec858c94770544b49c1e81b35ddb2327c9b7cc94c6bda295bf716aaa8c6190",
+      "owned": true
+    },
+    {
+      "path": "scripts/replay_freellmapi_three_arm.py",
+      "line": 153,
+      "column": 13,
+      "kind": "temp-artifact",
+      "owner": "_atomic_write",
+      "acquisition": "tempfile.NamedTemporaryFile(dir=path.parent, prefix=f'.{path.name}.', delete=False)",
+      "teardown": "context-manager-exit",
+      "source_hash": "8fc2e6cfab8ffbc8a4b312fccd3a953f469c90fab94fce15bc81449fcb90989a",
+      "owned": true
+    },
+    {
+      "path": "scripts/replay_freellmapi_three_arm.py",
+      "line": 183,
+      "column": 9,
+      "kind": "temp-artifact",
+      "owner": "_compile_once",
+      "acquisition": "tempfile.TemporaryDirectory(prefix='gludd-freellmapi-candidate-bundle-')",
+      "teardown": "context-manager-exit",
+      "source_hash": "b8b5fb1fd4f9779e121fe9b6555543311fc713f852412343306611264e2d2ddf",
+      "owned": true
+    },
+    {
       "path": "scripts/replay_self_improve_failure_corpus.py",
       "line": 524,
       "column": 9,
@@ -268,7 +312,29 @@
     },
     {
       "path": "scripts/run_ci_shards_parallel.py",
-      "line": 248,
+      "line": 123,
+      "column": 33,
+      "kind": "temp-artifact",
+      "owner": "_save_resume_state",
+      "acquisition": "tempfile.mkstemp(prefix=f'.{path.name}.', suffix='.tmp', dir=path.parent)",
+      "teardown": "temporary.unlink(missing_ok=True)",
+      "source_hash": "79f4eaa56c4e3d5be4bd8a69e5e300b79fc55bb5d582a76d46564e798643d9a8",
+      "owned": true
+    },
+    {
+      "path": "scripts/run_ci_shards_parallel.py",
+      "line": 485,
+      "column": 22,
+      "kind": "process",
+      "owner": "run",
+      "acquisition": "subprocess.Popen(command, start_new_session=True, env=env)",
+      "teardown": "ownership-transfer:_cleanup(running); ownership-transfer:_terminate_all(running)",
+      "source_hash": "7645390fa1248ddc86fb863ac03ab298ae84f6c77a606c111eb1ba88db792c3f",
+      "owned": true
+    },
+    {
+      "path": "scripts/run_ci_shards_parallel.py",
+      "line": 645,
       "column": 18,
       "kind": "process",
       "owner": "run",
@@ -279,7 +345,18 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 300,
+      "line": 211,
+      "column": 33,
+      "kind": "temp-artifact",
+      "owner": "_save_resume_state",
+      "acquisition": "tempfile.mkstemp(prefix=f'.{path.name}.', suffix='.tmp', dir=path.parent)",
+      "teardown": "temporary.unlink(missing_ok=True)",
+      "source_hash": "79f4eaa56c4e3d5be4bd8a69e5e300b79fc55bb5d582a76d46564e798643d9a8",
+      "owned": true
+    },
+    {
+      "path": "scripts/run_ci_shards_serial.py",
+      "line": 328,
       "column": 33,
       "kind": "temp-artifact",
       "owner": "_write_terminal_attestation",
@@ -290,7 +367,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 453,
+      "line": 479,
       "column": 16,
       "kind": "temp-artifact",
       "owner": "_owned_socket_safe_tmpdir",
@@ -301,7 +378,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 749,
+      "line": 766,
       "column": 14,
       "kind": "process",
       "owner": "_run_owned_pytest",
@@ -312,8 +389,8 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 1349,
-      "column": 16,
+      "line": 1398,
+      "column": 29,
       "kind": "temp-artifact",
       "owner": "run",
       "acquisition": "tempfile.mkdtemp(prefix=f'gludd-gate-{shard}-', dir=workspace_parent)",
@@ -499,7 +576,7 @@
     },
     {
       "path": "scripts/test_hook_runtime.py",
-      "line": 167,
+      "line": 168,
       "column": 9,
       "kind": "temp-artifact",
       "owner": "_run_ts",
@@ -620,13 +697,13 @@
     },
     {
       "path": "scripts/validate_release_checksums.py",
-      "line": 52,
+      "line": 129,
       "column": 13,
       "kind": "temp-artifact",
-      "owner": "download_artifact",
-      "acquisition": "tempfile.TemporaryDirectory()",
+      "owner": "download_artifact_digest",
+      "acquisition": "tempfile.TemporaryDirectory(prefix='gludd-release-checksum-')",
       "teardown": "context-manager-exit",
-      "source_hash": "6ee236f2254f3a64b46267c1b0dc271d86dde50940e42b6ac28130820e37bc57",
+      "source_hash": "37afa69003879ca79068a5d24e0b2a88f053255154aef2faefd8784688596d4b",
       "owned": true
     },
     {
@@ -1346,7 +1423,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 979,
+      "line": 998,
       "column": 22,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1357,7 +1434,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 991,
+      "line": 1010,
       "column": 27,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1368,7 +1445,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 1005,
+      "line": 1024,
       "column": 32,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1379,7 +1456,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 2514,
+      "line": 2627,
       "column": 29,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job_isolated",
@@ -1390,7 +1467,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3662,
+      "line": 3775,
       "column": 26,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -1401,7 +1478,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3720,
+      "line": 3833,
       "column": 27,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -1995,13 +2072,13 @@
     },
     {
       "path": "src/general_ludd/sandbox/backends/process_backend.py",
-      "line": 162,
+      "line": 167,
       "column": 19,
       "kind": "process",
       "owner": "ProcessBackend.execute",
-      "acquisition": "subprocess.Popen(command, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True, preexec_fn=_preexec, env=merged_env, start_new_session=os.name == 'posix')",
+      "acquisition": "subprocess.Popen(command, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True, preexec_fn=_preexec, env=merged_env, start_new_session=_IS_POSIX)",
       "teardown": "ownership-transfer:_reap_owned_process(proc); ownership-transfer:_terminate_owned_process(proc); ownership-transfer:return SandboxResult(returncode=returncode, stdout=stdout, stderr=stderr, pid=proc.pid or 0, was_killed=was_killed, cpu_time_ms=cpu_time_ms, memory_used_bytes=memory_used_bytes)",
-      "source_hash": "b348fac18f9ebae85152d0810dab72546c18abd82ab97f352a6ac2e09c889526",
+      "source_hash": "dbc7a7b108b806383567a30034e243e2911127f992b7ce662043689e4e120f09",
       "owned": true
     },
     {

@@ -163,6 +163,7 @@ def _run_ts(
     dispatch_outcomes_path = str(
         state_root / f"gludd-dispatch-outcomes-test-{os.getpid()}-{_tmp_counter}.json"
     )
+    streak_path = str(state_root / f"gludd-tool-streak-test-{os.getpid()}-{_tmp_counter}.json")
     hot_prefix = state_root / f"gludd-hot-{os.getpid()}-{_tmp_counter}-"
     with tempfile.NamedTemporaryFile(
         mode="w",
@@ -184,6 +185,7 @@ def _run_ts(
         env["GLUDD_DISENGAGE_PATH"] = str(state_root / f"gludd-disengage-hermetic-{os.getpid()}.json")
         env["GLUDD_FALSE_DONE_BLOCKS_FILE"] = false_done_path
         env["GLUDD_DISPATCH_OUTCOMES_FILE"] = dispatch_outcomes_path
+        env["GLUDD_STREAK_FILE"] = streak_path
         env["GLUDD_HOT_MODULE_PREFIX"] = str(hot_prefix)
         if env_override:
             env.update(env_override)
@@ -214,7 +216,7 @@ def _run_ts(
                 continue
         return None
     finally:
-        for path in (tmp, false_done_path, dispatch_outcomes_path):
+        for path in (tmp, false_done_path, dispatch_outcomes_path, streak_path):
             with contextlib.suppress(OSError):
                 os.unlink(path)
         for artifact_path in state_root.glob(f"{hot_prefix.name}*"):
@@ -230,6 +232,22 @@ def test_run_ts_returns_none_for_empty_stdout() -> None:
 def test_run_ts_ignores_non_json_diagnostics() -> None:
     """Non-JSON diagnostics do not become a fabricated hook result."""
     assert _run_ts("console.log('runtime diagnostic only')") is None
+
+
+def test_run_ts_namespaces_streak_state_per_invocation() -> None:
+    """Concurrent hook invocations must never share the mutable streak file."""
+    code = "console.log(JSON.stringify({streakPath: process.env.GLUDD_STREAK_FILE ?? null}))"
+
+    first = _run_ts(code)
+    second = _run_ts(code)
+
+    first_path = Path(first["streakPath"])
+    second_path = Path(second["streakPath"])
+    assert first_path.parent == _runtime_state_root()
+    assert second_path.parent == _runtime_state_root()
+    assert first_path.name.startswith("gludd-tool-streak-test-")
+    assert second_path.name.startswith("gludd-tool-streak-test-")
+    assert first_path != second_path
 
 
 def test_shared_explicit_non_subagent_ignores_stale_pid_marker() -> None:

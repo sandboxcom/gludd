@@ -297,6 +297,16 @@
       "behavior": "make ci-rerun RUN=123 CI_FAILURE_REPOSITORY=sandboxcom/gludd CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_RERUN_ALLOW_UNCHANGED=0 CI_RERUN_REASON=none CI_FAILURE_VALIDATE_ONLY=1"
     },
     {
+      "name": "ci-recover-runner-acquisition",
+      "make_variables": [
+        "RUN",
+        "CI_FAILURE_REPOSITORY",
+        "CI_FAILURE_LEDGER",
+        "CI_FAILURE_VALIDATE_ONLY"
+      ],
+      "behavior": "make ci-recover-runner-acquisition RUN=123 CI_FAILURE_REPOSITORY=sandboxcom/gludd CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_FAILURE_VALIDATE_ONLY=1"
+    },
+    {
       "name": "ci-failure-status",
       "make_variables": [
         "CI_FAILURE_LEDGER",
@@ -376,6 +386,19 @@
         "REVIEWED_HEAD_INTEGRATION_RECEIPT"
       ],
       "behavior": "make release-promote TAG=v0.1.0-beta.4 MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=1 REVIEWED_HEAD_INTEGRATION_RECEIPT="
+    },
+    {
+      "name": "replay-codex-file-changes",
+      "make_variables": [
+        "CODEX_REPLAY_DB",
+        "CODEX_REPLAY_RECORDED_REPO",
+        "CODEX_REPLAY_THREAD_ID",
+        "CODEX_REPLAY_START",
+        "CODEX_REPLAY_END",
+        "CODEX_REPLAY_APPLY",
+        "CODEX_REPLAY_VALIDATE_ONLY"
+      ],
+      "behavior": "make replay-codex-file-changes CODEX_REPLAY_DB=/tmp/gludd-codex-history.sqlite CODEX_REPLAY_RECORDED_REPO=. CODEX_REPLAY_THREAD_ID=00000000-0000-0000-0000-000000000000 CODEX_REPLAY_START=1 CODEX_REPLAY_END=1 CODEX_REPLAY_APPLY=0 CODEX_REPLAY_VALIDATE_ONLY=1"
     },
     {
       "name": "ci-job-failure-context",
@@ -585,6 +608,11 @@
       "name": "freellmapi-upstream-build",
       "make_variables": ["FREELLMAPI_BUILD_LIVE", "FREELLMAPI_BUILD_CANDIDATE", "FREELLMAPI_BUILD_PLAN", "FREELLMAPI_BUILD_REPORT"],
       "behavior": "make freellmapi-upstream-build FREELLMAPI_BUILD_LIVE=0 FREELLMAPI_BUILD_CANDIDATE=config/freellmapi/upstream_candidate.json FREELLMAPI_BUILD_PLAN=config/freellmapi/upstream_build_plan.json FREELLMAPI_BUILD_REPORT=/tmp/gludd-freellmapi-upstream-build/evidence.json"
+    },
+    {
+      "name": "freellmapi-three-arm-replay",
+      "make_variables": ["FREELLMAPI_THREE_ARM_MODE", "FREELLMAPI_THREE_ARM_CANDIDATE", "FREELLMAPI_THREE_ARM_PLAN", "FREELLMAPI_THREE_ARM_CORPUS", "FREELLMAPI_THREE_ARM_REPORT"],
+      "behavior": "make freellmapi-three-arm-replay FREELLMAPI_THREE_ARM_MODE=validate FREELLMAPI_THREE_ARM_CANDIDATE=config/freellmapi/upstream_candidate.json FREELLMAPI_THREE_ARM_PLAN=config/freellmapi/three_arm_plan.json FREELLMAPI_THREE_ARM_CORPUS=config/freellmapi/three_arm_corpus.json FREELLMAPI_THREE_ARM_REPORT=/tmp/gludd-freellmapi-three-arm/evidence.json"
     },
     {
       "name": "pip-audit-gate",

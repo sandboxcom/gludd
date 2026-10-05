@@ -130,6 +130,70 @@ def test_unchanged_rerun_is_blocked_unless_reasoned_override_is_explicit() -> No
     ) == []
 
 
+def test_rerun_attempts_share_a_run_id_but_keep_immutable_attempt_records() -> None:
+    module = _load()
+    ledger = module.new_ledger()
+    first = _failed_payload()
+    first["attempt"] = 1
+    second = _payload(
+        101,
+        SHA_FAILED,
+        [_job("unit-1a1", "success"), _job("unit-2", "success"), _job("ansible-ee", "success")],
+        conclusion="success",
+    )
+    second["attempt"] = 2
+
+    assert module.observe_payload(ledger, first, observed_at="first") == "recorded"
+    assert module.observe_payload(ledger, second, observed_at="second") == "recorded"
+    assert module.observe_payload(ledger, second, observed_at="later") == "unchanged"
+
+    assert set(ledger["runs"]) == {"101", "101:2"}
+    assert ledger["runs"]["101:2"]["attempt"] == 2
+    assert "already succeeded" in " ".join(
+        module.guard_rerun(
+            ledger,
+            101,
+            allow_unchanged=True,
+            reason="must inspect the latest attempt",
+        )
+    )
+
+
+def test_runner_acquisition_recovery_is_proven_complete_and_bounded() -> None:
+    module = _load()
+    payload = _payload(
+        101,
+        SHA_FAILED,
+        [
+            {**_job("gate (3.12)", "cancelled"), "databaseId": 9001},
+            {**_job("gate (3.11)", "success"), "databaseId": 9002},
+        ],
+    )
+    payload["attempt"] = 1
+    annotations = {
+        9001: ["The job was not acquired by Runner of type hosted even after multiple attempts"],
+    }
+
+    assert module.guard_runner_acquisition_rerun(payload, annotations) == []
+
+    missing = module.guard_runner_acquisition_rerun(payload, {})
+    assert "no runner-acquisition annotation" in " ".join(missing)
+
+    real_failure = json.loads(json.dumps(payload))
+    real_failure["jobs"][0]["steps"] = [
+        {"name": "Run tests", "status": "completed", "conclusion": "failure", "number": 1}
+    ]
+    assert "executed failing steps" in " ".join(
+        module.guard_runner_acquisition_rerun(real_failure, annotations)
+    )
+
+    exhausted = json.loads(json.dumps(payload))
+    exhausted["attempt"] = 2
+    assert "recovery limit" in " ".join(
+        module.guard_runner_acquisition_rerun(exhausted, annotations)
+    )
+
+
 def test_push_guard_reports_all_open_failures_not_only_the_first() -> None:
     module = _load()
     ledger = module.new_ledger()
@@ -213,6 +277,7 @@ def test_make_wiring_observes_before_rerun_and_guards_every_push_path() -> None:
     source = (ROOT / "Makefile").read_text(encoding="utf-8")
     view = _target_block(source, "ci-view")
     rerun = _target_block(source, "ci-rerun")
+    recover = _target_block(source, "ci-recover-runner-acquisition")
     push = _target_block(source, "ci-failure-push-guard")
 
     assert "scripts/ci_failure_ledger.py observe" in view
@@ -221,6 +286,9 @@ def test_make_wiring_observes_before_rerun_and_guards_every_push_path() -> None:
     assert rerun.index("guard-rerun") < rerun.index("gh run rerun")
     assert "CI_RERUN_ALLOW_UNCHANGED" in rerun
     assert "CI_RERUN_REASON" in rerun
+    assert "ci-recover-runner-acquisition: ci-view" in source
+    assert "guard-runner-acquisition-rerun" in recover
+    assert recover.index("guard-runner-acquisition-rerun") < recover.index("gh run rerun")
     assert "scripts/ci_failure_ledger.py guard-push" in push
     assert "_push-rate-guard: ci-failure-push-guard" in source
 
@@ -234,6 +302,7 @@ def test_all_ci_failure_make_targets_have_network_free_behavioral_contracts() ->
     expected = {
         "ci-view",
         "ci-rerun",
+        "ci-recover-runner-acquisition",
         "ci-failure-status",
         "ci-failure-repair",
         "ci-failure-push-guard",
@@ -250,6 +319,7 @@ def test_every_cli_contract_path_is_network_free_in_validation_mode(capsys: Any)
         ["observe-sha", "--sha", "0" * 40, "--validate-only"],
         ["status", "--validate-only"],
         ["guard-rerun", "--run", "7", "--validate-only"],
+        ["guard-runner-acquisition-rerun", "--run", "7", "--validate-only"],
         [
             "repair",
             "--all-open",
@@ -262,7 +332,7 @@ def test_every_cli_contract_path_is_network_free_in_validation_mode(capsys: Any)
         ["guard-push", "--head", "0" * 40, "--validate-only"],
     ]
 
-    assert [module.main(command) for command in commands] == [0, 0, 0, 0, 0, 0]
+    assert [module.main(command) for command in commands] == [0, 0, 0, 0, 0, 0, 0]
     output = capsys.readouterr().out
     assert "CI_FAILURE_LEDGER_OBSERVE" in output
     assert "VALIDATE_ONLY_PASS" in output
@@ -414,6 +484,7 @@ def test_fetch_run_is_id_bound_and_fail_closed() -> None:
 
     assert module.fetch_run(101, "sandboxcom/gludd", runner=success) == payload
     assert calls[0][:4] == ["gh", "run", "view", "101"]
+    assert "attempt" in calls[0][-1]
     with pytest.raises(module.LedgerError, match="repository"):
         module.fetch_run(101, "not-a-repository", runner=success)
 
@@ -437,6 +508,77 @@ def test_fetch_run_is_id_bound_and_fail_closed() -> None:
                 command, 0, json.dumps(wrong), ""
             ),
         )
+
+
+def test_check_run_annotations_are_paginated_typed_and_failure_closed() -> None:
+    module = _load()
+    calls: list[list[str]] = []
+
+    def success(command: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        pages = [[{"message": module.RUNNER_ACQUISITION_MESSAGE}], [{"message": "notice"}]]
+        return subprocess.CompletedProcess(command, 0, json.dumps(pages), "")
+
+    assert module.fetch_job_annotations(9001, "sandboxcom/gludd", runner=success) == [
+        module.RUNNER_ACQUISITION_MESSAGE,
+        "notice",
+    ]
+    assert calls == [
+        [
+            "gh",
+            "api",
+            "repos/sandboxcom/gludd/check-runs/9001/annotations",
+            "--paginate",
+            "--slurp",
+        ]
+    ]
+    with pytest.raises(module.LedgerError, match="repository"):
+        module.fetch_job_annotations(9001, "unsafe", runner=success)
+    with pytest.raises(module.LedgerError, match="positive integer"):
+        module.fetch_job_annotations(0, "sandboxcom/gludd", runner=success)
+    with pytest.raises(module.LedgerError, match="lookup failed"):
+        module.fetch_job_annotations(
+            9001,
+            "sandboxcom/gludd",
+            runner=lambda command, **_: subprocess.CompletedProcess(command, 1, "", "denied"),
+        )
+
+
+def test_runner_acquisition_cli_requires_observation_and_proven_annotations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    module = _load()
+    ledger_path = tmp_path / "ledger.json"
+    payload = _payload(
+        101,
+        SHA_FAILED,
+        [{**_job("gate", "cancelled"), "databaseId": 9001}],
+    )
+    ledger = module.new_ledger()
+    module.observe_payload(ledger, payload, observed_at="first")
+    module.write_ledger(ledger_path, ledger)
+    monkeypatch.setattr(module, "fetch_run", lambda _run, _repo: payload)
+    monkeypatch.setattr(
+        module,
+        "fetch_runner_acquisition_annotations",
+        lambda _payload, _repo: {9001: [module.RUNNER_ACQUISITION_MESSAGE]},
+    )
+
+    command = [
+        "guard-runner-acquisition-rerun",
+        "--run",
+        "101",
+        "--repo",
+        "sandboxcom/gludd",
+        "--ledger",
+        str(ledger_path),
+    ]
+    assert module.main(command) == 0
+    assert "GUARD_PASS" in capsys.readouterr().out
+
+    command[-1] = str(tmp_path / "absent.json")
+    assert module.main(command) == 2
+    assert "must be observed" in capsys.readouterr().err
 
 
 def test_git_identity_helpers_require_exact_successful_results() -> None:
@@ -470,6 +612,8 @@ def test_snapshot_rejects_every_ambiguous_nonterminal_shape() -> None:
     cases.append((dict(baseline, databaseId=True), "positive integer"))
     cases.append((dict(baseline, databaseId="nope"), "positive integer"))
     cases.append((dict(baseline, databaseId=0), "positive integer"))
+    cases.append((dict(baseline, attempt=True), "run attempt"))
+    cases.append((dict(baseline, attempt=0), "run attempt"))
     cases.append((dict(baseline, headSha="short"), "full lowercase"))
     cases.append((dict(baseline, status="queued"), "not terminal"))
     cases.append((dict(baseline, jobs=[]), "non-empty array"))

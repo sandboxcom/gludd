@@ -23,6 +23,37 @@ class TestServiceDiscoveryPipelineExports:
         assert callable(DiscoveryReport)
 
 
+@pytest.mark.parametrize("scalar_terms", ["service api", ""])
+def test_pipeline_rejects_scalar_search_terms_before_connector_creation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    scalar_terms: str,
+) -> None:
+    """A lone string must not become one outbound search per character."""
+    connector_factory = MagicMock()
+    monkeypatch.setattr(pipeline_module, "SearXConnector", connector_factory)
+
+    with pytest.raises(TypeError, match="search_terms must be a sequence of entries"):
+        ServiceDiscoveryPipeline(
+            searx_url="http://localhost:8080",
+            catalog_path=str(tmp_path / "service_catalog.yml"),
+            search_terms=scalar_terms,
+        )
+
+    connector_factory.assert_not_called()
+
+
+def test_pipeline_empty_search_term_sequence_uses_defaults(tmp_path: Path) -> None:
+    """An empty sequence retains the documented default-query fallback."""
+    pipeline = ServiceDiscoveryPipeline(
+        searx_url="http://localhost:8080",
+        catalog_path=str(tmp_path / "service_catalog.yml"),
+        search_terms=[],
+    )
+
+    assert pipeline._search_terms == [query for _, query in DEFAULT_SEARCH_TERMS]
+
+
 def test_empty_successful_search_preserves_existing_catalog(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

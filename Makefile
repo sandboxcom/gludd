@@ -36,6 +36,11 @@ FREELLMAPI_BUILD_LIVE ?= 0
 FREELLMAPI_BUILD_CANDIDATE ?= config/freellmapi/upstream_candidate.json
 FREELLMAPI_BUILD_PLAN ?= config/freellmapi/upstream_build_plan.json
 FREELLMAPI_BUILD_REPORT ?= /tmp/gludd-freellmapi-upstream-build/evidence.json
+FREELLMAPI_THREE_ARM_MODE ?= replay
+FREELLMAPI_THREE_ARM_CANDIDATE ?= config/freellmapi/upstream_candidate.json
+FREELLMAPI_THREE_ARM_PLAN ?= config/freellmapi/three_arm_plan.json
+FREELLMAPI_THREE_ARM_CORPUS ?= config/freellmapi/three_arm_corpus.json
+FREELLMAPI_THREE_ARM_REPORT ?= /tmp/gludd-freellmapi-three-arm/evidence.json
 ifneq (,$(findstring $$,$(value FREELLMAPI_ADMISSION_TAG)))
 $(error FREELLMAPI_ADMISSION_TAG contains forbidden input)
 endif
@@ -60,6 +65,21 @@ endif
 ifneq (,$(findstring $$,$(value FREELLMAPI_BUILD_REPORT)))
 $(error FREELLMAPI_BUILD_REPORT contains forbidden input)
 endif
+ifneq (,$(findstring $$,$(value FREELLMAPI_THREE_ARM_MODE)))
+$(error FREELLMAPI_THREE_ARM_MODE contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value FREELLMAPI_THREE_ARM_CANDIDATE)))
+$(error FREELLMAPI_THREE_ARM_CANDIDATE contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value FREELLMAPI_THREE_ARM_PLAN)))
+$(error FREELLMAPI_THREE_ARM_PLAN contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value FREELLMAPI_THREE_ARM_CORPUS)))
+$(error FREELLMAPI_THREE_ARM_CORPUS contains forbidden input)
+endif
+ifneq (,$(findstring $$,$(value FREELLMAPI_THREE_ARM_REPORT)))
+$(error FREELLMAPI_THREE_ARM_REPORT contains forbidden input)
+endif
 export FREELLMAPI_ADMISSION_TAG
 export FREELLMAPI_ADMISSION_COMMIT
 export FREELLMAPI_ADMISSION_LIVE
@@ -68,6 +88,11 @@ export FREELLMAPI_BUILD_LIVE
 export FREELLMAPI_BUILD_CANDIDATE
 export FREELLMAPI_BUILD_PLAN
 export FREELLMAPI_BUILD_REPORT
+export FREELLMAPI_THREE_ARM_MODE
+export FREELLMAPI_THREE_ARM_CANDIDATE
+export FREELLMAPI_THREE_ARM_PLAN
+export FREELLMAPI_THREE_ARM_CORPUS
+export FREELLMAPI_THREE_ARM_REPORT
 GLUDD_UV_CACHE_DIR ?= /tmp/gludd-uv-cache-public-v2
 override UV_CACHE_DIR := $(GLUDD_UV_CACHE_DIR)
 export UV_CACHE_DIR
@@ -331,7 +356,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         deck deck-serve deck-preview deck-data deck-honesty \
         script-count strip-enforce-stop test-hooks-live test-hook-runtime e2e-setup-test-project test-opencode-e2e test-opencode-e2e-hour \
         verify-enforcement \
-    ci-view ci-rerun ci-failure-status ci-failure-repair ci-failure-push-guard ci-trigger ci-active ci-job-log ci-job-failure-context ci-artifact-download ci-artifact-context ci-pyinstaller-warning-audit ci-coverage-artifact-audit ci-coverage-gap-plan ci-shards-log-context \
+    ci-view ci-rerun ci-recover-runner-acquisition ci-failure-status ci-failure-repair ci-failure-push-guard ci-trigger ci-active ci-job-log ci-job-failure-context ci-artifact-download ci-artifact-context ci-pyinstaller-warning-audit ci-coverage-artifact-audit ci-coverage-gap-plan ci-shards-log-context \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
 log-agent-result disk-guard disk-check disk-cleanup-preflight check-disk check-disk-classification check-system-load disk tmp-gludd-usage tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
         tmp-gludd-worktree-usage clean-worktree-venvs clean-worktree-caches \
@@ -379,6 +404,7 @@ help:
 	@echo "  node-deps-audit       Audit locked Node deps (NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false plus NODE_DEPS_AUDIT_LEVEL=low|moderate|high|critical)"
 	@echo "  freellmapi-upstream-admission  Validate/refresh the non-runnable upstream candidate (FREELLMAPI_ADMISSION_TAG, FREELLMAPI_ADMISSION_COMMIT, FREELLMAPI_ADMISSION_LIVE=0|1, FREELLMAPI_ADMISSION_OUTPUT)"
 	@echo "  freellmapi-upstream-build  Validate/run the exact-source upstream suite (FREELLMAPI_BUILD_LIVE=0|1, FREELLMAPI_BUILD_CANDIDATE, FREELLMAPI_BUILD_PLAN, FREELLMAPI_BUILD_REPORT)"
+	@echo "  freellmapi-three-arm-replay  Build/validate/replay exact v0.11.1 without promotion (FREELLMAPI_THREE_ARM_MODE, FREELLMAPI_THREE_ARM_CANDIDATE, FREELLMAPI_THREE_ARM_PLAN, FREELLMAPI_THREE_ARM_CORPUS, FREELLMAPI_THREE_ARM_REPORT)"
 	@echo "  bootstrap             init + lint + test + healthcheck"
 	@echo "  install-hooks         Install pre-commit hooks (secrets, lint, collect)"
 	@echo "  install-workflow-hook Validate/install the tracked GitHub workflow YAML hook (INSTALL_WORKFLOW_HOOK_VALIDATE_ONLY)"
@@ -716,6 +742,7 @@ help:
 	@echo "  ci-cooldown-status     Show remaining cooldown seconds"
 	@echo "  ci-view RUN=<id>       Show CI run details (jobs, steps, failures)"
 	@echo "  ci-rerun RUN=<id>      Guard and rerun one observed immutable CI run"
+	@echo "  ci-recover-runner-acquisition RUN=<id>  Retry attempt 1 only when every failure is hosted-runner acquisition"
 	@echo "  ci-active              List active/in-flight CI runs"
 	@echo "  ci-greenness           CI reliability ratio (green / total completed)"
 	@echo "  ci-trigger-committed-head [REF=<b>]  Idempotently signal + return exact-SHA GHA run URL"
@@ -773,6 +800,7 @@ help:
 	@echo "  --- Recovery ---"
 	@echo "  reap-orphan-pytest    Report stale orphan pytest trees (APPLY=1 to terminate)"
 	@echo "  reap-stale-collection-locks  Reap only old project-owned collection/gate-refresh locks (APPLY=1)"
+	@echo "  replay-codex-file-changes  Atomically validate/replay a bounded Codex file-change range"
 	@echo "  backup-opencode       Backup .opencode/ -> .opencode.orig/ (excludes node_modules/)"
 	@echo "  check-opencode-backup  Warn if .opencode.orig/ is stale (>24h older than .opencode/)"
 	@echo "  restore-opencode      Restore .opencode/ (backup then git fallback) + clear cache"
@@ -1025,6 +1053,16 @@ freellmapi-upstream-build:
 			--candidate "$$FREELLMAPI_BUILD_CANDIDATE" \
 			--plan "$$FREELLMAPI_BUILD_PLAN" \
 			--report "$$FREELLMAPI_BUILD_REPORT" \
+			--repository-root "$(CURDIR)"
+
+freellmapi-three-arm-replay:
+	@case "$$FREELLMAPI_THREE_ARM_MODE" in validate|replay|refresh-bundle|refresh-config) ;; *) echo "FREELLMAPI_THREE_ARM_MODE must be validate, replay, refresh-bundle, or refresh-config"; exit 2;; esac; \
+		$(UV) run python -m scripts.replay_freellmapi_three_arm \
+			--mode "$$FREELLMAPI_THREE_ARM_MODE" \
+			--candidate "$$FREELLMAPI_THREE_ARM_CANDIDATE" \
+			--plan "$$FREELLMAPI_THREE_ARM_PLAN" \
+			--corpus "$$FREELLMAPI_THREE_ARM_CORPUS" \
+			--report "$$FREELLMAPI_THREE_ARM_REPORT" \
 			--repository-root "$(CURDIR)"
 
 install-pip:
@@ -4091,12 +4129,13 @@ verify-remote: require-sandboxcom-ssh-key
 	REMOTE_SHORT=$$(echo $$REMOTE | cut -c1-$${#SHA}); \
 	if [ "$$SHA" = "$$REMOTE_SHORT" ]; then echo "VERIFIED $$BR@$$SHA"; else echo "REMOTE MISMATCH: remote=$$REMOTE expected=$$SHA" && exit 1; fi
 
-# Create an annotated tag and push it to sandboxcom to trigger the tag-gated
+# Create a signed annotated tag and push it to sandboxcom to trigger the tag-gated
 # release job (version -> gate -> builds -> release). Usage:
 #   make git-tag-push TAG=v0.1.0-alpha.1 COMMIT=<sha> MSG='alpha release'
 git-tag-push: _push-rate-guard require-sandboxcom-ssh-key
 	@[ -n "$(TAG)" ] || { echo "Usage: make git-tag-push TAG=v0.1.0-alpha.N [COMMIT=<sha>] [MSG='...']"; exit 1; }
-	@git tag -a "$(TAG)" $(if $(COMMIT),$(COMMIT)) -m "$(if $(MSG),$(MSG),$(TAG))"
+	@git tag -s -a "$(TAG)" $(if $(COMMIT),$(COMMIT)) -m "$(if $(MSG),$(MSG),$(TAG))"
+	@$(MAKE) --no-print-directory check-tag-signing TAG="$(TAG)"
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
 	@echo "Pushed tag $(TAG) to sandboxcom/gludd (triggers release job)"
 
@@ -4422,6 +4461,7 @@ git-tag-delete: git-tag-rm
 release-recut: _push-rate-guard require-sandboxcom-ssh-key
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-recut TAG=v0.1.0-alpha.1"; exit 1; }
 	@git tag -l "$(TAG)" | grep -q "$(TAG)" || { echo "ERROR: local tag $(TAG) not found"; exit 1; }
+	@$(MAKE) --no-print-directory check-tag-signing TAG="$(TAG)"
 	@$(MAKE) -s require-ci-green SHA=$$(git rev-parse "$(TAG)^{commit}")
 	@set -e; TAG_SHA="$$(git rev-parse "$(TAG)^{commit}")"; \
 		BASELINE="$$( $(MAKE) -s ci-await BRANCH="$(TAG)" TIMEOUT="$(RELEASE_AWAIT_TIMEOUT)" SHA="$$TAG_SHA" CI_AWAIT_WORKFLOW="Build and Release" CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL="$(RELEASE_AWAIT_INTERVAL)" CI_AWAIT_AFTER_RUN_ID=0 CI_AWAIT_VALIDATE_ONLY=0 CI_AWAIT_SNAPSHOT_ONLY=1 )"; \
@@ -5148,6 +5188,14 @@ ci-rerun: ci-view
 	@case "$(CI_RERUN_ALLOW_UNCHANGED)" in 0|1) ;; *) echo "CI_RERUN_ALLOW_UNCHANGED must be 0 or 1"; exit 2 ;; esac
 	@$(PYTHON) scripts/ci_failure_ledger.py guard-rerun --run "$(RUN)" --ledger "$(CI_FAILURE_LEDGER)" $(if $(filter 1,$(CI_RERUN_ALLOW_UNCHANGED)),--allow-unchanged --reason "$(CI_RERUN_REASON)",) $(if $(filter 1,$(CI_FAILURE_VALIDATE_ONLY)),--validate-only,)
 	@if [ "$(CI_FAILURE_VALIDATE_ONLY)" = "1" ]; then echo "CI_RERUN_VALIDATE_ONLY_PASS"; else gh run rerun -R "$(CI_FAILURE_REPOSITORY)" "$(RUN)"; fi
+
+# Recover one exact-SHA run only when all non-success jobs never started and
+# GitHub annotated each with its hosted-runner acquisition failure. The guard
+# admits attempt 1 only, making this a bounded retry rather than a churn loop.
+ci-recover-runner-acquisition: ci-view
+	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-recover-runner-acquisition RUN=<run-id>"; exit 1; fi
+	@$(PYTHON) scripts/ci_failure_ledger.py guard-runner-acquisition-rerun --run "$(RUN)" --repo "$(CI_FAILURE_REPOSITORY)" --ledger "$(CI_FAILURE_LEDGER)" $(if $(filter 1,$(CI_FAILURE_VALIDATE_ONLY)),--validate-only,)
+	@if [ "$(CI_FAILURE_VALIDATE_ONLY)" = "1" ]; then echo "CI_RECOVER_RUNNER_ACQUISITION_VALIDATE_ONLY_PASS"; else gh run rerun -R "$(CI_FAILURE_REPOSITORY)" "$(RUN)"; fi
 # Guard remote CI dispatch: the local tree must be clean and sandboxcom/<branch> must equal HEAD.
 ci-remote-head-guard:
 	@REF="$(REF)"; if [ -z "$$REF" ]; then REF="$$(git branch --show-current)"; fi; \
@@ -8347,6 +8395,20 @@ db-sample-part:
 
 db-tables:
 	@sqlite3 $(OPENCODE_DB) ".tables" 2>/dev/null
+
+# Recover a bounded set of completed Codex file-change events. Validation is
+# the default; CODEX_REPLAY_APPLY=1 publishes only after the entire batch has
+# replayed successfully in an isolated temporary tree.
+replay-codex-file-changes:
+	@[ -n "$(CODEX_REPLAY_DB)" ] && [ -n "$(CODEX_REPLAY_RECORDED_REPO)" ] && [ -n "$(CODEX_REPLAY_THREAD_ID)" ] && [ -n "$(CODEX_REPLAY_START)" ] && [ -n "$(CODEX_REPLAY_END)" ] || { echo "Usage: make replay-codex-file-changes CODEX_REPLAY_DB=path CODEX_REPLAY_RECORDED_REPO=path CODEX_REPLAY_THREAD_ID=uuid CODEX_REPLAY_START=n CODEX_REPLAY_END=n CODEX_REPLAY_APPLY=0|1"; exit 2; }
+	@case "$(CODEX_REPLAY_APPLY)" in 0|1) ;; *) echo "CODEX_REPLAY_APPLY must be 0 or 1"; exit 2;; esac
+	@case "$(CODEX_REPLAY_VALIDATE_ONLY)" in 0|1) ;; *) echo "CODEX_REPLAY_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@if [ "$(CODEX_REPLAY_VALIDATE_ONLY)" = "1" ]; then \
+		test -f scripts/replay_codex_file_changes.py; \
+		echo "CODEX_REPLAY_CONFIG_OK apply=$(CODEX_REPLAY_APPLY) range=$(CODEX_REPLAY_START)-$(CODEX_REPLAY_END)"; \
+	else \
+		$(UV) run python scripts/replay_codex_file_changes.py --database "$(CODEX_REPLAY_DB)" --repo . --recorded-repo "$(CODEX_REPLAY_RECORDED_REPO)" --thread-id "$(CODEX_REPLAY_THREAD_ID)" --start-ordinal "$(CODEX_REPLAY_START)" --end-ordinal "$(CODEX_REPLAY_END)" $(if $(filter 1,$(CODEX_REPLAY_APPLY)),--apply,); \
+	fi
 
 db-count:
 	@sqlite3 $(OPENCODE_DB) "SELECT COUNT(*) FROM message;" 2>/dev/null

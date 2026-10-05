@@ -29,6 +29,9 @@ of silently dropping them while applying the search-schema repair.
   remains the identical object for compatibility.
 - Callers may continue to pass a sequence of plain query strings. They may also
   pass labeled two-string tuples, including `DEFAULT_SEARCH_TERMS` itself.
+- A scalar string is rejected before connector construction instead of being
+  interpreted as one outbound query per character. This includes the empty
+  string; only an empty sequence selects the built-in defaults.
 - An empty caller sequence retains the historical built-in-default fallback.
 - Tuple entries with the wrong arity, non-string values, blank labels, blank
   queries, and non-string/non-tuple entries raise at construction. Errors name
@@ -49,6 +52,13 @@ since 2016, records repeated practitioner concern that a single `str` satisfies
 `Iterable[str]` even when an API intended a sequence of complete strings. That
 is the exact runtime ambiguity avoided here by validating every entry's concrete
 shape rather than relying on iteration or annotations alone.
+
+The related long-lived
+[mypy issue 11001](https://github.com/python/mypy/issues/11001) describes this
+as a broad class of real API bugs and requests an opt-in checker rule because a
+`str` still satisfies `Sequence[str]` statically. Until typing tools can express
+"a sequence of strings, but not a string" portably, Gludd must enforce that
+container boundary at runtime before constructing the network connector.
 
 The SearXNG community's
 [JSON API discussion 1789](https://github.com/searxng/searxng/discussions/1789)

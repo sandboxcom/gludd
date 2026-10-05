@@ -12,9 +12,8 @@ Parses ``.github/workflows/build.yml`` and asserts:
     Makefile implements as a contiguous slice of the sorted scenario list (see
     the ``molecule-test-shard`` target). A single leg running
     ``molecule-test-all`` would defeat parallelism.
-  - ``max-parallel`` is either unset (GitHub Actions default = all legs run
-    concurrently) or set to a value >= the shard count (no artificial throttle
-    below the matrix size).
+  - ``max-parallel`` remains greater than one but below the shard count, keeping
+    real parallelism while bounding hosted-runner acquisition bursts.
 
 These properties are structural invariants — if the YAML drifts and collapses
 the matrix back to a single sequential leg, the ~30 min wall time returns and
@@ -253,27 +252,20 @@ class TestMoleculeShardSubset:
 
 
 class TestMoleculeMaxParallel:
-    """``max-parallel`` controls how many matrix legs run concurrently. If
-    unset, GitHub Actions defaults to running ALL legs in parallel (the
-    desired behavior for sharding). If set, it must be >= the shard count —
-    a value below the shard count would serialize legs and defeat the
-    wall-time savings."""
+    """Keep two concurrent legs without requesting the whole matrix at once."""
 
-    def test_max_parallel_absent_or_ge_shard_count(self) -> None:
+    def test_max_parallel_preserves_bounded_parallelism(self) -> None:
         job = _molecule_job()
         strategy = job["strategy"]
         shard_count = len(strategy["matrix"]["shard"])
         max_parallel = strategy.get("max-parallel")
-        if max_parallel is None:
-            # GitHub Actions default: all legs run concurrently. This is the
-            # desired behavior for sharding — no assertion needed.
-            return
         assert isinstance(max_parallel, int), (
-            f"max-parallel must be an int if set; got {type(max_parallel).__name__}"
+            f"max-parallel must be an int; got {type(max_parallel).__name__}"
         )
-        assert max_parallel >= shard_count, (
-            f"max-parallel ({max_parallel}) must be >= shard count "
-            f"({shard_count}) so legs are not serialized below the matrix size"
+        assert max_parallel == 2
+        assert 1 < max_parallel < shard_count, (
+            f"max-parallel ({max_parallel}) must preserve parallel work while "
+            f"remaining below shard count ({shard_count})"
         )
 
 

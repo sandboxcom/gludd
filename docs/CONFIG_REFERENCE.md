@@ -447,6 +447,7 @@ services without an explicit budget entry still get observed.
 | `SLURM_API_URL` + `SLURM_AUTH_TOKEN` | Slurm compute integration. | off |
 | `AWS_ACCESS_KEY_ID` (+ `AWS_SECRET_ACCESS_KEY`) | AWS pricing/live onboarding. | off |
 | `GITHUB_TOKEN` | GitHub Actions connector + issue sources. | off |
+| `GLUDD_GITHUB_REPOSITORY` | Repository slug used by release-integrity and CI validators. | `sandboxcom/gludd` |
 | `PROMETHEUS_TOKEN` | Bearer token for Prometheus connector. | off |
 | `DATADOG_API_KEY` + `DATADOG_APP_KEY` | Datadog logs connector. | off |
 | `POSTGRES_AVAILABLE=1` | Opt-in flag enabling Postgres-dependent tests. | skipped |

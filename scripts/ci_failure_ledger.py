@@ -2,9 +2,9 @@
 """Persist complete hosted-CI failures and block unowned retries.
 
 The ledger is operational state, not a release claim.  A terminal GitHub run is
-immutable: observing it again is idempotent, while conflicting data for the
-same run ID fails closed.  Every failed job becomes an independently owned
-failure family so a rerun cannot hide sibling failures.
+immutable per attempt: observing it again is idempotent, while conflicting data
+for the same run ID and attempt fails closed. Every failed job becomes an
+independently owned failure family so a rerun cannot hide sibling failures.
 """
 
 from __future__ import annotations
@@ -35,7 +35,10 @@ MAKE_VARIABLE = re.compile(r"[A-Z][A-Z0-9_]*=.*\Z")
 SUCCESS_CONCLUSIONS = {"success", "skipped", "neutral"}
 FAILURE_STATUSES = {"open", "repaired", "resolved"}
 RUN_FIELDS = (
-    "databaseId,headSha,headBranch,status,conclusion,url,workflowName,jobs"
+    "attempt,databaseId,headSha,headBranch,status,conclusion,url,workflowName,jobs"
+)
+RUNNER_ACQUISITION_MESSAGE = (
+    "The job was not acquired by Runner of type hosted even after multiple attempts"
 )
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
@@ -67,17 +70,22 @@ def validate_ledger(ledger: dict[str, Any]) -> None:
         raise LedgerError("unsupported ledger version")
     runs = _require_mapping(ledger.get("runs"), "runs")
     families = _require_mapping(ledger.get("families"), "families")
-    for run_id, run in runs.items():
-        if not str(run_id).isdigit():
-            raise LedgerError(f"invalid run key: {run_id!r}")
-        record = _require_mapping(run, f"run {run_id}")
-        if str(record.get("run_id")) != str(run_id):
-            raise LedgerError(f"run {run_id} identity mismatch")
+    for run_key, run in runs.items():
+        match = re.fullmatch(r"([1-9][0-9]*)(?::([1-9][0-9]*))?", str(run_key))
+        if match is None:
+            raise LedgerError(f"invalid run key: {run_key!r}")
+        record = _require_mapping(run, f"run {run_key}")
+        expected_run_id = int(match.group(1))
+        expected_attempt = int(match.group(2) or "1")
+        if _run_id(record.get("run_id")) != expected_run_id:
+            raise LedgerError(f"run {run_key} identity mismatch")
+        if _attempt(record) != expected_attempt:
+            raise LedgerError(f"run {run_key} attempt mismatch")
         if FULL_SHA.fullmatch(str(record.get("sha") or "")) is None:
-            raise LedgerError(f"run {run_id} has invalid SHA")
+            raise LedgerError(f"run {run_key} has invalid SHA")
         digest = str(record.get("payload_fingerprint") or "")
         if re.fullmatch(r"[0-9a-f]{64}", digest) is None:
-            raise LedgerError(f"run {run_id} has invalid payload fingerprint")
+            raise LedgerError(f"run {run_key} has invalid payload fingerprint")
     for family_id, family in families.items():
         if re.fullmatch(r"[0-9a-f]{64}", str(family_id)) is None:
             raise LedgerError(f"invalid family key: {family_id!r}")
@@ -150,8 +158,22 @@ def _run_id(value: object) -> int:
     return run_id
 
 
+def _attempt(payload: dict[str, Any]) -> int:
+    raw = payload.get("attempt", 1)
+    if isinstance(raw, bool):
+        raise LedgerError("run attempt must be a positive integer")
+    try:
+        attempt = int(cast(Any, raw))
+    except (TypeError, ValueError) as exc:
+        raise LedgerError("run attempt must be a positive integer") from exc
+    if attempt < 1:
+        raise LedgerError("run attempt must be a positive integer")
+    return attempt
+
+
 def _snapshot(payload: dict[str, Any]) -> dict[str, Any]:
     run_id = _run_id(payload.get("databaseId"))
+    attempt = _attempt(payload)
     sha = _text(payload.get("headSha"), "head SHA").lower()
     if FULL_SHA.fullmatch(sha) is None:
         raise LedgerError("head SHA must be a full lowercase 40-character hash")
@@ -191,7 +213,7 @@ def _snapshot(payload: dict[str, Any]) -> dict[str, Any]:
                 "failed_steps": failed_steps,
             }
         )
-    return {
+    snapshot = {
         "run_id": run_id,
         "sha": sha,
         "branch": branch,
@@ -201,6 +223,11 @@ def _snapshot(payload: dict[str, Any]) -> dict[str, Any]:
         "url": str(payload.get("url") or ""),
         "jobs": jobs,
     }
+    # Attempt 1 omits the field to preserve fingerprints already written by
+    # ledger version 1. Later attempts use a distinct run key and fingerprint.
+    if attempt > 1:
+        snapshot["attempt"] = attempt
+    return snapshot
 
 
 def _digest(value: object) -> str:
@@ -226,7 +253,8 @@ def observe_payload(
     """Record every terminal failure or resolve it with later hosted success."""
     validate_ledger(ledger)
     snapshot = _snapshot(payload)
-    run_key = str(snapshot["run_id"])
+    attempt = int(snapshot.get("attempt", 1))
+    run_key = str(snapshot["run_id"]) if attempt == 1 else f"{snapshot['run_id']}:{attempt}"
     fingerprint = _digest(snapshot)
     runs = cast(dict[str, Any], ledger["runs"])
     existing = runs.get(run_key)
@@ -261,6 +289,8 @@ def observe_payload(
             "sha": snapshot["sha"],
             "observed_at": observed_at,
         }
+        if attempt > 1:
+            occurrence["attempt"] = attempt
         family = families.get(family_id)
         if family is None:
             families[family_id] = {
@@ -296,7 +326,12 @@ def guard_rerun(
 ) -> list[str]:
     """Return every reason an existing terminal run must not be rerun."""
     validate_ledger(ledger)
-    run = cast(dict[str, Any], ledger["runs"]).get(str(run_id))
+    run_candidates = [
+        record
+        for record in cast(dict[str, Any], ledger["runs"]).values()
+        if record.get("run_id") == run_id
+    ]
+    run = max(run_candidates, key=_attempt) if run_candidates else None
     if run is None:
         return [f"run {run_id} has not been observed into the failure ledger"]
     if run["conclusion"] in SUCCESS_CONCLUSIONS:
@@ -309,6 +344,54 @@ def guard_rerun(
     if not reason.strip():
         return ["unchanged rerun override requires a non-empty reason"]
     return []
+
+
+def guard_runner_acquisition_rerun(
+    payload: dict[str, Any], annotations_by_job: dict[int, list[str]]
+) -> list[str]:
+    """Permit one retry only when every failure is hosted-runner acquisition."""
+    snapshot = _snapshot(payload)
+    attempt = _attempt(payload)
+    blockers: list[str] = []
+    if snapshot["conclusion"] in SUCCESS_CONCLUSIONS:
+        blockers.append("run already succeeded; infrastructure recovery is unnecessary")
+    if attempt != 1:
+        blockers.append(
+            f"runner-acquisition recovery limit reached at attempt {attempt}; "
+            "only attempt 1 may be retried automatically"
+        )
+
+    raw_jobs = cast(list[dict[str, Any]], payload["jobs"])
+    failed_jobs = [
+        job
+        for job in raw_jobs
+        if str(job.get("conclusion") or "").lower() not in SUCCESS_CONCLUSIONS
+    ]
+    if not failed_jobs:
+        blockers.append("run has no failed or cancelled jobs to recover")
+    for job in failed_jobs:
+        name = str(job.get("name") or "<unnamed>")
+        failed_steps = [
+            str(step.get("name") or "<unnamed>")
+            for step in job.get("steps", [])
+            if isinstance(step, dict)
+            and str(step.get("conclusion") or "").lower()
+            not in SUCCESS_CONCLUSIONS | {""}
+        ]
+        if failed_steps:
+            blockers.append(
+                f"job {name} executed failing steps: {', '.join(failed_steps)}"
+            )
+            continue
+        try:
+            job_id = _run_id(job.get("databaseId"))
+        except LedgerError:
+            blockers.append(f"job {name} has no valid check-run identity")
+            continue
+        messages = annotations_by_job.get(job_id, [])
+        if not any(RUNNER_ACQUISITION_MESSAGE in message for message in messages):
+            blockers.append(f"job {name} has no runner-acquisition annotation")
+    return blockers
 
 
 def record_repair(
@@ -414,7 +497,7 @@ def status_lines(ledger: dict[str, Any]) -> list[str]:
 
 
 def fetch_run(run_id: int, repository: str, *, runner: Runner = subprocess.run) -> dict[str, Any]:
-    """Fetch one immutable run with every job and step from GitHub."""
+    """Fetch the latest immutable attempt with every job and step from GitHub."""
     if REPOSITORY.fullmatch(repository) is None:
         raise LedgerError("repository must be owner/name")
     result = runner(
@@ -444,6 +527,71 @@ def fetch_run(run_id: int, repository: str, *, runner: Runner = subprocess.run) 
     if _run_id(payload.get("databaseId")) != run_id:
         raise LedgerError("GitHub returned a different run identity")
     return payload
+
+
+def fetch_job_annotations(
+    job_id: int, repository: str, *, runner: Runner = subprocess.run
+) -> list[str]:
+    """Fetch every annotation message for one check run without truncation."""
+    if job_id < 1:
+        raise LedgerError("check-run ID must be a positive integer")
+    if REPOSITORY.fullmatch(repository) is None:
+        raise LedgerError("repository must be owner/name")
+    result = runner(
+        [
+            "gh",
+            "api",
+            f"repos/{repository}/check-runs/{job_id}/annotations",
+            "--paginate",
+            "--slurp",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "gh api failed").strip()
+        raise LedgerError(f"check-run annotation lookup failed: {detail}")
+    try:
+        decoded = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError as exc:
+        raise LedgerError(f"check-run annotations returned invalid JSON: {exc}") from exc
+    if not isinstance(decoded, list):
+        raise LedgerError("check-run annotations must be an array")
+    raw_annotations: list[object] = []
+    for page in decoded:
+        if isinstance(page, list):
+            raw_annotations.extend(page)
+        else:
+            raw_annotations.append(page)
+    messages: list[str] = []
+    for index, raw in enumerate(raw_annotations):
+        annotation = _require_mapping(raw, f"check-run annotation {index}")
+        message = annotation.get("message")
+        if isinstance(message, str) and message.strip():
+            messages.append(message.strip())
+    return messages
+
+
+def fetch_runner_acquisition_annotations(
+    payload: dict[str, Any],
+    repository: str,
+    *,
+    fetcher: Callable[[int, str], list[str]] = fetch_job_annotations,
+) -> dict[int, list[str]]:
+    """Fetch annotations for every non-successful job in a terminal attempt."""
+    raw_jobs = payload.get("jobs")
+    if not isinstance(raw_jobs, list):
+        raise LedgerError("GitHub run jobs must be an array")
+    annotations: dict[int, list[str]] = {}
+    for index, raw_job in enumerate(raw_jobs):
+        job = _require_mapping(raw_job, f"job {index}")
+        if str(job.get("conclusion") or "").lower() in SUCCESS_CONCLUSIONS:
+            continue
+        job_id = _run_id(job.get("databaseId"))
+        annotations[job_id] = fetcher(job_id, repository)
+    return annotations
 
 
 def fetch_run_index(
@@ -644,6 +792,12 @@ def _parser() -> argparse.ArgumentParser:
     rerun.add_argument("--reason", default="")
     rerun.add_argument("--validate-only", action="store_true")
 
+    infra_rerun = commands.add_parser("guard-runner-acquisition-rerun")
+    infra_rerun.add_argument("--run", type=int, required=True)
+    infra_rerun.add_argument("--repo", default=DEFAULT_REPOSITORY)
+    infra_rerun.add_argument("--ledger", type=Path, default=DEFAULT_LEDGER)
+    infra_rerun.add_argument("--validate-only", action="store_true")
+
     repair = commands.add_parser("repair")
     repair.add_argument("--family", action="append", default=[])
     repair.add_argument("--all-open", action="store_true")
@@ -738,6 +892,23 @@ def _command_rerun(args: argparse.Namespace) -> int:
     )
 
 
+def _command_runner_acquisition_rerun(args: argparse.Namespace) -> int:
+    if args.validate_only:
+        print("CI_FAILURE_RUNNER_ACQUISITION_RERUN_GUARD_VALIDATE_ONLY_PASS")
+        return 0
+    payload = fetch_run(args.run, args.repo)
+    attempt = _attempt(payload)
+    run_key = str(args.run) if attempt == 1 else f"{args.run}:{attempt}"
+    ledger = read_ledger(args.ledger)
+    if run_key not in cast(dict[str, Any], ledger["runs"]):
+        raise LedgerError(f"run {run_key} must be observed before recovery")
+    annotations = fetch_runner_acquisition_annotations(payload, args.repo)
+    return _print_blockers(
+        guard_runner_acquisition_rerun(payload, annotations),
+        "RUNNER_ACQUISITION_RERUN",
+    )
+
+
 def _command_repair(args: argparse.Namespace) -> int:
     if MAKE_TARGET.fullmatch(args.evidence_target) is None:
         raise LedgerError("evidence target must be one plain make target")
@@ -797,6 +968,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "observe-sha": _command_observe_sha,
             "status": _command_status,
             "guard-rerun": _command_rerun,
+            "guard-runner-acquisition-rerun": _command_runner_acquisition_rerun,
             "repair": _command_repair,
             "guard-push": _command_push,
         }

@@ -1,29 +1,41 @@
 #!/usr/bin/env python3
-"""validate_release_checksums.py — AC006: checksum-validation.
+"""Validate the canonical SHA256SUMS index against published release assets."""
 
-Every release artifact listed in checksums.txt MUST be downloadable and its
-SHA256 MUST match the listed checksum. The checksums file MUST itself be one
-of the release assets.
-"""
+from __future__ import annotations
 
 import hashlib
+import json
 import os
 import subprocess
 import sys
 import tempfile
-import urllib.request
+from pathlib import Path
+
+CHECKSUM_ASSET_NAME = "SHA256SUMS"
+DEFAULT_REPOSITORY = "sandboxcom/gludd"
 
 
-def get_checksums_content(tag: str) -> str | None:
-    """Fetch checksums.txt asset content from a GitHub release."""
+def get_checksums_content(tag: str, repository: str = DEFAULT_REPOSITORY) -> str | None:
+    """Return the published aggregate checksum index without writing it to disk."""
     try:
         result = subprocess.run(
-            ["gh", "release", "download", tag, "--pattern", "checksums.txt", "--dir", "-", "--output", "-"],
+            [
+                "gh",
+                "release",
+                "download",
+                tag,
+                "--repo",
+                repository,
+                "--pattern",
+                CHECKSUM_ASSET_NAME,
+                "--output",
+                "-",
+            ],
             capture_output=True,
             text=True,
             timeout=60,
         )
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         return None
     if result.returncode != 0:
         return None
@@ -31,85 +43,179 @@ def get_checksums_content(tag: str) -> str | None:
 
 
 def parse_checksums(content: str) -> dict[str, str]:
-    """Parse standard SHA256 checksum file into {filename: sha256} dict."""
+    """Parse a standard SHA-256 index into ``filename -> digest`` entries."""
     entries: dict[str, str] = {}
-    for line in content.strip().split("\n"):
-        line = line.strip()
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
         parts = line.split()
-        if len(parts) >= 2:
-            sha = parts[0]
-            name = parts[-1].lstrip("*")
-            if len(sha) == 64 and all(c in "0123456789abcdef" for c in sha):
-                entries[name] = sha
+        if len(parts) < 2:
+            continue
+        digest = parts[0]
+        name = parts[-1].lstrip("*")
+        if len(digest) == 64 and all(char in "0123456789abcdef" for char in digest):
+            entries[name] = digest
     return entries
 
 
-def download_artifact(tag: str, filename: str) -> bytes | None:
-    """Download a single release asset and return its bytes."""
+def get_release_asset_names(
+    tag: str, repository: str = DEFAULT_REPOSITORY
+) -> set[str] | None:
+    """Return the exact published asset-name set, or ``None`` on API failure."""
     try:
-        with tempfile.TemporaryDirectory() as td:
+        result = subprocess.run(
+            [
+                "gh",
+                "release",
+                "view",
+                tag,
+                "--repo",
+                repository,
+                "--json",
+                "assets",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        payload: object = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict) or not isinstance(payload.get("assets"), list):
+        return None
+    names: set[str] = set()
+    for asset in payload["assets"]:
+        if not isinstance(asset, dict) or not isinstance(asset.get("name"), str):
+            return None
+        names.add(asset["name"])
+    return names
+
+
+def validate_checksum_coverage(
+    entries: dict[str, str], release_assets: set[str]
+) -> list[str]:
+    """Require one safe digest entry for every asset except the index itself."""
+    errors: list[str] = []
+    unsafe = sorted(name for name in entries if Path(name).name != name)
+    if unsafe:
+        errors.append("unsafe checksum names: " + ", ".join(unsafe))
+
+    safe_entries = {name for name in entries if Path(name).name == name}
+    expected = release_assets - {CHECKSUM_ASSET_NAME}
+    missing = sorted(expected - safe_entries)
+    absent = sorted(safe_entries - expected)
+    if missing:
+        errors.append("checksums missing published assets: " + ", ".join(missing))
+    if absent:
+        errors.append("checksums reference absent assets: " + ", ".join(absent))
+    if CHECKSUM_ASSET_NAME not in release_assets:
+        errors.append(f"published release is missing {CHECKSUM_ASSET_NAME}")
+    return errors
+
+
+def download_artifact_digest(
+    tag: str, filename: str, repository: str = DEFAULT_REPOSITORY
+) -> str | None:
+    """Download one asset to bounded temporary storage and return its SHA-256."""
+    if Path(filename).name != filename:
+        return None
+    try:
+        with tempfile.TemporaryDirectory(prefix="gludd-release-checksum-") as temp_dir:
+            output = Path(temp_dir) / "asset"
             result = subprocess.run(
-                ["gh", "release", "download", tag, "--pattern", filename, "--dir", td],
+                [
+                    "gh",
+                    "release",
+                    "download",
+                    tag,
+                    "--repo",
+                    repository,
+                    "--pattern",
+                    filename,
+                    "--output",
+                    str(output),
+                ],
                 capture_output=True,
                 text=True,
-                timeout=120,
+                timeout=300,
             )
-            if result.returncode != 0:
+            if result.returncode != 0 or not output.is_file():
                 return None
-            filepath = os.path.join(td, filename)
-            if not os.path.exists(filepath):
-                return None
-            with open(filepath, "rb") as f:
-                return f.read()
+            digest = hashlib.sha256()
+            with output.open("rb") as artifact:
+                for chunk in iter(lambda: artifact.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            return digest.hexdigest()
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         return None
 
 
-def main():
-    tag = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("TAG", "")
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    tag = args[0] if args else os.environ.get("TAG", "")
+    repository = os.environ.get("GLUDD_GITHUB_REPOSITORY", DEFAULT_REPOSITORY)
     if not tag:
         print("AC006: INCONCLUSIVE — TAG required")
-        sys.exit(2)
+        return 2
 
-    checksums_content = get_checksums_content(tag)
+    checksums_content = get_checksums_content(tag, repository)
     if not checksums_content:
-        print(f"AC006: INCONCLUSIVE — checksums.txt not found for {tag}")
-        sys.exit(2)
+        print(f"AC006: INCONCLUSIVE — {CHECKSUM_ASSET_NAME} not readable for {tag}")
+        return 2
 
     entries = parse_checksums(checksums_content)
     if not entries:
-        print("AC006: FAIL — checksums.txt is empty or unparseable")
-        sys.exit(1)
+        print(f"AC006: FAIL — {CHECKSUM_ASSET_NAME} is empty or unparseable")
+        return 1
 
-    print(f"AC006: Found {len(entries)} entries in checksums.txt for {tag}")
+    release_assets = get_release_asset_names(tag, repository)
+    if release_assets is None:
+        print(f"AC006: INCONCLUSIVE — cannot enumerate published assets for {tag}")
+        return 2
 
-    failures = 0
-    for filename, expected_sha in sorted(entries.items()):
-        artifact_bytes = download_artifact(tag, filename)
-        if artifact_bytes is None:
-            print(f"AC006: FAIL — {filename}: cannot download")
-            failures += 1
-            continue
+    coverage_errors = validate_checksum_coverage(entries, release_assets)
+    for error in coverage_errors:
+        print(f"AC006: FAIL — {error}")
+    if coverage_errors:
+        return 1
 
-        actual_sha = hashlib.sha256(artifact_bytes).hexdigest()
-        if actual_sha != expected_sha:
+    print(
+        f"AC006: Found {len(entries)} complete entries in "
+        f"{CHECKSUM_ASSET_NAME} for {tag}",
+        flush=True,
+    )
+    mismatches = 0
+    unavailable = 0
+    for filename, expected_digest in sorted(entries.items()):
+        print(f"AC006: VERIFY — downloading {filename}", flush=True)
+        actual_digest = download_artifact_digest(tag, filename, repository)
+        if actual_digest is None:
+            print(f"AC006: INCONCLUSIVE — {filename}: cannot download")
+            unavailable += 1
+        elif actual_digest != expected_digest:
             print(
                 f"AC006: FAIL — {filename}: checksum mismatch "
-                f"(expected {expected_sha[:12]}..., got {actual_sha[:12]}...)"
+                f"(expected {expected_digest[:12]}..., got {actual_digest[:12]}...)"
             )
-            failures += 1
+            mismatches += 1
         else:
             print(f"AC006: PASS — {filename}: checksum verified")
 
-    if failures:
-        print(f"AC006: FAIL — {failures} checksum mismatch(es)")
-        sys.exit(1)
-
-    print(f"AC006: PASS — all {len(entries)} checksums verified for {tag}")
-    sys.exit(0)
+    if mismatches:
+        print(f"AC006: FAIL — {mismatches} checksum mismatch(es)")
+        return 1
+    if unavailable:
+        print(f"AC006: INCONCLUSIVE — {unavailable} asset download(s) unavailable")
+        return 2
+    print(f"AC006: PASS — all {len(entries)} published asset checksums verified for {tag}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

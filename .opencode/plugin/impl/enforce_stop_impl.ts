@@ -1282,7 +1282,7 @@ const defaultImpl: HotModule = {
 
       return {
         text: [
-          "POST-SHIP CONTINUATION: after shipping, continue to next pending item.",
+          "POST-SHIP CONTINUATION BLOCKED: after shipping, continue to next pending item.",
           "Text-only after commit/push is a stop.",
         ].join("\n"),
       }

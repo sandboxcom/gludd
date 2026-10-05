@@ -238,6 +238,16 @@ class TestProcessBackendExecute:
         kill_group.assert_not_called()
         process.kill.assert_not_called()
 
+    def test_pending_process_termination_is_requested_only_once(self) -> None:
+        from general_ludd.sandbox.backends import process_backend as module
+
+        process = mock.Mock(pid=0, returncode=None)
+
+        module._terminate_owned_process(cast(subprocess.Popen[str], process))
+        module._terminate_owned_process(cast(subprocess.Popen[str], process))
+
+        process.kill.assert_called_once_with()
+
     def test_cancellation_terminates_and_reaps_verified_child_group(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -435,7 +445,7 @@ class TestProcessBackendExecute:
             popen_kwargs.update(kwargs)
             return process
 
-        monkeypatch.setattr(os, "name", "nt")
+        monkeypatch.setattr(module, "_IS_POSIX", False)
         monkeypatch.setattr(subprocess, "Popen", fake_popen)
 
         result = module.ProcessBackend(SandboxConfig(timeout=1)).execute("wait")
@@ -502,6 +512,32 @@ class TestProcessBackendExecute:
 
         assert len(result.stdout) == 40
         assert len(result.stderr) == 10
+        assert result.memory_used_bytes == 2048
+
+    def test_output_budget_trims_longer_stderr_first(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from general_ludd.sandbox.backends import process_backend as module
+
+        class FakeProcess:
+            pid = 56
+            returncode = 0
+
+            def communicate(self, *, timeout: float) -> tuple[str, str]:
+                return "x" * 10, "e" * 80
+
+        monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: FakeProcess())
+        monkeypatch.setattr(sys, "platform", "linux")
+        monkeypatch.setattr(
+            resource,
+            "getrusage",
+            lambda _kind: SimpleNamespace(ru_utime=0.0, ru_stime=0.0, ru_maxrss=2),
+        )
+
+        result = module.ProcessBackend(SandboxConfig(max_output_bytes=50)).execute("emit")
+
+        assert len(result.stdout) == 10
+        assert len(result.stderr) == 40
         assert result.memory_used_bytes == 2048
 
     def test_respects_workdir(self, tmp_path: Path) -> None:

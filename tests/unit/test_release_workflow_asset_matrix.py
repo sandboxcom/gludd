@@ -122,6 +122,40 @@ def test_deep_matrix_verifier_runs_before_release_publish() -> None:
     assert "SHA256SUMS" in WORKFLOW
 
 
+def test_release_assets_receive_signed_build_provenance_before_publish() -> None:
+    """The exact staged matrix must be attested by the workflow that built it."""
+    workflow = yaml.safe_load(WORKFLOW)
+    release = workflow["jobs"]["release"]
+    permissions = release["permissions"]
+
+    assert permissions["contents"] == "write"
+    assert permissions["packages"] == "write"
+    assert permissions["id-token"] == "write"
+    assert permissions["attestations"] == "write"
+
+    steps = release["steps"]
+    attestation = next(
+        step for step in steps if step.get("name") == "Attest release asset provenance"
+    )
+    assert attestation["uses"] == (
+        "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6"
+    )
+    assert attestation["with"]["subject-checksums"] == "release-assets/SHA256SUMS"
+
+    checksum_index = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("name") == "Generate SHA256SUMS aggregate"
+    )
+    attest_index = steps.index(attestation)
+    publish_index = next(
+        index
+        for index, step in enumerate(steps)
+        if str(step.get("uses", "")).startswith("softprops/action-gh-release@")
+    )
+    assert checksum_index < attest_index < publish_index
+
+
 def test_every_release_artifact_upload_fails_on_missing_files() -> None:
     release_region = WORKFLOW[WORKFLOW.index("\n  linux:\n") :]
     upload_count = release_region.count("actions/upload-artifact@")
