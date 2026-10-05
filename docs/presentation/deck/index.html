@@ -881,6 +881,21 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
+<!-- SLIDE 19h: RELEASE AND WORKTREE RESILIENCE -->
+<!-- ============================================================ -->
+<section data-contract="release-resilience-boundaries">
+  <p class="stage-kicker">Resilience sequence &middot; evidence to confinement</p>
+  <h2>Recover safely without weakening identity</h2>
+  <ol class="bullets-tight">
+    <li><strong>Prove the release:</strong> bind CI and functional artifact smoke to the <strong>exact tagged SHA</strong>. The v0.1.1 receipt records <strong>46 artifacts</strong>, <strong>32 completeness checks</strong>, and <strong>zero zero-byte assets</strong>.</li>
+    <li><strong>Replay bounded recovery:</strong> open the <strong>read-only thread projection</strong>, select one thread + inclusive ordinals, replay in a temporary tree, and publish only after the whole batch validates.</li>
+    <li><strong>Confine worktree identity:</strong> resolve canonical filesystem identity; aliases and escapes fail closed before Git operations. In linked-worktree tests, main-checkout writes are denied before they occur while reads remain allowed.</li>
+  </ol>
+  <p class="honest-note">v0.1.1 stays immutable: its unsigned tag and no SLSA attestation are recorded exceptions. New releases fix forward with signed-tag verification before push and <code>gh release verify</code> over <code>SHA256SUMS</code>; recovery complements isolated worktrees.</p>
+  <p class="cite">Sources: docs/RELEASE_RUNBOOK.md &middot; docs/releases/audit-0.1.1.json &middot; docs/features/CODEX_FILE_CHANGE_RECOVERY.md &middot; docs/features/WORKTREE_AUDIT_IDENTITY_CONTRACT.md</p>
+</section>
+
+<!-- ============================================================ -->
 <!-- SLIDE 20: SECURITY -->
 <!-- ============================================================ -->
 <section>
