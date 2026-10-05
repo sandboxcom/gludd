@@ -245,6 +245,37 @@ when intermediate descendants exit. Gludd therefore discovers repository
 membership from Git, protects each recorded owner tree, and verifies command
 identity again immediately before signaling.
 
+#### Legacy-watchdog compatibility shield
+
+Repository-wide owner discovery protects gates only after every task watchdog
+has adopted the repaired code. A watchdog already running from an older linked
+worktree cannot be upgraded atomically, and its historical candidate filter
+already excludes commands containing the lowercase token `watchdog`. A new
+gate therefore carries the explicit `watchdog-owned-gate` marker through every
+long-lived command layer: detached recursive Make owner, integration wrapper,
+integration pytest child, serial shard runner, and isolated or batched pytest
+children. This closes the rolling-upgrade window without weakening the current
+PID, start-time, worktree-inventory, and process-tree checks.
+
+The marker is defense in depth, not a transferable ownership claim. It is added
+only by gate-owned entrypoints; ordinary `make test`, integration, and shard
+commands keep their existing shape. New watchdogs continue to derive authority
+from Git membership and verified process lineage rather than trusting arbitrary
+command text. Regressions construct the real child commands and require the
+marker at every layer, while existing tests prove unrelated stale work remains
+eligible for bounded cleanup.
+
+Rollout is ZDD: command arguments change, but no listener, service, data schema,
+or application process restarts. A running gate is not replaced. The next
+detached gate gets the shield as it starts, and a rollback removes the marker
+only after all legacy watchdogs are proven stopped or upgraded. During mixed
+versions, removing it first would reopen the cross-worktree termination window.
+The design follows long-lived practitioner reports about orphaned subprocesses
+in [pytest-timeout issue #159](https://github.com/pytest-dev/pytest-timeout/issues/159),
+wrong-process selection in [psutil issue #2335](https://github.com/giampaolo/psutil/issues/2335),
+and durable process-group ownership in
+[psutil issue #2534](https://github.com/giampaolo/psutil/issues/2534).
+
 This division follows years of upstream practitioner discussion. The
 pytest-timeout session-timeout request distinguishes an external CI deadline
 from a stuck individual test, while the still-open child-cleanup report shows
