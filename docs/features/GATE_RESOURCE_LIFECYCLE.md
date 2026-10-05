@@ -78,6 +78,40 @@ no data migration or service restart. During rollback, use
 `make active-work-status` as the authoritative cross-worktree snapshot rather
 than inferring idleness from the legacy main-checkout-only view.
 
+### Concurrent gate-lite evidence
+
+Two linked worktrees can safely execute their bounded two-worker `gate-lite`
+unit phases at the same time, but they must not publish into the same evidence
+file. The former recipe redirected both sessions with shell truncation to
+`/tmp/gludd-gate-lite-test.log`. A later session could therefore erase the
+first session's progress, while either operator could read the other session's
+failure marker or tail. The pytest base directories were distinct, but the
+diagnostic ownership boundary was not.
+
+The unit phase now runs through the existing observable-command wrapper under
+the invoking checkout's `OBSERVED_ROOT`, using the `gate-lite-unit` label and a
+fresh run identifier. Each worktree therefore owns a different root, and each
+invocation owns a different retained log and trace within that root. The
+wrapper streams pytest output, emits periodic heartbeats, preserves the exact
+exit status, enforces the existing quiet and whole-run deadlines, and retains
+at most the configured run count. Failure output tails that label's newest
+owned run instead of a host-global filename. The two-worker cap, fail-fast
+behavior, unique base directory, and zero worker-restart policy remain intact.
+
+This ownership rule matches a long-lived pytest-xdist practitioner report.
+[pytest-xdist issue 331, opened in 2018](https://github.com/pytest-dev/pytest-xdist/issues/331)
+documents that pytest's file logger opens in write mode and that mixing worker
+output makes complete troubleshooting evidence difficult. Appending every
+Gludd session to one file would retain the same ambiguity; unique worktree and
+run ownership prevents both truncation and interleaving.
+
+The change is gate-only and ZDD-safe: it adds no service, migration, listener,
+or worker, and observed-run retention is already bounded. Paths come from the
+fixed repository-local root and label rather than test data. Rollback is a
+Make/test/documentation revert after active new-format gates exit; restoring
+the shared `/tmp` log while concurrent worktrees run would knowingly restore
+cross-run evidence corruption.
+
 ### Distribution cleanup
 
 `make clean CLEAN_VALIDATE_ONLY=1` is the safe behavioral contract. Actual mode

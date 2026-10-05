@@ -33,15 +33,19 @@ The cleaner applies these rules in order:
 2. Enumerate only Git-registered worktrees inside the two approved Gludd
    namespaces. Unregistered directories are owned by the separate orphan
    classifier and are never inferred to be disposable here.
-3. Preserve the registered worktree that contains the invoking path, even when
+3. When the invoking path is inside an approved namespace, require that the
+   same canonical Git snapshot contains a registered worktree that owns it.
+   An omitted invoker makes the whole cleanup pass fail closed before any peer
+   is removed.
+4. Preserve the registered worktree that contains the invoking path, even when
    no process snapshot happens to mention it.
-4. Require a direct, real `.venv` directory. Refuse links and non-directories.
-5. Refresh Git registration immediately before deletion. A missing, moved,
+5. Require a direct, real `.venv` directory. Refuse links and non-directories.
+6. Refresh Git registration immediately before deletion. A missing, moved,
    malformed, prunable, or out-of-namespace registration is a refusal.
-6. Take a bounded process snapshot after the registration refresh. Preserve a
+7. Take a bounded process snapshot after the registration refresh. Preserve a
    peer when its canonical path appears in any visible command line. Process
    inspection failure is also a refusal.
-7. Report every eligible, removed, skipped, or errored path and return nonzero
+8. Report every eligible, removed, skipped, or errored path and return nonzero
    for safety-evidence failures.
 
 The authoritative registry remains `git worktree list --porcelain -z`. Git
@@ -67,6 +71,8 @@ even when process enumeration has a transient blind spot.
 
 - Candidate authority comes from Git's canonical NUL-porcelain registry, not
   directory names, globs, branch strings, or caller-controlled shell expansion.
+- A namespace-local invocation must be present in that canonical registry;
+  incomplete or stale evidence cannot authorize deletion of a peer.
 - The cleaner accepts only strict descendants of approved worktree namespaces
   and only the direct `.venv` child of a registered root. Symlink escapes fail
   closed.

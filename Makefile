@@ -2054,17 +2054,20 @@ gate-lite: disk-cleanup-preflight _dead-code-baseline-refresh check-opencode-int
 	@echo "=== GATE-LITE PHASE: test (unit, 2 workers, fail-fast) ==="
 	@printf "test " >> .gate-lite-status
 	@# 2 workers (not 8) avoids the local OOM; -x fails fast; unique basetemp
-	@# prevents collision with any in-flight full gate; output is tee'd to a
-	@# log so a failure surfaces its cause (No Unseen Events).
+	@# prevents collision with any in-flight full gate. The observed runner keeps
+	@# worktree-local, run-namespaced evidence and streams progress/heartbeats.
 	@# test_ansible_lint_deep.py excluded from parallel run (xdist worker crash).
 	@BT=$$(mktemp -d /tmp/gludd-gate-lite-XXXXXX); \
-	if $(UV) run python -m pytest tests/unit -q --no-header -x --basetemp="$$BT" -n 2 --maxprocesses=2 --ignore=tests/unit/test_ansible_lint_deep.py > /tmp/gludd-gate-lite-test.log 2>&1; then \
+	if $(UV) run python scripts/stream_command.py --root "$(OBSERVED_ROOT)" --label gate-lite-unit \
+		--heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" --quiet-secs "$(OBSERVED_QUIET_SECS)" \
+		--max-secs "$(OBSERVED_MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)" --pytest-trace -- \
+		$(UV) run python -m pytest tests/unit -q --no-header -x --basetemp="$$BT" -n 2 --maxprocesses=2 --max-worker-restart=0 -p scripts.xdist_trace_plugin --ignore=tests/unit/test_ansible_lint_deep.py; then \
 		echo "PASS 0" >> .gate-lite-status; \
 	else \
 		echo "FAIL non-zero-exit" >> .gate-lite-status; \
 		touch .gate-lite-failed; \
-		echo "[gate-lite] test FAILED — tail of /tmp/gludd-gate-lite-test.log:"; \
-		tail -30 /tmp/gludd-gate-lite-test.log; \
+		echo "[gate-lite] test FAILED — retained run tail:"; \
+		$(UV) run python scripts/stream_command.py --tail 30 --root "$(OBSERVED_ROOT)" --label gate-lite-unit; \
 	fi; \
 	rm -rf "$$BT"
 	@printf "test-ansible-lint-deep " >> .gate-lite-status
