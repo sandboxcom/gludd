@@ -2,15 +2,64 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
-## [0.1.1] — 2026-09-25
+## [0.1.1] — 2026-10-05
+
+- Source range: `v0.1.0-beta.4..v0.1.1` (826 commits; release source `5dcd2f6931aa6cb13d4de526d6c739891c0240f1`).
 
 ### Added
-- S83.166 release documentation: release notes, pre-release checklist, and runbook references for v0.1.1.
+
+- Provider-neutral accelerator discovery and facts for Apple Metal, Intel XPU,
+  NVIDIA, AMD, JAX TPU, FPGA, Slurm, and future accelerator kinds.
+- Model and runner right-sizing across single, fractional, multi-device, and
+  multi-host topologies for llama.cpp, vLLM, Ollama, and compatible runners.
+- Azure Container Apps and Azure VM/VMSS accelerator planning, owned lifecycle,
+  least-privilege credential handling, bounded spend, and teardown evidence.
+- Pinned FreeLLMAPI source admission, upstream Node 20/22 build verification,
+  provider catalog normalization, isolated scoring-kernel evaluation, frozen
+  corpus receipts, and fail-closed rollback/provenance records.
+- Universal polymer-design and Arduino-class firmware workloads using the same
+  scheduler, model gateway, accelerator placement, policy, and evidence boundary
+  as self-improvement work.
+- Reproducible cross-platform release artifacts, container and Ansible execution
+  environment images, SBOM, checksums, licenses, provenance manifest, and smoke
+  attestations.
 
 ### Changed
-- `pyproject.toml` and `src/general_ludd/__init__.py` bumped to version `0.1.1`.
-- README.md status line updated to `Status as of v0.1.1 — 2026-09-25`.
-- `docs/RELEASE_RUNBOOK.md` updated to reference v0.1.1.
+
+- Compute demand now originates in the durable todo scheduler, with project- and
+  provider-scoped ownership, bounded claims, observable use, and exact idle
+  teardown.
+- Accelerator discovery, placement, model scoring, and universal execution are
+  owned by general infrastructure/model packages; self-improvement is one
+  consumer rather than the architecture owner.
+- `greenlet` is a production dependency because SQLAlchemy asyncio requires it
+  in installed wheel environments.
+- Version-bearing metadata and release documentation now identify v0.1.1.
+
+### Fixed
+
+- Exact-SHA pipeline reporting now aggregates required hosted workflows and
+  rejects missing, stale, pending, cancelled, or contradictory evidence.
+- Release builds now preserve complete failure output, use pinned toolchains and
+  dependency locks, validate Ansible base-image liveness, and smoke every
+  packaged form before publication.
+- Resource ownership, cleanup, disk-pressure handling, process namespacing,
+  branch reconciliation, and guarded push reporting were hardened against the
+  failure modes found during the v0.1.1 release cycle.
+
+### Known limitations
+
+- The bounded Azure Container Apps T4 proof reached deployment but Azure placed
+  zero replicas; positive GPU-utilization and accepted mixed-provider evidence
+  remain separately tracked.
+- The FreeLLMAPI v0.11.1 candidate remains non-runtime-admitted: the live Z.AI
+  probe was rate-limited and the cross-engine/promotion prerequisites remain
+  fail-closed. The previously admitted, digest-pinned integration is unchanged.
+- The immutable published v0.1.1 tag is annotated but unsigned, and its release
+  assets have a deterministic source manifest and checksums but no signed SLSA
+  attestation. Neither public identity was rewritten after publication. The
+  release workflow now signs future tags before push and creates GitHub/Sigstore
+  provenance for the complete checksum-indexed asset set before publication.
 
 ## [0.1.0-beta.4] — 2026-08-09
 

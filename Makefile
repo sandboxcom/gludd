@@ -773,6 +773,7 @@ help:
 	@echo "  --- Recovery ---"
 	@echo "  reap-orphan-pytest    Report stale orphan pytest trees (APPLY=1 to terminate)"
 	@echo "  reap-stale-collection-locks  Reap only old project-owned collection/gate-refresh locks (APPLY=1)"
+	@echo "  replay-codex-file-changes  Atomically validate/replay a bounded Codex file-change range"
 	@echo "  backup-opencode       Backup .opencode/ -> .opencode.orig/ (excludes node_modules/)"
 	@echo "  check-opencode-backup  Warn if .opencode.orig/ is stale (>24h older than .opencode/)"
 	@echo "  restore-opencode      Restore .opencode/ (backup then git fallback) + clear cache"
@@ -4091,12 +4092,13 @@ verify-remote: require-sandboxcom-ssh-key
 	REMOTE_SHORT=$$(echo $$REMOTE | cut -c1-$${#SHA}); \
 	if [ "$$SHA" = "$$REMOTE_SHORT" ]; then echo "VERIFIED $$BR@$$SHA"; else echo "REMOTE MISMATCH: remote=$$REMOTE expected=$$SHA" && exit 1; fi
 
-# Create an annotated tag and push it to sandboxcom to trigger the tag-gated
+# Create a signed annotated tag and push it to sandboxcom to trigger the tag-gated
 # release job (version -> gate -> builds -> release). Usage:
 #   make git-tag-push TAG=v0.1.0-alpha.1 COMMIT=<sha> MSG='alpha release'
 git-tag-push: _push-rate-guard require-sandboxcom-ssh-key
 	@[ -n "$(TAG)" ] || { echo "Usage: make git-tag-push TAG=v0.1.0-alpha.N [COMMIT=<sha>] [MSG='...']"; exit 1; }
-	@git tag -a "$(TAG)" $(if $(COMMIT),$(COMMIT)) -m "$(if $(MSG),$(MSG),$(TAG))"
+	@git tag -s -a "$(TAG)" $(if $(COMMIT),$(COMMIT)) -m "$(if $(MSG),$(MSG),$(TAG))"
+	@$(MAKE) --no-print-directory check-tag-signing TAG="$(TAG)"
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
 	@echo "Pushed tag $(TAG) to sandboxcom/gludd (triggers release job)"
 
@@ -4422,6 +4424,7 @@ git-tag-delete: git-tag-rm
 release-recut: _push-rate-guard require-sandboxcom-ssh-key
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-recut TAG=v0.1.0-alpha.1"; exit 1; }
 	@git tag -l "$(TAG)" | grep -q "$(TAG)" || { echo "ERROR: local tag $(TAG) not found"; exit 1; }
+	@$(MAKE) --no-print-directory check-tag-signing TAG="$(TAG)"
 	@$(MAKE) -s require-ci-green SHA=$$(git rev-parse "$(TAG)^{commit}")
 	@set -e; TAG_SHA="$$(git rev-parse "$(TAG)^{commit}")"; \
 		BASELINE="$$( $(MAKE) -s ci-await BRANCH="$(TAG)" TIMEOUT="$(RELEASE_AWAIT_TIMEOUT)" SHA="$$TAG_SHA" CI_AWAIT_WORKFLOW="Build and Release" CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL="$(RELEASE_AWAIT_INTERVAL)" CI_AWAIT_AFTER_RUN_ID=0 CI_AWAIT_VALIDATE_ONLY=0 CI_AWAIT_SNAPSHOT_ONLY=1 )"; \
@@ -8347,6 +8350,20 @@ db-sample-part:
 
 db-tables:
 	@sqlite3 $(OPENCODE_DB) ".tables" 2>/dev/null
+
+# Recover a bounded set of completed Codex file-change events. Validation is
+# the default; CODEX_REPLAY_APPLY=1 publishes only after the entire batch has
+# replayed successfully in an isolated temporary tree.
+replay-codex-file-changes:
+	@[ -n "$(CODEX_REPLAY_DB)" ] && [ -n "$(CODEX_REPLAY_RECORDED_REPO)" ] && [ -n "$(CODEX_REPLAY_THREAD_ID)" ] && [ -n "$(CODEX_REPLAY_START)" ] && [ -n "$(CODEX_REPLAY_END)" ] || { echo "Usage: make replay-codex-file-changes CODEX_REPLAY_DB=path CODEX_REPLAY_RECORDED_REPO=path CODEX_REPLAY_THREAD_ID=uuid CODEX_REPLAY_START=n CODEX_REPLAY_END=n CODEX_REPLAY_APPLY=0|1"; exit 2; }
+	@case "$(CODEX_REPLAY_APPLY)" in 0|1) ;; *) echo "CODEX_REPLAY_APPLY must be 0 or 1"; exit 2;; esac
+	@case "$(CODEX_REPLAY_VALIDATE_ONLY)" in 0|1) ;; *) echo "CODEX_REPLAY_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@if [ "$(CODEX_REPLAY_VALIDATE_ONLY)" = "1" ]; then \
+		test -f scripts/replay_codex_file_changes.py; \
+		echo "CODEX_REPLAY_CONFIG_OK apply=$(CODEX_REPLAY_APPLY) range=$(CODEX_REPLAY_START)-$(CODEX_REPLAY_END)"; \
+	else \
+		$(UV) run python scripts/replay_codex_file_changes.py --database "$(CODEX_REPLAY_DB)" --repo . --recorded-repo "$(CODEX_REPLAY_RECORDED_REPO)" --thread-id "$(CODEX_REPLAY_THREAD_ID)" --start-ordinal "$(CODEX_REPLAY_START)" --end-ordinal "$(CODEX_REPLAY_END)" $(if $(filter 1,$(CODEX_REPLAY_APPLY)),--apply,); \
+	fi
 
 db-count:
 	@sqlite3 $(OPENCODE_DB) "SELECT COUNT(*) FROM message;" 2>/dev/null

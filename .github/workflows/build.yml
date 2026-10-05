@@ -1751,6 +1751,11 @@ jobs:
     needs: [version, gate, release_source_proof, freellmapi-upstream-build, test-shard, coverage, molecule, linux, macos, windows, termux, container, ansible-ee, game-building]
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
     # A skipped prerequisite normally skips dependent jobs. Here skips are the
     # expected tag state only for heavyweight validation already proved by the
     # exact-SHA development run. Every tag-specific producer must still pass.
@@ -1932,6 +1937,13 @@ jobs:
             echo "::error::RELEASE FUNCTIONAL MATRIX FAILED"
             exit 1
           }
+      - name: Attest release asset provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4.2.2 (node24)
+        with:
+          # The aggregate contains every staged asset except itself. Passing the
+          # same digest index used by the matrix verifier prevents the
+          # attestation subject set from drifting from the published files.
+          subject-checksums: release-assets/SHA256SUMS
       - name: Inspect existing release
         # action-gh-release updates the release for an existing tag. Inspect it
         # for audit visibility; a stale DRAFT left from a prior aborted run is
