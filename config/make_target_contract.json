@@ -1353,6 +1353,11 @@
       "name": "test-failures",
       "make_variables": ["TEST_FAILURES_CACHE", "TEST_FAILURES_LIMIT"],
       "behavior": "make test-failures TEST_FAILURES_CACHE=/tmp/gludd-no-prior-failures-contract.json TEST_FAILURES_LIMIT=5"
+    },
+    {
+      "name": "gate-background-observed",
+      "make_variables": ["GATE_TIMEOUT", "GATE_POLL_INTERVAL", "GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY"],
+      "behavior": "make gate-background-observed GATE_TIMEOUT=7200 GATE_POLL_INTERVAL=60 GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY=1"
     }
   ]
 }
