@@ -32,7 +32,9 @@ from scripts.task_watchdog import (
 def test_direct_script_execution_has_process_cleanup_import_fallback() -> None:
     """The Makefile launches the file path, so imports must work outside package mode."""
     source = Path(__file__).resolve().parents[2] / "scripts" / "task_watchdog.py"
-    assert "from process_cleanup import descendant_processes, snapshot_processes" in source.read_text()
+    source_text = source.read_text()
+    assert "from process_cleanup import descendant_processes, snapshot_processes" in source_text
+    assert "from active_work_status import _repository_roots" in source_text
 
 # ---------------------------------------------------------------------------
 # load_deadlines
@@ -373,6 +375,38 @@ class TestFindHungProcesses:
 
         assert [proc["pid"] for proc in procs] == [88888]
 
+    def test_excludes_gate_tree_owned_by_registered_linked_worktree(
+        self, tmp_path: Path
+    ) -> None:
+        """One worktree's watchdog cannot terminate another worktree's gate."""
+        main_root = tmp_path / "main"
+        linked_root = tmp_path / "linked"
+        main_root.mkdir()
+        (linked_root / ".gate-logs").mkdir(parents=True)
+        linked_gate_pid = 55555
+        (linked_root / ".gate-logs" / "gate-run.lock").write_text(
+            json.dumps({"pid": linked_gate_pid})
+        )
+        ps_output = (
+            "  PID  PPID ELAPSED COMMAND\n"
+            f"{linked_gate_pid}     1 10:00 make gate\n"
+            "66666 55555 10:00 uv run python -m pytest tests/integration\n"
+            "77777 66666 10:00 python3 -m pytest tests/integration\n"
+            "88888     1 10:00 make test-unit\n"
+        )
+        with patch("scripts.task_watchdog.subprocess.run") as mock_run:
+            mock_run.return_value = mock_run.return_value.__class__(
+                stdout=ps_output, returncode=0
+            )
+            procs = find_hung_processes(
+                timeout_secs=300,
+                gate_pid_file=str(main_root / ".gate-background.pid"),
+                gate_run_lock_file=str(main_root / ".gate-logs" / "gate-run.lock"),
+                repository_roots=(main_root, linked_root),
+            )
+
+        assert [proc["pid"] for proc in procs] == [88888]
+
     def test_malformed_gate_lock_does_not_exempt_processes(self, tmp_path: Path) -> None:
         """Corrupt ownership evidence cannot create a broad kill exemption."""
         gate_run_lock_file = tmp_path / "gate-run.lock"
@@ -457,6 +491,49 @@ class TestRunOnce:
         assert result["killed"] >= 1
         kills = json.loads(killed_file.read_text())
         assert len(kills) >= 1
+
+    def test_stale_scan_receives_complete_repository_worktree_inventory(
+        self, tmp_path: Path
+    ) -> None:
+        """The production poll protects gate owners in every Git worktree."""
+        now_ms = time.time() * 1000
+        deadlines_file = tmp_path / "deadlines.json"
+        deadlines_file.write_text(json.dumps({"stale-task": now_ms - 400_000}))
+        roots = (tmp_path / "main", tmp_path / "linked")
+
+        with (
+            patch("scripts.task_watchdog._repository_roots", return_value=roots),
+            patch("scripts.task_watchdog.find_hung_processes", return_value=[]) as mock_find,
+        ):
+            result = run_once(
+                deadlines_file=str(deadlines_file),
+                stale_file=str(tmp_path / "stale.json"),
+                killed_file=str(tmp_path / "killed.json"),
+            )
+
+        assert result == {"stale": 1, "killed": 0}
+        mock_find.assert_called_once_with(timeout_secs=300.0, repository_roots=roots)
+
+    def test_worktree_inventory_failure_prevents_ambiguous_kill(
+        self, tmp_path: Path
+    ) -> None:
+        """Missing ownership evidence fails safe before destructive scanning."""
+        now_ms = time.time() * 1000
+        deadlines_file = tmp_path / "deadlines.json"
+        deadlines_file.write_text(json.dumps({"stale-task": now_ms - 400_000}))
+
+        with (
+            patch("scripts.task_watchdog._repository_roots", side_effect=OSError("git unavailable")),
+            patch("scripts.task_watchdog.find_hung_processes") as mock_find,
+        ):
+            result = run_once(
+                deadlines_file=str(deadlines_file),
+                stale_file=str(tmp_path / "stale.json"),
+                killed_file=str(tmp_path / "killed.json"),
+            )
+
+        assert result == {"stale": 0, "killed": 0}
+        mock_find.assert_not_called()
 
     def test_no_hung_processes_means_no_kills(self, tmp_path: Path) -> None:
         """Stale task but no matching process = no kill (already exited)."""

@@ -181,15 +181,23 @@ foreground gate publishes its owner atomically in
 bounded gate indistinguishable from an abandoned task.
 
 `scripts/task_watchdog.py` now reads both owner records and excludes the union
-of each verified owner and its observed descendants. It still identifies and
-kills unrelated stale `pytest`, `make test`, Ansible, and Molecule processes;
-missing or malformed ownership evidence grants no exemption. This preserves
-the watchdog's bounded-resource and recovery behavior without allowing one
-control plane to cancel another control plane's observable, independently
-bounded work. The gate continues to emit progress and retains its own phase,
-no-progress, and whole-run limits, so the change does not create an unbounded
-execution path. Rollback is limited to removing the foreground-lock reader and
-its regression, with no state migration or resource mutation.
+of each verified owner and its observed descendants. The ownership inventory
+must cover every checkout registered by `git worktree list --porcelain`, not
+only the watchdog's invoking checkout. The deadline ledger and process scan are
+host-global, so a checkout-local exemption would let one linked worktree's
+watchdog terminate another linked worktree's healthy gate. If Git cannot
+establish the repository inventory, the destructive scan fails safe and sends
+no signal.
+
+Unrelated stale `pytest`, `make test`, Ansible, and Molecule processes remain
+eligible when they are outside every active gate tree; missing or malformed
+gate records grant no individual exemption. This preserves the watchdog's
+bounded-resource and recovery behavior without allowing one control plane to
+cancel another control plane's observable, independently bounded work. The
+gate continues to emit progress and retains its own phase, no-progress, and
+whole-run limits, so the change does not create an unbounded execution path.
+Rollback is limited to removing the repository-wide ownership reader and its
+regressions, with no state migration or resource mutation.
 
 The ownership requirement matches long-lived practitioner evidence. The open
 [pytest-timeout subprocess cleanup report](https://github.com/pytest-dev/pytest-timeout/issues/159)
@@ -197,7 +205,13 @@ documents child processes surviving timeout termination and recommends an
 owning wrapper; [pytest issue #5243](https://github.com/pytest-dev/pytest/issues/5243)
 documents that `SIGTERM` does not run ordinary fixture finalizers. Those reports
 make process-tree authority—not elapsed time alone—the safe termination
-boundary.
+boundary. [psutil issue #2335](https://github.com/giampaolo/psutil/issues/2335)
+warns that command-line inference can become a security issue and kill the
+wrong process, while [psutil issue #2534](https://github.com/giampaolo/psutil/issues/2534)
+records practitioner experience that process groups preserve ownership even
+when intermediate descendants exit. Gludd therefore discovers repository
+membership from Git, protects each recorded owner tree, and verifies command
+identity again immediately before signaling.
 
 This division follows years of upstream practitioner discussion. The
 pytest-timeout session-timeout request distinguishes an external CI deadline
