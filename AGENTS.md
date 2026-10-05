@@ -3290,6 +3290,67 @@ Checking ci-status more than 3 times in a row without intervening code changes i
 stop pattern. Each poll produces zero progress; only code changes unblock CI.
 If you find yourself polling, dispatch a subagent that produces a deliverable instead.
 
+## CRITICAL: CI Status Must Be Actionable — No Passive Polling
+
+`make ci-status` returns only workflow-level ternary state (`in_progress` / `success` /
+`failure`). Reporting that state repeatedly — especially in message after message with
+no other action — is passive polling, not work. It hides the actual signal (which shard
+failed, which step is running, how long jobs are taking) and wastes turns.
+
+### Rule
+
+Every CI observation MUST produce actionable insight or trigger an immediate next
+action. After the first high-level check, do not poll again with `make ci-status` until
+you have either:
+
+1. Used a rich target to see per-job/step state, or
+2. Dispatched a subagent to reproduce a failing shard locally, or
+3. Made and pushed a code change that can alter the CI outcome.
+
+### Rich CI insight targets (use these instead of bare `ci-status`)
+
+- `make ci-run-summary RUN=<id>` — per-job status, conclusion, duration, counts.
+- `make ci-view RUN=<id>` — detailed job/step view (works once terminal).
+- `make ci-dashboard` — compact listing of recent runs across branches.
+- `make ci-active` — JSON of currently in-flight runs.
+- `make ci-annotations-anon RUN=<id>` / `make ci-checkrun-anno CHECK=<id>` —
+  failure annotations for failed jobs.
+- `make ci-job-log RUN=<id> JOB=<substring>` — full tail of a specific job log.
+- `make ci-faillog RUN=<id>` — failed-step logs once the run is terminal.
+- `make ci-diagnose RUN=<id>` — grouped failure annotations/root causes.
+
+### When a run is in_progress
+
+Use `ci-run-summary` to see which jobs have already completed and whether any have
+failed. A single failed shard is enough to know the run will be red. Do not wait for
+the whole workflow to finish; immediately reproduce that shard locally with
+`make test-ci-shard SHARD=<name>` (or `make test-ci-shard-slice` to narrow it) and
+start fixing.
+
+### When a run has failures
+
+1. Identify the failing job name from `ci-run-summary`.
+2. Fetch annotations with `ci-annotations-anon` / `ci-checkrun-anno`.
+3. Reproduce locally with `make test-ci-shard SHARD=<shard>`.
+4. Fix the test or code, verify the shard passes, commit, and push.
+
+### Anti-patterns (forbidden)
+
+- Sending a series of messages that only say "Build and Release is still in_progress."
+- Calling `make ci-status` three or more times in a row without using a rich target or
+dispatching work.
+- Waiting for a run to finish before investigating a job that already shows `failure`.
+- Reporting CI state without also stating what failed, what is running, and what you
+are doing next.
+
+### Enforcement
+
+- **Prompt** — this section (proactive instruction).
+- **Test** — `tests/unit/test_no_passive_ci_polling.py` pins the section and the rich
+  target list.
+- **Plugin** — future `enforce-no-wait.ts` / `enforce-stop.ts` extension will track
+  consecutive `ci-status` calls and require an actionable target or dispatch.
+
 ## CRITICAL: Git Operations Are Not Grinding (DC.3)
 
 `make git-add`, `make git-commit`, `make git-push-sandboxcom`, `make batch-push`,
