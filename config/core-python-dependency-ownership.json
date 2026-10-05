@@ -275,6 +275,21 @@
       ],
       "runtime_evidence": []
     },
+    "greenlet": {
+      "collection_import_paths": [],
+      "collection_requirement_paths": [],
+      "core_import_paths": [],
+      "disposition": "retain-core",
+      "import_roots": [
+        "greenlet"
+      ],
+      "runtime_evidence": [
+        {
+          "path": "src/general_ludd/db/session.py",
+          "token": "greenlet>=3.0.0 is required by SQLAlchemy asyncio."
+        }
+      ]
+    },
     "httpx": {
       "collection_import_paths": [
         "collections/ansible_collections/general_ludd/chat/plugins/modules/chat_send.py"

@@ -50,14 +50,12 @@ not controller or managed-host runtime ownership. Any added, removed, moved, or
 stale consumer therefore makes the normal unit suite fail with an exact path
 diff.
 
-The replay found no additional package that can safely leave the core lock.
 Every direct dependency has at least one static core production consumer except
-four exact runtime-selected dependencies: `aiosqlite` is named by the default
-SQLAlchemy URL, `langchain-openai` by the default provider registry, `msgpack`
-by the safe-cache importlib seam, and `uvicorn-worker` by Gunicorn's worker-class
-string. Those four references are pinned by path and token rather than hidden
-behind a broad unused-dependency allowlist. Because all packages remain proven
-core requirements, `pyproject.toml` and `uv.lock` are intentionally unchanged.
+five exact runtime-selected dependencies: `aiosqlite` is named by the default
+SQLAlchemy URL, `greenlet` by the SQLAlchemy asyncio implementation, `langchain-openai`
+by the default provider registry, `msgpack` by the safe-cache importlib seam, and
+`uvicorn-worker` by Gunicorn's worker-class string. Those five references are pinned
+by path and token rather than hidden behind a broad unused-dependency allowlist.
 
 ## Dynamic and entrypoint adjudications
 
@@ -69,6 +67,7 @@ The narrow DEP002 list is not a blanket rule suppression:
   the managed interpreter's `python -m ansible_builder` entrypoint, avoiding a
   host wrapper while keeping Ansible imports outside Gludd's core runtime.
 - aiosqlite is selected through the SQLAlchemy URL scheme.
+- greenlet is required by SQLAlchemy's asyncio implementation.
 - boto3, msgpack, OpenTelemetry, Torch, and langchain-openai are loaded with
   guarded `importlib` calls.
 - pqcrypto selects a versioned KEM module dynamically.
