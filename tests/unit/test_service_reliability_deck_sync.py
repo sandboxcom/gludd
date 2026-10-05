@@ -6,6 +6,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DECK = ROOT / "docs/presentation/deck/index.html"
+SERVICE_DISCOVERY_CONTRACT = (
+    ROOT / "docs/features/SERVICE_DISCOVERY_SEARCH_TERM_SCHEMA.md"
+)
 
 
 def _reliability_slide() -> str:
@@ -33,6 +36,8 @@ def test_reveal_deck_composes_the_four_reliability_boundaries_in_order() -> None
         "(identifier, query)",
         "plain strings stay compatible",
         "empty results preserve the catalog",
+        "project-scoped catalog",
+        "health-socket state",
         "monkeypatch",
         "PID + counter",
         "pre-startup",
@@ -64,3 +69,16 @@ def test_reveal_deck_retains_prior_decisions_and_live_tokens() -> None:
         "{{GENERATED_AT}}",
     ):
         assert token in deck
+
+
+def test_service_discovery_contract_retains_namespace_isolation_evidence() -> None:
+    """Canonical docs retain the boundary and the practitioner evidence."""
+    contract = SERVICE_DISCOVERY_CONTRACT.read_text(encoding="utf-8")
+
+    for marker in (
+        "project_namespace",
+        "health-socket state",
+        "hashicorp/consul/issues/5842",
+        "pytest-dev/pytest-xdist/issues/524",
+    ):
+        assert marker in contract
