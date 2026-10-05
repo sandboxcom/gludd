@@ -916,7 +916,40 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19h: SERVICE RELIABILITY BOUNDARIES -->
+<!-- SLIDE 19h: S83.116 MONOTONIC DEBOUNCE STATE -->
+<!-- ============================================================ -->
+<section data-contract="s83-116-monotonic-debounce">
+  <p class="stage-kicker">Reliability contract &middot; deterministic clocks to rollback</p>
+  <h2>S83.116 &mdash; Monotonic state <span class="badge-green">Deterministic</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Preserve timing truth</h3>
+      <ul class="bullets-tight">
+        <li><code>None</code>, never a zero clock epoch, represents missing state.</li>
+        <li>A trailing debounce restarts its quiet-period deadline from the latest call; max-wait caps a sustained burst.</li>
+        <li>Throttle windows use their logical timer deadline, so late test or scheduler delivery cannot shift the next window.</li>
+        <li>Async leading callbacks and the replaceable trailing timer have separate task ownership on the event loop clock.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Measured, bounded, observable</h3>
+      <ul class="bullets-tight">
+        <li><strong>Tests:</strong> 160/160 warning-strict focused + adjacent checks</li>
+        <li><strong>Coverage:</strong> 95% aggregate; <code>debounce.py</code> / <code>debounce_v2.py</code> / <code>timing.py</code> = 90% / 93% / 98%</li>
+        <li><strong>Watchdog:</strong> live registration is idempotent until <code>finish</code> starts a new generation.</li>
+        <li><strong>Resources:</strong> one trailing timer and latest argument record per instance; only live leading tasks are retained; zero network or filesystem access.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">
+    ZDD uses rolling replacement and categorized timing metrics; drain old workers so admitted
+    callbacks finish or cancel normally; source-only rollback restores no test-local prototype.
+  </p>
+  <p class="cite">Sources: docs/features/DEBOUNCE_MONOTONIC_STATE.md &middot; Python <code>time.monotonic</code> / <code>loop.time</code> &middot; Lodash debounce model &middot; long-lived asyncio cancellation reports</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19i: SERVICE RELIABILITY BOUNDARIES -->
 <!-- ============================================================ -->
 <section data-contract="service-reliability-boundaries">
   <p class="stage-kicker">Reliability sequence &middot; input to teardown</p>
@@ -932,7 +965,7 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19i: RELEASE AND WORKTREE RESILIENCE -->
+<!-- SLIDE 19j: RELEASE AND WORKTREE RESILIENCE -->
 <!-- ============================================================ -->
 <section data-contract="release-resilience-boundaries">
   <p class="stage-kicker">Resilience sequence &middot; evidence to confinement</p>
