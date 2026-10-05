@@ -60,8 +60,12 @@ class ServiceDiscoveryPipeline:
             TypeError: If a search-term entry has an unsupported shape or type.
             ValueError: If a search-term tuple has the wrong arity or blank text.
         """
-        selected_terms: Sequence[object] = search_terms or DEFAULT_SEARCH_TERMS
+        selected_terms: Sequence[object] = (
+            DEFAULT_SEARCH_TERMS if search_terms is None else search_terms
+        )
         normalized_terms = _normalize_search_terms(selected_terms)
+        if not normalized_terms:
+            normalized_terms = _normalize_search_terms(DEFAULT_SEARCH_TERMS)
         self._searx = SearXConnector({
             "base_url": searx_url,
             # The bundled managed SearX service binds to loopback; this is an
@@ -202,6 +206,9 @@ def _extract_service_name(result: SearXResult) -> str | None:
 
 def _normalize_search_terms(search_terms: Sequence[object]) -> list[str]:
     """Validate labeled/default and legacy plain-string search terms."""
+    if isinstance(search_terms, (str, bytes)):
+        raise TypeError("search_terms must be a sequence of entries, not a scalar string")
+
     normalized: list[str] = []
     for index, entry in enumerate(search_terms):
         if isinstance(entry, str):
