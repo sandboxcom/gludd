@@ -855,37 +855,133 @@ graph TD
 <!-- SLIDE 19f: S83.163 FREELLMAPI FROZEN-DELTA HOLD -->
 <!-- ============================================================ -->
 <section data-contract="s83-163-frozen-delta-hold">
-  <p class="stage-kicker">Decision &middot; 2026-10-05 &middot; frozen-delta review</p>
+  <p class="stage-kicker">Decision &middot; 2026-10-05 &middot; exact three-arm replay</p>
   <h2>S83.163 &mdash; FreeLLMAPI promotion remains <span class="badge-yellow">HOLD</span></h2>
   <div class="two-col">
     <div>
-      <h3>Evidence we have vs. need</h3>
+      <h3>Exact evidence executed</h3>
       <ul class="bullets-tight">
-        <li><strong>Current evidence:</strong> <code>v0.9.9 synthetic</code>; four fixtures, not a promotion corpus</li>
-        <li><strong>Missing:</strong> exact v0.11.1 frozen replay; upstream <code>v0.12.0</code> waits for the next serial review</li>
+        <li><strong>Current evidence:</strong> exact v0.11.1 executed from signed 4191d8e7</li>
         <li><strong>Paired arms:</strong> native Gludd / <code>v0.9.9</code> / exact <code>v0.11.1</code></li>
         <li><strong>Corpus:</strong> 32 route groups &times; 3 = 96 observations, plus 8 exclusions frozen before scoring</li>
+        <li><strong>Next serial review:</strong> upstream <code>v0.12.0</code>; no retargeting here</li>
       </ul>
     </div>
     <div>
-      <h3>Every gate must clear</h3>
+      <h3>Why HOLD is mandatory</h3>
       <ul class="bullets-tight">
-        <li>Brier LCB &ge; +0.02 versus both comparators</li>
-        <li>Exact two-sided McNemar <code>p &lt; 0.05</code></li>
-        <li>No stratum worse by &gt;0.02 Brier loss</li>
-        <li>p95 latency &le; 5 ms; RSS &le; 32 MiB; cost = $0; zero faults</li>
+        <li><strong>vs native:</strong> LCB +0.5166; McNemar p = 4.66e-10</li>
+        <li><strong>vs v0.9.9:</strong> LCB 0.0; McNemar p = 1.0 &rarr; two gates fail</li>
+        <li><strong>Resources:</strong> 0.244458 ms max; 0.015625 MiB RSS delta</li>
+        <li><strong>Isolation:</strong> Node = QuickJS; network/cost/faults = 0</li>
       </ul>
     </div>
   </div>
   <p class="honest-note">
-    No retargeting: evaluate the reviewed v0.11.1 identity. A pass permits later
-    build/provenance/ZDD review only; a miss leaves v0.9.9 serving and runtime admission false.
+    No retargeting and no promotion: v0.9.9 stays serving, runtime admission remains false,
+    and even an all-green replay could only enter a separate build/provenance/ZDD review.
   </p>
   <p class="cite">Practitioner inputs: #456, discussion #533, #608, #666, #880, #1210, #1262 &middot; Source: docs/design/FREELLMAPI_UPSTREAM_INTEGRATION.md</p>
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19g: SERVICE RELIABILITY BOUNDARIES -->
+<!-- SLIDE 19g: S83.114 FAIL-CLOSED CHEMISTRY ENTITY RESOLUTION -->
+<!-- ============================================================ -->
+<section data-contract="s83-114-chemistry-entity-resolution">
+  <p class="stage-kicker">Chemistry contract &middot; typed failure to reversible rollout</p>
+  <h2>S83.114 &mdash; Chemistry identities <span class="badge-green">Fail closed</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Evidence, never inference</h3>
+      <ul class="bullets-tight">
+        <li>Only an unknown representation may carry the <strong>complete empty sentinel</strong>; one-sided empty states are rejected.</li>
+        <li>Stereo text evidence stays <code>specified / partial / unknown</code>; isotope evidence stays <code>specified / natural / unknown</code>.</li>
+        <li>The submitted text survives canonicalization, while the marker adapter remains a narrow <strong>RDKit adapter seam</strong>, not a molecular parser.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Measured and bounded</h3>
+      <ul class="bullets-tight">
+        <li><strong>Tests:</strong> 116/116 warning-strict focused + adjacent checks</li>
+        <li><strong>Coverage:</strong> 94% aggregate; <code>core.py</code> / <code>schemas.py</code> = 92% / 99%</li>
+        <li><strong>Resources:</strong> fixed regex scans, linear input work, constant state, and zero network access</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">
+    ZDD canary status counts distinguish unknown, partial, natural, and specified evidence.
+    Keep resolution and validation on the same worker; on rollback, drain or pin sentinel-bearing requests
+    before a source-only rollback.
+  </p>
+  <p class="cite">Sources: docs/features/CHEMISTRY_ENTITY_FAIL_CLOSED_RESOLUTION.md &middot; Pydantic model validators &middot; RDKit stereochemistry guidance and long-lived practitioner threads</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19h: S83.115 X.509 CHAIN VALIDATION -->
+<!-- ============================================================ -->
+<section data-contract="s83-115-x509-chain-validation">
+  <p class="stage-kicker">Security contract &middot; standards-consistent issuance to rollback</p>
+  <h2>S83.115 &mdash; X.509 chains <span class="badge-green">Fail closed</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Issue only authorized certificates</h3>
+      <ul class="bullets-tight">
+        <li>Verify the <strong>CSR proof-of-possession</strong> and require that the signing key matches issuer identity.</li>
+        <li>A CA needs critical BasicConstraints plus certificate-signing key use; unknown uses and invalid windows are rejected.</li>
+        <li>Choose each issuer by <strong>verified signature</strong>, reject cycles and unknown critical extensions, and count path length toward subordinate CAs.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Measured and bounded</h3>
+      <ul class="bullets-tight">
+        <li><strong>Tests:</strong> 210/210 warning-strict focused + adjacent checks</li>
+        <li><strong>Coverage:</strong> 95% aggregate; 90% branch coverage in the touched production file</li>
+        <li><strong>Boundary:</strong> caller-supplied trust boundary; <code>O(n)</code> walk and zero network access</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">
+    ZDD uses rolling replacement and categorized rejection metrics. Existing malformed CA
+    material stays rejected; drain in-flight issuance before a source-only rollback.
+  </p>
+  <p class="cite">Sources: docs/features/X509_CHAIN_VALIDATION.md &middot; cryptography <code>verify_directly_issued_by</code> &middot; pyca/cryptography #10276 and GHSA-m959-cc7f-wv43</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19h: S83.116 MONOTONIC DEBOUNCE STATE -->
+<!-- ============================================================ -->
+<section data-contract="s83-116-monotonic-debounce">
+  <p class="stage-kicker">Reliability contract &middot; deterministic clocks to rollback</p>
+  <h2>S83.116 &mdash; Monotonic state <span class="badge-green">Deterministic</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Preserve timing truth</h3>
+      <ul class="bullets-tight">
+        <li><code>None</code>, never a zero clock epoch, represents missing state.</li>
+        <li>A trailing debounce restarts its quiet-period deadline from the latest call; max-wait caps a sustained burst.</li>
+        <li>Throttle windows use their logical timer deadline, so late test or scheduler delivery cannot shift the next window.</li>
+        <li>Async leading callbacks and the replaceable trailing timer have separate task ownership on the event loop clock.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Measured, bounded, observable</h3>
+      <ul class="bullets-tight">
+        <li><strong>Tests:</strong> 160/160 warning-strict focused + adjacent checks</li>
+        <li><strong>Coverage:</strong> 95% aggregate; <code>debounce.py</code> / <code>debounce_v2.py</code> / <code>timing.py</code> = 90% / 93% / 98%</li>
+        <li><strong>Watchdog:</strong> live registration is idempotent until <code>finish</code> starts a new generation.</li>
+        <li><strong>Resources:</strong> one trailing timer and latest argument record per instance; only live leading tasks are retained; zero network or filesystem access.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">
+    ZDD uses rolling replacement and categorized timing metrics; drain old workers so admitted
+    callbacks finish or cancel normally; source-only rollback restores no test-local prototype.
+  </p>
+  <p class="cite">Sources: docs/features/DEBOUNCE_MONOTONIC_STATE.md &middot; Python <code>time.monotonic</code> / <code>loop.time</code> &middot; Lodash debounce model &middot; long-lived asyncio cancellation reports</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19i: SERVICE RELIABILITY BOUNDARIES -->
 <!-- ============================================================ -->
 <section data-contract="service-reliability-boundaries">
   <p class="stage-kicker">Reliability sequence &middot; input to teardown</p>
@@ -901,7 +997,7 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19h: RELEASE AND WORKTREE RESILIENCE -->
+<!-- SLIDE 19j: RELEASE AND WORKTREE RESILIENCE -->
 <!-- ============================================================ -->
 <section data-contract="release-resilience-boundaries">
   <p class="stage-kicker">Resilience sequence &middot; evidence to confinement</p>

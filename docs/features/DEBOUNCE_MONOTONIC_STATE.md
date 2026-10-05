@@ -21,6 +21,9 @@ unchanged until `finish` closes that generation.
   callers do not maintain substitute state machines.
 - A synchronous caller may inject a monotonic-compatible clock. `None`, not a
   timestamp such as `0.0`, represents missing state.
+- Each trailing debounce call restarts the quiet-period deadline from that
+  call. When configured, max-wait caps that moving deadline for a sustained
+  burst.
 - A throttle admits the configured leading edge at most once per window and
   retains only the latest suppressed call for its trailing edge. A late
   deterministic tick records the logical timer deadline, not wall-clock delay,

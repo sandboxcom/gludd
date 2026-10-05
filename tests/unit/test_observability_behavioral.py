@@ -193,6 +193,14 @@ class TestMakefileMonitoringTargets:
         mk = MAKEFILE.read_text()
         assert "ps:" in mk and "ps-gludd:" in mk
 
+    def test_ps_gludd_surfaces_watchdog_daemons_without_pid_files(self) -> None:
+        """An orphaned watchdog must remain visible after ownership-file loss."""
+        mk = MAKEFILE.read_text()
+        block = mk.split("\nps-gludd:\n", 1)[1].split("\n\n", 1)[0]
+
+        assert r"task_watchdog\.py" in block
+        assert r"agent_watchdog\.py" in block
+
     def test_ps_delegates_to_cross_worktree_owned_process_inventory(self) -> None:
         """The lightweight process census must not hard-code one checkout."""
         mk = MAKEFILE.read_text()
