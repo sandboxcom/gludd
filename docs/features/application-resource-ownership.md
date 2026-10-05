@@ -23,6 +23,16 @@ class `close`/`aclose`, a FastAPI shutdown owner, a structured task group, or a
 tracked registry that is cancelled and awaited. Injected clients and external
 model endpoints remain caller-owned and are never stopped by Gludd.
 
+## Durable todo claim ownership
+
+For todo-driven compute, the claim commit and session close precede provisioning.
+Commit failure or rollback clears the detached claimed batch, so neither the
+provider nor the runner can observe provisional ownership. Under competing
+workers and restart, the database fence yields
+one durable winner and one provisioning call.
+Non-runnable work retains zero allocation. A worker without that durable proof
+neither provisions nor tears down foreign compute.
+
 Cloud compute uses a project-scoped composite identity: project, provider, and
 instance identifier. The lifecycle manager permits the same provider-local
 identifier in different projects without overwriting either owner. An unscoped
