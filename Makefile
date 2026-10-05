@@ -2919,8 +2919,27 @@ disk-check:
 uv-cache-prune-status:
 	@/bin/ps -ax -o pid=,ppid=,etime=,command= | /usr/bin/awk '/[u]v cache prune/ { found=1; print } END { if (!found) print "UV_CACHE_PRUNE_IDLE" }'
 
+UV_CACHE_PRUNE_TIMEOUT ?= 300
+UV_CACHE_PRUNE_FORCE ?= 0
+
 uv-cache-prune:
-	@$(UV) cache prune --ci
+	@if [ "$(UV_CACHE_PRUNE_FORCE)" = "1" ]; then \
+		echo "UV_CACHE_PRUNE_FORCE=1: pruning uv cache with $(UV_CACHE_PRUNE_TIMEOUT)s timeout"; \
+	elif /bin/ps -ax -o command= | /usr/bin/awk '/[u]v[[:space:]]+(run|sync|pip|build|add)/ { found=1 } END { exit !found }'; then \
+		echo "UV_CACHE_PRUNE_SKIP active uv processes detected; skipping prune (set UV_CACHE_PRUNE_FORCE=1 to override)"; \
+		exit 0; \
+	else \
+		echo "Pruning uv cache (timeout $(UV_CACHE_PRUNE_TIMEOUT)s)..."; \
+	fi; \
+	$(UV) cache prune --ci & _pid=$$!; _elapsed=0; _hb=5; \
+	while kill -0 $$_pid 2>/dev/null; do \
+		sleep $$_hb; _elapsed=$$((_elapsed + _hb)); \
+		echo "UV_CACHE_PRUNE_HEARTBEAT pid=$$_pid elapsed_s=$$_elapsed max_s=$(UV_CACHE_PRUNE_TIMEOUT)"; \
+		if [ $$_elapsed -ge "$(UV_CACHE_PRUNE_TIMEOUT)" ]; then \
+			echo "UV_CACHE_PRUNE_TIMEOUT pid=$$_pid elapsed_s=$$_elapsed"; kill $$_pid 2>/dev/null || true; wait $$_pid 2>/dev/null || true; break; \
+		fi; \
+	done; \
+	wait $$_pid 2>/dev/null || true
 
 # Automatic disk preflight: clean only generated caches in completed/inactive
 # Gludd worktrees, then fail closed unless both canonical limits are healthy.
