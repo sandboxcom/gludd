@@ -890,6 +890,34 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
+<!-- SLIDE 19f.1: S83.113 QEMU IMPORT ISOLATION -->
+<!-- ============================================================ -->
+<section data-contract="s83-113-qemu-import-isolation">
+  <p class="stage-kicker">Test-isolation contract &middot; reversible module-graph probes</p>
+  <h2>S83.113 &mdash; QEMU import probes <span class="badge-green">Isolated</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Restore only what the probe owns</h3>
+      <ul class="bullets-tight">
+        <li>A <strong>prefix-scoped</strong> <code>sys.modules</code> snapshot removes and restores only the <code>general_ludd</code> family.</li>
+        <li>Saved <strong>parent-to-child bindings</strong> are restored; normally loaded <strong>third-party dependencies stay cached</strong>.</li>
+        <li><strong>QEMU detection semantics remain unchanged</strong>: unsupported hosts and missing binaries still fail closed.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Measured and bounded</h3>
+      <ul class="bullets-tight">
+        <li><strong>Tests:</strong> 75/75 warning-strict QEMU + Terraform adjacency</li>
+        <li><strong>Coverage:</strong> QEMU source = 100% line and branch</li>
+        <li><strong>Resources:</strong> process-local snapshot, constant worker count, zero network, files, or services</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">ZDD has no runtime artifact, API, schema, process, or deployment change; promote with ordered import adjacency and use a source-only test-harness rollback.</p>
+  <p class="cite">Sources: docs/features/QEMU_IMPORT_ISOLATION.md &middot; CPython #27515 and #24029 &middot; Python Help package-alias discussion</p>
+</section>
+
+<!-- ============================================================ -->
 <!-- SLIDE 19g: S83.114 FAIL-CLOSED CHEMISTRY ENTITY RESOLUTION -->
 <!-- ============================================================ -->
 <section data-contract="s83-114-chemistry-entity-resolution">
@@ -1023,7 +1051,7 @@ graph TD
   <p class="stage-kicker">Reliability sequence &middot; input to teardown</p>
   <h2>Four boundaries keep failure contained</h2>
   <ol class="bullets-tight">
-    <li><strong>Validate before I/O:</strong> labeled <code>(identifier, query)</code> defaults; plain strings stay compatible; malformed shapes fail closed, while empty results preserve the catalog.</li>
+    <li><strong>Validate before I/O:</strong> labeled <code>(identifier, query)</code> defaults; plain strings stay compatible; malformed shapes fail closed, while empty results preserve the catalog. Opt-in <code>project_namespace</code> creates a project-scoped catalog, so reconciling one health-socket state cannot retire another.</li>
     <li><strong>Isolate every test:</strong> <code>monkeypatch</code> owns environment teardown and PID + counter streak files prevent parallel workers sharing authorization state.</li>
     <li><strong>Choose lifecycle explicitly:</strong> pre-startup <code>/readyz</code> proves the 503 boundary; context-managed startup proves 200 readiness; model-health checks keep a per-app in-memory database.</li>
     <li><strong>Keep shutdown observable:</strong> a closed log stream falls back to stderr file descriptor 2, then restore handlers + propagation after cleanup.</li>

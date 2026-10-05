@@ -20,6 +20,10 @@ GLUDD_TASK_TIMEOUT ?= 300
 TIMEOUT ?= 3600
 GATE_POLL_INTERVAL ?= 60
 GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY ?= 0
+GATE_EXPECTED_PID ?=
+# Expand MAKE before recipe execution so launcher recipes are ordinary commands
+# under `make -n`; direct $(MAKE) references would execute despite dry-run mode.
+_GATE_MAKE := $(MAKE)
 INTERVAL ?= 300
 RELEASE_AWAIT_TIMEOUT ?= 5400
 RELEASE_AWAIT_INTERVAL ?= 10
@@ -2303,7 +2307,7 @@ BRANCHES ?=
 MERGE_STRATEGY ?= stop-on-conflict
 MANIFEST ?= /tmp/gludd-gated-merge-manifest.txt
 
-gated-merge:
+gated-merge: _gate-mutation-guard
 	@BASE='$(BASE)' BRANCHES='$(BRANCHES)' MERGE_STRATEGY='$(MERGE_STRATEGY)' MANIFEST='$(MANIFEST)' bash scripts/gated_merge.sh
 
 STALL_SECS ?= 180
@@ -5705,7 +5709,10 @@ _gate-fresh-check: check-gate-fresh
 # when make exits, fd 9 closes and the lock auto-releases. This is LAYER 1 of the
 # commit-serialization guardrail (AGENTS.md). LAYER 2 is the enforce-commit-lock
 # plugin that wraps the ENTIRE bash tool call boundary.
-_commit-lock-acquire:
+_gate-mutation-guard:
+	@$(UV) run python scripts/gate_run_lock.py assert-inactive "$(GATE_RUN_LOCK)" "$$PPID"
+
+_commit-lock-acquire: _gate-mutation-guard
 	@exec 9>/tmp/gludd-commit.lock; \
 	flock -n 9 2>/dev/null || python3 -c "import fcntl; f=open('/tmp/gludd-commit.lock'); \
 	  fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)" 2>/dev/null || { \
@@ -5911,7 +5918,7 @@ git-branch:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-branch MSG='branch-name'"; exit 1; fi
 	@git branch "$(MSG)"
 
-git-checkout:
+git-checkout: _gate-mutation-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-checkout MSG='branch-name'"; exit 1; fi
 	@git checkout "$(MSG)"
 
@@ -5940,7 +5947,7 @@ git-reset-hard:
 	@git reset --hard "$(MSG)"
 	@echo "Hard reset to $(MSG) — all uncommitted changes discarded."
 
-git-cherry-pick:
+git-cherry-pick: _gate-mutation-guard
 	@if [ -z "$(SHA)" ]; then echo "Usage: make git-cherry-pick SHA=<commit>"; exit 1; fi
 	@git cherry-pick "$(SHA)"
 
@@ -6044,7 +6051,7 @@ agent-worktree-base:
 # Merge a subagent's worktree branch back to master. Run on the MAIN checkout
 # (never from inside a worktree). Usage:
 #   make agent-merge BRANCH=agent-fix-slurm
-agent-merge:
+agent-merge: _gate-mutation-guard
 	@[ -n "$(BRANCH)" ] || { echo "Usage: make agent-merge BRANCH=agent-<name>"; exit 1; }
 	@git merge --no-ff "$(BRANCH)" -m "merge: $(BRANCH) worktree work into master"
 	@echo "Merged $(BRANCH) into master"
@@ -7073,7 +7080,7 @@ _pre-commit-stage-guard:
 # AA011 — _merge-strategy-guard: blocks `make git-merge MSG=<sha>` when MSG looks
 # like a SHA (7-40 hex chars). Merging SHAs as branch names caused 80+ conflicts.
 # Cherry-pick must be used for single commits. FORCE=1 bypasses.
-_merge-strategy-guard:
+_merge-strategy-guard: _gate-mutation-guard
 	@MSG="$(MSG)"; \
 	if echo "$$MSG" | grep -qE '^[0-9a-f]{7,40}$$'; then \
 		if [ "$$FORCE" != "1" ]; then \
@@ -8493,8 +8500,8 @@ gate-status:
 # Startup check: if a stale PID file exists (process dead), clean it.
 # If an existing gate is alive for >2h, auto-kill it and warn before launching.
 gate-background:
-	@mkdir -p .gate-logs
-	@GATE_TIMEOUT_OVERRIDE=$${GATE_TIMEOUT:-3600}; \
+	@mkdir -p .gate-logs; \
+	GATE_TIMEOUT_OVERRIDE=$${GATE_TIMEOUT:-3600}; \
 	STALE_PID=$$(cat .gate-background.pid 2>/dev/null || echo ""); \
 	GATE_PID_NOW=$$(date +%s); \
 	if [ -n "$$STALE_PID" ]; then \
@@ -8503,7 +8510,7 @@ gate-background:
 			ELAPSED=$$(( GATE_PID_NOW - GATE_MTIME )); \
 			if [ "$$ELAPSED" -gt "$$GATE_TIMEOUT_OVERRIDE" ]; then \
 				echo "[gate-background] WARNING: existing gate running for $$ELAPSED s (>$$GATE_TIMEOUT_OVERRIDE s) - auto-killing staled process"; \
-				$(MAKE) gate-kill; \
+				$(_GATE_MAKE) gate-kill || exit $$?; \
 			else \
 				echo "[gate-background] gate already running (pid=$$STALE_PID elapsed=$$ELAPSED s) - refusing to launch duplicate"; \
 				exit 0; \
@@ -8512,10 +8519,11 @@ gate-background:
 			echo "[gate-background] removing stale PID file (pid=$$STALE_PID not alive)"; \
 			rm -f .gate-background.pid; \
 		fi; \
-	fi
-	@nohup $(MAKE) gate gludd_watchdog_owned_gate=1 > .gate-logs/gate-$$(date +%Y%m%d%H%M%S).log 2>&1 & echo $$! | tee .gate-background.pid; \
+	fi; \
+	nohup $(_GATE_MAKE) gate gludd_watchdog_owned_gate=1 > .gate-logs/gate-$$(date +%Y%m%d%H%M%S).log 2>&1 & \
+	EXPECTED_PID=$$!; \
+	echo "$$EXPECTED_PID" | tee .gate-background.pid; \
 	GATE_TIMEOUT_VAL=$${GATE_TIMEOUT:-3600}; \
-	EXPECTED_PID=$$(cat .gate-background.pid 2>/dev/null); \
 	( sleep $$GATE_TIMEOUT_VAL; \
 	  if [ -f .gate-background.pid ]; then \
 	    PID_TO_KILL=$$(cat .gate-background.pid 2>/dev/null); \
@@ -8541,8 +8549,10 @@ gate-background-observed:
 		echo "gate-background-observed: VALIDATE launch timeout=$${GATE_TIMEOUT:-3600}s poll=$(GATE_POLL_INTERVAL)s"; \
 		exit 0; \
 	fi; \
-	$(MAKE) --no-print-directory gate-background GATE_TIMEOUT="$(GATE_TIMEOUT)" || exit $$?; \
-	$(MAKE) --no-print-directory gate-wait GATE_POLL_INTERVAL="$(GATE_POLL_INTERVAL)"
+	$(_GATE_MAKE) --no-print-directory gate-background GATE_TIMEOUT="$(GATE_TIMEOUT)" || exit $$?; \
+	EXPECTED_PID=$$(cat .gate-background.pid 2>/dev/null || echo ""); \
+	if [ -z "$$EXPECTED_PID" ]; then echo "gate-background-observed: launch published no PID"; exit 1; fi; \
+	$(_GATE_MAKE) --no-print-directory gate-wait GATE_EXPECTED_PID="$$EXPECTED_PID" GATE_POLL_INTERVAL="$(GATE_POLL_INTERVAL)"
 
 # Launch gate-lite detached via nohup; returns PID immediately (<1s).
 # Writes output to .gate-logs/gate-lite-<ts>.log, PID to .gate-lite-background.pid.
@@ -8586,7 +8596,8 @@ gate-lite-background:
 
 # Probe background gate: running/pass/fail + current phase + last 20 log lines + .gate-status.
 gate-status-check:
-	@PID=$$(cat .gate-background.pid 2>/dev/null || echo ""); \
+	@PID="$(GATE_EXPECTED_PID)"; \
+	if [ -z "$$PID" ]; then PID=$$(cat .gate-background.pid 2>/dev/null || echo ""); fi; \
 	if [ -n "$$PID" ] && kill -0 "$$PID" 2>/dev/null; then \
 		echo "RUNNING (pid=$$PID)"; \
 		LOGF=$$(ls -t .gate-logs/gate-*.log 2>/dev/null | head -1); \
@@ -8606,7 +8617,7 @@ gate-status-check:
 # Emits a timestamped heartbeat each cycle. Exits 0 on PASSED, 1 on FAILED/aborted.
 gate-wait:
 	@while true; do \
-		OUT=$$( $(MAKE) --no-print-directory gate-status-check 2>&1 ); \
+		OUT=$$( $(MAKE) --no-print-directory gate-status-check GATE_EXPECTED_PID="$(GATE_EXPECTED_PID)" 2>&1 ); \
 		TS=$$(date +%H:%M:%S); \
 		if echo "$$OUT" | grep -q '=== GATE: PASSED ==='; then \
 			echo "[$$TS] $$OUT" | tail -30; exit 0; \
