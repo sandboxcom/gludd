@@ -20,13 +20,42 @@ The event-loop order is:
 1. Load configuration and recover control-plane state.
 2. Promote due scheduled work.
 3. Run bounded self-improvement and issue discovery producers.
-4. Reconcile compute from the resulting durable todo state.
-5. Claim returns for review and claim todos for execution.
-6. Dispatch, reconcile decisions, and emit metrics.
+4. Cross the approval boundary, then atomically claim todos and execution leases.
+5. Commit the claim and lease transaction and close its database session.
+6. Provision compute only for the worker that won that durable claim.
+7. Dispatch, execute, verify, and durably commit the terminal decision.
+8. Release the exact owned compute after durable in-flight demand reaches zero.
+9. Emit metrics.
 
-The ordering lets a newly discovered todo request capacity in the same tick. It
-also ensures a restarted daemon restores capacity before it reviews or executes
-work.
+The ordering lets a newly discovered and approved todo request capacity in the
+same tick without allowing an uncommitted candidate read to create an external
+side effect. A restarted daemon observes durable ownership; it does not replay a
+predecessor's provisioning action or infer authority to tear that resource down.
+
+## Claim-before-provision boundary
+
+The production session-factory tick treats the database commit as the external
+effect boundary. The claim and lease transaction is committed and its session is
+closed before the runner can provision anything. Provisioning is then derived
+from the winning tick's claimed batch, not from a count of merely queued rows.
+That gives an empty queue, approval-only work, and a losing worker **zero
+pre-claim provisioning** and zero pre-claim compute.
+
+The durable todo compare-and-swap and execution lease are the ownership fence.
+If two workers observe the same candidate, only the winner receives a claimed
+batch and may reconcile compute to `present`; a foreign claim produces no
+provider call in the loser. Repeating the winner's reconcile call is idempotent
+through the provider's existing lifecycle contract. After a crash or restart, a
+fresh event-loop instance has no process-local ownership proof, so it neither
+replays provisioning nor releases a predecessor's resource. In short, a losing
+or restarted worker preserves foreign ownership.
+
+Release is deliberately later than execution and verification. The owner opens
+a fresh, short database session to prove that `active`, `awaiting_result`,
+`reviewing_return`, and `needs_more_work` demand is absent, closes that session,
+and only then asks the provider to reconcile the exact owned environment to
+`absent`. An unknown demand read or provider failure preserves the resource and
+its ownership record for retry.
 
 ## Demand states
 
@@ -34,11 +63,11 @@ The database, not a process-local queue, is the source of truth.
 
 | Todo state | Retains compute | Reason |
 |---|---:|---|
-| `queued` | yes | Claimable work exists now. |
-| `active` | yes | A worker owns execution. |
-| `awaiting_result` | yes | A durable result still needs review. |
-| `reviewing_return` | yes | Review is active work and can call a model. |
-| `needs_more_work` | yes | The work is non-terminal and eligible for remediation. |
+| `queued` | no | A candidate is demand, not ownership; the claim winner provisions. |
+| `active` | owner only | The exact claim and lease winner owns execution. |
+| `awaiting_result` | owner only | A durable result still needs review. |
+| `reviewing_return` | owner only | Review is active work and can call a model. |
+| `needs_more_work` | owner only | The work is non-terminal and eligible for remediation. |
 | `scheduled` | no | A future schedule is not current demand. |
 | `approval_required`, `approved` | no | Human-gated work cannot execute yet. |
 | `blocked`, `blocked_on_human`, `manual_hold` | no | No automated work can currently proceed. |
@@ -152,6 +181,13 @@ machine, execution-environment image, immutable image identity, health facts,
 and exact teardown. Runners without that lifecycle method are explicitly treated
 as externally managed for compatibility.
 
+The call to `present` is reachable only after the current tick wins a durable
+todo claim and lease and the factory-managed transaction has committed and
+closed. The call to `absent` is reachable only for compute previously provisioned
+by that same event-loop owner and after a fresh durable demand read. Queued work,
+foreign active work, and process restart cannot independently produce or destroy
+capacity.
+
 The role's Molecule scenario exercises an explicit, non-mutating `prepare` phase
 before validating both the `present` and `absent` plans. This keeps bootstrap
 readiness, idempotence, and exact teardown in the same CI-visible lifecycle.
@@ -165,10 +201,11 @@ precision, KV cache, runtime overhead, token budget, and task classification
 determine whether the admitted T4/A100 topology is large enough and how many
 bounded replicas may be used.
 
-With zero demand, the event loop reconciles its owned execution environment to
-`absent`. An Azure candidate independently releases the exact app revision and,
-when ownership and idle policy permit, its exact managed environment. Neither
-path performs subscription-wide deletion, pruning, or inferred cleanup.
+With zero durable in-flight demand, the event loop reconciles its exact owned
+execution environment to `absent`. An Azure candidate independently releases the
+exact app revision and, when ownership and idle policy permit, its exact managed
+environment. Neither path performs subscription-wide deletion, pruning, or
+inferred cleanup.
 
 Utilization-triggered idle teardown follows the same proof boundary. If no
 deployment owner is wired, or the owner's exact destroy call fails, Gludd keeps
@@ -211,9 +248,12 @@ with simultaneous `asyncio.gather()` calls for ordinary and managed
 self-improvement todos. Exactly one session wins, exactly one work object is
 returned to a dispatcher, and the surviving row is `active` at version 2.
 
-`tests/unit/test_todo_compute_demand_lifecycle.py` covers phase order, idempotent
-present/absent reconciliation, all in-flight states, approval-only and empty
-queues, bootstrap failure, and unknown database state. These tests are hermetic
+`tests/unit/test_todo_compute_demand_lifecycle.py` covers the full
+producer-to-release order, zero pre-claim provisioning, the two-worker winner
+fence, restart/crash idempotence, idempotent owner reconciliation, all in-flight
+states, bootstrap failure, and unknown database state.
+`tests/unit/test_tick_session.py` proves that the factory-managed claim and lease
+commit and its session close both precede provisioning. These tests are hermetic
 and run in GitHub Actions. The paid live Azure proof is separately gated by
 explicit credentials, scope, cost, TTL, and acknowledgement so pull requests do
 not create cloud resources.
@@ -371,6 +411,16 @@ Research refreshed on 2026-09-27 includes these scheduler and worker reports:
   broker copies. Gludd keeps resume claiming, todo CAS, and execution leases as
   separate durable fences and makes malformed claim state fail closed:
   [Celery discussion #9460](https://github.com/celery/celery/discussions/9460).
+- Sidekiq's long-lived FAQ warns both that a job can run before the creating
+  database transaction commits and that restarted work is at-least-once. Gludd
+  therefore closes the claim transaction before its first provider side effect
+  and requires that effect to be idempotent:
+  [Sidekiq FAQ](https://github.com/sidekiq/sidekiq/wiki/FAQ).
+- Celery operators have reported long-running tasks remaining reserved despite
+  late acknowledgement, fair scheduling, and prefetch limits. Gludd therefore
+  does not treat a broker reservation or queued-count hint as durable permission
+  to provision or execute:
+  [Celery issue #3765](https://github.com/celery/celery/issues/3765).
 
 - APScheduler issue
   [#579](https://github.com/agronholm/apscheduler/issues/579), opened in 2021,

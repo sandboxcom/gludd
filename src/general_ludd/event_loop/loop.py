@@ -156,13 +156,14 @@ PHASE_ORDER = [
     "self_improve",
     "poll_issue_sources",
     "sdlc_gate",
-    "reconcile_compute_demand",
     "claim_unreviewed_task_returns",
     "dispatch_return_review_jobs",
     "claim_runnable_todos",
     "evaluate_rules",
+    "reconcile_compute_demand",
     "dispatch_execute_jobs",
     "reconcile_completed_decisions",
+    "release_compute_demand",
     "refresh_model_performance",
     "check_compute_utilization",
     "check_service_credits",
@@ -175,11 +176,17 @@ PHASE_ORDER = [
     "emit_tick_metrics",
 ]
 
+# S83.158: durable claim/lease state is committed and its session is closed
+# before any compute lifecycle call.  The provision phase therefore has its own
+# boundary before the already-sessionless dispatch phase.
+PROVISION_PHASE_INDEX = PHASE_ORDER.index("reconcile_compute_demand")
+
 # E10 (PERF-1): index of the dispatch phase in PHASE_ORDER.  The tick session
 # is committed + closed BEFORE this phase so the dispatch gather (up to ~30 min)
 # does not hold the DB writer lock.  A fresh session is opened for the
 # post-dispatch phases.
 DISPATCH_PHASE_INDEX = PHASE_ORDER.index("dispatch_execute_jobs")
+RELEASE_PHASE_INDEX = PHASE_ORDER.index("release_compute_demand")
 
 
 # Two-phase generation (keystone): Phase 1 (``invoke_model_for_generation``) is
@@ -869,17 +876,29 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
                     self._task_return_repo = TaskReturnRepository(session)
                     self._audit_repo = AuditEventRepository(session)
                     self._variable_repo = VariableNamespaceRepository(session)
-                    # E10 (PERF-1): commit + close the tick session BEFORE the
-                    # dispatch gather so the DB writer lock is released during
-                    # the potentially-30-minute dispatch window.
-                    await self._run_phase_range(0, DISPATCH_PHASE_INDEX)
+                    # S83.158/E10: persist the claim and its execution leases,
+                    # then close the transaction before provisioning.  External
+                    # lifecycle work must never hold the database writer lock.
+                    await self._run_phase_range(0, PROVISION_PHASE_INDEX)
                     await self._commit_tick_session(session)
                     self._clear_repos()
-                # Dispatch phase: NO tick session held.  Isolated per-job
-                # sessions are opened inside _dispatch_execute_job_isolated.
+                # Provision and dispatch with NO tick session held. Isolated
+                # per-job sessions are opened inside the dispatcher.
+                await self._run_phase_range(
+                    PROVISION_PHASE_INDEX,
+                    DISPATCH_PHASE_INDEX,
+                )
                 await self._run_phase_range(DISPATCH_PHASE_INDEX, DISPATCH_PHASE_INDEX + 1)
                 assert self._session_factory is not None
                 for phase_idx in range(DISPATCH_PHASE_INDEX + 1, len(PHASE_ORDER)):
+                    if phase_idx == RELEASE_PHASE_INDEX:
+                        # The terminal-decision phase immediately before this
+                        # one has already committed and closed.  The release
+                        # phase performs its own short durable-demand read and
+                        # closes that read before touching external compute.
+                        self._clear_repos()
+                        await self._run_phase_range(phase_idx, phase_idx + 1)
+                        continue
                     async with self._session_factory() as session:
                         self._active_session = session
                         self._todo_repo = TodoRepository(session)
@@ -1819,17 +1838,31 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
             )
 
     async def _phase_reconcile_compute_demand(self) -> None:
-        """Reconcile owned compute from durable, runnable todo demand.
+        """Provision compute only for this tick's durable, fenced claims.
 
-        Discovery producers run before this phase, so normal and
-        self-improvement work share one demand signal. QUEUED work that can be
-        claimed and execution/review states already in flight retain compute;
-        scheduled, approval-waiting, blocked, and terminal work do not.
-
-        Runners without a concrete lifecycle method are treated as externally
-        managed for backwards compatibility.  A lifecycle-capable runner fails
-        closed: an unknown queue or failed bootstrap never mutates todo state.
+        The production tick commits and closes the claim/lease transaction
+        before entering this phase.  A worker that lost the claim therefore has
+        no local claim batch and cannot provision or tear down shared compute.
         """
+        raw_claimed = self._tick_state.get("claimed_todos", [])
+        claimed = list(raw_claimed) if isinstance(raw_claimed, (list, tuple)) else []
+        runnable_todos = len(claimed)
+        self._tick_metrics["compute_demand_runnable_todos"] = runnable_todos
+        if not claimed:
+            root_value_for_state = self._resolve_repo_root(self._tick_project_id)
+            owned_present = False
+            if root_value_for_state is not None:
+                root_key = str(Path(root_value_for_state).expanduser().resolve())
+                state = self._execution_environment_states.get(root_key)
+                owned_present = state is not None and state[0] == "present"
+            self._tick_state["compute_ready"] = owned_present
+            self._tick_state["compute_demand"] = {
+                "state": "retained" if owned_present else "idle",
+                "runnable_todos": 0,
+                "execution_environment": "present" if owned_present else "unchanged",
+            }
+            return
+
         runner = self._runner
         if runner is None:
             self._tick_state["compute_ready"] = True
@@ -1847,46 +1880,7 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
                 "execution_environment": "external",
             }
             return
-
-        if self._todo_repo is None:
-            self._tick_state["compute_ready"] = False
-            self._tick_state["compute_demand"] = {
-                "state": "unknown",
-                "execution_environment": "preserved",
-            }
-            return
-
         project_id = self._tick_project_id
-        try:
-            summary = await self._todo_repo.status_summary(project_id=project_id)
-            if not isinstance(summary, Mapping):
-                raise TypeError("todo status summary is not a mapping")
-            by_status = summary.get("by_status")
-            if not isinstance(by_status, Mapping):
-                raise TypeError("todo status counts are not a mapping")
-            runnable_todos = sum(
-                max(0, int(by_status.get(status, 0) or 0))
-                for status in (
-                    TodoStatus.QUEUED.value,
-                    TodoStatus.ACTIVE.value,
-                    TodoStatus.AWAITING_RESULT.value,
-                    TodoStatus.REVIEWING_RETURN.value,
-                    TodoStatus.NEEDS_MORE_WORK.value,
-                )
-            )
-        except Exception as exc:
-            logger.error(
-                "Compute demand unknown; preserving owned resources and deferring claims "
-                "(error_type=%s)",
-                type(exc).__name__,
-            )
-            self._tick_state["compute_ready"] = False
-            self._tick_state["compute_demand"] = {
-                "state": "unknown",
-                "execution_environment": "preserved",
-            }
-            return
-
         root_value = self._resolve_repo_root(project_id)
         if root_value is None:
             logger.error("Compute demand cannot be reconciled without an exact project root")
@@ -1922,7 +1916,7 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
             for name, value in execution_environment.items()
             if name != "enabled"
         }
-        desired_state = "present" if runnable_todos else "absent"
+        desired_state = "present"
         project_root = Path(root_value).expanduser().resolve()
         root_key = str(project_root)
         fingerprint = (
@@ -1930,14 +1924,12 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
             json.dumps(constraints, sort_keys=True, separators=(",", ":"), default=repr),
         )
         self._tick_state["compute_demand"] = {
-            "state": "demanded" if runnable_todos else "idle",
+            "state": "demanded",
             "runnable_todos": runnable_todos,
             "execution_environment": desired_state,
         }
-        self._tick_metrics["compute_demand_runnable_todos"] = runnable_todos
-
         if self._execution_environment_states.get(root_key) == fingerprint:
-            self._tick_state["compute_ready"] = desired_state == "present"
+            self._tick_state["compute_ready"] = True
             return
 
         reconcile = runner.reconcile_execution_environment
@@ -1969,12 +1961,131 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
             return
 
         self._execution_environment_states[root_key] = fingerprint
-        self._tick_state["compute_ready"] = desired_state == "present"
+        self._tick_state["compute_ready"] = True
         logger.info(
             "Execution environment reconciled (state=%s, runnable_todos=%d)",
             desired_state,
             runnable_todos,
         )
+
+    async def _phase_release_compute_demand(self) -> None:
+        """Release only compute provisioned by this loop after terminal commit."""
+        runner = self._runner
+        lifecycle_method = (
+            getattr(type(runner), "reconcile_execution_environment", None)
+            if runner is not None
+            else None
+        )
+        if runner is None or not callable(lifecycle_method):
+            return
+
+        project_id = self._tick_project_id
+        root_value = self._resolve_repo_root(project_id)
+        if root_value is None:
+            return
+        project_root = Path(root_value).expanduser().resolve()
+        root_key = str(project_root)
+        owned_state = self._execution_environment_states.get(root_key)
+        if owned_state is None or owned_state[0] != "present":
+            return
+
+        try:
+            if self._session_factory is not None:
+                async with self._session_factory() as session:
+                    summary = await TodoRepository(session).status_summary(
+                        project_id=project_id,
+                    )
+            elif self._todo_repo is not None:
+                summary = await self._todo_repo.status_summary(project_id=project_id)
+            else:
+                raise RuntimeError("todo repository unavailable")
+            if not isinstance(summary, Mapping):
+                raise TypeError("todo status summary is not a mapping")
+            by_status = summary.get("by_status")
+            if not isinstance(by_status, Mapping):
+                raise TypeError("todo status counts are not a mapping")
+            in_flight = sum(
+                max(0, int(by_status.get(status, 0) or 0))
+                for status in (
+                    TodoStatus.ACTIVE.value,
+                    TodoStatus.AWAITING_RESULT.value,
+                    TodoStatus.REVIEWING_RETURN.value,
+                    TodoStatus.NEEDS_MORE_WORK.value,
+                )
+            )
+        except Exception as exc:
+            logger.error(
+                "Compute release demand unknown; preserving owned resources "
+                "(error_type=%s)",
+                type(exc).__name__,
+            )
+            self._tick_state["compute_ready"] = True
+            self._tick_state["compute_demand"] = {
+                "state": "unknown",
+                "execution_environment": "preserved",
+            }
+            return
+
+        if in_flight:
+            self._tick_state["compute_ready"] = True
+            self._tick_state["compute_demand"] = {
+                "state": "retained",
+                "runnable_todos": in_flight,
+                "execution_environment": "present",
+            }
+            return
+
+        execution_environment = self.config.get("execution_environment", {})
+        if not isinstance(execution_environment, Mapping):
+            return
+        constraints = {
+            str(name): value
+            for name, value in execution_environment.items()
+            if name != "enabled"
+        }
+        fingerprint = (
+            "absent",
+            json.dumps(constraints, sort_keys=True, separators=(",", ":"), default=repr),
+        )
+        try:
+            result = await self._bounded_to_thread(
+                runner.reconcile_execution_environment,
+                state="absent",
+                project_root=project_root,
+                constraints=constraints,
+            )
+            success = (
+                isinstance(result, Mapping)
+                and result.get("status") == "successful"
+                and int(result.get("rc", 1)) == 0
+            )
+        except Exception as exc:
+            logger.error(
+                "Execution-environment release failed (error_type=%s)",
+                type(exc).__name__,
+            )
+            success = False
+
+        self._tick_metrics["execution_environment_reconciliations"] = (
+            int(self._tick_metrics.get("execution_environment_reconciliations", 0)) + 1
+        )
+        if not success:
+            self._tick_state["compute_ready"] = True
+            self._tick_state["compute_demand"] = {
+                "state": "release_failed",
+                "runnable_todos": 0,
+                "execution_environment": "preserved",
+            }
+            return
+
+        self._execution_environment_states[root_key] = fingerprint
+        self._tick_state["compute_ready"] = False
+        self._tick_state["compute_demand"] = {
+            "state": "idle",
+            "runnable_todos": 0,
+            "execution_environment": "absent",
+        }
+        logger.info("Execution environment reconciled (state=absent, runnable_todos=0)")
 
     async def _effective_claim_limit(self) -> tuple[int, int, Any]:
         config = getattr(self, "config", {})
@@ -2169,10 +2280,6 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
     async def _phase_claim_runnable_todos(self) -> None:
         if self._todo_repo is None:
             return
-        if self._tick_state.get("compute_ready") is False:
-            logger.info("Todo claim deferred: demanded execution environment is not ready")
-            self._tick_state["claimed_todos"] = []
-            return
         if (
             self._pause_controller is not None
             and self._tick_project_id is not None
@@ -2264,6 +2371,12 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
 
     async def _phase_dispatch_execute_jobs(self) -> None:
         claimed = list(self._tick_state.get("claimed_todos", []))
+        if claimed and self._tick_state.get("compute_ready") is False:
+            logger.error(
+                "Execute dispatch deferred: claimed work has no ready execution environment"
+            )
+            self._tick_metrics["todos_dispatched"] = 0
+            return
         claimed = await self._trim_claimed_to_pid_cap(claimed)
         if self._budget_guard is not None:
             check = self._budget_guard.check_all_limits(estimated_cost=self._estimated_dispatch_cost(len(claimed)))

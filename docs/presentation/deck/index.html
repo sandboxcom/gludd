@@ -140,7 +140,7 @@
   <h2>Architecture at a glance</h2>
   <p><span class="path">daemon.py</span> boots a FastAPI process and wires an <strong>EventLoop</strong> (<span class="path">event_loop/loop.py</span>) that ticks forever.</p>
   <ul class="bullets-tight">
-    <li class="fragment">Every tick opens <strong>one DB session</strong> and runs 16 named phases in a fixed order</li>
+    <li class="fragment">Every tick runs <strong>25 named phases</strong> in a fixed order across short database sessions and sessionless provider-effect boundaries</li>
     <li class="fragment">A todo moves through a state machine: BACKLOG &rarr; SCHEDULED/QUEUED &rarr; ACTIVE &rarr; done/reconciled</li>
     <li class="fragment">Every state change, dispatch, review verdict, and commit is a database row &mdash; nothing lives only in memory</li>
   </ul>
@@ -175,8 +175,8 @@ graph TD
     A4 --> A5["start EventLoop<br/>asyncio.create_task"]
   end
   subgraph Runtime["Per-tick (event_loop/loop.py)"]
-    B1["open DB session"] --> B2["run 16 PHASE_ORDER phases"]
-    B2 --> B3["commit + close session"]
+    B1["open short DB session"] --> B2["run 25 PHASE_ORDER phases<br/>across commit boundaries"]
+    B2 --> B3["close claim session<br/>before provider effects"]
   end
   subgraph Shutdown["Lifespan teardown"]
     C1["drain background tasks"] --> C2["close MCP subprocesses"]
@@ -214,6 +214,21 @@ flowchart TD
   n8 --> n9["9 Reconcile + commit<br/>git_automation/repo.py"]
   n8 -.->|reject: retry| n6
     </div>
+  </div>
+  <div data-contract="s83-158-claim-before-provision">
+    <p><strong>Claim-before-provision ownership path</strong></p>
+    <ol class="bullets-tight" style="font-size:0.58em;">
+      <li>Produce durable todo</li>
+      <li>Approval boundary</li>
+      <li>Claim + lease</li>
+      <li>Commit + close</li>
+      <li>Provision</li>
+      <li>Execute + verify</li>
+      <li>Terminal commit</li>
+      <li>Exact release</li>
+    </ol>
+    <p class="honest-note">Guarantees zero pre-claim compute; a losing or restarted worker preserves foreign ownership.</p>
+    <p class="cite">Contract: docs/features/TODO_DRIVEN_COMPUTE_LIFECYCLE.md</p>
   </div>
   <p class="cite">Source: code-trace audit, verified against src/general_ludd/ on 2026-07-12T10:39:48Z</p>
 </section>
@@ -274,8 +289,8 @@ flowchart TD
 <!-- ============================================================ -->
 <section>
   <div class="stage-kicker">Flagship flow &middot; stage 2 of 9</div>
-  <h2><span class="step-number">2</span>The tick loop &mdash; 17 phases</h2>
-  <p><span class="path">daemon.py</span> wires an <strong>EventLoop</strong> (<span class="path">event_loop/loop.py</span>). Every tick runs <span class="path">PHASE_ORDER</span> (<span class="path">loop.py:88</span>) &mdash; the same 17 phases, in the same order, inside one DB session.</p>
+  <h2><span class="step-number">2</span>The tick loop &mdash; 25 phases</h2>
+  <p><span class="path">daemon.py</span> wires an <strong>EventLoop</strong> (<span class="path">event_loop/loop.py</span>). Every tick runs <span class="path">PHASE_ORDER</span> (<span class="path">loop.py:151</span>) &mdash; the same 25 phases in the same order, with the claim transaction committed and closed before provisioning or dispatch.</p>
   <div class="diagram-wrap">
     <div class="mermaid">
 flowchart TD
@@ -288,10 +303,13 @@ flowchart TD
     B1["refill_task_buckets"] --> B2["run_scheduler"]
     B2 --> B3["claim_runnable_todos"]
     B3 --> B4["evaluate_rules"]
+    B4 --> B5["commit + close"]
+    B5 --> B6["reconcile_compute_demand"]
   end
   subgraph G3["Execution + reconcile"]
     C1["dispatch_execute_jobs"] --> C2["reconcile_completed_<br/>decisions"]
-    C2 --> C3["refresh_model_<br/>performance"]
+    C2 --> C3["release_compute_<br/>demand"]
+    C3 --> C4["refresh_model_<br/>performance"]
   end
   subgraph G4["Compute + credits"]
     D1["check_compute_<br/>utilization"] --> D2["check_service_credits"]
@@ -307,7 +325,7 @@ flowchart TD
   G4 --> G5
     </div>
   </div>
-  <p class="cite">Source: src/general_ludd/event_loop/loop.py:88-106 (PHASE_ORDER, 17 entries)</p>
+  <p class="cite">Source: src/general_ludd/event_loop/loop.py:151-177 (PHASE_ORDER, 25 entries)</p>
 </section>
 
 <!-- ============================================================ -->
@@ -315,22 +333,24 @@ flowchart TD
 <!-- ============================================================ -->
 <section>
   <h2>One tick, in order</h2>
-  <p>The load-bearing phases of <span class="path">PHASE_ORDER</span>, in the exact order they run inside a single tick's DB session.</p>
+  <p>The load-bearing phases of <span class="path">PHASE_ORDER</span>, in the exact order they cross short database sessions and sessionless provider-effect boundaries.</p>
   <div class="diagram-wrap">
     <div class="mermaid">
 flowchart TD
   A["load_config<br/>snapshot"] --> B["claim + dispatch<br/>return review"]
   B --> C["run_scheduler<br/>promote due todos"]
-  C --> D["claim_runnable<br/>todos (CAS)"]
-  D --> E["evaluate_rules"]
-  E --> F["dispatch_execute<br/>jobs (spend gate)"]
-  F --> G["reconcile_completed<br/>decisions + commit"]
-  G --> H["self_improve"]
-  H --> I["emit_tick_metrics"]
-  I -.->|next tick ~1s| A
+  C --> D["producer + approval<br/>boundary"]
+  D --> E["claim todo +<br/>execution lease"]
+  E --> F["commit + close<br/>claim session"]
+  F --> G["provision exact<br/>owned compute"]
+  G --> H["dispatch, execute<br/>+ verify"]
+  H --> I["terminal commit"]
+  I --> J["release exact<br/>owned compute"]
+  J --> K["emit_tick_metrics"]
+  K -.->|next tick ~1s| A
     </div>
   </div>
-  <p class="cite">Source: src/general_ludd/event_loop/loop.py:88-106 (PHASE_ORDER)</p>
+  <p class="cite">Source: src/general_ludd/event_loop/loop.py:151-177 (PHASE_ORDER)</p>
 </section>
 
 <!-- ============================================================ -->
