@@ -83,14 +83,11 @@ class TestWatchdogConstants:
             "PID_FILE must be overridable via GLUDD_WATCHDOG_PID_FILE"
         )
 
-    def test_task_pid_file_constant_exists(self):
+    def test_plugin_does_not_claim_task_watchdog_pid_ownership(self):
         src = _src()
-        assert "TASK_PID_FILE" in src, "TASK_PID_FILE constant missing"
-
-    def test_task_pid_file_value(self):
-        src = _src()
-        assert ".gate-logs/task-watchdog.pid" in src, (
-            "TASK_PID_FILE must point to .gate-logs/task-watchdog.pid"
+        assert "TASK_PID_FILE" not in src
+        assert "GLUDD_TASK_WATCHDOG_PID" not in src, (
+            "the session plugin must not unlink the independently owned task watchdog PID"
         )
 
     def test_alive_path_in_shared_import(self):
