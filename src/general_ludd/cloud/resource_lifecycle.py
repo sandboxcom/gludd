@@ -13,7 +13,8 @@ import os
 import signal
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import FrameType
@@ -22,6 +23,56 @@ from typing import Any
 from general_ludd.schemas.project_identity import ProjectResourceIdentity, validate_project_id
 
 logger = logging.getLogger(__name__)
+
+
+class _ShutdownStderrHandler(logging.Handler):
+    """Emit late-shutdown records through the process-owned stderr fd."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        """Write one formatted record without depending on a captured stream."""
+        try:
+            payload = f"{self.format(record)}\n".encode("utf-8", "backslashreplace")
+            os.write(2, payload)
+        except OSError:
+            # The process may have already lost stderr during interpreter
+            # teardown.  There is no later output channel to recover here.
+            return
+
+
+def _has_closed_log_stream(target_logger: logging.Logger) -> bool:
+    """Return whether this logger hierarchy contains a closed stream handler."""
+    current: logging.Logger | None = target_logger
+    while current is not None:
+        for handler in current.handlers:
+            stream = getattr(handler, "stream", None)
+            if stream is not None and bool(getattr(stream, "closed", False)):
+                return True
+        if not current.propagate:
+            break
+        current = current.parent
+    return False
+
+
+@contextmanager
+def _late_shutdown_logging() -> Iterator[None]:
+    """Keep lifecycle warnings observable after capture handlers close."""
+    if not _has_closed_log_stream(logger):
+        yield
+        return
+
+    original_handlers = list(logger.handlers)
+    original_propagate = logger.propagate
+    emergency_handler = _ShutdownStderrHandler()
+    emergency_handler.setFormatter(
+        logging.Formatter("%(levelname)s %(name)s: %(message)s"),
+    )
+    logger.handlers = [emergency_handler]
+    logger.propagate = False
+    try:
+        yield
+    finally:
+        logger.handlers = original_handlers
+        logger.propagate = original_propagate
 
 
 @dataclass
@@ -432,15 +483,20 @@ class ResourceLifecycleManager:
     # ------------------------------------------------------------------
 
     def _guaranteed_cleanup(self) -> None:
-        logger.warning("Guaranteed cleanup triggered — destroying all tracked resources")
-        try:
-            self.cleanup_all()
-        except Exception:
-            logger.exception("Guaranteed cleanup failed")
+        with _late_shutdown_logging():
+            if self.pending_cleanup():
+                logger.warning(
+                    "Guaranteed cleanup triggered — destroying all tracked resources",
+                )
+            try:
+                self.cleanup_all()
+            except Exception:
+                logger.exception("Guaranteed cleanup failed")
 
     def _handle_signal(self, signum: int, frame: FrameType | None) -> None:
-        logger.warning("Received signal %d — guaranteed cleanup", signum)
-        self._guaranteed_cleanup()
+        with _late_shutdown_logging():
+            logger.warning("Received signal %d — guaranteed cleanup", signum)
+            self._guaranteed_cleanup()
         previous_handler = self._previous_signal_handlers.get(signum, signal.SIG_DFL)
         if callable(previous_handler):
             previous_handler(signum, frame)
