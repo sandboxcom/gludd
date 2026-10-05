@@ -1666,7 +1666,7 @@ jobs:
           {"version":"${VERSION}","checks":{"ansible_ee":"passed","collections":"passed"}}
           JSON
           cat > "dist/ee-release/gludd-collections-${VERSION}.json" <<JSON
-          {"version":"${VERSION}","artifacts":["general_ludd-agent-0.2.0.tar.gz","general_ludd-language-0.1.0.tar.gz","general_ludd-networking-0.2.0.tar.gz"]}
+          {"version":"${VERSION}","artifacts":["general_ludd-agent-0.2.0.tar.gz","general_ludd-azure-0.2.0.tar.gz","general_ludd-language-0.1.0.tar.gz","general_ludd-networking-0.2.0.tar.gz"]}
           JSON
       - name: Upload execution-environment artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
