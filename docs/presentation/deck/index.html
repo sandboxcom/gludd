@@ -865,6 +865,22 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
+<!-- SLIDE 19g: SERVICE RELIABILITY BOUNDARIES -->
+<!-- ============================================================ -->
+<section data-contract="service-reliability-boundaries">
+  <p class="stage-kicker">Reliability sequence &middot; input to teardown</p>
+  <h2>Four boundaries keep failure contained</h2>
+  <ol class="bullets-tight">
+    <li><strong>Validate before I/O:</strong> labeled <code>(identifier, query)</code> defaults; plain strings stay compatible; malformed shapes fail closed, while empty results preserve the catalog.</li>
+    <li><strong>Isolate every test:</strong> <code>monkeypatch</code> owns environment teardown and PID + counter streak files prevent parallel workers sharing authorization state.</li>
+    <li><strong>Choose lifecycle explicitly:</strong> pre-startup <code>/readyz</code> proves the 503 boundary; context-managed startup proves 200 readiness; model-health checks keep a per-app in-memory database.</li>
+    <li><strong>Keep shutdown observable:</strong> a closed log stream falls back to stderr file descriptor 2, then restore handlers + propagation after cleanup.</li>
+  </ol>
+  <p class="honest-note">No new runtime service or persisted schema: validation happens before network work, test state is namespaced, lifespan ownership is explicit, and late cleanup remains visible.</p>
+  <p class="cite">Sources: docs/features/SERVICE_DISCOVERY_SEARCH_TERM_SCHEMA.md &middot; docs/features/FLOOR_TEST_ENV_ISOLATION.md &middot; docs/features/READINESS_LIFESPAN_TESTING.md &middot; docs/features/RESOURCE_LIFECYCLE_SHUTDOWN_LOGGING.md</p>
+</section>
+
+<!-- ============================================================ -->
 <!-- SLIDE 20: SECURITY -->
 <!-- ============================================================ -->
 <section>
