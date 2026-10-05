@@ -278,6 +278,28 @@
       "owned": true
     },
     {
+      "path": "scripts/replay_freellmapi_three_arm.py",
+      "line": 153,
+      "column": 13,
+      "kind": "temp-artifact",
+      "owner": "_atomic_write",
+      "acquisition": "tempfile.NamedTemporaryFile(dir=path.parent, prefix=f'.{path.name}.', delete=False)",
+      "teardown": "context-manager-exit",
+      "source_hash": "8fc2e6cfab8ffbc8a4b312fccd3a953f469c90fab94fce15bc81449fcb90989a",
+      "owned": true
+    },
+    {
+      "path": "scripts/replay_freellmapi_three_arm.py",
+      "line": 183,
+      "column": 9,
+      "kind": "temp-artifact",
+      "owner": "_compile_once",
+      "acquisition": "tempfile.TemporaryDirectory(prefix='gludd-freellmapi-candidate-bundle-')",
+      "teardown": "context-manager-exit",
+      "source_hash": "b8b5fb1fd4f9779e121fe9b6555543311fc713f852412343306611264e2d2ddf",
+      "owned": true
+    },
+    {
       "path": "scripts/replay_self_improve_failure_corpus.py",
       "line": 524,
       "column": 9,
