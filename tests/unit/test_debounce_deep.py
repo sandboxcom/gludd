@@ -60,6 +60,19 @@ class TestDebouncerTrailing:
         d.drive(3.0)
         assert calls == [4]
 
+    def test_later_call_restarts_quiet_period(self) -> None:
+        calls: list[int] = []
+        clock = SimulatedClock(0.0)
+        d = Debouncer(lambda x: calls.append(x), wait=3.0, clock=clock)
+        d(1)
+        clock.advance(1.0)
+        d(2)
+
+        d.drive(3.0)
+        assert calls == []
+        d.drive(4.0)
+        assert calls == [2]
+
     def test_cancel_prevents_pending_call(self) -> None:
         calls: list[int] = []
         clock = SimulatedClock(0.0)

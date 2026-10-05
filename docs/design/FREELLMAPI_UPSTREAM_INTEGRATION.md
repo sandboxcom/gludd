@@ -1,7 +1,7 @@
 # FreeLLMAPI Upstream Integration Decision
 
-**Status:** Accepted architecture; `v0.11.1` promotion is on **HOLD** pending an
-exact frozen-delta comparison
+**Status:** Accepted architecture; exact `v0.11.1` replay completed and promotion
+remains on **HOLD** after tying the admitted `v0.9.9` arm
 **Decision date:** 2026-09-15
 **Promotion review:** 2026-10-05
 **Upstream:** [`tashfeenahmed/freellmapi`][upstream]
@@ -618,26 +618,28 @@ The v0.1.1 release proof now has a mechanically replayable, non-promoting chain:
 
 These inputs are updateable without editing upstream-owned code: a new stable
 candidate replaces the candidate lock, then regenerates corpus, live-provider,
-and rollback receipts under their digest validators. The current proof cannot
-promote `v0.11.1`; a reproducible candidate bundle, exact Node 20/22 hosted build,
-CI provenance, and a successful bounded live call remain external prerequisites.
-The local exact-source attempt also stopped before source execution because the
-installed Node/npm pair did not match either pinned toolchain, reporting the
-content-free `toolchain_invalid` fault.
+and rollback receipts under their digest validators. The exact local replay below
+now supplies the reproducible candidate bundle and frozen comparison; it does not
+supply the separate hosted Node 20/22 build, CI provenance, or bounded live call.
+The earlier `toolchain_invalid` exact-source attempt remains historical evidence,
+not a promotion result.
 
 ### S83.163 frozen-delta promotion decision (2026-10-05)
 
-Decision: **HOLD**. The tracked receipt is useful harness evidence, but it is not
-promotion evidence for the pending candidate. It runs the still-admitted
-`v0.9.9` kernel over four synthetic binary fixtures. The candidate lock names
-`v0.11.1`, but the receipt does not execute an exact `v0.11.1` artifact over a
-frozen route corpus. Upstream has also published `v0.12.0`. That newer release is
-discovery evidence for the next serial review; it is not permission to change
-the candidate during this experiment. The next comparison evaluates the exact,
-already reviewed `v0.11.1` source and artifact with **no retargeting**.
+Decision: **HOLD**. The exact three-arm replay is complete, and it does not clear
+the conjunctive promotion gate. The deterministic IIFE bundle is built with the
+locked esbuild `0.28.1` from `server/src/services/scoring.ts` at signed commit
+`4191d8e7abef39fcd93fab009123467036f39750`; its SHA-256 is
+`e9e5d87a0d1e9697e0681b52afb719b7fd1fcdd601bd7fcbaf430cc502114845`.
+The bundle and adapter expose only JSON-in/JSON-out `expectedReliability` inside
+bounded QuickJS, while a separate capability-minimal Node process cross-checks
+the same bytes. Neither path can admit the artifact. Upstream `v0.12.0` remains
+discovery evidence for the next serial review; this already reviewed `v0.11.1`
+experiment proceeds with **no retargeting**.
 
-The preregistration freezes one three-arm paired experiment before any outcomes
-are inspected:
+The preregistered plan and corpus are tracked in
+`config/freellmapi/three_arm_plan.json` and
+`config/freellmapi/three_arm_corpus.json`. They freeze:
 
 - **Corpus:** 32 route groups, each replayed from the same content-addressed
   input and ground truth through native Gludd, the admitted `v0.9.9` export, and
@@ -668,14 +670,36 @@ are inspected:
   observations. A timeout, crash, non-finite result, schema rejection, host
   capability request, or content leak is a fault.
 
-Every gate is conjunctive. Missing any one keeps the decision at HOLD, leaves
-`v0.9.9` serving, exercises the removal/rollback receipt, and keeps
-`runtime_admitted: false`. Passing all gates only permits the already separate
-build, provenance, ABI, live-provider, and ZDD review; it does not promote an
-artifact by itself. The existing evaluator remains the evidence owner. The run
-reuses pytest and Hypothesis for contract/property coverage, SciPy for the paired
-bootstrap and exact discordant-pair calculation, psutil for RSS, and the existing
-Vitest/Node cross-engine fixtures. It adds **no new framework**.
+The replay produced the content-addressed receipt
+`config/freellmapi/three_arm_replay_receipt.json`. Its measured comparisons are:
+
+| Comparator | paired Brier delta | 95% bootstrap LCB | exact McNemar | max stratum loss | p95 added latency |
+|---|---:|---:|---:|---:|---:|
+| native Gludd | `+0.5165816326530612` | `+0.5165816326530612` | `4.656612873077393e-10` | `0.0` | `0.22718605 ms` |
+| admitted `v0.9.9` | `0.0` | `0.0` | `1.0` | `0.0` | `0.0 ms` |
+
+The exact candidate therefore beats native Gludd, but it is behaviorally
+identical to the already admitted `v0.9.9` export on all 32 route groups. The
+failed gates are exactly `quality_lcb:freellmapi_v0_9_9` and
+`mcnemar:freellmapi_v0_9_9`. The Node cross-check matched QuickJS for every
+group. The maximum candidate call was `0.244458 ms`;
+RSS delta was `0.015625 MiB` without monotonic growth; all strata remained within
+`0.02`; and
+the offline run recorded zero network calls, zero incremental cost, and zero
+bridge faults across 96 included observations and 8 frozen exclusions.
+
+Every gate remains conjunctive. The two admitted-arm failures keep the decision
+at HOLD, leave bundle
+`d3078364c02f482909681e21895c4e86dc11cc66c1da7ae2007ad35b096ddf7d`
+(`v0.9.9`) serving, and keep `runtime_admitted: false`. Even an all-green replay
+could return only `HOLD_PENDING_SEPARATE_REVIEW`; it could not promote by itself.
+The model-layer evaluator reuses pytest and Hypothesis for tests, NumPy for the
+seeded paired bootstrap, a standard-library exact binomial calculation for McNemar,
+psutil for RSS, and the existing QuickJS plus Node engines.
+It adds no new framework and performs no bridge switching or hand-porting of upstream scoring
+logic. Reproduction uses `make freellmapi-three-arm-replay` with every documented
+variable explicit; any typed input, provenance, engine, schema, or result fault
+writes a content-free HOLD and preserves `v0.9.9`.
 
 The practitioner record explains why those gates are deliberately conservative.
 These are upstream operator reports, not a claim that the young project has a

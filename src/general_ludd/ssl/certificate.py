@@ -8,7 +8,7 @@ from itertools import pairwise
 from typing import Any
 
 from cryptography import x509
-from cryptography.exceptions import InvalidSignature
+from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import (
     ec,
@@ -61,6 +61,55 @@ def _load_private_key(key_pem: bytes) -> Any:
     return serialization.load_pem_private_key(key_pem, password=None)
 
 
+def _public_key_bytes(public_key: Any) -> bytes:
+    """Serialize a public key for stable key-pair comparison."""
+    serialized = public_key.public_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    if not isinstance(serialized, bytes):
+        raise TypeError("public key serialization did not return bytes")
+    return serialized
+
+
+def _require_valid_csr(csr: x509.CertificateSigningRequest) -> None:
+    """Reject a CSR whose proof-of-possession signature is invalid."""
+    try:
+        signature_valid = csr.is_signature_valid
+    except (UnsupportedAlgorithm, ValueError, TypeError) as exc:
+        raise ValueError("CSR signature could not be verified") from exc
+    if not signature_valid:
+        raise ValueError("CSR signature is invalid")
+
+
+def _require_matching_private_key(
+    public_key: Any,
+    private_key: Any,
+    *,
+    owner: str,
+) -> None:
+    """Reject a signing key that does not correspond to *public_key*."""
+    if _public_key_bytes(public_key) != _public_key_bytes(private_key.public_key()):
+        raise ValueError(f"private key does not match {owner}")
+
+
+def _require_ca_authority(ca_cert: x509.Certificate) -> x509.BasicConstraints:
+    """Return CA constraints after enforcing issuer authorization."""
+    try:
+        constraints = ca_cert.extensions.get_extension_for_class(x509.BasicConstraints)
+    except x509.ExtensionNotFound as exc:
+        raise ValueError("CA certificate is not authorized as a CA") from exc
+    if not constraints.critical or not constraints.value.ca:
+        raise ValueError("CA certificate is not authorized as a CA")
+    try:
+        key_usage = ca_cert.extensions.get_extension_for_class(x509.KeyUsage)
+    except x509.ExtensionNotFound:
+        return constraints.value
+    if not key_usage.value.key_cert_sign:
+        raise ValueError("CA certificate is not authorized as a CA")
+    return constraints.value
+
+
 def generate_csr(
     key_pem: bytes,
     subject: dict[str, str],
@@ -103,9 +152,11 @@ def generate_csr(
             "encipher_only": False,
             "decipher_only": False,
         }
+        unknown_usages = [usage for usage in key_usage if usage not in usage_flags]
+        if unknown_usages:
+            raise ValueError(f"Unknown key usage: {unknown_usages[0]!r}")
         for u in key_usage:
-            if u in usage_flags:
-                kwargs[u] = True
+            kwargs[u] = True
         if kwargs["encipher_only"] or kwargs["decipher_only"]:
             kwargs["key_agreement"] = True
         csr_builder = csr_builder.add_extension(x509.KeyUsage(**kwargs), critical=True)
@@ -124,9 +175,11 @@ def generate_csr(
             "time_stamping": ExtendedKeyUsageOID.TIME_STAMPING,
             "ocsp_signing": ExtendedKeyUsageOID.OCSP_SIGNING,
         }
-        oids = [eku_map[u] for u in extended_key_usage if u in eku_map]
-        if oids:
-            csr_builder = csr_builder.add_extension(x509.ExtendedKeyUsage(oids), critical=False)
+        unknown_usages = [usage for usage in extended_key_usage if usage not in eku_map]
+        if unknown_usages:
+            raise ValueError(f"Unknown extended key usage: {unknown_usages[0]!r}")
+        oids = [eku_map[u] for u in extended_key_usage]
+        csr_builder = csr_builder.add_extension(x509.ExtendedKeyUsage(oids), critical=False)
 
     return csr_builder.sign(private_key, _signature_hash(private_key)).public_bytes(serialization.Encoding.PEM)
 
@@ -160,6 +213,8 @@ def _build_cert(
     validity_days: int,
     extensions: list[x509.Extension[x509.ExtensionType]] | x509.Extensions,
 ) -> bytes:
+    if validity_days <= 0:
+        raise ValueError("validity_days must be positive")
     now = datetime.now(UTC)
     cert_builder = (
         x509.CertificateBuilder()
@@ -178,7 +233,9 @@ def _build_cert(
 def self_sign(csr_pem: bytes, key_pem: bytes, validity_days: int = 365) -> bytes:
     """Issue a self-signed certificate from *csr_pem*."""
     csr = x509.load_pem_x509_csr(csr_pem)
+    _require_valid_csr(csr)
     private_key = _load_private_key(key_pem)
+    _require_matching_private_key(csr.public_key(), private_key, owner="CSR")
     return _build_cert(
         subject_name=csr.subject,
         issuer_name=csr.subject,
@@ -197,8 +254,21 @@ def sign_csr(
 ) -> bytes:
     """Issue a certificate from a CSR using the supplied CA certificate and key."""
     csr = x509.load_pem_x509_csr(csr_pem)
+    _require_valid_csr(csr)
     ca_cert = x509.load_pem_x509_certificate(ca_cert_pem)
     ca_key = _load_private_key(ca_key_pem)
+    _require_matching_private_key(ca_cert.public_key(), ca_key, owner="CA certificate")
+    ca_constraints = _require_ca_authority(ca_cert)
+    try:
+        requested_constraints = csr.extensions.get_extension_for_class(x509.BasicConstraints)
+    except x509.ExtensionNotFound:
+        requested_constraints = None
+    if (
+        requested_constraints is not None
+        and requested_constraints.value.ca
+        and ca_constraints.path_length == 0
+    ):
+        raise ValueError("CA path-length constraint does not permit a subordinate CA")
     return _build_cert(
         subject_name=csr.subject,
         issuer_name=ca_cert.subject,
@@ -324,36 +394,33 @@ def verify_chain(cert_chain: list[bytes]) -> bool:
         parsed = [x509.load_pem_x509_certificate(pem) for pem in cert_chain]
     except (ValueError, TypeError):
         return False
-    for cert, issuer in pairwise(parsed):
-        try:
-            cert.verify_directly_issued_by(issuer)
-        except (InvalidSignature, ValueError, TypeError):
-            return False
-    return True
+    return all(_verify_signature(cert, issuer) for cert, issuer in pairwise(parsed))
 
 
 def build_chain(leaf_cert: bytes, intermediates: list[bytes]) -> list[bytes]:
     """Build a leaf-first chain from unordered candidate intermediates."""
     certs: list[tuple[x509.Certificate, bytes]] = []
-    for pem in [leaf_cert, *intermediates]:
+    for pem in intermediates:
         cert = x509.load_pem_x509_certificate(pem)
         certs.append((cert, pem))
 
     chain: list[bytes] = []
     current_pem = leaf_cert
     current = x509.load_pem_x509_certificate(current_pem)
+    visited = {current.fingerprint(hashes.SHA256())}
 
     while True:
         chain.append(current_pem)
-        found = False
+        next_issuer: tuple[x509.Certificate, bytes] | None = None
         for cert, pem in certs:
-            if cert.subject == current.issuer and pem != current_pem:
-                current_pem = pem
-                current = cert
-                found = True
+            fingerprint = cert.fingerprint(hashes.SHA256())
+            if fingerprint not in visited and _verify_signature(current, cert):
+                next_issuer = (cert, pem)
                 break
-        if not found:
+        if next_issuer is None:
             break
+        current, current_pem = next_issuer
+        visited.add(current.fingerprint(hashes.SHA256()))
 
     return chain
 
@@ -375,20 +442,10 @@ def _parse_or_none(pem: bytes) -> x509.Certificate | None:
 
 
 def _cert_details(cert: x509.Certificate) -> dict[str, object]:
-    subject_cn = ""
-    issuer_cn = ""
-    try:
-        cn_attrs = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
-        if cn_attrs:
-            subject_cn = str(cn_attrs[0].value)
-    except Exception:
-        pass
-    try:
-        cn_attrs = cert.issuer.get_attributes_for_oid(NameOID.COMMON_NAME)
-        if cn_attrs:
-            issuer_cn = str(cn_attrs[0].value)
-    except Exception:
-        pass
+    subject_attrs = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
+    subject_cn = str(subject_attrs[0].value) if subject_attrs else ""
+    issuer_attrs = cert.issuer.get_attributes_for_oid(NameOID.COMMON_NAME)
+    issuer_cn = str(issuer_attrs[0].value) if issuer_attrs else ""
 
     is_ca = False
     try:
@@ -412,7 +469,7 @@ def _verify_signature(cert: x509.Certificate, issuer: x509.Certificate) -> bool:
     try:
         cert.verify_directly_issued_by(issuer)
         return True
-    except (InvalidSignature, ValueError, TypeError):
+    except (InvalidSignature, UnsupportedAlgorithm, ValueError, TypeError):
         return False
 
 
@@ -428,10 +485,12 @@ def _check_expiry(cert: x509.Certificate, validation_time: datetime) -> list[str
 def _check_ca_constraints(cert: x509.Certificate, is_leaf: bool, position: int) -> list[str]:
     errors: list[str] = []
     try:
-        bc = cert.extensions.get_extension_for_class(x509.BasicConstraints)
-        bc_val = bc.value
+        constraints = cert.extensions.get_extension_for_class(x509.BasicConstraints)
+        bc_val = constraints.value
         if not is_leaf and not bc_val.ca:
             errors.append(f"cert at position {position}: issuer is not a CA (BasicConstraints ca=False)")
+        if not is_leaf and not constraints.critical:
+            errors.append(f"cert at position {position}: issuer BasicConstraints is not critical")
         if bc_val.ca and bc_val.path_length is not None:
             pass
     except x509.ExtensionNotFound:
@@ -457,20 +516,42 @@ def _check_path_length(
     cert_chain: list[x509.Certificate],
 ) -> list[str]:
     errors: list[str] = []
-    for i in range(len(cert_chain) - 1):
-        issuer = cert_chain[i + 1]
+    for issuer_position in range(1, len(cert_chain)):
+        issuer = cert_chain[issuer_position]
         try:
-            bc = issuer.extensions.get_extension_for_class(x509.BasicConstraints)
-            if bc.value.path_length is not None and bc.value.ca:
-                intervening_ca_count = len(cert_chain) - i - 3
-                if intervening_ca_count > bc.value.path_length:
+            constraints = issuer.extensions.get_extension_for_class(x509.BasicConstraints)
+            if constraints.value.path_length is not None and constraints.value.ca:
+                subordinate_ca_count = 0
+                for subordinate in cert_chain[1:issuer_position]:
+                    try:
+                        subordinate_constraints = subordinate.extensions.get_extension_for_class(
+                            x509.BasicConstraints
+                        )
+                    except x509.ExtensionNotFound:
+                        continue
+                    if (
+                        subordinate_constraints.value.ca
+                        and subordinate.subject != subordinate.issuer
+                    ):
+                        subordinate_ca_count += 1
+                if subordinate_ca_count > constraints.value.path_length:
                     errors.append(
-                        f"cert at position {i + 1}: path_length={bc.value.path_length} "
-                        f"exceeded ({intervening_ca_count} intervening CAs)"
+                        f"cert at position {issuer_position}: "
+                        f"path_length={constraints.value.path_length} exceeded "
+                        f"({subordinate_ca_count} subordinate CAs)"
                     )
         except x509.ExtensionNotFound:
             pass
     return errors
+
+
+def _check_critical_extensions(cert: x509.Certificate, position: int) -> list[str]:
+    """Reject critical extensions that this validator cannot interpret."""
+    return [
+        f"cert at position {position}: unrecognized critical extension {extension.oid.dotted_string}"
+        for extension in cert.extensions
+        if extension.critical and isinstance(extension.value, x509.UnrecognizedExtension)
+    ]
 
 
 def validate_chain(
@@ -495,7 +576,16 @@ def validate_chain(
             cert_details=[_cert_details(cert)],
         )
 
-    now = validation_time or datetime.now(UTC)
+    if validation_time is not None:
+        if validation_time.tzinfo is None or validation_time.utcoffset() is None:
+            return ValidationResult(
+                valid=False,
+                errors=["validation_time must be timezone-aware"],
+                cert_details=[],
+            )
+        now = validation_time.astimezone(UTC)
+    else:
+        now = datetime.now(UTC)
     errors: list[str] = []
     parsed: list[x509.Certificate] = []
 
@@ -512,6 +602,7 @@ def validate_chain(
 
     for i, cert in enumerate(parsed):
         is_leaf = i == 0
+        errors.extend(_check_critical_extensions(cert, i))
         expiry_errs = _check_expiry(cert, now)
         for e in expiry_errs:
             errors.append(f"cert at position {i}: {e}")
