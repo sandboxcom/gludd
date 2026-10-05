@@ -112,11 +112,11 @@ class TestPythonVersionMatrix:
 
 
 class TestGateJobStructure:
-    def test_gate_runs_on_ubuntu(self):
+    def test_gate_pins_ubuntu_24_04(self):
         wf = _load_workflow()
         runs_on = wf["jobs"]["gate"]["runs-on"]
-        assert runs_on == "ubuntu-latest", (
-            f"gate job should run on ubuntu-latest; got {runs_on}"
+        assert runs_on == "ubuntu-24.04", (
+            f"gate job should pin ubuntu-24.04; got {runs_on}"
         )
 
     def test_gate_depends_on_version(self):
