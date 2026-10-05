@@ -116,6 +116,15 @@ class TestBudgetEnvelopeSpend:
         assert result["allowed"] is False
         assert result["remaining"] == pytest.approx(0.0)
 
+    def test_decimal_boundary_is_exact(self) -> None:
+        envelope = BudgetEnvelope("decimal", limit=0.3)
+
+        assert envelope.try_spend(0.1)["allowed"] is True
+        assert envelope.try_spend(0.2)["allowed"] is True
+        assert envelope.spent == 0.3
+        assert envelope.remaining == 0.0
+        assert envelope.is_exhausted
+
 
 class TestBudgetEnvelopeRecordSpend:
     def test_record_spend_no_gating(self) -> None:
@@ -127,6 +136,14 @@ class TestBudgetEnvelopeRecordSpend:
         e = BudgetEnvelope("test", limit=10.0)
         with pytest.raises(ValueError, match="non-negative"):
             e.record_spend(-5.0)
+
+    def test_record_spend_uses_decimal_arithmetic(self) -> None:
+        envelope = BudgetEnvelope("decimal", limit=1.0)
+        envelope.record_spend(0.1)
+        envelope.record_spend(0.2)
+
+        assert envelope.spent == 0.3
+        assert envelope.remaining == 0.7
 
 
 class TestBudgetEnvelopeStatus:
@@ -153,6 +170,21 @@ class TestBudgetEnvelopeStatus:
         status = e.get_status()
         assert status["exhausted"] is True
         assert status["remaining"] == pytest.approx(0.0)
+
+    def test_status_preserves_public_float_shape(self) -> None:
+        envelope = BudgetEnvelope("decimal", limit=1.0)
+        envelope.try_spend(0.1)
+
+        status = envelope.get_status()
+        assert isinstance(status["limit"], float)
+        assert isinstance(status["spent"], float)
+        assert isinstance(status["remaining"], float)
+
+    def test_updated_limit_reuses_fail_closed_validation(self) -> None:
+        envelope = BudgetEnvelope("decimal", limit=1.0)
+
+        with pytest.raises(ValueError, match="non-negative"):
+            envelope.limit = float("-inf")
 
 
 class TestBudgetEnvelopeReset:
@@ -381,6 +413,17 @@ class TestBudgetManager:
         bm.per_task.try_spend("t1", 20.0)
         bm.per_tool.try_spend("bash", 30.0)
         assert bm.total_spent() == pytest.approx(60.0)
+
+    def test_total_spent_aggregates_decimal_values_exactly(self) -> None:
+        manager = BudgetManager()
+        manager.per_agent.set_limit("agent", 1.0)
+        manager.per_task.set_limit("task", 1.0)
+        manager.per_tool.set_limit("tool", 1.0)
+        manager.per_agent.try_spend("agent", 0.1)
+        manager.per_task.try_spend("task", 0.2)
+        manager.per_tool.try_spend("tool", 0.3)
+
+        assert manager.total_spent() == 0.6
 
     def test_get_status_all_layers(self) -> None:
         bm = BudgetManager()

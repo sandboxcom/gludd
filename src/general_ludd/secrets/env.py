@@ -8,17 +8,18 @@ import re
 # S-1 (fail-closed allowlist): EnvSecretsManager previously returned
 # os.environ.get(alias) for ANY name, so a caller (or a hot-reloaded model
 # profile whose credential_alias is attacker-controlled) could exfiltrate
-# arbitrary process env vars — GLUDD_PSK, cloud provider keys, AWS_*, etc.
+# arbitrary process env vars — the daemon's pre-shared key, cloud provider
+# keys, AWS_*, etc.
 # Resolution from the ambient environment is now restricted to:
 #   1. names the caller explicitly registered (via overrides / set())
 #   2. names matching a recognized secret/credential naming convention
 #   3. names in an explicit extra allow-set passed by the caller
-# Anything else (e.g. GLUDD_PSK, PATH, HOME) resolves to None.
+# Anything else (e.g. the daemon pre-shared key, PATH, HOME) resolves to None.
 #
 # The suffix/prefix patterns below cover every legitimate api-key / api-base
 # alias used by the model gateway (e.g. OPENAI_API_KEY, ZAI_API_KEY,
 # ZAI_BASE_URL, *_API_BASE) and the infra routers (slurm_api_url,
-# slurm_auth_token), while NOT matching GLUDD_PSK.
+# slurm_auth_token), while NOT matching the pre-shared key var.
 _ALLOWLIST_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"_API_KEY$", re.IGNORECASE),
     re.compile(r"_API_BASE$", re.IGNORECASE),
@@ -51,11 +52,13 @@ class EnvSecretsManager:
         overrides: dict[str, str] | None = None,
         allow: set[str] | None = None,
     ) -> None:
+        """Initialize with explicit overrides and an extra env allow-set."""
         self._overrides: dict[str, str] = overrides or {}
         # Explicit extra allow-set of env-var names a caller vouches for.
         self._allow: set[str] = set(allow or set())
 
     def set(self, alias: str, value: str) -> None:
+        """Register an explicit override value for one alias."""
         self._overrides[alias] = value
 
     def allow_env(self, *names: str) -> None:
@@ -68,11 +71,12 @@ class EnvSecretsManager:
         return any(p.search(alias_name) for p in _ALLOWLIST_PATTERNS)
 
     def resolve(self, alias_name: str, project_id: str | None = None) -> str | None:
+        """Resolve one alias from overrides, then allowlisted env vars, else None."""
         # Explicitly-registered overrides are always honored.
         if alias_name in self._overrides:
             return self._overrides[alias_name]
         # Ambient env is only consulted for allowlisted names. This is the
-        # S-1 fix: GLUDD_PSK / arbitrary process env vars no longer leak.
+        # S-1 fix: the pre-shared key / arbitrary process env vars no longer leak.
         if self._is_allowlisted(alias_name):
             val = os.environ.get(alias_name)
             if val is None:
@@ -93,5 +97,6 @@ class EnvSecretsManager:
         return None
 
     def list_aliases(self) -> list[str]:
+        """Return the sorted list of explicitly registered override aliases."""
         keys = set(self._overrides.keys())
         return sorted(keys)

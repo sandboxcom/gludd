@@ -227,10 +227,10 @@ class TestReleaseRunbook:
             "RELEASE_RUNBOOK.md must cover the 'cancelled CI is not a verdict' rule"
         )
 
-    def test_covers_12_artifact_categories(self) -> None:
+    def test_covers_28_artifact_categories(self) -> None:
         text = _read(RUNBOOK)
-        assert "12 artifact" in text.lower() or "12 categories" in text.lower(), (
-            "RELEASE_RUNBOOK.md must reference the 12 artifact categories"
+        assert "28 artifact" in text.lower() or "28 categories" in text.lower(), (
+            "RELEASE_RUNBOOK.md must reference the 28 artifact categories"
         )
 
     def test_has_required_headings(self) -> None:
@@ -239,6 +239,36 @@ class TestReleaseRunbook:
         required = {"The rule", 'What "complete" means', "Traps"}
         missing = required - headings
         assert not missing, f"RELEASE_RUNBOOK.md missing required sections: {missing}"
+
+
+class TestReleaseCompletenessContractMirrors:
+    """Active release guidance must mirror the executable 28/30 contract."""
+
+    CURRENT_RELEASE_DOCS: ClassVar[tuple[Path, ...]] = (
+        AGENTS,
+        README,
+        DOCS / "CLAUDE.md",
+        DOCS / "MERGE_PLAN.md",
+        DOCS / "RELEASE_CHECKLIST.md",
+        RUNBOOK,
+        DOCS / "STABILIZATION_PLAN.md",
+        ARCH,
+        DOCS / "index.md",
+        DOCS / "specs" / "BEHAVIORAL_SPECS.md",
+        DOCS / "specs" / "COMPREHENSIVE_SPECS_20K.md",
+        DOCS / "specs" / "OPERATIONAL_DISCIPLINE_SPECS.md",
+        ROOT / "scripts" / "README.md",
+    )
+
+    def test_active_docs_require_28_categories_and_30_assets(self) -> None:
+        for path in self.CURRENT_RELEASE_DOCS:
+            text = _read(path).lower()
+            assert "28 artifact" in text or "28 categor" in text, (
+                f"{path.relative_to(ROOT)} does not mirror the 28-category gate"
+            )
+            assert "30 asset" in text or "30-asset" in text, (
+                f"{path.relative_to(ROOT)} does not mirror the 30-asset minimum"
+            )
 
 
 # ---------------------------------------------------------------------------

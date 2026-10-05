@@ -15,6 +15,7 @@ tool class, chatter risk, tolerance capability, surface integrity.
 
 from __future__ import annotations
 
+from general_ludd.materials.core import SCHEMA_VERSION
 from general_ludd.materials.joining import JoiningAdvisor
 from general_ludd.materials.machining import MachiningAdvisor
 
@@ -324,7 +325,8 @@ class TestSchemaVersionAndMetadata:
         adv = JoiningAdvisor()
         result = adv.assess_compatibility("aisi_1045", "aisi_1045", "gmaw")
         assert "schema_version" in result
-        assert isinstance(result["schema_version"], int)
+        assert result["schema_version"] == SCHEMA_VERSION
+        assert isinstance(result["schema_version"], str)
 
     def test_result_includes_material_ids(self):
         adv = JoiningAdvisor()

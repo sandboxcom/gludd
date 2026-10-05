@@ -121,6 +121,9 @@ class ArgoWorkflowsSource:
         *,
         http_get: Callable[..., tuple[int, object]] | None = None,
     ) -> None:
+        """Build the source from connector config; ``transport`` and ``http_get`` are exclusive."""
+        if transport is not None and http_get is not None:
+            raise ValueError("transport and http_get are mutually exclusive")
         self._config = dict(config)
         self.name = str(self._config.get("name", "argo_workflows"))
         self.allow_private = bool(self._config.get("allow_private", False))
@@ -133,6 +136,7 @@ class ArgoWorkflowsSource:
         self._token = os.environ.get(self._token_env, "")
         transport_impl: Transport
         if http_get is not None:
+
             def _legacy(_method: str, url: str, headers: Mapping[str, str], _timeout: float) -> tuple[int, bytes]:
                 status, body = http_get(url, dict(headers))
                 if isinstance(body, bytes):
@@ -140,6 +144,7 @@ class ArgoWorkflowsSource:
                 if isinstance(body, str):
                     return status, body.encode()
                 return status, json.dumps(body).encode()
+
             transport_impl = _legacy
         else:
             transport_impl = transport or _httpx_transport
@@ -182,6 +187,7 @@ class ArgoWorkflowsSource:
 
     # -- public API --------------------------------------------------------
     def health(self) -> dict[str, object]:
+        """Probe the source. Never raises."""
         try:
             status, _ = self._request("GET", self._workflows_url())
         except Exception:  # health must never raise
@@ -192,6 +198,7 @@ class ArgoWorkflowsSource:
         return {"ok": False, "detail": f"HTTP {status}"}
 
     def query(self, spec: ArgoQuerySpec | None = None) -> list[dict[str, object]]:
+        """Return normalized workflow records from the Argo API."""
         status, body = self._request("GET", self._workflows_url())
         if not (200 <= status < 300):
             raise ConnectorConfigError(f"argo workflows query failed: HTTP {status}")
@@ -201,11 +208,7 @@ class ArgoWorkflowsSource:
         items_obj = payload.get("items")
         # Argo returns null `items` when the list is empty.
         items: list[object] = items_obj if isinstance(items_obj, list) else []
-        return [
-            self._normalize_workflow(cast("Mapping[str, object]", w))
-            for w in items
-            if isinstance(w, Mapping)
-        ]
+        return [self._normalize_workflow(cast("Mapping[str, object]", w)) for w in items if isinstance(w, Mapping)]
 
     def fetch_jobs(self, spec: ArgoQuerySpec | None = None) -> list[dict[str, object]]:
         """Helper alias: each Argo *workflow* is the unit of pipeline work here."""

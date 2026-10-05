@@ -346,7 +346,7 @@ class TestResolveBinary:
             def get_binary_path(self, name: str) -> None:
                 return None
 
-        fake_pkg.BinaryBootstrapper = _Boot
+        fake_pkg.__dict__["BinaryBootstrapper"] = _Boot
         monkeypatch.setitem(
             sys.modules, "general_ludd.filestore.bootstrap", fake_pkg
         )
@@ -363,25 +363,13 @@ class TestResolveBinary:
 
 
 # --------------------------------------------------------------------------
-# FINDING 3 — filestore probe exception must warn, not silently swallow
+# Managed-host boundary — controller filestore must never be imported
 # --------------------------------------------------------------------------
 
-def test_filestore_probe_exception_warns(
+def test_controller_filestore_is_not_probed_with_module(
     module: ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """When the filestore probe raises, resolve_osquery_binary must call
-    module.warn(...) then fall through to PATH — not silently discard exc."""
-    import sys
-    import types
-
-    fake_pkg = types.ModuleType("general_ludd.filestore.bootstrap")
-
-    class _BrokenBoot:
-        def __init__(self, *a: Any, **k: Any) -> None:
-            raise RuntimeError("filestore unavailable in test")
-
-    fake_pkg.BinaryBootstrapper = _BrokenBoot
-    monkeypatch.setitem(sys.modules, "general_ludd.filestore.bootstrap", fake_pkg)
+    """Managed modules resolve target-host binaries without controller imports."""
     monkeypatch.setattr(module.shutil, "which", lambda name: "/usr/bin/osqueryi")
 
     class _MockModule:
@@ -395,27 +383,14 @@ def test_filestore_probe_exception_warns(
     result = module.resolve_osquery_binary("", module=mock_module)
 
     assert result == "/usr/bin/osqueryi"
-    assert len(mock_module.warnings) == 1
-    assert "filestore probe failed" in mock_module.warnings[0]
-    assert "falling back to PATH" in mock_module.warnings[0]
+    assert mock_module.warnings == []
+    assert "general_ludd.filestore" not in MODULE_PATH.read_text(encoding="utf-8")
 
 
-def test_filestore_probe_exception_no_warn_when_no_module(
+def test_managed_path_fallback_is_silent_without_module(
     module: ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Backward compat: when no module is passed, probe exception still falls
-    through to PATH without raising."""
-    import sys
-    import types
-
-    fake_pkg = types.ModuleType("general_ludd.filestore.bootstrap")
-
-    class _BrokenBoot:
-        def __init__(self, *a: Any, **k: Any) -> None:
-            raise RuntimeError("no module passed")
-
-    fake_pkg.BinaryBootstrapper = _BrokenBoot
-    monkeypatch.setitem(sys.modules, "general_ludd.filestore.bootstrap", fake_pkg)
+    """The optional module argument does not alter managed-host PATH lookup."""
     monkeypatch.setattr(module.shutil, "which", lambda name: "/usr/local/bin/osqueryi")
 
     result = module.resolve_osquery_binary("")

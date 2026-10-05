@@ -5,6 +5,16 @@
 # flags false claims (100% with no evidence or missing test files), and writes
 # audit artifacts.  NEVER mutates the repo.
 
+- name: Preflight managed-host runtime
+  ansible.builtin.include_role:
+    name: general_ludd.agent.managed_python_preflight
+    tasks_from: main
+    public: false
+  vars:
+    managed_python_preflight_interpreter: "{{ ansible_python_interpreter }}"
+    managed_python_preflight_lock_sha256: "{{ gludd_managed_python_lock_sha256 }}"
+    managed_python_preflight_previous_interpreter: "{{ gludd_previous_python_interpreter | default('') }}"
+
 - name: Create artifact directory
   ansible.builtin.file:
     path: "{{ artifact_dir }}"
@@ -13,7 +23,7 @@
 
 - name: Run feature evidence audit script
   ansible.builtin.command:
-    cmd: "uv run python scripts/audit_features.py"
+    cmd: "{{ ansible_python_interpreter }} scripts/audit_features.py"
     chdir: "{{ repo_path }}"
   register: _fea_result
   changed_when: false

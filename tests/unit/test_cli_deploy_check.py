@@ -26,7 +26,7 @@ class TestPskHeaders:
             assert "Authorization" not in headers
 
     def test_psk_env_adds_bearer(self):
-        with patch.dict("os.environ", {"GLUDD_PSK": "secret123"}, clear=True):
+        with patch.dict("os.environ", {"GLUDD_AUTH_PSK": "secret123"}, clear=True):
             headers = _psk_headers()
             assert headers["Authorization"] == "Bearer secret123"
 

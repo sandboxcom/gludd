@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from general_ludd.security.safe_diskcache import open_safe_diskcache
+from general_ludd.security.safe_diskcache import SafeCache, open_safe_diskcache
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,8 @@ DEFAULT_CACHE_DIR = ".gludd/local_memory"
 
 @dataclass
 class MemoryRecord:
+    """Represent one project-scoped local memory value and its expiry metadata."""
+
     agent_id: str
     key: str
     value: str
@@ -31,6 +33,7 @@ class MemoryRecord:
     updated_at: float = field(default_factory=time.time)
 
     def as_dict(self) -> dict[str, object]:
+        """Serialize the record into safe cache-compatible primitives."""
         return {
             "agent_id": self.agent_id,
             "key": self.key,
@@ -44,6 +47,7 @@ class MemoryRecord:
 
     @staticmethod
     def from_dict(data: dict[str, object]) -> MemoryRecord:
+        """Build a record from validated cache-compatible primitives."""
         return MemoryRecord(
             agent_id=str(data.get("agent_id", "")),
             key=str(data.get("key", "")),
@@ -74,11 +78,19 @@ class LocalAgentMemory:
     """
 
     def __init__(self, cache_dir: str | Path = DEFAULT_CACHE_DIR) -> None:
+        """Initialize the store without acquiring its SQLite-backed cache."""
         path = os.path.expanduser(os.path.expandvars(str(cache_dir)))
         os.makedirs(path, mode=0o700, exist_ok=True)
         self._cache_dir = path
-        self._cache = open_safe_diskcache(path)
+        self._cache_instance: SafeCache | None = None
         self._index_prefix = "idx"
+
+    @property
+    def _cache(self) -> SafeCache:
+        """Open the cache only when a data operation needs SQLite."""
+        if self._cache_instance is None:
+            self._cache_instance = open_safe_diskcache(self._cache_dir)
+        return self._cache_instance
 
     @staticmethod
     def _project_key(project_id: str | None) -> str:
@@ -99,6 +111,7 @@ class LocalAgentMemory:
     async def get(
         self, agent_id: str, key: str, namespace: str = "default", project_id: str | None = None,
     ) -> MemoryRecord | None:
+        """Return one unexpired memory record, if present."""
         cache_key = self._data_key(agent_id, key, namespace, project_id)
         data = self._cache.get(cache_key, default=None)
         if data is None:
@@ -125,6 +138,7 @@ class LocalAgentMemory:
         project_id: str | None = None,
         ttl_seconds: int | None = None,
     ) -> MemoryRecord:
+        """Store and index one memory record."""
         now = time.time()
         record = MemoryRecord(
             agent_id=agent_id,
@@ -149,6 +163,7 @@ class LocalAgentMemory:
     async def delete(
         self, agent_id: str, key: str, namespace: str = "default", project_id: str | None = None,
     ) -> bool:
+        """Delete one memory record and update its namespace index."""
         cache_key = self._data_key(agent_id, key, namespace, project_id)
         idx_key = self._index_key(agent_id, namespace, project_id)
         existed = cache_key in self._cache
@@ -169,6 +184,7 @@ class LocalAgentMemory:
         project_id: str | None = None,
         limit: int = 100,
     ) -> list[MemoryRecord]:
+        """List up to ``limit`` unexpired records in one namespace."""
         idx_key = self._index_key(agent_id, namespace, project_id)
         stored_keys = self._cache.get(idx_key, default=[])
         keys: set[str] = (
@@ -184,6 +200,7 @@ class LocalAgentMemory:
         return results
 
     async def purge_expired(self) -> int:
+        """Delete expired records and return the number removed."""
         purged = 0
         for cache_key_bytes in list(self._cache):
             if isinstance(cache_key_bytes, str):
@@ -219,8 +236,13 @@ class LocalAgentMemory:
         return elapsed > record.ttl_seconds
 
     def close(self) -> None:
-        self._cache.close()
+        """Close the owned cache if acquired and permit safe repeated calls."""
+        cache = self._cache_instance
+        if cache is not None:
+            cache.close()
+            self._cache_instance = None
 
     @property
     def cache_dir(self) -> str:
+        """Return the expanded owner-only cache directory."""
         return self._cache_dir

@@ -6,6 +6,7 @@ The isWatchdogDisengaged bug (Session 52): an import alias
 under --experimental-strip-types. This test scans all .ts plugin files
 for similar collisions before they reach production.
 """
+
 from __future__ import annotations
 
 import re
@@ -34,6 +35,9 @@ def _find_import_aliases(src: str) -> list[tuple[str, str, int]]:
     """Find import aliases: returns [(original, alias, line_number)]."""
     results: list[tuple[str, str, int]] = []
     for i, line in enumerate(src.split("\n"), 1):
+        stripped = line.strip()
+        if stripped.startswith(("//", "*", "/*")) or "import" not in stripped:
+            continue
         for m in re.finditer(r"(\w+)\s+as\s+(\w+)", line):
             original, alias = m.group(1), m.group(2)
             if original != alias:
@@ -43,10 +47,7 @@ def _find_import_aliases(src: str) -> list[tuple[str, str, int]]:
 
 def _has_local_definition(src: str, name: str) -> bool:
     """Check if a local function/const/class with the given name exists."""
-    return bool(re.search(
-        rf"(?:export\s+)?(?:function|const|class|let|var)\s+{re.escape(name)}\b",
-        src
-    ))
+    return bool(re.search(rf"(?:export\s+)?(?:function|const|class|let|var)\s+{re.escape(name)}\b", src))
 
 
 class TestNoImportAliasCollisions:
@@ -60,11 +61,9 @@ class TestNoImportAliasCollisions:
         for original, alias, line in aliases:
             if _has_local_definition(src, alias):
                 violations.append(
-                    f"  line {line}: import alias '{alias}' "
-                    f"(from '{original}') collides with local definition"
+                    f"  line {line}: import alias '{alias}' (from '{original}') collides with local definition"
                 )
         assert not violations, (
             f"{fpath.name}: import alias / local definition collisions detected.\n"
-            f"This causes ReferenceError under --experimental-strip-types:\n"
-            + "\n".join(violations)
+            f"This causes ReferenceError under --experimental-strip-types:\n" + "\n".join(violations)
         )

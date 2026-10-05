@@ -1,13 +1,8 @@
 """
 Capability dispatch module_utils for general_ludd.agent.
 
-Thin wrapper delegating to general_ludd.dispatch modules:
-- CapabilityRegistry, discover_capabilities  (capabilities.py)
-- CapabilityRouter, RouteResult              (router.py)
-- DynamicDispatcher                          (dynamic_dispatcher.py)
-
-Stdlib-only so it runs inside Ansible module execution without
-third-party deps (the delegated dispatch modules handle their own imports).
+Thin stdlib-only wrapper over the daemon's authenticated capability routes.
+Collection processes never import the core router or scan the source checkout.
 
 Usage in a module::
 
@@ -23,16 +18,9 @@ Usage in a module::
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import Any
 
-# ---------------------------------------------------------------------------
-# Ensure general_ludd package is importable when running inside Ansible
-# ---------------------------------------------------------------------------
-_SRC = Path(__file__).resolve().parents[6] / "src"
-if str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import GluddClient
 
 # ---------------------------------------------------------------------------
 # Public constants (kept for backward compatibility)
@@ -58,35 +46,6 @@ class CapabilityDispatchError(Exception):
 _registry: dict[str, dict[str, Any]] = {}
 
 # ---------------------------------------------------------------------------
-# Lazy router singleton — built once per process
-# ---------------------------------------------------------------------------
-
-_router: Any = None
-_router_init: bool = False
-
-
-def _build() -> Any:
-    """Create a CapabilityRouter backed by an empty CapabilityRegistry.
-
-    Returns the router on success, or None if general_ludd.dispatch is not
-    importable (no router → graceful fallback in list/register).
-    """
-    global _router, _router_init
-    if _router_init:
-        return _router
-    _router_init = True
-    try:
-        from general_ludd.dispatch.capabilities import CapabilityRegistry
-        from general_ludd.dispatch.router import CapabilityRouter
-
-        registry = CapabilityRegistry()
-        _router = CapabilityRouter(registry)
-    except Exception:
-        _router = None
-    return _router
-
-
-# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -101,46 +60,37 @@ def dispatch(
     model_profile: str | None = None,
     role: str | None = None,
 ) -> dict[str, Any]:
-    """Route a capability through CapabilityRouter.route().
-
-    The ``daemon_url``, ``psk``, ``timeout``, ``model_profile``, and ``role``
-    keyword-only arguments are retained for backward compatibility but are no
-    longer consumed — routing is now in-process via ``CapabilityRouter``.
-    """
+    """Route a capability through the daemon's shared registry."""
     if not capability or not isinstance(capability, str):
         raise CapabilityDispatchError("capability must be a non-empty string")
 
     if payload is None:
         payload = {}
 
-    router = _build()
-    if router is None:
+    client = GluddClient(base_url=daemon_url, psk=psk, timeout=timeout)
+    response = client.post(
+        "/api/dispatch/capability",
+        {"capability": capability, "payload": payload},
+    )
+    if response.get("_error") or response.get("_status") != 200:
         return {"results": [], "count": 0, "ok_count": 0, "error_count": 1}
-
-    result = router.route(capability, payload)
-    results: list[dict[str, Any]] = []
-    ok_count = 0
-    error_count = 0
-
-    if result.ok:
-        for m in result.matches:
-            results.append(
-                {
-                    "ok": True,
-                    "capability": result.capability,
-                    "collection": m.name,
-                    "score": m.score,
-                }
-            )
-            ok_count += 1
-    else:
-        error_count = 1
-
+    matches = response.get("matches")
+    raw_matches = matches if isinstance(matches, list) else []
+    results = [
+        {
+            "ok": True,
+            "capability": response.get("capability", capability),
+            "collection": match.get("collection", ""),
+            "score": match.get("score", 0.0),
+        }
+        for match in raw_matches
+        if isinstance(match, dict)
+    ]
     return {
         "results": results,
         "count": len(results),
-        "ok_count": ok_count,
-        "error_count": error_count,
+        "ok_count": len(results),
+        "error_count": 0 if response.get("ok") else 1,
     }
 
 
@@ -149,20 +99,14 @@ def list_capabilities(
     psk: str = "",
     timeout: int = DEFAULT_TIMEOUT,
 ) -> list[str]:
-    """List known capabilities from the registry and router.
-
-    Merges process-local entries (via ``register_capability``) with
-    capabilities discovered by the router.
-    """
+    """List daemon capabilities plus compatibility-local registrations."""
     capabilities: set[str] = set(_registry.keys())
-
-    router = _build()
-    if router is not None:
-        try:
-            for cap in router.list_capabilities():
-                capabilities.add(cap)
-        except Exception:
-            pass
+    response = GluddClient(base_url=daemon_url, psk=psk, timeout=timeout).get(
+        "/api/dispatch/capabilities"
+    )
+    remote = response.get("capabilities")
+    if isinstance(remote, list):
+        capabilities.update(str(item) for item in remote)
 
     return sorted(capabilities)
 

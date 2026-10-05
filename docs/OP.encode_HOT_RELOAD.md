@@ -1,12 +1,12 @@
-## Hot-Reload Proxy Pattern Architecture
+# Hot-Reload Proxy Pattern Architecture
 
 **Problem:** OpenCode loads and compiles plugins ONCE at startup. Editing `.opencode/plugin/*.ts` does not take effect without restarting opencode. This means a guardrail fix committed mid-session is invisible until the human intervenes.
 
 **Solution:** Each enforcement plugin is a thin proxy that delegates hook calls to a standalone JS module at `/tmp/gludd-hot-<plugin>.js`, re-read whenever its mtime changes, falling back to compiled-in defaults on any failure.
 
-### 1. Architecture (three layers)
+## 1. Architecture (three layers)
 
-```
+```text
 ┌─────────────────────────────────────────────────────┐
 │ Plugin .ts (compiled once at opencode startup)      │
 │ ┌─────────────────────────────────────────────────┐ │
@@ -59,9 +59,9 @@ export default ({ }) => ({
 | Fallback | Silent fail-open — any error (missing file, parse error, runtime exception) returns `defaultImpl` |
 | Module loading | `createRequire()` after deleting the exact module-cache entry, so CommonJS hook exports are re-evaluated after an mtime change |
 
-### 2. Building hot modules
+## 2. Building hot modules
 
-```
+```text
 make hot-reload-plugins
 ```
 
@@ -86,9 +86,9 @@ Only plugins with a `defaultImpl` object—directly or in their thin proxy's
 implementation module—produce hot modules. Plugins without the proxy pattern
 are reported as skipped and continue to use their compiled-in behavior.
 
-### 3. Verifying hot modules
+## 3. Verifying hot modules
 
-```
+```text
 make hot-reload-status          # lists all /tmp/gludd-hot-*.js with mtime age + size
 make check-hot-reload-fresh     # exits 1 if any hot module is stale or broken
 ```
@@ -106,7 +106,7 @@ The parser check matters because esbuild legitimately emits expressions such as
 TypeScript return annotation, falsely rejecting ten valid modules. Syntax is
 now decided by the JavaScript parser instead of an ambiguous token pattern.
 
-### 4. Limitations
+## 4. Limitations
 
 | Limitation | Detail |
 |------------|--------|
@@ -116,7 +116,7 @@ now decided by the JavaScript parser instead of an ambiguous token pattern.
 | **Hook signature changes require restart** | If you add a new hook to `defaultImpl` (e.g. a new `"session.idle"` handler), the compiled-in proxy wrapper must also be updated to call `loadHotModule()[newHook]`. That wrapper change requires an opencode restart. |
 | **`make restart-opencode` is the only activation path for proxy-wrapper changes** | Per `Makefile:3534`: "Plugin .ts edits do NOT hot-reload. OpenCode compiles plugins once at startup." Hot-reload covers hook *body* changes, not hook *registration* changes. |
 
-### 5. Upstream user reports and design evidence
+## 5. Upstream user reports and design evidence
 
 - OpenCode users continue to report lifecycle cases where custom tooling works
   only after a restart. In
@@ -137,7 +137,7 @@ now decided by the JavaScript parser instead of an ambiguous token pattern.
   and validates the exact CommonJS candidate with Node before atomically
   publishing it.
 
-### 6. The stale backup problem (`make restore-opencode`)
+## 6. The stale backup problem (`make restore-opencode`)
 
 `make restore-opencode` (`Makefile:3909`) restores `.opencode/` from `.opencode.orig/` (created by `make backup-opencode`). This exists as a recovery mechanism when opencode's cache is corrupted (`~/.cache/opencode`).
 
@@ -154,7 +154,7 @@ now decided by the JavaScript parser instead of an ambiguous token pattern.
 - After `make restore-opencode`, immediately run `make hot-reload-plugins` to regenerate hot modules from the restored (possibly older) source
 - Consider `.opencode.orig/` a "last known good" recovery point, not a live development mirror
 
-### 7. Reference: files and make targets
+## 7. Reference: files and make targets
 
 | Artifact | Path | Purpose |
 |----------|------|---------|

@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import pytest
-
-from general_ludd.ssl.asn1 import (
+from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import (
     _KNOWN_OIDS,
     _NAME_TO_TAG,
     _TAG_CLASS_BITS,
@@ -16,6 +15,7 @@ from general_ludd.ssl.asn1 import (
     _encode_int,
     _encode_length,
     _encode_oid,
+    _encode_value,
     _encoded_child_length,
     encode_der,
     generate_oid,
@@ -63,6 +63,10 @@ class TestIntegerEncoding:
 
     def test_decode_empty_is_zero(self) -> None:
         assert _decode_int(b"") == 0
+
+    @pytest.mark.parametrize("value", [-1, -127, -128, -256, -65535])
+    def test_negative_encode_decode_roundtrip(self, value: int) -> None:
+        assert _decode_int(_encode_int(value)) == value
 
 
 class TestOIDEncoding:
@@ -148,6 +152,27 @@ class TestTLVDecoding:
         assert result["unused_bits"] == 0
         assert result["value"] == b"\x03\x00\x01\x02"
 
+    def test_decode_constructed_octet_string(self) -> None:
+        result, _ = _decode_tlv(bytes([0x24, 0x03, 0x02, 0x01, 0x2A]), 0)
+        assert result["children"][0]["value"] == 42
+
+    def test_decode_high_tag_number(self) -> None:
+        result, offset = _decode_tlv(bytes([0x1F, 0x20, 0x00]), 0)
+        assert result == {"type": "TAG_32", "class": "UNIVERSAL", "value": b""}
+        assert offset == 3
+
+    @pytest.mark.parametrize(
+        ("der", "expected"),
+        [
+            (bytes([0x17, 0x03]) + b"now", "now"),
+            (bytes([0x18, 0x03]) + b"now", "now"),
+            (bytes([0x13, 0x03]) + b"abc", "abc"),
+        ],
+    )
+    def test_decode_text_types(self, der: bytes, expected: str) -> None:
+        result, _ = _decode_tlv(der, 0)
+        assert result["value"] == expected
+
 
 class TestDERRoundtrip:
     def test_encode_decode_null(self) -> None:
@@ -198,6 +223,25 @@ class TestDERRoundtrip:
         assert parsed["unused_bits"] == 4
         assert parsed["value"] == b"\x0f\x0f"
 
+    def test_parse_appends_trailing_children_to_constructed_value(self) -> None:
+        parsed = parse_der(bytes([0x30, 0x03, 0x02, 0x01, 0x01, 0x02, 0x01, 0x02]))
+        assert [child["value"] for child in parsed["children"]] == [1, 2]
+
+    def test_parse_rejects_trailing_primitive_data(self) -> None:
+        with pytest.raises(ValueError, match="Trailing data"):
+            parse_der(bytes([0x02, 0x01, 0x01, 0x05, 0x00]))
+
+    def test_encode_value_accepts_collection_wire_types(self) -> None:
+        assert _encode_value({"type": "OCTET STRING", "value": "abc"}) == b"abc"
+        assert _encode_value({"type": "UTF8String", "value": b"abc"}) == b"abc"
+        assert _encode_value({"type": "UTCTime", "value": b"now"}) == b"now"
+        assert _encode_value({"type": "GeneralizedTime", "value": "later"}) == b"later"
+
+    def test_encode_value_fallbacks_are_bounded(self) -> None:
+        assert _encode_value({"type": "TAG_99", "value": b"raw"}) == b"raw"
+        assert _encode_value({"type": "TAG_99", "value": "text"}) == b"text"
+        assert _encode_value({"type": "TAG_99", "value": object()}) == b""
+
 
 class TestLookupOID:
     def test_known_oid(self) -> None:
@@ -231,3 +275,10 @@ class TestEncodedChildLength:
     def test_simple_tlv(self) -> None:
         der = bytes([0x02, 0x01, 0x2A])
         assert _encoded_child_length(der, 0) == 3
+
+    def test_high_tag_and_long_length(self) -> None:
+        der = bytes([0x1F, 0x81, 0x20, 0x81, 0x80]) + bytes(128)
+        assert _encoded_child_length(der, 0) == len(der)
+
+    def test_truncated_tag_or_length_returns_zero(self) -> None:
+        assert _encoded_child_length(bytes([0x1F, 0x81]), 0) == 0

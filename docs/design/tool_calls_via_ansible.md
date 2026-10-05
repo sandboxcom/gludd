@@ -71,7 +71,7 @@ patterns.
 
 **Stack A — Ansible (principle-aligned, LIVE).**
 
-```
+```text
 event_loop/loop.py::_dispatch_execute_job   (loop.py:826)
   └─ AnsibleRunnerAdapter.run_playbook        (loop.py:933 → ansible/runner.py:112)
        └─ CoreAnsibleRunner.run_playbook      (ansible/core_runner.py:218)
@@ -87,7 +87,7 @@ HTTP for distributed execution.
 
 **Stack B — in-process Python (VIOLATING / legacy).**
 
-```
+```text
 ExecutionEngine.execute                       (execution/engine.py:196)  ← never instantiated
   ├─ subprocess.run(["git","checkout","-b",...])   (engine.py:120)
   ├─ subprocess.run(["git","commit",...])          (engine.py:131)

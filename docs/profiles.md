@@ -30,7 +30,7 @@ loads all `*.yml` files in this directory at startup.
 
 **Pydantic schema** (from `ModelProfile` in `src/general_ludd/models/gateway.py`):
 
-```
+```text
 model_profile_id   str          Required. Unique ID used everywhere else.
 role_names         list[str]    Roles this profile can be used for (informational).
 provider           str          Provider type. Default: "openai".
@@ -137,7 +137,7 @@ from your `config/model_profiles/*.yml` files.
 **Pydantic schema** (from `ModelRoutingConfig` in
 `src/general_ludd/config/model_routing.py`):
 
-```
+```text
 default_profile      str | None     Fallback when no other routing rule matches.
 weak_model_profile   str | None     Profile selected when role == "weak".
 role_routing         dict[str, str] Map of role name → profile ID.
@@ -209,7 +209,7 @@ General Ludd Agent supports per-project configuration through the config
 **Pydantic schema for per-project config** (`AgentConfig` in
 `src/general_ludd/config/user_config.py`):
 
-```
+```text
 model_routing        ModelRoutingConfig | None   Per-project routing override.
 active_model_profile str | None                  Pin a specific profile for this project.
 preferred_agents     dict[str, Any]              Map of task type → agent preference.
@@ -475,7 +475,7 @@ If you want to keep old profiles available without overwriting them, use version
 filenames. The daemon loads all `*.yml` files in `config/model_profiles/`, so
 both files are active simultaneously — give each a distinct `model_profile_id`:
 
-```
+```text
 config/model_profiles/
   strong_coder_v1.yml    # model_profile_id: strong_coder_v1
   strong_coder_v2.yml    # model_profile_id: strong_coder_v2
@@ -530,7 +530,7 @@ alpha release that introduces the profile change.
 
 ### File locations
 
-```
+```text
 config/
   model_routing.yml              Top-level routing rules (hot-reloadable)
   model_profiles/

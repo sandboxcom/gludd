@@ -53,9 +53,7 @@ class _ZipkinResponse:
 class HttpTransport(Protocol):
     """Injectable HTTP transport. The default uses httpx (no redirects)."""
 
-    def get(
-        self, url: str, *, headers: dict[str, str], timeout: float
-    ) -> _ZipkinResponse: ...
+    def get(self, url: str, *, headers: dict[str, str], timeout: float) -> _ZipkinResponse: ...
 
 
 class _HttpxTransport:
@@ -85,6 +83,7 @@ class ZipkinSource:
     KIND = "traces"
 
     def __init__(self, config: dict[str, object], transport: HttpTransport | None = None) -> None:
+        """Build the source from connector config and select the transport."""
         self.name: str = str(config.get("name", "zipkin"))
         self.allow_private: bool = bool(config.get("allow_private", False))
         self.base_url: str = _guard_base_url(
@@ -102,11 +101,13 @@ class ZipkinSource:
 
         transport_impl: HttpTransport
         if callable(transport) and not hasattr(transport, "get"):
+
             def _legacy_get(url: str, *, headers: dict[str, str], timeout: float) -> _ZipkinResponse:
-                result = transport(url, headers)
+                result = transport("GET", url, headers=headers or {})
                 status, payload = result if isinstance(result, tuple) and len(result) == 2 else (0, {})
                 body = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
                 return _ZipkinResponse(int(status), body)
+
             transport_impl = cast(HttpTransport, type("LegacyTransport", (), {"get": staticmethod(_legacy_get)})())
         else:
             transport_impl = transport if transport is not None else _HttpxTransport()
@@ -119,9 +120,7 @@ class ZipkinSource:
         return headers
 
     def _get(self, path: str, params: dict[str, object]) -> _ZipkinResponse:
-        query = urllib.parse.urlencode(
-            {k: v for k, v in params.items() if v is not None}, doseq=True
-        )
+        query = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None}, doseq=True)
         url = f"{self.base_url}{path}"
         if query:
             url = f"{url}?{query}"
@@ -166,9 +165,7 @@ class ZipkinSource:
 
     def _normalize_span(self, span: dict[str, object]) -> dict[str, object]:
         local_endpoint = span.get("localEndpoint") or {}
-        service = (
-            str(local_endpoint.get("serviceName", "")) if isinstance(local_endpoint, dict) else ""
-        )
+        service = str(local_endpoint.get("serviceName", "")) if isinstance(local_endpoint, dict) else ""
         name = str(span.get("name", ""))
         span_id = str(span.get("id", ""))
         trace_id = str(span.get("traceId", ""))

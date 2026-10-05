@@ -772,8 +772,20 @@ class TestSmallModelCosts:
         from datetime import UTC, datetime
 
         tuesday_noon = datetime(2026, 8, 4, 12, 0, 0, tzinfo=UTC)
-        result = small_cost.should_defer_download(2.5, tuesday_noon)
+        calls = 0
+
+        def clock():
+            nonlocal calls
+            calls += 1
+            return tuesday_noon
+
+        result = small_cost.should_defer_download(
+            2.5,
+            threshold_gb=2.0,
+            clock=clock,
+        )
         assert result["defer"] is True
+        assert calls == 1
 
     def test_compute_cost_score_bounded_0_to_1(self):
         score = small_cost.compute_cost_score("phi-2")

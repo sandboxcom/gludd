@@ -399,7 +399,11 @@ class TestCoreAnsibleRunner:
         assert isinstance(adapter._core_runner, CoreAnsibleRunner)
 
     def test_adapter_with_process_isolation(self) -> None:
-        isolation = ProcessIsolationConfig(enabled=True, executable="podman")
+        isolation = ProcessIsolationConfig(
+            enabled=True,
+            executable="podman",
+            container_image="registry.example/gludd-ee:test@sha256:" + "a" * 64,
+        )
         adapter = AnsibleRunnerAdapter(isolation_config=isolation)
         assert adapter.isolation_config is not None
         assert adapter.isolation_config.enabled is True
@@ -407,6 +411,7 @@ class TestCoreAnsibleRunner:
     def test_process_isolation_config_flows_to_core_runner(self) -> None:
         isolation = ProcessIsolationConfig(
             enabled=True,
+            container_image="registry.example/gludd-ee:test@sha256:" + "a" * 64,
             executable="podman",
             isolation_path="/tmp/sandbox",
             block_local_tools=["bash"],

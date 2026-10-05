@@ -8,37 +8,95 @@ from __future__ import annotations
 
 import math
 import threading
+from collections.abc import Iterable
 from dataclasses import dataclass, field
+from decimal import Context, Decimal, localcontext
+
+_DECIMAL_CONTEXT = Context(prec=28)
+_ZERO = Decimal(0)
+_POSITIVE_INFINITY = Decimal("Infinity")
+
+
+def _decimal(value: float) -> Decimal:
+    """Preserve the decimal intent of a compatibility float."""
+    return Decimal(str(value))
+
+
+def _add(left: Decimal, right: Decimal) -> Decimal:
+    """Add with a process-independent precision."""
+    with localcontext(_DECIMAL_CONTEXT):
+        return left + right
+
+
+def _subtract(left: Decimal, right: Decimal) -> Decimal:
+    """Subtract with a process-independent precision."""
+    with localcontext(_DECIMAL_CONTEXT):
+        return left - right
+
+
+def _sum_decimals(values: Iterable[Decimal]) -> Decimal:
+    """Sum decimal values without falling back through binary floats."""
+    total = _ZERO
+    for value in values:
+        total = _add(total, value)
+    return total
+
+
+def _validate_limit(limit: float) -> Decimal:
+    """Convert and validate a public budget limit."""
+    value = _decimal(limit)
+    if value.is_nan():
+        raise ValueError(
+            f"BudgetEnvelope limit must be finite or inf, got {limit!r}"
+        )
+    if value.is_infinite() and value.is_signed():
+        raise ValueError(
+            f"BudgetEnvelope limit must be non-negative, got {limit!r}"
+        )
+    if value < _ZERO:
+        raise ValueError(
+            f"BudgetEnvelope limit must be non-negative, got {limit!r}"
+        )
+    if not value.is_finite() and value != _POSITIVE_INFINITY:
+        raise ValueError(
+            f"BudgetEnvelope limit must be finite or inf, got {limit!r}"
+        )
+    return value
 
 
 class BudgetEnvelope:
     """A named budget envelope with a limit and tracked spend."""
 
     def __init__(self, name: str, limit: float = float("inf")) -> None:
-        if not math.isfinite(limit) and limit != float("inf"):
-            raise ValueError(
-                f"BudgetEnvelope limit must be finite or inf, got {limit!r}"
-            )
-        if limit < 0:
-            raise ValueError(
-                f"BudgetEnvelope limit must be non-negative, got {limit!r}"
-            )
+        """Initialize a named envelope with a validated limit."""
         self.name = name
-        self.limit = limit
-        self._spent: float = 0.0
+        self._limit = _validate_limit(limit)
+        self._spent = _ZERO
         self._lock = threading.Lock()
 
     @property
+    def limit(self) -> float:
+        """Return the configured limit in the public float shape."""
+        return float(self._limit)
+
+    @limit.setter
+    def limit(self, value: float) -> None:
+        self._limit = _validate_limit(value)
+
+    @property
     def spent(self) -> float:
-        return self._spent
+        """Return accumulated spend in the public float shape."""
+        return float(self._spent)
 
     @property
     def remaining(self) -> float:
-        return max(0.0, self.limit - self._spent)
+        """Return non-negative remaining capacity as a float."""
+        return float(max(_ZERO, _subtract(self._limit, self._spent)))
 
     @property
     def is_exhausted(self) -> bool:
-        return self._spent >= self.limit
+        """Return whether spend has reached the configured limit."""
+        return self._spent >= self._limit
 
     def try_spend(self, amount: float) -> dict[str, object]:
         """Atomically check and deduct. Returns allowed/denied dict.
@@ -56,27 +114,29 @@ class BudgetEnvelope:
                 "envelope": self.name,
                 "remaining": self.remaining,
             }
+        amount_decimal = _decimal(amount)
         with self._lock:
-            if self._spent + amount > self.limit:
+            projected_spend = _add(self._spent, amount_decimal)
+            if projected_spend > self._limit:
                 return {
                     "allowed": False,
                     "reason": (
                         f"Envelope '{self.name}' budget exceeded: "
                         f"+${amount:.4f} would bring total to "
-                        f"${self._spent + amount:.4f} > ${self.limit:.4f}"
+                        f"${projected_spend:.4f} > ${self._limit:.4f}"
                     ),
                     "envelope": self.name,
                     "remaining": self.remaining,
-                    "spent": self._spent,
+                    "spent": self.spent,
                     "limit": self.limit,
                 }
-            self._spent += amount
+            self._spent = projected_spend
             return {
                 "allowed": True,
                 "reason": "ok",
                 "envelope": self.name,
                 "remaining": self.remaining,
-                "spent": self._spent,
+                "spent": self.spent,
                 "limit": self.limit,
             }
 
@@ -88,21 +148,23 @@ class BudgetEnvelope:
                 f"non-negative, got {amount!r}"
             )
         with self._lock:
-            self._spent += amount
+            self._spent = _add(self._spent, _decimal(amount))
 
     def get_status(self) -> dict[str, object]:
+        """Return the envelope's public status shape."""
         with self._lock:
             return {
                 "name": self.name,
                 "limit": self.limit,
-                "spent": self._spent,
+                "spent": self.spent,
                 "remaining": self.remaining,
                 "exhausted": self.is_exhausted,
             }
 
     def reset(self) -> None:
+        """Reset accumulated spend without changing the limit."""
         with self._lock:
-            self._spent = 0.0
+            self._spent = _ZERO
 
 
 class PerAgentEnvelope:
@@ -113,10 +175,12 @@ class PerAgentEnvelope:
     """
 
     def __init__(self) -> None:
+        """Initialize an empty per-agent envelope collection."""
         self._envelopes: dict[str, BudgetEnvelope] = {}
         self._lock = threading.Lock()
 
     def set_limit(self, agent_type: str, limit: float) -> None:
+        """Create or update an agent's budget limit."""
         with self._lock:
             envelope = self._envelopes.get(agent_type)
             if envelope is not None:
@@ -127,6 +191,7 @@ class PerAgentEnvelope:
                 )
 
     def try_spend(self, agent_type: str, amount: float) -> dict[str, object]:
+        """Try to charge an agent-specific envelope."""
         with self._lock:
             envelope = self._envelopes.get(agent_type)
             if envelope is None:
@@ -139,6 +204,7 @@ class PerAgentEnvelope:
         return envelope.try_spend(amount)
 
     def get_status(self) -> dict[str, object]:
+        """Return status for every configured agent."""
         with self._lock:
             return {
                 name: env.get_status()
@@ -146,10 +212,12 @@ class PerAgentEnvelope:
             }
 
     def total_spent(self) -> float:
+        """Return exact aggregate agent spend as a public float."""
         with self._lock:
-            return sum(e.spent for e in self._envelopes.values())
+            return float(_sum_decimals(e._spent for e in self._envelopes.values()))
 
     def reset_all(self) -> None:
+        """Reset spend for all configured agents."""
         with self._lock:
             for env in self._envelopes.values():
                 env.reset()
@@ -163,11 +231,13 @@ class PerTaskEnvelope:
     """
 
     def __init__(self, default_limit: float = float("inf")) -> None:
+        """Initialize task envelopes with an optional default limit."""
         self._default_limit = default_limit
         self._envelopes: dict[str, BudgetEnvelope] = {}
         self._lock = threading.Lock()
 
     def set_limit(self, task_id: str, limit: float) -> None:
+        """Create or update a task's budget limit."""
         with self._lock:
             envelope = self._envelopes.get(task_id)
             if envelope is not None:
@@ -178,6 +248,7 @@ class PerTaskEnvelope:
                 )
 
     def try_spend(self, task_id: str, amount: float) -> dict[str, object]:
+        """Try to charge a task-specific envelope."""
         with self._lock:
             envelope = self._envelopes.get(task_id)
             if envelope is None and self._default_limit != float("inf"):
@@ -195,6 +266,7 @@ class PerTaskEnvelope:
         return envelope.try_spend(amount)
 
     def get_status(self) -> dict[str, object]:
+        """Return status for every materialized task."""
         with self._lock:
             return {
                 tid: env.get_status()
@@ -202,10 +274,12 @@ class PerTaskEnvelope:
             }
 
     def total_spent(self) -> float:
+        """Return exact aggregate task spend as a public float."""
         with self._lock:
-            return sum(e.spent for e in self._envelopes.values())
+            return float(_sum_decimals(e._spent for e in self._envelopes.values()))
 
     def reset_all(self) -> None:
+        """Discard all materialized task envelopes."""
         with self._lock:
             self._envelopes.clear()
 
@@ -218,10 +292,12 @@ class PerToolEnvelope:
     """
 
     def __init__(self) -> None:
+        """Initialize an empty per-tool envelope collection."""
         self._envelopes: dict[str, BudgetEnvelope] = {}
         self._lock = threading.Lock()
 
     def set_limit(self, tool_type: str, limit: float) -> None:
+        """Create or update a tool's budget limit."""
         with self._lock:
             envelope = self._envelopes.get(tool_type)
             if envelope is not None:
@@ -232,6 +308,7 @@ class PerToolEnvelope:
                 )
 
     def try_spend(self, tool_type: str, amount: float) -> dict[str, object]:
+        """Try to charge a tool-specific envelope."""
         with self._lock:
             envelope = self._envelopes.get(tool_type)
             if envelope is None:
@@ -244,6 +321,7 @@ class PerToolEnvelope:
         return envelope.try_spend(amount)
 
     def get_status(self) -> dict[str, object]:
+        """Return status for every configured tool."""
         with self._lock:
             return {
                 name: env.get_status()
@@ -251,10 +329,12 @@ class PerToolEnvelope:
             }
 
     def total_spent(self) -> float:
+        """Return exact aggregate tool spend as a public float."""
         with self._lock:
-            return sum(e.spent for e in self._envelopes.values())
+            return float(_sum_decimals(e._spent for e in self._envelopes.values()))
 
     def reset_all(self) -> None:
+        """Reset spend for all configured tools."""
         with self._lock:
             for env in self._envelopes.values():
                 env.reset()
@@ -281,6 +361,7 @@ class BudgetManager:
         per_task: PerTaskEnvelope | None = None,
         per_tool: PerToolEnvelope | None = None,
     ) -> None:
+        """Initialize the manager with optional envelope layers."""
         self.per_agent = per_agent or PerAgentEnvelope()
         self.per_task = per_task or PerTaskEnvelope()
         self.per_tool = per_tool or PerToolEnvelope()
@@ -330,6 +411,7 @@ class BudgetManager:
         )
 
     def get_status(self) -> dict[str, object]:
+        """Return status for all budget layers."""
         return {
             "agents": self.per_agent.get_status(),
             "tasks": self.per_task.get_status(),
@@ -337,13 +419,20 @@ class BudgetManager:
         }
 
     def total_spent(self) -> float:
-        return (
-            self.per_agent.total_spent()
-            + self.per_task.total_spent()
-            + self.per_tool.total_spent()
+        """Return exact aggregate spend across all layers as a float."""
+        return float(
+            _sum_decimals(
+                _decimal(total)
+                for total in (
+                    self.per_agent.total_spent(),
+                    self.per_task.total_spent(),
+                    self.per_tool.total_spent(),
+                )
+            )
         )
 
     def reset_all(self) -> None:
+        """Reset every budget layer."""
         self.per_agent.reset_all()
         self.per_task.reset_all()
         self.per_tool.reset_all()

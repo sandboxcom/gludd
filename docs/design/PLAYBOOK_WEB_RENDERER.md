@@ -102,7 +102,7 @@ the rendered page. `GET /api/renderers` lists it alongside the built-in
 
 ### 3.1 Component map
 
-```
+```text
 playbooks/renderers/                       <- operator-curated renderer playbooks
   gpu_dashboard.yml
   system_facts.yml                          <- shipped example (Phase 1 acceptance fixture)
@@ -197,7 +197,7 @@ the same registry; mixed deployments are the expected norm.
 
 ### 3.4 Discovery, execution, caching flow
 
-```
+```json
 [ startup ]
   create_daemon_app()
     -> RendererRegistry().discover()           # scan both dirs

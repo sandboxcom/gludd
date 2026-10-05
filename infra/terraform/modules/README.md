@@ -9,6 +9,7 @@ Reusable Terraform building blocks composed into deployment stacks.
 | `onboard-iam/` | AWS IAM onboarding: creates a least-privilege `gludd-compute-operator` role with EC2/EBS/EIP scoped policy, instance profile, and trust relationship |
 | `onboard-iam-azure/` | Azure IAM onboarding: creates a user-assigned managed identity with Contributor role assignment at the resource-group scope |
 | `onboard-iam-gcp/` | GCP IAM onboarding: creates a `gludd-compute-operator` service account with `compute.admin` role binding at the project level |
+| `azure-gpu-worker/` | One OpenTofu-owned Azure Linux GPU VM plus controller-restricted network children inside a pre-existing exact resource group; guest bootstrap stays in Ansible |
 | `llamacpp-server/` | Generic llama.cpp inference server: deploys a GPU VM/container running `ghcr.io/ggerganov/llama.cpp:server` with configurable model, GPU count, quantization, KV cache, and cost watchdog |
 | `vllm-server/` | Generic vLLM inference server: deploys a GPU VM/container running the vLLM OpenAI-compatible server with configurable model, tensor parallelism, GPU count, and cost watchdog |
 | `network/` | Multi-cloud network plumbing: creates security groups (AWS), firewall rules (GCP), NSGs (Azure), or port-group bindings (vSphere) for the inference port (8000) and SSH (22) |

@@ -5,8 +5,7 @@ from __future__ import annotations
 import math
 
 import pytest
-
-from general_ludd.algorithms.simplex import (
+from ansible_collections.general_ludd.physics.plugins.module_utils.simplex import (
     dual_simplex,
     integer_simplex,
     simplex_max,

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+from typing import cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -76,7 +78,7 @@ class TestValidatePackageSpec:
 
     def test_rejects_non_string_input(self) -> None:
         with pytest.raises(InvalidPackageSpecError, match="must be a string"):
-            _validate_package_spec(42)
+            _validate_package_spec(cast(str, 42))
 
     def test_rejects_shell_command(self) -> None:
         with pytest.raises(InvalidPackageSpecError, match="unsafe or malformed"):
@@ -212,3 +214,30 @@ class TestDependencyManagerRun:
         assert rc == 0
         assert "out" in stdout
         assert "err" in stderr
+
+    @pytest.mark.asyncio
+    async def test_run_confines_uv_environment_to_managed_project(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A nested uv project must not mutate its caller's toolchain."""
+        caller_environment = tmp_path / "caller-toolchain"
+        managed_project = tmp_path / "managed-project"
+        managed_project.mkdir()
+        monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", str(caller_environment))
+        proc = AsyncMock()
+        proc.returncode = 0
+        proc.communicate = AsyncMock(return_value=(b"", b""))
+        mgr = DependencyManager(project_root=str(managed_project))
+
+        with patch("asyncio.create_subprocess_exec", return_value=proc) as mock_exec:
+            await mgr._run("uv", "sync")
+
+        child_environment = mock_exec.call_args.kwargs["env"]
+        assert child_environment["UV_PROJECT_ENVIRONMENT"] == str(
+            managed_project / ".venv"
+        )
+        assert child_environment["UV_PROJECT_ENVIRONMENT"] != str(
+            caller_environment
+        )

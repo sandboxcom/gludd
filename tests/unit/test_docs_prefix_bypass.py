@@ -27,7 +27,7 @@ class TestDaemonDocsPublicPaths:
 
     @pytest.mark.asyncio
     async def test_docs_exact_is_public(self):
-        with patch.dict(os.environ, {"GLUDD_PSK": _PSK}):
+        with patch.dict(os.environ, {"GLUDD_AUTH_PSK": _PSK}):
             from general_ludd.daemon import create_daemon_app
             app = create_daemon_app(tick_interval=0.01)
         async with _daemon_client(app) as c:
@@ -37,7 +37,7 @@ class TestDaemonDocsPublicPaths:
 
     @pytest.mark.asyncio
     async def test_docs_subpath_is_public(self):
-        with patch.dict(os.environ, {"GLUDD_PSK": _PSK}):
+        with patch.dict(os.environ, {"GLUDD_AUTH_PSK": _PSK}):
             from general_ludd.daemon import create_daemon_app
             app = create_daemon_app(tick_interval=0.01)
         async with _daemon_client(app) as c:
@@ -46,7 +46,7 @@ class TestDaemonDocsPublicPaths:
 
     @pytest.mark.asyncio
     async def test_docs_admin_is_not_public(self):
-        with patch.dict(os.environ, {"GLUDD_PSK": _PSK}):
+        with patch.dict(os.environ, {"GLUDD_AUTH_PSK": _PSK}):
             from general_ludd.daemon import create_daemon_app
             app = create_daemon_app(tick_interval=0.01)
         async with _daemon_client(app) as c:
@@ -58,7 +58,7 @@ class TestDaemonDocsPublicPaths:
 
     @pytest.mark.asyncio
     async def test_docsecret_is_not_public(self):
-        with patch.dict(os.environ, {"GLUDD_PSK": _PSK}):
+        with patch.dict(os.environ, {"GLUDD_AUTH_PSK": _PSK}):
             from general_ludd.daemon import create_daemon_app
             app = create_daemon_app(tick_interval=0.01)
         async with _daemon_client(app) as c:
@@ -73,7 +73,7 @@ class TestWorkerDocsPublicPaths:
 
     @pytest.mark.asyncio
     async def test_worker_docs_exact_is_public(self):
-        with patch.dict(os.environ, {"GLUDD_PSK": _PSK}):
+        with patch.dict(os.environ, {"GLUDD_AUTH_PSK": _PSK}):
             from general_ludd.worker.app import create_app
             app = create_app(gateway=None)
         async with _worker_client(app) as c:
@@ -82,7 +82,7 @@ class TestWorkerDocsPublicPaths:
 
     @pytest.mark.asyncio
     async def test_worker_docs_subpath_is_public(self):
-        with patch.dict(os.environ, {"GLUDD_PSK": _PSK}):
+        with patch.dict(os.environ, {"GLUDD_AUTH_PSK": _PSK}):
             from general_ludd.worker.app import create_app
             app = create_app(gateway=None)
         async with _worker_client(app) as c:
@@ -91,7 +91,7 @@ class TestWorkerDocsPublicPaths:
 
     @pytest.mark.asyncio
     async def test_worker_docs_admin_is_not_public(self):
-        with patch.dict(os.environ, {"GLUDD_PSK": _PSK}):
+        with patch.dict(os.environ, {"GLUDD_AUTH_PSK": _PSK}):
             from general_ludd.worker.app import create_app
             app = create_app(gateway=None)
         async with _worker_client(app) as c:
@@ -102,7 +102,7 @@ class TestWorkerDocsPublicPaths:
 
     @pytest.mark.asyncio
     async def test_worker_docsecret_is_not_public(self):
-        with patch.dict(os.environ, {"GLUDD_PSK": _PSK}):
+        with patch.dict(os.environ, {"GLUDD_AUTH_PSK": _PSK}):
             from general_ludd.worker.app import create_app
             app = create_app(gateway=None)
         async with _worker_client(app) as c:

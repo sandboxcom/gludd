@@ -44,22 +44,27 @@ class KyberParams:
 
     @property
     def algorithm(self) -> str:
+        """Return the canonical FIPS 203 algorithm name."""
         return _backend_for(self).ALGORITHM
 
     @property
     def pk_bytes(self) -> int:
+        """Return the exact public-key size in bytes."""
         return _backend_for(self).PUBLIC_KEY_SIZE
 
     @property
     def sk_bytes(self) -> int:
+        """Return the exact secret-key size in bytes."""
         return _backend_for(self).SECRET_KEY_SIZE
 
     @property
     def ct_bytes(self) -> int:
+        """Return the exact ciphertext size in bytes."""
         return _backend_for(self).CIPHERTEXT_SIZE
 
     @property
     def ss_bytes(self) -> int:
+        """Return the exact shared-secret size in bytes."""
         return _backend_for(self).PLAINTEXT_SIZE
 
 
@@ -118,7 +123,6 @@ def _validate_backend_output(value: object, *, label: str, expected: int) -> byt
 
 def keygen(params: KyberParams = PARAMS_512) -> tuple[bytes, bytes]:
     """Generate a FIPS 203 public/secret key pair for params."""
-
     backend = _backend_for(params)
     try:
         public_key, secret_key = backend.generate_keypair()
@@ -135,7 +139,6 @@ def encapsulate(
     params: KyberParams = PARAMS_512,
 ) -> tuple[bytes, bytes]:
     """Encapsulate a fresh shared secret to a validated public key."""
-
     backend = _backend_for(params)
     checked_key = _require_bytes(
         public_key,
@@ -166,7 +169,6 @@ def decapsulate(
     params: KyberParams = PARAMS_512,
 ) -> bytes:
     """Decapsulate with FIPS 203 implicit-rejection semantics."""
-
     backend = _backend_for(params)
     checked_ciphertext = _require_bytes(
         ciphertext,
@@ -190,38 +192,47 @@ def decapsulate(
 
 
 def keygen_512() -> tuple[bytes, bytes]:
+    """Generate an ML-KEM-512 public/secret key pair."""
     return keygen(PARAMS_512)
 
 
 def keygen_768() -> tuple[bytes, bytes]:
+    """Generate an ML-KEM-768 public/secret key pair."""
     return keygen(PARAMS_768)
 
 
 def keygen_1024() -> tuple[bytes, bytes]:
+    """Generate an ML-KEM-1024 public/secret key pair."""
     return keygen(PARAMS_1024)
 
 
 def encapsulate_512(public_key: bytes) -> tuple[bytes, bytes]:
+    """Encapsulate a shared secret with an ML-KEM-512 public key."""
     return encapsulate(public_key, PARAMS_512)
 
 
 def encapsulate_768(public_key: bytes) -> tuple[bytes, bytes]:
+    """Encapsulate a shared secret with an ML-KEM-768 public key."""
     return encapsulate(public_key, PARAMS_768)
 
 
 def encapsulate_1024(public_key: bytes) -> tuple[bytes, bytes]:
+    """Encapsulate a shared secret with an ML-KEM-1024 public key."""
     return encapsulate(public_key, PARAMS_1024)
 
 
 def decapsulate_512(ciphertext: bytes, secret_key: bytes) -> bytes:
+    """Decapsulate an ML-KEM-512 ciphertext."""
     return decapsulate(ciphertext, secret_key, PARAMS_512)
 
 
 def decapsulate_768(ciphertext: bytes, secret_key: bytes) -> bytes:
+    """Decapsulate an ML-KEM-768 ciphertext."""
     return decapsulate(ciphertext, secret_key, PARAMS_768)
 
 
 def decapsulate_1024(ciphertext: bytes, secret_key: bytes) -> bytes:
+    """Decapsulate an ML-KEM-1024 ciphertext."""
     return decapsulate(ciphertext, secret_key, PARAMS_1024)
 
 

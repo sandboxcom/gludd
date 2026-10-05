@@ -1,7 +1,7 @@
 """D01/D02/D03/D04/D05: Dispatch floor enforcement structural tests.
 
 Verifies enforce-multitask.ts constants and plugin structure match
-the documented dispatch floor rules: MIN_DISPATCHES=10, streak
+the documented dispatch rules: MIN_DISPATCHES=0 by default, streak
 counter resets on dispatch, read tools don't increment streak.
 """
 
@@ -19,7 +19,8 @@ class TestDispatchFloorEnforcement:
         assert config_path.exists(), "D01: multitask_config.ts must exist as canonical constant source"
         content = config_path.read_text()
         assert "MIN_DISPATCHES" in content, "D01: multitask_config.ts must define MIN_DISPATCHES"
-        assert "10" in content, "D01: MIN_DISPATCHES should be 10"
+        assert "HARD_MAX_DISPATCHES = 3" in content
+        assert "MIN_DISPATCHES = Math.min(" in content
 
     def test_enforce_multitask_plugin_exists(self):
         plugin_path = PLUGIN_DIR / "enforce-multitask.ts"

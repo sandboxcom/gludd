@@ -1,5 +1,4 @@
 ---
-name: translate
 input_text: ""
 source_language: "auto"
 target_language: "en"

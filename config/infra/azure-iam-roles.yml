@@ -32,7 +32,7 @@
 #
 # How to test (verify each role works):
 #   az role assignment list --assignee ${PRINCIPAL_ID} --resource-group gludd-prod
-#   az role definition list --name "General Ludd Container App Deployer"
+#   az role definition list --name "General Ludd Accelerator Deployer"
 #   # Simulate a permission
 #   az rest --method POST \
 #       --uri "https://management.azure.com/subscriptions/${SUB_ID}/providers/Microsoft.Authorization/checkAccess?api-version=2022-04-01" \
@@ -55,9 +55,9 @@ roles:
   #
   # WHY EACH ROLE EXISTS (what breaks if removed):
   #
-  #   "General Ludd Container App Deployer" (custom, defined in
-  #     azure-iam-policy.json) — full lifecycle of Container Apps, ACR,
-  #     VNets, Subnets, NSGs, Public IPs, NICs, and VMs.  Detailed
+  #   "General Ludd Accelerator Deployer" (custom, defined in
+  #     azure-iam-policy.json) — full lifecycle of ephemeral GPU workers,
+  #     including preflight, VNets, NSGs, Public IPs, NICs, and VMs.  Detailed
   #     Action/NotAction allowlist in that file.  This is the LEAST
   #     privilege for Terraform — every action is individually listed.
   #
@@ -82,7 +82,7 @@ roles:
     description: "Provision/destroy gludd infrastructure via Terraform on Azure"
     scope: "/subscriptions/{subscription-id}/resourceGroups/{rg-name}"
     role_definitions:
-      - "General Ludd Container App Deployer"
+      - "General Ludd Accelerator Deployer"
       - "Contributor"
       - "Storage Blob Data Contributor"
       - "Key Vault Secrets User"
@@ -94,7 +94,7 @@ roles:
       "Contributor" is broad.  If gludd is deployed in a production
       subscription, replace with Network Contributor + Storage Account
       Contributor + Virtual Machine Contributor + the custom Container
-      App Deployer role.  Contributor at resource-group scope is a
+      Accelerator Deployer role.  Contributor at resource-group scope is a
       pragmatic lowest-common-denominator for providers that do not
       support Azure custom roles natively.
 

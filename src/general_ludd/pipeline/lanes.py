@@ -20,11 +20,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from general_ludd.controllers.saturation import SaturationController
+from general_ludd.pipeline.gate_lane import GateFn, GateLane
 from general_ludd.pipeline.state import (
     CompletedUnit,
     LaneState,
@@ -38,7 +38,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["DispatchLane", "GateLane", "IntegrateLane", "PidProvider"]
+__all__ = [
+    "DispatchLane",
+    "GateFn",
+    "GateLane",
+    "IntegrateLane",
+    "PidProvider",
+]
 
 # Injected behaviours. Tests pass mocks/fakes; the daemon passes real adapters.
 #
@@ -53,11 +59,6 @@ DispatchFn = Callable[[str], Awaitable[object]]
 #   git_repo_lock and reclaims the worktree on success / refuses on clobber).
 MergeFn = Callable[[CompletedUnit], Awaitable[MergeOutcome]]
 
-# GateFn() -> awaitable[bool]: run the full gate/validation on the current
-#   coherent snapshot; return True iff green. The daemon adapter commits on
-#   green.
-GateFn = Callable[[], Awaitable[bool]]
-
 # PidProvider() -> ControllerOutputs | None: the live load/PID controller
 #   evaluation (gludd's existing LoadController), supplying the DESIRED active
 #   concurrency for the keep-N-busy loop. Returning None means "no PID signal
@@ -71,8 +72,7 @@ PidProvider = Callable[[], "ControllerOutputs | None"]
 
 
 class DispatchLane:
-    """Keep N role-agents running on disjoint backlog units, where N is driven
-    by gludd's load/PID controller (not a frozen static target).
+    """Keep PID-selected role agents running on disjoint backlog units.
 
     Reconciles every ``step()`` from the authoritative running count
     (``len(state.running)``) using the :class:`SaturationController`, never
@@ -100,6 +100,7 @@ class DispatchLane:
         pid_provider: PidProvider | None = None,
         pid_group: str | None = None,
     ) -> None:
+        """Configure dispatch dependencies and optional live-load controls."""
         self._config = config
         self._state = state
         self._lock = lock
@@ -232,6 +233,7 @@ class DispatchLane:
         return dispatched
 
     async def run(self) -> None:
+        """Reconcile dispatch until cancellation or an explicit stop request."""
         self._stopped = False
         while not self._stopped:
             try:
@@ -243,6 +245,7 @@ class DispatchLane:
             await asyncio.sleep(self._config.dispatch_interval_s)
 
     def stop(self) -> None:
+        """Request a graceful stop after the current iteration."""
         self._stopped = True
 
 
@@ -265,6 +268,7 @@ class IntegrateLane:
         *,
         max_clobber_retries: int = 3,
     ) -> None:
+        """Configure merge dependencies and the bounded clobber retry limit."""
         self._config = config
         self._state = state
         self._lock = lock
@@ -329,6 +333,7 @@ class IntegrateLane:
         return outcome
 
     async def run(self) -> None:
+        """Drain completed units until cancellation or an explicit stop request."""
         self._stopped = False
         while not self._stopped:
             try:
@@ -343,102 +348,5 @@ class IntegrateLane:
                 await asyncio.sleep(self._config.integrate_interval_s)
 
     def stop(self) -> None:
-        self._stopped = True
-
-
-class GateLane:
-    """Debounced, single-flight gate/validation on a coherent snapshot.
-
-    Runs at most one gate at a time. A gate is triggered only when there is
-    merged-but-ungated work AND at least ``gate_debounce_s`` has elapsed since
-    the last gate START — so a burst of merges coalesces into one gate run.
-    While the gate runs, the dispatch and integrate lanes keep producing; the
-    set of units this run covers is captured at START so newly-merged units
-    after the snapshot are gated by the NEXT run.
-    """
-
-    def __init__(
-        self,
-        config: PipelineConfig,
-        state: LaneState,
-        lock: asyncio.Lock,
-        gate_fn: GateFn,
-        *,
-        clock: Callable[[], float] = time.time,
-    ) -> None:
-        self._config = config
-        self._state = state
-        self._lock = lock
-        self._gate_fn = gate_fn
-        self._clock = clock
-        self._in_flight = False
-        self._stopped = False
-
-    def _due(self) -> bool:
-        if self._in_flight:
-            return False
-        if not self._state.merged_awaiting_gate:
-            return False
-        elapsed = self._clock() - self._state.last_gate_epoch
-        return elapsed >= self._config.gate_debounce_s
-
-    async def step(self) -> bool | None:
-        """Maybe run one gate. Returns green/red bool, or None if not due.
-
-        Single-flight: a concurrent step while a gate is in flight is a no-op.
-        Debounced: returns None until ``gate_debounce_s`` has elapsed.
-        """
-        async with self._lock:
-            if not self._due():
-                return None
-            # Snapshot the coherent set this run covers, and stamp the epoch at
-            # START so the debounce window opens now (lanes 1&2 keep producing).
-            covered = list(self._state.merged_awaiting_gate)
-            self._state.last_gate_epoch = self._clock()
-            self._state.total_gates_run += 1
-            self._in_flight = True
-
-        try:
-            green = await self._gate_fn()
-        except Exception as exc:
-            logger.error("GateLane: gate run raised: %s", exc)
-            green = False
-        finally:
-            async with self._lock:
-                self._in_flight = False
-
-        async with self._lock:
-            if green:
-                self._state.total_gates_green += 1
-                # Clear exactly the units this run covered; any merged AFTER the
-                # snapshot remain queued for the next gate.
-                covered_set = set(covered)
-                self._state.merged_awaiting_gate = [
-                    u for u in self._state.merged_awaiting_gate
-                    if u not in covered_set
-                ]
-                logger.info(
-                    "GateLane: GREEN — committed snapshot covering %d unit(s)",
-                    len(covered),
-                )
-            else:
-                logger.warning(
-                    "GateLane: RED — snapshot of %d unit(s) NOT committed; "
-                    "will re-gate after debounce",
-                    len(covered),
-                )
-        return green
-
-    async def run(self) -> None:
-        self._stopped = False
-        while not self._stopped:
-            try:
-                await self.step()
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:  # pragma: no cover - loop guard
-                logger.error("GateLane loop error: %s", exc)
-            await asyncio.sleep(self._config.gate_poll_interval_s)
-
-    def stop(self) -> None:
+        """Request a graceful stop after the current iteration."""
         self._stopped = True

@@ -11,6 +11,14 @@ Source-mode background children keep the established quiet default. The private
 flag is accepted only when `sys.frozen` is true, preventing ordinary CLI users
 from reaching the internal bootstrap.
 
+The release smoke invokes the same blocking public contract as operators:
+`gludd daemon --host 127.0.0.1 --port 8000`. There is intentionally no nested
+`start` verb. It probes the public `/healthz` liveness route, checks the owned
+process on every attempt, reports its real early-exit status, and always reaps
+the process. This closes the 2026-08-21 GHE incident where an obsolete
+`gludd daemon start` invocation failed in argument parsing after the binary had
+built successfully.
+
 ## Practitioner evidence
 
 PyInstaller users have repeatedly found that frozen subprocesses cannot rely on

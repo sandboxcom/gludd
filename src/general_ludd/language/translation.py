@@ -21,6 +21,8 @@ from typing import TypedDict
 
 
 class TranslationResult(TypedDict):
+    """Stable serialized translation result shared by every engine."""
+
     source_language: str
     source_text: str
     target_language: str
@@ -230,6 +232,9 @@ def _libretranslate(source: str, target: str, text: str) -> TranslationResult | 
                 engine="libretranslate",
                 alternative=[],
             )
+    except urllib.error.HTTPError as exc:
+        exc.close()
+        return None
     except (urllib.error.URLError, OSError, json.JSONDecodeError):
         return None
 
@@ -302,7 +307,20 @@ def translate(
     text: str,
     source_language: str,
     target_language: str,
+    *,
+    allow_network: bool = True,
 ) -> TranslationResult:
+    """Translate text using a bounded network adapter and offline fallback.
+
+    Args:
+        text: Source text to translate.
+        source_language: Source ISO language code or ``auto``.
+        target_language: Target ISO language code.
+        allow_network: Whether the LibreTranslate adapter may be attempted.
+
+    Returns:
+        A stable translation result dictionary.
+    """
     if not text or not text.strip():
         return _make_result(
             source_language=source_language,
@@ -325,9 +343,10 @@ def translate(
             alternative=[],
         )
 
-    lt_result = _libretranslate(source_language, target_language, text)
-    if lt_result is not None:
-        return lt_result
+    if allow_network:
+        lt_result = _libretranslate(source_language, target_language, text)
+        if lt_result is not None:
+            return lt_result
 
     dict_result = _dictionary_translate(source_language, target_language, text)
     if dict_result is not None:

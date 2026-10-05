@@ -137,9 +137,13 @@ class TestPushToPushInterval:
 
     def test_push_rate_guard_checks_cooldown(self):
         text = makefile_text()
-        idx = text.find("_push-rate-guard:")
-        assert idx != -1
-        block = text[idx : idx + 1100]
+        match = re.search(
+            r"^_push-rate-guard:[^\n]*\n(?P<body>(?:\t.*\n)+)",
+            text,
+            re.MULTILINE,
+        )
+        assert match is not None
+        block = match.group("body")
         assert "LAST_PUSH" in block and "gludd-watchdog-push-timestamps.json" in block, (
             "P04: _push-rate-guard does not check push cooldown"
         )

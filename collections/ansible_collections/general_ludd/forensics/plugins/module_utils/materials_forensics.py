@@ -82,8 +82,15 @@ DNA_LOCI: dict[str, dict[str, Any]] = {
             "allelic_ladder": [17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]},
     "D8S1179": {"chromosome": 8, "repeat_motif": "TCTA", "repeat_range": "7-20",
                 "allelic_ladder": [8, 9, 10, 11, 12, 13, 14, 15, 16]},
-    "D21S11": {"chromosome": 21, "repeat_motif": "TCTA", "repeat_range": "24-38",
-               "allelic_ladder": [24, 25, 26, 27, 28, 29, 30, 30.2, 31, 31.2, 32, 32.2, 33, 33.2, 34, 34.2, 35, 35.2, 36, 37, 38]},
+    "D21S11": {
+        "chromosome": 21,
+        "repeat_motif": "TCTA",
+        "repeat_range": "24-38",
+        "allelic_ladder": [
+            24, 25, 26, 27, 28, 29, 30, 30.2, 31, 31.2, 32, 32.2,
+            33, 33.2, 34, 34.2, 35, 35.2, 36, 37, 38,
+        ],
+    },
     "D18S51": {"chromosome": 18, "repeat_motif": "AGAA", "repeat_range": "7-28",
                "allelic_ladder": [7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]},
     "D5S818": {"chromosome": 5, "repeat_motif": "AGAT", "repeat_range": "6-18",
@@ -319,9 +326,8 @@ def _determine_pattern(ridge_flow: str, core_present: bool, delta_count: int) ->
         return "ARCH"
     if "tent" in ridge_flow or "upthrust" in ridge_flow:
         return "ARCH"
-    if "recurve" in ridge_flow or "loop" in ridge_flow:
-        if delta_count <= 1:
-            return "LOOP"
+    if ("recurve" in ridge_flow or "loop" in ridge_flow) and delta_count <= 1:
+        return "LOOP"
     if delta_count >= 2 or "whorl" in ridge_flow or "concentric" in ridge_flow or "spiral" in ridge_flow:
         return "WHORL"
     if core_present and delta_count == 1:
@@ -339,20 +345,20 @@ def _determine_subtype(
     if pattern_type == "ARCH":
         if "tent" in ridge_flow or "upthrust" in ridge_flow:
             return "tented_arch"
-        return subtypes[0]
+        return str(subtypes[0])
     if pattern_type == "LOOP":
         if "ulnar" in ridge_flow or delta_count == 1:
             return "ulnar_loop"
         if "radial" in ridge_flow:
             return "radial_loop"
-        return subtypes[0]
+        return str(subtypes[0])
     if pattern_type == "WHORL":
         if delta_count >= 3:
             return "accidental_whorl"
         if delta_count == 2:
             return "plain_whorl"
-        return subtypes[0]
-    return subtypes[0] if subtypes else None
+        return str(subtypes[0])
+    return str(subtypes[0]) if subtypes else None
 
 
 def _compute_fingerprint_confidence(
@@ -499,7 +505,10 @@ def _dna_notes(
     if match_result == "match":
         return f"All {len(matched)} comparable loci matched"
     if match_result == "probable_match":
-        return f"{len(matched)}/{len(matched) + len(mismatched)} loci matched; {len(mismatched)} mismatched: {', '.join(mismatched[:5])}"
+        return (
+            f"{len(matched)}/{len(matched) + len(mismatched)} loci matched; "
+            f"{len(mismatched)} mismatched: {', '.join(mismatched[:5])}"
+        )
     if match_result == "exclusion":
         return f"Only {len(matched)}/{len(matched) + len(mismatched)} loci matched; exclusion supported"
     return "Insufficient data for conclusive determination"
@@ -541,25 +550,22 @@ def analyze_trace_evidence(
     comparisons: list[dict[str, Any]] = []
     match_scores: list[float] = []
 
-    for field in match_fields:
-        s_val = sample_data.get(field)
-        r_val = reference_data.get(field)
+    for field_name in match_fields:
+        s_val = sample_data.get(field_name)
+        r_val = reference_data.get(field_name)
         if s_val is None or r_val is None:
             comparisons.append({
-                "field": field, "sample_value": s_val, "reference_value": r_val,
+                "field": field_name, "sample_value": s_val, "reference_value": r_val,
                 "match": False, "reason": "missing_data",
             })
             continue
         if isinstance(s_val, (int, float)) and isinstance(r_val, (int, float)):
-            tolerance = float(tolerances.get(field, 0.0))
-            if tolerance > 0:
-                is_match = abs(float(s_val) - float(r_val)) <= tolerance
-            else:
-                is_match = s_val == r_val
+            tolerance = float(tolerances.get(field_name, 0.0))
+            is_match = abs(float(s_val) - float(r_val)) <= tolerance if tolerance > 0 else s_val == r_val
         else:
             is_match = str(s_val).lower() == str(r_val).lower()
         comparisons.append({
-            "field": field, "sample_value": s_val, "reference_value": r_val,
+            "field": field_name, "sample_value": s_val, "reference_value": r_val,
             "match": is_match, "reason": None if is_match else "value_mismatch",
         })
         match_scores.append(1.0 if is_match else 0.0)
@@ -582,7 +588,10 @@ def analyze_trace_evidence(
     findings: list[str] = []
     if match_result in ("match", "probable_match"):
         findings.append(f"{evidence_type} evidence consistent with reference source")
-        findings.append(f"Match fields: {', '.join(match_fields)} ({len([c for c in comparisons if c['match']])}/{total} matched)")
+        matched_count = sum(bool(comparison["match"]) for comparison in comparisons)
+        findings.append(
+            f"Match fields: {', '.join(match_fields)} ({matched_count}/{total} matched)"
+        )
     elif match_result == "inconclusive":
         findings.append(f"Insufficient data for conclusive {evidence_type} comparison")
     else:

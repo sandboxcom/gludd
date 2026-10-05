@@ -307,6 +307,42 @@ def test_overview_cluster_totals():
     assert conns["value"] == 12.0
 
 
+def test_normalizers_filter_malformed_payloads_and_false_node_state():
+    t = RoutingTransport(
+        {
+            "/api/overview": (200, {"queue_totals": [], "object_totals": []}),
+            "/api/queues": (200, [None, {"name": "empty", "messages": "bad"}]),
+            "/api/nodes": (200, [None, {"name": "down", "running": False}]),
+        }
+    )
+    src = RabbitMqSource({"base_url": GOOD_URL}, http_get=t)
+
+    records = src.query({"endpoints": ["unknown", "overview", "queues", "nodes"]})
+
+    assert not any(record["labels"].get("metric", "").startswith("cluster_") for record in records)
+    running = next(record for record in records if record["labels"].get("metric") == "node_running")
+    assert running["value"] == 0.0
+
+
+@pytest.mark.parametrize("payload", (None, {}, "invalid"))
+def test_query_replaces_non_collection_endpoint_selector(payload):
+    t = RoutingTransport(full_routes())
+    src = RabbitMqSource({"base_url": GOOD_URL}, http_get=t)
+
+    records = src.query({"endpoints": payload})
+
+    assert records
+    assert len(t.calls) == 3
+
+
+def test_normalizers_reject_non_collection_payloads():
+    src = RabbitMqSource({"base_url": GOOD_URL}, http_get=RoutingTransport({}))
+
+    assert src._normalize_queues({}, 1.0) == []
+    assert src._normalize_nodes({}, 1.0) == []
+    assert src._normalize_overview([], 1.0) == []
+
+
 def test_query_all_endpoints_hits_three_paths():
     t = RoutingTransport(full_routes())
     src = RabbitMqSource({"base_url": GOOD_URL}, http_get=t)

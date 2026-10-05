@@ -139,6 +139,20 @@ class TestSpendLimiterDispatch:
 
         assert abs(limiter.window_spend() - 0.05) < 1e-9
 
+    def test_structured_actual_cost_keeps_conservative_reservation(self) -> None:
+        limiter = SpendLimiter(limit_usd=1.0, window_seconds=3_600)
+        gateway = self._gateway(cost_estimate={"amount": 0.03})
+        engine = ExecutionEngine(
+            model_gateway=gateway,
+            workspace_path=tempfile.mkdtemp(),
+            spend_limiter=limiter,
+        )
+
+        with patch.object(limiter, "token_cost_usd", return_value=0.05):
+            asyncio.run(engine.execute_async(self._job()))
+
+        assert abs(limiter.window_spend() - 0.05) < 1e-9
+
     def test_reservation_error_fails_closed(self) -> None:
         limiter = MagicMock()
         limiter.cap_configured = True
@@ -175,6 +189,9 @@ class TestSpendLimiterDispatch:
 
 
 class TestExecutionEngine:
+    def test_sync_migration_residue_is_not_exposed(self) -> None:
+        assert not hasattr(ExecutionEngine, "_fallback_extract_code_not_a_method")
+
     def _make_engine(self, mock_gateway=None, workspace=None):
         return ExecutionEngine(
             model_gateway=mock_gateway or MagicMock(),

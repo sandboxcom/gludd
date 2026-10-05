@@ -280,7 +280,7 @@ jobs:
       - name: Run prompt evaluator
         run: |
           ansible-playbook \
-            -e "psk=${{ secrets.GLUDD_PSK }}" \
+            -e "psk=${{ secrets.GLUDD_AUTH_PSK }}" \
             -e "ci_regression_threshold=0.60" \
             -e "enable_model_call=true" \
             -e "log_source=/tmp/gludd-ci-prompt-logs" \

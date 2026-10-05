@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import errno
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from general_ludd.security.seccomp import (
     DEFAULT_ALLOWED_SYSCALLS,
@@ -72,6 +75,25 @@ class TestSeccompFilterYAML:
             assert flt.errno == 13
         finally:
             os.unlink(path)
+
+    @pytest.mark.parametrize(
+        ("content", "field"),
+        [
+            ("default_action: alow\n", "default_action"),
+            ("deny_action: terminate\n", "deny_action"),
+        ],
+    )
+    def test_from_yaml_rejects_unknown_actions(
+        self,
+        tmp_path: Path,
+        content: str,
+        field: str,
+    ) -> None:
+        policy = tmp_path / "seccomp.yml"
+        policy.write_text(content)
+
+        with pytest.raises(ValueError, match=field):
+            SeccompFilter.from_yaml(str(policy))
 
 
 class TestSeccompFilterChecks:
@@ -223,3 +245,40 @@ class TestSeccompFilterApply:
         calls = installed_filter.add_rule.call_args_list
         assert any(call.args == ("ALLOW", "read") for call in calls)
         assert any(call.args == (("ERRNO", errno.EPERM), "mount") for call in calls)
+
+    def test_manual_bpf_installs_owned_program(self) -> None:
+        libc = MagicMock()
+        libc.prctl.return_value = 0
+
+        with patch("ctypes.CDLL", return_value=libc):
+            assert SeccompFilter.default()._apply_manual_bpf() is True
+
+        assert libc.prctl.call_count == 2
+
+    def test_manual_bpf_fails_closed_when_no_new_privs_is_rejected(self) -> None:
+        libc = MagicMock()
+        libc.prctl.return_value = -1
+
+        with (
+            patch("ctypes.CDLL", return_value=libc),
+            patch("ctypes.get_errno", return_value=errno.EPERM),
+        ):
+            assert SeccompFilter.default()._apply_manual_bpf() is False
+
+        libc.prctl.assert_called_once()
+
+    def test_manual_bpf_fails_closed_when_filter_install_is_rejected(self) -> None:
+        libc = MagicMock()
+        libc.prctl.side_effect = [0, -1]
+
+        with (
+            patch("ctypes.CDLL", return_value=libc),
+            patch("ctypes.get_errno", return_value=errno.EACCES),
+        ):
+            assert SeccompFilter.default()._apply_manual_bpf() is False
+
+        assert libc.prctl.call_count == 2
+
+    def test_manual_bpf_import_or_assembly_error_is_nonfatal(self) -> None:
+        with patch("ctypes.CDLL", side_effect=OSError("libc unavailable")):
+            assert SeccompFilter.default()._apply_manual_bpf() is False

@@ -9,7 +9,7 @@ What this proves (per TASKS.md Phase FW)
 ----------------------------------------
 - FW.1  — every top-level plugin .ts has ``export default``
 - FW.2  — every plugin uses the hot-reload proxy (``loadHotModule``)
-- FW.3  — every plugin guards subagent context via ``isSubagent()``
+- FW.3  — every non-depth plugin guards subagent context via ``isSubagent()``
 - FW.4  — every plugin wraps hooks in fail-open try/catch
 - FW.5  — every plugin honors a ``GLUDD_*_ENFORCE=0`` disable env var
 - FW.6  — every plugin reports liveness via ``reportAlive()``
@@ -56,6 +56,7 @@ BEHAVIORAL_RUNNER = ROOT / "scripts" / "test_plugin_behavior.py"
 TOP_LEVEL_PLUGINS: list[Path] = (
     sorted(p for p in PLUGIN_DIR.glob("enforce-*.ts")) if PLUGIN_DIR.is_dir() else []
 )
+SUBAGENT_GUARD_EXCEPTIONS = frozenset({"enforce-depth.ts"})
 
 
 def _effective_source(plugin_path: Path) -> str:
@@ -133,16 +134,50 @@ def test_fw2_hot_reload_lib_exists() -> None:
 
 @pytest.mark.parametrize("plugin", TOP_LEVEL_PLUGINS, ids=lambda p: p.name)
 def test_fw3_plugin_uses_isSubagent_guard(plugin: Path) -> None:
-    """FW.3: every plugin checks ``isSubagent()`` and skips enforcement.
+    """FW.3: non-depth plugins check ``isSubagent()`` and skip enforcement.
 
-    Subagent contexts must never have enforcement fired inside them — the
-    orchestrator manages enforcement, not the subagent.
+    Depth is the sole exception because its dispatch recursion boundary must
+    remain enforceable inside delegated contexts.
     """
     source = _effective_source(plugin)
+    if plugin.name in SUBAGENT_GUARD_EXCEPTIONS:
+        assert plugin.name == "enforce-depth.ts"
+        assert "isSubagent" not in source, (
+            "enforce-depth.ts must not bypass dispatch-depth enforcement in "
+            "delegated contexts"
+        )
+        return
+
     assert "isSubagent" in source, (
         f"{plugin.name}: missing isSubagent() guard. Plugins MUST NOT fire "
         f"in subagent context (see AGENTS.md 'Subagent Enforcement Isolation')."
     )
+
+
+def test_fw3_depth_is_the_only_subagent_guard_exception() -> None:
+    """FW.3: only dispatch depth remains enforced inside subagents."""
+    plugins_without_guard = {
+        plugin.name
+        for plugin in TOP_LEVEL_PLUGINS
+        if "isSubagent" not in _effective_source(plugin)
+    }
+    assert plugins_without_guard == SUBAGENT_GUARD_EXCEPTIONS
+
+    source = _effective_source(PLUGIN_DIR / "enforce-depth.ts")
+    dispatch_guard = re.search(
+        r"function isDispatchTool\([^)]*\).*?\{(?P<body>.*?)\n\}",
+        source,
+        re.DOTALL,
+    )
+    assert dispatch_guard is not None, "depth enforcement must classify dispatch tools"
+    assert set(re.findall(r'lt === "([^"]+)"', dispatch_guard.group("body"))) == {
+        "task",
+        "agent",
+        "workflow",
+    }
+    assert "if (!isDispatchTool(tool)) return" in source
+    assert "if (depth >= MAX_DEPTH)" in source
+    assert 'permissionDecision: "deny"' in source
 
 
 def test_fw3_shared_ts_exports_isSubagent() -> None:
@@ -337,6 +372,20 @@ def test_fw9_opencode_json_restricts_external_paths(scope: str) -> None:
         f"permission.external_directory has an unreviewed path: "
         f"{sorted(set(external) - allowed_external)}"
     )
+
+
+def test_fw9_global_and_build_file_boundaries_match() -> None:
+    """FW.9: build cannot widen or fork the reviewed global file boundary."""
+    cfg = json.loads(OPENCODE_JSON.read_text())
+    global_permission = cfg["permission"]
+    build_permission = cfg["agent"]["build"]["permission"]
+    boundary_keys = {"read", "edit", "glob", "grep", "external_directory"}
+
+    assert {key: build_permission[key] for key in boundary_keys} == {
+        key: global_permission[key] for key in boundary_keys
+    }
+    assert "write" not in global_permission
+    assert "write" not in build_permission
 
 
 def test_fw9_opencode_json_bash_make_only() -> None:

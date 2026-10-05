@@ -37,13 +37,16 @@ import time
 from typing import Any, ClassVar
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from general_ludd.routers import security as sec
 from general_ludd.security.permissions import (
+    Capability,
     PermissionSpec,
     PermissionSpecParser,
+    PermissionSubject,
 )
 
 # ---------------------------------------------------------------------------
@@ -182,6 +185,20 @@ def _build_app(
     if human_spec is not None:
         app.state._human_spec = human_spec
     sec.register(app, {})
+
+    class _InjectAdminCapabilities(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next: Any) -> Any:
+            request.state.auth_spec = PermissionSpec(
+                agent_type="security-router-test",
+                capabilities=[
+                    Capability(resource="admin:sts", actions=["revoke"]),
+                    Capability(resource="admin:permissions", actions=["write"]),
+                ],
+                subject=PermissionSubject.HUMAN,
+            )
+            return await call_next(request)
+
+    app.add_middleware(_InjectAdminCapabilities)
     return app
 
 
@@ -864,7 +881,7 @@ class TestAuthzPosture:
     ) -> None:
         monkeypatch.delenv("GLUDD_ALLOW_NO_AUTH", raising=False)
         monkeypatch.delenv("GLUDD_REQUIRE_AUTH", raising=False)
-        monkeypatch.setenv("GLUDD_PSK", "unit-test-psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "unit-test-psk")
         from general_ludd.daemon import create_daemon_app
 
         daemon_app = create_daemon_app()
@@ -876,11 +893,11 @@ class TestAuthzPosture:
     def test_fails_closed_503_when_no_psk_configured(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Default-secure posture: with GLUDD_PSK unset (and no explicit
+        """Default-secure posture: with GLUDD_AUTH_PSK unset (and no explicit
         GLUDD_ALLOW_NO_AUTH opt-out), every non-public path is REFUSED rather
         than silently left open — the same fail-closed behavior every other
         admin router gets from the shared middleware."""
-        monkeypatch.delenv("GLUDD_PSK", raising=False)
+        monkeypatch.delenv("GLUDD_AUTH_PSK", raising=False)
         monkeypatch.delenv("GLUDD_ALLOW_NO_AUTH", raising=False)
         monkeypatch.delenv("GLUDD_REQUIRE_AUTH", raising=False)
         from general_ludd.daemon import create_daemon_app
@@ -894,7 +911,7 @@ class TestAuthzPosture:
     def test_valid_psk_reaches_the_router(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("GLUDD_ALLOW_NO_AUTH", raising=False)
         monkeypatch.delenv("GLUDD_REQUIRE_AUTH", raising=False)
-        monkeypatch.setenv("GLUDD_PSK", "unit-test-psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "unit-test-psk")
         from general_ludd.daemon import create_daemon_app
 
         daemon_app = create_daemon_app()

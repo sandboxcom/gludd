@@ -51,7 +51,7 @@ The user's prompt referenced "around line 88." The **actual** error was at **lin
 
 ### 2.1 `make git-log` output (current HEAD)
 
-```
+```text
 8673d3a9 fix: restore THIRD_PARTY_LICENSES.md to root, refresh secrets baseline, lint fixes, bundle in-flight work for CI
 baaf7366 feat: AutoMemory, OpenBao payment vault, combined cost tracking, task watchdog, CI bypass fix, presentation updates, a11y role
 f683923c readme: remove false percentage claims, replace with machine-verified facts only
@@ -116,7 +116,7 @@ assert result.returncode == 0, (
 
 ### 3.4 Live verification (this session)
 
-```
+```text
 $ make test-specific TESTFILE=tests/unit/test_makefile_syntax.py
 ...
 tests/unit/test_makefile_syntax.py::TestMakefileSyntax::test_make_dry_run_gate_parses
@@ -137,17 +137,17 @@ The current Makefile is syntactically clean.
 ### 4.1 The corrupted lines
 
 `Makefile:48-49` (current):
-```
- 		watchdog-start watchdog-status watchdog-stop watchdog-log \
- 		task-watchdog-start task-watchdog-stop task-watchdog-status task-watchdog-log task \
+```text
+ \t\twatchdog-start watchdog-status watchdog-stop watchdog-log \
+ \t\ttask-watchdog-start task-watchdog-stop task-watchdog-status task-watchdog-log task \
 ```
 
 Both lines begin with a **space character followed by tabs**, not pure tabs. The diff in the fix commit (`tool_f37304176001OVgTFCfWboK7A7:3504-3506`) shows the transition:
 
-```
--		watchdog-start watchdog-status watchdog-stop watchdog-log \
-+ 		watchdog-start watchdog-status watchdog-stop watchdog-log \
-+ 		task-watchdog-start task-watchdog-stop task-watchdog-status task-watchdog-log task \
+```text
+-\t\twatchdog-start watchdog-status watchdog-stop watchdog-log \
++ \t\twatchdog-start watchdog-status watchdog-stop watchdog-log \
++ \t\ttask-watchdog-start task-watchdog-stop task-watchdog-status task-watchdog-log task \
 ```
 
 The `-` (old) line is pure tab-indented; the `+` (new) line has a leading space. This is the space-tab corruption — introduced when the fix commit added the `task-watchdog-*` entries.

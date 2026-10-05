@@ -127,6 +127,35 @@ def _fields_of(cls: type) -> tuple[dataclasses.Field, ...]:
     return dataclasses.fields(cls)
 
 
+def _post_init_assigns(mod_name: str, cls_name: str, field_name: str) -> bool:
+    """True when the class's own ``__post_init__`` assigns ``self.<field>`` (AST)."""
+    for name, path in ALL_DATACLASS_MODULES:
+        if name != mod_name:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef) or node.name != cls_name:
+                continue
+            for sub in node.body:
+                if not isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                if sub.name != "__post_init__":
+                    continue
+                for stmt in ast.walk(sub):
+                    if not isinstance(stmt, ast.Assign):
+                        continue
+                    for target in stmt.targets:
+                        if (
+                            isinstance(target, ast.Attribute)
+                            and isinstance(target.value, ast.Name)
+                            and target.value.id == "self"
+                            and target.attr == field_name
+                        ):
+                            return True
+                return False
+    return False
+
+
 # ── test: all fields have type annotations ───────────────────────────────────
 
 
@@ -344,13 +373,24 @@ class TestNaming:
 
 
 class TestInitOnlyFields:
-    """init=False fields must have a default or default_factory."""
+    """init=False fields must be assigned: default, default_factory, or __post_init__.
+
+    ``field(init=False)`` without a default is the canonical CPython pattern for
+    derived attributes set in ``__post_init__`` (the alternative — a nullable
+    default — weakens the field type to ``X | None``).  This test therefore
+    verifies, via AST, that every default-less init=False field is actually
+    assigned in the class's own ``__post_init__``.
+    """
 
     def test_init_false_has_default(self) -> None:
         for mod_name, cls_name, cls in _entries():
             qual = f"{mod_name}.{cls_name}"
+            post_init = cls.__dict__.get("__post_init__")
             for f in _fields_of(cls):
                 if f.init:
                     continue
                 ok = f.default is not dataclasses.MISSING or f.default_factory is not dataclasses.MISSING
-                assert ok, f"{qual}.{f.name}: init=False but no default"
+                if not ok:
+                    if post_init is not None and _post_init_assigns(mod_name, cls_name, f.name):
+                        continue
+                    assert ok, f"{qual}.{f.name}: init=False but no default and no __post_init__ assignment"

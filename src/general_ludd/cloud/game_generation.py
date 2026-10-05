@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import re
 from collections.abc import Mapping, Sequence
 
@@ -14,6 +15,72 @@ _PYTHON_FENCE_START = re.compile(
     re.IGNORECASE,
 )
 _TEXT_BLOCK_TYPES = frozenset({"text", "output_text", "input_text"})
+
+
+def ensure_lifecycle_start_method(
+    source: str,
+    *,
+    class_name: str | None = None,
+) -> str:
+    """Add the minimal explicit ``start`` transition to one generated game class.
+
+    Small local models sometimes implement the complete state machine but omit
+    the mechanically simple ``ready`` to ``playing`` transition requested by
+    the game contract.  Only AST-valid source with an exact top-level class
+    match is eligible.  Existing methods and unrepairable candidates are
+    returned byte-for-byte so downstream validation remains fail closed.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return source
+
+    top_level_classes = [node for node in tree.body if isinstance(node, ast.ClassDef)]
+    if class_name is None:
+        target = top_level_classes[0] if len(top_level_classes) == 1 else None
+    else:
+        target = next(
+            (node for node in top_level_classes if node.name == class_name),
+            None,
+        )
+    if target is None or any(
+        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "start"
+        for node in target.body
+    ):
+        return source
+
+    target.body.append(
+        ast.FunctionDef(
+            name="start",
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[ast.arg(arg="self")],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                kwarg=None,
+                defaults=[],
+            ),
+            body=[
+                ast.Assign(
+                    targets=[
+                        ast.Attribute(
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr="state",
+                            ctx=ast.Store(),
+                        )
+                    ],
+                    value=ast.Constant(value="playing"),
+                )
+            ],
+            decorator_list=[],
+            returns=None,
+            type_comment=None,
+        )
+    )
+    ast.fix_missing_locations(tree)
+    return ast.unparse(tree)
 
 
 def normalize_generated_python(response: object) -> str:

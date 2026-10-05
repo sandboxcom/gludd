@@ -1,3 +1,5 @@
+"""Validated project administration and skill-assignment routes."""
+
 from __future__ import annotations
 
 import asyncio
@@ -10,6 +12,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from general_ludd.cloud.resource_lifecycle import get_lifecycle
 from general_ludd.db.repository import ProjectRepository
 from general_ludd.self_improve.harness import SelfImprovementHarness
 from general_ludd.skills.catalog import SkillCatalog
@@ -20,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 class AddProjectRequest(BaseModel):
+    """Project creation payload."""
+
     name: str
     weight: float
     description: str = ""
@@ -29,23 +34,33 @@ class AddProjectRequest(BaseModel):
 
 
 class SetWeightRequest(BaseModel):
+    """Single-project scheduler weight update."""
+
     weight: float
 
 
 class RebalanceRequest(BaseModel):
+    """Bounded scheduler-weight rebalance payload."""
+
     weights: dict[str, float]
 
 
 class ProjectSkillRequest(BaseModel):
+    """Project skill-assignment payload."""
+
     project_id: str
     skill_name: str
 
 
 class DispatchModeRequest(BaseModel):
+    """Project dispatch-mode update payload."""
+
     mode: str = "active"
 
 
 class TuiLogRequest(BaseModel):
+    """Bounded TUI log ingestion payload."""
+
     entries: list[dict[str, object]] = Field(default_factory=list)
 
 
@@ -61,7 +76,52 @@ def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | Non
     return getattr(app.state, "_session_factory", None)
 
 
-def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+async def _cleanup_persisted_project_resources(
+    factory: async_sessionmaker[AsyncSession],
+    project_id: str,
+) -> None:
+    """Destroy and verify durable compute records before project removal."""
+    from general_ludd.infra.deployment import DeploymentManager
+
+    manager = DeploymentManager(
+        session_factory=factory,
+        project_id=project_id,
+    )
+    try:
+        records = await manager.list_deployments_shared()
+        for record in records:
+            await manager.destroy(
+                record.instance_id,
+                provider=record.provider,
+            )
+        remaining = await manager.list_deployments_shared()
+    except Exception as exc:
+        logger.error(
+            "Durable resource cleanup failed for project %s: %s",
+            project_id,
+            exc,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "project still owns durable resources; cleanup must succeed "
+                "before removal"
+            ),
+        ) from exc
+    finally:
+        manager.close()
+    if remaining:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "project still owns durable resources; cleanup must succeed "
+                "before removal"
+            ),
+        )
+
+
+def _register_project_creation_route(app: FastAPI) -> None:
+    """Register project creation and durable persistence."""
 
     @app.post("/admin/projects")
     async def admin_add_project(req: AddProjectRequest) -> dict[str, object]:
@@ -131,11 +191,29 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 detail="invalid project request; check name, weight, and repo URL",
             ) from exc
 
+
+def _register_project_deletion_route(app: FastAPI) -> None:
+    """Register cleanup-first project deletion."""
+
     @app.delete("/admin/projects/{project_id}")
     async def admin_delete_project(project_id: str) -> dict[str, object]:
         from general_ludd.daemon import _get_or_create_extended_subsystems
         ext = _get_or_create_extended_subsystems(app)
         factory = _get_session_factory(app)
+        if factory is not None:
+            await _cleanup_persisted_project_resources(factory, project_id)
+        lifecycle = get_lifecycle()
+        if lifecycle.pending_cleanup(project_id=project_id):
+            await asyncio.to_thread(lifecycle.cleanup_project, project_id)
+            remaining = lifecycle.pending_cleanup(project_id=project_id)
+            if remaining:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "project still owns active resources; cleanup must succeed "
+                        "before removal"
+                    ),
+                )
         if factory is not None:
             async with factory() as session:
                 repo = ProjectRepository(session)
@@ -143,6 +221,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 await session.commit()
         ext["projects"].remove_project(project_id)
         return {"removed": project_id}
+
+
+def _register_project_weight_routes(app: FastAPI) -> None:
+    """Register project scheduling-weight mutations."""
 
     @app.put("/admin/projects/{project_id}/weight")
     async def admin_set_project_weight(project_id: str, req: SetWeightRequest) -> dict[str, object]:
@@ -176,6 +258,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 status_code=422, detail="invalid weights in rebalance request"
             ) from exc
 
+
+def _register_project_listing_route(app: FastAPI) -> None:
+    """Register the merged in-memory and durable project listing."""
+
     @app.get("/admin/projects")
     async def admin_list_projects() -> dict[str, object]:
         from general_ludd.daemon import _get_or_create_extended_subsystems
@@ -193,10 +279,24 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                     }
                     for p in active
                 ]
-        summary = ext["projects"].get_summary()
-        if isinstance(summary, dict):
-            summary["db_projects"] = db_projects
-        return cast("dict[str, object]", summary)
+        projects = ext.get("projects")
+        if projects is None:
+            logger.error("project manager unavailable while listing projects")
+            raise HTTPException(status_code=500, detail="project manager unavailable")
+        summary = projects.get_summary()
+        if not isinstance(summary, dict):
+            logger.error(
+                "project manager returned invalid summary type: %s",
+                type(summary).__name__,
+            )
+            raise HTTPException(status_code=500, detail="invalid project summary")
+        response = cast(dict[str, object], dict(summary))
+        response["db_projects"] = db_projects
+        return response
+
+
+def _register_project_skill_route(app: FastAPI) -> None:
+    """Register project-scoped skill assignment."""
 
     @app.post("/admin/projects/skills")
     async def admin_project_skills(req: ProjectSkillRequest) -> dict[str, object]:
@@ -229,6 +329,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             registry.register(skill, project_id=project_id)
         return {"status": "ok", "project_id": project_id, "skill": skill_name}
 
+
+def _register_dispatch_route(app: FastAPI) -> None:
+    """Register the global dispatch-mode mutation."""
+
     @app.put("/admin/dispatch/mode", response_model=None)
     async def admin_dispatch_mode(req: DispatchModeRequest) -> JSONResponse | dict[str, str]:
         mode = req.mode
@@ -239,6 +343,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         if cfg is not None and isinstance(cfg, dict):
             cfg["dispatch_mode"] = mode
         return {"dispatch_mode": mode}
+
+
+def _register_support_routes(app: FastAPI) -> None:
+    """Register bounded self-improvement and TUI support endpoints."""
 
     @app.post("/admin/self-improve")
     async def admin_self_improve() -> dict[str, object]:
@@ -264,3 +372,14 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     @app.get("/admin/tui-log")
     async def admin_tui_log_get() -> dict[str, object]:
         return {"entries": list(_tui_log_entries[-200:])}
+
+
+def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register cohesive project administration route groups on ``app``."""
+    _register_project_creation_route(app)
+    _register_project_deletion_route(app)
+    _register_project_weight_routes(app)
+    _register_project_listing_route(app)
+    _register_project_skill_route(app)
+    _register_dispatch_route(app)
+    _register_support_routes(app)

@@ -1,6 +1,4 @@
-"""Suffix array construction (SA-IS), LCP array (Kasai), sparse-table
-RMQ for O(1) LCP queries, longest repeated substring, and binary
-search for pattern matching. Pure-Python, stdlib only.
+"""Suffix array construction (SA-IS), LCP array (Kasai), sparse-table RMQ for O(1) LCP queries.
 
 Appends a unique sentinel (0) to the integer sequence during construction
 so the SA-IS induced sorting works correctly, then strips it from the
@@ -8,6 +6,8 @@ returned suffix array.
 """
 
 from __future__ import annotations
+
+import itertools
 
 
 def _is_lms(t: list[bool]) -> list[int]:
@@ -68,24 +68,34 @@ def _sa_is(s: list[int], k: int) -> list[int]:
     ordered = [i for i in sa if i > 0 and t[i] and not t[i - 1]]
 
     # ── Name the LMS substrings ────────────────────────────────────────
+    # Each LMS substring spans [lms_pos .. next LMS position in TEXT order]
+    # (inclusive). SA-adjacent LMS positions are NOT necessarily text-adjacent,
+    # so the endpoint must come from text order, not from `ordered`.
+    next_lms: dict[int, int] = {}
+    for a, b in itertools.pairwise(lms):
+        next_lms[a] = b
+    next_lms[lms[-1]] = n - 1
+
     names = [-1] * n
     cur = 0
     names[ordered[0]] = cur
+    prev = ordered[0]
     for p in range(1, len(ordered)):
-        a, b = ordered[p - 1], ordered[p]
-        a_end = ordered[p] if p < len(ordered) else n - 1
-        b_end = ordered[p + 1] if p + 1 < len(ordered) else n - 1
+        b = ordered[p]
+        a_end = next_lms[prev]
+        b_end = next_lms[b]
         same = True
-        if a_end - a != b_end - b:
+        if a_end - prev != b_end - b:
             same = False
         else:
-            for d in range(a_end - a):
-                if s[a + d] != s[b + d]:
+            for d in range(a_end - prev + 1):
+                if s[prev + d] != s[b + d]:
                     same = False
                     break
         if not same:
             cur += 1
         names[b] = cur
+        prev = b
 
     name_vals = [names[pos] for pos in lms]
 
@@ -175,7 +185,9 @@ def build_lcp(s: str | list[int], sa: list[int]) -> list[int]:
 
 def _suffix_cmp(text: str, pos: int, pattern: str) -> int:
     """Compare text[pos:] against pattern, only up to len(pattern) chars.
-    Returns -1, 0, 1."""
+
+    Returns -1, 0, 1.
+    """
     plen = len(pattern)
     for k in range(plen):
         if pos + k >= len(text):
@@ -220,6 +232,7 @@ def sa_find_all(sa: list[int], text: str, pattern: str) -> tuple[int, int]:
 
 
 def sa_contains(sa: list[int], text: str, pattern: str) -> bool:
+    """Return True when the pattern occurs anywhere in the text."""
     lo, _ = sa_find_all(sa, text, pattern)
     return lo < len(sa) and text[sa[lo] :].startswith(pattern)
 

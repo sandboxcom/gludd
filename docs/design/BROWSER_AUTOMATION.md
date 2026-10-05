@@ -134,7 +134,7 @@ New package `src/general_ludd/browser/`. The agent never sees a CSS selector or
 DOM node — only human verbs operating on **visible labels, roles, and text** and
 the **accessibility tree**. Selector/DOM handling is entirely internal.
 
-```
+```text
 browser/
   __init__.py
   session.py     # BrowserSession — owns Playwright ctx, one browser process
@@ -342,7 +342,7 @@ cookies/auth/context persist.
 ### 4a — Module list + signatures
 
 **`gludd_browser_open`** — start/reuse a session and navigate.
-```
+```text
 argument_spec:
   session_handle (str, default None)   # None → create new session, return handle
   url            (str, required)
@@ -354,7 +354,7 @@ returns: session_handle, url, status_code, title, redirected_from,
 ```
 
 **`gludd_browser_fill`** — fill + optionally submit a form by visible labels.
-```
+```text
 argument_spec:
   session_handle (str, required)
   fields         (dict, required)      # {visible_label: value}
@@ -369,7 +369,7 @@ no_log on secret_fields (mirror gludd_worktree/agent_task no_log pattern,
 ```
 
 **`gludd_browser_extract`** — read the page as structured data.
-```
+```text
 argument_spec:
   session_handle (str, required)
   what           (str, choices=[page,table,iframe,text,forms,json],
@@ -381,7 +381,7 @@ returns: page (StructuredPage dict) | table (rows) | iframe (StructuredPage) |
 ```
 
 **`gludd_browser_download`** — download a file by visible link label, jailed.
-```
+```text
 argument_spec:
   session_handle (str, required)
   link_label     (str, required)
@@ -391,7 +391,7 @@ returns: path, filename, size_bytes, content_type, truncated (bool→fail if cap
 ```
 
 **`gludd_browser_inspect`** — headers, TLS, and full network log.
-```
+```text
 argument_spec:
   session_handle (str, required)
   what           (str, choices=[headers,tls,network], default headers)
@@ -459,7 +459,7 @@ Register a `playbooks/browse_web.yml` (surfaces in `make playbook-list`).
 `BrowserConfig` (Pydantic, mirror `HumanInTheLoopConfig` at
 `config/user_config.py:130`), read from `config["browser"]`:
 
-```
+```text
 engine:            chromium | firefox | webkit          (default chromium)
 headless:          bool                                  (default True)
 proxy:             str | None   (http/https/socks proxy URL, None = direct)
@@ -494,7 +494,7 @@ boundary is invented.
    confines Chromium; the fork-child `os.setsid()` + `killpg` group-kill
    (`core_runner.py:390-411,489-516`) is what reaps a runaway/zombie Chromium and
    **all** its renderer children on timeout. Env is scrubbed to the allowlist
-   (`_PLAYBOOK_ENV_ALLOWLIST`, `core_runner.py:521-568`) so `GLUDD_PSK`,
+   (`_PLAYBOOK_ENV_ALLOWLIST`, `core_runner.py:521-568`) so `GLUDD_AUTH_PSK`,
    `ZAI_API_KEY`, `AWS_*`, `DATABASE_URL` never reach a page's process. Add
    Chromium's own `--no-sandbox` guard: **do not** pass it — keep Chromium's
    internal sandbox on inside the container.
@@ -663,7 +663,7 @@ must be folded in before implementation starts.
    fork-group-kill (`setsid`+`killpg` reap) and env-scrub, **not** real OS
    sandboxing. Two things genuinely ARE unconditional and can be relied on as
    a floor regardless of `iso.enabled`: (a) the `_PLAYBOOK_ENV_ALLOWLIST` env
-   scrub at `core_runner.py:782-800` — `GLUDD_PSK`/API keys/`AWS_*`/
+   scrub at `core_runner.py:782-800` — `GLUDD_AUTH_PSK`/API keys/`AWS_*`/
    `DATABASE_URL` are scrubbed from the child env even without isolation
    enabled; (b) the `setsid`+`killpg` reap that kills the whole process group
    on timeout. Real OS-level sandboxing (podman/bwrap/seccomp) requires the

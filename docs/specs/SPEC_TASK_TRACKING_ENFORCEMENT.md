@@ -47,7 +47,7 @@ This creates a class of failure where:
 
 ### 2.3 Detection Logic (text.complete hook)
 
-```
+```text
 On text.complete:
   1. If isSubagent() → return output (skip)
   2. If GLUDD_TASK_TRACKING_ENFORCE=0 → return output
@@ -104,7 +104,7 @@ This is a heuristic; false positives are acceptable (advisory only).
 
 ### 2.7 System Prompt Injection
 
-```
+```text
 ================ TASK TRACKING DIRECTIVE ================
 After every user prompt that requests new work:
   1. Add a new entry to TASKS.md describing the request
@@ -123,7 +123,7 @@ stale relative to user activity.
 
 ## 3. File Structure
 
-```
+```text
 .opencode/plugin/enforce-task-tracking.ts   ← main plugin (proxy pattern)
 .opencode/plugin/impl/enforce_task_tracking_impl.ts  ← implementation
 /tmp/gludd-task-tracking.json               ← state file
@@ -258,11 +258,11 @@ export default (() => {
 
 ```makefile
 task-tracking-state: ## Show task-tracking state file
-	@cat /tmp/gludd-task-tracking.json 2>/dev/null || echo '{"status":"no state file"}'
+    @cat /tmp/gludd-task-tracking.json 2>/dev/null || echo '{"status":"no state file"}'
 
 reset-task-tracking: ## Reset task-tracking state
-	@rm -f /tmp/gludd-task-tracking.json
-	@echo "Task tracking state reset."
+    @rm -f /tmp/gludd-task-tracking.json
+    @echo "Task tracking state reset."
 ```
 
 ---

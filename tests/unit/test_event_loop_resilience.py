@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from general_ludd.db.models import BucketLeaseModel
 from general_ludd.event_loop.lease import reclaim_expired_leases, release_lease
 from general_ludd.event_loop.loop import EventLoop
 from general_ludd.schemas.todo import Todo, TodoStatus
@@ -26,6 +27,7 @@ def _make_loop_resilience(**overrides):
     session.add = MagicMock()
     http_client = AsyncMock()
     todo_repo = AsyncMock()
+    todo_repo.count_active.return_value = 0
     task_return_repo = AsyncMock()
     defaults = dict(
         worker_base_url="http://worker:8000",
@@ -52,9 +54,8 @@ def _make_loop_resilience(**overrides):
 
 class TestWorkerCrashRecovery:
     @pytest.mark.asyncio
-    async def test_expired_lease_reaps_stuck_active_todo(self):
-        """An ACTIVE todo whose lease has expired (no live lease row) must be
-        transitioned ACTIVE->QUEUED by _reap_stuck_todos."""
+    async def test_unfenced_stale_active_todo_is_not_requeued(self):
+        """A missing lease cannot prove that the old execution stopped."""
 
         loop, mocks = _make_loop_resilience()
         session = mocks["session"]
@@ -80,7 +81,8 @@ class TestWorkerCrashRecovery:
 
         await loop._reap_stuck_todos()
 
-        mocks["todo_repo"].transition.assert_called_once_with("TODO-STUCK-1", TodoStatus.QUEUED, 3)
+        mocks["todo_repo"].transition.assert_not_called()
+        assert loop._tick_state["unfenced_stuck_todo_ids"] == {"TODO-STUCK-1"}
 
     @pytest.mark.asyncio
     async def test_live_lease_prevents_reaping(self):
@@ -113,11 +115,8 @@ class TestWorkerCrashRecovery:
         mocks["todo_repo"].transition.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_reap_skips_concurrent_version_change(self):
-        """When transition raises ConcurrencyError (lost race), the todo is
-        skipped — no crash, no double-reap."""
-        from general_ludd.db.repository import ConcurrencyError
-
+    async def test_stale_detection_never_attempts_a_version_transition(self):
+        """Detection is read-only regardless of the todo's observed version."""
         loop, mocks = _make_loop_resilience()
         session = mocks["session"]
 
@@ -134,14 +133,14 @@ class TestWorkerCrashRecovery:
         result2.scalars.return_value.all.return_value = []
         session.execute.side_effect = [result1, result2]
 
-        mocks["todo_repo"].transition = AsyncMock(side_effect=ConcurrencyError("version mismatch"))
+        mocks["todo_repo"].transition = AsyncMock()
         loop._todo_repo = mocks["todo_repo"]
         loop._active_session = session
 
-        # Must not raise — just skip the lost race.
         await loop._reap_stuck_todos()
 
-        mocks["todo_repo"].transition.assert_called_once()
+        mocks["todo_repo"].transition.assert_not_called()
+        assert loop._tick_state["unfenced_stuck_todo_ids"] == {"TODO-RACE-1"}
 
     @pytest.mark.asyncio
     async def test_reap_handles_no_active_session(self):
@@ -210,8 +209,12 @@ class TestTaskTimeoutAndRetry:
     async def test_lease_reclaim_with_max_age_respects_cutoff(self):
         """reclaim_expired_leases must only delete leases past max_age_seconds."""
         session = AsyncMock()
-        expired = MagicMock()
-        expired.expires_at = datetime.now(UTC) - timedelta(seconds=600)
+        expired = BucketLeaseModel(
+            bucket_key="malformed",
+            holder_id="holder",
+            expires_at=datetime.now(UTC) - timedelta(seconds=600),
+            termination_confirmed_at=datetime.now(UTC),
+        )
         result_mock = MagicMock()
         result_mock.scalars.return_value.all.return_value = [expired]
         session.execute.return_value = result_mock
@@ -404,7 +407,35 @@ class TestGracefulShutdown:
         assert len(loop._background_tasks) == 0
 
     @pytest.mark.asyncio
-    async def test_run_forever_stops_cleanly_on_stop(self):
+    async def test_shutdown_drains_cleanup_task_spawned_during_cancellation(self) -> None:
+        """Partial teardown work added by a cancelled task is drained too."""
+        loop, _ = _make_loop_resilience()
+        cleanup_tasks: list[asyncio.Task[None]] = []
+
+        async def cleanup() -> None:
+            await asyncio.Event().wait()
+
+        async def work() -> None:
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cleanup_task = asyncio.create_task(cleanup())
+                cleanup_tasks.append(cleanup_task)
+                loop._track_background_task(cleanup_task)
+
+        original = asyncio.create_task(work())
+        loop._track_background_task(original)
+        await asyncio.sleep(0)
+
+        await asyncio.wait_for(loop.shutdown(), timeout=5.0)
+
+        assert original.cancelled()
+        assert len(cleanup_tasks) == 1
+        assert cleanup_tasks[0].cancelled()
+        assert len(loop._background_tasks) == 0
+
+    @pytest.mark.asyncio
+    async def test_run_forever_stops_cleanly_on_stop(self, caplog):
         """Calling stop() mid-loop exits run_forever cleanly within timeout."""
         loop, mocks = _make_loop_resilience()
         mocks["todo_repo"].claim_runnable.return_value = []
@@ -422,10 +453,13 @@ class TestGracefulShutdown:
 
         loop.tick = counting_tick
 
-        await loop.run_forever(interval=0.001)
+        with caplog.at_level("INFO"):
+            await loop.run_forever(interval=0.001)
 
         assert ticks_run >= 2
         assert loop._running is False
+        assert "stopped gracefully" in caplog.text
+        assert not [record for record in caplog.records if record.levelname == "ERROR"]
 
 
 # ---------------------------------------------------------------------------

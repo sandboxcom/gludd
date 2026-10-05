@@ -23,7 +23,10 @@ class _Entry(Generic[K, V]):
 
 
 class HashTable(Generic[K, V]):
+    """Hash table with chaining."""
+
     def __init__(self, capacity: int = _DEFAULT_CAPACITY) -> None:
+        """Initialize the hash table with a capacity."""
         if capacity < 1:
             raise ValueError("capacity must be >= 1")
         self._capacity = capacity
@@ -32,13 +35,16 @@ class HashTable(Generic[K, V]):
 
     @property
     def capacity(self) -> int:
+        """Return the bucket capacity."""
         return self._capacity
 
     @property
     def size(self) -> int:
+        """Return the number of entries."""
         return self._size
 
     def put(self, key: K, value: V) -> None:
+        """Insert or update a key-value pair."""
         idx = self._index(key)
         entry = self._buckets[idx]
         while entry is not None:
@@ -54,12 +60,14 @@ class HashTable(Generic[K, V]):
             self._rehash()
 
     def get(self, key: K) -> V:
+        """Return the value for a key."""
         entry = self._find(key)
         if entry is None:
             raise KeyError(f"missing key: {key!r}")
         return entry.value
 
     def delete(self, key: K) -> None:
+        """Remove a key from the table."""
         idx = self._index(key)
         entry = self._buckets[idx]
         prev: _Entry[K, V] | None = None
@@ -76,6 +84,7 @@ class HashTable(Generic[K, V]):
         raise KeyError(f"absent key: {key!r}")
 
     def contains(self, key: K) -> bool:
+        """Return whether the key is present."""
         return self._find(key) is not None
 
     def _find(self, key: K) -> _Entry[K, V] | None:
@@ -102,11 +111,14 @@ class HashTable(Generic[K, V]):
 
 
 def _hash_key(key: str) -> int:
-    return int(hashlib.md5(key.encode("utf-8")).hexdigest(), 16)
+    return int(hashlib.md5(key.encode("utf-8"), usedforsecurity=False).hexdigest(), 16)
 
 
 class ConsistentHashRing:
+    """Consistent hash ring mapping keys to nodes."""
+
     def __init__(self, virtual_nodes: int = 64) -> None:
+        """Initialize the ring with a virtual node count."""
         if virtual_nodes < 1:
             raise ValueError("virtual_nodes must be >= 1")
         self._virtual_nodes = virtual_nodes
@@ -115,9 +127,11 @@ class ConsistentHashRing:
 
     @property
     def node_count(self) -> int:
+        """Return the number of distinct nodes."""
         return len(set(self._node_map.values()))
 
     def add_node(self, node_id: str) -> None:
+        """Add a node to the ring."""
         if node_id in set(self._node_map.values()):
             return
         for i in range(self._virtual_nodes):
@@ -128,6 +142,7 @@ class ConsistentHashRing:
             self._node_map[h] = node_id
 
     def remove_node(self, node_id: str) -> None:
+        """Remove a node from the ring."""
         if node_id not in set(self._node_map.values()):
             raise ValueError(f"unknown node: {node_id!r}")
         to_remove = [h for h, n in self._node_map.items() if n == node_id]
@@ -138,6 +153,7 @@ class ConsistentHashRing:
             del self._node_map[h]
 
     def get_node(self, key: str) -> str:
+        """Return the node responsible for a key."""
         if not self._ring:
             raise ValueError("ring is empty — add nodes first")
         h = _hash_key(key)

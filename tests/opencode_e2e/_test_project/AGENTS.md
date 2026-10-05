@@ -1,8 +1,8 @@
 # E2E Test Project — Agent Rules
 
-## CRITICAL: 10-Agent Dispatch Floor (HARD)
-Every dispatch wave MUST contain exactly 10 task/agent dispatches when pending work exists.
-Never send fewer than 10 dispatches in a wave. The floor IS the ceiling.
+## CRITICAL: Three-Agent Configured Width (HARD)
+Every full dispatch wave MUST contain exactly three task/agent dispatches while at least three independent tasks remain.
+Never exceed three dispatches in a wave. The final wave may be smaller.
 
 ## CRITICAL: Never-Stop Rule (HARD)
 Never send a text-only response while TASKS.md has unchecked items.
@@ -17,13 +17,13 @@ Subagents MUST do TRIVIAL low-token work only. Each subagent:
 - Does NOT dispatch further subagents (orchestrator handles all dispatch)
 
 ## Dispatch Wave Format
-- Exactly 10 subagents per wave, dispatched in ONE message
+- Exactly three subagents per full wave, dispatched in one message
 - Each subagent task = make taskN (trivial, sub-second operation)
 - All subagents operate on disjoint files only
 - No long-running tasks, no gate runs, no CI polling
 
 ## Depth Rules
-- Layer 0 (orchestrator): dispatches exactly 10 agents, ingests results
+- Layer 0 (orchestrator): dispatches up to three agents, ingests results
 - Layer 1 (agent): does exactly one trivial `make taskN` operation and returns
 - Layers 2-3 (sub-agents): MAY dispatch further subagents up to MAX_DEPTH=4
 - 3x deep dispatch is ALLOWED: main -> agent -> agent -> agent (depths 0-3)

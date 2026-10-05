@@ -13,8 +13,11 @@ an unpinned npx download, or an untracked helper script.
   MARKDOWNLINT_CONFIG explicitly.
 - The target uses only the exact binary installed under
   .opencode/node_modules from the tracked package lock.
-- Missing file arguments, missing configuration, or a missing locked binary
-  fail with exit code 2 and an actionable message.
+- Missing file arguments or missing configuration fail with exit code 2 and
+  an actionable message.
+- A missing locked binary triggers a locked dependency sync through the
+  repository's node-deps-sync target with the namespaced registry and cache
+  contract; if that sync fails, the target still exits 2 with a visible cause.
 - The checked-in configuration disables inline Markdown suppressions.
 - The initial rule set enforces heading progression and ATX form, trailing
   whitespace, hard tabs, heading spacing, and a final newline.
@@ -61,8 +64,9 @@ must not introduce a hidden baseline or suppression.
 This is development-only tooling with no runtime process, database, protocol,
 or deployment mutation. It can roll out before application workers and roll
 back independently. During a mixed-version development window, older checkouts
-lack the target while newer checkouts fail closed if dependencies are not
-synced; production service traffic remains uninterrupted.
+lack the target while newer checkouts sync locked dependencies automatically
+and fail closed if that sync fails; production service traffic remains
+uninterrupted.
 
 ## Resource and observability contract
 

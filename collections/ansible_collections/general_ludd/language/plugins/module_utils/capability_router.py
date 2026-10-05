@@ -8,7 +8,7 @@ route language requests through the daemon. Imports from
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 from ansible_collections.general_ludd.agent.plugins.module_utils.capability_router import (
     CapabilityDispatchError,
@@ -144,7 +144,7 @@ class LanguageRouter:
                 list_capabilities as _list,
             )
 
-            return _list()
+            return cast(list[str], _list())
         except Exception:
             return sorted(self.CAPABILITY_MAP.keys())
 

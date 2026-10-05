@@ -29,7 +29,7 @@ The role composes two gludd modules:
 | Variable | Default | Notes |
 |---|---|---|
 | `gludd_daemon_url` | `http://localhost:8000` | Daemon API base URL |
-| `gludd_psk` | `""` | Pre-shared key; `no_log` in every task that passes it. Prefer `GLUDD_PSK` env var |
+| `gludd_psk` | `""` | Pre-shared key; `no_log` in every task that passes it. Prefer `GLUDD_AUTH_PSK` env var |
 | `manage_processes_action` | `monitor` | `monitor` \| `signal` \| `reap` |
 | `cpu_percent_max` | `90.0` | Processes above this CPU% are breaching |
 | `memory_rss_mb_max` | `2048` | Processes with RSS above this many MB are breaching |

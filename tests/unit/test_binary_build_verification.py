@@ -36,8 +36,6 @@ _REQUIRED_HIDDENIMPORTS = {
     "general_ludd",
     "general_ludd.cli",
     "general_ludd.daemon",
-    "general_ludd.ansible.runner",
-    "general_ludd.ansible.core_runner",
     "general_ludd.db.models",
     "general_ludd.db.repository",
     "general_ludd.secrets.manager",
@@ -45,6 +43,18 @@ _REQUIRED_HIDDENIMPORTS = {
     "uvicorn.loops.auto",
     "uvicorn.protocols.http.auto",
     "uvicorn.lifespan.on",
+}
+
+_CONTROLLER_HIDDENIMPORTS = {
+    "general_ludd.ansible.runner",
+    "general_ludd.ansible.core_runner",
+}
+
+_ANSIBLE_SUBMODULE_PACKAGES = {
+    "ansible.module_utils",
+    "ansible.plugins",
+    "ansible.template",
+    "ansible.galaxy",
 }
 
 
@@ -146,11 +156,21 @@ class TestHiddenImports:
         hidden = set(_parse_string_list(spec_text, "hiddenimports"))
         missing = _REQUIRED_HIDDENIMPORTS - hidden
         assert not missing, f"Missing required hidden imports in gludd.spec: {sorted(missing)}"
+        bundled_controller = _CONTROLLER_HIDDENIMPORTS & hidden
+        assert not bundled_controller, (
+            "Frozen core must not force Ansible controller modules into the binary: "
+            f"{sorted(bundled_controller)}"
+        )
 
     def test_ansible_submodules_in_hidden_imports(self, spec_text: str) -> None:
         collected = _collect_submodule_packages(spec_text)
-        for sub in ("ansible.module_utils", "ansible.plugins", "ansible.template", "ansible.galaxy"):
-            assert sub in collected, f"gludd.spec must call collect_submodules('{sub}') for hidden imports"
+        bundled = _ANSIBLE_SUBMODULE_PACKAGES & collected
+        assert not bundled, (
+            "Ansible controller submodules belong in the independently locked EE, "
+            f"not the frozen core: {sorted(bundled)}"
+        )
+        excluded = set(_parse_string_list(spec_text, "excludes"))
+        assert {"ansible", "ansible_runner", "ansible.cli"} <= excluded
 
     def test_no_duplicate_hidden_imports(self, spec_text: str) -> None:
         literal_imports = _parse_string_list(spec_text, "hiddenimports")
@@ -167,8 +187,9 @@ class TestDataCollections:
     def test_required_data_dirs_collected(self, spec_text: str) -> None:
         pairs = _parse_tuple_list(spec_text, "datas")
         sources = {src for src, _ in pairs}
-        for expected in ("config", "templates", "playbooks"):
+        for expected in ("config", "templates"):
             assert expected in sources, f"datas must include '{expected}' directory — found: {sorted(sources)}"
+        assert "playbooks" not in sources, "Controller playbooks belong in the EE/collections, not the frozen core"
 
     def test_license_files_in_datas(self, spec_text: str) -> None:
         pairs = _parse_tuple_list(spec_text, "datas")
@@ -187,8 +208,8 @@ class TestDataCollections:
         assert not dupes, f"Duplicate datas entries found in gludd.spec: {dupes}"
 
     def test_ansible_data_files_collected(self, spec_text: str) -> None:
-        assert re.search(r"collect_data_files\(\s*['\"]ansible['\"]\s*\)", spec_text), (
-            "gludd.spec must call collect_data_files('ansible')"
+        assert not re.search(r"collect_data_files\(\s*['\"]ansible['\"]\s*\)", spec_text), (
+            "Frozen core must not collect Ansible data files; the locked EE owns them"
         )
 
 

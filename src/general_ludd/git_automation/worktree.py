@@ -38,6 +38,16 @@ DEFAULT_TARGET_BRANCH = "development"
 _MAIN_CHECKOUT = "/Users/shawnwilson/gludd"
 
 
+def _is_main_checkout(path: str, repo_path: str) -> bool:
+    """True when a porcelain ``worktree`` path is the main checkout.
+
+    Compares against the resolved repo_path first (portable across
+    machines), falling back to the historical constant so pre-existing
+    porcelain fixtures and callers that pass the legacy path keep working.
+    """
+    return path in (_MAIN_CHECKOUT, str(Path(repo_path).resolve()))
+
+
 class WorktreeHealthViolation:
     """A single worktree health violation."""
 
@@ -48,12 +58,14 @@ class WorktreeHealthViolation:
         reason: str,
         severity: str = "error",
     ) -> None:
+        """Record a worktree health violation found by the health check."""
         self.worktree_path = worktree_path
         self.branch = branch
         self.reason = reason
         self.severity = severity
 
     def __repr__(self) -> str:
+        """Human-readable rendering of this violation for logs and reports."""
         return (
             f"WorktreeHealthViolation(path={self.worktree_path!r}, "
             f"branch={self.branch!r}, reason={self.reason!r}, "
@@ -64,8 +76,7 @@ class WorktreeHealthViolation:
 def _reject_leading_dash(value: str, kind: str) -> str:
     if value.startswith("-"):
         raise ValueError(
-            f"refusing {kind} that begins with '-' (would be parsed as a git "
-            f"option, not a ref/path): {value!r}"
+            f"refusing {kind} that begins with '-' (would be parsed as a git option, not a ref/path): {value!r}"
         )
     return value
 
@@ -114,11 +125,6 @@ def worktree_create(
     except ValueError as exc:
         return WorktreeResult(path="", branch=branch, success=False, message=str(exc))
 
-    root = (
-        project_state(project_root=repo_path).directory("worktrees")
-        if worktree_root is None
-        else secure_directory(worktree_root)
-    )
     branch_path = Path(branch)
     if branch_path.is_absolute() or ".." in branch_path.parts:
         return WorktreeResult(
@@ -127,6 +133,11 @@ def worktree_create(
             success=False,
             message=f"refusing branch path that escapes worktree root: {branch!r}",
         )
+    root = (
+        project_state(project_root=repo_path).directory("worktrees")
+        if worktree_root is None
+        else secure_directory(worktree_root)
+    )
     worktree_path = str(root.joinpath(*branch_path.parts))
     try:
         _reject_leading_dash(worktree_path, "worktree path")
@@ -211,14 +222,23 @@ def worktree_merge(
 
     try:
         prev_branch = _run_git(
-            "rev-parse", "--abbrev-ref", "HEAD", cwd=repo_path,
+            "rev-parse",
+            "--abbrev-ref",
+            "HEAD",
+            cwd=repo_path,
         ).stdout.strip()
 
         _run_git("checkout", target_branch, "--", cwd=repo_path)
 
         merge_msg = f"merge: {branch} worktree work into {target_branch}"
         result = _run_git(
-            "merge", "--no-ff", branch, "-m", merge_msg, cwd=repo_path, check=False,
+            "merge",
+            "--no-ff",
+            branch,
+            "-m",
+            merge_msg,
+            cwd=repo_path,
+            check=False,
         )
 
         if result.returncode != 0:
@@ -273,11 +293,6 @@ def worktree_cleanup(
     except ValueError as exc:
         return {"success": False, "branch": branch, "branch_removed": False, "cleaned": False, "error": str(exc)}
 
-    root = (
-        project_state(project_root=repo_path).directory("worktrees")
-        if worktree_root is None
-        else secure_directory(worktree_root)
-    )
     branch_path = Path(branch)
     if branch_path.is_absolute() or ".." in branch_path.parts:
         return {
@@ -287,23 +302,35 @@ def worktree_cleanup(
             "cleaned": False,
             "error": f"refusing branch path that escapes worktree root: {branch!r}",
         }
+    root = (
+        project_state(project_root=repo_path).directory("worktrees")
+        if worktree_root is None
+        else secure_directory(worktree_root)
+    )
     worktree_path = str(root.joinpath(*branch_path.parts))
     cleaned = False
 
     try:
-        _run_git(
-            "worktree", "remove", worktree_path, "--force",
-            cwd=repo_path, check=False,
+        result = _run_git(
+            "worktree",
+            "remove",
+            worktree_path,
+            "--force",
+            cwd=repo_path,
+            check=False,
         )
-        cleaned = True
+        cleaned = result.returncode == 0
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         cleaned = False
 
     if not cleaned and os.path.isdir(worktree_path):
         with contextlib.suppress(Exception):
             _run_git(
-                "worktree", "unlock", worktree_path,
-                cwd=repo_path, check=False,
+                "worktree",
+                "unlock",
+                worktree_path,
+                cwd=repo_path,
+                check=False,
             )
 
     with contextlib.suppress(Exception):
@@ -339,14 +366,14 @@ def worktree_list(repo_path: str) -> list[WorktreeInfo]:
     current: dict[str, str] = {}
     for line in result.stdout.splitlines():
         if line.startswith("worktree "):
-            current["path"] = line[len("worktree "):]
+            current["path"] = line[len("worktree ") :]
         elif line.startswith("branch "):
-            current["branch"] = line[len("branch "):]
+            current["branch"] = line[len("branch ") :]
         elif line.startswith("HEAD "):
-            current["commit"] = line[len("HEAD "):]
+            current["commit"] = line[len("HEAD ") :]
         elif line == "":
             if "path" in current:
-                is_main = current.get("path", "") == _MAIN_CHECKOUT
+                is_main = _is_main_checkout(current.get("path", ""), repo_path)
                 worktrees.append(
                     WorktreeInfo(
                         path=current.get("path", ""),
@@ -357,7 +384,7 @@ def worktree_list(repo_path: str) -> list[WorktreeInfo]:
                 )
             current = {}
     if "path" in current:
-        is_main = current.get("path", "") == _MAIN_CHECKOUT
+        is_main = _is_main_checkout(current.get("path", ""), repo_path)
         worktrees.append(
             WorktreeInfo(
                 path=current.get("path", ""),
@@ -372,13 +399,17 @@ def worktree_list(repo_path: str) -> list[WorktreeInfo]:
 def _get_tree_age_seconds(worktree_path: str) -> float | None:
     try:
         result = _run_git(
-            "log", "-1", "--format=%ct", "HEAD",
-            cwd=worktree_path, check=False,
+            "log",
+            "-1",
+            "--format=%ct",
+            "HEAD",
+            cwd=worktree_path,
+            check=False,
         )
         if result.returncode == 0 and result.stdout.strip():
             commit_epoch = int(result.stdout.strip())
             return time.time() - commit_epoch
-    except (ValueError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+    except (OSError, ValueError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         pass
     try:
         mtime = os.path.getmtime(worktree_path)
@@ -390,16 +421,24 @@ def _get_tree_age_seconds(worktree_path: str) -> float | None:
 
 def _branch_is_merged(repo_path: str, branch: str, target: str) -> bool:
     result = _run_git(
-        "merge-base", "--is-ancestor", branch, target,
-        cwd=repo_path, check=False,
+        "merge-base",
+        "--is-ancestor",
+        branch,
+        target,
+        cwd=repo_path,
+        check=False,
     )
     return result.returncode == 0
 
 
 def _branch_on_remote(repo_path: str, branch: str, remote: str) -> bool:
     result = _run_git(
-        "ls-remote", "--heads", remote, f"refs/heads/{branch}",
-        cwd=repo_path, check=False,
+        "ls-remote",
+        "--heads",
+        remote,
+        f"refs/heads/{branch}",
+        cwd=repo_path,
+        check=False,
     )
     if result.returncode != 0:
         return True
@@ -437,6 +476,16 @@ def worktree_health_check(
         branch = wt.branch.removeprefix("refs/heads/")
 
         age_secs = _get_tree_age_seconds(path)
+        if age_secs is None and not os.path.isdir(path):
+            violations.append(
+                WorktreeHealthViolation(
+                    worktree_path=path,
+                    branch=branch,
+                    reason="Worktree path is missing — prune the stale Git registration",
+                    severity="warning",
+                )
+            )
+            continue
         merged = _branch_is_merged(repo_path, branch, target_branch) if branch else True
         remote_ok = _branch_on_remote(repo_path, branch, remote_name) if branch else True
 
@@ -445,10 +494,7 @@ def worktree_health_check(
                 WorktreeHealthViolation(
                     worktree_path=path,
                     branch=branch,
-                    reason=(
-                        f"Stale >{max_age_hours}h ({age_secs / 3600:.1f}h) "
-                        f"and NOT merged into {target_branch}"
-                    ),
+                    reason=(f"Stale >{max_age_hours}h ({age_secs / 3600:.1f}h) and NOT merged into {target_branch}"),
                     severity="error",
                 )
             )
@@ -468,10 +514,7 @@ def worktree_health_check(
                 WorktreeHealthViolation(
                     worktree_path=path,
                     branch=branch,
-                    reason=(
-                        f"Stale >{max_age_hours}h ({age_secs / 3600:.1f}h) "
-                        "and already merged — cleanup needed"
-                    ),
+                    reason=(f"Stale >{max_age_hours}h ({age_secs / 3600:.1f}h) and already merged — cleanup needed"),
                     severity="warning",
                 )
             )

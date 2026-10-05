@@ -6,7 +6,11 @@ from typing import Any
 
 import pytest
 
-from general_ludd.connectors.azure_resource_graph import AzureResourceGraphSource
+from general_ludd.connectors.azure_resource_graph import (
+    AzureResourceGraphSource,
+    _adapt_http_get,
+    _parse_ts,
+)
 
 TOKEN_ENV = "GLUDD_TEST_ARM_TOKEN"
 SUB = "00000000-0000-0000-0000-000000000001"
@@ -142,6 +146,37 @@ def test_http_get_and_config_transport_are_mutually_exclusive() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (42, 42.0),
+        ("", None),
+        ("not-a-timestamp", None),
+        (object(), None),
+    ],
+)
+def test_parse_ts_handles_supported_and_invalid_values(value: object, expected: float | None) -> None:
+    assert _parse_ts(value) == expected
+
+
+def test_construction_rejects_invalid_config_shapes() -> None:
+    invalid_config: Any = None
+    with pytest.raises(TypeError, match="config must be a dict"):
+        AzureResourceGraphSource(invalid_config)
+    with pytest.raises(ValueError, match="subscriptions"):
+        AzureResourceGraphSource({"subscriptions": object()})
+    with pytest.raises(ValueError, match="token_env"):
+        AzureResourceGraphSource({"subscriptions": [SUB], "token_env": ""})
+    with pytest.raises(TypeError, match="transport"):
+        AzureResourceGraphSource({"subscriptions": [SUB], "transport": object()})
+
+
+def test_http_get_adapter_accepts_response_objects() -> None:
+    response = FakeResponse(200, {"data": []})
+    transport = _adapt_http_get(lambda *_args, **_kwargs: response)
+    assert transport("GET", "https://example.com", {}, None, 1.0) is response
+
+
 # -- query normalization ---------------------------------------------------------------
 
 
@@ -258,6 +293,21 @@ def test_non_200_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     src = _make_source(monkeypatch, transport)
     with pytest.raises(RuntimeError, match="HTTP 401"):
         src.query("Resources")
+
+
+def test_query_rejects_invalid_or_empty_specs(monkeypatch: pytest.MonkeyPatch) -> None:
+    transport = RecordingTransport(FakeResponse(200, {}))
+    src = _make_source(monkeypatch, transport)
+    with pytest.raises(TypeError, match="spec"):
+        src.query(object())
+    with pytest.raises(ValueError, match="empty KQL"):
+        src.query({})
+
+
+def test_normalize_rejects_non_mapping_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    transport = RecordingTransport(FakeResponse(200, []))
+    src = _make_source(monkeypatch, transport)
+    assert src.query("Resources") == []
 
 
 # -- SSRF: internal / metadata base_url rejected ---------------------------------------

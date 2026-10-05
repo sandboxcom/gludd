@@ -1,7 +1,7 @@
 // enforce-floor-v2: session-wide cumulative dispatch tracker.
 // Integrates with scripts/dispatch_tracker.py to track dispatched-vs-completed
-// counts across the ENTIRE session, not per-message.  When floor deficit > 0
-// (10 - (dispatched - completed) > 0), non-dispatch tools are DENIED.
+// counts across the ENTIRE session, not per-message. When an operator explicitly
+// configures a positive floor and its deficit is > 0, non-dispatch tools are denied.
 //
 // Activation: GLUDD_FLOOR_V2_ENFORCE=0 disables. Default ON.
 
@@ -10,6 +10,11 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { createRequire } from "node:module"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
+import {
+  HARD_MAX_DISPATCHES,
+  MIN_DISPATCHES,
+  clampDispatchCount,
+} from "../lib/multitask_config.ts"
 import {
   isSubagent,
   reportAlive,
@@ -28,7 +33,11 @@ function execSync(...args: any[]): any {
 
 const FLOOR_ENFORCE = process.env.GLUDD_FLOOR_V2_ENFORCE !== "0"
 const DISPATCH_STATE_FILE = process.env.GLUDD_DISPATCH_STATE_FILE || "/tmp/gludd-dispatch-state.json"
-const FLOOR = parseInt(process.env.GLUDD_DISPATCH_FLOOR || "10", 10)
+const parsedFloor = Number.parseInt(
+  process.env.GLUDD_DISPATCH_FLOOR ?? String(MIN_DISPATCHES),
+  10,
+)
+const FLOOR = Math.min(HARD_MAX_DISPATCHES, clampDispatchCount(parsedFloor))
 
 const TRACKER_SCRIPT = "scripts/dispatch_tracker.py"
 const PYTHON = process.env.GLUDD_DISPATCH_PYTHON || "uv run python3"
@@ -93,7 +102,7 @@ const defaultImpl: HotModule = {
   "tool.execute.before": async (input: { tool?: string }) => {
     if (isSubagent()) return
     reportAlive("enforce-floor-v2")
-    if (!FLOOR_ENFORCE) return
+    if (!FLOOR_ENFORCE || FLOOR === 0) return
     try {
       const tool = (input?.tool ?? "") as string
       const lt = tool.toLowerCase()
@@ -125,7 +134,7 @@ const defaultImpl: HotModule = {
 
   "experimental.text.complete": async (_input: unknown, output: unknown) => {
     if (isSubagent()) return output
-    if (!FLOOR_ENFORCE) return undefined
+    if (!FLOOR_ENFORCE || FLOOR === 0) return output
     if (isDisengaged()) return output
     const text = typeof output === "string" ? output
       : (output as any)?.text ? String((output as any).text) : ""
@@ -143,7 +152,7 @@ const defaultImpl: HotModule = {
       const warning = [
         `FLOOR DEFICIT: ${d} agent(s) below floor.`,
         `dispatched=${s.dispatched} completed=${s.completed} in_flight=${Math.max(0, s.dispatched - s.completed)}`,
-        "Dispatch replacements to maintain the 10-agent floor.",
+        `Dispatch suitable replacements only when needed to maintain the configured floor (${FLOOR}).`,
       ].join("\n")
       if (typeof output === "string") return warning + "\n\n" + (output as string)
       if ((output as any)?.text) {
@@ -173,7 +182,7 @@ export default (({}) => {
     },
     "experimental.text.complete": async (_input: unknown, output: unknown) => {
       if (isSubagent()) return output
-      if (!FLOOR_ENFORCE) return undefined
+      if (!FLOOR_ENFORCE || FLOOR === 0) return output
       if (isDisengaged()) return output
       const impl = loadHotModule("floor-v2", defaultImpl)
       const fn = impl["experimental.text.complete"]

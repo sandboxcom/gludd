@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from general_ludd.algorithms.kmeans import (
+from ansible_collections.general_ludd.physics.plugins.module_utils.kmeans import (
     _inertia,
     elbow,
     fit,

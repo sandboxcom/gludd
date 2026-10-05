@@ -53,20 +53,11 @@ RETURN:
 
 from __future__ import annotations
 
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
-
-try:
-    from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
-        GluddClient,
-        error_result,
-        ok_result,
-    )
-except ImportError:
-    # Fallback for in-tree testing without a full collection install
-    import os
-    import sys
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
-    from gludd import GluddClient, ok_result  # type: ignore[import]
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
+    GluddClient,
+    ok_result,
+)
 
 
 def main() -> None:

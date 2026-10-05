@@ -8,7 +8,7 @@ enforced by guardrail tests; deviating from it breaks `make gate`.
 
 There is **one canonical home** for roles and modules:
 
-```
+```text
 collections/ansible_collections/general_ludd/
 ├── agent/                      # general_ludd.agent — roles + modules
 │   ├── roles/<name>/
@@ -23,7 +23,7 @@ collections/ansible_collections/general_ludd/
 
 Molecule scenarios live in **one central place**, not co-located with roles:
 
-```
+```text
 molecule/
 ├── mock_daemon/server.py            # shared stdlib HTTP stub of the daemon
 └── playbooks/
@@ -39,7 +39,7 @@ molecule/
 
 1. Create the role skeleton under the collection:
 
-   ```
+   ```text
    collections/ansible_collections/general_ludd/agent/roles/<name>/
    ├── tasks/main.yml
    ├── defaults/main.yml
@@ -58,7 +58,7 @@ molecule/
 3. Add a molecule scenario at `molecule/playbooks/role_<name>/` using the
    four-file skeleton:
 
-   ```
+   ```text
    molecule/playbooks/role_<name>/
    ├── molecule.yml               # see template below
    └── default/

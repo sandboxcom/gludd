@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
+from general_ludd import __version__
 from general_ludd.cli import main
 
 
@@ -22,7 +23,7 @@ class TestCLIParsing:
         with patch("sys.argv", ["gludd", "version"]):
             main()
         captured = capsys.readouterr()
-        assert "0.1.0" in captured.out
+        assert captured.out.strip() == f"general-ludd-agent {__version__}"
 
     def test_daemon_command_defaults(self):
         with patch("sys.argv", ["gludd", "daemon"]), patch("general_ludd.cli._cmd_daemon") as mock_cmd:

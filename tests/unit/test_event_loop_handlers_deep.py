@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
@@ -108,6 +109,9 @@ class TestPhaseSelfImproveDeep:
     @pytest.mark.asyncio
     async def test_handles_training_data_failure_gracefully(self):
         h = _make_handlers(_self_improve_interval=2, _total_ticks=2)
+        fake_harness = MagicMock()
+        fake_harness.run_gap_analysis.return_value = []
+        fake_harness.generate_fix_todos.return_value = []
 
         with (
             patch.object(h, "_collect_recurring_failures", new=AsyncMock(return_value=[])),
@@ -120,10 +124,15 @@ class TestPhaseSelfImproveDeep:
             patch.object(h, "_auto_consolidate_memory", new=AsyncMock()),
             patch.object(h, "_auto_cross_task_learn", new=AsyncMock()),
             patch.object(h, "_apply_self_improvements", new=AsyncMock()),
+            patch(
+                "general_ludd.event_loop.loop_handlers.SelfImprovementHarness",
+                return_value=fake_harness,
+            ),
         ):
             await h._phase_self_improve()
 
         assert h._tick_metrics["self_improve_training_recorded"] == 0
+        fake_harness.run_gap_analysis.assert_called_once_with([])
 
     @pytest.mark.asyncio
     async def test_handles_consolidation_failure_gracefully(self):
@@ -873,8 +882,17 @@ class TestPhaseServiceDiscoveryDeep:
         h = _make_handlers(
             _service_discovery=mock_sd,
             _service_discovery_last_run=0.0,
+            # interval 0 means "already elapsed" — without this the default
+            # 86400s interval makes the phase return before running discovery.
+            config={"service_discovery_interval_seconds": 0},
         )
         await h._phase_service_discovery()
+        # Flush the event loop so any executor-scheduled work from the mocked
+        # bounded-to-thread wrapper is fully drained before asserting. On CI
+        # runners the discovery call can still be in flight when the coroutine
+        # returns, making assert_called_once race the thread handoff.
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
         mock_sd.run_discovery_pipeline.assert_called_once()
         assert h._service_discovery_last_run > 0
 
@@ -885,6 +903,7 @@ class TestPhaseServiceDiscoveryDeep:
         h = _make_handlers(
             _service_discovery=mock_sd,
             _service_discovery_last_run=0.0,
+            config={"service_discovery_interval_seconds": 0},
         )
         await h._phase_service_discovery()
 

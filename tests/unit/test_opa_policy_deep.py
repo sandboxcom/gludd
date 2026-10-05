@@ -274,8 +274,7 @@ def test_iam_policy_required_deny_rules() -> None:
         "deny_azure_missing_metadata",
         "deny_azure_missing_assignable_scopes",
         "deny_azure_invalid_scope",
-        "deny_azure_missing_runcommand_notaction",
-        "deny_azure_missing_roleassign_notactions",
+        "deny_azure_forbidden_action",
         "deny_azure_list_action_suffix",
         "deny_azure_data_plane_access",
     ]
@@ -310,9 +309,9 @@ def test_iam_policy_has_provider_specific_deny_rules() -> None:
 
 def test_iam_policy_azure_helpers() -> None:
     text = _text(_REGO_FILES["iam_policy"])
-    assert "has_notaction_runcommand" in text
-    assert "has_notaction_roleassign_write" in text
-    assert "has_notaction_roleassign_delete" in text
+    assert "azure_forbidden_actions" in text
+    assert "Microsoft.App/containerApps/listSecrets/action" in text
+    assert "Microsoft.Authorization/roleAssignments/write" in text
 
 
 # ---------------------------------------------------------------------------

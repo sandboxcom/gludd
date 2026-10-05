@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import signal
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,11 @@ def test_elapsed_parser_handles_hh_mm_ss_and_days() -> None:
     assert parse_elapsed_seconds("31:11") == 31 * 60 + 11
     assert parse_elapsed_seconds("01:02:03") == 3723
     assert parse_elapsed_seconds("2-03:04:05") == 2 * 86400 + 3 * 3600 + 4 * 60 + 5
+
+
+def test_elapsed_parser_rejects_unknown_shape() -> None:
+    with pytest.raises(ValueError, match="unsupported elapsed time"):
+        parse_elapsed_seconds("9")
 
 
 def test_reaper_requires_orphan_project_owned_pytest_and_age() -> None:
@@ -143,6 +149,30 @@ def test_reap_escalates_term_resistant_descendant_and_verifies_exit(
     assert "orphan-pytest survivors=0" in output
 
 
+def test_reap_batches_grace_periods_across_independent_orphan_trees(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Cleanup waits once per signal phase, regardless of orphan-tree count."""
+    root = tmp_path / "checkout"
+    root.mkdir()
+    records = [
+        ProcessRecord(30, 1, 1900, f"{root}/.venv/bin/python -m pytest tests/unit/", 30),
+        ProcessRecord(40, 1, 1900, f"{root}/.venv/bin/python -m pytest tests/e2e/", 40),
+    ]
+    sleeps: list[float] = []
+    alive_checks = iter(({30, 40}, set()))
+
+    monkeypatch.setattr(reaper, "_records", lambda _root: records)
+    monkeypatch.setattr(reaper, "owner_pids", lambda _root: set())
+    monkeypatch.setattr(reaper, "_alive_pids", lambda _pids: next(alive_checks))
+    monkeypatch.setattr("scripts.reap_orphan_pytest.time.sleep", sleeps.append)
+    monkeypatch.setattr("scripts.reap_orphan_pytest.os.kill", lambda _pid, _sig: None)
+
+    assert reaper.reap(root, min_age_seconds=1800, apply=True) == 0
+    assert sleeps == [1.0, 0.1]
+
+
 def test_reaper_preserves_orphans_while_live_gate_owner_exists() -> None:
     """A live namespaced gate owner protects its orphaned pytest descendants."""
     root = Path.cwd()
@@ -212,3 +242,74 @@ def test_owner_claims_are_scoped_to_gate_state_and_resource_namespace(
     (root / ".gate-status").write_text("RUNNING 123 42\n", encoding="utf-8")
 
     assert owner_pids(root) == {41, 42}
+
+
+def test_owner_claims_ignore_malformed_and_nonpositive_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "checkout"
+    root.mkdir()
+    monkeypatch.setenv("GLUDD_RESOURCE_ROOT", str(tmp_path / "resources"))
+    monkeypatch.setenv("GLUDD_AGENT_OWNER_PID", "invalid,-1,43")
+    (root / ".gate-status").write_text("RUNNING 123 invalid\n", encoding="utf-8")
+
+    assert owner_pids(root) == {43}
+
+
+def test_owner_tie_prefers_process_group_when_available() -> None:
+    orphan = ProcessRecord(50, 1, 1900, "pytest tests/unit/", 500)
+    same_group_owner = ProcessRecord(51, 1, 2000, "make gate", 500)
+    other_group_owner = ProcessRecord(52, 1, 2000, "make gate", 501)
+
+    assert reaper._tied_to_owner(orphan, same_group_owner)
+    assert not reaper._tied_to_owner(orphan, other_group_owner)
+
+
+def test_alive_pids_handles_missing_inaccessible_and_nonpositive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def probe(pid: int, _signal: int) -> None:
+        if pid == 1:
+            raise ProcessLookupError
+        if pid == 2:
+            raise PermissionError
+
+    monkeypatch.setattr("scripts.reap_orphan_pytest.os.kill", probe)
+
+    assert reaper._alive_pids({-1, 0, 1, 2, 3}) == {2, 3}
+
+
+def test_process_records_parse_valid_rows_and_skip_bad_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stdout = (
+        "10 1 10 31:11 /checkout/.venv/bin/python -m pytest tests/unit/\n"
+        "malformed\n"
+        "not-a-pid 1 10 31:11 invalid\n"
+    )
+    completed = subprocess.CompletedProcess(args=["ps"], returncode=0, stdout=stdout)
+    monkeypatch.setattr("scripts.reap_orphan_pytest.subprocess.run", lambda *_a, **_k: completed)
+
+    assert reaper._records(tmp_path) == [
+        ProcessRecord(10, 1, 1871, "/checkout/.venv/bin/python -m pytest tests/unit/", 10)
+    ]
+
+
+def test_reap_reports_tree_preserved_by_live_owner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = tmp_path / "checkout"
+    root.mkdir()
+    records = [
+        ProcessRecord(60, 1, 2000, f"{root}/scripts/run_gate.sh"),
+        ProcessRecord(61, 1, 1900, f"{root}/.venv/bin/python -m pytest tests/unit/"),
+    ]
+    monkeypatch.setattr(reaper, "_records", lambda _root: records)
+    monkeypatch.setattr(reaper, "owner_pids", lambda _root: {60})
+
+    assert reaper.reap(root, min_age_seconds=1800, apply=False) == 0
+    output = capsys.readouterr().out
+    assert "orphan-pytest preserved=1 trees tied to live owner" in output
+    assert "orphan-pytest candidates=0 apply=False" in output

@@ -18,10 +18,11 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import time
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 
 import httpx
 
@@ -35,6 +36,36 @@ from general_ludd.pricing_intel.models import (
 
 logger = logging.getLogger(__name__)
 
+
+class PricingSourceAuthenticationError(RuntimeError):
+    """A pricing endpoint rejected the configured provider credentials."""
+
+
+class PricingSourceDataError(ValueError):
+    """A reachable pricing endpoint returned an invalid pricing contract."""
+
+
+class UnavailableModelPrices(list[ModelPrice]):
+    """Empty list marker for a transient fetch failure that must not replace cache."""
+
+
+def _openrouter_models(response: Any) -> list[Any]:
+    """Decode and validate the model list from an OpenRouter response."""
+    try:
+        data = response.json()
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        logger.warning("OpenRouter pricing response not JSON: %s", exc)
+        raise PricingSourceDataError(
+            "invalid OpenRouter pricing response: expected JSON"
+        ) from exc
+
+    if not isinstance(data, dict) or not isinstance(data.get("data", []), list):
+        raise PricingSourceDataError(
+            "invalid OpenRouter pricing response: data must be a list"
+        )
+    return cast(list[Any], data.get("data", []))
+
+
 # ---------------------------------------------------------------------------
 # Protocol (interface) for all pricing sources
 # ---------------------------------------------------------------------------
@@ -44,8 +75,8 @@ logger = logging.getLogger(__name__)
 class PricingSource(Protocol):
     """Protocol every pricing source must implement.
 
-    Sources MUST be fail-soft: any network error returns an empty list /
-    falls back gracefully. They MUST NOT raise exceptions to callers.
+    Sources are fail-soft for transient availability errors. Authentication and
+    invalid pricing data remain visible so callers cannot treat bad data as free.
     """
 
     def provider_slug(self) -> str:
@@ -61,7 +92,7 @@ class PricingSource(Protocol):
         ...
 
     def fetch_model_prices(self) -> list[ModelPrice]:
-        """Fetch current model prices. Returns [] on any error (fail-soft)."""
+        """Fetch prices; return [] on outages and raise on auth/data errors."""
         ...
 
     def fetch_compute_prices(self) -> list[ComputePrice]:
@@ -95,9 +126,11 @@ class OpenRouterSource:
     _ENDPOINT = "https://openrouter.ai/api/v1/models"
 
     def provider_slug(self) -> str:
+        """Return this provider's canonical slug."""
         return "openrouter"
 
     def billing(self) -> ProviderBilling:
+        """Return this provider's billing terms."""
         return ProviderBilling(
             provider="openrouter",
             granularity=BillingGranularity.per_token,
@@ -121,32 +154,60 @@ class OpenRouterSource:
           data[].pricing.completion — USD per token (output)
           data[].context_length — context window in tokens
 
-        Returns empty list on any network/parse error (fail-soft).
+        Transient network and provider availability errors return ``[]``.
+        Authentication failures and invalid pricing payloads raise because
+        treating either as an empty/free price catalog would be unsafe.
         """
         try:
             with httpx.Client(timeout=20.0) as client:
                 resp = client.get(self._ENDPOINT)
-                if resp.status_code != 200:
-                    logger.warning(
-                        "OpenRouter pricing API returned HTTP %s", resp.status_code
-                    )
-                    return []
-                data = resp.json()
-        except Exception as exc:
+        except (httpx.TransportError, ConnectionError, TimeoutError, OSError) as exc:
             logger.warning("OpenRouter pricing fetch failed: %s", exc)
-            return []
-
-        models = data.get("data", [])
+            return UnavailableModelPrices()
+        if resp.status_code in {401, 403}:
+            raise PricingSourceAuthenticationError(
+                f"OpenRouter pricing authentication failed with HTTP {resp.status_code}"
+            )
+        if resp.status_code >= 500 or resp.status_code in {408, 429}:
+            logger.warning("OpenRouter pricing API returned HTTP %s", resp.status_code)
+            return UnavailableModelPrices()
+        if resp.status_code != 200:
+            raise PricingSourceDataError(
+                f"OpenRouter pricing API returned unexpected HTTP {resp.status_code}"
+            )
+        models = _openrouter_models(resp)
         fetched_at = time.time()
         results: list[ModelPrice] = []
 
         for m in models:
+            if not isinstance(m, dict):
+                raise PricingSourceDataError(
+                    "invalid OpenRouter pricing response: model entry must be an object"
+                )
             model_id = m.get("id", "")
             pricing = m.get("pricing", {})
+            if not isinstance(pricing, dict):
+                raise PricingSourceDataError(
+                    f"invalid OpenRouter pricing for {model_id!r}: pricing must be an object"
+                )
             try:
                 prompt_per_token = float(pricing.get("prompt", 0) or 0)
                 completion_per_token = float(pricing.get("completion", 0) or 0)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError) as exc:
+                raise PricingSourceDataError(
+                    f"invalid OpenRouter pricing for {model_id!r}: non-numeric token rate"
+                ) from exc
+            if not math.isfinite(prompt_per_token) or not math.isfinite(
+                completion_per_token
+            ):
+                raise PricingSourceDataError(
+                    f"invalid OpenRouter pricing for {model_id!r}: token rates must be finite"
+                )
+            if prompt_per_token < 0 or completion_per_token < 0:
+                logger.info(
+                    "Omitting OpenRouter model %s with unavailable sentinel pricing",
+                    model_id,
+                )
                 continue
 
             # OpenRouter returns USD-per-token; convert to USD-per-1k-tokens
@@ -168,7 +229,7 @@ class OpenRouterSource:
                     fetched_at=fetched_at,
                     source=self._ENDPOINT,
                     context_window=ctx,
-                    notes=m.get("description", "")[:200],
+                    notes=str(m.get("description", ""))[:200],
                 )
             )
 
@@ -223,9 +284,11 @@ class AnthropicSource:
     """
 
     def provider_slug(self) -> str:
+        """Return this provider's canonical slug."""
         return "anthropic"
 
     def billing(self) -> ProviderBilling:
+        """Return this provider's billing terms."""
         return ProviderBilling(
             provider="anthropic",
             granularity=BillingGranularity.per_token,
@@ -310,9 +373,11 @@ class OpenAISource:
     """
 
     def provider_slug(self) -> str:
+        """Return this provider's canonical slug."""
         return "openai"
 
     def billing(self) -> ProviderBilling:
+        """Return this provider's billing terms."""
         return ProviderBilling(
             provider="openai",
             granularity=BillingGranularity.per_token,
@@ -407,9 +472,11 @@ class RunPodSource:
     """
 
     def provider_slug(self) -> str:
+        """Return this provider's canonical slug."""
         return "runpod"
 
     def billing(self) -> ProviderBilling:
+        """Return this provider's billing terms."""
         return ProviderBilling(
             provider="runpod",
             granularity=BillingGranularity.per_second,
@@ -523,15 +590,14 @@ class RunPodPricingSource:
 
     _ENDPOINT = "https://api.runpod.io/graphql"
     _SOURCE = "https://api.runpod.io/graphql"
-    _QUERY = (
-        "query GpuTypes { gpuTypes { id displayName memoryInGb "
-        "securePrice communityPrice spot } }"
-    )
+    _QUERY = "query GpuTypes { gpuTypes { id displayName memoryInGb securePrice communityPrice spot } }"
 
     def provider_slug(self) -> str:
+        """Return this provider's canonical slug."""
         return "runpod_live"
 
     def billing(self) -> ProviderBilling:
+        """Return this provider's billing terms."""
         return ProviderBilling(
             provider="runpod_live",
             granularity=BillingGranularity.per_second,
@@ -559,9 +625,7 @@ class RunPodPricingSource:
         """
         api_key = os.environ.get("RUNPOD_API_KEY")
         if not api_key:
-            logger.warning(
-                "RunPod GraphQL fetch skipped: RUNPOD_API_KEY not set"
-            )
+            logger.warning("RunPod GraphQL fetch skipped: RUNPOD_API_KEY not set")
             return []
 
         try:
@@ -575,9 +639,7 @@ class RunPodPricingSource:
                     },
                 )
                 if resp.status_code != 200:
-                    logger.warning(
-                        "RunPod GraphQL API returned HTTP %s", resp.status_code
-                    )
+                    logger.warning("RunPod GraphQL API returned HTTP %s", resp.status_code)
                     return []
                 data = resp.json()
         except Exception as exc:
@@ -587,9 +649,7 @@ class RunPodPricingSource:
         gpu_types = ((data.get("data") or {}).get("gpuTypes")) or []
         if not gpu_types:
             if data.get("errors"):
-                logger.warning(
-                    "RunPod GraphQL returned errors: %s", data["errors"]
-                )
+                logger.warning("RunPod GraphQL returned errors: %s", data["errors"])
             else:
                 logger.warning("RunPod GraphQL returned no gpuTypes")
             return []
@@ -669,10 +729,7 @@ class RunPodPricingSource:
             source=RunPodPricingSource._SOURCE,
             gpu_count=1,
             gpu_type=gpu_type,
-            notes=(
-                f"{label}. ${hourly:.2f}/hr = ${usd_per_second:.6f}/s. "
-                "Prepaid balance; per-second billing."
-            ),
+            notes=(f"{label}. ${hourly:.2f}/hr = ${usd_per_second:.6f}/s. Prepaid balance; per-second billing."),
         )
 
 
@@ -725,9 +782,11 @@ class LambdaLabsSource:
     """
 
     def provider_slug(self) -> str:
+        """Return this provider's canonical slug."""
         return "lambda_labs"
 
     def billing(self) -> ProviderBilling:
+        """Return this provider's billing terms."""
         return ProviderBilling(
             provider="lambda_labs",
             granularity=BillingGranularity.per_minute,
@@ -804,7 +863,7 @@ _AWS_GPU_INSTANCES: list[tuple[str, str, int, float, bool]] = [
     ("g5.12xlarge", "A10G 24GB", 4, 5.672, False),
     ("g5.48xlarge", "A10G 24GB", 8, 16.288, False),
     # Spot examples — typical spot price ≈ 30-70% of on-demand
-    ("p4d.24xlarge-spot", "A100 40GB", 8, 9.83, True),   # ~30% of on-demand
+    ("p4d.24xlarge-spot", "A100 40GB", 8, 9.83, True),  # ~30% of on-demand
     ("p5.48xlarge-spot", "H100 80GB SXM5", 8, 29.50, True),  # ~30% of on-demand
 ]
 
@@ -824,9 +883,11 @@ class AWSSource:
     """
 
     def provider_slug(self) -> str:
+        """Return this provider's canonical slug."""
         return "aws"
 
     def billing(self) -> ProviderBilling:
+        """Return this provider's billing terms."""
         return ProviderBilling(
             provider="aws",
             granularity=BillingGranularity.per_second,
@@ -932,9 +993,11 @@ class AWSPricingSource:
     _SOURCE = "AWS Price List Query API (boto3 pricing.GetProducts)"
 
     def provider_slug(self) -> str:
+        """Return this provider's canonical slug."""
         return "aws_live"
 
     def billing(self) -> ProviderBilling:
+        """Return this provider's billing terms."""
         return ProviderBilling(
             provider="aws_live",
             granularity=BillingGranularity.per_second,
@@ -962,17 +1025,13 @@ class AWSPricingSource:
         ``AWS_ACCESS_KEY_ID`` is not set or boto3 is not installed.
         """
         if not os.environ.get("AWS_ACCESS_KEY_ID"):
-            logger.warning(
-                "AWS pricing fetch skipped: AWS_ACCESS_KEY_ID not set"
-            )
+            logger.warning("AWS pricing fetch skipped: AWS_ACCESS_KEY_ID not set")
             return []
 
         try:
             client = self._get_client()
         except ImportError as exc:
-            logger.warning(
-                "AWS pricing fetch skipped: boto3 unavailable (%s)", exc
-            )
+            logger.warning("AWS pricing fetch skipped: boto3 unavailable (%s)", exc)
             return []
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("AWS pricing fetch skipped: %s", exc)
@@ -1021,9 +1080,7 @@ class AWSPricingSource:
         ]
         paginator = client.get_paginator("get_products")
         price_lists: list[str] = []
-        for page in paginator.paginate(
-            ServiceCode=self._SERVICE_CODE, Filters=filters
-        ):
+        for page in paginator.paginate(ServiceCode=self._SERVICE_CODE, Filters=filters):
             price_lists.extend(page.get("PriceLists", []) or [])
         return price_lists
 
@@ -1156,7 +1213,7 @@ _GCP_GPU_INSTANCES: list[tuple[str, str, int, float, bool]] = [
     ("g2-standard-48", "L4 24GB", 4, 2.800, False),
     # Spot/Preemptible examples — roughly 60-70% discount
     ("a2-highgpu-1g-spot", "A100 40GB", 1, 1.102, True),  # ~70% off
-    ("a3-highgpu-8g-spot", "H100 80GB SXM", 8, 29.50, True),   # ~70% off
+    ("a3-highgpu-8g-spot", "H100 80GB SXM", 8, 29.50, True),  # ~70% off
 ]
 
 
@@ -1175,9 +1232,11 @@ class GCPSource:
     """
 
     def provider_slug(self) -> str:
+        """Return this provider's canonical slug."""
         return "gcp"
 
     def billing(self) -> ProviderBilling:
+        """Return this provider's billing terms."""
         return ProviderBilling(
             provider="gcp",
             granularity=BillingGranularity.per_second,
@@ -1291,9 +1350,11 @@ class GCPPricingSource:
     )
 
     def provider_slug(self) -> str:
+        """Return this provider's canonical slug."""
         return "gcp_live"
 
     def billing(self) -> ProviderBilling:
+        """Return this provider's billing terms."""
         return ProviderBilling(
             provider="gcp_live",
             granularity=BillingGranularity.per_second,
@@ -1322,9 +1383,7 @@ class GCPPricingSource:
         is not installed.
         """
         if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
-            logger.warning(
-                "GCP SKU fetch skipped: GOOGLE_APPLICATION_CREDENTIALS not set"
-            )
+            logger.warning("GCP SKU fetch skipped: GOOGLE_APPLICATION_CREDENTIALS not set")
             return []
 
         try:
@@ -1542,9 +1601,11 @@ class HuggingFaceSource:
     """
 
     def provider_slug(self) -> str:
+        """Return this provider's canonical slug."""
         return "huggingface"
 
     def billing(self) -> ProviderBilling:
+        """Return this provider's billing terms."""
         return ProviderBilling(
             provider="huggingface",
             granularity=BillingGranularity.per_hour,
@@ -1637,9 +1698,11 @@ class ZAISource:
     """
 
     def provider_slug(self) -> str:
+        """Return this provider's canonical slug."""
         return "zai"
 
     def billing(self) -> ProviderBilling:
+        """Return this provider's billing terms."""
         return ProviderBilling(
             provider="zai",
             granularity=BillingGranularity.per_token,
@@ -1727,20 +1790,22 @@ class LiteLLMJSONSource:
       - min_charge: None
     """
 
-    _ENDPOINT = (
-        "https://raw.githubusercontent.com/BerriAI/litellm/main/"
-        "model_prices_and_context_window.json"
-    )
+    _ENDPOINT = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
 
     def __init__(self, provider: str) -> None:
-        """``provider`` is the upstream litellm_provider slug to filter on
-        (e.g. ``"anthropic"``, ``"openai"``)."""
+        """Initialize the source for the given upstream litellm provider.
+
+        ``provider`` is the upstream litellm_provider slug to filter on
+        (e.g. ``"anthropic"``, ``"openai"``).
+        """
         self._provider = provider
 
     def provider_slug(self) -> str:
+        """Return this provider's canonical slug."""
         return f"litellm_{self._provider}"
 
     def billing(self) -> ProviderBilling:
+        """Return this provider's billing terms."""
         return ProviderBilling(
             provider=self.provider_slug(),
             granularity=BillingGranularity.per_token,
@@ -1767,9 +1832,7 @@ class LiteLLMJSONSource:
             with httpx.Client(timeout=20.0) as client:
                 resp = client.get(self._ENDPOINT)
                 if resp.status_code != 200:
-                    logger.warning(
-                        "LiteLLM JSON catalog returned HTTP %s", resp.status_code
-                    )
+                    logger.warning("LiteLLM JSON catalog returned HTTP %s", resp.status_code)
                     return []
                 data = resp.json()
         except Exception as exc:
@@ -1903,6 +1966,7 @@ class CachedSource:
         static_fallback: PricingSource | None = None,
         ttl_seconds: float = _DEFAULT_CACHE_TTL,
     ) -> None:
+        """Initialize the cache wrapper around a live and optional static source."""
         self._live = live
         self._static = static_fallback
         self._ttl = ttl_seconds
@@ -1912,12 +1976,15 @@ class CachedSource:
         self._compute_cache_time: float = 0.0
 
     def provider_slug(self) -> str:
+        """Return this provider's canonical slug."""
         return self._live.provider_slug()
 
     def billing(self) -> ProviderBilling:
+        """Return this provider's billing terms."""
         return self._live.billing()
 
     def fetch_model_prices(self, refresh: bool = False) -> list[ModelPrice]:
+        """Return cached model prices, refetching live when stale or requested."""
         if not refresh and self._model_cache is not None and not self._is_stale(self._model_cache_time):
             return list(self._model_cache)
         try:
@@ -1925,7 +1992,8 @@ class CachedSource:
         except Exception as exc:
             logger.warning(
                 "CachedSource(%s): live model fetch failed: %s",
-                self.provider_slug(), exc,
+                self.provider_slug(),
+                exc,
             )
             if self._model_cache is not None:
                 return list(self._model_cache)
@@ -1939,13 +2007,13 @@ class CachedSource:
                 except Exception as fb_exc:
                     logger.warning(
                         "CachedSource(%s): static fallback also failed: %s",
-                        self.provider_slug(), fb_exc,
+                        self.provider_slug(),
+                        fb_exc,
                     )
             return []
         if not prices and self._static is not None:
             logger.info(
-                "CachedSource(%s): live returned empty, "
-                "falling back to static model prices",
+                "CachedSource(%s): live returned empty, falling back to static model prices",
                 self.provider_slug(),
             )
             try:
@@ -1955,13 +2023,15 @@ class CachedSource:
             except Exception as fb_exc:
                 logger.warning(
                     "CachedSource(%s): static fallback failed: %s",
-                    self.provider_slug(), fb_exc,
+                    self.provider_slug(),
+                    fb_exc,
                 )
         self._model_cache = list(prices)
         self._model_cache_time = time.time()
         return list(prices)
 
     def fetch_compute_prices(self, refresh: bool = False) -> list[ComputePrice]:
+        """Return cached compute prices, refetching live when stale or requested."""
         if not refresh and self._compute_cache is not None and not self._is_stale(self._compute_cache_time):
             return list(self._compute_cache)
         try:
@@ -1969,7 +2039,8 @@ class CachedSource:
         except Exception as exc:
             logger.warning(
                 "CachedSource(%s): live compute fetch failed: %s",
-                self.provider_slug(), exc,
+                self.provider_slug(),
+                exc,
             )
             if self._compute_cache is not None:
                 return list(self._compute_cache)
@@ -1983,13 +2054,13 @@ class CachedSource:
                 except Exception as fb_exc:
                     logger.warning(
                         "CachedSource(%s): static fallback also failed: %s",
-                        self.provider_slug(), fb_exc,
+                        self.provider_slug(),
+                        fb_exc,
                     )
             return []
         if not prices and self._static is not None:
             logger.info(
-                "CachedSource(%s): live returned empty, "
-                "falling back to static compute prices",
+                "CachedSource(%s): live returned empty, falling back to static compute prices",
                 self.provider_slug(),
             )
             try:
@@ -1999,7 +2070,8 @@ class CachedSource:
             except Exception as fb_exc:
                 logger.warning(
                     "CachedSource(%s): static fallback failed: %s",
-                    self.provider_slug(), fb_exc,
+                    self.provider_slug(),
+                    fb_exc,
                 )
         self._compute_cache = list(prices)
         self._compute_cache_time = time.time()
@@ -2049,16 +2121,14 @@ class LambdaLabsPricingSource:
     """
 
     _ENDPOINT = "https://cloud.lambdalabs.com/api/v1/instance-types"
-    _SOURCE = (
-        "Lambda Labs Cloud API "
-        "(GET /api/v1/instance-types) — "
-        "https://docs.lambdalabs.com/cloud/api"
-    )
+    _SOURCE = "Lambda Labs Cloud API (GET /api/v1/instance-types) — https://docs.lambdalabs.com/cloud/api"
 
     def provider_slug(self) -> str:
+        """Return this provider's canonical slug."""
         return "lambda_labs_live"
 
     def billing(self) -> ProviderBilling:
+        """Return this provider's billing terms."""
         return ProviderBilling(
             provider="lambda_labs_live",
             granularity=BillingGranularity.per_minute,
@@ -2074,14 +2144,14 @@ class LambdaLabsPricingSource:
         )
 
     def fetch_model_prices(self) -> list[ModelPrice]:
+        """Return this provider's model prices (fail-soft: empty on error)."""
         return []
 
     def fetch_compute_prices(self) -> list[ComputePrice]:
+        """Return this provider's compute prices (fail-soft: empty on error)."""
         api_key = os.environ.get("LAMBDA_API_KEY")
         if not api_key:
-            logger.warning(
-                "Lambda Labs fetch skipped: LAMBDA_API_KEY not set"
-            )
+            logger.warning("Lambda Labs fetch skipped: LAMBDA_API_KEY not set")
             return []
 
         try:
@@ -2093,9 +2163,7 @@ class LambdaLabsPricingSource:
                     },
                 )
                 if resp.status_code != 200:
-                    logger.warning(
-                        "Lambda Labs API returned HTTP %s", resp.status_code
-                    )
+                    logger.warning("Lambda Labs API returned HTTP %s", resp.status_code)
                     return []
                 data = resp.json()
         except Exception as exc:
@@ -2145,10 +2213,7 @@ class LambdaLabsPricingSource:
                     source=self._SOURCE,
                     gpu_count=gpu_count,
                     gpu_type=description,
-                    notes=(
-                        f"{description}. ${usd_per_hour:.4f}/hr = "
-                        f"${usd_per_minute:.6f}/min (billed per minute)."
-                    ),
+                    notes=(f"{description}. ${usd_per_hour:.4f}/hr = ${usd_per_minute:.6f}/min (billed per minute)."),
                 )
             )
 
@@ -2167,8 +2232,8 @@ class LambdaLabsPricingSource:
 
 
 _HF_PRICE_RE = re.compile(
-    r'(?:NVIDIA\s*)?((?:RTX\s*)?(?:Tesla\s*)?[ATVLHR]\d+\s*(?:SXM\d+\s*)?\d*\s*GB?)'
-    r'.*?\$(\d+\.?\d*)\s*/?\s*hr',
+    r"(?:NVIDIA\s*)?((?:RTX\s*)?(?:Tesla\s*)?[ATVLHR]\d+\s*(?:SXM\d+\s*)?\d*\s*GB?)"
+    r".*?\$(\d+\.?\d*)\s*/?\s*hr",
     re.IGNORECASE,
 )
 
@@ -2194,9 +2259,11 @@ class HuggingFacePricingSource:
     _SOURCE = "https://huggingface.co/pricing#dedicated-endpoints"
 
     def provider_slug(self) -> str:
+        """Return this provider's canonical slug."""
         return "huggingface_live"
 
     def billing(self) -> ProviderBilling:
+        """Return this provider's billing terms."""
         return ProviderBilling(
             provider="huggingface_live",
             granularity=BillingGranularity.per_hour,
@@ -2212,9 +2279,11 @@ class HuggingFacePricingSource:
         )
 
     def fetch_model_prices(self) -> list[ModelPrice]:
+        """Return this provider's model prices (fail-soft: empty on error)."""
         return []
 
     def fetch_compute_prices(self) -> list[ComputePrice]:
+        """Return this provider's compute prices (fail-soft: empty on error)."""
         try:
             with httpx.Client(timeout=20.0) as client:
                 resp = client.get(_HF_ENDPOINT)
@@ -2231,9 +2300,7 @@ class HuggingFacePricingSource:
 
         matches = _HF_PRICE_RE.findall(html)
         if not matches:
-            logger.warning(
-                "HuggingFace pricing scrape: no GPU price matches found"
-            )
+            logger.warning("HuggingFace pricing scrape: no GPU price matches found")
             return []
 
         fetched_at = time.time()
@@ -2268,10 +2335,7 @@ class HuggingFacePricingSource:
                     source=self._SOURCE,
                     gpu_count=1,
                     gpu_type=gpu_type,
-                    notes=(
-                        f"Dedicated Endpoint (reserved). ${usd_per_hour:.2f}/hr. "
-                        "Scraped from HF pricing page."
-                    ),
+                    notes=(f"Dedicated Endpoint (reserved). ${usd_per_hour:.2f}/hr. Scraped from HF pricing page."),
                 )
             )
 
@@ -2289,14 +2353,14 @@ class HuggingFacePricingSource:
 # ---------------------------------------------------------------------------
 
 _ZAI_PRICE_RE = re.compile(
-    r'([Gg][Ll][Mm][-\u2013\u2014\s]*[\d.]+).*?'
-    r'\$(\d+\.?\d*)\s*/\s*1M.*?input.*?'
-    r'\$(\d+\.?\d*)\s*/\s*1M.*?output',
+    r"([Gg][Ll][Mm][-\u2013\u2014\s]*[\d.]+).*?"
+    r"\$(\d+\.?\d*)\s*/\s*1M.*?input.*?"
+    r"\$(\d+\.?\d*)\s*/\s*1M.*?output",
     re.IGNORECASE | re.DOTALL,
 )
 
 _ZAI_TABLE_RE = re.compile(
-    r'([Gg][Ll][Mm][-\u2013\u2014\s]*[\d.]+).*?\$(\d+\.?\d*).*?\$(\d+\.?\d*)',
+    r"([Gg][Ll][Mm][-\u2013\u2014\s]*[\d.]+).*?\$(\d+\.?\d*).*?\$(\d+\.?\d*)",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -2323,9 +2387,11 @@ class ZAIPricingSource:
     _SOURCE = "https://docs.z.ai/guides/overview/pricing"
 
     def provider_slug(self) -> str:
+        """Return this provider's canonical slug."""
         return "zai_live"
 
     def billing(self) -> ProviderBilling:
+        """Return this provider's billing terms."""
         return ProviderBilling(
             provider="zai_live",
             granularity=BillingGranularity.per_token,
@@ -2341,13 +2407,12 @@ class ZAIPricingSource:
         )
 
     def fetch_model_prices(self) -> list[ModelPrice]:
+        """Return this provider's model prices (fail-soft: empty on error)."""
         try:
             with httpx.Client(timeout=20.0) as client:
                 resp = client.get(_ZAI_ENDPOINT)
                 if resp.status_code != 200:
-                    logger.warning(
-                        "Z.AI pricing page returned HTTP %s", resp.status_code
-                    )
+                    logger.warning("Z.AI pricing page returned HTTP %s", resp.status_code)
                     return []
                 html = resp.text
         except Exception as exc:
@@ -2362,9 +2427,7 @@ class ZAIPricingSource:
             matches = _ZAI_TABLE_RE.findall(collapsed)
 
         if not matches:
-            logger.warning(
-                "Z.AI pricing scrape: no GLM price matches found"
-            )
+            logger.warning("Z.AI pricing scrape: no GLM price matches found")
             return []
 
         fetched_at = time.time()
@@ -2399,6 +2462,7 @@ class ZAIPricingSource:
         return results
 
     def fetch_compute_prices(self) -> list[ComputePrice]:
+        """Return this provider's compute prices (fail-soft: empty on error)."""
         return []
 
 

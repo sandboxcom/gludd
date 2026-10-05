@@ -135,21 +135,45 @@ def test_terminate_tree_is_fail_open_on_signal_errors() -> None:
         assert terminate_tree(table, 10, namespace="/tmp/gludd-alpha") == []
 
 
-def test_cli_validate_only_never_reads_process_table(capsys: pytest.CaptureFixture[str]) -> None:
-    with patch("scripts.process_cleanup.snapshot_processes") as snapshot:
+def test_cli_validate_only_checks_config_without_process_table(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with (
+        patch("scripts.process_cleanup.snapshot_processes") as snapshot,
+        patch("scripts.process_cleanup.os.kill") as kill,
+    ):
         result = process_cleanup.main(
             [
                 "--root-pid",
-                "10",
+                "1",
                 "--namespace",
-                "/tmp/gludd-alpha",
+                "/tmp/gludd-contract",
                 "--validate-only",
             ]
         )
 
     assert result == 0
     snapshot.assert_not_called()
+    kill.assert_not_called()
     assert "PROCESS-CLEANUP-VALIDATION PASS" in capsys.readouterr().out
+
+
+def test_cli_dry_run_proves_the_same_identity_as_apply(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    table = {10: ProcessInfo(10, 1, 900, "/tmp/gludd-alpha/run")}
+    with (
+        patch("scripts.process_cleanup.snapshot_processes", return_value=table) as snapshot,
+        patch("scripts.process_cleanup.os.kill") as kill,
+    ):
+        result = process_cleanup.main(
+            ["--root-pid", "10", "--namespace", "/tmp/gludd-alpha"]
+        )
+
+    assert result == 0
+    snapshot.assert_called_once_with()
+    kill.assert_not_called()
+    assert "PROCESS-CLEANUP-DRY-RUN" in capsys.readouterr().out
 
 
 def test_cli_apply_terminates_only_matching_tree(

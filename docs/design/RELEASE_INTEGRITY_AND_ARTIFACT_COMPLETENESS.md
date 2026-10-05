@@ -176,6 +176,29 @@ Windows bootstrap actions).
 [checkout-resolution-report]: https://github.com/actions/checkout/issues/1562
 [checkout-node24]: https://github.com/actions/checkout#checkout-v5
 
+**R-16 — Molecule workflow Node 20 fallback (RESOLVED 2026-08-20).**
+
+GHE run `32437385366` reported that the floating `checkout@v4`,
+`setup-python@v5`, and `setup-uv@v5` actions declared Node 20 and were being
+forced onto Node 24 by the runner. A [2026 practitioner discussion][node24-noise]
+documents that opting into the newer runtime does not remove this warning:
+the action's declared runtime must be upgraded. The official
+[setup-python v6 release][setup-python-v6] also requires runner `2.327.1` or
+newer; this repository's observed GHE runner `2.336.0` satisfies that bound.
+
+The Molecule workflow now uses the same immutable, Node 24 checkout v5.0.1 and
+setup-uv v8.2.0 pins as the maintained build jobs, plus immutable setup-python
+v6.2.0. Structural tests require those exact hashes and reject any floating
+third-party action in every workflow. This is a zero-downtime CI-only rollout:
+there is no service or artifact migration, all action inputs remain compatible,
+and the six bounded Molecule shards are unchanged. Rollback restores the three
+workflow refs together; no persistent state is written beyond ordinary runner
+caches, and the existing 45-minute job timeout and concurrency group retain
+their resource bounds.
+
+[node24-noise]: https://github.com/orgs/community/discussions/190988
+[setup-python-v6]: https://github.com/actions/setup-python/releases/tag/v6.2.0
+
 **R-13 — The `/Users/` leak guard covers only the tarball (NEW, and it already
 cost us).** The only developer-path guard is
 `grep -rIl -e '/Users/' -e 'Mac.localdomain' $(TARBALL_DIR)` — implemented twice
@@ -247,10 +270,11 @@ was cancelled at 19:47:16 (one second after the next push), and **never executed
 a single job**. Runs 29364608983 / 29364610894 / 29364661863 died the same way.
 
 **Consequence:** a commit can reach a tag having **never been tested**, and
-`make ci-await BRANCH=<branch>` can never return a stable verdict against a
-moving branch. A cancelled run is not a failure and not a success — it is the
-*absence* of a gate. This is precisely how v0.1.0-beta.1's SHA went out
-unvalidated.
+branch-only `make ci-await BRANCH=<branch>` can never return a stable verdict
+against a moving branch. Release callers therefore supply the tag ref, full SHA,
+workflow, and event to the exact-identity form. A cancelled run is not a success
+— it is the *absence* of a gate. This is precisely how v0.1.0-beta.1's SHA went
+out unvalidated.
 
 **Fix:** the release gate must bind to a **SHA**, not a branch. Concretely:
 (a) `require-ci-green` must fail-closed on `cancelled`/missing runs, never treat

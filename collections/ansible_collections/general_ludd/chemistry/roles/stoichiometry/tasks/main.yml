@@ -26,19 +26,17 @@
       }}
 
 - name: Run stoichiometry calculation
-  ansible.builtin.command: >
-    {{ ansible_python_interpreter | default('python3') }}
-    {{ role_path }}/../../plugins/module_utils/chemistry_dispatch.py
-  environment:
-    CHEMISTRY_ACTION: "{{ stoichiometry_action }}"
-    CHEMISTRY_INPUT: "{{ _stoichiometry_payload | to_json }}"
+  general_ludd.chemistry.chemistry_operation:
+    operation: "{{ stoichiometry_action }}"
+    request: "{{ _stoichiometry_payload }}"
+    daemon_url: "{{ chemistry_daemon_url | default(daemon_url | default('http://localhost:8000')) }}"
+    psk: "{{ chemistry_psk | default(psk | default('')) }}"
   register: _stoichiometry_result
-  changed_when: false
-  failed_when: false
+  no_log: "{{ (chemistry_psk | default(psk | default(''))) | length > 0 }}"
 
 - name: Parse stoichiometry result
   ansible.builtin.set_fact:
-    stoichiometry_result: "{{ (_stoichiometry_result.stdout | from_json) if _stoichiometry_result.stdout | default('') | length > 0 else {} }}"
+    stoichiometry_result: "{{ _stoichiometry_result.result }}"
 
 - name: Write JSON output
   ansible.builtin.copy:

@@ -4,6 +4,7 @@ repos:
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
+        exclude: ^config/self-improve/catalog-truth\.json$
       - id: check-yaml
         args: [--allow-multiple-documents]
       - id: check-json
@@ -20,6 +21,10 @@ repos:
     hooks:
       - id: detect-secrets
         args: [--baseline, .secrets.baseline]
+        # Upstream intentionally refreshes baseline line metadata. Keep that
+        # mutating maintenance path explicit; normal gates use the local
+        # disposable-copy wrapper below.
+        stages: [manual]
         exclude: >
           (?x)^(
             uv.lock|
@@ -36,6 +41,26 @@ repos:
 
   - repo: local
     hooks:
+      - id: detect-secrets-readonly
+        name: Detect secrets
+        entry: uv run python scripts/detect_secrets_readonly.py
+        language: system
+        pass_filenames: true
+        require_serial: true
+        exclude: >
+          (?x)^(
+            uv.lock|
+            .secrets.baseline|
+            \.opencode/plugin-hashes\.json|
+            dist/.*|
+            \.venv/.*|
+            \.opencode/node_modules/.*|
+            \.mypy_cache/.*|
+            \.pytest_cache/.*|
+            \.ruff_cache/.*|
+            __pycache__/.*
+          )$
+
       - id: scan-conflicts
         name: scan for git conflict markers
         entry: python scripts/scan_conflicts.py
@@ -75,15 +100,15 @@ repos:
         stages: [pre-commit]
 
       - id: check-disk
-        name: disk usage check (/tmp/gludd-* and disk %)
-        entry: uv run python scripts/check_disk_usage.py
+        name: automatic inactive-worktree cache cleanup and disk check
+        entry: make check-disk CHECK_DISK_VALIDATE_ONLY=0
         language: system
         pass_filenames: false
         stages: [pre-commit]
 
       - id: collect-check
         name: test collection check
-        entry: uv run python -m pytest tests/ --co -q
+        entry: make collect-check
         language: system
         types: [python]
         pass_filenames: false

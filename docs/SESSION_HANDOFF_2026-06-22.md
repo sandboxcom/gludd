@@ -49,7 +49,7 @@ All commits are on `fix/self-update-sec`.
 - **PR #2** targets `integration/alpha3-rc` (alpha.3 ship branch — CI/infra fixes only).
 - **CI run `27919075093`** — greenness unconfirmed at handoff. Verify before running ship sequence.
 - Ship sequence (paste-ready) is in memory `gludd-ship-https-target`:
-  ```
+  ```text
   make require-ci-green SHA=<full-SHA>
   make check-readme-status TAG=v0.1.0-alpha.3
   make ship-https SHA=<full-SHA> TAG=v0.1.0-alpha.3 MSG='v0.1.0-alpha.3 — third alpha'

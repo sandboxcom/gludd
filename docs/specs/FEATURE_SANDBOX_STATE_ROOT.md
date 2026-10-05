@@ -1,5 +1,7 @@
 # Secure sandbox runtime-state root
 
+**Status:** Implemented on `enhance/sandbox-state-root`
+
 ## Status and scope
 
 Implemented on `enhance/sandbox-state-root`. This contract covers host-side

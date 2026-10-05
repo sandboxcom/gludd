@@ -206,7 +206,7 @@ for 10).
 
 ### Step 1 — Merge `feature/batch3-security` (alpha.2, already ancestor-clean)
 
-```
+```text
 make gated-merge BASE=master BRANCHES='feature/batch3-security' MANIFEST='/tmp/cascade-batch3.txt'
 make gate
 ```
@@ -215,7 +215,7 @@ Risk: NONE. Isolated files.
 
 ### Step 2 — Merge `fix/security-D12-D33-spend-limiter` (already ancestor-clean)
 
-```
+```text
 make gated-merge BASE=master BRANCHES='fix/security-D12-D33-spend-limiter' MANIFEST='/tmp/cascade-spend.txt'
 make gate
 ```
@@ -226,7 +226,7 @@ Risk: LOW. Verify spend_limiter.py post-merge (additive to ship commit's record(
 
 Rebase onto post-ship master, then:
 
-```
+```text
 make gated-merge BASE=master BRANCHES='security/D-07-D-08-D-34-webhook-hardening' MANIFEST='/tmp/cascade-webhook.txt'
 make gate
 ```
@@ -237,7 +237,7 @@ Risk: NONE (hooks.py not touched by any other branch or ship commit).
 
 Rebase onto post-ship master, then:
 
-```
+```text
 make gated-merge BASE=master BRANCHES='feat/pg-0-1-2-guardrail-ports' MANIFEST='/tmp/cascade-pg012.txt'
 make gate
 ```
@@ -249,7 +249,7 @@ Risk: NONE (behavior.py, engine.py isolated from all other branches).
 Rebase onto post-ship master. Post-rebase: verify `secrets/env.py` uppercase
 fallback logic is additive (ship commit does NOT touch env.py), then:
 
-```
+```text
 make gated-merge BASE=master BRANCHES='feature/dogfood-e2e-alpha3' MANIFEST='/tmp/cascade-dogfood.txt'
 make gate
 ```
@@ -273,7 +273,7 @@ overlap with ship commit's daemon status changes:
 After rebase, run `make test-unit TESTFILE='tests/unit/test_daemon.py'` before
 gated-merge.
 
-```
+```text
 make gated-merge BASE=master BRANCHES='integration/batch45-testfix' MANIFEST='/tmp/cascade-b45test.txt'
 make gate
 ```
@@ -286,7 +286,7 @@ Web toolkit touches Makefile (typecheck-web + git-checkout-sha). Do this before
 the mainthread-budget-hook branch so Makefile conflicts are resolved in two
 smaller steps rather than one.
 
-```
+```text
 make gated-merge BASE=master BRANCHES='fix/web-toolkit-review' MANIFEST='/tmp/cascade-webtoolkit.txt'
 make gate
 ```
@@ -304,7 +304,7 @@ Rebase from 85-commit-behind base. After rebase, verify:
 3. `scripts/agent_liveness.py`: new file — no conflict.
 4. `tests/unit/test_mainthread_budget_hook.py`: new file — no conflict.
 
-```
+```text
 make gated-merge BASE=master BRANCHES='feature/mainthread-budget-hook' MANIFEST='/tmp/cascade-mainthread.txt'
 make gate
 ```
@@ -315,7 +315,7 @@ Risk: MEDIUM-HIGH (Makefile + `.claude/settings.json` require post-rebase review
 
 Same as v1 Section C Step 5. Last in sequence because it also touches Makefile.
 
-```
+```text
 make gated-merge BASE=master BRANCHES='feature/floor-predictive-controller' MANIFEST='/tmp/cascade-floor.txt'
 make gate
 ```
@@ -336,7 +336,7 @@ Master (`3223c67`) is an ancestor of the ship commit (`6063e51`). The ship commi
 lives on `feature/wave3-ship-final` (tip `bd4cddb`). Before ANY cascade step,
 the ship must fast-forward master:
 
-```
+```text
 make git-checkout MSG='master'
 make git-ff-only   # or: make ship-ff REF=feature/wave3-ship-final
 make git-is-ancestor A='6063e51' B='master'   # expect exit=0

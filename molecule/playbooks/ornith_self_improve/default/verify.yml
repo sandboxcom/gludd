@@ -39,44 +39,46 @@
         fail_msg: "summary artifact wrong: {{ summary }}"
         success_msg: "ornith_self_improve proposed improvement: {{ summary }}"
 
-    - name: Snapshot the request log (proves endpoint hits)
-      ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ mock_port }}/__requests"
-        method: GET
-        status_code: 200
-      register: req_log
+    - name: Load the request log captured before deterministic teardown
+      ansible.builtin.slurp:
+        src: "{{ artifact_dir }}/request-log.json"
+      register: req_log_raw
+
+    - name: Decode the request evidence
+      ansible.builtin.set_fact:
+        req_log: "{{ req_log_raw.content | b64decode | from_json }}"
 
     - name: Assert the ornith pairs endpoint was hit
       ansible.builtin.assert:
         that:
           - >-
-            req_log.json.requests
+            req_log.requests
             | select('search', 'GET /admin/ornith/pairs')
             | list
             | length >= 1
-        fail_msg: "ornith pairs endpoint was not hit: {{ req_log.json.requests }}"
+        fail_msg: "ornith pairs endpoint was not hit: {{ req_log.requests }}"
         success_msg: "GET /admin/ornith/pairs was hit"
 
     - name: Assert the human-todos endpoint was hit
       ansible.builtin.assert:
         that:
           - >-
-            req_log.json.requests
+            req_log.requests
             | select('search', 'POST /api/human-todos')
             | list
             | length >= 1
-        fail_msg: "human-todos endpoint was not hit: {{ req_log.json.requests }}"
+        fail_msg: "human-todos endpoint was not hit: {{ req_log.requests }}"
         success_msg: "POST /api/human-todos was hit"
 
     - name: Assert the models/call endpoint was hit (the Ornith improve call)
       ansible.builtin.assert:
         that:
           - >-
-            req_log.json.requests
+            req_log.requests
             | select('search', 'POST /admin/models/call')
             | list
             | length >= 1
-        fail_msg: "models/call endpoint was not hit: {{ req_log.json.requests }}"
+        fail_msg: "models/call endpoint was not hit: {{ req_log.requests }}"
         success_msg: "POST /admin/models/call was hit"
 
     - name: Remove throwaway repo

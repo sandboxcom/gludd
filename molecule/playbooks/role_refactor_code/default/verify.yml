@@ -35,12 +35,6 @@
         fail_msg: "refactor_code artifact wrong: {{ result }}"
         success_msg: "refactor_code ran end-to-end; target={{ result.refactor_target }}"
 
-    - name: Stop mock daemon
-      ansible.builtin.shell:
-        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
-      changed_when: false
-      failed_when: false
-
     - name: Remove throwaway repo + worktrees
       ansible.builtin.file:
         path: "{{ item }}"

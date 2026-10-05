@@ -5,4 +5,4 @@
   tasks:
     - name: "Include windows_diagnose"
       ansible.builtin.include_role:
-        name: "windows_diagnose"
+        name: "general_ludd.os_expert.windows_diagnose"

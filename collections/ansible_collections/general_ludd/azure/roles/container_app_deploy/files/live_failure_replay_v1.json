@@ -1,0 +1,562 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "action": "record_negative_calibration",
+        "model_quality_relevant": true,
+        "reason_class": "proposal_scope",
+        "retryable": false
+      },
+      "id": "canonical-envelope-proposal-scope-2026-09-10",
+      "input": {
+        "accepted": false,
+        "response_withheld": false
+      },
+      "kind": "regression_contract",
+      "practitioner_refs": [],
+      "regression_node": "tests/unit/test_self_improve_failure_corpus.py::test_failure_class_has_exact_typed_feedback",
+      "source": {
+        "end_line": 805,
+        "start_line": 792
+      }
+    },
+    {
+      "expected": {
+        "action": "pin_published_operation_version",
+        "model_quality_relevant": false,
+        "reason_class": "api_version_rejected",
+        "retryable": false
+      },
+      "id": "preflight-api-version-pin-2026-09-11",
+      "input": {
+        "api_version": "2026-01-01"
+      },
+      "kind": "regression_contract",
+      "practitioner_refs": [
+        "https://github.com/Azure/azure-cli/issues/32181"
+      ],
+      "regression_node": "tests/unit/test_azure_containerapp_environment_preflight.py::test_named_environment_preflight_uses_only_three_exact_resource_gets",
+      "source": {
+        "end_line": 822,
+        "start_line": 807
+      }
+    },
+    {
+      "expected": {
+        "action": "bounded_wait_then_cleanup",
+        "classifier": {
+          "action": "wait_for_bounded_startup",
+          "model_quality_relevant": false,
+          "observed_replicas": 1,
+          "phase": "startup",
+          "protocol": "gludd-azure-containerapp-startup-diagnosis-v1",
+          "requested_replicas": 1,
+          "retryable": true,
+          "state": "pending"
+        },
+        "model_quality_relevant": false,
+        "reason_class": "timeout",
+        "retryable": true
+      },
+      "id": "a100-zero-running-replica-timeout-2026-09-12",
+      "input": {
+        "deadline_seconds": 900,
+        "health_state": "Healthy",
+        "listed_replicas": 0,
+        "provisioning_state": "Provisioned",
+        "requested_replicas": 1,
+        "running_state": "Unknown",
+        "summary_replicas": 1
+      },
+      "kind": "startup_diagnosis",
+      "practitioner_refs": [
+        "https://learn.microsoft.com/en-us/answers/questions/5572527/container-app-using-serverless-gpu-stuck-assigning"
+      ],
+      "regression_node": "tests/unit/test_azure_containerapp_runtime_resources.py::test_empty_replica_inventory_never_substitutes_for_running_container",
+      "source": {
+        "end_line": 843,
+        "start_line": 824
+      }
+    },
+    {
+      "expected": {
+        "action": "continue_to_inference",
+        "classifier": {
+          "action": "continue_to_inference",
+          "model_quality_relevant": false,
+          "observed_replicas": 1,
+          "phase": "ready",
+          "protocol": "gludd-azure-containerapp-startup-diagnosis-v1",
+          "requested_replicas": 1,
+          "retryable": false,
+          "state": "ready"
+        },
+        "model_quality_relevant": false,
+        "reason_class": "supplementary_unavailable",
+        "retryable": false
+      },
+      "id": "healthy-revision-empty-supplementary-inventory-2026-09-13",
+      "input": {
+        "health_state": "Healthy",
+        "listed_replicas": 0,
+        "provisioning_state": "Provisioned",
+        "requested_replicas": 1,
+        "running_state": "Running",
+        "summary_replicas": 1
+      },
+      "kind": "startup_diagnosis",
+      "practitioner_refs": [
+        "https://github.com/microsoft/azure-container-apps/issues/1705"
+      ],
+      "regression_node": "tests/unit/test_azure_containerapp_runtime_resources.py::test_resources_build_polling_runtimes_and_release_credentials_last",
+      "source": {
+        "end_line": 865,
+        "start_line": 845
+      }
+    },
+    {
+      "expected": {
+        "action": "continue_validated_local",
+        "model_quality_relevant": false,
+        "reason_class": "timeout",
+        "retryable": true
+      },
+      "id": "typed-azure-timeout-local-continuation-2026-09-13",
+      "input": {
+        "local_candidate_available": true,
+        "response_withheld": true
+      },
+      "kind": "regression_contract",
+      "practitioner_refs": [],
+      "regression_node": "tests/unit/test_self_improve_live_candidate_wiring.py::test_managed_runner_explicitly_continues_local_after_containerapp_failure",
+      "source": {
+        "end_line": 874,
+        "start_line": 867
+      }
+    },
+    {
+      "expected": {
+        "action": "import_exact_owned_environment",
+        "model_quality_relevant": false,
+        "reason_class": "state_unbound",
+        "retryable": false
+      },
+      "id": "retained-environment-state-adoption-2026-09-13",
+      "input": {
+        "api_version": "2025-07-01",
+        "local_state_bound": false,
+        "remote_owned": true
+      },
+      "kind": "regression_contract",
+      "practitioner_refs": [
+        "https://github.com/opentofu/opentofu/issues/1571"
+      ],
+      "regression_node": "tests/unit/test_azure_containerapp_environment_make_runtime.py::test_runtime_imports_verified_existing_environment_only_when_state_is_unbound",
+      "source": {
+        "end_line": 903,
+        "start_line": 876
+      }
+    },
+    {
+      "expected": {
+        "action": "enforce_candidate_deadline",
+        "model_quality_relevant": false,
+        "reason_class": "timeout",
+        "retryable": true
+      },
+      "id": "local-candidate-deadline-drift-2026-09-13",
+      "input": {
+        "candidate_timeout_seconds": 30,
+        "elapsed_seconds": 301,
+        "exit_code": 124
+      },
+      "kind": "regression_contract",
+      "practitioner_refs": [],
+      "regression_node": "tests/unit/test_managed_self_improve_runner.py::test_local_candidate_adapter_forwards_the_approved_timeout",
+      "source": {
+        "end_line": 926,
+        "start_line": 905
+      }
+    },
+    {
+      "expected": {
+        "action": "poll_bounded",
+        "model_quality_relevant": false,
+        "reason_class": "metric_pending",
+        "retryable": true
+      },
+      "id": "gpu-empty-metric-collection-2026-09-13",
+      "input": {
+        "exact_revision_bound": true,
+        "metric_series_count": 0,
+        "response_withheld": true
+      },
+      "kind": "regression_contract",
+      "practitioner_refs": [
+        "https://learn.microsoft.com/en-au/answers/questions/460863/azure-monitor-rest-api-empty-timeseries-data-point"
+      ],
+      "regression_node": "tests/unit/test_azure_containerapp_sdk.py::test_gpu_attestor_polls_when_monitor_has_not_ingested_samples_yet",
+      "source": {
+        "end_line": 967,
+        "start_line": 952
+      }
+    },
+    {
+      "expected": {
+        "action": "retry_bounded_registration",
+        "model_quality_relevant": false,
+        "reason_class": "metric_query_rejected",
+        "retryable": true
+      },
+      "id": "gpu-concrete-revision-filter-http-400-2026-09-13",
+      "input": {
+        "deadline_seconds": 300,
+        "exact_revision_bound": true,
+        "http_status": 400,
+        "validation_enabled": true,
+        "wildcard_dimensions": 0
+      },
+      "kind": "regression_contract",
+      "practitioner_refs": [
+        "https://learn.microsoft.com/en-us/answers/questions/5811384/not-able-to-select-the-failure-type-dimension-valu"
+      ],
+      "regression_node": "tests/unit/test_azure_containerapp_sdk.py::test_gpu_attestor_polls_transient_bad_request_until_metric_index_is_ready",
+      "source": {
+        "end_line": 990,
+        "start_line": 969
+      }
+    },
+    {
+      "expected": {
+        "action": "retry_bounded_registration",
+        "model_quality_relevant": false,
+        "reason_class": "metric_query_rejected",
+        "retryable": true
+      },
+      "id": "gpu-two-wildcard-filter-http-400-2026-09-13",
+      "input": {
+        "deadline_seconds": 300,
+        "exact_revision_bound": true,
+        "http_status": 400,
+        "validation_enabled": true,
+        "wildcard_dimensions": 2
+      },
+      "kind": "regression_contract",
+      "practitioner_refs": [
+        "https://learn.microsoft.com/en-us/answers/questions/5811384/not-able-to-select-the-failure-type-dimension-valu"
+      ],
+      "regression_node": "tests/unit/test_azure_containerapp_sdk.py::test_gpu_attestor_polls_transient_bad_request_until_metric_index_is_ready",
+      "source": {
+        "end_line": 1003,
+        "start_line": 992
+      }
+    },
+    {
+      "expected": {
+        "action": "retry_bounded_registration",
+        "model_quality_relevant": false,
+        "reason_class": "metric_query_rejected",
+        "retryable": true
+      },
+      "id": "gpu-one-wildcard-filter-http-400-2026-09-13",
+      "input": {
+        "deadline_seconds": 300,
+        "exact_revision_bound": true,
+        "http_status": 400,
+        "validation_enabled": true,
+        "wildcard_dimensions": 1
+      },
+      "kind": "regression_contract",
+      "practitioner_refs": [
+        "https://learn.microsoft.com/en-us/answers/questions/5811384/not-able-to-select-the-failure-type-dimension-valu"
+      ],
+      "regression_node": "tests/unit/test_azure_containerapp_sdk.py::test_gpu_attestor_polls_transient_bad_request_until_metric_index_is_ready",
+      "source": {
+        "end_line": 1012,
+        "start_line": 1005
+      }
+    },
+    {
+      "expected": {
+        "action": "fail_closed_cleanup",
+        "model_quality_relevant": false,
+        "reason_class": "metric_query_rejected",
+        "retryable": false
+      },
+      "id": "gpu-validation-disabled-http-400-2026-09-13",
+      "input": {
+        "deadline_seconds": 300,
+        "exact_revision_bound": true,
+        "http_status": 400,
+        "validation_enabled": false,
+        "wildcard_dimensions": 1
+      },
+      "kind": "regression_contract",
+      "practitioner_refs": [
+        "https://learn.microsoft.com/en-us/answers/questions/5811384/not-able-to-select-the-failure-type-dimension-valu"
+      ],
+      "regression_node": "tests/unit/test_azure_containerapp_sdk.py::test_gpu_attestor_reports_typed_rejection_when_bad_request_never_clears",
+      "source": {
+        "end_line": 1012,
+        "start_line": 1005
+      }
+    },
+    {
+      "expected": {
+        "action": "classify_allowlisted_guard",
+        "model_quality_relevant": true,
+        "reason_class": "commit_guard_unclassified",
+        "retryable": false
+      },
+      "id": "local-commit-guard-category-none-2026-09-13",
+      "input": {
+        "accepted": false
+      },
+      "kind": "regression_contract",
+      "practitioner_refs": [],
+      "regression_node": "tests/unit/test_self_improve_codex_runner.py::test_commit_candidate_surfaces_only_allowlisted_guard_category",
+      "source": {
+        "end_line": 1022,
+        "start_line": 1014
+      }
+    },
+    {
+      "expected": {
+        "action": "query_documented_metric_contract",
+        "model_quality_relevant": false,
+        "reason_class": "metric_catalog_absent",
+        "retryable": true
+      },
+      "id": "gpu-metric-catalog-empty-2026-09-13",
+      "input": {
+        "catalog_records": 0,
+        "deadline_seconds": 300,
+        "exact_revision_bound": true,
+        "response_withheld": true
+      },
+      "kind": "regression_contract",
+      "practitioner_refs": [
+        "https://learn.microsoft.com/en-us/answers/questions/5811384/not-able-to-select-the-failure-type-dimension-valu"
+      ],
+      "regression_node": "tests/unit/test_azure_containerapp_sdk.py::test_gpu_attestor_never_reads_optional_definition_catalog",
+      "source": {
+        "end_line": 1060,
+        "start_line": 1024
+      }
+    },
+    {
+      "expected": {
+        "action": "fail_closed_cleanup",
+        "model_quality_relevant": false,
+        "reason_class": "metric_query_rejected",
+        "retryable": false
+      },
+      "id": "gpu-direct-query-http-400-five-minute-2026-09-14",
+      "input": {
+        "deadline_seconds": 300,
+        "exact_revision_bound": true,
+        "http_status": 400,
+        "response_withheld": true,
+        "wildcard_dimensions": 0
+      },
+      "kind": "regression_contract",
+      "practitioner_refs": [
+        "https://learn.microsoft.com/en-us/answers/questions/5811384/not-able-to-select-the-failure-type-dimension-valu"
+      ],
+      "regression_node": "tests/unit/test_azure_containerapp_sdk.py::test_gpu_attestor_reports_typed_rejection_when_bad_request_never_clears",
+      "source": {
+        "end_line": 1071,
+        "start_line": 1062
+      }
+    },
+    {
+      "expected": {
+        "action": "restore_short_bound",
+        "model_quality_relevant": false,
+        "reason_class": "metric_query_rejected",
+        "retryable": false
+      },
+      "id": "gpu-direct-query-http-400-fifteen-minute-2026-09-14",
+      "input": {
+        "deadline_seconds": 900,
+        "exact_revision_bound": true,
+        "http_status": 400,
+        "response_withheld": true,
+        "wildcard_dimensions": 0
+      },
+      "kind": "regression_contract",
+      "practitioner_refs": [
+        "https://learn.microsoft.com/en-us/answers/questions/5811384/not-able-to-select-the-failure-type-dimension-valu"
+      ],
+      "regression_node": "tests/unit/test_azure_containerapp_sdk.py::test_gpu_attestor_reports_typed_rejection_when_bad_request_never_clears",
+      "source": {
+        "end_line": 1082,
+        "start_line": 1073
+      }
+    },
+    {
+      "expected": {
+        "action": "size_canonical_batch",
+        "model_quality_relevant": false,
+        "reason_class": "context_capacity",
+        "retryable": false
+      },
+      "id": "local-canonical-batch-context-overflow-2026-09-14",
+      "input": {
+        "canonical_batch_bytes": 5000,
+        "context_limit_bytes": 4096,
+        "largest_shard_bytes": 3000,
+        "shard_count": 2
+      },
+      "kind": "regression_contract",
+      "practitioner_refs": [],
+      "regression_node": "tests/unit/test_managed_self_improve_runner.py::test_compact_v4_attempt_identity_binds_prompt_size_policy",
+      "source": {
+        "end_line": 1101,
+        "start_line": 1094
+      }
+    },
+    {
+      "expected": {
+        "action": "censor_from_quality",
+        "model_quality_relevant": false,
+        "reason_class": "unavailable",
+        "retryable": true
+      },
+      "id": "local-native-decode-misclassified-2026-09-14",
+      "input": {
+        "exit_code": 3,
+        "response_withheld": true
+      },
+      "kind": "regression_contract",
+      "practitioner_refs": [],
+      "regression_node": "tests/unit/test_self_improve_local_worker.py::test_worker_censors_native_decode_failure_as_typed_infrastructure",
+      "source": {
+        "end_line": 1109,
+        "start_line": 1103
+      }
+    },
+    {
+      "expected": {
+        "action": "failover_profile_or_region",
+        "classifier": {
+          "action": "failover_profile_or_region",
+          "model_quality_relevant": false,
+          "observed_replicas": 0,
+          "phase": "placement",
+          "protocol": "gludd-azure-containerapp-startup-diagnosis-v1",
+          "requested_replicas": 1,
+          "retryable": true,
+          "state": "placement_unavailable"
+        },
+        "model_quality_relevant": false,
+        "reason_class": "placement_unavailable",
+        "retryable": true
+      },
+      "id": "a100-terminal-zero-replica-2026-09-15",
+      "input": {
+        "health_state": "Unhealthy",
+        "listed_replicas": 0,
+        "provisioning_state": "Failed",
+        "requested_replicas": 1,
+        "running_state": "Failed",
+        "summary_replicas": 0
+      },
+      "kind": "startup_diagnosis",
+      "practitioner_refs": [
+        "https://github.com/microsoft/azure-container-apps/issues/1705"
+      ],
+      "regression_node": "tests/unit/test_azure_containerapp_ansible_orchestration.py::test_startup_diagnosis_classifies_terminal_zero_replica_as_placement",
+      "source": {
+        "end_line": 1129,
+        "start_line": 1119
+      }
+    },
+    {
+      "expected": {
+        "action": "failover_profile_or_region",
+        "classifier": {
+          "action": "failover_profile_or_region",
+          "model_quality_relevant": false,
+          "observed_replicas": 0,
+          "phase": "placement",
+          "protocol": "gludd-azure-containerapp-startup-diagnosis-v1",
+          "requested_replicas": 1,
+          "retryable": true,
+          "state": "placement_unavailable"
+        },
+        "model_quality_relevant": false,
+        "reason_class": "placement_unavailable",
+        "retryable": true
+      },
+      "id": "t4-terminal-zero-replica-2026-09-21",
+      "input": {
+        "health_state": "Unhealthy",
+        "listed_replicas": 0,
+        "provisioning_state": "Failed",
+        "requested_replicas": 1,
+        "running_state": "Failed",
+        "summary_replicas": 0
+      },
+      "kind": "startup_diagnosis",
+      "practitioner_refs": [
+        "https://github.com/microsoft/azure-container-apps/issues/1511",
+        "https://github.com/microsoft/azure-container-apps/issues/1797"
+      ],
+      "regression_node": "tests/unit/test_azure_containerapp_ansible_orchestration.py::test_startup_diagnosis_classifies_terminal_zero_replica_as_placement",
+      "source": {
+        "end_line": 1140,
+        "start_line": 1131
+      }
+    },
+    {
+      "expected": {
+        "action": "reconcile_exact_arm_absence",
+        "model_quality_relevant": false,
+        "reason_class": "cleanup_poll_timeout",
+        "retryable": false
+      },
+      "id": "t4-environment-destroy-poll-timeout-2026-09-21",
+      "input": {
+        "cleanup_poll_timeout_seconds": 900,
+        "independent_absence": true,
+        "remote_owned": true
+      },
+      "kind": "regression_contract",
+      "practitioner_refs": [
+        "https://github.com/microsoft/azure-container-apps/issues/1511"
+      ],
+      "regression_node": "tests/unit/test_azure_containerapp_environment_make_runtime.py::test_destroy_timeout_is_reconciled_by_exact_arm_absence",
+      "source": {
+        "end_line": 1150,
+        "start_line": 1142
+      }
+    },
+    {
+      "expected": {
+        "action": "suppress_exact_unavailable_scope",
+        "model_quality_relevant": false,
+        "reason_class": "operational_unavailable",
+        "retryable": true
+      },
+      "id": "versioned-operational-failover-2026-09-21",
+      "input": {
+        "exact_revision_bound": true,
+        "profile_failures": 2,
+        "response_withheld": true
+      },
+      "kind": "regression_contract",
+      "practitioner_refs": [
+        "https://github.com/microsoft/azure-container-apps/issues/1511",
+        "https://github.com/microsoft/azure-container-apps/issues/1797"
+      ],
+      "regression_node": "tests/unit/test_azure_operational_availability.py::test_repeated_failures_make_only_exact_versioned_scope_infeasible",
+      "source": {
+        "end_line": 1208,
+        "start_line": 1161
+      }
+    }
+  ],
+  "protocol": "gludd-azure-live-failure-replay-v1",
+  "source_document": "docs/features/SELF_IMPROVEMENT_MIXED_MODELS.md"
+}

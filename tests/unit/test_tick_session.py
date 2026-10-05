@@ -6,7 +6,12 @@ from unittest.mock import AsyncMock, patch
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from general_ludd.event_loop.loop import DISPATCH_PHASE_INDEX, PHASE_ORDER, EventLoop
+from general_ludd.event_loop.loop import (
+    DISPATCH_PHASE_INDEX,
+    PHASE_ORDER,
+    PROVISION_PHASE_INDEX,
+    EventLoop,
+)
 
 
 @pytest_asyncio.fixture
@@ -45,7 +50,11 @@ class TestTickSessionClosedBeforeDispatch:
                 assert session is None, (
                     f"dispatch phase {phase_name!r} had active session"
                 )
-            elif phase_name in PHASE_ORDER[:DISPATCH_PHASE_INDEX]:
+            elif phase_name == "reconcile_compute_demand":
+                assert session is None, (
+                    "compute provisioning must not retain the claim session"
+                )
+            elif phase_name in PHASE_ORDER[:PROVISION_PHASE_INDEX]:
                 assert session is not None, (
                     f"pre-dispatch phase {phase_name!r} had no active session"
                 )
@@ -108,6 +117,41 @@ class TestTickSessionClosedBeforeDispatch:
             f"commit (idx {commit_idx}) before dispatch (idx {dispatch_idx}); "
             f"order: {order}"
         )
+
+    async def test_claim_commit_and_close_precede_compute_provisioning(
+        self, sqlite_session_factory,
+    ):
+        """Provisioning begins only after the durable claim transaction closes."""
+        loop = EventLoop(
+            worker_base_url="http://localhost:8000",
+            session=sqlite_session_factory,
+            daemon_state={},
+        )
+        observations: list[tuple[str, object]] = []
+
+        async def spy_provision() -> None:
+            observations.append(("provision", loop._active_session))
+
+        original_commit = loop._commit_tick_session
+
+        async def spy_commit(session: AsyncSession) -> None:
+            await original_commit(session)
+            observations.append(("commit", session))
+
+        with patch.object(loop, "_phase_reconcile_compute_demand", spy_provision), \
+             patch.object(loop, "_commit_tick_session", spy_commit):
+            await loop.tick()
+
+        commit_index = next(
+            index for index, (event, _session) in enumerate(observations)
+            if event == "commit"
+        )
+        provision_index = next(
+            index for index, (event, _session) in enumerate(observations)
+            if event == "provision"
+        )
+        assert commit_index < provision_index
+        assert observations[provision_index][1] is None
 
     async def test_isolated_dispatch_bypasses_active_session(
         self, sqlite_session_factory,

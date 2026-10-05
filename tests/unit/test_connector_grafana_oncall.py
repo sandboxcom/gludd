@@ -147,6 +147,17 @@ def test_callable_transport_compatibility(monkeypatch):
     assert "state=firing" in calls[0]["url"]
 
 
+@pytest.mark.parametrize("body", [b"raw", "text"])
+def test_callable_transport_accepts_textual_bodies(monkeypatch, body):
+    monkeypatch.setenv(_ENV, _TOKEN)
+
+    def transport(_method: str, _url: str, **_kwargs: Any) -> tuple[int, object]:
+        return 200, body
+
+    src = GrafanaOnCallSource({"base_url": _PUBLIC_BASE}, transport=transport)
+    assert src.health()["ok"] is True
+
+
 def test_query_handles_bare_list_payload(monkeypatch):
     monkeypatch.setenv(_ENV, _TOKEN)
     captured: dict[str, Any] = {}
@@ -154,6 +165,14 @@ def test_query_handles_bare_list_payload(monkeypatch):
     records = src.query()
     assert len(records) == 2
     assert records[0]["level_or_status"] == "firing"
+
+
+def test_query_handles_data_and_unknown_payload_shapes(monkeypatch):
+    monkeypatch.setenv(_ENV, _TOKEN)
+    data_source = _make({}, body={"data": _CANNED["results"]})
+    assert len(data_source.query({"limit": "default"})) == 2
+    unknown_source = _make({}, body={"unexpected": True})
+    assert unknown_source.query() == []
 
 
 def test_auth_header_from_env(monkeypatch):
@@ -227,6 +246,19 @@ def test_ssrf_allow_private_opt_in():
         transport=httpx.MockTransport(lambda r: httpx.Response(200)),
     )
     assert src._base_url == "http://oncall.internal.lan:8080"
+
+
+def test_tuple_response_and_callable_client_edge_contracts():
+    response = _gc._TupleResponse("bad-status", {})
+    assert response.status_code == 0
+    assert response.json() == {}
+    failing = _gc._TupleResponse(503, {})
+    with pytest.raises(RuntimeError, match="HTTP 503"):
+        failing.raise_for_status()
+
+    returned = _gc._TupleResponse(200, {"results": []})
+    client = _gc._CallableClient(lambda *_args, **_kwargs: returned)
+    assert client.get("https://example.com") is returned
 
 
 def test_token_never_in_records_or_labels(monkeypatch):

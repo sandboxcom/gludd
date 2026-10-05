@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import builtins
 import json
 import sys
+from collections.abc import Mapping
 from io import StringIO
 from pathlib import Path
+from typing import Protocol, cast
 
 import pytest
 
 from general_ludd.cli_physics import (
+    _check_collection_import,
     _run_latex,
     _run_math,
     _run_particle,
@@ -23,8 +27,12 @@ from general_ludd.cli_physics import (
 )
 
 
+class _SubparserChoices(Protocol):
+    choices: Mapping[str, argparse.ArgumentParser]
+
+
 class TestPhysicsSubparser:
-    def test_registers_physics_parser(self):
+    def test_registers_physics_parser(self) -> None:
         parser = argparse.ArgumentParser()
         sub = parser.add_subparsers(dest="command")
         add_physics_subparser(sub)
@@ -32,14 +40,14 @@ class TestPhysicsSubparser:
         physics = sub.choices["physics"]
         assert physics.get_default("func") is None
 
-    def test_quantum_subcommand_parsed(self):
+    def test_quantum_subcommand_parsed(self) -> None:
         parser = argparse.ArgumentParser()
         sub = parser.add_subparsers(dest="command")
         add_physics_subparser(sub)
         args = parser.parse_args(["physics", "quantum"])
         assert args.physics_command == "quantum"
 
-    def test_quantum_custom_args(self):
+    def test_quantum_custom_args(self) -> None:
         parser = argparse.ArgumentParser()
         sub = parser.add_subparsers(dest="command")
         add_physics_subparser(sub)
@@ -51,14 +59,14 @@ class TestPhysicsSubparser:
         assert args.num_states == 10
         assert args.output_dir == "/tmp/test-quantum"
 
-    def test_particle_subcommand_parsed(self):
+    def test_particle_subcommand_parsed(self) -> None:
         parser = argparse.ArgumentParser()
         sub = parser.add_subparsers(dest="command")
         add_physics_subparser(sub)
         args = parser.parse_args(["physics", "particle", "--beam-energy-GeV", "14.0"])
         assert args.beam_energy_GeV == 14.0
 
-    def test_spectroscopy_subcommand_parsed(self):
+    def test_spectroscopy_subcommand_parsed(self) -> None:
         parser = argparse.ArgumentParser()
         sub = parser.add_subparsers(dest="command")
         add_physics_subparser(sub)
@@ -67,7 +75,7 @@ class TestPhysicsSubparser:
         assert args.technique == "ir"
         assert args.wl_min == 4000.0
 
-    def test_thermo_subcommand_parsed(self):
+    def test_thermo_subcommand_parsed(self) -> None:
         parser = argparse.ArgumentParser()
         sub = parser.add_subparsers(dest="command")
         add_physics_subparser(sub)
@@ -76,7 +84,7 @@ class TestPhysicsSubparser:
         assert args.substance == "iron"
         assert args.mass == 2.0
 
-    def test_synthesis_subcommand_parsed(self):
+    def test_synthesis_subcommand_parsed(self) -> None:
         parser = argparse.ArgumentParser()
         sub = parser.add_subparsers(dest="command")
         add_physics_subparser(sub)
@@ -84,7 +92,7 @@ class TestPhysicsSubparser:
             ["physics", "synthesis", "--molecule", "paracetamol"])
         assert args.molecule == "paracetamol"
 
-    def test_math_subcommand_parsed(self):
+    def test_math_subcommand_parsed(self) -> None:
         parser = argparse.ArgumentParser()
         sub = parser.add_subparsers(dest="command")
         add_physics_subparser(sub)
@@ -93,7 +101,7 @@ class TestPhysicsSubparser:
         assert args.rate_k == 0.75
         assert args.time_steps == 200
 
-    def test_latex_subcommand_parsed(self):
+    def test_latex_subcommand_parsed(self) -> None:
         parser = argparse.ArgumentParser()
         sub = parser.add_subparsers(dest="command")
         add_physics_subparser(sub)
@@ -102,7 +110,7 @@ class TestPhysicsSubparser:
         assert args.document_class == "beamer"
         assert args.title == "Slides"
 
-    def test_review_subcommand_parsed(self):
+    def test_review_subcommand_parsed(self) -> None:
         parser = argparse.ArgumentParser()
         sub = parser.add_subparsers(dest="command")
         add_physics_subparser(sub)
@@ -111,7 +119,7 @@ class TestPhysicsSubparser:
         assert args.depth == "deep"
         assert args.text == "test content"
 
-    def test_review_missing_text_exits(self):
+    def test_review_missing_text_exits(self) -> None:
         parser = argparse.ArgumentParser()
         sub = parser.add_subparsers(dest="command")
         add_physics_subparser(sub)
@@ -120,13 +128,14 @@ class TestPhysicsSubparser:
         with pytest.raises(SystemExit):
             _run_review(args)
 
-    def test_all_eight_subcommands_registered(self):
+    def test_all_eight_subcommands_registered(self) -> None:
         parser = argparse.ArgumentParser()
         sub = parser.add_subparsers(dest="command")
         add_physics_subparser(sub)
         physics = sub.choices["physics"]
-        phys_sub = physics._subparsers._group_actions[0]
-        registered = sorted(phys_sub.choices.keys())
+        assert physics._subparsers is not None
+        phys_sub = cast(_SubparserChoices, physics._subparsers._group_actions[0])
+        registered = sorted(str(choice) for choice in phys_sub.choices)
         expected = sorted([
             "quantum", "particle", "spectroscopy", "thermo",
             "synthesis", "math", "latex", "review",
@@ -135,7 +144,7 @@ class TestPhysicsSubparser:
 
 
 class TestQuantumRun:
-    def test_run_quantum_basic(self):
+    def test_run_quantum_basic(self) -> None:
         args = argparse.Namespace(
             problem="infinite_square_well",
             well_width_nm=1.0,
@@ -156,7 +165,7 @@ class TestQuantumRun:
         assert result["n_states"] == 5
         assert "ground_state_eV" in result
 
-    def test_run_quantum_custom_states(self):
+    def test_run_quantum_custom_states(self) -> None:
         args = argparse.Namespace(
             problem="infinite_square_well",
             well_width_nm=2.0,
@@ -176,7 +185,7 @@ class TestQuantumRun:
 
 
 class TestParticleRun:
-    def test_run_particle_basic(self):
+    def test_run_particle_basic(self) -> None:
         args = argparse.Namespace(
             beam_energy_GeV=13.6,
             target="proton",
@@ -196,7 +205,7 @@ class TestParticleRun:
         result = json.loads(captured.getvalue())
         assert result["status"] == "success"
 
-    def test_run_particle_with_branching(self):
+    def test_run_particle_with_branching(self) -> None:
         args = argparse.Namespace(
             beam_energy_GeV=13.6,
             target="proton",
@@ -218,7 +227,7 @@ class TestParticleRun:
 
 
 class TestSpectroscopyRun:
-    def test_run_spectroscopy_basic(self):
+    def test_run_spectroscopy_basic(self) -> None:
         args = argparse.Namespace(
             technique="uv_vis",
             wl_min=200.0,
@@ -237,7 +246,7 @@ class TestSpectroscopyRun:
         result = json.loads(captured.getvalue())
         assert result["status"] == "success"
 
-    def test_run_spectroscopy_custom_peaks(self):
+    def test_run_spectroscopy_custom_peaks(self) -> None:
         peaks = json.dumps([{"center_nm": 450, "amplitude": 0.8, "sigma_nm": 6.0}])
         args = argparse.Namespace(
             technique="fluorescence",
@@ -259,7 +268,7 @@ class TestSpectroscopyRun:
 
 
 class TestThermoRun:
-    def test_run_thermo_basic(self):
+    def test_run_thermo_basic(self) -> None:
         args = argparse.Namespace(
             substance="water",
             mass=1.0,
@@ -275,7 +284,7 @@ class TestThermoRun:
         result = json.loads(captured.getvalue())
         assert result["status"] == "success"
 
-    def test_run_thermo_iron(self):
+    def test_run_thermo_iron(self) -> None:
         args = argparse.Namespace(
             substance="iron",
             mass=2.0,
@@ -293,7 +302,7 @@ class TestThermoRun:
 
 
 class TestSynthesisRun:
-    def test_run_synthesis_aspirin(self):
+    def test_run_synthesis_aspirin(self) -> None:
         args = argparse.Namespace(
             molecule="aspirin",
             starting_material="salicylic_acid",
@@ -311,7 +320,7 @@ class TestSynthesisRun:
         assert result["status"] == "success"
         assert result["molecule"] == "aspirin"
 
-    def test_run_synthesis_paracetamol(self):
+    def test_run_synthesis_paracetamol(self) -> None:
         args = argparse.Namespace(
             molecule="paracetamol",
             starting_material="4-aminophenol",
@@ -331,7 +340,7 @@ class TestSynthesisRun:
 
 
 class TestMathRun:
-    def test_run_math_basic(self):
+    def test_run_math_basic(self) -> None:
         args = argparse.Namespace(
             model_type="ode_first_order",
             equation="dy/dt = -k * y",
@@ -349,7 +358,7 @@ class TestMathRun:
         result = json.loads(captured.getvalue())
         assert result["status"] == "success"
 
-    def test_run_math_fast_decay(self):
+    def test_run_math_fast_decay(self) -> None:
         args = argparse.Namespace(
             model_type="ode_first_order",
             equation="dy/dt = -k * y",
@@ -370,7 +379,7 @@ class TestMathRun:
 
 
 class TestLatexRun:
-    def test_run_latex_basic(self):
+    def test_run_latex_basic(self) -> None:
         args = argparse.Namespace(
             document_class="article",
             font_size="11pt",
@@ -388,7 +397,7 @@ class TestLatexRun:
         assert Path(result["doc_path"]).exists()
         assert Path(result["eq_path"]).exists()
 
-    def test_run_latex_beamer(self):
+    def test_run_latex_beamer(self) -> None:
         args = argparse.Namespace(
             document_class="beamer",
             font_size="12pt",
@@ -408,7 +417,7 @@ class TestLatexRun:
 
 
 class TestReviewRun:
-    def test_run_review_with_text(self):
+    def test_run_review_with_text(self) -> None:
         test_text = (
             "Abstract\nThis is a test.\n\n"
             "Introduction\nWe present a novel method.\n\n"
@@ -432,7 +441,7 @@ class TestReviewRun:
         assert result["status"] == "success"
         assert "rigor" in result
 
-    def test_run_review_minimal_text(self):
+    def test_run_review_minimal_text(self) -> None:
         args = argparse.Namespace(
             title="",
             text="Finding: The algorithm converges. We show results. We demonstrate effectiveness.",
@@ -447,9 +456,60 @@ class TestReviewRun:
         result = json.loads(captured.getvalue())
         assert result["status"] == "success"
 
+    def test_run_review_reads_owned_input_file(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        paper = tmp_path / "paper.txt"
+        paper.write_text("Abstract\nA reproducible result.\nConclusion\nValidated.")
+
+        _run_review(
+            argparse.Namespace(
+                title="File Paper",
+                text="ignored",
+                file=str(paper),
+                depth="quick",
+                output_dir=str(tmp_path / "review"),
+            )
+        )
+
+        assert json.loads(capsys.readouterr().out)["status"] == "success"
+
+
+class TestPhysicsCollectionBoundary:
+    def test_required_collection_modules_import(self) -> None:
+        _check_collection_import()
+
+    def test_missing_collection_module_fails_closed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        original_import = builtins.__import__
+
+        def _import(
+            name: str,
+            globals: dict[str, object] | None = None,
+            locals: dict[str, object] | None = None,
+            fromlist: tuple[str, ...] = (),
+            level: int = 0,
+        ) -> object:
+            if name.endswith(".latex_expert"):
+                raise ImportError("missing physics collection")
+            return original_import(name, globals, locals, fromlist, level)
+
+        monkeypatch.setattr(builtins, "__import__", _import)
+
+        with pytest.raises(SystemExit) as exc_info:
+            _check_collection_import()
+
+        assert exc_info.value.code == 1
+        assert "latex_expert" in capsys.readouterr().err
+
 
 class TestInvalidCalls:
-    def test_review_no_text_exits(self):
+    def test_review_no_text_exits(self) -> None:
         args = argparse.Namespace(
             title="", text="", file=None, depth="standard",
             output_dir="/tmp/test-review",
@@ -457,7 +517,7 @@ class TestInvalidCalls:
         with pytest.raises(SystemExit):
             _run_review(args)
 
-    def test_invalid_physics_subcommand(self):
+    def test_invalid_physics_subcommand(self) -> None:
         parser = argparse.ArgumentParser()
         sub = parser.add_subparsers(dest="command")
         add_physics_subparser(sub)

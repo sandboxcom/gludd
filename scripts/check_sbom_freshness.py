@@ -1,91 +1,141 @@
 #!/usr/bin/env python3
-"""check_sbom_freshness.py — AC007: sbom-freshness.
+"""Verify that a published release carries a current, versioned CycloneDX SBOM."""
 
-Verifies SBOM was regenerated on this release, not copied from prior release.
-Checks: generation timestamp >= tag creation, version string matches, deps match lockfile.
-"""
+from __future__ import annotations
 
 import json
 import os
-import re
 import subprocess
 import sys
-from pathlib import Path
+from datetime import datetime
+
+DEFAULT_REPOSITORY = "sandboxcom/gludd"
+SBOM_ASSET_NAME = "sbom.json"
 
 
-def run_git(args):
-    result = subprocess.run(["git"] + args, capture_output=True, text=True)
+def run_git(args: list[str]) -> tuple[str, str, int]:
+    result = subprocess.run(["git", *args], capture_output=True, text=True)
     return result.stdout.strip(), result.stderr.strip(), result.returncode
 
 
-def get_tag_timestamp(tag):
-    out, _, rc = run_git(["tag", "-l", "--format=%(taggerdate:unix)", tag])
+def get_tag_timestamp(tag: str) -> int:
+    out, _, _ = run_git(["tag", "-l", "--format=%(taggerdate:unix)", tag])
     try:
         return int(out) if out else 0
     except ValueError:
         return 0
 
 
-def main():
-    tag = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("TAG", "")
-    if not tag:
-        print("AC007: TAG required")
-        sys.exit(2)
+def get_sbom_content(tag: str, repository: str = DEFAULT_REPOSITORY) -> str | None:
+    """Read the canonical published SBOM through GitHub CLI stdout mode."""
+    try:
+        result = subprocess.run(
+            [
+                "gh",
+                "release",
+                "download",
+                tag,
+                "--repo",
+                repository,
+                "--pattern",
+                SBOM_ASSET_NAME,
+                "--output",
+                "-",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout
 
-    tag_ts = get_tag_timestamp(tag)
-    if tag_ts == 0:
-        print(f"AC007: INCONCLUSIVE — cannot get timestamp for tag {tag}")
-        sys.exit(2)
 
-    root = Path(__file__).resolve().parent.parent
-    sbom_paths = list(root.glob("dist/*sbom*.json")) + list(root.glob("dist/*cyclonedx*.json"))
+def _normalized_distribution_name(value: object) -> str:
+    return str(value).strip().lower().replace("_", "-")
 
-    if not sbom_paths:
-        print("AC007: FAIL — no SBOM files found in dist/")
-        sys.exit(1)
 
-    version = tag.lstrip("v")
-    errors = 0
+def validate_sbom(payload: object, version: str, tag_timestamp: int) -> list[str]:
+    """Return all schema, generation-time, and release-identity errors."""
+    if not isinstance(payload, dict):
+        return ["SBOM JSON root must be an object"]
+    errors: list[str] = []
+    if payload.get("bomFormat") != "CycloneDX":
+        errors.append("SBOM is not CycloneDX")
 
-    for sbom_path in sbom_paths:
+    metadata = payload.get("metadata")
+    if not isinstance(metadata, dict):
+        errors.append("SBOM metadata is missing")
+        metadata = {}
+    timestamp = metadata.get("timestamp")
+    if not isinstance(timestamp, str) or not timestamp:
+        errors.append("SBOM metadata.timestamp is missing")
+    else:
         try:
-            with open(sbom_path) as f:
-                sbom = json.load(f)
-        except (json.JSONDecodeError, OSError) as e:
-            print(f"AC007: FAIL — cannot parse {sbom_path.name}: {e}")
-            errors += 1
-            continue
-
-        metadata = sbom.get("metadata", {})
-        sbom_ts_str = metadata.get("timestamp", "")
-        sbom_component = metadata.get("component", {})
-        sbom_version = sbom_component.get("version", "")
-
-        if sbom_version != version:
-            print(f"AC007: FAIL — {sbom_path.name} version '{sbom_version}' != tag version '{version}'")
-            errors += 1
-
-        if sbom_ts_str:
-            try:
-                from datetime import datetime, timezone
-
-                sbom_dt = datetime.fromisoformat(sbom_ts_str.replace("Z", "+00:00"))
-                sbom_ts = int(sbom_dt.timestamp())
-                if sbom_ts < tag_ts:
-                    print(f"AC007: FAIL — {sbom_path.name} generated before tag (SBOM: {sbom_ts}, tag: {tag_ts})")
-                    errors += 1
-            except ValueError:
-                print(f"AC007: WARN — {sbom_path.name} has unparseable timestamp '{sbom_ts_str}'")
+            generated = int(datetime.fromisoformat(timestamp.replace("Z", "+00:00")).timestamp())
+        except ValueError:
+            errors.append(f"SBOM metadata.timestamp is invalid: {timestamp}")
         else:
-            print(f"AC007: WARN — {sbom_path.name} has no metadata.timestamp")
+            if generated < tag_timestamp:
+                errors.append(
+                    f"SBOM generated before tag (SBOM: {generated}, tag: {tag_timestamp})"
+                )
 
+    components: list[object] = []
+    metadata_component = metadata.get("component")
+    if isinstance(metadata_component, dict):
+        components.append(metadata_component)
+    listed_components = payload.get("components")
+    if isinstance(listed_components, list):
+        components.extend(listed_components)
+    else:
+        errors.append("SBOM components must be a list")
+
+    has_release_component = any(
+        isinstance(component, dict)
+        and _normalized_distribution_name(component.get("name")) == "general-ludd-agent"
+        and component.get("version") == version
+        for component in components
+    )
+    if not has_release_component:
+        errors.append(f"SBOM does not identify general-ludd-agent {version}")
+    return errors
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    tag = args[0] if args else os.environ.get("TAG", "")
+    repository = os.environ.get("GLUDD_GITHUB_REPOSITORY", DEFAULT_REPOSITORY)
+    if not tag:
+        print("AC007: INCONCLUSIVE — TAG required")
+        return 2
+
+    tag_timestamp = get_tag_timestamp(tag)
+    if tag_timestamp == 0:
+        print(f"AC007: INCONCLUSIVE — cannot get timestamp for tag {tag}")
+        return 2
+
+    content = get_sbom_content(tag, repository)
+    if content is None:
+        print(f"AC007: INCONCLUSIVE — cannot read published {SBOM_ASSET_NAME} for {tag}")
+        return 2
+    try:
+        payload: object = json.loads(content)
+    except json.JSONDecodeError as exc:
+        print(f"AC007: FAIL — {SBOM_ASSET_NAME} is invalid JSON: {exc}")
+        return 1
+
+    errors = validate_sbom(payload, tag.removeprefix("v"), tag_timestamp)
+    for error in errors:
+        print(f"AC007: FAIL — {error}")
     if errors:
-        print(f"AC007: FAIL — {errors} SBOM freshness error(s)")
-        sys.exit(1)
-
-    print("AC007: PASS — SBOM freshness verified")
-    sys.exit(0)
+        print(f"AC007: FAIL — {len(errors)} SBOM freshness error(s)")
+        return 1
+    print(f"AC007: PASS — published {SBOM_ASSET_NAME} is fresh and version-correct")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

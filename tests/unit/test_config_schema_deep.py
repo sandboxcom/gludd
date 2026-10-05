@@ -14,6 +14,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
+from general_ludd.ansible.isolation import ProcessIsolationConfig
 from general_ludd.config.deployment_optimization import DeploymentOptimizationConfig
 from general_ludd.config.model_routing import ModelRoutingConfig, load_model_routing
 from general_ludd.config.user_config import (
@@ -579,7 +580,10 @@ class TestGeneralLuddConfig:
             data = yaml.safe_load(f) or {}
         iso = data["process_isolation"]
         assert iso["enabled"] is False
-        assert iso["container_runtime"] in ("podman", "docker")
+        assert iso["executable"] in ("podman", "docker")
+        assert iso["container_image"] is None
+        assert iso["test_only_in_process"] is False
+        assert ProcessIsolationConfig(**iso).enabled is False
 
 
 # ── AI SDLC config ────────────────────────────────────────────────────────────
@@ -736,7 +740,12 @@ class TestUserConfigFromExampleFiles:
         path = CONFIG_DIR / "examples" / "high_security_setup.yml"
         cfg = UserConfig.from_yaml(path)
         assert cfg.network.host == "127.0.0.1"
-        assert cfg.process_isolation == {"enabled": True, "container_runtime": "podman"}
+        isolation = ProcessIsolationConfig(**cfg.process_isolation)
+        assert isolation.enabled is True
+        assert isolation.executable == "podman"
+        assert isolation.container_image is not None
+        assert "@sha256:" in isolation.container_image
+        assert isolation.test_only_in_process is False
 
     def test_user_config_example_loads(self) -> None:
         path = CONFIG_DIR / "examples" / "user_config_example.yml"

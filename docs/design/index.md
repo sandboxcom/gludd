@@ -35,6 +35,7 @@ Architecture decision records and design specifications.
 | [Playbook Web Renderer](PLAYBOOK_WEB_RENDERER.md) | Playbook web renderer design |
 | [Per-Model Prompt Adapter](per_model_prompt_adapter.md) | Per-model prompt adapter |
 | [Backlog Audit System](backlog_audit_system.md) | Backlog audit system |
+| [ML/AI Expert and Safe Self-Improvement](specs/SPEC_ML_AI_EXPERT_AND_SAFE_SELF_IMPROVEMENT.md) | Versioned expert collection and governed continual-research contract |
 
 ## Related Sections
 

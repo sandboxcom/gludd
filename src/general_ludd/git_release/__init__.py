@@ -45,11 +45,14 @@ from .helper_ranker import (
     rank_helpers,
 )
 from .provenance import (
+    ArtifactVerificationReceipt,
     Attestation,
     ProvenanceRecord,
+    ReceiptPurpose,
     SignatureState,
     VerificationResult,
     build_provenance,
+    verify_artifact_receipt,
     verify_provenance,
 )
 from .release_state import (
@@ -72,6 +75,7 @@ __all__ = [
     "SCORE_CRITERIA",
     "AbortDecision",
     "AdvanceResult",
+    "ArtifactVerificationReceipt",
     "Attestation",
     "BlueGreenCutComplete",
     "Decision",
@@ -89,6 +93,7 @@ __all__ = [
     "HoldDecision",
     "PromoteDecision",
     "ProvenanceRecord",
+    "ReceiptPurpose",
     "ReleasePlan",
     "ReleaseState",
     "ReleaseStateMachine",
@@ -112,6 +117,7 @@ __all__ = [
     "discover_helpers",
     "helper_build_file_changes",
     "rank_helpers",
+    "verify_artifact_receipt",
     "verify_provenance",
 ]
 __version__ = "1.0.0"

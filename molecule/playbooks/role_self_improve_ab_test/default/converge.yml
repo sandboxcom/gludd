@@ -10,7 +10,14 @@
   vars:
     sc_baseline_root: "/tmp/gludd-ab-baseline"
     sc_candidate_root: "/tmp/gludd-ab-crash-candidate"
+  force_handlers: true
+  handlers:
+    - name: Stop scenario-owned mock daemon
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_stop.yml"
   tasks:
+    - name: Acquire a private ready mock-daemon session
+      ansible.builtin.include_tasks: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/shared/mock_daemon_start.yml"
+
     - name: Invoke self_improve_ab_test (enabled) on the crashing candidate
       ansible.builtin.include_role:
         name: general_ludd.agent.self_improve_ab_test

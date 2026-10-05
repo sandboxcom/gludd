@@ -1,7 +1,16 @@
 ---
 # android_security role — audit Android security subsystems:
 # SELinux/SEPolicy, package permissions, keystore, dm-verity.
-# Uses the python auditor backend in files/android_security_audit.py.
+# Uses the managed-runtime auditor in files/android_security_audit.py.
+
+- name: Resolve the managed-host Python runtime before mutation
+  ansible.builtin.include_role:
+    name: general_ludd.os_expert.managed_python_preflight
+    public: false
+    rolespec_validate: true
+  vars:
+    os_expert_python_preflight_contract: "{{ os_expert_python_contract | default('discovered') }}"
+    os_expert_python_preflight_managed_interpreter: "{{ os_expert_managed_python_interpreter | default('') }}"
 
 - name: Create artifact directory
   ansible.builtin.file:
@@ -16,7 +25,7 @@
   ignore_errors: true
   failed_when: false
 
-- name: Run full security audit via python backend
+- name: Run full security audit via managed runtime
   when: _adb_check is success
   block:
     - name: Copy android_security_audit.py to target
@@ -26,10 +35,17 @@
         mode: "0755"
 
     - name: Run auditor — collect sepolicy, permissions, keystore, verity
-      ansible.builtin.command: >
-        python3 {{ artifact_dir }}/android_security_audit.py
-        --output {{ artifact_dir }}/security_audit.json
-        {{ '--serial ' ~ adb_serial if adb_serial else '' }}
+      ansible.builtin.command:
+        argv: >-
+          {{
+            [
+              _os_expert_python_runtime.executable,
+              artifact_dir ~ '/android_security_audit.py',
+              '--output',
+              artifact_dir ~ '/security_audit.json'
+            ]
+            + (['--serial', adb_serial] if adb_serial else [])
+          }}
       register: _audit_result
       changed_when: false
       ignore_errors: true
@@ -45,7 +61,7 @@
         mode: "0644"
       when: _audit_result is defined
 
-# ── Fallback raw commands (used when python backend unavailable) ──
+# ── Fallback raw commands when the managed runtime is unavailable ──
 
 - name: Audit SELinux (fallback)
   when:

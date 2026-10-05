@@ -1,0 +1,14 @@
+---
+- name: Discover bounded accelerator inventory
+  general_ludd.agent.gludd_accelerator_facts:
+    scope: "{{ gludd_accelerator_scope }}"
+    daemon_url: "{{ gludd_daemon_url }}"
+    psk: "{{ gludd_daemon_psk }}"
+    timeout: "{{ gludd_accelerator_timeout }}"
+  register: gludd_accelerator_discovery
+
+- name: Publish normalized accelerator facts
+  ansible.builtin.set_fact:
+    gludd_accelerators: >-
+      {{ gludd_accelerator_discovery.ansible_facts.gludd_accelerators }}
+  changed_when: false

@@ -1,11 +1,13 @@
 {
   "legacy_floor_literal": {
-    "CLAUDE_AGENT_FLOOR": "5"
+    "CLAUDE_AGENT_FLOOR": "0"
   },
   "env": {
-    "CLAUDE_AGENT_FLOOR": "10",
-    "CLAUDE_AGENT_CEILING": "16",
-    "GLUDD_FORCE_DELEGATE": "1",
+    "CLAUDE_AGENT_FLOOR": "0",
+    "CLAUDE_AGENT_CEILING": "3",
+    "GLUDD_MIN_DISPATCHES": "0",
+    "GLUDD_MULTITASK_MAX_DISPATCHES": "3",
+    "GLUDD_FORCE_DELEGATE": "0",
     "GLUDD_FORCE_DELEGATE_GRACE": "5",
     "GLUDD_FORCE_DELEGATE_MAXBLOCK": "4",
     "GLUDD_NO_WAIT_ENFORCE": "1",
@@ -55,6 +57,10 @@
           {
             "type": "command",
             "command": "bash /Users/shawnwilson/gludd/.claude/hooks/agent_floor_userprompt.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/agent_count_truth.sh"
           }
         ]
       }
@@ -78,6 +84,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/agent_floor_enforce_pretool.sh"
+          },
+          {
+            "type": "command",
             "command": "bash /Users/shawnwilson/gludd/.claude/hooks/agent_floor_pretool.sh"
           },
           {
@@ -93,6 +103,10 @@
       {
         "matcher": "Agent",
         "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/no_makework_agent_pretool.sh"
+          },
           {
             "type": "command",
             "command": "bash /Users/shawnwilson/gludd/.claude/hooks/agent_ceiling_pretool.sh"
@@ -112,11 +126,24 @@
         ]
       },
       {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/no_flag_file_write_pretool.sh"
+          }
+        ]
+      },
+      {
         "matcher": "Edit",
         "hooks": [
           {
             "type": "command",
             "command": "bash /Users/shawnwilson/gludd/.claude/hooks/guardrail_integrity_edit_pretool.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/no_flag_file_write_pretool.sh"
           }
         ]
       },

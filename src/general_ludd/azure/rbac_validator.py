@@ -1,6 +1,7 @@
-"""Azure RBAC validator — action-string validation, security-critical
-NotAction enforcement, built-in role lookup, provider catalog, and
-high-level role-definition generation.
+"""Validate Azure RBAC action strings and role definitions.
+
+Provides security-critical allowlist checks, built-in role lookup, a provider
+catalog, and high-level role-definition generation.
 """
 
 from __future__ import annotations
@@ -20,7 +21,11 @@ KNOWN_RBAC_ACTIONS: frozenset[str] = frozenset(
         "Microsoft.Network/virtualNetworks/delete",
         "Microsoft.App/containerApps/read",
         "Microsoft.App/containerApps/write",
+        "Microsoft.App/containerApps/getAuthToken/action",
         "Microsoft.App/managedEnvironments/read",
+        "Microsoft.App/managedEnvironments/getAuthToken/action",
+        "Microsoft.App/managedEnvironments/usages/read",
+        "Microsoft.App/managedEnvironments/workloadProfileStates/read",
         "Microsoft.Storage/storageAccounts/read",
         "Microsoft.Storage/storageAccounts/write",
         "Microsoft.ContainerRegistry/registries/read",
@@ -167,6 +172,7 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
             "Microsoft.Resources/subscriptions/resourceGroups/delete",
             "Microsoft.Resources/subscriptions/resourceGroups/moveResources/action",
             "Microsoft.Resources/subscriptions/locations/read",
+            "Microsoft.Resources/subscriptions/providers/read",
             "Microsoft.Resources/deployments/read",
             "Microsoft.Resources/deployments/write",
             "Microsoft.Resources/deployments/delete",
@@ -186,6 +192,7 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
     ),
     "Microsoft.ContainerRegistry": frozenset(
         {
+            "Microsoft.ContainerRegistry/register/action",
             "Microsoft.ContainerRegistry/registries/read",
             "Microsoft.ContainerRegistry/registries/write",
             "Microsoft.ContainerRegistry/registries/delete",
@@ -204,16 +211,21 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
     ),
     "Microsoft.App": frozenset(
         {
+            "Microsoft.App/register/action",
             "Microsoft.App/managedEnvironments/read",
             "Microsoft.App/managedEnvironments/write",
             "Microsoft.App/managedEnvironments/delete",
             "Microsoft.App/managedEnvironments/join/action",
+            "Microsoft.App/managedEnvironments/getAuthToken/action",
+            "Microsoft.App/managedEnvironments/usages/read",
+            "Microsoft.App/managedEnvironments/workloadProfileStates/read",
             "Microsoft.App/managedEnvironments/storages/read",
             "Microsoft.App/managedEnvironments/storages/write",
             "Microsoft.App/managedEnvironments/storages/delete",
             "Microsoft.App/containerApps/read",
             "Microsoft.App/containerApps/write",
             "Microsoft.App/containerApps/delete",
+            "Microsoft.App/containerApps/getAuthToken/action",
             "Microsoft.App/containerApps/listSecrets/action",
             "Microsoft.App/containerApps/revisions/read",
             "Microsoft.App/containerApps/revisions/restart/action",
@@ -231,6 +243,7 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
     ),
     "Microsoft.Network": frozenset(
         {
+            "Microsoft.Network/register/action",
             "Microsoft.Network/virtualNetworks/read",
             "Microsoft.Network/virtualNetworks/write",
             "Microsoft.Network/virtualNetworks/delete",
@@ -243,6 +256,7 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
             "Microsoft.Network/networkSecurityGroups/read",
             "Microsoft.Network/networkSecurityGroups/write",
             "Microsoft.Network/networkSecurityGroups/delete",
+            "Microsoft.Network/networkSecurityGroups/join/action",
             "Microsoft.Network/networkSecurityGroups/securityRules/read",
             "Microsoft.Network/networkSecurityGroups/securityRules/write",
             "Microsoft.Network/networkSecurityGroups/securityRules/delete",
@@ -279,6 +293,10 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
     ),
     "Microsoft.Compute": frozenset(
         {
+            "Microsoft.Compute/register/action",
+            "Microsoft.Compute/skus/read",
+            "Microsoft.Compute/locations/usages/read",
+            "Microsoft.Compute/locations/vmSizes/read",
             "Microsoft.Compute/virtualMachines/read",
             "Microsoft.Compute/virtualMachines/write",
             "Microsoft.Compute/virtualMachines/delete",
@@ -286,6 +304,9 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
             "Microsoft.Compute/virtualMachines/restart/action",
             "Microsoft.Compute/virtualMachines/deallocate/action",
             "Microsoft.Compute/virtualMachines/instanceView/read",
+            "Microsoft.Compute/virtualMachines/extensions/read",
+            "Microsoft.Compute/virtualMachines/extensions/write",
+            "Microsoft.Compute/virtualMachines/extensions/delete",
             "Microsoft.Compute/virtualMachines/powerOff/action",
             "Microsoft.Compute/virtualMachines/runCommand/action",
             "Microsoft.Compute/virtualMachines/runCommands/read",
@@ -322,6 +343,7 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
     ),
     "Microsoft.OperationalInsights": frozenset(
         {
+            "Microsoft.OperationalInsights/register/action",
             "Microsoft.OperationalInsights/workspaces/read",
             "Microsoft.OperationalInsights/workspaces/write",
             "Microsoft.OperationalInsights/workspaces/delete",
@@ -331,9 +353,11 @@ PROVIDER_OPERATIONS: dict[str, frozenset[str]] = {
     ),
     "Microsoft.Insights": frozenset(
         {
+            "Microsoft.Insights/register/action",
             "Microsoft.Insights/diagnosticSettings/read",
             "Microsoft.Insights/diagnosticSettings/write",
             "Microsoft.Insights/diagnosticSettings/delete",
+            "Microsoft.Insights/metricDefinitions/read",
             "Microsoft.Insights/metrics/read",
             "Microsoft.Insights/alertRules/read",
             "Microsoft.Insights/alertRules/write",
@@ -512,8 +536,9 @@ _ACTIONS_BY_PROVIDER: dict[str, list[str]] = {}
 
 
 def _lazy_provider_map() -> dict[str, list[str]]:
-    """Build a reverse map from provider namespace to list of known read/write/delete
-    actions, used by generate_role_definition to auto-populate actions.
+    """Build a reverse map from provider namespace to known actions.
+
+    The role-definition generator uses the map to populate actions automatically.
     """
     if _ACTIONS_BY_PROVIDER:
         return _ACTIONS_BY_PROVIDER

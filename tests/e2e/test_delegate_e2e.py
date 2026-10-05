@@ -92,11 +92,11 @@ try {{
     )
 
 
-# ─── Streak at threshold denies mutation ────────────────────────────────────
+# ─── Opt-in streak floor denies mutation ────────────────────────────────────
 
 
 def test_streak_at_threshold_denies_edit(tmp_path):
-    """streak=2, threshold=2, live=0 -> edit denied."""
+    """An opted-in floor denies edit at streak=2 with no live agents."""
     streak_file = str(tmp_path / "streak.json")
     _write_streak_file(streak_file, 2)
 
@@ -115,6 +115,7 @@ try {{
         "GLUDD_DISENGAGE_PATH": str(tmp_path / "disengage.json"),
         "GLUDD_MAINTHREAD_THRESHOLD": "2",
         "GLUDD_LIVE_AGENTS_COUNT": "0",
+        "CLAUDE_AGENT_FLOOR": "1",
     })
     assert result is not None, "Expected deny for streak at threshold"
     assert result.get("permissionDecision") == "deny", (
@@ -124,7 +125,7 @@ try {{
 
 
 def test_streak_at_threshold_denies_write(tmp_path):
-    """streak=2, threshold=2 -> write denied."""
+    """An opted-in floor denies write at streak=2 with no live agents."""
     streak_file = str(tmp_path / "streak.json")
     _write_streak_file(streak_file, 2)
 
@@ -143,6 +144,7 @@ try {{
         "GLUDD_DISENGAGE_PATH": str(tmp_path / "disengage.json"),
         "GLUDD_MAINTHREAD_THRESHOLD": "2",
         "GLUDD_LIVE_AGENTS_COUNT": "0",
+        "CLAUDE_AGENT_FLOOR": "1",
     })
     assert result is not None and result.get("permissionDecision") == "deny", (
         f"Expected deny for write, got: {result}"
@@ -150,7 +152,7 @@ try {{
 
 
 def test_streak_at_threshold_denies_mutating_bash(tmp_path):
-    """streak=2 -> inline mutating bash (make format-python) denied."""
+    """An opted-in floor denies mutating bash at streak=2."""
     streak_file = str(tmp_path / "streak.json")
     _write_streak_file(streak_file, 2)
 
@@ -169,6 +171,7 @@ try {{
         "GLUDD_DISENGAGE_PATH": str(tmp_path / "disengage.json"),
         "GLUDD_MAINTHREAD_THRESHOLD": "2",
         "GLUDD_LIVE_AGENTS_COUNT": "0",
+        "CLAUDE_AGENT_FLOOR": "1",
     })
     assert result is not None and result.get("permissionDecision") == "deny"
 
@@ -249,6 +252,7 @@ try {{
         result = _run_plugin(code, env_override={
             "GLUDD_MAINTHREAD_STREAK_FILE": streak_file,
             "GLUDD_DISENGAGE_PATH": str(tmp_path / "disengage.json"),
+            "GLUDD_DISPATCH_DEDUP_STATE": str(tmp_path / "dispatch-ledger.json"),
             "GLUDD_MAINTHREAD_THRESHOLD": "2",
             "GLUDD_LIVE_AGENTS_COUNT": "0",
         })
@@ -350,7 +354,7 @@ try {{
 
 
 def test_force_delegate_denies_when_enabled_and_over_grace(tmp_path):
-    """GLUDD_FORCE_DELEGATE=1 + consecutive > GRACE + live=0 -> denies edit."""
+    """Opted-in force delegation denies over-grace edits below its floor."""
     force_state = str(tmp_path / "force.json")
     Path(force_state).write_text(
         json.dumps({"consecutive_targeted": 4, "consecutive_denied": 0})
@@ -372,6 +376,7 @@ try {{
         "GLUDD_DISENGAGE_PATH": str(tmp_path / "disengage.json"),
         "GLUDD_LIVE_AGENTS_COUNT": "0",
         "GLUDD_FORCE_DELEGATE_GRACE": "3",
+        "CLAUDE_AGENT_FLOOR": "1",
     })
     assert result is not None and result.get("permissionDecision") == "deny", (
         f"Force-delegate should deny when over grace, got: {result}"

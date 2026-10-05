@@ -28,8 +28,9 @@ import logging
 import os
 import time
 from collections.abc import Callable, Sequence
-from typing import Any, TypedDict, cast
+from typing import TypedDict
 
+from general_ludd.connectors.cursor_adapter import IterableCursor, adapt_iterable_cursor
 from general_ludd.connectors.normalize import sanitize_metric_value
 
 logger = logging.getLogger(__name__)
@@ -94,22 +95,18 @@ class CassandraStatsSource:
         config: CassandraConfig | None = None,
         executor: Executor | None = None,
         *,
-        cursor: object | None = None,
+        cursor: IterableCursor[CassandraRow] | None = None,
     ) -> None:
+        """Build the source from connector config; executor and cursor are mutually exclusive."""
+        if executor is not None and cursor is not None:
+            raise ValueError("provide exactly one of executor or cursor, not both")
         cfg = dict(config or {})
         self.name: str = str(cfg.get("name", "cassandra"))
         self._config = cfg
         self._jmx_url: str = str(cfg.get("jmx_url", "http://localhost:7070/metrics"))
         self._token_env: str = str(cfg.get("token_env", "CASSANDRA_JMX_TOKEN"))
         self._executor: Executor | None
-        if cursor is not None:
-            def _cursor_executor(command: str) -> Sequence[CassandraRow]:
-                cursor_obj = cast(Any, cursor)
-                cursor_obj.execute(command)
-                return list(cursor_obj)
-            self._executor = _cursor_executor
-        else:
-            self._executor = executor
+        self._executor = adapt_iterable_cursor(cursor) if cursor is not None else executor
         self._driver_error: str | None = None
 
     # -- executor wiring ---------------------------------------------------
@@ -167,13 +164,14 @@ class CassandraStatsSource:
     # -- query -------------------------------------------------------------
 
     def query(self, spec: CassandraQuerySpec | None = None) -> list[CassandraRecord]:
+        """Return normalized metric records for each logical command group."""
         executor = self._get_executor()
         if executor is None:
             return []
 
         ts = time.time()
         out: list[CassandraRecord] = []
-        seen: set[tuple[object, object, object, object]] = set()
+        seen: set[tuple[object, object, object, object, object]] = set()
         for command in _COMMANDS:
             try:
                 rows = executor(command)
@@ -183,8 +181,11 @@ class CassandraStatsSource:
             for record in self._rows_to_records(rows, command, ts):
                 labels = record["labels"]
                 key = (
-                    record["message"], record["value"],
-                    labels.get("keyspace"), labels.get("table"),
+                    record["message"],
+                    record["value"],
+                    labels.get("keyspace"),
+                    labels.get("table"),
+                    command,
                 )
                 if key in seen:
                     continue
@@ -214,9 +215,7 @@ class CassandraStatsSource:
             "raw": raw,
         }
 
-    def _rows_to_records(
-        self, rows: Sequence[CassandraRow], command: str, ts: float
-    ) -> list[CassandraRecord]:
+    def _rows_to_records(self, rows: Sequence[CassandraRow], command: str, ts: float) -> list[CassandraRecord]:
         out: list[CassandraRecord] = []
         for row in rows:
             metric = row.get("metric")

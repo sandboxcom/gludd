@@ -79,7 +79,7 @@ async def _make_app(
     *,
     runner: _StubRunner | None = None,
 ) -> tuple[Any, AsyncClient]:
-    monkeypatch.setenv("GLUDD_PSK", PSK)
+    monkeypatch.setenv("GLUDD_AUTH_PSK", PSK)
     from general_ludd.daemon import create_daemon_app
 
     app = create_daemon_app(tick_interval=1.0)

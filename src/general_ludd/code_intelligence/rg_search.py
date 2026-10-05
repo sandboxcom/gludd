@@ -64,6 +64,7 @@ class RgSearch:
         timeout: float = DEFAULT_TIMEOUT,
         allowed_roots: list[str] | None = None,
     ) -> None:
+        """Configure an optional binary, deadline, and canonical root allowlist."""
         self._rg_path = rg_path
         self._timeout = timeout
         self._allowed_roots = allowed_roots
@@ -110,6 +111,8 @@ class RgSearch:
         always treated as the pattern, never as an option). ``root`` follows the
         pattern after ``--``. ``globs`` -> ``-g`` filters, ``types`` -> ``-t``
         filters, ``flags`` -> extra raw flags (e.g. ``-i``, ``--word-regexp``).
+        One ripgrep thread bounds its internal per-file output buffering without
+        silently truncating matches.
         """
         argv = [rg, "--json"]
         for g in globs or []:
@@ -121,20 +124,29 @@ class RgSearch:
         # via `globs`/`types`. Anything else is dropped with a warning so a caller
         # (or untrusted config) can never inject arbitrary rg flags (e.g.
         # --passthru, -e, --pre) past the `--` guard.
-        _SAFE_FLAGS = frozenset({
-            "-i", "--ignore-case",
-            "-w", "--word-regexp",
-            "-F", "--fixed-strings",
-            "--multiline",
-            "-U",
-            "-s", "--case-sensitive",
-        })
+        _SAFE_FLAGS = frozenset(
+            {
+                "-i",
+                "--ignore-case",
+                "-w",
+                "--word-regexp",
+                "-F",
+                "--fixed-strings",
+                "--multiline",
+                "-U",
+                "-s",
+                "--case-sensitive",
+            }
+        )
         for flag in flags or []:
             if flag in _SAFE_FLAGS:
                 argv.append(flag)
             else:
                 logger.warning("rg_search: dropping disallowed flag %r", flag)
-        argv += ["--", query, root]
+        # ripgrep buffers per-file output when it searches in parallel. A
+        # single worker preserves result correctness while bounding that
+        # upstream buffering before Python applies its own result contract.
+        argv += ["--threads", "1", "--", query, root]
         return argv
 
     # --- NDJSON parsing -------------------------------------------------
@@ -184,11 +196,11 @@ class RgSearch:
 
     # --- path confinement -----------------------------------------------
 
-    def _validate_root(self, root: str) -> RgResult | None:
-        """Return an error ``RgResult`` if ``root`` is outside allowed dirs, else ``None``.
+    def _validate_root(self, root: str) -> str | RgResult:
+        """Return the canonical root or an error result when it is unsafe.
 
         Resolves ``root`` to an absolute path and checks it is under at least
-        one allowed root.  Also checks the resolved path against the deny-list
+        one allowed root. Also checks the resolved path against the deny-list
         in :mod:`general_ludd.security.path_canonicalizer`.
         """
         try:
@@ -204,11 +216,16 @@ class RgSearch:
             try:
                 allowed_resolved = Path(allowed_root).resolve()
                 resolved.relative_to(allowed_resolved)
-                return None
+                break
             except (ValueError, OSError):
                 continue
+        else:
+            return RgResult(available=False, error=f"Path outside allowed directories: {root}")
 
-        return RgResult(available=False, error=f"Path outside allowed directories: {root}")
+        if not resolved.is_dir():
+            return RgResult(available=False, error=f"Search root is not a directory: {root}")
+
+        return str(resolved)
 
     # --- run ------------------------------------------------------------
 
@@ -228,17 +245,26 @@ class RgSearch:
         ``available=True``), exit >= 2 = rg error (``available=True`` with the
         stderr surfaced in ``error``).
         """
-        root_err = self._validate_root(root)
-        if root_err is not None:
-            return root_err
+        resolved_root = self._validate_root(root)
+        if isinstance(resolved_root, RgResult):
+            return resolved_root
 
         rg = self._resolve_rg()
         if not rg:
             return RgResult(available=False, error="ripgrep (rg) not found")
 
-        argv = self.build_argv(rg, query, root, globs=globs, types=types, flags=flags)
+        argv = self.build_argv(
+            rg,
+            query,
+            resolved_root,
+            globs=globs,
+            types=types,
+            flags=flags,
+        )
         try:
             # argv is a fixed list (no shell); query/root are positional, not flags.
+            # A timeout bounds runtime. stdout remains correctness-preserving and
+            # fully captured; callers must not treat this as a total byte limit.
             proc = subprocess.run(
                 argv,
                 capture_output=True,

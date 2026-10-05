@@ -58,7 +58,7 @@ class BranchHandle(TypedDict):
 
 Implementation sketch:
 
-```
+```python
 def checkpoint_branch(
     checkpointer: TickCheckpointer,
     parent_tick_id: str,
@@ -139,7 +139,7 @@ did not happen (per the `Nothing-Dropped Guardrail` in `AGENTS.md`).
 
 ### 2.2 A/B Comparison Flow
 
-```
+```text
                     ┌─────────────┐
                     │  Checkpoint  │
                     │   "plan"     │
@@ -237,7 +237,7 @@ The event loop (`event_loop/loop.py`) already handles checkpoints at three
 boundaries (pre-model, per-tool-iter, clear-on-persist). AG.8 adds a fourth
 boundary: **post-checkpoint-branch**.
 
-```
+```markdown
 # In event_loop/loop.py — `_dispatch_execute_job`:
 if _todo.branch_config:
     checkpointer = self._checkpointer
@@ -274,7 +274,7 @@ selector: str | None                   # per-todo selector override
 
 ### 4.1 Code Generation: Two Implementations, Keep the Better One
 
-```
+```text
 Todo: "Implement a rate limiter for the API gateway"
 
 Checkpoint "spec-understood" → [
@@ -288,7 +288,7 @@ Result: token-bucket code committed, sliding-window archived for audit.
 
 ### 4.2 Bug Fixing: Three Fixes, Keep the Best-Coverage One
 
-```
+```text
 Todo: "Fix null-pointer in request parser"
 
 Checkpoint "bug-localized" → [
@@ -303,7 +303,7 @@ Result: validator-first merged. Other two branches logged for learning.
 
 ### 4.3 Prompt Optimization: A/B Test Prompt Variants
 
-```
+```text
 Todo: "Optimize the code-review prompt"
 
 Checkpoint "review-context-built" → [

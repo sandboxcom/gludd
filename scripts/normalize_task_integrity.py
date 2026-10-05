@@ -11,6 +11,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from general_ludd.quality.preflight import TASK_TICK_FORBIDDEN_WORDS
+
 ROOT = Path(__file__).resolve().parent.parent
 TASKS = ROOT / "TASKS.md"
 VALID_PRIORITIES = {"high", "medium", "low"}
@@ -37,19 +39,23 @@ ITEM = re.compile(r"^(?P<prefix>\s*[-*]\s*\[)(?P<mark>[ xX])(?P<close>\]\s+)(?P<
 
 
 def field(body: str, name: str) -> str | None:
+    """Return one pipe-delimited metadata field from a task row."""
     match = re.search(rf"\|\s*{name}\s*:\s*([^|]+)", body, re.IGNORECASE)
     return match.group(1).strip() if match else None
 
 
 def remove_field(body: str, name: str) -> str:
+    """Remove one pipe-delimited metadata field from a task row."""
     return re.sub(rf"\s*\|\s*{name}\s*:\s*[^|]*", "", body, flags=re.IGNORECASE).rstrip()
 
 
 def add_field(body: str, name: str, value: str) -> str:
+    """Append one canonical metadata field to a task row."""
     return f"{body.rstrip()} | {name}: {value}"
 
 
 def normalize() -> tuple[int, int, int]:
+    """Normalize the configured task ledger and report changed row counts."""
     lines = TASKS.read_text().splitlines()
     seen: dict[str, int] = {}
     changed = reopened = renamed = 0
@@ -94,7 +100,16 @@ def normalize() -> tuple[int, int, int]:
             status = "completed" if checked else "pending"
 
         evidence = field(body, "evidence")
-        invalid_completion = checked and (not evidence or WAVE_EVIDENCE.match(evidence))
+        evidence_has_incomplete_marker = bool(
+            evidence
+            and any(
+                re.search(r"(?<![-])\b" + word + r"\b", evidence, re.IGNORECASE)
+                for word in TASK_TICK_FORBIDDEN_WORDS
+            )
+        )
+        invalid_completion = checked and (
+            not evidence or bool(WAVE_EVIDENCE.match(evidence)) or evidence_has_incomplete_marker
+        )
         if invalid_completion:
             # Keep the original claim visible, but do not represent it as done.
             checked = False

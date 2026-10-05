@@ -1,13 +1,17 @@
+"""Local inference server lifecycle manager (start/stop/list/health)."""
+
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import logging
 import os
 import re
 import signal
 import tempfile
 import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -26,6 +30,9 @@ if TYPE_CHECKING:
     from general_ludd.ansible.runner import AnsibleRunnerAdapter
 
 logger = logging.getLogger(__name__)
+
+_TERMINAL_STATUS_LIMIT = 128
+_TERMINAL_ERROR_LIMIT = 4096
 
 # Characters that the shell treats specially. Any of these in a value that
 # is interpolated into an argv (or, worse, into the slurm ``--wrap`` shell
@@ -60,6 +67,13 @@ def _validate_model(model: str) -> str:
 
 # Hosts that are safe to bind to without network exposure.
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def _readiness_path(engine: str) -> str:
+    """Return the stable readiness endpoint exposed by an inference engine."""
+    if engine == "llamacpp":
+        return "/v1/models"
+    return "/health"
 
 
 def _validate_host(host: str, *, allow_nonloopback: bool = False) -> str:
@@ -107,6 +121,8 @@ def _validate_extra_args(extra_args: list[str]) -> list[str]:
 
 @dataclass
 class LocalServerConfig:
+    """Configuration for one local inference server instance."""
+
     engine: str = "vllm"
     model_path: str = ""
     model_name: str = ""
@@ -125,6 +141,8 @@ class LocalServerConfig:
 
 @dataclass
 class LocalServer:
+    """Runtime state for a local inference server managed by the daemon."""
+
     server_id: str
     config: LocalServerConfig
     process: Any | None = None
@@ -136,28 +154,97 @@ class LocalServer:
 
     @property
     def uptime_seconds(self) -> float:
+        """Return seconds since the server started (0 when stopped)."""
         if self.status != "running":
             return 0.0
         return time.time() - self.started_at
 
     @property
     def is_running(self) -> bool:
+        """Return whether the server process is live."""
         return self.status == "running" and self.process is not None
 
 
+@dataclass(frozen=True, slots=True)
+class LocalServerTerminalStatus:
+    """Immutable diagnostic snapshot retained after owned resources are reaped."""
+
+    server_id: str
+    status: str
+    engine: str
+    endpoint_url: str
+    returncode: int | None
+    error: str
+    recorded_at: float
+
+
+async def _read_stderr_tail(stderr_path: str | None) -> str:
+    """Read a bounded stderr tail without blocking the event loop."""
+    if stderr_path is None:
+        return "(stderr not captured)"
+
+    def _read_file(path: str) -> bytes:
+        with open(path, "rb") as stderr_file:
+            return stderr_file.read()
+
+    try:
+        raw = await asyncio.to_thread(_read_file, stderr_path)
+        return raw.decode(errors="replace")[-4000:]
+    except OSError:
+        return "(could not read stderr)"
+
+
 class LocalInferenceManager:
+    """Owns the local inference server lifecycle (create/start/stop/list)."""
+
     def __init__(
         self,
         event_bus: EventBus | None = None,
         ansible_adapter: AnsibleRunnerAdapter | None = None,
     ) -> None:
+        """Initialize the manager with an optional event bus and adapter."""
         self._servers: dict[str, LocalServer] = {}
+        self._terminal_statuses: OrderedDict[str, LocalServerTerminalStatus] = OrderedDict()
         self._event_bus = event_bus
         self._ansible_adapter = ansible_adapter
         self._next_id = 0
 
+    @staticmethod
+    def _returncode(process: Any | None) -> int | None:
+        """Return a concrete child exit code without retaining the process."""
+        value = getattr(process, "returncode", None)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+        return None
+
+    def _record_terminal_status(
+        self,
+        server: LocalServer,
+        *,
+        status: str,
+        error: BaseException | str = "",
+        returncode: int | None = None,
+    ) -> LocalServerTerminalStatus:
+        """Store one bounded immutable snapshot, evicting the oldest record."""
+        error_text = str(error) or (type(error).__name__ if isinstance(error, BaseException) else "")
+        terminal = LocalServerTerminalStatus(
+            server_id=server.server_id,
+            status=status,
+            engine=server.config.engine,
+            endpoint_url=server.endpoint_url,
+            returncode=returncode,
+            error=error_text[-_TERMINAL_ERROR_LIMIT:],
+            recorded_at=time.time(),
+        )
+        self._terminal_statuses[server.server_id] = terminal
+        self._terminal_statuses.move_to_end(server.server_id)
+        while len(self._terminal_statuses) > _TERMINAL_STATUS_LIMIT:
+            self._terminal_statuses.popitem(last=False)
+        return terminal
+
     @property
     def ansible_adapter(self) -> AnsibleRunnerAdapter | None:
+        """Return the wired ansible adapter, if any."""
         return self._ansible_adapter
 
     @ansible_adapter.setter
@@ -165,6 +252,7 @@ class LocalInferenceManager:
         self._ansible_adapter = adapter
 
     def create_server(self, config: LocalServerConfig) -> LocalServer:
+        """Register a new local server and return its runtime record."""
         server_id = f"local-{self._next_id}"
         self._next_id += 1
         endpoint_url = f"http://{config.host}:{config.port}/v1"
@@ -183,6 +271,7 @@ class LocalInferenceManager:
         return server
 
     async def start_server(self, server_id: str) -> LocalServer:
+        """Start a registered server (no-op when already running)."""
         server = self._servers.get(server_id)
         if server is None:
             raise ValueError(f"Server '{server_id}' not found")
@@ -294,43 +383,35 @@ class LocalInferenceManager:
         logger.info("Starting local inference server %s: %s", server.server_id, " ".join(cmd))
         with tempfile.NamedTemporaryFile(mode="w+b", delete=False, prefix="gludd-llama-stderr-") as stderr_file:
             server.stderr_path = stderr_file.name
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.PIPE,
-                start_new_session=True,
-            )
-            stderr_reader = process.stderr
-            assert stderr_reader is not None
-
-            async def _drain_stderr() -> None:
-                try:
-                    while True:
-                        chunk = await stderr_reader.read(65536)
-                        if not chunk:
-                            break
-                        stderr_file.write(chunk)
-                        stderr_file.flush()
-                except Exception:
-                    pass
-
-            drain_task = asyncio.ensure_future(_drain_stderr())
-            server.process = process
-            server.started_at = time.time()
-            server.pid = process.pid
-
             try:
-                # If the child exited before readiness polling begins, finish
-                # its bounded stderr drain first so the raised diagnostic does
-                # not race an empty on-disk capture.
-                if process.returncode is not None:
-                    with contextlib.suppress(TimeoutError):
-                        await asyncio.wait_for(drain_task, timeout=1.0)
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    # Direct file redirection keeps diagnostics without a bounded
+                    # PIPE that can fill and deadlock long-running inference after
+                    # readiness polling has completed. The child owns a duplicate
+                    # descriptor for its full lifetime.
+                    stderr=stderr_file,
+                    start_new_session=True,
+                )
+                server.process = process
+                server.started_at = time.time()
+                server.pid = process.pid
                 await self._wait_for_ready(server)
-            finally:
-                drain_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await drain_task
+            except BaseException as exc:
+                # The manager owns a subprocess as soon as creation succeeds.
+                # Readiness errors and cancellation must therefore traverse the
+                # same reaping and stderr-removal path as an explicit shutdown.
+                owned_process = server.process
+                await self.stop_server(server.server_id)
+                server.status = "error"
+                self._record_terminal_status(
+                    server,
+                    status="error",
+                    error=exc,
+                    returncode=self._returncode(owned_process),
+                )
+                raise
 
         server.status = "running"
         self._emit(
@@ -362,29 +443,15 @@ class LocalInferenceManager:
         if server.config.startup_timeout <= 0:
             return
 
-        health_url = f"http://{server.config.host}:{server.config.port}/health"
+        readiness_path = _readiness_path(server.config.engine)
+        health_url = f"http://{server.config.host}:{server.config.port}{readiness_path}"
         deadline = time.time() + server.config.startup_timeout
         poll_interval = 2.0
-
-        async def _read_stderr(stderr_path: str | None) -> str:
-            if stderr_path is None:
-                return "(stderr not captured)"
-            try:
-
-                def _read_file(path: str) -> bytes:
-                    with open(path, "rb") as f:
-                        return f.read()
-
-                loop = asyncio.get_running_loop()
-                raw = await loop.run_in_executor(None, _read_file, stderr_path)
-                return raw.decode(errors="replace")[-4000:]
-            except Exception:
-                return "(could not read stderr)"
 
         while time.time() < deadline:
             if server.process is not None and server.process.returncode is not None:
                 server.status = "error"
-                stderr_tail = await _read_stderr(server.stderr_path)
+                stderr_tail = await _read_stderr_tail(server.stderr_path)
                 logger.error(
                     "Server %s crashed (exit=%d). stderr tail:\n%s",
                     server.server_id,
@@ -398,7 +465,7 @@ class LocalInferenceManager:
                 )
 
             try:
-                async with httpx.AsyncClient(timeout=5.0) as client:
+                async with httpx.AsyncClient(timeout=5.0, trust_env=False) as client:
                     resp = await client.get(health_url)
                 if resp.status_code == 200:
                     return
@@ -410,7 +477,7 @@ class LocalInferenceManager:
         server.status = "error"
         stderr_tail = ""
         if server.stderr_path is not None:
-            stderr_tail = await _read_stderr(server.stderr_path)
+            stderr_tail = await _read_stderr_tail(server.stderr_path)
         msg = (
             f"Local inference server {server.server_id!r} did not become ready "
             f"within {server.config.startup_timeout}s (health URL: {health_url})."
@@ -471,6 +538,12 @@ class LocalInferenceManager:
         return server
 
     async def stop_server(self, server_id: str) -> None:
+        """Stop a registered server and retire it (no-op when unknown).
+
+        The shutdown ROUTE checks existence first and maps unknown IDs to
+        404; the manager itself stays a no-op so callers that stop idempotently
+        (unit-pinned contract) never raise.
+        """
         server = self._servers.get(server_id)
         if server is None:
             return
@@ -522,6 +595,7 @@ class LocalInferenceManager:
             with contextlib.suppress(TimeoutError, ProcessLookupError):
                 await asyncio.wait_for(server.process.wait(), timeout=5.0)
 
+        returncode = self._returncode(server.process)
         server.status = "stopped"
         server.process = None
         server.pid = None
@@ -529,28 +603,49 @@ class LocalInferenceManager:
             with contextlib.suppress(OSError):
                 os.unlink(server.stderr_path)
             server.stderr_path = None
+        self._record_terminal_status(
+            server,
+            status="stopped",
+            returncode=returncode,
+        )
         logger.info("Stopped local inference server %s", server_id)
+        # A stopped server is fully retired: drop the entry so a second
+        # shutdown raises KeyError (route maps it to 404 — pinned contract).
+        self._servers.pop(server_id, None)
 
     async def stop_all(self) -> None:
+        """Stop every registered server."""
         for sid in list(self._servers.keys()):
             await self.stop_server(sid)
 
     def list_servers(self, status: str | None = None) -> list[LocalServer]:
+        """List registered servers, optionally filtered by status."""
         servers = list(self._servers.values())
         if status:
             servers = [s for s in servers if s.status == status]
         return servers
 
     def get_server(self, server_id: str) -> LocalServer | None:
+        """Return a registered server by id, or None."""
         return self._servers.get(server_id)
 
+    def get_terminal_status(self, server_id: str) -> LocalServerTerminalStatus | None:
+        """Return a retired server's immutable terminal snapshot, if retained."""
+        return self._terminal_statuses.get(server_id)
+
+    def list_terminal_statuses(self) -> tuple[LocalServerTerminalStatus, ...]:
+        """Return the bounded terminal history as an immutable oldest-first tuple."""
+        return tuple(self._terminal_statuses.values())
+
     def remove_server(self, server_id: str) -> None:
+        """Remove a stopped server's record (raises while running)."""
         server = self._servers.get(server_id)
         if server and server.is_running:
             raise RuntimeError(f"Cannot remove running server '{server_id}'. Stop it first.")
         self._servers.pop(server_id, None)
 
     def get_endpoints(self) -> dict[str, str]:
+        """Return {server_id: endpoint_url} for running servers."""
         return {sid: s.endpoint_url for sid, s in self._servers.items() if s.is_running}
 
     def _build_command(self, config: LocalServerConfig) -> list[str]:
@@ -597,3 +692,33 @@ class LocalInferenceManager:
             return ["sbatch", *extra_args, "--wrap", command]
         else:
             raise ValueError(f"Unsupported engine: {config.engine}")
+
+
+def install_local_inference_lifespan(app: Any) -> None:
+    """Compose managed-server cleanup into an application's lifespan.
+
+    The route layer may create local inference subprocesses after application
+    startup, so cleanup must resolve the manager from application state at
+    shutdown rather than capturing one eagerly.  Composing the existing
+    lifespan preserves every daemon startup/shutdown hook while guaranteeing
+    manager cleanup after normal, failed-startup, and exceptional-body exits.
+    """
+    if getattr(app.state, "_local_inference_lifespan_registered", False):
+        return
+
+    previous_lifespan = app.router.lifespan_context
+
+    @contextlib.asynccontextmanager
+    async def _managed_local_inference_lifespan(owner: Any) -> Any:
+        try:
+            async with previous_lifespan(owner) as state:
+                yield state
+        finally:
+            manager = getattr(owner.state, "_local_inference_manager", None)
+            if manager is not None:
+                shutdown = manager.stop_all()
+                if inspect.isawaitable(shutdown):
+                    await shutdown
+
+    app.router.lifespan_context = _managed_local_inference_lifespan
+    app.state._local_inference_lifespan_registered = True

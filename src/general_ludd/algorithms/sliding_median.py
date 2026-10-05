@@ -21,11 +21,13 @@ class TwoHeapMedian:
     """
 
     def __init__(self) -> None:
+        """Initialize empty lower and upper heaps."""
         self._low: list[float] = []
         self._high: list[float] = []
         self._size: int = 0
 
     def add(self, value: float) -> None:
+        """Add ``value`` to the running median."""
         if not self._low or value <= -self._low[0]:
             heapq.heappush(self._low, -value)
         else:
@@ -39,6 +41,7 @@ class TwoHeapMedian:
         self._size += 1
 
     def find_median(self) -> float | None:
+        """Return the current median, or ``None`` when empty."""
         if self._size == 0:
             return None
         if self._size % 2 == 1:
@@ -47,9 +50,11 @@ class TwoHeapMedian:
 
     @property
     def size(self) -> int:
+        """Return the number of observed values."""
         return self._size
 
     def clear(self) -> None:
+        """Remove every observed value."""
         self._low = []
         self._high = []
         self._size = 0
@@ -63,6 +68,7 @@ class SlidingWindowMedian:
     """
 
     def __init__(self, window_size: int) -> None:
+        """Initialize a median window containing at most ``window_size`` values."""
         self._k: int = window_size
         self._low: list[float] = []
         self._high: list[float] = []
@@ -77,11 +83,15 @@ class SlidingWindowMedian:
         while self._low and self._marked.get(-self._low[0], 0) > 0:
             v = -heapq.heappop(self._low)
             self._marked[v] -= 1
+            if self._marked[v] == 0:
+                del self._marked[v]
 
     def _prune_high(self) -> None:
         while self._high and self._marked.get(self._high[0], 0) > 0:
             v = heapq.heappop(self._high)
             self._marked[v] -= 1
+            if self._marked[v] == 0:
+                del self._marked[v]
 
     def _rebalance(self) -> None:
         self._prune_low()
@@ -101,9 +111,11 @@ class SlidingWindowMedian:
 
     @property
     def size(self) -> int:
+        """Return the number of values in the current window."""
         return self._eff_sz
 
     def reset(self) -> None:
+        """Clear the window and all lazy-deletion state."""
         self._low = []
         self._high = []
         self._queue = deque()
@@ -112,6 +124,7 @@ class SlidingWindowMedian:
         self._eff_sz = 0
 
     def process(self, stream: Iterable[float]) -> Iterator[float | None]:
+        """Yield each full-window median, using ``None`` during warm-up."""
         k = self._k
         for value in stream:
             self._queue.append(value)
@@ -127,15 +140,13 @@ class SlidingWindowMedian:
             if len(self._queue) > k:
                 old = self._queue.popleft()
                 self._eff_sz -= 1
-                self._marked[old] += 1
-                self._prune_low()
-                self._prune_high()
-                if not self._low:
-                    self._balance += 1
-                elif old <= -self._low[0]:
+                if old <= -self._low[0]:
                     self._balance -= 1
                 else:
                     self._balance += 1
+                self._marked[old] += 1
+                self._prune_low()
+                self._prune_high()
 
             self._rebalance()
 
@@ -158,6 +169,7 @@ class MultiStreamMedian:
     """
 
     def __init__(self, window_size: int) -> None:
+        """Initialize independent windows of the requested size."""
         self._k: int = window_size
         self._streams: dict[str, SlidingWindowMedian] = {}
 
@@ -167,10 +179,12 @@ class MultiStreamMedian:
         return self._streams[name]
 
     def reset(self) -> None:
+        """Clear every named stream window."""
         for sw in self._streams.values():
             sw.reset()
 
     def process(self, **streams: Iterable[float]) -> dict[str, list[float | None]]:
+        """Return sliding medians for every named input stream."""
         result: dict[str, list[float | None]] = {}
         for name, stream in streams.items():
             sw = self._ensure_stream(name)

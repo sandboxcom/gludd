@@ -155,6 +155,7 @@
         that:
           - inv_json.handled | bool
           - inv_json.error_class is match('(YAMLError|ParserError|ScannerError|ComposerError|ConstructorError)')
+          - inv_json.is_yaml_error | bool
         fail_msg: "invalid YAML was NOT handled gracefully: {{ inv_json }}"
         success_msg: "invalid YAML raised a clean {{ inv_json.error_class }}"
 
@@ -188,6 +189,7 @@
         that:
           - corrupt_json.handled | bool
           - corrupt_json.error_class is match('(YAMLError|ParserError|ScannerError|ComposerError|ConstructorError)')
+          - corrupt_json.is_yaml_error | bool
         fail_msg: "corrupt YAML was NOT surfaced cleanly: {{ corrupt_json }}"
         success_msg: "corrupt YAML surfaced a clear {{ corrupt_json.error_class }}"
 

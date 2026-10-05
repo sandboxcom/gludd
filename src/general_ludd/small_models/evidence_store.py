@@ -9,16 +9,22 @@ from __future__ import annotations
 
 import json
 import os
+import stat
+import tempfile
 import threading
 import time
+from contextlib import suppress
 from typing import Any
 
 from general_ludd.routing_roles.small_model_policy import (
     _IDENTIFIER_RE,
     _TASK_KIND_RE,
+    DEFAULT_TASK_CONTRACTS,
     CapabilityEvidence,
 )
-from general_ludd.schemas.benchmark import TaskRole
+from general_ludd.schemas.benchmark import TaskRole, TaskType
+
+_MAX_EVIDENCE_BYTES = 67_108_864
 
 
 class CapabilityEvidenceStore:
@@ -30,6 +36,7 @@ class CapabilityEvidenceStore:
     """
 
     def __init__(self, path: str) -> None:
+        """Open or initialize the evidence store at an absolute path."""
         self._path = os.path.abspath(path)
         self._lock = threading.Lock()
         self._records: list[dict[str, Any]] = []
@@ -38,32 +45,80 @@ class CapabilityEvidenceStore:
     # -- persistence --------------------------------------------------------
 
     def _load(self) -> None:
-        if not os.path.exists(self._path):
+        try:
+            metadata = os.lstat(self._path)
+        except FileNotFoundError:
             self._records = []
             self._save()
             return
+        except OSError:
+            raise ValueError("evidence store is unavailable") from None
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+            raise ValueError("evidence store must be a regular non-symlink file")
         try:
-            with open(self._path) as fh:
-                raw = fh.read()
+            flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+            flags |= getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(self._path, flags)
+            try:
+                opened = os.fstat(descriptor)
+                if (
+                    not stat.S_ISREG(opened.st_mode)
+                    or (opened.st_dev, opened.st_ino)
+                    != (metadata.st_dev, metadata.st_ino)
+                    or opened.st_size > _MAX_EVIDENCE_BYTES
+                ):
+                    raise ValueError("evidence store is not one bounded regular file")
+                raw = os.read(descriptor, opened.st_size + 1).decode("utf-8")
+                os.fchmod(descriptor, 0o600)
+            finally:
+                os.close(descriptor)
             if not raw.strip():
                 self._records = []
                 self._save()
                 return
             loaded = json.loads(raw)
-            if isinstance(loaded, list):
-                self._records = loaded
-            else:
-                self._records = []
-                self._save()
-        except (json.JSONDecodeError, OSError):
-            self._records = []
-            self._save()
+            if not isinstance(loaded, list) or any(
+                not isinstance(record, dict) for record in loaded
+            ):
+                raise ValueError
+            self._records = loaded
+        except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
+            raise ValueError("evidence store must contain a valid JSON list") from None
 
     def _save(self) -> None:
-        tmp = self._path + ".tmp"
-        with open(tmp, "w") as fh:
-            json.dump(self._records, fh, sort_keys=True, indent=2)
-        os.replace(tmp, self._path)
+        directory = os.path.dirname(self._path)
+        descriptor = -1
+        temporary_path = ""
+        try:
+            descriptor, temporary_path = tempfile.mkstemp(
+                dir=directory,
+                prefix=f".{os.path.basename(self._path)}.",
+                suffix=".tmp",
+            )
+            os.fchmod(descriptor, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                descriptor = -1
+                json.dump(self._records, stream, sort_keys=True, indent=2)
+                stream.flush()
+                os.fsync(stream.fileno())
+            try:
+                current = os.lstat(self._path)
+            except FileNotFoundError:
+                current = None
+            if current is not None and (
+                stat.S_ISLNK(current.st_mode) or not stat.S_ISREG(current.st_mode)
+            ):
+                raise ValueError("evidence store must be a regular non-symlink file")
+            os.replace(temporary_path, self._path)
+            temporary_path = ""
+        except (OSError, TypeError, ValueError):
+            raise ValueError("evidence store could not be saved safely") from None
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+            if temporary_path:
+                with suppress(FileNotFoundError):
+                    os.unlink(temporary_path)
 
     # -- public API ---------------------------------------------------------
 
@@ -106,6 +161,42 @@ class CapabilityEvidenceStore:
             raise ValueError("task_kind has an invalid format")
         with self._lock:
             return [dict(r) for r in self._records if r.get("task_kind") == task_kind]
+
+    def query_by_task_shape(
+        self,
+        task_type: TaskType,
+        task_kind: str,
+        *,
+        model_profile_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return evidence for one exact existing task-type/contract shape.
+
+        Legacy records without task_type never match. This makes a success for
+        feature coding evidence unavailable to bug-fix coding selection.
+        """
+        if not isinstance(task_type, TaskType):
+            raise ValueError("task_type must be a TaskType value")
+        if task_kind not in DEFAULT_TASK_CONTRACTS:
+            raise ValueError("task_kind must name a default task contract")
+        if (
+            model_profile_id is not None
+            and (
+                not isinstance(model_profile_id, str)
+                or _IDENTIFIER_RE.fullmatch(model_profile_id) is None
+            )
+        ):
+            raise ValueError("model_profile_id has an invalid format")
+        with self._lock:
+            return [
+                dict(record)
+                for record in self._records
+                if record.get("task_type") == task_type.value
+                and record.get("task_kind") == task_kind
+                and (
+                    model_profile_id is None
+                    or record.get("model_profile_id") == model_profile_id
+                )
+            ]
 
     def list_all(self) -> list[dict[str, Any]]:
         """Return a shallow copy of every stored record."""

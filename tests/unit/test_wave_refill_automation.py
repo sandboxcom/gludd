@@ -1,7 +1,9 @@
 """Tests for DP.2: wave refill automation in enforce-multitask.ts.
 
-Verifies that the plugin tracks lastDispatchTs and injects a refill
-reminder when the subagent pool drops below 5 for more than 30 seconds.
+Verifies that the plugin tracks lastDispatchTs and injects a refill reminder
+when an explicitly configured dispatch minimum remains underfilled for more
+than 30 seconds.  The project-wide hard ceiling is tested separately from this
+opt-in minimum.
 """
 from __future__ import annotations
 
@@ -108,10 +110,13 @@ class TestRefillLogicInDefaultImpl:
             "lastDispatchTs > 0 guard missing from refill check"
         )
 
-    def test_refill_condition_checks_estimated_in_flight_lt_5(self):
+    def test_refill_condition_uses_configured_minimum(self):
         src = _plugin_source()
-        assert "_state.estimatedInFlight < 5" in src, (
-            "estimatedInFlight < 5 guard missing from refill check"
+        assert "REQUIRED_DISPATCHES > 0" in src, (
+            "refill must remain disabled when no minimum is configured"
+        )
+        assert "_state.estimatedInFlight < REQUIRED_DISPATCHES" in src, (
+            "refill must compare in-flight work with the configured minimum"
         )
 
     def test_refill_condition_checks_elapsed_time(self):
@@ -166,17 +171,19 @@ class TestRefillLogicInProxy:
     def test_refill_logic_has_single_source(self):
         src = _plugin_source()
         assert src.count("FLOOR LOW: only") == 1
-        assert src.count("_state.estimatedInFlight < 5") == 1
+        assert src.count("_state.estimatedInFlight < REQUIRED_DISPATCHES") == 1
 
 
-class TestRefillDoesNotFireWhenPoolHigh:
-    """Behavioral checks via source analysis: refill only fires when pool is low."""
+class TestRefillDoesNotFireAtConfiguredFloor:
+    """Source contract: refill only fires below an enabled configured floor."""
 
-    def test_refill_checks_estimated_in_flight_lt_5(self):
+    def test_refill_uses_strict_less_than_configured_minimum(self):
         src = _plugin_source()
-        # The guard uses < 5, not <= 5
-        assert "_state.estimatedInFlight < 5" in src, (
-            "Should guard on estimatedInFlight < 5, not <= 5"
+        assert "_state.estimatedInFlight < REQUIRED_DISPATCHES" in src, (
+            "refill must fire only below the configured minimum"
+        )
+        assert "_state.estimatedInFlight <= REQUIRED_DISPATCHES" not in src, (
+            "refill must not fire when the configured minimum is already met"
         )
 
     def test_refill_requires_last_dispatch_ts_nonzero(self):

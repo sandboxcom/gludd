@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 
 from general_ludd.execution.engine import ExecutionEngine
 from general_ludd.schemas.job import JobSpec
+from general_ludd.schemas.task_return import TaskReturn
 
 
 def _init_git_repo(path: str) -> None:
@@ -39,8 +40,16 @@ def _last_commit_subject(path: str) -> str:
     return result.stdout.strip()
 
 
+async def _execute_and_close(engine: ExecutionEngine, job: JobSpec) -> TaskReturn:
+    """Execute one job and complete the engine-owned shutdown boundary."""
+    try:
+        return await engine.execute_async(job)
+    finally:
+        await engine.shutdown()
+
+
 class TestExecutionGitDelivery:
-    def test_engine_creates_branch_and_commits(self):
+    def test_engine_creates_branch_and_commits(self) -> None:
         mock_gateway = MagicMock()
         code = "print('hello from gludd')\n"
         mock_gateway.call_model = MagicMock(return_value=MagicMock(content=f"```\nFILE: src/main.py\n{code}\n```"))
@@ -61,14 +70,14 @@ class TestExecutionGitDelivery:
                 prompt_text="Create main.py",
             )
 
-            result = asyncio.run(engine.execute_async(job))
+            result = asyncio.run(_execute_and_close(engine, job))
             assert result.job_id == "JOB-G1"
 
             branches = _branches(ws)
             gludd_branches = [b for b in branches if b.startswith("gludd/")]
             assert len(gludd_branches) >= 1
 
-    def test_no_changes_no_commit(self):
+    def test_no_changes_no_commit(self) -> None:
         mock_gateway = MagicMock()
         mock_gateway.call_model = MagicMock(return_value=MagicMock(content="I don't see any changes needed."))
 
@@ -90,7 +99,7 @@ class TestExecutionGitDelivery:
                 work_type="code",
                 prompt_text="Do nothing",
             )
-            result = asyncio.run(engine.execute_async(job))
+            result = asyncio.run(_execute_and_close(engine, job))
             assert result.exit_code != 0
 
             final_commits = subprocess.run(
@@ -101,7 +110,7 @@ class TestExecutionGitDelivery:
             ).stdout.strip()
             assert initial_commits == final_commits
 
-    def test_non_repo_workspace_succeeds_for_code_extraction(self):
+    def test_non_repo_workspace_succeeds_for_code_extraction(self) -> None:
         mock_gateway = MagicMock()
         mock_gateway.call_model = MagicMock(return_value=MagicMock(content="```\nFILE: x.py\nprint('ok')\n```"))
 
@@ -115,7 +124,7 @@ class TestExecutionGitDelivery:
                 work_type="code",
                 prompt_text="Write x.py",
             )
-            result = asyncio.run(engine.execute_async(job))
+            result = asyncio.run(_execute_and_close(engine, job))
             assert result.exit_code != 1, (
                 f"Engine should succeed on non-repo workspace for code extraction "
                 f"(got exit={result.exit_code}, summary={result.result_summary})"
@@ -124,7 +133,7 @@ class TestExecutionGitDelivery:
                 "Engine must warn user that git operations (commit, branch) are skipped on a non-git workspace"
             )
 
-    def test_commit_message_includes_todo_info(self):
+    def test_commit_message_includes_todo_info(self) -> None:
         mock_gateway = MagicMock()
         code = "print('hello')\n"
         mock_gateway.call_model = MagicMock(return_value=MagicMock(content=f"```\nFILE: src/app.py\n{code}\n```"))
@@ -140,7 +149,7 @@ class TestExecutionGitDelivery:
                 work_type="code",
                 prompt_text="Create app.py",
             )
-            asyncio.run(engine.execute_async(job))
+            asyncio.run(_execute_and_close(engine, job))
 
             subject = _last_commit_subject(ws)
             assert "TODO-G4" in subject

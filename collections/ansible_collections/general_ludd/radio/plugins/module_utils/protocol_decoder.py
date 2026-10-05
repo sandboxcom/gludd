@@ -192,8 +192,19 @@ def _demod_iq(data: bytes, sample_rate: int, bit_rate: int) -> list[int]:
     try:
         import numpy as np
 
-        raw = np.frombuffer(data, dtype=np.int16).astype(np.float64)
-        iq = raw[::2] + 1j * raw[1::2] if len(raw) >= 2 else raw
+        # Input may be either interleaved int16 IQ or an already-decoded byte
+        # frame.  Normalize incomplete int16/IQ pairs so the demodulation path
+        # can fail closed and allow protocol-specific raw-byte fallbacks.
+        usable_bytes = len(data) - (len(data) % 2)
+        if usable_bytes == 0:
+            return []
+        raw = np.frombuffer(data[:usable_bytes], dtype=np.int16).astype(np.float64)
+        if len(raw) >= 2:
+            usable_samples = len(raw) - (len(raw) % 2)
+            raw = raw[:usable_samples]
+            iq = raw[::2] + 1j * raw[1::2]
+        else:
+            iq = raw
         mag = np.abs(iq)
         if len(mag) < samples_per_bit:
             return []
@@ -253,7 +264,16 @@ def decode_adsb(data: bytes, sample_rate: int) -> dict[str, Any]:
     info = PROTOCOL_INFO["adsb"]
     bits = _demod_iq(data, sample_rate, info["symbol_rate"])
     if not bits:
-        return _empty_result("ADS-B", info, {"downlink_format": None, "icao_address": None, "type_code": None, "callsign": None})
+        return _empty_result(
+            "ADS-B",
+            info,
+            {
+                "downlink_format": None,
+                "icao_address": None,
+                "type_code": None,
+                "callsign": None,
+            },
+        )
 
     decoded = _manchester_decode(bits)
 
@@ -404,7 +424,7 @@ def decode_pocsag(data: bytes, sample_rate: int) -> dict[str, Any]:
             if sync_in_batch >= 0:
                 batch_count += 1
                 cursor += 32
-            codeword_start = cursor if sync_in_batch >= 0 else cursor
+            codeword_start = cursor
             if codeword_start + 32 > len(bits):
                 break
             cw_bits = bits[codeword_start:codeword_start + 32]
@@ -810,7 +830,7 @@ def _empty_result(mode: str, info: dict[str, Any], meta: dict[str, Any]) -> dict
 def _ber_estimate(received: list[int], expected: list[int]) -> float:
     if len(received) != len(expected) or not received:
         return 1.0
-    errors = sum(1 for r, e in zip(received, expected) if r != e)
+    errors = sum(1 for r, e in zip(received, expected, strict=True) if r != e)
     return errors / len(received)
 
 

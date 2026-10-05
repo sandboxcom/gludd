@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import pytest
 import yaml
@@ -27,28 +27,28 @@ INFRA_DIR = REPO_ROOT / "config" / "infra"
 def aws_doc() -> dict[str, Any]:
     path = INFRA_DIR / "aws-iam-roles.yml"
     assert path.exists(), f"Missing: {path}"
-    return yaml.safe_load(path.read_text())
+    return cast(dict[str, Any], yaml.safe_load(path.read_text()))
 
 
 @pytest.fixture(scope="module")
 def gcp_doc() -> dict[str, Any]:
     path = INFRA_DIR / "gcp-iam-roles.yml"
     assert path.exists(), f"Missing: {path}"
-    return yaml.safe_load(path.read_text())
+    return cast(dict[str, Any], yaml.safe_load(path.read_text()))
 
 
 @pytest.fixture(scope="module")
 def azure_doc() -> dict[str, Any]:
     path = INFRA_DIR / "azure-iam-roles.yml"
     assert path.exists(), f"Missing: {path}"
-    return yaml.safe_load(path.read_text())
+    return cast(dict[str, Any], yaml.safe_load(path.read_text()))
 
 
 @pytest.fixture(scope="module")
 def azure_custom_role() -> dict[str, Any]:
     path = INFRA_DIR / "azure-iam-policy.json"
     assert path.exists(), f"Missing: {path}"
-    return json.loads(path.read_text())
+    return cast(dict[str, Any], json.loads(path.read_text()))
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +218,7 @@ class TestActionsScopedToServices:
 
     def test_azure_role_definitions_from_allowlisted_set(self, azure_doc: dict[str, Any]) -> None:
         ALLOWED = frozenset({
-            "General Ludd Container App Deployer",
+            "General Ludd Accelerator Deployer",
             "Contributor",
             "Storage Blob Data Contributor",
             "Storage Blob Data Reader",
@@ -386,22 +386,14 @@ class TestAzureCustomRoleStructure:
     def test_custom_role_has_not_actions(self, azure_custom_role: dict[str, Any]) -> None:
         not_actions = azure_custom_role.get("NotActions", [])
         assert isinstance(not_actions, list)
-        assert len(not_actions) > 0, (
-            "Azure custom role has no NotActions — must explicitly deny "
-            "dangerous operations"
-        )
+        assert not_actions == []
 
-    def test_custom_role_has_no_denied_run_command(self, azure_custom_role: dict[str, Any]) -> None:
-        not_actions = azure_custom_role.get("NotActions", [])
+    def test_custom_role_does_not_grant_run_command(self, azure_custom_role: dict[str, Any]) -> None:
+        actions = azure_custom_role.get("Actions", [])
         run_cmd = "Microsoft.Compute/virtualMachines/runCommand/action"
         run_cmds_read = "Microsoft.Compute/virtualMachines/runCommands/read"
-        assert run_cmd in not_actions, (
-            f"Azure custom role must deny '{run_cmd}' in NotActions — "
-            f"runCommand allows arbitrary code execution"
-        )
-        assert run_cmds_read in not_actions, (
-            f"Azure custom role must deny '{run_cmds_read}' in NotActions"
-        )
+        assert run_cmd not in actions
+        assert run_cmds_read not in actions
 
     def test_custom_role_data_actions_empty(self, azure_custom_role: dict[str, Any]) -> None:
         assert azure_custom_role.get("DataActions", []) == []

@@ -6,6 +6,7 @@ import bisect
 import contextlib
 import json
 import os
+import re
 import struct
 import tempfile
 import time
@@ -64,27 +65,33 @@ class MemTable:
     _keys: list[bytes] = field(default_factory=list)
 
     def put(self, key: bytes, value: bytes) -> None:
+        """Insert or update a key, maintaining sorted-key order."""
         if key not in self.data:
             bisect.insort(self._keys, key)
         self.data[key] = value
 
     def get(self, key: bytes) -> bytes | None:
+        """Return the stored value, or None for absent or tombstoned keys."""
         value = self.data.get(key)
         if value == _TOMBSTONE:
             return None
         return value
 
     def delete(self, key: bytes) -> None:
+        """Mark a key deleted via a tombstone entry."""
         self.put(key, _TOMBSTONE)
 
     def __len__(self) -> int:
+        """Return the number of stored keys (including tombstones)."""
         return len(self.data)
 
     def __contains__(self, key: bytes) -> bool:
+        """Return True when the key holds a live (non-tombstone) value."""
         value = self.data.get(key)
         return value is not None and value != _TOMBSTONE
 
     def items(self) -> Iterator[tuple[bytes, bytes]]:
+        """Yield live entries in sorted-key order."""
         for k in self._keys:
             yield k, self.data[k]
 
@@ -97,6 +104,7 @@ class MemTable:
 
     @classmethod
     def from_snapshot(cls, raw: bytes) -> MemTable:
+        """Rebuild a MemTable from serialized snapshot JSON bytes."""
         payload = json.loads(raw)
         mt = cls()
         for k_hex, v_hex in payload["entries"]:
@@ -123,6 +131,7 @@ class SSTable:
         basename: str,
         directory: str = "",
     ) -> SSTable:
+        """Serialize sorted entries into a new SSTable + metadata file."""
         entries.sort(key=lambda e: e[0])
         key_count = len(entries)
         directory = directory or tempfile.mkdtemp(prefix="lsmt_")
@@ -195,6 +204,7 @@ class SSTable:
 
     @classmethod
     def load(cls, path: str | Path, meta_path: str | Path) -> SSTable:
+        """Reconstruct an SSTable from its data + metadata files."""
         path = Path(path)
         meta_path = Path(meta_path)
         meta = json.loads(meta_path.read_text())
@@ -247,6 +257,7 @@ class SSTable:
         return max(0, lo - 1)
 
     def get(self, key: bytes) -> bytes | None:
+        """Look up a key via bloom filter, range check, and sparse index."""
         if self._bloom and not self._bloom.may_contain(key):
             return None
         if self._min_key is None or self._max_key is None:
@@ -285,6 +296,7 @@ class SSTable:
         return None
 
     def iter_all(self) -> Iterator[tuple[bytes, bytes]]:
+        """Yield every entry stored in this SSTable."""
         if self._entry_count == 0:
             return
         with open(self.path, "rb") as f:
@@ -315,6 +327,7 @@ class LevelCompaction:
     source_meta_paths: list[Path]
 
     def run(self, directory: str, basename: str) -> SSTable:
+        """Merge the level's SSTables into one, then replace the sources."""
         merged: dict[bytes, bytes] = {}
         for sp, mp in zip(self.source_paths, self.source_meta_paths, strict=False):
             try:
@@ -358,6 +371,7 @@ class TieredCompaction:
     source_meta_paths: list[Path]
 
     def run(self, directory: str, basename: str) -> SSTable:
+        """Merge the level's SSTables into one, then replace the sources."""
         merged: dict[bytes, bytes] = {}
         for sp, mp in zip(self.source_paths, self.source_meta_paths, strict=False):
             try:
@@ -390,6 +404,7 @@ class LeveledCompaction:
     target_ssts: list[SSTable]
 
     def run(self, directory: str, basename: str) -> list[SSTable]:
+        """Merge overlapping SSTables across adjacent levels into one."""
         merged: dict[bytes, bytes] = {}
         for sst in self.target_ssts:
             for k, v in sst.iter_all():
@@ -431,6 +446,7 @@ class LSMEngine:
     _next_sst_id: int = 0
 
     def __post_init__(self) -> None:
+        """Create the storage directory and WAL path on construction."""
         self.directory.mkdir(parents=True, exist_ok=True)
         self._wal_path = self.directory / "wal.log"
 
@@ -442,12 +458,14 @@ class LSMEngine:
             f.write(entry + b"\n")
 
     def put(self, key: str | bytes, value: str | bytes) -> None:
+        """Write a key-value pair to the memtable and append to the WAL."""
         k = key if isinstance(key, bytes) else key.encode("utf-8")
         v = value if isinstance(value, bytes) else value.encode("utf-8")
         self.memtable.put(k, v)
         self._wal_append("put", k, v)
 
     def get(self, key: str | bytes) -> bytes | None:
+        """Look up a key in the memtable, then in each SSTable level."""
         k = key if isinstance(key, bytes) else key.encode("utf-8")
         value = self.memtable.get(k)
         if value is not None:
@@ -462,11 +480,13 @@ class LSMEngine:
         return None
 
     def delete(self, key: str | bytes) -> None:
+        """Mark a key deleted in the memtable and WAL."""
         k = key if isinstance(key, bytes) else key.encode("utf-8")
         self.memtable.delete(k)
         self._wal_append("delete", k, b"")
 
     def flush(self) -> SSTable:
+        """Persist the current memtable into a new SSTable at level 0."""
         entries = list(self.memtable.items())
         if not entries:
             entries = []
@@ -485,6 +505,7 @@ class LSMEngine:
         return sst
 
     def compact(self) -> LevelCompaction | None:
+        """Merge the first level with 2+ SSTables; None when nothing to do."""
         for level_idx, level in enumerate(self.levels):
             if len(level) >= 2:
                 compaction = LevelCompaction(
@@ -505,6 +526,7 @@ class LSMEngine:
         return None
 
     def find_overlapping(self, source_level: int, source_sst: SSTable) -> list[SSTable]:
+        """Return target-level SSTables whose key ranges overlap the source."""
         overlapping: list[SSTable] = []
         target_level = source_level + 1
         if target_level >= len(self.levels):
@@ -524,6 +546,7 @@ class LSMEngine:
         return overlapping
 
     def leveled_compact(self) -> LeveledCompaction | None:
+        """Run one cross-level overlapping compaction; None when idle."""
         for level_idx in range(len(self.levels)):
             if level_idx + 1 >= len(self.levels):
                 break
@@ -552,6 +575,7 @@ class LSMEngine:
         return None
 
     def tiered_compact(self) -> TieredCompaction | None:
+        """Merge the first level with 2+ SSTables; None when idle."""
         for level_idx, level in enumerate(self.levels):
             if len(level) >= 2:
                 compaction = TieredCompaction(
@@ -569,6 +593,7 @@ class LSMEngine:
         return None
 
     def recover(self, sst_paths: list[Path] | None = None) -> int:
+        """Rebuild in-memory state from SSTable metadata and WAL records."""
         count = 0
         if sst_paths is None:
             sst_paths = sorted(self.directory.glob("*.meta"))
@@ -584,9 +609,11 @@ class LSMEngine:
                 continue
             self.levels[0].append(sst)
             count += sst._entry_count
+            stem = meta_path.stem
+            digits = re.search(r"(\d+)$", stem)
             self._next_sst_id = max(
                 self._next_sst_id,
-                int(meta_path.stem.replace("sst_", "")) + 1,
+                int(digits.group(1)) + 1 if digits else self._next_sst_id,
             )
         if self._wal_path and self._wal_path.exists():
             wal_data = self._wal_path.read_bytes()

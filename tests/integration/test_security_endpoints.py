@@ -134,7 +134,7 @@ def _reset_daemon_state() -> Any:
 class TestStsIssue:
     def test_issue_sts_requires_admin_psk(self, tmp_path: pytest.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """A request without a valid PSK Bearer token is rejected with 401."""
-        monkeypatch.setenv("GLUDD_PSK", "test-secret-key")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "test-secret-key")
         with _patch_runner():
             app = create_daemon_app(tick_interval=300.0, config_dir=_config_dir(tmp_path))
             with TestClient(app) as client:
@@ -151,7 +151,7 @@ class TestStsIssue:
     def test_issue_sts_returns_token_for_valid_subset_request(
         self, tmp_path: pytest.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("GLUDD_PSK", "test-secret-key")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "test-secret-key")
         with _patch_runner():
             app = create_daemon_app(tick_interval=300.0, config_dir=_config_dir(tmp_path))
             _set_issuer(app, _ISSUER_SPEC_YAML)
@@ -174,7 +174,7 @@ class TestStsIssue:
     def test_issue_sts_rejects_overprivileged_request(
         self, tmp_path: pytest.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("GLUDD_PSK", "test-secret-key")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "test-secret-key")
         with _patch_runner():
             app = create_daemon_app(tick_interval=300.0, config_dir=_config_dir(tmp_path))
             _set_issuer(app, _ISSUER_SPEC_YAML)
@@ -194,7 +194,7 @@ class TestStsIssue:
 
 class TestStsActiveAndRevoke:
     def test_get_active_lists_unexpired_tokens(self, tmp_path: pytest.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("GLUDD_PSK", "test-secret-key")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "test-secret-key")
         with _patch_runner():
             app = create_daemon_app(tick_interval=300.0, config_dir=_config_dir(tmp_path))
             _set_issuer(app, _ISSUER_SPEC_YAML)
@@ -222,7 +222,7 @@ class TestStsActiveAndRevoke:
                 assert token_id in token_ids
 
     def test_revoke_expires_token_immediately(self, tmp_path: pytest.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("GLUDD_PSK", "test-secret-key")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "test-secret-key")
         with _patch_runner():
             app = create_daemon_app(tick_interval=300.0, config_dir=_config_dir(tmp_path))
             _set_issuer(app, _ISSUER_SPEC_YAML)
@@ -256,7 +256,7 @@ class TestStsActiveAndRevoke:
 
 class TestPermSpec:
     def test_get_perm_spec_returns_default(self, tmp_path: pytest.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("GLUDD_PSK", "test-secret-key")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "test-secret-key")
         with _patch_runner():
             app = create_daemon_app(tick_interval=300.0, config_dir=_config_dir(tmp_path))
             with TestClient(app) as client:
@@ -270,7 +270,7 @@ class TestPermSpec:
                 assert "build" in data["spec_yaml"]
 
     def test_put_perm_spec_validates_before_save(self, tmp_path: pytest.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("GLUDD_PSK", "test-secret-key")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "test-secret-key")
         # An invalid spec: file: resource with NO path_prefix constraint.
         invalid_yaml = (
             "version: 1\n"
@@ -296,7 +296,7 @@ class TestPermSpec:
 
 class TestStsAudit:
     def test_audit_query_filters_by_agent_id(self, tmp_path: pytest.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("GLUDD_PSK", "test-secret-key")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "test-secret-key")
         with _patch_runner():
             app = create_daemon_app(tick_interval=300.0, config_dir=_config_dir(tmp_path))
             _set_issuer(app, _ISSUER_SPEC_YAML)

@@ -8,13 +8,15 @@ from __future__ import annotations
 
 import importlib
 
+from packaging.version import Version
+
 
 class TestRepositorySkeleton:
     def test_package_version_importable(self):
         from general_ludd import __version__
 
         assert __version__
-        assert __version__.startswith("0.1.0")
+        assert Version(__version__).release
 
     def test_all_subpackages_importable(self):
         subpackages = [

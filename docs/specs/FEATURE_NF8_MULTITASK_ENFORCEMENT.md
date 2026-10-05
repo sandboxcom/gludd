@@ -4,9 +4,11 @@
 
 ## 1. Problem
 
-The 10-agent dispatch floor was bypassable. Agents could grind the main
-thread with rapid-fire read-only tool calls (read/grep/glob) without ever
-dispatching subagents, while technically satisfying message-shape rules.
+The legacy ten-agent dispatch floor was bypassable. Agents could grind the
+main thread with rapid-fire read-only tool calls (read/grep/glob) without ever
+dispatching subagents, while technically satisfying message-shape rules. That
+historical floor is superseded by the adaptive, hard-three contract documented
+in `docs/features/MULTITASK_MINIMUM_OPT_IN.md`.
 The prior enforcement (message-shape + streak counters) was defeated by:
 
 - Responses carrying 1 dispatch + N inline reads, each resetting counters.
@@ -149,7 +151,7 @@ zero-downtime operation needs no restart or state migration.
 
 ### Runtime verification
 
-```
+```text
 make test-hook-runtime → 52 functional tests across 8 plugins (PASS)
 enforce-multitask.test.node.mjs → runtime behavioral tests T1-T6 pass
   T5: CONSECUTIVE_NON_DISPATCH_THRESHOLD === 5

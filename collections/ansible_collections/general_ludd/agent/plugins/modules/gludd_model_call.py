@@ -75,19 +75,14 @@ RETURN:
 
 from __future__ import annotations
 
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
+from typing import Any
 
-try:
-    from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
-        GluddClient,
-        error_result,
-        ok_result,
-    )
-except ImportError:
-    import os
-    import sys
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
-    from gludd import GluddClient, error_result, ok_result  # type: ignore[import]
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
+    GluddClient,
+    error_result,
+    ok_result,
+)
 
 
 def main() -> None:
@@ -118,7 +113,7 @@ def main() -> None:
         timeout=module.params["timeout"],
     )
 
-    payload: dict = {
+    payload: dict[str, Any] = {
         "prompt": module.params["prompt"],
         "max_tokens": module.params["max_tokens"],
     }

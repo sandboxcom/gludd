@@ -15,46 +15,31 @@
 
 - name: Run mathematical model
   block:
-    - name: Solve ODE and compute statistics via module_utils
-      ansible.builtin.script:
-        cmd: |
-          import json, sys
-          sys.path.insert(0, "{{ playbook_dir }}/../../..")
-          from ansible_collections.general_ludd.physics.plugins.module_utils.math_modeler import (
-              MathModelConfig, solve_ode_exponential_decay, compute_statistics,
-              write_math_result
-          )
-          config = MathModelConfig(
-              model_type="{{ math_model_type }}",
-              equation="{{ math_equation }}",
-              initial_conditions={"y0": {{ math_initial_y0 }}},
-              parameters={"k": {{ math_param_k }}},
-              time_range=({{ math_time_start }}, {{ math_time_end }}),
-              time_steps={{ math_time_steps }},
-          )
-          ode_result = solve_ode_exponential_decay(config)
-          stats = compute_statistics(ode_result["y_values"])
-          result = {"ode_solution": ode_result, "statistics": stats}
-          path = write_math_result(result, "{{ math_output_dir }}")
-          print(json.dumps({"status": "success", "path": str(path),
-                            "half_life": ode_result["half_life"],
-                            "mean_y": stats.get("mean", 0)}))
-        executable: python3
+    - name: Solve ODE and compute statistics via packaged physics module
+      general_ludd.physics.physics_analysis:
+        operation: math
+        output_dir: "{{ math_output_dir }}"
+        parameters:
+          model_type: "{{ math_model_type }}"
+          equation: "{{ math_equation }}"
+          initial_y0: "{{ math_initial_y0 }}"
+          param_k: "{{ math_param_k }}"
+          time_start: "{{ math_time_start }}"
+          time_end: "{{ math_time_end }}"
+          time_steps: "{{ math_time_steps }}"
       register: math_result
-      failed_when: false
-      changed_when: false
 
     - name: Parse math result
       ansible.builtin.set_fact:
-        math_output: "{{ math_result.stdout | from_json }}"
-      when: math_result.rc == 0
+        math_output: "{{ math_result.result }}"
+      when: math_result.result is defined
 
   rescue:
     - name: Write failure result artifact
       ansible.builtin.copy:
         content: |
           {{ {'role': 'math_modeler', 'status': 'failed',
-              'error': math_result.stderr | default('unknown error')} | to_nice_json }}
+              'error': math_result.msg | default('unknown error')} | to_nice_json }}
         dest: "{{ math_output_dir }}/math_result.json"
         mode: "0644"
       failed_when: false

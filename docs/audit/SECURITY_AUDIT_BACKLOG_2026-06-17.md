@@ -61,11 +61,11 @@ none were addressed in integration batch 2 or batch 3.
 ### 6. PSK Authorization header missing on internal reload POSTs
 - **File:** `reload/worker_broadcast.py:58-79`
 - **Issue:** Daemon-to-worker `/admin/reload` and `/admin/models/sync` POST requests are
-  sent without an `Authorization: Bearer <GLUDD_PSK>` header, while the worker endpoint
+  sent without an `Authorization: Bearer <GLUDD_AUTH_PSK>` header, while the worker endpoint
   enforces PSK auth. Reloads silently 401 and the worker never applies them — auth/functional
   gap.
 - **Severity:** Med
-- **Fix:** Attach `Authorization: Bearer {GLUDD_PSK}` to the outgoing `httpx` requests in
+- **Fix:** Attach `Authorization: Bearer {GLUDD_AUTH_PSK}` to the outgoing `httpx` requests in
   `worker_broadcast.py`.
 
 ---

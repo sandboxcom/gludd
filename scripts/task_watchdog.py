@@ -39,16 +39,34 @@ import os
 import re
 import signal
 import subprocess
+import tempfile
 import time
 from contextlib import suppress
 from pathlib import Path
+from typing import TYPE_CHECKING, TypedDict
 
-try:
+if TYPE_CHECKING:
+    from scripts.process_cleanup import descendant_processes, snapshot_processes
+else:
     # ``make task-watchdog-start`` executes this file by path, where the
     # repository root is not on ``sys.path`` and the package import fails.
-    from scripts.process_cleanup import descendant_processes, snapshot_processes
-except ModuleNotFoundError:  # pragma: no cover - exercised by direct launch
-    from process_cleanup import descendant_processes, snapshot_processes
+    try:
+        from scripts.process_cleanup import descendant_processes, snapshot_processes
+    except ModuleNotFoundError:  # pragma: no cover - exercised by direct launch
+        from process_cleanup import descendant_processes, snapshot_processes
+
+if TYPE_CHECKING:
+    from scripts import gludd_env_defaults as gludd_env_defaults
+else:
+    try:
+        from scripts import gludd_env_defaults as gludd_env_defaults
+    except ModuleNotFoundError:  # pragma: no cover - direct launch from scripts/
+        import gludd_env_defaults
+
+if TYPE_CHECKING or __package__:
+    from scripts.active_work_status import _repository_roots
+else:  # pragma: no cover - direct script execution
+    from active_work_status import _repository_roots
 
 DEADLINES_FILE = os.environ.get(
     "GLUDD_TASK_DEADLINE_STATE", "/tmp/gludd-task-deadlines.json"
@@ -62,11 +80,16 @@ WATCHDOG_LOG = os.environ.get(
     "GLUDD_TASK_WATCHDOG_LOG", ".gate-logs/task-watchdog.log"
 )
 
-TIMEOUT_MS = int(os.environ.get("GLUDD_TASK_TIMEOUT_MS", "300000"))
+TIMEOUT_MS = int(os.environ.get("GLUDD_TASK_TIMEOUT_MS", gludd_env_defaults.TASK_TIMEOUT_MS_DEFAULT))
 TIMEOUT_SECS = TIMEOUT_MS / 1000.0
 POLL_SECS = int(os.environ.get("GLUDD_TASK_WATCHDOG_POLL", "5"))
 
-GATE_PID_FILE = Path(os.environ.get("GLUDD_WORKSPACE", os.getcwd())) / ".gate-background.pid"
+GATE_PID_FILE = Path(os.environ.get("GLUDD_WORKSPACE_ROOT", os.getcwd())) / ".gate-background.pid"
+GATE_RUN_LOCK_FILE = (
+    Path(os.environ.get("GLUDD_WORKSPACE_ROOT", os.getcwd()))
+    / ".gate-logs"
+    / "gate-run.lock"
+)
 
 # Processes matching these patterns are candidates for killing when they run
 # longer than the timeout. These are the commands dispatched subagents execute.
@@ -91,6 +114,30 @@ EXCLUDE_PATTERNS = [
 ]
 
 _SELF_PID = os.getpid()
+
+
+class StaleTask(TypedDict):
+    """One deadline entry that exceeded its timeout."""
+
+    task_id: str
+    start_ms: float
+    elapsed_ms: float
+    timeout_ms: float
+
+
+class HungProcess(TypedDict):
+    """One verified task-like process that exceeded its timeout."""
+
+    pid: int
+    etime_secs: float
+    command: str
+
+
+class PollResult(TypedDict):
+    """Counts emitted by one watchdog poll."""
+
+    stale: int
+    killed: int
 
 
 def _log(msg: str) -> None:
@@ -134,14 +181,14 @@ def find_stale_tasks(
     deadlines: dict[str, float],
     timeout_ms: float = TIMEOUT_MS,
     now_ms: float | None = None,
-) -> list[dict]:
+) -> list[StaleTask]:
     """Return tasks whose elapsed wall-clock exceeds the timeout.
 
     Each entry: ``{task_id, start_ms, elapsed_ms, timeout_ms}``.
     """
     if now_ms is None:
         now_ms = time.time() * 1000.0
-    stale: list[dict] = []
+    stale: list[StaleTask] = []
     for tid, start_ms in deadlines.items():
         if start_ms <= 0:
             continue
@@ -207,6 +254,19 @@ def _read_gate_pid(gate_pid_file: str = str(GATE_PID_FILE)) -> int | None:
         return None
 
 
+def _read_gate_run_lock_pid(
+    gate_run_lock_file: str = str(GATE_RUN_LOCK_FILE),
+) -> int | None:
+    """Return the active foreground gate owner recorded by ``gate_run_lock``."""
+    try:
+        payload = json.loads(Path(gate_run_lock_file).read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            return None
+        return int(payload["pid"])
+    except (FileNotFoundError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
 def _descendant_pids(lines: list[str], root_pid: int) -> set[int]:
     """Return the gate process and every descendant represented in ``ps``."""
     parents: dict[int, int] = {}
@@ -234,12 +294,15 @@ def _descendant_pids(lines: list[str], root_pid: int) -> set[int]:
 def find_hung_processes(
     timeout_secs: float = TIMEOUT_SECS,
     gate_pid_file: str = str(GATE_PID_FILE),
-) -> list[dict]:
+    gate_run_lock_file: str = str(GATE_RUN_LOCK_FILE),
+    repository_roots: tuple[Path, ...] = (),
+) -> list[HungProcess]:
     """Scan ``ps`` for processes older than timeout matching task patterns.
 
     Returns ``[{pid, etime_secs, command}, ...]``. Excludes:
     - The watchdog itself (``_SELF_PID``)
-    - The gate background process (has its own killer via ``agent_watchdog``)
+    - Active foreground and background gates in every registered worktree,
+      which own their process trees
     - Processes matching ``EXCLUDE_PATTERNS`` (watchdogs, daemons)
 
     Only processes matching ``TASK_PROCESS_PATTERNS`` are candidates — this is
@@ -253,10 +316,28 @@ def find_hung_processes(
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         return []
 
-    gate_pid = _read_gate_pid(gate_pid_file)
-    hung: list[dict] = []
+    gate_pids = {
+        pid
+        for pid in (
+            _read_gate_pid(gate_pid_file),
+            _read_gate_run_lock_pid(gate_run_lock_file),
+        )
+        if pid is not None
+    }
+    for root in repository_roots:
+        gate_pids.update(
+            pid
+            for pid in (
+                _read_gate_pid(str(root / ".gate-background.pid")),
+                _read_gate_run_lock_pid(str(root / ".gate-logs" / "gate-run.lock")),
+            )
+            if pid is not None
+        )
+    hung: list[HungProcess] = []
     lines = result.stdout.splitlines()[1:]  # skip header
-    gate_tree = _descendant_pids(lines, gate_pid) if gate_pid is not None else set()
+    gate_tree: set[int] = set()
+    for gate_pid in gate_pids:
+        gate_tree.update(_descendant_pids(lines, gate_pid))
 
     for line in lines:
         parts = line.strip().split(None, 3)
@@ -359,7 +440,7 @@ def record_kill(
     killed_file: str = KILLED_FILE,
 ) -> None:
     """Append a kill record to the audit log (JSON list)."""
-    entry = {
+    entry: dict[str, object] = {
         "task_id": task_id,
         "pid": pid,
         "elapsed_ms": round(elapsed_ms, 1),
@@ -367,14 +448,35 @@ def record_kill(
         "killed_at": time.time(),
     }
     try:
-        existing: list = []
+        existing: list[dict[str, object]] = []
         p = Path(killed_file)
         if p.exists():
-            data = json.loads(p.read_text())
+            try:
+                data = json.loads(p.read_text())
+            except json.JSONDecodeError:
+                data = []
             if isinstance(data, list):
                 existing = data
         existing.append(entry)
-        p.write_text(json.dumps(existing, indent=2))
+        p.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                dir=p.parent,
+                prefix=f".{p.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary:
+                temporary_path = Path(temporary.name)
+                temporary.write(json.dumps(existing, indent=2))
+                temporary.flush()
+                os.fsync(temporary.fileno())
+            os.replace(temporary_path, p)
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
     except Exception as exc:
         _log(f"KILL RECORD ERROR: {exc}")
 
@@ -388,7 +490,7 @@ def run_once(
     stale_file: str = STALE_FILE,
     killed_file: str = KILLED_FILE,
     timeout_ms: float = TIMEOUT_MS,
-) -> dict:
+) -> PollResult:
     """One poll cycle. Returns ``{stale: N, killed: N}``.
 
     1. Load deadlines, find stale tasks.
@@ -414,7 +516,15 @@ def run_once(
         if stale_from_plugin:
             _log(f"  plugin-flagged stale: {len(stale_from_plugin)} IDs")
 
-        hung = find_hung_processes(timeout_secs=timeout_ms / 1000.0)
+        # The deadline file is host-global, so the destructive scan must honor
+        # gate ownership across the repository's complete registered worktree
+        # set.  If Git cannot establish that set, fail safe without killing an
+        # ambiguously owned process.
+        repository_roots = _repository_roots()
+        hung = find_hung_processes(
+            timeout_secs=timeout_ms / 1000.0,
+            repository_roots=repository_roots,
+        )
         killed = 0
 
         for proc in hung:

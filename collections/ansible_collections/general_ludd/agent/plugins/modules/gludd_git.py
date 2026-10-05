@@ -4,295 +4,130 @@
 """
 DOCUMENTATION:
   module: gludd_git
-  short_description: Git control-plane ops (init/commit/branch/worktree/merge/push) via git_automation
+  short_description: Run hardened git control-plane operations through Gludd
   description:
-    - Exposes gludd's hardened C(general_ludd.git_automation.GitAutomation)
-      control plane to roles/playbooks so an agent-authored job can perform git
-      operations WITHOUT reimplementing the safety logic.
-    - This is a thin B(delegating wrapper) — it does not reimplement git. The
-      Python core provides per-repo C(.git/index.lock) serialization (issue #63),
-      a bounded subprocess timeout, a non-interactive git environment,
-      leading-dash ref rejection, C(--) end-of-options separators, worktree-path
-      traversal guards, and typed results the daemon also consumes synchronously.
-      Keeping that core in Python (rather than a pure role) preserves those
-      guarantees; this module simply makes the same operations available on the
-      Ansible execution seam.
-    - Idempotent where git is: C(init) reports C(changed=false) for an existing
-      repository; C(branch) is a no-op if the branch already exists; C(commit)
-      reports C(changed=false) when there is nothing to commit.
-    - Check-mode safe — read-only C(worktree_list) runs; mutating ops are skipped
-      in check mode and report the change they WOULD make.
+    - Sends a typed, authenticated request to the daemon-owned GitAutomation service.
+    - Collection Python never imports Gludd core or launches git itself.
+    - Mutations remain check-mode safe and preserve the historical result schema.
   options:
     path:
-      description: Path to the git repository or worktree.
       type: str
       required: true
-
     op:
-      description:
-        - Operation to perform. C(worktree_list) is read-only; the rest mutate.
       type: str
       required: true
-      choices:
-        - init
-        - clone
-        - commit
-        - gated_commit
-        - current_branch
-        - branch
-        - branch_list
-        - branch_delete
-        - worktree_list
-        - worktree_create
-        - worktree_remove
-        - merge
-        - gated_merge
-        - push
-        - verify_remote
-        - tag_release
-        - tag_checkpoint
-        - release_tag
-        - checkpoint_tag
-        - state
-        - batch_push
-        - release_cut
-        - release_delete
-        - release_recut
-        - ci_verdict
-        - ci_cancel
-    clone_url:
-      description: Repository URL for C(op=clone). Python preflight rejects unsafe transports before clone.
+      choices: [init, clone, commit, gated_commit, current_branch, branch,
+        branch_list, branch_delete, worktree_list, worktree_create,
+        worktree_remove, merge, gated_merge, push, verify_remote, tag_release,
+        tag_checkpoint, release_tag, checkpoint_tag, state, batch_push,
+        release_cut, release_delete, release_recut, ci_verdict, ci_cancel]
+    daemon_url:
       type: str
-    target_dir:
-      description: Destination checkout path for C(op=clone).
+      default: http://localhost:8000
+    psk:
       type: str
-    git_clone_timeout:
-      description: Clone timeout in seconds for C(op=clone).
-      type: int
-      default: 120
-    clone_allow_local:
-      description: Whether C(op=clone) allows C(file://) or local source URLs.
-      type: bool
-      default: true
-    message:
-      description: Commit message (required when C(op=commit) or C(op=gated_commit)).
-      type: str
-    branch:
-      description:
-        - Branch name. Required for C(op=branch), C(op=branch_delete),
-          C(op=worktree_create), and C(op=push) (the refspec to push).
-      type: str
-    worktree_path:
-      description: Worktree path (required for C(worktree_create)/C(worktree_remove)).
-      type: str
-    source:
-      description: Source ref to merge from (required for C(op=merge) or C(op=gated_merge)).
-      type: str
-    target:
-      description: Target ref to merge into / check out first (required for C(op=merge) or C(op=gated_merge)).
-      type: str
-    strategy:
-      description: Merge strategy for C(op=merge) and C(op=gated_merge).
-      type: str
-      default: "ff"
-      choices: [ff, no-ff, squash]
-    files:
-      description: Paths to stage before C(op=gated_commit). Use ["."] for all tracked and untracked workspace changes.
-      type: list
-      elements: str
-      default: []
-    gate_cmd:
-      description: Command argv to run before C(op=gated_commit) commits, or after C(op=gated_merge) merges.
-      type: list
-      elements: str
-      default: []
-    tag:
-      description: Tag name for C(op=tag_release) or C(op=tag_checkpoint).
-      type: str
-    todo_id:
-      description: Todo identifier for generated C(op=checkpoint_tag).
-      type: str
-    sha:
-      description: Commit SHA used in generated C(op=checkpoint_tag).
-      type: str
-
-    remote:
-      description: Remote name for C(op=push) and C(op=state).
-      type: str
-      default: "origin"
-    state_reconciled_preserve_heads:
-      description:
-        - Preserved branch HEAD SHAs already audited and reconciled.
-        - Matching heads do not block C(state_assert_no_unintegrated_branches).
-      type: list
-      elements: str
-      default: []
-    state_reconciled_preserve_head_file:
-      description:
-        - Repo-relative file listing audited preserved branch HEAD SHAs.
-      type: str
-      default: "config/reconciled_preserved_heads.txt"
+      no_log: true
+      default: ""
 
 EXAMPLES:
-  - name: Initialize an automation repository
+  - name: Create a branch through the daemon control plane
     general_ludd.agent.gludd_git:
-      path: "/workspace/myrepo"
-      op: init
-
-  - name: Commit changes in worktree
-    general_ludd.agent.gludd_git:
-      path: "/tmp/worktrees/fix-auto-20260612"
-      op: commit
-      message: "auto: apply model-suggested fix"
-    register: git_result
-
-  - name: Create branch
-    general_ludd.agent.gludd_git:
-      path: "/workspace/myrepo"
+      path: /workspace/repo
       op: branch
-      branch: "fix/auto-20260612"
-
-  - name: List worktrees
-    general_ludd.agent.gludd_git:
-      path: "/workspace/myrepo"
-      op: worktree_list
-    register: wts
-
-  - name: Add an agent worktree on a new branch
-    general_ludd.agent.gludd_git:
-      path: "/workspace/myrepo"
-      op: worktree_create
-      branch: "agent/TODO-1234/feature"
-      worktree_path: "/workspace/myrepo-wt-1234"
-
-  - name: Fast-forward merge a green branch
-    general_ludd.agent.gludd_git:
-      path: "/workspace/myrepo"
-      op: merge
-      source: "agent/TODO-1234/feature"
-      target: "main"
-      strategy: ff
-
-  - name: Push a branch to origin (bounded by the control-plane timeout)
-    general_ludd.agent.gludd_git:
-      path: "/workspace/myrepo"
-      op: push
-      branch: "main"
+      branch: feature/example
+      psk: "{{ vault_gludd_psk }}"
 
 RETURN:
-  sha:
-    description: Commit SHA (op=commit only).
-    type: str
-    returned: when op=commit and changed=true
-  branch:
-    description: Branch name (op=branch/current_branch).
-    type: str
-    returned: when op=branch/current_branch
   result:
-    description: Typed result dict for init/worktree/merge/push ops.
+    description: Typed daemon result for the selected operation.
     type: dict
-    returned: when op in (worktree_list, worktree_create, worktree_remove, merge, push)
+    returned: always
 """
 
 from __future__ import annotations
 
-import os
-import subprocess
-from dataclasses import asdict
+from typing import Any
 
 from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
+    GluddClient,
+    error_result,
+    ok_result,
+)
 
-try:
-    from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
-        error_result,
-        ok_result,
-    )
-except ImportError:
-    import sys
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
-    from gludd import error_result, ok_result  # type: ignore[import-not-found]
+_READ_ONLY_OPS = frozenset(
+    {"current_branch", "branch_list", "worktree_list", "verify_remote", "state", "ci_verdict"}
+)
+
+
+def _argument_spec() -> dict[str, dict[str, Any]]:
+    return {
+        "path": {"type": "str", "required": True},
+        "op": {
+            "type": "str",
+            "required": True,
+            "choices": [
+                "init", "clone", "commit", "gated_commit", "current_branch",
+                "branch", "branch_list", "branch_delete", "worktree_list",
+                "worktree_create", "worktree_remove", "merge", "gated_merge",
+                "push", "verify_remote", "tag_release", "tag_checkpoint",
+                "release_tag", "checkpoint_tag", "state", "batch_push",
+                "release_cut", "release_delete", "release_recut", "ci_verdict",
+                "ci_cancel",
+            ],
+        },
+        "clone_url": {"type": "str", "default": None},
+        "target_dir": {"type": "str", "default": None},
+        "git_clone_timeout": {"type": "int", "default": 120},
+        "clone_allow_local": {"type": "bool", "default": True},
+        "message": {"type": "str", "default": None},
+        "files": {"type": "list", "elements": "str", "default": []},
+        "gate_cmd": {"type": "list", "elements": "str", "default": []},
+        "branch": {"type": "str", "default": None},
+        "worktree_path": {"type": "str", "default": None},
+        "source": {"type": "str", "default": None},
+        "target": {"type": "str", "default": None},
+        "strategy": {"type": "str", "default": "ff", "choices": ["ff", "no-ff", "squash"]},
+        "tag": {"type": "str", "default": None},
+        "todo_id": {"type": "str", "default": None},
+        "sha": {"type": "str", "default": None},
+        "expected_sha": {"type": "str", "default": None},
+        "ssh_key_path": {"type": "str", "default": None},
+        "ref_type": {"type": "str", "default": "heads", "choices": ["heads", "tags"]},
+        "threshold": {"type": "int", "default": 5},
+        "force": {"type": "bool", "default": False},
+        "check_ci": {"type": "bool", "default": True},
+        "release_tag": {"type": "str", "default": None},
+        "release_message": {"type": "str", "default": ""},
+        "release_remote": {"type": "str", "default": "sandboxcom"},
+        "release_repo": {"type": "str", "default": "sandboxcom/gludd"},
+        "skip_readme_check": {"type": "bool", "default": False},
+        "skip_ci_check": {"type": "bool", "default": False},
+        "run_id": {"type": "str", "default": None},
+        "remote": {"type": "str", "default": "origin"},
+        "state_ref": {"type": "str", "default": ""},
+        "state_gha_head_sha": {"type": "str", "default": ""},
+        "state_worktree_target_ref": {"type": "str", "default": "HEAD"},
+        "state_preserve_branch_patterns": {"type": "list", "elements": "str", "default": []},
+        "state_reconciled_preserve_heads": {"type": "list", "elements": "str", "default": []},
+        "state_reconciled_preserve_head_file": {"type": "str", "default": "config/reconciled_preserved_heads.txt"},
+        "state_assert_clean": {"type": "bool", "default": False},
+        "state_assert_no_feature_on_master": {"type": "bool", "default": False},
+        "state_assert_merge_ready": {"type": "bool", "default": False},
+        "state_assert_remote_head": {"type": "bool", "default": False},
+        "state_assert_gha_matches_local": {"type": "bool", "default": False},
+        "state_assert_no_unintegrated_worktrees": {"type": "bool", "default": False},
+        "state_assert_no_unintegrated_branches": {"type": "bool", "default": False},
+        "daemon_url": {"type": "str", "default": "http://localhost:8000"},
+        "psk": {"type": "str", "default": "", "no_log": True},
+        "timeout": {"type": "int", "default": 300},
+        "idempotency_key": {"type": "str", "default": None},
+    }
 
 
 def main() -> None:
     module = AnsibleModule(
-        argument_spec=dict(
-            path=dict(type="str", required=True),
-            op=dict(
-                type="str",
-                required=True,
-                choices=[
-                    "init",
-                    "clone",
-                    "commit",
-                    "gated_commit",
-                    "current_branch",
-                    "branch",
-                    "branch_list",
-                    "branch_delete",
-                    "worktree_list",
-                    "worktree_create",
-                    "worktree_remove",
-                    "merge",
-                    "gated_merge",
-                    "push",
-                    "verify_remote",
-                    "tag_release",
-                    "tag_checkpoint",
-                    "release_tag",
-                    "checkpoint_tag",
-            "state",
-            "batch_push",
-                    "release_cut",
-                    "release_delete",
-                    "release_recut",
-                    "ci_verdict",
-                    "ci_cancel",
-                ],
-            ),
-            clone_url=dict(type="str", default=None),
-            target_dir=dict(type="str", default=None),
-            git_clone_timeout=dict(type="int", default=120),
-            clone_allow_local=dict(type="bool", default=True),
-            message=dict(type="str", default=None),
-            files=dict(type="list", elements="str", default=[]),
-            gate_cmd=dict(type="list", elements="str", default=[]),
-            branch=dict(type="str", default=None),
-            worktree_path=dict(type="str", default=None),
-            source=dict(type="str", default=None),
-            target=dict(type="str", default=None),
-            strategy=dict(type="str", default="ff", choices=["ff", "no-ff", "squash"]),
-            tag=dict(type="str", default=None),
-            todo_id=dict(type="str", default=None),
-            sha=dict(type="str", default=None),
-            expected_sha=dict(type="str", default=None),
-            ssh_key_path=dict(type="str", default=None),
-            ref_type=dict(type="str", default="heads", choices=["heads", "tags"]),
-            threshold=dict(type="int", default=5),
-            force=dict(type="bool", default=False),
-            check_ci=dict(type="bool", default=True),
-            release_tag=dict(type="str", default=None),
-            release_message=dict(type="str", default=""),
-            release_remote=dict(type="str", default="sandboxcom"),
-            release_repo=dict(type="str", default="sandboxcom/gludd"),
-            skip_readme_check=dict(type="bool", default=False),
-            skip_ci_check=dict(type="bool", default=False),
-            run_id=dict(type="str", default=None),
-
-            remote=dict(type="str", default="origin"),
-            state_ref=dict(type="str", default=""),
-            state_gha_head_sha=dict(type="str", default=""),
-            state_worktree_target_ref=dict(type="str", default="HEAD"),
-            state_preserve_branch_patterns=dict(type="list", elements="str", default=[]),
-            state_reconciled_preserve_heads=dict(type="list", elements="str", default=[]),
-            state_reconciled_preserve_head_file=dict(type="str", default="config/reconciled_preserved_heads.txt"),
-            state_assert_clean=dict(type="bool", default=False),
-            state_assert_no_feature_on_master=dict(type="bool", default=False),
-            state_assert_merge_ready=dict(type="bool", default=False),
-            state_assert_remote_head=dict(type="bool", default=False),
-            state_assert_gha_matches_local=dict(type="bool", default=False),
-            state_assert_no_unintegrated_worktrees=dict(type="bool", default=False),
-            state_assert_no_unintegrated_branches=dict(type="bool", default=False),
-        ),
+        argument_spec=_argument_spec(),
         required_if=[
             ("op", "clone", ["clone_url", "target_dir"]),
             ("op", "commit", ["message"]),
@@ -315,397 +150,48 @@ def main() -> None:
         ],
         supports_check_mode=True,
     )
-
-    path: str = module.params["path"]
-    op: str = module.params["op"]
-
-
-    try:
-        from general_ludd.git_automation.repo import GitAutomation
-    except ImportError as exc:
-        module.fail_json(**error_result(f"general_ludd not importable: {exc}"))
-        return
-
-    git = GitAutomation(repo_path=path)
-
+    op = str(module.params["op"])
     if op in {"gated_commit", "gated_merge"} and not module.params["gate_cmd"]:
         module.fail_json(**error_result(f"{op} requires non-empty gate_cmd"))
         return
-
-    if op == "current_branch":
-        module.exit_json(**ok_result({"branch": git.current_branch()}, changed=False))
-        return
-
-    if op == "branch_list":
-        try:
-            branches = git.list_branches()
-        except subprocess.CalledProcessError as exc:
-            module.fail_json(**error_result(f"branch_list failed: {exc.stderr or exc}"))
-            return
-        module.exit_json(**ok_result({"result": {"branches": branches}}, changed=False))
-        return
-
-    if op == "state":
-        try:
-            state_result = git.workflow_state(
-                remote=module.params["remote"],
-                ref=module.params["state_ref"],
-                gha_head_sha=module.params["state_gha_head_sha"],
-                worktree_target_ref=module.params["state_worktree_target_ref"],
-                preserve_branch_patterns=tuple(module.params["state_preserve_branch_patterns"] or []),
-                reconciled_preserve_heads=tuple(module.params["state_reconciled_preserve_heads"] or []),
-                reconciled_preserve_head_file=module.params["state_reconciled_preserve_head_file"],
-                assert_clean=module.params["state_assert_clean"],
-                assert_no_feature_on_master=module.params["state_assert_no_feature_on_master"],
-                assert_merge_ready=module.params["state_assert_merge_ready"],
-                assert_remote_head=module.params["state_assert_remote_head"],
-
-                assert_gha_matches_local=module.params["state_assert_gha_matches_local"],
-                assert_no_unintegrated_worktrees=module.params["state_assert_no_unintegrated_worktrees"],
-                assert_no_unintegrated_branches=module.params["state_assert_no_unintegrated_branches"],
-            )
-        except subprocess.CalledProcessError as exc:
-            module.fail_json(**error_result(f"git state failed: {exc.stderr or exc}"))
-            return
-        payload = asdict(state_result)
-        if not state_result.success:
-            module.fail_json(**error_result("git state guard failed", result=payload))
-            return
-        module.exit_json(**ok_result({"result": payload}, changed=False))
-        return
-
-    # Release and CI operations live in dedicated control-plane modules. Keep
-    # check-mode side-effect free while preserving the typed result payloads.
-    if op in {"release_cut", "release_delete", "release_recut", "ci_cancel"} and module.check_mode:
+    if module.check_mode and op not in _READ_ONLY_OPS:
         module.exit_json(
             **ok_result(
-                {"result": {"would_change": True, "op": op, "path": path}},
+                {"result": {"would_change": True, "op": op, "path": module.params["path"]}},
                 changed=True,
             )
         )
         return
 
-    if op in {"release_cut", "release_delete", "release_recut"}:
-        from general_ludd.git_automation.release_ops import (
-            release_cut,
-            release_delete,
-            release_recut,
-        )
-
-        tag = module.params["release_tag"]
-        kwargs = {
-            "tag": tag,
-            "repo_path": path,
-            "remote": module.params["release_remote"],
-        }
-        if op == "release_cut":
-            release_payload = asdict(
-                release_cut(
-                    message=module.params["release_message"],
-                    branch=module.params["branch"] or "master",
-                    skip_readme_check=module.params["skip_readme_check"],
-                    skip_ci_check=module.params["skip_ci_check"],
-                    **kwargs,
-                )
-            )
-        elif op == "release_recut":
-            release_payload = asdict(
-                release_recut(
-                    message=module.params["release_message"],
-                    branch=module.params["branch"] or "master",
-                    **kwargs,
-                )
-            )
-        else:
-            release_payload = asdict(
-                release_delete(repo=module.params["release_repo"], **kwargs)
-            )
-        if not release_payload.get("success", False):
-            module.fail_json(**error_result(f"{op} failed", result=release_payload))
-            return
-        module.exit_json(**ok_result({"result": release_payload}, changed=True))
-        return
-
-    if op == "ci_verdict":
-        from general_ludd.git_automation.ci_ops import ci_verdict
-
-        ci_result = ci_verdict(
-            branch=module.params["branch"] or "development",
-            sha=module.params["sha"],
-        )
-        module.exit_json(**ok_result({"result": ci_result}, changed=False))
-        return
-
-    if op == "ci_cancel":
-        from general_ludd.git_automation.ci_ops import ci_cancel
-
-        cancel_result = ci_cancel(module.params["run_id"])
-        if not cancel_result.get("success", False):
-            module.fail_json(**error_result("ci_cancel failed", result=cancel_result))
-            return
-        module.exit_json(**ok_result({"result": cancel_result}, changed=True))
-        return
-
-    if op == "batch_push":
-        if module.check_mode:
-            module.exit_json(
-                **ok_result(
-                    {"result": {"would_change": True, "op": op, "path": path}},
-                    changed=True,
-                )
-            )
-            return
-        from general_ludd.git_automation.batch_push import batch_push
-
-        batch_result = batch_push(
-            path,
-            remote=module.params["remote"],
-            branch=module.params["branch"] or "master",
-            threshold=module.params["threshold"],
-            force=module.params["force"],
-            check_ci=module.params["check_ci"],
-        )
-        batch_payload = asdict(batch_result)
-        module.exit_json(
-            **ok_result({"result": batch_payload}, changed=bool(batch_result.pushed))
-        )
-        return
-    if op == "commit":
-        message: str = module.params["message"]
-        # Route the dirty-check through the library (under git_repo_lock) rather
-        # than shelling out to `git status` directly — a bare subprocess here
-        # would bypass the per-repo lock and race a concurrent role on the same
-        # worktree. changed_files() is fail-safe ([] on any error).
-        has_changes = bool(git.changed_files())
-        if not has_changes:
-            module.exit_json(**ok_result({"sha": None, "message": "nothing to commit"}, changed=False))
-            return
-        if module.check_mode:
-            module.exit_json(**ok_result({"sha": "[check-mode]", "message": message}, changed=True))
-            return
-        try:
-            sha = git.commit(message)
-        except subprocess.CalledProcessError as exc:
-            module.fail_json(**error_result(f"git commit failed: {exc.stderr}"))
-            return
-        module.exit_json(**ok_result({"sha": sha, "message": message}, changed=True))
-        return
-
-    if op == "branch":
-        branch_name: str = module.params["branch"]
-        if module.check_mode:
-            module.exit_json(**ok_result({"branch": branch_name}, changed=True))
-            return
-        try:
-            created = git.create_branch(branch_name)
-        except subprocess.CalledProcessError as exc:
-            stderr = exc.stderr or ""
-            if "already exists" in stderr:
-                module.exit_json(**ok_result({"branch": branch_name}, changed=False))
-                return
-            module.fail_json(**error_result(f"git branch failed: {stderr}"))
-            return
-        module.exit_json(**ok_result({"branch": created}, changed=True))
-        return
-
-    # --- read-only worktree listing: runs in check mode ---------------------
-    if op == "worktree_list":
-        try:
-            worktrees = git.list_worktrees(path)
-        except Exception as exc:
-            module.fail_json(**error_result(f"worktree_list failed: {exc}"))
-            return
-        module.exit_json(
-            **ok_result(
-                {"result": {"worktrees": [asdict(w) for w in worktrees]}}, changed=False
+    excluded = {"daemon_url", "psk", "timeout", "idempotency_key"}
+    body = {
+        key: value
+        for key, value in module.params.items()
+        if key not in excluded and value is not None
+    }
+    body["idempotency_key"] = module.params["idempotency_key"]
+    response = GluddClient(
+        base_url=module.params["daemon_url"],
+        psk=module.params["psk"],
+        timeout=module.params["timeout"],
+    ).post("/admin/git/operation", body)
+    if response.get("_error") or response.get("_status") != 200:
+        module.fail_json(
+            **error_result(
+                str(response.get("detail") or response.get("_error") or f"{op} failed"),
+                status=response.get("_status", 0),
             )
         )
         return
-
-    # --- mutating worktree/merge/push ops: check-mode safe ------------------
-    if module.check_mode:
-        module.exit_json(
-            **ok_result(
-                {"result": {"would_change": True, "op": op, "path": path}}, changed=True
-            )
-        )
-        return
-
-    try:
-        if op == "init":
-            init_result = git.init_repo(path)
-            module.exit_json(
-                **ok_result(
-                    {"result": asdict(init_result)}, changed=init_result.created
-                )
-            )
-            return
-
-        if op == "clone":
-            clone_result = git.clone(
-                module.params["clone_url"],
-                module.params["target_dir"],
-                timeout=float(module.params["git_clone_timeout"]),
-                allow_local=bool(module.params["clone_allow_local"]),
-            )
-            clone_payload = asdict(clone_result)
-            if not clone_result.success:
-                module.fail_json(**error_result("clone failed", result=clone_payload))
-                return
-            module.exit_json(
-                **ok_result(
-                    {"result": clone_payload},
-                    changed=not clone_result.already_present,
-                )
-            )
-            return
-
-        if op == "worktree_create":
-            worktree_result = git.create_worktree(
-                path, module.params["branch"], module.params["worktree_path"]
-            )
-            module.exit_json(
-                **ok_result(
-                    {"result": asdict(worktree_result)},
-                    changed=worktree_result.success,
-                )
-            )
-            return
-
-        if op == "worktree_remove":
-            removed = git.remove_worktree(path, module.params["worktree_path"])
-            module.exit_json(
-                **ok_result(
-                    {"result": {"removed": removed, "path": module.params["worktree_path"]}},
-                    changed=removed,
-                )
-            )
-            return
-
-        if op == "branch_delete":
-            deleted = git.delete_branch(module.params["branch"])
-            module.exit_json(
-                **ok_result(
-                    {"result": {"branch": module.params["branch"], "deleted": deleted}},
-                    changed=deleted,
-                )
-            )
-            return
-
-
-        if op == "merge":
-            merge_result = git.merge_branch(
-                path,
-                module.params["source"],
-                module.params["target"],
-                strategy=module.params["strategy"],
-            )
-            module.exit_json(
-                **ok_result(
-                    {"result": asdict(merge_result)}, changed=merge_result.success
-                )
-            )
-            return
-
-        if op == "gated_commit":
-            gated_commit_result = git.gated_commit(
-                list(module.params["files"] or []),
-                module.params["message"],
-                list(module.params["gate_cmd"] or []),
-            )
-            gated_commit_payload = asdict(gated_commit_result)
-            if not gated_commit_result.success:
-                module.fail_json(
-                    **error_result(
-                        "gated_commit failed", result=gated_commit_payload
-                    )
-                )
-                return
-            module.exit_json(
-                **ok_result({"result": gated_commit_payload}, changed=True)
-            )
-            return
-
-        if op == "gated_merge":
-            gated_merge_result = git.gated_merge(
-                module.params["source"],
-                module.params["target"],
-                list(module.params["gate_cmd"] or []),
-                strategy=module.params["strategy"],
-            )
-            gated_merge_payload = asdict(gated_merge_result)
-            if not gated_merge_result.success:
-                module.fail_json(
-                    **error_result(
-                        "gated_merge failed", result=gated_merge_payload
-                    )
-                )
-                return
-            module.exit_json(
-                **ok_result({"result": gated_merge_payload}, changed=True)
-            )
-            return
-
-        if op == "push":
-            push_result = git.push_to_remote(
-                path, remote=module.params["remote"], branch=module.params["branch"]
-            )
-            module.exit_json(
-                **ok_result(
-                    {"result": asdict(push_result)}, changed=push_result.success
-                )
-            )
-            return
-
-        if op == "verify_remote":
-            verify_result = git.verify_remote(
-                remote=module.params["remote"],
-                branch=module.params["branch"],
-                expected_sha=module.params["expected_sha"],
-                ssh_key_path=module.params["ssh_key_path"],
-                ref_type=module.params["ref_type"],
-            )
-            module.exit_json(
-                **ok_result({"result": asdict(verify_result)}, changed=False)
-            )
-            return
-
-        if op == "tag_release":
-            tag = git.tag_release(module.params["tag"])
-            module.exit_json(**ok_result({"tag": tag}, changed=True))
-            return
-
-        if op == "tag_checkpoint":
-            tag = git.tag_checkpoint(module.params["tag"])
-            module.exit_json(**ok_result({"tag": tag}, changed=True))
-            return
-
-        if op == "release_tag":
-            tag = git.create_release_tag(path)
-            module.exit_json(**ok_result({"tag": tag}, changed=True))
-            return
-
-        if op == "checkpoint_tag":
-            tag = git.create_checkpoint_tag(
-                path,
-                module.params["todo_id"],
-                module.params["sha"],
-            )
-            module.exit_json(**ok_result({"tag": tag}, changed=True))
-            return
-    except ValueError as exc:
-        # Control-plane security guards (leading-dash refs, traversal paths)
-        # raise ValueError — surface as a clean rejection, not a stack trace.
-        module.fail_json(**error_result(f"{op} rejected: {exc}"))
-        return
-    except subprocess.CalledProcessError as exc:
-        module.fail_json(**error_result(f"{op} failed: {exc.stderr or exc}"))
-        return
-    except Exception as exc:
-        module.fail_json(**error_result(f"{op} failed: {exc}"))
-        return
-
-    module.fail_json(**error_result(f"unhandled op: {op!r}"))
+    result = response.get("result")
+    payload: dict[str, Any] = {"result": result}
+    if isinstance(result, dict):
+        for key in ("sha", "branch", "tag", "message"):
+            if key in result:
+                payload[key] = result[key]
+    module.exit_json(
+        **ok_result(payload, changed=bool(response.get("changed", op not in _READ_ONLY_OPS)))
+    )
 
 
 if __name__ == "__main__":

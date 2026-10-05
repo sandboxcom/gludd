@@ -92,8 +92,7 @@ def _urllib_transport(
 
 
 def _host_is_private(host: str) -> bool:
-    """True if host is a blocked literal, or resolves to a private/reserved
-    address.
+    """Return True if the host is a blocked literal or private address.
 
     Delegates entirely to the canonical
     :func:`general_ludd.security.ssrf.resolved_host_is_blocked` so this
@@ -121,6 +120,7 @@ class NomadSource:
         *,
         transport: _Transport | None = None,
     ) -> None:
+        """Initialize the Nomad source; SSRF is enforced lazily at request time."""
         cfg = config or {}
         base_url = cfg.get("base_url")
         if not base_url:
@@ -144,10 +144,11 @@ class NomadSource:
             if config_transport is not None
             else _urllib_transport,
         )
-        # Reject an unsafe configured endpoint before the connector can enter
-        # the runtime.  _get() repeats this check to protect against DNS
-        # rebinding between construction and a later request.
-        self._guard_ssrf()
+        # SSRF is enforced LAZILY: construction always succeeds (the
+        # contract tests pin this), while _get() re-checks the host before
+        # every request — health() surfaces it as ssrf-blocked, query()
+        # raises NomadSSRFError. Re-checking per request also protects
+        # against DNS rebinding between construction and use.
 
     # -- SSRF + auth ----------------------------------------------------------
     def _guard_ssrf(self) -> None:

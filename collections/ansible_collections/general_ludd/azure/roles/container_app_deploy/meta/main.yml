@@ -2,9 +2,9 @@
 galaxy_info:
   role_name: container_app_deploy
   author: Agentic Harness Agent
-  description: Configure a container app deployment with GPU.
+  description: Observe and reconcile an audited Azure Container Apps GPU stack.
   license: MIT
-  min_ansible_version: "2.14"
+  min_ansible_version: "2.16"
   platforms:
     - name: EL
       versions: [all]

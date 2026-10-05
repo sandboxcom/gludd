@@ -5,13 +5,34 @@
     state: directory
     mode: "0755"
 
-- name: Run bom_detect standalone script
-  ansible.builtin.script:
-    cmd: "files/bom_detect.py --input-bytes '{{ input_bytes }}' --output '{{ artifact_dir }}/bom_detection.json' {% if strip_bom | default(false) %}--strip{% endif %} {% if add_bom | default(false) %}--add-bom --add-bom-encoding '{{ add_bom_encoding | default('UTF-8') }}'{% endif %}"
-    executable: "{{ ansible_python_interpreter | default('python3') }}"
-  register: bom_result
+- name: Read managed-host input for controller analysis
+  ansible.builtin.slurp:
+    src: "{{ input_file }}"
+  register: bom_input
+  when: input_file | length > 0
   changed_when: false
+
+- name: Analyze byte order mark through Gludd
+  general_ludd.language.language_operation:
+    operation: bom_detect
+    payload:
+      input_b64: "{{ bom_input.content | default('') }}"
+      input_bytes: "{{ input_bytes }}"
+      strip_bom: "{{ strip_bom }}"
+      add_bom: "{{ add_bom }}"
+      add_bom_encoding: "{{ add_bom_encoding }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: bom_result
+  no_log: true
+  changed_when: false
+
+- name: Write BOM analysis artifact atomically
+  ansible.builtin.copy:
+    content: "{{ bom_result.result | to_nice_json }}\n"
+    dest: "{{ artifact_dir }}/bom_detection.json"
+    mode: "0600"
 
 - name: Print BOM detection summary
   ansible.builtin.debug:
-    msg: "{{ bom_result.stdout_lines }}"
+    var: bom_result.result

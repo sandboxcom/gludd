@@ -21,17 +21,17 @@ OPENCODE_BIN = "opencode"
 
 PROMPT_SEQUENCE = [
     (
-        "Read TASKS.md. There are 18 tasks. You MUST dispatch EXACTLY 10 task subagents "
+        "Read TASKS.md. There are 18 tasks. You MUST dispatch EXACTLY 3 task subagents "
         "in EACH wave. When subagent results arrive, immediately dispatch the NEXT wave "
-        "of 10 task subagents for remaining unchecked tasks. Repeat until ALL 18 tasks "
+        "of 3 task subagents for remaining unchecked tasks. Repeat until ALL 18 tasks "
         "are completed. NEVER send a text-only answer while tasks remain — always include "
         "task dispatches. Each subagent runs ONE make taskN command. When ALL 18 tasks "
         "show [x] in TASKS.md, say ALL DONE and exit."
     ),
-    "Keep going. Read TASKS.md now. Any unchecked tasks remain — dispatch exactly 10 more task subagents.",
-    "Still working. Check TASKS.md. Dispatch 10 task subagents for any remaining unchecked tasks.",
+    "Keep going. Read TASKS.md now. Any unchecked tasks remain — dispatch exactly 3 more task subagents.",
+    "Still working. Check TASKS.md. Dispatch 3 task subagents for any remaining unchecked tasks.",
     (
-        "Continue. Read TASKS.md. If any tasks unchecked, dispatch exactly 10 "
+        "Continue. Read TASKS.md. If any tasks unchecked, dispatch exactly 3 "
         "task subagents. Say ALL DONE only when all 18 are [x]."
     ),
 ]
@@ -147,6 +147,8 @@ def main() -> int:
                 prompt_sequence=[],
                 prompt_interval_sec=60,
                 progress_interval_sec=args.progress_interval,
+                minimum_dispatches=3,
+                maximum_dispatches=3,
             )
 
             print(f"\n--- Run {run_index}: opencode for {run_timeout}s ---")
@@ -210,7 +212,7 @@ def main() -> int:
         print(f"Per-wave violations: {len(all_violations)}")
 
         if all_violations:
-            print("\nViolations (waves with <10 dispatches):")
+            print("\nViolations (waves outside the configured three-agent width):")
             for v in all_violations[:20]:
                 print(f"  seq={v['sequence']} dispatches={v['dispatch_count']}")
 

@@ -15,44 +15,29 @@
 
 - name: Generate LaTeX document
   block:
-    - name: Generate paper and render equations via module_utils
-      ansible.builtin.script:
-        cmd: |
-          import json, sys
-          sys.path.insert(0, "{{ playbook_dir }}/../../..")
-          from ansible_collections.general_ludd.physics.plugins.module_utils.latex_expert import (
-              LatexConfig, generate_paper, render_equation, render_table, write_latex_output
-          )
-          config = LatexConfig(
-              document_class="{{ latex_document_class }}",
-              font_size="{{ latex_font_size }}",
-              title="{{ latex_title }}",
-              author="{{ latex_author }}",
-              output_format="{{ latex_output_format }}",
-          )
-          doc = generate_paper(config)
-          path = write_latex_output(doc, "{{ latex_output_dir }}")
-          eqn = render_equation(r"E = mc^2", "eq:einstein")
-          eq_path = write_latex_output(eqn, "{{ latex_output_dir }}", "equation.tex")
-          print(json.dumps({"status": "success", "doc_path": str(path),
-                            "doc_lines": len(doc.splitlines()),
-                            "eq_path": str(eq_path)}))
-        executable: python3
+    - name: Generate paper and render equations via packaged physics module
+      general_ludd.physics.physics_analysis:
+        operation: latex
+        output_dir: "{{ latex_output_dir }}"
+        parameters:
+          document_class: "{{ latex_document_class }}"
+          font_size: "{{ latex_font_size }}"
+          title: "{{ latex_title }}"
+          author: "{{ latex_author }}"
+          output_format: "{{ latex_output_format }}"
       register: latex_result
-      failed_when: false
-      changed_when: false
 
     - name: Parse latex result
       ansible.builtin.set_fact:
-        latex_output: "{{ latex_result.stdout | from_json }}"
-      when: latex_result.rc == 0
+        latex_output: "{{ latex_result.result }}"
+      when: latex_result.result is defined
 
   rescue:
     - name: Write failure result artifact
       ansible.builtin.copy:
         content: |
           {{ {'role': 'latex_expert', 'status': 'failed',
-              'error': latex_result.stderr | default('unknown error')} | to_nice_json }}
+              'error': latex_result.msg | default('unknown error')} | to_nice_json }}
         dest: "{{ latex_output_dir }}/latex_result.json"
         mode: "0644"
       failed_when: false

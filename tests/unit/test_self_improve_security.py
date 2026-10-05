@@ -11,14 +11,18 @@ Covers:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import json
+from dataclasses import FrozenInstanceError, dataclass, field
 from pathlib import Path
+
+import pytest
 
 from general_ludd.security.path_canonicalizer import (
     _SEGMENT_EXACT_MARKERS,
     CANONICAL_DENY_MARKERS,
     PROTECTED_PATH_MARKERS,
 )
+from general_ludd.self_improve.codex_comparison import ProposalManifest
 from general_ludd.self_update.applier import (
     UpdateApplier,
 )
@@ -50,6 +54,98 @@ class _FixedChecker:
 
     def allows(self, capability: str) -> bool:
         return capability in self._allowed
+
+
+def test_non_config_approval_plan_is_frozen_canonical_and_project_bound(
+    tmp_path: Path,
+) -> None:
+    from general_ludd.routers.self_improve import _NonConfigPlanSpec
+
+    worktree = tmp_path / "repo" / "worktrees" / "approved"
+    worktree.mkdir(parents=True)
+    spec = _NonConfigPlanSpec(
+        schema_version=1,
+        project_id="approved-project",
+        kind="code",
+        title="approved title",
+        description="approved description",
+        worktree_path=str(worktree.resolve()),
+    )
+
+    encoded = spec.to_json()
+    assert encoded == json.dumps(
+        json.loads(encoded),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    assert _NonConfigPlanSpec.from_json(
+        encoded,
+        expected_project_id="approved-project",
+    ) == spec
+    with pytest.raises(ValueError, match="project identity"):
+        _NonConfigPlanSpec.from_json(
+            encoded,
+            expected_project_id="attacker-project",
+        )
+    with pytest.raises(FrozenInstanceError):
+        spec.__setattr__("project_id", "attacker-project")
+
+
+@pytest.mark.parametrize(
+    ("case", "message"),
+    [
+        ("unsupported-schema", "schema version"),
+        ("malformed-project", "project identity"),
+        ("config-kind", "kind"),
+        ("empty-title", "title"),
+        ("relative-worktree", "worktree path"),
+        ("unexpected-field", "fields"),
+        ("wrong-field-type", "field types"),
+        ("noncanonical", "not canonical"),
+    ],
+)
+def test_non_config_approval_plan_rejects_ambiguous_artifacts(
+    case: str,
+    message: str,
+) -> None:
+    """Every persisted representation must have one exact approved meaning."""
+    from general_ludd.routers.self_improve import _NonConfigPlanSpec
+
+    payload: dict[str, object] = {
+        "description": "approved description",
+        "kind": "code",
+        "project_id": "approved-project",
+        "schema_version": 1,
+        "title": "approved title",
+        "worktree_path": "/approved/worktree",
+    }
+    if case == "unsupported-schema":
+        payload["schema_version"] = 2
+    elif case == "malformed-project":
+        payload["project_id"] = " approved-project"
+    elif case == "config-kind":
+        payload["kind"] = "config"
+    elif case == "empty-title":
+        payload["title"] = " "
+    elif case == "relative-worktree":
+        payload["worktree_path"] = "relative/worktree"
+    elif case == "unexpected-field":
+        payload["attacker_override"] = "/attacker/worktree"
+    elif case == "wrong-field-type":
+        payload["description"] = 17
+
+    raw = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=None if case == "noncanonical" else (",", ":"),
+        sort_keys=True,
+    )
+    with pytest.raises(ValueError, match=message):
+        _NonConfigPlanSpec.from_json(
+            raw,
+            expected_project_id="approved-project",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -261,7 +357,7 @@ class TestSignatureVerification:
     def _boom_verifier(_content: str, _sig: str, _key: str) -> bool:
         raise RuntimeError("verifier crashed")
 
-    def _make_applier(self, verifier=None) -> UpdateApplier:
+    def _make_applier(self) -> UpdateApplier:
         return UpdateApplier(
             writer=_FakeWriter(),
             capability_checker=_FixedChecker({"config_write"}),
@@ -506,3 +602,53 @@ class TestDenyListConsistency:
             assert found, (
                 f"Hard-deny substring {substring!r} has no matching canonical marker"
             )
+
+
+# ---------------------------------------------------------------------------
+# 4. SELF-IMPROVEMENT PROPOSAL PATH IDENTITY
+# ---------------------------------------------------------------------------
+
+
+def _proposal_with_edit_paths(*paths: str) -> str:
+    """Build a synthetic proposal with raw path identities controlled by the test."""
+    return json.dumps(
+        {
+            "schema_version": 1,
+            "baseline_sha": "a" * 40,
+            "task_id": "S83.208",
+            "edits": [
+                {
+                    "operation": "replace",
+                    "path": path,
+                    "old_text": f"before-{index}",
+                    "new_text": f"after-{index}",
+                }
+                for index, path in enumerate(paths)
+            ],
+            "tests": ["tests/unit/test_self_improve_security.py"],
+            "make_commands": [
+                "make test-files "
+                "TESTFILES=tests/unit/test_self_improve_security.py PYTEST_ARGS=-q"
+            ],
+            "commit_message": "fix: reject noncanonical proposal paths",
+        }
+    )
+
+
+@pytest.mark.parametrize("alias_path", ["src//x.py", "src/./x.py"])
+def test_proposal_rejects_alias_that_bypasses_raw_path_identity(
+    alias_path: str,
+) -> None:
+    """Textually distinct aliases must not evade duplicate/scope identity checks."""
+    raw = _proposal_with_edit_paths("src/x.py", alias_path)
+
+    with pytest.raises(ValueError, match="canonical"):
+        ProposalManifest.from_json(raw)
+
+
+def test_proposal_preserves_canonical_path_identity() -> None:
+    """A valid path retains its exact approved identity without normalization."""
+    manifest = ProposalManifest.from_json(_proposal_with_edit_paths("src/x.py"))
+
+    assert manifest.edits[0].path == "src/x.py"
+    assert json.loads(manifest.to_json())["edits"][0]["path"] == "src/x.py"

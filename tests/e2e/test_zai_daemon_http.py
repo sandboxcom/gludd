@@ -152,7 +152,7 @@ class TestZAIDaemonHTTPStructure:
         import os
 
         os.environ.pop("GLUDD_ALLOW_NO_AUTH", None)
-        os.environ.pop("GLUDD_PSK", None)
+        os.environ.pop("GLUDD_AUTH_PSK", None)
         os.environ.pop("GLUDD_REQUIRE_AUTH", None)
 
         from fastapi.testclient import TestClient

@@ -51,7 +51,7 @@ class TestManacherEven:
         assert manacher_even("aa") == [1, 0]
 
     def test_classic_abba(self) -> None:
-        assert manacher_even("abba") == [0, 0, 1, 0]
+        assert manacher_even("abba") == [0, 2, 0, 0]
 
     def test_all_same_even_length(self) -> None:
         assert manacher_even("aaaa") == [1, 2, 1, 0]
@@ -85,7 +85,7 @@ class TestLongestPalindrome:
         assert result in ("aa", "bb")
 
     def test_unicode(self) -> None:
-        assert longest_palindrome("αβαγβα") == "αβαγβα"
+        assert longest_palindrome("αβαγαβα") == "αβαγαβα"
 
     def test_long_input(self) -> None:
         s = "a" * 5000 + "b" + "a" * 5000

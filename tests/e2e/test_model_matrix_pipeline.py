@@ -64,6 +64,7 @@ _SNAKE_DESCRIPTION = (
 # --- env filter knobs ---
 _E2E_LOCAL_MODEL = os.environ.get("E2E_LOCAL_MODEL", "").strip()
 _CI_SAFE_ONLY = os.environ.get("CI_SAFE_ONLY", "").strip() in ("1", "true", "yes")
+_LIVE_MODEL_E2E = os.environ.get("GLUDD_LIVE_MODEL_E2E") == "1"
 
 # --- cloud model knobs ---
 _DS_BASE_URL = "https://api.deepseek.com/v1"
@@ -134,6 +135,8 @@ def _free_disk_gb() -> float:
 
 
 def _deps_reason() -> str | None:
+    if not _LIVE_MODEL_E2E:
+        return "set GLUDD_LIVE_MODEL_E2E=1 to load the local inference runtime"
     missing: list[str] = []
     if not _has_llama_cpp():
         missing.append("llama-cpp-python")
@@ -202,7 +205,8 @@ def _probe_local_endpoint() -> bool:
     try:
         url = f"{_LOCAL_BASE_URL}/models" if "/v1" in _LOCAL_BASE_URL else f"{_LOCAL_BASE_URL}/v1/models"
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        urllib.request.urlopen(req, timeout=5)
+        with urllib.request.urlopen(req, timeout=5):
+            pass
         return True
     except Exception:
         return False
@@ -271,7 +275,7 @@ def _cloud_tiers_for_matrix() -> list[tuple[str, str, str | None]]:
 def _find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
-        return s.getsockname()[1]
+        return int(s.getsockname()[1])
 
 
 def _find_cached_gguf(cache_dir: str, filename: str) -> str | None:
@@ -478,7 +482,9 @@ class MatrixRow:
 def _load_report() -> list[dict[str, Any]]:
     if _REPORT_PATH.exists():
         try:
-            return json.loads(_REPORT_PATH.read_text())
+            payload = json.loads(_REPORT_PATH.read_text())
+            if isinstance(payload, list):
+                return cast(list[dict[str, Any]], payload)
         except (json.JSONDecodeError, OSError):
             pass
     return []
@@ -513,6 +519,10 @@ def teardown_module() -> None:
 
 @pytest.mark.e2e
 @pytest.mark.slow
+@pytest.mark.skipif(
+    not _LIVE_MODEL_E2E,
+    reason="set GLUDD_LIVE_MODEL_E2E=1 to run model downloads and inference",
+)
 @pytest.mark.skipif(_LOCAL_DEPS_SKIP is not None, reason=_LOCAL_DEPS_SKIP or "unknown dep issue")
 @pytest.mark.parametrize(
     "model_entry",
@@ -553,7 +563,7 @@ class TestLocalModelMatrixDownloadServe:
                 row.error_detail = f"Need ~{needed}MB, have {free_ram}MB free"
                 _append_row(row)
                 if _FAIL_FAST:
-                    pytest.fail(row.error_detail)
+                    pytest.fail(str(row.error_detail))
                 pytest.skip(row.error_detail)
 
             # --- Disk guard ---
@@ -753,6 +763,10 @@ Check: syntax, all required components, acceptance criteria met."""
 
 @pytest.mark.e2e
 @pytest.mark.slow
+@pytest.mark.skipif(
+    not _LIVE_MODEL_E2E,
+    reason="set GLUDD_LIVE_MODEL_E2E=1 to run model downloads and inference",
+)
 @pytest.mark.skipif(_LOCAL_DEPS_SKIP is not None, reason=_LOCAL_DEPS_SKIP or "unknown dep issue")
 @pytest.mark.parametrize(
     "coder_model",
@@ -902,7 +916,7 @@ class TestCodingModelAsCoderRole:
                 )
                 _append_row(row)
                 if _FAIL_FAST:
-                    pytest.fail(row.error_detail)
+                    pytest.fail(str(row.error_detail))
                 pytest.skip(f"Planner failed: {plan_result['error']}")
 
             design_spec = plan_result["content"]

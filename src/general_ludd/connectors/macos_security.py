@@ -12,70 +12,29 @@ from __future__ import annotations
 
 import contextlib
 import json
-import subprocess
 import time
-from collections.abc import Callable
 from typing import Any
 
-RunnerResult = tuple[int, str, str] | str
-Runner = Callable[[list[str]], RunnerResult]
-
-_SHELL_METACHARS: frozenset[str] = frozenset(";&|`$<>(){}[]!*?#~\n\r\t \"'")
-
-_DEFAULT_TIMEOUT = 30.0
+from general_ludd.connectors.macos_security_support import (
+    Runner,
+    RunnerResult,
+)
+from general_ludd.connectors.macos_security_support import (
+    default_runner as _default_runner,
+)
+from general_ludd.connectors.macos_security_support import (
+    run as _run,
+)
+from general_ludd.connectors.macos_security_support import (
+    validate_arg as _validate_arg,
+)
 
 _XPROTECT_PLIST = (
     "/System/Library/CoreServices/XProtect.bundle"
     "/Contents/Resources/XProtect.meta.plist"
 )
 
-
-def _validate_arg(value: str, field: str) -> str:
-    """Validate a caller-supplied arg or raise ValueError.
-
-    Rejects non-strings, empty values, a leading dash (option-injection
-    guard), and any shell metacharacter / control character.
-    """
-    if not isinstance(value, str):
-        raise ValueError(f"{field} must be a string, got {type(value).__name__}")
-    if value == "":
-        raise ValueError(f"{field} must not be empty")
-    if value.startswith("-"):
-        raise ValueError(f"{field} must not start with '-': {value!r}")
-    bad = sorted(set(value) & _SHELL_METACHARS)
-    if bad:
-        raise ValueError(f"{field} contains disallowed characters {bad!r}: {value!r}")
-    return value
-
-
-def _default_runner(argv: list[str]) -> tuple[int, str, str]:
-    """Run argv as a discrete LIST, never ``shell=True``, always time-bound."""
-    try:
-        proc = subprocess.run(
-            argv,
-            capture_output=True,
-            text=True,
-            timeout=_DEFAULT_TIMEOUT,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        return (124, "", f"timeout after {_DEFAULT_TIMEOUT}s")
-    except (OSError, ValueError) as exc:
-        return (127, "", str(exc))
-    return (proc.returncode, proc.stdout, proc.stderr)
-
-
-def _run(runner: Runner, argv: list[str]) -> tuple[int, str, str]:
-    """Normalize canned stdout runners and production tuple runners."""
-    result = runner(argv)
-    if isinstance(result, str):
-        return 0, result, ""
-    if isinstance(result, tuple) and len(result) == 3:
-        rc, stdout, stderr = result
-        return int(rc), str(stdout or ""), str(stderr or "")
-    raise TypeError("runner must return stdout or (returncode, stdout, stderr)")
-
-
+__all__ = ("MacOSSecuritySource", "Runner", "RunnerResult")
 class MacOSSecuritySource:
     """Query macOS security subsystem state.
 
@@ -95,6 +54,7 @@ class MacOSSecuritySource:
         config: dict[str, Any] | None = None,
         runner: Runner | None = None,
     ) -> None:
+        """Configure the source name and optional injectable command runner."""
         self.config: dict[str, Any] = dict(config or {})
         self.name: str = str(self.config.get("name", "macos_security"))
         self._runner_injected = runner is not None

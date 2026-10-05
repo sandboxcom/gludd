@@ -1,64 +1,21 @@
 ---
-# verify_coverage — run pytest-cov on generated tests, verify thresholds
-#
-# Runs pytest --cov on the generated test files against the target source
-# module. Checks coverage threshold and verifies expected code paths are hit.
+- name: Verify generated coverage through the packaged controller action
+  general_ludd.e2e_test_gen.e2e_pipeline:
+    operation: verify_coverage
+    test_dir: "{{ test_output_dir }}"
+    source_module: "{{ source_module }}"
+    output: "{{ artifact_dir }}/{{ coverage_artifact_name }}"
+    threshold: "{{ coverage_threshold }}"
+    pytest_timeout: "{{ pytest_timeout }}"
+    test_file_prefix: "{{ test_file_prefix | default('test_e2e_generated_') }}"
+    scenarios_file: "{{ scenarios_file | default('') }}"
+    symbols_file: "{{ symbols_file | default('') }}"
+    timeout: "{{ pytest_timeout + 60 }}"
+  register: _vc_pipeline
 
-- name: Create artifact directory
-  ansible.builtin.file:
-    path: "{{ artifact_dir }}"
-    state: directory
-    mode: "0755"
-
-# ── Validate inputs ─────────────────────────────────────────────────────
-
-- name: Check test output directory exists
-  ansible.builtin.stat:
-    path: "{{ test_output_dir }}"
-  register: _vc_testdir_stat
-
-- name: Check source module exists
-  ansible.builtin.stat:
-    path: "{{ source_module }}"
-  register: _vc_src_stat
-
-- name: Fail if prerequisites missing
-  ansible.builtin.fail:
-    msg: >-
-      {{ 'Test output dir not found: ' + test_output_dir if not _vc_testdir_stat.stat.exists | default(false) else '' }}
-      {{ 'Source module not found: ' + source_module if not _vc_src_stat.stat.exists | default(false) else '' }}
-  when: >-
-    not (_vc_testdir_stat.stat.exists | default(false))
-    or not (_vc_src_stat.stat.exists | default(false))
-
-# ── Run coverage verification via Python script ────────────────────────
-
-- name: Assemble optional cross-reference CLI args
+- name: Publish coverage facts
   ansible.builtin.set_fact:
-    _vc_scenarios_arg: >-
-      {{ '--scenarios-file "' ~ scenarios_file ~ '"' if scenarios_file | default('') | length > 0 else '' }}
-    _vc_symbols_arg: >-
-      {{ '--symbols-file "' ~ symbols_file ~ '"' if symbols_file | default('') | length > 0 else '' }}
-
-- name: Run verify_coverage script
-  ansible.builtin.command:
-    cmd: >-
-      python3 "{{ verify_coverage_script }}"
-      --test-dir "{{ test_output_dir }}"
-      --source-module "{{ source_module }}"
-      --output "{{ artifact_dir }}/{{ coverage_artifact_name }}"
-      --threshold "{{ coverage_threshold }}"
-      --timeout "{{ pytest_timeout }}"
-      --test-file-prefix "{{ test_file_prefix | default('test_e2e_generated_') }}"
-      {{ _vc_scenarios_arg }}
-      {{ _vc_symbols_arg }}
-  register: _vc_result
-  changed_when: false
-  ignore_errors: true
-
-- name: Parse coverage output
-  ansible.builtin.set_fact:
-    _vc_output: "{{ (lookup('file', artifact_dir + '/' + coverage_artifact_name) | from_json) }}"
+    _vc_output: "{{ _vc_pipeline.artifact }}"
 
 - name: Report coverage results
   ansible.builtin.debug:
@@ -67,7 +24,7 @@
       coverage={{ _vc_output.coverage_percent }}% (threshold={{ _vc_output.threshold }}%)
       module={{ _vc_output.module }}
 
-- name: Fail if coverage below threshold
+- name: Fail if coverage is below threshold
   ansible.builtin.fail:
     msg: "Coverage {{ _vc_output.coverage_percent }}% is below threshold {{ _vc_output.threshold }}%"
   when: _vc_output.verdict == 'fail'

@@ -12,13 +12,36 @@ from __future__ import annotations
 
 import json
 import os
+from contextlib import suppress
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
 
+from general_ludd.models.freellmapi_candidates import FreeModelCandidateSeed
+from general_ludd.models.freellmapi_catalog import CatalogLimits
+from general_ludd.models.freellmapi_profiles import build_freellmapi_probe_profiles
+from general_ludd.models.freellmapi_release_proof import build_live_provider_receipt
 from general_ludd.models.gateway import ModelGateway, ModelProfile
 from general_ludd.models.provider_registry import ProviderRegistry
 from general_ludd.secrets.env import EnvSecretsManager
+from general_ludd.self_improve.azure_backend import (
+    ApprovedCandidatePrompt,
+    CandidatePromptApprovalError,
+)
+from general_ludd.self_improve.freellmapi_backend import (
+    FreeLLMAPIBackendTrace,
+    build_freellmapi_candidate_backend,
+)
+from general_ludd.self_improve.model_candidates import (
+    BackendCallBudget,
+    BackendInfrastructureError,
+    BoundedCandidateSession,
+)
+from general_ludd.self_improve.private_policy import SelfImproveRuntimePolicyGuard
+
+_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _get_zai_api_key() -> str | None:
@@ -85,19 +108,19 @@ _SKIP_REASON = (
 
 @pytest.mark.skipif(not _get_zai_api_key(), reason=_SKIP_REASON)
 class TestZAIConfigAndConnectivity:
-    def test_zai_gateway_profile_exists(self):
+    def test_zai_gateway_profile_exists(self) -> None:
         gw = _build_zai_gateway()
         profile = gw.get_profile("zai_live")
         assert profile is not None
         assert profile.enabled is True
         assert profile.provider == "openai"
 
-    def test_zai_provider_is_installed(self):
+    def test_zai_provider_is_installed(self) -> None:
         registry = ProviderRegistry()
         registry.register_provider("openai", "langchain_openai", "ChatOpenAI")
         assert registry.is_installed("openai")
 
-    def test_zai_config_file_is_valid_yaml(self):
+    def test_zai_config_file_is_valid_yaml(self) -> None:
         import yaml
 
         config_path = os.path.join(
@@ -113,7 +136,7 @@ class TestZAIConfigAndConnectivity:
         assert data["provider"] == "openai"
         assert data["model_profile_id"] == "zai_coder"
 
-    def test_zai_profile_matches_runtime_config(self):
+    def test_zai_profile_matches_runtime_config(self) -> None:
         gw = _build_zai_gateway()
         profile = gw.get_profile("zai_live")
         assert profile is not None
@@ -121,7 +144,7 @@ class TestZAIConfigAndConnectivity:
         assert profile.provider_class_hint == "ChatOpenAI"
         assert profile.api_metered is False
 
-    def test_zai_secrets_resolve(self):
+    def test_zai_secrets_resolve(self) -> None:
         secrets = EnvSecretsManager()
         secrets.set("ZAI_API_KEY", "test-key")
         secrets.set("ZAI_BASE_URL", "https://example.com/v1")
@@ -133,7 +156,7 @@ class TestZAIConfigAndConnectivity:
 class TestZAILiveCompletions:
     """Live model completion tests. May xfail on rate-limit or balance errors."""
 
-    def test_zai_simple_completion(self):
+    def test_zai_simple_completion(self) -> None:
         gw = _build_zai_gateway()
         response = gw.call_model(
             "zai_live",
@@ -145,7 +168,7 @@ class TestZAILiveCompletions:
         assert len(response.content) > 0
         assert response.model_name == _get_zai_model()
 
-    def test_zai_structured_json_response(self):
+    def test_zai_structured_json_response(self) -> None:
         gw = _build_zai_gateway()
         response = gw.call_model(
             "zai_live",
@@ -165,7 +188,7 @@ class TestZAILiveCompletions:
         assert "status" in parsed
         assert "count" in parsed
 
-    def test_zai_code_generation(self):
+    def test_zai_code_generation(self) -> None:
         gw = _build_zai_gateway()
         response = gw.call_model(
             "zai_live",
@@ -184,7 +207,7 @@ class TestZAILiveCompletions:
         assert "def " in response.content
         assert "return" in response.content
 
-    def test_zai_usage_metadata_returned(self):
+    def test_zai_usage_metadata_returned(self) -> None:
         gw = _build_zai_gateway()
         response = gw.call_model(
             "zai_live",
@@ -200,7 +223,7 @@ class TestZAILiveCompletions:
 class TestZAIModelIdentity:
     """Functional test: ask the model to identify itself and verify it is GLM-5.1."""
 
-    def test_model_identifies_as_glm(self):
+    def test_model_identifies_as_glm(self) -> None:
         gw = _build_zai_gateway()
         response = gw.call_model(
             "zai_live",
@@ -227,9 +250,116 @@ class TestZAIModelIdentity:
             f"Response too short to be a proper identity reply: {response.content}"
         )
         assert response.usage_metadata is not None
-        assert response.usage_metadata.get("input_tokens", 0) > 0, (
+        input_tokens = response.usage_metadata.get("input_tokens", 0)
+        output_tokens = response.usage_metadata.get("output_tokens", 0)
+        assert isinstance(input_tokens, int) and input_tokens > 0, (
             f"Expected non-zero input_tokens in usage_metadata: {response.usage_metadata}"
         )
-        assert response.usage_metadata.get("output_tokens", 0) > 0, (
+        assert isinstance(output_tokens, int) and output_tokens > 0, (
             f"Expected non-zero output_tokens in usage_metadata: {response.usage_metadata}"
         )
+
+
+@pytest.mark.skipif(not _get_zai_api_key(), reason=_SKIP_REASON)
+class TestFreeLLMAPILiveProviderProof:
+    """Use FreeLLMAPI evidence only to drive one native Gludd provider call."""
+
+    def test_native_backend_emits_content_free_live_receipt(self, tmp_path: Path) -> None:
+        candidate_lock = json.loads(
+            (_ROOT / "config/freellmapi/upstream_candidate.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        corpus_receipt = json.loads(
+            (_ROOT / "config/freellmapi/frozen_corpus_receipt.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        candidate = FreeModelCandidateSeed(
+            platform="zai",
+            model_id=_get_zai_model(),
+            display_name="Z.AI bounded release proof",
+            intelligence_rank=1,
+            speed_rank=1,
+            size_label="provider-owned",
+            limits=CatalogLimits(rpm=None, rpd=None, tpm=None, tpd=None),
+            monthly_token_budget=None,
+            context_window=64_000,
+            supports_vision=False,
+            supports_tools=False,
+            catalog_version="2026.09.21",
+            catalog_payload_sha256=str(candidate_lock["candidate_id"]).removeprefix(
+                "sha256:"
+            ),
+            quirk_slugs=(),
+        )
+        binding = build_freellmapi_probe_profiles((candidate,))[0]
+        source = tmp_path / "src" / "live_proof.py"
+        source.parent.mkdir(parents=True)
+        source.write_text("PUBLIC_LIVE_PROOF = True\n", encoding="utf-8")
+        guard = SelfImproveRuntimePolicyGuard.load(
+            tmp_path,
+            lambda _event: None,
+            CandidatePromptApprovalError,
+        )
+        approved = ApprovedCandidatePrompt.approve(
+            prompt="Reply with exactly FREELLMAPI-LIVE-OK.",
+            source_paths=("src/live_proof.py",),
+            policy_guard=guard,
+        )
+        traces: list[FreeLLMAPIBackendTrace] = []
+        secrets = EnvSecretsManager()
+        backend = build_freellmapi_candidate_backend(
+            binding,
+            secrets_manager=secrets,
+            trace_sink=traces.append,
+        )
+        response = None
+        try:
+            session = BoundedCandidateSession(
+                backend,
+                BackendCallBudget(
+                    max_calls=1,
+                    max_input_tokens=64,
+                    max_output_tokens=16,
+                    max_total_tokens=80,
+                    max_cost_microusd=0,
+                    timeout_seconds=60.0,
+                ),
+                azure_enabled=False,
+                external_enabled=True,
+            )
+            with suppress(BackendInfrastructureError):
+                response = session.generate(
+                    approved,
+                    input_tokens=16,
+                    max_output_tokens=16,
+                    estimated_cost_microusd=0,
+                )
+        finally:
+            backend.close()
+
+        receipt = build_live_provider_receipt(
+            candidate_id=str(candidate_lock["candidate_id"]),
+            corpus_evidence_id=str(corpus_receipt["evidence_id"]),
+            provider="zai",
+            model=_get_zai_model(),
+            traces=tuple(traces),
+            accounting=backend.accounting,
+            observed_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            external_opt_in=True,
+            queue_empty_after=True,
+            provisioned_compute_remaining=0,
+        )
+
+        assert receipt["decision"] in {
+            "live_provider_verified",
+            "live_provider_rejected",
+        }
+        if response is not None:
+            assert response.text.strip()
+            assert receipt["decision"] == "live_provider_verified"
+        else:
+            assert receipt["provider_failure"] == "rate_limited"
+        assert receipt["runtime_admitted"] is False
+        assert receipt["provisioned_compute_remaining"] == 0

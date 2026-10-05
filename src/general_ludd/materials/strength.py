@@ -26,8 +26,10 @@ _THERMAL_LINEAR_MODEL_MAX_ABS_DELTA_T_K = 10_000.0
 
 
 def _extract_capacity(prop: dict[str, Any]) -> float | None:
-    """Return the numeric capacity from a property record (handles both
-    ``value`` and ``value_or_range`` keys)."""
+    """Return the numeric capacity from a property record.
+
+    Both ``value`` and ``value_or_range`` keys are supported.
+    """
     v = prop.get("value")
     if v is None:
         v = prop.get("value_or_range")
@@ -41,6 +43,13 @@ def _extract_capacity(prop: dict[str, Any]) -> float | None:
     return None
 
 
+def _is_admissible_applied_stress(value: object, *, allow_zero: bool) -> bool:
+    """Return whether a stress value is finite and valid for the load case."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return math.isfinite(float(value)) and (value > 0 or (allow_zero and value == 0))
+
+
 def _stress_check(
     capacity_prop: dict[str, Any],
     applied_MPa: float,
@@ -51,9 +60,10 @@ def _stress_check(
     *,
     allow_zero_applied: bool = False,
 ) -> dict[str, Any]:
-    """Core (capacity - applied) / applied margin computation shared by the
-    direct-stress checks (tension, compression, shear, bending extreme fiber).
+    """Compute a shared direct-stress margin.
 
+    This implements ``(capacity - applied) / applied`` for tension,
+    compression, shear, and bending extreme fiber.
     Returns a verdict dict with margin, state, capacity, applied, unit,
     uncertainty, equation_id, inputs, and assumptions. Returns state
     ``insufficient_data`` when capacity is missing/non-numeric and
@@ -85,13 +95,9 @@ def _stress_check(
         "uncertainty": uncertainty,
     }
 
-    applied_is_finite = (
-        not isinstance(applied_MPa, bool)
-        and isinstance(applied_MPa, (int, float))
-        and math.isfinite(float(applied_MPa))
-    )
-    applied_is_admissible = applied_is_finite and (
-        applied_MPa > 0 or (allow_zero_applied and applied_MPa == 0)
+    applied_is_admissible = _is_admissible_applied_stress(
+        applied_MPa,
+        allow_zero=allow_zero_applied,
     )
 
     # Invalid loading is the stronger safety signal and therefore takes
@@ -162,8 +168,10 @@ def check_tension(capacity_prop: dict[str, Any], applied_stress_MPa: float) -> d
 
 
 def check_compression(capacity_prop: dict[str, Any], applied_stress_MPa: float) -> dict[str, Any]:
-    """Axial compression margin (crushing/crushing mode; see
-    :func:`check_buckling_euler` for slender-column stability)."""
+    """Calculate the axial compression margin.
+
+    This covers crushing; use :func:`check_buckling_euler` for stability.
+    """
     return _stress_check(
         capacity_prop,
         applied_stress_MPa,
@@ -315,8 +323,9 @@ def check_thermal_stress(
     delta_T_K: float,
     capacity_prop: dict[str, Any],
 ) -> dict[str, Any]:
-    """Thermal stress margin for a fully constrained member:
-    sigma_thermal = E * alpha * delta_T.
+    """Calculate thermal-stress margin for a fully constrained member.
+
+    ``sigma_thermal = E * alpha * delta_T``.
 
     A positive delta_T (heating) produces compressive stress; the magnitude
     is compared against the compressive/yield capacity.
@@ -368,6 +377,26 @@ def check_thermal_stress(
 # ---------------------------------------------------------------------------
 
 
+def _fatigue_uncertainty(
+    allowable: float,
+    applied_amplitude_MPa: float,
+    endurance_was_estimated: bool,
+    uncertainty_fraction: float,
+) -> tuple[bool, float]:
+    """Return amplitude validity and the corresponding fatigue uncertainty."""
+    applied_is_finite = (
+        not isinstance(applied_amplitude_MPa, bool)
+        and isinstance(applied_amplitude_MPa, (int, float))
+        and math.isfinite(float(applied_amplitude_MPa))
+    )
+    if endurance_was_estimated:
+        applied_basis = float(applied_amplitude_MPa) if applied_is_finite else 0.0
+        uncertainty_basis = max(0.5 * allowable, applied_basis)
+    else:
+        uncertainty_basis = allowable
+    return applied_is_finite, uncertainty_basis * uncertainty_fraction
+
+
 def check_fatigue_sn(
     S_ut_MPa: float,
     applied_amplitude_MPa: float,
@@ -414,19 +443,13 @@ def check_fatigue_sn(
         allowable = 10.0**log_s
         n_label = f"N={cycles} (finite-life Basquin interpolation)"
 
-    applied_is_finite = (
-        not isinstance(applied_amplitude_MPa, bool)
-        and isinstance(applied_amplitude_MPa, (int, float))
-        and math.isfinite(float(applied_amplitude_MPa))
+    # Keep inferred-strength uncertainty tied to the larger decision driver.
+    applied_is_finite, uncertainty = _fatigue_uncertainty(
+        allowable,
+        applied_amplitude_MPa,
+        endurance_was_estimated,
+        uncertainty_fraction,
     )
-    if endurance_was_estimated:
-        # Keep the baseline uncertainty tied to the inferred strength while
-        # widening it when the decision-driving amplitude is larger.
-        applied_basis = float(applied_amplitude_MPa) if applied_is_finite else 0.0
-        uncertainty_basis = max(0.5 * allowable, applied_basis)
-    else:
-        uncertainty_basis = allowable
-    uncertainty = uncertainty_basis * uncertainty_fraction
 
     inputs: dict[str, Any] = {
         "S_ut": {"value": S_ut_MPa, "unit": "MPa"},

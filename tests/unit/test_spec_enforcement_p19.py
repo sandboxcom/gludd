@@ -33,7 +33,7 @@ def _target_names(content: str) -> set[str]:
 class TestP19NoVerifyNeverDefault:
     """P19 — --no-verify and COMMIT_THRESHOLD=1 must not be defaults."""
 
-    def test_no_verify_restricted_to_nv_prefixed_targets(self):
+    def test_no_verify_restricted_to_nv_prefixed_targets(self) -> None:
         content = MAKEFILE.read_text()
         all_targets = _target_names(content)
         user_facing = sorted(
@@ -59,7 +59,7 @@ class TestP19NoVerifyNeverDefault:
             "P19 VIOLATION: user-facing targets hardcoding --no-verify without -nv suffix:\n" + "\n".join(violations)
         )
 
-    def test_commit_threshold_not_hardcoded_default(self):
+    def test_commit_threshold_not_hardcoded_default(self) -> None:
         content = MAKEFILE.read_text()
         all_targets = _target_names(content)
         opt_in_targets = {"batch-push-nv", "batch-push", "deploy-and-forget"}
@@ -83,7 +83,7 @@ class TestP19NoVerifyNeverDefault:
             violations
         )
 
-    def test_push_targets_have_guard(self):
+    def test_push_targets_have_guard(self) -> None:
         content = MAKEFILE.read_text()
         push_targets = [
             "git-push-sandboxcom",

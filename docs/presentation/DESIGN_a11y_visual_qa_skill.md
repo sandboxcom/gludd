@@ -96,7 +96,7 @@ Thresholds are config (`density_thresholds` in skill vars), defaulted but overri
 - Iterate all slides via `Reveal.getTotalSlides()`; emit a per-slide row.
 
 ### Output (every mode)
-```
+```json
 {
   "target": "...",
   "mode": "slide|app",
@@ -127,7 +127,7 @@ trigger_patterns, tags, body, source_path`.
 
 The skill file:
 
-```
+```text
 .opencode/skills/visual_qa.md        # primary search path used by gludd_skill
 ```
 
@@ -182,7 +182,7 @@ Notes:
 `gludd_skill` renders skill *text*; it does not run a browser. We add a thin,
 self-contained Python check engine that the skill's `visual_qa.run` tool dispatches to:
 
-```
+```text
 src/general_ludd/visual_qa/
 ├── __init__.py
 ├── runner.py        # VisualQaRunner.run(target, mode, viewport, out_dir, thresholds) -> VisualQaReport

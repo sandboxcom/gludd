@@ -1,30 +1,24 @@
 ---
-- name: Run mutation fuzzing
-  ansible.builtin.command:
-    cmd: >-
-      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
-      {{ role_path }}/files/fuzz_target.py
-      --mode mutation
-      --target {{ target_binary }}
-      --corpus {{ corpus_dir }}
-      --output {{ output_dir }}
-      --mutations {{ mutation_count | default(1000) }}
-      {% if mutation_ratio is defined %}--mutation-ratio {{ mutation_ratio }}{% endif %}
-  register: _mutation_result
-  changed_when: false
-  failed_when: _mutation_result.rc not in [0]
+- name: Run mutation fuzzing through packaged runtime
+  general_ludd.binary_re.binary_runtime:
+    operation: mutation
+    params:
+      target_binary: "{{ target_binary }}"
+      corpus_dir: "{{ corpus_dir }}"
+      output_dir: "{{ output_dir }}"
+      mutations: "{{ mutation_count | default(1000) }}"
+      mutation_ratio: "{{ mutation_ratio | default(omit, true) }}"
+  register: _mutation_runtime
 
-- name: Read mutation fuzzing artifact
-  ansible.builtin.slurp:
-    src: "{{ output_dir }}/mutation.json"
-  register: _mutation_artifact_raw
+- name: Write mutation artifact atomically
+  ansible.builtin.copy:
+    content: "{{ _mutation_runtime.artifact_content }}"
+    dest: "{{ output_dir }}/{{ _mutation_runtime.artifact_filename }}"
+    mode: "0644"
 
-- name: Parse mutation artifact
+- name: Publish mutation artifact
   ansible.builtin.set_fact:
-    mutation_artifact: >-
-      {{ _mutation_artifact_raw.content | b64decode | from_json
-         if (_mutation_artifact_raw is defined and _mutation_artifact_raw.content is defined)
-         else {} }}
+    mutation_artifact: "{{ _mutation_runtime.result }}"
 
 - name: Report mutation fuzzing summary
   ansible.builtin.debug:

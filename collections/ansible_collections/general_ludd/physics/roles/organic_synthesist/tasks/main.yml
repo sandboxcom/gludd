@@ -15,45 +15,30 @@
 
 - name: Plan organic synthesis
   block:
-    - name: Look up molecule and predict yield
-      ansible.builtin.script:
-        cmd: |
-          import json, sys
-          sys.path.insert(0, "{{ playbook_dir }}/../../..")
-          from ansible_collections.general_ludd.physics.plugins.module_utils.organic_synthesis import (
-              SynthesisConfig, lookup_molecule, predict_yield, write_synthesis_result
-          )
-          config = SynthesisConfig(
-              target_molecule="{{ synth_target_molecule }}",
-              starting_material="{{ synth_starting_material }}",
-              solvent="{{ synth_solvent }}",
-              catalyst="{{ synth_catalyst }}",
-              temperature_C={{ synth_temperature_c }},
-              reaction_time_min={{ synth_reaction_time_min }},
-          )
-          molecule = lookup_molecule(config.target_molecule)
-          yield_data = predict_yield(config)
-          result = {"molecule": molecule, "yield_prediction": yield_data}
-          path = write_synthesis_result(result, "{{ synth_output_dir }}")
-          print(json.dumps({"status": "success", "path": str(path),
-                            "molecule": config.target_molecule,
-                            "expected_yield_pct": yield_data.get("adjusted_yield_pct", 0)}))
-        executable: python3
+    - name: Look up molecule and predict yield via packaged physics module
+      general_ludd.physics.physics_analysis:
+        operation: organic_synthesis
+        output_dir: "{{ synth_output_dir }}"
+        parameters:
+          target_molecule: "{{ synth_target_molecule }}"
+          starting_material: "{{ synth_starting_material }}"
+          solvent: "{{ synth_solvent }}"
+          catalyst: "{{ synth_catalyst }}"
+          temperature_c: "{{ synth_temperature_c }}"
+          reaction_time_min: "{{ synth_reaction_time_min }}"
       register: synth_result
-      failed_when: false
-      changed_when: false
 
     - name: Parse synthesis result
       ansible.builtin.set_fact:
-        synth_output: "{{ synth_result.stdout | from_json }}"
-      when: synth_result.rc == 0
+        synth_output: "{{ synth_result.result }}"
+      when: synth_result.result is defined
 
   rescue:
     - name: Write failure result artifact
       ansible.builtin.copy:
         content: |
           {{ {'role': 'organic_synthesist', 'status': 'failed',
-              'error': synth_result.stderr | default('unknown error')} | to_nice_json }}
+              'error': synth_result.msg | default('unknown error')} | to_nice_json }}
         dest: "{{ synth_output_dir }}/synthesis_result.json"
         mode: "0644"
       failed_when: false

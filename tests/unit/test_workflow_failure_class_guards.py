@@ -65,6 +65,15 @@ def test_push_paths_have_ci_busy_or_rate_guard() -> None:
         assert guard in _target_line(target) or guard in _target_block(target), target
 
 
+def test_shared_branch_pull_uses_current_branch_merge_forward() -> None:
+    block = _target_block("git-pull-sandboxcom")
+
+    assert "git pull --rebase" not in block
+    assert "git branch --show-current" in block
+    assert 'git fetch sandboxcom "$$BRANCH"' in block
+    assert 'git merge --no-ff --no-edit "sandboxcom/$$BRANCH"' in block
+
+
 def test_batch_push_blocks_single_commit_threshold_override() -> None:
     for target in ["batch-push", "batch-push-nv"]:
         block = _target_block(target)
@@ -72,11 +81,24 @@ def test_batch_push_blocks_single_commit_threshold_override() -> None:
         assert "COMMIT_THRESHOLD=1 to override" not in block
 
 
-def test_ci_trigger_requires_exact_remote_head_guard() -> None:
+def test_batch_push_propagates_push_failure_before_success_side_effects() -> None:
+    block = _target_block("batch-push")
+    push_line = next(line.strip() for line in block.splitlines() if " git push " in line)
+
+    assert "||" in push_line or push_line.startswith("if ! "), (
+        "batch-push must stop when git push fails instead of claiming success"
+    )
+    assert block.index("git push ") < block.index("Pushed $$BRANCH")
+    assert block.index("Pushed $$BRANCH") < block.index("_record-push-verdict")
+
+
+def test_ci_trigger_delegates_to_idempotent_exact_sha_signal() -> None:
+    line = _target_line("ci-trigger")
     block = _target_block("ci-trigger")
-    assert "ci-trigger: ci-remote-head-guard _require-gh" in block
-    assert "--ref master" not in block
-    assert "git branch --show-current" in block
+
+    assert line == "ci-trigger: ci-trigger-committed-head"
+    assert "gh workflow run" not in block
+    assert "ci-trigger-failed" not in block
 
 
 def test_push_workflow_runs_for_development_and_master_without_canceling_push_runs() -> None:
@@ -92,14 +114,17 @@ def test_push_workflow_runs_for_development_and_master_without_canceling_push_ru
 
 
 def test_release_paths_verify_complete_artifact_set_before_publish_or_done() -> None:
-    for target in ["release-cut", "release-recut", "release-deploy"]:
+    for target in ["release-cut", "release-recut"]:
         assert "verify-release-completeness" in _target_block(target), target
+    assert "release-promote" in _target_block("release-deploy")
+    assert "release-cut" in _target_block("release-promote")
 
 
-def test_release_deploy_does_not_swallow_ci_await_failure() -> None:
+def test_release_deploy_cannot_bypass_the_promotion_owner() -> None:
     block = _target_block("release-deploy")
-    assert "ci-await BRANCH=master || true" not in block
-    assert "ci-await BRANCH=master" in block
+    assert "release-promote" in block
+    assert "ci-await" not in block
+    assert "development-merge-to-master" not in block
 
 
 def test_development_push_verifies_remote_sha_after_push() -> None:
@@ -307,10 +332,13 @@ def test_workflow_state_targets_do_not_dirty_lockfile_with_uv_run() -> None:
     makefile = _makefile()
     assert "override SYSTEM_PYTHON := /usr/bin/python3" in makefile
     assert "getconf _NPROCESSORS_ONLN" in makefile
-    assert "GLUDD_XDIST=\"$(GLUDD_XDIST)\" $(SYSTEM_PYTHON) -c" not in makefile
-    assert "GLUDD_XDIST=\"$(GLUDD_XDIST)\" python3 -c" not in makefile
+    assert "GLUDD_XDIST_WORKERS=\"$(GLUDD_XDIST_WORKERS)\" $(SYSTEM_PYTHON) -c" not in makefile
+    assert "GLUDD_XDIST_WORKERS=\"$(GLUDD_XDIST_WORKERS)\" python3 -c" not in makefile
     assert "VERSION := $(shell $(UV) run python" not in makefile
-    assert "VERSION = $(shell $(UV) run python" in makefile
+    assert (
+        'VERSION = $(shell UV_CACHE_DIR="$(GLUDD_UV_CACHE_DIR)" $(UV) run python'
+        in makefile
+    )
     no_uv_goals = makefile.split("_NO_UV_SYNC_GOALS :=", 1)[1].split("ifneq", 1)[0]
     for goal in [
         *guard_targets,
@@ -390,6 +418,7 @@ def test_tmp_gludd_cleanup_targets_are_scoped_to_generated_dirs() -> None:
     shard_cleanup = _target_block("tmp-gludd-clean-ci-shards")
     venv_cleanup = _target_block("clean-worktree-venvs")
     cache_cleanup = _target_block("clean-worktree-caches")
+    venv_cleaner = (ROOT / "scripts" / "clean_worktree_venvs.py").read_text()
 
     assert phony_block.count("log-agent-result disk-guard") == 1
     assert "sort -h | tail -40" in usage_block
@@ -403,14 +432,20 @@ def test_tmp_gludd_cleanup_targets_are_scoped_to_generated_dirs() -> None:
     assert "/tmp/gludd-worktrees" not in shard_cleanup
     assert "/Users/shawnwilson/gludd" not in shard_cleanup
 
-    assert "/tmp/gludd-worktrees/*/.venv" in venv_cleanup
-    assert "/Users/shawnwilson/gludd/.claude/worktrees/agent-*/.venv" in venv_cleanup
-    assert "/tmp/gludd-worktrees/* " not in venv_cleanup
+    assert "$(SYSTEM_PYTHON) -m scripts.clean_worktree_venvs" in venv_cleanup
+    assert "rm -rf" not in venv_cleanup
+    assert 'Path("/tmp/gludd-worktrees")' in venv_cleaner
+    assert 'Path("/Users/shawnwilson/gludd/.claude/worktrees")' in venv_cleaner
+    assert "registered_worktree_paths" in venv_cleaner
+    assert "active_process_pids" in venv_cleaner
+    assert "invoking-worktree" in venv_cleaner
 
     assert "clean-worktree-caches: clean-worktree-venvs" in cache_cleanup
-    assert "/tmp/gludd-worktrees/*/.pytest_cache" in cache_cleanup
-    assert "/tmp/gludd-worktrees/*/.mypy_cache" in cache_cleanup
-    assert "/tmp/gludd-worktrees/*/.ruff_cache" in cache_cleanup
+    assert "/usr/bin/find /tmp/gludd-worktrees -type d" in cache_cleanup
+    assert "/usr/bin/find /Users/shawnwilson/gludd/.claude/worktrees -type d" in cache_cleanup
+    for cache_name in (".pytest_cache", ".mypy_cache", ".ruff_cache"):
+        assert f"-name {cache_name}" in cache_cleanup
+    assert "-prune -exec rm -rf {} +" in cache_cleanup
     assert "/tmp/gludd-worktrees/* " not in cache_cleanup
 
 
@@ -443,13 +478,15 @@ def test_git_show_file_to_is_scoped_to_safe_restore_outputs() -> None:
     assert "Refusing unsafe OUT" in block
 
 
-def test_test_failures_preserves_pytest_exit_status_through_tee() -> None:
+def test_test_failures_is_a_bounded_read_only_cache_reporter() -> None:
     block = _target_block("test-failures")
-    assert "RC_FILE=$" + "$" + "(mktemp /tmp/gludd-test-failures-rc." in block
-    assert "echo $$? " + chr(62) + " \"$$RC_FILE\"" in block
-    assert "EXIT=$" + "$" + "(cat \"$$RC_FILE\")" in block
-    assert chr(124) + " tee /tmp/gludd-test-output.txt" in block
-    assert "EXIT=$$?" + chr(59) not in block
+    assert "scripts/report_pytest_failures.py" in block
+    assert "$(TEST_FAILURES_CACHE)" in block
+    assert "$(TEST_FAILURES_LIMIT)" in block
+    assert "python -m pytest" not in block
+    assert "pytest tests/" not in block
+    assert "$(_XD)" not in block
+    assert "tee" not in block
 
 
 def test_search_target_allows_scoped_tmp_gludd_logs_only() -> None:

@@ -21,6 +21,8 @@ import time
 from collections.abc import Callable, Coroutine
 from typing import Any, TypeVar
 
+from general_ludd.util.async_lifecycle import cancel_and_drain_tasks
+
 F = TypeVar("F", bound=Callable[..., Any])
 AF = TypeVar("AF", bound=Callable[..., Coroutine[Any, Any, Any]])
 
@@ -224,6 +226,18 @@ class AsyncDebounceV2:
         """Request cancellation of delayed trailing work."""
         if self._task is not None:
             self._task.cancel()
+        self._pending_args = None
+        self._first_call_at = None
+
+    async def aclose(self) -> None:
+        """Cancel and await all leading and trailing tasks owned by this debounce."""
+        await cancel_and_drain_tasks(
+            self._leading_tasks,
+            registry=self._leading_tasks,
+        )
+        if self._task is not None:
+            await cancel_and_drain_tasks((self._task,))
+        self._task = None
         self._pending_args = None
         self._first_call_at = None
 

@@ -118,31 +118,31 @@ RETURN:
 
 from __future__ import annotations
 
-import os
-
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
-
-try:
-    from ansible_collections.general_ludd.agent.plugins.module_utils.capability_policy import (
-        CapabilityError,
-        for_role,
-    )
-    from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
-        GluddClient,
-        error_result,
-        ok_result,
-    )
-except ImportError:
-    import sys
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
-    from capability_policy import CapabilityError, for_role  # type: ignore[import]
-    from gludd import GluddClient, error_result, ok_result  # type: ignore[import]
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.agent.plugins.module_utils.capability_policy import (
+    CapabilityError,
+    for_role,
+)
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
+    GluddClient,
+    error_result,
+    ok_result,
+)
 
 
 def main() -> None:
     module = AnsibleModule(
         argument_spec=dict(
-            op=dict(type="str", required=True, choices=["todo_get", "todo_create", "todo_update_status", "resource_preference"]),
+            op=dict(
+                type="str",
+                required=True,
+                choices=[
+                    "todo_get",
+                    "todo_create",
+                    "todo_update_status",
+                    "resource_preference",
+                ],
+            ),
             todo_id=dict(type="str", default=None),
             status=dict(type="str", default=None),
             resource_type=dict(type="str", default=None),

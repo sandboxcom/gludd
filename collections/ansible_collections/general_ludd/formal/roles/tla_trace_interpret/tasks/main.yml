@@ -12,8 +12,8 @@
 #   /\ n = -1
 #
 # Extracts: invariant name, numbered states with variable bindings, narrative.
-# Uses an inline Python script (via ansible.builtin.shell) for robust multiline parsing.
-# Python3 is a required dependency (same as Ansible itself).
+# Parsing is provided by the packaged formal collection module; no ambient
+# interpreter discovery or inline shell program is required.
 
 - name: Validate inputs
   ansible.builtin.assert:
@@ -44,105 +44,17 @@
         else tlc_output
       }}
 
-# ── Write raw TLC output to a temp file for Python parsing ───────────────
+# ── Parse trace through the packaged collection module ───────────────────
 
-- name: Write raw TLC output to temp file
-  ansible.builtin.copy:
-    content: "{{ _tti_raw }}"
-    dest: "{{ artifact_dir }}/_tti_raw.txt"
-    mode: "0644"
-
-# ── Parse trace with inline Python (robust multiline state machine) ───────
-# Parses the canonical TLC output format:
-#   Error: Invariant <Name> is violated.
-#   Error: The behavior up to this point is:
-#   State N: <label>
-#   /\ var = val
-#
-# Outputs JSON to artifact_dir/tla_trace.json directly.
-
-- name: Parse TLC trace with Python
-  ansible.builtin.shell:
-    cmd: |
-      python3 - << 'PYEOF'
-      import re, json, sys
-
-      raw_path = "{{ artifact_dir }}/_tti_raw.txt"
-      artifact_path = "{{ artifact_dir }}/tla_trace.json"
-
-      try:
-          with open(raw_path, 'r') as f:
-              raw = f.read()
-      except Exception as e:
-          print(f"ERROR reading {raw_path}: {e}", file=sys.stderr)
-          sys.exit(1)
-
-      # Extract invariant name
-      inv_match = re.search(r'Error: Invariant (\w+) is violated', raw)
-      invariant = inv_match.group(1) if inv_match else 'UnknownInvariant'
-
-      # Find trace section
-      trace_start = raw.find('The behavior up to this point is:')
-      trace_section = raw[trace_start:] if trace_start >= 0 else ''
-
-      # Parse states: "State N: <label>" headers followed by "/\ var = val" lines
-      steps = []
-      current_state = None
-      for line in trace_section.split('\n'):
-          sn_match = re.match(r'^State (\d+):\s*(.*)', line)
-          if sn_match:
-              if current_state is not None:
-                  steps.append(current_state)
-              current_state = {
-                  'state_n': int(sn_match.group(1)),
-                  'label': sn_match.group(2).strip(),
-                  'vars': {}
-              }
-          elif current_state is not None:
-              var_match = re.match(r'^/\\ (\w+) = (.*)', line)
-              if var_match:
-                  current_state['vars'][var_match.group(1)] = var_match.group(2).strip()
-      if current_state is not None:
-          steps.append(current_state)
-
-      # Build narrative
-      step_count = len(steps)
-      narrative = (
-          f"TLC found a violation of invariant {invariant}. "
-          f"The counterexample has {step_count} state(s). "
-          f"State 1 is the initial state; the final state is the impossible state. "
-          f"The invariant {invariant} was violated because the system reached "
-          f"a state that was modeled as IMPOSSIBLE. Review the design constraints "
-          f"and the Next predicate to prevent this transition."
-      )
-
-      result = {
-          'role': 'tla_trace_interpret',
-          'status': 'completed',
-          'invariant': invariant,
-          'step_count': step_count,
-          'steps': steps,
-          'narrative': narrative
-      }
-
-      with open(artifact_path, 'w') as f:
-          json.dump(result, f, indent=2)
-
-      print(json.dumps({'invariant': invariant, 'step_count': step_count}))
-      PYEOF
+- name: Parse TLC trace with the formal collection module
+  general_ludd.formal.tla_trace_interpret:
+    tlc_output: "{{ _tti_raw }}"
+    output_path: "{{ artifact_dir }}/tla_trace.json"
   register: _tti_parse_result
-  changed_when: true
 
-# ── Load parsed artifact back ─────────────────────────────────────────────
-
-- name: Load parsed tla_trace.json
-  ansible.builtin.slurp:
-    src: "{{ artifact_dir }}/tla_trace.json"
-  register: _tti_artifact_raw
-
-- name: Parse artifact JSON
+- name: Publish parsed trace for downstream role tasks
   ansible.builtin.set_fact:
-    _tti_artifact: "{{ _tti_artifact_raw.content | b64decode | from_json }}"
+    _tti_artifact: "{{ _tti_parse_result.trace }}"
 
 # ── Write markdown artifact ───────────────────────────────────────────────
 
@@ -194,12 +106,6 @@
   when:
     - handoff_recipient | length > 0
     - not ansible_check_mode
-
-- name: Remove temp raw file
-  ansible.builtin.file:
-    path: "{{ artifact_dir }}/_tti_raw.txt"
-    state: absent
-  failed_when: false
 
 - name: Report trace interpretation completion
   ansible.builtin.debug:

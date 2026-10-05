@@ -138,7 +138,7 @@
     - name: "Run pipeline unit tests to confirm source health"
       ansible.builtin.command:
         argv:
-          - python3
+          - "{{ ansible_playbook_python }}"
           - -c
           - |
             import sys; sys.path.insert(0, '{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}')

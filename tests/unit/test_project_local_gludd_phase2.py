@@ -52,7 +52,9 @@ class TestAnsibleRunnerAdapterDefaultEnv:
             extravars: Any,
             timeout: Any,
             extra_env: Any,
+            cancel_requested: Any,
         ) -> Any:
+            assert cancel_requested is None
             captured["extra_env"] = extra_env
             result = MagicMock()
             result.model_dump.return_value = {"status": "ok", "rc": 0, "events": []}
@@ -77,7 +79,9 @@ class TestAnsibleRunnerAdapterDefaultEnv:
             extravars: Any,
             timeout: Any,
             extra_env: Any,
+            cancel_requested: Any,
         ) -> Any:
+            assert cancel_requested is None
             captured["extra_env"] = extra_env
             result = MagicMock()
             result.model_dump.return_value = {"status": "ok", "rc": 0, "events": []}
@@ -103,7 +107,9 @@ class TestAnsibleRunnerAdapterDefaultEnv:
             extravars: Any,
             timeout: Any,
             extra_env: Any,
+            cancel_requested: Any,
         ) -> Any:
+            assert cancel_requested is None
             captured["extra_env"] = extra_env
             result = MagicMock()
             result.model_dump.return_value = {"status": "ok", "rc": 0, "events": []}

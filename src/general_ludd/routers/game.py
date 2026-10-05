@@ -12,13 +12,19 @@ from pydantic import BaseModel, model_validator
 
 from general_ludd.cloud.project_types import get_project_type
 from general_ludd.cloud.software_generator import ProjectSpec, SoftwareGenerator
+from general_ludd.schemas.benchmark import TaskRole
 
 logger = logging.getLogger(__name__)
 
 _GAME_TYPE = "game"
+_VALID_GAME_ROLES: frozenset[TaskRole] = frozenset(
+    {TaskRole.PLANNER, TaskRole.CODER, TaskRole.REVIEWER}
+)
 
 
 class GameGenerateMultiRequest(BaseModel):
+    """Validated role-specific model selection for game generation."""
+
     description: str
     planner_model: str = "default"
     coder_model: str = "default"
@@ -35,6 +41,7 @@ class GameGenerateMultiRequest(BaseModel):
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register the authenticated multi-model game generation route."""
 
     @app.post("/api/game/generate-multi")
     async def api_game_generate_multi(
@@ -72,7 +79,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             logger.exception("Multi-model game generation failed: %s", exc)
             raise HTTPException(
                 status_code=500,
-                detail={"error": f"Game generation failed: {exc}"},
+                detail={"error": "Game generation failed"},
             ) from exc
 
         return {

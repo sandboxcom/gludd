@@ -31,6 +31,15 @@
         },
         "verdict_path": {
           "type": "string"
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
         }
       },
       "additionalProperties": false,
@@ -38,6 +47,39 @@
         "candidate_root",
         "module"
       ]
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_accelerator_facts",
+    "description": "Expose Gludd local and Slurm accelerator inventory as facts — Reads Gludd's normalized, read-only accelerator discovery endpoints. Returns Apple Metal, Intel XPU, JAX TPU, NVIDIA, AMD, and Slurm GRES inventory under C(ansible_facts.gludd_accelerators). Hardware models are returned as observed values rather than schema keys. Performs no provisioning and is safe in check mode.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "enum": [
+            "local",
+            "slurm",
+            "all"
+          ],
+          "default": "all"
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 30
+        }
+      },
+      "additionalProperties": false
     },
     "server_id": "ansible"
   },
@@ -481,7 +523,7 @@
   },
   {
     "name": "general_ludd.agent.gludd_git",
-    "description": "Git control-plane ops (commit/branch/worktree/merge/push) via git_automation — Exposes gludd's hardened C(general_ludd.git_automation.GitAutomation) control plane to roles/playbooks so an agent-authored job can perform git operations WITHOUT reimplementing the safety logic. This is a thin B(delegating wrapper) — it does not reimplement git. The Python core provides per-repo C(.git/index.lock) serialization (issue #63), a bounded subprocess timeout, a non-interactive git environment, leading-dash ref rejection, C(--) end-of-options separators, worktree-path traversal guards, and typed results the daemon also consumes synchronously. Keeping that core in Python (rather than a pure role) preserves those guarantees; this module simply makes the same operations available on the Ansible execution seam. Idempotent where git is: C(branch) is a no-op if the branch already exists; C(commit) reports C(changed=false) when there is nothing to commit. Check-mode safe — read-only C(worktree_list) runs; mutating ops are skipped in check mode and report the change they WOULD make.",
+    "description": "Run hardened git control-plane operations through Gludd — Sends a typed, authenticated request to the daemon-owned GitAutomation service. Collection Python never imports Gludd core or launches git itself. Mutations remain check-mode safe and preserve the historical result schema.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -491,6 +533,7 @@
         "op": {
           "type": "string",
           "enum": [
+            "init",
             "clone",
             "commit",
             "gated_commit",
@@ -504,11 +547,18 @@
             "merge",
             "gated_merge",
             "push",
+            "verify_remote",
             "tag_release",
             "tag_checkpoint",
             "release_tag",
             "checkpoint_tag",
-            "state"
+            "state",
+            "batch_push",
+            "release_cut",
+            "release_delete",
+            "release_recut",
+            "ci_verdict",
+            "ci_cancel"
           ]
         },
         "clone_url": {
@@ -566,6 +616,58 @@
         "sha": {
           "type": "string"
         },
+        "expected_sha": {
+          "type": "string"
+        },
+        "ssh_key_path": {
+          "type": "string"
+        },
+        "ref_type": {
+          "type": "string",
+          "enum": [
+            "heads",
+            "tags"
+          ],
+          "default": "heads"
+        },
+        "threshold": {
+          "type": "integer",
+          "default": 5
+        },
+        "force": {
+          "type": "boolean",
+          "default": false
+        },
+        "check_ci": {
+          "type": "boolean",
+          "default": true
+        },
+        "release_tag": {
+          "type": "string"
+        },
+        "release_message": {
+          "type": "string",
+          "default": ""
+        },
+        "release_remote": {
+          "type": "string",
+          "default": "sandboxcom"
+        },
+        "release_repo": {
+          "type": "string",
+          "default": "sandboxcom/gludd"
+        },
+        "skip_readme_check": {
+          "type": "boolean",
+          "default": false
+        },
+        "skip_ci_check": {
+          "type": "boolean",
+          "default": false
+        },
+        "run_id": {
+          "type": "string"
+        },
         "remote": {
           "type": "string",
           "default": "origin"
@@ -621,6 +723,22 @@
         "state_assert_no_unintegrated_branches": {
           "type": "boolean",
           "default": false
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 300
+        },
+        "idempotency_key": {
+          "type": "string"
         }
       },
       "additionalProperties": false,
@@ -884,6 +1002,81 @@
     "server_id": "ansible"
   },
   {
+    "name": "general_ludd.agent.gludd_local_model",
+    "description": "Manage a daemon-owned local inference lifecycle — Delegates download, serve, consume, and shutdown to the Gludd daemon. Never installs packages or launches a model process inside the collection. The daemon LocalInferenceManager owns process groups, diagnostics, and teardown.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://127.0.0.1:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 180
+        },
+        "model_id": {
+          "type": "string",
+          "default": ""
+        },
+        "model_path": {
+          "type": "string",
+          "default": ""
+        },
+        "filename": {
+          "type": "string",
+          "default": ""
+        },
+        "source": {
+          "type": "string",
+          "default": "huggingface"
+        },
+        "server_id": {
+          "type": "string",
+          "default": ""
+        },
+        "prompt": {
+          "type": "string",
+          "default": ""
+        },
+        "max_tokens": {
+          "type": "integer",
+          "default": 1024
+        },
+        "host": {
+          "type": "string",
+          "default": "127.0.0.1"
+        },
+        "port": {
+          "type": "integer",
+          "default": 9999
+        },
+        "startup_timeout": {
+          "type": "integer",
+          "default": 120
+        },
+        "gpu_layers": {
+          "type": "integer",
+          "default": 0
+        },
+        "context_size": {
+          "type": "integer",
+          "default": 2048
+        }
+      },
+      "additionalProperties": false
+    },
+    "server_id": "ansible"
+  },
+  {
     "name": "general_ludd.agent.gludd_make",
     "description": "Run a make target via the MakeRunner abstraction — Runs a C(make) target through the C(MakeRunner) subprocess wrapper with proper sanitized environment, bounded output capture, and per-target timeout. Supports both blocking and streaming modes. Returns structured result (rc, stdout_tail, stderr_tail, success, phases).",
     "input_schema": {
@@ -912,6 +1105,15 @@
         "no_log": {
           "type": "boolean",
           "default": false
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
         }
       },
       "additionalProperties": false,
@@ -1107,8 +1309,62 @@
     "server_id": "ansible"
   },
   {
+    "name": "general_ludd.agent.gludd_model_worker_attest",
+    "description": "Attest a model worker's accelerator topology and runtime — Uses Gludd's provider-neutral model-worker attestation engine. Observes maintained NVIDIA NVML or AMD SMI interfaces on the managed host. Supports additional accelerator backends through the engine probe registry. Returns only content-free digests, readiness booleans, and refusal codes. Performs no provisioning and is safe in check mode.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "runner_id": {
+          "type": "string"
+        },
+        "source_revision": {
+          "type": "string"
+        },
+        "backend": {
+          "type": "string"
+        },
+        "minimum_device_count": {
+          "type": "integer"
+        },
+        "minimum_memory_mib": {
+          "type": "integer"
+        },
+        "required_interconnect": {
+          "type": "string"
+        },
+        "expected_topology_digest": {
+          "type": "string"
+        },
+        "runtime_probe": {
+          "type": "array",
+          "x-no-log": true
+        },
+        "expected_runtime_version_digest": {
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "default": 15
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "runner_id",
+        "source_revision",
+        "backend",
+        "minimum_device_count",
+        "minimum_memory_mib",
+        "required_interconnect",
+        "expected_topology_digest",
+        "runtime_probe",
+        "expected_runtime_version_digest"
+      ]
+    },
+    "server_id": "ansible"
+  },
+  {
     "name": "general_ludd.agent.gludd_observe",
-    "description": "Correlate telemetry across daemon-registered observability sources — Discovers operator-configured sources through the Gludd daemon. Adapts those named sources to C(GluddObserve) without accepting arbitrary URLs. Runs query, timeline, incident-correlation, and topology workflows. Isolates a failing source so healthy source results still return. All operations are read-only and check-mode safe.",
+    "description": "Correlate registered observability sources through the Gludd daemon — Provides the Ansible seam for the cross-source C(GluddObserve) facade. Discovers only operator-registered sources from C(GET /api/observe/sources) and queries them by registered name through C(POST /api/observe/query). Callers cannot supply connector URLs, preserving the daemon's SSRF boundary. Supports merged queries, timelines, incident correlation, and service/host topology without duplicating the canonical normalization logic. Read-only and check-mode safe. A failing connector is isolated into the returned C(errors) list instead of aborting successful sources.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -1116,26 +1372,27 @@
           "type": "string",
           "enum": [
             "query_sources",
-            "correlate_incident",
             "timeline",
+            "correlate_incident",
             "topology"
           ]
         },
         "role": {
           "type": "string",
-          "default": ""
-        },
-        "kinds": {
-          "type": "array",
-          "default": []
-        },
-        "window": {
-          "type": "array",
-          "default": []
+          "default": "observe"
         },
         "seed": {
           "type": "object",
           "default": {}
+        },
+        "kinds": {
+          "type": "array",
+          "default": [
+            "logs",
+            "traces",
+            "metrics",
+            "events"
+          ]
         },
         "by": {
           "type": "string",
@@ -1154,10 +1411,6 @@
         },
         "end": {
           "type": "number"
-        },
-        "correlate_by": {
-          "type": "string",
-          "default": ""
         },
         "daemon_url": {
           "type": "string",
@@ -1192,7 +1445,7 @@
   },
   {
     "name": "general_ludd.agent.gludd_ornith",
-    "description": "Pull rejected Ornith training pairs and invoke improvement rollouts — {'Bidirectional seam for the gludd × Ornith symbiotic loop. Two states': None} C(state=pairs) — fetch the most-recent training pairs whose outcome matches a comma-separated status list (e.g. C(rejected_by_gate,rejected_by_review,reverted)). These are the artifacts that NEED improvement. Hits the daemon's C(GET /admin/ornith/pairs) endpoint. C(state=improve) — invoke the daemon's model gateway (C(POST /admin/models/call)) with a structured \"improve this artifact\" prompt and return the proposed diff. The caller is responsible for writing the diff to disk, opening a PR, and filing a human-todo for review. The PR is NEVER auto-merged — the human-todo is the gate. Check mode skips both the network call and the model invocation.",
+    "description": "Pull rejected Ornith training pairs and invoke improvement rollouts — {'Bidirectional seam for the gludd x Ornith symbiotic loop. Two states': None} C(state=pairs) — fetch the most-recent training pairs whose outcome matches a comma-separated status list (e.g. C(rejected_by_gate,rejected_by_review,reverted)). These are the artifacts that NEED improvement. Hits the daemon's C(GET /admin/ornith/pairs) endpoint. C(state=improve) — invoke the daemon's model gateway (C(POST /admin/models/call)) with a structured \"improve this artifact\" prompt and return the proposed diff. The caller is responsible for writing the diff to disk, opening a PR, and filing a human-todo for review. The PR is NEVER auto-merged — the human-todo is the gate. Check mode skips both the network call and the model invocation.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -1276,8 +1529,7 @@
           "default": ""
         },
         "daemon_url": {
-          "type": "string",
-          "default": "http://localhost:8000"
+          "type": "string"
         },
         "psk": {
           "type": "string",
@@ -1424,8 +1676,62 @@
     "server_id": "ansible"
   },
   {
+    "name": "general_ludd.agent.gludd_rag",
+    "description": "Retrieval-Augmented Generation pipeline via module_utils.rag — With C(op=add_document) ingests text into an in-memory vector store backed by the L(rag module_utils,ansible_collections.general_ludd.agent.plugins.module_utils.rag). With C(op=query) embeds a question, retrieves the top-k closest chunks, builds a prompt with them as context, and asks the daemon model gateway for an answer. The pipeline uses the pluggable embedder from C(rag.py) (HashEmbedder by default, or a daemon-backed embedder when the daemon is reachable). Check-mode safe for C(op=query) — returns a placeholder answer.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": [
+            "add_document",
+            "query"
+          ],
+          "default": "query"
+        },
+        "text": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object",
+          "default": {}
+        },
+        "top_k": {
+          "type": "integer",
+          "default": 5
+        },
+        "chunk_size": {
+          "type": "integer",
+          "default": 1000
+        },
+        "chunk_overlap": {
+          "type": "integer",
+          "default": 200
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 120
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ]
+    },
+    "server_id": "ansible"
+  },
+  {
     "name": "general_ludd.agent.gludd_reload",
-    "description": "Hot-rotate a validated leaf code module with health-gated auto-rollback — Wraps C(general_ludd.reload.hot_reloader.HotReloader.reload_code_module): snapshots the live module bytes, C(os.replace)s the candidate source over the live path, C(importlib.reload)s the module, then runs a health gate (a C(/readyz) poll). If the health gate fails or the reload raises, the original bytes are restored and the module is reloaded again — the live module ends up exactly as it started. Fail-closed: a missing/non-importable target, a missing candidate, or a failed health gate all yield C(success=false). Runs in-process (same venv as C(general_ludd)).",
+    "description": "Hot-rotate a validated leaf code module with health-gated auto-rollback — Calls the authenticated Gludd daemon reload endpoint, which wraps C(general_ludd.reload.hot_reloader.HotReloader.reload_code_module): snapshots the live module bytes, C(os.replace)s the candidate source over the live path, C(importlib.reload)s the module, then runs a health gate (a C(/readyz) poll). If the health gate fails or the reload raises, the original bytes are restored and the module is reloaded again — the live module ends up exactly as it started. Fail-closed: a missing/non-importable target, a missing candidate, or a failed health gate all yield C(success=false). The collection validates and hashes the candidate but never imports the Gludd core runtime; daemon authentication is explicit.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -1446,63 +1752,35 @@
           "type": "string",
           "default": "config"
         },
+        "base_source_path": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "expected_sha256": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
         "result_path": {
           "type": "string"
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
         }
       },
       "additionalProperties": false,
       "required": [
         "module_name",
         "candidate_source_path"
-      ]
-    },
-    "server_id": "ansible"
-  },
-  {
-    "name": "general_ludd.agent.gludd_scapy",
-    "description": "Packet crafting, sniffing, and pcap manipulation via Scapy — Wraps the C(general_ludd.networking.scapy_adapter) so networking playbooks can craft, send, sniff, and analyze packets directly. Read-only actions (C(read_pcap), C(analyze_pcap), C(dissect_packet)) are check-mode safe and return C(changed=False). Mutating actions (C(write_pcap), C(craft_packet), C(send_packet), C(sniff_packets)) require the adapter binary (C(scapy)) and return C(changed=True) on success. All actions run via the adapter's Python API (never C(shell=True)).",
-    "input_schema": {
-      "type": "object",
-      "properties": {
-        "action": {
-          "type": "string"
-        },
-        "pcap_path": {
-          "type": "string"
-        },
-        "packets": {
-          "type": "array"
-        },
-        "protocol_stack": {
-          "type": "array"
-        },
-        "packet_fields": {
-          "type": "object"
-        },
-        "interface": {
-          "type": "string",
-          "default": "eth0"
-        },
-        "count": {
-          "type": "integer",
-          "default": 1
-        },
-        "timeout": {
-          "type": "integer",
-          "default": 30
-        },
-        "output_format": {
-          "type": "string",
-          "enum": [
-            "json",
-            "hex"
-          ],
-          "default": "json"
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "action"
       ]
     },
     "server_id": "ansible"
@@ -1556,6 +1834,19 @@
         "skills_path": {
           "type": "string",
           "default": ""
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 30
         }
       },
       "additionalProperties": false
@@ -1624,6 +1915,18 @@
         "extra_args": {
           "type": "array",
           "default": []
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
         }
       },
       "additionalProperties": false,
@@ -1782,6 +2085,19 @@
             "absent"
           ],
           "default": "present"
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 120
         }
       },
       "additionalProperties": false,

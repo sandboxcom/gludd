@@ -30,6 +30,8 @@ from typing import Any
 
 
 class EstimateAccuracy(StrEnum):
+    """Classification of actual work against its recorded estimate."""
+
     ACCURATE = "accurate"       # within threshold
     OVER_ESTIMATE = "over"      # estimate was too high
     UNDER_ESTIMATE = "under"    # estimate was too low
@@ -138,6 +140,7 @@ class EstimationTracker:
         min_samples: int = 5,
         max_history: int = 1000,
     ) -> None:
+        """Initialize thresholds, calibration state, and bounded history."""
         self._cost_threshold = cost_threshold
         self._time_threshold = time_threshold
         self._loc_threshold = loc_threshold
@@ -356,15 +359,24 @@ class EstimationTracker:
 
         denom = max(abs(estimate.estimated_cost_usd), 0.01)
         cost_ratio = actual.actual_cost_usd / denom
-        cal.mean_cost_error = cal.mean_cost_error * 0.9 + cost_ratio * 0.1
+        if cal.sample_count == 1:
+            cal.mean_cost_error = cost_ratio
+        else:
+            cal.mean_cost_error = cal.mean_cost_error * 0.9 + cost_ratio * 0.1
 
         denom = max(abs(estimate.estimated_time_minutes), 1.0)
         time_ratio = actual.actual_time_minutes / denom
-        cal.mean_time_error = cal.mean_time_error * 0.9 + time_ratio * 0.1
+        if cal.sample_count == 1:
+            cal.mean_time_error = time_ratio
+        else:
+            cal.mean_time_error = cal.mean_time_error * 0.9 + time_ratio * 0.1
 
         denom = max(abs(estimate.estimated_loc), 1)
         loc_ratio = actual.actual_loc / denom
-        cal.mean_loc_error = cal.mean_loc_error * 0.9 + loc_ratio * 0.1
+        if cal.sample_count == 1:
+            cal.mean_loc_error = loc_ratio
+        else:
+            cal.mean_loc_error = cal.mean_loc_error * 0.9 + loc_ratio * 0.1
 
         if cal.sample_count >= self._min_samples:
             cal.cost_multiplier = cal.mean_cost_error
@@ -402,4 +414,5 @@ class EstimationTracker:
 
 
 def default_estimation_tracker() -> EstimationTracker:
+    """Return a fresh tracker using the application defaults."""
     return EstimationTracker()

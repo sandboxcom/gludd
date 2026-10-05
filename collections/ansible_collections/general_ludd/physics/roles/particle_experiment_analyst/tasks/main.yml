@@ -15,45 +15,30 @@
 
 - name: Analyze particle experiment
   block:
-    - name: Compute cross-section and decay analysis
-      ansible.builtin.script:
-        cmd: |
-          import json, sys
-          sys.path.insert(0, "{{ playbook_dir }}/../../..")
-          from ansible_collections.general_ludd.physics.plugins.module_utils.particle_experiment import (
-              ParticleConfig, compute_cross_section, analyze_decay_chain, write_particle_result
-          )
-          config = ParticleConfig(
-              beam_energy_GeV={{ particle_beam_energy_gev }},
-              target="{{ particle_target }}",
-              beam="{{ particle_beam }}",
-              detector="{{ particle_detector }}",
-              luminosity_inv_fb={{ particle_luminosity_inv_fb }},
-              analysis_channel="{{ particle_analysis_channel }}",
-          )
-          xs_result = compute_cross_section(config)
-          decay = analyze_decay_chain("Higgs", 1.56e-22, {"ZZ": 0.0264, "WW": 0.215,
-              "gamma_gamma": 0.00227, "bb": 0.582, "tautau": 0.0627})
-          result = {"cross_section": xs_result, "decay_chain": decay}
-          path = write_particle_result(result, "{{ particle_output_dir }}")
-          print(json.dumps({"status": "success", "path": str(path),
-                            "expected_events": xs_result["expected_events"]}))
-        executable: python3
+    - name: Compute cross-section and decay analysis via packaged physics module
+      general_ludd.physics.physics_analysis:
+        operation: particle_experiment
+        output_dir: "{{ particle_output_dir }}"
+        parameters:
+          beam_energy_gev: "{{ particle_beam_energy_gev }}"
+          target: "{{ particle_target }}"
+          beam: "{{ particle_beam }}"
+          detector: "{{ particle_detector }}"
+          luminosity_inv_fb: "{{ particle_luminosity_inv_fb }}"
+          analysis_channel: "{{ particle_analysis_channel }}"
       register: particle_result
-      failed_when: false
-      changed_when: false
 
     - name: Parse particle result
       ansible.builtin.set_fact:
-        particle_output: "{{ particle_result.stdout | from_json }}"
-      when: particle_result.rc == 0
+        particle_output: "{{ particle_result.result }}"
+      when: particle_result.result is defined
 
   rescue:
     - name: Write failure result artifact
       ansible.builtin.copy:
         content: |
           {{ {'role': 'particle_experiment_analyst', 'status': 'failed',
-              'error': particle_result.stderr | default('unknown error')} | to_nice_json }}
+              'error': particle_result.msg | default('unknown error')} | to_nice_json }}
         dest: "{{ particle_output_dir }}/particle_result.json"
         mode: "0644"
       failed_when: false

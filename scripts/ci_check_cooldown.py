@@ -14,6 +14,10 @@ Usage::
     make deploy-and-forget         # push + record timestamp + print checkback
     make ci-cooldown-status        # show remaining cooldown seconds
 
+The internal ``record-push`` command runs only after a push succeeds. It
+atomically arms verdict history and increments the restart counter; failed
+preflight checks therefore cannot consume restart budget.
+
 Exit codes for ``check``: 0=proceed to ci-verdict, 1=cooldown blocks AND last
 verdict was RED/failure (the failure IS surfaced), 3=cooldown blocks and last
 verdict was success/pending/unknown. In all cases the last known verdict is
@@ -25,8 +29,17 @@ State file: ``/tmp/gludd-ci-check-state.json``
      "last_verdict": "<success|failure|pending|unknown>",
      "last_verdict_epoch": <float>}
 
+Verdict history file: ``/tmp/gludd-ci-verdict-history.json``
+    ``record-verdict <verdict> <sha>`` additionally sets ``last_checked_sha``
+    (and ``last_verdict``/``last_checked_ts``) in this file via an atomic
+    tmp+rename write, preserving ``last_push_sha`` and any other existing
+    keys. This is what unblocks the Makefile ``_ci-verdict-history-guard``
+    (AA032), which refuses a push while ``last_checked_sha`` !=
+    ``last_push_sha``.
+
 Default cooldown: 600s (10 min). Override via ``CI_CHECK_COOLDOWN_SEC``.
 """
+
 from __future__ import annotations
 
 import json
@@ -34,25 +47,69 @@ import os
 import subprocess
 import sys
 import time
+from contextlib import suppress
 from pathlib import Path
+from typing import TypedDict, cast
+
+
+class CIState(TypedDict, total=False):
+    """Durable cooldown state persisted between operator invocations."""
+
+    last_check_epoch: float
+    last_push_epoch: float
+    last_head_sha: str
+    check_count: int
+    last_verdict: str
+    last_verdict_epoch: float
 
 STATE_FILE = Path(os.environ.get("GLUDD_CI_STATE_FILE", "/tmp/gludd-ci-check-state.json"))
+HISTORY_FILE = Path(os.environ.get("GLUDD_CI_HISTORY_FILE", "/tmp/gludd-ci-verdict-history.json"))
+RESTART_COUNT_FILE = Path(os.environ.get("GLUDD_CI_RESTART_COUNT_FILE", "/tmp/gludd-ci-restart-count"))
+PUSH_STATE_FILE = Path(os.environ.get("GLUDD_PUSH_STATE_FILE", "/tmp/gludd-push-state.json"))
 DEFAULT_COOLDOWN_SEC = int(os.environ.get("CI_CHECK_COOLDOWN_SEC", "600"))
 
 
-def load_state() -> dict:
+def load_state() -> CIState:
     try:
-        return json.loads(STATE_FILE.read_text())
+        loaded: object = json.loads(STATE_FILE.read_text())
+        if isinstance(loaded, dict):
+            return cast(CIState, loaded)
     except (FileNotFoundError, json.JSONDecodeError):
-        return {"last_check_epoch": 0.0, "last_push_epoch": 0.0, "last_head_sha": "", "check_count": 0,
-                "last_verdict": "", "last_verdict_epoch": 0.0}
+        pass
+    return {
+        "last_check_epoch": 0.0,
+        "last_push_epoch": 0.0,
+        "last_head_sha": "",
+        "check_count": 0,
+        "last_verdict": "",
+        "last_verdict_epoch": 0.0,
+    }
 
 
-def save_state(state: dict) -> None:
+def save_state(state: CIState) -> None:
     STATE_FILE.write_text(json.dumps(state))
 
 
-def remaining_cooldown_sec(state: dict, cooldown: int = DEFAULT_COOLDOWN_SEC) -> float:
+def load_history() -> dict[str, object]:
+    """Read the CI verdict history file; missing/corrupt → empty dict."""
+    try:
+        loaded: object = json.loads(HISTORY_FILE.read_text())
+        if isinstance(loaded, dict):
+            return cast(dict[str, object], loaded)
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    return {}
+
+
+def save_history_atomic(history: dict[str, object]) -> None:
+    """Write the history file atomically (tmp + rename) so a partial write
+    can never leave the file corrupt (AB074 requires valid JSON at all times)."""
+    tmp_path = HISTORY_FILE.with_suffix(".json.tmp")
+    tmp_path.write_text(json.dumps(history))
+    os.replace(tmp_path, HISTORY_FILE)
+
+
+def remaining_cooldown_sec(state: CIState, cooldown: int = DEFAULT_COOLDOWN_SEC) -> float:
     elapsed = time.time() - state.get("last_check_epoch", 0.0)
     return max(0.0, cooldown - elapsed)
 
@@ -70,6 +127,81 @@ def record_push(head_sha: str) -> None:
     state["last_push_epoch"] = time.time()
     state["last_head_sha"] = head_sha
     save_state(state)
+
+
+def _load_restart_count() -> int:
+    """Return the durable restart count, rejecting corrupt or negative state."""
+    try:
+        raw = RESTART_COUNT_FILE.read_text().strip()
+    except FileNotFoundError:
+        return 0
+    value = int(raw)
+    if value < 0:
+        raise ValueError("restart count cannot be negative")
+    return value
+
+
+def _save_restart_count_atomic(value: int) -> None:
+    """Atomically replace the restart-count state file."""
+    tmp_path = RESTART_COUNT_FILE.with_name(f"{RESTART_COUNT_FILE.name}.tmp")
+    tmp_path.write_text(str(value))
+    os.replace(tmp_path, RESTART_COUNT_FILE)
+
+
+def cmd_record_restart_block(restart_count: int) -> int:
+    """Atomically publish a structured AA023 denial event."""
+    if restart_count < 3:
+        print("RESTART-BLOCK-FAILED: count is below the blocking threshold", file=sys.stderr)
+        return 2
+    event = {
+        "last_push_blocked": True,
+        "block_reason": "_ci-restart-cap:limit",
+        "restart_count": restart_count,
+        "max_allowed": 3,
+        "epoch": int(time.time()),
+    }
+    tmp_path = PUSH_STATE_FILE.with_name(f"{PUSH_STATE_FILE.name}.tmp")
+    try:
+        tmp_path.write_text(json.dumps(event))
+        os.replace(tmp_path, PUSH_STATE_FILE)
+    except OSError as exc:
+        print(f"RESTART-BLOCK-FAILED: state write failed: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_record_push() -> int:
+    """Record exactly one push after it has successfully landed.
+
+    Verdict history is armed before the restart count changes. If either
+    durable write fails, the command surfaces the error and returns nonzero;
+    callers must never retry the push itself.
+    """
+    head_sha = get_head_sha()
+    if not head_sha:
+        print("RECORD-PUSH-FAILED: unable to resolve HEAD", file=sys.stderr)
+        return 1
+    try:
+        restart_count = _load_restart_count()
+    except (OSError, ValueError) as exc:
+        print(f"RECORD-PUSH-FAILED: invalid restart count: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        history = load_history()
+        history["last_push_sha"] = head_sha
+        history["last_checked_sha"] = ""
+        history["ts"] = int(time.time())
+        save_history_atomic(history)
+        new_count = restart_count + 1
+        _save_restart_count_atomic(new_count)
+    except OSError as exc:
+        print(f"RECORD-PUSH-FAILED: state write failed: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"CI-RESTART-CAP: successful push {new_count}/3 recorded.")
+    print(f"recorded push verdict history for {head_sha}")
+    return 0
 
 
 def get_head_sha() -> str:
@@ -122,12 +254,35 @@ def _age_str(epoch: float) -> str:
     return f" ({age // 60}m{age % 60}s ago)"
 
 
-def cmd_record_verdict(verdict: str) -> int:
+def cmd_record_verdict(verdict: str, sha: str | None = None) -> int:
     state = load_state()
     state["last_verdict"] = verdict.strip().lower()
     state["last_verdict_epoch"] = time.time()
     save_state(state)
+    if sha:
+        history = load_history()
+        history["last_checked_sha"] = sha
+        history["last_verdict"] = verdict.strip().lower()
+        history["last_checked_ts"] = int(time.time())
+        save_history_atomic(history)
+    _reset_restart_cap_on_terminal_verdict(verdict)
     return 0
+
+
+def _reset_restart_cap_on_terminal_verdict(verdict: str) -> None:
+    """Reset the AA023 CI-restart counter once CI has reported a terminal
+    verdict (GREEN or RED) for the pushed SHA.
+
+    The Makefile `_ci-restart-cap` limits CI restarts to 3 per session and
+    documents that pushes unblock "when CI reports GREEN or RED". Without
+    this reset the counter never decreases — a blocked push loop permanently
+    wedges. PENDING/unknown verdicts keep the cap in force (CI has not
+    reported yet, so thrash protection is still needed)."""
+    normalized = verdict.strip().lower()
+    if normalized not in ("success", "failure"):
+        return
+    with suppress(OSError):
+        RESTART_COUNT_FILE.write_text("0")
 
 
 def cmd_deploy() -> int:
@@ -165,7 +320,11 @@ def cmd_status(cooldown: int) -> int:
 
 def main() -> int:
     if len(sys.argv) < 2:
-        print("usage: ci_check_cooldown.py {check|deploy|status|record-verdict} [args...]", file=sys.stderr)
+        print(
+            "usage: ci_check_cooldown.py "
+            "{check|deploy|status|record-push|record-restart-block|record-verdict} [args...]",
+            file=sys.stderr,
+        )
         return 2
     cmd = sys.argv[1]
     force = os.environ.get("FORCE", "") == "1"
@@ -179,7 +338,17 @@ def main() -> int:
         return cmd_status(cooldown)
     if cmd == "record-verdict":
         verdict = sys.argv[2] if len(sys.argv) > 2 else "unknown"
-        return cmd_record_verdict(verdict)
+        sha = sys.argv[3] if len(sys.argv) > 3 else None
+        return cmd_record_verdict(verdict, sha)
+    if cmd == "record-push":
+        return cmd_record_push()
+    if cmd == "record-restart-block":
+        try:
+            restart_count = int(sys.argv[2])
+        except (IndexError, ValueError):
+            print("record-restart-block requires an integer count", file=sys.stderr)
+            return 2
+        return cmd_record_restart_block(restart_count)
     print(f"unknown command: {cmd}", file=sys.stderr)
     return 2
 

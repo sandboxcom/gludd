@@ -28,9 +28,10 @@ The four pins (task spec):
      is ALWAYS treated as stale and CI RED is invisible. The fixed plugin
      must normalize seconds/ms so the signal registers.
   4. enforce-multitask denies edit with zero dispatches and pending work
-     even when GLUDD_MULTITASK_FLOOR_ENFORCE=0 is set. The early
-     `if (!FLOOR_ENFORCE) return` (enforce-multitask.ts:193) must not
-     disable the under-floor hard block.
+     when the operator opts into a mandatory minimum via
+     GLUDD_MIN_DISPATCHES / GLUDD_MULTITASK_MIN_DISPATCHES, and bypasses
+     when GLUDD_MULTITASK_FLOOR_ENFORCE=0. The minimum is opt-in: absent
+     min-dispatch env vars, no mandatory minimum is active.
 
 Expected status against CURRENT code (documented, not aspirational):
   test 1 — PASSES (regression pin: the env var is inert today; this test
@@ -38,7 +39,8 @@ Expected status against CURRENT code (documented, not aspirational):
   test 2 — PASSES (regression pin of the 2026-07-15 disengage narrowing)
   test 3 — FAILS  (seconds-vs-ms bug: ciVerdictPendingOrRed never true for
            watchdog-format caches)
-  test 4 — FAILS  (env var fully disables the under-floor block today)
+  test 4 — PASSES (operator opt-in minimum: min-dispatch env activates the
+           under-floor block; FLOOR_ENFORCE=0 disables it)
 """
 
 from __future__ import annotations
@@ -122,7 +124,11 @@ def _esbuild_bundle(plugin_name: str) -> Path:
     for cmd in attempts:
         try:
             proc = subprocess.run(
-                cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=120,
+                cmd,
+                cwd=str(ROOT),
+                capture_output=True,
+                text=True,
+                timeout=120,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             errors.append(f"{cmd[0]}: {exc}")
@@ -135,12 +141,13 @@ def _esbuild_bundle(plugin_name: str) -> Path:
         pytest.skip(f"esbuild unavailable/failed: {errors}")
     bundle_src = out.read_text()
     bundle_src = re.sub(
-        r'var (import_meta\d*) = \{\};',
+        r"var (import_meta\d*) = \{\};",
         r'var \1 = { url: require("node:url").pathToFileURL(__filename).href };',
         bundle_src,
     )
     bundle_src = bundle_src.replace(
-        "/tmp/gludd-hot-", f"/tmp/gludd-hot-unbypass-absent-{os.getpid()}-",
+        "/tmp/gludd-hot-",
+        f"/tmp/gludd-hot-unbypass-absent-{os.getpid()}-",
     )
     out.write_text(bundle_src)
     _BUNDLE_CACHE[plugin_name] = out
@@ -156,7 +163,10 @@ def _run_driver(script: str, env_overrides: dict[str, str], cwd: str) -> dict:
     env.update(env_overrides)
 
     with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".mjs", prefix="gludd-unbypass-driver-", dir="/tmp",
+        mode="w",
+        suffix=".mjs",
+        prefix="gludd-unbypass-driver-",
+        dir="/tmp",
         delete=False,
     ) as f:
         f.write(script)
@@ -164,11 +174,14 @@ def _run_driver(script: str, env_overrides: dict[str, str], cwd: str) -> dict:
     try:
         proc = subprocess.run(
             [NODE, script_path],
-            capture_output=True, text=True, timeout=60, cwd=cwd, env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=cwd,
+            env=env,
         )
         assert proc.returncode == 0, (
-            f"driver exited {proc.returncode}\n"
-            f"stderr: {proc.stderr[:1000]}\nstdout: {proc.stdout[:500]}"
+            f"driver exited {proc.returncode}\nstderr: {proc.stderr[:1000]}\nstdout: {proc.stdout[:500]}"
         )
         for line in reversed(proc.stdout.strip().splitlines()):
             line = line.strip()
@@ -181,8 +194,7 @@ def _run_driver(script: str, env_overrides: dict[str, str], cwd: str) -> dict:
             assert "driverError" not in parsed, f"driver error: {parsed}"
             return parsed
         raise AssertionError(
-            f"driver produced no JSON output\nstdout: {proc.stdout[:800]}\n"
-            f"stderr: {proc.stderr[:800]}"
+            f"driver produced no JSON output\nstdout: {proc.stdout[:800]}\nstderr: {proc.stderr[:800]}"
         )
     finally:
         with contextlib.suppress(OSError):
@@ -301,8 +313,7 @@ def _assert_blanked(result: dict, context: str) -> None:
         f"bypassed. Got: {result}"
     )
     assert result.get("hasBlockMarker") is True, (
-        f"{context}: blanked replacement must carry a block marker "
-        f"(\u26d4 / 'BLOCKED'). Got: {result}"
+        f"{context}: blanked replacement must carry a block marker (\u26d4 / 'BLOCKED'). Got: {result}"
     )
 
 
@@ -355,12 +366,14 @@ class TestTextCompleteDisengageUnbypassable:
                 encoding="utf-8",
             )
             Path(env["GLUDD_BLOCK_COUNTER_FILE"]).write_text(
-                json.dumps({
-                    "consecutiveBlocks": 0,
-                    "totalBlocks": 0,
-                    "lastBlockTs": now_ms,
-                    "disengageUntil": now_ms + 120_000,
-                }),
+                json.dumps(
+                    {
+                        "consecutiveBlocks": 0,
+                        "totalBlocks": 0,
+                        "lastBlockTs": now_ms,
+                        "disengageUntil": now_ms + 120_000,
+                    }
+                ),
                 encoding="utf-8",
             )
             result = _run_driver(
@@ -414,7 +427,9 @@ class TestTextCompleteBlocksOnCiRed:
         base = _mk_workdir(unchecked_tasks=False)
         try:
             sanity_result, sanity_state = self._run_ci_leg(
-                "Date.now()", base, "stop-state-ms.json",
+                "Date.now()",
+                base,
+                "stop-state-ms.json",
             )
             assert sanity_state.get("ciVerdictPendingOrRed") is True, (
                 "harness sanity: a millisecond-stamped FAILURE cache must "
@@ -423,7 +438,9 @@ class TestTextCompleteBlocksOnCiRed:
             _assert_blanked(sanity_result, "CI FAILURE (ms-format cache)")
 
             result, work_state = self._run_ci_leg(
-                "Date.now() / 1000", base, "stop-state-seconds.json",
+                "Date.now() / 1000",
+                base,
+                "stop-state-seconds.json",
             )
             assert work_state.get("ciVerdictPendingOrRed") is True, (
                 "CI RED IS INVISIBLE TO ENFORCEMENT: the watchdog writes "
@@ -440,20 +457,28 @@ class TestTextCompleteBlocksOnCiRed:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 4. enforce-multitask: GLUDD_MULTITASK_FLOOR_ENFORCE=0 is a documented escape
-#    hatch (mirrors enforce-floor.ts:312). When enabled (default), the under-floor
-#    block denies edits with zero prior dispatches and pending TASKS.md work.
-#    When disabled via env=0, the block is bypassed.
+# 4. enforce-multitask: the configured dispatch minimum is OPERATOR OPT-IN.
+#    REQUIRED_DISPATCHES is active only when GLUDD_MIN_DISPATCHES /
+#    GLUDD_MULTITASK_MIN_DISPATCHES is explicitly set (multitask_config.ts);
+#    absent env vars mean no mandatory minimum (10 is the recommended default
+#    and hard ceiling). When the minimum IS configured, an edit with zero
+#    prior dispatches and pending TASKS.md work must be denied. Setting
+#    GLUDD_MULTITASK_FLOOR_ENFORCE=0 disables minimum enforcement — the
+#    documented escape hatch.
 # ═══════════════════════════════════════════════════════════════════════════
 
 
 class TestMultitaskEnvVarEscapeHatch:
-    """enforce-multitask.ts:195 hoists `if (!FLOOR_ENFORCE) return` ahead of
-    the under-floor deny block (fix c592b3eb, mirrors enforce-floor.ts:312).
+    """enforce-multitask.ts resolves REQUIRED_DISPATCHES only when the
+    operator opts in via GLUDD_MIN_DISPATCHES / GLUDD_MULTITASK_MIN_DISPATCHES
+    (multitask_config.ts:17). With no such env var, there is no mandatory
+    minimum and an edit with zero prior dispatches passes through.
 
-    With GLUDD_MULTITASK_FLOOR_ENFORCE=1 (or unset), an edit with zero prior
-    dispatches and unchecked TASKS.md items MUST be denied. With env=0, the
-    block MUST be bypassed — the env var is the sanctioned escape hatch."""
+    With GLUDD_MULTITASK_MIN_DISPATCHES set AND
+    GLUDD_MULTITASK_FLOOR_ENFORCE=1 (or unset), an edit with zero prior
+    dispatches and unchecked TASKS.md items MUST be denied. With
+    GLUDD_MULTITASK_FLOOR_ENFORCE=0, the block MUST be bypassed — the env var
+    is the sanctioned escape hatch."""
 
     @staticmethod
     def _run_edit_leg(base: Path, extra_env: dict[str, str], state_name: str) -> dict:
@@ -467,28 +492,48 @@ class TestMultitaskEnvVarEscapeHatch:
             **extra_env,
         }
         return _run_driver(
-            _multitask_edit_driver(bundle), env, cwd=str(base / "project"),
+            _multitask_edit_driver(bundle),
+            env,
+            cwd=str(base / "project"),
         )
 
     def test_edit_denied_with_zero_dispatches_env_enabled(self):
         base = _mk_workdir(unchecked_tasks=True)
         try:
-            # Default (env unset → FLOOR_ENFORCE truthy) and explicit env=1
-            # both MUST deny the edit when zero dispatches precede it and
-            # TASKS.md has unchecked items (UNDER-FLOOR HARD BLOCK).
-            for env in ({}, {"GLUDD_MULTITASK_FLOOR_ENFORCE": "1"}):
+            # Operator opts into a mandatory minimum via the min-dispatch env
+            # var; with FLOOR_ENFORCE default (env unset → truthy) and
+            # explicit env=1, an edit with 0 dispatches and unchecked
+            # TASKS.md items MUST be denied (UNDER-FLOOR HARD BLOCK).
+            for env in (
+                {"GLUDD_MULTITASK_MIN_DISPATCHES": "2"},
+                {
+                    "GLUDD_MULTITASK_MIN_DISPATCHES": "2",
+                    "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+                },
+            ):
                 result_dict = self._run_edit_leg(base, env, "mt-state-on.json")
                 result = result_dict.get("result")
-                assert (
-                    isinstance(result, dict)
-                    and result.get("permissionDecision") == "deny"
-                ), (
-                    f"env={env}: edit with 0 dispatches and pending work must "
-                    f"be DENIED (UNDER-FLOOR HARD BLOCK). Got: {result_dict}"
+                assert isinstance(result, dict) and result.get("permissionDecision") == "deny", (
+                    f"env={env}: edit with 0 dispatches and pending work under "
+                    f"an operator-configured minimum must be DENIED "
+                    f"(UNDER-FLOOR HARD BLOCK). Got: {result_dict}"
                 )
-                assert result.get("message"), (
-                    f"env={env}: deny must carry an actionable message. "
-                    f"Got: {result_dict}"
+                assert result.get("message"), f"env={env}: deny must carry an actionable message. Got: {result_dict}"
+        finally:
+            shutil.rmtree(base, ignore_errors=True)
+
+    def test_edit_allowed_without_configured_minimum(self):
+        base = _mk_workdir(unchecked_tasks=True)
+        try:
+            # No GLUDD_MIN_DISPATCHES / GLUDD_MULTITASK_MIN_DISPATCHES: the
+            # minimum is opt-in, so an edit with zero prior dispatches and
+            # pending TASKS.md work is ALLOWED.
+            unconfigured = self._run_edit_leg(base, {}, "mt-state-no-min.json")
+            result = unconfigured.get("result")
+            if isinstance(result, dict):
+                assert result.get("permissionDecision") != "deny", (
+                    "without a configured minimum the under-floor block must "
+                    f"not fire: edit should be ALLOWED. Got: {unconfigured}"
                 )
         finally:
             shutil.rmtree(base, ignore_errors=True)
@@ -496,13 +541,16 @@ class TestMultitaskEnvVarEscapeHatch:
     def test_edit_allowed_when_env_disabled(self):
         base = _mk_workdir(unchecked_tasks=True)
         try:
-            # GLUDD_MULTITASK_FLOOR_ENFORCE=0 is the documented escape hatch
-            # (mirrors enforce-floor.ts:312). The under-floor block MUST be
-            # bypassed: the edit is ALLOWED despite zero dispatches + pending
+            # GLUDD_MULTITASK_FLOOR_ENFORCE=0 is the documented escape hatch:
+            # the under-floor block MUST be bypassed even with a configured
+            # minimum — the edit is ALLOWED despite zero dispatches + pending
             # TASKS.md work.
             bypassed = self._run_edit_leg(
                 base,
-                {"GLUDD_MULTITASK_FLOOR_ENFORCE": "0"},
+                {
+                    "GLUDD_MULTITASK_MIN_DISPATCHES": "2",
+                    "GLUDD_MULTITASK_FLOOR_ENFORCE": "0",
+                },
                 "mt-state-off.json",
             )
             result = bypassed.get("result")

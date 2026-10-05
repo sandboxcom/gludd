@@ -26,15 +26,18 @@ def _read_json(path: str) -> dict | None:
 
 
 def _check_env() -> dict[str, bool]:
+    # Canonical truthy pattern: enabled when the value lower-cases to one of
+    # the accepted truthy tokens (matches the plugin-side env checks).
     return {
-        "GLUDD_MULTITASK_FLOOR_ENFORCE": os.environ.get("GLUDD_MULTITASK_FLOOR_ENFORCE", "1") != "0",
-        "GLUDD_FLOOR_ENFORCE": os.environ.get("GLUDD_FLOOR_ENFORCE", "1") != "0",
-        "GLUDD_MAINTHREAD_STREAK_ENFORCE": os.environ.get("GLUDD_MAINTHREAD_STREAK_ENFORCE",
-                                                           "1") != "0",
-        "GLUDD_SESSION_START_ENFORCE": os.environ.get("GLUDD_SESSION_START_ENFORCE",
-                                                       "1") != "0",
-        "GLUDD_ENHANCEMENT_RATIO_ENFORCE": os.environ.get("GLUDD_ENHANCEMENT_RATIO_ENFORCE",
-                                                           "1") != "0",
+        "GLUDD_MULTITASK_FLOOR_ENFORCE": os.environ.get("GLUDD_MULTITASK_FLOOR_ENFORCE", "1").lower().strip()
+        in {"1", "true", "yes", "on"},
+        "GLUDD_FLOOR_ENFORCE": os.environ.get("GLUDD_FLOOR_ENFORCE", "1").lower().strip() in {"1", "true", "yes", "on"},
+        "GLUDD_MAINTHREAD_STREAK_ENFORCE": os.environ.get("GLUDD_MAINTHREAD_STREAK_ENFORCE", "1").lower().strip()
+        in {"1", "true", "yes", "on"},
+        "GLUDD_SESSION_START_ENFORCE": os.environ.get("GLUDD_SESSION_START_ENFORCE", "1").lower().strip()
+        in {"1", "true", "yes", "on"},
+        "GLUDD_ENHANCEMENT_RATIO_ENFORCE": os.environ.get("GLUDD_ENHANCEMENT_RATIO_ENFORCE", "1").lower().strip()
+        in {"1", "true", "yes", "on"},
     }
 
 
@@ -89,8 +92,7 @@ def main() -> int:
     return 0
 
 
-def _check_multitask_state(label: str, data: dict, floor: int,
-                           violations: list[str]) -> None:
+def _check_multitask_state(label: str, data: dict, floor: int, violations: list[str]) -> None:
     if label != "multitask":
         return
 
@@ -109,22 +111,13 @@ def _check_multitask_state(label: str, data: dict, floor: int,
         )
 
     if zero_streak >= 2:
-        violations.append(
-            f"MULTITASK zeroStreak={zero_streak} — {zero_streak} consecutive "
-            f"zero-dispatch messages"
-        )
+        violations.append(f"MULTITASK zeroStreak={zero_streak} — {zero_streak} consecutive zero-dispatch messages")
 
     if prev_disp > 0 and prev_disp < floor:
-        violations.append(
-            f"MULTITASK prevMessageDispatches={prev_disp} — last wave was below "
-            f"floor {floor}"
-        )
+        violations.append(f"MULTITASK prevMessageDispatches={prev_disp} — last wave was below floor {floor}")
 
     if this_disp > 0 and this_disp < floor:
-        violations.append(
-            f"MULTITASK thisMessageDispatches={this_disp} — current wave is "
-            f"below floor {floor}"
-        )
+        violations.append(f"MULTITASK thisMessageDispatches={this_disp} — current wave is below floor {floor}")
 
     if session_total > 0:
         thin_pct = (under_floor / max(session_total, 1)) * 100

@@ -1,10 +1,8 @@
-"""Polygon triangulation and geometric queries: ear clipping, monotone
-partitioning, area, centroid, and point-in-polygon.
+"""Provide polygon triangulation and geometric queries.
 
-Pure-Python, stdlib only.  O(n2) ear clipping; O(n log n) monotone partition
-via trapezoidal decomposition for simple polygons.  Polygon vertices are
-assumed to be in counterclockwise order for triangulation; clockwise inputs
-are automatically reversed.
+The pure-Python implementation includes ear clipping, monotonicity checks,
+area, centroid, and point-in-polygon queries. Polygon vertices are assumed to
+be counterclockwise for triangulation; clockwise inputs are reversed.
 """
 
 from __future__ import annotations
@@ -171,93 +169,11 @@ def is_monotone(polygon: list[tuple[float, float]]) -> bool:
     return _non_increasing_chain(topmost, botmost) and _non_decreasing_chain(botmost, topmost)
 
 
-def _sweep_triangulate(verts: list[tuple[float, float]]) -> list[tuple[int, int, int]]:
-    n = len(verts)
-    if n < 3:
-        return []
-    if n == 3:
-        return [(0, 1, 2)]
-
-    topmost = max(range(n), key=lambda i: (verts[i][1], verts[i][0]))
-    botmost = min(range(n), key=lambda i: (verts[i][1], verts[i][0]))
-
-    left_chain: list[int] = [topmost]
-    i = (topmost + 1) % n
-    while i != botmost:
-        left_chain.append(i)
-        i = (i + 1) % n
-    left_chain.append(botmost)
-
-    right_chain: list[int] = [topmost]
-    i = (topmost - 1) % n
-    while i != botmost:
-        right_chain.append(i)
-        i = (i - 1) % n
-    right_chain.append(botmost)
-
-    def _y_key(idx: int) -> tuple[float, float]:
-        return (-verts[idx][1], verts[idx][0])
-
-    events: list[int] = []
-    li = ri = 1
-    events.append(topmost)
-    while li < len(left_chain) - 1 and ri < len(right_chain) - 1:
-        if _y_key(left_chain[li]) < _y_key(right_chain[ri]):
-            events.append(left_chain[li])
-            li += 1
-        else:
-            events.append(right_chain[ri])
-            ri += 1
-    while li < len(left_chain) - 1:
-        events.append(left_chain[li])
-        li += 1
-    while ri < len(right_chain) - 1:
-        events.append(right_chain[ri])
-        ri += 1
-    events.append(botmost)
-
-    chain_side: dict[int, int] = {}
-    for v in left_chain:
-        chain_side[v] = 0
-    for v in right_chain:
-        chain_side[v] = 1
-
-    stack = [events[0], events[1]]
-    tris: list[tuple[int, int, int]] = []
-
-    for u in events[2:]:
-        us = chain_side[u]
-        ss = chain_side[stack[-1]]
-
-        if us != ss:
-            while len(stack) > 1:
-                tris.append((u, stack[-2], stack[-1]))
-                stack.pop()
-            stack = [stack[0], u]
-        else:
-            while len(stack) >= 2:
-                a, b = stack[-2], stack[-1]
-                ox = _orient(
-                    verts[a][0],
-                    verts[a][1],
-                    verts[b][0],
-                    verts[b][1],
-                    verts[u][0],
-                    verts[u][1],
-                )
-                if (us == 0 and ox > _EPS) or (us == 1 and ox < -_EPS):
-                    tris.append((u, a, b))
-                    stack.pop()
-                else:
-                    break
-            stack.append(u)
-
-    return tris
-
-
 def monotone_triangulate(polygon: list[tuple[float, float]]) -> list[tuple[int, int, int]]:
-    """Triangulate a simple polygon. Uses ear clipping (O(n2)) which handles
-    all simple polygons including y-monotone and non-monotone shapes."""
+    """Triangulate a simple polygon.
+
+    Ear clipping handles both y-monotone and non-monotone simple polygons.
+    """
     return ear_clipping(polygon)
 
 

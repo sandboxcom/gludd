@@ -1,53 +1,33 @@
 ---
-# validate_scenarios — validate E2E scenarios against real-world usage
-#
-# Cross-references generated scenarios against web research via the
-# ResearcherAgent (SearXNG-backed). Prunes implausible scenarios. Produces
-# validated scenario list with confidence scores and source URLs.
+- name: Require authenticated daemon validation or explicit mock mode
+  ansible.builtin.assert:
+    that:
+      - validate_scenarios_mock | bool or psk | length > 0
+    fail_msg: >-
+      Live scenario validation requires a daemon PSK. Set psk or explicitly
+      opt into validate_scenarios_mock for hermetic validation.
 
-- name: Create artifact directory
-  ansible.builtin.file:
-    path: "{{ artifact_dir }}"
-    state: directory
-    mode: "0755"
+- name: Validate scenarios through the packaged controller action
+  general_ludd.e2e_test_gen.e2e_pipeline:
+    operation: validate
+    scenarios_file: >-
+      {{ scenarios_artifact if scenarios_artifact | length > 0
+         else artifact_dir + '/scenarios.json' }}
+    output: "{{ artifact_dir }}/{{ validated_artifact_name }}"
+    confidence_threshold: "{{ confidence_threshold }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+    mock: "{{ validate_scenarios_mock }}"
+    research_categories: "{{ research_categories }}"
+    research_time_range: "{{ research_time_range }}"
+    max_results: "{{ max_search_results }}"
+    timeout: 360
+  register: _vs_pipeline
+  no_log: "{{ psk | length > 0 }}"
 
-# ── Load scenarios ──────────────────────────────────────────────────────
-
-- name: Load scenarios from artifact
-  ansible.builtin.slurp:
-    src: "{{ scenarios_artifact if scenarios_artifact | length > 0 else artifact_dir + '/scenarios.json' }}"
-  register: _vs_scenarios_raw
-
-- name: Fail if no scenarios found
-  ansible.builtin.fail:
-    msg: >-
-      No scenarios found at {{
-        scenarios_artifact if scenarios_artifact | length > 0
-        else artifact_dir + '/scenarios.json'
-      }}
-  when: _vs_scenarios_raw.content | default('') | length == 0
-
-- name: Parse scenarios
+- name: Publish validated scenario facts
   ansible.builtin.set_fact:
-    _vs_scenarios_data: "{{ _vs_scenarios_raw.content | b64decode | from_json }}"
-    _vs_scenarios_list: >-
-      {{ (_vs_scenarios_raw.content | b64decode | from_json).get('scenarios', []) }}
-
-# ── Validate scenarios via Python script ───────────────────────────────
-
-- name: Run validate_scenarios script
-  ansible.builtin.command:
-    cmd: >-
-      python3 "{{ validate_script }}"
-      --scenarios-file "{{ scenarios_artifact if scenarios_artifact | length > 0 else artifact_dir + '/scenarios.json' }}"
-      --output "{{ artifact_dir }}/{{ validated_artifact_name }}"
-      --confidence-threshold "{{ confidence_threshold }}"
-  register: _vs_script_result
-  changed_when: false
-
-- name: Parse validated output
-  ansible.builtin.set_fact:
-    _vs_output: "{{ (lookup('file', artifact_dir + '/' + validated_artifact_name) | from_json) }}"
+    _vs_output: "{{ _vs_pipeline.artifact }}"
 
 - name: Report completion
   ansible.builtin.debug:

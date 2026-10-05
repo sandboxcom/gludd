@@ -8,6 +8,7 @@ and RenderDocument validation edge cases.
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 from jinja2 import DictLoader
@@ -725,7 +726,7 @@ class TestSchemaFieldRendering:
             },
             data={"status": "b"},
         )
-        assert '<option value="b" selected' in html
+        assert re.search(r'<option value="b"\s+selected', html)
 
     def test_integer_field(self, env):
         env.loader.mapping["field.html.j2"] = self._FIELD_MACRO

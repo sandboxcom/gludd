@@ -20,7 +20,13 @@ import pytest
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_todo(todo_id: str, queue: str = "core") -> MagicMock:
+def _make_todo(
+    todo_id: str,
+    queue: str = "core",
+    *,
+    project_id: str | None = None,
+    dependencies: list[str] | str | None = None,
+) -> MagicMock:
     """Create a fake todo object with the minimal attributes EventLoop expects."""
     todo = MagicMock()
     todo.todo_id = todo_id
@@ -32,9 +38,8 @@ def _make_todo(todo_id: str, queue: str = "core") -> MagicMock:
     todo.prompt_profile = None
     todo.model_profile = None
     todo.plan_artifact = None
-    todo.project_id = None
-    # hasattr checks for project_id
-    type(todo).project_id = property(lambda self: None)
+    todo.project_id = project_id
+    todo.dependencies = dependencies if dependencies is not None else []
     return todo
 
 
@@ -182,8 +187,8 @@ class TestSchedulerTickConcurrentDispatch:
         assert count == 0
 
     @pytest.mark.asyncio
-    async def test_scheduler_error_falls_back_sequential(self) -> None:
-        """If Scheduler.plan() raises, fall back to sequential (fail-closed)."""
+    async def test_scheduler_error_dispatches_nothing(self) -> None:
+        """An invalid dependency graph cannot escape through input-order dispatch."""
         from unittest.mock import patch
 
         from general_ludd.event_loop.loop import EventLoop
@@ -210,8 +215,103 @@ class TestSchedulerTickConcurrentDispatch:
         ):
             count = await loop._dispatch_jobs_via_scheduler(todos)
 
-        assert count == 2
-        assert set(dispatch_order) == {"E0", "E1"}
+        assert count == 0
+        assert dispatch_order == []
+
+    @pytest.mark.asyncio
+    async def test_project_scoped_ids_preserve_same_named_todos(self) -> None:
+        """Runtime identity must not collapse coincident IDs from two owners."""
+        from general_ludd.event_loop.loop import EventLoop
+
+        calls: list[tuple[str, str]] = []
+        todos = [
+            _make_todo("SAME", project_id="project-a"),
+            _make_todo("SAME", project_id="project-b"),
+        ]
+        loop = EventLoop(session=None, config={})
+        loop._session_factory = _make_session_factory()
+        loop._config_snapshot = {}
+
+        async def fake_isolated(todo: Any) -> None:
+            calls.append((todo.project_id, todo.todo_id))
+
+        cast(Any, loop)._dispatch_execute_job_isolated = fake_isolated
+
+        assert await loop._dispatch_jobs_via_scheduler(todos) == 2
+        assert calls == [("project-a", "SAME"), ("project-b", "SAME")]
+
+    @pytest.mark.asyncio
+    async def test_explicit_dependencies_define_batch_order(self) -> None:
+        """A dependency runs in an earlier scheduler batch even when listed later."""
+        from general_ludd.event_loop.loop import EventLoop
+
+        parent = _make_todo("PARENT", project_id="project-a")
+        child = _make_todo(
+            "CHILD",
+            project_id="project-a",
+            dependencies='["PARENT"]',
+        )
+        batches: list[list[str]] = []
+        loop = EventLoop(session=None, config={})
+        loop._session_factory = _make_session_factory()
+        loop._config_snapshot = {}
+
+        async def capture_batch(
+            batch_todos: list[Any],
+            *,
+            can_concurrent: bool,
+        ) -> int:
+            assert can_concurrent is True
+            batches.append([todo.todo_id for todo in batch_todos])
+            return len(batch_todos)
+
+        cast(Any, loop)._dispatch_scheduler_batch = capture_batch
+
+        assert await loop._dispatch_jobs_via_scheduler([child, parent]) == 2
+        assert batches == [["PARENT"], ["CHILD"]]
+
+    @pytest.mark.asyncio
+    async def test_dependency_cycle_dispatches_nothing(self) -> None:
+        """A real two-node cycle is rejected rather than dispatched in input order."""
+        from general_ludd.event_loop.loop import EventLoop
+
+        first = _make_todo(
+            "FIRST",
+            project_id="project-a",
+            dependencies=["SECOND"],
+        )
+        second = _make_todo(
+            "SECOND",
+            project_id="project-a",
+            dependencies=["FIRST"],
+        )
+        loop = EventLoop(session=None, config={})
+        loop._session_factory = _make_session_factory()
+        loop._config_snapshot = {}
+        cast(Any, loop)._dispatch_scheduler_batch = AsyncMock(return_value=2)
+
+        assert await loop._dispatch_jobs_via_scheduler([first, second]) == 0
+        loop._dispatch_scheduler_batch.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_missing_predecessor_fails_closed_without_scoped_db_proof(
+        self,
+    ) -> None:
+        """A dependency omitted from the batch needs same-project COMPLETE proof."""
+        from general_ludd.event_loop.loop import EventLoop
+
+        child = _make_todo(
+            "CHILD",
+            project_id="project-a",
+            dependencies=["MISSING"],
+        )
+        loop = EventLoop(session=None, todo_repo=None, config={})
+        loop._session_factory = _make_session_factory()
+        loop._config_snapshot = {}
+        cast(Any, loop)._dispatch_scheduler_batch = AsyncMock(return_value=1)
+
+        assert await loop._dispatch_jobs_via_scheduler([child]) == 0
+        loop._dispatch_scheduler_batch.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_metrics_todos_dispatched_updated(self) -> None:

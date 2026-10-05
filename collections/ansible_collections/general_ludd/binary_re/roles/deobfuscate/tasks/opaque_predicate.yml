@@ -1,27 +1,20 @@
 ---
-- name: Detect opaque predicates
-  ansible.builtin.command:
-    cmd: >-
-      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
-      {{ role_path }}/files/deobfuscate.py
-      --mode opaque_predicates
-      --binary {{ binary_path }}
-      --output {{ output_dir }}/opaque_predicates.json
-  register: _opaque_result
-  changed_when: false
-  failed_when: _opaque_result.rc not in [0]
+- name: Detect opaque predicates through packaged runtime
+  general_ludd.binary_re.binary_runtime:
+    operation: opaque_predicates
+    params:
+      binary_path: "{{ binary_path }}"
+  register: _opaque_runtime
 
-- name: Read opaque predicate artifact
-  ansible.builtin.slurp:
-    src: "{{ output_dir }}/opaque_predicates.json"
-  register: _opaque_artifact_raw
+- name: Write opaque predicate artifact atomically
+  ansible.builtin.copy:
+    content: "{{ _opaque_runtime.artifact_content }}"
+    dest: "{{ output_dir }}/{{ _opaque_runtime.artifact_filename }}"
+    mode: "0644"
 
-- name: Parse opaque predicate artifact
+- name: Publish opaque predicate artifact
   ansible.builtin.set_fact:
-    opaque_predicate_artifact: >-
-      {{ _opaque_artifact_raw.content | b64decode | from_json
-         if (_opaque_artifact_raw is defined and _opaque_artifact_raw.content is defined)
-         else {} }}
+    opaque_predicate_artifact: "{{ _opaque_runtime.result }}"
 
 - name: Report opaque predicate summary
   ansible.builtin.debug:

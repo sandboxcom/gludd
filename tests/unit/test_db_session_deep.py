@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import weakref
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -240,6 +241,24 @@ class TestCloseEngine:
         close_engine(e1)
         assert _engine_closed(e1) is True
         assert _engine_closed(e2) is False
+
+    def test_recycled_identity_does_not_close_a_live_engine(self):
+        from general_ludd.db.session import (
+            _closed_engine_refs,
+            _closed_engines,
+            _engine_closed,
+        )
+
+        live_engine = MagicMock(spec=AsyncEngine)
+        collected_engine = MagicMock(spec=AsyncEngine)
+        engine_id = id(live_engine)
+        _closed_engines.add(engine_id)
+        _closed_engine_refs[engine_id] = weakref.ref(collected_engine)
+        try:
+            assert _engine_closed(live_engine) is False
+        finally:
+            _closed_engine_refs.pop(engine_id, None)
+            _closed_engines.discard(engine_id)
 
 
 class TestGetAsyncSessionDeep:

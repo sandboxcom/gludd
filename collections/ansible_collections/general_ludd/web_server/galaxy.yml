@@ -22,4 +22,5 @@ tags:
   - asgi
   - logging
   - middleware
-dependencies: {}
+dependencies:
+  general_ludd.agent: ">=0.2.0"

@@ -37,7 +37,10 @@ ModuleSymbols = namedtuple("ModuleSymbols", ["name", "functions", "classes"])
 
 
 class CodePathAnalyzer:
+    """Extract module-level functions, classes, and class-owned methods."""
+
     def analyze(self, file_path: str) -> ModuleSymbols:
+        """Parse one Python file and return its public-symbol structure."""
         parser = _get_parser()
         if parser is None:
             return ModuleSymbols(name=file_path, functions=[], classes=[])
@@ -103,7 +106,7 @@ class CodePathAnalyzer:
                     )
                     classes.append(csym)
 
-            if ctype in ("block", "body", "class_definition"):
+            if ctype in ("block", "body"):
                 CodePathAnalyzer._walk(child, source, functions, classes)
 
 

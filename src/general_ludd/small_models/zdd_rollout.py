@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Sequence
+from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -147,7 +148,7 @@ class ZDDRollout:
     @property
     def observations(self) -> list[dict[str, object]]:
         """Read-only view of recorded authorization observations."""
-        return list(self._observations)
+        return deepcopy(self._observations)
 
     def clear_observations(self) -> None:
         """Reset the observation log."""

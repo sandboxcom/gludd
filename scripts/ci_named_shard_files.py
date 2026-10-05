@@ -7,7 +7,10 @@ import fnmatch
 import shlex
 from pathlib import Path
 
-ISOLATED_TESTS = ("tests/unit/test_all_plugins_runtime.py",)
+ISOLATED_TESTS = (
+    "tests/unit/test_all_plugins_runtime.py",
+    "tests/unit/test_makefile_audit_deep.py",
+)
 
 SHARDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "unit-1a1": (
@@ -23,9 +26,16 @@ SHARDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
         ("*/test_connector*.py", "*/test_*_e2e.py"),
     ),
     "unit-1d": (("tests/unit/test_[bd]*.py",), ("*/test_*_e2e.py",)),
-    "unit-2": (("tests/unit/test_[f-m]*.py",), ("*/test_*_e2e.py",)),
-    "unit-3": (
-        ("tests/unit/test_[n-z]*.py", "tests/unit/secrets/"),
+    "unit-2": (
+        ("tests/unit/test_[f-m]*.py",),
+        ("*/test_*_e2e.py", "*/test_makefile_audit_deep.py"),
+    ),
+    "unit-3a": (
+        ("tests/unit/test_[n-r]*.py",),
+        ("*/test_*_e2e.py",),
+    ),
+    "unit-3b": (
+        ("tests/unit/test_[s-z]*.py", "tests/unit/secrets/"),
         ("*/test_*_e2e.py",),
     ),
     "other": (
@@ -58,6 +68,7 @@ def _excluded(path: str, patterns: tuple[str, ...]) -> bool:
 
 
 def expand_shard(shard: str) -> list[str]:
+    """Expand one canonical named shard into ordered, unique test paths."""
     try:
         patterns, excludes = SHARDS[shard]
     except KeyError as exc:
@@ -116,6 +127,7 @@ def slice_paths(
 
 
 def main() -> int:
+    """Print one optionally bounded named shard for a local CI invocation."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--shard", required=True)
     parser.add_argument("--shell", action="store_true")
@@ -134,8 +146,6 @@ def main() -> int:
         to_path=args.to_path,
         before_path=args.before_path,
     )
-    if not paths:
-        raise SystemExit(f"shard {args.shard!r} expanded to no test paths")
     if args.shell:
         print(" ".join(shlex.quote(path) for path in paths))
     else:

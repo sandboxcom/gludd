@@ -253,7 +253,10 @@ class TestHookSystemUnit:
         from unittest.mock import AsyncMock
 
         hooks = HookSystem()
-        with patch("general_ludd.events.hooks.httpx.AsyncClient") as mock_client_cls:
+        with (
+            patch("general_ludd.events.hooks.httpx.AsyncClient") as mock_client_cls,
+            patch("general_ludd.events.hooks.resolve_and_pin", return_value=None),
+        ):
             mock_client = MagicMock()
             mock_client_instance = MagicMock()
             mock_client_cls.return_value = mock_client_instance
@@ -269,7 +272,10 @@ class TestHookSystemUnit:
         from unittest.mock import AsyncMock
 
         hooks = HookSystem()
-        with patch("general_ludd.events.hooks.httpx.AsyncClient") as mock_client_cls:
+        with (
+            patch("general_ludd.events.hooks.httpx.AsyncClient") as mock_client_cls,
+            patch("general_ludd.events.hooks.resolve_and_pin", return_value=None),
+        ):
             mock_client = MagicMock()
             mock_client_instance = MagicMock()
             mock_client_cls.return_value = mock_client_instance
@@ -329,7 +335,10 @@ class TestHookSystemUnit:
         from unittest.mock import AsyncMock
 
         hooks = HookSystem()
-        with patch("general_ludd.events.hooks.httpx.AsyncClient") as mock_client_cls:
+        with (
+            patch("general_ludd.events.hooks.httpx.AsyncClient") as mock_client_cls,
+            patch("general_ludd.events.hooks.resolve_and_pin", return_value=None),
+        ):
             mock_client = MagicMock()
             mock_client_instance = MagicMock()
             mock_client_cls.return_value = mock_client_instance
@@ -349,7 +358,10 @@ class TestHookSystemUnit:
         from unittest.mock import AsyncMock
 
         hooks = HookSystem()
-        with patch("general_ludd.events.hooks.httpx.AsyncClient") as mock_client_cls:
+        with (
+            patch("general_ludd.events.hooks.httpx.AsyncClient") as mock_client_cls,
+            patch("general_ludd.events.hooks.resolve_and_pin", return_value=None),
+        ):
             mock_client = MagicMock()
             mock_client_instance = MagicMock()
             mock_client_cls.return_value = mock_client_instance
@@ -369,7 +381,10 @@ class TestHookSystemUnit:
         from unittest.mock import AsyncMock
 
         hooks = HookSystem()
-        with patch("general_ludd.events.hooks.httpx.AsyncClient") as mock_client_cls:
+        with (
+            patch("general_ludd.events.hooks.httpx.AsyncClient") as mock_client_cls,
+            patch("general_ludd.events.hooks.resolve_and_pin", return_value=None),
+        ):
             mock_client = MagicMock()
             mock_client_instance = MagicMock()
             mock_client_cls.return_value = mock_client_instance

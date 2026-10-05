@@ -50,7 +50,7 @@ class _UnavailableSessionFactory:
 async def _make_app(monkeypatch):
     """Build the real daemon app with PSK auth enabled, WITHOUT leaking the env.
 
-    GLUDD_PSK is read inside create_daemon_app and captured in the auth
+    GLUDD_AUTH_PSK is read inside create_daemon_app and captured in the auth
     middleware closure, so it must be set before app creation. We use
     monkeypatch (auto-reverted at test teardown) rather than os.environ so the
     PSK does not leak into the ~90 other daemon-app tests sharing the process.
@@ -60,7 +60,7 @@ async def _make_app(monkeypatch):
         await conn.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
-    monkeypatch.setenv("GLUDD_PSK", PSK)
+    monkeypatch.setenv("GLUDD_AUTH_PSK", PSK)
     from general_ludd.daemon import create_daemon_app
 
     app = create_daemon_app(tick_interval=1.0)

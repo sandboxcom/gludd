@@ -45,7 +45,7 @@ by weighted random in `ProjectManager.select_project` (`manager.py:234`).
 `ProjectWorkspace` (`src/general_ludd/projects/workspace.py:46`) creates, under
 `/tmp/gludd-workspaces/<project_id>/`:
 
-```
+```text
 repo/           ← git clone of project.repo_url lands here
 artifacts/  logs/  config/  runner/  playbooks/  templates/  roles/
 ```
@@ -70,7 +70,7 @@ Two-step per tick (`src/general_ludd/event_loop/loop.py`):
 2. **Repo-root resolution** — `_resolve_repo_root(project_id)` (`loop.py:944`)
    is the single chokepoint that maps a `project_id` to a working directory:
 
-   ```
+   ```text
    priority 1: self._project_workspace[project_id].repo_dir   (the clone)
    priority 2: self.config["repo_root"]                        (daemon cwd fallback)
    priority 3: None → completion_verifier fail-closes

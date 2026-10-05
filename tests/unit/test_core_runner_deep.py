@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import os
+import sys
+import tempfile
 import textwrap
+import threading
+import warnings
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -660,12 +666,89 @@ class TestRunWithTimeout:
             assert result.status == "successful"
             assert result.rc == 0
             assert result.stats == {"ok": 3}
+            mock_queue.close.assert_called_once_with()
+            mock_queue.join_thread.assert_called_once_with()
 
 
 # ── CoreAnsibleRunner _execute_with_core ────────────────────────────────────
 
 
 class TestExecuteWithCore:
+    def test_multithreaded_execution_is_warning_free(self, tmp_path):
+        """A live peer thread must never share an Ansible fork boundary."""
+        from ansible.utils.multiprocessing import context as ansible_mp_context
+
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
+
+        pb = tmp_path / "threaded.yml"
+        pb.write_text(
+            "- hosts: localhost\n"
+            "  connection: local\n"
+            "  gather_facts: false\n"
+            "  tasks:\n"
+            "    - ansible.builtin.debug:\n"
+            "        msg: safe worker\n"
+        )
+        release = threading.Event()
+        background = threading.Thread(target=release.wait, daemon=True)
+        background.start()
+        original_start = ansible_mp_context.Process.start
+
+        def guarded_start(process):
+            if threading.active_count() > 1:
+                warnings.warn(
+                    "forking a multithreaded process is unsafe",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+            return original_start(process)
+
+        try:
+            with (
+                patch.object(ansible_mp_context.Process, "start", guarded_start),
+                warnings.catch_warnings(),
+            ):
+                warnings.simplefilter("error", DeprecationWarning)
+                result = CoreAnsibleRunner()._execute_with_core(playbook_path=str(pb))
+        finally:
+            release.set()
+            background.join(timeout=2.0)
+
+        assert not background.is_alive()
+        assert result.status == "successful"
+
+    def test_process_state_context_restores_import_and_ansible_globals(self):
+        from ansible import context
+        from ansible.utils.collection_loader import AnsibleCollectionConfig
+
+        from general_ludd.ansible.core_runner import _isolated_ansible_process_state
+
+        env_key = "ANSIBLE_COLLECTIONS_PATH"
+        original_env = os.environ.get(env_key)
+        original_cliargs = context.CLIARGS
+        original_finder = AnsibleCollectionConfig._collection_finder
+        original_meta_path = list(sys.meta_path)
+        original_path_hooks = list(sys.path_hooks)
+        original_importer_cache = dict(sys.path_importer_cache)
+        fake_finder = MagicMock(name="test_collection_finder")
+        fake_path_hook = MagicMock(name="test_path_hook")
+        fake_cliargs = MagicMock(name="test_cliargs")
+
+        with _isolated_ansible_process_state({env_key: "/tmp/gludd-test-collections"}):
+            assert os.environ[env_key] == "/tmp/gludd-test-collections"
+            context.CLIARGS = fake_cliargs
+            AnsibleCollectionConfig._collection_finder = fake_finder
+            sys.meta_path.append(fake_finder)
+            sys.path_hooks.append(fake_path_hook)
+            sys.path_importer_cache["/tmp/gludd-test-import-cache"] = fake_finder
+
+        assert os.environ.get(env_key) == original_env
+        assert context.CLIARGS is original_cliargs
+        assert AnsibleCollectionConfig._collection_finder is original_finder
+        assert sys.meta_path == original_meta_path
+        assert sys.path_hooks == original_path_hooks
+        assert sys.path_importer_cache == original_importer_cache
+
     def test_inline_run_successful(self, tmp_path):
         from general_ludd.ansible.core_runner import CoreAnsibleRunner
 
@@ -675,6 +758,30 @@ class TestExecuteWithCore:
         result = runner._execute_with_core(playbook_path=str(pb))
         assert result.status == "successful"
         assert result.rc == 0
+
+    def test_inline_run_closes_ansible_connection_lock(self, tmp_path):
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
+
+        pb = tmp_path / "simple.yml"
+        pb.write_text("- hosts: localhost\n  connection: local\n  tasks: []\n")
+        with tempfile.TemporaryFile() as connection_lock:
+            fake_executor = SimpleNamespace(
+                _tqm=SimpleNamespace(
+                    _callback_plugins=[],
+                    _connection_lockfile=connection_lock,
+                    _stats=SimpleNamespace(process_tally={}),
+                ),
+                run=lambda: 0,
+            )
+
+            with patch(
+                "ansible.executor.playbook_executor.PlaybookExecutor",
+                return_value=fake_executor,
+            ):
+                result = CoreAnsibleRunner()._execute_with_core(playbook_path=str(pb))
+
+            assert result.status == "successful"
+            assert connection_lock.closed
 
     def test_inline_run_with_failed_task(self, tmp_path):
         from general_ludd.ansible.core_runner import CoreAnsibleRunner
@@ -869,6 +976,39 @@ class TestExecuteWithRunner:
         finally:
             mod.ansible_runner = orig_runner
 
+    def test_runner_passes_owned_job_deadline_to_ansible_runner(self, tmp_path):
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
+
+        iso = MagicMock()
+        iso.enabled = True
+        iso.to_runner_kwargs.return_value = {"container_image": "test"}
+        runner = CoreAnsibleRunner(process_isolation=iso)
+
+        mock_result = MagicMock()
+        mock_result.rc = 0
+        mock_result.status = "successful"
+        mock_result.stats = {}
+        mock_result.events = []
+
+        import general_ludd.ansible.core_runner as mod
+
+        orig_runner = mod.ansible_runner
+        mock_runner_mod = MagicMock()
+        mock_runner_mod.run.return_value = mock_result
+        mod.ansible_runner = mock_runner_mod
+        try:
+            result = runner._execute_with_runner(
+                playbook_path=str(tmp_path / "p.yml"),
+                timeout=23.0,
+            )
+        finally:
+            mod.ansible_runner = orig_runner
+
+        assert result.status == "successful"
+        assert mock_runner_mod.run.call_args.kwargs["settings"] == {
+            "job_timeout": 23.0,
+        }
+
 
 # ── _timeout_child_entry ────────────────────────────────────────────────────
 
@@ -887,6 +1027,7 @@ class TestTimeoutChildEntry:
             )
             _timeout_child_entry(runner, queue, {"playbook_path": "/t.yml"})
             queue.put.assert_called_once()
+            assert runner._inside_safe_process is False
 
     def test_child_posts_error_on_exception(self):
         from general_ludd.ansible.core_runner import CoreAnsibleRunner, _timeout_child_entry
@@ -898,6 +1039,7 @@ class TestTimeoutChildEntry:
             args = queue.put.call_args[0][0]
             assert args[0] == "err"
             assert "ValueError" in args[1]
+            assert runner._inside_safe_process is False
 
     def test_child_posts_error_on_systemexit(self):
         from general_ludd.ansible.core_runner import CoreAnsibleRunner, _timeout_child_entry
@@ -909,6 +1051,7 @@ class TestTimeoutChildEntry:
             args = queue.put.call_args[0][0]
             assert args[0] == "err"
             assert "SystemExit" in args[1]
+            assert runner._inside_safe_process is False
 
 
 # ── CoreAnsibleRunner _PLAYBOOK_ENV_ALLOWLIST ───────────────────────────────
@@ -920,7 +1063,7 @@ class TestPlaybookEnvAllowlist:
 
         allow = CoreAnsibleRunner._PLAYBOOK_ENV_ALLOWLIST
         assert "ZAI_API_KEY" not in allow
-        assert "GLUDD_PSK" not in allow
+        assert "GLUDD_AUTH_PSK" not in allow
         assert "DATABASE_URL" not in allow
         assert "OPENAI_API_KEY" not in allow
 

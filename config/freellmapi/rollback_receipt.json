@@ -1,0 +1,25 @@
+{
+  "active_lease_after": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "active_lease_before": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "candidate_id": "sha256:69d63b09199c37f38c02c711559b15e0fd5dc5ecc0e64e2d94c597dc5e5d3998",
+  "corpus_evidence_id": "sha256:33003e2239bb8e30bff3577c246e16b5bea4408fca524a16020203e3333b7daa",
+  "decision": "rollback_verified_promotion_blocked",
+  "events": [
+    "green_evidence_verified",
+    "promotion_blocked_live_provider_rejected",
+    "blue_assignment_retained",
+    "green_review_generation_closed"
+  ],
+  "evidence_id": "sha256:23acd0ada46af06655f1292063599f31e14a847b3b76731916f71e826485f000",
+  "gate": "freellmapi-rollback-proof-v1",
+  "green_candidate": "sha256:69d63b09199c37f38c02c711559b15e0fd5dc5ecc0e64e2d94c597dc5e5d3998",
+  "live_provider_evidence_id": "sha256:dd1732ff83f62d8799155f69369ab5c8c098b5cc918ae6dbdc770949757e6b20",
+  "promotion_attempted": false,
+  "protected_artifacts": [
+    "d3078364c02f482909681e21895c4e86dc11cc66c1da7ae2007ad35b096ddf7d"
+  ],
+  "runtime_admitted": false,
+  "schema_version": 1,
+  "serving_after": "d3078364c02f482909681e21895c4e86dc11cc66c1da7ae2007ad35b096ddf7d",
+  "serving_before": "d3078364c02f482909681e21895c4e86dc11cc66c1da7ae2007ad35b096ddf7d"
+}

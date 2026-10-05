@@ -1,8 +1,17 @@
 ---
 # linux_diagnose role — gather Linux diagnostic data from /proc/*,
 # journalctl, sysfs, dmesg, lsmod, and sysctl.
-# Uses the python gatherer backend in files/linux_gather.py for
+# Uses the managed-runtime gatherer in files/linux_gather.py for
 # structured JSON output, with raw shell fallbacks.
+
+- name: Resolve the managed-host Python runtime before mutation
+  ansible.builtin.include_role:
+    name: general_ludd.os_expert.managed_python_preflight
+    public: false
+    rolespec_validate: true
+  vars:
+    os_expert_python_preflight_contract: "{{ os_expert_python_contract | default('discovered') }}"
+    os_expert_python_preflight_managed_interpreter: "{{ os_expert_managed_python_interpreter | default('') }}"
 
 - name: Create artifact directory
   when: ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
@@ -21,7 +30,7 @@
     - proc
     - sysfs
 
-- name: Gather structured diagnostics via python backend
+- name: Gather structured diagnostics via managed runtime
   when:
     - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
     - gather_proc | bool or gather_dmesg | bool or gather_lsmod | bool or gather_sysctl | bool
@@ -33,10 +42,14 @@
         mode: "0755"
 
     - name: Run gatherer — collect proc, dmesg, lsmod, sysctl as JSON
-      ansible.builtin.command: >
-        python3 {{ artifact_dir }}/linux_gather.py
-        --output {{ artifact_dir }}/diagnostics.json
-        --dmesg-lines {{ dmesg_lines | default(500) }}
+      ansible.builtin.command:
+        argv:
+          - "{{ _os_expert_python_runtime.executable }}"
+          - "{{ artifact_dir }}/linux_gather.py"
+          - --output
+          - "{{ artifact_dir }}/diagnostics.json"
+          - --dmesg-lines
+          - "{{ dmesg_lines | default(500) }}"
       register: _gather_result
       changed_when: false
       ignore_errors: true

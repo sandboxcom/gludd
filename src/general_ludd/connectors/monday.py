@@ -90,6 +90,7 @@ class Transport(Protocol):
         json: dict[str, Any] | None = None,
         timeout: float = 30.0,
     ) -> HttpResponse:  # pragma: no cover - structural typing only
+        """Execute a synchronous HTTP request."""
         ...
 
 
@@ -120,6 +121,7 @@ class MondaySource:
         config: dict[str, Any],
         transport: Transport | None = None,
     ) -> None:
+        """Initialize the Monday source from config and an optional transport."""
         # -- board_ids ---------------------------------------------------
         board_ids = config.get("board_ids")
         if isinstance(board_ids, (int, str)):
@@ -149,21 +151,15 @@ class MondaySource:
     def _guard_ssrf(self, url: str) -> None:
         parts = urlsplit(url)
         if parts.scheme not in ("http", "https"):
-            raise ValueError(
-                f"monday: unsupported URL scheme: {parts.scheme!r}"
-            )
+            raise ValueError(f"monday: unsupported URL scheme: {parts.scheme!r}")
         host = parts.hostname or ""
         if is_url_blocked(url, scheme_allowlist=("http", "https")):
-            raise ValueError(
-                f"monday: refusing private/loopback host {host!r}"
-            )
+            raise ValueError(f"monday: refusing private/loopback host {host!r}")
 
     def _token(self) -> str:
         token = os.environ.get(self.token_env)
         if not token:
-            raise RuntimeError(
-                f"monday: token env var {self.token_env!r} is unset or empty"
-            )
+            raise RuntimeError(f"monday: token env var {self.token_env!r} is unset or empty")
         return token
 
     def _headers(self) -> dict[str, str]:
@@ -249,17 +245,15 @@ class MondaySource:
         for board_idx, board in enumerate(boards):
             if not isinstance(board, dict):
                 continue
-            board_id = (
-                self.board_ids[board_idx]
-                if board_idx < len(self.board_ids)
-                else None
-            )
+            board_id = self.board_ids[board_idx] if board_idx < len(self.board_ids) else None
             if board_id is None:
                 continue
             page = board.get("items_page") or {}
             if not isinstance(page, dict):
-                continue
-            items = page.get("items") or []
+                page = {}
+            # Backward compatibility: the pinned contract also accepts the
+            # legacy boards[].items shape without items_page pagination.
+            items = page.get("items") or board.get("items") or []
             for item in items:
                 if isinstance(item, dict):
                     out.append(self._normalize(item, board_id))
@@ -296,10 +290,6 @@ class MondaySource:
                     if isinstance(item, dict):
                         out.append(self._normalize(item, board_id))
                 next_cursor = page.get("cursor")
-                cursor = (
-                    next_cursor
-                    if isinstance(next_cursor, str) and next_cursor
-                    else None
-                )
+                cursor = next_cursor if isinstance(next_cursor, str) and next_cursor else None
 
         return out

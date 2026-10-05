@@ -17,6 +17,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 SHARED_TS = ROOT / ".opencode" / "lib" / "shared.ts"
@@ -24,7 +25,11 @@ SHARED_TS = ROOT / ".opencode" / "lib" / "shared.ts"
 _tmp_counter = 0
 
 
-def _run_ts(ts_body: str, env_override: dict | None = None, timeout: int = 15) -> dict | None:
+def _run_ts(
+    ts_body: str,
+    env_override: dict[str, str | None] | None = None,
+    timeout: int = 15,
+) -> dict[str, Any]:
     """Write a TS snippet that imports the real isSubagent, run via node, return parsed JSON."""
     global _tmp_counter
     _tmp_counter += 1
@@ -60,9 +65,10 @@ const {{ isSubagent }} = await import({json.dumps(str(SHARED_TS))})
                 f"Node exit {proc.returncode}:\nstderr: {proc.stderr[:800]}\nstdout: {proc.stdout[:400]}"
             )
         stdout = proc.stdout.strip()
-        if not stdout:
-            return None
-        return json.loads(stdout)
+        assert stdout, "Node subprocess returned no JSON result"
+        parsed: object = json.loads(stdout)
+        assert isinstance(parsed, dict), f"Expected JSON object, got {parsed!r}"
+        return parsed
     finally:
         with contextlib.suppress(OSError):
             os.unlink(tmp)
@@ -72,7 +78,7 @@ const {{ isSubagent }} = await import({json.dumps(str(SHARED_TS))})
 
 # ── Test 1: OPENCODE_SUBAGENT=1 → isSubagent returns true ───────────────────
 
-def test_env_var_true():
+def test_env_var_true() -> None:
     result = _run_ts(
         "console.log(JSON.stringify({isSub: isSubagent()}))",
         env_override={"OPENCODE_SUBAGENT": "1"},
@@ -82,7 +88,7 @@ def test_env_var_true():
 
 # ── Test 2: File marker exists → isSubagent returns true ────────────────────
 
-def test_file_marker_true():
+def test_file_marker_true() -> None:
     result = _run_ts(
         """\
 const fs = await import('node:fs')
@@ -98,7 +104,7 @@ console.log(JSON.stringify({isSub: val}))
 
 # ── Test 3: Neither env nor file → isSubagent returns false ─────────────────
 
-def test_neither_false():
+def test_neither_false() -> None:
     result = _run_ts(
         """\
 const fs = await import('node:fs')
@@ -112,7 +118,7 @@ console.log(JSON.stringify({isSub: isSubagent()}))
 
 # ── Test 4: Marker contents are opaque; existence remains authoritative ──────
 
-def test_marker_content_is_opaque():
+def test_marker_content_is_opaque() -> None:
     invalid_json = 'NOT VALID JSON ' + '{' * 13
     result = _run_ts(
         f"""\
@@ -131,7 +137,7 @@ console.log(JSON.stringify({{isSub: val}}))
 
 # ── Test 5: Missing env + missing file → false (main thread) ────────────────
 
-def test_main_thread_false():
+def test_main_thread_false() -> None:
     result = _run_ts(
         """\
 const fs = await import('node:fs')
@@ -146,7 +152,7 @@ console.log(JSON.stringify({isSub: isSubagent()}))
 
 # ── Edge case: OPENCODE_SUBAGENT=0 is NOT a subagent ────────────────────────
 
-def test_env_var_zero_is_not_subagent():
+def test_env_var_zero_is_not_subagent() -> None:
     result = _run_ts(
         "console.log(JSON.stringify({isSub: isSubagent()}))",
         env_override={"OPENCODE_SUBAGENT": "0"},
@@ -154,9 +160,9 @@ def test_env_var_zero_is_not_subagent():
     assert result["isSub"] is False, f"OPENCODE_SUBAGENT=0 must be false, got {result}"
 
 
-# ── Edge case: file marker overrides env=0 ──────────────────────────────────
+# ── Edge case: explicit env=0 disables marker fallback ─────────────────────
 
-def test_file_marker_wins_over_env_zero():
+def test_env_zero_disables_file_marker_fallback() -> None:
     result = _run_ts(
         """\
 const fs = await import('node:fs')
@@ -168,12 +174,17 @@ console.log(JSON.stringify({isSub: val}))
 """,
         env_override={"OPENCODE_SUBAGENT": "0"},
     )
-    assert result["isSub"] is True, f"File marker must win over env=0, got {result}"
+    assert result["isSub"] is False, (
+        "The marker is a fallback only when OPENCODE_SUBAGENT is unset; "
+        f"an explicit zero must win, got {result}"
+    )
 
 
 # ── Edge case: namespaced marker lookup isolates concurrent sessions ─────────
 
-def test_namespaced_marker_ignores_stale_default_pid_marker(tmp_path: Path):
+def test_namespaced_marker_ignores_stale_default_pid_marker(
+    tmp_path: Path,
+) -> None:
     marker_prefix = f"{tmp_path}/gludd-subagent-"
     result = _run_ts(
         """\
@@ -196,7 +207,7 @@ console.log(JSON.stringify({isSub: val}))
 
 # ── Edge case: env=1 overrides missing file ─────────────────────────────────
 
-def test_env_overrides_missing_file():
+def test_env_overrides_missing_file() -> None:
     result = _run_ts(
         """\
 const fs = await import('node:fs')

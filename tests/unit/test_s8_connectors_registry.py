@@ -129,7 +129,9 @@ class TestCaseInsensitiveMatching:
         _validate_class_name("PROMETHEUSSource")
 
     def test_module_config_with_valid_class_name_works(self) -> None:
-        _MOD_PATH = "general_ludd.connectors.test_s8"
+        # Exercise a real operator-selectable module path so this positive
+        # control remains compatible with the production module allowlist.
+        _MOD_PATH = "general_ludd.connectors.prometheus"
 
         mock_mod = types.ModuleType(_MOD_PATH)
 
@@ -154,7 +156,7 @@ class TestCaseInsensitiveMatching:
                     {
                         "name": "test-source",
                         "kind": "test",
-                        "module": "test_s8",
+                        "module": "prometheus",
                         "class_name": "FakeSource",
                     }
                 ],

@@ -38,10 +38,10 @@ gludd remediation chronic-blockers  # Show chronic blockers
 
 ## Authentication
 
-Write operations require the daemon PSK. Set `GLUDD_PSK` environment variable or pass `--psk` (if supported by subcommand).
+Write operations require the daemon PSK. Set `GLUDD_AUTH_PSK` environment variable or pass `--psk` (if supported by subcommand).
 
 ```bash
-export GLUDD_PSK="your-psk-here"
+export GLUDD_AUTH_PSK="your-psk-here"
 gludd todo add "New feature"
 ```
 

@@ -383,17 +383,20 @@ class TestEdgeCaseInteractions:
         rollout.rollback()
         assert rollout.stage is RolloutStage.ROLLBACK
 
-    def test_default_seed_produces_different_buckets_per_session(self) -> None:
+    def test_default_seed_produces_same_buckets_per_session(self) -> None:
         rollout = ZDDRollout(stage=RolloutStage.CANARY_10)
         rollout2 = ZDDRollout(stage=RolloutStage.CANARY_10)
         policy = SmallModelTaskPolicy()
+        policy2 = SmallModelTaskPolicy()
         identity = _identity()
 
         results = []
         for i in range(100):
             task = _task(task_id=f"def-seed-{i}")
             d1 = rollout.authorize(policy, task, identity, [_proof(task, identity=identity)])
-            d2 = rollout2.authorize(policy, task, identity, [_proof(task, identity=identity)])
+            d2 = rollout2.authorize(policy2, task, identity, [_proof(task, identity=identity)])
             results.append(d1.approved == d2.approved)
 
+        assert rollout.seed is None
+        assert rollout2.seed is None
         assert all(results)

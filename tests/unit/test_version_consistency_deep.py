@@ -8,6 +8,8 @@ import re
 import subprocess
 import tomllib
 
+from pytest import MonkeyPatch
+
 from general_ludd import __version__
 
 PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -15,6 +17,7 @@ CHANGELOG = os.path.join(PROJECT_ROOT, "CHANGELOG.md")
 PYPROJECT = os.path.join(PROJECT_ROOT, "pyproject.toml")
 README = os.path.join(PROJECT_ROOT, "README.md")
 INIT = os.path.join(PROJECT_ROOT, "src", "general_ludd", "__init__.py")
+TEST_PACKAGE_INIT = os.path.join(PROJECT_ROOT, "tests", "unit", "__init__.py")
 
 SEMVER_RE = re.compile(
     r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
@@ -35,7 +38,11 @@ def _read(path: str) -> str:
 def _pyproject_version() -> str:
     with open(PYPROJECT, "rb") as f:
         data = tomllib.load(f)
-    return data["project"]["version"]
+    project = data.get("project")
+    assert isinstance(project, dict), "pyproject.toml must contain a project table"
+    version = project.get("version")
+    assert isinstance(version, str), "pyproject.toml project.version must be a string"
+    return version
 
 
 def _init_version_line() -> str:
@@ -213,6 +220,13 @@ def test_all_version_files_agree() -> None:
     )
 
 
+def test_test_package_init_does_not_own_release_version() -> None:
+    """A non-collected package marker must not carry a stale version assertion."""
+    text = _read(TEST_PACKAGE_INIT)
+    assert "__version__" not in text
+    assert not re.search(r"\b\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\b", text)
+
+
 def test_init_version_is_string() -> None:
     assert isinstance(__version__, str)
     assert len(__version__) > 0
@@ -242,7 +256,15 @@ def test_git_tags_include_current_version() -> None:
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return
     tags = [t.strip() for t in result.stdout.splitlines() if t.strip()]
-    assert len(tags) >= 1, f"No git tag 'v{__version__}' found. Tags matching: {tags}"
+    if _release_tag_is_required():
+        assert tags == [f"v{__version__}"], (
+            f"Tag-triggered release validation requires exact tag 'v{__version__}', "
+            f"got: {tags}"
+        )
+    else:
+        assert tags in ([], [f"v{__version__}"]), (
+            f"Candidate validation found an unexpected current-version tag set: {tags}"
+        )
 
 
 def test_git_tags_are_annotated() -> None:
@@ -276,15 +298,40 @@ def test_git_tags_most_recent_is_current() -> None:
         return
     tags = [t.strip() for t in result.stdout.splitlines() if t.strip()]
     version_tags = [t.lstrip("v") for t in tags if SEMVER_RE.match(t.lstrip("v"))]
-    if version_tags:
+    if _release_tag_is_required():
+        assert version_tags, "Tag-triggered release validation found no semantic-version tags"
         assert version_tags[0] == __version__, (
             f"Most recent git tag by creatordate '{version_tags[0]}' != __version__ '{__version__}'"
         )
 
 
+def test_branch_candidate_does_not_require_uncut_release_tag(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setenv("GITHUB_REF_TYPE", "branch")
+    monkeypatch.delenv("GLUDD_REQUIRE_RELEASE_TAG", raising=False)
+    assert not _release_tag_is_required()
+
+
+def test_tag_trigger_requires_published_release_tag(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setenv("GITHUB_REF_TYPE", "tag")
+    assert _release_tag_is_required()
+
+
+def test_explicit_release_tag_guard_is_available_locally(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.delenv("GITHUB_REF_TYPE", raising=False)
+    monkeypatch.setenv("GLUDD_REQUIRE_RELEASE_TAG", "1")
+    assert _release_tag_is_required()
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _release_tag_is_required() -> bool:
+    """Return whether this run validates an already-created release tag."""
+    return os.environ.get("GITHUB_REF_TYPE") == "tag" or os.environ.get(
+        "GLUDD_REQUIRE_RELEASE_TAG"
+    ) == "1"
 
 
 def _parse_semver_for_sort(v: str) -> tuple[int, int, int, tuple[int | str, ...]]:

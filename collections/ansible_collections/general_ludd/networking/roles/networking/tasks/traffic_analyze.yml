@@ -18,7 +18,7 @@
       register: _ta_pcap_stat
 
     - name: Analyze pcap traffic via gludd_scapy
-      general_ludd.agent.gludd_scapy:
+      general_ludd.networking.gludd_scapy:
         action: analyze_pcap
         pcap_path: "{{ networking__pcap_path }}"
         output_format: "{{ networking__output_format | default('json') }}"

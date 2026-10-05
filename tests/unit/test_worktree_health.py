@@ -13,7 +13,10 @@ from __future__ import annotations
 import importlib
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
+from types import ModuleType
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -31,14 +34,14 @@ cwh = importlib.import_module("check_worktree_health")
 
 def _mock_run(
     return_values: dict[str, tuple[int, str, str]],
-):
+) -> Callable[..., MagicMock]:
     """Return a mock subprocess.run that maps commands to (rc, stdout, stderr).
 
     The key is matched against the first argument of the first cmd element.
     Example: {"git": (0, "output", "")} matches any cmd whose [0] == "git".
     """
 
-    def _runner(cmd: list[str], **kwargs):
+    def _runner(cmd: list[str], **kwargs: Any) -> MagicMock:
         key = cmd[0]
         if key in return_values:
             rc, out, err = return_values[key]
@@ -84,7 +87,7 @@ def _worktree_entry(
 class TestGetWorktreesExcludesMainCheckout:
     """get_worktrees() must exclude the main checkout."""
 
-    def test_excludes_main_checkout(self):
+    def test_excludes_main_checkout(self) -> None:
         porcelain = (
             f"worktree {cwh.MAIN_CHECKOUT}\nHEAD abc\nbranch refs/heads/development\n\n"
             f"worktree /tmp/gludd-worktrees/agent-foo\nHEAD def\nbranch refs/heads/agent-foo\n"
@@ -92,16 +95,19 @@ class TestGetWorktreesExcludesMainCheckout:
         with patch("check_worktree_health.run", return_value=(0, porcelain.strip(), "")):
             wts = cwh.get_worktrees()
         paths = [w["worktree"] for w in wts]
+        expected_agent_path = str(
+            Path("/tmp/gludd-worktrees/agent-foo").resolve()
+        )
         assert cwh.MAIN_CHECKOUT not in paths, "main checkout must be excluded"
-        assert "/tmp/gludd-worktrees/agent-foo" in paths
+        assert expected_agent_path in paths
 
-    def test_no_worktrees_returns_empty(self):
+    def test_no_worktrees_returns_empty(self) -> None:
         porcelain = f"worktree {cwh.MAIN_CHECKOUT}\nHEAD abc\nbranch refs/heads/development\n"
         with patch("check_worktree_health.run", return_value=(0, porcelain.strip(), "")):
             wts = cwh.get_worktrees()
         assert wts == []
 
-    def test_git_failure_returns_empty(self):
+    def test_git_failure_returns_empty(self) -> None:
         with patch("check_worktree_health.run", return_value=(1, "", "error")):
             wts = cwh.get_worktrees()
         assert wts == []
@@ -110,7 +116,7 @@ class TestGetWorktreesExcludesMainCheckout:
 class TestGetTreeAge:
     """get_tree_age() returns age from commit time or falls back to mtime."""
 
-    def test_commit_epoch_fresh(self):
+    def test_commit_epoch_fresh(self) -> None:
         now = int(time.time())
         epoch = now - 3600  # 1h ago
         with patch("check_worktree_health.run", return_value=(0, str(epoch), "")):
@@ -118,14 +124,14 @@ class TestGetTreeAge:
         assert age is not None
         assert 3500 < age < 3700, f"expected ~3600, got {age}"
 
-    def test_commit_epoch_stale(self):
+    def test_commit_epoch_stale(self) -> None:
         epoch = 1000000000  # ~2001
         with patch("check_worktree_health.run", return_value=(0, str(epoch), "")):
             age = cwh.get_tree_age("/tmp/wt")
         assert age is not None
         assert age > cwh.MAX_AGE_SECONDS, "ancient commit must exceed max age"
 
-    def test_fallback_mtime(self):
+    def test_fallback_mtime(self) -> None:
         with (
             patch("check_worktree_health.run", return_value=(1, "", "")),
             patch("os.path.getmtime", return_value=time.time() - 7200),
@@ -135,7 +141,7 @@ class TestGetTreeAge:
         assert age is not None
         assert 7100 < age < 7300, f"expected ~7200, got {age}"
 
-    def test_missing_dir_returns_none(self):
+    def test_missing_dir_returns_none(self) -> None:
         with patch("check_worktree_health.run", return_value=(1, "", "")):
             age = cwh.get_tree_age("/nonexistent/path")
         assert age is None
@@ -144,21 +150,21 @@ class TestGetTreeAge:
 class TestBranchMerged:
     """is_merged() uses git merge-base --is-ancestor."""
 
-    def test_merged_branch_returns_true(self):
+    def test_merged_branch_returns_true(self) -> None:
         with patch(
             "check_worktree_health.run",
             return_value=(0, "", ""),
         ):
             assert cwh.is_merged("agent-merged", "development")
 
-    def test_unmerged_branch_returns_false(self):
+    def test_unmerged_branch_returns_false(self) -> None:
         with patch(
             "check_worktree_health.run",
             return_value=(1, "", "not ancestor"),
         ):
             assert not cwh.is_merged("agent-unmerged", "development")
 
-    def test_custom_target(self):
+    def test_custom_target(self) -> None:
         with patch(
             "check_worktree_health.run",
             return_value=(0, "", ""),
@@ -172,21 +178,21 @@ class TestBranchMerged:
 class TestBranchExistsOnRemote:
     """branch_exists_on_remote() checks git ls-remote for the branch ref."""
 
-    def test_branch_exists(self):
+    def test_branch_exists(self) -> None:
         with patch(
             "check_worktree_health.run",
             return_value=(0, "abc123\trefs/heads/my-branch\n", ""),
         ):
             assert cwh.branch_exists_on_remote("my-branch")
 
-    def test_branch_missing(self):
+    def test_branch_missing(self) -> None:
         with patch(
             "check_worktree_health.run",
             return_value=(0, "", ""),
         ):
             assert not cwh.branch_exists_on_remote("no-such-branch")
 
-    def test_remote_check_fails_fail_open(self):
+    def test_remote_check_fails_fail_open(self) -> None:
         with patch(
             "check_worktree_health.run",
             return_value=(1, "", "network error"),
@@ -197,7 +203,7 @@ class TestBranchExistsOnRemote:
 class TestGetBranchCommit:
     """get_branch_commit() resolves branch tip."""
 
-    def test_valid_branch(self):
+    def test_valid_branch(self) -> None:
         sha = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
         with patch(
             "check_worktree_health.run",
@@ -205,7 +211,7 @@ class TestGetBranchCommit:
         ):
             assert cwh.get_branch_commit("agent-x") == sha
 
-    def test_nonexistent_branch_returns_none(self):
+    def test_nonexistent_branch_returns_none(self) -> None:
         with patch(
             "check_worktree_health.run",
             return_value=(1, "", "not found"),
@@ -216,11 +222,13 @@ class TestGetBranchCommit:
 class TestMainPass:
     """main() returns 0 when healthy."""
 
-    def test_no_worktrees_returns_zero(self):
+    def test_no_worktrees_returns_zero(self) -> None:
         with patch.object(cwh, "get_worktrees", return_value=[]):
             assert cwh.main() == 0, "no worktrees = PASS (exit 0)"
 
-    def test_merged_worktree_under_24h_passes(self, monkeypatch):
+    def test_merged_worktree_under_24h_passes(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         wt = _worktree_entry("/tmp/gludd-worktrees/agent-fresh", "agent-fresh")
         with (
             patch.object(cwh, "get_worktrees", return_value=[wt]),
@@ -235,7 +243,9 @@ class TestMainPass:
 class TestMainFailViolations:
     """main() returns 1 on violations."""
 
-    def test_stale_unmerged_violation(self, monkeypatch):
+    def test_stale_unmerged_violation(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         wt = _worktree_entry("/tmp/gludd-worktrees/agent-stale", "agent-stale")
         stale_age = cwh.MAX_AGE_SECONDS + 3600
         with (
@@ -248,7 +258,9 @@ class TestMainFailViolations:
             exit_code = cwh.main()
         assert exit_code == 1, "stale + unmerged = exit 1"
 
-    def test_prunable_violation(self, monkeypatch):
+    def test_prunable_violation(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         wt = _worktree_entry("/tmp/gludd-worktrees/agent-prune", "agent-prune", prunable="reason")
         with (
             patch.object(cwh, "get_worktrees", return_value=[wt]),
@@ -259,7 +271,9 @@ class TestMainFailViolations:
             exit_code = cwh.main()
         assert exit_code == 1, "prunable worktree = exit 1"
 
-    def test_remote_missing_violation(self, monkeypatch):
+    def test_remote_missing_violation(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         wt = _worktree_entry("/tmp/gludd-worktrees/agent-orphan", "agent-orphan")
         with (
             patch.object(cwh, "get_worktrees", return_value=[wt]),
@@ -274,7 +288,9 @@ class TestMainFailViolations:
 class TestMainDetachedWorktree:
     """Detached HEAD worktrees have no branch — some checks skip."""
 
-    def test_detached_passes_if_not_stale(self, monkeypatch):
+    def test_detached_passes_if_not_stale(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         wt = _worktree_entry("/tmp/gludd-worktrees/agent-detached", "", detached=True)
         with (
             patch.object(cwh, "get_worktrees", return_value=[wt]),
@@ -288,12 +304,12 @@ class TestMainDetachedWorktree:
 class TestExitCodes:
     """Ensure exit codes match the documented contract."""
 
-    def test_pass_returns_0(self):
+    def test_pass_returns_0(self) -> None:
         assert True  # structural: function exists
         with patch.object(cwh, "get_worktrees", return_value=[]):
             assert cwh.main() == 0
 
-    def test_violation_returns_1(self):
+    def test_violation_returns_1(self) -> None:
         wt = _worktree_entry("/tmp/gludd-worktrees/agent-bad", "agent-bad", prunable="yes")
         with (
             patch.object(cwh, "get_worktrees", return_value=[wt]),
@@ -307,16 +323,16 @@ class TestExitCodes:
 class TestConstantsDocumented:
     """Constants match the AGENTS.md contract."""
 
-    def test_max_age_is_24h(self):
+    def test_max_age_is_24h(self) -> None:
         assert cwh.MAX_AGE_SECONDS == 24 * 60 * 60
 
-    def test_worktree_root_is_tmp_gludd_worktrees(self):
+    def test_worktree_root_is_tmp_gludd_worktrees(self) -> None:
         assert cwh.WORKTREE_ROOT == "/tmp/gludd-worktrees"
 
-    def test_main_checkout_is_gludd_repo(self):
+    def test_main_checkout_is_gludd_repo(self) -> None:
         assert cwh.MAIN_CHECKOUT == "/Users/shawnwilson/gludd"
 
-    def test_remote_is_sandboxcom(self):
+    def test_remote_is_sandboxcom(self) -> None:
         assert cwh.REMOTE_NAME == "sandboxcom"
 
 
@@ -326,14 +342,16 @@ class TestMergeAllBehavior:
     units: merge resolution, cleanup, and conflict reporting.
     """
 
+    wma: ModuleType
+
     @pytest.fixture(autouse=True)
-    def _import_merge_all(self):
+    def _import_merge_all(self) -> None:
         sys.path.insert(0, str(SCRIPT_DIR))
         import worktree_merge_all as wma
 
         self.wma = wma
 
-    def test_is_merged_ancestor(self):
+    def test_is_merged_ancestor(self) -> None:
         with patch(
             "worktree_merge_all.run",
             return_value=(0, "", ""),
@@ -344,14 +362,14 @@ class TestMergeAllBehavior:
             assert "agent-merged" in cmd
             assert "development" in cmd
 
-    def test_is_merged_not_ancestor(self):
+    def test_is_merged_not_ancestor(self) -> None:
         with patch(
             "worktree_merge_all.run",
             return_value=(1, "", ""),
         ):
             assert not self.wma.is_merged("agent-diverged")
 
-    def test_merge_branch_success(self):
+    def test_merge_branch_success(self) -> None:
         with patch(
             "worktree_merge_all.run",
             return_value=(0, "merge ok", ""),
@@ -362,10 +380,12 @@ class TestMergeAllBehavior:
             assert "merge" in cmd
             assert "--no-ff" in cmd
 
-    def test_merge_branch_conflict(self):
+    def test_merge_branch_conflict(self) -> None:
         call_count = 0
 
-        def _side_effect(cmd, **kwargs):
+        def _side_effect(
+            cmd: list[str], **kwargs: Any
+        ) -> tuple[int, str, str]:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -376,7 +396,7 @@ class TestMergeAllBehavior:
             assert not self.wma.merge_branch("agent-conflict")
             assert mock_run.call_count == 2  # merge + merge --abort
 
-    def test_cleanup_branch_success(self):
+    def test_cleanup_branch_success(self) -> None:
         with patch(
             "worktree_merge_all.run",
             return_value=(0, "cleaned", ""),
@@ -386,7 +406,7 @@ class TestMergeAllBehavior:
             assert "make" in cmd
             assert "agent-cleanup" in cmd
 
-    def test_get_worktrees_excludes_main(self):
+    def test_get_worktrees_excludes_main(self) -> None:
         porcelain = (
             f"worktree {self.wma.MAIN_CHECKOUT}\nHEAD a1b2\nbranch refs/heads/development\n\n"
             f"worktree /tmp/gludd-worktrees/agent-1\nHEAD c3d4\nbranch refs/heads/agent-1\n\n"
@@ -403,14 +423,14 @@ class TestMergeAllBehavior:
         assert "/tmp/gludd-worktrees/agent-1" in paths
         assert "/tmp/gludd-worktrees/agent-2" in paths
 
-    def test_main_no_worktrees_returns_zero(self):
+    def test_main_no_worktrees_returns_zero(self) -> None:
         with (
             patch.object(self.wma, "get_worktrees", return_value=[]),
             patch.object(self.wma, "prune_worktrees"),
         ):
             assert self.wma.main() == 0
 
-    def test_main_with_conflicts_returns_one(self):
+    def test_main_with_conflicts_returns_one(self) -> None:
         wts = [
             {
                 "worktree": "/tmp/gludd-worktrees/w1",
@@ -433,7 +453,7 @@ class TestMergeAllBehavior:
             exit_code = self.wma.main()
         assert exit_code == 1, "conflict should produce exit 1"
 
-    def test_main_all_clean_returns_zero(self):
+    def test_main_all_clean_returns_zero(self) -> None:
         wts = [
             {
                 "worktree": "/tmp/gludd-worktrees/w1",
@@ -451,7 +471,7 @@ class TestMergeAllBehavior:
             exit_code = self.wma.main()
         assert exit_code == 0
 
-    def test_main_already_merged_skips_merge(self):
+    def test_main_already_merged_skips_merge(self) -> None:
         wts = [
             {
                 "worktree": "/tmp/gludd-worktrees/w1",

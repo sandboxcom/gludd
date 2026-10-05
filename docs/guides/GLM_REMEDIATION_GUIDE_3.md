@@ -153,7 +153,7 @@ Nothing for the agent to do here except: **re-verify these files were not hand-e
 - Commit: `W1.3: V1.2 done — state-based stop checks only, vocabulary list deleted`
 
 ### W1.4 status-snapshot writes in place + drift detector (V1.5)
-- Change `make status-snapshot` to rewrite the `<!-- gate:begin -->`/`<!-- gate:end -->` block **inside `SESSION.md` directly** (a small `scripts/status_snapshot.py` invoked by the target; stdlib only). Add the marker comments to SESSION.md around the "Current Gate Status" section.
+- Change `make status-snapshot` to rewrite the `&lt;!-- gate:begin --&gt;`/`&lt;!-- gate:end --&gt;` block **inside `SESSION.md` directly** (a small `scripts/status_snapshot.py` invoked by the target; stdlib only). Add the marker comments to SESSION.md around the "Current Gate Status" section.
 - Preflight: fail if the numbers inside the markers disagree with `.gate-status` (drift detector).
 - **Prove:** hand-edit a number between markers → preflight fails → `make status-snapshot` fixes it.
 - Commit: `W1.4: status-snapshot in-place + preflight drift detector`
@@ -324,7 +324,7 @@ This is the actual product. SESSION.md ticks cover C0/C2/C3/C4/H5/H6 — the rem
 - Any README number/claim ("0 noqa", test counts) gets a preflight grep check or gets deleted. One source of truth: the generated gate block (W1.4).
 
 ### W5.6 Worker endpoints need auth before shipping
-- The daemon enforces auth (`daemon.py:674-689`); the worker does not (`worker/app.py:45-112` — `/jobs/execute` et al. accept anyone who can reach the port). Anyone on the network can make the worker run arbitrary registered playbooks. Apply the same PSK check (the `GLUDD_PSK` mechanism CI already sets) to all worker job endpoints; unauthenticated → 401.
+- The daemon enforces auth (`daemon.py:674-689`); the worker does not (`worker/app.py:45-112` — `/jobs/execute` et al. accept anyone who can reach the port). Anyone on the network can make the worker run arbitrary registered playbooks. Apply the same PSK check (the `GLUDD_AUTH_PSK` mechanism CI already sets) to all worker job endpoints; unauthenticated → 401.
 - TDD: worker test client without the header → 401; with it → current behavior.
 - Commit: `W5.6: worker job endpoints require PSK auth`
 
@@ -412,7 +412,7 @@ This is the actual product. SESSION.md ticks cover C0/C2/C3/C4/H5/H6 — the rem
 
 ## 9. Checklist (mirror into TASKS.md as you go)
 
-```
+```text
 Phase W0 — truth repairs (done in validation pass 2026-06-12)
 [x] W0.1  SESSION.md ratchet-count contradictions corrected (23)
 [x] W0.2  TASKS.md V3.1 false tick reverted

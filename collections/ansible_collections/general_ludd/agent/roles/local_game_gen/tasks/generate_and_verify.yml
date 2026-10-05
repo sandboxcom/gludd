@@ -1,0 +1,235 @@
+---
+# generate_and_verify.yml — recursive generate → verify loop with bounded retry.
+#
+# Any failure in the block (generation or a verify check) is a REJECTION
+# event. The rescue records the REJECTED event (naming the failing check),
+# increments the attempt counter, and either re-includes this file with the
+# corrective retry_prompt — optionally on the next fallback model — or fails
+# the role hard once max_attempts is exhausted (bounded retry, no infinite
+# loop). Default max_attempts=1 preserves the original single-shot behavior.
+
+- name: "Select model for the current attempt"
+  ansible.builtin.set_fact:
+    _fallback_idx: "{{ [(_attempt | int) - 2, fallback_models | length - 1] | min }}"
+    _active_repo: >-
+      {{ model_repo if _attempt | int == 1 or fallback_models | length == 0
+         else fallback_models[([(_attempt | int) - 2, fallback_models | length - 1] | min)].repo }}
+    _active_file: >-
+      {{ model_file if _attempt | int == 1 or fallback_models | length == 0
+         else fallback_models[([(_attempt | int) - 2, fallback_models | length - 1] | min)].file }}
+
+- name: "Select effective prompt for the current attempt"
+  ansible.builtin.set_fact:
+    _effective_prompt: "{{ game_prompt if _attempt | int == 1 else retry_prompt }}"
+
+- name: "Generate and verify"
+  block:
+    - name: "Switch daemon-owned server to a fallback model"
+      when:
+        - _attempt | int > 1
+        - fallback_models | length > 0
+      block:
+        - name: "Ask the Gludd daemon to stop the current model before fallback"
+          general_ludd.agent.gludd_local_model:
+            action: shutdown
+            daemon_url: "{{ daemon_url }}"
+            psk: "{{ psk }}"
+            server_id: "{{ _local_model_server.server_id }}"
+            timeout: "{{ daemon_timeout }}"
+
+        - name: "Clear the stopped server identity before reacquisition"
+          ansible.builtin.set_fact:
+            _local_model_server: {}
+
+        - name: "Ask the Gludd daemon to acquire the fallback model"
+          general_ludd.agent.gludd_local_model:
+            action: download
+            daemon_url: "{{ daemon_url }}"
+            psk: "{{ psk }}"
+            timeout: "{{ daemon_timeout }}"
+            model_id: "{{ _active_repo }}"
+            filename: "{{ _active_file }}"
+            source: "{{ model_source }}"
+          register: _local_model_download
+
+        - name: "Ask the Gludd daemon to serve the fallback model"
+          general_ludd.agent.gludd_local_model:
+            action: serve
+            daemon_url: "{{ daemon_url }}"
+            psk: "{{ psk }}"
+            timeout: "{{ daemon_timeout }}"
+            model_id: "{{ _active_repo }}"
+            model_path: "{{ _local_model_download.local_path }}"
+            host: "{{ server_host }}"
+            port: "{{ server_port }}"
+            startup_timeout: "{{ server_startup_timeout }}"
+            gpu_layers: "{{ server_gpu_layers }}"
+            context_size: "{{ server_context_size }}"
+          register: _fallback_local_model_server
+
+        - name: "Promote the running fallback server identity"
+          ansible.builtin.set_fact:
+            _local_model_server: "{{ _fallback_local_model_server }}"
+
+    - name: "Ask the Gludd daemon to consume the owned local model"
+      general_ludd.agent.gludd_local_model:
+        action: consume
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+        timeout: "{{ daemon_timeout }}"
+        server_id: "{{ _local_model_server.server_id }}"
+        prompt: "{{ _effective_prompt }}"
+        max_tokens: "{{ max_tokens }}"
+      register: _model_response
+
+    - name: "Extract generated code from daemon response"
+      ansible.builtin.set_fact:
+        _generated_code: "{{ _model_response.text | default('') }}"
+
+    - name: "Write generated code to artifact"
+      ansible.builtin.copy:
+        content: "{{ _generated_code }}"
+        dest: "{{ artifact_dir }}/{{ game_name }}.py"
+        mode: "0644"
+
+    - name: "Verify - acceptance engine (single rejection choke point)"
+      when: use_acceptance_engine | default(false) | bool
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - -m
+          - general_ludd.game_gen.acceptance
+          - "{{ artifact_dir }}/{{ game_name }}.py"
+      register: _acceptance_result
+      changed_when: false
+
+    - name: "Verify - AST parse"
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - -c
+          - |
+            import ast
+            import sys
+            from pathlib import Path
+
+            ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"))
+            print("AST: OK")
+          - "{{ artifact_dir }}/{{ game_name }}.py"
+      register: _ast_result
+      changed_when: false
+
+    - name: "Verify - import module"
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - -c
+          - |
+            import importlib.util
+            import sys
+
+            module_name = sys.argv[2]
+            spec = importlib.util.spec_from_file_location(module_name, sys.argv[1])
+            if spec is None or spec.loader is None:
+                raise RuntimeError("unable to load generated module")
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            classes = [
+                value
+                for value in vars(module).values()
+                if isinstance(value, type) and value.__module__ == module_name
+            ]
+            if not classes:
+                print("ERR: no game class found")
+                raise SystemExit(1)
+            print(f"Classes: {[candidate.__name__ for candidate in classes]}")
+          - "{{ artifact_dir }}/{{ game_name }}.py"
+          - "{{ game_name }}"
+      register: _import_result
+      changed_when: false
+
+    - name: "Verify - runtime checks"
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - -c
+          - |
+            import importlib.util
+            import sys
+
+            module_name = sys.argv[2]
+            spec = importlib.util.spec_from_file_location(module_name, sys.argv[1])
+            if spec is None or spec.loader is None:
+                raise RuntimeError("unable to load generated module")
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            classes = [
+                value
+                for value in vars(module).values()
+                if isinstance(value, type) and value.__module__ == module_name
+            ]
+            game = classes[0]()
+            print(f"Instantiated {type(game).__name__}")
+            if hasattr(game, "start"):
+                game.start()
+                print("start(): OK")
+            if hasattr(game, "score"):
+                print(f"score(): {game.score()}")
+            if hasattr(game, "is_game_over"):
+                print(f"is_game_over(): {game.is_game_over()}")
+            if hasattr(game, "tick") and hasattr(game, "is_game_over"):
+                for _ in range(5):
+                    if not game.is_game_over():
+                        game.tick("right")
+                print("tick() x5: OK")
+            if hasattr(game, "restart"):
+                game.restart()
+                print("restart(): OK")
+            print("RUNTIME: OK")
+          - "{{ artifact_dir }}/{{ game_name }}.py"
+          - "{{ game_name }}"
+      register: _runtime_result
+      changed_when: false
+
+    - name: "Report verification results"
+      ansible.builtin.debug:
+        msg:
+          - "AST parse: {{ _ast_result.stdout_lines | default([]) }}"
+          - "Import: {{ _import_result.stdout_lines | default([]) }}"
+          - "Runtime: {{ _runtime_result.stdout_lines | default([]) }}"
+  rescue:
+    - name: "REJECTED event — record model-output rejection with failing check"
+      when: _verify_failed | default(true) | bool
+      ansible.builtin.set_fact:
+        _verify_failed: true
+        _verify_failed_check: >-
+          {{ 'acceptance engine' if _acceptance_result is defined and (_acceptance_result.failed | default(false))
+             else ('AST parse' if _ast_result is not defined or (_ast_result.failed | default(false))
+             else ('module import' if _import_result is not defined or (_import_result.failed | default(false))
+             else 'runtime checks')) }}
+
+    - name: "Increment attempt counter on rejection"
+      ansible.builtin.set_fact:
+        _attempt: "{{ _attempt | int + 1 }}"
+
+    - name: "Retry generation with corrective prompt (model fallback on repeated rejection)"
+      when: _attempt | int < max_attempts | int
+      ansible.builtin.include_tasks: generate_and_verify.yml
+
+    - name: "Remove artifact after all verification attempts exhausted"
+      when: _attempt | int >= max_attempts | int
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}/{{ game_name }}.py"
+        state: absent
+
+    - name: "Fail after all attempts rejected (skip when rejection is observable-only)"
+      when:
+        - _attempt | int >= max_attempts | int
+        - fail_on_rejection | default(true) | bool
+      ansible.builtin.fail:
+        msg: >-
+          REJECTED: generated code failed verification after {{ max_attempts }}
+          attempt(s). Last failing check: {{ _verify_failed_check }}.
+          AST result: {{ _ast_result.stdout_lines | default([]) }}
+          Import result: {{ _import_result.stdout_lines | default([]) }}
+          Runtime result: {{ _runtime_result.stdout_lines | default([]) }}

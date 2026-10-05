@@ -37,14 +37,20 @@ from __future__ import annotations
 
 import functools
 import importlib
+import importlib.util
 import logging
 import os
+import shlex
 import shutil
 import socket
 import sys
 import unittest.mock as _mock_mod
+from collections.abc import Iterator, Mapping
 from contextlib import suppress
+from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -93,6 +99,332 @@ del _FAKE_PKG_RESOURCES
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _SCRIPTS_DIR = _REPO_ROOT / "scripts"
 _SRC_DIR = _REPO_ROOT / "src"
+
+
+def _linked_worktree_main_checkout(repo_root: Path) -> Path | None:
+    """Return the canonical checkout for a linked Git worktree.
+
+    A normal checkout owns a ``.git`` directory and needs no cross-checkout
+    guard.  A linked worktree instead has a ``.git`` text file whose gitdir is
+    ``<main>/.git/worktrees/<name>``; that administrative path is the durable
+    filesystem identity of the canonical checkout.
+    """
+    marker = repo_root / ".git"
+    if not marker.is_file():
+        return None
+    try:
+        prefix, raw_git_dir = marker.read_text(encoding="utf-8").strip().split(":", 1)
+    except (OSError, UnicodeError, ValueError):
+        return None
+    if prefix.strip().lower() != "gitdir" or not raw_git_dir.strip():
+        return None
+
+    git_dir = Path(raw_git_dir.strip())
+    if not git_dir.is_absolute():
+        git_dir = marker.parent / git_dir
+    git_dir = git_dir.resolve()
+    worktrees_dir = git_dir.parent
+    common_git_dir = worktrees_dir.parent
+    if worktrees_dir.name != "worktrees" or common_git_dir.name != ".git":
+        return None
+    return common_git_dir.parent.resolve()
+
+
+_WRITE_OPEN_FLAGS = (
+    os.O_WRONLY | os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_TRUNC | os.O_EXCL
+)
+_MUTATING_PATH_EVENTS: dict[str, tuple[int, ...]] = {
+    "os.chmod": (0,),
+    "os.chown": (0,),
+    "os.link": (0, 1),
+    "os.mkdir": (0,),
+    "os.remove": (0,),
+    "os.rename": (0, 1),
+    "os.rmdir": (0,),
+    "os.symlink": (1,),
+    "os.truncate": (0,),
+    "os.utime": (0,),
+}
+_PYTEST_COLLECTION_ACTIVE = False
+
+
+@dataclass(frozen=True, slots=True)
+class _WorktreeConfinement:
+    """Deny test-process mutations that escape into canonical main."""
+
+    active_root: Path
+    canonical_root: Path
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "active_root", self.active_root.resolve())
+        object.__setattr__(self, "canonical_root", self.canonical_root.resolve())
+
+    @staticmethod
+    def _dir_fd(event: str, args: tuple[object, ...], path_index: int) -> int | None:
+        positions = {
+            ("os.chmod", 0): 2,
+            ("os.chown", 0): 3,
+            ("os.link", 0): 2,
+            ("os.link", 1): 3,
+            ("os.mkdir", 0): 2,
+            ("os.remove", 0): 1,
+            ("os.rename", 0): 2,
+            ("os.rename", 1): 3,
+            ("os.rmdir", 0): 1,
+            ("os.symlink", 1): 2,
+            ("os.utime", 0): 3,
+        }
+        position = positions.get((event, path_index))
+        if position is None or position >= len(args):
+            return None
+        value = args[position]
+        return value if isinstance(value, int) and value >= 0 else None
+
+    @staticmethod
+    def _dir_fd_path(dir_fd: int) -> Path | None:
+        """Resolve an open directory descriptor on Linux or macOS."""
+        for descriptor_root in ("/proc/self/fd", "/dev/fd"):
+            try:
+                return Path(os.readlink(f"{descriptor_root}/{dir_fd}"))
+            except OSError:
+                continue
+
+        try:
+            import fcntl
+
+            get_path = getattr(fcntl, "F_GETPATH", None)
+            if not isinstance(get_path, int):
+                return None
+            raw_path = fcntl.fcntl(dir_fd, get_path, b"\0" * 1024)
+        except (ImportError, OSError, ValueError):
+            return None
+        if not isinstance(raw_path, bytes):
+            return None
+        return Path(os.fsdecode(raw_path.split(b"\0", 1)[0]))
+
+    @staticmethod
+    def _resolve_path(value: object, dir_fd: int | None = None) -> Path | None:
+        if isinstance(value, int):
+            dir_fd = value
+            value = "."
+        if not isinstance(value, (str, bytes, os.PathLike)):
+            return None
+        try:
+            path = Path(os.fsdecode(value))
+        except (TypeError, ValueError):
+            return None
+        if not path.is_absolute():
+            base: Path | None
+            if dir_fd is None:
+                base = Path.cwd()
+            else:
+                base = _WorktreeConfinement._dir_fd_path(dir_fd)
+                if base is None:
+                    return None
+            path = base / path
+        try:
+            return path.resolve()
+        except (OSError, RuntimeError, ValueError):
+            return None
+
+    @staticmethod
+    def _is_within(path: Path, root: Path) -> bool:
+        return path == root or path.is_relative_to(root)
+
+    def _deny_canonical_path(
+        self,
+        event: str,
+        value: object,
+        dir_fd: int | None = None,
+    ) -> None:
+        path = self._resolve_path(value, dir_fd)
+        if path is None or self._is_within(path, self.active_root):
+            return
+        if self._is_within(path, self.canonical_root):
+            raise PermissionError(
+                f"pytest worktree confinement denied {event} in canonical "
+                f"main checkout {self.canonical_root}; active checkout is "
+                f"{self.active_root}"
+            )
+
+    def _contains_canonical_reference(self, value: object) -> bool:
+        if isinstance(value, Mapping):
+            return any(
+                self._contains_canonical_reference(item) for item in value.values()
+            )
+        if isinstance(value, (list, tuple, set, frozenset)):
+            return any(self._contains_canonical_reference(item) for item in value)
+        if isinstance(value, bytes):
+            value = os.fsdecode(value)
+        if isinstance(value, os.PathLike):
+            resolved = self._resolve_path(value)
+            return resolved is not None and self._is_within(
+                resolved, self.canonical_root
+            )
+        if not isinstance(value, str):
+            return False
+
+        canonical_text = str(self.canonical_root)
+        if canonical_text in value:
+            return True
+        candidates = [value]
+        if "=" in value:
+            candidates.append(value.split("=", 1)[1])
+        if os.pathsep in value:
+            candidates.extend(value.split(os.pathsep))
+        for candidate in candidates:
+            if not candidate or not candidate.startswith(("/", ".")):
+                continue
+            resolved = self._resolve_path(candidate)
+            if resolved is not None and self._is_within(
+                resolved, self.canonical_root
+            ):
+                return True
+        return False
+
+    def _deny_subprocess_payload(self, label: str, value: object) -> None:
+        if self._contains_canonical_reference(value):
+            raise PermissionError(
+                f"pytest worktree confinement denied subprocess {label} "
+                f"reference to canonical main checkout {self.canonical_root}; "
+                f"active checkout is {self.active_root}"
+            )
+
+    @staticmethod
+    def _subprocess_argv(value: object) -> tuple[str, ...]:
+        if isinstance(value, bytes):
+            value = os.fsdecode(value)
+        if isinstance(value, str):
+            try:
+                return tuple(shlex.split(value))
+            except ValueError:
+                return (value,)
+        if not isinstance(value, (list, tuple)):
+            return ()
+        return tuple(
+            os.fsdecode(item)
+            for item in value
+            if isinstance(item, (str, bytes, os.PathLike))
+        )
+
+    @classmethod
+    def _is_repository_mutation(cls, value: object) -> bool:
+        argv = cls._subprocess_argv(value)
+        if not argv:
+            return False
+        executable = Path(argv[0]).name
+        if executable == "git":
+            for index, token in enumerate(argv):
+                if token == "worktree" and any(
+                    action in {"add", "lock", "move", "prune", "remove", "repair", "unlock"}
+                    for action in argv[index + 1 :]
+                ):
+                    return True
+            if any(token in {"checkout", "switch"} for token in argv) and any(
+                token in {"-b", "-B", "-c", "-C"} for token in argv
+            ):
+                return True
+        if executable in {"make", "gmake"}:
+            mutating_targets = {
+                "agent-cleanup",
+                "agent-worktree",
+                "agent-worktree-base",
+                "feature-start",
+                "git-branch",
+                "git-checkout",
+            }
+            return any(
+                token in mutating_targets
+                or any(target in token for target in mutating_targets)
+                for token in argv[1:]
+            )
+        return False
+
+    @classmethod
+    def _is_side_effect_free_version_probe(cls, value: object) -> bool:
+        """Return whether collection is only querying one executable version."""
+        argv = cls._subprocess_argv(value)
+        return len(argv) == 2 and bool(Path(argv[0]).name) and argv[1] == "--version"
+
+    @staticmethod
+    def _is_collection_phase() -> bool:
+        return _PYTEST_COLLECTION_ACTIVE
+
+    def audit(self, event: str, args: tuple[object, ...]) -> None:
+        """Enforce the boundary at CPython file, cwd, and process events."""
+        if event == "open" and len(args) >= 3:
+            mode = args[1]
+            flags = args[2]
+            writes = (
+                isinstance(mode, str) and any(token in mode for token in "wax+")
+            ) or (isinstance(flags, int) and bool(flags & _WRITE_OPEN_FLAGS))
+            if writes:
+                self._deny_canonical_path(event, args[0])
+            return
+
+        if event == "os.chdir" and args:
+            self._deny_canonical_path(event, args[0])
+            return
+
+        if event == "subprocess.Popen" and len(args) >= 3:
+            cwd = args[2] if args[2] is not None else Path.cwd()
+            self._deny_canonical_path(event, cwd)
+            self._deny_subprocess_payload("argv", args[1])
+            if self._is_repository_mutation(args[1]):
+                raise PermissionError(
+                    "pytest worktree confinement denied repository mutation "
+                    "subprocess; tests may inspect but cannot create branches "
+                    "or worktrees"
+                )
+            environment = args[3] if len(args) >= 4 and args[3] is not None else os.environ
+            self._deny_subprocess_payload("environment", environment)
+            if self._is_collection_phase() and not self._is_side_effect_free_version_probe(
+                args[1]
+            ):
+                raise PermissionError(
+                    "pytest worktree confinement denied subprocess.Popen "
+                    "during pytest collection; module imports may only run "
+                    "an exact executable --version probe"
+                )
+            return
+
+        if event in {"os.posix_spawn", "os.posix_spawnp", "os.system"}:
+            if event != "os.system" and len(args) >= 3:
+                self._deny_subprocess_payload("argv", args[1])
+                self._deny_subprocess_payload("environment", args[2])
+            if self._is_collection_phase() and (
+                event == "os.system"
+                or len(args) < 2
+                or not self._is_side_effect_free_version_probe(args[1])
+            ):
+                raise PermissionError(
+                    f"pytest worktree confinement denied {event} during pytest "
+                    "collection; module imports may only run an exact "
+                    "executable --version probe"
+                )
+            return
+
+        for path_index in _MUTATING_PATH_EVENTS.get(event, ()):
+            if path_index < len(args):
+                self._deny_canonical_path(
+                    event,
+                    args[path_index],
+                    self._dir_fd(event, args, path_index),
+                )
+
+
+_CANONICAL_MAIN_CHECKOUT = _linked_worktree_main_checkout(_REPO_ROOT)
+if (
+    _CANONICAL_MAIN_CHECKOUT is not None
+    and _REPO_ROOT.resolve() != _CANONICAL_MAIN_CHECKOUT
+):
+    sys.addaudithook(
+        _WorktreeConfinement(
+            active_root=_REPO_ROOT,
+            canonical_root=_CANONICAL_MAIN_CHECKOUT,
+        ).audit
+    )
+
 for _p in (str(_SCRIPTS_DIR), str(_SRC_DIR)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
@@ -130,8 +462,7 @@ def _deny_unowned_unit_gunicorn(
         return
     if Path(executable).name == "gunicorn":
         raise RuntimeError(
-            "unit test attempted an unowned Gunicorn launch; mock "
-            "subprocess.Popen and explicitly own the fake process"
+            "unit test attempted an unowned Gunicorn launch; mock subprocess.Popen and explicitly own the fake process"
         )
 
 
@@ -303,6 +634,18 @@ def _pin_enforcement_shared_state(item: pytest.Item) -> None:
     item.add_marker(pytest.mark.xdist_group(name=ENFORCEMENT_SHARED_STATE_GROUP))
 
 
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_collection(session: pytest.Session) -> Iterator[None]:
+    """Mark only the real module-collection window as process-free."""
+    del session
+    global _PYTEST_COLLECTION_ACTIVE
+    _PYTEST_COLLECTION_ACTIVE = True
+    try:
+        yield
+    finally:
+        _PYTEST_COLLECTION_ACTIVE = False
+
+
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     """Serialize shared enforcement state and apply strict ratchet markers.
 
@@ -341,20 +684,27 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 def _allow_no_auth_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """Permit non-public daemon/worker endpoints during tests when no PSK is set.
 
-    The production daemon is fail-closed: ``GLUDD_PSK`` unset + no opt-out ⇒
+    The production daemon is fail-closed: ``GLUDD_AUTH_PSK`` unset + no opt-out ⇒
     every non-public path returns 503 (daemon.py:2270-2303, worker/app.py via
     security/auth.py). Tests that don't care about auth should not have to
     each ``monkeypatch.setenv`` to bypass it. Tests that DO exercise the auth
-    layer override this by setting ``GLUDD_PSK`` or unsetting the env var
+    layer override this by setting ``GLUDD_AUTH_PSK`` or unsetting the env var
     inside their own ``monkeypatch.setenv`` calls.
     """
-    if not os.environ.get("GLUDD_PSK", "").strip():
+    if not os.environ.get("GLUDD_AUTH_PSK", "").strip():
         monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
 
 
 @pytest.fixture(autouse=True)
 def _disable_gate_refresh_autospawn(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep plugin-construction tests from launching background release gates."""
+    """Prevent plugin-construction tests from launching background release gates.
+
+    Autouse is required because the gate-refresh autospawn hook reads the live
+    plugin bundle at import/construction time: without a global, process-wide
+    backstop, any test that merely builds an enforcement plugin would fork a
+    long-running background gate, leaking orphaned ``make`` processes into the
+    pytest runner and polluting CI with phantom work.
+    """
     monkeypatch.setenv("GLUDD_GATE_REFRESH_AUTOSPAWN", "0")
 
 
@@ -401,7 +751,7 @@ def _testclient_presents_loopback_host():
 _LEAKY_ENV_VARS: frozenset[str] = frozenset(
     {
         "AWS_ACCESS_KEY_ID",
-        "GLUDD_PSK",
+        "GLUDD_AUTH_PSK",
         "GLUDD_REQUIRE_AUTH",
         "GLUDD_ALLOW_NO_AUTH",
         "GLUDD_WEB_FETCH_ALLOWED_DOMAINS",
@@ -435,6 +785,25 @@ def _restore_leaky_env_vars(monkeypatch):
         else:
             monkeypatch.delenv(k, raising=False)
     yield
+
+
+@pytest.fixture(autouse=True)
+def _restore_cwd_after_test() -> None:
+    """Restore the worker CWD after every test.
+
+    Some tests intentionally chdir into temporary project roots. If a test fails
+    before restoring CWD, later tests that use repo-relative paths see missing
+    Makefile, src, or collection files. This fixture confines that process-global
+    mutation to the test that made it.
+    """
+    original_cwd = os.getcwd()
+    try:
+        yield
+    finally:
+        try:
+            os.chdir(original_cwd)
+        except OSError:
+            os.chdir(_REPO_ROOT)
 
 
 @pytest.fixture(autouse=True)
@@ -610,14 +979,14 @@ _A3_DENYLIST_PREFIXES: frozenset[str] = frozenset(
 )
 
 
-def _snapshot_sys_modules_and_path() -> tuple[dict[str, object], list[str]]:
+def _snapshot_sys_modules_and_path() -> tuple[dict[str, ModuleType], list[str]]:
     """Snapshot sys.modules (shallow dict copy) and sys.path (shallow list copy)."""
     import sys
 
     return dict(sys.modules), list(sys.path)
 
 
-def _restore_sys_modules_and_path(snap_modules: dict[str, object], snap_path: list[str]) -> None:
+def _restore_sys_modules_and_path(snap_modules: dict[str, ModuleType], snap_path: list[str]) -> None:
     """Restore sys.path verbatim; evict denylisted test-injected sys.modules keys;
     restore any replaced modules from the snapshot."""
     import sys
@@ -636,9 +1005,75 @@ def _restore_sys_modules_and_path(snap_modules: dict[str, object], snap_path: li
             sys.modules[key] = snap_modules[key]
 
 
+@dataclass(frozen=True)
+class _ImportStateSnapshot:
+    """Bounded process-global import state restored after each test."""
+
+    modules: dict[str, ModuleType]
+    path: tuple[str, ...]
+    meta_path: tuple[Any, ...]
+    path_hooks: tuple[Any, ...]
+    path_importer_cache: dict[str, Any]
+    argv: tuple[str, ...]
+
+
+def _snapshot_import_state() -> _ImportStateSnapshot:
+    """Capture mutable import registries without copying module contents."""
+    return _ImportStateSnapshot(
+        modules=dict(sys.modules),
+        path=tuple(sys.path),
+        meta_path=tuple(sys.meta_path),
+        path_hooks=tuple(sys.path_hooks),
+        path_importer_cache=dict(sys.path_importer_cache),
+        argv=tuple(sys.argv),
+    )
+
+
+def _restore_import_state(snapshot: _ImportStateSnapshot) -> None:
+    """Restore test-owned state without orphaning retained package importers.
+
+    Some packages install a package-owned meta-path finder when first imported;
+    ``six.moves`` is one example.  The module sandbox intentionally retains
+    ordinary newly imported modules, so it must retain their finders as well or
+    leave an internally inconsistent import cache for the next test.
+    """
+    added_meta_path = tuple(finder for finder in sys.meta_path if finder not in snapshot.meta_path)
+    _restore_sys_modules_and_path(snapshot.modules, list(snapshot.path))
+    retained_module_names = set(sys.modules) - set(snapshot.modules)
+    retained_package_finders = tuple(
+        finder
+        for finder in added_meta_path
+        if type(finder).__module__ in retained_module_names
+    )
+    sys.meta_path[:] = (*snapshot.meta_path, *retained_package_finders)
+    sys.path_hooks[:] = snapshot.path_hooks
+    sys.path_importer_cache.clear()
+    sys.path_importer_cache.update(snapshot.path_importer_cache)
+    sys.argv[:] = snapshot.argv
+
+
+def _load_path_module_isolated(module_name: str, module_path: str | Path) -> ModuleType:
+    """Execute one path module without retaining its test-only cache alias."""
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"unable to create import spec for {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    had_previous = module_name in sys.modules
+    previous = sys.modules.get(module_name)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        if not had_previous:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = cast(ModuleType, previous)
+    return module
+
+
 @pytest.fixture(autouse=True)
-def _sandbox_sys_modules_and_path():
-    """Snapshot and restore sys.modules + sys.path around every test.
+def _sandbox_sys_modules_and_path() -> Iterator[None]:
+    """Snapshot and restore process-global import state around every test.
 
     Prevents fake-module injection leaks: tests that inject stub modules
     (live_pkg_*, rbpkg, smg_*, capability_policy, fs_write_policy) into
@@ -647,9 +1082,9 @@ def _sandbox_sys_modules_and_path():
 
     Implements CI_GREEN_PLAN_2026-07-01.md Appendix A3.
     """
-    snap_modules, snap_path = _snapshot_sys_modules_and_path()
+    snapshot = _snapshot_import_state()
     yield
-    _restore_sys_modules_and_path(snap_modules, snap_path)
+    _restore_import_state(snapshot)
 
 
 # --- Environmental test-skip probes -----------------------------------------

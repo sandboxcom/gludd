@@ -46,3 +46,10 @@ class TestSemanticSearcherStructural:
             searcher = SemanticSearcher(cache_dir=tmpdir)
             searcher.close()
             searcher.close()
+
+    def test_context_manager_closes_cache(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            with SemanticSearcher(cache_dir=tmpdir) as searcher:
+                assert searcher._cache is not None
+
+            assert searcher._cache is None

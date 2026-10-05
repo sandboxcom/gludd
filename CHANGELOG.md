@@ -2,6 +2,65 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
+## [0.1.1] — 2026-10-05
+
+- Source range: `v0.1.0-beta.4..v0.1.1` (826 commits; release source `5dcd2f6931aa6cb13d4de526d6c739891c0240f1`).
+
+### Added
+
+- Provider-neutral accelerator discovery and facts for Apple Metal, Intel XPU,
+  NVIDIA, AMD, JAX TPU, FPGA, Slurm, and future accelerator kinds.
+- Model and runner right-sizing across single, fractional, multi-device, and
+  multi-host topologies for llama.cpp, vLLM, Ollama, and compatible runners.
+- Azure Container Apps and Azure VM/VMSS accelerator planning, owned lifecycle,
+  least-privilege credential handling, bounded spend, and teardown evidence.
+- Pinned FreeLLMAPI source admission, upstream Node 20/22 build verification,
+  provider catalog normalization, isolated scoring-kernel evaluation, frozen
+  corpus receipts, and fail-closed rollback/provenance records.
+- Universal polymer-design and Arduino-class firmware workloads using the same
+  scheduler, model gateway, accelerator placement, policy, and evidence boundary
+  as self-improvement work.
+- Reproducible cross-platform release artifacts, container and Ansible execution
+  environment images, SBOM, checksums, licenses, provenance manifest, and smoke
+  attestations.
+
+### Changed
+
+- Compute demand now originates in the durable todo scheduler, with project- and
+  provider-scoped ownership, bounded claims, observable use, and exact idle
+  teardown.
+- Accelerator discovery, placement, model scoring, and universal execution are
+  owned by general infrastructure/model packages; self-improvement is one
+  consumer rather than the architecture owner.
+- `greenlet` is a production dependency because SQLAlchemy asyncio requires it
+  in installed wheel environments.
+- Version-bearing metadata and release documentation now identify v0.1.1.
+
+### Fixed
+
+- Exact-SHA pipeline reporting now aggregates required hosted workflows and
+  rejects missing, stale, pending, cancelled, or contradictory evidence.
+- Release builds now preserve complete failure output, use pinned toolchains and
+  dependency locks, validate Ansible base-image liveness, and smoke every
+  packaged form before publication.
+- Resource ownership, cleanup, disk-pressure handling, process namespacing,
+  branch reconciliation, and guarded push reporting were hardened against the
+  failure modes found during the v0.1.1 release cycle.
+
+### Known limitations
+
+- The bounded Azure Container Apps T4 proof reached deployment but Azure placed
+  zero replicas; positive GPU-utilization and accepted mixed-provider evidence
+  remain separately tracked.
+- The FreeLLMAPI v0.11.1 candidate remains non-runtime-admitted: the live Z.AI
+  probe was rate-limited and the cross-engine/promotion prerequisites remain
+  fail-closed. The previously admitted, digest-pinned integration is unchanged.
+- The immutable published v0.1.1 tag is annotated but unsigned, and its release
+  assets have a deterministic source manifest and checksums but no signed SLSA
+  attestation. Neither public identity was rewritten after publication. The
+  release workflow now signs future tags before push and creates GitHub/Sigstore
+  provenance for the complete checksum-indexed asset set before publication.
+
 ## [0.1.0-beta.4] — 2026-08-09
 
 ### Added
@@ -10,8 +69,10 @@ All notable changes to this project are documented here. Format follows [Keep a 
 - Quantization ladder: GGUF Q4/Q5/Q8 with per-level quality assessment (severe/moderate/slight impact) (`models/quantization.py`)
 - Local model health check: warm-start at daemon boot, `/api/health` endpoint includes local model status (`health/local_model_check.py`)
 - Ollama health check + URL reachability probing as part of source-chain resolution
+- Branch reconciliation tooling: `development-merge-forward` (dry-run-first transactional reconciliation with current-development content preference), `development-merge-forward-batch` (atomic ancestry-only batching for superseded refs), `git-patch-equivalence` (separate already-applied patches from unique branch work), `resolve-development-conflicts` (preserve development on conflicts), and `branch-reconciliation-summary` (bounded cursor-paginated head classification with current-only and opt-in semantic-summary modes)
 
 ### Fixed
+- S83 reliability/security wave: fail-closed SkillCatalog download-path confinement, ripgrep root confinement, noncanonical GitHub issue-number validation, reviewed provider import policy, FIPS 203 ML-KEM provider boundary replacing custom Kyber, unsafe XMSS fallback removal, strict MessagePack DiskCache serialization, authenticated TLS 1.3 state, X.509 chain validation, and fail-closed dependency audit (100+ S83 items across algorithms, security, connectors, and tooling)
 - gate-lite: per-agent envelope key prefix normalization, YAML parse crash guards for large files and config cascade quotes, cost_pipeline assertion
 - gate-lite: `src.general_ludd` → `general_ludd` import path normalization with uv.lock refresh
 - event_log message assertion + ansible_lint_deep xdist serialization to prevent worker crashes
@@ -23,6 +84,8 @@ All notable changes to this project are documented here. Format follows [Keep a 
 ### Changed
 - 5 CI-smoke-safe local models flagged (Qwen 0.5B, SmolLM2 135M/360M, TinyLlama 1.1B, Phi-2) for lightweight CI model download tests
 - `model_sources.py`: `ALTERNATIVE_SOURCES` dict maps every local model to its multi-source download config with env-var-overridable S3 mirror URLs
+- Test count growth: 105k+ tests collected (latest serialized collection 105,546/105,547 with one intentional deselection and zero collection errors)
+- beta.4 pending release: full gate, development integration, and release fan-in remain outstanding
 
 ## [0.1.0-beta.3] — 2026-07-26
 

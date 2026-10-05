@@ -17,6 +17,7 @@ import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519
 
+import general_ludd.auth.webauthn as webauthn
 from general_ludd.auth.webauthn import (
     COSEKeyParser,
     ParsedCredential,
@@ -238,6 +239,22 @@ def test_parse_authenticator_data_truncated():
         parse_authenticator_data(b"\x00" * 10)
 
 
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        (b"\x00" * 37, "header"),
+        (b"\x00" * 37 + b"\x00\x04ab", "body"),
+    ],
+)
+def test_parse_authenticator_data_rejects_truncated_attested_data(
+    payload: bytes,
+    message: str,
+) -> None:
+    auth_data = payload[:32] + b"\x41" + payload[33:]
+    with pytest.raises(WebAuthnError, match=message):
+        parse_authenticator_data(auth_data)
+
+
 def test_parse_authenticator_data_user_verified():
     rp_id_hash = hashlib.sha256(_RP_ID.encode()).digest()
     ad = _auth_data(rp_id_hash, 0x05, 7)
@@ -289,6 +306,21 @@ def test_decode_attested_credential_data_ed25519():
     assert result.cose_key == cose_key
 
 
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        (b"", "aaguid"),
+        (b"\x00" * 16 + b"\x00\x04ab", "credential id"),
+    ],
+)
+def test_decode_attested_credential_data_rejects_truncated_fields(
+    payload: bytes,
+    message: str,
+) -> None:
+    with pytest.raises(WebAuthnError, match=message):
+        decode_attested_credential_data(payload)
+
+
 # ── COSE key parsing ───────────────────────────────────────────────
 
 
@@ -334,6 +366,56 @@ def test_cose_parse_missing_alg():
     with pytest.raises(WebAuthnError, match="algorithm"):
         parsed = _cbor_encode({1: 2})
         COSEKeyParser(parsed)
+
+
+def test_cose_parse_missing_key_type_fails_closed() -> None:
+    parser = COSEKeyParser(_cbor_encode({3: -7}))
+
+    with pytest.raises(WebAuthnError, match="key type"):
+        _ = parser.key_type
+
+
+@pytest.mark.parametrize(
+    ("mapping", "message"),
+    [
+        ({1: 2, 3: -7}, "missing x or y"),
+        ({1: 1, 3: -8}, "missing x"),
+        ({1: 3, 3: -257}, "missing n or e"),
+        ({1: 2, 3: -999}, "unsupported"),
+    ],
+)
+def test_cose_key_loader_rejects_incomplete_or_unsupported_keys(
+    mapping: dict[int, int],
+    message: str,
+) -> None:
+    parser = COSEKeyParser(_cbor_encode(mapping))
+
+    with pytest.raises(WebAuthnError, match=message):
+        parser.load_public_key()
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        (b"", "empty"),
+        (b"\xbf", "indefinite-length"),
+        (b"\xb8", "truncated CBOR map header"),
+        (b"\xa1", "truncated CBOR"),
+        (b"\xa1\x18", "truncated CBOR argument"),
+        (b"\xa1\x42a", "truncated CBOR byte string"),
+        (b"\xa1\x62a", "truncated CBOR text string"),
+    ],
+)
+def test_cbor_map_decoder_rejects_truncated_structures(
+    payload: bytes,
+    message: str,
+) -> None:
+    with pytest.raises((ValueError, WebAuthnError), match=message):
+        webauthn._cbor_decode_map(payload)
+
+
+def test_cbor_decoder_consumes_nested_values_without_treating_them_as_labels() -> None:
+    assert webauthn._cbor_decode_map(b"\xa1\x81\x01\x01") == {}
 
 
 # ── credential creation options ────────────────────────────────────

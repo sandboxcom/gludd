@@ -311,7 +311,7 @@ class TestAuthMiddlewareErrors:
     @pytest.mark.asyncio
     async def test_protected_endpoint_with_bad_bearer_token_returns_401(self):
         """Protected endpoints return 401 when an invalid bearer token is sent."""
-        with patch.dict(os.environ, {"GLUDD_PSK": "test-secret-key-12345"}):
+        with patch.dict(os.environ, {"GLUDD_AUTH_PSK": "test-secret-key-12345"}):
             app = create_daemon_app(tick_interval=999.0)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -327,7 +327,7 @@ class TestAuthMiddlewareErrors:
     @pytest.mark.asyncio
     async def test_public_endpoint_accessible_without_auth(self):
         """GET /healthz is accessible without PSK even when auth is configured."""
-        with patch.dict(os.environ, {"GLUDD_PSK": "test-secret-key-12345"}):
+        with patch.dict(os.environ, {"GLUDD_AUTH_PSK": "test-secret-key-12345"}):
             app = create_daemon_app(tick_interval=999.0)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -339,7 +339,7 @@ class TestAuthMiddlewareErrors:
     @pytest.mark.asyncio
     async def test_public_get_with_mutating_method_requires_auth(self):
         """A public path under a mutating method (POST) is NOT public — requires auth."""
-        with patch.dict(os.environ, {"GLUDD_PSK": "test-secret-key-12345"}):
+        with patch.dict(os.environ, {"GLUDD_AUTH_PSK": "test-secret-key-12345"}):
             app = create_daemon_app(tick_interval=999.0)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:

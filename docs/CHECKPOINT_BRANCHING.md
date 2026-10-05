@@ -21,7 +21,7 @@ a branch by loading its state into a new invocation.
 
 ## 3. Core Types
 
-```
+```text
 CheckpointBranch(branch_id, name, checkpoint_id, state, parent_branch?, description?)
 BranchResult(branch_id, status, output, error?, duration_ms)
 ```

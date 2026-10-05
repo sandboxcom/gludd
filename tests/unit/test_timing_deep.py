@@ -31,15 +31,17 @@ class TestDurationTrackerDeep:
 
     def test_track_with_on_anomaly_callback_fires(self) -> None:
         calls: list[DurationVerdict] = []
-        t = DurationTracker(min_samples=3, slow_factor=2.0)
+        ticks = iter((10.0, 10.08))
+        t = DurationTracker(min_samples=3, slow_factor=2.0, clock=lambda: next(ticks))
         for _ in range(3):
             t.record("op", 0.001)
         with t.track("op", on_anomaly=calls.append):
-            time.sleep(0.05)
+            pass
         assert len(calls) == 1 and calls[0].anomalous
 
     def test_track_on_anomaly_callback_exception_does_not_suppress(self) -> None:
-        t = DurationTracker(min_samples=3, slow_factor=2.0)
+        ticks = iter((20.0, 20.08))
+        t = DurationTracker(min_samples=3, slow_factor=2.0, clock=lambda: next(ticks))
         for _ in range(3):
             t.record("op", 0.001)
 
@@ -47,7 +49,7 @@ class TestDurationTrackerDeep:
             raise RuntimeError("callback exploded")
 
         with t.track("op", on_anomaly=_failing_cb):
-            time.sleep(0.05)
+            pass
         assert t.baseline("op") is not None
 
     def test_is_anomalous_respects_slow_factor_threshold(self) -> None:

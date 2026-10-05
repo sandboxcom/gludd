@@ -132,7 +132,7 @@ API](https://ai.google.dev/gemini-api/docs/interactions/image-understanding).
 
 Hermes 2 / Hermes 3 models use `<tool_call>{"name":"...","arguments":{...}}</tool_call>` in
 the assistant turn; the tool schema is injected as JSON in the system prompt:
-```
+```text
 You have access to these tools: [{"name":"get_weather","description":"...","parameters":{...}}]
 ```
 Mistral v3 adds dedicated control tokens: `[AVAILABLE_TOOLS]...[/AVAILABLE_TOOLS]` for the
@@ -393,7 +393,7 @@ The adapter sits between `call_model()` receiving its `messages` argument and th
 `init_kwargs` is assembled and the provider class is instantiated.  Concretely, in
 `ModelGateway._invoke_and_bill`:
 
-```
+```text
 caller → call_model(profile_id, messages, tools=..., system=...)
        → _invoke_and_bill(profile, messages, ...)
            adapter = get_adapter(profile.provider, profile.model_family)
@@ -446,7 +446,7 @@ against a table of known prefixes (e.g. `"meta-llama/Meta-Llama-3"` → `"llama3
 
 ### 4.1 Module location
 
-```
+```text
 src/general_ludd/models/
     gateway.py          (existing — add model_family, reasoning_model to ModelProfile;
                          call get_adapter in _invoke_and_bill)

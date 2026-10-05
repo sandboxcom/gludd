@@ -16,7 +16,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Protocol, Self, cast
+from typing import TYPE_CHECKING, Protocol, Self, cast
+
+if TYPE_CHECKING:
+    from azure.core.credentials import TokenCredential
 
 
 class AzureCostReconciliationError(RuntimeError):
@@ -109,6 +112,7 @@ class AzureCostPrediction:
     tags: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        """Normalize and validate immutable prediction identity and bounds."""
         for name in (
             "prediction_id",
             "todo_id",
@@ -178,6 +182,7 @@ class AzureActualCostObservation:
     payload: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        """Normalize one immutable billed-cost observation."""
         for name in ("source", "snapshot_id", "row_identity", "currency"):
             _require_text(name, getattr(self, name))
         if isinstance(self.cost_usd, bool) or not math.isfinite(self.cost_usd):
@@ -193,7 +198,12 @@ class AzureActualCostObservation:
 class AzureActualCostQueryClient(Protocol):
     """Adapter boundary for the mature Azure Cost Management query API."""
 
-    def query_actual_cost(self, prediction: AzureCostPrediction) -> Sequence[AzureBilledCostLineItem]: ...
+    def query_actual_cost(
+        self,
+        prediction: AzureCostPrediction,
+    ) -> Sequence[AzureBilledCostLineItem]:
+        """Return resource-scoped billed rows for one prediction."""
+        ...
 
 
 class _AzureQueryOperations(Protocol):
@@ -227,6 +237,7 @@ class AzureCostManagementQueryClient:
         *,
         subscription_id: str,
     ) -> None:
+        """Bind the official SDK client to one exact subscription."""
         _require_text("subscription_id", subscription_id)
         self._client = client
         self._subscription_id = subscription_id
@@ -236,7 +247,7 @@ class AzureCostManagementQueryClient:
         cls,
         subscription_id: str,
         *,
-        credential: object | None = None,
+        credential: TokenCredential | None = None,
     ) -> Self:
         """Build the official SDK client without making Azure a base dependency."""
         try:
@@ -379,6 +390,7 @@ class AzureCostReconciler:
         *,
         max_data_latency: timedelta = timedelta(hours=72),
     ) -> None:
+        """Bind a query client and bounded Azure billing-latency window."""
         if max_data_latency <= timedelta(0):
             raise ValueError("max_data_latency must be positive")
         self._query_client = query_client

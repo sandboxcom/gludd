@@ -5,6 +5,18 @@
 # All audit tasks are read-only and run unconditionally.
 # Mutating operations are gated behind explicit manage_* boolean flags.
 
+- name: Resolve the controller Python runtime before mutation
+  ansible.builtin.include_role:
+    name: general_ludd.os_expert.managed_python_preflight
+    public: false
+    rolespec_validate: true
+    apply:
+      delegate_to: localhost
+  vars:
+    os_expert_python_preflight_contract: managed
+    os_expert_python_preflight_managed_interpreter: "{{ ansible_playbook_python }}"
+  run_once: true
+
 - name: Create artifact directory
   ansible.builtin.file:
     path: "{{ artifact_dir }}"
@@ -325,10 +337,10 @@
     dest: "{{ artifact_dir }}/software/installed_32bit.json"
 
 # ============================================================================
-# Structured audit via python backend (runs on control node, parses JSON)
+# Structured audit via the managed controller runtime (parses JSON)
 # ============================================================================
 
-- name: Run structured audit via python backend (localhost)
+- name: Run structured audit via managed controller runtime
   when:
     - ansible_os_family == 'Windows'
     - run_backend | default(true) | bool
@@ -342,17 +354,48 @@
         mode: "0755"
 
     - name: Run audit parser — aggregate collected JSON into structured output
-      ansible.builtin.shell: >
-        python3 {{ artifact_dir }}/windows_automation_audit.py
-        --output {{ artifact_dir }}/automation_audit.json
-        {% if _psremoting_wsman_test is defined %}--wsman "{{ _psremoting_wsman_test.output | default([]) | join('') }}"{% endif %}
-        {% if _psremoting_winrm_service is defined %}--winrm "{{ _psremoting_winrm_service.output | default([]) | join('') }}"{% endif %}
-        {% if _dsc_config_status is defined %}--dsc-status "{{ _dsc_config_status.output | default([]) | join('') }}"{% endif %}
-        {% if _dsc_test is defined %}--dsc-test "{{ _dsc_test.output | default([]) | join('') }}"{% endif %}
-        {% if _schtasks_list is defined %}--schtasks-json "{{ _schtasks_list.output | default([]) | join('') }}"{% endif %}
-        {% if _software_64bit is defined %}--software-64 "{{ _software_64bit.output | default([]) | join('') }}"{% endif %}
-        {% if _software_32bit is defined %}--software-32 "{{ _software_32bit.output | default([]) | join('') }}"{% endif %}
-        {% if _unattended_unattend is defined %}--unattend "{{ _unattended_unattend.output | default([]) | join('') }}"{% endif %}
+      ansible.builtin.command:
+        argv: >-
+          {{
+            [
+              _os_expert_python_runtime.executable,
+              artifact_dir ~ '/windows_automation_audit.py',
+              '--output',
+              artifact_dir ~ '/automation_audit.json'
+            ]
+            + (
+              ['--wsman', _psremoting_wsman_test.output | default([]) | join('')]
+              if _psremoting_wsman_test is defined else []
+            )
+            + (
+              ['--winrm', _psremoting_winrm_service.output | default([]) | join('')]
+              if _psremoting_winrm_service is defined else []
+            )
+            + (
+              ['--dsc-status', _dsc_config_status.output | default([]) | join('')]
+              if _dsc_config_status is defined else []
+            )
+            + (
+              ['--dsc-test', _dsc_test.output | default([]) | join('')]
+              if _dsc_test is defined else []
+            )
+            + (
+              ['--schtasks-json', _schtasks_list.output | default([]) | join('')]
+              if _schtasks_list is defined else []
+            )
+            + (
+              ['--software-64', _software_64bit.output | default([]) | join('')]
+              if _software_64bit is defined else []
+            )
+            + (
+              ['--software-32', _software_32bit.output | default([]) | join('')]
+              if _software_32bit is defined else []
+            )
+            + (
+              ['--unattend', _unattended_unattend.output | default([]) | join('')]
+              if _unattended_unattend is defined else []
+            )
+          }}
       register: _backend_result
       changed_when: false
       ignore_errors: true

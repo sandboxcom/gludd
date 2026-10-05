@@ -73,6 +73,8 @@ orchestration:
 # Enable only if you have a separate isolation host.
 process_isolation:
   enabled: false
+  container_image: null       # required by digest when enabled
+  test_only_in_process: false
   container_runtime: podman
 
 # --- budget ----------------------------------------------------------------

@@ -132,6 +132,25 @@ class TestContract:
         assert calls[0][0] == "lookup_events"
         assert calls[0][1]["service_name"] == "cloudtrail"
 
+    def test_callback_mapping_result_is_forwarded_without_tuple_wrapper(self) -> None:
+        def aws_client(_method: str, **_kwargs: object) -> object:
+            return {"Events": [{"EventId": "evt-direct", "EventName": "DirectResult"}]}
+
+        src = AwsConfigTrailSource({}, aws_client=aws_client)
+
+        rows = src.query({"mode": "cloudtrail"})
+
+        assert rows[0]["value"] == "evt-direct"
+
+    def test_injected_concrete_client_is_reused_for_each_service(self) -> None:
+        client = FakeCloudTrailClient()
+        src = AwsConfigTrailSource({}, aws_client=client)
+
+        rows = src.query({"mode": "cloudtrail"})
+
+        assert len(rows) == 2
+        assert client.lookup_calls
+
     def test_kind_and_name(self) -> None:
         src = make_source(client_factory=factory_for({}))
         assert src.KIND == "infra"
@@ -186,6 +205,27 @@ class TestConfigMode:
         # history was consulted per discovered resource
         assert len(cfg.history_calls) == 2
 
+    def test_config_mode_adapts_lookup_only_client(self) -> None:
+        client = FakeCloudTrailClient()
+        src = make_source(client_factory=factory_for({"config": client}))
+
+        rows = src.query({"mode": "config"})
+
+        assert len(rows) == 2
+        assert rows[0]["level_or_status"] == "audit"
+
+    def test_config_mode_skips_identifier_without_resource_id(self) -> None:
+        class MissingIdentifierClient(FakeConfigClient):
+            def list_discovered_resources(self, **kwargs: Any) -> dict[str, Any]:
+                self.list_calls.append(kwargs)
+                return {"resourceIdentifiers": [{"resourceType": "AWS::EC2::Instance"}]}
+
+        client = MissingIdentifierClient()
+        src = make_source(client_factory=factory_for({"config": client}))
+
+        assert src.query({"mode": "config"}) == []
+        assert client.history_calls == []
+
 
 class TestCloudTrailMode:
     def test_normalizes_lookup_events(self) -> None:
@@ -202,7 +242,9 @@ class TestCloudTrailMode:
         assert "alice" in r["message"]
         assert r["labels"]["EventSource"] == "ec2.amazonaws.com"
         assert r["labels"]["awsRegion"] == "us-east-1"
-        assert r["raw"]["EventId"] == "evt-1"
+        raw = r["raw"]
+        assert isinstance(raw, dict)
+        assert raw["EventId"] == "evt-1"
 
     def test_second_event_region_from_event(self) -> None:
         ct = FakeCloudTrailClient()
@@ -210,6 +252,35 @@ class TestCloudTrailMode:
         rows = src.query({"mode": "cloudtrail"})
         assert rows[1]["labels"]["awsRegion"] == "us-west-2"
         assert "DeleteBucket" in rows[1]["message"]
+
+    def test_lookup_options_are_forwarded_with_bounded_limit(self) -> None:
+        client = FakeCloudTrailClient()
+        src = make_source(client_factory=factory_for({"cloudtrail": client}))
+        attributes = [{"AttributeKey": "EventName", "AttributeValue": "RunInstances"}]
+
+        src.query(
+            {
+                "mode": "cloudtrail",
+                "limit": 25,
+                "lookup_attributes": attributes,
+                "start_time": "start",
+                "end_time": "end",
+            }
+        )
+
+        assert client.lookup_calls == [
+            {
+                "MaxResults": 25,
+                "LookupAttributes": attributes,
+                "StartTime": "start",
+                "EndTime": "end",
+            }
+        ]
+
+    def test_missing_cloudtrail_client_returns_empty(self) -> None:
+        src = make_source(client_factory=lambda _service: None)
+
+        assert src.query({"mode": "cloudtrail"}) == []
 
 
 class TestModeSelection:
@@ -228,4 +299,13 @@ class TestModeSelection:
     def test_query_without_factory_returns_empty(self) -> None:
         src = make_source(client_factory=None)
         assert src.query({"mode": "config"}) == []
+        assert src.query({"mode": "cloudtrail"}) == []
+
+    def test_client_failure_returns_empty_without_leaking_exception(self) -> None:
+        class FailingClient:
+            def lookup_events(self, **_kwargs: object) -> object:
+                raise RuntimeError("credential detail must not escape")
+
+        src = make_source(client_factory=lambda _service: FailingClient())
+
         assert src.query({"mode": "cloudtrail"}) == []

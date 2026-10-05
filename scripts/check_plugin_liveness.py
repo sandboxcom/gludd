@@ -30,15 +30,20 @@ import time
 from pathlib import Path
 from typing import Optional, TypedDict
 
+try:
+    from scripts import gludd_env_defaults as gludd_env_defaults
+except ModuleNotFoundError:  # pragma: no cover - direct launch from scripts/
+    import gludd_env_defaults
 
-WORKSPACE = Path(os.environ.get("GLUDD_WORKSPACE", os.getcwd()))
+
+WORKSPACE = Path(os.environ.get("GLUDD_WORKSPACE_ROOT", os.getcwd()))
 PLUGIN_DIR = WORKSPACE / ".opencode" / "plugin"
 PLUGIN_FILE = PLUGIN_DIR / "enforce-stop.ts"
 ALIVE_FILE = Path("/tmp/gludd-plugin-alive.json")
 TEXT_COMPLETE_COUNTER = Path("/tmp/gludd-stop-text-complete-count.json")
 TOOL_COUNTER = Path("/tmp/gludd-stop-tool-counts.json")
 RESULT_FILE = Path("/tmp/gludd-plugin-liveness.json")
-MAX_AGE_SECS = int(os.environ.get("GLUDD_LIVENESS_MAX_AGE", "300"))
+MAX_AGE_SECS = int(os.environ.get("GLUDD_LIVENESS_MAX_AGE", gludd_env_defaults.LIVENESS_MAX_AGE_DEFAULT))
 
 
 class HookCheck(TypedDict):

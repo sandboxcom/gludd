@@ -93,7 +93,7 @@
     &mdash; explained, with exact code paths
   </p>
   <p style="margin-top:30px; font-size:0.5em; color:#484f58;">
-    v0.1.0-beta.2 &middot; MIT License &middot; built 2026-07-14
+    v{{VERSION}} &middot; MIT License &middot; commit {{GIT_SHA}} &middot; generated {{GENERATED_AT}}
   </p>
 </section>
 
@@ -140,7 +140,7 @@
   <h2>Architecture at a glance</h2>
   <p><span class="path">daemon.py</span> boots a FastAPI process and wires an <strong>EventLoop</strong> (<span class="path">event_loop/loop.py</span>) that ticks forever.</p>
   <ul class="bullets-tight">
-    <li class="fragment">Every tick opens <strong>one DB session</strong> and runs 16 named phases in a fixed order</li>
+    <li class="fragment">Every tick runs <strong>25 named phases</strong> in a fixed order across short database sessions and sessionless provider-effect boundaries</li>
     <li class="fragment">A todo moves through a state machine: BACKLOG &rarr; SCHEDULED/QUEUED &rarr; ACTIVE &rarr; done/reconciled</li>
     <li class="fragment">Every state change, dispatch, review verdict, and commit is a database row &mdash; nothing lives only in memory</li>
   </ul>
@@ -175,8 +175,8 @@ graph TD
     A4 --> A5["start EventLoop<br/>asyncio.create_task"]
   end
   subgraph Runtime["Per-tick (event_loop/loop.py)"]
-    B1["open DB session"] --> B2["run 16 PHASE_ORDER phases"]
-    B2 --> B3["commit + close session"]
+    B1["open short DB session"] --> B2["run 25 PHASE_ORDER phases<br/>across commit boundaries"]
+    B2 --> B3["close claim session<br/>before provider effects"]
   end
   subgraph Shutdown["Lifespan teardown"]
     C1["drain background tasks"] --> C2["close MCP subprocesses"]
@@ -188,7 +188,7 @@ graph TD
     </div>
   </div>
   <ul class="bullets-tight">
-    <li class="fragment"><strong>Wired at boot:</strong> 24 model providers, 109 Ansible roles, 14 enforcement plugins, 27 DB tables</li>
+    <li class="fragment"><strong>Wired at boot:</strong> 24 model providers, {{ROLE_COUNT}} Ansible roles, 14 enforcement plugins, 27 DB tables</li>
     <li class="fragment"><strong>Routers registered:</strong> todos, review, admin, MCP, self-improve, compute, pause, remediation, eval, security, account, memory, worktree, stream, files, facts, ornith, benchmark, model-performance</li>
     <li class="fragment"><strong>Daemon state:</strong> single source of truth (&lt;code&gt;app.state&lt;/code&gt;) — DB factory, controllers, agent registry, dispatcher, all in one process</li>
   </ul>
@@ -214,6 +214,21 @@ flowchart TD
   n8 --> n9["9 Reconcile + commit<br/>git_automation/repo.py"]
   n8 -.->|reject: retry| n6
     </div>
+  </div>
+  <div data-contract="s83-158-claim-before-provision">
+    <p><strong>Claim-before-provision ownership path</strong></p>
+    <ol class="bullets-tight" style="font-size:0.58em;">
+      <li>Produce durable todo</li>
+      <li>Approval boundary</li>
+      <li>Claim + lease</li>
+      <li>Commit + close</li>
+      <li>Provision</li>
+      <li>Execute + verify</li>
+      <li>Terminal commit</li>
+      <li>Exact release</li>
+    </ol>
+    <p class="honest-note">Guarantees zero pre-claim compute; a losing or restarted worker preserves foreign ownership.</p>
+    <p class="cite">Contract: docs/features/TODO_DRIVEN_COMPUTE_LIFECYCLE.md</p>
   </div>
   <p class="cite">Source: code-trace audit, verified against src/general_ludd/ on 2026-07-12T10:39:48Z</p>
 </section>
@@ -274,8 +289,8 @@ flowchart TD
 <!-- ============================================================ -->
 <section>
   <div class="stage-kicker">Flagship flow &middot; stage 2 of 9</div>
-  <h2><span class="step-number">2</span>The tick loop &mdash; 17 phases</h2>
-  <p><span class="path">daemon.py</span> wires an <strong>EventLoop</strong> (<span class="path">event_loop/loop.py</span>). Every tick runs <span class="path">PHASE_ORDER</span> (<span class="path">loop.py:88</span>) &mdash; the same 17 phases, in the same order, inside one DB session.</p>
+  <h2><span class="step-number">2</span>The tick loop &mdash; 25 phases</h2>
+  <p><span class="path">daemon.py</span> wires an <strong>EventLoop</strong> (<span class="path">event_loop/loop.py</span>). Every tick runs <span class="path">PHASE_ORDER</span> (<span class="path">loop.py:151</span>) &mdash; the same 25 phases in the same order, with the claim transaction committed and closed before provisioning or dispatch.</p>
   <div class="diagram-wrap">
     <div class="mermaid">
 flowchart TD
@@ -288,10 +303,13 @@ flowchart TD
     B1["refill_task_buckets"] --> B2["run_scheduler"]
     B2 --> B3["claim_runnable_todos"]
     B3 --> B4["evaluate_rules"]
+    B4 --> B5["commit + close"]
+    B5 --> B6["reconcile_compute_demand"]
   end
   subgraph G3["Execution + reconcile"]
     C1["dispatch_execute_jobs"] --> C2["reconcile_completed_<br/>decisions"]
-    C2 --> C3["refresh_model_<br/>performance"]
+    C2 --> C3["release_compute_<br/>demand"]
+    C3 --> C4["refresh_model_<br/>performance"]
   end
   subgraph G4["Compute + credits"]
     D1["check_compute_<br/>utilization"] --> D2["check_service_credits"]
@@ -307,7 +325,7 @@ flowchart TD
   G4 --> G5
     </div>
   </div>
-  <p class="cite">Source: src/general_ludd/event_loop/loop.py:88-106 (PHASE_ORDER, 17 entries)</p>
+  <p class="cite">Source: src/general_ludd/event_loop/loop.py:151-177 (PHASE_ORDER, 25 entries)</p>
 </section>
 
 <!-- ============================================================ -->
@@ -315,22 +333,24 @@ flowchart TD
 <!-- ============================================================ -->
 <section>
   <h2>One tick, in order</h2>
-  <p>The load-bearing phases of <span class="path">PHASE_ORDER</span>, in the exact order they run inside a single tick's DB session.</p>
+  <p>The load-bearing phases of <span class="path">PHASE_ORDER</span>, in the exact order they cross short database sessions and sessionless provider-effect boundaries.</p>
   <div class="diagram-wrap">
     <div class="mermaid">
 flowchart TD
   A["load_config<br/>snapshot"] --> B["claim + dispatch<br/>return review"]
   B --> C["run_scheduler<br/>promote due todos"]
-  C --> D["claim_runnable<br/>todos (CAS)"]
-  D --> E["evaluate_rules"]
-  E --> F["dispatch_execute<br/>jobs (spend gate)"]
-  F --> G["reconcile_completed<br/>decisions + commit"]
-  G --> H["self_improve"]
-  H --> I["emit_tick_metrics"]
-  I -.->|next tick ~1s| A
+  C --> D["producer + approval<br/>boundary"]
+  D --> E["claim todo +<br/>execution lease"]
+  E --> F["commit + close<br/>claim session"]
+  F --> G["provision exact<br/>owned compute"]
+  G --> H["dispatch, execute<br/>+ verify"]
+  H --> I["terminal commit"]
+  I --> J["release exact<br/>owned compute"]
+  J --> K["emit_tick_metrics"]
+  K -.->|next tick ~1s| A
     </div>
   </div>
-  <p class="cite">Source: src/general_ludd/event_loop/loop.py:88-106 (PHASE_ORDER)</p>
+  <p class="cite">Source: src/general_ludd/event_loop/loop.py:151-177 (PHASE_ORDER)</p>
 </section>
 
 <!-- ============================================================ -->
@@ -797,6 +817,130 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
+<!-- SLIDE 19e: S83.157 NEXT BOUNDED GPU PROOF -->
+<!-- ============================================================ -->
+<section data-contract="s83-157-next-live-proof">
+  <p class="stage-kicker">Decision &middot; 2026-10-05 &middot; next live proof</p>
+  <h2>S83.157 &mdash; bounded alternate-region T4 proof</h2>
+  <div class="two-col">
+    <div>
+      <h3>One placement at a time</h3>
+      <ul class="bullets-tight">
+        <li><strong>Profile:</strong> one owner-tagged <code>Consumption-GPU-NC8as-T4</code> app/environment pair</li>
+        <li><strong>Pins:</strong> one task, model revision, and image digest; <code>minReplicas=1</code>, <code>maxReplicas=1</code></li>
+        <li><strong>Lease:</strong> <code>$5 / 60 min</code>, acquisition through independently verified cleanup</li>
+        <li><strong>T4 order:</strong> <code>westus</code> &rarr; <code>westus2</code> &rarr; <code>canadacentral</code></li>
+        <li><strong>A100:</strong> only after two cleaned placement failures</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Evidence before quality</h3>
+      <ul class="bullets-tight">
+        <li>Bind status and replicas to the <strong>exact revision</strong></li>
+        <li>Retain <strong>startup + readiness probes</strong> and app/environment <strong>system events</strong></li>
+        <li>Require in-container <strong>CUDA attestation</strong> and revision/pod <code>GpuUtilizationPercentage</code></li>
+        <li>On every terminal path: <strong>destroy + verified absence</strong> before failover</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">
+    Never score placement as model quality. Placement, image, probe, CUDA, metric,
+    timeout, and cleanup outcomes stay in the operational channel; inference quality
+    begins only after every readiness and GPU check succeeds.
+  </p>
+  <p class="cite">Sources: docs/features/SELF_IMPROVEMENT_MIXED_MODELS.md &middot; docs/research/AZURE_TERRAFORM_EVENT_ELASTICITY_E2E_EVIDENCE.md</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19f: S83.163 FREELLMAPI FROZEN-DELTA HOLD -->
+<!-- ============================================================ -->
+<section data-contract="s83-163-frozen-delta-hold">
+  <p class="stage-kicker">Decision &middot; 2026-10-05 &middot; exact three-arm replay</p>
+  <h2>S83.163 &mdash; FreeLLMAPI promotion remains <span class="badge-yellow">HOLD</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Exact evidence executed</h3>
+      <ul class="bullets-tight">
+        <li><strong>Current evidence:</strong> exact v0.11.1 executed from signed 4191d8e7</li>
+        <li><strong>Paired arms:</strong> native Gludd / <code>v0.9.9</code> / exact <code>v0.11.1</code></li>
+        <li><strong>Corpus:</strong> 32 route groups &times; 3 = 96 observations, plus 8 exclusions frozen before scoring</li>
+        <li><strong>Next serial review:</strong> upstream <code>v0.12.0</code>; no retargeting here</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Why HOLD is mandatory</h3>
+      <ul class="bullets-tight">
+        <li><strong>vs native:</strong> LCB +0.5166; McNemar p = 4.66e-10</li>
+        <li><strong>vs v0.9.9:</strong> LCB 0.0; McNemar p = 1.0 &rarr; two gates fail</li>
+        <li><strong>Resources:</strong> 0.244458 ms max; 0.015625 MiB RSS delta</li>
+        <li><strong>Isolation:</strong> Node = QuickJS; network/cost/faults = 0</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">
+    No retargeting and no promotion: v0.9.9 stays serving, runtime admission remains false,
+    and even an all-green replay could only enter a separate build/provenance/ZDD review.
+  </p>
+  <p class="cite">Practitioner inputs: #456, discussion #533, #608, #666, #880, #1210, #1262 &middot; Source: docs/design/FREELLMAPI_UPSTREAM_INTEGRATION.md</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19g: SERVICE RELIABILITY BOUNDARIES -->
+<!-- ============================================================ -->
+<section data-contract="service-reliability-boundaries">
+  <p class="stage-kicker">Reliability sequence &middot; input to teardown</p>
+  <h2>Four boundaries keep failure contained</h2>
+  <ol class="bullets-tight">
+    <li><strong>Validate before I/O:</strong> labeled <code>(identifier, query)</code> defaults; plain strings stay compatible; malformed shapes fail closed, while empty results preserve the catalog.</li>
+    <li><strong>Isolate every test:</strong> <code>monkeypatch</code> owns environment teardown and PID + counter streak files prevent parallel workers sharing authorization state.</li>
+    <li><strong>Choose lifecycle explicitly:</strong> pre-startup <code>/readyz</code> proves the 503 boundary; context-managed startup proves 200 readiness; model-health checks keep a per-app in-memory database.</li>
+    <li><strong>Keep shutdown observable:</strong> a closed log stream falls back to stderr file descriptor 2, then restore handlers + propagation after cleanup.</li>
+  </ol>
+  <p class="honest-note">No new runtime service or persisted schema: validation happens before network work, test state is namespaced, lifespan ownership is explicit, and late cleanup remains visible.</p>
+  <p class="cite">Sources: docs/features/SERVICE_DISCOVERY_SEARCH_TERM_SCHEMA.md &middot; docs/features/FLOOR_TEST_ENV_ISOLATION.md &middot; docs/features/READINESS_LIFESPAN_TESTING.md &middot; docs/features/RESOURCE_LIFECYCLE_SHUTDOWN_LOGGING.md</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19h: RELEASE AND WORKTREE RESILIENCE -->
+<!-- ============================================================ -->
+<section data-contract="release-resilience-boundaries">
+  <p class="stage-kicker">Resilience sequence &middot; evidence to confinement</p>
+  <h2>Recover safely without weakening identity</h2>
+  <ol class="bullets-tight">
+    <li><strong>Prove the release:</strong> bind CI and functional artifact smoke to the <strong>exact tagged SHA</strong>. The v0.1.1 receipt records <strong>46 artifacts</strong>, <strong>32 completeness checks</strong>, and <strong>zero zero-byte assets</strong>.</li>
+    <li><strong>Replay bounded recovery:</strong> open the <strong>read-only thread projection</strong>, select one thread + inclusive ordinals, replay in a temporary tree, and publish only after the whole batch validates.</li>
+    <li><strong>Confine worktree identity:</strong> resolve canonical filesystem identity; aliases and escapes fail closed before Git operations. In linked-worktree tests, main-checkout writes are denied before they occur while reads remain allowed.</li>
+  </ol>
+  <p class="honest-note">v0.1.1 stays immutable: its unsigned tag and no SLSA attestation are recorded exceptions. New releases fix forward with signed-tag verification before push and <code>gh release verify</code> over <code>SHA256SUMS</code>; recovery complements isolated worktrees.</p>
+  <p class="cite">Sources: docs/RELEASE_RUNBOOK.md &middot; docs/releases/audit-0.1.1.json &middot; docs/features/CODEX_FILE_CHANGE_RECOVERY.md &middot; docs/features/WORKTREE_AUDIT_IDENTITY_CONTRACT.md</p>
+  <!-- S83.166 HOSTED RUNNER CAPACITY SUBSECTION -->
+  <div data-contract="hosted-runner-capacity">
+  <h3>S83.166 &mdash; bound the runners, preserve the evidence</h3>
+  <ol class="bullets-tight" style="font-size:0.68em;">
+    <li><strong>Bound acquisition:</strong> every Linux job pins <code>ubuntu-24.04</code>; Build gate max-parallel=1 plus standalone Molecule max-parallel=3 requests four Linux runners instead of eight.</li>
+    <li><strong>Keep coverage parallel:</strong> later fan-out 1 / 3 / 2 caps FreeLLMAPI, test, and Build Molecule matrices at six instead of fourteen; <code>fail-fast=false</code>, so every version and shard still reports.</li>
+    <li><strong>Classify before retry:</strong> <code>not acquired by Runner</code> before any step ran is hosted-capacity evidence. Preserve the run and attempt, permit one annotation-proven retry, then no automatic attempt 3.</li>
+    <li><strong>Roll forward without downtime:</strong> the current candidate completes and only a newer exact SHA gets the bounded topology. Rollback is the inverse YAML change, with no release artifact, application state, credential, or production resource mutation.</li>
+  </ol>
+  <p class="honest-note" style="font-size:0.48em;">Runs 37363551133 and 37363666474 lost hosted legs before repository code ran. Capacity is bounded, not coverage; unresolved attempt-2 failure requires a topology or platform change.</p>
+  <p class="cite">Sources: docs/features/HOSTED_RUNNER_CAPACITY.md &middot; .github/workflows/build.yml &middot; .github/workflows/molecule.yml &middot; TASKS.md</p>
+  </div>
+  <!-- HOSTED RUNNER ACQUISITION RECOVERY SUBSECTION -->
+  <div data-contract="runner-acquisition-recovery">
+  <h3>Bounded acquisition recovery &mdash; ledger before rerun</h3>
+  <ol class="bullets-tight" style="font-size:0.68em;">
+    <li><strong>Record first:</strong> <code>ci-view</code> persists the complete terminal attempt before admission, keyed by run ID/attempt + full SHA.</li>
+    <li><strong>Prove exact acquisition:</strong> every non-successful job must have no executed failing step and the exact annotation <code>The job was not acquired by Runner of type hosted even after multiple attempts</code>.</li>
+    <li><strong>Rerun coherently:</strong> <code>ci-recover-runner-acquisition</code> admits attempt 1 only and requests a full same-SHA rerun, so dependent jobs and artifacts remain one coherent candidate proof.</li>
+    <li><strong>Stop at attempt 2:</strong> attempt 2 is a hard stop that requires diagnosis instead of an automatic loop.</li>
+    <li><strong>Keep recovery control-plane only:</strong> admission precedes the rerun; there is no live restart, traffic shift, tag move, artifact upload, or credential mutation.</li>
+  </ol>
+  <p class="honest-note" style="font-size:0.48em;">Conclusion alone never authorizes retry. Practitioner reports #27083, #52505, #17854, #186208, #165291, #166283, and #126539 remain tied to the exact guardrails in the source contract.</p>
+  <p class="cite">Sources: docs/features/CI_FAILURE_LEDGER.md &middot; Makefile <code>ci-recover-runner-acquisition</code> &middot; tests/unit/test_ci_failure_ledger.py</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
 <!-- SLIDE 20: SECURITY -->
 <!-- ============================================================ -->
 <section>
@@ -871,12 +1015,12 @@ graph TD
       <span class="cite"><code>find src -name '*.py'</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">38,207</div>
+      <div class="number">{{TEST_COUNT}}</div>
       <div class="label">tests collected</div>
       <span class="cite"><code>make test-count</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">111</div>
+      <div class="number">{{ROLE_COUNT}}</div>
       <div class="label">Ansible roles</div>
       <span class="cite"><code>make collection-roles</code></span>
     </div>
@@ -1056,12 +1200,12 @@ make init</code></pre>
   </p>
   <div class="metrics-grid">
     <div class="metric-box">
-      <div class="number">v0.1.0-beta.2</div>
+      <div class="number">v{{VERSION}}</div>
       <div class="label">current version</div>
       <span class="cite"><code>pyproject.toml</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">38,207</div>
+      <div class="number">{{TEST_COUNT}}</div>
       <div class="label">tests collected</div>
       <span class="cite"><code>make test-count</code></span>
     </div>
@@ -1133,7 +1277,7 @@ make init</code></pre>
   <p style="color:#8b949e; margin-top:20px;">Questions?</p>
   <p style="font-size:0.6em; margin-top:40px;">
     gludd &mdash; Autonomous Software Development<br>
-    v0.1.0-beta.2 &middot; MIT License &middot; built 2026-07-14
+    v{{VERSION}} &middot; MIT License &middot; commit {{GIT_SHA}} &middot; generated {{GENERATED_AT}}
   </p>
   <p style="font-size:0.5em; margin-top:20px;">
     <a href="https://github.com/sandboxcom/gludd">github.com/sandboxcom/gludd</a><br>

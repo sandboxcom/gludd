@@ -35,6 +35,25 @@ def test_platform_specific_node_dependencies_are_never_tracked() -> None:
     assert "node_modules/" in ignored
 
 
+def test_ignored_runtime_state_is_never_tracked() -> None:
+    """Cleanup-owned lock and status files must not be committed as source."""
+    runtime_state = {".ansible/.lock", ".gate-status"}
+    tracked = set(
+        subprocess.run(
+            ["git", "-C", str(ROOT), "ls-files"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+    )
+    ignored = set((ROOT / ".gitignore").read_text(encoding="utf-8").splitlines())
+
+    assert runtime_state <= ignored
+    assert tracked.isdisjoint(runtime_state), (
+        f"cleanup-owned runtime state is tracked: {sorted(tracked & runtime_state)}"
+    )
+
+
 def test_hot_reload_node_dependencies_are_locked_and_installed_in_ci() -> None:
     """CI must install an integrity-locked native esbuild for its own platform."""
     manifest = json.loads((ROOT / ".opencode" / "package.json").read_text(encoding="utf-8"))

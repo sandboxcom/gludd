@@ -15,47 +15,29 @@
 
 - name: Compute thermodynamics
   block:
-    - name: Compute heat, phase, and entropy via module_utils
-      ansible.builtin.script:
-        cmd: |
-          import json, sys
-          sys.path.insert(0, "{{ playbook_dir }}/../../..")
-          from ansible_collections.general_ludd.physics.plugins.module_utils.thermodynamics import (
-              ThermoConfig, compute_heat_transfer, compute_phase_change,
-              compute_entropy_change, write_thermo_result
-          )
-          config = ThermoConfig(
-              substance="{{ thermo_substance }}",
-              mass_kg={{ thermo_mass_kg }},
-              initial_temp_C={{ thermo_initial_temp_c }},
-              final_temp_C={{ thermo_final_temp_c }},
-              pressure_atm={{ thermo_pressure_atm }},
-          )
-          result = {
-              "heat_transfer": compute_heat_transfer(config),
-              "phase_change": compute_phase_change(config),
-              "entropy_change": compute_entropy_change(config),
-          }
-          path = write_thermo_result(result, "{{ thermo_output_dir }}")
-          print(json.dumps({"status": "success", "path": str(path),
-                            "heat_kJ": result["heat_transfer"]["heat_transfer_kJ"],
-                            "entropy_J_K": result["entropy_change"]["entropy_change_J_K"]}))
-        executable: python3
+    - name: Compute heat, phase, and entropy via packaged physics module
+      general_ludd.physics.physics_analysis:
+        operation: thermodynamics
+        output_dir: "{{ thermo_output_dir }}"
+        parameters:
+          substance: "{{ thermo_substance }}"
+          mass_kg: "{{ thermo_mass_kg }}"
+          initial_temp_c: "{{ thermo_initial_temp_c }}"
+          final_temp_c: "{{ thermo_final_temp_c }}"
+          pressure_atm: "{{ thermo_pressure_atm }}"
       register: thermo_result
-      failed_when: false
-      changed_when: false
 
     - name: Parse thermo result
       ansible.builtin.set_fact:
-        thermo_output: "{{ thermo_result.stdout | from_json }}"
-      when: thermo_result.rc == 0
+        thermo_output: "{{ thermo_result.result }}"
+      when: thermo_result.result is defined
 
   rescue:
     - name: Write failure result artifact
       ansible.builtin.copy:
         content: |
           {{ {'role': 'thermodynamics_engineer', 'status': 'failed',
-              'error': thermo_result.stderr | default('unknown error')} | to_nice_json }}
+              'error': thermo_result.msg | default('unknown error')} | to_nice_json }}
         dest: "{{ thermo_output_dir }}/thermo_result.json"
         mode: "0644"
       failed_when: false

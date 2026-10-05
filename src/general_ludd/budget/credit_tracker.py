@@ -34,33 +34,34 @@ import os
 import time
 from typing import Any
 
+from general_ludd.budget.credit_providers import (
+    PARSERS as _PARSERS,
+)
+from general_ludd.budget.credit_providers import (
+    SERVICE_CONFIG as _SERVICE_CONFIG,
+)
+from general_ludd.budget.credit_providers import (
+    SUPPORTED_SERVICES as SUPPORTED_SERVICES,
+)
+from general_ludd.budget.credit_providers import (
+    Unparseable as _Unparseable,
+)
+from general_ludd.budget.credit_providers import (
+    parse_deepseek as _parse_deepseek,
+)
+from general_ludd.budget.credit_providers import (
+    parse_openai as _parse_openai,
+)
+from general_ludd.budget.credit_providers import (
+    parse_openrouter as _parse_openrouter,
+)
+from general_ludd.budget.credit_providers import (
+    parse_zai as _parse_zai,
+)
+
+__all__ = ("_parse_deepseek", "_parse_openai", "_parse_openrouter", "_parse_zai")
+
 logger = logging.getLogger(__name__)
-
-SUPPORTED_SERVICES: tuple[str, ...] = ("deepseek", "openai", "zai", "openrouter")
-
-#: Per-provider endpoint + auth configuration.
-_SERVICE_CONFIG: dict[str, dict[str, str]] = {
-    "deepseek": {
-        "base_url": "https://api.deepseek.com",
-        "balance_path": "/user/balance",
-        "auth_env_var": "DEEPSEEK_API_KEY",
-    },
-    "openai": {
-        "base_url": "https://api.openai.com",
-        "balance_path": "/v1/organization/costs",
-        "auth_env_var": "OPENAI_API_KEY",
-    },
-    "zai": {
-        "base_url": "https://api.z.ai/api",
-        "balance_path": "/paas/v4/usage",
-        "auth_env_var": "ZAI_API_KEY",
-    },
-    "openrouter": {
-        "base_url": "https://openrouter.ai",
-        "balance_path": "/api/credits",
-        "auth_env_var": "OPENROUTER_API_KEY",
-    },
-}
 
 #: Conservative default minimum balance before a refill is recommended (USD).
 DEFAULT_THRESHOLDS: dict[str, float] = {
@@ -77,64 +78,6 @@ DEFAULT_REFILL_DAYS: float = 7.0
 #: providers do not expose this; :meth:`set_spend_limit` returns
 #: ``{"supported": False}`` for them.
 _SPEND_LIMIT_SUPPORTED: frozenset[str] = frozenset({"openrouter", "openai"})
-
-
-# ---------------------------------------------------------------------------
-# Per-provider response parsers. Each returns (balance_usd, currency) or
-# raises _Unparseable on a shape it does not recognise.
-# ---------------------------------------------------------------------------
-
-
-class _Unparseable(Exception):
-    """Raised by per-provider parsers when the JSON shape is unexpected."""
-
-
-def _parse_deepseek(data: Any) -> tuple[float, str]:
-    wallets = (data or {}).get("wallets") or []
-    for w in wallets:
-        if str(w.get("currency", "")).upper() == "USD":
-            return float(w["balance"]), "USD"
-    if wallets:
-        # No USD wallet — fall back to the first wallet's currency.
-        w = wallets[0]
-        return float(w["balance"]), str(w.get("currency", "USD")).upper()
-    raise _Unparseable("no wallets in DeepSeek response")
-
-
-def _parse_openai(data: Any) -> tuple[float, str]:
-    # /v1/organization/costs returns usage line items, not a balance. We
-    # surface the summed usage so the caller can observe spend against the
-    # prepaid pool. (OpenAI has no public balance API for prepaid credits.)
-    items = (data or {}).get("data") or []
-    total = 0.0
-    for item in items:
-        line = item.get("line_item")
-        if line is None:
-            continue
-        total += float(line)
-    return total, "USD"
-
-
-def _parse_zai(data: Any) -> tuple[float, str]:
-    inner = (data or {}).get("data") or {}
-    if "balance" not in inner:
-        raise _Unparseable("no balance field in Z.AI response")
-    return float(inner["balance"]), str(inner.get("currency", "USD")).upper()
-
-
-def _parse_openrouter(data: Any) -> tuple[float, str]:
-    inner = (data or {}).get("data") or {}
-    if "total_credits" not in inner or "total_usage" not in inner:
-        raise _Unparseable("missing total_credits/total_usage in OpenRouter response")
-    return float(inner["total_credits"]) - float(inner["total_usage"]), "USD"
-
-
-_PARSERS: dict[str, Any] = {
-    "deepseek": _parse_deepseek,
-    "openai": _parse_openai,
-    "zai": _parse_zai,
-    "openrouter": _parse_openrouter,
-}
 
 
 class CreditTracker:
@@ -172,10 +115,12 @@ class CreditTracker:
         http_client: Any = None,
         timeout: float = 10.0,
     ) -> None:
+        """Configure provider credentials, thresholds, and optional transport."""
         self._api_keys: dict[str, str] = dict(api_keys or {})
         self._thresholds: dict[str, float] = {**DEFAULT_THRESHOLDS, **(thresholds or {})}
         self._spend_rates: dict[str, float] = dict(historical_spend_rates or {})
         self._http_client = http_client
+        self._owns_http_client = False
         self._timeout = timeout
         self._last_balance: dict[str, dict[str, Any]] = {}
 
@@ -195,7 +140,16 @@ class CreditTracker:
         import httpx
 
         self._http_client = httpx.Client(timeout=self._timeout)
+        self._owns_http_client = True
         return self._http_client
+
+    def close(self) -> None:
+        """Close the lazily-created HTTP client without touching injected clients."""
+        if not self._owns_http_client or self._http_client is None:
+            return
+        self._http_client.close()
+        self._http_client = None
+        self._owns_http_client = False
 
     @staticmethod
     def _build_result(
@@ -422,6 +376,7 @@ class CreditTracker:
         return self._last_balance.get(service)
 
     def __repr__(self) -> str:
+        """Return a credential-free tracker summary."""
         return (
             f"CreditTracker("
             f"services={list(SUPPORTED_SERVICES)}, "
