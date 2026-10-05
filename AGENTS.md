@@ -1478,6 +1478,61 @@ Work that cannot be expressed as a tag continues on a NEW branch.
 - `make test-release-branch-guard` — behavioral test (6 cases)
 - This AGENTS.md section — proactive instruction
 
+## CRITICAL: Release Candidate Discipline — Promote the Green Commit
+
+**When hosted CI is green for the current development HEAD, the next action must
+be local dual-track attestation + `make release-promote`; do NOT add new
+commits, start unrelated feature work, or pause for a status summary first.**
+A green CI result on `development` is the release signal; treating it as an
+invitation to do "one more thing" is the recurring failure mode that leaves
+releases un-promoted and tags un-pushed.
+
+### Rules
+
+1. **Green HEAD → promote immediately.** When `make ci-verdict BRANCH=development`
+   reports `conclusion: success` and `headSha` equals the local development tip,
+   the very next actions are:
+   1. Start or confirm `make test-ci-dual-track-local-bg` has produced an
+      attestation for that SHA.
+   2. Run `make release-promote TAG=<tag>` to merge development into master and
+      cut the release.
+   Do NOT add new commits to development, do NOT start a new feature branch, and
+   do NOT run a long unrelated gate first.
+
+2. **Start local dual-track attestation right after pushing the candidate.**
+   As soon as a release candidate is pushed (commit or tag), immediately run
+   `make test-ci-dual-track-local-bg` so the long local attestation runs in
+   parallel with hosted CI. Check progress only at natural breaks with
+   `make test-ci-dual-track-local-status`; never hold the main thread polling it.
+
+3. **Never re-run a full test suite on the same SHA.** The canonical local
+   runner supports incremental resume via `DUAL_TRACK_RESUME=1` (the default).
+   If a prior attestation run was interrupted or partial, resume it; do not
+   discard the work and start from scratch. Re-running from zero on the same
+   SHA wastes hours and cancels the productivity the dual-track pipeline was
+   built to provide.
+
+4. **While CI is pending, only do release-advancing actions.** Allowed:
+   README/status/tag hygiene, release notes, version bumps, or fixes for a CI
+   failure that has already surfaced. Forbidden: new features, refactors,
+   documentation unrelated to the release, or status-only polling. The release
+   is the objective; side work is a stop pattern.
+
+5. **No text-only responses or premature stops while a release is pending.**
+   If a release is in flight (tag pushed, CI running, attestation producing,
+   or promotion not yet verified), every response must include a tool call that
+   advances the release. A text-only summary, a "waiting for CI" message, or a
+   "what's next?" question while release work remains is a premature stop.
+
+### Enforcement
+
+- This AGENTS.md section — proactive instruction.
+- `make test-ci-dual-track-local-bg` / `make test-ci-dual-track-local-status` —
+  canonical background local attestation targets.
+- `make release-promote` — the only sanctioned promotion path.
+- `tests/unit/test_release_candidate_discipline.py` — structural pin on the
+  section and each numbered rule.
+
 ## CRITICAL: Agent At-Rest / Re-Dispatch Policy
 
 **An agent "coming to rest" does NOT mean it is incomplete.** "At rest" =
