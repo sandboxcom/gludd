@@ -90,12 +90,21 @@ def clean_worktree_venvs(
     candidates: list[tuple[Path, Path]] = []
     for worktree_root in worktree_roots:
         try:
+            canonical_root = worktree_root.resolve()
             registrations = _canonical_registrations(
                 worktree_root, registered_worktree_paths
             )
         except (check_disk_usage.DiskInspectionError, OSError, RuntimeError):
             result["errors"].append(f"{worktree_root}:registry-failed")
             continue
+        if _is_invoking_worktree(canonical_invoking, canonical_root) and not any(
+            _is_invoking_worktree(canonical_invoking, worktree)
+            for worktree in registrations
+        ):
+            result["errors"].append(
+                f"{canonical_invoking}:invoker-unregistered"
+            )
+            return result
         candidates.extend((worktree_root, worktree) for worktree in registrations)
 
     for worktree_root, worktree in sorted(candidates, key=lambda item: str(item[1])):

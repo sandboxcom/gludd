@@ -186,6 +186,29 @@ def test_unavailable_invoking_identity_refuses_all_cleanup(tmp_path: Path) -> No
     assert result["errors"] == [f"{missing_invoker}:invoker-unavailable"]
 
 
+def test_unregistered_invoking_worktree_refuses_peer_cleanup(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    worktree_root = tmp_path / "gludd-worktrees"
+    invoking = worktree_root / "invoking"
+    peer = worktree_root / "peer"
+    invoking_venv = _make_venv(invoking)
+    peer_venv = _make_venv(peer)
+
+    result = module.clean_worktree_venvs(
+        worktree_roots=(worktree_root,),
+        invoking_path=invoking,
+        registered_worktree_paths=_registered(peer),
+        active_process_pids=lambda _path: [],
+    )
+
+    assert invoking_venv.is_dir()
+    assert peer_venv.is_dir()
+    assert result["removed"] == []
+    assert result["errors"] == [f"{invoking}:invoker-unregistered"]
+
+
 def test_unsafe_and_absent_venv_entries_are_never_removed(tmp_path: Path) -> None:
     module = _load_module()
     worktree_root = tmp_path / "gludd-worktrees"
