@@ -1401,7 +1401,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 979,
+      "line": 998,
       "column": 22,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1412,7 +1412,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 991,
+      "line": 1010,
       "column": 27,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1423,7 +1423,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 1005,
+      "line": 1024,
       "column": 32,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1434,7 +1434,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 2514,
+      "line": 2627,
       "column": 29,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job_isolated",
@@ -1445,7 +1445,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3662,
+      "line": 3775,
       "column": 26,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -1456,7 +1456,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3720,
+      "line": 3833,
       "column": 27,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -2050,13 +2050,13 @@
     },
     {
       "path": "src/general_ludd/sandbox/backends/process_backend.py",
-      "line": 162,
+      "line": 167,
       "column": 19,
       "kind": "process",
       "owner": "ProcessBackend.execute",
-      "acquisition": "subprocess.Popen(command, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True, preexec_fn=_preexec, env=merged_env, start_new_session=os.name == 'posix')",
+      "acquisition": "subprocess.Popen(command, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True, preexec_fn=_preexec, env=merged_env, start_new_session=_IS_POSIX)",
       "teardown": "ownership-transfer:_reap_owned_process(proc); ownership-transfer:_terminate_owned_process(proc); ownership-transfer:return SandboxResult(returncode=returncode, stdout=stdout, stderr=stderr, pid=proc.pid or 0, was_killed=was_killed, cpu_time_ms=cpu_time_ms, memory_used_bytes=memory_used_bytes)",
-      "source_hash": "b348fac18f9ebae85152d0810dab72546c18abd82ab97f352a6ac2e09c889526",
+      "source_hash": "dbc7a7b108b806383567a30034e243e2911127f992b7ce662043689e4e120f09",
       "owned": true
     },
     {
