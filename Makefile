@@ -4091,12 +4091,13 @@ verify-remote: require-sandboxcom-ssh-key
 	REMOTE_SHORT=$$(echo $$REMOTE | cut -c1-$${#SHA}); \
 	if [ "$$SHA" = "$$REMOTE_SHORT" ]; then echo "VERIFIED $$BR@$$SHA"; else echo "REMOTE MISMATCH: remote=$$REMOTE expected=$$SHA" && exit 1; fi
 
-# Create an annotated tag and push it to sandboxcom to trigger the tag-gated
+# Create a signed annotated tag and push it to sandboxcom to trigger the tag-gated
 # release job (version -> gate -> builds -> release). Usage:
 #   make git-tag-push TAG=v0.1.0-alpha.1 COMMIT=<sha> MSG='alpha release'
 git-tag-push: _push-rate-guard require-sandboxcom-ssh-key
 	@[ -n "$(TAG)" ] || { echo "Usage: make git-tag-push TAG=v0.1.0-alpha.N [COMMIT=<sha>] [MSG='...']"; exit 1; }
-	@git tag -a "$(TAG)" $(if $(COMMIT),$(COMMIT)) -m "$(if $(MSG),$(MSG),$(TAG))"
+	@git tag -s -a "$(TAG)" $(if $(COMMIT),$(COMMIT)) -m "$(if $(MSG),$(MSG),$(TAG))"
+	@$(MAKE) --no-print-directory check-tag-signing TAG="$(TAG)"
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
 	@echo "Pushed tag $(TAG) to sandboxcom/gludd (triggers release job)"
 
@@ -4422,6 +4423,7 @@ git-tag-delete: git-tag-rm
 release-recut: _push-rate-guard require-sandboxcom-ssh-key
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-recut TAG=v0.1.0-alpha.1"; exit 1; }
 	@git tag -l "$(TAG)" | grep -q "$(TAG)" || { echo "ERROR: local tag $(TAG) not found"; exit 1; }
+	@$(MAKE) --no-print-directory check-tag-signing TAG="$(TAG)"
 	@$(MAKE) -s require-ci-green SHA=$$(git rev-parse "$(TAG)^{commit}")
 	@set -e; TAG_SHA="$$(git rev-parse "$(TAG)^{commit}")"; \
 		BASELINE="$$( $(MAKE) -s ci-await BRANCH="$(TAG)" TIMEOUT="$(RELEASE_AWAIT_TIMEOUT)" SHA="$$TAG_SHA" CI_AWAIT_WORKFLOW="Build and Release" CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL="$(RELEASE_AWAIT_INTERVAL)" CI_AWAIT_AFTER_RUN_ID=0 CI_AWAIT_VALIDATE_ONLY=0 CI_AWAIT_SNAPSHOT_ONLY=1 )"; \

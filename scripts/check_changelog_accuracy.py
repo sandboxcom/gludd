@@ -10,6 +10,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+_EXACT_RANGE_SUMMARY_RE = re.compile(
+    r"^- Source range: `(?P<range>[^`]+)` "
+    r"\((?P<count>[0-9]+) commits; release source `(?P<sha>[0-9a-f]{40})`\)\.?$",
+    re.MULTILINE,
+)
+
 
 def run_git(args: list[str]) -> tuple[str, str, int]:
     result = subprocess.run(
@@ -40,6 +46,30 @@ def find_missing_commits(commits: list[str], section: str) -> list[str]:
         if sha not in section and desc[:20] not in section:
             missing.append(commit)
     return missing
+
+
+def has_exact_range_summary(
+    section: str,
+    *,
+    prior_tag: str,
+    tag: str,
+    commit_count: int,
+    tag_sha: str,
+) -> bool:
+    """Accept a compact changelog only when its complete range identity matches.
+
+    Listing hundreds of commit subjects obscures the operator-facing summary.
+    The exact prior/current refs, commit count, and immutable tag commit provide
+    a mechanically checkable representation of the same complete history.
+    """
+    match = _EXACT_RANGE_SUMMARY_RE.search(section)
+    if match is None:
+        return False
+    return (
+        match.group("range") == f"{prior_tag}..{tag}"
+        and int(match.group("count")) == commit_count
+        and match.group("sha") == tag_sha
+    )
 
 
 def parse_changelog_entries(changelog_content: str, version: str) -> list[str]:
@@ -106,7 +136,7 @@ def candidate_documents_complete(
     )
 
 
-def main() -> None:
+def main(root: Path | None = None) -> None:
     tag = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("TAG", "")
     if not tag:
         print("AC015: TAG required")
@@ -125,8 +155,8 @@ def main() -> None:
         sys.exit(1)
     commits = [line for line in out.split("\n") if line]
 
-    root = Path(__file__).resolve().parent.parent
-    changelog = root / "CHANGELOG.md"
+    repository_root = Path(__file__).resolve().parent.parent if root is None else root
+    changelog = repository_root / "CHANGELOG.md"
     if not changelog.exists():
         print("AC015: FAIL — CHANGELOG.md not found")
         sys.exit(1)
@@ -143,7 +173,7 @@ def main() -> None:
     section = version_section.group(0)
 
     if candidate_ref == "HEAD":
-        release_notes = root / "docs" / "releases" / f"{tag}.md"
+        release_notes = repository_root / "docs" / "releases" / f"{tag}.md"
         if not release_notes.exists():
             print(f"AC015: FAIL — release notes not found: {release_notes}")
             sys.exit(1)
@@ -157,6 +187,25 @@ def main() -> None:
         print(
             f"AC015: PASS — candidate documents cover {version}; "
             f"inspected {len(commits)} commits in {range_spec}"
+        )
+        sys.exit(0)
+
+    tag_sha, error, returncode = run_git(["rev-parse", "--verify", f"{tag}^{{commit}}"])
+    if returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", tag_sha):
+        detail = error or "tag did not resolve to a full commit identity"
+        print(f"AC015: FAIL — cannot resolve immutable release source for {tag}: {detail}")
+        sys.exit(1)
+
+    if has_exact_range_summary(
+        section,
+        prior_tag=prev_tag,
+        tag=tag,
+        commit_count=len(commits),
+        tag_sha=tag_sha,
+    ):
+        print(
+            f"AC015: PASS — exact range summary covers {len(commits)} commits "
+            f"in {range_spec} at {tag_sha}"
         )
         sys.exit(0)
 

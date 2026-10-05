@@ -1072,12 +1072,12 @@ Total: 4000 specs across 26 groups.
 ### AC006 — checksum-validation
 **Category:** Release Discipline
 **Enforcement:** `scripts/validate_release_checksums.py` + `make validate-release-checksums`
-**Behavior:** Every release artifact listed in `checksums.txt` MUST be downloadable and its SHA256 MUST match the listed checksum. The validation script downloads each artifact, computes SHA256, compares. Any mismatch exits non-zero with the artifact name. The checksums file MUST itself be one of the release assets. The check is gated behind the verify-release-completeness cooldown to prevent API abuse; use `FORCE=1` for immediate re-check. Network-unreachable or gh API down → exit 2 (inconclusive/fail-open), not exit 1.
+**Behavior:** Every published release asset except the checksum index itself MUST have exactly one safe basename entry in the canonical `SHA256SUMS` asset, MUST be downloadable, and MUST match that SHA-256 digest. The validator first compares the complete remote asset-name set with the index, then downloads one artifact at a time into bounded temporary storage, streams its digest, and deletes it before continuing. Missing, extra, unsafe, or mismatched entries fail. Network-unreachable or GitHub CLI/API failure exits 2 (inconclusive), never a false PASS.
 
 ### AC007 — sbom-freshness
 **Category:** Release Discipline
 **Enforcement:** `scripts/check_sbom_freshness.py` + `make check-sbom-freshness`
-**Behavior:** The SBOM (Software Bill of Materials) MUST be regenerated on every release cut, not copied from a prior release. The freshness check verifies: (a) SBOM generation timestamp ≥ tag creation timestamp, (b) SBOM includes the current version string, (c) SBOM dependency list matches current `uv.lock` / `requirements.txt`. A stale SBOM (copied from prior release) is BLOCKED. `make release-cut` runs this check before SBOM upload. The script cross-references the SBOM's `metadata.timestamp` against the tag's `taggerdate`.
+**Behavior:** The canonical published `sbom.json` MUST be regenerated on every release cut, not copied from a prior release. The freshness check downloads that exact asset and verifies: (a) valid CycloneDX structure, (b) generation timestamp ≥ annotated-tag creation, and (c) a `general-ludd-agent` component whose version exactly matches the tag. The release matrix independently validates the component inventory before publication. Missing, malformed, stale, or version-mismatched SBOM evidence is BLOCKED; unavailable remote evidence is INCONCLUSIVE, never PASS.
 
 ### AC008 — container-push-verification
 **Category:** Release Discipline
@@ -1092,12 +1092,12 @@ Total: 4000 specs across 26 groups.
 ### AC010 — multi-platform-consistency
 **Category:** Release Discipline
 **Enforcement:** `scripts/check_multiplatform_consistency.py` + `make check-multiplatform-consistency`
-**Behavior:** Every release MUST have artifacts for all target platforms (linux-amd64, linux-arm64, macos-amd64, macos-arm64, windows-amd64). The consistency check verifies: (a) each platform has a binary artifact, (b) each platform binary is similarly-sized (±50% of mean), (c) each binary has a matching checksum entry. A missing platform (e.g., only linux built, macOS CI flaked) is BLOCKED. Platform count must be ≥4 (2 OS × 2 arch minimum). This prevents the "we shipped but only Linux built" class of partial release.
+**Behavior:** Every release MUST carry the canonical native matrix: Linux x86_64 tar, Linux aarch64 tar, macOS arm64 tar, and Windows x86_64 zip. Exact primary-archive patterns exclude `.sha256` sidecars from binary-size analysis. The check verifies: (a) all four primary artifacts exist, (b) size outliers are surfaced, and (c) every published asset except `SHA256SUMS` is represented in the aggregate index. A missing platform or checksum is BLOCKED. Architecture additions change the canonical build matrix, checker, runbook, and tests together.
 
 ### AC011 — provenance-attestation
 **Category:** Release Discipline
 **Enforcement:** `scripts/check_provenance_attestation.py` + `make check-provenance-attestation`
-**Behavior:** Every release MUST include a SLSA provenance attestation for each binary artifact. The attestation check verifies: (a) `.build.provenance` file exists in release assets, (b) provenance `subject.digest` matches the binary's SHA256, (c) provenance `builder.id` references the CI workflow. If attestation is missing or mismatched, the release is BLOCKED. The check uses `gh attestation verify` if available, falling back to manual digest comparison. This is a SHALL requirement, not a SHOULD — releases without provenance are not shippable.
+**Behavior:** Every release MUST include signed SLSA provenance covering the checksum-indexed staged asset set. After the functional matrix creates `SHA256SUMS`, the tag workflow invokes an exact-SHA-pinned `actions/attest` step with that file as `subject-checksums`; publication happens only after attestation succeeds. `make check-provenance-attestation` delegates Sigstore signature, builder identity, subject digest, and release binding verification to `gh release verify`. A plain release manifest or unsigned sidecar is never accepted as signed provenance. Missing, empty, invalid, or mismatched evidence blocks release; tool/network unavailability is INCONCLUSIVE, never PASS.
 
 ### AC012 — dependency-pinning
 **Category:** Release Discipline
@@ -1119,7 +1119,7 @@ Total: 4000 specs across 26 groups.
 ### AC015 — changelog-accuracy
 **Category:** Release Discipline
 **Enforcement:** `scripts/check_changelog_accuracy.py` + `make check-changelog-accuracy`
-**Behavior:** `CHANGELOG.md` MUST accurately reflect all commits between the prior release tag and the current tag. The accuracy check: (a) computes the commit range between tags, (b) extracts `CHANGELOG.md` entries for the current version, (c) verifies every commit in the range is referenced (by hash or description) in the changelog, (d) verifies no changelog entry references a commit NOT in the range. Missing entries or phantom entries exit non-zero. High-level summaries are acceptable; the check uses keyword matching and commit hash cross-reference.
+**Behavior:** `CHANGELOG.md` MUST accurately reflect all commits between the prior release tag and the current tag. The accuracy check: (a) computes the commit range between tags, (b) extracts `CHANGELOG.md` entries for the current version, and (c) requires either every commit to be referenced by hash/description or one exact range summary containing the prior/current refs, computed commit count, and immutable 40-character release-source commit. Any mismatched ref, count, or source identity exits non-zero. This compact identity permits readable high-level summaries for large release trains without weakening complete-history coverage.
 
 ### AC016 — version-bump-atomicity
 **Category:** Release Discipline
@@ -1144,7 +1144,7 @@ Total: 4000 specs across 26 groups.
 ### AC020 — release-audit-trail
 **Category:** Release Discipline
 **Enforcement:** `scripts/check_release_audit_trail.py` + `make check-release-audit-trail`
-**Behavior:** Every release MUST leave a complete audit trail in `docs/releases/audit-<version>.json`. The audit file records: (a) tag SHA, (b) CI run ID + conclusion, (c) artifact list with digests, (d) release-cut timestamp, (e) gate status at cut time, (f) changelog range, (g) signing key fingerprint, (h) operator/agent that cut the release. The audit check verifies the file exists, is valid JSON, and all required fields are populated. Missing audit files or incomplete entries exit non-zero. The audit file is generated by `make release-cut` as a post-cut step and committed alongside the version bump.
+**Behavior:** Every release MUST leave a complete audit trail in `docs/releases/audit-<version>.json`. The audit file records: (a) tag SHA, (b) CI run ID + conclusion, (c) artifact list and canonical digest index, (d) release-cut timestamp, (e) gate status at cut time, (f) changelog range, (g) signing key fingerprint, and (h) operator/agent that cut the release. The audit check verifies the file exists, is valid JSON, and all required fields are populated. A historical policy failure must be recorded explicitly rather than replaced with fabricated compliant evidence; its owning control remains red and the audit names the fix-forward. Missing audit files or incomplete entries exit non-zero. The audit file is generated by `make release-cut` as a post-cut step and committed alongside the version bump.
 
 Each spec defines a behavioral invariant. Each spec MUST have a corresponding
 enforcement mechanism (Makefile target, script, or plugin) and a structural

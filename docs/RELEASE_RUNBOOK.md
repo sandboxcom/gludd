@@ -120,6 +120,32 @@ pass. `scripts/verify_release_asset_matrix.py` unions those attestations and
 requires all 15 smoke checks before the publishing action runs. Every artifact
 upload sets `if-no-files-found: error`.
 
+After the matrix writes and validates `SHA256SUMS`, the release job uses
+`actions/attest` v4.2.2 pinned to commit
+`1e69f48acb82d1966a394da916b4c1698aa569d6`. Its `subject-checksums` input binds
+the signed SLSA statement to the same complete asset set that is published. The
+job grants `id-token: write` and `attestations: write` explicitly, and
+`make check-provenance-attestation TAG=<tag>` uses `gh release verify`; a source
+manifest alone is not signed provenance.
+
+Long-lived practitioner reports shaped the guardrails. In
+[actions/attest-build-provenance #156](https://github.com/actions/attest-build-provenance/issues/156),
+self-hosted users reported OIDC-token failures despite apparently correct
+settings, so release attestation remains on a GitHub-hosted runner with explicit
+permissions and is blocking. In
+[actions/attest-build-provenance #454](https://github.com/actions/attest-build-provenance/issues/454),
+multi-subject input remained a recurring usability issue; Gludd avoids a
+hand-maintained subject list by feeding the already-verified aggregate checksum
+file to the consolidated action. GitHub's current
+[artifact-attestation guidance](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)
+confirms the OIDC/attestations permissions and post-build placement.
+
+Historical exception: v0.1.1 was published before this signed-attestation step
+existed. Its immutable source manifest and SHA-256 coverage remain valid, but
+`gh release verify v0.1.1` correctly reports no attestation. Do not rewrite the
+public tag or assets; the exception and fix-forward are recorded in
+`docs/releases/audit-0.1.1.json`.
+
 The staged `install.sh` is treated as untrusted release input even after its
 execution smoke. Static verification accepts at most 1 MiB of UTF-8, requires
 the executable bit and the exact repository Bash shebang, and requires an
@@ -179,12 +205,35 @@ Expected release state:
 - all 28 required artifact categories report `PASS`;
 - at least 30 assets are present;
 - no zero-sized asset;
+- signed release provenance verifies with `gh release verify` (the immutable
+  v0.1.1 historical exception is recorded above and in its audit receipt);
 - release URL identifies `v0.1.1`.
 
 Record the release URL, exact tag SHA, CI run URL, gate evidence, coverage
 evidence, and completeness PASS in the task ledger.
 
-## Repair and rollback
+## Rollback
+
+The v0.1.1 rollback target is `v0.1.0-beta.4`. Rollback is a routing change to
+that already-published version; it never moves, deletes, or overwrites the
+v0.1.1 tag or its release assets.
+
+- **Target:** route new work to `v0.1.0-beta.4`, then drain work already bound
+  to v0.1.1.
+- **Container:** resolve the immutable image digest recorded by the
+  `v0.1.0-beta.4` release metadata and pin that digest. Never roll back to a
+  mutable image tag.
+- **Binary:** obtain the platform artifact from
+  `https://github.com/sandboxcom/gludd/releases/tag/v0.1.0-beta.4` and verify it
+  with that release's checksum set before installation.
+- **Config compatibility:** restore a configuration snapshot validated by
+  v0.1.0-beta.4 and run its migration/health checks before shifting traffic.
+  Do not downgrade a database or configuration in place without that proof.
+
+After traffic is restored, independently verify the prior digest, binary
+version, health endpoint, and absence of v0.1.1-bound new work. Preserve the
+failed deployment and its content-free evidence until the incident record is
+complete.
 
 Never upload a locally built replacement to a published release. Only artifacts
 built by CI from the exact tagged SHA have valid provenance.
@@ -240,3 +289,31 @@ build command or a well-named transfer artifact:
 
 These reports are design evidence, not exceptions. A matching upstream symptom
 still fails the beta4 gate.
+
+### Signed-tag automation evidence
+
+Reviewed on 2026-10-05, long-lived GitHub operator reports show why tag signing
+must be owned before publication instead of inferred from a successful release
+job:
+
+- GitHub Community discussion
+  [#27016](https://github.com/orgs/community/discussions/27016) records that the
+  REST tag-creation API does not create a user-signed tag; the supported pattern
+  is to sign with Git locally and push the resulting tag object. Gludd therefore
+  creates release tags with `git tag -s -a`, verifies them locally, and only then
+  pushes the ref.
+- `actions/checkout` issue
+  [#649](https://github.com/actions/checkout/issues/649) documents signed tag
+  objects being checked out as direct commit refs in shallow workflows. Hosted
+  artifact jobs may prove the peeled commit, but they are not the owner of tag
+  signature admission; the pre-push local guard verifies the actual tag object.
+- `action-gh-release` issue
+  [#722](https://github.com/softprops/action-gh-release/issues/722) records an
+  orphaned draft release when tag creation is denied after release work starts.
+  Gludd performs signing and tag-policy checks before remote mutation so a
+  signing failure cannot create or replace hosted release state.
+
+The v0.1.1 tag predates this repaired wiring and is unsigned. Its published tag
+is immutable: do not delete or replace it to manufacture compliance after the
+fact. The audit trail must record that exception, and every later release is
+blocked unless the signed tag verifies before push.
