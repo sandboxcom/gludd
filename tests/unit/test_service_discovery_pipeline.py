@@ -1,7 +1,9 @@
 """Unit tests for the service-discovery pipeline and its compatibility shim."""
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Barrier
 from unittest.mock import MagicMock
 
 import pytest
@@ -295,3 +297,100 @@ def test_normalize_search_terms_rejects_invalid_entries(
 ) -> None:
     with pytest.raises(expected_exception):
         pipeline_module._normalize_search_terms(terms)
+
+
+def test_pipeline_rejects_blank_project_namespace_before_connector_creation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A blank ownership boundary must fail before any connector is built."""
+    connector_factory = MagicMock()
+    monkeypatch.setattr(pipeline_module, "SearXConnector", connector_factory)
+
+    with pytest.raises(ValueError, match="project_namespace must not be blank"):
+        ServiceDiscoveryPipeline(
+            searx_url="http://localhost:8080",
+            project_namespace="   ",
+        )
+
+    connector_factory.assert_not_called()
+
+
+def test_concurrent_project_namespaces_isolate_health_socket_catalogs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One namespace's reconcile cannot discover or retire another's socket."""
+    monkeypatch.chdir(tmp_path)
+    rendezvous = Barrier(2)
+
+    def build_pipeline(namespace: str) -> ServiceDiscoveryPipeline:
+        pipeline = ServiceDiscoveryPipeline(
+            searx_url="http://localhost:8080",
+            search_terms=["local health socket"],
+            project_namespace=namespace,
+        )
+
+        def discover(_term: str) -> list[SearXResult]:
+            rendezvous.wait(timeout=2)
+            return [
+                SearXResult(
+                    title=f"{namespace.title()} Health Socket - local readiness",
+                    url=f"unix:///run/gludd/{namespace}/health.sock",
+                    snippet=f"{namespace} readiness endpoint",
+                    engine="local-harness",
+                )
+            ]
+
+        monkeypatch.setattr(pipeline._searx, "search", discover)
+        return pipeline
+
+    alpha = build_pipeline("project-alpha")
+    beta = build_pipeline("project-beta")
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        reports = list(
+            executor.map(
+                lambda pipeline: pipeline.run_discovery_pipeline(),
+                (alpha, beta),
+            )
+        )
+
+    alpha_catalog_path = Path(alpha._catalog.path)
+    beta_catalog_path = Path(beta._catalog.path)
+    assert alpha_catalog_path != beta_catalog_path
+    assert [report.new_services for report in reports] == [
+        ["Project-Alpha Health Socket"],
+        ["Project-Beta Health Socket"],
+    ]
+    assert set(ServiceCatalog(path=str(alpha_catalog_path)).services) == {
+        "Project-Alpha Health Socket"
+    }
+    assert set(ServiceCatalog(path=str(beta_catalog_path)).services) == {
+        "Project-Beta Health Socket"
+    }
+
+    beta_before = beta_catalog_path.read_bytes()
+    monkeypatch.setattr(
+        alpha._searx,
+        "search",
+        MagicMock(
+            return_value=[
+                SearXResult(
+                    title="Project-Alpha Replacement - local readiness",
+                    url="unix:///run/gludd/project-alpha/replacement.sock",
+                    snippet="replacement readiness endpoint",
+                    engine="local-harness",
+                )
+            ]
+        ),
+    )
+
+    alpha_report = alpha.run_discovery_pipeline()
+
+    assert alpha_report.retired_services == ["Project-Alpha Health Socket"]
+    assert beta_catalog_path.read_bytes() == beta_before
+    beta_service = ServiceCatalog(path=str(beta_catalog_path)).get(
+        "Project-Beta Health Socket"
+    )
+    assert beta_service is not None
+    assert beta_service.status == "active"
