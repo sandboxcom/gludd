@@ -4,7 +4,8 @@
 
 Implemented for the `0.1.0-beta.4` release train. The built-in discovery
 queries have stable labels, legacy plain-string caller input remains accepted,
-and malformed entries fail before any search request or catalog mutation.
+malformed entries fail before any search request or catalog mutation, and
+concurrent projects may opt into separate catalog namespaces.
 
 ## Problem
 
@@ -19,6 +20,12 @@ search wording.
 The adjacent pipeline contract already recognizes valid two-character service
 acronyms such as `GE`, `HP`, and `AI`. Discovery must retain those names instead
 of silently dropping them while applying the search-schema repair.
+
+The historical default catalog path is process-global. Two concurrent projects
+that intentionally share a working directory could therefore reconcile the
+same health-socket records: one project's absent result could retire another
+project's still-healthy service. Isolation must be explicit without changing
+the path used by existing callers.
 
 ## Schema and compatibility contract
 
@@ -41,6 +48,12 @@ of silently dropping them while applying the search-schema repair.
 - A completed search batch with zero results is inconclusive. It reports any
   isolated query errors and preserves the existing catalog; an empty upstream
   response is not evidence that every known service disappeared.
+- Supplying `project_namespace` places the existing catalog filename beneath a
+  sanitized project directory. A blank namespace fails before connector
+  construction, while omitting the option preserves the exact legacy path.
+- Concurrent project namespaces never load, save, discover, or retire each
+  other's health-socket state. Reconciliation remains local to one
+  project-scoped catalog even when both pipelines search at the same time.
 - Service names containing two non-blank characters remain valid; blank and
   single-character titles remain excluded from automatic catalog registration.
 
@@ -77,6 +90,21 @@ The same evidence makes destructive empty-snapshot reconciliation unsafe: a
 temporarily empty or incompatible upstream response must not mass-retire known
 services.
 
+The long-running
+[Consul health-check deregistration issue 5842](https://github.com/hashicorp/consul/issues/5842)
+records a practitioner finding that deregistering one service removed health
+checks from unrelated services when their identifiers shared agent-level
+scope. Gludd avoids the analogous ownership ambiguity by putting each opt-in
+project's discovered health state in a separate catalog before any retire or
+save operation can run.
+
+The pytest-xdist community's
+[cross-worker identity issue 524](https://github.com/pytest-dev/pytest-xdist/issues/524),
+opened in 2020, documents the need for one stable identity that distinguishes a
+parallel run's shared resources from other runs. Gludd uses the caller's stable
+project namespace—not thread timing or a transient worker number—to derive the
+catalog boundary exercised by the concurrent regression.
+
 ## Security and resource boundaries
 
 Search text is untrusted outbound input. Shape validation occurs before the
@@ -91,18 +119,25 @@ is added. Rejecting malformed entries at construction avoids partial batches
 and wasted outbound calls. Per-query upstream errors retain their current
 isolation and are accumulated in the discovery report.
 
+Namespace text is treated as an untrusted path component and normalized by the
+existing sandbox-state component allocator; separators and traversal syntax
+cannot escape the catalog parent. Opting in adds at most one existing-format
+catalog file and parent directory per active project. It adds no worker,
+socket, network call, cleanup daemon, or cross-project delete permission.
+
 ## Zero-downtime rollout and rollback
 
-The change has no persisted-schema, catalog-format, wire-format, or migration
-impact. Existing processes keep their normalized in-memory query list; newly
-constructed pipelines accept both the legacy and labeled forms. Development is
-promoted only after focused coverage, the full gate, and CI are green, so old
-and new workers may overlap without sharing mutable search state.
+The change has no persisted-schema, catalog-format, or wire-format impact.
+Existing callers that omit `project_namespace` keep the historical path.
+Namespaced workers write only their new project path, so old and new workers can
+overlap during a rolling deployment without sharing the new mutable state.
+Development is promoted only after focused coverage, the full gate, and CI are
+green.
 
-Rollback reverts the constant, normalizer, tests, and this contract together.
-Catalog files created before or after the rollout remain readable, no data
-conversion is needed, and in-flight queries complete under the code that
-started them.
+Rollback stops passing `project_namespace`; namespaced catalog files remain
+readable and recoverable but are no longer selected automatically. No data
+conversion or destructive cleanup is required, and in-flight queries complete
+under the code and catalog path that started them.
 
 ## Verification contract
 
@@ -110,8 +145,11 @@ The authoritative regression first reproduces the three exported tuple-shape
 failures. Additional tests prove deterministic query order, labeled-tuple and
 plain-string compatibility, the empty-sequence fallback, non-destructive empty
 search results, malformed-input rejection before I/O, and two-character
-service-name preservation. The focused family runs with warnings treated as
-errors. Touched-source aggregate coverage must be at least 85 percent and each
-touched source file must retain at least 75 percent line and branch coverage;
-Ruff, strict mypy, docstrings, Markdown, feature-spec, task-ledger, collection,
-and the full release gate remain mandatory.
+service-name preservation. The concurrent namespace regression synchronizes
+two searches at a barrier, proves their catalog paths and services differ, then
+retires one project's health-socket record while requiring the other catalog to
+remain byte-identical and active. The focused family runs with warnings treated
+as errors. Touched-source aggregate coverage must be at least 85 percent and
+each touched source file must retain at least 75 percent line and branch
+coverage; Ruff, strict mypy, docstrings, Markdown, feature-spec, task-ledger,
+collection, and the full release gate remain mandatory.

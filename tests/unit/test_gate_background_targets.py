@@ -4,6 +4,8 @@ Reads the Makefile as text and asserts the new targets, nohup usage, PID file,
 and streaming phase markers exist. Mirrors test_guardrails.py::TestMakefileTargets.
 """
 
+import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
@@ -103,11 +105,103 @@ def test_gate_background_observed_keeps_the_launch_owner_alive() -> None:
     assert idx != -1, "Makefile missing 'gate-background-observed:' target"
     recipe_block = content[idx : idx + 800]
 
-    launch = "$(MAKE) --no-print-directory gate-background"
-    wait = "$(MAKE) --no-print-directory gate-wait"
+    launch = "$(_GATE_MAKE) --no-print-directory gate-background"
+    wait = "$(_GATE_MAKE) --no-print-directory gate-wait"
     assert launch in recipe_block
     assert wait in recipe_block
     assert recipe_block.index(launch) < recipe_block.index(wait)
     assert 'GATE_TIMEOUT="$(GATE_TIMEOUT)"' in recipe_block
     assert 'GATE_POLL_INTERVAL="$(GATE_POLL_INTERVAL)"' in recipe_block
     assert "GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY" in recipe_block
+
+
+def test_gate_background_refusal_and_launch_share_one_shell() -> None:
+    """A duplicate refusal must stop before the launch and PID-file write."""
+    content = _content()
+    start = content.index("gate-background:")
+    end = content.index("# Managed command runners", start)
+    recipe_block = content[start:end]
+
+    assert recipe_block.count("\n\t@") == 1
+    assert recipe_block.index("refusing to launch duplicate") < recipe_block.index(
+        "nohup"
+    )
+
+
+def test_background_launchers_are_safe_under_make_dry_run() -> None:
+    """GNU Make must not classify launcher recipes as recursive under ``-n``."""
+    content = _content()
+    background_start = content.index("gate-background:")
+    background_end = content.index("# Managed command runners", background_start)
+    observed_start = content.index("gate-background-observed:")
+    observed_end = content.index("# Launch gate-lite detached", observed_start)
+
+    assert "$(MAKE)" not in content[background_start:background_end]
+    assert "$(MAKE)" not in content[observed_start:observed_end]
+
+
+def test_observed_gate_waits_for_the_exact_launched_pid() -> None:
+    """A later shared PID-file write cannot detach the observed owner."""
+    content = _content()
+    observed_start = content.index("gate-background-observed:")
+    observed_end = content.index("# Launch gate-lite detached", observed_start)
+    observed_block = content[observed_start:observed_end]
+    status_start = content.index("gate-status-check:")
+    status_end = content.index("# Poll the background gate", status_start)
+    status_block = content[status_start:status_end]
+
+    assert 'EXPECTED_PID=$$(cat .gate-background.pid' in observed_block
+    assert 'GATE_EXPECTED_PID="$$EXPECTED_PID"' in observed_block
+    assert 'PID="$(GATE_EXPECTED_PID)"' in status_block
+
+
+def test_gate_background_duplicate_does_not_replace_live_pid(
+    tmp_path: Path,
+) -> None:
+    """The real target refuses a live owner without reaching its launch step."""
+    owner = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+    )
+    try:
+        pid_file = tmp_path / ".gate-background.pid"
+        pid_file.write_text(f"{owner.pid}\n")
+        result = subprocess.run(
+            [
+                "make",
+                "-f",
+                str(MAKEFILE),
+                "gate-background",
+                "GATE_TIMEOUT=7200",
+            ],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert "refusing to launch duplicate" in result.stdout
+        assert pid_file.read_text() == f"{owner.pid}\n"
+    finally:
+        owner.terminate()
+        owner.wait(timeout=10)
+
+
+def test_gate_background_dry_run_has_no_filesystem_side_effects(
+    tmp_path: Path,
+) -> None:
+    """The real ``make -n`` target prints its recipe and creates nothing."""
+    subprocess.run(
+        [
+            "make",
+            "-n",
+            "-f",
+            str(MAKEFILE),
+            "gate-background",
+            "GATE_TIMEOUT=7200",
+        ],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert not (tmp_path / ".gate-background.pid").exists()
+    assert not (tmp_path / ".gate-logs").exists()

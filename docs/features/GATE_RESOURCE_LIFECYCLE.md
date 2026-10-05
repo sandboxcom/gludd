@@ -296,6 +296,16 @@ launch failure stops before polling, and the terminal child result becomes the
 composite target's result. `GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY=1` verifies
 the bounded plan without starting a gate.
 
+Duplicate admission and launch are one shell transaction. An admitted live PID
+returns before `nohup` or PID publication; a stale PID is removed before one new
+owner is started. Launcher recipes use a Make command expanded before recipe
+execution, avoiding GNU Make's rule that direct `$(MAKE)` recipe references run
+even under `-n`. The observed wrapper captures the PID published by its launch
+and passes it as `GATE_EXPECTED_PID` on every poll rather than following a
+replaceable shared PID file. Real behavioral tests pin both boundaries: a live
+subprocess retains its exact PID record after duplicate refusal, and a dry run
+creates neither the record nor the log directory.
+
 This is ZDD for application services: it changes only the release-control
 process tree, creates no listener or schema, and leaves the interactive target
 compatible. Existing gates are neither restarted nor adopted. Rollback removes
@@ -309,6 +319,43 @@ documents explicit orphan-process cleanup, and runner
 [issue #1309](https://github.com/actions/runner/issues/1309) records externally
 selected termination signals. Those practitioner reports reinforce the rule:
 `nohup` changes terminal behavior; it does not prove durable runner ownership.
+GNU Make's [recursive invocation contract](https://www.gnu.org/software/make/manual/html_node/MAKE-Variable.html)
+additionally explains why direct `MAKE` references require an explicit dry-run
+boundary.
+
+#### Candidate history freeze
+
+A clean worktree does not make HEAD immutable. During the first observed
+v0.1.1 replay, the gate acquired its live owner lock at `c35a78038` and advanced
+into integration preflights. A separate future-release merge then moved the
+same clean `development` checkout to `8c4843b71`. No uncommitted file appeared,
+so dirty-tree admission alone could not distinguish the launched candidate from
+the later tree. The run remains useful diagnostics but is not exact-SHA proof.
+
+The gate's existing worktree-local run lock is now also the Git mutation
+boundary. `gate_run_lock.py assert-inactive` permits a missing lock, rejects a
+live owner, fails closed on malformed ownership, and removes only a proven dead
+owner. `_gate-mutation-guard` is a prerequisite of the common commit lock,
+merge-strategy guard, agent/gated merge paths, checkout, and cherry-pick. Thus a
+main-checkout gate freezes its own history while feature worktrees retain their
+independent lock paths and can prepare repairs without touching the candidate.
+The actual live-owner proof rejected a feature-worktree request aimed at the
+main lock and named PID 81162; the same command passed against the feature
+worktree's absent lock.
+
+This is ZDD for services and conservative for repository control: it neither
+restarts the running diagnostic gate nor blocks read-only status operations.
+After that run terminates, its normal release removes the live lock and merges
+can resume. A killed owner leaves a record that the next guard or gate reclaims
+only after liveness proof. Rollback removes the mutation prerequisites and new
+lock action, but doing so during an active candidate would intentionally reopen
+the identity race. Git's
+[worktree porcelain format](https://git-scm.com/docs/git-worktree#_porcelain_format)
+provides the checkout boundary. GitHub runner
+[issue #4601](https://github.com/actions/runner/issues/4601) and psutil
+[issue #2335](https://github.com/giampaolo/psutil/issues/2335) provide long-lived
+practitioner evidence for explicit, fail-closed ownership instead of process or
+filesystem snapshots.
 
 This division follows years of upstream practitioner discussion. The
 pytest-timeout session-timeout request distinguishes an external CI deadline

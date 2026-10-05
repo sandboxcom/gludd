@@ -1046,7 +1046,7 @@ graph TD
   <p class="stage-kicker">Reliability sequence &middot; input to teardown</p>
   <h2>Four boundaries keep failure contained</h2>
   <ol class="bullets-tight">
-    <li><strong>Validate before I/O:</strong> labeled <code>(identifier, query)</code> defaults; plain strings stay compatible; malformed shapes fail closed, while empty results preserve the catalog.</li>
+    <li><strong>Validate before I/O:</strong> labeled <code>(identifier, query)</code> defaults; plain strings stay compatible; malformed shapes fail closed, while empty results preserve the catalog. Opt-in <code>project_namespace</code> creates a project-scoped catalog, so reconciling one health-socket state cannot retire another.</li>
     <li><strong>Isolate every test:</strong> <code>monkeypatch</code> owns environment teardown and PID + counter streak files prevent parallel workers sharing authorization state.</li>
     <li><strong>Choose lifecycle explicitly:</strong> pre-startup <code>/readyz</code> proves the 503 boundary; context-managed startup proves 200 readiness; model-health checks keep a per-app in-memory database.</li>
     <li><strong>Keep shutdown observable:</strong> a closed log stream falls back to stderr file descriptor 2, then restore handlers + propagation after cleanup.</li>
