@@ -885,7 +885,38 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19g: SERVICE RELIABILITY BOUNDARIES -->
+<!-- SLIDE 19g: S83.115 X.509 CHAIN VALIDATION -->
+<!-- ============================================================ -->
+<section data-contract="s83-115-x509-chain-validation">
+  <p class="stage-kicker">Security contract &middot; standards-consistent issuance to rollback</p>
+  <h2>S83.115 &mdash; X.509 chains <span class="badge-green">Fail closed</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Issue only authorized certificates</h3>
+      <ul class="bullets-tight">
+        <li>Verify the <strong>CSR proof-of-possession</strong> and require that the signing key matches issuer identity.</li>
+        <li>A CA needs critical BasicConstraints plus certificate-signing key use; unknown uses and invalid windows are rejected.</li>
+        <li>Choose each issuer by <strong>verified signature</strong>, reject cycles and unknown critical extensions, and count path length toward subordinate CAs.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Measured and bounded</h3>
+      <ul class="bullets-tight">
+        <li><strong>Tests:</strong> 210/210 warning-strict focused + adjacent checks</li>
+        <li><strong>Coverage:</strong> 95% aggregate; 90% branch coverage in the touched production file</li>
+        <li><strong>Boundary:</strong> caller-supplied trust boundary; <code>O(n)</code> walk and zero network access</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">
+    ZDD uses rolling replacement and categorized rejection metrics. Existing malformed CA
+    material stays rejected; drain in-flight issuance before a source-only rollback.
+  </p>
+  <p class="cite">Sources: docs/features/X509_CHAIN_VALIDATION.md &middot; cryptography <code>verify_directly_issued_by</code> &middot; pyca/cryptography #10276 and GHSA-m959-cc7f-wv43</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19h: SERVICE RELIABILITY BOUNDARIES -->
 <!-- ============================================================ -->
 <section data-contract="service-reliability-boundaries">
   <p class="stage-kicker">Reliability sequence &middot; input to teardown</p>
@@ -901,7 +932,7 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19h: RELEASE AND WORKTREE RESILIENCE -->
+<!-- SLIDE 19i: RELEASE AND WORKTREE RESILIENCE -->
 <!-- ============================================================ -->
 <section data-contract="release-resilience-boundaries">
   <p class="stage-kicker">Resilience sequence &middot; evidence to confinement</p>
