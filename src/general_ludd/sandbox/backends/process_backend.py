@@ -12,6 +12,11 @@ from typing import Any
 
 from general_ludd.sandbox.contracts import SandboxConfig, SandboxResult
 
+# Capture the host capability once at import time.  Tests must not mutate the
+# process-wide ``os.name`` value: pathlib and other standard-library modules
+# consult it dynamically and can become internally inconsistent on POSIX.
+_IS_POSIX = os.name == "posix"
+
 
 def _linux_user_task_count() -> int:
     """Return the current real-UID task count used by Linux ``RLIMIT_NPROC``."""
@@ -54,7 +59,7 @@ def _nproc_soft_limit(
 def _verified_child_process_group(proc: subprocess.Popen[str]) -> int | None:
     """Return the child's isolated process group, never the caller's group."""
     pid = proc.pid
-    if os.name != "posix" or pid is None or pid <= 0:
+    if not _IS_POSIX or pid is None or pid <= 0:
         return None
     try:
         child_pgid = os.getpgid(pid)
@@ -168,7 +173,7 @@ class ProcessBackend:
                 shell=True,
                 preexec_fn=_preexec,
                 env=merged_env,
-                start_new_session=os.name == "posix",
+                start_new_session=_IS_POSIX,
             )
         except FileNotFoundError:
             return SandboxResult(
