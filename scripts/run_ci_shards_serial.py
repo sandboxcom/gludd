@@ -42,9 +42,7 @@ else:
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
 DEFAULT_SHARDS = tuple(SHARDS)
-_CANCELLATION_RETURN_CODES = frozenset(
-    {128 + int(signal.SIGINT), 128 + int(signal.SIGTERM)}
-)
+_CANCELLATION_RETURN_CODES = frozenset({128 + int(signal.SIGINT), 128 + int(signal.SIGTERM)})
 _COLLECT_ALL_PYTEST_RETURN_CODES = frozenset({1, 2, 5, 6})
 ATTESTATION_SCHEMA_VERSION = 3
 RELEASE_PYTEST_ARGS = ("-W", "error")
@@ -149,8 +147,7 @@ def _disk_headroom_available(
         free_bytes = disk_usage(path).free
     except OSError as exc:
         print(
-            f"SHARD-DISK-PREFLIGHT status=error context={context} "
-            f"path={path} error={type(exc).__name__}:{exc}",
+            f"SHARD-DISK-PREFLIGHT status=error context={context} path={path} error={type(exc).__name__}:{exc}",
             flush=True,
         )
         return False
@@ -172,6 +169,7 @@ class ResourcePaths:
     coverage_json: Path
     coverage_audit: Path
     attestation: Path
+    resume: Path
 
 
 def _resource_paths() -> ResourcePaths:
@@ -183,7 +181,43 @@ def _resource_paths() -> ResourcePaths:
         coverage_json=root / "coverage.json",
         coverage_audit=root / "coverage-audit.json",
         attestation=root / "attestation.json",
+        resume=root / "resume.json",
     )
+
+
+def _batch_key(shard: str, batch_index: int, files: list[str]) -> str:
+    """Return a stable key for one batch of test files."""
+    return f"{shard}:batch-{batch_index:03d}:{canonical_json_sha256(files)}"
+
+
+def _load_resume_state(path: Path) -> dict[str, object]:
+    """Load durable per-batch results from a previous interrupted run."""
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if isinstance(payload, dict):
+        return payload
+    return {}
+
+
+def _save_resume_state(
+    path: Path,
+    state: dict[str, object],
+) -> None:
+    """Atomically persist per-batch results so a restart can skip passes."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(state, sort_keys=True, indent=2) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _git_output(*arguments: str) -> tuple[int, str]:
@@ -216,11 +250,7 @@ def _repository_identity(*, expected_sha: str | None) -> dict[str, object]:
 
 def _identity_is_release_eligible(identity: dict[str, object]) -> bool:
     """Return whether an attestation identifies one clean immutable commit."""
-    return bool(
-        identity.get("queries_ok", True)
-        and identity.get("clean")
-        and identity.get("exact_sha")
-    )
+    return bool(identity.get("queries_ok", True) and identity.get("clean") and identity.get("exact_sha"))
 
 
 def _identity_is_execution_eligible(
@@ -280,9 +310,7 @@ def _write_terminal_attestation(
     )
     payload = {
         "schema_version": ATTESTATION_SCHEMA_VERSION,
-        "lane": "hosted"
-        if os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
-        else "local",
+        "lane": "hosted" if os.environ.get("GITHUB_ACTIONS", "").lower() == "true" else "local",
         "identity": identity,
         "shards": shards,
         "status": "pass" if returncode == 0 else "fail",
@@ -297,9 +325,7 @@ def _write_terminal_attestation(
         payload["error"] = error
     if coverage is not None:
         payload["coverage"] = coverage
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
-    )
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent)
     temporary = Path(temporary_name)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
@@ -337,9 +363,7 @@ XDIST_TERMINAL_SUMMARY_LINE = re.compile(
     r"^=+\s+xdist:\s+(?P<message>.+?)\s+=+$",
     re.IGNORECASE,
 )
-COVERAGE_FRAGMENT_NAME = re.compile(
-    r"^\.coverage\.[A-Za-z0-9_-]+\.batch-\d{3}$"
-)
+COVERAGE_FRAGMENT_NAME = re.compile(r"^\.coverage\.[A-Za-z0-9_-]+\.batch-\d{3}$")
 
 
 def _quote(command: list[str]) -> str:
@@ -368,11 +392,16 @@ def _interpreter_identity() -> dict[str, str]:
         detail = (completed.stderr or completed.stdout or "probe failed").strip()
         raise RuntimeError(f"interpreter identity probe failed: {detail}")
     payload = json.loads(completed.stdout)
-    if not isinstance(payload, dict) or set(payload) != {
-        "implementation",
-        "version",
-        "executable",
-    } or not all(isinstance(value, str) and value for value in payload.values()):
+    if (
+        not isinstance(payload, dict)
+        or set(payload)
+        != {
+            "implementation",
+            "version",
+            "executable",
+        }
+        or not all(isinstance(value, str) and value for value in payload.values())
+    ):
         raise RuntimeError("interpreter identity probe returned malformed evidence")
     return payload
 
@@ -409,10 +438,7 @@ def _is_xdist_worker_death_line(line: str) -> bool:
     terminal_summary = XDIST_TERMINAL_SUMMARY_LINE.fullmatch(normalized)
     if terminal_summary is not None:
         normalized = terminal_summary.group("message").strip()
-    return bool(
-        XDIST_NODE_DOWN_LINE.fullmatch(normalized)
-        or XDIST_FATAL_SUMMARY_LINE.fullmatch(normalized)
-    )
+    return bool(XDIST_NODE_DOWN_LINE.fullmatch(normalized) or XDIST_FATAL_SUMMARY_LINE.fullmatch(normalized))
 
 
 def _run_command(command: list[str], *, env: dict[str, str] | None = None) -> int:
@@ -472,8 +498,7 @@ def _remove_owned_tree(path: Path, *, context: str) -> int:
     if deferred_signals:
         returncode = 128 + deferred_signals[0]
         print(
-            f"OWNED-TREE-CLEANUP-SIGNAL context={context} path={path} "
-            f"signal={deferred_signals[0]} rc={returncode}",
+            f"OWNED-TREE-CLEANUP-SIGNAL context={context} path={path} signal={deferred_signals[0]} rc={returncode}",
             flush=True,
         )
         return returncode
@@ -489,9 +514,10 @@ def _cleanup_owned_tmpdir(path: Path) -> int:
     """Remove one socket-safe owned root and return its cleanup status."""
     expected_parent = Path("/tmp") if os.name == "posix" else Path(tempfile.gettempdir())
     resolved = path.resolve()
-    if resolved.parent != expected_parent.resolve() or re.fullmatch(
-        r"gludd-[0-9a-f]{4}-[a-z0-9_]+", resolved.name
-    ) is None:
+    if (
+        resolved.parent != expected_parent.resolve()
+        or re.fullmatch(r"gludd-[0-9a-f]{4}-[a-z0-9_]+", resolved.name) is None
+    ):
         raise ValueError(f"refusing to remove unowned shard temp root: {resolved}")
     return _cleanup_owned_tree(resolved, context="owned-tmpdir")
 
@@ -580,10 +606,7 @@ def _partition_test_paths(
         raise ValueError("max_files must be positive")
 
     expanded = _expand_test_paths(paths, root=root)
-    return [
-        expanded[index : index + max_files]
-        for index in range(0, len(expanded), max_files)
-    ]
+    return [expanded[index : index + max_files] for index in range(0, len(expanded), max_files)]
 
 
 def _attestation_pairing(
@@ -660,9 +683,7 @@ def _validate_only_plan(
     return 0
 
 
-def _signal_owned_process_group(
-    process: subprocess.Popen[str], signum: signal.Signals
-) -> None:
+def _signal_owned_process_group(process: subprocess.Popen[str], signum: signal.Signals) -> None:
     """Signal only the process group created for this runner invocation."""
     if os.name == "posix":
         os.killpg(process.pid, signum)
@@ -683,9 +704,7 @@ def _owned_process_group_alive(process: subprocess.Popen[str]) -> bool:
     return True
 
 
-def _try_signal_owned_process_group(
-    process: subprocess.Popen[str], signum: signal.Signals
-) -> bool:
+def _try_signal_owned_process_group(process: subprocess.Popen[str], signum: signal.Signals) -> bool:
     """Contain normal process-group disappearance or access races."""
     try:
         _signal_owned_process_group(process, signum)
@@ -694,9 +713,7 @@ def _try_signal_owned_process_group(
     return True
 
 
-def _terminate_owned_process(
-    process: subprocess.Popen[str], *, grace_seconds: float = 5.0
-) -> None:
+def _terminate_owned_process(process: subprocess.Popen[str], *, grace_seconds: float = 5.0) -> None:
     """Terminate the owned group, then kill survivors after a bounded grace."""
     if _owned_process_group_alive(process):
         _try_signal_owned_process_group(process, signal.SIGTERM)
@@ -796,8 +813,7 @@ def _run_owned_pytest(
                 if forced_returncode is None and _is_xdist_worker_death_line(line):
                     forced_returncode = WORKER_DEATH_EXIT_CODE
                     print(
-                        f"WORKER-DEATH label={label} rc={WORKER_DEATH_EXIT_CODE}; "
-                        "restarts=disabled cleanup=TERM->KILL",
+                        f"WORKER-DEATH label={label} rc={WORKER_DEATH_EXIT_CODE}; restarts=disabled cleanup=TERM->KILL",
                         flush=True,
                     )
                     _terminate_owned_process(process)
@@ -824,8 +840,7 @@ def _run_owned_pytest(
     except _OwnedProcessInterrupted as exc:
         forced_returncode = 128 + exc.signum
         print(
-            f"SHARD-SIGNAL label={label} signal={exc.signum} "
-            "cleanup=TERM->KILL",
+            f"SHARD-SIGNAL label={label} signal={exc.signum} cleanup=TERM->KILL",
             flush=True,
         )
     finally:
@@ -839,7 +854,9 @@ def _run_owned_pytest(
     returncode = (
         forced_returncode
         if forced_returncode is not None
-        else process.returncode if process.returncode is not None else 1
+        else process.returncode
+        if process.returncode is not None
+        else 1
     )
     print(f"OWNED-PYTEST-RESULT label={label} rc={returncode}", flush=True)
     return returncode
@@ -886,6 +903,42 @@ def _coverage_data_error(path: Path) -> str | None:
     return None
 
 
+def _resume_skip_batch(
+    resume_state: dict[str, object],
+    shard: str,
+    batch_index: int,
+    files: list[str],
+    coverage_shards: Path,
+    resource_root: Path,
+) -> bool:
+    """Reuse one previously-passing batch's coverage fragment if it still exists."""
+    key = _batch_key(shard, batch_index, files)
+    entry = resume_state.get(key)
+    if not isinstance(entry, dict):
+        return False
+    if entry.get("rc") != 0:
+        return False
+    fragment_name = entry.get("coverage_fragment")
+    if not isinstance(fragment_name, str):
+        return False
+    source = resource_root / fragment_name
+    try:
+        if not source.is_file() or source.stat().st_size == 0:
+            return False
+        source_digest = _file_sha256(source)
+        destination = coverage_shards / source.name
+        if destination.resolve() != source.resolve():
+            destination.unlink(missing_ok=True)
+            shutil.copy2(source, destination)
+        destination_digest = _file_sha256(destination)
+        if destination_digest != source_digest:
+            destination.unlink(missing_ok=True)
+            return False
+    except (OSError, ValueError):
+        return False
+    return True
+
+
 def _save_shard_coverage(
     shard: str,
     batch_index: int,
@@ -921,9 +974,7 @@ def _save_shard_coverage(
             )
             return False
     try:
-        coverage_missing = (
-            not coverage_file.is_file() or coverage_file.stat().st_size == 0
-        )
+        coverage_missing = not coverage_file.is_file() or coverage_file.stat().st_size == 0
     except OSError:
         coverage_missing = True
     if coverage_missing:
@@ -935,8 +986,7 @@ def _save_shard_coverage(
     coverage_error = _coverage_data_error(coverage_file)
     if coverage_error is not None:
         print(
-            f"SHARD-COVERAGE-INVALID shard={shard} batch={batch_index} "
-            f"path={coverage_file} error={coverage_error}",
+            f"SHARD-COVERAGE-INVALID shard={shard} batch={batch_index} path={coverage_file} error={coverage_error}",
             flush=True,
         )
         return False
@@ -954,27 +1004,19 @@ def _save_shard_coverage(
         try:
             destination.unlink(missing_ok=True)
         except OSError as cleanup_exc:
-            cleanup_error = (
-                f" cleanup_error={type(cleanup_exc).__name__}:{cleanup_exc}"
-            )
+            cleanup_error = f" cleanup_error={type(cleanup_exc).__name__}:{cleanup_exc}"
         print(
             f"SHARD-COVERAGE-TRANSFER-FAIL shard={shard} batch={batch_index} "
             f"error={type(exc).__name__}:{exc}{cleanup_error}",
             flush=True,
         )
         return False
-    if (
-        destination_error is not None
-        or destination_digest != source_digest
-        or current_source_digest != source_digest
-    ):
+    if destination_error is not None or destination_digest != source_digest or current_source_digest != source_digest:
         cleanup_error = ""
         try:
             destination.unlink(missing_ok=True)
         except OSError as cleanup_exc:
-            cleanup_error = (
-                f" cleanup_error={type(cleanup_exc).__name__}:{cleanup_exc}"
-            )
+            cleanup_error = f" cleanup_error={type(cleanup_exc).__name__}:{cleanup_exc}"
         print(
             f"SHARD-COVERAGE-TRANSFER-MISMATCH shard={shard} batch={batch_index} "
             f"source_sha256={source_digest} destination_sha256={destination_digest} "
@@ -983,8 +1025,7 @@ def _save_shard_coverage(
         )
         return False
     print(
-        f"SHARD-COVERAGE-SAVED shard={shard} batch={batch_index} "
-        f"bytes={destination_size} sha256={destination_digest}",
+        f"SHARD-COVERAGE-SAVED shard={shard} batch={batch_index} bytes={destination_size} sha256={destination_digest}",
         flush=True,
     )
     return True
@@ -1038,11 +1079,7 @@ def _combine_coverage_output(destination: Path) -> int:
             flush=True,
         )
         return 1
-    fragments = sorted(
-        path
-        for path in COVERAGE_SHARDS.iterdir()
-        if COVERAGE_FRAGMENT_NAME.fullmatch(path.name)
-    )
+    fragments = sorted(path for path in COVERAGE_SHARDS.iterdir() if COVERAGE_FRAGMENT_NAME.fullmatch(path.name))
     if not fragments:
         print(
             f"SHARD-COVERAGE-FRAGMENTS-MISSING path={COVERAGE_SHARDS}",
@@ -1053,8 +1090,7 @@ def _combine_coverage_output(destination: Path) -> int:
         fragment_error = _coverage_data_error(fragment)
         if fragment_error is not None:
             print(
-                f"SHARD-COVERAGE-FRAGMENT-INVALID path={fragment} "
-                f"error={fragment_error}",
+                f"SHARD-COVERAGE-FRAGMENT-INVALID path={fragment} error={fragment_error}",
                 flush=True,
             )
             return 1
@@ -1064,8 +1100,7 @@ def _combine_coverage_output(destination: Path) -> int:
         destination.unlink(missing_ok=True)
     except OSError as exc:
         print(
-            f"SHARD-COVERAGE-OUTPUT-SETUP-FAIL path={destination} "
-            f"error={type(exc).__name__}:{exc}",
+            f"SHARD-COVERAGE-OUTPUT-SETUP-FAIL path={destination} error={type(exc).__name__}:{exc}",
             flush=True,
         )
         return 1
@@ -1102,8 +1137,7 @@ def _combine_coverage_output(destination: Path) -> int:
                 )
                 return 1
             print(
-                f"SHARD-COVERAGE-TRANSFER source={fragment.name} "
-                f"destination={alias.name} bytes={source_size}",
+                f"SHARD-COVERAGE-TRANSFER source={fragment.name} destination={alias.name} bytes={source_size}",
                 flush=True,
             )
         rc = _run_command(
@@ -1123,18 +1157,13 @@ def _combine_coverage_output(destination: Path) -> int:
                 flush=True,
             )
             return rc
-        if (
-            destination.is_symlink()
-            or not destination.is_file()
-            or destination.stat().st_size == 0
-        ):
+        if destination.is_symlink() or not destination.is_file() or destination.stat().st_size == 0:
             print(f"SHARD-COVERAGE-OUTPUT-MISSING path={destination}", flush=True)
             return 1
         coverage_error = _coverage_data_error(destination)
         if coverage_error is not None:
             print(
-                f"SHARD-COVERAGE-OUTPUT-INVALID path={destination} "
-                f"error={coverage_error}",
+                f"SHARD-COVERAGE-OUTPUT-INVALID path={destination} error={coverage_error}",
                 flush=True,
             )
             return 1
@@ -1155,11 +1184,7 @@ def _coverage_output_evidence(destination: Path) -> dict[str, object]:
     """Return portable, hash-bound evidence for one durable coverage artifact."""
     if not destination.is_absolute():
         destination = ROOT / destination
-    if (
-        destination.is_symlink()
-        or not destination.is_file()
-        or destination.stat().st_size == 0
-    ):
+    if destination.is_symlink() or not destination.is_file() or destination.stat().st_size == 0:
         raise ValueError(f"coverage output is missing or invalid: {destination}")
     digest = hashlib.sha256(destination.read_bytes()).hexdigest()
     return {
@@ -1204,6 +1229,7 @@ def run(
     run_isolated: bool = True,
     aggregate_coverage: bool = True,
     coverage_output: Path | None = None,
+    resume_path: Path | None = None,
 ) -> int:
     """Run bounded batches serially and aggregate their coverage fragments."""
     if max_files_per_batch < 1:
@@ -1215,43 +1241,69 @@ def run(
         _print_serial_summary(shards, {"plan": 2}, phase_results)
         return 2
     expected_interpreter = _interpreter_identity()
-    reset_rc = _cleanup_owned_tree(COVERAGE_SHARDS, context="coverage:reset")
-    _record_phase_result(phase_results, "coverage:reset", reset_rc)
-    if reset_rc:
-        _print_serial_summary(shards, {"coverage:reset": reset_rc}, phase_results)
-        return reset_rc
-    try:
-        COVERAGE_SHARDS.mkdir(parents=True)
+    resume_state: dict[str, object] = {}
+    resume_valid = False
+    candidate_sha = _git_output("rev-parse", "HEAD")[1]
+    if resume_path is not None:
+        resume_state = _load_resume_state(resume_path)
+        resume_valid = bool(
+            resume_state.get("schema_version") == 1
+            and resume_state.get("candidate_sha") == candidate_sha
+            and resume_state.get("runner") == "scripts/run_ci_shards_serial.py"
+        )
+        if resume_valid:
+            print(
+                f"RESUME-RECOVER candidate_sha={candidate_sha} batches={len(resume_state) - 3}",
+                flush=True,
+            )
+        else:
+            resume_state = {
+                "schema_version": 1,
+                "candidate_sha": candidate_sha,
+                "runner": "scripts/run_ci_shards_serial.py",
+            }
+    reset_rc = 0
+    if resume_valid:
+        COVERAGE_SHARDS.mkdir(parents=True, exist_ok=True)
         COVERAGE_AUDIT.parent.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        print(
-            f"SHARD-RESOURCE-SETUP-FAIL error={type(exc).__name__}:{exc} "
-            f"rc={CLEANUP_FAILURE_EXIT_CODE}",
-            flush=True,
-        )
-        _record_phase_result(
-            phase_results,
-            "coverage:setup",
-            CLEANUP_FAILURE_EXIT_CODE,
-        )
-        cleanup_rc = _cleanup_owned_tree(
-            COVERAGE_SHARDS,
-            context="coverage:fragments-cleanup",
-        )
-        _record_phase_result(
-            phase_results,
-            "coverage:fragments-cleanup",
-            cleanup_rc,
-        )
-        setup_failures = {"coverage:setup": CLEANUP_FAILURE_EXIT_CODE}
-        if cleanup_rc:
-            setup_failures["coverage:fragments-cleanup"] = cleanup_rc
-        _print_serial_summary(
-            shards,
-            setup_failures,
-            phase_results,
-        )
-        return cleanup_rc or CLEANUP_FAILURE_EXIT_CODE
+        _record_phase_result(phase_results, "coverage:reset", "skipped-resume")
+    else:
+        reset_rc = _cleanup_owned_tree(COVERAGE_SHARDS, context="coverage:reset")
+        _record_phase_result(phase_results, "coverage:reset", reset_rc)
+        if reset_rc:
+            _print_serial_summary(shards, {"coverage:reset": reset_rc}, phase_results)
+            return reset_rc
+        try:
+            COVERAGE_SHARDS.mkdir(parents=True)
+            COVERAGE_AUDIT.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            print(
+                f"SHARD-RESOURCE-SETUP-FAIL error={type(exc).__name__}:{exc} rc={CLEANUP_FAILURE_EXIT_CODE}",
+                flush=True,
+            )
+            _record_phase_result(
+                phase_results,
+                "coverage:setup",
+                CLEANUP_FAILURE_EXIT_CODE,
+            )
+            cleanup_rc = _cleanup_owned_tree(
+                COVERAGE_SHARDS,
+                context="coverage:fragments-cleanup",
+            )
+            _record_phase_result(
+                phase_results,
+                "coverage:fragments-cleanup",
+                cleanup_rc,
+            )
+            setup_failures = {"coverage:setup": CLEANUP_FAILURE_EXIT_CODE}
+            if cleanup_rc:
+                setup_failures["coverage:fragments-cleanup"] = cleanup_rc
+            _print_serial_summary(
+                shards,
+                setup_failures,
+                phase_results,
+            )
+            return cleanup_rc or CLEANUP_FAILURE_EXIT_CODE
     erase_rc = _run_command([sys.executable, "-m", "coverage", "erase"])
     _record_phase_result(phase_results, "coverage:erase", erase_rc)
     if erase_rc:
@@ -1299,8 +1351,7 @@ def run(
 
     if failures and not _is_collect_all_pytest_returncode(failures["isolated"]):
         print(
-            f"SERIAL-ISOLATED-FAILED rc={failures['isolated']}; "
-            "later-shards=not-started",
+            f"SERIAL-ISOLATED-FAILED rc={failures['isolated']}; later-shards=not-started",
             flush=True,
         )
         _record_phase_result(phase_results, "coverage", "not-started")
@@ -1335,8 +1386,7 @@ def run(
             safety_stop_rc = 2
             terminal_rc = 2
             print(
-                f"SERIAL-SHARD-FAILED shard={shard} rc=2; "
-                "later-shards=not-started",
+                f"SERIAL-SHARD-FAILED shard={shard} rc=2; later-shards=not-started",
                 flush=True,
             )
             break
@@ -1345,9 +1395,7 @@ def run(
         workspace_parent = _resource_paths().root / "workspaces"
         try:
             workspace_parent.mkdir(parents=True, exist_ok=True)
-            workspace = Path(
-                tempfile.mkdtemp(prefix=f"gludd-gate-{shard}-", dir=workspace_parent)
-            )
+            workspace = Path(tempfile.mkdtemp(prefix=f"gludd-gate-{shard}-", dir=workspace_parent))
         except OSError as exc:
             print(
                 f"SHARD-RESOURCE-SETUP-FAIL phase={workspace_setup_phase} "
@@ -1377,6 +1425,24 @@ def run(
                 batch_name = f"{shard}-batch-{batch_index:03d}"
                 failure_phase = f"{shard}:batch-{batch_index:03d}"
                 batch_setup_phase = f"{failure_phase}:setup"
+                if resume_path is not None and _resume_skip_batch(
+                    resume_state,
+                    shard,
+                    batch_index,
+                    files,
+                    COVERAGE_SHARDS,
+                    _RESOURCE_PATHS.root,
+                ):
+                    _record_phase_result(phase_results, batch_setup_phase, 0)
+                    _record_phase_result(phase_results, f"{failure_phase}:tmpdir-setup", 0)
+                    _record_phase_result(phase_results, failure_phase, 0)
+                    _record_phase_result(phase_results, f"{failure_phase}:coverage", 0)
+                    _record_phase_result(phase_results, f"{failure_phase}:cleanup", 0)
+                    print(
+                        f"RESUME-SKIP shard={shard} batch={batch_index} files={len(files)}",
+                        flush=True,
+                    )
+                    continue
                 batchtemp = workspace / f"batch-{batch_index:03d}"
                 try:
                     batchtemp.mkdir(parents=True)
@@ -1530,6 +1596,13 @@ def run(
                     f"{failure_phase}:coverage",
                     0 if coverage_saved else 1,
                 )
+                if resume_path is not None and rc == 0 and coverage_saved:
+                    fragment_name = f".coverage.{shard}.batch-{batch_index:03d}"
+                    resume_state[_batch_key(shard, batch_index, files)] = {
+                        "rc": 0,
+                        "coverage_fragment": f"coverage-fragments/{fragment_name}",
+                    }
+                    _save_resume_state(resume_path, resume_state)
                 batch_cleanup_rc = _cleanup_owned_tmpdir_safely(
                     owned_tmpdir,
                     context=f"{failure_phase}:cleanup",
@@ -1549,31 +1622,23 @@ def run(
                         cancellation_rc = rc
                 if batch_cleanup_rc:
                     print(
-                        f"SHARD-CLEANUP-SIGNAL shard={shard} "
-                        f"batch={batch_index} rc={batch_cleanup_rc}",
+                        f"SHARD-CLEANUP-SIGNAL shard={shard} batch={batch_index} rc={batch_cleanup_rc}",
                         flush=True,
                     )
                     shard_failed = True
-                    if not cancellation_rc and _is_cancellation_returncode(
-                        batch_cleanup_rc
-                    ):
+                    if not cancellation_rc and _is_cancellation_returncode(batch_cleanup_rc):
                         cancellation_rc = batch_cleanup_rc
                 if cancellation_rc:
                     if rc != 0:
                         print(
-                            f"SHARD-FAIL shard={shard} batch={batch_index} "
-                            f"rc={rc}; later-batches=not-started",
+                            f"SHARD-FAIL shard={shard} batch={batch_index} rc={rc}; later-batches=not-started",
                             flush=True,
                         )
                     shard_failed = True
                     safety_stop_rc = cancellation_rc
                     break
                 if batch_cleanup_rc:
-                    safety_stop_rc = (
-                        rc
-                        if rc != 0 and not _is_collect_all_pytest_returncode(rc)
-                        else batch_cleanup_rc
-                    )
+                    safety_stop_rc = rc if rc != 0 and not _is_collect_all_pytest_returncode(rc) else batch_cleanup_rc
                     break
                 if not coverage_saved:
                     failures[f"{failure_phase}:coverage"] = 1
@@ -1587,28 +1652,19 @@ def run(
                     shard_failed = True
                     break
                 if rc != 0:
-                    if (
-                        _is_collect_all_pytest_returncode(rc)
-                        and batch_cleanup_rc == 0
-                    ):
+                    if _is_collect_all_pytest_returncode(rc) and batch_cleanup_rc == 0:
                         print(
-                            f"SHARD-FAIL shard={shard} batch={batch_index} rc={rc}; "
-                            "later-batches=continuing",
+                            f"SHARD-FAIL shard={shard} batch={batch_index} rc={rc}; later-batches=continuing",
                             flush=True,
                         )
                         shard_failed = True
                         continue
                     print(
-                        f"SHARD-FAIL shard={shard} batch={batch_index} rc={rc}; "
-                        "later-batches=not-started",
+                        f"SHARD-FAIL shard={shard} batch={batch_index} rc={rc}; later-batches=not-started",
                         flush=True,
                     )
                     shard_failed = True
-                    safety_stop_rc = (
-                        batch_cleanup_rc
-                        if _is_collect_all_pytest_returncode(rc)
-                        else rc
-                    )
+                    safety_stop_rc = batch_cleanup_rc if _is_collect_all_pytest_returncode(rc) else rc
                     break
                 print(
                     f"SHARD-BATCH-PASS shard={shard} batch={batch_index} rc=0",
@@ -1655,23 +1711,20 @@ def run(
         if cancellation_rc:
             terminal_rc = cancellation_rc
             print(
-                f"SERIAL-SHARD-CANCELLED shard={shard} rc={cancellation_rc}; "
-                "later-shards=not-started",
+                f"SERIAL-SHARD-CANCELLED shard={shard} rc={cancellation_rc}; later-shards=not-started",
                 flush=True,
             )
             break
         if safety_stop_rc:
             terminal_rc = safety_stop_rc
             print(
-                f"SERIAL-SHARD-FAILED shard={shard} rc={safety_stop_rc}; "
-                "later-shards=not-started",
+                f"SERIAL-SHARD-FAILED shard={shard} rc={safety_stop_rc}; later-shards=not-started",
                 flush=True,
             )
             break
         if shard_failure_rc:
             print(
-                f"SERIAL-SHARD-COLLECTED shard={shard} rc={shard_failure_rc}; "
-                "later-shards=continuing",
+                f"SERIAL-SHARD-COLLECTED shard={shard} rc={shard_failure_rc}; later-shards=continuing",
                 flush=True,
             )
 
@@ -1776,6 +1829,20 @@ def main() -> int:
             "the resulting attestation remains ineligible for release"
         ),
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "skip batches that already passed in a previous run for the same "
+            "candidate SHA and reuse their coverage fragments"
+        ),
+    )
+    parser.add_argument(
+        "--resume-file",
+        type=Path,
+        default=None,
+        help="path to the resume state file (default: <resource-root>/ci-shards/resume.json)",
+    )
     args = parser.parse_args()
     if args.allow_dirty_worktree and args.require_release_policy:
         print(
@@ -1804,12 +1871,12 @@ def main() -> int:
             max_files_per_batch=args.max_files_per_batch,
             attestation_output=args.attestation_output,
         )
+    resume_path: Path | None = None
+    if args.resume:
+        resume_path = args.resume_file or _resource_paths().resume
     pairing = _attestation_pairing(shards, pytest_args=pytest_args)
     started_at = _utc_now()
-    identity = _repository_identity(
-        expected_sha=os.environ.get("GLUDD_CANDIDATE_SHA")
-        or os.environ.get("GITHUB_SHA")
-    )
+    identity = _repository_identity(expected_sha=os.environ.get("GLUDD_CANDIDATE_SHA") or os.environ.get("GITHUB_SHA"))
     if _identity_is_execution_eligible(
         identity,
         allow_dirty_worktree=args.allow_dirty_worktree,
@@ -1828,6 +1895,7 @@ def main() -> int:
                 run_isolated=not args.skip_isolated,
                 aggregate_coverage=not args.skip_aggregate,
                 coverage_output=args.coverage_output,
+                resume_path=resume_path,
             )
             error = None
             if (
@@ -1883,8 +1951,7 @@ def main() -> int:
             with _defer_termination_signals():
                 publish_terminal()
         print(
-            f"TERMINAL-ATTESTATION-SIGNAL signal={deferred_signals[0]} "
-            f"rc={returncode}",
+            f"TERMINAL-ATTESTATION-SIGNAL signal={deferred_signals[0]} rc={returncode}",
             flush=True,
         )
     return returncode
