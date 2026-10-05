@@ -40,11 +40,12 @@ import importlib
 import importlib.util
 import logging
 import os
+import shlex
 import shutil
 import socket
 import sys
 import unittest.mock as _mock_mod
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -98,6 +99,332 @@ del _FAKE_PKG_RESOURCES
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _SCRIPTS_DIR = _REPO_ROOT / "scripts"
 _SRC_DIR = _REPO_ROOT / "src"
+
+
+def _linked_worktree_main_checkout(repo_root: Path) -> Path | None:
+    """Return the canonical checkout for a linked Git worktree.
+
+    A normal checkout owns a ``.git`` directory and needs no cross-checkout
+    guard.  A linked worktree instead has a ``.git`` text file whose gitdir is
+    ``<main>/.git/worktrees/<name>``; that administrative path is the durable
+    filesystem identity of the canonical checkout.
+    """
+    marker = repo_root / ".git"
+    if not marker.is_file():
+        return None
+    try:
+        prefix, raw_git_dir = marker.read_text(encoding="utf-8").strip().split(":", 1)
+    except (OSError, UnicodeError, ValueError):
+        return None
+    if prefix.strip().lower() != "gitdir" or not raw_git_dir.strip():
+        return None
+
+    git_dir = Path(raw_git_dir.strip())
+    if not git_dir.is_absolute():
+        git_dir = marker.parent / git_dir
+    git_dir = git_dir.resolve()
+    worktrees_dir = git_dir.parent
+    common_git_dir = worktrees_dir.parent
+    if worktrees_dir.name != "worktrees" or common_git_dir.name != ".git":
+        return None
+    return common_git_dir.parent.resolve()
+
+
+_WRITE_OPEN_FLAGS = (
+    os.O_WRONLY | os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_TRUNC | os.O_EXCL
+)
+_MUTATING_PATH_EVENTS: dict[str, tuple[int, ...]] = {
+    "os.chmod": (0,),
+    "os.chown": (0,),
+    "os.link": (0, 1),
+    "os.mkdir": (0,),
+    "os.remove": (0,),
+    "os.rename": (0, 1),
+    "os.rmdir": (0,),
+    "os.symlink": (1,),
+    "os.truncate": (0,),
+    "os.utime": (0,),
+}
+_PYTEST_COLLECTION_ACTIVE = False
+
+
+@dataclass(frozen=True, slots=True)
+class _WorktreeConfinement:
+    """Deny test-process mutations that escape into canonical main."""
+
+    active_root: Path
+    canonical_root: Path
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "active_root", self.active_root.resolve())
+        object.__setattr__(self, "canonical_root", self.canonical_root.resolve())
+
+    @staticmethod
+    def _dir_fd(event: str, args: tuple[object, ...], path_index: int) -> int | None:
+        positions = {
+            ("os.chmod", 0): 2,
+            ("os.chown", 0): 3,
+            ("os.link", 0): 2,
+            ("os.link", 1): 3,
+            ("os.mkdir", 0): 2,
+            ("os.remove", 0): 1,
+            ("os.rename", 0): 2,
+            ("os.rename", 1): 3,
+            ("os.rmdir", 0): 1,
+            ("os.symlink", 1): 2,
+            ("os.utime", 0): 3,
+        }
+        position = positions.get((event, path_index))
+        if position is None or position >= len(args):
+            return None
+        value = args[position]
+        return value if isinstance(value, int) and value >= 0 else None
+
+    @staticmethod
+    def _dir_fd_path(dir_fd: int) -> Path | None:
+        """Resolve an open directory descriptor on Linux or macOS."""
+        for descriptor_root in ("/proc/self/fd", "/dev/fd"):
+            try:
+                return Path(os.readlink(f"{descriptor_root}/{dir_fd}"))
+            except OSError:
+                continue
+
+        try:
+            import fcntl
+
+            get_path = getattr(fcntl, "F_GETPATH", None)
+            if not isinstance(get_path, int):
+                return None
+            raw_path = fcntl.fcntl(dir_fd, get_path, b"\0" * 1024)
+        except (ImportError, OSError, ValueError):
+            return None
+        if not isinstance(raw_path, bytes):
+            return None
+        return Path(os.fsdecode(raw_path.split(b"\0", 1)[0]))
+
+    @staticmethod
+    def _resolve_path(value: object, dir_fd: int | None = None) -> Path | None:
+        if isinstance(value, int):
+            dir_fd = value
+            value = "."
+        if not isinstance(value, (str, bytes, os.PathLike)):
+            return None
+        try:
+            path = Path(os.fsdecode(value))
+        except (TypeError, ValueError):
+            return None
+        if not path.is_absolute():
+            base: Path | None
+            if dir_fd is None:
+                base = Path.cwd()
+            else:
+                base = _WorktreeConfinement._dir_fd_path(dir_fd)
+                if base is None:
+                    return None
+            path = base / path
+        try:
+            return path.resolve()
+        except (OSError, RuntimeError, ValueError):
+            return None
+
+    @staticmethod
+    def _is_within(path: Path, root: Path) -> bool:
+        return path == root or path.is_relative_to(root)
+
+    def _deny_canonical_path(
+        self,
+        event: str,
+        value: object,
+        dir_fd: int | None = None,
+    ) -> None:
+        path = self._resolve_path(value, dir_fd)
+        if path is None or self._is_within(path, self.active_root):
+            return
+        if self._is_within(path, self.canonical_root):
+            raise PermissionError(
+                f"pytest worktree confinement denied {event} in canonical "
+                f"main checkout {self.canonical_root}; active checkout is "
+                f"{self.active_root}"
+            )
+
+    def _contains_canonical_reference(self, value: object) -> bool:
+        if isinstance(value, Mapping):
+            return any(
+                self._contains_canonical_reference(item) for item in value.values()
+            )
+        if isinstance(value, (list, tuple, set, frozenset)):
+            return any(self._contains_canonical_reference(item) for item in value)
+        if isinstance(value, bytes):
+            value = os.fsdecode(value)
+        if isinstance(value, os.PathLike):
+            resolved = self._resolve_path(value)
+            return resolved is not None and self._is_within(
+                resolved, self.canonical_root
+            )
+        if not isinstance(value, str):
+            return False
+
+        canonical_text = str(self.canonical_root)
+        if canonical_text in value:
+            return True
+        candidates = [value]
+        if "=" in value:
+            candidates.append(value.split("=", 1)[1])
+        if os.pathsep in value:
+            candidates.extend(value.split(os.pathsep))
+        for candidate in candidates:
+            if not candidate or not candidate.startswith(("/", ".")):
+                continue
+            resolved = self._resolve_path(candidate)
+            if resolved is not None and self._is_within(
+                resolved, self.canonical_root
+            ):
+                return True
+        return False
+
+    def _deny_subprocess_payload(self, label: str, value: object) -> None:
+        if self._contains_canonical_reference(value):
+            raise PermissionError(
+                f"pytest worktree confinement denied subprocess {label} "
+                f"reference to canonical main checkout {self.canonical_root}; "
+                f"active checkout is {self.active_root}"
+            )
+
+    @staticmethod
+    def _subprocess_argv(value: object) -> tuple[str, ...]:
+        if isinstance(value, bytes):
+            value = os.fsdecode(value)
+        if isinstance(value, str):
+            try:
+                return tuple(shlex.split(value))
+            except ValueError:
+                return (value,)
+        if not isinstance(value, (list, tuple)):
+            return ()
+        return tuple(
+            os.fsdecode(item)
+            for item in value
+            if isinstance(item, (str, bytes, os.PathLike))
+        )
+
+    @classmethod
+    def _is_repository_mutation(cls, value: object) -> bool:
+        argv = cls._subprocess_argv(value)
+        if not argv:
+            return False
+        executable = Path(argv[0]).name
+        if executable == "git":
+            for index, token in enumerate(argv):
+                if token == "worktree" and any(
+                    action in {"add", "lock", "move", "prune", "remove", "repair", "unlock"}
+                    for action in argv[index + 1 :]
+                ):
+                    return True
+            if any(token in {"checkout", "switch"} for token in argv) and any(
+                token in {"-b", "-B", "-c", "-C"} for token in argv
+            ):
+                return True
+        if executable in {"make", "gmake"}:
+            mutating_targets = {
+                "agent-cleanup",
+                "agent-worktree",
+                "agent-worktree-base",
+                "feature-start",
+                "git-branch",
+                "git-checkout",
+            }
+            return any(
+                token in mutating_targets
+                or any(target in token for target in mutating_targets)
+                for token in argv[1:]
+            )
+        return False
+
+    @classmethod
+    def _is_side_effect_free_version_probe(cls, value: object) -> bool:
+        """Return whether collection is only querying one executable version."""
+        argv = cls._subprocess_argv(value)
+        return len(argv) == 2 and bool(Path(argv[0]).name) and argv[1] == "--version"
+
+    @staticmethod
+    def _is_collection_phase() -> bool:
+        return _PYTEST_COLLECTION_ACTIVE
+
+    def audit(self, event: str, args: tuple[object, ...]) -> None:
+        """Enforce the boundary at CPython file, cwd, and process events."""
+        if event == "open" and len(args) >= 3:
+            mode = args[1]
+            flags = args[2]
+            writes = (
+                isinstance(mode, str) and any(token in mode for token in "wax+")
+            ) or (isinstance(flags, int) and bool(flags & _WRITE_OPEN_FLAGS))
+            if writes:
+                self._deny_canonical_path(event, args[0])
+            return
+
+        if event == "os.chdir" and args:
+            self._deny_canonical_path(event, args[0])
+            return
+
+        if event == "subprocess.Popen" and len(args) >= 3:
+            cwd = args[2] if args[2] is not None else Path.cwd()
+            self._deny_canonical_path(event, cwd)
+            self._deny_subprocess_payload("argv", args[1])
+            if self._is_repository_mutation(args[1]):
+                raise PermissionError(
+                    "pytest worktree confinement denied repository mutation "
+                    "subprocess; tests may inspect but cannot create branches "
+                    "or worktrees"
+                )
+            environment = args[3] if len(args) >= 4 and args[3] is not None else os.environ
+            self._deny_subprocess_payload("environment", environment)
+            if self._is_collection_phase() and not self._is_side_effect_free_version_probe(
+                args[1]
+            ):
+                raise PermissionError(
+                    "pytest worktree confinement denied subprocess.Popen "
+                    "during pytest collection; module imports may only run "
+                    "an exact executable --version probe"
+                )
+            return
+
+        if event in {"os.posix_spawn", "os.posix_spawnp", "os.system"}:
+            if event != "os.system" and len(args) >= 3:
+                self._deny_subprocess_payload("argv", args[1])
+                self._deny_subprocess_payload("environment", args[2])
+            if self._is_collection_phase() and (
+                event == "os.system"
+                or len(args) < 2
+                or not self._is_side_effect_free_version_probe(args[1])
+            ):
+                raise PermissionError(
+                    f"pytest worktree confinement denied {event} during pytest "
+                    "collection; module imports may only run an exact "
+                    "executable --version probe"
+                )
+            return
+
+        for path_index in _MUTATING_PATH_EVENTS.get(event, ()):
+            if path_index < len(args):
+                self._deny_canonical_path(
+                    event,
+                    args[path_index],
+                    self._dir_fd(event, args, path_index),
+                )
+
+
+_CANONICAL_MAIN_CHECKOUT = _linked_worktree_main_checkout(_REPO_ROOT)
+if (
+    _CANONICAL_MAIN_CHECKOUT is not None
+    and _REPO_ROOT.resolve() != _CANONICAL_MAIN_CHECKOUT
+):
+    sys.addaudithook(
+        _WorktreeConfinement(
+            active_root=_REPO_ROOT,
+            canonical_root=_CANONICAL_MAIN_CHECKOUT,
+        ).audit
+    )
+
 for _p in (str(_SCRIPTS_DIR), str(_SRC_DIR)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
@@ -305,6 +632,18 @@ def _pin_enforcement_shared_state(item: pytest.Item) -> None:
     if unrelated_groups:
         return
     item.add_marker(pytest.mark.xdist_group(name=ENFORCEMENT_SHARED_STATE_GROUP))
+
+
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_collection(session: pytest.Session) -> Iterator[None]:
+    """Mark only the real module-collection window as process-free."""
+    del session
+    global _PYTEST_COLLECTION_ACTIVE
+    _PYTEST_COLLECTION_ACTIVE = True
+    try:
+        yield
+    finally:
+        _PYTEST_COLLECTION_ACTIVE = False
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
