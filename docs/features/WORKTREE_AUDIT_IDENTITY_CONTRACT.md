@@ -39,6 +39,53 @@ Tests accept either a populated active inventory or the explicit empty state.
 They validate the shape and canonical identity of populated rows instead of
 requiring an idle developer machine.
 
+## Pytest linked-worktree confinement
+
+A release-integrity gate exposed a second identity boundary. The gate was
+invoked from a linked worktree, but a nested release-check process resolved the
+canonical main checkout as its repository. During that interval it changed 15
+tracked release files and created two generated release artifacts in main.
+Later collection intervals created `tests/unit/test_replay_codex_file_changes.py`
+and `scripts/replay_codex_file_changes.py`, and registered the sibling branch
+and worktree `agent/codex-release-integrity`. Those generated files were removed
+before a guarded replay, so no present tracked module can be attributed as the
+import trigger. The surviving filesystem and Git evidence nevertheless fixes
+the failure class: nested code-generation was free to select a different
+checkout through its working directory, arguments, inherited project-root
+environment, or its own repository discovery.
+
+Pytest's existing current-directory restoration fixture could repair a test
+worker's own directory only after a test returned. It neither denied a write
+while the test was running nor constrained a child process. Treating pytest's
+reported `rootdir` as a filesystem jail, and guarding only the parent's current
+directory, was therefore the root cause.
+
+When `tests/conftest.py` is loaded from a linked worktree, it now derives the
+canonical checkout from Git's `.git/worktrees/<name>` administrative path and
+installs one CPython audit hook. The hook resolves symlinks and denies, before
+the operation occurs:
+
+1. write-capable `open` calls and filesystem mutation events below canonical
+   main;
+2. `chdir` into canonical main, which would redirect later relative writes;
+3. a nested process whose working directory, argument vector, or effective
+   environment references canonical main;
+4. branch- or worktree-creating Git and Make commands, even when their explicit
+   paths do not mention main;
+5. active child processes launched while pytest imports test modules, except
+   for an exact two-token `executable --version` availability probe.
+
+The effective-environment check accepts the general `Mapping` protocol, so it
+covers both an explicit dictionary and Python's inherited `os._Environ`. The
+collection phase is tracked by pytest's collection hook instead of inferred
+from `PYTEST_CURRENT_TEST`, which is intentionally absent while modules are
+imported. Canonical path checks run before the narrow version-probe exception.
+
+Reads from main remain permitted, and writes inside the invoking linked
+worktree remain permitted. A test run started in canonical main installs no
+cross-checkout hook. This makes the active worktree the mutation boundary while
+preserving structural tests that need read-only visibility into main metadata.
+
 ## Practitioner evidence
 
 The long-running Stack Overflow Q&A
@@ -53,6 +100,20 @@ shows absolute worktree metadata becoming invalid when the same checkout is
 observed through a different host path, with symlinks suggested as an aliasing
 workaround. It supports resolving aliases before comparing or operating on
 worktree paths.
+
+Pytest's long-lived user report
+[`--ignore` option is not relative to `rootdir`?](https://github.com/pytest-dev/pytest/issues/6399)
+was opened in 2019 and still received practitioner follow-up in 2022. It records
+the same dangerous assumption: pytest's `rootdir` does not rebase every
+path-sensitive operation, while the process working directory still controls
+some behavior. The
+[official rootdir documentation](https://docs.pytest.org/en/stable/reference/customize.html#initialization-determining-rootdir-and-configfile)
+likewise limits `rootdir` to node IDs and plugin state and explicitly warns
+against treating it as an import-path control. The
+[CPython audit-event contract](https://docs.python.org/3/library/audit_events.html)
+exposes the child process's `cwd` on `subprocess.Popen`, while the
+[`sys.addaudithook` contract](https://docs.python.org/3/library/sys.html#sys.addaudithook)
+allows a hook to raise and abort the operation.
 
 ## Security and failure behavior
 
@@ -80,6 +141,16 @@ service, so deployment downtime remains zero. During a rolling deployment, an
 old and new auditor can run independently: each reads Git state and emits its
 own terminal result without shared mutable state.
 
+The pytest confinement hook has the same ZDD properties. It creates no process,
+daemon, watcher, temporary directory, network request, or persisted state. It
+runs synchronously in each test interpreter and refuses an escape before any
+canonical-main mutation, so there is no cleanup window and no application
+restart. It also prevents test collection from starting an active code-editing
+child or creating a sibling worktree; a harmless version probe remains
+available for import-time skip markers. Old and new test workers can overlap
+safely during rollout because each hook owns only its interpreter and enforces
+the same immutable pair of resolved checkout identities.
+
 ## Rollback
 
 Rollback is a normal code revert of the health script, focused tests, task
@@ -96,3 +167,12 @@ The complete audit test module, production coverage floors, Ruff, strict mypy,
 docstring lint, Markdown/spec lint, and task-ledger validators form the bounded
 acceptance set. Collection and commit are deliberately separate authorization
 steps.
+
+The pytest regressions additionally cover linked-worktree main discovery,
+write-open and atomic-rename denial, process `cwd`/argv/explicit and inherited
+environment denial, symlink-alias `chdir` denial, collection-phase process
+denial with the exact version-probe exception, and branch-backed worktree
+creation denial. The 12 focused regressions pass, the release-integrity suite
+passes from the linked worktree, and the exact guarded `make test-count`
+collected 117,301 tests with zero errors. Canonical main was clean at the same
+development commit before and after the exact-scope replay.
