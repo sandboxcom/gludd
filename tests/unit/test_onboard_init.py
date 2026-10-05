@@ -18,6 +18,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import general_ludd.onboard as onboard_pkg
 from general_ludd.onboard import (
     SUPPORTED_PROVIDERS,
     AWSOnboardProvider,
@@ -39,6 +40,22 @@ PROVIDERS = ("aws", "gcp", "azure")
 
 
 class TestGetProviderReturnsRealImplementation:
+    def test_runtime_protocol_declarations_remain_explicit_sentinels(self) -> None:
+        """Execute the runtime-checkable Protocol's three declaration bodies."""
+        protocol_type: Any = OnboardProvider
+        receiver = object()
+
+        assert protocol_type.create_role_instructions(receiver) is None
+        assert protocol_type.token_acquisition_guide(receiver) is None
+        assert (
+            protocol_type.validate_token_and_role(receiver, "token", "role", "region")
+            is None
+        )
+
+    def test_unknown_provider_fails_closed(self) -> None:
+        with pytest.raises(ValueError, match="Unknown onboard provider 'missing'"):
+            get_provider("missing")
+
     def test_aws_wraps_real_impl(self) -> None:
         # AWSOnboardProvider wraps (composition, not inheritance — see
         # onboard/__init__.py docstring) the real aws.AWSOnboardProvider.
@@ -108,6 +125,33 @@ class TestGetProviderKwargPassthrough:
         provider = get_provider("gcp", project_id=None)
         assert isinstance(provider, GCPOnboardProvider)
         assert provider.project_id == "proj-from-env"
+
+    def test_kwarg_filter_covers_accepted_present_and_none_values(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The audited constructor allowlist filters both value branches."""
+
+        captured: dict[str, str] = {}
+
+        class _Provider:
+            name = "coverage"
+
+            def __init__(self, **kwargs: str) -> None:
+                captured.update(kwargs)
+
+        monkeypatch.setitem(SUPPORTED_PROVIDERS, "coverage", _Provider)
+        monkeypatch.setitem(
+            onboard_pkg._PROVIDER_INIT_KWARGS,
+            "coverage",
+            frozenset({"project_id", "subscription_id"}),
+        )
+
+        provider = get_provider(
+            "coverage", project_id="project", subscription_id=None
+        )
+
+        assert provider.name == "coverage"
+        assert captured == {"project_id": "project"}
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +319,9 @@ class TestValidateTokenAndRoleWithFakeClient:
         assert ok is True
         assert details["missing"] == []
 
-    def test_azure_validate_missing_subscription_is_non_raising(self, monkeypatch) -> None:
+    def test_azure_validate_missing_subscription_is_non_raising(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.delenv("AZURE_SUBSCRIPTION_ID", raising=False)
         provider = AzureOnboardProvider(subscription_id=None)
         ok, details = provider.validate_token_and_role(

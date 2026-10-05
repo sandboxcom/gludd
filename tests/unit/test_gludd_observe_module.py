@@ -1,4 +1,4 @@
-"""Unit contracts for the cross-source ``gludd_observe`` Ansible module."""
+"""HTTP compatibility contracts for the ``gludd_observe`` Ansible module."""
 
 from __future__ import annotations
 
@@ -12,13 +12,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = (
     ROOT
-    / "collections"
-    / "ansible_collections"
-    / "general_ludd"
-    / "agent"
-    / "plugins"
-    / "modules"
-    / "gludd_observe.py"
+    / "collections/ansible_collections/general_ludd/agent/plugins/modules/gludd_observe.py"
 )
 
 
@@ -37,42 +31,16 @@ class _FakeAnsibleModule:
 
 
 class _FakeClient:
-    def __init__(self, *, source_status: int = 200) -> None:
-        self.source_status = source_status
+    def __init__(self, response: dict[str, Any] | None = None) -> None:
+        self.response = response or {
+            "_status": 200,
+            "result": {"records": [{"ts": 1.0}], "errors": [], "role": "observe_test"},
+        }
         self.posts: list[tuple[str, dict[str, Any]]] = []
 
-    def get(self, path: str) -> dict[str, Any]:
-        assert path == "/api/observe/sources"
-        return {
-            "_status": self.source_status,
-            "sources": [
-                {"name": "prod-logs", "kind": "logs"},
-                {"name": "prod-metrics", "kind": "metrics"},
-            ],
-        }
-
     def post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-        assert path == "/api/observe/query"
         self.posts.append((path, body))
-        records = {
-            "prod-logs": [
-                {
-                    "ts": 20.0,
-                    "source": "prod-logs",
-                    "kind": "logs",
-                    "labels": {"trace_id": "trace-a", "service": "api", "host": "web-1"},
-                }
-            ],
-            "prod-metrics": [
-                {
-                    "ts": 10.0,
-                    "source": "prod-metrics",
-                    "kind": "metrics",
-                    "labels": {"trace_id": "trace-a", "service": "api", "host": "web-1"},
-                }
-            ],
-        }
-        return {"_status": 200, "records": records[body["source"]]}
+        return self.response
 
 
 def _load_module() -> ModuleType:
@@ -105,118 +73,85 @@ def _params(**overrides: Any) -> dict[str, Any]:
 def _run(
     monkeypatch: pytest.MonkeyPatch,
     *,
-    client: Any | None = None,
+    client: _FakeClient | None = None,
     **params: Any,
 ) -> tuple[_FakeAnsibleModule, _FakeClient]:
     module = _load_module()
-    fake_module = _FakeAnsibleModule(_params(**params))
+    ansible = _FakeAnsibleModule(_params(**params))
     fake_client = client or _FakeClient()
-    monkeypatch.setattr(module, "AnsibleModule", lambda **_: fake_module)
+    monkeypatch.setattr(module, "AnsibleModule", lambda **_: ansible)
     monkeypatch.setattr(module, "GluddClient", lambda **_: fake_client)
     module.main()
-    return fake_module, fake_client
+    return ansible, fake_client
 
 
-def test_query_sources_fans_out_by_kind_and_preserves_bounds(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_query_sources_uses_one_authenticated_facade_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     ansible, client = _run(monkeypatch)
 
     assert ansible.failed is None
-    facts = ansible.exited["ansible_facts"]["gludd_observe"]
-    assert [record["ts"] for record in facts["records"]] == [10.0, 20.0]
-    assert facts["errors"] == []
-    assert [body["source"] for _, body in client.posts] == ["prod-logs", "prod-metrics"]
-    assert all(body["spec"]["start"] == 5.0 for _, body in client.posts)
-    assert all(body["spec"]["end"] == 25.0 for _, body in client.posts)
+    assert ansible.exited is not None
+    assert ansible.exited["ansible_facts"]["gludd_observe"]["records"] == [{"ts": 1.0}]
+    assert client.posts == [
+        (
+            "/api/observe/facade",
+            {
+                "operation": "query_sources",
+                "role": "observe_test",
+                "seed": {},
+                "kinds": ["logs", "metrics"],
+                "by": "trace_id",
+                "window_s": 300.0,
+                "spec": {"query": "errors"},
+                "start": 5.0,
+                "end": 25.0,
+                "timeout_seconds": 30,
+            },
+        )
+    ]
 
 
-def test_correlate_incident_returns_trace_groups(monkeypatch: pytest.MonkeyPatch) -> None:
-    seed = {"ts": 15.0, "labels": {"trace_id": "trace-a"}, "kind": "events"}
-    ansible, _ = _run(
+def test_correlate_requires_seed_before_http(monkeypatch: pytest.MonkeyPatch) -> None:
+    ansible, client = _run(monkeypatch, op="correlate_incident", seed={})
+
+    assert ansible.exited is None
+    assert ansible.failed is not None
+    assert ansible.failed["msg"] == "correlate_incident requires a non-empty seed"
+    assert client.posts == []
+
+
+@pytest.mark.parametrize(
+    ("response", "message"),
+    [
+        ({"_status": 401}, "unauthorized (bad or missing PSK)"),
+        ({"_status": 503, "detail": "offline"}, "offline"),
+        ({"_status": 200, "result": []}, "invalid observability response or request"),
+    ],
+)
+def test_http_failures_are_schema_stable(
+    monkeypatch: pytest.MonkeyPatch,
+    response: dict[str, Any],
+    message: str,
+) -> None:
+    ansible, _ = _run(monkeypatch, client=_FakeClient(response))
+
+    assert ansible.exited is None
+    assert ansible.failed is not None
+    assert ansible.failed["msg"] == message
+
+
+def test_topology_payload_is_forwarded_without_local_core_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    topology = {"services": {"api": ["web-1"]}, "hosts": {"web-1": ["api"]}}
+    ansible, client = _run(
         monkeypatch,
-        op="correlate_incident",
-        seed=seed,
-        start=None,
-        end=None,
+        op="topology",
+        client=_FakeClient({"_status": 200, "result": {"topology": topology, "errors": []}}),
     )
 
     assert ansible.failed is None
-    groups = ansible.exited["ansible_facts"]["gludd_observe"]["groups"]
-    assert len(groups["trace-a"]) == 3
-
-
-def test_topology_is_json_safe_and_deterministic(monkeypatch: pytest.MonkeyPatch) -> None:
-    ansible, _ = _run(monkeypatch, op="topology", start=None, end=None)
-
-    topology = ansible.exited["ansible_facts"]["gludd_observe"]["topology"]
-    assert topology == {"services": {"api": ["web-1"]}, "hosts": {"web-1": ["api"]}}
-
-
-def test_source_discovery_auth_failure_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
-    ansible, _ = _run(monkeypatch, client=_FakeClient(source_status=401))
-
-    assert ansible.exited is None
-    assert ansible.failed["msg"] == "unauthorized (bad or missing PSK)"
-
-
-def test_timeline_uses_the_same_bounded_fanout(monkeypatch: pytest.MonkeyPatch) -> None:
-    ansible, _ = _run(monkeypatch, op="timeline")
-
-    records = ansible.exited["ansible_facts"]["gludd_observe"]["records"]
-    assert [record["ts"] for record in records] == [10.0, 20.0]
-
-
-def test_correlate_requires_a_seed(monkeypatch: pytest.MonkeyPatch) -> None:
-    ansible, _ = _run(monkeypatch, op="correlate_incident", seed={})
-
-    assert ansible.exited is None
-    assert ansible.failed["msg"] == "correlate_incident requires a non-empty seed"
-
-
-def test_source_discovery_transport_failure_is_generic(monkeypatch: pytest.MonkeyPatch) -> None:
-    ansible, _ = _run(monkeypatch, client=_FakeClient(source_status=503))
-
-    assert ansible.exited is None
-    assert ansible.failed["msg"] == "unable to discover registered observability sources"
-
-
-@pytest.mark.parametrize(
-    "sources",
-    [
-        "not-a-list",
-        ["not-a-dict"],
-        [{"name": "", "kind": "logs"}],
-        [{"name": "same", "kind": "logs"}, {"name": "same", "kind": "metrics"}],
-    ],
-)
-def test_invalid_source_catalog_fails_closed(
-    monkeypatch: pytest.MonkeyPatch,
-    sources: Any,
-) -> None:
-    class InvalidCatalogClient(_FakeClient):
-        def get(self, path: str) -> dict[str, Any]:
-            assert path == "/api/observe/sources"
-            return {"_status": 200, "sources": sources}
-
-    ansible, _ = _run(monkeypatch, client=InvalidCatalogClient())
-
-    assert ansible.exited is None
-    assert ansible.failed["msg"] == "invalid observability response or request"
-
-
-@pytest.mark.parametrize(
-    "response",
-    [
-        {"_status": 500},
-        {"_status": 200, "records": "not-a-list"},
-    ],
-)
-def test_remote_source_rejects_invalid_query_response(response: dict[str, Any]) -> None:
-    module = _load_module()
-
-    class QueryClient:
-        def post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-            return response
-
-    source = module._RemoteSource(name="logs", kind="logs", client=QueryClient())
-    with pytest.raises((RuntimeError, TypeError)):
-        source.query({"query": "errors"})
+    assert ansible.exited is not None
+    assert ansible.exited["ansible_facts"]["gludd_observe"]["topology"] == topology
+    assert client.posts[0][1]["operation"] == "topology"

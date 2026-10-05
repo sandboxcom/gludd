@@ -1,8 +1,9 @@
 """Structural + behavioral tests for enforce-depth.ts.
 
-Verifies: max depth at 3 levels, depth 0/1/2 allow dispatch, depth 3+/MAX_DEPTH
-override blocks, OPENCODE_DEPTH env var parsing, GLUDD_DEPTH_ENFORCE=0 disables,
-GLUDD_MAX_DEPTH override, subagent guard, disengage guard, fail-open, Node v26
+Verifies: max depth at 4 levels (main + 3 subagent layers), depth 0-3 allow
+dispatch, depth 4+/MAX_DEPTH override blocks, OPENCODE_DEPTH env var parsing,
+GLUDD_DEPTH_ENFORCE=0 disables, GLUDD_MAX_DEPTH override, delegated depth
+boundary enforcement, disengage guard, fail-open, Node v26
 compat, opencode.json registration, and hot-reload proxy pattern.
 """
 
@@ -49,28 +50,25 @@ class TestPluginHooks:
 
 
 # ---------------------------------------------------------------------------
-# Subagent guard
+# Delegated depth boundary
 # ---------------------------------------------------------------------------
 
 
-class TestSubagentGuard:
-    def test_imports_is_subagent(self):
-        assert "isSubagent" in _src()
+class TestDelegatedDepthBoundary:
+    """Depth is the scoped exception to generic subagent isolation."""
 
-    def test_guard_in_tool_execute_before(self):
-        src = _src()
-        idx = src.find('"tool.execute.before"')
-        after = src[idx : idx + 400] if idx > 0 else src
-        assert "isSubagent()" in after
+    def test_no_subagent_bypass_in_depth_plugin(self):
+        assert "isSubagent" not in _src()
+        assert "OPENCODE_SUBAGENT" not in _src()
 
-    def test_guard_precedes_enforcement(self):
+    def test_enforce_gate_precedes_depth_check(self):
         src = _src()
         idx = src.find('"tool.execute.before": async', src.find("defaultImpl"))
         after = src[idx : idx + 500] if idx > 0 else src
-        guard_idx = after.find("isSubagent()")
         enforce_idx = after.find("ENFORCE")
-        if enforce_idx > 0:
-            assert guard_idx < enforce_idx, "subagent guard must precede ENFORCE check"
+        depth_idx = after.find("currentDepth()")
+        if depth_idx > 0:
+            assert enforce_idx < depth_idx, "ENFORCE gate must precede the depth check"
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +105,7 @@ class TestFailOpen:
     def test_before_hook_has_try_catch(self):
         src = _src()
         idx = src.find('"tool.execute.before": async', src.find("defaultImpl"))
-        end = idx + 600 if idx > 0 else len(src)
+        end = idx + 2000 if idx > 0 else len(src)
         section = src[idx:end]
         assert "catch" in section, "tool.execute.before must have try/catch (fail-open)"
 
@@ -153,11 +151,11 @@ class TestRegistration:
 
 
 class TestConstants:
-    def test_max_depth_default_is_3(self):
+    def test_max_depth_default_is_4(self):
         src = _src()
         m = re.search(r'GLUDD_MAX_DEPTH\s*\|\|\s*"(\d+)"', src)
         assert m, "GLUDD_MAX_DEPTH default not found"
-        assert int(m.group(1)) == 3, "MAX_DEPTH default must be 3"
+        assert int(m.group(1)) == 4, "MAX_DEPTH default must be 4 (main + 3 subagent layers)"
 
     def test_enforce_flag_default_on(self):
         src = _src()
@@ -239,7 +237,7 @@ class TestNodeV26Compat:
 # Behavioral depth enforcement tests — Python simulation of plugin logic
 # ===========================================================================
 
-MAX_DEPTH = 3
+MAX_DEPTH = 4
 
 
 def _simulate(
@@ -250,9 +248,9 @@ def _simulate(
     is_subagent: bool = False,
     disengaged: bool = False,
 ) -> dict | None:
-    """Simulation of enforce-depth.ts tool.execute.before logic."""
-    if is_subagent:
-        return None
+    """Simulation of enforce-depth.ts tool.execute.before logic.
+
+    Delegated contexts still enforce this dispatch-only recursion boundary."""
     if not enforce:
         return None
     lt = tool.lower()
@@ -265,8 +263,8 @@ def _simulate(
             "permissionDecision": "deny",
             "message": (
                 f"MAX DEPTH EXCEEDED: depth={depth}, limit={max_depth}.\n"
-                "AGENTS.md: Subagent delegation depth MUST NOT exceed 3 levels.\n"
-                "A depth-3 subagent CANNOT dispatch further. Complete assigned work directly.\n"
+                "AGENTS.md: Subagent delegation depth MUST NOT exceed 4 levels.\n"
+                "A depth-4 subagent CANNOT dispatch further. Complete assigned work directly.\n"
                 "Set GLUDD_DEPTH_ENFORCE=0 to disable."
             ),
         }
@@ -274,7 +272,7 @@ def _simulate(
 
 
 class TestDepthBehavioral:
-    """Depth 0/1/2 allow dispatch; depth 3+ blocks."""
+    """Depth 0/1/2/3 allow dispatch; depth 4+ blocks."""
 
     def test_depth_0_allows_dispatch(self):
         assert _simulate(0) is None
@@ -285,16 +283,14 @@ class TestDepthBehavioral:
     def test_depth_2_allows_dispatch(self):
         assert _simulate(2) is None
 
-    def test_depth_3_blocks_dispatch(self):
-        result = _simulate(3)
-        assert result is not None
-        assert result["permissionDecision"] == "deny"
-        assert "MAX DEPTH EXCEEDED" in result["message"]
+    def test_depth_3_allows_dispatch(self):
+        assert _simulate(3) is None
 
     def test_depth_4_blocks_dispatch(self):
         result = _simulate(4)
         assert result is not None
         assert result["permissionDecision"] == "deny"
+        assert "MAX DEPTH EXCEEDED" in result["message"]
 
     def test_depth_10_blocks_dispatch(self):
         result = _simulate(10)
@@ -343,14 +339,24 @@ class TestMaxDepthOverride:
         assert result is not None
 
 
-class TestSubagentBypass:
-    """isSubagent() bypasses enforcement."""
+class TestDelegatedDepthBehavior:
+    """Delegated dispatch is allowed below the cap and denied at the cap."""
 
     def test_subagent_depth_3_allows_dispatch(self):
         assert _simulate(3, is_subagent=True) is None
 
-    def test_subagent_depth_10_allows_dispatch(self):
-        assert _simulate(10, is_subagent=True) is None
+    def test_subagent_depth_4_blocks_dispatch(self):
+        result = _simulate(4, is_subagent=True)
+        assert result is not None
+        assert result["permissionDecision"] == "deny"
+
+    def test_subagent_depth_10_blocks_dispatch(self):
+        result = _simulate(10, is_subagent=True)
+        assert result is not None
+        assert result["permissionDecision"] == "deny"
+
+    def test_subagent_non_dispatch_at_depth_4_allows(self):
+        assert _simulate(4, tool="read", is_subagent=True) is None
 
 
 class TestDisengageBypass:
@@ -378,8 +384,8 @@ class TestNonDispatchToolsPassThrough:
     def test_bash_at_depth_3_allows(self):
         assert _simulate(3, tool="bash") is None
 
-    def test_agent_at_depth_3_blocks(self):
-        result = _simulate(3, tool="agent")
+    def test_agent_at_depth_4_blocks(self):
+        result = _simulate(4, tool="agent")
         assert result is not None
 
 

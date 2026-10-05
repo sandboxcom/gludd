@@ -22,7 +22,7 @@ access, matching the policy's artifact-only, read-source impact boundary.
 
 ## Three-phase pipeline
 
-```
+```text
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
 │   PLANNER    │────▶│    CODER     │────▶│   REVIEWER   │
 │  (strong)    │     │  (flexible)  │     │  (strong)    │
@@ -122,7 +122,7 @@ override global high-impact exclusions.
 
 ## Fallback and escalation behavior
 
-```
+```text
 dispatch(phase=2, model=small|local)
   │
   ├─ SmallModelTaskPolicy.authorize()
@@ -160,7 +160,7 @@ collapsed into one call) as a last-resort recovery path.
 
 ## Data flow diagram
 
-```
+```text
 GameSpec ─────────────────────────────────────────────────────────────────┐
     │                                                                     │
     ▼                                                                     │

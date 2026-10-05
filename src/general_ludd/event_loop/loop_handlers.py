@@ -7,15 +7,43 @@ the main ``EventLoop`` class and are resolved at runtime.
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
-from general_ludd.db.task_decisions_retention import cleanup_old_task_decisions
+from general_ludd.db import task_decisions_retention
 from general_ludd.self_improve.harness import SelfImprovementHarness
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def _session_scope(factory: Any) -> AsyncIterator[Any]:
+    """Yield a DB session from a session factory.
+
+    Production factories are sync-callable (``async_sessionmaker``) and
+    return an async context manager (``AsyncSession``); test doubles are
+    frequently async-callable (``AsyncMock``) and return a plain session
+    when awaited. Both shapes are supported.
+    """
+    ctx = factory()
+    if inspect.isawaitable(ctx):
+        session = await ctx
+        try:
+            yield session
+        finally:
+            close = getattr(session, "close", None)
+            if callable(close):
+                maybe = close()
+                if inspect.isawaitable(maybe):
+                    await maybe
+    else:
+        async with ctx as session:
+            yield session
 
 
 class EventLoopHandlers:
@@ -175,7 +203,7 @@ class EventLoopHandlers:
             )
             from general_ludd.ornith.training_data import TrainingDataCollector
 
-            async with factory() as session:
+            async with _session_scope(factory) as session:
                 collector = TrainingDataCollector(session)
 
                 stmt = (
@@ -256,7 +284,7 @@ class EventLoopHandlers:
             from general_ludd.ornith.training_data import TrainingDataCollector
             from general_ludd.self_improve.outcomes import OutcomeAnalyzer
 
-            async with factory() as session:
+            async with _session_scope(factory) as session:
                 collector = TrainingDataCollector(session)
                 report = await collector.quality_report()
 
@@ -343,7 +371,7 @@ class EventLoopHandlers:
         if repo is None or self._session_factory is None:
             return
         try:
-            async with self._session_factory() as perf_session:
+            async with _session_scope(self._session_factory) as perf_session:
                 refreshed = await repo.refresh_recent_stats(session=perf_session)
                 await perf_session.commit()
                 logger.debug(
@@ -444,7 +472,7 @@ class EventLoopHandlers:
         if interval <= 0 or self._total_ticks % interval != 0:
             return
         try:
-            deleted = await cleanup_old_task_decisions(
+            deleted = await task_decisions_retention.cleanup_old_task_decisions(
                 self._active_session,
                 retention_days=int(self.config.get("task_decisions_retention_days", 365)),
             )

@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import os
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 
@@ -25,8 +27,33 @@ from general_ludd.security.db_telemetry import (
 )
 
 
+class _DiskUsage(NamedTuple):
+    """Represent deterministic disk capacity for admission tests."""
+
+    total: int
+    used: int
+    free: int
+
+
+def _set_disk_usage(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    used: int,
+    total: int = 1_000,
+) -> None:
+    """Replace host disk telemetry with one explicit capacity snapshot."""
+
+    def _disk_usage(_path: str) -> _DiskUsage:
+        return _DiskUsage(total=total, used=used, free=total - used)
+
+    monkeypatch.setattr(
+        "general_ludd.security.db_telemetry.shutil.disk_usage",
+        _disk_usage,
+    )
+
+
 @pytest.fixture
-def sqlite_db() -> str:
+def sqlite_db() -> Generator[str, None, None]:
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
     yield path
@@ -113,37 +140,69 @@ def test_estimate_disk_usage_nonexistent_returns_zero() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_check_disk_pressure_ok_default_threshold(tmp_path: Path) -> None:
+def test_check_disk_pressure_ok_default_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_disk_usage(monkeypatch, used=500)
     result = check_disk_pressure(str(tmp_path), threshold_fraction=0.99)
-    assert result.status in {DiskPressureStatus.OK, DiskPressureStatus.WARNING}
+    assert result.status == DiskPressureStatus.OK
 
 
-def test_check_disk_pressure_critical_threshold(tmp_path: Path) -> None:
+def test_check_disk_pressure_critical_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_disk_usage(monkeypatch, used=500)
     result = check_disk_pressure(str(tmp_path), threshold_fraction=1.0001)
     assert result.status == DiskPressureStatus.CRITICAL
 
 
-def test_check_disk_pressure_nonexistent_path() -> None:
+def test_check_disk_pressure_nonexistent_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_disk_usage(monkeypatch, used=500)
     result = check_disk_pressure("/nonexistent/db/path")
     assert result.status == DiskPressureStatus.CRITICAL
 
 
-def test_check_disk_pressure_includes_free_bytes(tmp_path: Path) -> None:
+def test_check_disk_pressure_includes_free_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_disk_usage(monkeypatch, used=250)
     result = check_disk_pressure(str(tmp_path))
-    assert result.free_bytes > 0
-    assert isinstance(result.free_bytes, int)
+    assert result.free_bytes == 750
+    assert result.total_bytes == 1_000
 
 
-def test_check_disk_pressure_respects_env_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_check_disk_pressure_respects_env_override(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_disk_usage(monkeypatch, used=500)
     monkeypatch.setenv("GLUDD_DB_DISK_PRESSURE_THRESHOLD", "1.0")
     result = check_disk_pressure(str(tmp_path))
     assert result.status == DiskPressureStatus.CRITICAL
 
 
-def test_check_disk_pressure_invalid_env_uses_default(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_check_disk_pressure_invalid_env_uses_default(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_disk_usage(monkeypatch, used=900)
     monkeypatch.setenv("GLUDD_DB_DISK_PRESSURE_THRESHOLD", "not_a_number")
     result = check_disk_pressure(str(tmp_path))
-    assert result.status in {DiskPressureStatus.OK, DiskPressureStatus.WARNING}
+    assert result.status == DiskPressureStatus.OK
+
+
+def test_check_disk_pressure_critical_host_capacity_is_preserved(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _set_disk_usage(monkeypatch, used=995)
+    result = check_disk_pressure(str(tmp_path), threshold_fraction=0.95)
+    assert result.status == DiskPressureStatus.CRITICAL
 
 
 # ---------------------------------------------------------------------------

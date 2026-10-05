@@ -519,14 +519,14 @@ class OPAQUERegistration:
         oprf_seed = os.urandom(32)
 
         if config.curve == "ed25519":
-            _, spub = _opaque_ed25519_keygen()
-            server_public_bytes = spub.public_bytes(
+            _, ed_public = _opaque_ed25519_keygen()
+            server_public_bytes = ed_public.public_bytes(
                 encoding=serialization.Encoding.Raw,
                 format=serialization.PublicFormat.Raw,
             )
         else:
-            _, spub = _opaque_ec_keygen(config.curve)  # type: ignore[assignment]
-            server_public_bytes = spub.public_bytes(
+            _, ec_public = _opaque_ec_keygen(config.curve)
+            server_public_bytes = ec_public.public_bytes(
                 encoding=serialization.Encoding.X962,
                 format=serialization.PublicFormat.UncompressedPoint,
             )
@@ -596,16 +596,16 @@ class OPAQUEClient:
             raise PAKEError("envelope verification failed — wrong password or corrupt record")
 
         if self._config.curve == "ed25519":
-            cpriv = _ed.Ed25519PrivateKey.generate()
-            cpub = cpriv.public_key()
-            client_bytes = cpub.public_bytes(
+            ed_private = _ed.Ed25519PrivateKey.generate()
+            ed_public = ed_private.public_key()
+            client_bytes = ed_public.public_bytes(
                 encoding=serialization.Encoding.Raw,
                 format=serialization.PublicFormat.Raw,
             )
         else:
-            cpriv = ec.generate_private_key(_CURVE_OBJ_MAP[self._config.curve])  # type: ignore[assignment]
-            cpub = cpriv.public_key()
-            client_bytes = cpub.public_bytes(
+            ec_private = ec.generate_private_key(_CURVE_OBJ_MAP[self._config.curve])
+            ec_public = ec_private.public_key()
+            client_bytes = ec_public.public_bytes(
                 encoding=serialization.Encoding.X962,
                 format=serialization.PublicFormat.UncompressedPoint,
             )

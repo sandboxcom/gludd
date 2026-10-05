@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
 from unittest.mock import MagicMock
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from general_ludd.models.timeout_detector import (
@@ -15,85 +17,111 @@ from general_ludd.models.timeout_detector import (
 )
 
 
+@pytest.fixture(scope="class")
+def model_health_client(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Iterator[tuple[FastAPI, TestClient]]:
+    """Share one fully started daemon across the endpoint contract tests."""
+    from general_ludd.daemon import create_daemon_app
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.delenv("GLUDD_AUTH_PSK", raising=False)
+        monkeypatch.delenv("GLUDD_REQUIRE_AUTH", raising=False)
+        monkeypatch.delenv("GLUDD_ALLOW_NO_AUTH", raising=False)
+        monkeypatch.setenv("GLUDD_PSK_DISABLE", "1")
+        config_dir = tmp_path_factory.mktemp("model-health-config")
+        app = create_daemon_app(
+            config_dir=str(config_dir),
+            _db_path_override=":memory:",
+        )
+        client = TestClient(app)
+        try:
+            yield app, client
+        finally:
+            client.close()
+
+
+@pytest.mark.xdist_group("model-health-daemon")
 class TestDaemonModelHealthEndpoint:
-    def test_get_models_health_empty(self) -> None:
-        from general_ludd.daemon import create_daemon_app
+    def test_get_models_health_empty(
+        self,
+        model_health_client: tuple[FastAPI, TestClient],
+    ) -> None:
+        _app, client = model_health_client
+        resp = client.get("/admin/models/health")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "health" in data
 
-        app = create_daemon_app()
-        with TestClient(app) as client:
-            resp = client.get("/admin/models/health")
-            assert resp.status_code == 200
-            data = resp.json()
-            assert "health" in data
+    def test_get_models_health_with_profiles(
+        self,
+        model_health_client: tuple[FastAPI, TestClient],
+    ) -> None:
+        _app, client = model_health_client
+        add_resp = client.post("/admin/models", json={
+            "model_id": "test-health-1",
+            "provider": "openai",
+            "model": "gpt-4",
+            "enabled": True,
+            "api_metered": True,
+            "cost_per_input_token": 0.00003,
+            "cost_per_output_token": 0.00006,
+        })
+        assert add_resp.status_code == 200
+        resp = client.get("/admin/models/health")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["health"]) >= 1
+        health = data["health"][0]
+        assert health["model_id"] == "test-health-1"
+        assert health["healthy"] is True
 
-    def test_get_models_health_with_profiles(self) -> None:
-        from general_ludd.daemon import create_daemon_app
+    def test_get_models_health_unhealthy_model(
+        self,
+        model_health_client: tuple[FastAPI, TestClient],
+    ) -> None:
+        app, client = model_health_client
+        add_resp = client.post("/admin/models", json={
+            "model_id": "sick-model",
+            "provider": "openai",
+            "model": "gpt-4",
+            "enabled": True,
+            "api_metered": True,
+            "cost_per_input_token": 0.00003,
+            "cost_per_output_token": 0.00006,
+        })
+        assert add_resp.status_code == 200
+        tracker = app.state._health_tracker
+        for _ in range(3):
+            tracker.record_event(TimeoutEvent(
+                model_id="sick-model",
+                kind=TimeoutKind.READ_TIMEOUT,
+                timestamp=time.monotonic(),
+                duration_s=30.0,
+            ))
+        resp = client.get("/admin/models/health")
+        assert resp.status_code == 200
+        data = resp.json()
+        sick = next(h for h in data["health"] if h["model_id"] == "sick-model")
+        assert sick["healthy"] is False
+        assert sick["consecutive_failures"] == 3
 
-        app = create_daemon_app()
-        with TestClient(app) as client:
-            add_resp = client.post("/admin/models", json={
-                "model_id": "test-health-1",
+    def test_add_metered_model_without_pricing_is_rejected(
+        self,
+        model_health_client: tuple[FastAPI, TestClient],
+    ) -> None:
+        _app, client = model_health_client
+        resp = client.post(
+            "/admin/models",
+            json={
+                "model_id": "missing-pricing",
                 "provider": "openai",
                 "model": "gpt-4",
-                "enabled": True,
                 "api_metered": True,
-                "cost_per_input_token": 0.00003,
-                "cost_per_output_token": 0.00006,
-            })
-            assert add_resp.status_code == 200
-            resp = client.get("/admin/models/health")
-            assert resp.status_code == 200
-            data = resp.json()
-            assert len(data["health"]) >= 1
-            health = data["health"][0]
-            assert health["model_id"] == "test-health-1"
-            assert health["healthy"] is True
-
-    def test_get_models_health_unhealthy_model(self) -> None:
-        from general_ludd.daemon import create_daemon_app
-
-        app = create_daemon_app()
-        with TestClient(app) as client:
-            add_resp = client.post("/admin/models", json={
-                "model_id": "sick-model",
-                "provider": "openai",
-                "model": "gpt-4",
-                "enabled": True,
-                "api_metered": True,
-                "cost_per_input_token": 0.00003,
-                "cost_per_output_token": 0.00006,
-            })
-            assert add_resp.status_code == 200
-            tracker = app.state._health_tracker
-            for _ in range(3):
-                tracker.record_event(TimeoutEvent(
-                    model_id="sick-model",
-                    kind=TimeoutKind.READ_TIMEOUT,
-                    timestamp=time.monotonic(),
-                    duration_s=30.0,
-                ))
-            resp = client.get("/admin/models/health")
-            assert resp.status_code == 200
-            data = resp.json()
-            sick = next(h for h in data["health"] if h["model_id"] == "sick-model")
-            assert sick["healthy"] is False
-            assert sick["consecutive_failures"] == 3
-
-    def test_add_metered_model_without_pricing_is_rejected(self) -> None:
-        from general_ludd.daemon import create_daemon_app
-
-        with TestClient(create_daemon_app()) as client:
-            resp = client.post(
-                "/admin/models",
-                json={
-                    "model_id": "missing-pricing",
-                    "provider": "openai",
-                    "model": "gpt-4",
-                    "api_metered": True,
-                },
-            )
-            assert resp.status_code == 422
-            assert "non-zero cost" in resp.json()["detail"]
+            },
+        )
+        assert resp.status_code == 422
+        assert "non-zero cost" in resp.json()["detail"]
 
 
 class TestRouterHealthAwareRouting:
@@ -113,7 +141,7 @@ class TestRouterHealthAwareRouting:
 
         repo = MagicMock()
 
-        async def _return_rows(**kwargs: object) -> list[dict]:
+        async def _return_rows(**kwargs: object) -> list[dict[str, object]]:
             return [
                 {
                     "model_profile_id": "bad-model",
@@ -154,7 +182,7 @@ class TestRouterHealthAwareRouting:
                     duration_s=30.0,
                 ))
 
-        async def _return_rows(**kwargs: object) -> list[dict]:
+        async def _return_rows(**kwargs: object) -> list[dict[str, object]]:
             return [
                 {
                     "model_profile_id": "m1",
@@ -195,7 +223,7 @@ class TestRouterHealthAwareRouting:
                 duration_s=10.0,
             ))
 
-        async def _return_rows(**kwargs: object) -> list[dict]:
+        async def _return_rows(**kwargs: object) -> list[dict[str, object]]:
             return [
                 {
                     "model_profile_id": "expensive-ok",

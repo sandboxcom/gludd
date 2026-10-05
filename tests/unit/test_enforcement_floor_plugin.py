@@ -48,29 +48,29 @@ class TestPluginRegistration:
 
 
 class TestKeyConstants:
-    def test_floor_default_is_10(self):
+    def test_floor_uses_canonical_three_agent_cap(self):
         src = _src()
-        m = re.search(r'CLAUDE_AGENT_FLOOR",\s*"(\d+)"', src)
-        assert m, "CLAUDE_AGENT_FLOOR default not found"
-        assert m.group(1) == "10"
+        assert "../lib/multitask_config.ts" in src
+        assert "CLAUDE_AGENT_FLOOR" in src
+        assert "String(HARD_MAX_DISPATCHES)" in src
+        assert "clampDispatchCount" in src
 
-    def test_ceiling_default_is_10(self):
+    def test_ceiling_uses_canonical_three_agent_cap(self):
         src = _src()
-        m = re.search(r'CLAUDE_AGENT_CEILING",\s*"(\d+)"', src)
-        assert m, "CLAUDE_AGENT_CEILING default not found"
-        assert m.group(1) == "10"
+        assert "CLAUDE_AGENT_CEILING" in src
+        assert "String(HARD_MAX_DISPATCHES)" in src
+        assert "clampDispatchCount" in src
 
-    def test_target_default_is_10(self):
+    def test_target_uses_canonical_three_agent_cap(self):
         src = _src()
-        m = re.search(r'CLAUDE_AGENT_TARGET\s*\|\|\s*"(\d+)"', src)
-        assert m, "CLAUDE_AGENT_TARGET default not found"
-        assert m.group(1) == "10"
+        assert "CLAUDE_AGENT_TARGET || String(HARD_MAX_DISPATCHES)" in src
+        assert "clampDispatchCount" in src
 
     def test_target_capped_by_ceiling(self):
         src = _src()
         assert "Math.min" in src
         idx = src.find("const TARGET")
-        after = src[idx:idx + 150]
+        after = src[idx : idx + 150]
         assert "CEILING" in after, "TARGET must be capped by CEILING via Math.min"
 
     def test_floor_enforce_is_hard_true(self):
@@ -85,7 +85,7 @@ class TestKeyConstants:
     def test_tunable_function_reads_override_file(self):
         src = _src()
         idx = src.find("function _tunable")
-        after = src[idx:idx + 250]
+        after = src[idx : idx + 250]
         assert "readFileSync" in after
         assert "overridePath" in after
         assert "parseInt" in after
@@ -93,12 +93,18 @@ class TestKeyConstants:
     def test_tunable_fail_open_on_bad_file(self):
         src = _src()
         idx = src.find("function _tunable")
-        after = src[idx:idx + 400]
+        after = src[idx : idx + 400]
         assert "catch" in after.lower() or "} catch" in after
 
     def test_floor_override_file_path(self):
         src = _src()
         assert "/tmp/gludd-floor-override" in src
+        assert "GLUDD_FLOOR_OVERRIDE_PATH" in src
+
+    def test_load_throttle_file_path_is_namespacable(self):
+        src = _src()
+        assert "/tmp/gludd-load-throttle" in src
+        assert "GLUDD_LOAD_THROTTLE_PATH" in src
 
     def test_ceiling_override_file_path(self):
         src = _src()
@@ -113,9 +119,7 @@ class TestKeyConstants:
 class TestSubagentGuard:
     def test_guard_checks_env_var(self):
         src = _src()
-        assert "isSubagent()" in src, (
-            "isSubagent() must be called to check subagent context (imported from shared.ts)"
-        )
+        assert "isSubagent()" in src, "isSubagent() must be called to check subagent context (imported from shared.ts)"
 
     def test_guard_before_any_enforcement_in_before_hook(self):
         src = _src()
@@ -124,16 +128,21 @@ class TestSubagentGuard:
         after = src[idx:]
         subagent_idx = after.find("OPENCODE_SUBAGENT")
         report_idx = after.find("reportAlive")
-        assert subagent_idx < report_idx, (
-            "OPENCODE_SUBAGENT check must precede reportAlive in tool.execute.before"
-        )
+        assert subagent_idx < report_idx, "OPENCODE_SUBAGENT check must precede reportAlive in tool.execute.before"
 
     def test_guard_also_in_text_complete(self):
-        """The supported experimental hook must preserve subagent isolation."""
+        """The experimental.text.complete key is declared as a pass-through
+        (opencode ≥1.17.9 registers only the experimental key); subagent
+        isolation and enforcement live in tool.execute.before."""
         src = _src()
-        handler = src.split('"experimental.text.complete"')[1]
-        assert "isSubagent()" in handler
-        assert "return output" in handler
+        assert '"experimental.text.complete"' in src, (
+            "the experimental.text.complete key must be declared so the pinned "
+            "supported-hooks surface holds on opencode ≥1.17.9"
+        )
+        idx = src.find('"tool.execute.before": async', src.find("defaultImpl"))
+        after = src[idx : idx + 120] if idx > 0 else src
+        assert "isSubagent()" in after
+        assert "reportAlive" in after
 
 
 # ---------------------------------------------------------------------------
@@ -148,13 +157,13 @@ class TestDispatchToolClassification:
 
     def test_agent_is_dispatch_tool(self):
         src = _src()
-        assert 'if (isDispatchTool(tool))' in src
+        assert "if (isDispatchTool(tool))" in src
 
     def test_workflow_is_dispatch_tool(self):
         src = _src()
         idx = src.find("if (isDispatchTool(tool))")
         assert idx > 0
-        after = src[idx:idx + 200]
+        after = src[idx : idx + 200]
         assert "_streakCount = 0" in after
         assert "_readStreak = 0" in after
 
@@ -174,7 +183,7 @@ class TestDispatchToolClassification:
         src = _src()
         idx = src.find("if (isDispatchTool(tool))")
         assert idx > 0
-        after = src[idx:idx + 200]
+        after = src[idx : idx + 200]
         assert "_streakCount = 0" in after
         assert "_readStreak = 0" in after
 
@@ -182,10 +191,8 @@ class TestDispatchToolClassification:
         src = _src()
         dispatch_idx = src.find("if (isDispatchTool(tool))")
         assert dispatch_idx > 0
-        after = src[dispatch_idx:dispatch_idx + 300]
-        assert "_lastDispatchTs = now" in after, (
-            "_lastDispatchTs must be reset inside dispatch branch"
-        )
+        after = src[dispatch_idx : dispatch_idx + 300]
+        assert "_lastDispatchTs = now" in after, "_lastDispatchTs must be reset inside dispatch branch"
 
 
 # ---------------------------------------------------------------------------
@@ -209,21 +216,21 @@ class TestCompulsiveCheckBlocking:
     def test_blocks_git_diff(self):
         src = _src()
         idx = src.find("COMPULSIVE_CHECK_RE")
-        after = src[idx:idx + 200]
+        after = src[idx : idx + 200]
         assert "git-diff" in after
 
     def test_block_message_mentions_loop_pattern(self):
         src = _src()
         idx = src.find("COMPULSIVE-CHECK LOOP BLOCKED")
         assert idx > 0
-        after = src[idx:idx + 400]
+        after = src[idx : idx + 400]
         assert "compulsive-check loop" in after.lower()
 
     def test_block_only_when_open_work_exists(self):
         src = _src()
         idx = src.find("COMPULSIVE_CHECK_RE.test")
         assert idx > 0
-        after = src[idx:idx + 150]
+        after = src[idx : idx + 150]
         assert "openWorkExists" in after, "compulsive-check block must be gated on openWorkExists"
 
 
@@ -257,13 +264,13 @@ class TestReadGrinding:
         src = _src()
         idx = src.find("_readStreak > 15")
         assert idx > 0
-        after = src[idx:idx + 100]
+        after = src[idx : idx + 100]
         assert "&&" in after, "read-grind deny must use AND (both count AND time)"
 
     def test_read_grind_resets_on_dispatch(self):
         src = _src()
         dispatch_idx = src.find("if (isDispatchTool(tool))")
-        after = src[dispatch_idx:dispatch_idx + 200]
+        after = src[dispatch_idx : dispatch_idx + 200]
         assert "_readStreak = 0" in after
 
 
@@ -285,7 +292,7 @@ class TestMessageShapeEnforcement:
         src = _src()
         idx = src.find("_prevMessageDispatchCount === 1")
         assert idx > 0
-        after = src[idx:idx + 100]
+        after = src[idx : idx + 100]
         assert "openWorkExists" in after
 
     def test_reset_on_text_complete(self):
@@ -320,7 +327,7 @@ class TestFloorBreachBlock:
         # After streak check, openWorkExists gates the block
         streak_idx = src.find("_streakCount <= MAX_STREAK")
         if streak_idx > 0:
-            after = src[streak_idx:streak_idx + 80]
+            after = src[streak_idx : streak_idx + 80]
             assert "openWorkExists" in after or "return" in after
         else:
             block_idx = src.find("if (!openWorkExists")
@@ -334,7 +341,7 @@ class TestFloorBreachBlock:
         src = _src()
         idx = src.find("AGENT-FLOOR BREACH")
         assert idx > 0
-        after = src[idx:idx + 600]
+        after = src[idx : idx + 600]
         assert "FLOOR" in after
         assert "TARGET" in after
 
@@ -361,7 +368,7 @@ class TestOpenWorkExists:
     def test_probes_ratchet_yml(self):
         src = _src()
         idx = src.find("function openWorkExists")
-        after = src[idx:idx + 400]
+        after = src[idx : idx + 400]
         assert "ratchet.yml" in after
 
     def test_probes_tasks_md(self):
@@ -410,8 +417,8 @@ class TestOpenWorkExists:
         src = _src()
         idx = src.find("function openWorkExists")
         after = src[idx:]
-        assert "process.env.GLUDD_WATCHDOG_CI_FILE" in after[:4000]
-        assert "process.env.GLUDD_STOP_STATE_FILE" in after[:4000]
+        assert "process.env.GLUDD_CI_CACHE_PATH" in after[:4000]
+        assert "process.env.GLUDD_STOP_STATE_PATH" in after[:4000]
 
     def test_function_returns_false_on_catch(self):
         src = _src()
@@ -447,10 +454,8 @@ class TestRefillState:
         src = _src()
         idx = src.find("inResultPhase && _consecutiveReadsInResultPhase")
         if idx > 0:
-            after = src[idx:idx + 500]
-            assert 'permissionDecision: "deny"' in after, (
-                "result-phase window must deny non-read non-dispatch calls"
-            )
+            after = src[idx : idx + 500]
+            assert 'permissionDecision: "deny"' in after, "result-phase window must deny non-read non-dispatch calls"
 
     def test_grace_deny_message_mentions_dispatch_gap(self):
         src = _src()
@@ -460,7 +465,7 @@ class TestRefillState:
         src = _src()
         idx = src.find("DISPATCH GAP")
         assert idx > 0
-        after = src[idx:idx + 600]
+        after = src[idx : idx + 600]
         assert "task/agent dispatches" in after
         assert "read/grep/glob" in after
 
@@ -468,17 +473,15 @@ class TestRefillState:
         src = _src()
         idx = src.find("DISPATCH GAP")
         assert idx > 0
-        after = src[idx:idx + 800]
+        after = src[idx : idx + 800]
         assert "bash" in after.lower() and "edit" in after.lower() and "write" in after.lower()
 
     def test_grace_still_resets_streak_on_block(self):
         src = _src()
         idx = src.find("inResultPhase && _consecutiveReadsInResultPhase")
         if idx > 0:
-            after = src[idx:idx + 400]
-            assert "_streakCount = 0" in after, (
-                "grace block must still reset streak to prevent double-punishment"
-            )
+            after = src[idx : idx + 400]
+            assert "_streakCount = 0" in after, "grace block must still reset streak to prevent double-punishment"
 
     def test_refill_nudge_exists(self):
         src = _src()
@@ -496,13 +499,21 @@ class TestRefillState:
 
 
 class TestTextCompleteBehavior:
-    """The removed bare hook stays absent; the experimental boundary remains."""
+    """The experimental.text.complete key is a pass-through: it keeps the
+    pinned supported-hooks surface valid on opencode ≥1.17.9 while all
+    enforcement stays in tool.execute.before via time-based message-boundary
+    detection. The pass-through must return output unchanged."""
 
     def test_experimental_text_complete_passes_output_through(self):
         src = _src()
-        handler = src.split('"experimental.text.complete"')[1]
-        assert "incrementTextCompleteCount()" in handler
-        assert "return output" in handler
+        assert '"experimental.text.complete"' in src, "the experimental.text.complete pass-through key must be declared"
+        assert "return fn ? await fn(_input, output) : output" in src, (
+            "experimental.text.complete must be a pure pass-through: delegate "
+            "to the hot impl if present, otherwise return output unchanged"
+        )
+        assert "MESSAGE_BOUNDARY_MS" in src, "time-based message boundary detection must drive enforcement"
+        assert "isNewMessage" in src
+        assert "_prevMessageDispatchCount = _thisMessageDispatchCount" in src
 
     def test_no_removed_bare_text_complete_hook(self):
         src = _src()
@@ -566,15 +577,13 @@ class TestSessionIdleHook:
 class TestDisengage:
     def test_disengage_file_referenced(self):
         src = _src()
-        assert "isDisengaged" in src, (
-            "isDisengaged must be imported/called from shared.ts"
-        )
+        assert "isDisengaged" in src, "isDisengaged must be imported/called from shared.ts"
 
     def test_disengage_hoisted_above_read_grind(self):
         src = _src()
         idx = src.find("isDisengaged()")
         assert idx > 0
-        after = src[idx:idx + 5000]
+        after = src[idx : idx + 5000]
         read_grind_idx = after.find("_readStreak++")
         assert read_grind_idx > 0
         assert after.find("isDisengaged()") < read_grind_idx
@@ -591,9 +600,7 @@ class TestDisengage:
 
     def test_disengage_skips_all_blocks(self):
         src = _src()
-        assert src.count("isDisengaged()") >= 2, (
-            "isDisengaged must be checked at multiple enforcement points"
-        )
+        assert src.count("isDisengaged()") >= 2, "isDisengaged must be checked at multiple enforcement points"
 
 
 # ---------------------------------------------------------------------------
@@ -604,16 +611,12 @@ class TestDisengage:
 class TestSharedStreakState:
     def test_imports_from_shared(self):
         src = _src()
-        assert "shared.ts" in src, (
-            "enforce-floor.ts must import shared helpers from ../lib/shared.ts"
-        )
+        assert "shared.ts" in src, "enforce-floor.ts must import shared helpers from ../lib/shared.ts"
         assert "isDispatchTool" in src
 
     def test_shared_streak_file_path_referenced(self):
         src = _src()
-        assert "updateSharedStreak" in src, (
-            "streak file path lives in shared.ts; plugin calls updateSharedStreak"
-        )
+        assert "updateSharedStreak" in src, "streak file path lives in shared.ts; plugin calls updateSharedStreak"
 
     def test_streak_variables_exist(self):
         src = _src()
@@ -646,15 +649,12 @@ class TestSharedStreakState:
 class TestHeartbeat:
     def test_report_alive_called(self):
         src = _src()
-        assert "reportAlive" in src, (
-            "reportAlive must be imported from shared.ts and called"
-        )
+        assert "reportAlive" in src, "reportAlive must be imported from shared.ts and called"
 
     def test_heartbeat_writes_per_plugin_file(self):
         src = _src()
         assert "writeHeartbeat" in src, (
-            "writeHeartbeat must be imported from shared.ts and called; "
-            "file path is constructed inside shared.ts"
+            "writeHeartbeat must be imported from shared.ts and called; file path is constructed inside shared.ts"
         )
         assert 'writeHeartbeat("enforce-floor")' in src
 
@@ -711,13 +711,14 @@ class TestPluginHookRegistration:
 
     def test_no_session_idle_hook(self):
         src = _src()
-        assert '"session.idle"' not in src, (
-            "session.idle was removed — plugin is self-contained in tool.execute.before"
-        )
+        assert '"session.idle"' not in src, "session.idle was removed — plugin is self-contained in tool.execute.before"
 
-    def test_returns_experimental_text_complete(self):
+    def test_no_text_complete_hook_returned(self):
         src = _src()
-        assert '"experimental.text.complete"' in src
+        assert re.search(r'(?<!experimental\.)"text\.complete"\s*:', src) is None, (
+            "no bare (non-experimental) text.complete hook may be registered"
+        )
+        assert '"tool.execute.before"' in src
 
 
 # ---------------------------------------------------------------------------
@@ -748,21 +749,21 @@ class TestPostResultReadLimit:
         src = _src()
         idx = src.find("POST-RESULT READ LIMIT EXCEEDED")
         assert idx > 0
-        after = src[idx:idx + 500]
+        after = src[idx : idx + 500]
         assert "dispatch-gap" in after.lower()
 
     def test_deny_message_requires_dispatch(self):
         src = _src()
         idx = src.find("POST-RESULT READ LIMIT EXCEEDED")
         assert idx > 0
-        after = src[idx:idx + 600]
+        after = src[idx : idx + 600]
         assert "Dispatch task/agent" in after
 
     def test_counter_resets_on_dispatch(self):
         src = _src()
         dispatch_idx = src.find("if (isDispatchTool(tool))")
         assert dispatch_idx > 0
-        after = src[dispatch_idx:dispatch_idx + 500]
+        after = src[dispatch_idx : dispatch_idx + 500]
         assert "_consecutiveReadsInResultPhase = 0" in after, (
             "_consecutiveReadsInResultPhase must reset inside dispatch branch"
         )
@@ -770,9 +771,7 @@ class TestPostResultReadLimit:
     def test_counter_resets_on_new_message_boundary(self):
         src = _src()
         idx = src.find("_prevMessageDispatchCount = _thisMessageDispatchCount")
-        assert idx > 0, (
-            "Message boundary detection replaces session.idle for resetting counters"
-        )
+        assert idx > 0, "Message boundary detection replaces session.idle for resetting counters"
 
     def test_block_gated_on_result_phase(self):
         src = _src()
@@ -783,7 +782,7 @@ class TestPostResultReadLimit:
         src = _src()
         idx = src.find("POST-RESULT READ LIMIT EXCEEDED")
         assert idx > 0
-        before = src[idx - 400:idx]
+        before = src[idx - 400 : idx]
         assert 'permissionDecision: "deny"' in before, (
             "post-result read limit must be a hard deny (permissionDecision), not advisory console.warn"
         )
@@ -803,6 +802,6 @@ class TestStartupCleanup:
         src = _src()
         # Look in the stale-reset block near the factory start
         factory_idx = src.find("export default")
-        factory_section = src[factory_idx:factory_idx + 500]
+        factory_section = src[factory_idx : factory_idx + 500]
         # The rename in the cleanup
         assert "renameSync" in factory_section or "renameSync" in src

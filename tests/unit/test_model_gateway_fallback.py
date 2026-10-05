@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -35,9 +36,7 @@ def _make_gateway(profiles: list[ModelProfile]) -> tuple[ModelGateway, ProviderR
     reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
 
     fake_secret_client = MagicMock()
-    fake_secret_client.secrets.kv.v2.read_secret_version.return_value = {
-        "data": {"data": {"value": "sk-test"}}
-    }
+    fake_secret_client.secrets.kv.v2.read_secret_version.return_value = {"data": {"data": {"value": "sk-test"}}}
     secrets = SecretsManager(
         client=fake_secret_client,
         aliases={"openai_key": SecretAlias("openai_key", "keys/openai", "secret")},
@@ -47,6 +46,9 @@ def _make_gateway(profiles: list[ModelProfile]) -> tuple[ModelGateway, ProviderR
         profiles=profiles,
         provider_registry=reg,
         secrets_manager=secrets,
+        # Peak-time billing clock (multiplier 1.0) keeps cost-tracking pins
+        # deterministic against peak/off-peak pricing variance.
+        billing_clock=lambda: datetime.datetime(2026, 8, 3, 12, 0, 0, tzinfo=datetime.UTC),
     )
     return gw, reg
 

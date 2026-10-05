@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from general_ludd.db.models import Base
+from general_ludd.db.models import Base, ProjectModel
 from general_ludd.db.repository import TodoRepository
 from general_ludd.event_loop.loop import EventLoop
 from general_ludd.schemas.todo import TodoStatus
@@ -69,6 +69,7 @@ class TestZ1DaemonPipeline:
     async def test_claim_returns_queued_todo_with_matching_project(self, _session_factory):
         async with _session_factory() as session:
             repo = TodoRepository(session)
+            session.add(ProjectModel(project_id=_PROJECT_ID, name="Z regression"))
             await repo.create(
                 {
                     "todo_id": "Z1-001",

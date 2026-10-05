@@ -15,12 +15,15 @@ import sys
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from importlib import import_module
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-try:
+if TYPE_CHECKING or __package__:
     from scripts.resource_arbiter import resource_path
-except ModuleNotFoundError:  # pragma: no cover - direct script execution
-    from resource_arbiter import resource_path
+else:  # pragma: no cover - direct script execution
+    _resource_arbiter = import_module("resource_arbiter")
+    resource_path = _resource_arbiter.resource_path
 
 DEFAULT_COLLECTION_LOCK_TIMEOUT = 900.0
 DEFAULT_GATE_REFRESH_LOCK_TIMEOUT = 120.0

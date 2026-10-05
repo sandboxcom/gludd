@@ -1,83 +1,38 @@
 ---
-# write_e2e_tests — generate pytest test files from validated E2E scenarios
-#
-# Reads validated_scenarios.json, emits pytest test files using project
-# fixtures (TestClient, _run_cli, tmp_path) with AAA structure and coverage
-# markers. Writes to output_dir with import plumbing.
-
-- name: Create artifact and output directories
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: directory
-    mode: "0755"
-  loop:
-    - "{{ artifact_dir }}"
-    - "{{ output_dir }}"
-
-# ── Load validated scenarios ────────────────────────────────────────────
-
-- name: Load validated scenarios artifact
-  ansible.builtin.slurp:
-    src: >-
+- name: Write generated tests through the packaged controller action
+  general_ludd.e2e_test_gen.e2e_pipeline:
+    operation: write_tests
+    scenarios_file: >-
       {{ validated_scenarios_artifact if validated_scenarios_artifact | length > 0
          else artifact_dir + '/validated_scenarios.json' }}
-  register: _wt_scenarios_raw
+    output_dir: "{{ output_dir }}"
+    manifest: "{{ artifact_dir }}/{{ generated_tests_manifest }}"
+    test_file_prefix: "{{ test_file_prefix }}"
+    timeout: 360
+  register: _wt_pipeline
 
-- name: Fail if no validated scenarios found
-  ansible.builtin.fail:
-    msg: "No validated scenarios found."
-  when: _wt_scenarios_raw.content | default('') | length == 0
-
-- name: Parse validated scenarios
+- name: Publish generated test facts
   ansible.builtin.set_fact:
-    _wt_data: "{{ _wt_scenarios_raw.content | b64decode | from_json }}"
-    _wt_valid: "{{ (_wt_scenarios_raw.content | b64decode | from_json).get('valid', []) }}"
-
-# ── Generate test files via Python script ───────────────────────────────
-
-- name: Run write_e2e_tests script
-  ansible.builtin.command:
-    cmd: >-
-      python3 "{{ write_tests_script }}"
-      --scenarios-file >-
-        {{ validated_scenarios_artifact if validated_scenarios_artifact | length > 0
-           else artifact_dir + '/validated_scenarios.json' }}
-      --output-dir "{{ output_dir }}"
-      --manifest "{{ artifact_dir }}/{{ generated_tests_manifest }}"
-      --test-file-prefix "{{ test_file_prefix }}"
-  register: _wt_result
-  changed_when: true
-
-- name: Load test file manifest
-  ansible.builtin.slurp:
-    src: "{{ artifact_dir }}/{{ generated_tests_manifest }}"
-  register: _wt_manifest_raw
-
-- name: Build output summary
-  ansible.builtin.set_fact:
-    _wt_output: >-
-      {{
-        {
-          'module': _wt_data.get('module', 'unknown'),
-          'scenarios_used': _wt_valid | length,
-          'test_files': (_wt_manifest_raw.content | b64decode | from_json).get('test_files', []),
-          'output_dir': output_dir,
-          'fixtures_used': [test_client_fixture, cli_runner_fixture, tmp_path_fixture],
-          'status': 'completed'
-        }
-      }}
-
-# ── Write artifact ──────────────────────────────────────────────────────
+    _wt_output:
+      module: "{{ _wt_pipeline.artifact.module | default('unknown') }}"
+      scenarios_used: "{{ _wt_pipeline.artifact.scenario_count }}"
+      test_files: "{{ _wt_pipeline.artifact.test_files }}"
+      output_dir: "{{ output_dir }}"
+      fixtures_used:
+        - "{{ test_client_fixture }}"
+        - "{{ cli_runner_fixture }}"
+        - "{{ tmp_path_fixture }}"
+      status: completed
 
 - name: Write generation summary JSON
   ansible.builtin.copy:
     content: "{{ _wt_output | to_nice_json }}"
     dest: "{{ artifact_dir }}/test_generation_summary.json"
     mode: "0644"
+  delegate_to: localhost
 
 - name: Report completion
   ansible.builtin.debug:
     msg: >-
-      E2E tests written: module={{ _wt_output.module }}
-      test_files={{ _wt_output.test_files | length }}
+      E2E tests written: test_files={{ _wt_output.test_files | length }}
       output_dir={{ output_dir }}

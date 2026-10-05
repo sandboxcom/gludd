@@ -198,24 +198,31 @@ class TestRetrievalSearcher:
         with tempfile.TemporaryDirectory() as tmp:
             cache_dir = Path(tmp) / "cache"
             cache_dir.mkdir()
-            import diskcache
+            # Seed through the SAME safe adapter the searcher reads: the
+            # searcher opens the owner-only msgpack-v1 namespace, while a
+            # plain diskcache.Cache writes a separate pickle namespace the
+            # searcher deliberately refuses to deserialize.
+            from general_ludd.security.safe_diskcache import open_safe_diskcache
 
-            cache = diskcache.Cache(str(cache_dir))
+            cache = open_safe_diskcache(cache_dir)
             from general_ludd.retrieval.indexer import _tokenize
 
             tokens = _tokenize("hello world")
             from collections import Counter
 
             vec = {k: float(v) for k, v in Counter(tokens).items()}
-            cache["file1.py"] = {
-                "filepath": "file1.py",
-                "content": "hello world",
-                "vector": vec,
-            }
+            cache.set(
+                "file1.py",
+                {
+                    "filepath": "file1.py",
+                    "content": "hello world",
+                    "vector": vec,
+                },
+            )
             cache.close()
 
-            searcher = SemanticSearcher(cache_dir=cache_dir)
-            results = searcher.search("hello")
+            with SemanticSearcher(cache_dir=cache_dir) as searcher:
+                results = searcher.search("hello")
             assert len(results) >= 1
             assert results[0]["filepath"] == "file1.py"
 
@@ -266,9 +273,7 @@ class TestSearXClient:
     def test_searx_client_constructs(self):
         from general_ludd.connectors.searx import SearXConnector
 
-        client = SearXConnector(
-            {"base_url": "http://localhost:8888", "allow_private": True}
-        )
+        client = SearXConnector({"base_url": "http://localhost:8888", "allow_private": True})
         assert client.base_url == "http://localhost:8888"
         assert client.allow_private is True
 
@@ -746,16 +751,19 @@ class TestRoutingRoles:
 class TestSslCertManager:
     """Tests for SSL certificate manager."""
 
-    def test_cert_manager_imports(self):
-        from general_ludd.ssl_agent.cert_manager import CertManager
+    def test_security_collection_asn1_imports(self):
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import (
+            lookup_oid,
+        )
 
-        assert CertManager is not None
+        assert lookup_oid is not None
 
-    def test_cert_manager_constructs(self):
-        from general_ludd.ssl_agent.cert_manager import CertManager
+    def test_security_collection_owns_oid_lookup(self):
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import (
+            lookup_oid,
+        )
 
-        manager = CertManager()
-        assert manager._known_oids["2.5.4.3"].name == "commonName"
+        assert lookup_oid("2.5.4.3")["name"] == "commonName"
 
 
 class TestSslAgentFlow:

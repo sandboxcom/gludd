@@ -189,7 +189,7 @@ above are high-confidence for the read files, but **the sweep is not provably
 exhaustive.** Before declaring the bug class closed, run these mechanical sweeps over
 all of `src/` and reconcile each hit against the SAFE/UNSAFE tables here:
 
-```
+```text
 rg -n "Environment\(|\.from_string\(|Template\(|Templar|\.template\(" src/
 rg -n "render_template|AnsibleTemplater\(|\.render\(" src/        # trusted-path callers
 rg -n 'f"""?---|f"---|f-?string.*\{.*\}.*---' src/                # f-string YAML frontmatter

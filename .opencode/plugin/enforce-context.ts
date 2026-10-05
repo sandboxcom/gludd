@@ -1,15 +1,17 @@
 // Per AGENTS.md "Session Persistence Policy": SESSION.md must be read at
-// - Fail-open: missing SESSION.md or stat failure → allow.
-// Default ON. Fail-open: any throw/exception → allow.
+// - Missing SESSION.md or stat failure → allow.
+// - Corrupt cache state → force a fresh SESSION.md check (fail-closed).
+// Default ON. Unexpected hook exceptions remain fail-open to avoid wedging the TUI.
 // HOT-RELOAD: implements the proxy pattern from hot_reload.ts.
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Plugin } from "@opencode-ai/plugin";
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, isReadTool, reportAlive, readJsonFile, writeJsonFile, getProjectRoot } from "../lib/shared.ts";
-const STATE_FILE = "/tmp/gludd-context-check.json";
+const STATE_FILE = process.env.GLUDD_CONTEXT_STATE_FILE || "/tmp/gludd-context-check.json";
 const DEFAULT_STALE_SECONDS = 86400;
 const PROJECT_ROOT = getProjectRoot();
+const SESSION_FILE = process.env.GLUDD_CONTEXT_SESSION_FILE || path.join(PROJECT_ROOT, "SESSION.md");
 interface ContextCheckState {
   lastCheckedEpoch: number;
   sessionPid: number;
@@ -24,8 +26,7 @@ function getStaleSeconds(): number {
 }
 function getSessionMdMtime(): number | null {
   try {
-    const p = path.join(PROJECT_ROOT, "SESSION.md");
-    if (fs.existsSync(p)) return Math.floor(fs.statSync(p).mtimeMs / 1000);
+    if (fs.existsSync(SESSION_FILE)) return Math.floor(fs.statSync(SESSION_FILE).mtimeMs / 1000);
   } catch {}
   return null;
 }
@@ -41,6 +42,8 @@ function shouldCheck(state: ContextCheckState): boolean {
   return now - state.lastCheckedEpoch > 21600;
 }
 function loadState(): ContextCheckState {
+  // readJsonFile's default deliberately represents "never checked". A corrupt
+  // cache therefore cannot suppress the stale-session validation.
   return readJsonFile<ContextCheckState>(STATE_FILE, {
     lastCheckedEpoch: 0,
     sessionPid: 0,

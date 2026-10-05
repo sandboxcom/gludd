@@ -25,7 +25,6 @@ from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
 from general_ludd.routers.todos import (
-    _TODO_RATE_LIMITER,
     AddTodoRequest,
     _deserialize_json_list,
     register,
@@ -117,7 +116,7 @@ class TestRateLimiterExhaustion:
     def test_post_todos_429_when_rate_limited(self):
         """POST /api/todos returns 429 when rate limiter allowance exhausted."""
         app = _bare_app()
-        with patch.object(_TODO_RATE_LIMITER, "allow", return_value=False):
+        with patch.object(app.state._todo_rate_limiter, "allow", return_value=False):
             resp = TestClient(app).post("/api/todos", json={"title": "rate-limited task"})
         assert resp.status_code == 429
         assert "Rate limit exceeded" in resp.json()["detail"]
@@ -125,20 +124,29 @@ class TestRateLimiterExhaustion:
     def test_post_scheduled_todos_429_when_rate_limited(self):
         """POST /api/todos/scheduled returns 429 when rate limiter exhausted."""
         app = _bare_app()
-        with patch.object(_TODO_RATE_LIMITER, "allow", return_value=False):
+        with patch.object(app.state._todo_rate_limiter, "allow", return_value=False):
             resp = TestClient(app).post(
                 "/api/todos/scheduled",
                 json={"title": "sched", "cron": "0 9 * * 1-5"},
             )
         assert resp.status_code == 429
 
-    async def test_both_endpoints_share_rate_limiter(self):
-        """Rate limiter is shared — both POST endpoints check the same instance."""
-        # The limiter is a module-level singleton: both endpoints check it.
-        # Verify it exists and is the expected type.
+    async def test_both_endpoints_share_app_owned_rate_limiter(self):
+        """Both POST endpoints share one limiter owned by their application."""
         from general_ludd.routers.web_search import SlidingWindowRateLimiter
 
-        assert isinstance(_TODO_RATE_LIMITER, SlidingWindowRateLimiter)
+        app = _bare_app()
+        assert isinstance(app.state._todo_rate_limiter, SlidingWindowRateLimiter)
+
+    def test_separate_apps_do_not_share_todo_rate_limit_state(self) -> None:
+        """One daemon instance cannot consume another instance's allowance."""
+        first = _bare_app()
+        second = _bare_app()
+
+        assert first.state._todo_rate_limiter is not second.state._todo_rate_limiter
+        with patch.object(first.state._todo_rate_limiter, "allow", return_value=False):
+            assert TestClient(first).post("/api/todos", json={"title": "blocked"}).status_code == 429
+        assert TestClient(second).post("/api/todos", json={"title": "independent"}).status_code == 201
 
 
 # ── scheduled todo validation ────────────────────────────────────────────

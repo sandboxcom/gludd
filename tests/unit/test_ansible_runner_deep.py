@@ -432,6 +432,7 @@ class TestIsolationConfigDeep:
     def test_construct_with_all_isolation_fields(self, tmp_workspace: str):
         iso = ProcessIsolationConfig(
             enabled=True,
+            container_image="registry.example/gludd-ee:test@sha256:" + "a" * 64,
             executable="podman",
             hide_paths=["/etc/shadow"],
             show_paths=["/workspace"],

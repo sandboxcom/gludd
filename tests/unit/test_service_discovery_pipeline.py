@@ -1,418 +1,297 @@
-"""Unit tests for ServiceDiscoveryPipeline and DiscoveryReport.
+"""Unit tests for the service-discovery pipeline and its compatibility shim."""
 
-Covers:
-- ``DiscoveryReport`` creation and defaults
-- ``ServiceDiscoveryPipeline`` via patched SearXConnector
-- ``run_discovery_pipeline()``: new services, retired, changed, unchanged
-- Error handling: SearX unreachable → logged, no crash
-"""
-
-from __future__ import annotations
-
-import logging
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from general_ludd.service_discovery.pipeline import (
+import general_ludd.service_discovery.pipeline as pipeline_module
+from general_ludd.connectors.searx import SearXResult
+from general_ludd.infra.service_catalog import DiscoveredService, ServiceCatalog
+from general_ludd.infra.service_discovery_pipeline import (
     DEFAULT_SEARCH_TERMS,
     DiscoveryReport,
     ServiceDiscoveryPipeline,
-    _extract_service_name,
 )
 
 
-def _mock_searx_result(
-    title: str = "API Gateway",
-    url: str = "https://api.example.com",
-    snippet: str = "API management",
-    engine: str = "arxiv",
-    score: float = 0.9,
-) -> MagicMock:
-    r = MagicMock()
-    r.title = title
-    r.url = url
-    r.snippet = snippet
-    r.engine = engine
-    r.score = score
-    return r
+class TestServiceDiscoveryPipelineExports:
+    def test_classes_importable(self) -> None:
+        assert isinstance(DEFAULT_SEARCH_TERMS, (list, tuple))
+        assert callable(ServiceDiscoveryPipeline)
+        assert callable(DiscoveryReport)
 
 
-def _write_catalog(path: Path, services: list[dict[str, object]]) -> None:
-    import yaml
+@pytest.mark.parametrize("scalar_terms", ["service api", ""])
+def test_pipeline_rejects_scalar_search_terms_before_connector_creation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    scalar_terms: str,
+) -> None:
+    """A lone string must not become one outbound search per character."""
+    connector_factory = MagicMock()
+    monkeypatch.setattr(pipeline_module, "SearXConnector", connector_factory)
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump({"services": services}))
-
-
-class TestDiscoveryReport:
-    def test_creation_defaults(self) -> None:
-        report = DiscoveryReport()
-        assert report.new_services == []
-        assert report.retired_services == []
-        assert report.changed_services == []
-        assert report.errors == []
-        assert report.total_discovered == 0
-
-    def test_creation_with_fields(self) -> None:
-        report = DiscoveryReport(
-            new_services=["alpha"],
-            retired_services=["beta"],
-            changed_services=["gamma"],
-            errors=["timeout on term X"],
-            total_discovered=5,
+    with pytest.raises(TypeError, match="search_terms must be a sequence of entries"):
+        ServiceDiscoveryPipeline(
+            searx_url="http://localhost:8080",
+            catalog_path=str(tmp_path / "service_catalog.yml"),
+            search_terms=scalar_terms,
         )
-        assert report.new_services == ["alpha"]
-        assert report.retired_services == ["beta"]
-        assert report.changed_services == ["gamma"]
-        assert report.errors == ["timeout on term X"]
-        assert report.total_discovered == 5
+
+    connector_factory.assert_not_called()
 
 
-class TestExtractServiceName:
-    @pytest.mark.parametrize("title", ["GE", "HP", "AI"])
-    def test_preserves_valid_two_character_names(self, title: str) -> None:
-        assert _extract_service_name(_mock_searx_result(title=title)) == title
-
-    def test_rejects_blank_title(self) -> None:
-        assert _extract_service_name(_mock_searx_result(title=" \t ")) is None
-
-
-class TestRunDiscoveryPipeline:
-    def test_default_search_term_queries_are_sent_in_declared_order(
-        self, tmp_path: Path
-    ) -> None:
-        mock_searx = MagicMock()
-        mock_searx.search.return_value = []
-
-        with patch(
-            "general_ludd.service_discovery.pipeline.SearXConnector",
-            return_value=mock_searx,
-        ):
-            pipeline = ServiceDiscoveryPipeline(
-                searx_url="http://test:8888",
-                catalog_path=str(tmp_path / "catalog.yml"),
-            )
-            pipeline.run_discovery_pipeline()
-
-        assert [call.args[0] for call in mock_searx.search.call_args_list] == [
-            query for _, query in DEFAULT_SEARCH_TERMS
-        ]
-
-    def test_explicit_tuple_terms_are_compatible(self, tmp_path: Path) -> None:
-        mock_searx = MagicMock()
-        mock_searx.search.return_value = []
-
-        with patch(
-            "general_ludd.service_discovery.pipeline.SearXConnector",
-            return_value=mock_searx,
-        ):
-            pipeline = ServiceDiscoveryPipeline(
-                searx_url="http://test:8888",
-                catalog_path=str(tmp_path / "catalog.yml"),
-                search_terms=[("cloud-apis", "public cloud API")],
-            )
-            pipeline.run_discovery_pipeline()
-
-        mock_searx.search.assert_called_once_with("public cloud API")
-
-    def test_empty_custom_terms_keep_legacy_default_fallback(self) -> None:
-        with patch("general_ludd.service_discovery.pipeline.SearXConnector"):
-            pipeline = ServiceDiscoveryPipeline(
-                searx_url="http://test:8888",
-                search_terms=[],
-            )
-
-        assert pipeline._search_terms == [query for _, query in DEFAULT_SEARCH_TERMS]
-
-    @pytest.mark.parametrize(
-        "malformed",
-        [
-            [""],
-            [("", "query")],
-            [("label", "")],
-            [("label",)],
-            [("label", "query", "extra")],
-            [("label", 7)],
-            [7],
-        ],
+def test_pipeline_empty_search_term_sequence_uses_defaults(tmp_path: Path) -> None:
+    """An empty sequence retains the documented default-query fallback."""
+    pipeline = ServiceDiscoveryPipeline(
+        searx_url="http://localhost:8080",
+        catalog_path=str(tmp_path / "service_catalog.yml"),
+        search_terms=[],
     )
-    def test_malformed_search_term_schema_fails_closed(self, malformed: object) -> None:
-        unsafe_terms = cast("list[str | tuple[str, str]]", malformed)
 
-        with (
-            patch(
-                "general_ludd.service_discovery.pipeline.SearXConnector"
-            ) as connector_type,
-            patch(
-                "general_ludd.service_discovery.pipeline.ServiceCatalog"
-            ) as catalog_type,
-            pytest.raises((TypeError, ValueError), match="search term"),
-        ):
-            ServiceDiscoveryPipeline(
-                searx_url="http://test:8888",
-                search_terms=unsafe_terms,
-            )
+    assert pipeline._search_terms == [query for _, query in DEFAULT_SEARCH_TERMS]
 
-        connector_type.assert_not_called()
-        catalog_type.assert_not_called()
 
-    def test_new_services_vs_empty_catalog(self, tmp_path: Path) -> None:
-        catalog_path = tmp_path / "catalog.yml"
-        results = [
-            _mock_searx_result("Alpha API", "https://alpha.example.com"),
-            _mock_searx_result("Beta API", "https://beta.example.com"),
-        ]
-        mock_searx = MagicMock()
-        mock_searx.search.return_value = results
-
-        with patch(
-            "general_ludd.service_discovery.pipeline.SearXConnector",
-            return_value=mock_searx,
-        ):
-            pipeline = ServiceDiscoveryPipeline(
-                searx_url="http://test:8888",
-                catalog_path=str(catalog_path),
-                search_terms=["test"],
-            )
-            report = pipeline.run_discovery_pipeline()
-
-        assert len(report.new_services) == 2
-        assert set(report.new_services) == {"Alpha API", "Beta API"}
-        assert report.errors == []
-
-    def test_retired_services(self, tmp_path: Path) -> None:
-        catalog_path = tmp_path / "catalog.yml"
-        _write_catalog(
-            catalog_path,
-            [
-                {"name": "Old API", "url": "https://old.example.com", "status": "active"},
-                {"name": "Current API", "url": "https://current.example.com", "status": "active"},
-            ],
+def test_empty_successful_search_preserves_existing_catalog(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A transiently empty search must not retire every known service."""
+    catalog_path = tmp_path / "service_catalog.yml"
+    catalog = ServiceCatalog(path=str(catalog_path))
+    catalog.add(
+        DiscoveredService(
+            name="Existing API",
+            url="https://existing.example/api",
+            status="active",
         )
-        results = [_mock_searx_result("Current API", "https://current.example.com")]
-        mock_searx = MagicMock()
-        mock_searx.search.return_value = results
+    )
+    catalog.save()
 
-        with patch(
-            "general_ludd.service_discovery.pipeline.SearXConnector",
-            return_value=mock_searx,
-        ):
-            pipeline = ServiceDiscoveryPipeline(
-                searx_url="http://test:8888",
-                catalog_path=str(catalog_path),
-                search_terms=["test"],
-            )
-            report = pipeline.run_discovery_pipeline()
+    pipeline = ServiceDiscoveryPipeline(
+        searx_url="http://localhost:8080",
+        catalog_path=str(catalog_path),
+        search_terms=["service api"],
+    )
+    monkeypatch.setattr(pipeline._searx, "search", MagicMock(return_value=[]))
 
-        assert "Old API" in report.retired_services
-        assert len(report.new_services) == 0
+    report = pipeline.run_discovery_pipeline()
 
-    def test_changed_service_different_url(self, tmp_path: Path) -> None:
-        catalog_path = tmp_path / "catalog.yml"
-        _write_catalog(
-            catalog_path,
-            [{"name": "Migrated API", "url": "https://old-url.example.com", "status": "active"}],
+    persisted = ServiceCatalog(path=str(catalog_path))
+    existing = persisted.get("Existing API")
+    assert report.retired_services == []
+    assert report.total_discovered == 1
+    assert existing is not None
+    assert existing.status == "active"
+
+
+def test_pipeline_reconciles_results_and_isolates_query_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Successful query results reconcile even when another query fails."""
+    catalog_path = tmp_path / "service_catalog.yml"
+    catalog = ServiceCatalog(path=str(catalog_path))
+    catalog.add(
+        DiscoveredService(
+            name="Removed API",
+            url="https://removed.example/api",
+            status="active",
         )
-        results = [_mock_searx_result("Migrated API", "https://new-url.example.com")]
-        mock_searx = MagicMock()
-        mock_searx.search.return_value = results
-
-        with patch(
-            "general_ludd.service_discovery.pipeline.SearXConnector",
-            return_value=mock_searx,
-        ):
-            pipeline = ServiceDiscoveryPipeline(
-                searx_url="http://test:8888",
-                catalog_path=str(catalog_path),
-                search_terms=["test"],
-            )
-            report = pipeline.run_discovery_pipeline()
-
-        assert "Migrated API" in report.changed_services
-        assert report.new_services == []
-        assert report.retired_services == []
-
-    def test_unchanged_services(self, tmp_path: Path) -> None:
-        catalog_path = tmp_path / "catalog.yml"
-        _write_catalog(
-            catalog_path,
-            [
-                {"name": "Stable API", "url": "https://stable.example.com", "status": "active"},
-                {"name": "Legacy API", "url": "https://legacy.example.com", "status": "active"},
-            ],
+    )
+    catalog.add(
+        DiscoveredService(
+            name="Changed API",
+            url="https://old.example/api",
+            status="active",
         )
-        results = [
-            _mock_searx_result("Stable API", "https://stable.example.com"),
-            _mock_searx_result("Legacy API", "https://legacy.example.com"),
-        ]
-        mock_searx = MagicMock()
-        mock_searx.search.return_value = results
+    )
+    catalog.save()
 
-        with patch(
-            "general_ludd.service_discovery.pipeline.SearXConnector",
-            return_value=mock_searx,
-        ):
-            pipeline = ServiceDiscoveryPipeline(
-                searx_url="http://test:8888",
-                catalog_path=str(catalog_path),
-                search_terms=["test"],
-            )
-            report = pipeline.run_discovery_pipeline()
+    pipeline = ServiceDiscoveryPipeline(
+        searx_url="http://localhost:8080",
+        catalog_path=str(catalog_path),
+        search_terms=["working query", "broken query"],
+    )
+    monkeypatch.setattr(
+        pipeline._searx,
+        "search",
+        MagicMock(
+            side_effect=[
+                [
+                    SearXResult(
+                        title="New API - Developer portal",
+                        url="https://new.example/api",
+                        snippet="n" * 700,
+                        engine="engine-a",
+                    ),
+                    SearXResult(
+                        title="Changed API | Documentation",
+                        url="https://new-location.example/api",
+                        snippet="updated",
+                        engine="engine-b",
+                    ),
+                    SearXResult(
+                        title=" ",
+                        url="https://unnamed.example/api",
+                        snippet="ignored",
+                        engine="engine-c",
+                    ),
+                ],
+                RuntimeError("search offline"),
+            ]
+        ),
+    )
 
-        assert report.new_services == []
-        assert report.retired_services == []
-        assert report.changed_services == []
+    report = pipeline.run_discovery_pipeline()
 
-    def test_error_handling_searx_unreachable(self, tmp_path: Path) -> None:
-        catalog_path = tmp_path / "catalog.yml"
-        mock_searx = MagicMock()
-        mock_searx.search.side_effect = ConnectionError("SearX unreachable")
+    persisted = ServiceCatalog(path=str(catalog_path))
+    removed = persisted.get("Removed API")
+    changed = persisted.get("Changed API")
+    added = persisted.get("New API")
+    assert report.new_services == ["New API"]
+    assert report.changed_services == ["Changed API"]
+    assert report.retired_services == ["Removed API"]
+    assert report.total_discovered == 3
+    assert len(report.errors) == 1
+    assert "broken query" in report.errors[0]
+    assert removed is not None
+    assert removed.status == "inactive"
+    assert changed is not None
+    assert changed.url == "https://new-location.example/api"
+    assert added is not None
+    assert added.description is not None
+    assert len(added.description) == 500
 
-        with patch(
-            "general_ludd.service_discovery.pipeline.SearXConnector",
-            return_value=mock_searx,
-        ):
-            pipeline = ServiceDiscoveryPipeline(
-                searx_url="http://test:8888",
-                catalog_path=str(catalog_path),
-                search_terms=["single-term"],
-            )
-            report = pipeline.run_discovery_pipeline()
 
-        assert len(report.errors) == 1
-        assert "SearX unreachable" in report.errors[0]
-        assert report.new_services == []
+def test_pipeline_isolates_result_parse_and_catalog_save_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One malformed result and a failed save are both reported safely."""
+    pipeline = ServiceDiscoveryPipeline(
+        searx_url="http://localhost:8080",
+        catalog_path=str(tmp_path / "service_catalog.yml"),
+        search_terms=["query"],
+    )
+    monkeypatch.setattr(
+        pipeline._searx,
+        "search",
+        MagicMock(
+            return_value=[
+                SearXResult(
+                    title="Broken API",
+                    url="https://broken.example/api",
+                    snippet="broken",
+                    engine="engine",
+                )
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "_extract_service_name",
+        MagicMock(side_effect=ValueError("invalid title")),
+    )
+    monkeypatch.setattr(
+        ServiceCatalog,
+        "save",
+        MagicMock(side_effect=OSError("disk unavailable")),
+    )
 
-    def test_errors_logged_not_crashed(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        catalog_path = tmp_path / "catalog.yml"
-        mock_searx = MagicMock()
-        mock_searx.search.side_effect = RuntimeError("timeout")
+    report = pipeline.run_discovery_pipeline()
 
-        with patch(
-            "general_ludd.service_discovery.pipeline.SearXConnector",
-            return_value=mock_searx,
-        ):
-            pipeline = ServiceDiscoveryPipeline(
-                searx_url="http://test:8888",
-                catalog_path=str(catalog_path),
-                search_terms=["test-term"],
-            )
-            with caplog.at_level(logging.WARNING, logger="general_ludd.service_discovery.pipeline"):
-                report = pipeline.run_discovery_pipeline()
+    assert report.total_discovered == 0
+    assert len(report.errors) == 2
+    assert "Failed to parse result" in report.errors[0]
+    assert "Failed to save catalog" in report.errors[1]
 
-        assert len(report.errors) == 1
-        assert "test-term" in report.errors[0]
 
-    def test_empty_results_returns_empty_report(self, tmp_path: Path) -> None:
-        catalog_path = tmp_path / "catalog.yml"
-        mock_searx = MagicMock()
-        mock_searx.search.return_value = []
+def test_auto_retire_only_marks_stale_active_services(tmp_path: Path) -> None:
+    """The inactivity window preserves fresh and already-inactive services."""
+    pipeline = ServiceDiscoveryPipeline(
+        searx_url="http://localhost:8080",
+        catalog_path=str(tmp_path / "service_catalog.yml"),
+        search_terms=["query"],
+    )
+    now = datetime(2026, 9, 27, tzinfo=UTC)
+    stale = DiscoveredService(
+        name="Stale API",
+        url="https://stale.example/api",
+        status="active",
+        last_seen=now - timedelta(days=31),
+    )
+    fresh = DiscoveredService(
+        name="Fresh API",
+        url="https://fresh.example/api",
+        status="active",
+        last_seen=now - timedelta(days=29),
+    )
+    inactive = DiscoveredService(
+        name="Inactive API",
+        url="https://inactive.example/api",
+        status="inactive",
+        last_seen=now - timedelta(days=60),
+    )
+    catalog = ServiceCatalog()
+    catalog.services = {svc.name: svc for svc in (stale, fresh, inactive)}
 
-        with patch(
-            "general_ludd.service_discovery.pipeline.SearXConnector",
-            return_value=mock_searx,
-        ):
-            pipeline = ServiceDiscoveryPipeline(
-                searx_url="http://test:8888",
-                catalog_path=str(catalog_path),
-                search_terms=["test"],
-            )
-            report = pipeline.run_discovery_pipeline()
+    pipeline._auto_retire_stale(catalog, now)
 
-        assert report.new_services == []
-        assert report.retired_services == []
-        assert report.changed_services == []
+    assert stale.status == "inactive"
+    assert stale.last_seen == now
+    assert fresh.status == "active"
+    assert inactive.last_seen == now - timedelta(days=60)
 
-    def test_duplicate_urls_are_deduplicated(self, tmp_path: Path) -> None:
-        catalog_path = tmp_path / "catalog.yml"
-        results = [
-            _mock_searx_result("First", "https://dup.example.com"),
-            _mock_searx_result("Duplicate", "https://dup.example.com", engine="pubmed"),
-        ]
-        mock_searx = MagicMock()
-        mock_searx.search.return_value = results
 
-        with patch(
-            "general_ludd.service_discovery.pipeline.SearXConnector",
-            return_value=mock_searx,
-        ):
-            pipeline = ServiceDiscoveryPipeline(
-                searx_url="http://test:8888",
-                catalog_path=str(catalog_path),
-                search_terms=["test"],
-            )
-            report = pipeline.run_discovery_pipeline()
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("Alpha - Docs", "Alpha"),
+        ("Beta | Docs", "Beta"),
+        ("Gamma · Docs", "Gamma"),
+        ("Delta :: Docs", "Delta"),
+        ("Epsilon — Docs", "Epsilon"),
+        ("Unbroken service title", "Unbroken service title"),
+        ("X", None),
+        ("   ", None),
+        ("L" * 100, "L" * 80),
+    ],
+)
+def test_extract_service_name_handles_supported_title_shapes(
+    title: str, expected: str | None
+) -> None:
+    result = SearXResult(
+        title=title,
+        url="https://service.example/api",
+        snippet="",
+        engine="engine",
+    )
 
-        # Both have same URL, only one unique service name should be in new_services
-        # (deduplication happens by name, not URL, in the pipeline via snapshot.add)
-        assert len(report.new_services) <= 2
+    assert pipeline_module._extract_service_name(result) == expected
 
-    def test_empty_url_skipped(self, tmp_path: Path) -> None:
-        catalog_path = tmp_path / "catalog.yml"
-        results = [
-            _mock_searx_result("No URL", ""),
-            _mock_searx_result("Good", "https://good.example.com"),
-        ]
-        mock_searx = MagicMock()
-        mock_searx.search.return_value = results
 
-        with patch(
-            "general_ludd.service_discovery.pipeline.SearXConnector",
-            return_value=mock_searx,
-        ):
-            pipeline = ServiceDiscoveryPipeline(
-                searx_url="http://test:8888",
-                catalog_path=str(catalog_path),
-                search_terms=["test"],
-            )
-            report = pipeline.run_discovery_pipeline()
+def test_normalize_search_terms_accepts_legacy_and_labeled_entries() -> None:
+    assert pipeline_module._normalize_search_terms(
+        ["legacy query", ("stable-id", "labeled query")]
+    ) == ["legacy query", "labeled query"]
+    assert pipeline_module._normalize_search_terms(DEFAULT_SEARCH_TERMS) == [
+        query for _, query in DEFAULT_SEARCH_TERMS
+    ]
 
-        assert "Good" in report.new_services or not report.errors
 
-    def test_partial_failures_some_succeed(self, tmp_path: Path) -> None:
-        catalog_path = tmp_path / "catalog.yml"
-        mock_searx = MagicMock()
-        mock_searx.search.side_effect = [
-            RuntimeError("term1 failed"),
-            [_mock_searx_result("Working", "https://working.example.com")],
-            RuntimeError("term3 failed"),
-        ]
-
-        with patch(
-            "general_ludd.service_discovery.pipeline.SearXConnector",
-            return_value=mock_searx,
-        ):
-            pipeline = ServiceDiscoveryPipeline(
-                searx_url="http://test:8888",
-                catalog_path=str(catalog_path),
-                search_terms=["term1", "term2", "term3"],
-            )
-            report = pipeline.run_discovery_pipeline()
-
-        assert len(report.errors) == 2
-        assert len(report.new_services) == 1
-        assert report.new_services[0] == "Working"
-
-    def test_source_engine_is_preserved(self, tmp_path: Path) -> None:
-        catalog_path = tmp_path / "catalog.yml"
-        results = [_mock_searx_result("GE", "https://ge.example.com", engine="google")]
-        mock_searx = MagicMock()
-        mock_searx.search.return_value = results
-
-        with patch(
-            "general_ludd.service_discovery.pipeline.SearXConnector",
-            return_value=mock_searx,
-        ):
-            pipeline = ServiceDiscoveryPipeline(
-                searx_url="http://test:8888",
-                catalog_path=str(catalog_path),
-                search_terms=["test"],
-            )
-            report = pipeline.run_discovery_pipeline()
-
-        assert "GE" in report.new_services
+@pytest.mark.parametrize(
+    ("terms", "expected_exception"),
+    [
+        ([tuple()], ValueError),
+        ([("one", "two", "three")], ValueError),
+        ([("label", 3)], TypeError),
+        ([object()], TypeError),
+        (["   "], ValueError),
+        ([("label", " ")], ValueError),
+    ],
+)
+def test_normalize_search_terms_rejects_invalid_entries(
+    terms: list[object], expected_exception: type[Exception]
+) -> None:
+    with pytest.raises(expected_exception):
+        pipeline_module._normalize_search_terms(terms)

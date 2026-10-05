@@ -8,7 +8,7 @@ instead of encouraging marker padding in the facade.
 from dataclasses import dataclass
 from pathlib import Path
 
-from scripts.plugin_contract import plugin_contract_source
+from scripts.plugin_contract import plugin_contract_source as plugin_contract_source
 
 
 @dataclass(frozen=True)

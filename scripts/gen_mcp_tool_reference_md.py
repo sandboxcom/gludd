@@ -10,14 +10,11 @@ parameters. Run after ``gen-mcp-tools`` to keep the reference current.
 from __future__ import annotations
 
 import json
-import os
-import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-
 
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_PATH = ROOT / "docs" / "MCP_TOOLS_MANIFEST.json"
@@ -42,10 +39,6 @@ def _param_row(name: str, prop: dict[str, Any], required: set[str]) -> str:
     return f"| `{name}` | {ptype} | {req}{' ' if req else ''}| {default} |"
 
 
-def _format_description(desc: str) -> str:
-    lines = desc.strip().splitlines()
-    return "\n".join(f"      {line.strip()}" for line in lines)
-
 
 def _tool_section(tool: dict[str, Any], index: int, total: int) -> str:
     name = tool["name"]
@@ -60,7 +53,7 @@ def _tool_section(tool: dict[str, Any], index: int, total: int) -> str:
     lines: list[str] = []
     lines.append(f"### {index}. `{short}`")
     lines.append("")
-    lines.append(f"**Server:** `{server}`  \n**FQCN:** `{name}`")
+    lines.append(f"**Server:** `{server}` | **FQCN:** `{name}`")
     lines.append("")
     lines.append(f"> {desc}")
     lines.append("")
@@ -84,7 +77,7 @@ def generate(output_path: Path | None = None) -> str:
         raise SystemExit(f"ERROR: {MANIFEST_PATH} is not a JSON array")
 
     tool_count = len(manifest)
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
 
     try:
         tag_cmd = ["git", "-C", str(ROOT), "describe", "--tags", "--always", "--dirty"]

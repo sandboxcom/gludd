@@ -1,8 +1,8 @@
 """SSL certificate management core.
 
-Key generation, CSR creation, certificate signing, parsing,
-ASN.1 operations, OID management, algorithm evaluation,
-compliance checking, and CA jurisdiction lookups.
+Key generation, CSR creation, certificate signing and parsing, algorithm
+evaluation, compliance checking, and CA jurisdiction lookups. ASN.1 DER and OID
+utilities are owned by ``general_ludd.security`` collection module utilities.
 
 Built on the ``cryptography`` library.
 """
@@ -19,7 +19,6 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
 from cryptography.hazmat.primitives.asymmetric import padding as asym_padding
 from cryptography.x509 import oid as x509_oid
-from cryptography.x509.oid import ObjectIdentifier
 
 
 class _ProxyPublicKey:
@@ -63,54 +62,10 @@ class _ProxyPrivateKey:
         return cast(int, self._key.key_size)
 
 
-class CertManager:
-    def __init__(self) -> None:
-        self._known_oids: dict[str, OIDInfo] = {
-            "2.5.4.3": OIDInfo(
-                oid="2.5.4.3",
-                name="commonName",
-                description="X.520 Common Name attribute",
-            ),
-            "2.5.4.6": OIDInfo(
-                oid="2.5.4.6",
-                name="countryName",
-                description="X.520 Country Name attribute",
-            ),
-            "2.5.4.10": OIDInfo(
-                oid="2.5.4.10",
-                name="organizationName",
-                description="X.520 Organization Name attribute",
-            ),
-            "2.5.4.11": OIDInfo(
-                oid="2.5.4.11",
-                name="organizationalUnitName",
-                description="X.520 Organizational Unit Name",
-            ),
-            "1.2.840.113549.1.1.1": OIDInfo(
-                oid="1.2.840.113549.1.1.1",
-                name="rsaEncryption",
-                description="RSA Encryption (PKCS #1)",
-            ),
-            "1.2.840.10045.2.1": OIDInfo(
-                oid="1.2.840.10045.2.1",
-                name="ecPublicKey",
-                description="Elliptic Curve Public Key",
-            ),
-            "2.5.29.19": OIDInfo(
-                oid="2.5.29.19",
-                name="basicConstraints",
-                description="X.509 Basic Constraints extension",
-            ),
-            "1.2.840.113549.1.1.11": OIDInfo(
-                oid="1.2.840.113549.1.1.11",
-                name="sha256WithRSAEncryption",
-                description="SHA-256 with RSA Encryption",
-            ),
-        }
-
-
 @dataclass
 class KeyPair:
+    """Serialized public and private key material for one algorithm."""
+
     key_type: str
     public_pem: bytes
     private_pem: bytes
@@ -118,6 +73,8 @@ class KeyPair:
 
 @dataclass
 class CSRData:
+    """Certificate-signing request plus its key-type metadata."""
+
     common_name: str
     csr_pem: bytes
     key_type: str
@@ -125,6 +82,8 @@ class CSRData:
 
 @dataclass
 class CertificateFields:
+    """Normalized certificate fields exposed by the SSL agent."""
+
     subject_cn: str = ""
     subject_org: str = ""
     issuer_cn: str = ""
@@ -140,14 +99,9 @@ class CertificateFields:
 
 
 @dataclass
-class OIDInfo:
-    oid: str
-    name: str
-    description: str = ""
-
-
-@dataclass
 class AlgorithmEvaluation:
+    """Security posture and migration guidance for one algorithm."""
+
     algorithm: str
     strength: str
     is_recommended: bool
@@ -157,6 +111,8 @@ class AlgorithmEvaluation:
 
 @dataclass
 class ComplianceResult:
+    """Checks and failures produced for a compliance profile."""
+
     profile: str
     passed: bool
     checks: list[dict[str, Any]] = field(default_factory=list)
@@ -165,6 +121,8 @@ class ComplianceResult:
 
 @dataclass
 class CAJurisdiction:
+    """Jurisdiction and trust metadata for a certificate authority."""
+
     ca_name: str
     jurisdiction_country: str = ""
     jurisdiction_state: str = ""
@@ -173,47 +131,12 @@ class CAJurisdiction:
 
 
 class ComplianceProfile(Enum):
+    """Supported certificate compliance profiles."""
+
     FIPS = "fips"
     PCI = "pci"
     HIPAA = "hipaa"
 
-
-KNOWN_OIDS: dict[str, OIDInfo] = {
-    "2.5.4.3": OIDInfo(
-        oid="2.5.4.3", name="commonName", description="X.520 Common Name"
-    ),
-    "2.5.4.6": OIDInfo(
-        oid="2.5.4.6", name="countryName", description="X.520 Country Name"
-    ),
-    "2.5.4.10": OIDInfo(
-        oid="2.5.4.10", name="organizationName", description="X.520 Organization Name"
-    ),
-    "2.5.4.11": OIDInfo(
-        oid="2.5.4.11",
-        name="organizationalUnitName",
-        description="X.520 Organizational Unit",
-    ),
-    "1.2.840.113549.1.1.1": OIDInfo(
-        oid="1.2.840.113549.1.1.1",
-        name="rsaEncryption",
-        description="RSA Encryption (PKCS #1)",
-    ),
-    "1.2.840.10045.2.1": OIDInfo(
-        oid="1.2.840.10045.2.1",
-        name="ecPublicKey",
-        description="Elliptic Curve Public Key",
-    ),
-    "2.5.29.19": OIDInfo(
-        oid="2.5.29.19",
-        name="basicConstraints",
-        description="X.509 Basic Constraints",
-    ),
-    "1.2.840.113549.1.1.11": OIDInfo(
-        oid="1.2.840.113549.1.1.11",
-        name="sha256WithRSAEncryption",
-        description="SHA-256 with RSA Encryption",
-    ),
-}
 
 ALGORITHM_EVALUATIONS: dict[str, AlgorithmEvaluation] = {
     "rsa-2048": AlgorithmEvaluation(
@@ -281,6 +204,17 @@ CA_JURISDICTIONS: dict[str, CAJurisdiction] = {
 
 
 def generate_key_pair(key_type: str) -> KeyPair:
+    """Generate and serialize a supported asymmetric key pair.
+
+    Args:
+        key_type: Algorithm and size identifier.
+
+    Returns:
+        Serialized public and private key material.
+
+    Raises:
+        ValueError: If ``key_type`` is unsupported.
+    """
     private_key: Any
     if key_type == "rsa-2048":
         private_key = rsa.generate_private_key(
@@ -307,6 +241,15 @@ def generate_key_pair(key_type: str) -> KeyPair:
 
 
 def generate_csr(common_name: str, key_pair: KeyPair) -> CSRData:
+    """Create a certificate-signing request for a common name.
+
+    Args:
+        common_name: DNS name to encode as the subject common name.
+        key_pair: Key material used to sign the request.
+
+    Returns:
+        Serialized request and its identifying metadata.
+    """
     private_key: Any = serialization.load_pem_private_key(key_pair.private_pem, password=None)
 
     builder = x509.CertificateSigningRequestBuilder()
@@ -339,6 +282,16 @@ def generate_csr(common_name: str, key_pair: KeyPair) -> CSRData:
 def self_sign_cert(
     csr_data: CSRData, key_pair: KeyPair, validity_days: int = 365
 ) -> CertificateFields:
+    """Self-sign a request and return its normalized certificate fields.
+
+    Args:
+        csr_data: Certificate-signing request to issue.
+        key_pair: Private key that signs the certificate.
+        validity_days: Number of days the certificate remains valid.
+
+    Returns:
+        Normalized fields from the issued certificate.
+    """
     private_key: Any = serialization.load_pem_private_key(
         key_pair.private_pem, password=None
     )
@@ -376,6 +329,15 @@ def _self_sign_with_key(
 def generate_ca_chain(
     ca_common_name: str, leaf_common_name: str
 ) -> dict[str, Any]:
+    """Generate a root CA and a signed leaf certificate.
+
+    Args:
+        ca_common_name: Subject common name for the root CA.
+        leaf_common_name: Subject common name for the leaf certificate.
+
+    Returns:
+        Certificate objects, PEM encodings, leaf key material, and validation state.
+    """
     ca_key_pair = generate_key_pair("rsa-2048")
     ca_private_key: Any = serialization.load_pem_private_key(
         ca_key_pair.private_pem, password=None
@@ -470,6 +432,14 @@ def _verify_chain(ca_cert: x509.Certificate, leaf_cert: x509.Certificate) -> boo
 
 
 def cert_parse(cert_or_pem: bytes | x509.Certificate) -> CertificateFields:
+    """Normalize a PEM-encoded or parsed X.509 certificate.
+
+    Args:
+        cert_or_pem: Certificate object or PEM bytes to inspect.
+
+    Returns:
+        Agent-facing certificate fields.
+    """
     cert = x509.load_pem_x509_certificate(cert_or_pem) if isinstance(cert_or_pem, bytes) else cert_or_pem
 
     sans: list[str] = []
@@ -516,54 +486,15 @@ def cert_parse(cert_or_pem: bytes | x509.Certificate) -> CertificateFields:
     )
 
 
-def asn1_roundtrip_verify(
-    cert_or_pem: bytes | x509.Certificate | CertificateFields,
-) -> dict[str, Any]:
-    # ``self_sign_cert`` intentionally returns the parsed summary used by the
-    # agent API. Preserve that API while still supporting DER round-trips for
-    # callers that provide the underlying certificate object or PEM bytes.
-    if isinstance(cert_or_pem, CertificateFields):
-        return {
-            "match": True,
-            "der_length": 0,
-            "original_fields": cert_or_pem,
-            "decoded_fields": cert_or_pem,
-        }
-    if isinstance(cert_or_pem, bytes):
-        cert_obj = x509.load_pem_x509_certificate(cert_or_pem)
-        der_bytes = cert_obj.public_bytes(serialization.Encoding.DER)
-    else:
-        der_bytes = cert_or_pem.public_bytes(serialization.Encoding.DER)
-        cert_obj = cert_or_pem
-
-    decoded = x509.load_der_x509_certificate(der_bytes)
-    original_fields = cert_parse(cert_obj)
-    decoded_fields = cert_parse(decoded)
-
-    return {
-        "match": original_fields == decoded_fields,
-        "der_length": len(der_bytes),
-        "original_fields": original_fields,
-        "decoded_fields": decoded_fields,
-    }
-
-
-def oid_generate(oid_str: str) -> ObjectIdentifier:
-    return x509.ObjectIdentifier(oid_str)
-
-
-def oid_lookup(oid_str: str) -> OIDInfo | None:
-    if oid_str in KNOWN_OIDS:
-        return KNOWN_OIDS[oid_str]
-
-    for oid in KNOWN_OIDS.values():
-        if oid.name.lower() == oid_str.lower():
-            return oid
-
-    return None
-
-
 def algorithm_evaluate(algorithm_name: str) -> AlgorithmEvaluation:
+    """Evaluate a named cryptographic algorithm.
+
+    Args:
+        algorithm_name: Human-readable algorithm identifier.
+
+    Returns:
+        Known posture metadata or a fail-closed unknown evaluation.
+    """
     key = algorithm_name.lower().replace(" ", "-")
     if key in ALGORITHM_EVALUATIONS:
         return ALGORITHM_EVALUATIONS[key]
@@ -579,6 +510,15 @@ def compliance_check(
     cert_or_pem: bytes | x509.Certificate | CertificateFields,
     profile: ComplianceProfile,
 ) -> ComplianceResult:
+    """Evaluate certificate metadata against a compliance profile.
+
+    Args:
+        cert_or_pem: Certificate bytes, object, or normalized fields.
+        profile: Compliance rules to apply.
+
+    Returns:
+        Individual checks, failures, and aggregate pass state.
+    """
     profile_name = profile.value
     profile_rules = COMPLIANCE_PROFILES[profile_name]
     failures: list[str] = []
@@ -653,4 +593,12 @@ def compliance_check(
 
 
 def ca_jurisdiction_lookup(ca_name: str) -> CAJurisdiction | None:
+    """Look up known certificate-authority jurisdiction metadata.
+
+    Args:
+        ca_name: Case-insensitive certificate-authority identifier.
+
+    Returns:
+        Known jurisdiction metadata, or ``None`` for an unknown authority.
+    """
     return CA_JURISDICTIONS.get(ca_name.lower())

@@ -16,7 +16,7 @@ answering Java questions, debugging JVM issues, or reviewing JVM-based projects.
 The JVM executes Java bytecode. Source code (`.java`) compiles to `.class` files
 containing platform-independent bytecode verified and executed at runtime.
 
-```
+```text
 Source (.java) → javac → Bytecode (.class) → Class Loader → Bytecode Verifier
 → Interpreter + JIT Compiler (C1/C2) → Machine Code
 ```
@@ -1135,7 +1135,7 @@ jcmd <pid> JFR.stop name=profile
 
 ### 8.1 Maven Standard Layout
 
-```
+```text
 project/
 ├── pom.xml                         # project descriptor
 ├── src/
@@ -1161,7 +1161,7 @@ project/
 
 ### 8.2 Multi-Module Layout
 
-```
+```text
 platform/
 ├── pom.xml                         # parent POM (packaging=pom)
 ├── platform-common/                # shared utilities
@@ -1178,7 +1178,7 @@ platform/
 
 ### 8.3 Package Naming Conventions
 
-```
+```text
 com.company.module.layer
 
 Examples:
@@ -1202,7 +1202,7 @@ Layer conventions:
 
 ### 8.4 Testing Conventions
 
-```
+```text
 src/test/java/
 ├── unit/                  # pure unit tests (mock collaborators)
 │   └── .../OrderServiceTest.java
@@ -1239,7 +1239,7 @@ Key libraries:
 
 Every `.class` file starts with the magic number `0xCAFEBABE`. Structure:
 
-```
+```text
 ClassFile {
     u4             magic;              // 0xCAFEBABE
     u2             minor_version;
@@ -1352,7 +1352,7 @@ unrolling, branch prediction, dead code elimination, constant folding.
 
 In HotSpot, every object has:
 
-```
+```text
 |-----------------------------|
 | Mark Word (8 bytes on 64-bit) |
 |  - identity hash code       |

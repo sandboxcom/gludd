@@ -26,7 +26,7 @@ class TestPlaybookEnvScrub:
     """PlaybookExecutor.run() must not see secrets in os.environ."""
 
     def test_secret_keys_stripped_from_playbook_env(self) -> None:
-        """ZAI_API_KEY, GLUDD_PSK, AWS_SECRET_ACCESS_KEY must not reach pb_exec.run()."""
+        """ZAI_API_KEY, GLUDD_AUTH_PSK, AWS_SECRET_ACCESS_KEY must not reach pb_exec.run()."""
         captured: list[dict[str, str]] = []
 
         def fake_run() -> int:
@@ -41,7 +41,7 @@ class TestPlaybookEnvScrub:
 
         secrets = {
             "ZAI_API_KEY": "super-secret-zai",
-            "GLUDD_PSK": "super-secret-psk",
+            "GLUDD_AUTH_PSK": "super-secret-psk",
             "AWS_SECRET_ACCESS_KEY": "super-secret-aws",
         }
 
@@ -57,7 +57,7 @@ class TestPlaybookEnvScrub:
         assert captured, "pb_exec.run() was never called"
         env_at_run = captured[0]
         assert "ZAI_API_KEY" not in env_at_run, "ZAI_API_KEY leaked into playbook env"
-        assert "GLUDD_PSK" not in env_at_run, "GLUDD_PSK leaked into playbook env"
+        assert "GLUDD_AUTH_PSK" not in env_at_run, "GLUDD_AUTH_PSK leaked into playbook env"
         assert "AWS_SECRET_ACCESS_KEY" not in env_at_run, (
             "AWS_SECRET_ACCESS_KEY leaked into playbook env"
         )
@@ -145,7 +145,7 @@ class TestPlaybookEnvScrub:
 
     def test_gludd_playbook_timeout_reaches_playbook_env(self) -> None:
         """GLUDD_PLAYBOOK_TIMEOUT set in parent must be visible inside pb_exec.run(),
-        while secret vars (ZAI_API_KEY, GLUDD_PSK) remain stripped."""
+        while secret vars (ZAI_API_KEY, GLUDD_AUTH_PSK) remain stripped."""
         captured: list[dict[str, str]] = []
 
         def fake_run() -> int:
@@ -160,7 +160,7 @@ class TestPlaybookEnvScrub:
         parent_env = {
             "GLUDD_PLAYBOOK_TIMEOUT": "120",
             "ZAI_API_KEY": "should-be-stripped",
-            "GLUDD_PSK": "also-stripped",
+            "GLUDD_AUTH_PSK": "also-stripped",
         }
 
         with patch.dict(os.environ, parent_env, clear=False), patch(
@@ -181,4 +181,4 @@ class TestPlaybookEnvScrub:
         )
         # Secrets must still be absent.
         assert "ZAI_API_KEY" not in env_at_run, "ZAI_API_KEY leaked into playbook env"
-        assert "GLUDD_PSK" not in env_at_run, "GLUDD_PSK leaked into playbook env"
+        assert "GLUDD_AUTH_PSK" not in env_at_run, "GLUDD_AUTH_PSK leaked into playbook env"

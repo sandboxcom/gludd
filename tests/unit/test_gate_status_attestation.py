@@ -198,6 +198,54 @@ def test_worktree_and_index_state_must_converge_before_commit(tmp_path: Path) ->
     assert repository_state_id(repo) == repository_state_id(repo, source="index")
 
 
+def test_uninitialized_submodule_uses_the_pinned_index_gitlink(tmp_path: Path) -> None:
+    submodule = tmp_path / "submodule"
+    parent = tmp_path / "parent"
+    checkout = tmp_path / "checkout"
+    submodule.mkdir()
+    parent.mkdir()
+
+    def git(repo: Path, *args: str) -> None:
+        subprocess.run(
+            ["git", "-C", str(repo), *args],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    for repo in (submodule, parent):
+        git(repo, "init", "-q")
+        git(repo, "config", "user.email", "gate-test@example.invalid")
+        git(repo, "config", "user.name", "Gate Test")
+
+    (submodule / "tracked.txt").write_text("submodule\n", encoding="utf-8")
+    git(submodule, "add", "tracked.txt")
+    git(submodule, "commit", "-q", "-m", "initial")
+    git(
+        parent,
+        "-c",
+        "protocol.file.allow=always",
+        "submodule",
+        "add",
+        "-q",
+        str(submodule),
+        "external/example",
+    )
+    git(parent, "commit", "-q", "-am", "add submodule")
+    subprocess.run(
+        ["git", "clone", "-q", "--no-recurse-submodules", str(parent), str(checkout)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert (checkout / "external" / "example").is_dir()
+    assert repository_state_id(checkout) == repository_state_id(
+        checkout,
+        source="index",
+    )
+
+
 def test_makefile_signs_final_gate_and_checks_before_commit() -> None:
     makefile = (Path(__file__).parents[2] / "Makefile").read_text(encoding="utf-8")
 

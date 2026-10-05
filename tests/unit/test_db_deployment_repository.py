@@ -61,6 +61,16 @@ def _make_record(instance_id: str = "i-abc123", **kw) -> DeploymentRecord:
     return DeploymentRecord(**defaults)
 
 
+async def _get_model(
+    repo: DeploymentRegistryRepository,
+    instance_id: str = "i-abc123",
+) -> DeploymentRecordModel | None:
+    return await repo._session.get(
+        DeploymentRecordModel,
+        ("default", "aws", instance_id),
+    )
+
+
 # ---------------------------------------------------------------------------
 # _as_record
 # ---------------------------------------------------------------------------
@@ -68,6 +78,7 @@ def _make_record(instance_id: str = "i-abc123", **kw) -> DeploymentRecord:
 
 def test_as_record_converts_all_fields():
     model = DeploymentRecordModel(
+        project_id="default",
         instance_id="i-1",
         working_dir="/tmp/wd",
         provider="aws",
@@ -140,7 +151,7 @@ async def test_upsert_blocked_when_destroying(repo: DeploymentRegistryRepository
     rec = _make_record()
     await repo.upsert(rec)
 
-    model = await repo._session.get(DeploymentRecordModel, "i-abc123")
+    model = await _get_model(repo)
     assert model is not None
     model.state = "destroying"
     model.destroy_owner = "worker-x"
@@ -191,7 +202,7 @@ async def test_claim_for_destroy_succeeds_running(repo: DeploymentRegistryReposi
     await repo.upsert(_make_record())
     result = await repo.claim_for_destroy("i-abc123", owner="worker-1")
     assert result.state == "destroying"
-    model = await repo._session.get(DeploymentRecordModel, "i-abc123")
+    model = await _get_model(repo)
     assert model is not None
     assert model.destroy_owner == "worker-1"
 
@@ -309,14 +320,14 @@ class TestUpsertRevisionTracking:
     async def test_revision_present_on_insert(self, repo: DeploymentRegistryRepository):
         rec = _make_record()
         await repo.upsert(rec)
-        model = await repo._session.get(DeploymentRecordModel, "i-abc123")
+        model = await _get_model(repo)
         assert model is not None
         assert model.revision >= 1
 
     async def test_revision_present_after_update(self, repo: DeploymentRegistryRepository):
         await repo.upsert(_make_record())
         await repo.upsert(_make_record(state="stopped"))
-        model = await repo._session.get(DeploymentRecordModel, "i-abc123")
+        model = await _get_model(repo)
         assert model is not None
         assert model.revision >= 1
 
@@ -325,7 +336,7 @@ class TestUpsertClearsDestroyOwner:
     async def test_upsert_resets_destroy_owner_in_set_clause(self, repo: DeploymentRegistryRepository):
         await repo.upsert(_make_record())
         await repo.claim_for_destroy("i-abc123", owner="worker-1")
-        model_before = await repo._session.get(DeploymentRecordModel, "i-abc123")
+        model_before = await _get_model(repo)
         assert model_before is not None
         assert model_before.destroy_owner == "worker-1"
         assert model_before.state == "destroying"
@@ -334,7 +345,7 @@ class TestUpsertClearsDestroyOwner:
 class TestUpsertUpdatedAt:
     async def test_updated_at_changes_on_update(self, repo: DeploymentRegistryRepository):
         await repo.upsert(_make_record())
-        model1 = await repo._session.get(DeploymentRecordModel, "i-abc123")
+        model1 = await _get_model(repo)
         assert model1 is not None
         ts1 = model1.updated_at
 
@@ -343,7 +354,7 @@ class TestUpsertUpdatedAt:
         await asyncio.sleep(1.0)
 
         await repo.upsert(_make_record(state="stopped"))
-        model2 = await repo._session.get(DeploymentRecordModel, "i-abc123")
+        model2 = await _get_model(repo)
         assert model2 is not None
         assert model2.updated_at > ts1
 
@@ -353,7 +364,7 @@ class TestClaimForDestroyOwnerTruncation:
         await repo.upsert(_make_record())
         long_owner = "x" * 200
         await repo.claim_for_destroy("i-abc123", owner=long_owner)
-        model = await repo._session.get(DeploymentRecordModel, "i-abc123")
+        model = await _get_model(repo)
         assert model is not None
         assert len(model.destroy_owner) <= 128
         assert model.destroy_owner == long_owner[:128]
@@ -364,25 +375,25 @@ class TestReleaseDestroyEdgeCases:
         await repo.upsert(_make_record())
         await repo.claim_for_destroy("i-abc123", owner="worker-1")
         await repo.release_destroy("i-abc123", owner="worker-1")
-        model = await repo._session.get(DeploymentRecordModel, "i-abc123")
+        model = await _get_model(repo)
         assert model is not None
         assert model.destroy_owner is None
         assert model.state == "destroy_failed"
 
     async def test_release_destroy_increments_revision(self, repo: DeploymentRegistryRepository):
         await repo.upsert(_make_record())
-        model1 = await repo._session.get(DeploymentRecordModel, "i-abc123")
+        model1 = await _get_model(repo)
         assert model1 is not None
         rev1 = model1.revision
 
         await repo.claim_for_destroy("i-abc123", owner="worker-1")
-        model2 = await repo._session.get(DeploymentRecordModel, "i-abc123")
+        model2 = await _get_model(repo)
         assert model2 is not None
         rev2 = model2.revision
         assert rev2 > rev1
 
         await repo.release_destroy("i-abc123", owner="worker-1")
-        model3 = await repo._session.get(DeploymentRecordModel, "i-abc123")
+        model3 = await _get_model(repo)
         assert model3 is not None
         assert model3.revision > rev2
 

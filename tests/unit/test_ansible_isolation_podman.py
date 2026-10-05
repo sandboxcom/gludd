@@ -11,6 +11,8 @@ from general_ludd.ansible.isolation import (
     detect_container_runtime,
 )
 
+PINNED_EE_IMAGE = "registry.example/gludd-ee:test@sha256:" + "a" * 64
+
 
 class TestPodmanSocketPaths:
     def test_windows_without_getuid_uses_system_socket_only(self, monkeypatch):
@@ -79,14 +81,18 @@ class TestPodmanToolPathResolution:
         assert "/run/podman/podman.sock" in paths
 
     def test_podman_block_local_adds_sockets_to_hide(self):
-        cfg = ProcessIsolationConfig(enabled=True, block_local_tools=["podman"])
+        cfg = ProcessIsolationConfig(
+            enabled=True, container_image=PINNED_EE_IMAGE, block_local_tools=["podman"]
+        )
         kwargs = cfg.to_runner_kwargs()
         hide = kwargs["process_isolation_hide_paths"]
         uid = os.getuid()
         assert f"/run/user/{uid}/podman/podman.sock" in hide
 
     def test_podman_block_local_in_core_runner_kwargs(self):
-        cfg = ProcessIsolationConfig(enabled=True, block_local_tools=["podman"])
+        cfg = ProcessIsolationConfig(
+            enabled=True, container_image=PINNED_EE_IMAGE, block_local_tools=["podman"]
+        )
         kwargs = cfg.to_core_runner_kwargs()
         hide = kwargs["hide_paths"]
         uid = os.getuid()
@@ -117,6 +123,7 @@ class TestAutoDetectRuntime:
         mock_detect.return_value = "/usr/bin/podman"
         cfg = ProcessIsolationConfig(
             enabled=True,
+            container_image=PINNED_EE_IMAGE,
             isolation_path="/tmp/iso",
             hide_paths=["/etc"],
             show_paths=["/home"],
@@ -151,7 +158,7 @@ class TestPodmanDefaultExecutable:
         assert cfg.executable == "podman"
 
     def test_to_runner_kwargs_default_executable(self):
-        cfg = ProcessIsolationConfig(enabled=True)
+        cfg = ProcessIsolationConfig(enabled=True, container_image=PINNED_EE_IMAGE)
         kwargs = cfg.to_runner_kwargs()
         assert kwargs["process_isolation_executable"] == "podman"
 
@@ -161,7 +168,9 @@ class TestPodmanDefaultExecutable:
 
     def test_podman_and_docker_tools_coexist(self):
         cfg = ProcessIsolationConfig(
-            enabled=True, block_local_tools=["podman", "docker"]
+            enabled=True,
+            container_image=PINNED_EE_IMAGE,
+            block_local_tools=["podman", "docker"],
         )
         kwargs = cfg.to_runner_kwargs()
         hide = kwargs["process_isolation_hide_paths"]

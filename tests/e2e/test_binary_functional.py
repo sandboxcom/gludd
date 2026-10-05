@@ -35,6 +35,12 @@ from pathlib import Path
 import httpx
 import pytest
 
+from tests.e2e._daemon_harness import (
+    daemon_subprocess_env,
+    start_daemon_process,
+    stop_daemon_process,
+)
+
 # ---------------------------------------------------------------------------
 # Availability probe — skip the entire module if the CLI cannot run at all.
 # ---------------------------------------------------------------------------
@@ -160,53 +166,26 @@ def isolated_daemon(tmp_path: Path):
     Fails the test if gunicorn is unavailable OR the daemon fails to become
     healthy within the readiness window.
     """
-    assert _GUNICORN_AVAILABLE, (
-        "gunicorn is a required release dependency for `gludd daemon`"
-    )
+    assert _GUNICORN_AVAILABLE, "gunicorn is a required release dependency for `gludd daemon`"
 
     config_dir = _write_isolated_config(tmp_path)
     port = find_free_port()
     base_url = f"http://127.0.0.1:{port}"
 
-    proc = subprocess.Popen(
-        [
-            sys.executable, "-m", "general_ludd.cli", "daemon",
-            "--host", "127.0.0.1",
-            "--port", str(port),
-            "--config-dir", str(config_dir),
-            "--tick-interval", "0.5",
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        cwd=str(tmp_path),
-        env=os.environ.copy(),
-        start_new_session=True,
+    proc = start_daemon_process(
+        config_dir=config_dir,
+        cwd=tmp_path,
+        port=port,
     )
 
     try:
         if not wait_for_url(f"{base_url}/healthz", timeout=40.0):
             # Daemon did not come up — surface its logs for diagnostics.
-            try:
-                proc.terminate()
-                out, err = proc.communicate(timeout=5)
-            except Exception:
-                out, err = "<no output>", "<no stderr>"
-            pytest.fail(
-                f"daemon did not become healthy on {base_url} within 40s\n"
-                f"stdout={out!r}\nstderr={err!r}"
-            )
+            out, err = stop_daemon_process(proc, terminate_timeout=5)
+            pytest.fail(f"daemon did not become healthy on {base_url} within 40s\nstdout={out!r}\nstderr={err!r}")
         yield base_url, proc
     finally:
-        # Clean shutdown: SIGTERM the process group, then SIGKILL if needed.
-        if proc.poll() is None:
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-                proc.wait(timeout=10)
-            except (ProcessLookupError, subprocess.TimeoutExpired):
-                with contextlib.suppress(Exception):
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                proc.wait(timeout=5)
+        stop_daemon_process(proc)
 
 
 # ---------------------------------------------------------------------------
@@ -226,9 +205,13 @@ class TestVersionCommand:
 
     def test_version_flag_outputs_release_version(self):
         """The standard top-level flag reports the packaged release version."""
+        from general_ludd import __version__ as package_version
+
         result = run_gludd(["--version"], timeout=20)
         assert result.returncode == 0, f"stderr: {result.stderr!r}"
-        assert "0.1.0-beta.3" in result.stdout
+        # Pin against the package's own version so release bumps never
+        # silently diverge the CLI from the installed metadata.
+        assert package_version in result.stdout
         assert "gludd" in result.stdout.lower()
         assert "Traceback (most recent call last)" not in result.stderr
 
@@ -242,11 +225,36 @@ class TestVersionCommand:
 # dynamically parsed) so a rename is surfaced as a test failure rather than
 # silently disappearing from the parametrization.
 EXPECTED_SUBCOMMANDS = [
-    "daemon", "version", "health", "add", "status", "list", "help",
-    "models", "project", "mcp", "skills", "compute", "scores",
-    "leaderboard", "filestore", "worktree", "config", "ansible",
-    "integrity", "slurm", "login", "test", "tui", "chat", "metrics",
-    "reload", "templates", "playbooks", "pause", "resume",
+    "daemon",
+    "version",
+    "health",
+    "add",
+    "status",
+    "list",
+    "help",
+    "models",
+    "project",
+    "mcp",
+    "skills",
+    "compute",
+    "scores",
+    "leaderboard",
+    "filestore",
+    "worktree",
+    "config",
+    "ansible",
+    "integrity",
+    "slurm",
+    "login",
+    "test",
+    "tui",
+    "chat",
+    "metrics",
+    "reload",
+    "templates",
+    "playbooks",
+    "pause",
+    "resume",
 ]
 
 
@@ -280,9 +288,7 @@ class TestHelpCommand:
     def test_subcommand_help(self, subcommand: str):
         """`gludd <subcommand> --help` exits 0 and prints a usage line."""
         result = run_gludd([subcommand, "--help"], timeout=20)
-        assert result.returncode == 0, (
-            f"`gludd {subcommand} --help` exited {result.returncode}: {result.stderr!r}"
-        )
+        assert result.returncode == 0, f"`gludd {subcommand} --help` exited {result.returncode}: {result.stderr!r}"
         assert "usage:" in result.stdout.lower()
 
     def test_nested_smoke_help(self):
@@ -318,9 +324,7 @@ class TestProjectCommand:
         """`gludd project paths --json` emits a parseable JSON list (≥1 entry)."""
         import json
 
-        result = run_gludd(
-            ["project", "paths", str(tmp_path), "--json"], timeout=30
-        )
+        result = run_gludd(["project", "paths", str(tmp_path), "--json"], timeout=30)
         assert result.returncode == 0
         data = json.loads(result.stdout)
         assert isinstance(data, list)
@@ -334,9 +338,7 @@ class TestProjectCommand:
 
     def test_project_init_missing_namespace_clean_error(self, tmp_path: Path):
         """`gludd project init` without --namespace exits non-zero with a clean message."""
-        result = run_gludd(
-            ["project", "init", str(tmp_path)], timeout=30
-        )
+        result = run_gludd(["project", "init", str(tmp_path)], timeout=30)
         assert result.returncode != 0
         assert "namespace" in result.stderr.lower()
         # No Python traceback should leak to the user for an arg-validation error.
@@ -378,9 +380,7 @@ class TestDaemonCommand:
     def test_daemon_health_cli_command(self, isolated_daemon):
         """`gludd health --daemon-url <url>` exits 0 against the live daemon."""
         base_url, _proc = isolated_daemon
-        result = run_gludd(
-            ["health", "--daemon-url", base_url], timeout=20
-        )
+        result = run_gludd(["health", "--daemon-url", base_url], timeout=20)
         assert result.returncode == 0, f"stderr: {result.stderr!r}"
         assert "healthy" in result.stdout
 
@@ -450,45 +450,45 @@ class TestErrorHandling:
 
     def test_port_conflict_graceful(self, tmp_path: Path):
         """Starting a second daemon on an occupied port fails cleanly (no traceback)."""
-        assert _GUNICORN_AVAILABLE, (
-            "gunicorn is a required release dependency for `gludd daemon`"
-        )
+        assert _GUNICORN_AVAILABLE, "gunicorn is a required release dependency for `gludd daemon`"
 
         config_dir = _write_isolated_config(tmp_path)
         port = find_free_port()
 
         # First daemon — should become healthy.
-        first = subprocess.Popen(
-            [
-                sys.executable, "-m", "general_ludd.cli", "daemon",
-                "--host", "127.0.0.1", "--port", str(port),
-                "--config-dir", str(config_dir),
-            ],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            cwd=str(tmp_path), env=os.environ.copy(), start_new_session=True,
+        first = start_daemon_process(
+            config_dir=config_dir,
+            cwd=tmp_path,
+            port=port,
         )
         try:
             if not wait_for_url(f"http://127.0.0.1:{port}/healthz", timeout=40.0):
-                first.terminate()
-                out, err = first.communicate(timeout=10)
+                out, err = stop_daemon_process(first)
                 pytest.fail(
-                    "first daemon did not become healthy; cannot test conflict\n"
-                    f"stdout={out!r}\nstderr={err!r}"
+                    f"first daemon did not become healthy; cannot test conflict\nstdout={out!r}\nstderr={err!r}"
                 )
 
             # Second daemon on the SAME port — must fail cleanly and quickly.
             second = subprocess.run(
                 [
-                    sys.executable, "-m", "general_ludd.cli", "daemon",
-                    "--host", "127.0.0.1", "--port", str(port),
-                    "--config-dir", str(config_dir),
+                    sys.executable,
+                    "-m",
+                    "general_ludd.cli",
+                    "daemon",
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    str(port),
+                    "--config-dir",
+                    str(config_dir),
                 ],
-                capture_output=True, text=True, timeout=60,
-                cwd=str(tmp_path), env=os.environ.copy(),
+                capture_output=True,
+                text=True,
+                timeout=60,
+                cwd=str(tmp_path),
+                env=daemon_subprocess_env(tmp_path, port=port),
             )
-            assert second.returncode != 0, (
-                "second daemon on an occupied port unexpectedly exited 0"
-            )
+            assert second.returncode != 0, "second daemon on an occupied port unexpectedly exited 0"
             # The failure must be a clean bind error, never a Python traceback
             # dumped to the operator.
             combined = (second.stdout or "") + (second.stderr or "")
@@ -496,10 +496,4 @@ class TestErrorHandling:
                 f"unexpected traceback on port conflict:\n{combined}"
             )
         finally:
-            if first.poll() is None:
-                try:
-                    os.killpg(os.getpgid(first.pid), signal.SIGTERM)
-                    first.wait(timeout=10)
-                except Exception:
-                    with contextlib.suppress(Exception):
-                        os.killpg(os.getpgid(first.pid), signal.SIGKILL)
+            stop_daemon_process(first)

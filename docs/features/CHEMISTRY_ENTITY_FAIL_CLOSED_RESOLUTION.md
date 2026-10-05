@@ -80,4 +80,3 @@ the former exception for empty failure results and the former coarse statuses,
 so operators should drain or pin requests that produced an empty unknown entity
 before routing them to an old worker. Validation warnings and status counts are
 the operational signals; the repair introduces no hidden asynchronous work.
-

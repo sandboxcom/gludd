@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 from collections.abc import AsyncGenerator, Callable, Generator
 from datetime import UTC, datetime, timedelta
 from typing import Any, ClassVar, cast
@@ -39,6 +40,7 @@ from general_ludd.db.models import (
     VariableNamespaceModel,
     VariableValueModel,
 )
+from general_ludd.schemas import self_improve_artifact as artifact_contract
 from general_ludd.schemas.todo import TodoStatus
 
 # Hard upper bound applied to unbounded ``list_*`` reads (P12). Callers that
@@ -46,6 +48,26 @@ from general_ludd.schemas.todo import TodoStatus
 # itself capped at this value so a single query can never load an unbounded
 # result set into memory. ``offset`` enables forward pagination.
 _DEFAULT_LIST_LIMIT = 1000
+
+
+def _todo_dependency_ids(raw: object) -> tuple[str, ...] | None:
+    """Decode persisted todo dependencies; ``None`` means malformed."""
+    if raw is None or raw == "":
+        return ()
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(raw, list):
+        return None
+    dependencies: list[str] = []
+    for value in raw:
+        if not isinstance(value, str) or not value:
+            return None
+        if value not in dependencies:
+            dependencies.append(value)
+    return tuple(dependencies)
 
 
 # C.3 / S27: scoped_to context manager for explicit tenant-scoped operations.
@@ -79,14 +101,27 @@ VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
     # cancelling it. CANCELLED retires the schedule permanently.
     TodoStatus.SCHEDULED: {TodoStatus.QUEUED, TodoStatus.CANCELLED, TodoStatus.MANUAL_HOLD},
     # APPROVAL_REQUIRED is the human-gate holding state for self-improve todos.
-    # A human releases a held todo to QUEUED (approve) or retires it to
-    # CANCELLED (reject) via SelfImproveApprovalManager; MANUAL_HOLD lets an
-    # operator park it further. Without this entry TodoRepository.transition()
-    # would reject the release and self-improve todos would strand in
-    # APPROVAL_REQUIRED forever.
-    TodoStatus.APPROVAL_REQUIRED: {TodoStatus.QUEUED, TodoStatus.CANCELLED, TodoStatus.MANUAL_HOLD},
-    TodoStatus.QUEUED: {TodoStatus.ACTIVE, TodoStatus.FAILED, TodoStatus.BLOCKED, TodoStatus.BLOCKED_ON_HUMAN},
+    # A human releases a held managed plan to QUEUED or a legacy manual-apply
+    # artifact to non-runnable APPROVED. Rejecting retires either to CANCELLED;
+    # MANUAL_HOLD lets an operator park it further. Without this entry,
+    # TodoRepository.transition() would strand self-improve approvals forever.
+    TodoStatus.APPROVAL_REQUIRED: {
+        TodoStatus.APPROVED,
+        TodoStatus.QUEUED,
+        TodoStatus.CANCELLED,
+        TodoStatus.MANUAL_HOLD,
+    },
+    TodoStatus.APPROVED: {TodoStatus.ACTIVE, TodoStatus.CANCELLED},
+    TodoStatus.QUEUED: {
+        TodoStatus.ACTIVE,
+        TodoStatus.FAILED,
+        TodoStatus.BLOCKED,
+        TodoStatus.BLOCKED_ON_HUMAN,
+        TodoStatus.CANCELLED,
+        TodoStatus.MANUAL_HOLD,
+    },
     TodoStatus.ACTIVE: {
+        TodoStatus.AWAITING_RESULT,
         TodoStatus.COMPLETE,
         TodoStatus.FAILED,
         TodoStatus.BLOCKED,
@@ -95,6 +130,12 @@ VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
         TodoStatus.MANUAL_HOLD,
         TodoStatus.NEEDS_MORE_WORK,
         TodoStatus.QUEUED,
+    },
+    TodoStatus.AWAITING_RESULT: {
+        TodoStatus.REVIEWING_RETURN,
+        TodoStatus.BLOCKED,
+        TodoStatus.CANCELLED,
+        TodoStatus.BUDGET_EXCEEDED,
     },
     TodoStatus.REVIEWING_RETURN: {
         TodoStatus.COMPLETE,
@@ -151,6 +192,7 @@ ALLOWED_TODO_CREATE_FIELDS: frozenset[str] = frozenset(
         "artifacts",
         "evidence_refs",
         "plan_artifact",
+        "approved_artifact_digest",
         "confidence",
         "manual_hold_reason",
         "approval_policy",
@@ -361,6 +403,15 @@ class TodoRepository:
         todo = await self.get_by_id(todo_id, project_id=_pid)
         if todo is None:
             raise InvalidTransitionError(f"Todo {todo_id} not found")
+        artifact_fields = {"plan_artifact", "approved_artifact_digest"}
+        if (
+            todo.work_type == "self_improve"
+            and todo.status != TodoStatus.APPROVAL_REQUIRED.value
+            and artifact_fields & updates.keys()
+        ):
+            raise ValueError(
+                "self-improve approval artifact fields are immutable after human approval"
+            )
         if todo.version != expected_version:
             raise ConcurrencyError(f"Version mismatch: expected {expected_version}, actual {todo.version}")
         now = datetime.now(UTC)
@@ -487,7 +538,121 @@ class TodoRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def claim_runnable(self, limit: int = 10, project_id: str | None = None) -> list[TodoModel]:
+    async def recover_queued_legacy_self_improve(
+        self,
+        *,
+        limit: int = 100,
+        project_id: str | None = None,
+    ) -> list[TodoModel]:
+        """Move exact legacy approvals out of the scheduler queue in a bounded batch.
+
+        Releases created before the durable ``APPROVED`` status existed may
+        still be ``QUEUED``. Artifacts matching one of the two exact legacy
+        schemas become ``APPROVED``; malformed or unknown artifacts are moved
+        to ``MANUAL_HOLD``. Both outcomes remove the row from scheduler claim.
+        """
+        from sqlalchemy import update
+
+        bounded_limit = min(max(limit, 0), _DEFAULT_LIST_LIMIT)
+        if bounded_limit == 0:
+            return []
+        _pid = self._resolve_pid(project_id)
+        stmt = (
+            select(TodoModel)
+            .where(
+                TodoModel.status == TodoStatus.QUEUED.value,
+                TodoModel.work_type == "self_improve",
+                TodoModel.approval_policy
+                != artifact_contract.MANAGED_SELF_IMPROVE_APPROVAL_POLICY,
+            )
+            .order_by(TodoModel.id)
+            .limit(bounded_limit)
+        )
+        if _pid is not None:
+            stmt = stmt.where(TodoModel.project_id == _pid)
+        else:
+            stmt = stmt.where(TodoModel.project_id.is_(None))
+        result = await self._session.execute(stmt)
+        candidates = list(result.scalars().all())
+        legacy_kinds = {
+            artifact_contract.LegacySelfImproveArtifactKind.CONFIG,
+            artifact_contract.LegacySelfImproveArtifactKind.NON_CONFIG,
+        }
+        now = datetime.now(UTC)
+        recovered: list[TodoModel] = []
+        quarantine_reason = (
+            "Quarantined queued self-improvement artifact that does not match an "
+            "approved executable schema"
+        )
+        for todo in candidates:
+            artifact_kind = artifact_contract.classify_legacy_self_improve_artifact(
+                todo.plan_artifact
+            )
+            next_status = TodoStatus.MANUAL_HOLD
+            digest: str | None = None
+            reason = quarantine_reason
+            if artifact_kind in legacy_kinds:
+                try:
+                    digest = artifact_contract.self_improve_artifact_digest(
+                        todo.plan_artifact
+                    )
+                except ValueError:
+                    pass
+                else:
+                    next_status = TodoStatus.APPROVED
+                    reason = "Recovered legacy approval from scheduler queue"
+            old_version = todo.version
+            guard = (
+                update(TodoModel)
+                .where(
+                    TodoModel.id == todo.id,
+                    TodoModel.status == TodoStatus.QUEUED.value,
+                    TodoModel.version == old_version,
+                )
+                .values(
+                    status=next_status.value,
+                    approved_artifact_digest=digest,
+                    manual_hold_reason=(
+                        quarantine_reason
+                        if next_status is TodoStatus.MANUAL_HOLD
+                        else None
+                    ),
+                    version=old_version + 1,
+                    updated_at=now,
+                )
+            )
+            update_result = await self._session.execute(guard)
+            if (cast("CursorResult[Any]", update_result).rowcount or 0) != 1:
+                await self._session.refresh(todo)
+                continue
+            todo.status = next_status.value
+            todo.approved_artifact_digest = digest
+            todo.manual_hold_reason = (
+                quarantine_reason if next_status is TodoStatus.MANUAL_HOLD else None
+            )
+            todo.version = old_version + 1
+            todo.updated_at = now
+            self._session.add(
+                TodoEventModel(
+                    todo_id=todo.todo_id,
+                    event_type="status_change",
+                    old_status=TodoStatus.QUEUED.value,
+                    new_status=next_status.value,
+                    actor="recover_legacy_self_improve",
+                    reason=reason,
+                )
+            )
+            recovered.append(todo)
+        await self._session.flush()
+        return recovered
+
+    async def claim_runnable(
+        self,
+        limit: int = 10,
+        project_id: str | None = None,
+        *,
+        max_active: int | None = None,
+    ) -> list[TodoModel]:
         """Claim QUEUED todos for execution with a guarded conditional UPDATE.
 
         SQLite has no row-level locking (``with_for_update`` is silently dropped),
@@ -498,10 +663,51 @@ class TodoRepository:
         the row, so every todo is returned to exactly one caller -> no double
         claim / double dispatch.
         """
-        from sqlalchemy import update
+        from sqlalchemy import func, update
 
         _pid = self._resolve_pid(project_id)
-        stmt = select(TodoModel).where(TodoModel.status == TodoStatus.QUEUED.value)
+        claim_limit = max(0, min(limit, _DEFAULT_LIST_LIMIT))
+        if max_active is not None:
+            if (
+                not isinstance(max_active, int)
+                or isinstance(max_active, bool)
+                or not 0 <= max_active <= 10_000
+            ):
+                raise ValueError("max_active must be an integer between 0 and 10000")
+            # A project row is the stable serialization point shared by every
+            # worker claiming for that project. PostgreSQL honors this row lock;
+            # SQLite's single-writer lock plus the guarded updates below retains
+            # the same fail-closed loser behavior.
+            if _pid is not None:
+                project_lock = (
+                    select(ProjectModel.project_id)
+                    .where(ProjectModel.project_id == _pid)
+                    .with_for_update()
+                )
+                if (await self._session.execute(project_lock)).scalar_one_or_none() is None:
+                    return []
+            active_stmt = select(func.count()).select_from(TodoModel).where(
+                TodoModel.status == TodoStatus.ACTIVE.value,
+            )
+            if _pid is None:
+                active_stmt = active_stmt.where(TodoModel.project_id.is_(None))
+            else:
+                active_stmt = active_stmt.where(TodoModel.project_id == _pid)
+            active_count = (await self._session.execute(active_stmt)).scalar_one()
+            if (
+                not isinstance(active_count, int)
+                or isinstance(active_count, bool)
+                or active_count < 0
+            ):
+                return []
+            claim_limit = min(claim_limit, max(0, max_active - active_count))
+        if claim_limit == 0:
+            return []
+        stmt = select(TodoModel).where(
+            TodoModel.status == TodoStatus.QUEUED.value,
+            (TodoModel.work_type != "self_improve")
+            | (TodoModel.approval_policy == "managed_self_improve_plan"),
+        )
         if _pid is not None:
             stmt = stmt.where(TodoModel.project_id == _pid)
         else:
@@ -512,16 +718,46 @@ class TodoRepository:
         # possible under load. id is a deterministic tiebreaker for same-instant
         # created_at (e.g. todos inserted within the same microsecond in tests).
         stmt = stmt.order_by(TodoModel.priority.desc(), TodoModel.created_at, TodoModel.id)
-        # P12: cap even an explicit caller limit so a huge value can't load an
-        # unbounded result set (claim semantics are per-batch, so a cap is safe).
-        stmt = stmt.limit(min(limit, _DEFAULT_LIST_LIMIT))
+        # Scan one bounded page so a high-priority dependent cannot hide an
+        # older ready candidate behind the requested WIP count. ``claim_limit``
+        # still caps writes; the page bound caps memory and database work.
+        stmt = stmt.limit(_DEFAULT_LIST_LIMIT)
         with contextlib.suppress(Exception):
             stmt = stmt.with_for_update(skip_locked=True)
         result = await self._session.execute(stmt)
         candidates = list(result.scalars().all())
+        dependencies_by_id = {
+            todo.todo_id: _todo_dependency_ids(todo.dependencies)
+            for todo in candidates
+        }
+        dependency_ids = {
+            dependency_id
+            for dependencies in dependencies_by_id.values()
+            if dependencies is not None
+            for dependency_id in dependencies
+        }
+        dependency_statuses: dict[str, str] = {}
+        if dependency_ids:
+            dependency_stmt = select(TodoModel.todo_id, TodoModel.status).where(
+                TodoModel.todo_id.in_(dependency_ids)
+            )
+            if _pid is not None:
+                dependency_stmt = dependency_stmt.where(TodoModel.project_id == _pid)
+            dependency_rows = await self._session.execute(dependency_stmt)
+            dependency_statuses = {
+                todo_id: status
+                for todo_id, status in dependency_rows.all()
+            }
         now = datetime.now(UTC)
         claimed: list[TodoModel] = []
         for todo in candidates:
+            dependencies = dependencies_by_id[todo.todo_id]
+            if dependencies is None or any(
+                dependency_statuses.get(dependency_id)
+                != TodoStatus.COMPLETE.value
+                for dependency_id in dependencies
+            ):
+                continue
             old_status = todo.status
             old_version = todo.version
             # Guarded conditional claim: transition only if the row is STILL
@@ -536,6 +772,21 @@ class TodoRepository:
                 )
                 .values(status=TodoStatus.ACTIVE.value, version=old_version + 1, updated_at=now)
             )
+            if max_active is not None:
+                live_active_count = select(func.count()).select_from(TodoModel).where(
+                    TodoModel.status == TodoStatus.ACTIVE.value,
+                )
+                if _pid is None:
+                    live_active_count = live_active_count.where(
+                        TodoModel.project_id.is_(None),
+                    )
+                else:
+                    live_active_count = live_active_count.where(
+                        TodoModel.project_id == _pid,
+                    )
+                guard = guard.where(
+                    live_active_count.scalar_subquery() < max_active,
+                )
             try:
                 res = await self._session.execute(guard)
             except OperationalError as exc:
@@ -568,6 +819,8 @@ class TodoRepository:
             )
             self._session.add(evt)
             claimed.append(todo)
+            if len(claimed) >= claim_limit:
+                break
         await self._session.flush()
         return claimed
 
@@ -1073,6 +1326,7 @@ class BenchmarkRepository:
 
     async def record_result(self, data: dict[str, Any]) -> BenchmarkResultModel:
         """Persist and return a benchmark result."""
+
         async def _do(session: AsyncSession) -> BenchmarkResultModel:
             row = BenchmarkResultModel(**data)
             session.add(row)
@@ -1183,6 +1437,7 @@ class BenchmarkRepository:
 
     async def get_model_scores(self, model_profile_id: str) -> list[BenchmarkResultModel]:
         """List bounded benchmark results for a model, newest first."""
+
         async def _do(session: AsyncSession) -> list[BenchmarkResultModel]:
             stmt = (
                 select(BenchmarkResultModel)
@@ -1198,6 +1453,7 @@ class BenchmarkRepository:
 
     async def list_recent(self, limit: int = 50) -> list[BenchmarkResultModel]:
         """List a bounded set of recent benchmark results."""
+
         async def _do(session: AsyncSession) -> list[BenchmarkResultModel]:
             stmt = (
                 select(BenchmarkResultModel)
@@ -1599,7 +1855,7 @@ class AgentMessageRepository:
         if keyword_style:
             # Preserve the legacy row-returning mapping API while supporting
             # the newer keyword API's boolean acknowledgement contract.
-            row._keyword_style = True  # type: ignore[attr-defined]
+            row.__dict__["_keyword_style"] = True
         self._session.add(row)
         await self._session.flush()
         return row
@@ -2822,6 +3078,160 @@ class ModelPerformanceRepository:
             for r in result.all()
         ]
 
+    # ── router-facing queries ───────────────────────────────────────────
+
+    async def get_ranking(
+        self,
+        task_type: str,
+        session: AsyncSession | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return per-(service, model) outcome stats for *task_type*.
+
+        Grouped from the immutable ``model_call_logs`` table so the router
+        always sees the latest recorded outcomes (no aggregate refresh
+        required).  Each row carries ``success_rate``, ``avg_latency_ms``,
+        ``avg_cost_usd`` and ``sample_count``.
+        """
+        from sqlalchemy import Integer as _Integer
+        from sqlalchemy import func as _func
+
+        eff_session = session or self._resolve_session()
+        stmt = (
+            select(
+                ModelCallLogModel.service,
+                ModelCallLogModel.model_name,
+                ModelCallLogModel.model_profile_id,
+                _func.count().label("sample_count"),
+                _func.sum(_func.cast(ModelCallLogModel.success, _Integer)).label("successes"),
+                _func.coalesce(_func.avg(ModelCallLogModel.duration_ms), 0.0).label("avg_latency_ms"),
+                _func.coalesce(_func.avg(ModelCallLogModel.cost_usd), 0.0).label("avg_cost_usd"),
+            )
+            .where(ModelCallLogModel.task_type == task_type)
+            .group_by(
+                ModelCallLogModel.service,
+                ModelCallLogModel.model_name,
+                ModelCallLogModel.model_profile_id,
+            )
+        )
+        rows = (await eff_session.execute(stmt)).all()
+        ranking: list[dict[str, Any]] = []
+        for row in rows:
+            sample_count = int(row.sample_count or 0)
+            successes = int(row.successes or 0)
+            ranking.append(
+                {
+                    "service": str(row.service or ""),
+                    "model_name": str(row.model_name or ""),
+                    "model_profile_id": str(row.model_profile_id or ""),
+                    "sample_count": sample_count,
+                    "success_rate": round(successes / sample_count, 4) if sample_count else 0.0,
+                    "avg_latency_ms": float(row.avg_latency_ms or 0.0),
+                    "avg_cost_usd": float(row.avg_cost_usd or 0.0),
+                }
+            )
+        return ranking
+
+    async def get_best_model(
+        self,
+        task_type: str,
+        min_calls: int = 3,
+        prefer_cost: bool = False,
+        session: AsyncSession | None = None,
+    ) -> dict[str, Any] | None:
+        """Return the best (service, model_name) for *task_type*.
+
+        Considers only rows with ``sample_count >= min_calls``.  By default
+        the highest success rate wins (cost as tiebreak); with
+        ``prefer_cost`` the lowest average cost wins (success as tiebreak).
+        Returns ``None`` when no model meets the minimum sample count.
+        """
+        ranking = await self.get_ranking(task_type, session=session)
+        eligible = [r for r in ranking if int(r.get("sample_count", 0)) >= min_calls]
+        if not eligible:
+            return None
+        if prefer_cost:
+            eligible.sort(
+                key=lambda r: (
+                    float(r.get("avg_cost_usd", 0.0)),
+                    -float(r.get("success_rate", 0.0)),
+                )
+            )
+        else:
+            eligible.sort(
+                key=lambda r: (
+                    -float(r.get("success_rate", 0.0)),
+                    float(r.get("avg_cost_usd", 0.0)),
+                )
+            )
+        best = eligible[0]
+        if prefer_cost:
+            composite = round(1.0 / (1.0 + float(best.get("avg_cost_usd", 0.0))), 4)
+        else:
+            composite = float(best.get("success_rate", 0.0))
+        return {
+            "service": str(best.get("service", "openai")),
+            "model_name": str(best.get("model_name", "")),
+            "model_profile_id": str(best.get("model_profile_id", "")),
+            "composite_score": composite,
+            "sample_count": int(best.get("sample_count", 0)),
+        }
+
+    async def get_summary(
+        self,
+        service: str | None = None,
+        task_type: str | None = None,
+        session: AsyncSession | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return aggregated per-model outcome summaries for dashboards.
+
+        Groups call logs by (service, task_type, model).  Optional filters
+        narrow to a single *service* and/or *task_type*.
+        """
+        from sqlalchemy import Integer as _Integer
+        from sqlalchemy import func as _func
+
+        eff_session = session or self._resolve_session()
+        stmt = select(
+            ModelCallLogModel.service,
+            ModelCallLogModel.task_type,
+            ModelCallLogModel.model_name,
+            ModelCallLogModel.model_profile_id,
+            _func.count().label("total_calls"),
+            _func.sum(_func.cast(ModelCallLogModel.success, _Integer)).label("successful_calls"),
+            _func.coalesce(_func.sum(ModelCallLogModel.cost_usd), 0.0).label("total_cost_usd"),
+            _func.coalesce(_func.avg(ModelCallLogModel.duration_ms), 0.0).label("avg_duration_ms"),
+        )
+        if service is not None:
+            stmt = stmt.where(ModelCallLogModel.service == service)
+        if task_type is not None:
+            stmt = stmt.where(ModelCallLogModel.task_type == task_type)
+        stmt = stmt.group_by(
+            ModelCallLogModel.service,
+            ModelCallLogModel.task_type,
+            ModelCallLogModel.model_name,
+            ModelCallLogModel.model_profile_id,
+        )
+        rows = (await eff_session.execute(stmt)).all()
+        summary: list[dict[str, Any]] = []
+        for row in rows:
+            total = int(row.total_calls or 0)
+            successful = int(row.successful_calls or 0)
+            summary.append(
+                {
+                    "service": str(row.service or ""),
+                    "task_type": str(row.task_type or ""),
+                    "model_name": str(row.model_name or ""),
+                    "model_profile_id": str(row.model_profile_id or ""),
+                    "total_calls": total,
+                    "successful_calls": successful,
+                    "failed_calls": total - successful,
+                    "success_rate": round(successful / total, 4) if total else 0.0,
+                    "total_cost_usd": float(row.total_cost_usd or 0.0),
+                    "avg_duration_ms": float(row.avg_duration_ms or 0.0),
+                }
+            )
+        return summary
+
     # ── helpers ─────────────────────────────────────────────────────────
 
     def _resolve_session(self) -> AsyncSession:
@@ -2990,12 +3400,16 @@ class MemoryRepository:
         self,
         agent_id: str,
         key: str,
-        value: str,
+        value: str | None = None,
         namespace: str = "default",
         project_id: str | None = None,
         ttl_seconds: int | None = None,
     ) -> MemoryRecordModel:
-        """Upsert and return a scoped agent-memory value with optional TTL."""
+        """Upsert and return a scoped agent-memory value with optional TTL.
+
+        A ``value`` of ``None`` preserves the existing value on update (used by
+        the API when the client omits the field); on create it stores ``""``.
+        """
         async with self._resolve_session() as session:
             now = datetime.now(UTC)
             stmt = select(MemoryRecordModel).where(
@@ -3012,7 +3426,7 @@ class MemoryRepository:
                 existing = MemoryRecordModel(
                     agent_id=agent_id,
                     key=key,
-                    value=value,
+                    value=value or "",
                     namespace=namespace,
                     project_id=project_id,
                     ttl_seconds=ttl_seconds,
@@ -3021,7 +3435,8 @@ class MemoryRepository:
                 )
                 session.add(existing)
             else:
-                existing.value = value
+                if value is not None:
+                    existing.value = value
                 existing.ttl_seconds = ttl_seconds
                 existing.updated_at = now
             await session.flush()

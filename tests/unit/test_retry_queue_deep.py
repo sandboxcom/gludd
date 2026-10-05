@@ -388,6 +388,37 @@ class TestPeek:
         # peek should not see the item that is still on backoff
         assert rq.peek(timeout=0.0) is None
 
+    def test_repeated_peek_preserves_item_and_next_dequeue(self) -> None:
+        rq = RetryQueue(max_retries=3, base_delay=0.01)
+        rq.enqueue(_make_item("stable"), priority=4)
+
+        first = rq.peek(timeout=0.0)
+        second = rq.peek(timeout=0.0)
+        dequeued = rq.dequeue(timeout=0.0)
+
+        assert first is second is dequeued
+        assert rq.size == 0
+        assert rq.active_count == 1
+
+    def test_peek_skips_delayed_high_priority_for_ready_lower_priority(self) -> None:
+        now = [10.0]
+        rq = RetryQueue(
+            max_retries=3,
+            base_delay=0.01,
+            clock=lambda: now[0],
+        )
+        rq.enqueue(_make_item("delayed-high"), priority=10)
+        delayed = rq.dequeue(timeout=0.0)
+        assert delayed is not None
+        rq.requeue(delayed.item_id, delay=5.0)
+        rq.enqueue(_make_item("ready-low"), priority=1)
+
+        peeked = rq.peek(timeout=0.0)
+
+        assert peeked is not None
+        assert peeked.payload["payload"] == "ready-low"
+        assert rq.size == 2
+
 
 # ===========================================================================
 # Full lifecycle

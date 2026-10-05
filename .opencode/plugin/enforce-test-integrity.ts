@@ -20,7 +20,6 @@ const TEST_DISABLE_PATTERNS: readonly RegExp[] = Object.freeze([
 ]) as readonly RegExp[]
 const ALLOWLIST_PATHS = Object.freeze([
   "tests/unit/test_behavioral_specs.py",
-  "tests/unit/test_tdd_allowlist_parity.py",
   "tests/unit/test_type_safety_guardrails.py",
 ])
 function isTestFile(p: string): boolean {

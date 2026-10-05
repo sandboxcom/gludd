@@ -30,9 +30,12 @@ def sanitize_exc_message(exc: BaseException) -> str:
 
     Logs only the exception type so failures remain observable without copying
     attacker-controlled exception text, credentials, paths, or URLs into logs.
+    ``exc_info`` stays unset: attaching the traceback would embed the
+    secret-bearing exception message in the log record, defeating the
+    sanitizer (see tests/unit/test_h20_connector_exc_leak.py).
     """
     error_type = type(exc).__name__
-    logger.warning("connector exception sanitized type=%s", error_type, exc_info=True)
+    logger.warning("connector exception sanitized type=%s", error_type)
     return error_type
 
 

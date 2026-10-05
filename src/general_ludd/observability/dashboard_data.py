@@ -13,11 +13,15 @@ from typing import Any
 
 
 class DashboardDataProvider:
+    """Read operational metrics for the TUI dashboard."""
+
     def __init__(self, metrics_exporter: Any = None, session_factory: Any = None) -> None:
+        """Store optional metrics and persistence providers."""
         self._metrics = metrics_exporter
         self._session_factory = session_factory
 
     async def get_overview(self) -> dict[str, Any]:
+        """Return the current high-level operational summary."""
         return {
             "uptime": self._get_uptime(),
             "active_jobs": 0,
@@ -28,6 +32,7 @@ class DashboardDataProvider:
         }
 
     async def get_agent_status(self) -> list[dict[str, Any]]:
+        """Return observable status for the primary agent."""
         return [
             {
                 "agent_id": "main",
@@ -38,6 +43,7 @@ class DashboardDataProvider:
         ]
 
     async def get_pipeline_health(self) -> dict[str, Any]:
+        """Return health labels for the core pipeline components."""
         return {
             "event_loop": "running",
             "db": "connected",
@@ -58,5 +64,8 @@ class DashboardDataProvider:
     def _get_uptime(self) -> float:
         if self._metrics:
             import time
-            return float(time.monotonic() - self._metrics._started_at)
+            started_at = getattr(self._metrics, "_started_at", None)
+            if not isinstance(started_at, (int, float)):
+                return 0.0
+            return max(0.0, float(time.monotonic() - started_at))
         return 0.0

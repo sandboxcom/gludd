@@ -43,11 +43,12 @@ verifier:
 scenario:
   test_sequence:
     - dependency
-    - syntax
     - cleanup
     - destroy
+    - syntax
     - create
     - prepare
     - converge
     - verify
+    - cleanup
     - destroy

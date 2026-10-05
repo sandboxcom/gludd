@@ -111,7 +111,7 @@ subtypes, and the `Observability` facade (lower-level than `GluddObserve`).
 
 The full canonical vocabulary the normalization layer targets:
 
-```
+```text
 join = {
     # Distributed tracing
     "trace_id":  str,      # globally unique trace identifier
@@ -232,7 +232,7 @@ but does NOT add it to `labels`. It must be added to `labels` under the key
 
 The normalization layer lives at:
 
-```
+```text
 src/general_ludd/connectors/normalize.py      # already exists — extend in place
 src/general_ludd/connectors/__init__.py        # re-export normalize_join_keys, correlate
 src/general_ludd/observe/facade.py             # GluddObserve — no changes needed
@@ -243,7 +243,7 @@ and a one-line fix in `elasticsearch.py`.
 
 ### Module dependency graph
 
-```
+```text
 connectors/base.py          (NormalizedRecord, Source protocol)
       ↑
 connectors/normalize.py     (normalize_join_keys, correlate, auth_family)

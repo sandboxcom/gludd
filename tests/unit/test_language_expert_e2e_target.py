@@ -110,6 +110,6 @@ class TestLanguageExpertE2eTarget:
 
     def test_target_caps_adaptive_workers_without_disabling_oom_retry(self) -> None:
         recipe = _recipe("test-language-expert")
-        assert "GLUDD_XDIST=2" in recipe
+        assert "GLUDD_XDIST_WORKERS=2" in recipe
         assert "-n 2" not in recipe
         assert "--maxprocesses=2" not in recipe

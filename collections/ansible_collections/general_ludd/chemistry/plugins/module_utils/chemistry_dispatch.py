@@ -1,102 +1,123 @@
-"""Dispatcher bridge between ansible roles and ``general_ludd.chemistry.core``.
-
-Roles call this module via ``ansible.builtin.command``; it loads the service
-API from ``src/general_ludd/chemistry/core.py`` (falling back to a file-path
-import inside the worktree) and returns a JSON result on stdout. Keeping the
-dispatch logic here means task files stay declarative.
-"""
+"""Compatibility CLI for the collection's authenticated chemistry seam."""
 
 from __future__ import annotations
 
-import importlib.util
+import hashlib
 import json
 import os
 import sys
+from typing import Any
+
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import GluddClient
+
+_OPERATIONS = frozenset(
+    {
+        "route",
+        "identity",
+        "reaction",
+        "molar_mass",
+        "moles",
+        "dilution",
+        "yield",
+        "hazard",
+    }
+)
 
 
-def _load_core():
-    try:
-        from general_ludd.chemistry import core  # type: ignore
+def _payload(raw: str) -> dict[str, Any]:
+    decoded = json.loads(raw) if raw.strip() else {}
+    if not isinstance(decoded, dict):
+        raise ValueError("CHEMISTRY_INPUT must be a JSON object")
+    return decoded
 
-        return core
-    except ImportError:
-        here = os.path.dirname(os.path.abspath(__file__))
-        candidates = []
-        repo_root = os.environ.get("GLUDD_REPO_ROOT")
-        if repo_root:
-            candidates.append(os.path.join(repo_root, "src", "general_ludd", "chemistry", "core.py"))
-        candidates.append(
-            os.path.abspath(
-                os.path.join(here, "..", "..", "..", "..", "..", "..", "src", "general_ludd", "chemistry", "core.py")
+
+def _key(operation: str, request: dict[str, Any]) -> str:
+    encoded = json.dumps(
+        {"operation": operation, "request": request},
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode()
+    return f"chemistry:{hashlib.sha256(encoded).hexdigest()}"
+
+
+def main() -> int:
+    """Execute the legacy environment-based contract over HTTP."""
+    operation = os.environ.get("CHEMISTRY_ACTION", "route")
+    if operation not in _OPERATIONS:
+        print(
+            json.dumps(
+                {
+                    "status": "refused",
+                    "errors": [
+                        {
+                            "code": "chem.unknown_action",
+                            "message": f"unknown action {operation!r}",
+                        }
+                    ],
+                }
             )
         )
-        for path in candidates:
-            if os.path.isfile(path):
-                spec = importlib.util.spec_from_file_location("chemistry_core_dispatch", path)
-                assert spec is not None and spec.loader is not None
-                mod = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(mod)
-                return mod
-    raise RuntimeError("could not locate general_ludd.chemistry.core")
-
-
-def _parse_json_arg(value):
-    if value is None:
-        return None
-    if isinstance(value, (dict, list)):
-        return value
+        return 2
     try:
-        return json.loads(value)
-    except (TypeError, ValueError):
-        return value
+        request = _payload(os.environ.get("CHEMISTRY_INPUT", "{}"))
+    except (json.JSONDecodeError, ValueError) as exc:
+        print(
+            json.dumps(
+                {
+                    "status": "failed",
+                    "errors": [{"code": "chem.bad_json", "message": str(exc)}],
+                }
+            )
+        )
+        return 2
 
-
-def main():
-    core = _load_core()
-    action = os.environ.get("CHEMISTRY_ACTION", "route")
-    raw = os.environ.get("CHEMISTRY_INPUT", "{}")
-    try:
-        payload = json.loads(raw) if raw.strip() else {}
-    except json.JSONDecodeError as exc:
-        print(json.dumps({"status": "failed", "errors": [{"code": "chem.bad_json", "message": str(exc)}]}))
+    timeout = min(max(int(os.environ.get("GLUDD_TIMEOUT", "30")), 1), 30)
+    client = GluddClient(
+        base_url=os.environ.get("GLUDD_DAEMON_URL", "http://localhost:8000"),
+        psk=os.environ.get("GLUDD_PSK", ""),
+        timeout=timeout,
+    )
+    response = client.post(
+        "/api/chemistry/resolve",
+        {
+            "operation": operation,
+            "request": request,
+            "timeout_seconds": float(timeout),
+            "idempotency_key": _key(operation, request),
+        },
+    )
+    status = response.get("_status", 0)
+    if response.get("_error") or status not in (200, 201):
+        print(
+            json.dumps(
+                {
+                    "status": "failed",
+                    "errors": [
+                        {
+                            "code": "chem.daemon_error",
+                            "message": str(
+                                response.get("detail")
+                                or response.get("_error")
+                                or f"HTTP {status}"
+                            ),
+                        }
+                    ],
+                }
+            )
+        )
         return 1
-
-    if action == "route":
-        result = core.route_chemistry_task(payload)
-    elif action == "identity":
-        result = core.resolve_identity(payload)
-    elif action == "reaction":
-        result = core.analyze_reaction(payload)
-    elif action == "molar_mass":
-        result = core.molar_mass(payload.get("formula", ""))
-    elif action == "moles":
-        result = core.stoichiometry_moles(
-            mass_g=float(payload.get("mass_g", 0.0)),
-            formula=payload.get("formula", ""),
-            mass_uncertainty=float(payload.get("mass_uncertainty", 0.0)),
+    print(
+        json.dumps(
+            {
+                key: value
+                for key, value in response.items()
+                if not key.startswith("_")
+            },
+            default=str,
+            sort_keys=True,
         )
-    elif action == "dilution":
-        result = core.stoichiometry_dilution(
-            payload.get("c1"),
-            payload.get("v1"),
-            payload.get("c2"),
-            payload.get("v2"),
-        )
-    elif action == "yield":
-        result = core.stoichiometry_yield(
-            actual_g=float(payload.get("actual_g", 0.0)),
-            theoretical_g=float(payload.get("theoretical_g", 0.0)),
-            actual_unc=float(payload.get("actual_unc", 0.0)),
-            theoretical_unc=float(payload.get("theoretical_unc", 0.0)),
-        )
-    elif action == "hazard":
-        result = core.screen_hazards(payload)
-    else:
-        result = {
-            "status": "refused",
-            "errors": [{"code": "chem.unknown_action", "message": f"unknown action {action!r}"}],
-        }
-    print(json.dumps(result, default=str, sort_keys=True))
+    )
     return 0
 
 

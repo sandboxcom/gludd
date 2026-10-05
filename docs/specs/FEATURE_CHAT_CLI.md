@@ -31,7 +31,7 @@ response (no REPL, exit 0). Both modes bypass the daemon's dispatch/todo queue
 
 ## 3. CLI Interface
 
-```
+```text
 gludd chat                         # interactive REPL
 gludd chat --eval PROMPT           # oneshot (non-interactive)
 gludd chat --eval PROMPT --model MODEL  # select provider/model

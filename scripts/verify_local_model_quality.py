@@ -7,6 +7,7 @@ import glob
 import os
 import sys
 import time
+from importlib import import_module
 
 MODEL_DIR = "/tmp/gludd-qwen-e2e-model"
 
@@ -28,8 +29,8 @@ class Snake:
 FIBONACCI_PROMPT = "def fibonacci(n):"
 
 
-def main():
-    import llama_cpp
+def main() -> int:
+    llama_cpp = import_module("llama_cpp")
 
     ggufs = glob.glob(os.path.join(MODEL_DIR, "*.gguf"))
     if not ggufs:
@@ -97,38 +98,37 @@ def main():
     import tempfile
     from pathlib import Path
 
-    tmp = tempfile.mkdtemp(prefix="gludd-verify-")
-    game_path = Path(tmp) / "game.py"
-    game_path.write_text(text)
-
     import_ok = False
-    try:
-        spec = importlib.util.spec_from_file_location("game", str(game_path))
-        if spec and spec.loader:
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            import_ok = True
-    except Exception as e:
-        print(f"Import FAILED: {type(e).__name__}: {e}")
-
-    print(f"Import: {'OK' if import_ok else 'FAIL'}")
-
-    # Instantiate and run
     runtime_ok = False
-    if import_ok and hasattr(mod, "Snake"):
+    with tempfile.TemporaryDirectory(prefix="gludd-verify-") as tmp:
+        game_path = Path(tmp) / "game.py"
+        game_path.write_text(text)
         try:
-            game = mod.Snake()
-            game.start()
-            s = game.score()
-            go = game.is_game_over()
-            for _ in range(5):
-                if not game.is_game_over():
-                    game.tick("right")
-            game.restart()
-            runtime_ok = True
-            print(f"Runtime: OK (score={s}, game_over={go})")
+            spec = importlib.util.spec_from_file_location("game", str(game_path))
+            if spec and spec.loader:
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                import_ok = True
         except Exception as e:
-            print(f"Runtime FAILED: {type(e).__name__}: {e}")
+            print(f"Import FAILED: {type(e).__name__}: {e}")
+
+        print(f"Import: {'OK' if import_ok else 'FAIL'}")
+
+        # Instantiate and run
+        if import_ok and hasattr(mod, "Snake"):
+            try:
+                game = mod.Snake()
+                game.start()
+                s = game.score()
+                go = game.is_game_over()
+                for _ in range(5):
+                    if not game.is_game_over():
+                        game.tick("right")
+                game.restart()
+                runtime_ok = True
+                print(f"Runtime: OK (score={s}, game_over={go})")
+            except Exception as e:
+                print(f"Runtime FAILED: {type(e).__name__}: {e}")
 
     print()
 

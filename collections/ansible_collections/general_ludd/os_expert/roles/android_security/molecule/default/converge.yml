@@ -5,6 +5,6 @@
   tasks:
     - name: "Include android_security"
       ansible.builtin.include_role:
-        name: "android_security"
+        name: "general_ludd.os_expert.android_security"
       vars:
         enable_git_push: false

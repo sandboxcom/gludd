@@ -9,8 +9,7 @@ from __future__ import annotations
 import math
 
 import pytest
-
-from general_ludd.algorithms.interpolation import (
+from ansible_collections.general_ludd.physics.plugins.module_utils.interpolation import (
     bilinear_interp,
     cubic_spline_coeffs,
     cubic_spline_eval,

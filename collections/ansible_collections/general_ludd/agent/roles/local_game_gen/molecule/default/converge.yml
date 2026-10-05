@@ -96,8 +96,8 @@
     - name: "S3.4 Verify health endpoint polling exists"
       ansible.builtin.assert:
         that:
-          - _main_slurp.content | b64decode is search('/health')
-        fail_msg: "Must poll /health endpoint after server start"
+          - _main_slurp.content | b64decode is search('/v1/models')
+        fail_msg: "Must poll /v1/models endpoint after server start"
 
     - name: "S3.5 Verify health poll uses until/retries/delay pattern"
       ansible.builtin.assert:

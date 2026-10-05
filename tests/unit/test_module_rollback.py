@@ -6,6 +6,7 @@ import sys
 import threading
 import types
 from pathlib import Path
+from typing import Protocol, cast
 from unittest.mock import MagicMock, patch
 
 from general_ludd.self_update.module_snapshot import (
@@ -51,6 +52,14 @@ def _make_temp_module(name: str, content: str) -> types.ModuleType:
 
 def _cleanup_module(name: str) -> None:
     sys.modules.pop(name, None)
+
+
+class _RequestModule(Protocol):
+    Request: type[object]
+
+
+class _ChildPackage(Protocol):
+    child: types.ModuleType
 
 
 class TestIsExtensionModule:
@@ -141,6 +150,49 @@ class TestSnapshotModulesBasic:
 
 
 class TestRestoreModules:
+    def test_restore_preserves_snapshotted_class_identity(self) -> None:
+        name = "test_restore_preserves_class_identity"
+        old_mod = _make_temp_module(name, "class Request: pass\n")
+        request_module = cast("_RequestModule", old_mod)
+        original_request = type("Request", (), {})
+        request_module.Request = original_request
+        try:
+            snap = snapshot_modules([name])
+            request_module.Request = type("Request", (), {})
+
+            restored = restore_modules(snap)
+
+            assert restored == [name]
+            restored_module = cast("_RequestModule", sys.modules[name])
+            assert restored_module.Request is original_request
+        finally:
+            _cleanup_module(name)
+
+    def test_restore_rebinds_parent_package_child(self) -> None:
+        package_name = "test_restore_parent_package"
+        child_name = f"{package_name}.child"
+        package = types.ModuleType(package_name)
+        child = types.ModuleType(child_name)
+        child.__package__ = package_name
+        package_view = cast("_ChildPackage", package)
+        sys.modules[package_name] = package
+        sys.modules[child_name] = child
+        package_view.child = child
+        try:
+            snap = snapshot_modules([child_name])
+            replacement = types.ModuleType(child_name)
+            sys.modules[child_name] = replacement
+            package_view.child = replacement
+
+            restored = restore_modules(snap)
+
+            assert restored == [child_name]
+            assert sys.modules[child_name] is child
+            assert package_view.child is child
+        finally:
+            _cleanup_module(child_name)
+            _cleanup_module(package_name)
+
     def test_restore_puts_old_module_back(self):
         name = "test_restore_puts_old_back"
         old_mod = _make_temp_module(name, "VALUE = 1")

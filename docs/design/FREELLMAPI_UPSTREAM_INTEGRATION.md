@@ -1,0 +1,947 @@
+# FreeLLMAPI Upstream Integration Decision
+
+**Status:** Accepted architecture; `v0.11.1` promotion is on **HOLD** pending an
+exact frozen-delta comparison
+**Decision date:** 2026-09-15
+**Promotion review:** 2026-10-05
+**Upstream:** [`tashfeenahmed/freellmapi`][upstream]
+**Admitted artifact:** `v0.9.9`, full source commit
+`780a7d8d6dcbc818eb10ec17da210635b569ae22`
+**Pending candidate:** [`v0.11.1`][release-v0.11.1], full source commit
+[`4191d8e7abef39fcd93fab009123467036f39750`][commit-v0.11.1]
+**Scope:** upstream ownership, in-process execution, signed free-tier knowledge,
+pure-function evaluation, security, updates, rollback, tests, and
+self-improvement evidence
+
+## Decision summary
+
+Gludd already implements the majority of FreeLLMAPI's advertised runtime
+features. It remains the sole owner of discovery, routing, calibration, health,
+failover, envelopes, privacy, cost, scheduling, provider transport, compute, and
+lifecycle. This is not a FreeLLMAPI reimplementation project.
+
+The first and only pre-approved integration is FreeLLMAPI's maintained, signed
+free-tier catalog: model availability, advertised quotas, and provider quirks.
+Those records are advisory discovery inputs, never executable candidates or
+routing decisions. They are fetched and authenticated by Gludd's existing Python
+runtime and do not require a JavaScript engine.
+
+In this design, "free-model routing" means that the authenticated feed expands
+Gludd's native candidate set with currently free endpoints and quota metadata;
+Gludd's existing calibrated router then selects among free, local, Azure, and
+other admitted candidates under the task's privacy, quality, latency, and cost
+constraints. It does not mean embedding FreeLLMAPI's second router.
+
+The concrete Gludd gap is small but real: its provider presets currently mark
+only a few hard-coded model-list endpoints and use them for smoke discovery; they
+do not provide a signed, maintained, cross-provider free-tier inventory with
+quota/reset and compatibility metadata. Filling that gap is the integration.
+Everything after catalog admission reuses Gludd's existing candidate probing,
+calibration, trial, routing, execution, trace, and lifecycle paths.
+
+The executable scoring kernel follows the same ownership rule. Its canonical
+Python boundary and attributed JavaScript artifact live under
+`general_ludd.models`, where chemistry, firmware, self-improvement, and future
+workloads can reuse them. `general_ludd.self_improve.freellmapi_scoring_kernel`
+is an identity-preserving compatibility import only; the model layer never
+imports self-improvement implementation.
+
+No FreeLLMAPI TypeScript function is pre-approved. A named, pure upstream export
+may be proposed only after a frozen shadow/ablation experiment identifies a
+specific Gludd capability gap and demonstrates a positive quality benefit after
+latency, memory, cost, and failure penalties. Only then may the minimal import
+graph for that export be bundled and called through the in-process bridge. If no
+export clears that gate, Gludd ships no JavaScript bridge or JavaScript runtime.
+
+## Non-negotiable boundary
+
+FreeLLMAPI code must execute **inside the existing Gludd Python worker**. Gludd
+will not start a FreeLLMAPI server, subprocess, sidecar, container, or separately
+supervised service. It will not call a loopback FreeLLMAPI HTTP gateway.
+
+The selected integration is:
+
+1. fetch an exact upstream source release in an isolated update job;
+2. admit only signed, schema-locked free-tier catalog/quota/quirk data;
+3. when a named export clears its delta gate, compile its deliberately small,
+   pure TypeScript import graph into one pinned JavaScript artifact;
+4. load that artifact into an in-process V8 isolate through PyMiniRacer; and
+5. invoke only manifest-enumerated, pure, bounded functions with no host callback
+   or I/O capability.
+
+No upstream source file is copied into or hand-edited in the Gludd source tree.
+The generated artifact is an attributable MIT-licensed redistribution, never a
+fork. Its source commit, source digest, build recipe, dependency lock, license
+notices, SBOM, provenance, and artifact digest travel together.
+
+This decision is intentionally fail-closed. If a release cannot produce the
+approved pure import graph, Gludd keeps a still-compatible previous artifact or
+disables that optional capability. The independently locked data feed may remain
+available. Gludd does not fall back to a process boundary, image, mutable tag, or
+locally rewritten copy.
+
+## Context and upstream facts
+
+FreeLLMAPI is a fast-moving, self-hosted model router. Gludd already has discovery,
+routing, calibration, health, failover, proposal envelopes, project privacy, cost
+accounting, scheduling, and infrastructure lifecycle. This integration does not
+replace or wrap any of those capabilities. Its narrow purpose is to ingest
+FreeLLMAPI's free-tier catalog, advertised quota, and provider-quirk knowledge and,
+only where an ablation proves incremental value, execute selected pure upstream
+scoring, normalization, or fusion functions.
+
+The following facts were checked against upstream on 2026-09-15:
+
+- The source is under the [MIT license][license]. Individual provider terms still
+  apply; the MIT license does not grant Google, NVIDIA, GitHub Models, or another
+  provider's service rights.
+- The root is a private npm workspace monorepo. The server workspace is also
+  private. The published [`freellmapi` npm package][cli-package] is a setup CLI,
+  not a reusable server or core library. Upstream requires Node
+  `>=20.18.0 <25.0.0`.
+- The server targets ES2022 ESM. Its [package manifest][server-package] depends on
+  Express, Undici, and Sharp, with optional Better SQLite3. The
+  [server entry point][server-entry] owns a Node HTTP listener, process signals,
+  timers, SQLite lifecycle, background schedulers, and Node-specific error
+  handling.
+- The public service API includes OpenAI-compatible chat, Responses,
+  completions, embeddings, and model discovery; Anthropic Messages; native
+  Gemini; optional Ollama emulation; media routes; OpenAPI; and MCP. The
+  [API reference][api-reference] remains useful as behavioral documentation, but
+  Gludd does not deploy that HTTP service.
+- Declarative startup configuration can define keys, custom endpoints, model
+  metadata, fallback chains, and routing strategy through
+  `FREEAPI_CONFIG_PATH` or `FREEAPI_CONFIG_JSON`. This is an upstream deployment
+  feature, not an integration surface: Gludd does not import its configuration,
+  keys, fallback chains, or routing strategy.
+- Upstream's [catalog synchronization implementation][catalog-sync] polls twice
+  daily, authenticates the exact response bytes with a pinned Ed25519 public key,
+  rejects missing or invalid signatures, enforces a bundled minimum catalog
+  version, and transactionally applies accepted data. Free installations receive
+  a monthly snapshot; the paid feed changes more quickly.
+- Upstream's root test command covers bootstrap, hooks, server, CLI, and client.
+  The [CI workflow][upstream-ci] exercises Node 20 and 22, migration round trips,
+  tests, and workspace builds. These tests must remain part of every update even
+  though Gludd embeds only a subset.
+- Upstream also publishes multi-architecture OCI images. Their
+  [Docker workflow][docker-workflow] creates release, commit, and branch tags.
+
+### Upstream recheck on 2026-09-21
+
+The latest signed release is now `v0.11.1` at full commit
+`4191d8e7abef39fcd93fab009123467036f39750`; the admitted executable subset
+remains pinned to `v0.9.9` until the update workflow can replay upstream tests,
+purity, provenance, ABI, and frozen delta evidence. A newer tag is discovery
+evidence, not automatic authorization to replace a working artifact.
+
+Two newer operator reports reinforce that boundary. [Issue #1270][issue-1270]
+showed the desktop updater advertising untagged commits for which no installer
+existed; `v0.11.1` changed it to compare published releases. [Issue #1262][issue-1262]
+showed a healthy but slow endpoint being cancelled by a fixed outer retry
+budget; `v0.11.1` changed that budget to measured endpoint history.
+Gludd therefore resolves full signed release identities, rejects mutable `main`,
+and retains its own measured, task-bounded deadline rather than importing
+FreeLLMAPI's process-wide retry policy.
+  That is a supported upstream deployment form, but it is explicitly not Gludd's
+  integration form.
+
+The repository release page reports a GitHub-verified commit signature for the
+evaluated release. That signature authenticates a commit; it is not a signature
+over a Gludd-compatible compiled bridge. Gludd therefore produces and attests its
+own deterministic artifact from the verified source.
+
+## Concrete delta matrix
+
+The default action for every upstream feature is **do not integrate**. A row moves
+from data-only to executable only when a named pure export beats Gludd's existing
+implementation on a preregistered metric without weakening correctness, privacy,
+latency, or cost.
+
+| Capability | Existing Gludd authority | Incremental FreeLLMAPI input | Integration action | Proof that ownership is not duplicated |
+|---|---|---|---|---|
+| Model discovery | Hardware, endpoint, provider, and live-capability discovery | Signed free-tier model/catalog rows | Admit rows only as unverified discovery seeds; Gludd probes and registers the real endpoint/model | Disable the upstream feed and prove all existing Gludd discovery still operates |
+| Routing | Task-to-model selection and outer route | Optional pure upstream score | Run as a versioned advisory feature or shadow challenger; it cannot select a route | Router output is always a Gludd decision with its own calibrated explanation |
+| Calibration | Benchmarks, priors, confidence, drift, and promotion | Catalog ranks and optional scorer output | Record as candidate priors, then calibrate against held-out Gludd outcomes | No upstream value can update quality without normal Gludd evaluation |
+| Health | Active probes, availability, latency, error taxonomy, and circuit state | Advertised quota windows and provider-specific failure quirks | Annotate probe interpretation only; measured health wins | No upstream health checker, timer, cooldown table, or health state is embedded |
+| Failover | Retry budget, fallback graph, deadline, and exactly-once lease | Provider retry/timeout quirks and suggested compatibility constraints | Convert data into bounded policy hints; Gludd validates and builds the graph | No upstream fallback planner or executor enters the artifact |
+| Envelopes | Canonical request, response, proposal, tool, usage, and error envelopes | A pure normalizer may cover a provider edge case | Execute only as an inner transform, then validate against the Gludd envelope | The upstream function never defines or emits the authoritative envelope |
+| Privacy | Project exclusions, egress admission, redaction, and retention | None | Import nothing | Privacy checks run before any bridge input and cannot be relaxed by catalog data |
+| Cost and quota | Price accounting, budgets, reservations, observed usage, and idle-cost policy | Advertised free-tier limits, reset cadence, and quota quirks | Store as timestamped uncertain metadata; observed accounting and operator policy win | No upstream budget, ledger, or spend decision is embedded |
+| Scheduling and work claims | Atomic todo leases, concurrency, deadlines, recovery, and ranking | None | Import nothing | The bridge never claims, queues, schedules, retries, or completes work |
+| Provider transport | Auth, egress, HTTP/SSE, redirects, cancellation, and telemetry | Declarative provider protocol quirks | Compile data into Gludd transport fixtures/policy inputs | No upstream HTTP adapter, credential handler, socket, or callback performs I/O |
+| Fusion | Model invocation, component identity, validation, and promotion | Optional pure fusion export over already collected bounded outputs | Evaluate as a deterministic challenger transform after Gludd runs the models | Gludd chooses participants, records each result, validates fusion, and owns promotion |
+| Local/Azure serving | Hardware sizing, provisioning, runners, teardown, and metrics | None | Import nothing | FreeLLMAPI cannot create, configure, route, or tear down compute |
+| Lifecycle and ZDD | Worker supervision, generation switch, rollback, and cleanup | Immutable bridge bytes only | Apply Gludd's existing artifact-generation lifecycle | No Express, SQLite, migration, dashboard, server, or upstream supervisor is loaded |
+
+Every selected datum/export has a delta record containing the Gludd baseline, the
+upstream candidate, fixture corpus, quality metric, latency and memory overhead,
+decision threshold, observation window, owner, and removal condition. A
+non-positive or statistically inconclusive delta means rejection. Rejection is a
+successful update outcome and leaves no dead compatibility code.
+
+## Feasibility boundary: JavaScript is not Node.js
+
+A V8, SpiderMonkey, Duktape, or QuickJS engine does not by itself implement
+Node.js. FreeLLMAPI's complete server cannot be evaluated unchanged in any
+reviewed Python JavaScript bridge because it needs Node built-ins, libuv-backed
+networking, process globals, and native addons such as Sharp and Better SQLite3.
+Bundling does not turn those dependencies into portable JavaScript.
+
+Gludd consequently considers only upstream logic that is pure and within the
+delta matrix:
+
+- free-tier catalog, advertised quota, and provider-quirk normalization;
+- a scoring export whose shadow result measurably improves Gludd's router;
+- a provider-result normalizer that closes a demonstrated conformance gap; and
+- a fusion export that operates solely on outputs already selected and collected
+  by Gludd.
+
+Python retains discovery, routing, calibration, health, failover, envelopes,
+privacy, cost, networking, credentials, persistence, scheduling, streaming,
+timeouts, work leases, and lifecycle. The build rejects an import graph containing
+`node:*`, filesystem or process access, sockets, child processes, dynamic
+`require`, native `.node` addons, Sharp, Better SQLite3, Express, Undici, or
+runtime package resolution.
+
+If useful upstream behavior is entangled with the server, the preferred fix is an
+upstream contribution that extracts a pure exported function. Until that lands
+and passes the gate, the behavior is unavailable. Gludd does not reproduce the
+implementation from memory.
+
+## Runtime comparison and decision
+
+| Bridge | Modern TS/ESM and Node compatibility | Async and cancellation | Limits and isolation | Packaging and license | Decision |
+|---|---|---|---|---|---|
+| [PyMiniRacer `mini-racer`][miniracer] | Current V8 and modern ECMAScript; no Node APIs or runtime module loader, so TypeScript and ESM must be bundled to one IIFE | Promises integrate with asyncio; cancelable evaluation and async Python callbacks are documented | Separate V8 isolates, synchronous timeout, cancelable async calls, hard/soft heap limits; callbacks deliberately pierce the capability boundary | ISC; 0.14.1 is classified stable, uses V8 14.4, and publishes attested wheels for Python 3.10-3.14 on macOS and Linux, x86-64 and arm64 | **Selected**, subject to the compatibility and crash-containment gates below |
+| [jsrun][jsrun] | Current V8, native ESM, custom loaders; explicitly no Node or Web APIs | Async evaluation and host operations; timeout and same-thread termination | No I/O by default, heap limit, per-runtime isolate/thread | MIT; 0.1.0 is explicitly under development, and the observed wheel set lacks macOS x86-64 | Re-evaluate when its API and platform matrix mature |
+| [PythonMonkey][pythonmonkey] | Modern SpiderMonkey; Node-like npm/CommonJS resolver, but not the Node runtime used by upstream ES2022 ESM | Python awaitables and JS promises share an event loop | No documented per-runtime hard heap limit, deadline, or termination API; its CommonJS environment exposes Python eval, exec, environment, and exit primitives | MIT; 1.3.2 has broad macOS/Linux wheel coverage | Rejected for this least-capability boundary |
+| [DukPy][dukpy] | QuickJS-based 0.6 supports ESM/CommonJS classification and a TypeScript transpiler, but not Node built-ins | No documented asyncio cancellation contract | No documented Python API for hard heap/deadline enforcement | MIT; PyPI classifies it alpha | Rejected |
+| [PetterS quickjs][quickjs-wrapper] | ES modules and QuickJS jobs, no Node runtime | Manual pending-job pumping rather than an asyncio bridge | Memory/time/stack limits | MIT; repository was archived in 2026 and published binaries target Python only through 3.10 | Rejected |
+| Embedded libnode | Only option considered that supplies real Node APIs and native-addon semantics | Requires coordinating libuv, V8, Python, and Gunicorn lifecycle | Large same-process trusted computing base; Node's own [embedder API][node-embedder] may break on each semver-major | Would require a custom CPython extension and per-platform libnode build | Rejected unless a future ADR proves the pure-core boundary impossible |
+
+PyMiniRacer is the best current fit because it combines a maintained V8, explicit
+async cancellation, hard memory limits, broad wheels, and a small default host
+surface. Its missing ESM loader is useful pressure: the accepted artifact is one
+fully resolved IIFE, so no import can unexpectedly reach the host at runtime.
+Although PyMiniRacer supports Python callbacks, this integration never registers
+one; the callback API remains outside the allowed bridge surface.
+
+Version `mini-racer==0.14.1` is the first candidate, not an accepted dependency
+lock. The implementation must record hashes and PyPI provenance for every wheel
+in Gludd's actual Python/platform matrix. A missing or unattested wheel fails that
+platform instead of building native code opportunistically on an operator host.
+
+## Embedded artifact contract
+
+### Source and build identity
+
+The lock records at least:
+
+~~~text
+upstream_repository
+upstream_release
+upstream_full_commit
+upstream_source_archive_sha256
+upstream_package_lock_sha256
+selected_source_paths_and_export_names
+eligible_upstream_data_schema_version
+selected_capability_ids
+delta_evidence_sha256_by_capability
+bridge_entrypoint_sha256
+typescript_and_bundler_versions
+build_recipe_sha256
+compiled_artifact_sha256
+source_map_sha256
+license_bundle_sha256
+sbom_sha256
+provenance_attestation_identity
+miniracer_version
+miniracer_wheel_sha256_by_platform
+miniracer_v8_version
+previous_accepted_artifact_sha256
+abi_version
+~~~
+
+The short `780a7d8` reference is documentation only. A production lock requires
+the full commit and exact archive digest. The generated artifact and source map
+are build outputs, not reviewed source, and are never edited after generation.
+
+The release bundle contains:
+
+- one deterministic IIFE JavaScript file;
+- a machine-readable export/import manifest and ABI version;
+- the matching source map for private debugging;
+- the complete upstream and transitive license notices;
+- an SPDX or CycloneDX SBOM;
+- build and test evidence; and
+- a keyless CI provenance attestation bound to the artifact digest.
+
+Gludd may package those immutable bytes inside its tested release artifact for
+offline bootstrap. The repository lock identifies them; it never downloads code
+at task execution time.
+
+### Stable bridge ABI
+
+A small Gludd-owned TypeScript entrypoint imports named upstream functions and
+exports one frozen global object, `globalThis.__gluddFreellmapiCore`. The ABI
+accepts and returns bounded JSON values or byte arrays only. There is no mandatory
+FreeLLMAPI operation. A build may expose only an explicit subset of these
+capability classes:
+
+- `score_candidate_features`: return an advisory feature vector or score, never a
+  route or provider selection;
+- `normalize_provider_observation`: return an inner candidate representation for
+  a demonstrated provider edge case, never Gludd's canonical envelope; and
+- `fuse_candidate_outputs`: deterministically combine bounded outputs that Gludd
+  has already selected, invoked, and recorded.
+
+Each operation must call a named, pure upstream export and have a positive delta
+record. The ABI manifest binds its public operation, exact upstream export,
+input/output schema, limits, delta-record digest, and removal threshold. An
+operation is absent when no export clears the gate; absence does not degrade
+Gludd's existing behavior. If a shim would need to reproduce upstream logic,
+perform I/O, choose a model, or own a policy decision, the build fails and an
+upstream extraction is required.
+
+The ABI has no generic eval operation. User input, prompts, model output, and
+project code are data, never JavaScript source or module names.
+
+### Zero-host-capability execution
+
+The V8 isolate begins without filesystem, network, process, environment, console,
+module-loader, secret, or Python-callback access. Gludd registers **zero** host
+functions. Fetching, signature verification, provider I/O, event emission, work
+leases, cancellation, and policy all stay in existing Python components. If an
+approved pure export needs a time or seed value, Python supplies a bounded,
+recorded value in its input; JavaScript cannot ask the host for another value.
+
+Each call carries an operation enum, schema version, artifact identity, work-lease
+identity, deadline, and bounded data. Python validates the returned value before
+it can become advisory evidence. Exceptions cross the bridge as finite typed
+errors, not tracebacks or environment dumps. Adding any callback or ambient
+capability requires a new security review and ADR.
+
+## Catalog, quota, quirks, and Gludd-owned discovery
+
+Python fetches a catalog with a strict byte limit and no redirects. Before JSON
+parsing, it verifies the upstream `x-catalog-signature` over the exact received
+bytes with the pinned Ed25519 key. It rejects a missing/invalid signature, an
+unknown signer, a version below the artifact's upstream minimum, rollback from a
+previously accepted version, and a catalog whose identity conflicts with the
+locked upstream data schema or any selected bridge artifact.
+
+After authentication, Python schema-validates and stores the immutable upstream
+snapshot as a knowledge feed. It extracts only free-tier model metadata,
+advertised quota/reset information, and provider-quirk fields admitted by a
+versioned allowlist. A selected pure upstream normalizer may additionally produce
+an advisory representation when its delta record is positive. Raw or normalized
+rows never become runnable candidates directly. Gludd maps relevant rows onto its
+existing provider and endpoint identities, probes actual capability, and then
+applies provider terms, project privacy, modality, context, cost, hardware, and
+empirical-quality policy. Catalog rank is a prior, never proof.
+
+Production forbids catalog URL and public-key overrides. A self-hosted catalog
+requires a separate signer/key-rotation decision and a distinct trust namespace,
+so it cannot masquerade as upstream.
+
+The provenance attached to a native Gludd candidate or decision contains:
+
+~~~text
+upstream_knowledge_source=freellmapi
+bridge_artifact_sha256
+bridge_upstream_commit
+bridge_abi_version
+effective_signed_catalog_sha256
+normalized_upstream_record_sha256
+selected_capability_id_or_none
+delta_record_sha256_or_none
+native_gludd_candidate_id
+~~~
+
+FreeLLMAPI is never a backend, provider, route, candidate type, or evidence owner.
+Its `auto` mode, named profiles, fallback chains, health system, and scheduler are
+not registered in Gludd. A selected fusion export is an inner deterministic
+challenger over already collected inputs; Gludd preserves every component model's
+native identity and attributes the fused result separately. Bridge output cannot
+update quality, cost, quota, or health until Gludd's normal validation and
+calibration path accepts the evidence.
+
+Provider availability, quota pressure, network health, model quality, and
+infrastructure failure remain separate evidence axes. A bounded non-promoting
+canary is required before a newly discovered candidate receives real
+self-improvement work.
+
+## Concurrency, cancellation, and lifecycle
+
+Each Gunicorn worker owns a bounded pool of PyMiniRacer contexts. A context is
+leased exclusively to one bridge invocation and never crosses a Python thread.
+The compiled global is frozen, and per-request state is cleared or the context is
+discarded before reuse.
+
+Pool size is not a model-specific config key. It is computed from measured peak
+context memory and the worker budget:
+
+~~~text
+pool_size = min(
+  worker_concurrency,
+  floor((worker_memory_budget - python_headroom) / measured_context_peak)
+)
+~~~
+
+Zero capacity means the optional advisor/normalizer is not loaded. Native Gludd
+discovery, routing, provider execution, and self-improvement continue unchanged.
+Gludd never creates unbounded contexts merely because work is queued.
+
+All bridge work uses cancelable evaluation under `asyncio.wait_for`. Cancellation
+terminates or closes the owning V8 context and replaces it before new work.
+PyMiniRacer's ordinary promise awaiting is not assumed to provide this behavior;
+the cancellation E2E test is the authority. Provider I/O is never coupled to the
+isolate and remains governed by Gludd's existing cancellation and work deadline.
+
+A hard heap limit, soft collection threshold, wall-clock deadline, maximum ABI
+invocations per work item, maximum input size, and maximum returned value are
+mandatory.
+Exceeding any bound invalidates and closes the context. V8 heap limits do not
+cover every native allocation, so worker RSS is monitored; a leaking or crashing
+worker loses its lease and is replaced by the existing Gunicorn supervisor.
+There is no dedicated FreeLLMAPI process.
+
+When the todo queue is empty and no discovery probe is due, Gludd makes no model
+request and provisions no inference compute. The FreeLLMAPI knowledge feed and
+bridge never create work or keep model compute alive. Warm isolate retention is an
+explicit memory-cost policy; evicting an isolate never deletes the current or
+rollback artifact.
+
+## Zero-downtime update and rollback
+
+An artifact generation is immutable. For an update, every worker creates a green
+pool beside its serving blue pool, checks artifact digest and ABI, loads the
+bundle, validates a signed fixture catalog, and runs a no-secret canary. Only
+after all required workers report ready does the supervisor atomically assign new
+leases to green. Blue finishes existing leases and remains available during the
+rollback window.
+
+Every phase emits a sanitized event: source verified, artifact verified, isolate
+created, ABI checked, catalog checked, canary passed, generation switched, old
+lease drained, and context closed. Long builds or platform tests emit phase
+progress and heartbeats.
+
+Rollback atomically routes new bridge leases to the retained blue generation,
+cancels no valid in-flight work, drains green, and closes green contexts. Catalog
+snapshots and artifact generations roll back as a compatible pair. Garbage
+collection cannot delete:
+
+- the generation serving new work;
+- a generation with an active work lease;
+- the immediately previous accepted generation;
+- evidence referenced by an unresolved task; or
+- the last known-good wheel/artifact for any supported platform.
+
+Because Gludd does not run upstream SQLite or migrations, rollback has no
+cross-version database hazard. Gludd-owned evidence schema migrations remain
+subject to the repository's normal ZDD rules.
+
+## Exact upstream update procedure
+
+One bot-created update branch performs these steps serially and fails closed:
+
+1. Discover a stable upstream release; never select `main` or a prerelease by
+   default.
+2. Resolve the tag to a full commit, verify repository signature policy, acquire
+   the exact source archive, verify its digest, and confirm the MIT license.
+3. Diff the npm lock, license set, security policy, provider terms, catalog
+   signer/minimum version, eligible data schema, selected exports, and each
+   capability's delta evidence. Explicitly record rejected additions.
+4. In a credential-free isolated builder, reproduce upstream's Node 20 and 22
+   locked install, migration round trip, root tests, lint, workspace build, and
+   server coverage. Lifecycle scripts run only in this disposable no-secret
+   environment.
+5. Resolve the approved TypeScript import graph. Reject new Node built-ins,
+   dynamic module loading/eval, native addons, undeclared network/filesystem
+   access, or imports outside the allowlist.
+6. Use exact locked TypeScript and bundler binaries to build the IIFE twice in
+   clean builders. Reject non-identical bytes after deterministic source-map
+   normalization. Generate the manifest, licenses, SBOM, and source map.
+7. Run the same pure-function ABI conformance fixtures against the bundle in
+   upstream-supported Node and in the locked PyMiniRacer/V8. Reject semantic
+   differences, undeclared exports, or any attempted host access.
+8. Scan source, npm dependencies, compiled bundle, PyMiniRacer wheel, and embedded
+   V8. Verify PyPI provenance and hashes for every supported wheel.
+9. Run the full credential-free Gludd bridge, ownership-regression, ablation,
+   policy, privacy, cancellation, resource-limit, concurrency, self-improvement,
+   and ZDD suites. An export without a positive measured delta is removed.
+10. Run macOS arm64, macOS x86-64, Linux arm64, and Linux x86-64 smoke tests on
+    each supported Gludd Python version. GitHub-hosted Linux is mandatory; absent
+    platform capacity is a release blocker, not a skipped pass.
+11. Publish the immutable artifact bundle with a CI identity-bound provenance
+    attestation. An authorized review records its digest and promotes it through a
+    green generation. Optional live tests use Gludd's existing provider transports
+    and bounded leased credentials; the bridge only contributes admitted advisory
+    data or pure-function output.
+12. Exercise rollback, then commit current and previous artifact identities,
+    catalog compatibility, evidence, and rationale as one reviewable lock update.
+
+Discovery never mutates the running lock. Renovation is source replacement and
+rebuild, not rebasing a fork.
+
+### Implemented candidate-admission checkpoint
+
+The 2026-09-21 discovery slice implements the first three trust boundaries of
+the update workflow without admitting new runtime code:
+
+- `make freellmapi-upstream-admission` uses the maintained GitHub CLI against the
+  fixed `tashfeenahmed/freellmapi` repository. It accepts only an explicit stable
+  semver tag and full 40-character commit. `FREELLMAPI_ADMISSION_LIVE=1` is the
+  only mutating mode; the default mode validates the tracked lock offline.
+- The updater resolves lightweight or bounded annotated tags to the explicit
+  commit, requires GitHub's commit API to report a valid signature, binds the
+  verified tree, and records digests of the signature and signed payload without
+  persisting either raw value. This is source-discovery evidence; independent
+  build attestation and cross-engine provenance remain required before promotion.
+- The exact commit archive is read without extraction under compressed,
+  expanded-size, member-count, path, type, and per-source limits. The updater
+  verifies the MIT text, npm lock identity/version, selected scoring symbols,
+  and the digest and ABI identity of Gludd's still-admitted artifact.
+- The resulting
+  `config/freellmapi/upstream_candidate.json` is atomically replaced and
+  content-free. Two independent live acquisitions produced candidate
+  `sha256:69d63b09199c37f38c02c711559b15e0fd5dc5ecc0e64e2d94c597dc5e5d3998`
+  and archive
+  `sha256:9f5156164cfc9b98416014b1ed1a9a49bb0005b32ae64b7a21e4afd8c467a198`.
+- The candidate state is `pending_frozen_delta` and `runtime_admitted` is
+  unconditionally false. Missing selected symbols produce a tracked rejection,
+  not a fallback import. A lock cannot promote itself; the frozen delta,
+  upstream tests/build, cross-engine ABI, GHA, live-provider, rollback, and
+  review gates below remain release blockers.
+
+The first slice of the separate frozen-delta gate now lives in the cohesive
+`general_ludd.models.freellmapi_frozen_delta`,
+`general_ludd.models.freellmapi_frozen_delta_contracts`, and
+`general_ludd.models.freellmapi_frozen_delta_validation` modules. It binds a
+preregistered plan to the immutable candidate ID, ordered frozen-corpus digest,
+named upstream export, bounded capability operation, schema digests, and an ABI
+with no host capabilities. It compares paired baseline and shadow observations,
+subtracts the preregistered latency, memory, cost, and failure penalties, and
+requires the lower confidence bound to clear the configured positive-gain
+threshold.
+Non-positive, inconclusive, malformed, and ABI-incompatible candidates are
+explicit rejections. Even a positive result is only
+`accepted_for_build_review`; the emitted content-free evidence always retains
+`runtime_admitted: false`.
+
+This harness does not claim that the pending `v0.11.1` candidate has cleared the
+gate. A tracked real frozen corpus and delta plan, successful exact-source hosted
+build output, cross-engine bundle evidence, and the later live-provider/rollback
+promotion proofs remain required. The focused adversarial suite exercises
+accepted, rejected, tampered, incomplete, non-finite, and host-capability cases
+without importing self-improvement implementation. The split also keeps every
+module inside the unchanged maintainability budget and uses explicit typed
+contracts instead of type-suppression comments.
+
+### Implemented exact-source build checkpoint
+
+The next trust boundary is now represented by
+`config/freellmapi/upstream_build_plan.json` and the universal
+`general_ludd.models.freellmapi_upstream_build` contract. The default
+`make freellmapi-upstream-build` operation is offline and read-only. It binds the
+plan to the exact candidate and archive identities above and reports
+`validated_not_run`; validation is never presented as an executed build.
+
+The explicit live mode refetches only the locked commit archive, verifies its
+size, SHA-256, license, npm lock, and selected scoring symbols, and materializes
+it beneath a unique temporary directory. Extraction rejects absolute or parent
+paths, multiple roots, case-folding collisions, links, devices, unsupported
+member types, and bounded-size violations. It always removes the source and npm
+cache after the attempt. The build subprocess receives an allowlisted
+environment containing no GitHub, Azure, model-provider, or Gludd credential;
+the GitHub token is used only by the separate archive-fetch boundary.
+
+The fixed plan follows the exact upstream package scripts documented by the
+[`v0.11.1` root manifest][root-package-v0.11.1] and
+[`v0.11.1` server manifest][server-package-v0.11.1]: locked install, migration
+tests, root tests, lint, workspace build, and server coverage. No manifest text
+is converted into shell input: the runner uses fixed argv without a shell and
+first proves each named upstream script exists. GitHub Actions executes this
+plan independently on Node 20 and Node 22 and makes both jobs release
+prerequisites. Each success or failure report is content-free, digest-bound, and
+retains `runtime_admitted: false`.
+
+The toolchain pairs are exact rather than floating majors: Node 20.20.2 with npm
+10.8.2 and Node 22.23.2 with npm 10.9.8, as recorded by the official
+[Node 20 archive][node-20-build] and [Node 22 archive][node-22-build]. Node 20 is
+already out of maintenance, so that leg is compatibility evidence for the
+upstream-declared range only; it is ephemeral and never becomes a Gludd runtime
+dependency. The supported Node 22 leg remains independently mandatory.
+
+The local adversarial and workflow-contract suite passes 34 tests and reports
+93% branch coverage for the production validator, with no measured production
+file below 75%. This is implementation evidence, not hosted execution evidence:
+the real upstream Node 20/22 build remains open until both exact-HEAD GitHub
+Actions legs complete successfully.
+
+This checkpoint directly codifies current operator evidence. The
+[`v0.11.1` release][release-v0.11.1] says updates now follow published releases
+instead of untagged `main` after [issue #1270][issue-1270], and that per-endpoint
+latency history replaced a fixed budget after [issue #1262][issue-1262]. Gludd
+therefore pins a published release and commit while retaining its own outer
+scheduler, deadline policy, health evidence, and final routing authority.
+
+### Tracked corpus, live-provider, and rollback receipts
+
+The v0.1.1 release proof now has a mechanically replayable, non-promoting chain:
+
+- `config/freellmapi/frozen_corpus.json` pins four held-out binary provider
+  outcomes, their exact inputs, and per-fixture digests. The paired plan and ABI
+  records bind that ordered corpus to candidate
+  `sha256:69d63b09199c37f38c02c711559b15e0fd5dc5ecc0e64e2d94c597dc5e5d3998`
+  and the still-admitted `v0.9.9` scoring artifact. No task text, provider key,
+  endpoint, or model response is retained.
+- `general_ludd.models.freellmapi_release_proof` executes the real pinned
+  `expectedReliability` kernel. The shadow result has a preregistered adjusted
+  gain of `0.225848931675` and lower confidence bound `0.223107905138`; the same
+  corpus with the advisor disabled produces a zero delta and exercises the
+  removal decision. Both receipts keep `runtime_admitted: false`.
+- The opt-in `make test-live-zai` run on 2026-09-27 reached the real Z.AI
+  transport through `FreeLLMAPICandidateBackend`. The provider rejected the
+  bounded request with HTTP 429 because the scoped credential had no available
+  balance or resource package. The tracked receipt records only
+  `provider_failure: rate_limited`, zero tokens, the hashed provider/model
+  identity, and teardown state; it does not relabel the rejection as a pass.
+- `config/freellmapi/rollback_receipt.json` then exercises the fail-closed review
+  rollback. The active lease identity is unchanged, the serving blue digest
+  remains `d3078364c02f482909681e21895c4e86dc11cc66c1da7ae2007ad35b096ddf7d`,
+  the candidate review generation closes, and the known-good artifact remains
+  protected. Promotion is never attempted.
+- `config/freellmapi/release_provenance_receipt.json` binds the candidate,
+  corpus, live-provider, and rollback evidence IDs into one immutable release
+  verdict, including the exact external block rather than a completion claim.
+
+These inputs are updateable without editing upstream-owned code: a new stable
+candidate replaces the candidate lock, then regenerates corpus, live-provider,
+and rollback receipts under their digest validators. The current proof cannot
+promote `v0.11.1`; a reproducible candidate bundle, exact Node 20/22 hosted build,
+CI provenance, and a successful bounded live call remain external prerequisites.
+The local exact-source attempt also stopped before source execution because the
+installed Node/npm pair did not match either pinned toolchain, reporting the
+content-free `toolchain_invalid` fault.
+
+### S83.163 frozen-delta promotion decision (2026-10-05)
+
+Decision: **HOLD**. The tracked receipt is useful harness evidence, but it is not
+promotion evidence for the pending candidate. It runs the still-admitted
+`v0.9.9` kernel over four synthetic binary fixtures. The candidate lock names
+`v0.11.1`, but the receipt does not execute an exact `v0.11.1` artifact over a
+frozen route corpus. Upstream has also published `v0.12.0`. That newer release is
+discovery evidence for the next serial review; it is not permission to change
+the candidate during this experiment. The next comparison evaluates the exact,
+already reviewed `v0.11.1` source and artifact with **no retargeting**.
+
+The preregistration freezes one three-arm paired experiment before any outcomes
+are inspected:
+
+- **Corpus:** 32 route groups, each replayed from the same content-addressed
+  input and ground truth through native Gludd, the admitted `v0.9.9` export, and
+  the exact `v0.11.1` export: 96 included observations in total. Each group must
+  be complete across all three arms or the entire group fails closed.
+- **Exclusions:** 8 preregistered exclusions are named by digest and reason before
+  unblinding. Only corrupt/missing ground truth, policy-prohibited provider use,
+  or an unavailable exact three-arm input qualifies. Exclusions cannot be added,
+  removed, or rewritten after scoring and never become evidence for either arm.
+- **Strata:** provider family, authenticated health/quota state, cold versus warm
+  endpoint, and capability shape are fixed in the manifest. Every aggregate
+  claim retains the corresponding per-stratum result.
+- **Primary quality gate:** exact paired Brier improvement for `v0.11.1` must beat
+  both native Gludd and `v0.9.9`, with the 95% paired-bootstrap LCB at least
+  `+0.02` for each comparison. Lower Brier loss is better; the recorded delta is
+  comparator loss minus candidate loss.
+- **Decision agreement gate:** correct/incorrect route decisions for `v0.11.1`
+  versus each comparator must pass an exact two-sided McNemar test with
+  `p < 0.05`. A favorable Brier result cannot compensate for a nonsignificant
+  decision result.
+- **Regression gate:** No stratum may be worse by more than `0.02` absolute Brier
+  loss against either comparator. Sparse or inconclusive strata retain HOLD;
+  they are not pooled away.
+- **Resource and fault gates:** paired p95 added scoring latency is at most
+  `5 ms` (and no call exceeds 25 ms), peak RSS delta is at most `32 MiB` with no
+  monotonic replay growth, incremental provider cost is exactly `$0` because the
+  corpus is offline, and there are zero bridge faults across included
+  observations. A timeout, crash, non-finite result, schema rejection, host
+  capability request, or content leak is a fault.
+
+Every gate is conjunctive. Missing any one keeps the decision at HOLD, leaves
+`v0.9.9` serving, exercises the removal/rollback receipt, and keeps
+`runtime_admitted: false`. Passing all gates only permits the already separate
+build, provenance, ABI, live-provider, and ZDD review; it does not promote an
+artifact by itself. The existing evaluator remains the evidence owner. The run
+reuses pytest and Hypothesis for contract/property coverage, SciPy for the paired
+bootstrap and exact discordant-pair calculation, psutil for RSS, and the existing
+Vitest/Node cross-engine fixtures. It adds **no new framework**.
+
+The practitioner record explains why those gates are deliberately conservative.
+These are upstream operator reports, not a claim that the young project has a
+multi-year stability history:
+
+- [Issue #456][issue-456] reports a monthly token budget that did not scale with
+  multiple provider keys and skewed routing headroom. The corpus therefore fixes
+  per-key quota identity and treats advertised budget as a hint, never measured
+  capacity.
+- [Discussion #533][discussion-533] records `latest` following unreleased `main`
+  until the maintainer changed it to release tags. Gludd requires a full commit
+  for every arm and an immutable release identity.
+- [Issue #608][issue-608] shows a public model-list endpoint accepting a revoked
+  credential while generation returned 401. Catalog reachability and
+  authenticated readiness remain separate strata and evidence.
+- [Issue #666][issue-666] shows a Gludd-relevant failure mode where a router-wide
+  budget aborted slow local Ollama before its configured provider timeout. A
+  Gludd-owned deadline remains authoritative, and latency is measured rather than
+  imported.
+- [Issue #880][issue-880] reports more than 100 discovered models but zero usable
+  models in the client. A catalog row is not a usable route; capability and
+  envelope validation remain native Gludd gates.
+- [Issue #1210][issue-1210] reports high-frequency requests leading to AI Studio
+  key suspensions. Frozen evaluation is offline, and any later live proof keeps a
+  one-request request-rate ceiling with scoped credentials and immediate teardown.
+- [Issue #1262][issue-1262] supplies production TTFB evidence for slow-but-alive
+  endpoints that a fixed 45-second budget killed. The frozen corpus retains that
+  stratum while Gludd, not the imported scorer, owns retry and failover policy.
+
+#### Adversarial receipt hardening
+
+A content-addressed receipt proves consistency, not authorship. The tracked-chain
+validator therefore now requires both the complete release-provenance receipt and
+its independently trusted evidence ID. That ID must come from the reviewed release
+control plane; accepting an ID read from the same untrusted receipt set would
+recreate the forgery weakness. The current reviewed root is
+`sha256:0e9fdb5759bef683c5a71f929cba4d551c1b65784f362536f5e404ae5f186bc1`.
+Coordinated corpus reordering, upstream revision or delta-plan drift, and a fully
+rehashed live/rollback/provenance chain now fail against that root.
+
+Rollback also revalidates the content-addressed candidate lock, admitted artifact,
+corpus receipt, accepted/removal delta pair, and strict live-receipt schema before
+closing green. The accepted and rejected records must share candidate, plan,
+corpus, export, capability, ABI, fixture count, and non-admission context. Live
+receipts accept no extra fields and require one request, decision-consistent
+counts, exact zero-token rejection accounting, a canonical provider, and a typed
+provider failure. Recomputing a receipt hash cannot legitimize contradictory
+accounting or detach rollback from the reviewed provenance root.
+
+Provider and build failures remain separate taxonomies. A native HTTP 429 is
+`live_provider_rate_limited`; an unsupported local Node/npm pair is
+`upstream_build_toolchain_invalid`. The release blocker can record both without
+turning either into success, and derives the pending release label from the
+content-addressed candidate instead of a hard-coded revision. This directly
+preserves the lesson from [issue #1210][issue-1210] (real provider 429 exhaustion)
+without confusing it with the exact-toolchain discipline motivated by the
+mutable-update report in [issue #1270][issue-1270].
+
+## Security and privacy contract
+
+1. **Admission before bridge.** Project-private or policy-excluded business logic
+   is denied before scoring, normalization, or fusion. No source, diff, prompt,
+   trace, or artifact reaches an external provider unless the project's egress
+   policy permits that exact Gludd-owned provider route.
+2. **No ambient authority.** The isolate receives no environment, filesystem,
+   network, subprocess, cloud-management token, OpenBao token, provider secret, or
+   generic Python callback.
+3. **Artifact trust.** Verify the release source, compiled artifact, PyMiniRacer
+   wheel, SBOM, and provenance before load. Runtime code download, CDN imports,
+   mutable tags, and build-on-first-use are forbidden.
+4. **Pure-output validation.** Treat every JavaScript-produced score,
+   normalization, or fusion result as untrusted. Python revalidates schema,
+   identity, bounds, and invariants. The result cannot weaken privacy, authorize
+   egress, select a route, create a lease, or bypass Gludd's normal evidence gate.
+5. **Memory safety.** The V8 isolate is a capability boundary, not an operating
+   system sandbox. V8 and PyMiniRacer security updates are release-critical.
+   Callback APIs weaken isolation, as the
+   [PyMiniRacer security notes][miniracer-security] explicitly warn; callbacks are
+   therefore prohibited rather than merely constrained.
+6. **Records.** Prompts and responses are not cached by this bridge. Events,
+   route evidence, and failure detail are bounded and redacted. Source maps remain
+   private build evidence and are never returned through an API.
+7. **Catalog trust.** A valid signature authenticates upstream bytes; it does not
+   authorize provider terms, data egress, spend, or a model-quality promotion.
+8. **Terms.** Provider use is deny-by-default. Evaluation-only,
+   personal-use-only, ambiguous, or no-resale tiers need an explicit operator
+   policy record for the actual workload.
+
+[Security issue #35][security-35] documented authentication bypass,
+unauthenticated administration, open CORS, missing rate limits, and
+provider-detail leakage in an earlier server version. The embedded design removes
+that HTTP/admin surface but does not treat upstream data or logic as trusted
+policy.
+
+## Test and acceptance matrix
+
+| Layer | Required proof |
+|---|---|
+| Static source lock | Reject tags, short commits, source/hash mismatch, license change, missing previous artifact, unknown signer, unsupported ABI, or unpinned build tool. |
+| Upstream source | At the exact commit on Node 20 and 22, pass install, migrations, root tests, lint, workspace build, and server coverage. |
+| Import purity | Mechanically enumerate the transitive graph and reject Node built-ins, native addons, dynamic imports/eval, undeclared I/O, or files outside the approved upstream paths. |
+| Reproducible artifact | Two clean builds produce identical bundle, map, manifest, licenses, and SBOM; attestation subject equals the locked digest. |
+| Cross-engine ABI | Golden and property fixtures return identical normalized results in Node and locked PyMiniRacer, including Unicode, large integers, missing fields, typed errors, and malformed input. |
+| Catalog security | Verify valid exact-byte signatures; reject modified bytes, wrong key, missing header, old version, rollback, oversized catalog, duplicate IDs, and hostile URLs. |
+| Bridge unit | Bound every input/output and operation count; reject unknown operations and host access; never retain object proxies, keys, prompts, or task data between leases. |
+| Provider transport | Run Gludd's existing fake-provider matrix unchanged with upstream quirks disabled and enabled; prove the artifact performs no HTTP, authentication, streaming, redirect, retry, or socket work. |
+| Async cancellation | Cancel before invocation and during JS CPU/promise work; prove context invalidation, lease release, and no duplicate task. Separately rerun Gludd's unchanged provider-transport cancellation suite. |
+| Resource limits | Infinite loops, promise storms, recursion, repeated ABI calls, large inputs/outputs, heap exhaustion, native RSS growth, and malformed source maps fail within limits without wedging other Gunicorn workers. |
+| Platform | Run local and GHA smoke suites on macOS/Linux and x86-64/arm64 using only locked wheels; assert V8 and artifact identities. |
+| Privacy E2E | Project-private tasks never enter the isolate or model provider; allowed bridge inputs contain no excluded paths/content; events and errors remain redacted. |
+| Ownership regression | With the feed and every bridge export disabled, prove discovery, routing, calibration, health, failover, envelopes, privacy, cost, scheduling, lifecycle, and local/Azure execution still pass their existing suites. |
+| Delta and ablation | Compare baseline, shadow, and admitted modes on a frozen task/fixture corpus; require preregistered quality gain after latency, memory, cost, and failure penalties. Reject inconclusive results and automatically exercise the removal path. |
+| Mixed self-improvement | Run the same atomic task through native local and Azure models with the advisor disabled, shadowed, and admitted; preserve Gludd envelopes and identities, validate independently, and promote only through Gludd's normal gate. FreeLLMAPI is never a model backend. |
+| ZDD and rollback | Blue continues serving while green loads/tests; assignment switches atomically; work drains; rollback preserves exactly-once leases; protected artifacts survive cleanup. |
+| Live opt-in | With scoped, revocable credentials and existing Gludd transports, run a bounded task with upstream advice disabled and enabled, validate the patch, capture sanitized delta/quota/timing evidence, revoke leases, and prove no billed compute remains solely for an empty queue. |
+
+Production Gludd files require at least 75% branch coverage each and the repository
+must retain at least 85% aggregate coverage. Upstream tests are additional
+evidence, not a replacement for Gludd bridge, privacy, lifecycle, and
+self-improvement tests.
+
+The mandatory GHA path is deterministic and credential-free: exact source
+archive, locked build tools and wheels, signed catalog fixtures, fake providers,
+bounded model fixtures, malicious bridge fixtures, and teardown assertions. Live
+tests are separately labelled and report `not_run`, never a false pass, when
+scoped secrets are absent.
+
+## Eligible upstream inputs without copied code
+
+- Signed free-tier catalog snapshots supply model identifiers, advertised
+  capability metadata, and catalog rank as uncertain discovery priors.
+- Advertised quotas and reset cadence supply timestamped hints; Gludd's observed
+  quota and cost accounting remain authoritative.
+- Provider quirks supply bounded compatibility, timeout, retry, and error-shape
+  hints; Gludd's transport, health, and failover logic interpret them.
+- A named pure scoring, normalization, or fusion export may execute only after its
+  delta record proves incremental value and defines automatic removal criteria.
+
+The pinned compiled module is the only executable upstream redistribution. Signed
+snapshots are immutable attributed inputs, not copied source. Gludd does not
+translate provider tables, router code, configuration, migrations, server code,
+or upstream tests into locally owned implementations.
+
+## Alternatives rejected
+
+| Alternative | Reason rejected |
+|---|---|
+| FreeLLMAPI process, sidecar, container, or loopback service | Violates the in-process requirement, duplicates supervision and observability, and creates another credential/network/admin boundary. |
+| Git submodule | Couples checkout and release state, encourages local upstream patches, and does not produce a runtime artifact or security boundary. |
+| Vendored source or copied upstream tests | Creates a drifting fork and obscures ownership. Exact upstream tests run from an ephemeral verified archive. |
+| Published npm package | The package is a configuration CLI, not a reusable server/core API, and would still require a JavaScript runtime boundary. |
+| Upstream OCI image | Useful for upstream operators but would run another service. Mutable tag history also makes tags unsuitable as identity. |
+| Protocol-only HTTP adapter | Requires a separately running gateway and duplicates Gludd's existing provider transport; eligible data and pure exports need no HTTP service. |
+| Full server bundle in a bare JS engine | Express, Undici, Sharp, Better SQLite3, Node globals, and process lifecycle cannot be made available by bundling alone. |
+| Handwritten Python port | Duplicates fast-moving upstream logic and makes behavioral drift inevitable. |
+| Custom libnode CPython extension | Supplies Node compatibility but creates a large dual-event-loop/native-addon maintenance surface with semver-major embedder breakage. |
+| Import upstream catalog directly as truth | A signature authenticates bytes, not provider terms, privacy, task fit, or measured quality. |
+| Import upstream discovery, routing, health, failover, envelopes, scheduling, or lifecycle | Duplicates Gludd authority, splits evidence ownership, and creates behavior that cannot be independently disabled for regression and ablation. |
+
+## Practitioner and maintenance evidence
+
+The project is young, so no multi-year FreeLLMAPI issue history exists. The
+oldest directly relevant operator threads were retained rather than claiming
+long-term stability:
+
+- In [discussion #533][discussion-533], an operator found confusing Docker
+  update behavior. The maintainer explained that `latest` had tracked unreleased
+  `main` and changed it to follow stable releases. Gludd does not use that image,
+  but the incident supports immutable source and artifact identities.
+- [Issue #666][issue-666] records a local Ollama custom endpoint being aborted by
+  a router-wide retry budget before its provider timeout. This motivates one
+  Gludd-owned outer deadline, with the upstream timeout detail consumed only as a
+  quirk hint and tested with that hint enabled and disabled.
+- [Issue #608][issue-608] demonstrates that a successful public `/v1/models`
+  response can coexist with a revoked credential that fails an authenticated
+  generation request. Gludd therefore treats catalog reachability, credential
+  validity, quota state, and model readiness as separate evidence and never
+  promotes a catalog seed without an exact, bounded generation probe.
+- [Issue #880][issue-880] reports more than 100 returned model rows but zero
+  models accepted by a consuming client because discovery metadata was not
+  sufficient to establish compatibility. Gludd consequently retains its own
+  capability/profile validation and records upstream rows only as trial seeds.
+- [Issue #584][issue-584] records a long-context NVIDIA NIM stream ending after a
+  fixed inactivity interval. Gludd's existing transport tests first-byte and
+  mid-stream deadlines independently; the artifact performs no stream I/O.
+- [Issue #35][security-35] records earlier server authentication/admin weaknesses.
+  Removing the server surface is useful defense in depth, not permission to relax
+  artifact or egress controls.
+- [Issue #671][issue-671] records the upstream CLI name returning npm `E404`
+  because the workspace package was not published. Gludd therefore does not
+  substitute an npm package for reviewed source: it runs the upstream-owned
+  scripts from the exact verified archive and keeps that archive ephemeral.
+- [Issue #1210][issue-1210] records a real provider path exhausting retries on
+  HTTP 429. The v0.1.1 live receipt consequently treats a rate limit as a typed
+  rejection, not a weak success or an invitation to bypass Gludd's budget.
+- [Issue #522][issue-522] records a live NVIDIA NIM degradation being reported as
+  a client error. Gludd therefore persists only its independently classified
+  provider fault and never copies an upstream body into release evidence.
+- Upstream published [v0.12.0][release-v0.12.0] after this candidate was frozen.
+  That is discovery evidence for the next serial update, not permission to
+  silently retarget the reviewed v0.11.1 source or its receipts.
+- The current [security policy][security-policy] still names `0.6.x` while the
+  release page lists `0.9.9`. Update automation therefore reconciles source,
+  release, security, and provider facts instead of trusting one page.
+
+## Implementation slices
+
+1. Add signed free-tier catalog/quota/quirk ingestion and an immutable data lock,
+   then map authenticated rows onto existing native Gludd discovery candidates as
+   uncertain advisory metadata. Prove that disabling the feed leaves every Gludd
+   runtime capability unchanged.
+2. Add credential-free catalog signature, rollback, schema, privacy, ownership,
+   update, ZDD, GHA, and local/Azure self-improvement tests. This is the complete
+   default integration when no executable upstream delta has been proven.
+3. Add the delta-record and shadow/ablation harness. Evaluate named pure upstream
+   exports only against a frozen corpus and the existing Gludd baseline. Do not
+   add a JavaScript dependency for an inconclusive or losing export.
+4. For each export that independently clears the delta gate, add the immutable
+   upstream-source, compiled-artifact, PyMiniRacer-wheel, ABI, provenance, and
+   rollback lock plus a mechanical validator. If purity requires source
+   duplication, stop and submit an upstream core-export change.
+5. Only when slice 4 has an admitted export, add the no-callback PyMiniRacer
+   adapter, bounded context pool, typed pure ABI, cancellation, metrics,
+   generation swap, and the full credential-free build/platform/security/E2E
+   matrix.
+6. Add serial data-update automation first. Add executable artifact building,
+   attestation, blue/green promotion, rollback, and lease-aware cleanup only when
+   an executable export exists. Opt-in local/Azure proofs compare the native
+   baseline with each admitted input disabled, shadowed, and enabled.
+
+No slice is complete until focused tests, coverage, lint, type checking, security
+scans, lifecycle cleanup, full gate, and hosted CI evidence are green.
+
+[api-reference]: https://github.com/tashfeenahmed/freellmapi/blob/main/docs/en/api/01-rest-api.md
+[catalog-sync]: https://github.com/tashfeenahmed/freellmapi/blob/main/server/src/services/catalog-sync.ts
+[cli-package]: https://github.com/tashfeenahmed/freellmapi/blob/main/cli/package.json
+[discussion-533]: https://github.com/tashfeenahmed/freellmapi/discussions/533
+[docker-workflow]: https://github.com/tashfeenahmed/freellmapi/blob/main/.github/workflows/docker.yml
+[dukpy]: https://pypi.org/project/dukpy/
+[issue-456]: https://github.com/tashfeenahmed/freellmapi/issues/456
+[issue-584]: https://github.com/tashfeenahmed/freellmapi/issues/584
+[issue-608]: https://github.com/tashfeenahmed/freellmapi/issues/608
+[issue-671]: https://github.com/tashfeenahmed/freellmapi/issues/671
+[issue-666]: https://github.com/tashfeenahmed/freellmapi/issues/666
+[issue-880]: https://github.com/tashfeenahmed/freellmapi/issues/880
+[issue-1262]: https://github.com/tashfeenahmed/freellmapi/issues/1262
+[issue-1270]: https://github.com/tashfeenahmed/freellmapi/issues/1270
+[issue-1210]: https://github.com/tashfeenahmed/freellmapi/issues/1210
+[issue-522]: https://github.com/tashfeenahmed/freellmapi/issues/522
+[jsrun]: https://imfing.github.io/jsrun/concepts/runtime/
+[license]: https://github.com/tashfeenahmed/freellmapi/blob/main/LICENSE
+[miniracer]: https://pypi.org/project/mini-racer/
+[miniracer-security]: https://bpcreech.com/PyMiniRacer/architecture/
+[node-embedder]: https://nodejs.org/download/release/v24.8.0/docs/api/all.html#c-embedder-api
+[node-20-build]: https://nodejs.org/en/download/archive/v20.20.2
+[node-22-build]: https://nodejs.org/en/download/archive/v22.23.2
+[pythonmonkey]: https://docs.pythonmonkey.io/
+[quickjs-wrapper]: https://github.com/PetterS/quickjs
+[release-v0.11.1]: https://github.com/tashfeenahmed/freellmapi/releases/tag/v0.11.1
+[release-v0.12.0]: https://github.com/tashfeenahmed/freellmapi/releases/tag/v0.12.0
+[commit-v0.11.1]: https://github.com/tashfeenahmed/freellmapi/commit/4191d8e7abef39fcd93fab009123467036f39750
+[root-package-v0.11.1]: https://github.com/tashfeenahmed/freellmapi/blob/4191d8e7abef39fcd93fab009123467036f39750/package.json
+[server-package-v0.11.1]: https://github.com/tashfeenahmed/freellmapi/blob/4191d8e7abef39fcd93fab009123467036f39750/server/package.json
+[security-35]: https://github.com/tashfeenahmed/freellmapi/issues/35
+[security-policy]: https://github.com/tashfeenahmed/freellmapi/blob/main/SECURITY.md
+[server-entry]: https://github.com/tashfeenahmed/freellmapi/blob/main/server/src/index.ts
+[server-package]: https://github.com/tashfeenahmed/freellmapi/blob/main/server/package.json
+[upstream]: https://github.com/tashfeenahmed/freellmapi
+[upstream-ci]: https://github.com/tashfeenahmed/freellmapi/blob/main/.github/workflows/ci.yml

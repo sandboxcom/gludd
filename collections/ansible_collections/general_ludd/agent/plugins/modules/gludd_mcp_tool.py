@@ -76,18 +76,8 @@ RETURN:
 
 from __future__ import annotations
 
-import os
-
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
-
-try:
-    from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
-        ok_result,
-    )
-except ImportError:
-    import sys
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
-    from gludd import ok_result  # type: ignore[import]
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import ok_result
 
 # W3.9 decision: MCP is honestly fenced.
 # daemon.py:403 passes mcp_client=None; mcp_servers config is loaded but unused.

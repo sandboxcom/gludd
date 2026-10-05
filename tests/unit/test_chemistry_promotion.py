@@ -14,32 +14,17 @@ CHEM-AT-024, CHEM-AT-025 drive the assertions:
 * Safety-policy updates may tighten immediately but cannot loosen without
   approval and canary evidence (spec §11).
 
-Modules load via importlib file paths so the suite is robust inside worktrees.
+Modules are imported through their installed package paths so coverage and
+runtime import behavior match the application boundary.
 """
 
 from __future__ import annotations
 
-import importlib.util
-import os
-import sys
 import time
 
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-_PROMOTION_PATH = os.path.join(_PROJECT_ROOT, "src", "general_ludd", "chemistry", "promotion.py")
-_PROVENANCE_PATH = os.path.join(_PROJECT_ROOT, "src", "general_ludd", "chemistry", "provenance.py")
+import pytest
 
-
-def _load(path: str, name: str):
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec is not None and spec.loader is not None, f"{name} spec failed"
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-promotion = _load(_PROMOTION_PATH, "chem_promotion_under_test")
-provenance = _load(_PROVENANCE_PATH, "chem_provenance_under_test")
+from general_ludd.chemistry import promotion, provenance
 
 
 def _snapshot_payload(label: str = "v1"):
@@ -346,3 +331,131 @@ class TestProvenanceChain:
         assert len(chains) == 2
         locators = {c["source"]["locator"] for c in chains}
         assert locators == {"s1", "s2"}
+
+
+class TestPromotionBoundaryCoverage:
+    """Exercise fail-closed and no-op state-machine edges."""
+
+    def test_snapshot_validates_inputs_and_reports_all_counts(self):
+        with pytest.raises(TypeError, match="payload"):
+            promotion.ChemistrySnapshot([], version=1)
+        with pytest.raises(ValueError, match="version"):
+            promotion.ChemistrySnapshot({}, version=0)
+        snapshot = promotion.ChemistrySnapshot(_snapshot_payload(), version=1)
+        summary = snapshot.summary()
+        assert summary["counts"] == {
+            "entities": 1,
+            "properties": 1,
+            "reactions": 1,
+            "hazards": 1,
+        }
+        assert "ChemistrySnapshot(version=1" in repr(snapshot)
+
+    def test_canary_hash_validates_input_and_ignores_timestamp(self):
+        with pytest.raises(TypeError, match="request"):
+            promotion.canary_hash([])
+        assert promotion.canary_hash({"request_id": "r", "timestamp": 1}) == promotion.canary_hash(
+            {"request_id": "r", "timestamp": 2}
+        )
+
+    def test_alias_and_canary_validation_edges(self):
+        pipe = promotion.PromotionPipeline()
+        snapshot = promotion.ChemistrySnapshot(_snapshot_payload(), version=1)
+        with pytest.raises(TypeError, match="alias target"):
+            pipe.register_alias("chemistry", object())
+        with pytest.raises(KeyError, match="unknown alias"):
+            pipe.read("missing", "r")
+        pipe.register_alias("chemistry", snapshot)
+        assert pipe.read_shadow("chemistry", "r") is snapshot
+        pipe.stop_shadow("chemistry")
+        for fraction in (0.0, 1.0):
+            with pytest.raises(ValueError, match="fraction"):
+                pipe.start_canary("chemistry", snapshot, fraction)
+        assert pipe.route_canary("chemistry", {"request_id": "r"}) == "prod"
+
+    def test_finish_without_admission_and_missing_warm_snapshot_fall_back(self):
+        pipe = promotion.PromotionPipeline()
+        snapshot = promotion.ChemistrySnapshot(_snapshot_payload(), version=1)
+        pipe.register_alias("chemistry", snapshot)
+        assert pipe.finish("chemistry", "not-admitted")["snapshot"] is snapshot
+        assert pipe.admit("chemistry", "r") == 1
+        pipe._aliases["chemistry"].warm.clear()
+        assert pipe.finish("chemistry", "r")["snapshot"] is snapshot
+
+    def test_swap_validation_and_candidate_cleanup(self):
+        pipe = promotion.PromotionPipeline()
+        v1 = promotion.ChemistrySnapshot(_snapshot_payload("v1"), version=1)
+        v2 = promotion.ChemistrySnapshot(_snapshot_payload("v2"), version=2)
+        pipe.register_alias("chemistry", v1)
+        with pytest.raises(TypeError, match="swap target"):
+            pipe.atomic_swap("chemistry", object())
+        with pytest.raises(ValueError, match="must exceed"):
+            pipe.atomic_swap("chemistry", v1)
+        pipe.start_shadow("chemistry", v2)
+        pipe.start_canary("chemistry", v2, 0.5)
+        pipe.atomic_swap("chemistry", v2)
+        state = pipe._aliases["chemistry"]
+        assert state.shadow is None
+        assert state.canary is None
+        assert state.canary_fraction == 0.0
+
+    def test_rollback_validation_current_and_missing_warm_paths(self):
+        pipe = promotion.PromotionPipeline()
+        v1 = promotion.ChemistrySnapshot(_snapshot_payload("v1"), version=1)
+        pipe.register_alias("chemistry", v1)
+        with pytest.raises(RuntimeError, match="no recoverable"):
+            pipe.rollback("chemistry")
+        same = pipe.rollback("chemistry", target_version=1, breach_at=10.0)
+        assert same["within_seconds"] == 0
+        with pytest.raises(RuntimeError, match="not warm"):
+            pipe.rollback("chemistry", target_version=99)
+
+    def test_rollback_retargets_shadow_and_canary(self):
+        pipe = promotion.PromotionPipeline()
+        v1 = promotion.ChemistrySnapshot(_snapshot_payload("v1"), version=1)
+        v2 = promotion.ChemistrySnapshot(_snapshot_payload("v2"), version=2)
+        v3 = promotion.ChemistrySnapshot(_snapshot_payload("v3"), version=3)
+        pipe.register_alias("chemistry", v1)
+        pipe.atomic_swap("chemistry", v2)
+        pipe.start_shadow("chemistry", v1)
+        pipe.rollback("chemistry", target_version=1)
+        assert pipe._aliases["chemistry"].shadow is v2
+
+        pipe.atomic_swap("chemistry", v3)
+        pipe.start_canary("chemistry", v1, 0.5)
+        pipe.rollback("chemistry", target_version=1)
+        state = pipe._aliases["chemistry"]
+        assert state.canary is v3
+        assert state.canary_fraction == 0.0
+
+    def test_recoverable_versions_includes_shadow_and_canary(self):
+        pipe = promotion.PromotionPipeline()
+        versions = [promotion.ChemistrySnapshot(_snapshot_payload(str(i)), version=i) for i in range(1, 4)]
+        pipe.register_alias("chemistry", versions[0])
+        pipe.start_shadow("chemistry", versions[1])
+        pipe.start_canary("chemistry", versions[2], 0.5)
+        assert pipe.recoverable_versions("chemistry") == [1, 2, 3]
+
+    def test_policy_no_change_missing_alias_and_mixed_direction(self):
+        pipe = promotion.PromotionPipeline()
+        unchanged = {"ethanol": {"tier": "moderate"}}
+        result = pipe.apply_safety_policy("missing", unchanged, unchanged, approval=None)
+        assert result["direction"] == "no_change"
+
+        assert pipe._policy_direction({}, unchanged) == "tighten"
+        assert pipe._policy_direction(unchanged, {}) == "loosen"
+        assert pipe._policy_direction({"x": "legacy"}, {"x": {"tier": "high"}}) == "tighten"
+        assert (
+            pipe._policy_direction(
+                {"safer": {"tier": "moderate"}, "looser": {"tier": "high"}},
+                {"safer": {"tier": "high"}, "looser": {"tier": "moderate"}},
+            )
+            == "tighten"
+        )
+
+    def test_policy_requires_both_approval_fields(self):
+        pipe = promotion.PromotionPipeline()
+        old = {"ethanol": {"tier": "high"}}
+        new = {"ethanol": {"tier": "moderate"}}
+        for approval in ({}, {"approver": "chemist"}, {"canary_evidence": "ok"}):
+            assert pipe.apply_safety_policy("missing", old, new, approval)["applied"] is False

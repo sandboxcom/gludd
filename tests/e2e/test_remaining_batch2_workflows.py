@@ -473,50 +473,50 @@ class TestSSLCompliance:
 
 class TestSSLASN1:
     def test_import(self):
-        from general_ludd.ssl.asn1 import parse_der
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import parse_der
 
         assert parse_der is not None
 
     def test_parse_simple_integer(self):
-        from general_ludd.ssl.asn1 import parse_der
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import parse_der
 
         result = parse_der(b"\x02\x01\x2a")
         assert result["type"] == "INTEGER"
         assert result["value"] == 42
 
     def test_parse_null(self):
-        from general_ludd.ssl.asn1 import parse_der
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import parse_der
 
         result = parse_der(b"\x05\x00")
         assert result["type"] == "NULL"
 
     def test_parse_oid(self):
-        from general_ludd.ssl.asn1 import parse_der
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import parse_der
 
         result = parse_der(b"\x06\x08\x2b\x06\x01\x05\x05\x07\x03\x01")
         assert result["type"] == "OID"
         assert "1.3.6" in result["value"]
 
     def test_encode_integer(self):
-        from general_ludd.ssl.asn1 import encode_der
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import encode_der
 
         encoded = encode_der({"type": "INTEGER", "value": 42})
         assert encoded == b"\x02\x01\x2a"
 
     def test_encode_null(self):
-        from general_ludd.ssl.asn1 import encode_der
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import encode_der
 
         encoded = encode_der({"type": "NULL", "value": None})
         assert encoded == b"\x05\x00"
 
     def test_encode_boolean(self):
-        from general_ludd.ssl.asn1 import encode_der
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import encode_der
 
         encoded = encode_der({"type": "BOOLEAN", "value": True})
         assert encoded == b"\x01\x01\xff"
 
     def test_encode_sequence(self):
-        from general_ludd.ssl.asn1 import encode_der
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import encode_der
 
         encoded = encode_der(
             {
@@ -527,7 +527,7 @@ class TestSSLASN1:
         assert encoded[0] == 0x30
 
     def test_encode_roundtrip_simple(self):
-        from general_ludd.ssl.asn1 import encode_der, parse_der
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import encode_der, parse_der
 
         original = {"type": "SEQUENCE", "children": [{"type": "INTEGER", "value": 100}]}
         der = encode_der(original)
@@ -536,26 +536,26 @@ class TestSSLASN1:
         assert decoded["children"][0]["value"] == 100
 
     def test_lookup_known_oid(self):
-        from general_ludd.ssl.asn1 import lookup_oid
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import lookup_oid
 
         info = lookup_oid("2.5.4.3")
         assert info["name"] == "commonName"
 
     def test_lookup_unknown_oid(self):
-        from general_ludd.ssl.asn1 import lookup_oid
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import lookup_oid
 
         info = lookup_oid("1.2.3.4.5.999")
         assert info["name"] == "unknown"
 
     def test_generate_oid(self):
-        from general_ludd.ssl.asn1 import generate_oid
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import generate_oid
 
         oid = generate_oid("1.2.3", "test description")
         assert oid.startswith("1.2.3.")
         assert len(oid.split(".")) == 5
 
     def test_encode_oid(self):
-        from general_ludd.ssl.asn1 import encode_der
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import encode_der
 
         encoded = encode_der({"type": "OID", "value": "2.5.4.3"})
         decoded = bytes([0x06, encoded[1], *encoded[2:]])
@@ -644,10 +644,10 @@ class TestSSLHSM:
 class TestSSLCertManager:
     def test_import(self):
         from general_ludd.ssl_agent.cert_manager import (
-            CertManager,
+            generate_key_pair,
         )
 
-        assert CertManager is not None
+        assert generate_key_pair is not None
 
     def test_generate_rsa_keypair(self):
         from general_ludd.ssl_agent.cert_manager import generate_key_pair
@@ -712,40 +712,46 @@ class TestSSLCertManager:
         assert "leaf_cert_pem" in chain
         assert chain["chain_valid"] is True
 
-    def test_asn1_roundtrip_verify(self):
-        from general_ludd.ssl_agent.cert_manager import (
-            asn1_roundtrip_verify,
-            generate_ca_chain,
+    def test_collection_asn1_roundtrip(self):
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import (
+            encode_der,
+            parse_der,
         )
 
-        chain = generate_ca_chain("Roundtrip Root", "roundtrip.example.com")
-        result = asn1_roundtrip_verify(chain["leaf_cert_pem"])
-        assert result["match"] is True
+        structure = {"type": "OID", "value": "2.5.4.3"}
+        assert parse_der(encode_der(structure))["value"] == "2.5.4.3"
 
     def test_oid_lookup_by_oid(self):
-        from general_ludd.ssl_agent.cert_manager import oid_lookup
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import (
+            lookup_oid,
+        )
 
-        result = oid_lookup("2.5.4.3")
-        assert result is not None
-        assert result.name == "commonName"
+        result = lookup_oid("2.5.4.3")
+        assert result["name"] == "commonName"
 
-    def test_oid_lookup_by_name(self):
-        from general_ludd.ssl_agent.cert_manager import oid_lookup
+    def test_oid_lookup_includes_description(self):
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import (
+            lookup_oid,
+        )
 
-        result = oid_lookup("commonName")
-        assert result is not None
+        result = lookup_oid("2.5.4.3")
+        assert result["description"]
 
     def test_oid_lookup_missing(self):
-        from general_ludd.ssl_agent.cert_manager import oid_lookup
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import (
+            lookup_oid,
+        )
 
-        result = oid_lookup("99.99.99.99.9999")
-        assert result is None
+        result = lookup_oid("99.99.99.99.9999")
+        assert result["name"] == "unknown"
 
     def test_oid_generate(self):
-        from general_ludd.ssl_agent.cert_manager import oid_generate
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import (
+            generate_oid,
+        )
 
-        oid = oid_generate("2.5.4.3")
-        assert oid.dotted_string == "2.5.4.3"
+        oid = generate_oid("2.5.4.3", "e2e")
+        assert oid.startswith("2.5.4.3.")
 
     def test_algorithm_evaluate_known(self):
         from general_ludd.ssl_agent.cert_manager import algorithm_evaluate
@@ -798,17 +804,19 @@ class TestSSLCertManager:
         j = ca_jurisdiction_lookup("bogus-ca")
         assert j is None
 
-    def test_cert_manager_constructor(self):
-        from general_ludd.ssl_agent.cert_manager import CertManager
+    def test_collection_oid_owner_import(self):
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import (
+            lookup_oid,
+        )
 
-        cm = CertManager()
-        assert cm._known_oids is not None
+        assert lookup_oid is not None
 
-    def test_cert_manager_known_oids(self):
-        from general_ludd.ssl_agent.cert_manager import CertManager
+    def test_collection_oid_owner_has_common_name(self):
+        from ansible_collections.general_ludd.security.plugins.module_utils.asn1 import (
+            lookup_oid,
+        )
 
-        cm = CertManager()
-        assert "2.5.4.3" in cm._known_oids
+        assert lookup_oid("2.5.4.3")["name"] == "commonName"
 
 
 # ---------------------------------------------------------------------------

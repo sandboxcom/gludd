@@ -56,8 +56,8 @@
           nohup {{ venv_bin }}/python -m general_ludd.cli daemon
           --host {{ daemon_host }} --port {{ daemon_port }}
           --log-level info --workers 1
+          --pid-file {{ pidfile }}
           > {{ logfile }} 2>&1 &
-          echo $! > {{ pidfile }};
       args:
         chdir: "{{ project_dir }}"
       environment:
@@ -66,14 +66,17 @@
         PYTHONPATH: "{{ project_dir }}/src"
       changed_when: true
 
-    - name: Slurp the recorded PID
+    - name: Wait for the daemon to record its PID
       ansible.builtin.slurp:
         src: "{{ pidfile }}"
       register: pid_raw
+      until: pid_raw.content is defined
+      retries: 30
+      delay: 1
 
     - name: Parse the daemon PID
       ansible.builtin.set_fact:
-        daemon_pid: "{{ (pid_raw.content | b64decode).strip() | int }}"
+        daemon_pid: "{{ (pid_raw.content | b64decode | from_json)['pid'] }}"
 
     - name: Poll /healthz for up to 30 seconds
       ansible.builtin.uri:

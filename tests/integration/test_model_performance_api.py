@@ -82,7 +82,7 @@ async def _make_app(monkeypatch):
         await conn.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
-    monkeypatch.setenv("GLUDD_PSK", PSK)
+    monkeypatch.setenv("GLUDD_AUTH_PSK", PSK)
     from general_ludd.daemon import create_daemon_app
 
     app = create_daemon_app(tick_interval=1.0)
@@ -170,7 +170,7 @@ class TestPerformanceEndpoint:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         factory = async_sessionmaker(engine, expire_on_commit=False)
-        monkeypatch.setenv("GLUDD_PSK", PSK)
+        monkeypatch.setenv("GLUDD_AUTH_PSK", PSK)
         from general_ludd.daemon import create_daemon_app
         app = create_daemon_app(tick_interval=1.0)
         app.state._session_factory = factory
@@ -277,7 +277,7 @@ class TestRankingEndpoint:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         factory = async_sessionmaker(engine, expire_on_commit=False)
-        monkeypatch.setenv("GLUDD_PSK", PSK)
+        monkeypatch.setenv("GLUDD_AUTH_PSK", PSK)
         from general_ludd.daemon import create_daemon_app
         app = create_daemon_app(tick_interval=1.0)
         app.state._session_factory = factory
@@ -331,7 +331,7 @@ class TestRouterStatusEndpoint:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         factory = async_sessionmaker(engine, expire_on_commit=False)
-        monkeypatch.setenv("GLUDD_PSK", PSK)
+        monkeypatch.setenv("GLUDD_AUTH_PSK", PSK)
         from general_ludd.daemon import create_daemon_app
         app = create_daemon_app(tick_interval=1.0)
         app.state._session_factory = factory
@@ -450,7 +450,7 @@ class TestRouterConfigEndpoint:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         factory = async_sessionmaker(engine, expire_on_commit=False)
-        monkeypatch.setenv("GLUDD_PSK", PSK)
+        monkeypatch.setenv("GLUDD_AUTH_PSK", PSK)
         from general_ludd.daemon import create_daemon_app
         app = create_daemon_app(tick_interval=1.0)
         app.state._session_factory = factory

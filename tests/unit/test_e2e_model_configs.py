@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+import pytest
+
+from general_ludd.local_model._local_model_configs import (
+    _LOCAL_MODELS,
+    LocalModelConfig,
+    get_e2e_models,
+)
 from tests.e2e._local_model_configs import (
     _MODELS,
     LOCAL_GGUF_MODELS,
@@ -11,10 +18,72 @@ from tests.e2e._local_model_configs import (
     get_models_by_role,
     list_models,
     model_count,
+    select_models,
 )
 
 
 class TestModelRegistry:
+    def test_runtime_catalog_uses_verified_hugging_face_artifacts(self) -> None:
+        """Every repaired coding entry must retain its reviewed artifact identity."""
+        by_name = {model.name: model for model in _LOCAL_MODELS}
+
+        deepseek = by_name["deepseek-coder-1.3b"]
+        assert deepseek.repo == "TheBloke/deepseek-coder-1.3b-instruct-GGUF"
+        assert deepseek.filename == "deepseek-coder-1.3b-instruct.Q4_K_M.gguf"
+
+        starcoder = by_name["starcoder2-3b"]
+        assert starcoder.repo == "QuantFactory/starcoder2-3b-instruct-GGUF"
+        assert starcoder.filename == "starcoder2-3b-instruct.Q4_K_M.gguf"
+
+        identities = {(model.repo, model.filename) for model in _LOCAL_MODELS}
+        assert (
+            "bartowski/DeepSeek-Coder-1.3B-Instruct-GGUF",
+            "DeepSeek-Coder-1.3B-Instruct-Q4_K_M.gguf",
+        ) not in identities
+        assert (
+            "bartowski/StarCoder2-3B-Instruct-GGUF",
+            "StarCoder2-3B-Instruct-Q4_K_M.gguf",
+        ) not in identities
+
+    def test_smollm2_1_7b_context_matches_native_limit(self) -> None:
+        """Catalog maintenance must not inflate SmolLM2 beyond its native context."""
+        smollm = next(model for model in _LOCAL_MODELS if model.name == "smollm2-1.7b")
+
+        assert smollm.context_size == 8192
+
+    def test_runtime_registry_filter_and_quant_detection(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("E2E_LOCAL_MODEL", "qwen-0.5b")
+        assert [model.name for model in get_e2e_models()] == ["qwen-0.5b"]
+
+        detected = LocalModelConfig(
+            name="detected",
+            repo="owner/model",
+            filename="model-Q6_K.gguf",
+            quant_level="",
+        )
+        assert detected.huggingface_url == "https://huggingface.co/owner/model"
+        assert detected.quant_level == "Q6_K"
+
+        unmatched = LocalModelConfig(
+            name="unmatched",
+            repo="",
+            filename="model.gguf",
+            quant_level="",
+        )
+        assert unmatched.huggingface_url == ""
+        assert unmatched.quant_level == ""
+
+    def test_runtime_registry_returns_copy_without_filter(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("E2E_LOCAL_MODEL", raising=False)
+        first = get_e2e_models()
+        second = get_e2e_models()
+        assert first == second
+        assert first is not second
+
     def test_model_count_at_least_20(self) -> None:
         assert model_count() >= 20
 
@@ -61,7 +130,7 @@ class TestModelRegistry:
         for c in configs:
             assert isinstance(c, LocalModelConfig)
 
-    def test_get_e2e_configs_single_model(self, monkeypatch) -> None:
+    def test_get_e2e_configs_single_model(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("E2E_LOCAL_MODEL", "Qwen2.5-Coder-0.5B")
         configs = get_e2e_configs()
         assert len(configs) == 1
@@ -78,17 +147,17 @@ class TestModelRegistry:
         assert len(roles["PLANNER"]) >= 1
         assert len(roles["REVIEWER"]) >= 1
 
-    def test_local_model_filter_coding(self, monkeypatch) -> None:
+    def test_local_model_filter_coding(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("LOCAL_MODEL_FILTER", "coding")
         models = list_models()
         assert all(m.category == "coding" for m in models)
 
-    def test_local_model_filter_ci_safe(self, monkeypatch) -> None:
+    def test_local_model_filter_ci_safe(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("LOCAL_MODEL_FILTER", "<500mb")
         models = list_models()
         assert all(m.ci_safe for m in models)
 
-    def test_local_model_filter_specific_model(self, monkeypatch) -> None:
+    def test_local_model_filter_specific_model(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("LOCAL_MODEL_FILTER", "DeepSeek-Coder-1.3B")
         models = list_models()
         assert len(models) == 1
@@ -114,6 +183,19 @@ class TestModelRegistry:
         assert _resolve("phi3-mini") is not None
         assert _resolve("gemma-2b") is not None
         assert _resolve("nonexistent-model") is None
+
+    def test_selected_model_accepts_openai_server_identity(self) -> None:
+        selected = select_models(ci_safe=True, target="Qwen2.5-0.5B-Instruct")
+
+        assert [model.name for model in selected] == ["Qwen2.5-0.5B"]
+
+    def test_selected_model_rejects_unknown_identity(self) -> None:
+        with pytest.raises(ValueError, match="Unknown local model"):
+            select_models(ci_safe=True, target="missing-model")
+
+    def test_selected_model_rejects_ci_excluded_identity(self) -> None:
+        with pytest.raises(ValueError, match="excluded by the active filters"):
+            select_models(ci_safe=True, target="DeepSeek-Coder-1.3B")
 
     def test_all_names_unique(self) -> None:
         names = [m.name for m in _MODELS]

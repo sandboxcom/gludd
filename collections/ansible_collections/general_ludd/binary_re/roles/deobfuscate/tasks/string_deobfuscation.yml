@@ -1,27 +1,20 @@
 ---
-- name: Deobfuscate strings in binary
-  ansible.builtin.command:
-    cmd: >-
-      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
-      {{ role_path }}/files/deobfuscate.py
-      --mode strings
-      --binary {{ binary_path }}
-      --output {{ output_dir }}/string_deobfuscation.json
-  register: _strings_result
-  changed_when: false
-  failed_when: _strings_result.rc not in [0]
+- name: Deobfuscate strings through packaged runtime
+  general_ludd.binary_re.binary_runtime:
+    operation: strings
+    params:
+      binary_path: "{{ binary_path }}"
+  register: _strings_runtime
 
-- name: Read string deobfuscation artifact
-  ansible.builtin.slurp:
-    src: "{{ output_dir }}/string_deobfuscation.json"
-  register: _strings_artifact_raw
+- name: Write string deobfuscation artifact atomically
+  ansible.builtin.copy:
+    content: "{{ _strings_runtime.artifact_content }}"
+    dest: "{{ output_dir }}/{{ _strings_runtime.artifact_filename }}"
+    mode: "0644"
 
-- name: Parse string deobfuscation artifact
+- name: Publish string deobfuscation artifact
   ansible.builtin.set_fact:
-    strings_artifact: >-
-      {{ _strings_artifact_raw.content | b64decode | from_json
-         if (_strings_artifact_raw is defined and _strings_artifact_raw.content is defined)
-         else {} }}
+    strings_artifact: "{{ _strings_runtime.result }}"
 
 - name: Report string deobfuscation summary
   ansible.builtin.debug:

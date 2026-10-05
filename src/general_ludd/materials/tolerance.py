@@ -1,5 +1,4 @@
-"""Tolerance modeling for spec MATE-001 section 3 (``tolerance_model`` role) and
-section 4.7 (build / dimensional modeling).
+"""Tolerance modeling for spec MATE-001 section 3 (``tolerance_model`` role) and section 4.7.
 
 Provides:
 
@@ -45,6 +44,7 @@ class ToleranceChain:
     equation_id_thermal = "thermal: dL = alpha * L0 * dT"
 
     def __init__(self, dims: list[tuple[float, float]], unit: str) -> None:
+        """Build a tolerance chain from (nominal, tolerance) pairs and a unit."""
         if unit is None or not str(unit).strip():
             raise ValueError("unit must be a non-empty string")
         self.dims: list[tuple[float, float]] = list(dims)
@@ -92,8 +92,7 @@ class ToleranceChain:
         }
 
     def rss_stackup(self) -> dict[str, Any]:
-        """Statistical stack-up assuming independent, normally-distributed
-        contributors: ``band = sqrt(sum(t_i^2))`` (1-sigma).
+        """Statistical stack-up assuming independent, normally-distributed contributors.
 
         The returned ``upper``/``lower`` are ±1-sigma around the nominal. For
         a ~99.73% band multiply ``sigma_band`` by 3; we keep it at 1-sigma to
@@ -213,10 +212,10 @@ def process_capability(
         "mean": mean,
     }
 
-    if sigma <= 0:
+    if not math.isfinite(sigma) or sigma <= 0:
         return {
             "state": STATE_FAIL_CLOSED,
-            "reason": "sigma must be positive",
+            "reason": "sigma must be a positive finite number",
             "Cp": None,
             "Cpk": None,
             "equation_id": equation_id,
@@ -265,8 +264,7 @@ def assess_assembly(
     shaft_tol: float,
     unit: str,
 ) -> dict[str, Any]:
-    """Worst-case clearance between a hole and a shaft given bilateral
-    bilateral tolerances on each.
+    """Worst-case clearance between a hole and a shaft given bilateral tolerances on each.
 
     Clearance = hole_dimension - shaft_dimension. Positive = clearance fit;
     negative = interference fit. ``min_clearance`` uses the smallest hole with
@@ -278,8 +276,8 @@ def assess_assembly(
     hole_max = hole_nominal + abs(hole_tol)
     shaft_min = shaft_nominal - abs(shaft_tol)
     shaft_max = shaft_nominal + abs(shaft_tol)
-    min_clearance = hole_min - shaft_max
-    max_clearance = hole_max - shaft_min
+    min_clearance = round(hole_min - shaft_max, 12)
+    max_clearance = round(hole_max - shaft_min, 12)
 
     if min_clearance > 0:
         fit_class = "clearance"

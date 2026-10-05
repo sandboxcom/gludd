@@ -186,7 +186,7 @@ collection entry through the project-collection precedence system. This is the
 bidirectional loop — **the property that makes Ornith symbiotic rather than just "a model we
 call."**
 
-```
+```text
  Ornith solve  →  PR on target repo  →  CI gate  →  HumanTodo review
                                                               │
                                             ┌─────────────────┴──────────────┐
@@ -251,7 +251,7 @@ Phase 3 closes the loop: gludd emits labeled training data; the offline RL train
 new model checkpoint rolls back into gludd's config; the next wave of solves uses it. Gludd never
 runs the trainer — that's operator-side — but gludd owns every other leg of the loop.
 
-```
+```text
  ┌─────────────────────────┐   OrnithTrainingRepo.export_dataset()   ┌──────────────────────┐
  │  ornith_training_pairs  │ ──────────────────────────────────────► │  JSONL on disk       │
  │  (Postgres)             │   {task, scaffold, outcome, reward}     │  /var/lib/gludd/     │
@@ -335,7 +335,7 @@ Ornith runs under the `agent:ornith` principal. Its `PermissionSpec` lives at
 `config/permissions/agent-ornith.yml` and is intersected with the human spec and the agent spec
 per AGENTS.md "Human Permission Subjects + Intersection Policy":
 
-```
+```text
 effective_spec = intersection(human_spec, agent_spec, ornith_requested_spec)
 ```
 
@@ -420,7 +420,7 @@ mode.
 A gludd task needs to refactor `src/foo.py` to use `tenacity` for retries.
 
 1. **Dispatch.** The owning gludd agent runs:
-   ```
+   ```text
    gludd ornith solve \
        --task "refactor foo.py to use tenacity for retries" \
        --target-files src/foo.py
@@ -624,9 +624,9 @@ in that order.
    per-SHA eval pass on the held-out set on each checkpoint bump (tracked in
    `OrnithTrainingPairModel.model_sha`).
 
-5. **Interaction with the 10-agent floor.** Ornith inference is GPU-bound and single-tenant per
-   server; dispatching 10 parallel Ornith subagents would queue. Does the floor policy need a
-   per-provider concurrency cap, or do we route excess demand to the sonnet fallback?
+5. **Interaction with the three-agent ceiling.** Ornith inference is GPU-bound and single-tenant
+   per server; even three parallel Ornith subagents may queue. Provider capacity must further
+   lower concurrency or route excess demand to the Sonnet fallback.
 
 6. **Ornith 397B-MoE hosting.** The 397B model needs 8×H100. For most gludd deployments the 9B is
    the right default; the 35B-MoE for hot-path code-gen. Should the adapter auto-fallback across

@@ -104,7 +104,7 @@ class TestAdminTokenIndependentOfPsk:
         self, method: str, path: str, body: dict | None, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("GLUDD_ADMIN_TOKEN", "admin-secret")
-        monkeypatch.setenv("GLUDD_PSK", "shared-psk")
+        monkeypatch.setenv("GLUDD_AUTH_PSK", "shared-psk")
         app = _make_app()
         client = TestClient(app)
         kwargs = {"json": body} if body else {}

@@ -102,19 +102,14 @@ RETURN:
 
 from __future__ import annotations
 
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
+from typing import Any
 
-try:
-    from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
-        GluddClient,
-        error_result,
-        ok_result,
-    )
-except ImportError:
-    import os
-    import sys
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
-    from gludd import GluddClient, error_result, ok_result  # type: ignore[import]
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
+    GluddClient,
+    error_result,
+    ok_result,
+)
 
 
 def main() -> None:
@@ -154,12 +149,12 @@ def main() -> None:
         timeout=module.params["timeout"],
     )
 
-    messages: list[dict] = []
+    messages: list[dict[str, Any]] = []
     if module.params["system"]:
         messages.append({"role": "system", "content": module.params["system"]})
     messages.append({"role": "user", "content": module.params["prompt"]})
 
-    payload: dict = {
+    payload: dict[str, Any] = {
         "messages": messages,
         "profile_id": module.params["model_profile"],
         "work_type": module.params["work_type"],

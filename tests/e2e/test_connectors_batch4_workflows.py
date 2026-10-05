@@ -63,15 +63,17 @@ class MockHttpTransport:
         timeout: float | None = None,
         **kwargs: object,
     ) -> tuple[int, object]:
-        self.calls.append({
-            "method": method_or_url,
-            "url": url_or_headers if isinstance(url_or_headers, str) else method_or_url,
-            "params": params,
-            "json": json,
-            "headers": headers,
-            "auth": auth,
-            "timeout": timeout,
-        })
+        self.calls.append(
+            {
+                "method": method_or_url,
+                "url": url_or_headers if isinstance(url_or_headers, str) else method_or_url,
+                "params": params,
+                "json": json,
+                "headers": headers,
+                "auth": auth,
+                "timeout": timeout,
+            }
+        )
         return self.responses.get(
             str(url_or_headers) if isinstance(url_or_headers, str) else "default",
             (self.default_status, self.default_body),
@@ -107,15 +109,17 @@ class MockHttpResponseTransport:
         timeout: float = 30.0,
         **kwargs: object,
     ) -> MockHttpResponse:
-        self.calls.append({
-            "method": method,
-            "url": url,
-            "headers": headers,
-            "params": params,
-            "json": json,
-            "auth": auth,
-            "timeout": timeout,
-        })
+        self.calls.append(
+            {
+                "method": method,
+                "url": url,
+                "headers": headers,
+                "params": params,
+                "json": json,
+                "auth": auth,
+                "timeout": timeout,
+            }
+        )
         resp = MockHttpResponse(self._status, self._body)
         resp.headers = dict(self._headers)
         return resp
@@ -221,12 +225,14 @@ class TestOktaConnector:
 
         monkeypatch.setenv("OKTA_TOK_B4", "tok")
         try:
-            source = OktaSource({
-                "org_url": "https://my.okta.com",
-                "token_env": "OKTA_TOK_B4",
-                "max_pages": 5,
-                "timeout": 15,
-            })
+            source = OktaSource(
+                {
+                    "org_url": "https://my.okta.com",
+                    "token_env": "OKTA_TOK_B4",
+                    "max_pages": 5,
+                    "timeout": 15,
+                }
+            )
             assert source.max_pages == 5
             assert source.timeout == 15
         finally:
@@ -316,9 +322,7 @@ class TestOktaConnector:
         def _transport(method: str, url: str, **kw: object) -> MockHttpResponse:
             call_count[0] += 1
             msg = f"event {call_count[0]}"
-            resp = MockHttpResponse(
-                200, [{"published": "2025-01-01T00:00:00Z", "displayMessage": msg}]
-            )
+            resp = MockHttpResponse(200, [{"published": "2025-01-01T00:00:00Z", "displayMessage": msg}])
             if call_count[0] < 3:
                 resp.headers = {"Link": '<https://ok.example.com/api/v1/logs?after=2>; rel="next"'}
             return resp
@@ -353,11 +357,13 @@ class TestEntraSigninConnector:
         monkeypatch.setenv("ENTRA_CLIENT_ID", "cid")
         monkeypatch.setenv("ENTRA_SECRET", "sec")  # pragma: allowlist secret
         try:
-            source = EntraSigninSource({
-                "tenant_id": "test-tenant-id",
-                "client_id_env": "ENTRA_CLIENT_ID",
-                "secret_env": "ENTRA_SECRET",  # pragma: allowlist secret
-            })
+            source = EntraSigninSource(
+                {
+                    "tenant_id": "test-tenant-id",
+                    "client_id_env": "ENTRA_CLIENT_ID",
+                    "secret_env": "ENTRA_SECRET",  # pragma: allowlist secret
+                }
+            )
             assert source.name is not None
         finally:
             del os.environ["ENTRA_CLIENT_ID"], os.environ["ENTRA_SECRET"]
@@ -449,11 +455,13 @@ class TestServiceNowConnector:
         monkeypatch.setenv("SN_USER_B4", "admin")
         monkeypatch.setenv("SN_PASS_B4", "pass")
         try:
-            source = ServiceNowSource({
-                "instance": "dev12345",
-                "user_env": "SN_USER_B4",
-                "pass_env": "SN_PASS_B4",
-            })
+            source = ServiceNowSource(
+                {
+                    "instance": "dev12345",
+                    "user_env": "SN_USER_B4",
+                    "pass_env": "SN_PASS_B4",
+                }
+            )
             assert source.KIND == "tickets"
             assert "dev12345" in str(source.name)
         finally:
@@ -546,11 +554,13 @@ class TestZendeskConnector:
 
         monkeypatch.setenv("ZD_TOK_B4", "tok")
         try:
-            source = ZendeskSource({
-                "subdomain": "mycompany",
-                "email_env": "ZD_EMAIL_B4",
-                "token_env": "ZD_TOK_B4",
-            })
+            source = ZendeskSource(
+                {
+                    "subdomain": "mycompany",
+                    "email_env": "ZD_EMAIL_B4",
+                    "token_env": "ZD_TOK_B4",
+                }
+            )
             assert source.KIND == "tickets"
         finally:
             del os.environ["ZD_TOK_B4"]
@@ -1010,7 +1020,14 @@ class TestJournaldConnector:
     def test_query_empty_with_no_reader(self, monkeypatch):
         from general_ludd.connectors.journald import JournaldSource
 
-        source = JournaldSource()
+        # Inject a failing runner: the no-reader contract is "no injected
+        # reader → no records". Without it, Linux CI hosts with a working
+        # journalctl would return REAL journal entries, making the pinned
+        # empty result environment-dependent.
+        def _failing_runner(argv):
+            return (1, "", "journalctl not available in this test")
+
+        source = JournaldSource(runner=_failing_runner)
         records = source.query({})
         assert records == []
 
@@ -1046,9 +1063,7 @@ class TestLinearConnector:
         )
         monkeypatch.setenv("LIN_H", "tok")
         try:
-            source = LinearSource(
-                {"token_env": "LIN_H", "team_id": "T1"}, transport=transport
-            )
+            source = LinearSource({"token_env": "LIN_H", "team_id": "T1"}, transport=transport)
             result = source.health()
             assert result["ok"] is True
         finally:
@@ -1060,9 +1075,7 @@ class TestLinearConnector:
         transport = MockHttpResponseTransport(status_code=401, body={"errors": [{"message": "unauthorized"}]})
         monkeypatch.setenv("LIN_H2", "tok")
         try:
-            source = LinearSource(
-                {"token_env": "LIN_H2", "team_id": "T1"}, transport=transport
-            )
+            source = LinearSource({"token_env": "LIN_H2", "team_id": "T1"}, transport=transport)
             result = source.health()
             assert result["ok"] is False
         finally:
@@ -1112,9 +1125,7 @@ class TestLinearConnector:
 
         monkeypatch.setenv("LIN_ERR", "tok")
         try:
-            source = LinearSource(
-                {"token_env": "LIN_ERR", "team_id": "T1"}, transport=_fail
-            )
+            source = LinearSource({"token_env": "LIN_ERR", "team_id": "T1"}, transport=_fail)
             records = source.query({})
             assert records == []
         finally:
@@ -1148,10 +1159,12 @@ class TestNotionConnector:
 
         monkeypatch.setenv("NOT_TOK", "secret")
         try:
-            source = NotionSource({
-                "token_env": "NOT_TOK",
-                "database_id": "db123",
-            })
+            source = NotionSource(
+                {
+                    "token_env": "NOT_TOK",
+                    "database_id": "db123",
+                }
+            )
             assert source.name == "notion"
         finally:
             del os.environ["NOT_TOK"]
@@ -1236,11 +1249,13 @@ class TestTrelloConnector:
         monkeypatch.setenv("TRELLO_KEY", "key")
         monkeypatch.setenv("TRELLO_TOKEN", "tok")
         try:
-            source = TrelloSource({
-                "key_env": "TRELLO_KEY",
-                "token_env": "TRELLO_TOKEN",
-                "board_id": "board1",
-            })
+            source = TrelloSource(
+                {
+                    "key_env": "TRELLO_KEY",
+                    "token_env": "TRELLO_TOKEN",
+                    "board_id": "board1",
+                }
+            )
             assert source.KIND == "tasks"
         finally:
             del os.environ["TRELLO_KEY"], os.environ["TRELLO_TOKEN"]
@@ -1324,11 +1339,13 @@ class TestAirtableConnector:
 
         monkeypatch.setenv("AT_TOK", "tok")
         try:
-            source = AirtableSource({
-                "token_env": "AT_TOK",
-                "base_id": "app123",
-                "table_name": "Tasks",
-            })
+            source = AirtableSource(
+                {
+                    "token_env": "AT_TOK",
+                    "base_id": "app123",
+                    "table_name": "Tasks",
+                }
+            )
             assert source.KIND == "records"
         finally:
             del os.environ["AT_TOK"]
@@ -1408,10 +1425,12 @@ class TestAsanaConnector:
 
         monkeypatch.setenv("ASANA_TOK", "tok")
         try:
-            source = AsanaSource({
-                "token_env": "ASANA_TOK",
-                "project_gid": "project1",
-            })
+            source = AsanaSource(
+                {
+                    "token_env": "ASANA_TOK",
+                    "project_gid": "project1",
+                }
+            )
             assert source.name == "asana"
         finally:
             del os.environ["ASANA_TOK"]
@@ -1494,10 +1513,12 @@ class TestMondayConnector:
 
         monkeypatch.setenv("MON_TOK", "tok")
         try:
-            source = MondaySource({
-                "token_env": "MON_TOK",
-                "board_ids": [1, 2],
-            })
+            source = MondaySource(
+                {
+                    "token_env": "MON_TOK",
+                    "board_ids": [1, 2],
+                }
+            )
             assert source.KIND == "tasks"
         finally:
             del os.environ["MON_TOK"]
@@ -1511,9 +1532,7 @@ class TestMondayConnector:
         )
         monkeypatch.setenv("MON_H", "tok")
         try:
-            source = MondaySource(
-                {"token_env": "MON_H", "board_ids": [1]}, transport=transport
-            )
+            source = MondaySource({"token_env": "MON_H", "board_ids": [1]}, transport=transport)
             result = source.health()
             assert result["ok"] is True
         finally:
@@ -1525,9 +1544,7 @@ class TestMondayConnector:
         transport = MockHttpResponseTransport(status_code=401, body={})
         monkeypatch.setenv("MON_H2", "tok")
         try:
-            source = MondaySource(
-                {"token_env": "MON_H2", "board_ids": [1]}, transport=transport
-            )
+            source = MondaySource({"token_env": "MON_H2", "board_ids": [1]}, transport=transport)
             result = source.health()
             assert result["ok"] is False
         finally:
@@ -1558,9 +1575,7 @@ class TestMondayConnector:
         )
         monkeypatch.setenv("MON_Q", "tok")
         try:
-            source = MondaySource(
-                {"token_env": "MON_Q", "board_ids": [1]}, transport=transport
-            )
+            source = MondaySource({"token_env": "MON_Q", "board_ids": [1]}, transport=transport)
             records = source.query({})
             assert len(records) >= 1
             assert records[0]["kind"] == "tasks"

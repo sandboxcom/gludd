@@ -29,48 +29,20 @@
 
 - name: Run photo forensics analysis
   block:
-    - name: Analyze image via photo_forensics module_utils
-      ansible.builtin.script:
-        cmd: |
-          import json, sys
-          sys.path.insert(0, "{{ playbook_dir }}/../../..")
-          from ansible_collections.general_ludd.forensics.plugins.module_utils import (
-              photo_forensics as pf,
-          )
-
-          path = "{{ photo_forensics_image_path }}"
-          with open(path, "rb") as f:
-              data = f.read()
-
-          types = {{ photo_forensics_analysis_types | to_json }}
-          results = {}
-
-          if "metadata" in types:
-              results["metadata"] = pf.extract_metadata(data)
-          if "ela" in types:
-              results["ela"] = pf.compute_ela(data)
-          if "modification" in types:
-              results["modification"] = pf.detect_modifications(data)
-          if "ai_detection" in types:
-              results["ai_detection"] = pf.detect_ai_generated(data)
-          if "camera_id" in types:
-              results["camera_id"] = pf.identify_camera(data)
-
-          results["analysis_types_run"] = types
-          results["image_path"] = "{{ photo_forensics_image_path }}"
-          print(json.dumps(results))
-        executable: python3
+    - name: Analyze image via packaged forensics module
+      general_ludd.forensics.forensic_analysis:
+        operation: photo
+        image_path: "{{ photo_forensics_image_path }}"
+        analysis_types: "{{ photo_forensics_analysis_types }}"
       register: photo_forensics_output
-      failed_when: false
-      changed_when: false
       when: photo_forensics_enabled | bool
 
     - name: Parse photo forensics result
       ansible.builtin.set_fact:
-        photo_forensics_result_raw: "{{ photo_forensics_output.stdout | from_json }}"
+        photo_forensics_result_raw: "{{ photo_forensics_output.result }}"
       when:
         - photo_forensics_enabled | bool
-        - photo_forensics_output.rc == 0
+        - photo_forensics_output.result is defined
 
     - name: Register photo forensics verdict
       ansible.builtin.set_fact:
@@ -97,7 +69,7 @@
         content: |
           {{ {'role': 'photo_forensics_analyst', 'status': 'failed',
               'image_path': photo_forensics_image_path,
-              'error': photo_forensics_output.stderr | default('unknown error')} | to_nice_json }}
+              'error': photo_forensics_output.msg | default('unknown error')} | to_nice_json }}
         dest: "{{ photo_forensics_output_dir }}/photo_forensics_verdict.json"
         mode: "0644"
       failed_when: false

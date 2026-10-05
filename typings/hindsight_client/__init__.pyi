@@ -1,0 +1,3 @@
+"""Minimal typing facade for the optional Hindsight client package."""
+
+class Hindsight: ...

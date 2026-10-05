@@ -34,7 +34,7 @@ capability without any operator config changes.
 ### 2.1 Collection Layout
 
 Each collection lives under:
-```
+```text
 collections/ansible_collections/general_ludd/<name>/
   galaxy.yml          ← ansible-galaxy metadata (namespace, name, version, tags, dependencies)
   roles/
@@ -89,7 +89,8 @@ permission gating.
 
 ### 3.1 Capability Declaration Format
 
-Each collection declares capabilities in one of two places (checked in order):
+Each release collection declares capabilities in the Gludd-owned extension
+file while keeping Galaxy's manifest schema clean:
 
 **Option A — `capabilities.yml` at collection root (canonical):**
 ```yaml
@@ -128,19 +129,49 @@ model_capabilities:
       - chemical-analysis
 ```
 
-**Option B — inline in `galaxy.yml` (convenience for simple collections):**
-```yaml
-# Inside galaxy.yml, add:
-model_capabilities:
-  - name: translation
-    roles: [translate_text, detect_language, localize_ui]
-    quality_class: medium
-    aliases: [i18n, l10n]
-```
+Inline declarations in `galaxy.yml` remain a read-only compatibility path for
+older project collections, but release artifacts must not use it: Galaxy warns
+on extension keys outside its published schema. `capabilities.yml` takes
+precedence when both exist, so a project-local `.gludd/collections/` override
+can replace capabilities without editing the bundled manifest.
 
-`capabilities.yml` takes precedence over `galaxy.yml` when both exist
-(so a project-local `.gludd/collections/` override can replace capabilities
-without editing the bundled galaxy.yml).
+#### 2026-08-20–21 collection capability metadata incidents
+
+The beta4 Galaxy build accepted the language collection but warned that
+`model_capabilities` and `role_capabilities` were unknown manifest keys. The
+declarations now live unchanged in `capabilities.yml`, and discovery merges
+only those two named extension fields with standard Galaxy metadata. This is a
+fail-closed boundary: arbitrary extension-file fields cannot replace a
+collection's namespace, name, version, dependencies, or signing metadata.
+
+On August 21, 2026, the same real-build warning was reproduced in governance,
+travel, radio, sandbox, and binary-re. Those declarations were moved verbatim
+to the canonical sidecar. A repository-wide schema test now pins every
+`galaxy.yml` key to Ansible's [published collection metadata structure](https://docs.ansible.com/projects/ansible/latest/dev_guide/collections_galaxy_meta.html),
+and a real `ansible-galaxy collection build` test proves warning-free artifacts
+whose dependency map exactly matches the source manifest.
+
+The [April 4, 2022 Ansible collection publishing report](https://github.com/ansible/ansible/issues/77460)
+is durable practitioner evidence that Automation Hub validates collection
+metadata by its specified file and schema, even when a local collection build
+appears usable. Gludd consequently owns capability metadata in a distinct file
+instead of relying on a tolerant parser or suppressing the Galaxy warning.
+The [October 2, 2023 Galaxy dependency-resolution forum report](https://forum.ansible.com/t/resolving-dependencies-installing-collections/1277)
+also records a collection that built successfully but failed when consumers
+resolved its declared dependency. That long-lived practitioner case is why the
+regression inspects the built artifact's dependency map rather than treating a
+zero build exit code alone as sufficient evidence.
+
+The migration is ZDD-safe because the scanner retains legacy inline reads,
+prefers the sidecar atomically when present, and rebuilds the in-memory registry
+before it is swapped into a daemon. Rollback removes the sidecar and restores
+the inline fields; no running job or installed collection is mutated. Scans
+remain bounded to one small file per discovered collection and create no
+processes, clients, or temporary artifacts. Release verification owns one
+bounded Galaxy subprocess and pytest-owned temporary output directory per
+collection; it performs no network access or service startup. Rollback restores
+the inline keys and removes each sidecar, while the retained legacy reader keeps
+the last-known contract routable throughout the change.
 
 **Field reference:**
 
@@ -163,7 +194,7 @@ If the operator wants both, they define distinct capability names.
 At startup (and on hot-reload), core walks every tier in the resolved
 collections path:
 
-```
+```text
 for each tier in resolve_collections_paths():
     ns_dir = tier.path / "ansible_collections" / "general_ludd"
     for collection_dir in ns_dir.iterdir():
@@ -224,7 +255,7 @@ class CapabilityRegistry:
 
 `CapabilityRegistry.resolve_to_profile(capability_name, router)` → model profile ID:
 
-```
+```text
 1. Lookup by canonical name in _by_name.
    If not found, try _by_alias (aliases map).
    If not found, return None → fallback to router.default_profile_id.
@@ -389,8 +420,8 @@ No new daemon logic needed — the CLI is a thin HTTP client.
 
 The entire mechanism is **zero-configuration for the operator**:
 
-1. **Collection author** adds `capabilities.yml` to their collection root
-   (or adds `model_capabilities` to `galaxy.yml`).
+1. **Collection author** adds `capabilities.yml` to their collection root and
+   leaves `galaxy.yml` within Ansible's published schema.
 
 2. **On daemon startup** (or `POST /api/capabilities/reload`), the
    `CapabilityRegistryScanner` walks every tier in the resolved collections
@@ -427,7 +458,7 @@ The entire mechanism is **zero-configuration for the operator**:
 
 ### Phase 1 — Data Model (src/general_ludd/capability/)
 
-```
+```text
 src/general_ludd/capability/
   __init__.py
   registry.py        # CapabilityEntry, CapabilityRegistry

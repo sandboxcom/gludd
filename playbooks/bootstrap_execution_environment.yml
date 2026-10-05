@@ -1,0 +1,11 @@
+---
+- name: Bootstrap Gludd's namespaced Ansible execution environment
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  roles:
+    - role: general_ludd.agent.execution_environment_bootstrap
+      vars:
+        execution_environment_bootstrap_project_root: "{{ playbook_dir | dirname }}"

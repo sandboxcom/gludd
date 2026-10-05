@@ -82,13 +82,13 @@ def _release_job_steps(src: str) -> list[dict[str, str]]:
 class TestPostDeploySmokeStep:
     """The release job MUST include a post-deploy smoke step."""
 
-    def test_release_job_exists(self):
+    def test_release_job_exists(self) -> None:
         src = _workflow_source()
         assert re.search(r"^  release:\s*$", src, re.MULTILINE), (
             "release job must exist in build.yml"
         )
 
-    def test_smoke_step_present(self):
+    def test_smoke_step_present(self) -> None:
         """A step whose name mentions 'smoke' must exist in the release job."""
         steps = _release_job_steps(_workflow_source())
         assert steps, "release job must have at least one step"
@@ -99,7 +99,7 @@ class TestPostDeploySmokeStep:
             + ", ".join(repr(s["name"]) for s in steps)
         )
 
-    def test_smoke_step_downloads_published_asset(self):
+    def test_smoke_step_downloads_published_asset(self) -> None:
         """The smoke step MUST download the just-published asset via gh."""
         steps = _release_job_steps(_workflow_source())
         smoke_steps = [s for s in steps if SMOKE_STEP_NAME_RE.search(s["name"])]
@@ -111,7 +111,23 @@ class TestPostDeploySmokeStep:
             "release asset itself."
         )
 
-    def test_smoke_step_makes_executable(self):
+    def test_smoke_step_selects_downloaded_archive(self) -> None:
+        """The smoke step MUST select and extract the downloaded archive."""
+        steps = _release_job_steps(_workflow_source())
+        smoke_steps = [s for s in steps if SMOKE_STEP_NAME_RE.search(s["name"])]
+        assert smoke_steps
+        bodies = "\n".join(s["body"] for s in smoke_steps)
+        assert "ARCHIVE=" in bodies, (
+            "smoke step must bind the exact downloaded Linux archive"
+        )
+        assert re.search(r'tar\s+-xzf\s+"\$ARCHIVE"', bodies), (
+            "smoke step must extract the bound archive directly"
+        )
+        assert "-not -name '*.tar.gz'" not in bodies, (
+            "smoke step must not exclude the archive it needs to execute"
+        )
+
+    def test_smoke_step_makes_executable(self) -> None:
         """The smoke step MUST chmod +x the downloaded binary."""
         steps = _release_job_steps(_workflow_source())
         smoke_steps = [s for s in steps if SMOKE_STEP_NAME_RE.search(s["name"])]
@@ -121,7 +137,7 @@ class TestPostDeploySmokeStep:
             "smoke step must `chmod +x` the downloaded binary before running it"
         )
 
-    def test_smoke_step_runs_version_or_help(self):
+    def test_smoke_step_runs_version_or_help(self) -> None:
         """The smoke step MUST execute gludd --version or gludd --help."""
         steps = _release_job_steps(_workflow_source())
         smoke_steps = [s for s in steps if SMOKE_STEP_NAME_RE.search(s["name"])]
@@ -132,7 +148,7 @@ class TestPostDeploySmokeStep:
             "on the downloaded binary"
         )
 
-    def test_smoke_step_fails_on_nonzero_exit(self):
+    def test_smoke_step_fails_on_nonzero_exit(self) -> None:
         """The smoke step MUST fail the job on non-zero exit.
 
         Either `set -e` at the top of the run block, or an explicit
@@ -149,7 +165,7 @@ class TestPostDeploySmokeStep:
             "or an explicit `exit 1` in the failure branch"
         )
 
-    def test_smoke_step_runs_on_tag_only(self):
+    def test_smoke_step_runs_on_tag_only(self) -> None:
         """The release job (and thus the smoke step) only runs on tag pushes.
 
         This is a sanity check: the release job's `if:` must restrict to
@@ -174,7 +190,7 @@ class TestPostDeployDebValidation:
     """
 
     @pytest.mark.parametrize("needle", ["dpkg-deb", "*.deb"])
-    def test_deb_validation_step_present(self, needle: str):
+    def test_deb_validation_step_present(self, needle: str) -> None:
         src = _workflow_source()
         assert needle in src, (
             f"release job must reference '{needle}' for .deb post-deploy validation"

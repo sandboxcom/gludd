@@ -370,7 +370,7 @@ exact pattern every existing router follows).
 Endpoints (admin-scoped, PSK-gated by the existing daemon middleware that checks
 `Authorization: Bearer <psk>`):
 
-```
+```text
 POST /admin/observe/query
   Request (Pydantic, field-constrained like routers/todos.py):
     { "kinds":   [str]   # subset of valid KINDs; pattern ^(logs|metrics|traces|events|incidents|pipeline|infra|security)$

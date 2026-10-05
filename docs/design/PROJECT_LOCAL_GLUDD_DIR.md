@@ -17,7 +17,7 @@ export/archive/weights, live-reload). Owner artifact for ledger request #17.
 `.gludd/` directory (git-root style). It takes precedence over (layers on top of)
 the user-level `$XDG_CONFIG/gludd`. Layout:
 
-```
+```text
 <repo>/.gludd/
   general-ludd.yml        # project config overlay (merged over user config)
   collections/            # ansible_collections/ + roles/ + group_vars/ (search path)
@@ -101,6 +101,95 @@ the user-level `$XDG_CONFIG/gludd`. Layout:
   Distinct from `make dist` (code-only).
 - `bootstrap.py`: mirror `sync_bundled_to_filestore` reverse (filestore → `.gludd/`).
 - Tests: archive round-trips DB+filestore+weights; restore rehydrates a clean tree.
+
+## Merge snapshot integrity
+
+Implemented and re-verified on 2026-08-20. `merge_config()` returns a detached
+configuration graph: mutable mappings and lists in the result do not alias either
+input. The project layer still wins, mappings still merge recursively, and lists
+still replace wholesale. This makes idempotence durable across later state changes,
+not merely equal at the instant the merge returns.
+
+Practitioner and upstream evidence reviewed on 2026-08-20:
+
+- A [Python practitioner report from 2022-06-11](https://stackoverflow.com/questions/72587500/python-merging-nested-dictionaries-into-a-new-dictionary-and-update-that-diction)
+  reproduces the same failure mode: a new top-level merged dictionary retained
+  references to nested mutable inputs, so editing the result edited both sources.
+- OmegaConf's [documented safe and unsafe merge split](https://omegaconf.readthedocs.io/en/latest/usage.html#omegaconf-unsafe-merge)
+  makes the ownership contract explicit: safe merge preserves inputs, while its
+  faster destructive merge requires callers to stop using them. Its
+  [safe merge implementation](https://github.com/omry/omegaconf/blob/main/omegaconf/omegaconf.py)
+  starts from a deep copy. Gludd keeps only the safe behavior because user config
+  remains the rollback source if a project overlay fails validation.
+
+ZDD follows from building and validating an independent candidate before replacing
+the active config object: readers retain the previous snapshot until validation
+succeeds, and rollback discards the candidate without repairing mutated source
+state. The merge allocates one detached user graph plus copied project replacements,
+does no I/O, and starts no processes; CPU and peak memory remain linear in the
+already-loaded configuration size.
+
+### Property-generator resource boundary
+
+Verified on 2026-08-29. The merge algebra tests retain 200 generated examples and
+the complete scalar/key domains, while recursive configuration values now have an
+explicit budget: four root keys and eight scalar leaves per value, for at most 32
+leaves in one generated config. A property test enforces that arithmetic directly.
+No Hypothesis health check is suppressed, so later strategy drift remains visible.
+
+Upstream and practitioner evidence reviewed on 2026-08-29:
+
+- Hypothesis's [recursive-strategy reference](https://hypothesis.readthedocs.io/en/latest/reference/strategies.html#hypothesis.strategies.recursive)
+  defines `max_leaves` as the per-run bound on values drawn from the base strategy
+  and documents recursion-aware shrinking. Gludd uses that maintained primitive
+  instead of rebuilding an exponentially branching deferred strategy.
+- A [Hypothesis user report opened 2019-11-08](https://github.com/HypothesisWorks/hypothesis/issues/2195)
+  records the same `FailedHealthCheck` for slow generation; its diagnostic directs
+  users to decrease generated size with `max_size` or `max_leaves`.
+- In a [practitioner question from 2018-09-25](https://stackoverflow.com/questions/52503486/suppressing-healthcheck-too-slow-for-a-composite-hypothesis-strategy),
+  a Hypothesis maintainer recommends optimizing a known-slow strategy before
+  suppressing the health check. This change keeps the health check active.
+
+This test-only bound does not alter `merge_config()` or deployed configuration
+semantics, so rollout and rollback require no service restart, schema migration, or
+state conversion. It reduces CPU, peak generated-object memory, and shrink work for
+local and hosted gates. Reverting restores only the previous test generator; active
+configuration snapshots and ZDD behavior remain unchanged.
+
+## Agent-config permission boundary
+
+Implemented and verified on 2026-08-25. The project-local
+`.general-ludd/agent_config.yml` reader treats a `PermissionError` while checking or
+opening the file as an unavailable optional layer and returns a fresh default
+`AgentConfig`. It never consumes content that the running identity cannot read.
+The exception boundary is deliberately narrow: malformed YAML, non-mapping data,
+and schema-validation errors still fail visibly, and path traversal and symlink
+semantics are unchanged.
+
+Upstream and practitioner evidence reviewed on 2026-08-25:
+
+- Python's [upstream `pathlib` documentation](https://docs.python.org/3.14/library/pathlib.html#querying-file-type-and-status)
+  records that Python 3.14 changed `Path.exists()` to return `False` for every OS
+  error; earlier supported interpreters can still raise selected `OSError`
+  subclasses. The loader handles `PermissionError` explicitly so Python 3.11 and
+  newer runtimes share the same fail-closed application contract.
+- A [Python.org practitioner discussion from 2024-03-31](https://discuss.python.org/t/handle-not-executable-directories-for-os-listdir/49978)
+  demonstrates that directory search permissions can make existence and listing
+  results disagree. Participants also call out the race between an existence check
+  and a later open, so the regression covers both operations rather than assuming
+  the check authorizes the read.
+- Python's [upstream issue 35692, opened 2019-01-09](https://bugs.python.org/issue35692)
+  includes a concrete `Path.exists()` `PermissionError` and the maintainers'
+  distinction between inaccessible paths and absent paths. Gludd preserves that
+  distinction internally but applies its documented optional-layer policy at the
+  config boundary.
+
+This is ZDD-safe because a denied optional layer produces a complete default object
+without mutating any active configuration, persistent state, or file permissions.
+Rollback is a code-only revert; there is no schema, data, wire, or deployment
+migration. Restoring access makes the next bounded load consume the file normally.
+Each attempt performs at most one metadata check and one open, adds no retry or
+directory walk, allocates only the default model on denial, and starts no process.
 
 ## Risks / decisions
 1. **Merge semantics** for `general-ludd.yml` — deep-merge with project-wins, but

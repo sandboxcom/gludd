@@ -235,6 +235,21 @@ class TestSuspectDetection:
 # ---------------------------------------------------------------------------
 
 class TestSelfCorrection:
+    def test_first_honest_sample_seeds_calibration_without_zero_bias(self):
+        tracker = EstimationTracker(min_samples=1)
+        tracker.record_estimate(_make_estimate(cost=10, time=20, loc=100))
+
+        tracker.record_completion(_make_actual(cost=20, time=40, loc=200))
+
+        calibration = tracker.get_calibration("code")
+        assert calibration is not None
+        assert calibration.mean_cost_error == pytest.approx(2.0)
+        assert calibration.mean_time_error == pytest.approx(2.0)
+        assert calibration.mean_loc_error == pytest.approx(2.0)
+        assert tracker.get_corrected_estimate("code", 10, 20, 100) == pytest.approx(
+            (20.0, 40.0, 200)
+        )
+
     def test_calibration_multipliers_set_after_5_honest_completions(self):
         tracker = EstimationTracker()
         tracker.record_estimate(_make_estimate(cost=10, time=20, loc=100))

@@ -15,6 +15,16 @@
 # REPORT-ONLY on existing code; FAILS the play when new violations exceed
 # the configurable threshold.
 
+- name: Preflight managed-host runtime
+  ansible.builtin.include_role:
+    name: general_ludd.agent.managed_python_preflight
+    tasks_from: main
+    public: false
+  vars:
+    managed_python_preflight_interpreter: "{{ ansible_python_interpreter }}"
+    managed_python_preflight_lock_sha256: "{{ gludd_managed_python_lock_sha256 }}"
+    managed_python_preflight_previous_interpreter: "{{ gludd_previous_python_interpreter | default('') }}"
+
 - name: Create artifact directory
   ansible.builtin.file:
     path: "{{ artifact_dir }}"
@@ -59,7 +69,7 @@
 - name: Run type-strictness scanner (with baseline)
   ansible.builtin.command:
     cmd: >-
-      python3 {{ checker_script }} {{ source_path }}
+      {{ ansible_python_interpreter }} {{ checker_script }} {{ source_path }}
       --format json
       --baseline {{ _tsa_effective_baseline }}
   register: _tsa_scan_raw
@@ -70,7 +80,7 @@
 - name: Run type-strictness scanner (no baseline)
   ansible.builtin.command:
     cmd: >-
-      python3 {{ checker_script }} {{ source_path }}
+      {{ ansible_python_interpreter }} {{ checker_script }} {{ source_path }}
       --format json
   register: _tsa_scan_raw_nobaseline
   changed_when: false

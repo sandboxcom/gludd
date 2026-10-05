@@ -50,8 +50,8 @@ class TestNoUnseenEvents:
         We verify:
           1. The Makefile gate recipe calls run_gate.sh (delegation wired).
           2. run_gate.sh delegates to the serial named-shard runner.
-          3. Every shard uses the adaptive pytest runner.
-          3. run_gate.sh pipes through tee (output is never a silent black box).
+          3. Every shard streams owned-process heartbeats and worker-death state.
+          4. run_gate.sh pipes through tee (output is never a silent black box).
         """
         gate_body = _recipe("gate")
         assert "run_gate.sh" in gate_body, (
@@ -61,9 +61,16 @@ class TestNoUnseenEvents:
         assert "run_ci_shards_serial.py" in run_gate_text, (
             "scripts/run_gate.sh must delegate to the complete named-shard runner"
         )
-        assert "adaptive_test.py" in SERIAL_SHARD_RUNNER.read_text(), (
-            "every named shard must retain adaptive worker sizing and OOM retry"
-        )
+        serial_runner = SERIAL_SHARD_RUNNER.read_text()
+        for marker in (
+            "SHARD-HEARTBEAT",
+            "WORKER-DEATH",
+            "start_new_session=True",
+            "OWNED-PYTEST-RESULT",
+        ):
+            assert marker in serial_runner, (
+                f"serial named shards must retain observable owned cleanup: {marker}"
+            )
         assert "tee" in run_gate_text, (
             "scripts/run_gate.sh MUST pipe its output through tee so a "
             "backgrounded gate is never a silent black box "
@@ -77,6 +84,20 @@ class TestNoUnseenEvents:
                 assert "/dev/null" not in line, (
                     f"gate must not pipe the full suite to /dev/null: {line.strip()!r}"
                 )
+
+    def test_env_write_gate_phases_stream_bounded_checker_output(self) -> None:
+        invocations = [
+            line
+            for line in MAKEFILE.read_text().splitlines()
+            if "$(MAKE) --no-print-directory check-test-env-writes" in line
+        ]
+
+        assert len(invocations) == 3
+        for line in invocations:
+            assert "/dev/null" not in line
+            assert "scripts/stream_command.py --log .gate-logs/" in line
+            assert "&& echo \"PASS\"" in line
+            assert "touch .gate-" in line
 
     def test_gate_emits_a_progress_marker_per_phase(self) -> None:
         """Each gate phase must print a stdout marker as it starts (heartbeat)."""
@@ -217,6 +238,50 @@ class TestNoSilentStalls:
         assert "run-watched:" in mk, "Makefile must provide the run-watched stall watchdog"
         for token in ("STALL_SECS", "MAX_SECS", "RESULT=STALLED", "kill"):
             assert token in mk, f"run-watched watchdog is missing {token!r}"
+
+    def test_observed_commands_share_one_status_and_tail_mechanism(self) -> None:
+        coverage = _recipe("coverage-files")
+        test_count = _recipe("test-count")
+        collect = _recipe("collect-check")
+        watched = _recipe("run-watched")
+
+        for label, body in (
+            ("coverage-files", coverage),
+            ("test-count", test_count),
+            ("collect-check", collect),
+            ("run-watched", watched),
+        ):
+            assert "scripts/stream_command.py" in body
+            if label == "run-watched":
+                assert "$(OBSERVED_LABEL)" in body
+                assert "run-watched" in body
+            else:
+                assert f"--label {label}" in body
+            assert "--root \"$(OBSERVED_ROOT)\"" in body
+            assert "--retain-runs \"$(OBSERVED_RETAIN_RUNS)\"" in body
+
+        assert "--pytest-trace" in coverage
+        assert "-p scripts.xdist_trace_plugin" in coverage
+        assert "-W error" in coverage
+        assert "$(COVERAGE_REPORT).tmp." in coverage
+        assert 'mv "$$GLUDD_COVERAGE_REPORT_WORK" "$(COVERAGE_REPORT)"' in coverage
+        assert "--quiet" in test_count
+        assert "--quiet" in collect
+        assert "scripts/collection_lock.py --run" in collect
+        assert "/tmp/gludd-collect-output.txt" not in collect
+        assert 'exit "$$RC"' in collect
+        assert "--quiet-secs \"$(STALL_SECS)\"" in watched
+        assert "--max-secs \"$(MAX_SECS)\"" in watched
+        assert '$(if $(RUN_ID),--run-id "$(RUN_ID)",)' in watched
+        assert "while kill -0" not in watched
+
+        status = _recipe("observed-status")
+        tail = _recipe("observed-tail")
+        assert "--status" in status
+        assert "--stale-secs \"$(OBSERVED_STALE_SECS)\"" in status
+        assert '$(if $(RUN_ID),--run-id "$(RUN_ID)",)' in status
+        assert "--tail \"$(OBSERVED_TAIL_LINES)\"" in tail
+        assert '$(if $(RUN_ID),--run-id "$(RUN_ID)",)' in tail
 
     def test_every_ci_job_has_timeout_minutes(self) -> None:
         import yaml

@@ -13,6 +13,7 @@ The parallel task that owns ``general_ludd.security.permissions`` and
 when it is absent. This keeps the CLI useful today and unchanged the day the
 parser lands.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -27,8 +28,18 @@ import httpx
 import yaml
 
 PERM_SUBCOMMANDS = [
-    "list", "show", "grant", "deny", "revoke", "edit", "validate",
-    "diff", "project", "sts", "audit", "escalations",
+    "list",
+    "show",
+    "grant",
+    "deny",
+    "revoke",
+    "edit",
+    "validate",
+    "diff",
+    "project",
+    "sts",
+    "audit",
+    "escalations",
 ]
 
 
@@ -41,28 +52,29 @@ class SpecStore:
     """Read/write PermissionSpec YAML files under a config directory."""
 
     def __init__(self, config_dir: str | Path) -> None:
+        """Initialize the store rooted at ``<config_dir>/permissions``."""
         self.config_dir = Path(config_dir).expanduser()
         self.perms_dir = self.config_dir / "permissions"
 
     # ---- paths --------------------------------------------------------
 
     def spec_path(self, agent_type: str, project: str | None = None) -> Path:
+        """Return the YAML path for an agent spec, optionally under a project override."""
         if project:
             return self.perms_dir / "projects" / project / f"{agent_type}.yml"
         return self.perms_dir / f"{agent_type}.yml"
 
     def all_spec_paths(self) -> list[Path]:
+        """Return every top-level spec file under the permissions dir (sorted)."""
         if not self.perms_dir.is_dir():
             return []
         # only top-level *.yml (project overrides live in projects/<p>/)
-        return sorted(
-            p for p in self.perms_dir.glob("*.yml")
-            if p.is_file()
-        )
+        return sorted(p for p in self.perms_dir.glob("*.yml") if p.is_file())
 
     # ---- read ---------------------------------------------------------
 
     def load(self, agent_type: str, project: str | None = None) -> dict[str, Any] | None:
+        """Load one spec as a dict, or None when the file is absent/invalid."""
         path = self.spec_path(agent_type, project)
         if not path.exists():
             return None
@@ -74,6 +86,7 @@ class SpecStore:
         return data
 
     def load_all(self) -> list[dict[str, Any]]:
+        """Load every top-level spec file into a list of dicts."""
         specs: list[dict[str, Any]] = []
         for path in self.all_spec_paths():
             data = yaml.safe_load(path.read_text()) or {}
@@ -85,6 +98,7 @@ class SpecStore:
     # ---- write --------------------------------------------------------
 
     def save(self, agent_type: str, spec: dict[str, Any], project: str | None = None) -> Path:
+        """Write one spec to YAML (creating parent dirs) and return the path."""
         path = self.spec_path(agent_type, project)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(yaml.safe_dump(spec, sort_keys=False))
@@ -252,8 +266,7 @@ def _cmd_perm_list(args: argparse.Namespace) -> None:
         at = str(s.get("agent_type", "?"))[:19]
         caps = s.get("capabilities", [])
         cap_str = ", ".join(
-            f"{c.get('resource', '?')}:{'/'.join(c.get('actions', []))}"
-            for c in caps if isinstance(c, dict)
+            f"{c.get('resource', '?')}:{'/'.join(c.get('actions', []))}" for c in caps if isinstance(c, dict)
         )[:39]
         denied = s.get("denied", []) or []
         denied_str = str(len(denied)) if isinstance(denied, list) else "?"
@@ -280,11 +293,13 @@ def _cmd_perm_grant(args: argparse.Namespace) -> None:
         spec = {"agent_type": args.agent_type, "capabilities": [], "denied": [], "max_sts_ttl": 3600}
     caps = spec.setdefault("capabilities", [])
     constraints = _parse_constraints(args.constraints)
-    caps.append({
-        "resource": args.resource,
-        "actions": _actions_list(args.actions),
-        "constraints": constraints,
-    })
+    caps.append(
+        {
+            "resource": args.resource,
+            "actions": _actions_list(args.actions),
+            "constraints": constraints,
+        }
+    )
     errors = validate_spec(spec)
     if errors:
         print("Validation failed:", file=sys.stderr)
@@ -301,10 +316,12 @@ def _cmd_perm_deny(args: argparse.Namespace) -> None:
     if spec is None:
         spec = {"agent_type": args.agent_type, "capabilities": [], "denied": [], "max_sts_ttl": 3600}
     denied = spec.setdefault("denied", [])
-    denied.append({
-        "resource": args.resource,
-        "actions": _actions_list(args.actions),
-    })
+    denied.append(
+        {
+            "resource": args.resource,
+            "actions": _actions_list(args.actions),
+        }
+    )
     errors = validate_spec(spec)
     if errors:
         print("Validation failed:", file=sys.stderr)
@@ -425,11 +442,17 @@ def _cmd_perm_diff(args: argparse.Namespace) -> None:
         if sa != sb:
             diff_actions[r] = (sa, sb)
     if getattr(args, "json", False):
-        print(json.dumps({
-            "only_in_a": {r: c for r, c in only_a.items()},
-            "only_in_b": {r: c for r, c in only_b.items()},
-            "action_diff": {r: {"a": sorted(a_), "b": sorted(b_)} for r, (a_, b_) in diff_actions.items()},
-        }, indent=2, default=str))
+        print(
+            json.dumps(
+                {
+                    "only_in_a": {r: c for r, c in only_a.items()},
+                    "only_in_b": {r: c for r, c in only_b.items()},
+                    "action_diff": {r: {"a": sorted(a_), "b": sorted(b_)} for r, (a_, b_) in diff_actions.items()},
+                },
+                indent=2,
+                default=str,
+            )
+        )
         return
     print(f"Diff: {args.agent_type_a}  vs  {args.agent_type_b}")
     print(f"\nOnly in {args.agent_type_a}:")
@@ -473,7 +496,7 @@ def _cmd_perm_project(args: argparse.Namespace) -> None:
 
 
 def _resolve_psk(args: argparse.Namespace) -> str:
-    psk = getattr(args, "psk", None) or os.environ.get("GLUDD_PSK", "")
+    psk = getattr(args, "psk", None) or os.environ.get("GLUDD_AUTH_PSK", "").strip()
     return psk or ""
 
 
@@ -799,7 +822,7 @@ def _add_common(p: argparse.ArgumentParser) -> None:
 
 def _add_http_common(p: argparse.ArgumentParser) -> None:
     p.add_argument("--daemon-url", default="http://localhost:8000", help="Daemon base URL.")
-    p.add_argument("--psk", default=None, help="Pre-shared key (or set GLUDD_PSK).")
+    p.add_argument("--psk", default=None, help="Pre-shared key (or set GLUDD_AUTH_PSK).")
     p.add_argument("--config-dir", default=None, help="Config directory (default: ~/.config/gludd).")
     p.add_argument("--json", dest="json", action="store_true", help="Emit machine-readable JSON.")
     p.add_argument("--quiet", action="store_true", help="Suppress non-essential output.")

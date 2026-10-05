@@ -16,6 +16,9 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
+_TEST_INPUT_COST_PER_TOKEN = 0.000_001
+_TEST_OUTPUT_COST_PER_TOKEN = 0.000_002
+
 
 class TestTimeoutClassifier:
     def test_classify_connection_timeout(self) -> None:
@@ -694,6 +697,8 @@ class TestGatewayTimeoutIntegration:
             model_profile_id="test-model",
             provider="openai",
             model_name="gpt-4",
+            cost_per_input_token=_TEST_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_TEST_OUTPUT_COST_PER_TOKEN,
             enabled=True,
         )
         gateway = ModelGateway(
@@ -729,6 +734,8 @@ class TestGatewayTimeoutIntegration:
             model_profile_id="test-model",
             provider="openai",
             model_name="gpt-4",
+            cost_per_input_token=_TEST_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_TEST_OUTPUT_COST_PER_TOKEN,
             enabled=True,
         )
         gateway = ModelGateway(
@@ -760,6 +767,8 @@ class TestGatewayTimeoutIntegration:
             model_profile_id="test-model",
             provider="openai",
             model_name="gpt-4",
+            cost_per_input_token=_TEST_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_TEST_OUTPUT_COST_PER_TOKEN,
             enabled=True,
         )
         gateway = ModelGateway(
@@ -796,6 +805,8 @@ class TestGatewayTimeoutIntegration:
             model_profile_id="primary",
             provider="openai",
             model_name="gpt-4",
+            cost_per_input_token=_TEST_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_TEST_OUTPUT_COST_PER_TOKEN,
             enabled=True,
             fallback_profiles=["fallback"],
         )
@@ -803,6 +814,8 @@ class TestGatewayTimeoutIntegration:
             model_profile_id="fallback",
             provider="openai",
             model_name="gpt-3.5-turbo",
+            cost_per_input_token=_TEST_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_TEST_OUTPUT_COST_PER_TOKEN,
             enabled=True,
         )
         from general_ludd.models.gateway import ModelGateway
@@ -849,6 +862,8 @@ class TestGatewayTimeoutIntegration:
             model_profile_id="test-model",
             provider="openai",
             model_name="gpt-4",
+            cost_per_input_token=_TEST_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_TEST_OUTPUT_COST_PER_TOKEN,
             enabled=True,
         )
         gateway = ModelGateway(
@@ -891,6 +906,8 @@ class TestGatewayTimeoutIntegration:
             model_profile_id="primary",
             provider="openai",
             model_name="gpt-4",
+            cost_per_input_token=_TEST_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_TEST_OUTPUT_COST_PER_TOKEN,
             enabled=True,
             fallback_profiles=["fallback"],
         )
@@ -898,6 +915,8 @@ class TestGatewayTimeoutIntegration:
             model_profile_id="fallback",
             provider="openai",
             model_name="gpt-3.5-turbo",
+            cost_per_input_token=_TEST_INPUT_COST_PER_TOKEN,
+            cost_per_output_token=_TEST_OUTPUT_COST_PER_TOKEN,
             enabled=True,
         )
         gateway = ModelGateway(

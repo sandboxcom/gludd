@@ -342,6 +342,21 @@ class TestValidateExtravars:
         with pytest.raises(ExtraVarsValidationError, match="total bytes exceed"):
             validate_extravars(data, limits=ExtraVarsLimits(max_total_bytes=50))
 
+    def test_total_byte_budget_counts_keys_and_values_at_exact_boundary(self):
+        from general_ludd.ansible.unsafe import (
+            ExtraVarsLimits,
+            ExtraVarsValidationError,
+            validate_extravars,
+        )
+
+        assert validate_extravars(
+            {"key": "value"}, limits=ExtraVarsLimits(max_total_bytes=8)
+        ) == {"key": "value"}
+        with pytest.raises(ExtraVarsValidationError, match=r"total bytes exceed.*\$\.key"):
+            validate_extravars(
+                {"key": "value"}, limits=ExtraVarsLimits(max_total_bytes=7)
+            )
+
     def test_rejects_unsupported_type(self):
         from general_ludd.ansible.unsafe import ExtraVarsValidationError, validate_extravars
 

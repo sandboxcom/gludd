@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from collections.abc import Callable
 from typing import Any
 
 
@@ -264,6 +265,7 @@ def decode_ais(data: bytes, sample_rate: int) -> dict[str, Any]:
         "frequency_maritime": "161.975 MHz (ch87B), 162.025 MHz (ch88B)",
         "modulation": "GMSK 9600 bps NRZI",
         "messages": [],
+        "summary": {"messages_found": 0, "unique_mmsi": []},
     }
 
     try:
@@ -275,7 +277,8 @@ def decode_ais(data: bytes, sample_rate: int) -> dict[str, Any]:
             return result
         mag = np.abs(iq)
         threshold = np.mean(mag) + 2.0 * np.std(mag)
-        raw_bits = [1 if m > threshold else 0 for m in mag[::sample_rate // 19200]]
+        sample_step = max(sample_rate // 19200, 1)
+        raw_bits = [1 if m > threshold else 0 for m in mag[::sample_step]]
     except ImportError:
         if len(data) < 64:
             result["error"] = "signal too short"
@@ -286,13 +289,13 @@ def decode_ais(data: bytes, sample_rate: int) -> dict[str, Any]:
 
     FLAG = [0, 1, 1, 1, 1, 1, 1, 0]
     frame_starts = []
-    for i in range(len(nrz_bits) - 8):
+    for i in range(len(nrz_bits) - 7):
         if nrz_bits[i:i + 8] == FLAG:
             frame_starts.append(i + 8)
 
     for fs in frame_starts:
         next_flag = fs
-        for i in range(fs, len(nrz_bits) - 8):
+        for i in range(fs, len(nrz_bits) - 7):
             if nrz_bits[i:i + 8] == FLAG:
                 next_flag = i
                 break
@@ -318,7 +321,10 @@ def decode_ais(data: bytes, sample_rate: int) -> dict[str, Any]:
 
         decoded = _decode_ais_field(unstuffed, fields)
         decoded["message_type"] = msg_type_raw
-        decoded["message_type_name"] = AIS_MESSAGE_STRUCTS.get(msg_type_raw, {}).get("name", f"Unknown type {msg_type_raw}")
+        decoded["message_type_name"] = AIS_MESSAGE_STRUCTS.get(
+            msg_type_raw,
+            {},
+        ).get("name", f"Unknown type {msg_type_raw}")
 
         mmsi = decoded.get("mmsi", 0)
 
@@ -394,7 +400,8 @@ def decode_navtex(data: bytes, sample_rate: int) -> dict[str, Any]:
         if len(iq) >= sample_rate // 10:
             mag = np.abs(iq)
             threshold = np.mean(mag) + 2.0 * np.std(mag)
-            bits = [1 if m > threshold else 0 for m in mag[::sample_rate // 200]]
+            sample_step = max(sample_rate // 200, 1)
+            bits = [1 if m > threshold else 0 for m in mag[::sample_step]]
             chars = []
             for i in range(0, len(bits) - 7, 7):
                 char_val = sum(bits[i + j] << (6 - j) for j in range(7))
@@ -402,13 +409,13 @@ def decode_navtex(data: bytes, sample_rate: int) -> dict[str, Any]:
                     chars.append(chr(char_val))
             message_text = "".join(chars[:500])
     except ImportError:
-        message_text = "NAVTEX decode requires numpy/scipy for full demodulation"
+        result["warning"] = "NAVTEX decode requires numpy/scipy for full demodulation"
 
     if message_text:
         lines = message_text.split("\n")
         for line in lines:
             line = line.strip()
-            if len(line) >= 4 and line[2:4] in NAVTEX_CHARS:
+            if len(line) >= 4 and line[2] in NAVTEX_CHARS:
                 try:
                     station = line[0]
                     subject = line[2]
@@ -454,7 +461,8 @@ def decode_dsc(data: bytes, sample_rate: int) -> dict[str, Any]:
         if len(iq) >= sample_rate // 10:
             mag = np.abs(iq)
             threshold = np.mean(mag) + 2.0 * np.std(mag)
-            bits = [1 if m > threshold else 0 for m in mag[::sample_rate // 200]]
+            sample_step = max(sample_rate // 200, 1)
+            bits = [1 if m > threshold else 0 for m in mag[::sample_step]]
 
             phasing = [1, 0, 1, 0, 1, 0, 1, 0, 1, 0]
             sync_positions = []
@@ -475,7 +483,11 @@ def decode_dsc(data: bytes, sample_rate: int) -> dict[str, Any]:
                     "address": address,
                     "category": CATEGORY_NAMES.get(address if address < 200 else fmt_spec * 10 + (address % 10),
                                                     f"Unknown ({address})"),
-                    "telecommand_bits": call_bits[16:32].hex() if len(call_bits) >= 32 else "",
+                    "telecommand_bits": (
+                        f"{bits_to_int(call_bits[16:32]):04x}"
+                        if len(call_bits) >= 32
+                        else ""
+                    ),
                 })
     except ImportError:
         result["warning"] = "numpy/scipy not available; returning structural decode"
@@ -506,7 +518,7 @@ def decode_auto(data: bytes, sample_rate: int, center_freq: int) -> dict[str, An
         490_000: "navtex",
     }
 
-    guessed_mode = "ais"
+    guessed_mode = "auto"
     freq = center_freq
     for f, m in ch_map.items():
         if abs(freq - f) < 50_000:
@@ -532,7 +544,7 @@ def decode_auto(data: bytes, sample_rate: int, center_freq: int) -> dict[str, An
     }
 
 
-DECODERS = {
+DECODERS: dict[str, Callable[..., dict[str, Any]]] = {
     "ais": decode_ais,
     "navtex": decode_navtex,
     "dsc": decode_dsc,
@@ -557,7 +569,11 @@ def main() -> None:
 
     decoder = DECODERS[args.mode]
     try:
-        result = decoder(data, args.sample_rate)
+        result = (
+            decoder(data, args.sample_rate, args.center_freq)
+            if args.mode == "auto"
+            else decoder(data, args.sample_rate)
+        )
     except Exception as exc:
         result = {"error": str(exc), "mode": args.mode}
 

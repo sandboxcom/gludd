@@ -38,7 +38,7 @@ KEY_PHRASES = [
     "CI is pending",
     "never a stop",
     "verify-release-completeness",
-    "all 12 asset",
+    "all 28 artifact",
     "NOT done",
 ]
 
@@ -106,7 +106,7 @@ class TestAntiPatternsPresent:
     """The anti-patterns list must call out the specific failure modes."""
 
     EXPECTED_ANTI_PATTERNS: tuple[str, ...] = (
-        "structural-test subagents while the pipeline is red",
+        "all three slots with unrelated structural-test work while the pipeline is red",
         "new enforcement plugin while commits sit unpushed",
         "documentation while CI is failing",
         "CI is pending",
@@ -147,13 +147,13 @@ class TestSecondaryWorkCap:
 
     def test_fifty_percent_cap_stated(self, section_src):
         # The rule must state the cap both as prose ("50%") and as the
-        # concrete wave allocation ("at least 5" of 10).
+        # concrete bounded-wave allocation ("at least two" of three).
         assert "50%" in section_src, (
             "AGENTS.md must state the 50% cap on secondary work explicitly."
         )
-        assert "at least 5" in section_src, (
+        assert "at least two" in section_src, (
             "AGENTS.md must translate the 50% cap into a concrete slot count "
-            "(at least 5 of 10) so it is unambiguous."
+            "(at least two of three) so it is unambiguous."
         )
 
 

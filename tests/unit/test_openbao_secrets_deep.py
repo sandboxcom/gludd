@@ -766,6 +766,28 @@ class TestPolicyEnforcementDeep:
         manager = SecretsManager(permission_spec=spec)
         manager._enforce_permission("secret/data/ok/path", "read")
 
+    def test_denied_path_prefix_does_not_match_sibling_name_collision(self) -> None:
+        spec = PermissionSpec(
+            agent_type="agent",
+            capabilities=[
+                Capability(
+                    resource="secret:openbao",
+                    actions=["read"],
+                    constraints={"openbao_paths": ["secret/data/*"]},
+                ),
+            ],
+            denied=[
+                Capability(
+                    resource="secret:openbao",
+                    actions=["read"],
+                    constraints={"path_prefix": "secret/data/sensitive"},
+                ),
+            ],
+        )
+        manager = SecretsManager(permission_spec=spec)
+
+        manager._enforce_permission("secret/data/sensitive-backup/key", "read")
+
 
 # ──────────────────────────────────────────────────────────────
 #  Policy name and evidence — deep recurrence

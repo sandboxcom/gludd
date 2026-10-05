@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tomllib
 from collections import deque
+from pathlib import PurePosixPath
 
 import pytest
 from packaging.utils import canonicalize_name
@@ -25,6 +26,7 @@ from packaging.utils import canonicalize_name
 PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 PYPROJECT = os.path.join(PROJECT_ROOT, "pyproject.toml")
 UV_LOCK = os.path.join(PROJECT_ROOT, "uv.lock")
+THIRD_PARTY_LICENSES = os.path.join(PROJECT_ROOT, "THIRD_PARTY_LICENSES.md")
 
 # ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -102,15 +104,30 @@ def _dep_depth(graph: dict[str, set[str]], root: str) -> dict[str, int]:
 def _package_info(name: str) -> dict | None:
     """Get package metadata via importlib.metadata."""
     try:
-        from importlib.metadata import metadata
+        from importlib.metadata import distribution
 
-        meta = metadata(name)
+        dist = distribution(name)
+        meta = dist.metadata
         license_val = meta.get("License-Expression") or meta.get("License") or ""
+        license_files = list(meta.get_all("License-File") or [])
+        if not license_val:
+            texts: list[str] = []
+            for declared in license_files:
+                path = PurePosixPath(declared)
+                if path.is_absolute() or ".." in path.parts:
+                    continue
+                for candidate in (f"licenses/{path.as_posix()}", path.as_posix()):
+                    content = dist.read_text(candidate)
+                    if content:
+                        texts.append(content)
+                        break
+            license_val = "\n\n".join(texts)
         classifiers = meta.get_all("Classifier") or []
         return {
             "name": name,
             "version": meta.get("Version", ""),
             "license": license_val,
+            "license_files": license_files,
             "classifiers": list(classifiers),
             "summary": meta.get("Summary", ""),
             "home_page": meta.get("Home-page", "") or meta.get("Project-URL", ""),
@@ -170,6 +187,7 @@ _GPL_ALLOWLIST = {
 
 _LGPL_ALLOWLIST = {
     "chardet",
+    "pygame",
     "psycopg",
     "psycopg-binary",
 }
@@ -383,6 +401,7 @@ def test_no_gpl_licensed_dependencies() -> None:
 def test_lgpl_dependencies_documented() -> None:
     """LGPL dependencies are enumerated and verified to be in the allowlist."""
     text = _read(UV_LOCK)
+    notices = _read(THIRD_PARTY_LICENSES).lower()
     packages = _parse_uvlock_packages(text)
 
     lgpl_found: list[tuple[str, str, str]] = []
@@ -395,6 +414,12 @@ def test_lgpl_dependencies_documented() -> None:
     undocumented = [(n, v, lic) for n, v, lic in lgpl_found if n not in _LGPL_ALLOWLIST]
     assert not undocumented, "LGPL packages not in allowlist (review and add if acceptable):\n" + "\n".join(
         f"  {n} v{v} — {lic}" for n, v, lic in undocumented
+    )
+
+    missing_notices = sorted(name for name in _LGPL_ALLOWLIST if name not in notices)
+    assert not missing_notices, (
+        "LGPL allowlist entries missing from THIRD_PARTY_LICENSES.md: "
+        f"{missing_notices}"
     )
 
     assert len(lgpl_found) > 0, "Expected some LGPL dependencies but found none"
@@ -418,8 +443,16 @@ def test_all_installed_deps_have_license() -> None:
     )
 
 
+def test_quickjs_ng_pep639_license_file_is_consumed() -> None:
+    """PEP 639 ``License-File`` evidence counts when SPDX fields are absent."""
+    info = _package_info("quickjs-ng")
+    assert info is not None
+    assert info["license_files"] == ["LICENSE"]
+    assert "MIT License" in (_get_license("quickjs-ng") or "")
+
+
 def test_core_deps_license_from_classifier_or_field() -> None:
-    """Core dependencies have license info via classifier or License field."""
+    """Core dependencies expose a classifier, SPDX field, or declared file."""
     data = _load_pyproject()
     core_deps_raw: list[str] = data["project"]["dependencies"]
     core_names = {d.split(">=")[0].split("==")[0].split("~=")[0].split("[")[0].strip() for d in core_deps_raw}

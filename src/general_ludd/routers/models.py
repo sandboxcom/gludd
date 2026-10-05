@@ -36,7 +36,11 @@ from general_ludd.daemon import (
 )
 from general_ludd.db.repository import BenchmarkRepository
 from general_ludd.hardware.survey import HardwareInventory
-from general_ludd.infra.local_inference import LocalInferenceManager, LocalServerConfig
+from general_ludd.infra.local_inference import (
+    LocalInferenceManager,
+    LocalServerConfig,
+    install_local_inference_lifespan,
+)
 from general_ludd.local_model._local_model_configs import _LOCAL_MODELS
 from general_ludd.models.auto_configurator import AutoConfigurator, ModelPrioritizer
 from general_ludd.models.gateway import ModelGateway, ModelResponse
@@ -81,10 +85,10 @@ _MAX_MODELS_CALL_MAX_TOKENS = 1_000_000
 def _workspace_root(app: FastAPI) -> str:
     """The directory attacker-supplied code paths are confined to.
 
-    Prefers GLUDD_WORKSPACE, then the daemon's configured workspace root, then
+    Prefers GLUDD_WORKSPACE_ROOT, then the daemon's configured workspace root, then
     the current working directory. Pure env/attr read — no I/O, no blocking.
     """
-    return os.environ.get("GLUDD_WORKSPACE") or getattr(app.state, "_workspace_root", None) or os.getcwd()
+    return os.environ.get("GLUDD_WORKSPACE_ROOT") or getattr(app.state, "_workspace_root", None) or os.getcwd()
 
 
 def _allowed_code_roots(app: FastAPI) -> list[str]:
@@ -264,6 +268,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         app.state._local_inference_manager = LocalInferenceManager(
             ansible_adapter=getattr(app.state, "_runner", None),
         )
+    install_local_inference_lifespan(app)
     if not hasattr(app.state, "_small_model_task_policy"):
         app.state._small_model_task_policy = SmallModelTaskPolicy()
     if not hasattr(app.state, "_model_downloader"):
@@ -308,6 +313,12 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             )
             _track_router_owned_gateway(app, app.state._model_gateway)
         gateway: ModelGateway = app.state._model_gateway
+        # A zero-cost profile with api_metered UNSPECIFIED is un-metered by
+        # definition (validator rejects enabled + metered + zero cost, and
+        # the pinned registration contract accepts such profiles as 200).
+        # An explicit api_metered=True keeps the fail-closed 422 contract.
+        if req.api_metered is None:
+            req.api_metered = not (req.cost_per_input_token == 0.0 and req.cost_per_output_token == 0.0)
         try:
             profile = gateway.add_profile(
                 model_id=req.model_id,
@@ -321,7 +332,11 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 cost_per_output_token=req.cost_per_output_token,
             )
         except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            logger.warning("invalid model profile: %s", exc, exc_info=True)
+            raise HTTPException(
+                status_code=422,
+                detail="invalid model profile: metered profiles require non-zero cost",
+            ) from exc
         return {"model_id": req.model_id, "profile": profile.model_dump()}
 
     @app.delete("/admin/models/{model_id}")
@@ -499,10 +514,13 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
         mgr = _get_inference_mgr(app)
         if mgr is None:
-            if not hasattr(app.state, "_local_inference") or app.state._local_inference is None:
+            if (
+                not hasattr(app.state, "_local_inference_manager")
+                or app.state._local_inference_manager is None
+            ):
                 subsys = _get_or_create_subsystems(app)
-                app.state._local_inference = LocalInferenceManager(event_bus=subsys["bus"])
-            mgr = app.state._local_inference
+                app.state._local_inference_manager = LocalInferenceManager(event_bus=subsys["bus"])
+            mgr = app.state._local_inference_manager
 
         port = cast(int, body.get("port", 8080))
         if not isinstance(port, int) or not 1024 <= port <= 65535:
@@ -593,7 +611,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 "estimated_cost_usd": 0.0,
                 "sample_count": 0,
                 "fallback": True,
-                "reason": f"router_error: {exc!r}",
+                "reason": "router_error",
             }
 
         return {
@@ -1099,7 +1117,6 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         # while direct Hugging Face repository IDs and Ollama tags use the fixed
         # provider transports below and do not expose registry-controlled paths.
         if config is not None and source in registry_bound_sources | {"huggingface"}:
-
             source_order_raw = body.get("order")
             source_order: list[ModelSource] | None = None
             if isinstance(source_order_raw, list):
@@ -1121,7 +1138,8 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                     timeout=downloader.timeout,
                 )
             except ModelSourceDownloadError as exc:
-                raise HTTPException(status_code=502, detail=str(exc)) from exc
+                logger.warning("model download failed: %s", exc, exc_info=True)
+                raise HTTPException(status_code=502, detail="model download failed") from exc
 
             store = cast(dict[str, LocalServerConfig], request.app.state._sm_server_store)
             key = f"{result.source.value}/{model_id}"
@@ -1357,6 +1375,26 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                     ev.passed_cases,
                     ev.total_cases,
                 )
+                # Feed the weight DB: capability probes ARE task performance
+                # evidence — record them so the router learns which model
+                # passes which task kind (cross-task reuse included).
+                perf_repo = getattr(request.app.state, "model_perf_repo", None)
+                if perf_repo is not None:
+                    try:
+                        await perf_repo.record_call(
+                            service="local",
+                            model_name=model_id,
+                            model_profile_id=model_id,
+                            task_type=ev.task_kind,
+                            success=bool(entry["passed"]),
+                            duration_ms=0.0,
+                            cost_usd=0.0,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "capability evidence not recorded to weight DB: %s",
+                            exc,
+                        )
 
             return {
                 "evaluated": True,
@@ -1415,6 +1453,21 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         cap_store.setdefault(key, []).append(evidence_entry)
         ev_store[f"eval:{model_id}:{task_kind}"] = evidence_entry
         logger.info("model evaluate: %s task=%s passed=%s/%s", model_id, task_kind, passed_cases, total_cases)
+        # Feed the weight DB: capability probes ARE task performance evidence.
+        perf_repo = getattr(request.app.state, "model_perf_repo", None)
+        if perf_repo is not None:
+            try:
+                await perf_repo.record_call(
+                    service="local",
+                    model_name=model_id,
+                    model_profile_id=model_id,
+                    task_type=task_kind,
+                    success=bool(evidence_entry["passed"]),
+                    duration_ms=0.0,
+                    cost_usd=0.0,
+                )
+            except Exception as exc:
+                logger.warning("capability evidence not recorded to weight DB: %s", exc)
         return {"evaluated": True, "model_id": model_id, "evidence": evidence_entry}
 
     @app.get("/admin/models/local/evidence")
@@ -1513,6 +1566,8 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         if mgr is None:
             raise HTTPException(status_code=503, detail="LocalInferenceManager not available")
 
+        if mgr.get_server(server_id) is None:
+            raise HTTPException(status_code=404, detail=f"Server {server_id} not found")
         try:
             await mgr.stop_server(server_id)
             logger.info("local server shut down: server_id=%s", server_id)
@@ -1600,7 +1655,13 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             )
 
         candidates.sort(key=lambda c: (c["passed"], c["pass_ratio"]), reverse=True)
-        return {"task": task, "recommendations": candidates, "total": len(candidates)}
+        selected_model_profile_id = str(candidates[0]["model_id"]) if candidates else None
+        return {
+            "task": task,
+            "recommendations": candidates,
+            "total": len(candidates),
+            "selected_model_profile_id": selected_model_profile_id,
+        }
 
     @app.get("/admin/models/cost")
     async def admin_models_cost(request: Request, model: str) -> dict[str, object]:

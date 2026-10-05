@@ -110,7 +110,7 @@ model can silently act on stale or wrong state.
 
 ### Decision rule
 
-```
+```text
 Let:
   C_down   = downstream cost per input token ($)
   C_comp   = compactor cost per output token ($)  [output = what goes to downstream]

@@ -1,0 +1,4 @@
+---
+# Callers must explicitly select discovered or managed execution.
+os_expert_python_preflight_contract: ""
+os_expert_python_preflight_managed_interpreter: ""

@@ -229,6 +229,21 @@ wheels = [
 ]
 
 [[package]]
+name = "ansible-builder"
+version = "3.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "bindep" },
+    { name = "jsonschema" },
+    { name = "packaging" },
+    { name = "pyyaml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fe/6b/0525894e5dd510c3a67da0b8819209333ca939cfa94b7f0d3ef041a628ec/ansible_builder-3.1.1.tar.gz", hash = "sha256:9d88bc15acc7d31056d0c51914a6102dac8e5ad73f9f2d35ba98378c89714ed2", size = 109392, upload-time = "2025-10-27T18:51:54.755Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a5/d0/e4a46f92084fcd6a94ca038645b1580316d3a6e0a8be28709bc4e00367cd/ansible_builder-3.1.1-py3-none-any.whl", hash = "sha256:a8246022edb92ca27ea95e87c7af30bcb2752f108dcc75fbf96e77196dff1072", size = 46517, upload-time = "2025-10-27T18:51:53.702Z" },
+]
+
+[[package]]
 name = "ansible-compat"
 version = "26.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -356,15 +371,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/19/14/2c5dd9f512b66549ae92767a9c7b330ae88e1932ca57876909410251fe13/anyio-4.13.0.tar.gz", hash = "sha256:334b70e641fd2221c1505b3890c69882fe4a2df910cba14d97019b90b24439dc", size = 231622, upload-time = "2026-03-24T12:59:09.671Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/da/42/e921fccf5015463e32a3cf6ee7f980a6ed0f395ceeaa45060b61d86486c2/anyio-4.13.0-py3-none-any.whl", hash = "sha256:08b310f9e24a9594186fd75b4f73f4a4152069e3853f1ed8bfbf58369f4ad708", size = 114353, upload-time = "2026-03-24T12:59:08.246Z" },
-]
-
-[[package]]
-name = "appdirs"
-version = "1.4.4"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/d7/d8/05696357e0311f5b5c316d7b95f46c669dd9c15aaeecbb48c7d0aeb88c40/appdirs-1.4.4.tar.gz", hash = "sha256:7d5d0167b2b1ba821647616af46a749d1c653740dd0d2415100fe26e27afdf41", size = 13470, upload-time = "2020-05-11T07:59:51.037Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/3b/00/2344469e2084fb287c2e0b57b72910309874c3245463acd6cf5e3db69324/appdirs-1.4.4-py2.py3-none-any.whl", hash = "sha256:a841dacd6b99318a741b166adb07e19ee71a274450e68237b4650ca1055ab128", size = 9566, upload-time = "2020-05-11T07:59:49.499Z" },
 ]
 
 [[package]]
@@ -520,6 +526,20 @@ wheels = [
 ]
 
 [[package]]
+name = "azure-mgmt-appcontainers"
+version = "5.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "azure-mgmt-core" },
+    { name = "isodate" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/05/f6/ee9e9408345b420bc64a8ef8fcb31e428c6a47571bf25daff3babceb6c2e/azure_mgmt_appcontainers-5.0.0.tar.gz", hash = "sha256:a3cb592741f09a2d8d63a68a202eb62a2daaf0b1c42c2bc160c2018e5b340efe", size = 260615, upload-time = "2026-07-08T09:42:11.252Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/09/95/4ef0bf9edfe346e5a0af35c7dece90682010fa0c2e66a7fbf5c574492872/azure_mgmt_appcontainers-5.0.0-py3-none-any.whl", hash = "sha256:1c94d1c7b5ded159353ff2c087f96d485d2e05ce3eedd5309fcdb474532aba61", size = 229829, upload-time = "2026-07-08T09:42:12.618Z" },
+]
+
+[[package]]
 name = "azure-mgmt-authorization"
 version = "4.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -531,6 +551,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/9e/ab/e79874f166eed24f4456ce4d532b29a926fb4c798c2c609eefd916a3f73d/azure-mgmt-authorization-4.0.0.zip", hash = "sha256:69b85abc09ae64fc72975bd43431170d8c7eb5d166754b98aac5f3845de57dc4", size = 1134795, upload-time = "2023-07-25T04:47:46.033Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/32/b3/8ec1268082f4d20cc8bf723a1a8e6b9e330bcc338a4dbcee9c7737e9dc1c/azure_mgmt_authorization-4.0.0-py3-none-any.whl", hash = "sha256:d8feeb3842e6ddf1a370963ca4f61fb6edc124e8997b807dd025bc9b2379cd1a", size = 1072620, upload-time = "2023-07-25T04:47:49.26Z" },
+]
+
+[[package]]
+name = "azure-mgmt-cognitiveservices"
+version = "14.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "azure-mgmt-core" },
+    { name = "msrest" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fa/8e/9fcfdd507413a2536c5458b40942705ea8d74fe4e17f05fd1c32bb0225a9/azure_mgmt_cognitiveservices-14.1.0.tar.gz", hash = "sha256:915191374d0adb443863c20aaea2c9f3b9d558a849ac2b78f152249262fdcaf8", size = 184444, upload-time = "2025-10-24T07:28:14.229Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d3/25/ed6bbc01a03991255dd22aa41091360d225f1be20c88710af0f4a6c27459/azure_mgmt_cognitiveservices-14.1.0-py3-none-any.whl", hash = "sha256:3c0eecc00d183842a11d754f4f5c3328ff86f2d6c0a2b81b28dd7e073680258e", size = 290096, upload-time = "2025-10-24T07:28:15.766Z" },
 ]
 
 [[package]]
@@ -571,6 +605,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/11/6c/8fa4145a45a5feed057a45db99376860a4bfedc4c664392103a1c2043ded/azure_mgmt_costmanagement-5.0.0b1.tar.gz", hash = "sha256:7ff39d3d1dfe852942c1bfbd731a6c2c0c39c80acde1b2b4f52bd25f21cea557", size = 154889, upload-time = "2026-05-26T08:53:44.398Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5a/5b/6c3fadd4fe80b6987cab98fb8115fdb2ac85374b2fd4895a1cd29c726096/azure_mgmt_costmanagement-5.0.0b1-py3-none-any.whl", hash = "sha256:8e8f097d51865f63acbd306d730fa2ad50e2c9cb087d79e3d0154db622d5b43d", size = 159667, upload-time = "2026-05-26T08:53:45.906Z" },
+]
+
+[[package]]
+name = "azure-mgmt-monitor"
+version = "7.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "azure-common" },
+    { name = "azure-mgmt-core" },
+    { name = "isodate" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0e/12/25874f6b894e972646244f570a23298969b58f57cfb7a188e2740017b43a/azure_mgmt_monitor-7.0.0.tar.gz", hash = "sha256:b75f536441d430f69ff873a1646e5f5dbcb3080a10768a59d0adc01541623816", size = 195496, upload-time = "2025-07-28T07:46:17.031Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c6/d1/f6ea4731edfa02c14756770d7c3d5202b40c5c72744f15142c0d89b6d957/azure_mgmt_monitor-7.0.0-py3-none-any.whl", hash = "sha256:ad63b5d187e21d2d34366271ade6abbeea1fcf76e313ff0f83d394d9c124aa1b", size = 245243, upload-time = "2025-07-28T07:46:18.594Z" },
 ]
 
 [[package]]
@@ -670,6 +719,21 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/54/79/875f9558179573d40a9cc743038ac2bf67dfb79cecb1e8b5d70e88c94c3d/bcrypt-5.0.0-pp311-pypy311_pp73-manylinux_2_28_x86_64.whl", hash = "sha256:046ad6db88edb3c5ece4369af997938fb1c19d6a699b9c1b27b0db432faae4c4", size = 273791, upload-time = "2025-09-25T19:50:39.913Z" },
     { url = "https://files.pythonhosted.org/packages/bc/fe/975adb8c216174bf70fc17535f75e85ac06ed5252ea077be10d9cff5ce24/bcrypt-5.0.0-pp311-pypy311_pp73-manylinux_2_34_aarch64.whl", hash = "sha256:dcd58e2b3a908b5ecc9b9df2f0085592506ac2d5110786018ee5e160f28e0911", size = 270746, upload-time = "2025-09-25T19:50:43.306Z" },
     { url = "https://files.pythonhosted.org/packages/e4/f8/972c96f5a2b6c4b3deca57009d93e946bbdbe2241dca9806d502f29dd3ee/bcrypt-5.0.0-pp311-pypy311_pp73-manylinux_2_34_x86_64.whl", hash = "sha256:6b8f520b61e8781efee73cba14e3e8c9556ccfb375623f4f97429544734545b4", size = 273375, upload-time = "2025-09-25T19:50:45.43Z" },
+]
+
+[[package]]
+name = "bindep"
+version = "2.14.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "distro" },
+    { name = "packaging" },
+    { name = "parsley" },
+    { name = "pbr" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/be/c2/a549e0286fd2711e401dc240184fb89c06e2ff1642fb7c6cac7a95fe0c8c/bindep-2.14.0.tar.gz", hash = "sha256:0c804c7e48dd17db24cb39121ade7171f684fb463c8aa01d0338cd11d254364a", size = 44234, upload-time = "2026-03-19T14:58:49.961Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6e/50/b102034fbff7f86dc1120ba72309c12a9a4937e02b941e7c7a301879dc0f/bindep-2.14.0-py3-none-any.whl", hash = "sha256:235181c6f79f3a3edb831a6ae55f61185bc1de0f7761904d906507e9a5d801c9", size = 35171, upload-time = "2026-03-19T14:58:48.621Z" },
 ]
 
 [[package]]
@@ -1893,20 +1957,6 @@ wheels = [
 ]
 
 [[package]]
-name = "fs"
-version = "2.4.16"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "appdirs" },
-    { name = "setuptools" },
-    { name = "six" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/5d/a9/af5bfd5a92592c16cdae5c04f68187a309be8a146b528eac3c6e30edbad2/fs-2.4.16.tar.gz", hash = "sha256:ae97c7d51213f4b70b6a958292530289090de3a7e15841e108fbe144f069d313", size = 187441, upload-time = "2022-05-02T09:25:54.22Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b9/5c/a3d95dc1ec6cdeb032d789b552ecc76effa3557ea9186e1566df6aac18df/fs-2.4.16-py2.py3-none-any.whl", hash = "sha256:660064febbccda264ae0b6bace80a8d1be9e089e0a5eb2427b7d517f9a91545c", size = 135261, upload-time = "2022-05-02T09:25:52.363Z" },
-]
-
-[[package]]
 name = "fsspec"
 version = "2026.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1922,25 +1972,23 @@ http = [
 
 [[package]]
 name = "general-ludd-agent"
-version = "0.1.0b4"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
     { name = "alembic" },
     { name = "annotated-types" },
-    { name = "ansible-core", version = "2.19.12", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "ansible-core", version = "2.21.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "ansible-runner" },
     { name = "argon2-cffi" },
     { name = "bcrypt" },
     { name = "blake3" },
+    { name = "chardet" },
     { name = "croniter" },
     { name = "cryptography" },
     { name = "defusedxml" },
     { name = "diskcache" },
     { name = "fastapi" },
     { name = "filelock" },
-    { name = "fs" },
+    { name = "greenlet" },
     { name = "gunicorn" },
     { name = "httpx" },
     { name = "huggingface-hub" },
@@ -1952,29 +2000,23 @@ dependencies = [
     { name = "langgraph" },
     { name = "langsmith" },
     { name = "msgpack" },
-    { name = "numpy" },
     { name = "openai" },
+    { name = "pathspec" },
     { name = "pqcrypto" },
     { name = "prometheus-client" },
     { name = "prompt-toolkit" },
     { name = "psutil" },
     { name = "psycopg", extra = ["binary"] },
-    { name = "pycryptodome" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pygments" },
-    { name = "pyspx" },
-    { name = "pywavelets" },
     { name = "pyyaml" },
+    { name = "quickjs-ng" },
     { name = "rapidfuzz" },
     { name = "requests" },
     { name = "rich" },
     { name = "safehttpx" },
-    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "shamir" },
     { name = "sqlalchemy" },
-    { name = "srptools" },
     { name = "starlette" },
     { name = "tenacity" },
     { name = "tree-sitter" },
@@ -1984,14 +2026,23 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+ansible-controller = [
+    { name = "ansible-builder" },
+    { name = "ansible-core", version = "2.19.12", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "ansible-core", version = "2.21.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "ansible-runner" },
+]
 aws = [
     { name = "boto3" },
 ]
 azure = [
     { name = "azure-identity" },
+    { name = "azure-mgmt-appcontainers" },
     { name = "azure-mgmt-authorization" },
+    { name = "azure-mgmt-cognitiveservices" },
     { name = "azure-mgmt-compute" },
     { name = "azure-mgmt-costmanagement" },
+    { name = "azure-mgmt-monitor" },
     { name = "azure-mgmt-resource" },
 ]
 benchmark = [
@@ -2003,18 +2054,23 @@ cuda-inference = [
 ]
 dev = [
     { name = "aiosqlite" },
+    { name = "ansible-builder" },
+    { name = "ansible-core", version = "2.19.12", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "ansible-core", version = "2.21.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "ansible-lint" },
+    { name = "ansible-runner" },
     { name = "bandit" },
     { name = "cyclonedx-py" },
-    { name = "greenlet" },
     { name = "httpx2" },
     { name = "hypothesis" },
     { name = "molecule" },
     { name = "molecule-plugins", extra = ["docker"] },
     { name = "mypy" },
+    { name = "numpy" },
     { name = "pip" },
     { name = "pip-audit" },
     { name = "pre-commit" },
+    { name = "pycryptodome" },
     { name = "pyinstaller" },
     { name = "pytest" },
     { name = "pytest-ansible" },
@@ -2022,8 +2078,13 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-timeout" },
     { name = "pytest-xdist" },
+    { name = "pywavelets" },
     { name = "ruff" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "setuptools" },
+    { name = "shamir" },
+    { name = "srptools" },
     { name = "types-defusedxml" },
     { name = "types-gunicorn" },
     { name = "types-psutil" },
@@ -2031,11 +2092,15 @@ dev = [
 ]
 e2e-all = [
     { name = "azure-identity" },
+    { name = "azure-mgmt-appcontainers" },
     { name = "azure-mgmt-authorization" },
+    { name = "azure-mgmt-cognitiveservices" },
     { name = "azure-mgmt-compute" },
     { name = "azure-mgmt-costmanagement" },
+    { name = "azure-mgmt-monitor" },
     { name = "azure-mgmt-resource" },
     { name = "langchain-openai" },
+    { name = "numpy" },
     { name = "opencv-python-headless" },
     { name = "pillow" },
     { name = "pygame" },
@@ -2043,6 +2108,7 @@ e2e-all = [
     { name = "yt-dlp" },
 ]
 game-e2e = [
+    { name = "numpy" },
     { name = "opencv-python-headless" },
     { name = "pillow" },
     { name = "pygame" },
@@ -2087,20 +2153,25 @@ xml-security = [
 [package.dev-dependencies]
 dev = [
     { name = "aiosqlite" },
+    { name = "ansible-builder" },
+    { name = "ansible-core", version = "2.19.12", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "ansible-core", version = "2.21.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "ansible-lint" },
+    { name = "ansible-runner" },
     { name = "bandit" },
     { name = "cyclonedx-py" },
     { name = "deptry" },
     { name = "detect-secrets" },
-    { name = "greenlet" },
     { name = "httpx2" },
     { name = "hypothesis" },
     { name = "molecule" },
     { name = "molecule-plugins", extra = ["docker"] },
     { name = "mypy" },
+    { name = "numpy" },
     { name = "pip" },
     { name = "pip-audit" },
     { name = "pre-commit" },
+    { name = "pycryptodome" },
     { name = "pyinstaller" },
     { name = "pytest" },
     { name = "pytest-ansible" },
@@ -2108,8 +2179,13 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-timeout" },
     { name = "pytest-xdist" },
+    { name = "pywavelets" },
     { name = "ruff" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "setuptools" },
+    { name = "shamir" },
+    { name = "srptools" },
     { name = "types-defusedxml" },
     { name = "types-gunicorn" },
     { name = "types-psutil" },
@@ -2122,25 +2198,37 @@ requires-dist = [
     { name = "aiosqlite", marker = "extra == 'dev'", specifier = ">=0.20.0" },
     { name = "alembic", specifier = ">=1.14.0" },
     { name = "annotated-types", specifier = ">=0.7.0" },
-    { name = "ansible-core", marker = "python_full_version < '3.12'", specifier = ">=2.19.11,<2.20" },
-    { name = "ansible-core", marker = "python_full_version >= '3.12'", specifier = ">=2.21.2,<2.22" },
+    { name = "ansible-builder", marker = "extra == 'ansible-controller'", specifier = ">=3.1.1,<3.2" },
+    { name = "ansible-builder", marker = "extra == 'dev'", specifier = ">=3.1.1,<3.2" },
+    { name = "ansible-core", marker = "python_full_version >= '3.12' and extra == 'ansible-controller'", specifier = ">=2.21.2,<2.22" },
+    { name = "ansible-core", marker = "python_full_version >= '3.12' and extra == 'dev'", specifier = ">=2.21.2,<2.22" },
+    { name = "ansible-core", marker = "python_full_version < '3.12' and extra == 'ansible-controller'", specifier = ">=2.19.11,<2.20" },
+    { name = "ansible-core", marker = "python_full_version < '3.12' and extra == 'dev'", specifier = ">=2.19.11,<2.20" },
     { name = "ansible-lint", marker = "extra == 'dev'", specifier = ">=24.0.0" },
-    { name = "ansible-runner", specifier = ">=2.4.0" },
+    { name = "ansible-runner", marker = "extra == 'ansible-controller'", specifier = ">=2.4.0" },
+    { name = "ansible-runner", marker = "extra == 'dev'", specifier = ">=2.4.0" },
     { name = "argon2-cffi", specifier = ">=23.1.0" },
     { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.16.0" },
     { name = "azure-identity", marker = "extra == 'e2e-all'", specifier = ">=1.16.0" },
+    { name = "azure-mgmt-appcontainers", marker = "extra == 'azure'", specifier = ">=5.0.0,<6" },
+    { name = "azure-mgmt-appcontainers", marker = "extra == 'e2e-all'", specifier = ">=5.0.0,<6" },
     { name = "azure-mgmt-authorization", marker = "extra == 'azure'", specifier = ">=4.0.0" },
     { name = "azure-mgmt-authorization", marker = "extra == 'e2e-all'", specifier = ">=4.0.0" },
+    { name = "azure-mgmt-cognitiveservices", marker = "extra == 'azure'", specifier = ">=14.1.0,<15" },
+    { name = "azure-mgmt-cognitiveservices", marker = "extra == 'e2e-all'", specifier = ">=14.1.0,<15" },
     { name = "azure-mgmt-compute", marker = "extra == 'azure'", specifier = ">=31.0.0" },
     { name = "azure-mgmt-compute", marker = "extra == 'e2e-all'", specifier = ">=31.0.0" },
     { name = "azure-mgmt-costmanagement", marker = "extra == 'azure'", specifier = "==5.0.0b1" },
     { name = "azure-mgmt-costmanagement", marker = "extra == 'e2e-all'", specifier = "==5.0.0b1" },
+    { name = "azure-mgmt-monitor", marker = "extra == 'azure'", specifier = ">=7.0.0,<8" },
+    { name = "azure-mgmt-monitor", marker = "extra == 'e2e-all'", specifier = ">=7.0.0,<8" },
     { name = "azure-mgmt-resource", marker = "extra == 'azure'", specifier = ">=23.0.0" },
     { name = "azure-mgmt-resource", marker = "extra == 'e2e-all'", specifier = ">=23.0.0" },
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.8.0" },
     { name = "bcrypt", specifier = ">=4.0.0" },
     { name = "blake3", specifier = ">=1.0.0" },
     { name = "boto3", marker = "extra == 'aws'", specifier = ">=1.34.0" },
+    { name = "chardet", specifier = ">=5.2.0,<6" },
     { name = "croniter", specifier = ">=2.0.0" },
     { name = "cryptography", specifier = ">=49.0.0,<51" },
     { name = "cyclonedx-py", marker = "extra == 'dev'", specifier = ">=0.7.0" },
@@ -2148,11 +2236,10 @@ requires-dist = [
     { name = "diskcache", specifier = ">=5.6.3,<6" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "filelock", specifier = ">=3.13.0" },
-    { name = "fs", specifier = ">=2.4.0" },
     { name = "google-api-python-client", marker = "extra == 'gcp'", specifier = ">=2.100.0" },
     { name = "google-auth", marker = "extra == 'gcp'", specifier = ">=2.25.0" },
     { name = "google-cloud-core", marker = "extra == 'gcp'", specifier = ">=2.3.0" },
-    { name = "greenlet", marker = "extra == 'dev'", specifier = ">=3.0.0" },
+    { name = "greenlet", specifier = ">=3.0.0" },
     { name = "gunicorn", specifier = ">=23.0.0" },
     { name = "hindsight-client", marker = "extra == 'hindsight'", specifier = ">=0.8.4" },
     { name = "httpx", specifier = ">=0.28.0" },
@@ -2175,17 +2262,20 @@ requires-dist = [
     { name = "molecule-plugins", extras = ["docker"], marker = "extra == 'dev'", specifier = ">=25.8.12" },
     { name = "msgpack", specifier = ">=1.2.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13.0" },
-    { name = "numpy", specifier = ">=1.26.0" },
-    { name = "openai", specifier = ">=1.0.0" },
+    { name = "numpy", marker = "extra == 'dev'", specifier = ">=1.26.0" },
+    { name = "numpy", marker = "extra == 'e2e-all'", specifier = ">=1.26.0" },
+    { name = "numpy", marker = "extra == 'game-e2e'", specifier = ">=1.26.0" },
+    { name = "openai", specifier = ">=1.66.0" },
     { name = "opencv-python-headless", marker = "extra == 'e2e-all'", specifier = ">=4.9.0,<4.13" },
     { name = "opencv-python-headless", marker = "extra == 'game-e2e'", specifier = ">=4.9.0,<4.13" },
     { name = "opentelemetry-api", marker = "extra == 'observability'", specifier = ">=1.20.0" },
     { name = "opentelemetry-exporter-otlp-proto-grpc", marker = "extra == 'observability'", specifier = ">=1.20.0" },
     { name = "opentelemetry-proto", marker = "extra == 'observability'", specifier = ">=1.20.0" },
     { name = "opentelemetry-sdk", marker = "extra == 'observability'", specifier = ">=1.20.0" },
+    { name = "pathspec", specifier = ">=1.0.4,<2" },
     { name = "pillow", marker = "extra == 'e2e-all'", specifier = ">=12.3.0" },
     { name = "pillow", marker = "extra == 'game-e2e'", specifier = ">=12.3.0" },
-    { name = "pip", marker = "extra == 'dev'", specifier = ">=26.1.2" },
+    { name = "pip", marker = "extra == 'dev'", specifier = ">=26.2" },
     { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=0.3.0" },
     { name = "pqcrypto", specifier = ">=0.4.0,<1" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.0.0" },
@@ -2193,7 +2283,7 @@ requires-dist = [
     { name = "prompt-toolkit", specifier = ">=3.0.0" },
     { name = "psutil", specifier = ">=6.0.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.0" },
-    { name = "pycryptodome", specifier = ">=3.20.0" },
+    { name = "pycryptodome", marker = "extra == 'dev'", specifier = ">=3.20.0" },
     { name = "pydantic", specifier = ">=2.10.0" },
     { name = "pydantic-settings", specifier = ">=2.14.2" },
     { name = "pygame", marker = "extra == 'e2e-all'", specifier = ">=2.5.0" },
@@ -2201,7 +2291,6 @@ requires-dist = [
     { name = "pygments", specifier = ">=2.0.0" },
     { name = "pyinstaller", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "pymysql", marker = "extra == 'mysql'", specifier = ">=1.1.0" },
-    { name = "pyspx", specifier = ">=0.1.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-ansible", marker = "extra == 'dev'", specifier = ">=24.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.25.0" },
@@ -2209,9 +2298,10 @@ requires-dist = [
     { name = "pytest-timeout", marker = "extra == 'dev'", specifier = ">=2.3.0" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.5.0" },
     { name = "pyvmomi", marker = "extra == 'vmware'", specifier = ">=8.0.0" },
-    { name = "pywavelets", specifier = ">=1.4" },
+    { name = "pywavelets", marker = "extra == 'dev'", specifier = ">=1.4" },
     { name = "pywin32", marker = "sys_platform == 'win32' and extra == 'platform-sandbox'", specifier = ">=306" },
     { name = "pyyaml", specifier = ">=6.0.2" },
+    { name = "quickjs-ng", specifier = "==0.16.2.1" },
     { name = "rapidfuzz", specifier = ">=3.0.0" },
     { name = "requests", specifier = ">=2.32.0" },
     { name = "rich", specifier = ">=13.0.0" },
@@ -2220,11 +2310,11 @@ requires-dist = [
     { name = "scapy", marker = "extra == 'networking'", specifier = ">=2.5.0" },
     { name = "scikit-image", marker = "extra == 'e2e-all'", specifier = ">=0.22.0" },
     { name = "scikit-image", marker = "extra == 'game-e2e'", specifier = ">=0.22.0" },
-    { name = "scipy", specifier = ">=1.11.0" },
+    { name = "scipy", marker = "extra == 'dev'", specifier = ">=1.11.0" },
     { name = "setuptools", marker = "extra == 'dev'", specifier = ">=83.0.0" },
-    { name = "shamir", specifier = ">=17.12.0" },
+    { name = "shamir", marker = "extra == 'dev'", specifier = ">=17.12.0" },
     { name = "sqlalchemy", specifier = ">=2.0.0" },
-    { name = "srptools", specifier = ">=1.0.0" },
+    { name = "srptools", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "starlette", specifier = ">=1.3.1" },
     { name = "tenacity", specifier = ">=9.0.0" },
     { name = "torch", marker = "extra == 'cuda-inference'", specifier = ">=2.6.0" },
@@ -2241,25 +2331,30 @@ requires-dist = [
     { name = "yt-dlp", marker = "extra == 'e2e-all'", specifier = ">=2025.1.15" },
     { name = "yt-dlp", marker = "extra == 'game-e2e'", specifier = ">=2025.1.15" },
 ]
-provides-extras = ["dev", "local-inference", "cuda-inference", "aws", "gcp", "azure", "observability", "sandbox", "game-e2e", "e2e-all", "mysql", "vmware", "networking", "hindsight", "benchmark", "xml-security", "platform-sandbox"]
+provides-extras = ["ansible-controller", "dev", "local-inference", "cuda-inference", "aws", "gcp", "azure", "observability", "sandbox", "game-e2e", "e2e-all", "mysql", "vmware", "networking", "hindsight", "benchmark", "xml-security", "platform-sandbox"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "aiosqlite", specifier = ">=0.20.0" },
+    { name = "ansible-builder", specifier = ">=3.1.1,<3.2" },
+    { name = "ansible-core", marker = "python_full_version < '3.12'", specifier = ">=2.19.11,<2.20" },
+    { name = "ansible-core", marker = "python_full_version >= '3.12'", specifier = ">=2.21.2,<2.22" },
     { name = "ansible-lint", specifier = ">=24.0.0" },
+    { name = "ansible-runner", specifier = ">=2.4.0" },
     { name = "bandit", specifier = ">=1.8.0" },
     { name = "cyclonedx-py", specifier = ">=0.7.0" },
     { name = "deptry", specifier = ">=0.20.0" },
     { name = "detect-secrets", specifier = ">=1.5.0" },
-    { name = "greenlet", specifier = ">=3.0.0" },
     { name = "httpx2", specifier = ">=2.7.0" },
     { name = "hypothesis", specifier = ">=6.0.0" },
     { name = "molecule", specifier = ">=24.0.0" },
     { name = "molecule-plugins", extras = ["docker"], specifier = ">=25.8.12" },
     { name = "mypy", specifier = ">=1.13.0" },
-    { name = "pip", specifier = ">=26.1.2" },
+    { name = "numpy", specifier = ">=1.26.0" },
+    { name = "pip", specifier = ">=26.2" },
     { name = "pip-audit", specifier = ">=0.3.0" },
     { name = "pre-commit", specifier = ">=4.0.0" },
+    { name = "pycryptodome", specifier = ">=3.20.0" },
     { name = "pyinstaller", specifier = ">=6.0.0" },
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "pytest-ansible", specifier = ">=24.0.0" },
@@ -2267,8 +2362,12 @@ dev = [
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "pytest-timeout", specifier = ">=2.3.0" },
     { name = "pytest-xdist", specifier = ">=3.5.0" },
+    { name = "pywavelets", specifier = ">=1.4" },
     { name = "ruff", specifier = ">=0.8.0" },
+    { name = "scipy", specifier = ">=1.11.0" },
     { name = "setuptools", specifier = ">=83.0.0" },
+    { name = "shamir", specifier = ">=17.12.0" },
+    { name = "srptools", specifier = ">=1.0.0" },
     { name = "types-defusedxml", specifier = ">=0.7.0.20240218" },
     { name = "types-gunicorn", specifier = ">=26.0.0.20260518" },
     { name = "types-psutil", specifier = ">=6.0.0" },
@@ -3856,6 +3955,22 @@ wheels = [
 ]
 
 [[package]]
+name = "msrest"
+version = "0.7.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "azure-core" },
+    { name = "certifi" },
+    { name = "isodate" },
+    { name = "requests" },
+    { name = "requests-oauthlib" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/68/77/8397c8fb8fc257d8ea0fa66f8068e073278c65f05acb17dcb22a02bfdc42/msrest-0.7.1.zip", hash = "sha256:6e7661f46f3afd88b75667b7187a92829924446c7ea1d169be8c4bb7eeb788b9", size = 175332, upload-time = "2022-06-13T22:41:25.111Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/15/cf/f2966a2638144491f8696c27320d5219f48a072715075d168b31d3237720/msrest-0.7.1-py3-none-any.whl", hash = "sha256:21120a810e1233e5e6cc7fe40b474eeb4ec6f757a15d7cf86702c369f9567c32", size = 85384, upload-time = "2022-06-13T22:41:22.42Z" },
+]
+
+[[package]]
 name = "multidict"
 version = "6.7.1"
 source = { registry = "https://pypi.org/simple" }
@@ -4324,6 +4439,15 @@ wheels = [
 ]
 
 [[package]]
+name = "oauthlib"
+version = "3.3.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0b/5f/19930f824ffeb0ad4372da4812c50edbd1434f678c90c2733e1188edfc63/oauthlib-3.3.1.tar.gz", hash = "sha256:0f0f8aa759826a193cf66c12ea1af1637f87b9b4622d46e866952bb022e538c9", size = 185918, upload-time = "2025-06-19T22:48:08.269Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/be/9c/92789c596b8df838baa98fa71844d84283302f7604ed565dafe5a6b5041a/oauthlib-3.3.1-py3-none-any.whl", hash = "sha256:88119c938d2b8fb88561af5f6ee0eec8cc8d552b7bb1f712743136eb7523b7a1", size = 160065, upload-time = "2025-06-19T22:48:06.508Z" },
+]
+
+[[package]]
 name = "openai"
 version = "2.48.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4722,6 +4846,15 @@ wheels = [
 ]
 
 [[package]]
+name = "parsley"
+version = "1.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/06/52/cac2f9e78c26cff8bb518bdb4f2b5a0c7058dec7a62087ed48fe87478ef0/Parsley-1.3.tar.gz", hash = "sha256:9444278d47161d5f2be76a767809a3cbe6db4db822f46a4fd7481d4057208d41", size = 99616, upload-time = "2015-09-09T02:53:04.899Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2b/d6/4fed8d65e28a970e1c5cb33ce9c7e22e3de745e1b2ae37af051ef16aea3b/Parsley-1.3-py2.py3-none-any.whl", hash = "sha256:c3bc417b8c7e3a96c87c0f2f751bfd784ed5156ffccebe2f84330df5685f8dc3", size = 88932, upload-time = "2015-09-09T02:53:09.977Z" },
+]
+
+[[package]]
 name = "partial-json-parser"
 version = "0.2.1.1.post7"
 source = { registry = "https://pypi.org/simple" }
@@ -4746,6 +4879,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/fa/2a/52a8da6fe965dea6192eb716b357558e103aea0a1e9a8352ad575a8406ca/pathvalidate-3.3.1.tar.gz", hash = "sha256:b18c07212bfead624345bb8e1d6141cdcf15a39736994ea0b94035ad2b1ba177", size = 63262, upload-time = "2025-06-15T09:07:20.736Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9a/70/875f4a23bfc4731703a5835487d0d2fb999031bd415e7d17c0ae615c18b7/pathvalidate-3.3.1-py3-none-any.whl", hash = "sha256:5263baab691f8e1af96092fa5137ee17df5bdfbd6cff1fcac4d6ef4bc2e1735f", size = 24305, upload-time = "2025-06-15T09:07:19.117Z" },
+]
+
+[[package]]
+name = "pbr"
+version = "7.0.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "setuptools" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5e/ab/1de9a4f730edde1bdbbc2b8d19f8fa326f036b4f18b2f72cfbea7dc53c26/pbr-7.0.3.tar.gz", hash = "sha256:b46004ec30a5324672683ec848aed9e8fc500b0d261d40a3229c2d2bbfcedc29", size = 135625, upload-time = "2025-11-03T17:04:56.274Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c0/db/61efa0d08a99f897ef98256b03e563092d36cc38dc4ebe4a85020fe40b31/pbr-7.0.3-py2.py3-none-any.whl", hash = "sha256:ff223894eb1cd271a98076b13d3badff3bb36c424074d26334cd25aebeecea6b", size = 131898, upload-time = "2025-11-03T17:04:54.875Z" },
 ]
 
 [[package]]
@@ -4856,11 +5001,11 @@ wheels = [
 
 [[package]]
 name = "pip"
-version = "26.1.2"
+version = "26.2.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/01/91/47e7d486260f618783899587af63ccf7980fb60245c3e63dd4571c6b57ad/pip-26.1.2.tar.gz", hash = "sha256:f49cd134c61cf2fd75e0ce2676db03e4054504a5a4986d00f8299ae632dc4605", size = 1840799, upload-time = "2026-05-31T17:33:58.56Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ae/15/4500e320e6b101ec3b719ae85b697d9940b6cda672bc555bd6016fc60c6f/pip-26.2.1.tar.gz", hash = "sha256:f6ad667e89a1fe78046c8f13232b247200f5258d7828f3f7883d660878e0813f", size = 1848877, upload-time = "2026-08-04T22:51:14.148Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5d/95/6b5cb3461ea5673ba0995989746db58eb18b91b54dbf331e72f569540946/pip-26.1.2-py3-none-any.whl", hash = "sha256:382ff9f685ee3bc25864f820aa50505825f10f5458ffff07e30a6d96e5715cab", size = 1813144, upload-time = "2026-05-31T17:33:56.772Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/6e/1736e5b4ae2b778ef2f81c47d797de9f891d4d8acb047a24ca37a60294dd/pip-26.2.1-py3-none-any.whl", hash = "sha256:71138adf1f4ca900cdb7d289c21b7494329f2332b6d85f0e1c42108c0384ed3e", size = 1816632, upload-time = "2026-08-04T22:51:12.472Z" },
 ]
 
 [[package]]
@@ -5673,18 +5818,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pyspx"
-version = "0.5.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "cffi" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/98/d5/2a5a52edc715e0cb3b3b1d6f67668b9f07775e2ec19c63742552780e1c6f/PySPX-0.5.0.tar.gz", hash = "sha256:e3544229e2bee9ef13a8468693491374080beb3f91080c3a86c698be8ece2baa", size = 454434, upload-time = "2022-08-02T19:34:17.878Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b7/d2/cf1bdd5b20fe3a93c11fc9cd80d2590ca0ee806f9f81610889dc3cc33596/PySPX-0.5.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:aa64aa0e2aa523a6a4484a2721d33694147730d0910493aa23bf1f452f4fba45", size = 1398196, upload-time = "2022-08-02T19:34:00.539Z" },
-]
-
-[[package]]
 name = "pytablewriter"
 version = "1.2.1"
 source = { registry = "https://pypi.org/simple" }
@@ -6108,6 +6241,28 @@ wheels = [
 ]
 
 [[package]]
+name = "quickjs-ng"
+version = "0.16.2.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/28/e1/0df75fc53a7764e0d99799aac01f4b72db1227f3e7dba2e5d2246b1222eb/quickjs_ng-0.16.2.1.tar.gz", hash = "sha256:cc0db5caeee8f93bcbbaf8ee59eefce58d33edc2c6ca340834e98c9520741ba1", size = 537108, upload-time = "2026-09-01T12:00:21.632Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/de/e1/e91954cfb83e8a0b4a064a50df4395394722cbfc090f6e98a126a3b029c5/quickjs_ng-0.16.2.1-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:5edf6aeb394d270ca7193279251a8b3e7e68577aed9f2ede7406a676056d6ffc", size = 531728, upload-time = "2026-09-01T11:59:53.519Z" },
+    { url = "https://files.pythonhosted.org/packages/21/16/ed077e854cf64fc8eb76a81a9107765e65b042b31984f333ffec2bd8e1e0/quickjs_ng-0.16.2.1-cp310-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:7446efb6134226d4d10236363c0b308a877613214ff2d798e4e270a8f22e579d", size = 2459036, upload-time = "2026-09-01T11:59:55.008Z" },
+    { url = "https://files.pythonhosted.org/packages/1b/21/38ba3e548285fa591b7ecb9514bf65f411628e6030cf0f7505c4960bcaff/quickjs_ng-0.16.2.1-cp310-abi3-manylinux2014_i686.manylinux_2_17_i686.manylinux_2_28_i686.whl", hash = "sha256:d65cda8ee4afb8ba0709e6881c0f90f483deb2239845a9a04491024aafc6184d", size = 2409184, upload-time = "2026-09-01T11:59:56.599Z" },
+    { url = "https://files.pythonhosted.org/packages/65/52/c124d48efaf9d1f5b706c2d8366d6fb010873d8f447295f1c604825e5393/quickjs_ng-0.16.2.1-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:780bc24ba5f26b9dc6f9c737de9db8f9787c6a0ab72f91e0f778623fefce2d4d", size = 2537370, upload-time = "2026-09-01T11:59:58.585Z" },
+    { url = "https://files.pythonhosted.org/packages/bf/54/a6758c8c775d7ca43d15d085aff2b10a6ff5dccf50bf3436cb52a197337e/quickjs_ng-0.16.2.1-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:50721415002975b3c64bf7836e64fd07a9d519396036257e8ef5ef419752c637", size = 2441594, upload-time = "2026-09-01T12:00:00.207Z" },
+    { url = "https://files.pythonhosted.org/packages/53/f7/617c2aa3d4ebad27bc7b3d7140d0db89c40a5d28b494035bf3598ca86ed6/quickjs_ng-0.16.2.1-cp310-abi3-musllinux_1_2_i686.whl", hash = "sha256:2b7a0f0412ea8e5874c659086a5f8b7d171d6ca2990b9c20e047bd11a25fb470", size = 2436556, upload-time = "2026-09-01T12:00:01.682Z" },
+    { url = "https://files.pythonhosted.org/packages/9d/dc/12f6b77802a4b5a56e3f03756d21cc9247f3cd6399ccd3c51b2753d72aa5/quickjs_ng-0.16.2.1-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:c131d2fb5c9741ad2da9475807453dc98a31fde1df5f096e4037b1a7ae576025", size = 2527814, upload-time = "2026-09-01T12:00:03.318Z" },
+    { url = "https://files.pythonhosted.org/packages/d2/c0/3d50214bb88361541712d15da7db0f291daa01294c540fc9f5f0d602c750/quickjs_ng-0.16.2.1-cp310-abi3-win32.whl", hash = "sha256:020eebb22ed98e3bd3ab44dc9225aff0186ee72df8a152d894b7ac55b079e295", size = 395822, upload-time = "2026-09-01T12:00:04.582Z" },
+    { url = "https://files.pythonhosted.org/packages/57/f7/1b02fd4e531f31cdbe5fb2418b0b25587d3b721137fa9c7e457a003fd2d8/quickjs_ng-0.16.2.1-cp310-abi3-win_amd64.whl", hash = "sha256:7dd5f9fd78917c4c444c52eb2029f51610487bc219f5ca1b2766bcbd98b8afc3", size = 521986, upload-time = "2026-09-01T12:00:05.958Z" },
+    { url = "https://files.pythonhosted.org/packages/6b/1c/e5ab0fe0bd8fd668e91511b580ea2a16e04c0fd354ac9ccf58f8ad5c99d3/quickjs_ng-0.16.2.1-pp311-pypy311_pp73-macosx_11_0_arm64.whl", hash = "sha256:f1c4b9741fca4cd29e0212b293a5d3a9ecda85a87d66df7bcfbcf44bef282fa2", size = 475770, upload-time = "2026-09-01T12:00:14.397Z" },
+    { url = "https://files.pythonhosted.org/packages/4e/4c/16a9c034989b1dbea312d0d5fd9e71af2465f5203e5140e1740bf5d43278/quickjs_ng-0.16.2.1-pp311-pypy311_pp73-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:688942b54540df1bbca2c2c4f67a167df604df17bc76b95857b72507e195a31d", size = 522754, upload-time = "2026-09-01T12:00:15.97Z" },
+    { url = "https://files.pythonhosted.org/packages/4c/63/6be5cc1d20d896f1069d362668362f689c55f5b2b2c88be3bc65fe070300/quickjs_ng-0.16.2.1-pp311-pypy311_pp73-manylinux2014_i686.manylinux_2_17_i686.manylinux_2_28_i686.whl", hash = "sha256:27771a34e74aa91fc739a60c6c8c5aa4eb1d38d8ca8a1fe03485bd91d1f27a86", size = 597645, upload-time = "2026-09-01T12:00:17.427Z" },
+    { url = "https://files.pythonhosted.org/packages/ff/4c/dc282fbeba2e44f88a81cb55a993a8d30cb3de2682460d5262fdddf96baf/quickjs_ng-0.16.2.1-pp311-pypy311_pp73-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:16e4b3272fd0ed98118570fdf5ac1880ad94a4563221e0c2508c0771c04ef033", size = 555216, upload-time = "2026-09-01T12:00:18.66Z" },
+    { url = "https://files.pythonhosted.org/packages/78/fe/4581160df1d85c1ff092f656381e37aa0359fc4d15bad196e036e63adf94/quickjs_ng-0.16.2.1-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:f275bfd4af674ed4c1becdf0c03c145d834fd9fb775c1c7eb9d162199710cd67", size = 522055, upload-time = "2026-09-01T12:00:20.372Z" },
+]
+
+[[package]]
 name = "rapidfuzz"
 version = "3.14.5"
 source = { registry = "https://pypi.org/simple" }
@@ -6353,6 +6508,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ac/c3/e2a2b89f2d3e2179abd6d00ebd70bff6273f37fb3e0cc209f48b39d00cbf/requests-2.34.2.tar.gz", hash = "sha256:f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed", size = 142856, upload-time = "2026-05-14T19:25:27.735Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl", hash = "sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0", size = 73075, upload-time = "2026-05-14T19:25:26.443Z" },
+]
+
+[[package]]
+name = "requests-oauthlib"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "oauthlib" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/42/f2/05f29bc3913aea15eb670be136045bf5c5bbf4b99ecb839da9b422bb2c85/requests-oauthlib-2.0.0.tar.gz", hash = "sha256:b3dffaebd884d8cd778494369603a9e7b58d29111bf6b41bdc2dcd87203af4e9", size = 55650, upload-time = "2024-03-22T20:32:29.939Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3b/5d/63d4ae3b9daea098d5d6f5da83984853c1bbacd5dc826764b249fe119d24/requests_oauthlib-2.0.0-py2.py3-none-any.whl", hash = "sha256:7dd8a5c40426b779b0868c404bdef9768deccf22749cde15852df527e6269b36", size = 24179, upload-time = "2024-03-22T20:32:28.055Z" },
 ]
 
 [[package]]

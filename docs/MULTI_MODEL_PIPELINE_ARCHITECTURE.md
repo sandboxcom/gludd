@@ -4,7 +4,7 @@
 
 ## 1. Component Diagram
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        INBOUND API LAYER                            │
 │                                                                     │
@@ -79,7 +79,7 @@
 
 ### 2.1 Request to Response (end-to-end)
 
-```
+```text
 User request (JSON)
     │
     ├── project_type validated against PROJECT_TYPE_REGISTRY (project_types.py)
@@ -115,7 +115,7 @@ MultiModelGamePipeline.generate(description, planner_model, coder_model, reviewe
 
 ### 2.2 Model Resolution Flow (when model_id="default")
 
-```
+```text
 gateway.route_for_task(task_kind)
     │
     ├── lookup _TASK_MODEL_PREFERENCES[kind]
@@ -149,7 +149,7 @@ for small/local models, based on capability evidence rather than provider preset
 
 ### 3.1 Algorithm
 
-```
+```text
 recommend_model(task_description, hardware, store, urgent=False)
 
 1. PARSE: _map_task_to_capabilities(description)
@@ -179,7 +179,7 @@ recommend_model(task_description, hardware, store, urgent=False)
 
 Used by `rank_models()` for cloud model selection. Three-component weighted score:
 
-```
+```text
 score = success_rate * 60.0                             [capability: 60%]
       + (1.0 / (adjusted_cost * 1000)) * 20.0           [cost efficiency: 20%]
       + (1.0 / (latency_ms / 1000)) * 20.0              [speed: 20%]
@@ -194,7 +194,7 @@ Adjusted cost = `base_cost * cost_multiplier` where multiplier comes from CostAw
 
 Used by `recommend_model()` for small/local model selection. Weighted composite:
 
-```
+```text
 Standard weights (off-peak or urgent):
   score = 0.30 * avg_pass_rate         [evaluation suite pass rate]
         + 0.20 * collection_ok_rate    [test collection success]

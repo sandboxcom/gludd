@@ -1,16 +1,19 @@
 ---
-# ci_verdict.yml — CI verdict check through ci_ops.py.
+# ci_verdict.yml — CI verdict check through the authenticated daemon seam.
 # Defaults branch to "development"; sha can be blank (uses HEAD).
 
 - name: "Run CI verdict"
-  ansible.builtin.command:
-    argv:
-      - "{{ ansible_python_interpreter | default('/usr/bin/python3') }}"
-      - "-c"
-      - "from general_ludd.git_automation.ci_ops import ci_verdict; import json, sys; sys.stdout.write(json.dumps(ci_verdict(branch='{{ ci_branch | default(\"development\") }}', sha='{{ ci_sha | default(\"\") }}' or None)))"
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path }}"
+    op: ci_verdict
+    branch: "{{ ci_branch | default('development') }}"
+    sha: "{{ ci_sha | default('') or omit }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+    timeout: "{{ git_api_timeout }}"
   register: _ci_verdict_raw
-  changed_when: false
+  no_log: "{{ psk | length > 0 }}"
 
 - name: "Parse CI verdict result"
   ansible.builtin.set_fact:
-    ci_verdict_result: "{{ _ci_verdict_raw.stdout | from_json }}"
+    ci_verdict_result: "{{ _ci_verdict_raw.result }}"

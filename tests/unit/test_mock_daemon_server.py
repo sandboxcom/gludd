@@ -8,21 +8,31 @@ status code, and error handling behaviour.
 from __future__ import annotations
 
 import concurrent.futures
+import importlib.util
 import json
+import os
 import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
 from collections.abc import Generator
 from pathlib import Path
+from types import ModuleType
+from typing import Protocol
 
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 MOCK_DAEMON_SCRIPT = ROOT / "molecule" / "mock_daemon" / "server.py"
+
+
+def _python() -> str:
+    """Return the immutable interpreter owned by the current test process."""
+    return sys.executable
 
 
 def _find_free_port() -> int:
@@ -31,15 +41,50 @@ def _find_free_port() -> int:
         return s.getsockname()[1]
 
 
-def _wait_for_server(url: str, timeout: float = 10.0) -> None:
+class _ChildProcess(Protocol):
+    """Minimum child identity needed for readiness diagnostics."""
+
+    @property
+    def pid(self) -> int: ...
+
+    def poll(self) -> int | None: ...
+
+
+def _wait_for_server(
+    url: str,
+    timeout: float = 10.0,
+    process: _ChildProcess | None = None,
+) -> None:
     deadline = time.monotonic() + timeout
+    last_error: OSError | None = None
     while time.monotonic() < deadline:
+        if process is not None:
+            returncode = process.poll()
+            if returncode is not None:
+                raise RuntimeError(
+                    "Mock daemon child terminated before readiness: "
+                    f"pid={process.pid} returncode={returncode}"
+                )
         try:
-            urllib.request.urlopen(f"{url}/healthz", timeout=1)
-            return
-        except Exception:
+            with urllib.request.urlopen(f"{url}/healthz", timeout=1):
+                return
+        except OSError as exc:
+            last_error = exc
             time.sleep(0.05)
-    raise TimeoutError(f"Mock daemon did not start within {timeout}s")
+    child = f"pid={process.pid} state=running" if process is not None else "child=unobserved"
+    error = type(last_error).__name__ if last_error is not None else "none"
+    raise TimeoutError(
+        f"Mock daemon did not start within {timeout}s; {child}; last_error={error}"
+    )
+
+
+def _load_mock_daemon() -> ModuleType:
+    """Load the server implementation for deterministic startup-order tests."""
+    spec = importlib.util.spec_from_file_location("mock_daemon_startup_under_test", MOCK_DAEMON_SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _get(url: str, path: str) -> tuple[int, dict]:
@@ -58,6 +103,225 @@ def _post(url: str, path: str, payload: dict | None = None) -> tuple[int, dict]:
         return resp.status, body
 
 
+class TestCollectionControlPlaneEndpoints:
+    """Daemon seams used by the migrated collection modules."""
+
+    @pytest.fixture(scope="class")
+    def url(self) -> Generator[str]:
+        port = _find_free_port()
+        proc = subprocess.Popen(
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        base = f"http://127.0.0.1:{port}"
+        _wait_for_server(base, process=proc)
+        yield base
+        proc.send_signal(signal.SIGTERM)
+        proc.wait(timeout=5)
+
+    def test_git_route_owns_worktree_lifecycle(self, url: str, tmp_path: Path) -> None:
+        worktree = tmp_path / "candidate"
+        status, created = _post(
+            url,
+            "/admin/git/operation",
+            {
+                "op": "worktree_create",
+                "path": str(tmp_path / "repo"),
+                "branch": "feature/molecule",
+                "worktree_path": str(worktree),
+            },
+        )
+        assert status == 200
+        assert created["result"]["success"] is True
+        assert worktree.is_dir()
+
+        status, removed = _post(
+            url,
+            "/admin/git/operation",
+            {
+                "op": "worktree_remove",
+                "path": str(tmp_path / "repo"),
+                "worktree_path": str(worktree),
+            },
+        )
+        assert status == 200
+        assert removed["result"]["removed"] is True
+        assert not worktree.exists()
+
+    def test_git_route_returns_typed_commit_and_branch_results(self, url: str) -> None:
+        _, committed = _post(
+            url,
+            "/admin/git/operation",
+            {"op": "commit", "path": "/tmp/repo", "message": "molecule commit"},
+        )
+        _, branched = _post(
+            url,
+            "/admin/git/operation",
+            {"op": "branch", "path": "/tmp/repo", "branch": "molecule/test-branch"},
+        )
+        assert committed["changed"] is True
+        assert committed["result"]["sha"] == "0123456789abcdef"
+        assert committed["result"]["message"] == "molecule commit"
+        assert branched["result"]["branch"] == "molecule/test-branch"
+
+    @pytest.mark.parametrize(
+        ("target", "success", "exit_code", "needle"),
+        [
+            ("hello", True, 0, "hello from molecule test_gludd_make"),
+            ("versions", True, 0, "make version:"),
+            ("does-not-exist", False, 2, "No rule to make target"),
+        ],
+    )
+    def test_make_route_preserves_structured_result(
+        self, url: str, target: str, success: bool, exit_code: int, needle: str
+    ) -> None:
+        status, result = _post(url, "/admin/make", {"target": target})
+        assert status == 200
+        assert result["success"] is success
+        assert result["exit_code"] == exit_code
+        assert needle in (result["stdout_tail"] + result["stderr_tail"])
+
+    def test_skill_route_renders_required_variables(self, url: str) -> None:
+        status, result = _post(
+            url,
+            "/admin/skills/render",
+            {
+                "name": "mock-review",
+                "variables": {"language": "python", "project_name": "gludd"},
+            },
+        )
+        assert status == 200
+        assert result["skill_name"] == "mock-review"
+        assert "python" in result["rendered_body"]
+        assert "gludd" in result["rendered_body"]
+
+    @pytest.mark.parametrize(
+        ("operation", "required"),
+        [
+            ("bom_detect", {"bom_detected", "encoding"}),
+            ("encoding_detect", {"detected_encoding", "confidence_level"}),
+            ("homoglyph_scan", {"input_length", "total_findings"}),
+            ("language_detect", {"language", "confidence"}),
+            ("locale_format", {"locale", "formatted_value", "is_rtl"}),
+            ("phonetic_transcribe", {"method", "words"}),
+            ("translate", {"translated_text", "target_language"}),
+            ("transliterate", {"transliterated_text", "target_script"}),
+            ("unicode_analyze", {"input_length", "codepoints", "normalization"}),
+        ],
+    )
+    def test_language_route_returns_operation_schema(
+        self, url: str, operation: str, required: set[str]
+    ) -> None:
+        status, response = _post(
+            url,
+            "/api/language/execute",
+            {"operation": operation, "payload": {"input_text": "Hello"}},
+        )
+        assert status == 200
+        assert required <= response["result"].keys()
+
+    def test_language_route_fails_closed_for_unknown_operation(self, url: str) -> None:
+        status, response = _post_error(
+            url,
+            "/api/language/execute",
+            {"operation": "not_registered", "payload": {}},
+        )
+        assert status == 422
+        assert response == {"detail": "unsupported language operation: not_registered"}
+
+    def test_language_action_crosses_the_installed_collection_boundary(self, url: str) -> None:
+        from ansible_collections.general_ludd.language.plugins.action.language_operation import (
+            execute_action,
+        )
+
+        result = execute_action(
+            {
+                "operation": "bom_detect",
+                "payload": {"input_bytes": "efbbbf48656c6c6f"},
+                "daemon_url": url,
+                "psk": "molecule-language-psk",
+            }
+        )
+        assert result["failed"] is False
+        assert result["result"]["bom_detected"] is True
+
+    def test_observe_facade_preserves_fanout_and_isolated_errors(self, url: str) -> None:
+        _post(url, "/__requests/reset")
+        operations = (
+            ("query_sources", ["logs", "metrics", "traces"]),
+            ("timeline", ["logs", "metrics", "traces", "events"]),
+            ("correlate_incident", ["logs", "metrics", "traces"]),
+            ("topology", ["logs", "metrics", "traces"]),
+        )
+        results: dict[str, dict] = {}
+        for operation, kinds in operations:
+            request_payload = {
+                "operation": operation,
+                "role": "molecule_observe_probe",
+                "kinds": kinds,
+                "seed": {
+                    "ts": 25.0,
+                    "source": "incident-seed",
+                    "kind": "events",
+                    "labels": {"trace_id": "incident-42"},
+                },
+                "start": 5.0,
+                "end": 35.0,
+            }
+            if operation == "correlate_incident":
+                request_payload["start"] = None
+                request_payload["end"] = None
+                request_payload["window_s"] = 20.0
+            status, response = _post(
+                url,
+                "/api/observe/facade",
+                request_payload,
+            )
+            assert status == 200
+            results[operation] = response["result"]
+
+        assert [record["ts"] for record in results["query_sources"]["records"]] == [
+            10.0,
+            20.0,
+            30.0,
+        ]
+        assert results["timeline"]["errors"] == [
+            {"source": "broken-events", "message": "query failed"}
+        ]
+        assert len(results["correlate_incident"]["groups"]["incident-42"]) == 4
+        assert results["topology"]["topology"]["services"]["checkout"] == ["web-01"]
+        _, requests = _get(url, "/__requests")
+        assert requests["requests"].count("GET /api/observe/sources") == 4
+        assert requests["requests"].count("POST /api/observe/query") == 13
+
+    @pytest.mark.parametrize("source_root", ["", "src"])
+    def test_reload_route_promotes_or_rolls_back_from_health_gate(
+        self, url: str, tmp_path: Path, source_root: str
+    ) -> None:
+        live = tmp_path / source_root / "demo" / "leaf.py"
+        live.parent.mkdir(parents=True)
+        live.write_text('VERSION = "v1"\n')
+        candidate = tmp_path / "candidate.py"
+        candidate.write_text('VERSION = "v2"\n')
+        payload = {
+            "module_name": "demo.leaf",
+            "candidate_source_path": str(candidate),
+            "health_url": f"{url}/readyz",
+        }
+        _, promoted = _post(url, "/admin/reload/code", payload)
+        assert promoted["success"] is True
+        assert promoted["rolled_back"] is False
+        assert '"v2"' in live.read_text()
+
+        candidate.write_text('VERSION = "broken"\n')
+        payload["health_url"] = f"{url}/readyz-degraded"
+        _, rolled_back = _post(url, "/admin/reload/code", payload)
+        assert rolled_back["success"] is False
+        assert rolled_back["rolled_back"] is True
+        assert '"v2"' in live.read_text()
+
+
 def _patch(url: str, path: str, payload: dict) -> tuple[int, dict]:
     data = json.dumps(payload).encode("utf-8")
     headers = {"Content-Type": "application/json"}
@@ -69,8 +333,26 @@ def _patch(url: str, path: str, payload: dict) -> tuple[int, dict]:
 
 def _request_raw(url: str, path: str, method: str = "GET", headers: dict | None = None) -> tuple[int, bytes]:
     req = urllib.request.Request(f"{url}{path}", headers=headers or {}, method=method)
-    with urllib.request.urlopen(req, timeout=5) as resp:
-        return resp.status, resp.read()
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status, resp.read()
+    except urllib.error.HTTPError as error:
+        with error:
+            return error.code, error.read()
+
+
+def _post_error(url: str, path: str, payload: dict | None = None) -> tuple[int, dict]:
+    data = json.dumps(payload or {}).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    req = urllib.request.Request(f"{url}{path}", data=data, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            body = json.loads(resp.read().decode())
+            return resp.status, body
+    except urllib.error.HTTPError as error:
+        with error:
+            body = json.loads(error.read().decode())
+            return error.code, body
 
 
 def _get_error(url: str, path: str) -> tuple[int, dict]:
@@ -79,24 +361,94 @@ def _get_error(url: str, path: str) -> tuple[int, dict]:
         with urllib.request.urlopen(req, timeout=5) as resp:
             body = json.loads(resp.read().decode())
             return resp.status, body
-    except urllib.error.HTTPError as e:
-        body = json.loads(e.read().decode())
-        return e.code, body
+    except urllib.error.HTTPError as error:
+        with error:
+            body = json.loads(error.read().decode())
+            return error.code, body
 
 
 class TestMockDaemonStartup:
     """Tests for mock daemon process startup and shutdown."""
 
+    def test_wait_reports_terminal_child_before_timeout(self) -> None:
+        class ExitedChild:
+            pid = 4242
+
+            def poll(self) -> int:
+                return 17
+
+        with pytest.raises(
+            RuntimeError,
+            match=r"pid=4242 returncode=17",
+        ):
+            _wait_for_server(
+                "http://127.0.0.1:1",
+                timeout=10.0,
+                process=ExitedChild(),
+            )
+
+    def test_readiness_waits_for_delayed_pidfile_publish(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        module = _load_mock_daemon()
+        port = _find_free_port()
+        url = f"http://127.0.0.1:{port}"
+        pidfile = tmp_path / "mock-daemon.pid"
+        pid_write_started = threading.Event()
+        allow_pid_write = threading.Event()
+        original_write = module._atomic_write
+
+        def delayed_write(path: str, content: str) -> None:
+            if Path(path) == pidfile:
+                pid_write_started.set()
+                if not allow_pid_write.wait(timeout=2):
+                    raise TimeoutError("test did not release delayed pidfile write")
+            original_write(path, content)
+
+        monkeypatch.setattr(module, "_atomic_write", delayed_write)
+        monkeypatch.setattr(module.signal, "signal", lambda *_args: None)
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                str(MOCK_DAEMON_SCRIPT),
+                "--port",
+                str(port),
+                "--pidfile",
+                str(pidfile),
+                "--lease-seconds",
+                "0.75",
+            ],
+        )
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(module.main)
+            assert pid_write_started.wait(timeout=2)
+            try:
+                with (
+                    pytest.raises(OSError),
+                    urllib.request.urlopen(f"{url}/healthz", timeout=0.2),
+                ):
+                    pass
+            finally:
+                allow_pid_write.set()
+
+            _wait_for_server(url, timeout=2)
+            assert pidfile.read_text(encoding="utf-8") == str(os.getpid())
+            assert future.result(timeout=3) == 0
+
     def test_daemon_starts_and_writes_pidfile(self, tmp_path: Path):
         port = _find_free_port()
         pidfile = tmp_path / "mock-daemon.pid"
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port), "--pidfile", str(pidfile)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port), "--pidfile", str(pidfile)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         try:
-            _wait_for_server(f"http://127.0.0.1:{port}")
+            _wait_for_server(f"http://127.0.0.1:{port}", process=proc)
             assert pidfile.exists()
             pid = int(pidfile.read_text().strip())
             assert pid == proc.pid
@@ -108,12 +460,12 @@ class TestMockDaemonStartup:
         port = _find_free_port()
         pidfile = tmp_path / "mock-daemon.pid"
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port), "--pidfile", str(pidfile)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port), "--pidfile", str(pidfile)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         try:
-            _wait_for_server(f"http://127.0.0.1:{port}")
+            _wait_for_server(f"http://127.0.0.1:{port}", process=proc)
             _, body = _get(f"http://127.0.0.1:{port}", "/healthz")
             assert body == {"status": "ok"}
         finally:
@@ -124,12 +476,12 @@ class TestMockDaemonStartup:
         port = _find_free_port()
         pidfile = tmp_path / "mock-daemon.pid"
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port), "--pidfile", str(pidfile)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port), "--pidfile", str(pidfile)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         try:
-            _wait_for_server(f"http://127.0.0.1:{port}")
+            _wait_for_server(f"http://127.0.0.1:{port}", process=proc)
         finally:
             proc.send_signal(signal.SIGTERM)
             proc.wait(timeout=5)
@@ -143,12 +495,12 @@ class TestHealthEndpoints:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -185,12 +537,12 @@ class TestFactsMetricsTraces:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -227,12 +579,12 @@ class TestObserveEndpoints:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -252,12 +604,13 @@ class TestObserveEndpoints:
         assert body["records"][0]["source"] == "prod-logs"
 
     def test_query_broken_source_returns_503(self, url: str):
-        status, _body = _get_error(url, "/api/observe/query")
+        status, body = _post_error(url, "/api/observe/query", {"source": "broken-events"})
         assert status == 503
+        assert "detail" in body
 
     def test_query_unknown_source_returns_404(self, url: str):
-        status, _body = _get_error(url, "/api/observe/query")
-        assert status in (404, 503)
+        status, _body = _post_error(url, "/api/observe/query", {"source": "unknown-source"})
+        assert status == 404
 
 
 class TestMessagesEndpoints:
@@ -267,12 +620,12 @@ class TestMessagesEndpoints:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -300,7 +653,7 @@ class TestMessagesEndpoints:
         assert body["recipient"] == "agent-2"
 
     def test_ack_message_returns_acked_true(self, url: str):
-        status, body = _get_error(url, "/api/messages/any-id/ack")
+        status, body = _post(url, "/api/messages/any-id/ack")
         assert status == 200
         assert body == {"acked": True}
 
@@ -312,12 +665,12 @@ class TestTodosEndpoints:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -343,12 +696,12 @@ class TestFeaturesSpendAccounting:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -413,12 +766,12 @@ class TestScheduleDispatch:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -482,12 +835,12 @@ class TestEnvironmentEndpoints:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -524,12 +877,12 @@ class TestModelEndpoints:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -581,12 +934,12 @@ class TestSTSTokenLifecycle:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -633,14 +986,14 @@ class TestSTSTokenLifecycle:
 
     def test_revoke_token_sets_revoked_status(self, url: str):
         _post(url, "/admin/sts/mint", {"agent_id": "agent-revoke"})
-        status, body = _get_error(url, "/admin/sts/revoke/agent-revoke")
+        status, body = _post(url, "/admin/sts/revoke/agent-revoke")
         assert status == 200
         assert body["status"] == "revoked"
         assert body["agent_id"] == "agent-revoke"
 
     def test_validate_revoked_token_returns_invalid(self, url: str):
         _post(url, "/admin/sts/mint", {"agent_id": "agent-revoked"})
-        _get_error(url, "/admin/sts/revoke/agent-revoked")
+        _post(url, "/admin/sts/revoke/agent-revoked")
         _status, body = _get(url, "/admin/sts/validate/agent-revoked")
         assert body["valid"] is False
         assert body["revoked"] is True
@@ -653,12 +1006,12 @@ class TestProcessManagement:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -703,12 +1056,12 @@ class TestOrnithAndHumanTodos:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -754,12 +1107,12 @@ class TestStreamDispatch:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -802,12 +1155,12 @@ class TestProcessAuditAndResourcePreferences:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -832,12 +1185,12 @@ class TestGitHubApiMocks:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -871,12 +1224,12 @@ class TestOpenBaoBreakGlass:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -922,12 +1275,12 @@ class TestRequestLogIntrospection:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -952,7 +1305,7 @@ class TestRequestLogIntrospection:
         _get(url, "/healthz")
         _, body_before = _get(url, "/__requests")
         assert len(body_before["requests"]) > 0
-        _get_error(url, "/__requests/reset")
+        _post(url, "/__requests/reset")
         _, body_after = _get(url, "/__requests")
         assert body_after["requests"] == []
 
@@ -964,12 +1317,12 @@ class TestErrorHandling:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
@@ -1010,18 +1363,18 @@ class TestConcurrentRequests:
     def url(self) -> Generator[str]:
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         base = f"http://127.0.0.1:{port}"
-        _wait_for_server(base)
+        _wait_for_server(base, process=proc)
         yield base
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=5)
 
     def test_concurrent_get_healthz_all_return_200(self, url: str):
-        def hit_healthz() -> int:
+        def hit_healthz(_: int) -> int:
             status, _ = _get(url, "/healthz")
             return status
 
@@ -1058,7 +1411,7 @@ class TestConcurrentRequests:
         assert len(set(agent_ids)) == 5
 
     def test_concurrent_request_log_is_accurate(self, url: str):
-        _get_error(url, "/__requests/reset")
+        _post(url, "/__requests/reset")
 
         def hit_healthz_once(_: int) -> None:
             _get(url, "/healthz")
@@ -1076,12 +1429,12 @@ class TestManagedPidOverride:
     def test_managed_pid_overrides_first_record(self, tmp_path: Path):
         port = _find_free_port()
         proc = subprocess.Popen(
-            [sys.executable, str(MOCK_DAEMON_SCRIPT), "--port", str(port), "--managed-pid", "99999"],
+            [_python(), str(MOCK_DAEMON_SCRIPT), "--port", str(port), "--managed-pid", "99999"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         try:
-            _wait_for_server(f"http://127.0.0.1:{port}")
+            _wait_for_server(f"http://127.0.0.1:{port}", process=proc)
             _, body = _get(f"http://127.0.0.1:{port}", "/admin/processes")
             assert body["processes"][0]["pid"] == 99999
             assert body["processes"][0]["pgid"] == 99999

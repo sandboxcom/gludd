@@ -26,7 +26,7 @@ def test_agent_networking_role_delegates_to_canonical_collection() -> None:
 
     assert tasks == [
         {
-            "name": "Delegate networking operations to the canonical collection",
+            "name": "Delegate networking operations to the canonical collection role",
             "ansible.builtin.include_role": {
                 "name": "general_ludd.networking.networking",
             },

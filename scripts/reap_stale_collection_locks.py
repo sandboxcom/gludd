@@ -15,14 +15,21 @@ import subprocess
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-try:
+if TYPE_CHECKING or __package__:
     from scripts.process_cleanup import ProcessInfo, snapshot_processes
     from scripts.resource_arbiter import project_namespace, project_root, resource_root
-except ModuleNotFoundError:  # pragma: no cover - direct script execution
-    from process_cleanup import ProcessInfo, snapshot_processes
-    from resource_arbiter import project_namespace, project_root, resource_root
+else:  # pragma: no cover - direct script execution
+    _process_cleanup = import_module("process_cleanup")
+    _resource_arbiter = import_module("resource_arbiter")
+    ProcessInfo = _process_cleanup.ProcessInfo
+    snapshot_processes = _process_cleanup.snapshot_processes
+    project_namespace = _resource_arbiter.project_namespace
+    project_root = _resource_arbiter.project_root
+    resource_root = _resource_arbiter.resource_root
 
 LOCK_NAMES = frozenset({"collection.lock", "gate-refresh.lock"})
 DEFAULT_STALE_AFTER = 900.0
@@ -54,15 +61,21 @@ def _owner_pid(path: Path) -> int | None:
     return pid if pid > 0 else None
 
 
+def _path_exists(path: Path) -> bool:
+    """Observe a procfs path through a module-local, testable boundary."""
+
+    return path.exists()
+
+
 def _process_cwd(pid: int) -> Path | None:
     """Read a process cwd without trusting a command-line-only identity."""
 
     proc_link = Path(f"/proc/{pid}/cwd")
-    if proc_link.exists():
-        try:
+    try:
+        if _path_exists(proc_link):
             return proc_link.resolve()
-        except OSError:
-            return None
+    except OSError:
+        pass
     try:
         result = subprocess.run(
             ["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"],

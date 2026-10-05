@@ -46,7 +46,7 @@ The alpha.3 ship (C2) proceeds independently on `integration/alpha3-rc`.
 | Self-improve interval default | fallback `or 10` → default-on | `daemon.py` (af1a697) |
 | Gateway health-gate (ModelHealthTracker wired) | ModelHealthTracker → gateway+router+app.state | `daemon.py` (af1a697) |
 | Rules engine (UserConfig.rules field+loader) | rules field added, seeds cfg["rules"] from uc.rules | `user_config.py` + `daemon.py` (af1a697) |
-| G5 reviewer fence-parse | _extract_json_from_output strips ```json fences | `reviewer.py` (ab98968) |
+| G5 reviewer fence-parse | _extract_json_from_output strips JSON code-fence markers | `reviewer.py` (ab98968) |
 | F6 failover openai-exception-types | APITimeoutError/APIConnectionError/APIStatusError retryable | `gateway.py` + `timeout_detector.py` (a143) |
 | W6.8 ToolCallLoop._call_model + _run_local | correct call_model signature + JobSpec fields | `tool_loop.py:167-182`, `gludd_agent_run.py` (a4351b8) |
 | Async/daemon-path benchmark recording (CA-T11) | execute_async benchmark block + loop feed | `engine.py:352-368`, `loop.py:1012-1028` (aed29) |

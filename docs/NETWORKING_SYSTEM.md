@@ -7,7 +7,7 @@ and Wireshark Lua dissector generation.
 
 ## Architecture Overview
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────┐
 │                        Agent / Playbook                          │
 │         (FQCN: general_ludd.networking.networking)               │

@@ -17,7 +17,7 @@ When the 5h window rolls over, old messages age out of the lookback, spend drops
 90%, and the floor is automatically restored to 7 -- keeping work going across windows.
 
 BUDGET (5h token allowance for your plan -- tune it): read from
-/tmp/gludd-5h-token-budget if present, else $GLUDD_5H_TOKEN_BUDGET, else DEFAULT_BUDGET.
+/tmp/gludd-5h-token-budget if present, else $GLUDD_TOKEN_BUDGET_5H, else DEFAULT_BUDGET.
 
 Usage:
   token_window_monitor.py --once   # one evaluation, print + act, exit (used by status/test)
@@ -59,7 +59,7 @@ TRANSCRIPT_DIR = Path(
 # From then on the rolling % self-corrects against that live anchor. The default
 # below is only the pre-calibration fallback: set so the operator's observed
 # "278M measured is still under 100%" does not false-trip the >=95% throttle.
-DEFAULT_BUDGET = int(os.environ.get("GLUDD_5H_TOKEN_BUDGET", "316000000"))
+DEFAULT_BUDGET = int(os.environ.get("GLUDD_TOKEN_BUDGET_5H", "316000000"))
 WINDOW = timedelta(hours=5)
 HIGH_WATERMARK = 0.95
 LOW_WATERMARK = 0.90

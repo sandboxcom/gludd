@@ -87,7 +87,7 @@ def main() -> int:
 
     prompt = (
         f"Read TASKS.md. There are {args.tasks} trivial tasks (each writes a 1-line file via make taskN). "
-        "You MUST dispatch EXACTLY 10 task subagents per wave. Each subagent runs ONE `make taskN` command. "
+        "You MUST dispatch EXACTLY 3 task subagents per wave. Each subagent runs ONE `make taskN` command. "
         "When all subagent results return, immediately dispatch the next wave for remaining tasks. "
         "Repeat until ALL tasks show [x] in TASKS.md. NEVER send a text-only answer. "
         "Say ALL DONE only when every task is checked."
@@ -106,6 +106,8 @@ def main() -> int:
         timeout_sec=args.timeout,
         model=args.model,
         progress_interval_sec=30,
+        minimum_dispatches=3,
+        maximum_dispatches=3,
     )
 
     t0 = time.time()

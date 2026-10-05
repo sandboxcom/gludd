@@ -74,6 +74,7 @@ class ExtraVarsLimits:
     max_total_bytes: int = 4_194_304
 
     def __post_init__(self) -> None:
+        """Reject non-positive and non-integer resource limits."""
         for name in (
             "max_depth",
             "max_items",
@@ -89,9 +90,24 @@ class ExtraVarsLimits:
 DEFAULT_EXTRAVARS_LIMITS = ExtraVarsLimits()
 
 
+@dataclass(slots=True)
+class _ExtraVarsByteBudget:
+    """Track the aggregate byte budget independently from tree traversal."""
+
+    limits: ExtraVarsLimits
+    total_bytes: int = 0
+
+    def add(self, size: int, path: str) -> None:
+        """Account for bytes and fail at the same offending value boundary."""
+        self.total_bytes += size
+        if self.total_bytes > self.limits.max_total_bytes:
+            raise ExtraVarsValidationError(
+                f"extra-vars total bytes exceed limit at {path}"
+            )
+
+
 def _scan_yaml_operators(payload: str, limits: ExtraVarsLimits) -> None:
     """Reject dangerous YAML features and excessive nesting before loading."""
-
     depth = -1
     starts = (
         BlockMappingStartToken,
@@ -136,18 +152,9 @@ def validate_extravars(
     while Ansible or PyYAML traverses the payload. Container reuse is rejected
     because it represents either a cycle or YAML alias semantics.
     """
-
     item_count = 0
-    total_bytes = 0
     seen_containers: set[int] = set()
-
-    def add_bytes(size: int, path: str) -> None:
-        nonlocal total_bytes
-        total_bytes += size
-        if total_bytes > limits.max_total_bytes:
-            raise ExtraVarsValidationError(
-                f"extra-vars total bytes exceed limit at {path}"
-            )
+    byte_budget = _ExtraVarsByteBudget(limits)
 
     def visit(value: object, path: str, depth: int) -> Any:
         nonlocal item_count
@@ -173,14 +180,14 @@ def validate_extravars(
                 raise ExtraVarsValidationError(
                     f"extra-vars string exceeds byte limit at {path}"
                 )
-            add_bytes(encoded_size, path)
+            byte_budget.add(encoded_size, path)
             return value
         if isinstance(value, bytes) and value_type is bytes:
             if len(value) > limits.max_bytes_value:
                 raise ExtraVarsValidationError(
                     f"extra-vars byte string exceeds limit at {path}"
                 )
-            add_bytes(len(value), path)
+            byte_budget.add(len(value), path)
             return value
 
         if not isinstance(value, (dict, list)) or value_type not in (dict, list):
@@ -213,7 +220,7 @@ def validate_extravars(
                 raise ExtraVarsValidationError(
                     f"extra-vars string key exceeds byte limit at {path}"
                 )
-            add_bytes(key_size, path)
+            byte_budget.add(key_size, path)
             if key == "<<" or key.startswith(("!", "&", "*", "%")):
                 raise ExtraVarsValidationError(
                     f"extra-vars YAML operator key is forbidden at {path}"
@@ -234,7 +241,6 @@ def parse_extravars(
     limits: ExtraVarsLimits = DEFAULT_EXTRAVARS_LIMITS,
 ) -> dict[str, Any]:
     """Parse strict YAML/JSON or validate an already-decoded extra-vars map."""
-
     if type(payload) is dict:
         return validate_extravars(payload, limits=limits)
     if type(payload) is bytes:

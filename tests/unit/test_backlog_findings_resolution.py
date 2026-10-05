@@ -64,9 +64,7 @@ class Test2ForProjectWiring:
     def test_for_project_method_exists_on_daemon_wrapper(self):
         from general_ludd.daemon import build_secrets_resolver
 
-        wrapper = build_secrets_resolver(
-            openbao_config=None, projects_active=True
-        )
+        wrapper = build_secrets_resolver(openbao_config=None, projects_active=True)
         assert hasattr(wrapper, "for_project")
         assert callable(wrapper.for_project)
 
@@ -80,6 +78,7 @@ class Test2ForProjectWiring:
         class _MockResolver:
             def resolve(self, alias_name: str) -> str | None:
                 return None
+
             def for_project(self, project_id: str):
                 return self
 
@@ -128,9 +127,7 @@ class Test3ManifestSignature:
             "checksums": {"artifact.whl": checksum},
         }
         (tmp_path / "MANIFEST.json").write_text(json.dumps(manifest))
-        (tmp_path / "CHECKSUMS.sha256").write_text(
-            f"{checksum}  artifact.whl\n"
-        )
+        (tmp_path / "CHECKSUMS.sha256").write_text(f"{checksum}  artifact.whl\n")
 
         result = ReleaseArtifactValidator().validate_release("1.0.0", str(tmp_path))
 
@@ -177,7 +174,8 @@ class Test4RgSearchRootConfinement:
         subdir = tmp_path / "sub"
         subdir.mkdir()
         result = searcher._validate_root(str(subdir))
-        assert result is None
+        assert isinstance(result, str)
+        assert result == str(subdir.resolve())
 
     def test_init_stores_allowed_roots(self, tmp_path: Path):
         from general_ludd.code_intelligence.rg_search import RgSearch

@@ -12,10 +12,15 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, field_validator
 
+from general_ludd.security.auth import is_join_within
+from general_ludd.security.sanitize import sanitize_skill_name
+
 logger = logging.getLogger(__name__)
 
 
 class CatalogSkillEntry(BaseModel):
+    """Describe one curated skill available through the local catalog."""
+
     name: str
     description: str = ""
     source: str = ""
@@ -38,6 +43,7 @@ class SkillCatalog:
     """Search and discover curated skills from community sources."""
 
     def __init__(self) -> None:
+        """Initialize the stateless curated catalog facade."""
         pass
 
     def search(
@@ -47,6 +53,7 @@ class SkillCatalog:
         category: str | None = None,
         limit: int = 20,
     ) -> list[CatalogSkillEntry]:
+        """Return curated entries matching the optional query and filters."""
         results: list[CatalogSkillEntry] = []
         query_lower = query.lower()
 
@@ -64,34 +71,49 @@ class SkillCatalog:
         return results
 
     def get_skill(self, name: str) -> CatalogSkillEntry | None:
+        """Return the exact named curated entry when it exists."""
         return _CURATED_SKILLS.get(name)
 
     def download_skill(self, name: str, target_dir: str) -> Path | None:
+        """Write a named curated skill inside ``target_dir`` when safe."""
         entry = _CURATED_SKILLS.get(name)
         if entry is None:
+            return None
+
+        stem = sanitize_skill_name(name)
+        if stem is None:
+            logger.warning("Refusing skill with unsafe catalog name: %r", name)
             return None
 
         target = Path(target_dir)
         target.mkdir(parents=True, exist_ok=True)
 
-        skill_file = target / f"{name}.md"
+        filename = f"{stem}.md"
+        if not is_join_within(str(target), filename):
+            logger.warning("Refusing skill path escaping %s: %r", target_dir, name)
+            return None
+
+        skill_file = target / filename
         skill_file.write_text(_build_skill_md(entry))
         logger.info("Downloaded skill %s to %s", name, skill_file)
         return skill_file
 
     def list_categories(self) -> list[str]:
+        """Return all catalog categories in deterministic order."""
         cats: set[str] = set()
         for entry in _CURATED_SKILLS.values():
             cats.add(entry.category)
         return sorted(cats)
 
     def list_tags(self) -> list[str]:
+        """Return all catalog tags in deterministic order."""
         tags: set[str] = set()
         for entry in _CURATED_SKILLS.values():
             tags.update(entry.tags)
         return sorted(tags)
 
     def install_skill(self, name: str, config_dir: str) -> Path | None:
+        """Download a named skill into ``config_dir/skills``."""
         skills_dir = Path(config_dir) / "skills"
         return self.download_skill(name, str(skills_dir))
 

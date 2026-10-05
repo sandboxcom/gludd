@@ -119,15 +119,19 @@ class TravisSource:
         *,
         http_get: Callable[..., tuple[int, object]] | None = None,
     ) -> None:
+        """Build the source from connector config; ``transport`` and ``http_get`` are exclusive."""
+        if transport is not None and http_get is not None:
+            raise ValueError("transport and http_get are mutually exclusive")
         self._config = dict(config)
         self.name = str(self._config.get("name", "travis"))
         self.base_url = _guard_base_url(str(self._config.get("base_url", DEFAULT_BASE_URL)))
-        self.slug = str(self._config.get("slug", ""))
+        self.slug = str(self._config.get("slug") or self._config.get("repository", ""))
         self.timeout = float(cast(float | int | str | bool, self._config.get("timeout", 10.0)))
         self._token_env = str(self._config.get("token_env", "TRAVIS_TOKEN"))
         self._token = os.environ.get(self._token_env, "")
         transport_impl: Transport
         if http_get is not None:
+
             def _legacy(_method: str, url: str, headers: Mapping[str, str], _timeout: float) -> tuple[int, bytes]:
                 status, body = http_get(url, dict(headers))
                 if isinstance(body, bytes):
@@ -135,6 +139,7 @@ class TravisSource:
                 if isinstance(body, str):
                     return status, body.encode()
                 return status, json.dumps(body).encode()
+
             transport_impl = _legacy
         else:
             transport_impl = transport or _httpx_transport
@@ -189,6 +194,7 @@ class TravisSource:
 
     # -- public API --------------------------------------------------------
     def health(self) -> dict[str, object]:
+        """Probe the source. Never raises."""
         try:
             status, _ = self._request("GET", self._builds_url())
         except Exception:  # health must never raise
@@ -199,6 +205,7 @@ class TravisSource:
         return {"ok": False, "detail": f"HTTP {status}"}
 
     def query(self, spec: TravisQuerySpec | None = None) -> list[dict[str, object]]:
+        """Return normalized build records from the Travis builds API."""
         status, body = self._request("GET", self._builds_url())
         if not (200 <= status < 300):
             raise ConnectorConfigError(f"travis builds query failed: HTTP {status}")
@@ -207,11 +214,7 @@ class TravisSource:
             raise ConnectorConfigError("travis builds response was not a JSON object")
         builds_obj = payload.get("builds", [])
         builds: list[object] = builds_obj if isinstance(builds_obj, list) else []
-        return [
-            self._normalize_build(cast("Mapping[str, object]", b))
-            for b in builds
-            if isinstance(b, Mapping)
-        ]
+        return [self._normalize_build(cast("Mapping[str, object]", b)) for b in builds if isinstance(b, Mapping)]
 
     def fetch_log(self, job_id: str) -> str:
         """Fetch the raw log content for a single Travis job."""

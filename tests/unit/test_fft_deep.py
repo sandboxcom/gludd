@@ -9,8 +9,7 @@ import cmath
 import math
 
 import pytest
-
-from general_ludd.algorithms.fft import (
+from ansible_collections.general_ludd.physics.plugins.module_utils.fft import (
     convolve,
     fft,
     fft_freq,

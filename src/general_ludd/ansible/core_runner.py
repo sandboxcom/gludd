@@ -17,6 +17,9 @@ import contextlib
 import logging
 import multiprocessing
 import os
+import sys
+import time
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +37,11 @@ _DEFAULT_PLAYBOOK_TIMEOUT = 300.0
 # rc returned when a run is killed for exceeding its wall-clock bound (matches
 # the shell convention for "command timed out").
 _TIMEOUT_RC = 124
+# Conventional interactive-cancellation return code. Keeping cancellation
+# distinct from timeout lets the lease owner acknowledge the correct terminal
+# cause after the process tree is reaped.
+_CANCELLED_RC = 130
+_CANCEL_POLL_SECONDS = 0.25
 
 
 def _json_safe(obj: Any) -> Any:
@@ -75,6 +83,76 @@ def _env_default_timeout() -> float:
     return val if val > 0 else _DEFAULT_PLAYBOOK_TIMEOUT
 
 
+def _native_playbook_executor_is_active() -> bool:
+    """Return whether the installed fork-based ansible-core executor is active.
+
+    Tests and embedders may inject a no-process executor for deterministic
+    inspection.  The native executor is the boundary that must run in Gludd's
+    single-threaded forkserver/spawn worker because ansible-core deliberately
+    uses a ``fork`` context for its task workers.
+    """
+    from ansible.executor.playbook_executor import PlaybookExecutor
+
+    return (
+        isinstance(PlaybookExecutor, type)
+        and PlaybookExecutor.__module__ == "ansible.executor.playbook_executor"
+        and PlaybookExecutor.__name__ == "PlaybookExecutor"
+    )
+
+
+@contextlib.contextmanager
+def _isolated_ansible_process_state(
+    extra_env: dict[str, str] | None,
+) -> Iterator[None]:
+    """Bound Ansible's process-global loader and CLI state to one execution.
+
+    ``ansible-core`` installs a collection finder in ``sys.meta_path`` and
+    stores CLI options on a module global.  Inline playbook execution must not
+    leave either mutation behind for unrelated imports in a long-lived worker.
+    Newly imported production modules remain cached; only registries and hooks
+    owned by this call are restored.
+    """
+    from ansible import context
+    from ansible.plugins.loader import init_plugin_loader
+    from ansible.utils.collection_loader import AnsibleCollectionConfig
+
+    ansible_env_keys = (
+        "ANSIBLE_COLLECTIONS_PATH",
+        "ANSIBLE_ROLES_PATH",
+        "ANSIBLE_COLLECTIONS_PATHS",
+    )
+    original_env = {key: os.environ.get(key) for key in ansible_env_keys}
+    original_cliargs = context.CLIARGS
+    original_finder = AnsibleCollectionConfig._collection_finder
+    original_path = list(sys.path)
+    original_meta_path = list(sys.meta_path)
+    original_path_hooks = list(sys.path_hooks)
+    original_importer_cache = dict(sys.path_importer_cache)
+
+    if extra_env:
+        for key in ansible_env_keys:
+            if key in extra_env:
+                os.environ[key] = extra_env[key]
+
+    try:
+        if AnsibleCollectionConfig._collection_finder is None:
+            init_plugin_loader()
+        yield
+    finally:
+        context.CLIARGS = original_cliargs
+        AnsibleCollectionConfig._collection_finder = original_finder
+        sys.path[:] = original_path
+        sys.meta_path[:] = original_meta_path
+        sys.path_hooks[:] = original_path_hooks
+        sys.path_importer_cache.clear()
+        sys.path_importer_cache.update(original_importer_cache)
+        for key, value in original_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
 def _timeout_child_entry(
     runner: CoreAnsibleRunner,
     queue: Any,
@@ -87,7 +165,6 @@ def _timeout_child_entry(
     pytest parent. The child retains the original seccomp-before-execution and
     process-group ownership guarantees.
     """
-
     if runner._seccomp_filter is not None:
         try:
             applied = runner._seccomp_filter.apply()
@@ -103,11 +180,16 @@ def _timeout_child_entry(
     # every Ansible task process it creates with one scoped signal.
     with contextlib.suppress(AttributeError, OSError):
         os.setsid()
+    previous_worker_state = runner._inside_safe_process
+    runner._inside_safe_process = True
     try:
-        result = runner._execute_with_core(**exec_kwargs)
-        queue.put(("ok", _json_safe(result.model_dump())))
-    except BaseException as exc:  # report SystemExit and executor failures too
-        queue.put(("err", f"{type(exc).__name__}: {exc}"))
+        try:
+            result = runner._execute_with_core(**exec_kwargs)
+            queue.put(("ok", _json_safe(result.model_dump())))
+        except BaseException as exc:  # report SystemExit and executor failures too
+            queue.put(("err", f"{type(exc).__name__}: {exc}"))
+    finally:
+        runner._inside_safe_process = previous_worker_state
 
 
 try:
@@ -216,6 +298,8 @@ class _EventCollectorCallback(CallbackBase):
 
 
 class AnsibleOptions:
+    """Options object mirroring the ansible CLI args a playbook run accepts."""
+
     def __init__(
         self,
         inventory: list[str] | None = None,
@@ -233,6 +317,7 @@ class AnsibleOptions:
         skip_tags: list[str] | None = None,
         start_at_task: str | None = None,
     ) -> None:
+        """Build an AnsibleOptions instance with safe defaults."""
         self.inventory = inventory or ["localhost,"]
         self.extravars = extravars
         self.verbosity = verbosity
@@ -250,6 +335,8 @@ class AnsibleOptions:
 
 
 class AnsibleResult(BaseModel):
+    """Result of one playbook execution: status, rc, stats, events, error."""
+
     status: str = "unknown"
     rc: int = 0
     stats: dict[str, Any] = Field(default_factory=dict)
@@ -266,6 +353,8 @@ class AnsibleResult(BaseModel):
 
 
 class CoreAnsibleRunner:
+    """Execute Ansible playbooks in-process via ansible-core's PlaybookExecutor."""
+
     def __init__(
         self,
         module_paths: list[str] | None = None,
@@ -275,11 +364,16 @@ class CoreAnsibleRunner:
         network_policy: Any | None = None,
         seccomp_filter: Any | None = None,
     ) -> None:
+        """Initialize the runner with optional module paths, callbacks, and sandboxing."""
         self._module_paths = module_paths or []
         self._callback_plugins = callback_plugins or []
         self._process_isolation = process_isolation
         self._private_data_dir = private_data_dir
         self._network_policy = network_policy
+        # True only inside Gludd's explicitly selected forkserver/spawn child.
+        # It prevents the native ansible-core dispatcher from nesting another
+        # safety worker before ansible starts its own fork-only task workers.
+        self._inside_safe_process = False
         # OpenShell P2 transfer: an optional seccomp BPF filter installed in the
         # timeout child (before os.setsid) to block container-escape syscalls
         # (mount/unshare/setns/pivot_root/...). None = no syscall filtering
@@ -288,11 +382,16 @@ class CoreAnsibleRunner:
         self._collected_events: list[dict[str, Any]] = []
 
     def close(self) -> None:
+        """Remove the runner's private data directory if one was created."""
         if self._private_data_dir and os.path.isdir(self._private_data_dir):
             import shutil
 
             shutil.rmtree(self._private_data_dir, ignore_errors=True)
             self._private_data_dir = ""
+
+    def set_process_isolation(self, config: Any | None) -> None:
+        """Switch subsequent playbook runs to a verified isolation boundary."""
+        self._process_isolation = config
 
     def run_playbook(
         self,
@@ -307,7 +406,9 @@ class CoreAnsibleRunner:
         become: bool = False,
         timeout: float | None = None,
         extra_env: dict[str, str] | None = None,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> AnsibleResult:
+        """Run one playbook with network-policy scanning, unsafe-wrapping, and a timeout bound."""
         if not _HAS_ANSIBLE_CORE:
             raise ImportError("ansible-core is required for playbook execution but is not installed")
 
@@ -354,6 +455,11 @@ class CoreAnsibleRunner:
         # actual confinement via ansible-runner.
         iso = self._process_isolation
         if iso is not None and getattr(iso, "enabled", False):
+            # Process-isolated execution still belongs to Gludd.  Give the
+            # ansible-runner backend the same absolute deadline as the native
+            # child-process path instead of relying on a caller, HTTP proxy, or
+            # external watchdog to tear down a stalled container.
+            isolation_timeout = _env_default_timeout() if timeout is None else timeout
             return self._execute_with_runner(
                 playbook_path=playbook_path,
                 inventory=inventory,
@@ -365,6 +471,8 @@ class CoreAnsibleRunner:
                 connection=connection,
                 become=become,
                 extra_env=extra_env,
+                timeout=isolation_timeout,
+                cancel_requested=cancel_requested,
             )
 
         # HIGH (no timeout): bound the run in a killable child process. An
@@ -372,15 +480,14 @@ class CoreAnsibleRunner:
         # worker forever. The network-exposed adapter (runner.py) ALWAYS passes
         # a finite timeout, so the exposed path is always bounded.
         #
-        # Bounding requires a child process, which (a) cannot share an in-process
-        # mock and (b) serializes the result across the process boundary. So an
-        # explicit timeout=None means "run inline, no bound" — preserving the
-        # in-process API (direct event/stat collection, mockable executor) for
-        # trusted callers and tests. A None timeout falls back to the env-driven
-        # default ONLY when one is configured, never to a silent child process.
+        # The native ansible-core backend always selects a forkserver/spawn
+        # safety worker before Ansible creates its fork-only task processes.
+        # Keeping this dispatch call also preserves the injectable no-process
+        # executor seam used by embedders. A configured timeout overrides the
+        # standard bounded-worker default.
         if timeout is None:
             env_to = os.environ.get("GLUDD_PLAYBOOK_TIMEOUT", "")
-            if not env_to:
+            if not env_to and cancel_requested is None:
                 return self._execute_with_core(
                     playbook_path=playbook_path,
                     inventory=inventory,
@@ -395,10 +502,14 @@ class CoreAnsibleRunner:
                 )
             bound = _env_default_timeout()
         else:
-            bound = timeout
+            # An owner-provided cancellation callback must always supervise a
+            # killable child, even when a caller attempts to disable the normal
+            # wall-clock bound with zero or a negative value.
+            bound = _env_default_timeout() if cancel_requested is not None and timeout <= 0 else timeout
 
         return self._run_with_timeout(
             timeout=bound,
+            cancel_requested=cancel_requested,
             playbook_path=playbook_path,
             inventory=inventory,
             extravars=safe_extravars,
@@ -414,14 +525,16 @@ class CoreAnsibleRunner:
     def _run_with_timeout(
         self,
         timeout: float,
+        *,
+        cancel_requested: Callable[[], bool] | None = None,
         **exec_kwargs: Any,
     ) -> AnsibleResult:
         """Run ``_execute_with_core`` in a thread-safe child bounded by timeout.
 
-        The child puts its serialized AnsibleResult on a queue. The parent joins
-        with a deadline; on expiry it terminate()s then kill()s the child and
-        returns a failed result with rc 124. A non-positive timeout means "no
-        bound" and runs inline.
+        The child puts its serialized AnsibleResult on a queue. The parent polls
+        with a deadline and optional owner callback; timeout or cancellation
+        terminates and reaps the process group before returning. A non-positive
+        timeout means "no bound" only for direct callers without cancellation.
         """
         if timeout is None or timeout <= 0:
             return self._execute_with_core(**exec_kwargs)
@@ -460,6 +573,13 @@ class CoreAnsibleRunner:
             )
             proc.start()
         except Exception as exc:
+            # Release the queue's feeder thread + file descriptors even on a
+            # failed child start; a leaked Queue keeps its thread alive.
+            try:
+                queue.close()
+                queue.join_thread()
+            except Exception:
+                pass
             return AnsibleResult(
                 status="failed",
                 rc=1,
@@ -486,18 +606,49 @@ class CoreAnsibleRunner:
             logger.debug("managed-process registration failed", exc_info=True)
 
         try:
-            proc.join(timeout)
+            deadline = time.monotonic() + timeout
+            while proc.is_alive():
+                if cancel_requested is not None:
+                    try:
+                        should_cancel = bool(cancel_requested())
+                    except Exception as exc:
+                        self._terminate_tree(proc)
+                        logger.error(
+                            "ANSIBLE_EXECUTION_CANCEL_CHECK_FAILED callback=%s",
+                            type(exc).__name__,
+                        )
+                        return AnsibleResult(
+                            status="failed",
+                            rc=1,
+                            error=(
+                                "playbook cancellation callback failed: "
+                                f"{type(exc).__name__}"
+                            ),
+                        )
+                    if should_cancel:
+                        self._terminate_tree(proc)
+                        logger.info("ANSIBLE_EXECUTION_CANCELLED backend=native")
+                        return AnsibleResult(
+                            status="cancelled",
+                            rc=_CANCELLED_RC,
+                            error="playbook cancelled by owner",
+                        )
 
-            if proc.is_alive():
-                # Deadline blown — kill the child and (best-effort) its worker
-                # tree, then hard-kill if it ignores SIGTERM.
-                self._terminate_tree(proc)
-                logger.error("Playbook exceeded wall-clock timeout of %.1fs; killed", timeout)
-                return AnsibleResult(
-                    status="failed",
-                    rc=_TIMEOUT_RC,
-                    error=f"playbook timed out after {timeout:.1f}s",
-                )
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    # Deadline blown — kill the child and (best-effort) its
+                    # worker tree, then hard-kill if it ignores SIGTERM.
+                    self._terminate_tree(proc)
+                    logger.error(
+                        "Playbook exceeded wall-clock timeout of %.1fs; killed",
+                        timeout,
+                    )
+                    return AnsibleResult(
+                        status="failed",
+                        rc=_TIMEOUT_RC,
+                        error=f"playbook timed out after {timeout:.1f}s",
+                    )
+                proc.join(min(_CANCEL_POLL_SECONDS, remaining))
 
             try:
                 kind, payload = queue.get_nowait()
@@ -521,10 +672,17 @@ class CoreAnsibleRunner:
                     default_registry().deregister(_pid)
             except Exception:
                 logger.debug("managed-process deregister failed", exc_info=True)
+            try:
+                queue.close()
+                queue.join_thread()
+            except Exception:
+                logger.debug("playbook timeout queue cleanup failed", exc_info=True)
+            with contextlib.suppress(AttributeError, ValueError):
+                proc.close()
 
     @staticmethod
     def _terminate_tree(proc: Any) -> None:
-        """Kill a timed-out child and the process group it leads.
+        """Kill a timed-out or cancelled child and the process group it leads.
 
         The child called ``os.setsid()``, so its PID is its process-group id and
         every ansible worker it forked shares that group. We SIGTERM the group,
@@ -617,6 +775,8 @@ class CoreAnsibleRunner:
         connection: str = "local",
         become: bool = False,
         extra_env: dict[str, str] | None = None,
+        timeout: float | None = None,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> AnsibleResult:
         """Execute playbook via the ansible-runner subprocess backend.
 
@@ -647,13 +807,25 @@ class CoreAnsibleRunner:
 
         import tempfile
 
-        private_data_dir = self._private_data_dir or tempfile.mkdtemp(prefix="gl-runner-iso-")
+        private_data_owner = None
+        if self._private_data_dir:
+            private_data_dir = self._private_data_dir
+        else:
+            private_data_owner = tempfile.TemporaryDirectory(prefix="gl-runner-iso-")
+            private_data_dir = private_data_owner.name
 
         runner_kwargs: dict[str, Any] = {
             "private_data_dir": private_data_dir,
             "playbook": playbook_path,
             **iso.to_runner_kwargs(),
         }
+        if timeout is not None and timeout > 0:
+            # ``job_timeout`` is enforced inside ansible-runner's own event
+            # loop.  On expiry it kills the owned isolation container and the
+            # Ansible process group before returning status="timeout".
+            runner_kwargs["settings"] = {"job_timeout": timeout}
+        if cancel_requested is not None:
+            runner_kwargs["cancel_callback"] = cancel_requested
         if inventory:
             runner_kwargs["inventory"] = inventory
         if extravars:
@@ -692,6 +864,9 @@ class CoreAnsibleRunner:
                 rc=1,
                 error=f"ansible-runner invocation raised: {type(exc).__name__}: {exc}",
             )
+        finally:
+            if private_data_owner is not None:
+                private_data_owner.cleanup()
 
         rc = int(getattr(runner_obj, "rc", 1) or 0)
         raw_status = getattr(runner_obj, "status", None)
@@ -717,6 +892,15 @@ class CoreAnsibleRunner:
                 stats=stats,
                 events=events,
             )
+        if status in {"canceled", "cancelled"}:
+            logger.info("ANSIBLE_EXECUTION_CANCELLED backend=ansible-runner")
+            return AnsibleResult(
+                status="cancelled",
+                rc=_CANCELLED_RC,
+                stats=stats,
+                events=events,
+                error="playbook cancelled by owner",
+            )
         return AnsibleResult(
             status="failed",
             rc=rc if rc != 0 else 1,
@@ -738,46 +922,64 @@ class CoreAnsibleRunner:
         become: bool = False,
         extra_env: dict[str, str] | None = None,
     ) -> AnsibleResult:
-        # Pre-set ansible collections env vars so that AnsibleCollectionConfig
-        # (which reads ANSIBLE_COLLECTIONS_PATH at module-import time and caches
-        # it) picks up the correct paths.  The post-import os.environ swap below
-        # is too late — the cached value is already stale by then.
-        _ansible_env_restore: dict[str, str | None] = {}
-        if extra_env:
-            for _ak in (
-                "ANSIBLE_COLLECTIONS_PATH",
-                "ANSIBLE_ROLES_PATH",
-                "ANSIBLE_COLLECTIONS_PATHS",
-            ):
-                if _ak in extra_env:
-                    _ansible_env_restore[_ak] = os.environ.get(_ak)
-                    os.environ[_ak] = extra_env[_ak]
+        """Execute native ansible-core behind a thread-safe process boundary."""
+        if not self._inside_safe_process and _native_playbook_executor_is_active():
+            # Only execution-owned, picklable state crosses the process
+            # boundary. A disabled isolation adapter or already-consumed
+            # network-policy object must not make an otherwise safe playbook
+            # unstartable (test doubles and live adapters may hold locks).
+            worker_runner = CoreAnsibleRunner(
+                module_paths=self._module_paths,
+                callback_plugins=self._callback_plugins,
+                private_data_dir=self._private_data_dir,
+                seccomp_filter=self._seccomp_filter,
+            )
+            return worker_runner._run_with_timeout(
+                timeout=_env_default_timeout(),
+                playbook_path=playbook_path,
+                inventory=inventory,
+                extravars=extravars,
+                verbosity=verbosity,
+                check=check,
+                tags=tags,
+                skip_tags=skip_tags,
+                connection=connection,
+                become=become,
+                extra_env=extra_env,
+            )
 
+        with _isolated_ansible_process_state(extra_env):
+            return self._execute_with_core_active_state(
+                playbook_path=playbook_path,
+                inventory=inventory,
+                extravars=extravars,
+                verbosity=verbosity,
+                check=check,
+                tags=tags,
+                skip_tags=skip_tags,
+                connection=connection,
+                become=become,
+                extra_env=extra_env,
+            )
+
+    def _execute_with_core_active_state(
+        self,
+        playbook_path: str,
+        inventory: list[str] | None = None,
+        extravars: dict[str, Any] | None = None,
+        verbosity: int = 0,
+        check: bool = False,
+        tags: list[str] | None = None,
+        skip_tags: list[str] | None = None,
+        connection: str = "local",
+        become: bool = False,
+        extra_env: dict[str, str] | None = None,
+    ) -> AnsibleResult:
         from ansible import context
         from ansible.executor.playbook_executor import PlaybookExecutor
         from ansible.inventory.manager import InventoryManager
         from ansible.module_utils.common.collections import ImmutableDict
         from ansible.vars.manager import VariableManager
-
-        # Ensure the collection/plugin loader is initialized in THIS process.
-        # When the run is bounded in a fork child, the child must (re)install the
-        # AnsibleCollectionFinder on its own sys.meta_path or ansible.builtin.*
-        # module resolution fails ("couldn't resolve module/action"). Idempotent.
-        try:
-            from ansible.plugins.loader import init_plugin_loader
-
-            init_plugin_loader()
-        except Exception:  # pragma: no cover - older cores auto-init on use
-            pass
-
-        # Restore pre-existing ansible env values after AnsibleCollectionConfig
-        # has read the overridden paths.  The full env swap below takes over from
-        # here.
-        for _k, _v in _ansible_env_restore.items():
-            if _v is None:
-                os.environ.pop(_k, None)
-            else:
-                os.environ[_k] = _v
 
         loader = DataLoader()
 
@@ -879,6 +1081,14 @@ class CoreAnsibleRunner:
         finally:
             os.environ.clear()
             os.environ.update(_original_env)
+            # ansible-core closes its worker queue but currently leaves the
+            # TaskQueueManager connection lock's TemporaryFile open.  Bound
+            # that descriptor to this execution so repeated inline runs do not
+            # leak pytest capture resources or exhaust a long-lived worker.
+            tqm = getattr(pb_exec, "_tqm", None)
+            connection_lock = getattr(tqm, "_connection_lockfile", None)
+            if connection_lock is not None:
+                connection_lock.close()
 
         self._collected_events = list(callback._events)
 
@@ -910,11 +1120,20 @@ class CoreAnsibleRunner:
             else 0
         )
         if pb_rc != 0 or failed_count:
+            if pb_rc != 0:
+                return AnsibleResult(
+                    status="failed",
+                    rc=pb_rc,
+                    stats=stats,
+                    events=list(self._collected_events),
+                    error=f"ansible playbook execution failed with rc={pb_rc}",
+                )
             return AnsibleResult(
                 status="failed",
-                rc=pb_rc if pb_rc != 0 else 1,
+                rc=1,
                 stats=stats,
                 events=list(self._collected_events),
+                error="ansible playbook reported task failures with rc=0",
             )
 
         return AnsibleResult(
@@ -929,11 +1148,22 @@ class CoreAnsibleRunner:
         template_str: str,
         variables: dict[str, Any] | None = None,
     ) -> str:
+        """Render a Jinja template string with optional variables via ansible Templar."""
         if not _HAS_ANSIBLE_CORE:
             raise ImportError("ansible-core is required for templating but is not installed")
         templar = _get_templar(variables=variables)
         result = templar.template(template_str)
-        return str(result)
+        rendered = str(result)
+        if rendered == template_str and "{{" in template_str:
+            # Some ansible-core Templar configurations return the input
+            # unchanged for simple expressions. The trusted path may fall
+            # back to a plain Jinja2 render (variables are already validated
+            # by the caller) so basic templates always render.
+            from jinja2 import Environment, StrictUndefined
+
+            env = Environment(undefined=StrictUndefined)
+            rendered = env.from_string(template_str).render(**(variables or {}))
+        return rendered
 
     def resolve_variable(
         self,
@@ -942,6 +1172,7 @@ class CoreAnsibleRunner:
         inventory_path: str | None = None,
         extravars: dict[str, Any] | None = None,
     ) -> Any:
+        """Resolve a single host variable using ansible's variable manager."""
         if not _HAS_ANSIBLE_CORE:
             raise ImportError("ansible-core is required for variable resolution but is not installed")
         return self._resolve_with_variable_manager(var_name, host, inventory_path, extravars)
@@ -976,6 +1207,7 @@ class CoreAnsibleRunner:
         playbook_path: str,
         extravars: dict[str, Any] | None = None,
     ) -> list[dict[str, str]]:
+        """Return a flat list of {name, module, hosts} for every task in a playbook."""
         _NON_MODULE_KEYS = {
             "name",
             "when",
@@ -1034,6 +1266,7 @@ class CoreAnsibleRunner:
         return tasks
 
     def validate_playbook_syntax(self, playbook_path: str) -> list[str]:
+        """Validate a playbook parses as YAML and is a list of plays with hosts keys."""
         errors: list[str] = []
 
         if not os.path.isfile(playbook_path):

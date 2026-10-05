@@ -28,15 +28,17 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import StaticPool
 
-from general_ludd.db.models import Base, BucketLeaseModel, TodoModel
-from general_ludd.db.repository import TodoRepository
+from general_ludd.db.models import Base, BucketLeaseModel, ProjectModel, TodoModel
+from general_ludd.db.repository import ProjectRepository, TodoRepository
 from general_ludd.event_loop.lease import (
     acquire_lease,
     acquire_leases_batch,
+    confirm_lease_termination,
     reclaim_expired_leases,
     release_lease,
 )
 from general_ludd.event_loop.loop import PHASE_ORDER, EventLoop
+from general_ludd.projects.manager import persist_project
 from general_ludd.schemas.queue import Queue
 from general_ludd.schemas.todo import TodoStatus
 
@@ -189,11 +191,11 @@ class TestLeaseE2E:
         assert lease.expires_at > datetime.now(UTC)
 
     @pytest.mark.asyncio
-    async def test_acquire_lease_upserts_existing(self, db_session: AsyncSession):
+    async def test_acquire_lease_renews_exact_holder(self, db_session: AsyncSession):
         await acquire_lease(db_session, "core:todo-2", "worker-a", ttl_seconds=300)
         await db_session.commit()
-        lease = await acquire_lease(db_session, "core:todo-2", "worker-b", ttl_seconds=600)
-        assert lease.holder_id == "worker-b"
+        lease = await acquire_lease(db_session, "core:todo-2", "worker-a", ttl_seconds=600)
+        assert lease.holder_id == "worker-a"
 
     @pytest.mark.asyncio
     async def test_acquire_leases_batch(self, db_session: AsyncSession):
@@ -224,11 +226,20 @@ class TestLeaseE2E:
         lease = BucketLeaseModel(
             bucket_key="core:todo-expired",
             holder_id="worker-dead",
+            todo_version=todo.version,
             expires_at=datetime.now(UTC) - timedelta(seconds=10),
         )
         session.add(lease)
         await session.commit()
 
+        reclaimed = await reclaim_expired_leases(session)
+        assert reclaimed == 0
+        assert await confirm_lease_termination(
+            session,
+            bucket_key="core:todo-expired",
+            holder_id="worker-dead",
+            todo_version=todo.version,
+        )
         reclaimed = await reclaim_expired_leases(session)
         assert reclaimed == 1
 
@@ -380,7 +391,18 @@ def _runner_for_pipeline():
 @pytest.fixture
 async def _session_factory(db_engine):
     """Session factory for the pipeline DB."""
-    return async_sessionmaker(db_engine, expire_on_commit=False)
+    factory = async_sessionmaker(db_engine, expire_on_commit=False)
+    async with factory() as session:
+        await persist_project(
+            ProjectRepository(session),
+            project_id=_PIPELINE_PROJECT_ID,
+            name="Event loop pipeline E2E",
+            weight=100.0,
+            dispatch_mode="active",
+        )
+        await session.commit()
+        assert await session.get(ProjectModel, _PIPELINE_PROJECT_ID) is not None
+    return factory
 
 
 @pytest.fixture

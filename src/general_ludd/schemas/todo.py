@@ -12,6 +12,8 @@ _MAX_PRIORITY: int = 1000
 
 
 class TodoStatus(enum.StrEnum):
+    """Lifecycle states for persisted and in-memory todos."""
+
     BACKLOG = "backlog"
     SCHEDULED = "scheduled"
     QUEUED = "queued"
@@ -23,6 +25,7 @@ class TodoStatus(enum.StrEnum):
     BLOCKED_ON_HUMAN = "blocked_on_human"
     MANUAL_HOLD = "manual_hold"
     APPROVAL_REQUIRED = "approval_required"
+    APPROVED = "approved"
     COMPLETE = "complete"
     BUDGET_EXCEEDED = "budget_exceeded"
     FAILED = "failed"
@@ -30,6 +33,8 @@ class TodoStatus(enum.StrEnum):
 
 
 class WorkType(enum.StrEnum):
+    """Supported categories of todo work."""
+
     CODE = "code"
     TEST = "test"
     REVIEW = "review"
@@ -47,6 +52,8 @@ class WorkType(enum.StrEnum):
 
 
 class RiskLevel(enum.StrEnum):
+    """Risk classifications used for todo admission and review."""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -54,6 +61,8 @@ class RiskLevel(enum.StrEnum):
 
 
 class ResourceProfile(enum.StrEnum):
+    """Resource-shape hints used when scheduling todo work."""
+
     AI_HEAVY = "ai_heavy"
     LOCAL_HEAVY = "local_heavy"
     HYBRID = "hybrid"
@@ -101,7 +110,15 @@ VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
     TodoStatus.BLOCKED: {TodoStatus.QUEUED, TodoStatus.CANCELLED},
     TodoStatus.BLOCKED_ON_HUMAN: {TodoStatus.QUEUED, TodoStatus.CANCELLED},
     TodoStatus.MANUAL_HOLD: {TodoStatus.QUEUED, TodoStatus.CANCELLED},
-    TodoStatus.APPROVAL_REQUIRED: {TodoStatus.QUEUED, TodoStatus.CANCELLED, TodoStatus.MANUAL_HOLD},
+    TodoStatus.APPROVAL_REQUIRED: {
+        TodoStatus.APPROVED,
+        TodoStatus.QUEUED,
+        TodoStatus.CANCELLED,
+        TodoStatus.MANUAL_HOLD,
+    },
+    # APPROVED is a durable non-runnable holding state. Only the explicit
+    # legacy apply endpoints may consume it by claiming APPROVED -> ACTIVE.
+    TodoStatus.APPROVED: {TodoStatus.ACTIVE, TodoStatus.CANCELLED},
     TodoStatus.COMPLETE: set(),
     TodoStatus.FAILED: {TodoStatus.QUEUED, TodoStatus.CANCELLED},
     TodoStatus.CANCELLED: set(),
@@ -109,6 +126,7 @@ VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
 
 
 def validate_transition(current: TodoStatus, target: TodoStatus) -> bool:
+    """Return whether the lifecycle permits ``current`` to become ``target``."""
     return target in VALID_TRANSITIONS.get(current, set())
 
 
@@ -116,6 +134,7 @@ _TODO_MAX_PRIORITY: int = 1000
 
 
 class Todo(BaseModel):
+    """Validated application representation of a unit of work."""
 
     todo_id: str = Field(default_factory=lambda: f"TODO-{uuid4().hex[:8].upper()}")
     title: str
@@ -148,6 +167,7 @@ class Todo(BaseModel):
     artifacts: list[str] = Field(default_factory=list)
     evidence_refs: list[str] = Field(default_factory=list)
     plan_artifact: str | None = None
+    approved_artifact_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     confidence: float | None = None
     manual_hold_reason: str | None = None
     approval_policy: str = "none"
@@ -238,6 +258,7 @@ class Todo(BaseModel):
         return self
 
     def transition_to(self, target: TodoStatus) -> None:
+        """Apply one valid lifecycle transition and update its timestamps."""
         if not validate_transition(self.status, target):
             raise ValueError(
                 f"Invalid transition from {self.status.value} to {target.value}"

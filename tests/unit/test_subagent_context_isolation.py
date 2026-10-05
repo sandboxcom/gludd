@@ -11,6 +11,10 @@ at the correct position in every handler.
 
 Plugins that do NOT run in subagent context (watchdog.ts — daemon lifecycle
 only) are explicitly exempted from the guard requirement.
+
+``enforce-depth.ts`` is the sole tool-hook exception: it must inspect dispatch
+tools inside delegated contexts so a depth-four agent cannot recurse further.
+Its handler is dispatch-only, so ordinary subagent tools remain unaffected.
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 PLUGINS_DIR = ROOT / ".opencode" / "plugins"
+SUBAGENT_GUARD_EXCEPTIONS = frozenset({"enforce-depth"})
 
 
 def _enforce_plugins() -> list[Path]:
@@ -211,6 +216,11 @@ PLUGINS_WITH_TOOL_BEFORE = sorted(
     for plugin in _enforce_plugins()
     if '"tool.execute.before"' in _read_plugin(plugin.stem)
 )
+GUARDED_TOOL_PLUGINS = [
+    name
+    for name in PLUGINS_WITH_TOOL_BEFORE
+    if name not in SUBAGENT_GUARD_EXCEPTIONS
+]
 
 PLUGINS_WITH_TEXT_COMPLETE = sorted(
     plugin.stem
@@ -224,10 +234,10 @@ class TestStructuralGuardPresence:
     guard as the FIRST substantive line of the handler body.
     """
 
-    def test_all_tool_before_plugins_have_guard(self):
+    def test_all_tool_before_plugins_have_guard(self) -> None:
         missing = []
         misplaced = []
-        for name in PLUGINS_WITH_TOOL_BEFORE:
+        for name in GUARDED_TOOL_PLUGINS:
             src = _read_plugin(name)
             result = _extract_handler_body(src, "tool.execute.before")
             assert result is not None, (
@@ -263,9 +273,17 @@ class TestStructuralGuardPresence:
             )
         assert not failures, "\n\n".join(failures)
 
-    def test_guard_is_early_return_not_throw(self):
+    def test_depth_is_the_only_dispatch_guard_exception(self) -> None:
+        """Depth remains active only for delegated dispatch tools."""
+        assert frozenset({"enforce-depth"}) == SUBAGENT_GUARD_EXCEPTIONS
+        source = _read_plugin("enforce-depth")
+        assert "isSubagent(" not in source
+        assert "if (!isDispatchTool(tool)) return" in source
+        assert 'lt === "task" || lt === "agent" || lt === "workflow"' in source
+
+    def test_guard_is_early_return_not_throw(self) -> None:
         violations = []
-        for name in PLUGINS_WITH_TOOL_BEFORE:
+        for name in GUARDED_TOOL_PLUGINS:
             src = _read_plugin(name)
             result = _extract_handler_body(src, "tool.execute.before")
             assert result is not None, f"{name}.ts: no handler found"
@@ -293,9 +311,9 @@ class TestGuardIsFirstCheck:
     before _reportAlive(), before try{, before GLUDD_*_ENFORCE checks.
     """
 
-    def test_guard_before_report_alive(self):
+    def test_guard_before_report_alive(self) -> None:
         violations = []
-        for name in PLUGINS_WITH_TOOL_BEFORE:
+        for name in GUARDED_TOOL_PLUGINS:
             src = _read_plugin(name)
             result = _extract_handler_body(src, "tool.execute.before")
             if result is None:
@@ -319,9 +337,9 @@ class TestGuardIsFirstCheck:
             + "\n".join(f"  - {v}" for v in violations)
         )
 
-    def test_guard_before_try(self):
+    def test_guard_before_try(self) -> None:
         violations = []
-        for name in PLUGINS_WITH_TOOL_BEFORE:
+        for name in GUARDED_TOOL_PLUGINS:
             src = _read_plugin(name)
             result = _extract_handler_body(src, "tool.execute.before")
             if result is None:
@@ -349,9 +367,9 @@ class TestGuardIsFirstCheck:
 class TestGuardExactPatterns:
     """Guard must use the exact env check or the shared isSubagent() helper."""
 
-    def test_exact_pattern(self):
+    def test_exact_pattern(self) -> None:
         violations = []
-        for name in PLUGINS_WITH_TOOL_BEFORE:
+        for name in GUARDED_TOOL_PLUGINS:
             src = _read_plugin(name)
             result = _extract_handler_body(src, "tool.execute.before")
             if result is None:
@@ -380,9 +398,9 @@ class TestGuardExactPatterns:
             + "\n".join(f"  - {v}" for v in violations)
         )
 
-    def test_no_substring_or_alternate_var(self):
+    def test_no_substring_or_alternate_var(self) -> None:
         violations = []
-        for name in PLUGINS_WITH_TOOL_BEFORE:
+        for name in GUARDED_TOOL_PLUGINS:
             src = _read_plugin(name)
             result = _extract_handler_body(src, "tool.execute.before")
             if result is None:
@@ -424,9 +442,9 @@ class TestNoSubagentBlocksEdits:
     so edit/write tool calls pass through.
     """
 
-    def test_guard_returns_not_denies(self):
+    def test_guard_returns_not_denies(self) -> None:
         violations = []
-        for name in PLUGINS_WITH_TOOL_BEFORE:
+        for name in GUARDED_TOOL_PLUGINS:
             src = _read_plugin(name)
             result = _extract_handler_body(src, "tool.execute.before")
             if result is None:
@@ -451,9 +469,9 @@ class TestNoSubagentBlocksEdits:
 class TestNoSubagentBlocksBash:
     """Same as edit, but for bash tools."""
 
-    def test_guard_returns_not_denies_bash(self):
+    def test_guard_returns_not_denies_bash(self) -> None:
         violations = []
-        for name in PLUGINS_WITH_TOOL_BEFORE:
+        for name in GUARDED_TOOL_PLUGINS:
             src = _read_plugin(name)
             result = _extract_handler_body(src, "tool.execute.before")
             if result is None:
@@ -472,7 +490,7 @@ class TestTextCompleteGuards:
     the OPENCODE_SUBAGENT guard, so subagent results are not destroyed.
     """
 
-    def test_multitask_has_text_complete_guard(self):
+    def test_multitask_has_text_complete_guard(self) -> None:
         result = _extract_handler_body(
             _read_plugin("enforce-multitask"), "experimental.text.complete"
         )
@@ -491,7 +509,7 @@ class TestTextCompleteGuards:
             f"enforce-multitask.ts: text.complete guard must return output: {guard!r}"
         )
 
-    def test_stop_has_text_complete_guard(self):
+    def test_stop_has_text_complete_guard(self) -> None:
         result = _extract_handler_body(
             _read_plugin("enforce-stop"), "experimental.text.complete"
         )
@@ -510,7 +528,7 @@ class TestTextCompleteGuards:
             f"enforce-stop.ts: text.complete guard must return (output): {guard!r}"
         )
 
-    def test_verified_claims_has_text_complete_guard(self):
+    def test_verified_claims_has_text_complete_guard(self) -> None:
         result = _extract_handler_body(
             _read_plugin("enforce-verified-claims"), "experimental.text.complete"
         )
@@ -534,26 +552,30 @@ class TestSystemTransformGuards:
     DELEGATE-FIRST nag, bash-availability warning).
     """
 
-    def test_stop_has_system_transform_guard(self):
+    def test_stop_has_system_transform_guard(self) -> None:
         _check_system_transform_guard(
             _read_plugin("enforce-stop"), "experimental.chat.system.transform",
             "enforce-stop.ts",
         )
 
-    def test_session_start_has_system_transform_guard(self):
+    def test_session_start_has_system_transform_guard(self) -> None:
         _check_system_transform_guard(
             _read_plugin("enforce-session-start"), "experimental.chat.system.transform",
             "enforce-session-start.ts",
         )
 
-    def test_make_has_system_transform_guard(self):
+    def test_make_has_system_transform_guard(self) -> None:
         _check_system_transform_guard(
             _read_plugin("enforce-make"), "experimental.chat.system.transform",
             "enforce-make.ts",
         )
 
 
-def _check_system_transform_guard(src: str, hook_key: str, plugin_name: str):
+def _check_system_transform_guard(
+    src: str,
+    hook_key: str,
+    plugin_name: str,
+) -> None:
     """Verify a system.transform hook has the OPENCODE_SUBAGENT guard with return output."""
     idx = src.find(hook_key)
     assert idx != -1, f"{plugin_name}: {hook_key} hook not found"
@@ -581,7 +603,7 @@ class TestGuardNotInFilesThatDontNeedIt:
     Verify we don't over-apply the requirement.
     """
 
-    def test_watchdog_has_no_tool_execute_before(self):
+    def test_watchdog_has_no_tool_execute_before(self) -> None:
         path = PLUGINS_DIR / "watchdog.ts"
         assert path.exists(), "watchdog.ts must exist"
         src = path.read_text()
@@ -589,13 +611,13 @@ class TestGuardNotInFilesThatDontNeedIt:
             "watchdog.ts should NOT have tool.execute.before — it is a daemon"
         )
 
-    def test_watchdog_has_no_text_complete(self):
+    def test_watchdog_has_no_text_complete(self) -> None:
         src = (PLUGINS_DIR / "watchdog.ts").read_text()
         assert "experimental.text.complete" not in src, (
             "watchdog.ts should NOT have text.complete"
         )
 
-    def test_watchdog_reports_alive(self):
+    def test_watchdog_reports_alive(self) -> None:
         """watchdog.ts reports liveness to shared alive.json (standard pattern)."""
         src = (PLUGINS_DIR / "watchdog.ts").read_text()
         assert 'reportAlive("watchdog")' in src, (
@@ -606,7 +628,7 @@ class TestGuardNotInFilesThatDontNeedIt:
 class TestPluginCount:
     """All enforce-*.ts files are accounted for in the test class lists."""
 
-    def test_count_matches_and_all_covered(self):
+    def test_count_matches_and_all_covered(self) -> None:
         plugins = _enforce_plugins()
         expected = {
             plugin.stem
@@ -619,7 +641,7 @@ class TestPluginCount:
             f"actual={PLUGINS_WITH_TOOL_BEFORE}"
         )
 
-    def test_all_plugins_have_identifiable_hooks(self):
+    def test_all_plugins_have_identifiable_hooks(self) -> None:
         for p in _enforce_plugins():
             src = p.read_text()
             has_obj_hook = '"tool.execute.before"' in src

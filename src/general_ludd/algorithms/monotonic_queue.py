@@ -22,9 +22,19 @@ from typing import Generic, Protocol, TypeVar
 
 
 class Comparable(Protocol):
-    def __lt__(self, other: object, /) -> bool: ...
-    def __gt__(self, other: object, /) -> bool: ...
-    def __le__(self, other: object, /) -> bool: ...
+    """Structural protocol for values usable by monotonic queues."""
+
+    def __lt__(self, other: object, /) -> bool:
+        """Return whether ``self`` sorts before ``other``."""
+        ...
+
+    def __gt__(self, other: object, /) -> bool:
+        """Return whether ``self`` sorts after ``other``."""
+        ...
+
+    def __le__(self, other: object, /) -> bool:
+        """Return whether ``self`` sorts at or before ``other``."""
+        ...
 
 
 T = TypeVar("T", bound=Comparable)
@@ -48,6 +58,7 @@ class MonotonicQueue(Generic[T]):
     __slots__ = ("_dq", "_order")
 
     def __init__(self, order: Callable[[T, T], bool] | None = None) -> None:
+        """Create a queue using *order* as the dominance predicate."""
         self._dq: deque[tuple[int, T]] = deque()
         self._order: Callable[[T, T], bool] = order if order is not None else lambda a, b: a < b
 
@@ -90,19 +101,23 @@ class MonotonicQueue(Generic[T]):
         return self._dq[0] if self._dq else None
 
     def __len__(self) -> int:
+        """Return the number of live elements."""
         return len(self._dq)
 
     def __bool__(self) -> bool:
+        """Return whether the queue is non-empty."""
         return bool(self._dq)
 
-    def __iter__(self) -> Iterator[T]:
-        return (item for _, item in self._dq)
+    def __iter__(self) -> Iterator[tuple[int, T]]:
+        """Iterate over ``(key, value)`` pairs, front to back."""
+        return iter(self._dq)
 
 
 class MinQueue(MonotonicQueue[T]):
     """Monotonic min-queue — front is always the minimum element."""
 
     def __init__(self) -> None:
+        """Create a min-queue."""
         super().__init__(order=lambda a, b: a < b)
 
 
@@ -110,6 +125,7 @@ class MaxQueue(MonotonicQueue[T]):
     """Monotonic max-queue — front is always the maximum element."""
 
     def __init__(self) -> None:
+        """Create a max-queue."""
         super().__init__(order=lambda a, b: a > b)
 
 
@@ -193,6 +209,7 @@ class PriorityMonotonic(Generic[T]):
     __slots__ = ("_counter", "_dq", "_order")
 
     def __init__(self, order: Callable[[T, T], bool] | None = None) -> None:
+        """Create a priority queue using *order* as the dominance predicate."""
         self._dq: deque[tuple[int, int, T]] = deque()
         self._order: Callable[[T, T], bool] = order if order is not None else lambda a, b: a < b
         self._counter = 0
@@ -234,6 +251,7 @@ class PriorityMonotonic(Generic[T]):
             self._dq.popleft()
 
     def __len__(self) -> int:
+        """Return the number of live elements."""
         return len(self._dq)
 
 

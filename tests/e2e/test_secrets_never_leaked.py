@@ -541,7 +541,7 @@ class TestHTTPResponseSafety:
 
     @pytest.fixture
     def daemon_client(self, monkeypatch: pytest.MonkeyPatch) -> TestClient:
-        monkeypatch.setenv("GLUDD_PSK", _PSK)
+        monkeypatch.setenv("GLUDD_AUTH_PSK", _PSK)
         monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "0")
 
         from general_ludd.daemon import create_daemon_app
@@ -959,7 +959,7 @@ class TestSubprocessSafety:
         from general_ludd.secrets.env import EnvSecretsManager
 
         mgr = EnvSecretsManager()
-        result = mgr.resolve("GLUDD_PSK")
+        result = mgr.resolve("GLUDD_AUTH_PSK")
         assert result is None
 
     def test_env_secrets_manager_rejects_arbitrary_env(self):
@@ -1031,7 +1031,7 @@ class TestSubprocessSafety:
 
         mgr = EnvSecretsManager()
         assert mgr.resolve("gludd_psk") is None
-        assert mgr.resolve("GLUDD_PSK") is None
+        assert mgr.resolve("GLUDD_AUTH_PSK") is None
 
     def test_migrate_profile_skips_gludd_psk_from_env(self):
         from general_ludd.secrets.config import OpenBaoConfig
@@ -1044,12 +1044,12 @@ class TestSubprocessSafety:
         profiles = [
             {
                 "model_profile_id": "p1",
-                "credential_alias": "GLUDD_PSK",
+                "credential_alias": "GLUDD_AUTH_PSK",
             }
         ]
         result = migrate_profile_secrets(mgr, profiles)
         assert result["migrated"] == 0
-        assert "GLUDD_PSK" in result["skipped"]
+        assert "GLUDD_AUTH_PSK" in result["skipped"]
 
     def test_mcp_launch_command_validate_rejects_shell_meta(self):
         from general_ludd.mcp.transport import MCPTransportError, _validate_launch_command

@@ -51,7 +51,7 @@ def test_no_type_ignore_comments():
 Running it right now produces a hard failure with 40 violations
 (`make test-specific TESTFILE='tests/unit/test_type_safety_guardrails.py::test_no_type_ignore_comments'`):
 
-```
+```text
 FAILED tests/unit/test_type_safety_guardrails.py::test_no_type_ignore_comments
 AssertionError: Found 40 # type: ignore comments:
   src/general_ludd/connectors/ingest_formats.py:182: import msgpack  # type: ignore[import-untyped] ...

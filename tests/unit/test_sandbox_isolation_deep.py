@@ -24,6 +24,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from general_ludd.ornith.sandbox import (
+    OrnithSandbox,
     _sandbox_preexec_fn,
     confine_export_path,
     create_ornith_sandbox,
@@ -941,7 +942,10 @@ class TestSandboxStateDeep:
     def test_safe_state_component_with_unsafe_chars(self) -> None:
         result = safe_state_component("../etc")
         assert ".." not in result
-        assert "--etc" in result
+        assert result.startswith("etc-")
+        assert "/" not in result
+        assert result == safe_state_component("../etc")
+        assert result != safe_state_component("/etc")
 
     def test_safe_state_component_empty_fallback(self) -> None:
         result = safe_state_component("")
@@ -986,11 +990,42 @@ class TestSandboxStateDeep:
         evil.mkdir()
         sym = state_dir / "hijack"
         sym.symlink_to(evil)
-        with pytest.raises(SandboxStateError, match="symlink"):
-            SandboxState.discover(
-                project_root=tmp_path / "proj4",
-                state_dir_env="GLUDD_SANDBOX_STATE_DIR",
-            )
+        project = tmp_path / "proj4"
+        project.mkdir()
+        with (
+            patch.dict(
+                os.environ,
+                {"GLUDD_SANDBOX_STATE_DIR": str(sym / "managed")},
+            ),
+            pytest.raises(SandboxStateError, match="symlink"),
+        ):
+            SandboxState.discover(project_root=project)
+
+    def test_discover_rolls_back_new_base_on_namespace_failure(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import general_ludd.security.sandboxes.state as state_module
+
+        project = tmp_path / "rollback-project"
+        project.mkdir()
+        base = tmp_path / "rollback-state"
+        monkeypatch.setenv("GLUDD_SANDBOX_STATE_DIR", str(base))
+        secure_directory = state_module._secure_directory
+
+        def fail_namespace(path: Path) -> Path:
+            if path == base:
+                return secure_directory(path)
+            raise SandboxStateError("injected namespace allocation failure")
+
+        monkeypatch.setattr(state_module, "_secure_directory", fail_namespace)
+
+        with pytest.raises(SandboxStateError, match="injected"):
+            SandboxState.discover(project_root=project)
+
+        assert not base.exists()
+        assert project.exists()
 
     def test_validate_safe_component_rejects_dot_dot(self) -> None:
         from general_ludd.security.sandboxes.state import _validate_component
@@ -1134,9 +1169,9 @@ class TestOrnithSandboxDeep:
     def test_sandboxed_run_respects_env_override(self, tmp_path: Path) -> None:
         with (
             patch("subprocess.run") as mock_run,
-            patch("general_ludd.security.state.SecureState.temporary_directory") as mock_td,
+            patch("general_ludd.ornith.sandbox.create_ornith_sandbox") as mock_sandbox,
         ):
-            mock_td.return_value = tmp_path
+            mock_sandbox.return_value.__enter__.return_value.temp_dir = tmp_path
             mock_proc = MagicMock()
             mock_proc.stdout = ""
             mock_proc.stderr = ""
@@ -1148,18 +1183,52 @@ class TestOrnithSandboxDeep:
             call_kwargs = mock_run.call_args[1]
             assert "MY_VAR" in call_kwargs["env"]
             assert call_kwargs["env"]["MY_VAR"] == "custom"
+            assert call_kwargs["cwd"] == str(tmp_path)
+            mock_sandbox.return_value.__exit__.assert_called_once()
 
     def test_sandboxed_run_mem_and_cpu_override(self, tmp_path: Path) -> None:
         with (
             patch("subprocess.run") as mock_run,
-            patch("general_ludd.security.state.SecureState.temporary_directory") as mock_td,
+            patch("general_ludd.ornith.sandbox.create_ornith_sandbox") as mock_sandbox,
+            patch("general_ludd.ornith.sandbox._sandbox_preexec_fn") as mock_preexec,
         ):
-            mock_td.return_value = tmp_path
+            mock_sandbox.return_value.__enter__.return_value.temp_dir = tmp_path
             mock_proc = MagicMock()
             mock_proc.stdout = ""
             mock_proc.stderr = ""
             mock_proc.returncode = 0
             mock_run.return_value = mock_proc
 
-            ornith_sandboxed_run(["echo"], mem_mb=128, cpu_s=10)
-            assert True
+            result = ornith_sandboxed_run(["echo"], mem_mb=128, cpu_s=10)
+            preexec_fn = mock_run.call_args.kwargs["preexec_fn"]
+            preexec_fn()
+
+            assert result["returncode"] == 0
+            mock_preexec.assert_called_once_with(128, 10, str(tmp_path))
+            mock_sandbox.return_value.__exit__.assert_called_once()
+
+    def test_cleanup_refuses_unmanaged_temp_directory(self, tmp_path: Path) -> None:
+        project = tmp_path / "cleanup-project"
+        project.mkdir()
+        state_root = tmp_path / "cleanup-state"
+        outside = tmp_path / "outside-sandbox"
+        outside.mkdir()
+        marker = outside / "preserve.txt"
+        marker.write_text("preserve", encoding="utf-8")
+
+        with patch.dict(
+            os.environ,
+            {"GLUDD_SANDBOX_STATE_DIR": str(state_root)},
+        ):
+            state = SandboxState.discover(project_root=project)
+
+        sandbox = object.__new__(OrnithSandbox)
+        sandbox._state = state
+        sandbox.temp_dir = outside
+        sandbox._cleaned = False
+
+        with pytest.raises(SandboxStateError, match="outside"):
+            sandbox.cleanup()
+
+        assert marker.read_text(encoding="utf-8") == "preserve"
+        assert sandbox._cleaned is False

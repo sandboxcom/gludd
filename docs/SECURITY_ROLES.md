@@ -78,7 +78,7 @@ Guardrails AI, NeMo Guardrails, Promptfoo.
 
 ## Interoperability Matrix
 
-```
+```text
                   ssl_cert   hsm_ops   audit_fw  sql_inj   cmd_inj   prompt_inj
 ssl_cert            ─         ──▸       ▸         ·         ·         ·
 hsm_operations      ◂──       ─         ▸         ·         ·         ·

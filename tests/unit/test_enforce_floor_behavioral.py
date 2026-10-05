@@ -98,13 +98,17 @@ class TestWaveWidthBehavior:
     dispatches are blocked. When an undersized wave completes, inline work
     is blocked until a full-width wave is dispatched."""
 
-    def test_wave_width_default_is_10(self):
+    def test_wave_width_uses_canonical_three_agent_cap(self):
         src = _src()
-        assert 'GLUDD_DISPATCH_WAVE_WIDTH",\n  "10"' in src or '"10",\n)' in src, "WAVE_WIDTH default MUST be 10"
+        assert "GLUDD_DISPATCH_WAVE_WIDTH" in src
+        assert "String(HARD_MAX_DISPATCHES)" in src
+        assert "clampDispatchCount" in src
 
     def test_dispatch_exceeding_wave_width_is_blocked(self):
         src = _src()
-        assert "_thisMessageDispatchCount >= eff.waveWidth" in src, "Dispatch MUST be blocked when count >= waveWidth"
+        assert "_thisMessageDispatchCount >= dispatchCeiling" in src, (
+            "Dispatch MUST be blocked when count reaches the effective ceiling"
+        )
 
     def test_wave_width_violation_returns_deny(self):
         src = _src()
@@ -116,8 +120,8 @@ class TestWaveWidthBehavior:
 
     def test_prev_message_undersized_wave_blocks_inline_work(self):
         src = _src()
-        assert "_prevMessageDispatchCount > 0 &&\n        _prevMessageDispatchCount < eff.waveWidth" in src, (
-            "Previous message with undersized wave MUST block inline work"
+        assert "_prevMessageDispatchCount > 0 &&\n        _prevMessageDispatchCount < eff.floor" in src, (
+            "Previous message below an explicit minimum MUST block inline work"
         )
 
     def test_prev_message_undersized_returns_deny(self):
@@ -138,8 +142,8 @@ class TestWaveWidthBehavior:
     def test_dispatch_wave_complete_recorded_on_full_wave(self):
         src = _src()
         assert "recordDispatchWaveComplete" in src, "Full wave completion MUST be recorded"
-        assert "_thisMessageDispatchCount === eff.waveWidth" in src, (
-            "Wave complete MUST fire exactly when dispatch count == waveWidth"
+        assert "_thisMessageDispatchCount === dispatchCeiling" in src, (
+            "Wave complete MUST fire exactly when dispatch count reaches the effective ceiling"
         )
 
 
@@ -264,10 +268,10 @@ class TestEnvVarOverrides:
 
     def test_target_cannot_exceed_ceiling(self):
         src = _src()
-        target_idx = src.find("const TARGET = Math.min")
-        assert target_idx > 0
-        after = src[target_idx : target_idx + 120]
-        assert "CEILING" in after, "TARGET MUST be capped at CEILING via Math.min"
+        assert re.search(
+            r"const TARGET = Math\.min\([\s\S]*?CEILING,?\s*\)",
+            src,
+        ), "TARGET MUST be capped at CEILING via Math.min"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -800,18 +804,19 @@ class TestSubagentIsolation:
 
 class TestRefillNudgeBehavior:
     """When non-dispatch calls accumulate within 15s of last dispatch AND
-    dispatch peak was >=5 AND open work exists, a console.warn fires."""
+    dispatch peak reached the canonical hard cap and open work exists, warn."""
 
     def test_refill_nudge_checks_streak_greater_than_zero(self):
         src = _src()
         assert "_streakCount > 0" in src, "Refill nudge MUST only fire when streakCount > 0"
 
-    def test_refill_nudge_checks_dispatch_peak_at_least_5(self):
+    def test_refill_nudge_checks_dispatch_peak_at_canonical_cap(self):
         src = _src()
         nudge_idx = src.find("REFILL NEEDED")
         assert nudge_idx > 0
         before = src[nudge_idx - 300 : nudge_idx]
-        assert "_dispatchPeak >= 5" in before, "Refill nudge MUST require dispatch peak >= 5"
+        assert "_dispatchPeak >= HARD_MAX_DISPATCHES" in before
+        assert "_dispatchPeak >= 5" not in before
 
     def test_refill_nudge_checks_time_since_dispatch(self):
         src = _src()

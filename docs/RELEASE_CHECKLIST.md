@@ -47,13 +47,17 @@ Full procedure and rationale: **`docs/RELEASE_RUNBOOK.md`**.
 - [ ] `make verify-release-completeness TAG='<tag>'` exits 0 and prints `PASS`.
 - [ ] Record the artifact download URL(s) and the CI run id.
 
-`verify-release-completeness` requires **12 artifact categories**:
+`verify-release-completeness` requires **28 artifact categories** and at least
+30 assets:
 
-| | |
+| Group | Required categories |
 |---|---|
-| Platform binaries | linux-x86_64, linux-aarch64, macos-arm64, windows-x86_64 |
-| Packages | `.deb`, `.rpm`, `.dmg`, `.exe` installer |
-| Metadata | checksums, SBOM, `LICENSE`, `THIRD_PARTY_LICENSES` |
+| Platform binaries (4) | linux-x86_64, linux-aarch64, macos-arm64, windows-x86_64 |
+| Native packages/installers (4) | `.deb`, `.rpm`, `.dmg`, `.exe` installer |
+| Base metadata (4) | checksums, SBOM, `LICENSE`, `THIRD_PARTY_LICENSES` |
+| Python and collections (4) | wheel, sdist, three runtime collection tarballs, collection manifest |
+| Ansible execution boundary (8) | EE definition, EE collection requirements, EE Python requirements, EE system requirements, EE runtime lock, managed-host Python lock, collection Python boundary inventory, EE image metadata |
+| Runtime delivery (4) | container image metadata, install script, smoke attestations, release manifest |
 
 Plus: the release must be **non-draft**; the **prerelease flag must match the tag
 shape** (`-alpha`/`-beta`/`-rc` ⇒ prerelease, stable tag ⇒ not); asset names must
@@ -95,6 +99,6 @@ assembles the tarball. Two things to know:
   `general-ludd.service`, `debian/control`, `rpm/gludd.spec`, `windows/gludd.nsi`)
   are hand-authored; build *outputs* are gitignored. **Deleting `dist/` breaks
   `make dist`.** Use `make dist-clean` to remove only the outputs.
-- A local `make dist` **cannot** produce the full 12-asset set — the Linux and
+- A local `make dist` **cannot** produce the full 28-category/30-asset set — the Linux and
   Windows artifacts come from the **CI matrix**, not a developer laptop. That is
   expected, and it is why the release must come from CI.

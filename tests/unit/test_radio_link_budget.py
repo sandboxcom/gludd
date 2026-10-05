@@ -3,32 +3,15 @@
 from __future__ import annotations
 
 import contextlib
-import importlib
 import json
 import math
-import os
 import sys
 from pathlib import Path
 
 import pytest
-
-_collection_files_dir = os.path.join(
-    os.path.dirname(__file__),
-    "..",
-    "..",
-    "collections",
-    "ansible_collections",
-    "general_ludd",
-    "radio",
-    "roles",
-    "link_budget",
-    "files",
+from ansible_collections.general_ludd.radio.plugins.module_utils import (
+    link_budget_runtime as lb,
 )
-_collection_files_dir = os.path.abspath(_collection_files_dir)
-if _collection_files_dir not in sys.path:
-    sys.path.insert(0, _collection_files_dir)
-
-lb = importlib.import_module("link_budget")
 
 
 class TestComputeLinkBudget:
@@ -254,16 +237,21 @@ class TestPropagationModels:
 
 class TestMainCli:
     def _run_main(self, tmp_path: Path, *extra: str) -> dict:
-        sys.argv = [
-            "link_budget.py",
-            "--tx-power", "30",
-            "--freq-hz", "144000000",
-            "--distance-m", "10000",
-            "--output-dir", str(tmp_path),
-            *extra,
-        ]
-        with contextlib.suppress(SystemExit):
-            lb.main()
+        with pytest.MonkeyPatch.context() as monkeypatch:
+            monkeypatch.setattr(
+                sys,
+                "argv",
+                [
+                    "link_budget.py",
+                    "--tx-power", "30",
+                    "--freq-hz", "144000000",
+                    "--distance-m", "10000",
+                    "--output-dir", str(tmp_path),
+                    *extra,
+                ],
+            )
+            with contextlib.suppress(SystemExit):
+                lb.main()
         return json.loads((tmp_path / "link_budget.json").read_text())
 
     def test_main_writes_json_file(self, tmp_path: Path):
@@ -273,15 +261,20 @@ class TestMainCli:
         assert "viable" in data
 
     def test_main_outputs_json_to_stdout(self, capsys, tmp_path: Path):
-        sys.argv = [
-            "link_budget.py",
-            "--tx-power", "37",
-            "--freq-hz", "146000000",
-            "--distance-m", "10000",
-            "--output-dir", str(tmp_path),
-        ]
-        with contextlib.suppress(SystemExit):
-            lb.main()
+        with pytest.MonkeyPatch.context() as monkeypatch:
+            monkeypatch.setattr(
+                sys,
+                "argv",
+                [
+                    "link_budget.py",
+                    "--tx-power", "37",
+                    "--freq-hz", "146000000",
+                    "--distance-m", "10000",
+                    "--output-dir", str(tmp_path),
+                ],
+            )
+            with contextlib.suppress(SystemExit):
+                lb.main()
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         assert data["tx"]["power_dbm"] == 37.0
@@ -301,15 +294,20 @@ class TestMainCli:
         assert "rain_attenuation_db" in data
 
     def test_main_invalid_model_exits_nonzero(self):
-        sys.argv = [
-            "link_budget.py",
-            "--tx-power", "30",
-            "--freq-hz", "144000000",
-            "--distance-m", "10000",
-            "--model", "flux_capacitor",
-        ]
-        with pytest.raises(SystemExit):
-            lb.main()
+        with pytest.MonkeyPatch.context() as monkeypatch:
+            monkeypatch.setattr(
+                sys,
+                "argv",
+                [
+                    "link_budget.py",
+                    "--tx-power", "30",
+                    "--freq-hz", "144000000",
+                    "--distance-m", "10000",
+                    "--model", "flux_capacitor",
+                ],
+            )
+            with pytest.raises(SystemExit):
+                lb.main()
 
     def test_main_antenna_type_overrides_gain(self, tmp_path: Path):
         data = self._run_main(tmp_path, "--tx-antenna-type", "yagi_3el")

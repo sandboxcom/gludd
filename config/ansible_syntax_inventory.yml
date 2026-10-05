@@ -1,0 +1,10 @@
+---
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+  children:
+    gludd_model_workers:
+      hosts:
+        gludd-model-worker-syntax:
+          ansible_connection: local

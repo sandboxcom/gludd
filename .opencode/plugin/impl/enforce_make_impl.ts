@@ -23,6 +23,18 @@ const BASH_POLICY_REF = "See AGENTS.md for existing make targets and the full po
 
 const MAKE_ENFORCE = process.env.GLUDD_MAKE_ENFORCE !== "0"
 const PROMPT_PRONE_EDIT_TOOLS = new Set(["apply_patch", "functions.apply_patch"])
+const NESTED_PROMPT_PRONE_EDIT_CALL = /\btools(?:\.apply_patch|\[['"]apply_patch['"]\])\s*\(/
+
+function invokesPromptProneNestedEdit(input: unknown): boolean {
+  if (typeof input !== "object" || input === null) return false
+  if ((input as { tool?: unknown }).tool !== "functions.exec") return false
+  try {
+    return NESTED_PROMPT_PRONE_EDIT_CALL.test(JSON.stringify(input))
+  } catch {
+    return false
+  }
+}
+
 // Bare `(` and `)` removed 2026-07-18: they triggered false positives on
 // legitimate commit messages (e.g. MSG="fix foo (see #123)"). The actual
 // shell-injection vector is `$()` command substitution, which is still
@@ -402,7 +414,13 @@ const defaultImpl: HotModule = {
         // These edit surfaces can trigger an approval prompt before project
         // policy gets a chance to redirect the operation through an auditable
         // make target. Deny them at the earliest hook boundary.
-        if (MAKE_ENFORCE && PROMPT_PRONE_EDIT_TOOLS.has(input.tool)) {
+        if (
+          MAKE_ENFORCE
+          && (
+            PROMPT_PRONE_EDIT_TOOLS.has(input.tool)
+            || invokesPromptProneNestedEdit(input)
+          )
+        ) {
           return {
             permissionDecision: "deny",
             message: "Prompt-prone edit tool blocked. Add or use a make target instead.",

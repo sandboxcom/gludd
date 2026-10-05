@@ -1,7 +1,16 @@
 ---
 # ios_diagnose role — gather iOS diagnostic data via libimobiledevice:
 # ideviceinfo, idevicesyslog, idevicediagnostics, oslog.
-# Uses the python gatherer backend in files/ios_gather.py.
+# Uses the managed-runtime gatherer in files/ios_gather.py.
+
+- name: Resolve the managed-host Python runtime before mutation
+  ansible.builtin.include_role:
+    name: general_ludd.os_expert.managed_python_preflight
+    public: false
+    rolespec_validate: true
+  vars:
+    os_expert_python_preflight_contract: "{{ os_expert_python_contract | default('discovered') }}"
+    os_expert_python_preflight_managed_interpreter: "{{ os_expert_managed_python_interpreter | default('') }}"
 
 - name: Create artifact directory
   ansible.builtin.file:
@@ -16,7 +25,7 @@
   ignore_errors: true
   failed_when: false
 
-- name: Gather iOS diagnostics via python backend
+- name: Gather iOS diagnostics via managed runtime
   when:
     - _idevice_check is success
     - gather_ideviceinfo | bool or gather_idevicesyslog | bool or gather_idevicediagnostics | bool or gather_oslog | bool
@@ -28,11 +37,19 @@
         mode: "0755"
 
     - name: Run gatherer — collect ideviceinfo, syslog, diagnostics
-      ansible.builtin.command: >
-        python3 {{ artifact_dir }}/ios_gather.py
-        --output {{ artifact_dir }}/diagnostics.json
-        --syslog-lines {{ syslog_lines | default(100) }}
-        {{ '--udid ' ~ device_udid if device_udid else '' }}
+      ansible.builtin.command:
+        argv: >-
+          {{
+            [
+              _os_expert_python_runtime.executable,
+              artifact_dir ~ '/ios_gather.py',
+              '--output',
+              artifact_dir ~ '/diagnostics.json',
+              '--syslog-lines',
+              syslog_lines | default(100) | string
+            ]
+            + (['--udid', device_udid] if device_udid else [])
+          }}
       register: _gather_result
       changed_when: false
       ignore_errors: true

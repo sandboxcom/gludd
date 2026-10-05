@@ -13,8 +13,9 @@ provisioner:
             ansible_python_interpreter: "{{ ansible_playbook_python }}"
   env:
     ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
-    GLUDD_MOCK_PORT: "8841"
   playbooks:
+    cleanup: "${MOLECULE_PROJECT_DIRECTORY}/molecule/shared/mock_daemon_cleanup.yml"
+    destroy: "${MOLECULE_PROJECT_DIRECTORY}/molecule/shared/mock_daemon_destroy.yml"
     prepare: default/prepare.yml
     converge: default/converge.yml
     verify: default/verify.yml
@@ -25,7 +26,11 @@ scenario:
   # the worktree branch already exists after the first converge, so a second
   # converge is not idempotent. Skip the idempotence step.
   test_sequence:
+    - cleanup
+    - destroy
     - syntax
     - prepare
     - converge
     - verify
+    - cleanup
+    - destroy

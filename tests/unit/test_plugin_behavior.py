@@ -385,8 +385,8 @@ class TestEnforceStopRepoPendingWork:
     def test_repo_has_pending_work_wired_into_has_local_work(self):
         """Repository state participates in the unified pending-work state."""
         src = ENFORCE_STOP.read_text()
-        assert re.search(r"projectWorkOpen\s*=[\s\S]{0,400}repoPending", src)
-        assert "hasPendingWork = projectWorkOpen || underFloor" in src
+        assert re.search(r"const signals\s*:[^=]+=\s*\{[\s\S]{0,400}repoPending", src)
+        assert "hasPendingWork = computeHealthScore(signals)" in src
 
     def test_no_wait_patterns_include_done_answer(self):
         """NO_WAIT_PATTERNS was removed."""
@@ -418,16 +418,13 @@ class TestEnforceStopRepoPendingWork:
 
 
 # --------------------------------------------------------------------------- #
-# 3e. enforce-stop.ts — tasksMdHasUnchecked (2026-06-30 fix)
+# 3e. enforce-stop.ts — milestone-scoped tasksMdHasUnchecked
 # --------------------------------------------------------------------------- #
-# The ratchet-only proxy was broken: it tracked test failures but not
-# agent-acknowledged work in TASKS.md. An agent with all-green tests and a
-# clean git tree but unchecked TASKS.md rows could stop undetected. This
-# function reads TASKS.md for `- [ ]` / `* [ ]` rows and gates hasPendingWork
-# on them, closing the gap that caused the 2026-06-30 incident.
+# The stop-like shipping path must share the canonical milestone parser used by
+# hasRealPendingWork(). A duplicate raw checkbox scan made future-version
+# backlog block a completed active release indefinitely.
 class TestEnforceStopTasksMdUnchecked:
-    """tasksMdHasUnchecked must exist, be wired into hasPendingWork, and
-    detect unchecked markdown task boxes."""
+    """Shipping uses canonical task ownership rather than a raw checkbox scan."""
 
     def test_tasks_md_has_unchecked_function_exists(self):
         src = ENFORCE_STOP.read_text()
@@ -436,51 +433,57 @@ class TestEnforceStopTasksMdUnchecked:
             "2026-06-30 incident fix (TASKS.md unchecked work) is absent"
         )
 
-    def test_tasks_md_has_unchecked_uses_exists_sync(self):
-        """Must guard the read with fs.existsSync (fail-open on absent file)."""
+    def test_tasks_md_has_unchecked_uses_canonical_scope_parser(self):
+        """The shipping path must delegate to the shared milestone parser."""
         src = ENFORCE_STOP.read_text()
         m = re.search(r"function tasksMdHasUnchecked\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
         assert m, "could not extract tasksMdHasUnchecked body"
         body = m.group(1)
-        assert "existsSync" in body, (
-            "tasksMdHasUnchecked must guard with fs.existsSync so absent "
-            "TASKS.md does not throw"
+        assert "tasksMdPendingStats" in body, (
+            "tasksMdHasUnchecked must use the canonical milestone-aware parser; "
+            "a raw scan incorrectly makes future backlog release-blocking"
         )
 
-    def test_tasks_md_has_unchecked_uses_default_path(self):
-        """Default path must be <cwd>/TASKS.md."""
+    def test_tasks_md_has_unchecked_uses_project_root(self):
+        """The task ledger path must come from the canonical project root."""
         src = ENFORCE_STOP.read_text()
         m = re.search(r"function tasksMdHasUnchecked\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
         assert m, "could not extract tasksMdHasUnchecked body"
         body = m.group(1)
-        assert "TASKS.md" in body, (
-            "tasksMdHasUnchecked must use TASKS.md as the default path"
+        assert 'path.join(getProjectRoot(), "TASKS.md")' in body, (
+            "tasksMdHasUnchecked must read TASKS.md from getProjectRoot()"
         )
 
-    def test_tasks_md_has_unchecked_detects_dash_checkbox(self):
-        """Must detect `- [ ]` dash-marked unchecked boxes."""
+    def test_tasks_md_has_unchecked_has_no_duplicate_raw_scan(self):
+        """A local checkbox regex would bypass milestone ownership again."""
         src = ENFORCE_STOP.read_text()
         m = re.search(r"function tasksMdHasUnchecked\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
         assert m, "could not extract tasksMdHasUnchecked body"
         body = m.group(1)
-        # The body contains regex literals like /-\s+\[\s*\]/ — verify the
-        # box-matching tokens appear. Use the same flexible assertion as
-        # enforce-floor's openWorkExists scan (substring triple: \[, \s, \]).
-        assert "\\[" in body and "\\s" in body and "\\]" in body, (
-            "tasksMdHasUnchecked must contain box-matching tokens for "
-            "unchecked markdown checkboxes ([ ])"
+        assert "readFileSync" not in body
+        assert "content.match" not in body
+        assert "content.test" not in body
+
+    def test_legacy_unscoped_count_checker_is_removed(self):
+        """No second repository-wide counter may disagree with task ownership."""
+        src = ENFORCE_STOP.read_text()
+        assert "function countTasksMdUnchecked" not in src, (
+            "countTasksMdUnchecked duplicates the canonical milestone parser"
         )
 
-    def test_tasks_md_has_unchecked_fails_open(self):
-        """Function must return false on any error (fail-open)."""
+    def test_canonical_release_targets_delegate_terminal_task_exception(self):
+        """Release promotion must reach the readiness check that owns its task."""
         src = ENFORCE_STOP.read_text()
-        m = re.search(r"function tasksMdHasUnchecked\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
-        assert m, "could not extract tasksMdHasUnchecked body"
-        body = m.group(1)
-        assert "catch" in body, (
-            "tasksMdHasUnchecked must wrap in try/catch and return false on "
-            "error (fail-open)"
+        assert re.search(
+            r"CANONICAL_RELEASE_PREFLIGHT_TARGET_RE\s*=\s*/\^make\\s\+"
+            r"\(release-cut\|release-promote\)",
+            src,
         )
+        assert re.search(
+            r"const taskMd\s*=\s*CANONICAL_RELEASE_PREFLIGHT_TARGET_RE\.test"
+            r"\(command\)\s*\?\s*false\s*:\s*tasksMdHasUnchecked\(\)",
+            src,
+        ), "release targets must delegate TASKS policy to release-readiness"
 
     def test_tasks_md_has_unchecked_wired_into_has_pending_work(self):
         """TASKS.md state participates in the unified pending-work state."""
@@ -660,7 +663,7 @@ class TestEnforceStopCiPendingOrRed:
             "the CI verdict query must be wired into the pre-generation gate"
         )
         assert "ciVerdictPendingOrRed" in src
-        assert re.search(r"projectWorkOpen\s*=[\s\S]{0,400}ciVerdictPendingOrRed", src)
+        assert re.search(r"const signals\s*:[^=]+=\s*\{[\s\S]{0,400}ciVerdictPendingOrRed", src)
 
     def test_session_idle_refreshes_pending_work_state(self):
         """session.idle refreshes pending-work state for the next turn."""
@@ -673,52 +676,23 @@ class TestEnforceStopCiPendingOrRed:
 # 4. enforce-floor.ts — floor/target/ceiling constants
 # --------------------------------------------------------------------------- #
 class TestEnforceFloorConstants:
-    """The three band constants must be 5/6/8 (cost-efficiency directive 2026-07-11)."""
+    """The floor is opt-in while target and ceiling retain the hard cap."""
 
-    def test_floor_constant_is_5(self):
+    def test_floor_constant_uses_opt_in_minimum(self):
         src = ENFORCE_FLOOR.read_text()
-        # FLOOR now uses _tunable helper with default "10" (raised from 5 per
-        # cost-efficiency directive relaxation 2026-07-13).
-        m = re.search(
-            r"const\s+FLOOR\s*=\s*_tunable\s*\([^)]*CLAUDE_AGENT_FLOOR[^)]*[\"'](\d+)[\"']\s*\)",
-            src,
-        )
-        assert m, (
-            "FLOOR constant declaration not found — expected "
-            "_tunable(\"/tmp/gludd-floor-override\", \"CLAUDE_AGENT_FLOOR\", \"10\")"
-        )
-        assert m.group(1) == "10", (
-            f"FLOOR default is {m.group(1)}, expected 10"
-        )
+        assert "const FLOOR = Math.min(" in src
+        assert '"CLAUDE_AGENT_FLOOR", String(MIN_DISPATCHES)' in src
 
     def test_target_constant_is_6(self):
         src = ENFORCE_FLOOR.read_text()
-        # TARGET uses Math.min(parseInt(process.env.CLAUDE_AGENT_TARGET || "10"), CEILING)
-        m = re.search(
-            r"const\s+TARGET\s*=\s*Math\.min\s*\(\s*parseInt\s*\(\s*process\.env\.CLAUDE_AGENT_TARGET\s*\|\|\s*[\"'](\d+)[\"']",
-            src,
-        )
-        assert m, (
-            "TARGET constant declaration not found — expected "
-            "Math.min(parseInt(process.env.CLAUDE_AGENT_TARGET || \"10\", 10), CEILING)"
-        )
-        assert m.group(1) == "10", (
-            f"TARGET default is {m.group(1)}, expected 10"
-        )
+        assert "const TARGET = Math.min(" in src
+        assert "CLAUDE_AGENT_TARGET || String(HARD_MAX_DISPATCHES)" in src
+        assert "clampDispatchCount" in src
 
     def test_ceiling_constant_is_8(self):
         src = ENFORCE_FLOOR.read_text()
-        m = re.search(
-            r"const\s+CEILING\s*=\s*_tunable\s*\([^)]*CLAUDE_AGENT_CEILING[^)]*[\"'](\d+)[\"']\s*\)",
-            src,
-        )
-        assert m, (
-            "CEILING constant declaration not found — expected "
-            "_tunable(\"/tmp/gludd-ceiling-override\", \"CLAUDE_AGENT_CEILING\", \"10\")"
-        )
-        assert m.group(1) == "10", (
-            f"CEILING default is {m.group(1)}, expected 10"
-        )
+        assert "const CEILING = clampDispatchCount(" in src
+        assert '"CLAUDE_AGENT_CEILING", String(HARD_MAX_DISPATCHES)' in src
 
     def test_all_three_constants_present(self):
         """FLOOR, TARGET, and CEILING must all be declared (bands intact)."""
@@ -1128,10 +1102,10 @@ class TestEnforceDelegateDisengageEscape:
         )
 
     def test_disengage_max_duration_clamped(self):
-        """shared.ts enforces maxMs (default 3_600_000 = 1h) via Math.min."""
+        """shared.ts limits disengagement to a short, bounded five minutes."""
         shared_src = (PLUGIN_DIR / "../lib/shared.ts").read_text()
-        assert "3_600_000" in shared_src, (
-            "shared.ts must have the 1-hour maxMs default (3_600_000)"
+        assert "300_000" in shared_src, (
+            "shared.ts must have the five-minute maxMs default (300_000)"
         )
 
     def test_floor_disengage_early_return_exists(self):
@@ -1457,11 +1431,10 @@ class TestEnforceFloorOpenWorkScan:
         )
         # Must match an unchecked markdown task box (`[ ]` with optional inner
         # whitespace) preceded by a list marker.
-        assert re.search(r"\\\[\s*\\\]|\\\[\s*\*\\\]|\\\\\[\s*\\\\\]", body) or \
-               ("\\[" in body and "\\s" in body and "\\]" in body) or \
-               re.search(r"\[\s*\\s\*\]", body), (
-            "openWorkExists must count unchecked markdown task boxes "
-            "(regex matching `^[\\s*][-*]\\s+\\[\\s*\\]`)"
+        assert "hasTasksMdPendingWork(tasksMd)" in body
+        shared_src = (PLUGIN_DIR / "../lib/shared.ts").read_text()
+        assert "[-*]" in shared_src and r"\[\s*\]" in shared_src, (
+            "the shared TASKS.md scanner must match unchecked boxes for both list markers"
         )
 
     def test_open_work_exists_detects_unchecked_tasks_md_asterisk(self):

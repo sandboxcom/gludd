@@ -24,3 +24,8 @@ audit_framework__spec_path: ""
 audit_framework__audit_results: ""
 audit_framework__target_type: ""
 audit_framework__output_format: "json"
+
+# Explicit content-addressed interpreter for optional DOCX/HTML parsers.
+audit_framework__managed_python_interpreter: ""
+audit_framework__managed_python_lock_sha256: ""
+audit_framework__previous_python_interpreter: ""

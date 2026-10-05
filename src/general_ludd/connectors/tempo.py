@@ -58,9 +58,7 @@ class _TempoResponse:
 class HttpTransport(Protocol):
     """Injectable HTTP transport. The default uses httpx (no redirects)."""
 
-    def get(
-        self, url: str, *, headers: dict[str, str], timeout: float
-    ) -> _TempoResponse: ...
+    def get(self, url: str, *, headers: dict[str, str], timeout: float) -> _TempoResponse: ...
 
 
 class _HttpxTransport:
@@ -90,32 +88,31 @@ class TempoSource:
     KIND = "traces"
 
     def __init__(self, config: dict[str, object], transport: HttpTransport | None = None) -> None:
+        """Build the source from connector config and select the transport."""
         self.name: str = str(config.get("name", "tempo"))
         self.allow_private: bool = bool(config.get("allow_private", False))
         self.base_url: str = _guard_base_url(
             str(config.get("base_url", "https://tempo.example.com")), allow_private=self.allow_private
         )
         self.timeout: float = float(cast("float | int | str", config.get("timeout", 10.0)))
-        self.default_tags: str | None = (
-            str(config["tags"]) if config.get("tags") is not None else None
-        )
+        self.default_tags: str | None = str(config["tags"]) if config.get("tags") is not None else None
         self.default_start: int | None = (
             int(cast("int | str", config["start"])) if config.get("start") is not None else None
         )
-        self.default_end: int | None = (
-            int(cast("int | str", config["end"])) if config.get("end") is not None else None
-        )
+        self.default_end: int | None = int(cast("int | str", config["end"])) if config.get("end") is not None else None
 
         token_env = config.get("token_env")
         self._token: str | None = os.environ.get(str(token_env)) if token_env else None
 
         transport_impl: HttpTransport
         if callable(transport) and not hasattr(transport, "get"):
+
             def _legacy_get(url: str, *, headers: dict[str, str], timeout: float) -> _TempoResponse:
-                result = transport(url, headers)
+                result = transport("GET", url, headers=headers or {})
                 status, payload = result if isinstance(result, tuple) and len(result) == 2 else (0, {})
                 body = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
                 return _TempoResponse(int(status), body)
+
             transport_impl = cast(HttpTransport, type("LegacyTransport", (), {"get": staticmethod(_legacy_get)})())
         else:
             transport_impl = transport if transport is not None else _HttpxTransport()
@@ -128,9 +125,7 @@ class TempoSource:
         return headers
 
     def _get(self, path: str, params: dict[str, object]) -> _TempoResponse:
-        query = urllib.parse.urlencode(
-            {k: v for k, v in params.items() if v is not None}, doseq=True
-        )
+        query = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None}, doseq=True)
         url = f"{self.base_url}{path}"
         if query:
             url = f"{url}?{query}"
@@ -183,11 +178,7 @@ class TempoSource:
                     records.extend(self._fetch_and_normalize_spans(summary))
             return records
 
-        return [
-            self._normalize_summary(summary)
-            for summary in summaries
-            if isinstance(summary, dict)
-        ]
+        return [self._normalize_summary(summary) for summary in summaries if isinstance(summary, dict)]
 
     def _normalize_summary(self, summary: dict[str, object]) -> dict[str, object]:
         trace_id = str(summary.get("traceID", ""))
@@ -226,9 +217,7 @@ class TempoSource:
                 spans: list[dict[str, object]] = spans_raw if isinstance(spans_raw, list) else []
                 for span in spans:
                     if isinstance(span, dict):
-                        records.append(
-                            self._normalize_span(span, service, trace_id)
-                        )
+                        records.append(self._normalize_span(span, service, trace_id))
         return records
 
     @staticmethod
@@ -256,15 +245,11 @@ class TempoSource:
                     return str(value.get("stringValue", ""))
         return ""
 
-    def _normalize_span(
-        self, span: dict[str, object], service: str, trace_id: str
-    ) -> dict[str, object]:
+    def _normalize_span(self, span: dict[str, object], service: str, trace_id: str) -> dict[str, object]:
         name = str(span.get("name", ""))
         span_id = str(span.get("spanId", span.get("spanID", "")))
         status_obj = span.get("status") or {}
-        status_code = (
-            str(status_obj.get("code", "")) if isinstance(status_obj, dict) else ""
-        )
+        status_code = str(status_obj.get("code", "")) if isinstance(status_obj, dict) else ""
         is_error = status_code in {"2", "STATUS_CODE_ERROR", "ERROR"}
         status = "error" if is_error else (status_code or "ok")
         start = span.get("startTimeUnixNano")

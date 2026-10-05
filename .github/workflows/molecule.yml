@@ -19,10 +19,16 @@ permissions:
 
 jobs:
   molecule:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    runs-on: ubuntu-24.04
+    # local_game_gen (shard 1) downloads a real GGUF, serves llama.cpp,
+    # regenerates through the retry loop, and verifies via the acceptance
+    # engine — the previous 30-minute cap expired mid-scenario (round 11).
+    timeout-minutes: 45
     strategy:
       fail-fast: false
+      # Build and Release starts at the same development SHA. Three legs keep
+      # sharding parallel while bounding the shared hosted-runner startup burst.
+      max-parallel: 3
       matrix:
         shard: [1, 2, 3, 4, 5, 6]
     env:
@@ -31,15 +37,17 @@ jobs:
       ANSIBLE_COLLECTIONS_PATH: ${{ github.workspace }}/collections
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0 (node24)
         with:
-          python-version: "3.11"
+          # Keep PyInstaller's analyzed graph identical to the digest-pinned
+          # Linux release builder used by binary_smoke_linux.
+          python-version: "3.12.14"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
         with:
           enable-cache: true
 
@@ -49,3 +57,14 @@ jobs:
       - name: Run molecule test shard ${{ matrix.shard }}/${{ env.SHARD_COUNT }}
         run: |
           make molecule-test-shard SHARD=${{ matrix.shard }}/${{ env.SHARD_COUNT }}
+      - name: Verify Linux PyInstaller warning graph artifact
+        if: always() && matrix.shard == 1
+        run: test -s dist/linux/warn-gludd.txt
+      - name: Upload Linux PyInstaller warning graph
+        if: always() && matrix.shard == 1 && hashFiles('dist/linux/warn-gludd.txt') != ''
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+        with:
+          name: molecule-linux-pyinstaller-warning-shard-1
+          path: dist/linux/warn-gludd.txt
+          if-no-files-found: error
+          retention-days: 7

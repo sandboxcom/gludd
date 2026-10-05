@@ -13,7 +13,7 @@
     - name: "A1. Import pipeline and verify all exports are accessible"
       ansible.builtin.command:
         argv:
-          - python3
+          - "{{ ansible_playbook_python }}"
           - -c
           - |
             import sys; sys.path.insert(0, '{{ project_root }}')
@@ -46,7 +46,7 @@
     - name: "B1. Build DesignSpec from synthetic planner response"
       ansible.builtin.command:
         argv:
-          - python3
+          - "{{ ansible_playbook_python }}"
           - -c
           - |
             import sys; sys.path.insert(0, '{{ project_root }}')
@@ -99,7 +99,7 @@
     - name: "C1. Build ReviewResult from synthetic reviewer response"
       ansible.builtin.command:
         argv:
-          - python3
+          - "{{ ansible_playbook_python }}"
           - -c
           - |
             import sys; sys.path.insert(0, '{{ project_root }}')
@@ -134,7 +134,7 @@
     - name: "C2. Assert ReviewResult with issues generates feedback"
       ansible.builtin.command:
         argv:
-          - python3
+          - "{{ ansible_playbook_python }}"
           - -c
           - |
             import sys; sys.path.insert(0, '{{ project_root }}')
@@ -165,7 +165,12 @@
     # ── Section D: AST validation of generated code ────────────────────────
 
     - name: "D1. Verify synthetic coder output is valid Python"
-      ansible.builtin.command: "python3 -c \"import ast; ast.parse(open('{{ test_artifact_dir }}/coder_output.py').read()); print('AST: OK')\""
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - -c
+          - >-
+            import ast; ast.parse(open('{{ test_artifact_dir }}/coder_output.py').read()); print('AST: OK')
       register: _ast_check
       changed_when: false
 
@@ -176,10 +181,15 @@
         fail_msg: "Coder output must be syntactically valid Python"
 
     - name: "D3. Verify broken code fails AST parse"
-      ansible.builtin.command: "python3 -c \"import ast; ast.parse(open('{{ test_artifact_dir }}/broken_code.py').read()); print('SHOULD_NOT_REACH')\""
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - -c
+          - >-
+            import ast; ast.parse(open('{{ test_artifact_dir }}/broken_code.py').read()); print('SHOULD_NOT_REACH')
       register: _bad_ast
-      ignore_errors: true
       changed_when: false
+      failed_when: false
 
     - name: "D4. Assert invalid code is rejected"
       ansible.builtin.assert:
@@ -193,7 +203,7 @@
     - name: "E1. Verify planner regex matches synthetic response"
       ansible.builtin.command:
         argv:
-          - python3
+          - "{{ ansible_playbook_python }}"
           - -c
           - |
             import sys, re; sys.path.insert(0, '{{ project_root }}')
@@ -221,7 +231,7 @@
     - name: "E3. Verify reviewer regex matches synthetic response"
       ansible.builtin.command:
         argv:
-          - python3
+          - "{{ ansible_playbook_python }}"
           - -c
           - |
             import sys, re; sys.path.insert(0, '{{ project_root }}')
@@ -252,7 +262,7 @@
     - name: "F1. Run full planner→coder→reviewer data flow with synthetic data"
       ansible.builtin.command:
         argv:
-          - python3
+          - "{{ ansible_playbook_python }}"
           - -c
           - |
             import sys; sys.path.insert(0, '{{ project_root }}')
@@ -317,7 +327,7 @@
     - name: "G1. Verify RuntimeError raised on max rounds with failing review"
       ansible.builtin.command:
         argv:
-          - python3
+          - "{{ ansible_playbook_python }}"
           - -c
           - |
             import sys; sys.path.insert(0, '{{ project_root }}')

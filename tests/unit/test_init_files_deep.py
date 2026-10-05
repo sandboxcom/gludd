@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import importlib
 import os
+import re
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -13,6 +14,27 @@ import pytest
 
 if TYPE_CHECKING:
     from collections.abc import Generator
+
+
+def _ruff_all_sort_key(name: str) -> tuple[int, tuple[tuple[int, object], ...]]:
+    """Reproduce ruff RUF022's isort-style ordering: SCREAMING_SNAKE_CASE
+    first, then CamelCase, then everything else; within each group a
+    natural (digit-run-numeric, case-sensitive) sort."""
+    first = name.lstrip("_")[0] if name else ""
+    if first.isupper() and name.upper() == name:
+        group = 0
+    elif first.isupper():
+        group = 1
+    else:
+        group = 2
+    natural: list[tuple[int, object]] = []
+    for part in re.split(r"(\d+)", name):
+        if part.isdigit():
+            natural.append((0, int(part)))
+        else:
+            natural.append((1, tuple(part)))
+    return (group, tuple(natural))
+
 
 SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "general_ludd"
 
@@ -69,7 +91,31 @@ UNSORTED_ALLOWLIST: frozenset[str] = frozenset()
 # Init files with names in __all__ that aren't top-level import names because
 # they're imported via explicit `from ... import ... as name` that matches
 # differently, or imported in nested scopes. Reviewed per-file.
-ORPHAN_ALLOWLIST: dict[str, frozenset[str]] = {}
+ORPHAN_ALLOWLIST: dict[str, frozenset[str]] = {
+    # PEP 562 lazy __getattr__: the model lives in db.models.py and is
+    # imported inside __getattr__ to avoid a circular import at package init.
+    "remediation/__init__.py": frozenset({"RemediationActionModel"}),
+    # PEP 562 lazy __getattr__: weights and small-model-policy names are
+    # deferred past package init to break an import cycle with
+    # schemas.benchmark (see the __getattr__ comment in the module).
+    "routing_roles/__init__.py": frozenset(
+        {
+            "CapabilityEvidence",
+            "CompletionAction",
+            "CompletionEvidence",
+            "DispatchAction",
+            "ModelIdentity",
+            "PolicyConfig",
+            "RoleWeights",
+            "SmallModelTaskPolicy",
+            "SmallModelTaskSpec",
+            "TaskContract",
+            "TaskImpact",
+            "task_weights",
+            "weights_for",
+        }
+    ),
+}
 
 
 def _normalize_rel(path: Path) -> str:
@@ -98,9 +144,11 @@ META_NAMES: frozenset[str] = frozenset({"annotations", "TYPE_CHECKING"})
 
 
 def _parse_names_available(source: str) -> set[str]:
-    """Return all public names available at module level: imported names AND
+    """Return all names available at module level: imported names AND
     names defined in the init file itself (classes, functions, top-level
-    assignments). Excludes future/typing meta-imports."""
+    assignments, annotated assignments). Excludes future/typing meta-imports.
+    Private (underscore-prefixed) names are included because they may
+    legitimately appear in __all__."""
     tree = ast.parse(source)
     names: set[str] = set()
     for node in ast.iter_child_nodes(tree):
@@ -117,21 +165,22 @@ def _parse_names_available(source: str) -> set[str]:
                 if name in META_NAMES:
                     continue
                 names.add(name)
-        elif isinstance(node, ast.ClassDef):
+        elif isinstance(node, (ast.ClassDef, ast.FunctionDef)):
             names.add(node.name)
-        elif isinstance(node, ast.FunctionDef):
-            if not node.name.startswith("_"):
-                names.add(node.name)
         elif isinstance(node, ast.Assign):
             for target in node.targets:
-                if isinstance(target, ast.Name) and target.id != "__all__" and not target.id.startswith("_"):
+                if isinstance(target, ast.Name) and target.id != "__all__":
                     names.add(target.id)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id != "__all__":
+            names.add(node.target.id)
     return names
 
 
 def _parse_imports_only(source: str) -> set[str]:
     """Return only imported names from general_ludd project packages
-    (not stdlib/typing/third-party imports)."""
+    (not stdlib/typing/third-party imports). Private (underscore-prefixed)
+    imports are excluded: they are implementation details, not part of the
+    public re-export surface."""
     tree = ast.parse(source)
     names: set[str] = set()
     for node in ast.iter_child_nodes(tree):
@@ -146,7 +195,7 @@ def _parse_imports_only(source: str) -> set[str]:
                 if alias.name == "*":
                     continue
                 name = alias.asname or alias.name
-                if name in META_NAMES:
+                if name in META_NAMES or name.startswith("_"):
                     continue
                 names.add(name)
     return names
@@ -365,7 +414,9 @@ class TestAllIsListOrTuple:
 
 
 class TestAllSorted:
-    """__all__ entries should be sorted alphabetically for readability."""
+    """__all__ entries should be sorted isort-style (SCREAMING_SNAKE_CASE,
+    then CamelCase, then the rest; natural sort within each group) for
+    readability — the same order ruff's RUF022 enforces."""
 
     @pytest.fixture(scope="class")
     def unsorted(self) -> dict[str, str]:
@@ -376,7 +427,7 @@ class TestAllSorted:
             all_list, _ = _parse_all(path.read_text())
             if all_list is None or len(all_list) < 2:
                 continue
-            sorted_list = sorted(all_list, key=str.lower)
+            sorted_list = sorted(all_list, key=_ruff_all_sort_key)
             if all_list != sorted_list:
                 unsorted[rel] = f"unsorted ({len(all_list)} entries)"
         return unsorted

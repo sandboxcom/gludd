@@ -22,7 +22,7 @@ configuration reference is [docs/CONFIG_REFERENCE.md](../CONFIG_REFERENCE.md).
 ## Per-Project Override
 
 Projects can override routing and profile selection via:
-```
+```text
 <project-repo>/.general-ludd/agent_config.yml
 ```
 

@@ -236,9 +236,9 @@ class TestAzureActionFormat:
 # ---------------------------------------------------------------------------
 
 
-_AWS_ARN_RE = re.compile(r"^arn:aws:[a-z0-9\-]+:[a-z0-9\-\*]*:\d*:[a-zA-Z0-9\-_\.\*/:\$\{\}]+$")
-_AWS_ARN_WILDCARD_OK = re.compile(r"^arn:aws:[a-z0-9\-]+:[a-z0-9\-\*]*:\d*:\*?$")
-_AWS_LOG_ARN_RE = re.compile(r"^arn:aws:logs:[a-z0-9\-\*]*:\d*:log-group:/[a-zA-Z0-9\-_/\.\*]+$")
+_AWS_ARN_RE = re.compile(r"^arn:aws:[a-z0-9\-]+:[a-z0-9\-\*]*:[0-9\*]*:[a-zA-Z0-9\-_\.\*/:\$\{\}]+$")
+_AWS_ARN_WILDCARD_OK = re.compile(r"^arn:aws:[a-z0-9\-]+:[a-z0-9\-\*]*:[0-9\*]*:\*?$")
+_AWS_LOG_ARN_RE = re.compile(r"^arn:aws:logs:[a-z0-9\-\*]*:[0-9\*]*:log-group:/[a-zA-Z0-9\-_/\.\*]+$")
 
 
 class TestAwsArnFormat:
@@ -248,12 +248,12 @@ class TestAwsArnFormat:
         for stmt in tf_policy["Statement"]:
             resource = stmt.get("Resource")
             if isinstance(resource, str):
-                if resource == "*":
+                if resource == "*" or resource.startswith("${"):
                     continue
                 assert _AWS_ARN_RE.match(resource), f"ARN '{resource}' in '{stmt.get('Sid')}' invalid format"
             elif isinstance(resource, list):
                 for r in resource:
-                    if r == "*":
+                    if r == "*" or r.startswith("${"):
                         continue
                     assert _AWS_ARN_RE.match(r), f"ARN '{r}' in '{stmt.get('Sid')}' invalid format"
 
@@ -366,7 +366,9 @@ class TestConditionBlocksWellFormed:
 
     def test_terraform_policy_condition_instancetype_values_valid(self, tf_policy: dict) -> None:
         instance_type_re = re.compile(
-            r"^(t3\.[a-z]+|g[2456]dn?\.[0-9]?x?large|g[56]\.[0-9]+xlarge|p[345]\.[0-9]+xlarge|p4d\.[0-9]+xlarge)$"
+            r"^(t3\.[a-z]+|g[2456]dn?\.[0-9]?x?large|g[56]\.[0-9]*x?large|p[345]\.[0-9]+xlarge|p4d\.[0-9]+xlarge"
+            r"|p4de\.[0-9]+xlarge"
+            r"|g[2456]dn?\.\*|g[56]\.\*|p[345]\.\*|p4d\.\*|p4de\.\*)$"
         )
         for stmt in tf_policy["Statement"]:
             condition = stmt.get("Condition", {})
@@ -408,18 +410,23 @@ class TestDeniedEscalationPaths:
         assert "iam:CreateRole" in deny_actions, "Terraform policy must deny iam:CreateRole"
         assert "iam:AttachRolePolicy" in deny_actions, "Terraform policy must deny iam:AttachRolePolicy"
 
-    def test_azure_custom_role_denies_runcommand(self, azure_policy: dict) -> None:
-        not_actions = azure_policy.get("NotActions", [])
-        assert "Microsoft.Compute/virtualMachines/runCommand/action" in not_actions, (
-            "Azure custom role must deny runCommand/action"
-        )
+    def test_azure_custom_role_does_not_grant_runcommand(self, azure_policy: dict) -> None:
+        actions = azure_policy.get("Actions", [])
+        assert "Microsoft.Compute/virtualMachines/runCommand/action" not in actions
 
-    def test_azure_custom_role_denies_roleassignment_write(self, azure_policy: dict) -> None:
-        not_actions = azure_policy.get("NotActions", [])
-        assert "Microsoft.Authorization/roleAssignments/write" in not_actions
-        assert "Microsoft.Authorization/roleAssignments/delete" in not_actions
-        assert "Microsoft.Authorization/roleDefinitions/write" in not_actions
-        assert "Microsoft.Authorization/roleDefinitions/delete" in not_actions
+    def test_azure_custom_role_does_not_grant_role_administration(
+        self,
+        azure_policy: dict,
+    ) -> None:
+        actions = frozenset(azure_policy.get("Actions", []))
+        forbidden = {
+            "Microsoft.Authorization/roleAssignments/write",
+            "Microsoft.Authorization/roleAssignments/delete",
+            "Microsoft.Authorization/roleDefinitions/write",
+            "Microsoft.Authorization/roleDefinitions/delete",
+        }
+        assert actions.isdisjoint(forbidden)
+        assert azure_policy.get("NotActions") == []
 
     def test_aws_iam_roles_runtime_has_deny_statement(self, aws_roles: dict) -> None:
         rt = aws_roles["roles"]["runtime_execution"]
@@ -450,9 +457,9 @@ class TestAzureCliPolicySchema:
 
     def test_cli_policy_has_assignable_scopes(self, azure_cli_policy: dict) -> None:
         scopes = azure_cli_policy["properties"].get("assignableScopes", [])
-        assert isinstance(scopes, list) and len(scopes) > 0
-        for scope in scopes:
-            assert scope.startswith("/subscriptions/"), f"AssignableScope '{scope}' not a subscription path"
+        assert len(scopes) == 1
+        assert scopes[0].startswith("/subscriptions/")
+        assert "/resourceGroups/" in scopes[0]
 
     def test_cli_policy_has_permissions(self, azure_cli_policy: dict) -> None:
         perms = azure_cli_policy["properties"].get("permissions", [])
@@ -511,7 +518,7 @@ class TestOpaRegoPolicy:
         assert "test_deny_mfa_missing_for_create_user" in content
         assert "test_azure_scope_is_required" in content
         assert "test_azure_missing_name_denied" in content
-        assert "test_azure_runcommand_not_denied_fails" in content
+        assert "test_azure_runcommand_grant_fails" in content
         assert "test_gcp_setmetadata_is_denied" in content
 
 

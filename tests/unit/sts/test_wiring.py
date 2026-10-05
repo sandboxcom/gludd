@@ -79,7 +79,7 @@ class TestSubagentTokenInjectorEnvInjection:
 
     @pytest.mark.asyncio
     async def test_env_vars_never_contain_psk(self) -> None:
-        """env_vars() must NEVER inject GLUDD_PSK into the subagent env."""
+        """env_vars() must NEVER inject GLUDD_AUTH_PSK into the subagent env."""
         mock_minter = AsyncMock()
         mock_minter.mint.return_value = MagicMock(role_id="role-4", secret_id="sec-4")
         mock_store = MagicMock()
@@ -88,7 +88,7 @@ class TestSubagentTokenInjectorEnvInjection:
 
         env = await injector.env_vars(agent_id="agent-4", parent_agent_id="parent-1")
 
-        assert "GLUDD_PSK" not in env, (
+        assert "GLUDD_AUTH_PSK" not in env, (
             "P4 gap: SubagentTokenInjector must NOT leak the admin PSK. "
             "Per NEXT_RELEASE_BETA2_SPEC Wave 1, the PSK flat-authz cluster "
             "requires scoped STS tokens instead of PSK pass-through."

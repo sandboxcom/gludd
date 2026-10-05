@@ -26,6 +26,7 @@ def test_call_model_raises_model_paused_error_when_profile_paused(tmp_path):
         model_profile_id="paused-model",
         provider="openai",
         model_name="gpt-4",
+        api_metered=False,
         enabled=True,
     )
     pc.pause("model", "paused-model", reason="testing")
@@ -56,6 +57,7 @@ def test_call_model_proceeds_after_resume(tmp_path):
         model_profile_id="resumed-model",
         provider="openai",
         model_name="gpt-4",
+        api_metered=False,
         enabled=True,
     )
     pc.pause("model", "resumed-model", reason="testing")
@@ -86,6 +88,7 @@ def test_try_call_model_propagates_model_paused_error(tmp_path):
         model_profile_id="try-call-paused",
         provider="openai",
         model_name="gpt-4",
+        api_metered=False,
         enabled=True,
     )
     pc.pause("model", "try-call-paused", reason="testing")
@@ -151,4 +154,8 @@ async def test_event_loop_claims_normally_when_project_not_paused(tmp_path):
     claimed = loop._tick_state.get("claimed_todos", [])
     assert claimed == fake_todos
     assert len(claimed) == 2
-    mock_todo_repo.claim_runnable.assert_called_once_with(limit=10, project_id="test-project")
+    mock_todo_repo.claim_runnable.assert_called_once_with(
+        limit=10,
+        max_active=10,
+        project_id="test-project",
+    )

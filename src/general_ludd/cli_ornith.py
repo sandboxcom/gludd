@@ -2,7 +2,7 @@
 
 Operator-facing commands for the Ornith self-improving coding-agent
 integration. Mirrors the daemon's ``/admin/ornith/*`` endpoints. All
-HTTP-backed calls send the ``GLUDD_PSK`` env var as a Bearer token
+HTTP-backed calls send the ``GLUDD_AUTH_PSK`` env var as a Bearer token
 (admin PSK required on /admin paths).
 
 Subcommands (all support ``--json`` for scripting):
@@ -40,7 +40,7 @@ _ORNITH_CONFIG_DIR_DEFAULT = "~/.config/gludd"
 
 
 def _psk_headers() -> dict[str, str]:
-    psk = os.environ.get("GLUDD_PSK", "")
+    psk = os.environ.get("GLUDD_AUTH_PSK", "").strip()
     headers: dict[str, str] = {
         "Content-Type": "application/json",
         "Accept": "application/json",
@@ -178,10 +178,7 @@ def _cmd_set_outcome(args: argparse.Namespace) -> None:
         _print_json(res)
         return
     if isinstance(res, dict):
-        print(
-            f"Set outcome for {res.get('id')} -> {res.get('outcome_status')} "
-            f"@ {res.get('outcome_set_at')}"
-        )
+        print(f"Set outcome for {res.get('id')} -> {res.get('outcome_status')} @ {res.get('outcome_set_at')}")
     else:
         print("set-outcome failed")
 
@@ -284,9 +281,7 @@ def _cmd_improve(args: argparse.Namespace) -> None:
 
 
 def _resolve_config_path(args: argparse.Namespace) -> Path:
-    cfg_dir = getattr(args, "config_dir", None) or os.path.expanduser(
-        _ORNITH_CONFIG_DIR_DEFAULT
-    )
+    cfg_dir = getattr(args, "config_dir", None) or os.path.expanduser(_ORNITH_CONFIG_DIR_DEFAULT)
     return Path(cfg_dir) / _ORNITH_CONFIG_FILENAME
 
 
@@ -403,9 +398,7 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
 
     # 3. model_sha matches config (if expected sha is known).
     expected_sha = os.environ.get("ORNITH_MODEL_SHA") or args.expected_model_sha
-    actual_sha = (
-        status_payload.get("model_sha") if isinstance(status_payload, dict) else None
-    )
+    actual_sha = status_payload.get("model_sha") if isinstance(status_payload, dict) else None
     if expected_sha and actual_sha:
         sha_ok = expected_sha == actual_sha
         findings.append(
@@ -424,10 +417,7 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
             {
                 "check": "model_sha_matches",
                 "ok": True,
-                "detail": (
-                    f"daemon reports model_sha={actual_sha} "
-                    "(no expected sha configured)"
-                ),
+                "detail": (f"daemon reports model_sha={actual_sha} (no expected sha configured)"),
             }
         )
     else:
@@ -446,28 +436,20 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
             "check": "permission_spec_includes_agent_ornith",
             "ok": perm_ok,
             "detail": (
-                f"found agent:ornith entry in {perms_dir}"
-                if perm_ok
-                else f"no agent:ornith entry under {perms_dir}"
+                f"found agent:ornith entry in {perms_dir}" if perm_ok else f"no agent:ornith entry under {perms_dir}"
             ),
         }
     )
 
     # 5. Sandbox backend available (read from status if present).
-    sandbox_backend = (
-        status_payload.get("sandbox_backend")
-        if isinstance(status_payload, dict)
-        else None
-    )
+    sandbox_backend = status_payload.get("sandbox_backend") if isinstance(status_payload, dict) else None
     sandbox_ok = bool(sandbox_backend) and sandbox_backend != "none"
     findings.append(
         {
             "check": "sandbox_backend_available",
             "ok": sandbox_ok,
             "detail": (
-                f"sandbox backend: {sandbox_backend}"
-                if sandbox_backend
-                else "no sandbox backend reported by daemon"
+                f"sandbox backend: {sandbox_backend}" if sandbox_backend else "no sandbox backend reported by daemon"
             ),
         }
     )
@@ -483,10 +465,7 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
             print("\nornith doctor: all checks passed")
         else:
             failed = [f["check"] for f in findings if not f["ok"]]
-            print(
-                f"\nornith doctor: {len(failed)} check(s) failed: "
-                f"{', '.join(failed)}"
-            )
+            print(f"\nornith doctor: {len(failed)} check(s) failed: {', '.join(failed)}")
     if not healthy:
         sys.exit(1)
 
@@ -589,6 +568,7 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
 
 
 def add_ornith_subparser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Register the ``ornith`` subcommand tree for the training-data collector."""
     p = sub.add_parser(
         "ornith",
         help="Ornith training-data collector (scaffold/outcome pairs).",
@@ -596,9 +576,7 @@ def add_ornith_subparser(sub: argparse._SubParsersAction[argparse.ArgumentParser
     p.set_defaults(func=None)
     osub = p.add_subparsers(dest="ornith_command")
 
-    status = osub.add_parser(
-        "status", help="Show Ornith MCP server / endpoint status."
-    )
+    status = osub.add_parser("status", help="Show Ornith MCP server / endpoint status.")
     status.add_argument("--daemon-url", default="http://localhost:8000")
     status.add_argument("--json", action="store_true")
     status.set_defaults(func=_cmd_status)
@@ -617,9 +595,7 @@ def add_ornith_subparser(sub: argparse._SubParsersAction[argparse.ArgumentParser
     solve.add_argument("--json", action="store_true")
     solve.set_defaults(func=_cmd_solve)
 
-    improve = osub.add_parser(
-        "improve", help="Submit a (scaffold, outcome) pair to the RL trainer."
-    )
+    improve = osub.add_parser("improve", help="Submit a (scaffold, outcome) pair to the RL trainer.")
     improve.add_argument("--artifact-path", required=True, dest="artifact_path")
     improve.add_argument(
         "--kind",
@@ -651,15 +627,12 @@ def add_ornith_subparser(sub: argparse._SubParsersAction[argparse.ArgumentParser
     stats.add_argument("--json", action="store_true")
     stats.set_defaults(func=_cmd_stats)
 
-    set_out = osub.add_parser(
-        "set-outcome", help="Manually set an outcome (operator override)."
-    )
+    set_out = osub.add_parser("set-outcome", help="Manually set an outcome (operator override).")
     set_out.add_argument("pair_id", help="Pair ID (ORN-...).")
     set_out.add_argument(
         "--status",
         required=True,
-        help="One of: pending, applied, succeeded, rejected_by_review, "
-        "rejected_by_gate, reverted.",
+        help="One of: pending, applied, succeeded, rejected_by_review, rejected_by_gate, reverted.",
     )
     set_out.add_argument("--details", default=None, help="Free-text note.")
     set_out.add_argument("--daemon-url", default="http://localhost:8000")
@@ -686,9 +659,7 @@ def add_ornith_subparser(sub: argparse._SubParsersAction[argparse.ArgumentParser
     train.add_argument("--json", action="store_true")
     train.set_defaults(func=_cmd_train)
 
-    history = osub.add_parser(
-        "history", help="Show past self-improvement training cycles."
-    )
+    history = osub.add_parser("history", help="Show past self-improvement training cycles.")
     history.add_argument("--limit", type=int, default=20)
     history.add_argument("--daemon-url", default="http://localhost:8000")
     history.add_argument("--json", action="store_true")
@@ -724,10 +695,7 @@ def add_ornith_subparser(sub: argparse._SubParsersAction[argparse.ArgumentParser
     doctor.add_argument(
         "--perms-dir",
         default=None,
-        help=(
-            "Permissions directory to scan for agent:ornith "
-            "(default: config/permissions)."
-        ),
+        help=("Permissions directory to scan for agent:ornith (default: config/permissions)."),
     )
     doctor.add_argument("--json", action="store_true")
     doctor.set_defaults(func=_cmd_doctor)

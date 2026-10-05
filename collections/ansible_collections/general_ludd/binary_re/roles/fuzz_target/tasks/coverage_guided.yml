@@ -1,32 +1,26 @@
 ---
-- name: Run coverage-guided fuzzing
-  ansible.builtin.command:
-    cmd: >-
-      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
-      {{ role_path }}/files/fuzz_target.py
-      --mode coverage_guided
-      --fuzzer {{ fuzzer }}
-      --fuzzer-path {{ fuzzer_path }}
-      --target {{ target_binary }}
-      --corpus {{ corpus_dir }}
-      --output {{ output_dir }}
-      --timeout {{ fuzz_timeout_seconds | default(300) }}
-      {% if fuzz_dict | length > 0 %}--dict {{ fuzz_dict }}{% endif %}
-  register: _coverage_result
-  changed_when: false
-  failed_when: _coverage_result.rc not in [0]
+- name: Run coverage-guided fuzzing through packaged runtime
+  general_ludd.binary_re.binary_runtime:
+    operation: coverage_guided
+    params:
+      fuzzer: "{{ fuzzer }}"
+      fuzzer_path: "{{ fuzzer_path }}"
+      target_binary: "{{ target_binary }}"
+      corpus_dir: "{{ corpus_dir }}"
+      output_dir: "{{ output_dir }}"
+      timeout_seconds: "{{ fuzz_timeout_seconds | default(300) }}"
+      fuzz_dict: "{{ fuzz_dict | default(omit, true) }}"
+  register: _coverage_runtime
 
-- name: Read coverage-guided fuzzing artifact
-  ansible.builtin.slurp:
-    src: "{{ output_dir }}/coverage_guided.json"
-  register: _coverage_artifact_raw
+- name: Write coverage-guided artifact atomically
+  ansible.builtin.copy:
+    content: "{{ _coverage_runtime.artifact_content }}"
+    dest: "{{ output_dir }}/{{ _coverage_runtime.artifact_filename }}"
+    mode: "0644"
 
-- name: Parse coverage-guided artifact
+- name: Publish coverage-guided artifact
   ansible.builtin.set_fact:
-    coverage_guided_artifact: >-
-      {{ _coverage_artifact_raw.content | b64decode | from_json
-         if (_coverage_artifact_raw is defined and _coverage_artifact_raw.content is defined)
-         else {} }}
+    coverage_guided_artifact: "{{ _coverage_runtime.result }}"
 
 - name: Report coverage-guided summary
   ansible.builtin.debug:

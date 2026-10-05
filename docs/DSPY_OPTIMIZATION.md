@@ -13,7 +13,7 @@ DSPy optimizes three things: **signatures** (input/output field specs),
 **modules** (parametrized prompt templates), and **optimizers** (metric-driven
 param update logic). We mirror this at a simpler scale:
 
-```
+```text
 Signature  →  PromptSpec (field names + types)
 Module     →  PromptTemplate (parametrized jinja2 template)
 Optimizer  →  PromptOptimizer (scoring + mutation loop)

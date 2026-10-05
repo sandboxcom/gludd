@@ -24,7 +24,7 @@ Existing tests read: `tests/unit/test_run_history_coverage.py`,
 - **Defect class:** template injection (SSTI) → remote code execution.
 - **Why it's reachable with attacker-controlled input:** `render_skill(body, ...)` is called by `execution/engine.py:48` (`_render_skill_body`) from `_build_system_prompt` (`engine.py:62`) with `job.skill_body`. Skill bodies are not authored only locally — `RemoteSkillFetcher.fetch` / `GitHubSkillSource.download_skill` (`skills/fetcher.py:84-93, 97-112`) pull a SKILL.md from a remote GitHub repo / raw URL and `parse_skill_md` (`skills/loader.py:41`) puts the post-frontmatter text verbatim into `Skill.body`. That body then becomes `job.skill_body`. A plain `jinja2.Environment` (not `SandboxedEnvironment`) evaluates arbitrary attribute access.
 - **Failing scenario / trigger input:** install a skill whose body contains a classic Jinja2 SSTI payload, e.g.
-  ```
+  ```json
   {{ cycler.__init__.__globals__.os.popen('id').read() }}
   ```
   When a job using that skill is built, `render_skill` executes `os.popen('id')` in the daemon process. (`{{ "".__class__.__mro__[1].__subclasses__() }}` is the equivalent gadget if `cycler` is unavailable.)

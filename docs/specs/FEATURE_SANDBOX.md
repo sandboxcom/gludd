@@ -91,3 +91,27 @@ The `FEATURE_SANDBOX_STATE_ROOT.md` spec is IMPLEMENTED:
 - **Total sandbox tests**: 35 test files covering all backends + contracts + state + policy + dispatch
 - **lint**: PASS 0
 - **gate-lite**: ALL GREEN (baseline from S69, 4682/4682)
+
+## 8. Auto-jail owner lifecycle
+
+Reviewed 2026-08-20. `SandboxEnforcer` owns every jail it creates when no
+external `jail_dir` is supplied. Explicit `close()` invokes the same idempotent
+finalizer used when the enforcer owner is released; externally supplied jails
+remain unowned and are never removed. Success, path-rejection, fail-open, and
+failed-readiness paths therefore leave no implicit `TemporaryDirectory`
+cleanup for Python or the test harness.
+
+The long-lived [CPython issue 22427, opened September 17, 2014](https://bugs.python.org/issue22427)
+records `TemporaryDirectory` emitting `ResourceWarning` during garbage
+collection and explains that nested finalizer deletion order is unreliable.
+Gludd keeps the mature standard-library resource but registers cleanup on the
+application owner, rather than relying on the nested temporary object's
+warning-producing fallback or suppressing the warning.
+
+This change is ZDD-safe: old and new workers own disjoint, namespaced jail
+directories, and rolling replacement does not change job or wire formats.
+Rollback is code-only; an old worker retains responsibility for its own jail.
+The fix creates no process or client, adds no polling, and preserves the
+existing bounded executor. Regression coverage forces owner collection and
+asserts that the jail is gone, while the full sandbox/security workflow runs
+with warnings treated as errors without test-side cleanup.

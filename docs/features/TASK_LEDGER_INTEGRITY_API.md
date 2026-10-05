@@ -27,6 +27,8 @@ The active-ledger grammar is:
 - active rows require priority, effort, and status metadata;
 - checked active rows require measurable evidence rather than a wave/session
   label; and
+- a checked row with an explicit non-complete status is contradictory and must
+  fail closed; unchecked rows remain open regardless of status metadata; and
 - duplicate identifiers are rejected within the active ledger.
 
 The CLI remains a fixed-path, read-only adapter over this function. It reports
@@ -41,6 +43,13 @@ is actionable without copying the ledger to temporary scripts. Archived content
 is ignored only by explicit heading scope; malformed current content continues
 to fail closed. A joined checklist marker is diagnosed at the source line before
 its trailing fields can be mistaken for metadata of the preceding item.
+
+Completion consumers use the same effective-state rule. A checkbox is necessary
+but not sufficient when the row also declares status: checked plus `completed`
+(or a compatible complete spelling) is closed, checked plus `pending` or
+`in_progress` remains open, and every unchecked row remains open. Active release
+status and release readiness therefore cannot hide unfinished work behind a
+stale marker.
 
 ## Zero-downtime adoption
 
@@ -72,5 +81,6 @@ data-integrity boundaries and rejects a second marker on the same line:
 
 The focused suite covers active/archive transitions, nested archived sections,
 accepted vocabulary, evidence failures, duplicate identifiers, joined physical
-rows, invalid values, and all CLI outcomes. It passes 16 tests under strict
-warnings with 94.48% branch coverage for `scripts/check_task_integrity.py`.
+rows, invalid values, checkbox/status contradictions, milestone visibility,
+release-readiness behavior, and all CLI outcomes. The focused completion-state
+replay passes 143 tests; exact-head gate evidence remains required.

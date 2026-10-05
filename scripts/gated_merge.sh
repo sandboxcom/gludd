@@ -44,6 +44,11 @@ fi
 # Use Python fcntl for portability (macOS lacks the 'flock' CLI command)
 # ---------------------------------------------------------------------------
 exec 9>"$LOCK_FILE"
+cleanup() {
+    exec 9>&-
+}
+trap cleanup EXIT
+
 if ! python3 - 9 <<'PYEOF'
 import fcntl, sys
 fd = int(sys.argv[1])

@@ -5,13 +5,23 @@
     state: directory
     mode: "0755"
 
-- name: Run language_detect analysis
-  ansible.builtin.script:
-    cmd: "files/language_detect.py --text '{{ input_text }}' --output '{{ artifact_dir }}/language_detection.json'"
-    executable: "{{ ansible_python_interpreter | default('python3') }}"
+- name: Detect language through Gludd
+  general_ludd.language.language_operation:
+    operation: language_detect
+    payload:
+      input_text: "{{ input_text }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
   register: detect_result
+  no_log: true
   changed_when: false
+
+- name: Write language detection artifact atomically
+  ansible.builtin.copy:
+    content: "{{ detect_result.result | to_nice_json }}\n"
+    dest: "{{ artifact_dir }}/language_detection.json"
+    mode: "0600"
 
 - name: Print language detection summary
   ansible.builtin.debug:
-    msg: "{{ detect_result.stdout_lines }}"
+    var: detect_result.result

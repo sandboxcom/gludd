@@ -5,12 +5,12 @@
 #
 #   docker build --build-arg VERSION=0.1.0-alpha.5 \
 #       -t ghcr.io/<owner>/general-ludd-agent:0.1.0-alpha.5 .
-#   docker run --rm -p 8000:8000 -e GLUDD_PSK=<secret> \
+#   docker run --rm -p 8000:8000 -e GLUDD_AUTH_PSK=<secret> \
 #       -v gludd-data:/var/lib/general-ludd \
 #       ghcr.io/<owner>/general-ludd-agent:0.1.0-alpha.5
 #
 # The daemon binds 0.0.0.0 inside the container; because that is an external
-# interface, it fail-closes (HTTP 503 on protected paths) UNLESS GLUDD_PSK is
+# interface, it fail-closes (HTTP 503 on protected paths) UNLESS GLUDD_AUTH_PSK is
 # supplied at runtime. For throwaway/dev only, pass GLUDD_ALLOW_NO_AUTH=1.
 
 ARG PYTHON_VERSION=3.12
@@ -96,7 +96,7 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     GLUDD_PLAYBOOKS_DIR=/app/playbooks \
     GLUDD_LOG_LEVEL=info
 # AI provider keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, ZAI_API_KEY,
-# OPENROUTER_API_KEY) and GLUDD_PSK must be injected at runtime via
+# OPENROUTER_API_KEY) and GLUDD_AUTH_PSK must be injected at runtime via
 # --env / --env-file / secrets — never baked into the image.
 
 WORKDIR /app
@@ -121,6 +121,9 @@ LABEL org.opencontainers.image.title="general-ludd-agent" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.source="https://github.com/sandboxcom/gludd"
 
+# Runtime-relative state (including the git-history ``.gludd`` directory) must
+# resolve beneath the owned persistent volume, never beneath read-only /app.
+WORKDIR ${APP_HOME}
 USER gludd
 
 EXPOSE 8000
@@ -130,5 +133,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=4).status==200 else 1)"
 
-# tini reaps the gunicorn subprocess the CLI spawns; gludd binds 0.0.0.0:8000.
-ENTRYPOINT ["tini", "--", "gludd", "daemon", "--host", "0.0.0.0", "--port", "8000"]
+# Run the application server as the foreground service. Tini owns and reaps the
+# single Gunicorn tree, while startup exceptions and request/error logs remain
+# attached to container stdio for health-smoke and operator diagnostics.
+ENTRYPOINT ["tini", "--", "gunicorn", "general_ludd.daemon:create_daemon_app()", "--worker-class", "uvicorn_worker.UvicornWorker", "--workers", "1", "--bind", "0.0.0.0:8000", "--access-logfile", "-", "--error-logfile", "-", "--capture-output"]

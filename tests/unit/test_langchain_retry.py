@@ -20,6 +20,38 @@ def _fake_response(content: str) -> MagicMock:
 
 
 class TestLangChainRetryPrimarySuccess:
+    def test_call_requires_a_built_chain(self) -> None:
+        gateway = MagicMock(spec=ModelGateway)
+        retry_gateway = LangChainRetryGateway(gateway)
+
+        with pytest.raises(RuntimeError, match="build_chain"):
+            retry_gateway.call([{"role": "user", "content": "hi"}])
+
+    def test_call_forwards_tools_context_and_runnable_config(self) -> None:
+        gateway = MagicMock(spec=ModelGateway)
+        gateway.call_model.return_value = _fake_response("ok")
+        retry_gateway = LangChainRetryGateway(gateway)
+        retry_gateway.build_chain(
+            "primary",
+            [],
+            retry_config={"stop_after_attempt": 1},
+        )
+
+        result = retry_gateway.call(
+            [{"role": "user", "content": "hi"}],
+            tools=[{"type": "function"}],
+            config={"tags": ["coverage-contract"]},
+            context={"project_id": "project-1"},
+        )
+
+        assert result.content == "ok"
+        gateway.call_model.assert_called_once_with(
+            "primary",
+            [{"role": "user", "content": "hi"}],
+            tools=[{"type": "function"}],
+            project_id="project-1",
+        )
+
     def test_primary_succeeds_no_fallback_used(self):
         primary_id = "primary"
         fallback_id = "fallback"

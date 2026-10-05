@@ -28,7 +28,7 @@ enable_git_push: false   # must be explicitly set to true to push
 
 # Daemon connectivity
 daemon_url: "http://localhost:8000"
-psk: ""   # prefer GLUDD_PSK env var
+psk: ""   # prefer GLUDD_AUTH_PSK env var
 
 # ---- MCP sync (PHASE-2 directive) ----
 # After the model authors new content, ensure created resources carry a

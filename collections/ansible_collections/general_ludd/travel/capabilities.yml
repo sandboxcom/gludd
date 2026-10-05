@@ -1,0 +1,44 @@
+---
+model_capabilities:
+  - name: trip_planning
+    description: Multi-day trip itinerary planning with flight and hotel coordination
+    roles:
+      - trip_planner
+    model_needs:
+      - search
+      - planning
+    quality_class: high
+    aliases:
+      - plan_trip
+      - itinerary
+  - name: flight_search
+    description: Flight availability and pricing search across carriers
+    roles:
+      - flight_search
+    model_needs:
+      - search
+    quality_class: medium
+    aliases:
+      - find_flights
+      - airfare
+  - name: hotel_search
+    description: Hotel availability, pricing, and amenity search
+    roles:
+      - hotel_search
+    model_needs:
+      - search
+    quality_class: medium
+    aliases:
+      - find_hotels
+      - lodging
+  - name: web_search
+    description: Web search via SearXNG metasearch engine
+    roles:
+      - searxng_search
+    model_needs:
+      - search
+      - web_access
+    quality_class: medium
+    aliases:
+      - search_web
+      - metasearch

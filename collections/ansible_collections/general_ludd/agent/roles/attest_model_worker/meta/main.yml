@@ -1,0 +1,9 @@
+---
+galaxy_info:
+  author: General Ludd
+  description: Attest provider-neutral accelerator topology and model-runner runtime evidence
+  license: MIT
+  min_ansible_version: "2.15"
+  role_name: attest_model_worker
+  namespace: general_ludd
+dependencies: []

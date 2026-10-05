@@ -1,3 +1,4 @@
+"""Chat session primitives."""
 from general_ludd.chat.context_window import ContextWindow
 from general_ludd.chat.contracts import ChatConfig, ChatMessage
 from general_ludd.chat.formatter import MessageFormatter, StreamingChatFormatter

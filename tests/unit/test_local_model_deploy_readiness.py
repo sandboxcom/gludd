@@ -102,24 +102,50 @@ def test_profiles_enabled_for_local_deploy() -> None:
 # ── 2. llama-cpp-python importable ─────────────────────────────────────────
 
 
+def _llama_cpp_gap() -> dict[str, Any]:
+    return {
+        "severity": "WARN",
+        "component": "llama-cpp-python",
+        "detail": (
+            "llama_cpp is not installed. "
+            "Install with: pip install llama-cpp-python[server] --extra-index-url "
+            "https://abetlen.github.io/llama-cpp-python/whl/cpu"
+        ),
+    }
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("llama_cpp") is None,
+    reason="llama-cpp-python (optional local-inference extra) not installed",
+)
 def test_llama_cpp_python_importable() -> None:
-    """llama_cpp.server is importable; otherwise report gap."""
+    """llama_cpp is importable when the optional local-inference extra is installed."""
+    importlib.import_module("llama_cpp")
+
+
+def test_llama_cpp_missing_reports_structured_gap(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The gap report for a missing llama_cpp is well-formed and actionable.
+
+    Runs unconditionally (llama_cpp is an optional extra, so the gate must
+    pass without it) by forcing the ImportError path.
+    """
     gaps: list[dict[str, Any]] = []
+    real_import = importlib.import_module
+
+    def fake_import(name: str, *args: object, **kwargs: object) -> Any:
+        if name == "llama_cpp":
+            raise ImportError("No module named 'llama_cpp'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib, "import_module", fake_import)
     try:
         importlib.import_module("llama_cpp")
     except ImportError:
-        gaps.append(
-            {
-                "severity": "WARN",
-                "component": "llama-cpp-python",
-                "detail": (
-                    "llama_cpp is not installed. "
-                    "Install with: pip install llama-cpp-python[server] --extra-index-url "
-                    "https://abetlen.github.io/llama-cpp-python/whl/cpu"
-                ),
-            }
-        )
-    _collect_gaps(gaps)
+        gaps.append(_llama_cpp_gap())
+    assert len(gaps) == 1
+    assert gaps[0]["severity"] == "WARN"
+    assert gaps[0]["component"] == "llama-cpp-python"
+    assert "llama-cpp-python" in gaps[0]["detail"]
 
 
 # ── 3. model download directory writable ───────────────────────────────────

@@ -2,10 +2,10 @@
 """
 check_dispatch_diversity.py
 
-Pre-dispatch checker: validates a dispatch wave for diversity invariants.
-Reads TASKS.md for in_progress task IDs, cross-references the dispatch prompts,
-and enforces: exactly 10 dispatches, >=3 distinct topics, <=50% slots to any
-one topic, >=1 continuation slot.
+Pre-dispatch checker: validates a voluntary dispatch wave for bounded,
+productive ownership. Reads TASKS.md for in-progress task IDs, cross-references
+the dispatch prompts, and enforces one-to-three dispatches, topic diversity for
+multi-prompt waves, and a continuation when in-progress work exists.
 
 Usage:
     python3 scripts/check_dispatch_diversity.py /tmp/dispatch-wave.json
@@ -57,6 +57,8 @@ COMMON_WORDS: frozenset[str] = frozenset(
         "issue",
     }
 )
+MAX_DISPATCHES = 3
+MIN_MULTI_WAVE_TOPICS = 2
 
 
 def read_tasks_file(tasks_path: Path) -> str:
@@ -146,29 +148,34 @@ def main() -> int:
 
     violations: list[str] = []
 
-    if n_prompts != 10:
-        violations.append(f"DISAPTCH COUNT: {n_prompts} (requires exactly 10)")
+    if n_prompts < 1 or n_prompts > MAX_DISPATCHES:
+        violations.append(
+            f"DISPATCH COUNT: {n_prompts} "
+            f"(requires at least 1 and at most {MAX_DISPATCHES})"
+        )
 
     num_distinct = len(topic_counts)
-    if num_distinct < 3:
+    if n_prompts > 1 and num_distinct < MIN_MULTI_WAVE_TOPICS:
         violations.append(
-            f"TOPIC DIVERSITY: {num_distinct} distinct topics (requires >=3). "
+            f"TOPIC DIVERSITY: {num_distinct} distinct topics "
+            f"(requires >={MIN_MULTI_WAVE_TOPICS} for a multi-prompt wave). "
             f"Topics found: {', '.join(sorted(topic_counts.keys()))}"
         )
 
-    if topic_counts:
+    if n_prompts > 1 and topic_counts:
         newest_topic = topic_counts.most_common(1)[0][0]
         newest_count = topic_counts[newest_topic]
-        if newest_count > n_prompts / 2:
+        if newest_count == n_prompts:
             violations.append(
                 f"SLOT CONCENTRATION: '{newest_topic}' has {newest_count}/{n_prompts} "
-                f"slots ({newest_count / n_prompts:.0%}), exceeds 50% maximum"
+                "slots and consumes the entire multi-prompt wave; "
+                "use at least two topics"
             )
 
-    if continuations < 1:
+    if in_progress_ids and continuations < 1:
         violations.append(
             "NO CONTINUATIONS: 0 slots reference an in-progress TASKS.md item. "
-            f"Known in-progress IDs: {sorted(in_progress_ids) if in_progress_ids else '(none)'}"
+            f"Known in-progress IDs: {sorted(in_progress_ids)}"
         )
 
     if not violations:

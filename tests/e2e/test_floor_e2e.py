@@ -1,4 +1,4 @@
-"""E2e test for enforce-floor.ts: streak-based 10-agent floor enforcement.
+"""E2e test for enforce-floor.ts: opt-in streak-based floor enforcement.
 
 Invokes the actual TypeScript plugin via node --experimental-strip-types
 in isolated temp dirs, verifying key behaviors of the floor enforcement hook.
@@ -74,6 +74,10 @@ def _run_plugin(
         env["GLUDD_HOT_MODULE_PREFIX"] = str(hot_module_prefix)
         env["GLUDD_CI_CACHE_PATH"] = str(ci_cache_state)
         env["GLUDD_STOP_STATE_PATH"] = str(stop_state)
+        # The production default is deliberately zero.  This module exercises
+        # the opt-in enforcement paths, so declare the configured floor rather
+        # than inheriting an unrelated caller/session value.
+        env["CLAUDE_AGENT_FLOOR"] = "3"
         if env_override:
             env.update(env_override)
         proc = subprocess.run(
@@ -385,8 +389,8 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     assert "WAVE WIDTH VIOLATION" in r.get("message", "")
 
 
-def test_message_shape_allows_after_10_dispatch_wave(tmp_path):
-    """After an exact 10-dispatch wave, next non-dispatch is allowed."""
+def test_message_shape_allows_after_configured_dispatch_wave(tmp_path):
+    """After an exact configured-floor wave, next non-dispatch is allowed."""
     ws = tmp_path / "msg-ok"
     ws.mkdir()
     _make_working_workspace(ws)
@@ -397,13 +401,6 @@ const plugin = await mod.default({{}})
     await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
     await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
     await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 {_BOUNDARY_SLEEP_JS}
 const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
@@ -411,7 +408,32 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     result = _run_plugin(code, cwd=str(ws), env_override=_BOUNDARY_ENV)
     r = _last_json(result)
     assert r is None or r.get("permissionDecision") != "deny", (
-        f"10-dispatch wave should allow next non-dispatch, got: {r}"
+        f"Configured-floor dispatch wave should allow next non-dispatch, got: {r}"
+    )
+
+
+def test_zero_floor_disables_floor_enforcement(tmp_path):
+    """The canonical zero floor keeps dispatch pressure opt-in."""
+    ws = tmp_path / "zero-floor"
+    ws.mkdir()
+    _make_working_workspace(ws)
+
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
+const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(
+        code,
+        cwd=str(ws),
+        env_override={"CLAUDE_AGENT_FLOOR": "0"},
+    )
+    r = _last_json(result)
+    assert r is None or r.get("permissionDecision") != "deny", (
+        f"Zero floor should keep enforcement disabled, got: {r}"
     )
 
 

@@ -36,7 +36,10 @@ OVERFLOW_LABEL_VALUE = "__other__"
 
 
 class MetricsExporter:
+    """Bounded prometheus-client metric registry for the daemon process."""
+
     def __init__(self, registry: CollectorRegistry | None = None) -> None:
+        """Initialize counters, gauges, histograms, and the uptime gauge."""
         self._registry = registry or _REGISTRY
         self._counters: dict[str, Counter] = {}
         self._gauges: dict[str, Gauge] = {}
@@ -47,7 +50,8 @@ class MetricsExporter:
         self._seen_label_values: dict[tuple[str, str], set[str]] = {}
 
         self._uptime = Gauge(
-            "gludd_uptime_seconds", "Process uptime in seconds",
+            "gludd_uptime_seconds",
+            "Process uptime in seconds",
             registry=self._registry,
         )
 
@@ -79,6 +83,7 @@ class MetricsExporter:
         return bounded
 
     def counter_inc(self, name: str, labels: dict[str, str] | None = None, value: int = 1) -> None:
+        """Increment a named counter, creating it lazily when first used."""
         counter = self._counters.get(name)
         if counter is None:
             label_keys = sorted(labels.keys()) if labels else []
@@ -90,6 +95,7 @@ class MetricsExporter:
             counter.inc(value)
 
     def gauge_set(self, name: str, value: float, labels: dict[str, str] | None = None) -> None:
+        """Set a named gauge, creating it lazily when first used."""
         gauge = self._gauges.get(name)
         if gauge is None:
             label_keys = sorted(labels.keys()) if labels else []
@@ -101,6 +107,7 @@ class MetricsExporter:
             gauge.set(value)
 
     def histogram_observe(self, name: str, value: float, labels: dict[str, str] | None = None) -> None:
+        """Record an observation against a named (optionally labeled) histogram."""
         hist = self._histograms.get(name)
         if hist is None:
             label_keys = sorted(labels.keys()) if labels else []
@@ -112,20 +119,24 @@ class MetricsExporter:
             hist.observe(value)
 
     def render_prometheus(self) -> str:
+        """Return all metrics in the Prometheus text exposition format."""
         self._uptime.set(time.monotonic() - self._started_at)
         return generate_latest(self._registry).decode()
 
     def get_json(self) -> dict[str, Any]:
+        """Return all metrics plus uptime as a JSON-serializable dict."""
         self._uptime.set(time.monotonic() - self._started_at)
         samples: dict[str, list[dict[str, Any]]] = {}
         for metric in self._registry.collect():
             metric_samples: list[dict[str, Any]] = []
             for s in metric.samples:
-                metric_samples.append({
-                    "name": s.name,
-                    "labels": dict(s.labels),
-                    "value": s.value,
-                })
+                metric_samples.append(
+                    {
+                        "name": s.name,
+                        "labels": dict(s.labels),
+                        "value": s.value,
+                    }
+                )
             if metric_samples:
                 samples[metric.name] = metric_samples
         return {
@@ -134,6 +145,7 @@ class MetricsExporter:
         }
 
     def get_counters(self) -> dict[str, int]:
+        """Return a flat name-to-value dict of every counter sample."""
         result: dict[str, int] = {}
         for name, counter in self._counters.items():
             for sample in counter.collect():
@@ -147,9 +159,19 @@ class MetricsExporter:
         return result
 
     def get_gauges(self) -> dict[str, float]:
+        """Return a flat name-to-value dict of every gauge and histogram sample."""
         result: dict[str, float] = {}
         for name, gauge in self._gauges.items():
             for sample in gauge.collect():
+                for s in sample.samples:
+                    if s.labels:
+                        label_parts = sorted(s.labels.items())
+                        key = f"{name}_" + "_".join(f"{k}={v}" for k, v in label_parts)
+                    else:
+                        key = name
+                    result[key] = float(s.value)
+        for name, hist in self._histograms.items():
+            for sample in hist.collect():
                 for s in sample.samples:
                     if s.labels:
                         label_parts = sorted(s.labels.items())
@@ -164,6 +186,7 @@ _metrics_exporter: MetricsExporter | None = None
 
 
 def get_metrics_exporter() -> MetricsExporter:
+    """Return the process-wide metrics exporter singleton."""
     global _metrics_exporter
     if _metrics_exporter is None:
         _metrics_exporter = MetricsExporter()
@@ -174,23 +197,31 @@ _current_trace_id: dict[int, str] = {}
 
 
 def set_trace_id(trace_id: str | None = None) -> str:
+    """Set (or generate) the trace id for the calling thread and return it."""
     import threading
+
     tid = trace_id or _uuid.uuid4().hex[:16]
     _current_trace_id[threading.get_ident()] = tid
     return tid
 
 
 def get_trace_id() -> str:
+    """Return the calling thread's trace id, or "unknown" when unset."""
     import threading
+
     return _current_trace_id.get(threading.get_ident(), "unknown")
 
 
 class CorrelatedLogAdapter(logging.LoggerAdapter):
+    """LoggerAdapter that prefixes records with the current trace and span ids."""
+
     def process(self, msg: str, kwargs: Any) -> tuple[str, Any]:
+        """Prefix the message with correlated trace/span identifiers."""
         trace_id = get_trace_id()
         span_id = _uuid.uuid4().hex[:8]
         return f"[trace={trace_id} span={span_id}] {msg}", kwargs
 
 
 def get_correlated_logger(name: str) -> logging.LoggerAdapter:
+    """Return a CorrelatedLogAdapter wrapping the named logger."""
     return CorrelatedLogAdapter(logging.getLogger(name), {})

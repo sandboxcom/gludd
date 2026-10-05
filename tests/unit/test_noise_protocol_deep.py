@@ -163,6 +163,15 @@ class TestCipherState:
         cs2.decrypt_with_ad(b"", ct)
         assert cs2.nonce == 1
 
+    @pytest.mark.parametrize("operation", ["encrypt", "decrypt"])
+    def test_nonce_exhaustion_fails_closed(self, operation: str) -> None:
+        cs = CipherState(key=b"\x08" * 32, nonce=2**64 - 1)
+        with pytest.raises(NoiseError, match="Nonce exhausted"):
+            if operation == "encrypt":
+                cs.encrypt_with_ad(b"", b"message")
+            else:
+                cs.decrypt_with_ad(b"", b"ciphertext")
+
     def test_split_produces_two_keys(self) -> None:
         cs = CipherState()
         cs.initialize_key(b"\x09" * 32)
@@ -552,29 +561,41 @@ class TestErrorHandling:
         i = create_noise_session("XX", True)
         assert not i.completed()
 
+    def test_handshake_write_enforces_noise_message_limit(self) -> None:
+        initiator = create_noise_session("NN", True)
+        with pytest.raises(NoiseError, match="65,535"):
+            initiator.write_message(b"x" * 65_504)
+
+    def test_handshake_read_enforces_noise_message_limit(self) -> None:
+        responder = create_noise_session("NN", False)
+        with pytest.raises(NoiseError, match="65,535"):
+            responder.read_message(b"x" * 65_536)
+
 
 # ── Prologue and additional data ───────────────────────────────────────
 
 
 class TestPrologue:
-    def test_different_prologues_produce_different_handshake(self) -> None:
+    def test_prologue_agreement_and_channel_binding(self) -> None:
         p1_i = create_noise_session("NN", True, prologue=b"version 1.0")
         p1_r = create_noise_session("NN", False, prologue=b"version 1.0")
         p2_i = create_noise_session("NN", True, prologue=b"version 2.0")
         p2_r = create_noise_session("NN", False, prologue=b"version 2.0")
 
-        msg_v1 = p1_i.write_message(b"")
-        msg_v2 = p2_i.write_message(b"")
-        assert msg_v1 != msg_v2
+        p1_r.read_message(p1_i.write_message(b""))
+        p1_i.read_message(p1_r.write_message(b""))
+        p2_r.read_message(p2_i.write_message(b""))
+        p2_i.read_message(p2_r.write_message(b""))
 
-        p1_r.read_message(msg_v1)
-        p2_r.read_message(msg_v2)
+        assert p1_i._handshake_hash() == p1_r._handshake_hash()
+        assert p2_i._handshake_hash() == p2_r._handshake_hash()
+        assert p1_i._handshake_hash() != p2_i._handshake_hash()
 
-        i1_send, _ = p1_i.split()
-        i2_send, _ = p2_i.split()
-        ct1 = i1_send.encrypt_with_ad(b"", b"msg")
-        ct2 = i2_send.encrypt_with_ad(b"", b"msg")
-        assert ct1 != ct2
+        mismatched_i = create_noise_session("NN", True, prologue=b"version 1.0")
+        mismatched_r = create_noise_session("NN", False, prologue=b"version 2.0")
+        mismatched_r.read_message(mismatched_i.write_message(b""))
+        with pytest.raises(DecryptError, match="AEAD"):
+            mismatched_i.read_message(mismatched_r.write_message(b""))
 
 
 class TestDirection:

@@ -116,7 +116,7 @@ Honesty note: 5.4 depends on a screenshot pipeline gludd **does not have yet**
 The deck is **data + template**, never hand-edited HTML for the dynamic slides.
 A single make target produces a `deck-data.json` the template reads at build time.
 
-```
+```text
 make deck-data        # runs/locates E2E artifacts, emits docs/presentation/deck-data.json
 make deck             # renders reveal.js HTML from template + deck-data.json
 make deck-serve       # local static serve for preview
@@ -146,7 +146,7 @@ deck therefore truthfully shows which E2E flows have and have not run.
 
 ## 3. Where the deck is generated / stored
 
-```
+```text
 docs/presentation/
 ├── DESIGN_revealjs_deck.md          # this doc
 ├── DESIGN_a11y_visual_qa_skill.md   # Deliverable B

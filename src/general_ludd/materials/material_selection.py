@@ -55,8 +55,11 @@ def _find_property(material: dict[str, Any], name: str) -> dict[str, Any] | None
 
 
 def _to_mpa(value: float, unit: str) -> tuple[float, str]:
-    """Normalize a stress/modulus value to MPa. Returns the value unchanged
-    if the unit is not a known stress unit (non-destructive)."""
+    """Normalize a stress/modulus value to MPa.
+
+    Returns the value unchanged if the unit is not a known stress unit
+    (non-destructive).
+    """
     factor = _STRESS_UNIT_FACTOR_TO_MPA.get(unit)
     if factor is not None:
         return value * factor, "MPa"
@@ -73,8 +76,7 @@ def resolve_property(
     prop_name: str,
     overrides: dict[str, dict[str, dict[str, Any]]] | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """Resolve the effective property record using the lot > supplier >
-    handbook > estimated hierarchy.
+    """Resolve the effective property record using the lot/supplier/handbook hierarchy.
 
     Returns ``(record, tier)`` where *record* is normalized to always carry a
     ``value`` key (converting from the registry's ``value_or_range`` if
@@ -272,8 +274,7 @@ def _build_tradeoffs(
 def _compute_indices(
     tradeoffs: dict[str, dict[str, Any]],
 ) -> dict[str, float]:
-    """Derive standard performance indices (specific strength / stiffness)
-    when density data is available."""
+    """Derive standard performance indices (specific strength/stiffness) when density is available."""
     indices: dict[str, float] = {}
     ys = tradeoffs.get("yield_strength", {})
     mod = tradeoffs.get("youngs_modulus", {})
@@ -395,8 +396,7 @@ def rank_candidates(
     candidates: list[str] | None = None,
     overrides: dict[str, dict[str, dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
-    """Rank material candidates under nominal, conservative, and sensitivity
-    cases (MATE-DEC-002 steps 2-5).
+    """Rank material candidates under nominal, conservative, and sensitivity cases.
 
     Returns a structured result with three parallel lists (``nominal``,
     ``conservative``, ``sensitivity``). Each candidate entry carries:
@@ -420,7 +420,13 @@ def rank_candidates(
             "sensitivity": [],
         }
 
-    candidate_ids = candidates if candidates is not None else list(MATERIALS.keys())
+    req_candidates = reqs.get("candidates")
+    if candidates is not None:
+        candidate_ids = candidates
+    elif isinstance(req_candidates, list) and req_candidates:
+        candidate_ids = req_candidates
+    else:
+        candidate_ids = list(MATERIALS.keys())
 
     def build_case(case: str) -> list[dict[str, Any]]:
         entries: list[dict[str, Any]] = []

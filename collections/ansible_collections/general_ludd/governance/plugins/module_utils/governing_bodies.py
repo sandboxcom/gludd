@@ -26,7 +26,7 @@ Public surface::
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 BODY_TYPES: tuple[str, ...] = (
     "international",
@@ -136,6 +136,57 @@ INTERNATIONAL_BODIES: list[dict[str, Any]] = [
         "global",
         "GA Resolution 60/251 (2006)",
         "Geneva, Switzerland",
+    ),
+    _body(
+        "un_ecosoc",
+        "United Nations Economic and Social Council",
+        ("ECOSOC", "Economic and Social Council"),
+        "international",
+        54,
+        (
+            "High-level Segment",
+            "Coordination Segment",
+            "Humanitarian Affairs Segment",
+            "Management Segment",
+        ),
+        (),
+        "Each member has one vote; decisions are taken by a majority of members present and voting.",
+        "simple_majority",
+        "global",
+        "UN Charter Articles 61-72",
+        "New York, NY, USA",
+    ),
+    _body(
+        "un_tc",
+        "United Nations Trusteeship Council",
+        ("Trusteeship Council", "TC"),
+        "international",
+        5,
+        ("Council",),
+        (),
+        "Operations are suspended; the Council meets when required by its President or members.",
+        "simple_majority",
+        "global",
+        "UN Charter Articles 86-91",
+        "New York, NY, USA",
+    ),
+    _body(
+        "un_secretariat",
+        "United Nations Secretariat",
+        ("UN Secretariat", "Secretariat"),
+        "international",
+        0,
+        (
+            "Secretary-General",
+            "Departments and Offices",
+            "Duty Stations",
+        ),
+        (),
+        "The Secretary-General directs the international civil service under mandates of UN organs.",
+        "administrative",
+        "global",
+        "UN Charter Articles 97-101",
+        "New York, NY, USA",
     ),
     _body(
         "eu",
@@ -452,6 +503,12 @@ BODY_RELATIONSHIPS: list[dict[str, str]] = [
      "note": "Security Council is a principal organ of the UN."},
     {"parent": "un", "child": "icj", "kind": "parent_child",
      "note": "ICJ is the principal judicial organ of the UN."},
+    {"parent": "un", "child": "un_ecosoc", "kind": "parent_child",
+     "note": "ECOSOC is a principal organ coordinating the UN system's economic and social work."},
+    {"parent": "un", "child": "un_tc", "kind": "parent_child",
+     "note": "The Trusteeship Council is a principal organ whose operations are suspended."},
+    {"parent": "un", "child": "un_secretariat", "kind": "parent_child",
+     "note": "The Secretariat is the UN's principal administrative organ."},
     {"parent": "un_ga", "child": "un_hrc", "kind": "parent_child",
      "note": "HRC is a subsidiary organ of the General Assembly."},
     {"parent": "eu", "child": "eu_parliament", "kind": "parent_child",
@@ -462,14 +519,30 @@ BODY_RELATIONSHIPS: list[dict[str, str]] = [
      "note": "Council of the EU co-legislates with Parliament under the ordinary legislative procedure."},
     {"parent": "eu", "child": "ecj", "kind": "parent_child",
      "note": "CJEU is the judicial institution of the EU, interpreting and enforcing EU law."},
-    {"parent": "imf", "child": "world_bank", "kind": "overlapping_jurisdiction",
-     "note": "Bretton Woods twins share overlapping fiscal/monetary oversight; distinct mandates but coordinated policy."},
-    {"parent": "world_bank", "child": "imf", "kind": "overlapping_jurisdiction",
-     "note": "Bretton Woods twins share overlapping fiscal/monetary oversight; distinct mandates but coordinated policy."},
-    {"parent": "icc", "child": "icj", "kind": "overlapping_jurisdiction",
-     "note": "Both are international courts seated in The Hague; ICC prosecutes individuals, ICJ adjudicates state disputes."},
-    {"parent": "icj", "child": "icc", "kind": "overlapping_jurisdiction",
-     "note": "Both are international courts seated in The Hague; ICC prosecutes individuals, ICJ adjudicates state disputes."},
+    {
+        "parent": "imf",
+        "child": "world_bank",
+        "kind": "overlapping_jurisdiction",
+        "note": "Bretton Woods twins share fiscal and monetary oversight with distinct mandates.",
+    },
+    {
+        "parent": "world_bank",
+        "child": "imf",
+        "kind": "overlapping_jurisdiction",
+        "note": "Bretton Woods twins share fiscal and monetary oversight with distinct mandates.",
+    },
+    {
+        "parent": "icc",
+        "child": "icj",
+        "kind": "overlapping_jurisdiction",
+        "note": "Both are Hague courts; ICC prosecutes people while ICJ adjudicates state disputes.",
+    },
+    {
+        "parent": "icj",
+        "child": "icc",
+        "kind": "overlapping_jurisdiction",
+        "note": "Both are Hague courts; ICC prosecutes people while ICJ adjudicates state disputes.",
+    },
     {"parent": "un_sc", "child": "icc", "kind": "regulatory",
      "note": "Security Council can refer situations to the ICC under Rome Statute Article 13(b)."},
 ]
@@ -611,12 +684,12 @@ def all_relationships_for(body_id: str) -> list[dict[str, str]]:
 
 def national_branches() -> tuple[str, ...]:
     """Return the tuple of national-government branch names."""
-    return NATIONAL_STRUCTURES["branches"]
+    return cast(tuple[str, ...], NATIONAL_STRUCTURES["branches"])
 
 
 def national_ministries() -> tuple[str, ...]:
     """Return the tuple of national-government ministry category tokens."""
-    return NATIONAL_STRUCTURES["ministries"]
+    return cast(tuple[str, ...], NATIONAL_STRUCTURES["ministries"])
 
 
 __all__ = [

@@ -1,10 +1,18 @@
-"""Template-based cloud role generator — encodes learned rules from each
-provider to produce least-privilege role definitions.
-"""
+"""Generate least-privilege cloud roles from learned provider templates."""
 
 from __future__ import annotations
 
 from typing import Any
+
+from general_ludd.cloud.role_pruning import (
+    _aws_action_matches as _aws_action_matches,
+)
+from general_ludd.cloud.role_pruning import (
+    _azure_action_matches as _azure_action_matches,
+)
+from general_ludd.cloud.role_pruning import (
+    prune_by_resource_types as _prune_by_resource_types,
+)
 
 ROLE_TEMPLATES: dict[str, dict[str, dict[str, Any]]] = {
     "azure": {
@@ -386,73 +394,6 @@ def generate_role_from_template(provider: str, persona: str, resource_types: lis
         "role_definition": role_def,
         "warnings": pruned_warnings,
     }
-
-
-def _prune_by_resource_types(
-    provider: str, role_def: dict[str, Any], resource_types: list[str]
-) -> tuple[dict[str, Any], list[str]]:
-    """Best-effort prune the role definition to only include requested resource types."""
-    warnings: list[str] = []
-    if not resource_types:
-        return role_def, warnings
-
-    keep: set[str] = {rt.lower() for rt in resource_types}
-
-    if provider == "azure":
-        actions = role_def.get("Actions", [])
-        filtered = [a for a in actions if _azure_action_matches(a, keep)]
-        removed = len(actions) - len(filtered)
-        if removed > 0:
-            warnings.append(f"Pruned {removed} Azure action(s) not matching resource types {sorted(keep)}")
-        role_def["Actions"] = filtered
-
-    elif provider == "aws":
-        for stmt in role_def.get("policy", []):
-            if not isinstance(stmt, dict):
-                continue
-            stmt_actions = stmt.get("Action", [])
-            if isinstance(stmt_actions, list):
-                filtered = [a for a in stmt_actions if _aws_action_matches(a, keep)]
-                removed = len(stmt_actions) - len(filtered)
-                if removed > 0:
-                    warnings.append(f"Pruned {removed} AWS action(s) not matching resource types {sorted(keep)}")
-                stmt["Action"] = filtered
-
-    elif provider == "gcp":
-        warnings.append("GCP resource-type pruning not supported — using full role template")
-
-    return role_def, warnings
-
-
-def _azure_action_matches(action: str, resource_types: set[str]) -> bool:
-    action_lower = action.lower()
-    for rt in resource_types:
-        if rt in action_lower or rt == "*" or "/*" in action:
-            return True
-        if rt in (
-            "compute",
-            "network",
-            "storage",
-            "containerregistry",
-            "containerservice",
-            "app",
-            "operationalinsights",
-            "insights",
-            "authorization",
-            "managedidentity",
-            "keyvault",
-        ) and action_lower.startswith(f"microsoft.{rt}/"):
-            return True
-    return False
-
-
-def _aws_action_matches(action: str, resource_types: set[str]) -> bool:
-    action_lower = action.lower()
-    for rt in resource_types:
-        if rt in action_lower or rt == "*":
-            return True
-    service_prefix = action.split(":")[0].lower() if ":" in action else ""
-    return service_prefix in resource_types
 
 
 __all__ = [

@@ -37,6 +37,12 @@ from general_ludd.budget.peak_pricing import (
     current_rate_multiplier,
 )
 
+
+def _local_wall_time(hour: int) -> float:
+    """Return a stable timestamp whose local-time hour is ``hour``."""
+    return datetime.datetime(2026, 1, 15, hour).timestamp()
+
+
 # ---------------------------------------------------------------------------
 # BudgetEnvelope
 # ---------------------------------------------------------------------------
@@ -677,6 +683,25 @@ class TestOffPeakTicket:
 class TestOffPeakScheduler:
     """OffPeakScheduler — deferral, ready-tasks, pruning, status."""
 
+    def test_schedule_uses_injected_clock_consistently(self) -> None:
+        now = _local_wall_time(12)
+        scheduler = OffPeakScheduler(
+            off_peak_start=0,
+            off_peak_end=6,
+            clock=lambda: now,
+        )
+
+        ticket = scheduler.schedule(
+            {"action": "sweep"},
+            deadline=now + 7200,
+            estimated_cost_now=100.0,
+            estimated_cost_off_peak=50.0,
+        )
+
+        assert ticket is not None
+        assert ticket.scheduled_at == now
+        assert ticket.runnable_after > now
+
     def test_schedule_returns_none_during_off_peak(self) -> None:
         scheduler = OffPeakScheduler(off_peak_start=0, off_peak_end=23)
         with patch.object(scheduler, "_is_off_peak", return_value=True):
@@ -688,7 +713,10 @@ class TestOffPeakScheduler:
         assert ticket is None
 
     def test_schedule_returns_none_below_savings_ratio(self) -> None:
-        scheduler = OffPeakScheduler(min_savings_ratio=0.50)
+        scheduler = OffPeakScheduler(
+            min_savings_ratio=0.50,
+            clock=lambda: _local_wall_time(12),
+        )
         ticket = scheduler.schedule(
             {"action": "eval"},
             deadline=time.time() + 7200,
@@ -702,6 +730,7 @@ class TestOffPeakScheduler:
             off_peak_start=0,
             off_peak_end=6,
             min_savings_ratio=0.20,
+            clock=lambda: _local_wall_time(12),
         )
         ticket = scheduler.schedule(
             {"action": "sweep"},
@@ -720,6 +749,7 @@ class TestOffPeakScheduler:
             cost_tracker=fake_combined,
             off_peak_start=0,
             off_peak_end=6,
+            clock=lambda: _local_wall_time(12),
         )
         ticket = scheduler.schedule(
             {"action": "infer"},
@@ -727,6 +757,27 @@ class TestOffPeakScheduler:
         )
         assert ticket is not None
         assert ticket.estimated_cost_now == 42.0
+
+    def test_prune_uses_injected_clock(self) -> None:
+        current = [_local_wall_time(12) + 86400 * 3650]
+        scheduler = OffPeakScheduler(
+            off_peak_start=0,
+            off_peak_end=6,
+            ticket_ttl=10.0,
+            clock=lambda: current[0],
+        )
+        ticket = scheduler.schedule(
+            {"action": "sweep"},
+            deadline=current[0] + 10.0,
+            estimated_cost_now=100.0,
+            estimated_cost_off_peak=50.0,
+        )
+        assert ticket is not None
+
+        current[0] += 21.0
+
+        assert scheduler._prune_expired() == 1
+        assert scheduler.pending_count == 0
 
     def test_get_ready_tasks_filters_correctly(self) -> None:
         scheduler = OffPeakScheduler(off_peak_start=0, off_peak_end=6)

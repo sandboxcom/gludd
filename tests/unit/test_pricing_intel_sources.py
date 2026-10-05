@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 from general_ludd.pricing_intel.models import (
     BillingGranularity,
     BillingTerms,
@@ -44,8 +46,17 @@ class TestOpenRouterSource:
         assert OpenRouterSource().fetch_compute_prices() == []
 
     def test_fetch_model_prices_fail_soft_no_network(self) -> None:
-        result = OpenRouterSource().fetch_model_prices()
+        client = MagicMock()
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        client.get = MagicMock(side_effect=ConnectionError("offline"))
+        with patch(
+            "general_ludd.pricing_intel.sources.httpx.Client",
+            return_value=client,
+        ):
+            result = OpenRouterSource().fetch_model_prices()
         assert isinstance(result, list)
+        assert result == []
 
 
 class TestAnthropicSource:

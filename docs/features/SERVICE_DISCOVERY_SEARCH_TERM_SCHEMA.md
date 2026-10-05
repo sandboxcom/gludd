@@ -29,12 +29,18 @@ of silently dropping them while applying the search-schema repair.
   remains the identical object for compatibility.
 - Callers may continue to pass a sequence of plain query strings. They may also
   pass labeled two-string tuples, including `DEFAULT_SEARCH_TERMS` itself.
+- A scalar string is rejected before connector construction instead of being
+  interpreted as one outbound query per character. This includes the empty
+  string; only an empty sequence selects the built-in defaults.
 - An empty caller sequence retains the historical built-in-default fallback.
 - Tuple entries with the wrong arity, non-string values, blank labels, blank
   queries, and non-string/non-tuple entries raise at construction. Errors name
   only the entry index and expected shape; they do not echo query contents.
 - Input order is preserved exactly. Construction performs no search, catalog
   write, process start, or network request.
+- A completed search batch with zero results is inconclusive. It reports any
+  isolated query errors and preserves the existing catalog; an empty upstream
+  response is not evidence that every known service disappeared.
 - Service names containing two non-blank characters remain valid; blank and
   single-character titles remain excluded from automatic catalog registration.
 
@@ -46,6 +52,13 @@ since 2016, records repeated practitioner concern that a single `str` satisfies
 `Iterable[str]` even when an API intended a sequence of complete strings. That
 is the exact runtime ambiguity avoided here by validating every entry's concrete
 shape rather than relying on iteration or annotations alone.
+
+The related long-lived
+[mypy issue 11001](https://github.com/python/mypy/issues/11001) describes this
+as a broad class of real API bugs and requests an opt-in checker rule because a
+`str` still satisfies `Sequence[str]` statically. Until typing tools can express
+"a sequence of strings, but not a string" portably, Gludd must enforce that
+container boundary at runtime before constructing the network connector.
 
 The SearXNG community's
 [JSON API discussion 1789](https://github.com/searxng/searxng/discussions/1789)
@@ -60,6 +73,9 @@ also shows that an upstream search request can fail for an otherwise valid
 query depending on instance format and engine configuration. Schema validation
 is deliberately separate from the existing per-query error isolation: valid
 queries still report remote failures without crashing the whole batch.
+The same evidence makes destructive empty-snapshot reconciliation unsafe: a
+temporarily empty or incompatible upstream response must not mass-retire known
+services.
 
 ## Security and resource boundaries
 
@@ -92,10 +108,10 @@ started them.
 
 The authoritative regression first reproduces the three exported tuple-shape
 failures. Additional tests prove deterministic query order, labeled-tuple and
-plain-string compatibility, the empty-sequence fallback, malformed-input
-rejection before I/O, and two-character service-name preservation. The focused
-family runs with warnings treated as errors. Touched-source aggregate coverage
-must be at least 85 percent and each touched source file must retain at least 75
-percent line and branch coverage; Ruff, strict mypy, docstrings, Markdown,
-feature-spec, task-ledger, collection, and the full release gate remain
-mandatory.
+plain-string compatibility, the empty-sequence fallback, non-destructive empty
+search results, malformed-input rejection before I/O, and two-character
+service-name preservation. The focused family runs with warnings treated as
+errors. Touched-source aggregate coverage must be at least 85 percent and each
+touched source file must retain at least 75 percent line and branch coverage;
+Ruff, strict mypy, docstrings, Markdown, feature-spec, task-ledger, collection,
+and the full release gate remain mandatory.

@@ -1,0 +1,14 @@
+---
+argument_specs:
+  main:
+    short_description: Validate a content-addressed managed-host interpreter
+    options:
+      managed_python_preflight_interpreter:
+        type: path
+        required: true
+      managed_python_preflight_lock_sha256:
+        type: str
+        required: true
+      managed_python_preflight_previous_interpreter:
+        type: path
+        default: ""

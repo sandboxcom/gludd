@@ -34,154 +34,29 @@ Design constraints honored here:
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping
-from typing import Any, Protocol, TypedDict, cast, runtime_checkable
+from collections.abc import Mapping
+from typing import cast
+
+from general_ludd.connectors._aws_config_types import (
+    ClientFactory,
+    CloudTrailLookupEvent,
+    ConfigurationItem,
+    GetResourceConfigHistoryResponse,
+    HealthStatus,
+    ListDiscoveredResourcesResponse,
+    LookupEventsResponse,
+    NormalizedRecord,
+    _Client,
+    _default_factory,
+    _TupleAwsClient,
+)
+from general_ludd.connectors._aws_config_types import (
+    ConfigResourceIdentifier as ConfigResourceIdentifier,
+)
 
 __all__ = ["AwsConfigTrailSource"]
 
 logger = logging.getLogger(__name__)
-
-
-# --------------------------------------------------------------------------- #
-# AWS API response shapes
-# --------------------------------------------------------------------------- #
-# All response TypedDicts are ``total=False`` because boto3 omits empty/missing
-# fields rather than emitting nulls; every key is therefore optional at runtime.
-
-
-class ConfigResourceIdentifier(TypedDict, total=False):
-    """One row from ``config.list_discovered_resources['resourceIdentifiers]``."""
-
-    resourceType: str
-    resourceId: str
-    resourceName: str
-
-
-class ListDiscoveredResourcesResponse(TypedDict, total=False):
-    """Response of ``config.list_discovered_resources``."""
-
-    resourceIdentifiers: list[ConfigResourceIdentifier]
-
-
-class ConfigurationItem(TypedDict, total=False):
-    """One row from ``config.get_resource_config_history['configurationItems']``."""
-
-    resourceId: str
-    resourceType: str
-    configurationItemStatus: str
-    configurationStateId: str
-    configurationItemCaptureTime: object  # boto3 returns datetime | ISO 8601 str
-    awsRegion: str
-    availabilityZone: str
-
-
-class GetResourceConfigHistoryResponse(TypedDict, total=False):
-    """Response of ``config.get_resource_config_history``."""
-
-    configurationItems: list[ConfigurationItem]
-
-
-class CloudTrailLookupEvent(TypedDict, total=False):
-    """One row from ``cloudtrail.lookup_events['Events']``."""
-
-    EventId: str
-    EventName: str
-    EventTime: object  # boto3 returns datetime | ISO 8601 str
-    Username: str
-    EventSource: str
-    AwsRegion: str
-    awsRegion: str  # AWS API uses both casings across SDK versions
-    CloudTrailEvent: str
-
-
-class LookupEventsResponse(TypedDict, total=False):
-    """Response of ``cloudtrail.lookup_events``."""
-
-    Events: list[CloudTrailLookupEvent]
-
-
-class HealthStatus(TypedDict):
-    """Return shape of :meth:`AwsConfigTrailSource.health`."""
-
-    ok: bool
-    detail: str
-
-
-class NormalizedRecord(TypedDict):
-    """A single infra-state row emitted by :meth:`AwsConfigTrailSource.query`.
-
-    Note: ``ts`` and ``value`` are intentionally ``object`` (not ``float``)
-    because this connector surfaces the upstream AWS timestamp / state-id
-    verbatim (datetime | ISO 8601 str | state token), which the canonical
-    pipeline/log/metric NormalizedRecord shape does not narrow to a number.
-    """
-
-    ts: object
-    source: str
-    kind: str
-    level_or_status: str
-    message: str
-    value: object
-    labels: dict[str, str]
-    raw: object
-
-
-# --------------------------------------------------------------------------- #
-# Client protocol + factory
-# --------------------------------------------------------------------------- #
-
-
-@runtime_checkable
-class _Client(Protocol):
-    """Minimal structural type for an AWS service client.
-
-    boto3 generates one client class per service, each exposing a different
-    method surface. The only honest static type for ``client.<arbitrary_method>``
-    is therefore ``Any`` — this is the documented dynamic-dispatch exception
-    from the type-safety skill. The TypedDicts above re-assert the known shape
-    the moment we bind the response to a name.
-    """
-
-    def __getattr__(self, name: str) -> Any: ...  # pragma: no cover - protocol
-
-
-# A factory turning a service name into a client (or None when boto3 missing).
-ClientFactory = Callable[[str], _Client | None]
-
-
-class _TupleAwsClient:
-    def __init__(self, value: object) -> None:
-        self._value = value
-
-    def lookup_events(self, **_kwargs: object) -> object:
-        if isinstance(self._value, tuple) and len(self._value) == 2:
-            return self._value[1]
-        return self._value
-
-
-def _default_factory(region: str | None, timeout: float) -> ClientFactory | None:
-    """Build a boto3-backed client_factory, or None if boto3 is unavailable.
-
-    The import is guarded so the module is importable (and testable) on hosts
-    without boto3 installed.
-    """
-    try:
-        import importlib
-
-        boto3 = importlib.import_module("boto3")  # boto3: optional [aws] extra, guarded by try/except
-        Config = importlib.import_module("botocore.config").Config  # botocore: optional, ships with boto3
-    except Exception:
-        return None
-
-    cfg = Config(connect_timeout=timeout, read_timeout=timeout, retries={"max_attempts": 2})
-
-    def _factory(service_name: str) -> _Client | None:
-        params: dict[str, object] = {"config": cfg}
-        if region:
-            params["region_name"] = region
-        return cast(_Client, boto3.client(service_name, **params))
-
-    return _factory
 
 
 class AwsConfigTrailSource:
@@ -190,7 +65,13 @@ class AwsConfigTrailSource:
     KIND = "infra"
     name = "aws_config_trail"
 
-    def __init__(self, config: Mapping[str, object], *, aws_client: _Client | None = None) -> None:
+    def __init__(
+        self,
+        config: Mapping[str, object],
+        *,
+        aws_client: object | None = None,
+    ) -> None:
+        """Build the source from connector config; an injected client wins over the boto3 factory."""
         self._config: dict[str, object] = dict(config)
         region_raw = config.get("region")
         self._region: str | None = region_raw if isinstance(region_raw, str) else None
@@ -208,12 +89,14 @@ class AwsConfigTrailSource:
         self._client_factory: ClientFactory | None = None
         if aws_client is not None:
             if callable(aws_client) and not hasattr(aws_client, "lookup_events"):
-                self._client_factory = cast(
-                    ClientFactory,
-                    lambda service: cast(_Client, _TupleAwsClient(aws_client(service))),
-                )
+
+                def _tuple_factory(service: str) -> _Client | None:
+                    return cast(_Client, _TupleAwsClient(aws_client, service))
+
+                self._client_factory = _tuple_factory
             else:
-                self._client_factory = lambda _service: aws_client
+                concrete_client = cast(_Client, aws_client)
+                self._client_factory = lambda _service: concrete_client
         elif "client_factory" in config:
             factory_val = config["client_factory"]
             self._client_factory = cast(ClientFactory, factory_val) if callable(factory_val) else None
@@ -350,6 +233,7 @@ class AwsConfigTrailSource:
     # -- public API ----------------------------------------------------------
 
     def health(self) -> HealthStatus:
+        """Probe the source. Never raises."""
         try:
             if self._client_factory is None:
                 return {"ok": False, "detail": "boto3 unavailable"}
@@ -365,6 +249,7 @@ class AwsConfigTrailSource:
             return {"ok": False, "detail": "health check failed"}
 
     def query(self, spec: Mapping[str, object]) -> list[NormalizedRecord]:
+        """Return normalized records from AWS Config or CloudTrail per ``spec['mode']``."""
         if self._client_factory is None:
             return []
         mode_raw = spec.get("mode", "config")

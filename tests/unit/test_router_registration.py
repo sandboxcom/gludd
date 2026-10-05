@@ -31,11 +31,14 @@ EXPECTED_ROUTERS: tuple[str, ...] = (
     "adversarial",
     "ansible",
     "benchmark",
+    "chat",
     "compute",
     "coordination",
     "estimation",
     "eval",
     "filestore",
+    "game",
+    "generate",
     "human_todos",
     "integrity",
     "mcp",
@@ -53,6 +56,7 @@ EXPECTED_ROUTERS: tuple[str, ...] = (
     "signing",
     "skills",
     "slurm",
+    "spec_quality",
     "stream",
     "terraform_state",
     "todos",
@@ -60,7 +64,7 @@ EXPECTED_ROUTERS: tuple[str, ...] = (
     "web_search",
     "worktree",
 )
-EXPECTED_ROUTER_COUNT = 32
+EXPECTED_ROUTER_COUNT = 36
 
 # Pre-existing (method, path) collisions known to exist across routers wired
 # by ``register_all``. The ``test_no_duplicate_route_keys`` test allows these

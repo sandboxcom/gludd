@@ -37,6 +37,7 @@ PLUGIN_TO_TEST = {
     "enforce-multitask": ["test_multitask_plugin.py"],
     "enforce-no-suppressions": ["test_no_suppression_comments_plugin.py"],
     "enforce-no-wait": ["test_no_wait_plugin.py"],
+    "enforce-pipeline-kickoff": ["test_pipeline_parallel_kickoff.py"],
     "enforce-session-start": ["test_session_start_plugin.py", "test_enforcement_session_start_plugin.py"],
     "enforce-stop": [
         "test_enforce_stop_syntax.py",
@@ -49,7 +50,11 @@ PLUGIN_TO_TEST = {
     "enforce-batch-push": ["test_batch_push_enforce.py", "test_behavioral_specs.py"],
     "enforce-depth": ["test_behavioral_specs.py"],
     "enforce-tdd": ["test_enforce_tdd_plugin.py", "test_behavioral_specs.py"],
-    "enforce-objective": ["test_enforce_objective_plugin.py", "test_behavioral_specs.py"],
+    "enforce-objective": [
+        "test_enforce_objective_plugin.py",
+        "test_enforce_objective_release_runtime.py",
+        "test_behavioral_specs.py",
+    ],
     "enforce-anti-essay": ["test_behavioral_specs.py"],
     "enforce-branch-discipline": ["test_behavioral_specs.py"],
     "enforce-test-integrity": ["test_behavioral_specs.py"],

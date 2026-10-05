@@ -1,19 +1,24 @@
+"""Hot-reload, rollback, and worker coordination HTTP routes."""
+
 from __future__ import annotations
 
 import asyncio
 import logging
 from pathlib import Path
 from typing import cast
+from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field, field_validator
+from fastapi import Depends, FastAPI, HTTPException
+from pydantic import BaseModel, Field, StrictFloat, StrictStr, field_validator
 
 from general_ludd.ansible.runner import AnsibleRunnerAdapter
 from general_ludd.daemon import _get_or_create_extended_subsystems, _get_or_create_subsystems
 from general_ludd.events.types import ConfigReloadedEvent
 from general_ludd.prompts.registry import PromptRegistry
 from general_ludd.reload.hot_reloader import HotReloader, ReloadScope
+from general_ludd.routers._runtime import IdempotencyStore, StrictRuntimeRequest
 from general_ludd.security import is_safe_fetch_url
+from general_ludd.security.capability_guard import RequireCapability
 from general_ludd.security.state import project_state
 from general_ludd.self_update.module_snapshot import (
     ModuleSnapshot,
@@ -31,6 +36,8 @@ _MAX_HEADER_VAL_LEN = 1024
 
 
 class ReloadRequest(BaseModel):
+    """Describe a scoped hot-reload request and optional rollback snapshot."""
+
     scope: str = "all"
     snapshot_modules: list[str] | None = Field(
         default=None,
@@ -40,6 +47,8 @@ class ReloadRequest(BaseModel):
 
 
 class RollbackRequest(BaseModel):
+    """Select module snapshots to restore after a failed reload."""
+
     module_names: list[str] | None = Field(
         default=None,
         description="Module names to restore. When None, restores all modules in the most recent snapshot.",
@@ -47,6 +56,8 @@ class RollbackRequest(BaseModel):
 
 
 class RegisterWorkerRequest(BaseModel):
+    """Register one safe remote worker endpoint."""
+
     worker_id: str
     address: str
 
@@ -62,6 +73,8 @@ class RegisterWorkerRequest(BaseModel):
 
 
 class RegisterHookRequest(BaseModel):
+    """Register one bounded and SSRF-checked reload event hook."""
+
     event_name: str
     url: str
     headers: dict[str, str] | None = Field(default=None, repr=False)
@@ -94,22 +107,120 @@ class RegisterHookRequest(BaseModel):
         return v
 
 
+class CodeReloadRequest(StrictRuntimeRequest):
+    """Digest-bound leaf-module rotation request."""
+
+    module_name: StrictStr = Field(
+        min_length=1,
+        max_length=512,
+        pattern=r"^general_ludd(?:\.[A-Za-z_][A-Za-z0-9_]*)+$",
+    )
+    candidate_source_path: StrictStr = Field(min_length=1, max_length=4096)
+    expected_sha256: StrictStr = Field(pattern=r"^[0-9a-f]{64}$")
+    base_source_path: StrictStr | None = Field(default=None, max_length=4096)
+    role: StrictStr | None = Field(default=None, max_length=128)
+    health_url: StrictStr | None = Field(default=None, max_length=2048)
+    health_timeout: StrictFloat = Field(default=5.0, ge=0.1, le=30.0)
+    idempotency_key: StrictStr | None = Field(default=None, min_length=1, max_length=256)
+
+    @field_validator("candidate_source_path", "base_source_path")
+    @classmethod
+    def _require_absolute_source_path(cls, value: str | None) -> str | None:
+        if value is not None and not Path(value).is_absolute():
+            raise ValueError("source paths must be absolute")
+        return value
+
+    @field_validator("health_url")
+    @classmethod
+    def _confine_health_gate(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
+            or parsed.path not in {"/readyz", "/healthz"}
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("health_url must be a loopback /readyz or /healthz endpoint")
+        return value
+
+
+def _make_hot_reloader(app: FastAPI) -> HotReloader:
+    subsys = _get_or_create_subsystems(app)
+    skills_dirs: list[str] = []
+    config_dir = getattr(app.state, "_config_dir", None)
+    if config_dir:
+        global_skills = Path(config_dir) / "skills"
+        if global_skills.is_dir():
+            skills_dirs.append(str(global_skills))
+    project_dir = getattr(app.state, "_project_gludd_dir", None)
+    if project_dir is not None:
+        project_skills = Path(project_dir) / "skills"
+        if project_skills.is_dir():
+            skills_dirs.append(str(project_skills))
+    return HotReloader(
+        config_dir=config_dir or str(project_state().directory("config")),
+        event_bus=subsys["bus"],
+        hook_system=subsys["hooks"],
+        worker_broadcaster=subsys["broadcaster"],
+        templates_dir=app.state._templates_dir,
+        playbooks_dir=app.state._playbooks_dir,
+        skills_dirs=skills_dirs or None,
+        skill_registry=getattr(app.state, "_skill_registry", None),
+        prompt_registry=getattr(app.state, "_prompt_registry", None),
+        reload_lock=getattr(app.state, "_reload_lock", None),
+    )
+
 def _register_admin_routes(app: FastAPI) -> None:
+    code_reload_store = IdempotencyStore()
+
+    @app.post(
+        "/admin/reload/code",
+        dependencies=[Depends(RequireCapability(resource="admin:reload", action="write"))],
+    )
+    async def admin_reload_code(req: CodeReloadRequest) -> dict[str, object]:
+        async def _run() -> dict[str, object]:
+            reloader = _make_hot_reloader(app)
+
+            def _health_check() -> bool:
+                return not bool(getattr(app.state, "_degraded", False))
+
+            try:
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        reloader.reload_code_module,
+                        module_name=req.module_name,
+                        candidate_source_path=req.candidate_source_path,
+                        health_check=_health_check if req.health_url else None,
+                        role=req.role,
+                        base_source_path=req.base_source_path,
+                        expected_sha256=req.expected_sha256,
+                    ),
+                    timeout=req.health_timeout + 15.0,
+                )
+            except TimeoutError as exc:
+                raise HTTPException(status_code=504, detail="code reload timed out") from exc
+            details = dict(result.details)
+            return {
+                "success": result.success,
+                "rolled_back": bool(details.get("rolled_back", False)),
+                "module": req.module_name,
+                "details": details,
+                "error": result.error,
+            }
+
+        return await code_reload_store.run(
+            key=req.idempotency_key,
+            payload=req.model_dump(exclude={"idempotency_key"}, mode="json"),
+            producer=_run,
+        )
 
     @app.post("/admin/reload")
     async def admin_reload(req: ReloadRequest) -> dict[str, object]:
-        subsys = _get_or_create_subsystems(app)
-        _skills_dirs: list[str] = []
-        _config_dir_val = getattr(app.state, "_config_dir", None)
-        if _config_dir_val:
-            _global_skills = Path(_config_dir_val) / "skills"
-            if _global_skills.is_dir():
-                _skills_dirs.append(str(_global_skills))
-        _proj_dir = getattr(app.state, "_project_gludd_dir", None)
-        if _proj_dir is not None:
-            _proj_skills = Path(_proj_dir) / "skills"
-            if _proj_skills.is_dir():
-                _skills_dirs.append(str(_proj_skills))
         # Snapshot modules before reload so a failed reload can be rolled back.
         import logging
         import sys
@@ -127,18 +238,7 @@ def _register_admin_routes(app: FastAPI) -> None:
                 len(pre_snapshot.warnings),
             )
 
-        reloader = HotReloader(
-            config_dir=app.state._config_dir or str(project_state().directory("config")),
-            event_bus=subsys["bus"],
-            hook_system=subsys["hooks"],
-            worker_broadcaster=subsys["broadcaster"],
-            templates_dir=app.state._templates_dir,
-            playbooks_dir=app.state._playbooks_dir,
-            skills_dirs=_skills_dirs if _skills_dirs else None,
-            skill_registry=getattr(app.state, "_skill_registry", None),
-            prompt_registry=getattr(app.state, "_prompt_registry", None),
-            reload_lock=getattr(app.state, "_reload_lock", None),
-        )
+        reloader = _make_hot_reloader(app)
         scope = ReloadScope(req.scope)
         # reloader.reload is a sync op that (deep inside) does serial blocking
         # httpx.post per worker via the broadcaster — offload it so the whole
@@ -405,5 +505,6 @@ def _register_agent_routes(app: FastAPI) -> None:
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    """Register reload administration and agent-facing routes."""
     _register_admin_routes(app)
     _register_agent_routes(app)

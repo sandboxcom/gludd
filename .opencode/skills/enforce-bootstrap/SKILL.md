@@ -95,38 +95,29 @@ State reset via make crash-recovery confirmed.
 
 ---
 
-### Scenario B: "I need to push but enforce-floor blocks me"
+### Scenario B: "I need to push but an explicit floor blocks me"
 
 **Symptom:**
 ```
 make git-push-sandboxcom
-→ BLOCKED: Floor breach. Active subagent count below 10.
+→ BLOCKED: Configured floor breach.
 ```
 
-**Root cause:** The floor plugin detected fewer than 10 active subagents.
-This is usually correct — the agent stopped dispatching.
+**Root cause:** A positive operator override or stale state enabled a mandatory
+floor. The project default is zero; the hard ceiling is three.
 
 **Legitimate fix (do this first):**
-1. Check if you can dispatch more subagents. If you have pending work, dispatch.
-2. If this is a "finishing up" moment (single remaining action before session
-   end), the floor is at odds with reality. Use the escape hatch.
+1. Inspect state with `make enforcement-status`.
+2. Reset stale state to the canonical default with
+   `make reload-enforcement CLAUDE_AGENT_FLOOR=0 CLAUDE_AGENT_CEILING=3`.
+3. If an operator intentionally configured a positive floor, satisfy it only
+   with concrete independent deliverables; never add filler.
+4. Use the normal guarded push target for the current branch.
 
-**Escape hatch:**
+**Guarded push:**
 ```bash
-# Option A: Use the batch-push target (lower threshold)
-make batch-push COMMIT_THRESHOLD=1
-
-# Option B: Temporary push-me target
-cat >> Makefile << 'EOF'
-push-me:
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom master
-EOF
-make push-me
-```
-
-**After pushing, remove the temporary target:**
-```bash
-# Edit Makefile to remove the push-me target
+make push-guarded BRANCH=development
+make verify-remote BRANCH=development
 ```
 
 ---
@@ -148,12 +139,9 @@ This is almost always correct — you should write the test first.
 3. Now edit `src/general_ludd/foo.py` (allowed — test file exists)
 4. Run test again: should PASS (green)
 
-**Escape hatch (only for refactoring untested legacy code):**
-```bash
-# Disable TDD enforcement for this session
-GLUDD_TDD_ENFORCE=0 make gate  # re-run with env var
-# Or: touch tests/unit/test_<module>.py first (even an empty file satisfies the check)
-```
+There is no empty-test or disable-the-guard shortcut. For legacy code, add a
+real failing characterization test, observe the failure, then change the
+implementation.
 
 ---
 
@@ -162,72 +150,50 @@ GLUDD_TDD_ENFORCE=0 make gate  # re-run with env var
 **Symptom:** Every tool call is denied by a different plugin. Normal targets
 also denied. Crash recovery didn't help. This is a full enforcement deadlock.
 
-**Step-by-step emergency procedure:**
+**Step-by-step recovery procedure:**
 
-**Step 1: Disengage enforcement**
+**Step 1: Restore canonical state**
 ```bash
-make disengage-enforcement
-```
-This writes three files:
-- `/tmp/gludd-watchdog-disengage.json` — disengage signal with 1-hour expiry
-- `/tmp/gludd-block-counter.json` — resets block counter to zero
-- `/tmp/gludd-watchdog-ci.json` — green CI cache (bypasses CI gate)
-
-Every enforcement plugin checks for the disengage file FIRST in its
-`tool.execute.before` hook and passes through if it exists and is unexpired.
-
-**Step 2: Verify the disengage file**
-```bash
-# Check the file exists and has a future expiry:
-# It should contain: {"disengage_until_epoch_ms": <timestamp>}
+make crash-recovery
+make reload-enforcement CLAUDE_AGENT_FLOOR=0 CLAUDE_AGENT_CEILING=3
+make enforcement-status
 ```
 
-The file written by `make disengage-enforcement` sets a 1-hour window.
+Use `make disengage-enforcement` only if canonical state recovery itself cannot
+run. Disengage skips heuristic checks temporarily; it does not waive pending
+work, test, exact-head gate, branch, or release requirements.
 
-**Step 3: Commit using the escape-hatch target**
+**Step 2: Reproduce and fix the false positive**
 ```bash
-# Write message to temp file
-cat > /tmp/msg.txt << 'EOF'
-fix: resolve enforcement deadlock
-
-All plugins returning false positives after state-file corruption.
-Root cause: stale /tmp/gludd-* from crashed prior session.
-State reset + crash-recovery run. Commit via git-commit-file.
-EOF
-
-make git-commit-file FILE=/tmp/msg.txt
+make test-hook-runtime
+make verify-enforcement
 ```
 
-This target is NOT in any plugin's "stop-like" or "commit-shaped" regex, so it
-passes through even when `make git-commit` / `make ship-commit` /
-`make commit-no-verify` are blocked.
+Add a failing regression for the specific deadlock before changing plugin code.
 
-**Step 4: Push using the escape-hatch target**
+**Step 3: Run the exact candidate gate and commit normally**
 ```bash
-# If push-me doesn't exist, add it temporarily:
-cat >> Makefile << 'EOF'
+make gate
+make git-commit MSG='fix: resolve enforcement deadlock'
+```
 
-push-me:
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom master
-EOF
-
-make push-me
+**Step 4: Push through the guarded branch workflow**
+```bash
+make verify-state
+make push-guarded BRANCH=development
 ```
 
 **Step 5: Verify the remote**
 ```bash
-make verify-remote BRANCH=master SHA=$(git rev-parse HEAD)
+make verify-remote BRANCH=development
 ```
 
-NEVER claim a push succeeded until `VERIFIED master@<sha>` is printed.
+NEVER claim a push succeeded until the matching `VERIFIED` evidence is printed.
 
-**Step 6: Clean up**
+**Step 6: Re-arm and verify**
 ```bash
-# Remove temporary push-me target from Makefile
-# The target was added at the end — remove those lines.
-
-# Check: make sure no temporary targets linger
-make check-duplicate-targets
+make rearm-enforcement
+make enforcement-status
 ```
 
 ---
@@ -269,7 +235,7 @@ hatch when the fix is impossible.
 |---|---|
 | **What it blocks** | Non-`make` bash commands, shell metacharacters in `make` commands |
 | **Legitimate fix** | Add a `make` target for what you need, then `make <target>` |
-| **Escape hatch** | Add the target to the Makefile temporarily. No other way — the plugin is hard-coded ON with no env-var disable. |
+| **Escape hatch** | None. Add a narrow, tested, contract-registered Make target when a capability is genuinely missing. |
 | **Disable env var** | (none — hard-coded) |
 
 ### enforce-stop.ts
@@ -285,8 +251,8 @@ hatch when the fix is impossible.
 
 | | |
 |---|---|
-| **What it blocks** | Non-dispatch tool calls after 5 calls in 30s with fewer than 10 active subagents |
-| **Legitimate fix** | Dispatch subagents to refill the floor. |
+| **What it blocks** | Non-dispatch tool calls only when an explicitly configured one-to-three floor is unmet; the default floor is zero |
+| **Legitimate fix** | Reset stale state or assign concrete independent work up to the configured bounded floor. |
 | **Escape hatch** | `GLUDD_FLOOR_ENFORCE=0 make <target>` |
 | **Disable env var** | `GLUDD_FLOOR_ENFORCE=0` |
 
@@ -294,8 +260,8 @@ hatch when the fix is impossible.
 
 | | |
 |---|---|
-| **What it blocks** | Edit/write/bash after 2 consecutive non-dispatch calls (MAINTHREAD_THRESHOLD); read-grind after 10 reads in 60s |
-| **Legitimate fix** | Dispatch a subagent between inline edits. |
+| **What it blocks** | Inline mutation/read streaks only when an explicit positive floor is active; the zero-floor default permits inline progress |
+| **Legitimate fix** | Reset stale state or satisfy the configured floor with a real independent deliverable; never dispatch filler. |
 | **Escape hatch** | `GLUDD_MAINTHREAD_STREAK_ENFORCE=0 make <target>` |
 | **Disable env var** | `GLUDD_MAINTHREAD_STREAK_ENFORCE=0` |
 
@@ -348,8 +314,8 @@ hatch when the fix is impossible.
 
 | | |
 |---|---|
-| **What it blocks** | Non-dispatch tool calls before ≥10 dispatches have been made in the session |
-| **Legitimate fix** | Dispatch a 10-wide wave as the first action after reading the backlog. |
+| **What it blocks** | Non-dispatch tool calls only when an operator configured a positive session-start floor and that bounded floor is unmet |
+| **Legitimate fix** | Satisfy the configured one-to-three floor with concrete independent work, or keep the default zero floor for inline work. |
 | **Escape hatch** | `GLUDD_SESSION_START_ENFORCE=0 make <target>` |
 | **Disable env var** | `GLUDD_SESSION_START_ENFORCE=0` |
 
@@ -357,8 +323,8 @@ hatch when the fix is impossible.
 
 | | |
 |---|---|
-| **What it blocks** | Non-dispatch tools when fewer than 10 dispatches have been made; zero-dispatch streak ≥ 2 |
-| **Legitimate fix** | Dispatch ≥10 subagents in one message. |
+| **What it blocks** | Non-dispatch tools only when an explicit one-to-three minimum is unmet; the default zero floor never forces delegation |
+| **Legitimate fix** | Dispatch only concrete independent work up to the three-agent ceiling; never add filler. |
 | **Escape hatch** | `GLUDD_MULTITASK_FLOOR_ENFORCE=0 make <target>` |
 | **Disable env var** | `GLUDD_MULTITASK_FLOOR_ENFORCE=0` |
 
@@ -390,15 +356,15 @@ and how to inspect/reset it.
 ### `/tmp/gludd-floor-override`
 
 ```json
-10
+0
 ```
 
 | | |
 |---|---|
 | **Controls** | Floor value for subagent count enforcement |
-| **Inspect** | Read the file — it's just an integer |
-| **Reset** | `echo 10 > /tmp/gludd-floor-override` |
-| **Default** | 10 |
+| **Inspect** | `make enforcement-status` |
+| **Reset** | `make reload-enforcement CLAUDE_AGENT_FLOOR=0 CLAUDE_AGENT_CEILING=3` |
+| **Default** | 0, with a hard ceiling of 3 |
 
 ### `/tmp/gludd-watchdog-disengage.json`
 
@@ -412,8 +378,8 @@ and how to inspect/reset it.
 | | |
 |---|---|
 | **Controls** | Disengage signal — tells all enforcement plugins to skip heuristic checks |
-| **Inspect** | Read the file and check `disengage_until_epoch_ms` is in the future |
-| **Reset** | Delete the file: `rm /tmp/gludd-watchdog-disengage.json` |
+| **Inspect** | `make enforcement-status` |
+| **Reset** | `make rearm-enforcement` |
 | **Expiry** | 1 hour after creation |
 
 ### `/tmp/gludd-session-start.json`
@@ -421,8 +387,8 @@ and how to inspect/reset it.
 ```json
 {
   "pid": 12345,
-  "dispatchCount": 5,
-  "dispatchesRequired": 10,
+  "dispatchCount": 0,
+  "dispatchesRequired": 0,
   "sessionStartedAt": 1753459200000,
   "firstDispatchMade": true,
   "lastDispatchAt": 1753459260000
@@ -581,44 +547,23 @@ The disengage signal expires after `MAX_DISENGAGE_MS` (typically 1 hour /
 ### Manual verification
 
 ```bash
-# Check if disengage is active:
-if [ -f /tmp/gludd-watchdog-disengage.json ]; then
-  EXPIRY=$(python3 -c "import json; print(json.load(open('/tmp/gludd-watchdog-disengage.json'))['disengage_until_epoch_ms'])")
-  NOW=$(python3 -c "import time; print(int(time.time() * 1000))")
-  if [ "$NOW" -lt "$EXPIRY" ]; then
-    echo "DISENGAGE ACTIVE — expires in $(( (EXPIRY - NOW) / 1000 ))s"
-  else
-    echo "DISENGAGE EXPIRED — enforcement active"
-  fi
-else
-  echo "DISENGAGE NOT SET — enforcement active"
-fi
+make enforcement-status
 ```
 
 ---
 
-## Make Target Reference for Escape Hatches
+## Make Target Reference for Recovery
 
-| Normal target (blocked) | Escape-hatch target (not matched by plugin regex) | Use when |
-|---|---|---|
-| `make git-commit MSG=...` | `make git-commit-file FILE=/tmp/msg.txt` | Commit blocked by todowrite/stop enforcement |
-| `make ship-commit MSG=...` | `make git-commit-file FILE=/tmp/msg.txt` | Ship blocked by floor/multitask enforcement |
-| `make commit-no-verify` | `make git-commit-file FILE=/tmp/msg.txt` | No-verify blocked by stop enforcement |
-| `make git-push-sandboxcom` | `make push-me` (temporary target) | Push blocked by floor/clean-tree enforcement |
-| `make ci-verdict` | `make ci-verdict-safe FORCE=1` | CI check blocked by cooldown (release-cut only) |
-| `make batch-push` | `make batch-push COMMIT_THRESHOLD=1` | Batch push blocked by threshold |
-| `make git-push-branch` | `make push-me` (temporary target) | Branch push blocked by green-branch guard |
-| `make ship-commit MSG=... PUSH=1` | Commit locally, then `make push-me` | Combined commit+push blocked |
-
-### When NOT to use each escape hatch
-
-| Escape hatch | Do NOT use when |
+| Blocked operation | Recovery path |
 |---|---|
-| `git-commit-file` | Gate is red/failing — fix the gate first |
-| `push-me` | CI is already running (will cancel it) |
-| `ci-verdict-safe FORCE=1` | Not cutting a release (routine CI check) |
-| `COMMIT_THRESHOLD=1` | Less than 5 minutes since last push (cooldown violation) |
-| Any escape hatch | The guardrail is correctly blocking a policy violation |
+| Commit or ship | Fix the reported task/gate violation, run `make crash-recovery` only for stale state, then retry the ordinary guarded target |
+| Push | Run `make verify-state`, preserve branch discipline, then use `make push-guarded BRANCH=development` |
+| CI verdict cooldown | Check at a natural break; use `make ci-verdict-safe FORCE=1` only inside an authorized release cut |
+| Batch threshold | Accumulate the required local commits; do not lower the threshold to manufacture a push |
+| Suspected plugin deadlock | Add a failing hook regression, fix the plugin, run `make test-hook-runtime`, and restart OpenCode after committing |
+
+Recovery targets do not waive a red gate, incomplete task evidence, branch
+discipline, or release prerequisites.
 
 ---
 
@@ -647,14 +592,14 @@ through, but the push is now blocked because the disengage expired.
 # Run a fresh disengage
 make disengage-enforcement
 
-# Push immediately
-make push-me
+# Use the guarded push; disengage does not waive its preconditions
+make push-guarded BRANCH=development
 
 # Verify
-make verify-remote BRANCH=master SHA=$(git rev-parse HEAD)
+make verify-remote BRANCH=development
 
-# Clean up
-rm /tmp/gludd-watchdog-disengage.json  # remove the fresh disengage
+# Re-arm immediately
+make rearm-enforcement
 ```
 
 ### Recovery 3: Push that was blocked but actually succeeded
@@ -664,8 +609,8 @@ before the plugin fired (race condition). The remote has the commit.
 
 **Procedure:**
 ```bash
-# Verify what's actually on the remote
-make verify-remote BRANCH=master
+# Verify what's actually on the shared development branch
+make verify-remote BRANCH=development
 
 # If VERIFIED: the push DID land. The plugin was a false positive.
 # Check CI status:
@@ -673,8 +618,9 @@ make ci-verdict-safe
 
 # If NOT VERIFIED: the push did NOT land. Retry with escape hatch.
 make disengage-enforcement
-make push-me
-make verify-remote BRANCH=master
+make push-guarded BRANCH=development
+make verify-remote BRANCH=development
+make rearm-enforcement
 ```
 
 ### Recovery 4: CI green cache is stale
@@ -684,8 +630,8 @@ CI is actually red or running.
 
 **Procedure:**
 ```bash
-# Remove the stale cache
-rm /tmp/gludd-watchdog-ci.json
+# Reset project-owned enforcement state through its bounded target
+make crash-recovery
 
 # Check real CI state (force past cooldown)
 make ci-verdict-safe FORCE=1
@@ -713,28 +659,17 @@ make gate  # confirm PASS
 make git-commit MSG='quick fix'  # now allowed — gate is green
 ```
 
-### AP-2: Leaving the push-me target in the Makefile
+### AP-2: Creating a temporary push bypass target
 
 ```bash
-# WRONG — push-me target persists, becomes a permanent bypass
-cat >> Makefile << 'EOF'
-push-me:
-	git push sandboxcom master
-EOF
-make push-me
-# ... next session ...
-make push-me  # agent uses it again, short-circuiting push guards permanently
+# WRONG — adding a direct-push Make target bypasses branch and pre-push guards.
+# Do not create or retain temporary push targets.
 ```
 
 ```bash
-# RIGHT — remove the temporary target immediately after use
-cat >> Makefile << 'EOF'
-push-me:
-	git push sandboxcom master
-EOF
-make push-me
-make verify-remote BRANCH=master
-# NOW remove push-me from Makefile
+# RIGHT — use the existing guarded target and verify the same branch.
+make push-guarded BRANCH=development
+make verify-remote BRANCH=development
 ```
 
 ### AP-3: Using FORCE=1 for routine CI checks
@@ -749,7 +684,7 @@ make ci-verdict-safe FORCE=1  # cooldown was 3m, agent forced through
 # RIGHT — respect the cooldown for routine checks
 # Cooldown says 3m left → dispatch real work for 3+ minutes, then check
 make ci-verdict-safe  # returns CI-COOLDOWN: 3m remaining
-# ... dispatch 10 subagents doing real work ...
+# ... advance concrete work inline or with up to three bounded subagents ...
 # ... 5 minutes later ...
 make ci-verdict-safe  # cooldown expired → returns actual CI state
 ```
@@ -759,8 +694,8 @@ make ci-verdict-safe  # cooldown expired → returns actual CI state
 ```bash
 # WRONG — disengaging to avoid a minor inconvenience
 make disengage-enforcement
-make git-commit-file FILE=/tmp/msg.txt  # commit wasn't actually blocked
-# Result: all guardrails are now bypassed for an hour
+make git-commit MSG='fix: update TASKS.md'
+# Result: heuristic checks were bypassed without fixing their false positive.
 ```
 
 ```bash
@@ -772,23 +707,24 @@ make crash-recovery  # try state reset first
 make git-commit MSG='fix: update TASKS.md'  # retry normal
 # Still blocked? NOW disengage.
 make disengage-enforcement
-make git-commit-file FILE=/tmp/msg.txt
+make git-commit MSG='fix: update TASKS.md'
+make rearm-enforcement
 ```
 
-### AP-5: Using the escape hatch without verifying the result
+### AP-5: Pushing without verifying the result
 
 ```bash
-# WRONG — push-me succeeded but agent doesn't verify
-make push-me
+# WRONG — a push target returned but the agent doesn't verify
+make push-guarded BRANCH=development
 # Agent: "Pushed!" — but the push was a no-op (remote already had the commit)
 # Agent starts next work assuming CI will pick up the push — CI sees nothing new
 ```
 
 ```bash
 # RIGHT — always verify
-make push-me
-make verify-remote BRANCH=master SHA=$(git rev-parse HEAD)
-# VERIFIED master@abc123def  ← confirmed the remote tip matches
+make push-guarded BRANCH=development
+make verify-remote BRANCH=development
+# VERIFIED development@abc123def  ← confirmed the remote tip matches
 # NOW you can claim "pushed"
 ```
 
@@ -796,16 +732,15 @@ make verify-remote BRANCH=master SHA=$(git rev-parse HEAD)
 
 ## Checklist
 
-- [ ] Tried normal `make git-commit` / `make git-push-sandboxcom` — blocked
+- [ ] Tried ordinary `make git-commit` / `make push-guarded` flow — blocked
 - [ ] Determined the block is a false positive (not a legitimate policy violation)
 - [ ] Tried `make crash-recovery` (stale state file reset)
 - [ ] Tried `make clean-tmp` (stale temp file cleanup)
 - [ ] Ran `make disengage-enforcement`
-- [ ] Verified `/tmp/gludd-watchdog-disengage.json` exists with future expiry
-- [ ] Wrote commit message to `/tmp/msg.txt`
-- [ ] Committed via `make git-commit-file FILE=/tmp/msg.txt`
-- [ ] Added temporary `push-me` target (if needed)
-- [ ] Pushed via `make push-me`
-- [ ] Verified remote via `make verify-remote BRANCH=master SHA=<sha>`
-- [ ] Removed temporary `push-me` target from Makefile
-- [ ] Removed disengage signal when no longer needed: `rm /tmp/gludd-watchdog-disengage.json`
+- [ ] Verified state through `make enforcement-status`
+- [ ] Added a failing regression for the false-positive block
+- [ ] Ran the exact candidate gate
+- [ ] Committed via the ordinary guarded Make target
+- [ ] Pushed via `make push-guarded BRANCH=development`
+- [ ] Verified remote via `make verify-remote BRANCH=development`
+- [ ] Re-armed enforcement via `make rearm-enforcement`

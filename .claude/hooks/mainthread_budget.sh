@@ -27,8 +27,13 @@ set -o pipefail 2>/dev/null || true
 
 STREAK_FILE="${GLUDD_MAINTHREAD_STREAK_FILE:-/tmp/gludd-mainthread-streak}"
 THRESHOLD="${GLUDD_MAINTHREAD_THRESHOLD:-12}"  # inline calls in a row before we nag (rev 2026-06-24: raised 8->12; coherent read/edit sets routinely exceed 8)
-TARGET="${CLAUDE_AGENT_TARGET:-10}"
+FLOOR="${CLAUDE_AGENT_FLOOR:-0}"
+TARGET="${CLAUDE_AGENT_TARGET:-3}"
 REPO_DIR="/Users/shawnwilson/gludd"
+
+# Delegation pressure is opt-in. A target without a positive floor is only a
+# sizing preference and must never turn valid inline ownership into a warning.
+[ "$FLOOR" -gt 0 ] || exit 0
 
 input="$(cat 2>/dev/null || echo '{}')"
 
@@ -85,13 +90,12 @@ case "$EVENT" in
     streak="$(read_streak)"
     [ "$streak" -ge "$THRESHOLD" ] || exit 0
 
-    # Only nag when the floor is actually below target — inline work is fine when
-    # a healthy pool is already running.
+    # Only nag when the explicitly configured floor is not met.
     live="$(cd "$REPO_DIR" 2>/dev/null && \
       FLOOR_PROBE_SECS="${FLOOR_PROBE_SECS:-0.5}" FLOOR_TAIL_SECS="${FLOOR_TAIL_SECS:-75}" \
       python3 scripts/agent_liveness.py --count 2>/dev/null)"
     case "$live" in ''|*[!0-9]*) exit 0 ;; esac
-    [ "$live" -lt "$TARGET" ] || exit 0
+    [ "$live" -lt "$FLOOR" ] || exit 0
 
     # TIME COOLDOWN (rev 2026-06-24): even with the streak re-arm this could fire
     # every ~3 inline calls; cap it to once per COOLDOWN secs so a necessary short

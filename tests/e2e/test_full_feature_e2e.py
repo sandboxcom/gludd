@@ -208,6 +208,7 @@ class TestProcessIsolation:
     def test_to_runner_kwargs_with_blocked_tools(self) -> None:
         config = ProcessIsolationConfig(
             enabled=True,
+            container_image="registry.example/gludd-ee:test@sha256:" + "a" * 64,
             executable="podman",
             isolation_path="/tmp/sandbox",
             hide_paths=["/secret"],
@@ -241,7 +242,9 @@ class TestProcessIsolation:
 
     def test_is_module_blocked_shell(self) -> None:
         config = ProcessIsolationConfig(
-            enabled=True, block_local_tools=["bash"]
+            enabled=True,
+            container_image="registry.example/gludd-ee:test@sha256:" + "a" * 64,
+            block_local_tools=["bash"],
         )
         assert config.is_module_blocked("shell") is True
         assert config.is_module_blocked("command") is True
@@ -256,6 +259,7 @@ class TestProcessIsolation:
     def test_ansible_runner_adapter_passes_isolation(self) -> None:
         isolation = ProcessIsolationConfig(
             enabled=True,
+            container_image="registry.example/gludd-ee:test@sha256:" + "a" * 64,
             executable="podman",
             block_local_tools=["bash"],
         )

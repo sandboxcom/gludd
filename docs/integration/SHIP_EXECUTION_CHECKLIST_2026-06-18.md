@@ -38,20 +38,20 @@ full gate re-run.
 ## Step 1 — Pre-ship safety: confirm master is STILL 3223c67 and is an ancestor of 6063e51
 
 **Makefile target:** `git-is-ancestor` (line 604):
-```
+```text
 make git-is-ancestor A=3223c67 B=6063e51
 ```
 **Expected output:** `exit=0`
 **Abort condition:** `exit=1` — master has moved ahead of 3223c67 OR 3223c67 is not an ancestor of 6063e51; investigate before proceeding. Do not ship.
 
 To confirm the current master SHA (so you can verify it is still 3223c67):
-```
+```text
 make git-where
 ```
 (Makefile line 545: prints HEAD, master short SHA, all branches, worktree list.)
 
 Or:
-```
+```text
 make git-log
 ```
 (Shows the 10 most recent commits; confirm master tip is 3223c67.)
@@ -63,7 +63,7 @@ make git-log
 ### Option A — Automated path via ship-async (recommended; re-runs full gate)
 
 **Makefile target:** `ship-async` (line 360):
-```
+```text
 make ship-async REF=6063e51 TARGET=master
 ```
 `ship_async.sh` does:
@@ -79,13 +79,13 @@ make ship-async REF=6063e51 TARGET=master
 ### Option B — Manual FF path (skips gate re-run; use only if you trust the 6063e51 gate result)
 
 No single target does a bare ff-only merge. You must chain two targets:
-```
+```text
 make git-checkout MSG='master'
 ```
 (Makefile line 1293: `git checkout "$(MSG)"` — switches to master.)
 
 Then manually confirm the gate is still fresh (`.gate-status` < 30 min old and all phases PASS), then run:
-```
+```text
 make git-is-ancestor A=master B=6063e51
 ```
 (Confirm exit=0 — i.e. master is still an ancestor of 6063e51 and FF is valid.)
@@ -102,13 +102,13 @@ targets that merge are:
 
 ## Step 3 — Post-ship verify: confirm master == 6063e51
 
-```
+```text
 make git-show MSG="master"
 ```
 (Makefile line 633: `git show "$(MSG)"` — shows the commit. Confirm first line is `commit 6063e5176401e95d1c311013913c23d655571b40`.)
 
 Or use:
-```
+```text
 make git-where
 ```
 Confirm the `--- master ---` line shows `6063e51`.
@@ -120,7 +120,7 @@ Confirm the `--- master ---` line shows `6063e51`.
 ## Step 4 — Gated-merge cascade
 
 **Makefile target:** `gated-merge` (line 376):
-```
+```text
 BASE='$(BASE)' BRANCHES='$(BRANCHES)' MERGE_STRATEGY='$(MERGE_STRATEGY)' MANIFEST='$(MANIFEST)' bash scripts/gated_merge.sh
 ```
 
@@ -135,7 +135,7 @@ verify. On conflict or collection failure it resets hard to `BASE`.
 
 ### 4a — Prerequisite: verify ship landed (runbook section 1)
 
-```
+```text
 make git-is-ancestor A="6063e51" B="master"
 ```
 Expected: `exit=0`. If `exit=1`, the ship has not landed; do not run merges.
@@ -145,20 +145,20 @@ Expected: `exit=0`. If `exit=1`, the ship has not landed; do not run merges.
 This branch is ancestor-clean off 6063e51 (3 commits ahead, 0 commits unique to ship).
 
 FF pre-check (confirm master is an ancestor of the branch, so merge is clean):
-```
+```text
 make git-is-ancestor A="master" B="feature/batch3-security"
 ```
 Expected: `exit=0`.
 
 Merge:
-```
+```text
 make gated-merge BASE=master BRANCHES='feature/batch3-security' MANIFEST='/tmp/gludd-cascade-batch3.txt'
 ```
 **Expected:** manifest at `/tmp/gludd-cascade-batch3.txt` contains `feature/batch3-security MERGED`.
 **Abort condition:** `CONFLICT` or `FAIL` in the manifest — do not proceed; check manifest for which ref failed.
 
 Post-merge full gate:
-```
+```text
 make gate
 ```
 **Abort condition:** any phase shows FAIL in `.gate-status`.
@@ -171,40 +171,40 @@ ancestor check against current master (not 6063e51 — master will have moved af
 **Re-check-ancestry-against-current-master protocol for each:**
 
 For each branch when it lands, run:
-```
+```text
 make git-is-ancestor A="master" B="<branch-name>"
 ```
 - If `exit=0`: branch is ancestor-clean off current master; proceed with `make gated-merge`.
 - If `exit=1`: master has moved ahead of the branch's base. The branch needs to be rebased or merged. Use `make git-merge MSG="<branch>"` (--no-ff, creates merge commit) then `make gate`; OR ask the build agent to rebase the branch onto current master.
 
 **floor_controller-consolidated** (not yet created — mt-7 + feature/floor-gate-safe consolidation):
-```
+```text
 make git-is-ancestor A="master" B="floor_controller-consolidated"
 ```
 If exit=0:
-```
+```text
 make gated-merge BASE=master BRANCHES='floor_controller-consolidated' MANIFEST='/tmp/gludd-cascade-floor.txt'
 make gate
 ```
 Conflict risk on Makefile: HIGH. See runbook section 5 for resolution notes.
 
 **feature/security-batch4** (not yet created — being built off 6063e51):
-```
+```text
 make git-is-ancestor A="master" B="feature/security-batch4"
 ```
 If exit=0:
-```
+```text
 make gated-merge BASE=master BRANCHES='feature/security-batch4' MANIFEST='/tmp/gludd-cascade-batch4.txt'
 make gate
 ```
 Conflict risk on gateway.py: MEDIUM. Verify no line-level overlap with 6063e51 hunk in `_notify_profile_change` before merging.
 
 **mt-6-watchdog** (not yet created — exact branch name TBD; try `feature/mt-6-watchdog`):
-```
+```text
 make git-is-ancestor A="master" B="feature/mt-6-watchdog"
 ```
 If exit=0:
-```
+```text
 make gated-merge BASE=master BRANCHES='feature/mt-6-watchdog' MANIFEST='/tmp/gludd-cascade-mt6.txt'
 make gate
 ```
@@ -228,7 +228,7 @@ The ship commit (6063e51) already changed Makefile (added `VIRTUAL_ENV`/`UV_PROJ
 exports, `venv-check`, `git-hard-reset` targets). The working-tree Makefile changes must not
 conflict with those additions. Run:
 
-```
+```text
 make git-diff
 make git-staged
 ```
@@ -238,7 +238,7 @@ Review before staging.
 ### Commit commands
 
 Stage (after backlog JSON SHAs are repointed):
-```
+```text
 make git-add FILES='AGENTS.md Makefile scripts/multitasking_backlog.json SESSION.md BUGS.md .claude/hooks/agent_floor_stop.sh'
 ```
 
@@ -249,7 +249,7 @@ to the FILES list before committing.
 phases must be PASS, and the gate epoch must be < 1800 seconds old). Run `make gate` if
 the last gate is stale.
 
-```
+```text
 make git-commit MSG='chore(orchestration): meta-work — AGENTS.md policy + Makefile targets + backlog + guardrail hooks'
 ```
 
@@ -261,7 +261,7 @@ make git-commit MSG='chore(orchestration): meta-work — AGENTS.md policy + Make
 
 ## Quick-reference command sequence (copy-paste order)
 
-```
+```markdown
 # 1. Pre-ship safety
 make git-is-ancestor A=3223c67 B=6063e51         # expect exit=0
 make git-where                                    # confirm local master=3223c67
@@ -333,7 +333,7 @@ Remote master (`sandboxcom`) = `4314a6c`.
 `4314a6c` is an ancestor of `6063e51` (verified session exit=0).
 Therefore local master is STRICTLY AHEAD of remote master — `git push -u sandboxcom master` is a clean fast-forward, no `--force` flag.
 
-```
+```text
 make git-push-sandboxcom
 ```
 (Makefile line 791: `git push -u sandboxcom master` — no force flag in the target.)
@@ -342,7 +342,7 @@ make git-push-sandboxcom
 
 ## Step 8 — Tag + release
 
-```
+```text
 make git-tag-push TAG=v0.1.0-alpha.2 MSG='Release v0.1.0-alpha.2: integration batch 3, ship pipeline, security hardening'
 ```
 (Makefile line 806: creates annotated tag at HEAD, pushes to sandboxcom.)
@@ -350,7 +350,7 @@ make git-tag-push TAG=v0.1.0-alpha.2 MSG='Release v0.1.0-alpha.2: integration ba
 Remote already has: `0.1.0-alpha.1`, `v0.1.0-alpha.1` — next tag MUST be `v0.1.0-alpha.2` (with leading `v` per convention).
 
 Confirm release published:
-```
+```text
 make release-view TAG=v0.1.0-alpha.2
 ```
 (Makefile line 817: calls `gh release view ... -R sandboxcom/gludd`.)
@@ -397,7 +397,7 @@ Execute BEFORE `make release-cut`.
 
 ### Prerequisites (verify before any edit)
 
-```
+```text
 make git-where          # confirm master == 6063e51 (or 6063e51 + cascade merge commits)
 make gate               # confirm all phases PASS and gate epoch < 1800 s old
 ```
@@ -409,22 +409,22 @@ make gate               # confirm all phases PASS and gate epoch < 1800 s old
 **File 1: `pyproject.toml` line 3**
 
 Current line (read-verified):
-```
+```text
 version = "0.1.0-alpha.202606120000"
 ```
 Change to:
-```
+```text
 version = "0.1.0-alpha.2"
 ```
 
 **File 2: `src/general_ludd/__init__.py` line 3**
 
 Current line (read-verified):
-```
+```text
 __version__ = "0.1.0-alpha.202606120000"
 ```
 Change to:
-```
+```text
 __version__ = "0.1.0-alpha.2"
 ```
 
@@ -437,11 +437,11 @@ Use the Edit tool (NOT shell) to make both changes. Do not touch any other line.
 **File: `CHANGELOG.md` line 5**
 
 Current heading (read-verified):
-```
+```markdown
 ## [Unreleased] — next alpha — 2026-06-17
 ```
 Change to:
-```
+```markdown
 ## [0.1.0-alpha.2] - 2026-06-18
 ```
 
@@ -455,7 +455,7 @@ the unreleased section). Only the heading line itself needs to change. Use the E
 **File: `README.md` line 70**
 
 Current line (read-verified — gate requirement already met):
-```
+```text
 **Status as of v0.1.0-alpha.2 — 2026-06-18**
 ```
 No edit needed. `make release-cut` grepped for this string and it is present.
@@ -545,14 +545,14 @@ Untracked new files to include:
 
 **Exact command (Option A — track `.claude/`):**
 
-```
+```text
 make git-add FILES='pyproject.toml src/general_ludd/__init__.py CHANGELOG.md README.md AGENTS.md BUGS.md Makefile SESSION.md scripts/multitasking_backlog.json scripts/check_readme_status_current.py scripts/gen_gate_safe_hook.py tests/unit/test_readme_status_gate.py docs/audit/BACKLOG_RECONCILED_2026-06-17.md docs/audit/BATCH2_SECURITY_PLAN_2026-06-18.md docs/audit/MEMORY_TO_HOOK_AUDIT_2026-06-18.md docs/audit/NEW_FINDINGS_2026-06-16.md docs/audit/NEW_FINDINGS_TRIAGE_2026-06-18.md docs/audit/SECURITY_AUDIT_BACKLOG_2026-06-17.md docs/audit/WAVE3_FIXPASS_PLAN_2026-06-18.md docs/audit/backlog_completeness_2026-06-16.md docs/audit/batch3_dedup_coherence.md docs/audit/feature_package_wiring_status.md docs/audit/floor_breach_rootcause_2026-06-17.md docs/audit/misconfig_detector_dedup_decision.md docs/audit/model_routing_coherence_check.md docs/design/connector_join_key_normalization.md docs/integration/BATCH3_APPLY_PLAN.md docs/integration/BATCH4_DEFERRED.md docs/integration/CASCADE_STATE_2026-06-18.md docs/integration/CYCLE_APPLY_PLAN_2026-06-17.md docs/integration/META_COMMIT_MANIFEST_2026-06-18.md docs/integration/NEXT_CYCLES_READY.md docs/integration/POSTSHIP_MERGE_CASCADE_2026-06-18.md docs/integration/POSTSHIP_RUNBOOK.md docs/integration/RELEASE_ALPHA2_MECHANICS_2026-06-18.md docs/integration/REVIEW_FINDINGS_2026-06-17.md docs/integration/SHIP_EXECUTION_CHECKLIST_2026-06-18.md docs/research/MODEL_ROUTING_RECOMMENDATION.md .opencode/plugin/enforce-floor.ts .claude/'
 ```
 
 **Alternate command (Option B — gitignore `.claude/`):**
 
 First add `.claude/` to `.gitignore` and stage it, then:
-```
+```text
 make git-add FILES='pyproject.toml src/general_ludd/__init__.py CHANGELOG.md README.md AGENTS.md BUGS.md Makefile SESSION.md scripts/multitasking_backlog.json scripts/check_readme_status_current.py scripts/gen_gate_safe_hook.py tests/unit/test_readme_status_gate.py docs/audit/BACKLOG_RECONCILED_2026-06-17.md docs/audit/BATCH2_SECURITY_PLAN_2026-06-18.md docs/audit/MEMORY_TO_HOOK_AUDIT_2026-06-18.md docs/audit/NEW_FINDINGS_2026-06-16.md docs/audit/NEW_FINDINGS_TRIAGE_2026-06-18.md docs/audit/SECURITY_AUDIT_BACKLOG_2026-06-17.md docs/audit/WAVE3_FIXPASS_PLAN_2026-06-18.md docs/audit/backlog_completeness_2026-06-16.md docs/audit/batch3_dedup_coherence.md docs/audit/feature_package_wiring_status.md docs/audit/floor_breach_rootcause_2026-06-17.md docs/audit/misconfig_detector_dedup_decision.md docs/audit/model_routing_coherence_check.md docs/design/connector_join_key_normalization.md docs/integration/BATCH3_APPLY_PLAN.md docs/integration/BATCH4_DEFERRED.md docs/integration/CASCADE_STATE_2026-06-18.md docs/integration/CYCLE_APPLY_PLAN_2026-06-17.md docs/integration/META_COMMIT_MANIFEST_2026-06-18.md docs/integration/NEXT_CYCLES_READY.md docs/integration/POSTSHIP_MERGE_CASCADE_2026-06-18.md docs/integration/POSTSHIP_RUNBOOK.md docs/integration/RELEASE_ALPHA2_MECHANICS_2026-06-18.md docs/integration/REVIEW_FINDINGS_2026-06-17.md docs/integration/SHIP_EXECUTION_CHECKLIST_2026-06-18.md docs/research/MODEL_ROUTING_RECOMMENDATION.md .opencode/plugin/enforce-floor.ts .gitignore'
 ```
 
@@ -560,7 +560,7 @@ make git-add FILES='pyproject.toml src/general_ludd/__init__.py CHANGELOG.md REA
 
 ### STEP F — Commit message
 
-```
+```text
 make git-commit MSG='chore(release): v0.1.0-alpha.2 — version bump + session meta-work (README status table, CHANGELOG cut, AGENTS.md policy, Makefile targets, guardrail hooks, planning docs, audit docs, new tests)'
 ```
 
@@ -573,7 +573,7 @@ Expected output: `Gate fresh and green. Committing...` followed by the new commi
 
 ### STEP G — Post-commit: run `make release-cut`
 
-```
+```text
 make release-cut
 ```
 
@@ -584,7 +584,7 @@ Expected: exits 0. If it fails on the README gate, re-verify line 70 was not clo
 
 ### Full apply sequence (copy-paste order for post-gate execution)
 
-```
+```markdown
 # 0. Gate freshness check
 make gate                        # skip if .gate-status < 30 min old and all PASS
 

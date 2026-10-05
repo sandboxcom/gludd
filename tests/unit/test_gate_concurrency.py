@@ -20,7 +20,10 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Protocol, cast
 from uuid import uuid4
+
+import pytest
 
 # The script's basetemp is `mktemp -d /tmp/gludd-gate-XXXXXX` → basename is
 # "gludd-gate-" followed by ONLY alphanumerics. Test artifacts (workdirs, lock
@@ -34,6 +37,22 @@ ROOT = Path(__file__).parent.parent.parent
 SCRIPT = ROOT / "scripts" / "run_gate.sh"
 
 DEFAULT_LOCK_FILE = "/tmp/gludd-gate.lock"
+
+
+class _GateWorkerModule(Protocol):
+    """Typed surface loaded from the standalone worker-count script."""
+
+    def compute_worker_count(
+        self,
+        *,
+        cpu_count: int,
+        available_ram_gb: float,
+        per_worker_gb: float,
+    ) -> int:
+        """Return the bounded worker count."""
+
+    def main(self) -> None:
+        """Print the selected worker count."""
 
 
 def _run_gate(
@@ -57,6 +76,8 @@ def _run_gate(
         **os.environ,
         "PYTEST_CMD": 'python3 -c "import sys; sys.exit(0)"',
         "GATE_LOCK_FILE": unique_lock,
+        "GATE_STATUS_FILE": str(workdir / ".gate-status"),
+        "GATE_FAILED_FILE": str(workdir / ".gate-failed"),
     }
     if env_overrides:
         env.update(env_overrides)
@@ -136,6 +157,27 @@ class TestRunGateScript:
             ".gate-failed must be created when pytest exits non-zero"
         )
 
+    def test_stub_gate_does_not_inherit_parent_status_paths(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A nested gate test must not mutate its live parent gate's markers."""
+        parent_status = tmp_path / "parent-status"
+        parent_failed = tmp_path / "parent-failed"
+        parent_status.write_text("RUNNING parent\n")
+        monkeypatch.setenv("GATE_STATUS_FILE", str(parent_status))
+        monkeypatch.setenv("GATE_FAILED_FILE", str(parent_failed))
+        workdir = tmp_path / "nested"
+        workdir.mkdir()
+
+        result = _run_gate(cwd=workdir)
+
+        assert result.returncode == 0, result.stderr
+        assert "PASS 0" in (workdir / ".gate-status").read_text()
+        assert parent_status.read_text() == "RUNNING parent\n"
+        assert not parent_failed.exists()
+
     def test_unique_basetemp_not_fixed_path(self) -> None:
         """run_gate.sh must use mktemp-based basetemp, not the old fixed path."""
         script_text = SCRIPT.read_text()
@@ -178,7 +220,7 @@ class TestRunGateScript:
         # Use a unique lock file for this test so it doesn't race with other tests.
         unique_lock = tempfile.mktemp(prefix="gludd-gate-conctest-lock-", dir="/tmp")
         lock_path = Path(unique_lock)
-        holder_proc: subprocess.Popen | None = None
+        holder_proc: subprocess.Popen[str] | None = None
 
         try:
             # Mirror the script's GNU-flock probe: flock --nonblock /dev/null true
@@ -261,6 +303,8 @@ class TestRunGateScript:
             if holder_proc is not None:
                 holder_proc.terminate()
                 holder_proc.wait(timeout=5)
+                if holder_proc.stdout is not None:
+                    holder_proc.stdout.close()
             # Clean up our unique lock file.
             lock_path.unlink(missing_ok=True)
 
@@ -427,6 +471,8 @@ class TestRunGateScript:
             **os.environ,
             "PYTEST_CMD": 'python3 -c "import sys; sys.exit(0)"',
             "GATE_LOCK_FILE": tempfile.mktemp(prefix="gludd-gate-main-lock-", dir="/tmp"),
+            "GATE_STATUS_FILE": str(workdir / ".gate-status"),
+            "GATE_FAILED_FILE": str(workdir / ".gate-failed"),
         }
         env.pop("CLAUDE_AGENT_ID", None)
         env.pop("GLUDD_SUBAGENT", None)
@@ -449,3 +495,114 @@ class TestRunGateScript:
         assert "PASS 0" in content, (
             f".gate-status must contain 'PASS 0'. Got:\n{content}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Worker-count formula tests  (scripts/gate_worker_count.py)
+# ---------------------------------------------------------------------------
+
+class TestGateWorkerCount:
+    """Unit tests for the memory-bounded xdist worker-count formula in
+    scripts/gate_worker_count.py.
+
+    Formula:
+        cpu_based  = max(1, cpu_count // 4)
+        mem_based  = max(1, floor(available_ram_gb / per_worker_gb))
+        workers    = min(cpu_based, mem_based)
+    """
+
+    def _import_module(self) -> _GateWorkerModule:
+        """Import gate_worker_count without installing it as a package."""
+        import importlib.util
+        import pathlib
+        spec = importlib.util.spec_from_file_location(
+            "gate_worker_count",
+            pathlib.Path(__file__).parent.parent.parent / "scripts" / "gate_worker_count.py",
+        )
+        assert spec is not None and spec.loader is not None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return cast("_GateWorkerModule", mod)
+
+    def test_script_exists(self) -> None:
+        script = Path(__file__).parent.parent.parent / "scripts" / "gate_worker_count.py"
+        assert script.exists(), "scripts/gate_worker_count.py must exist"
+
+    def test_cpu_bound_dominates_when_ram_is_ample(self) -> None:
+        """When RAM is very plentiful the CPU term is the binding constraint."""
+        mod = self._import_module()
+        # 8 CPUs → cpu_based=2; 100 GB RAM / 1.5 per worker → mem_based=66
+        result = mod.compute_worker_count(cpu_count=8, available_ram_gb=100.0, per_worker_gb=1.5)
+        assert result == 2, f"Expected 2 (cpu-bound), got {result}"
+
+    def test_mem_bound_dominates_when_ram_is_scarce(self) -> None:
+        """When RAM is scarce the memory term is the binding constraint."""
+        mod = self._import_module()
+        # 64 CPUs → cpu_based=16; 3 GB / 1.5 per worker → mem_based=2
+        result = mod.compute_worker_count(cpu_count=64, available_ram_gb=3.0, per_worker_gb=1.5)
+        assert result == 2, f"Expected 2 (mem-bound), got {result}"
+
+    def test_minimum_is_one_regardless_of_ram(self) -> None:
+        """Even with almost no RAM we must return at least 1 worker."""
+        mod = self._import_module()
+        # 4 CPUs → cpu_based=1; 0.1 GB / 1.5 per worker → mem_based=0 → clamped to 1
+        result = mod.compute_worker_count(cpu_count=4, available_ram_gb=0.1, per_worker_gb=1.5)
+        assert result == 1, f"Expected 1 (minimum floor), got {result}"
+
+    def test_minimum_is_one_with_single_cpu(self) -> None:
+        """1 CPU → cpu_based = max(1, 0) = 1; result must be 1."""
+        mod = self._import_module()
+        result = mod.compute_worker_count(cpu_count=1, available_ram_gb=16.0, per_worker_gb=1.5)
+        assert result == 1, f"Expected 1 for single CPU, got {result}"
+
+    def test_per_worker_gb_override(self) -> None:
+        """A larger per-worker budget further constrains the mem-based count."""
+        mod = self._import_module()
+        # 16 CPUs → cpu_based=4; 6 GB / 3.0 per worker → mem_based=2
+        result = mod.compute_worker_count(cpu_count=16, available_ram_gb=6.0, per_worker_gb=3.0)
+        assert result == 2, f"Expected 2 (mem-bound with 3 GB/worker budget), got {result}"
+
+    def test_invalid_per_worker_gb_raises(self) -> None:
+        """per_worker_gb <= 0 must raise ValueError."""
+        import pytest as _pytest
+        mod = self._import_module()
+        with _pytest.raises(ValueError):
+            mod.compute_worker_count(cpu_count=4, available_ram_gb=8.0, per_worker_gb=0)
+
+    def test_gludd_xdist_env_override_bypasses_formula(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """When GLUDD_XDIST_WORKERS is set, main() must print it verbatim and skip formula."""
+        import contextlib
+        import io
+        mod = self._import_module()
+        monkeypatch.setenv("GLUDD_XDIST_WORKERS", "7")
+        monkeypatch.delenv("GLUDD_PER_WORKER_GB", raising=False)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            mod.main()
+        assert buf.getvalue().strip() == "7", f"Expected '7', got {buf.getvalue().strip()!r}"
+
+    def test_main_returns_positive_int_by_default(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """main() without any env overrides must print a positive integer."""
+        import contextlib
+        import io
+        mod = self._import_module()
+        monkeypatch.delenv("GLUDD_XDIST_WORKERS", raising=False)
+        monkeypatch.delenv("GLUDD_PER_WORKER_GB", raising=False)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            mod.main()
+        val = int(buf.getvalue().strip())
+        assert val >= 1, f"Expected >= 1, got {val}"
+
+    def test_formula_symmetric_boundary(self) -> None:
+        """Exact boundary: cpu_based == mem_based → result equals both."""
+        mod = self._import_module()
+        # 8 CPUs → cpu_based=2; 3.0 GB / 1.5 per worker → mem_based=2
+        result = mod.compute_worker_count(cpu_count=8, available_ram_gb=3.0, per_worker_gb=1.5)
+        assert result == 2, f"Expected 2 at boundary, got {result}"

@@ -301,25 +301,18 @@ import os
 import subprocess
 import tempfile
 import time
-from typing import Any
+from contextlib import suppress
+from typing import Any, cast
 
-from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
-
-try:
-    from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
-        GluddClient,
-        error_result,
-        ok_result,
-    )
-    from ansible_collections.general_ludd.agent.plugins.module_utils.gludd_stream_buffer import (
-        RollingBuffer,
-    )
-except ImportError:
-    import sys
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
-    from gludd import GluddClient, error_result, ok_result  # type: ignore[import]
-    from gludd_stream_buffer import RollingBuffer  # type: ignore[import]
-
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
+    GluddClient,
+    error_result,
+    ok_result,
+)
+from ansible_collections.general_ludd.agent.plugins.module_utils.gludd_stream_buffer import (
+    RollingBuffer,
+)
 
 _VALID_TRIGGER_TYPES = {
     "size_threshold",
@@ -471,10 +464,18 @@ def _dispatch(
     body["extra_vars"]["stream_chunk_position"] = position
     body["extra_vars"]["stream_key_hit"] = key_hit
     body["extra_vars"]["stream_chunk_index"] = chunk_index
-    return client.post("/admin/stream/dispatch", body=body)
+    return cast(
+        dict[str, Any],
+        client.post("/admin/stream/dispatch", body=body),
+    )
 
 
-def _check_status(module: Any, resp: dict[str, Any], label: str, ok_codes=(200, 201)) -> bool:
+def _check_status(
+    module: Any,
+    resp: dict[str, Any],
+    label: str,
+    ok_codes: tuple[int, ...] = (200, 201),
+) -> bool:
     if resp.get("_error"):
         module.fail_json(**error_result(f"daemon error: {resp['_error']}"))
         return False
@@ -504,7 +505,7 @@ def _trigger_fires(
     if ttype == "silence_detection":
         # Silence detection requires webrtcvad/whisper; if unavailable, fall
         # back to a size-threshold of half the buffer so we still make progress.
-        return len(buffer) >= buffer.max_bytes // 2
+        return bool(len(buffer) >= buffer.max_bytes // 2)
     if ttype == "external":
         # External triggers are polled separately; the streaming loop checks
         # the MQ inbox. This function returns False to keep streaming.
@@ -561,7 +562,7 @@ def _tail_after_key(buffer: RollingBuffer, offset: int, key_len: int) -> bytes:
     after = tail[key_len:]
     buffer.drain()
     buffer.push(after)
-    return tail[:key_len]  # the key bytes (used to prepend to after-chunks)
+    return bytes(tail[:key_len])  # the key bytes (used to prepend to after-chunks)
 
 
 def _input_key_step(state: _InputKeyState, buffer: RollingBuffer) -> list[tuple[bytes, str, int]]:
@@ -602,7 +603,6 @@ def _input_key_step(state: _InputKeyState, buffer: RollingBuffer) -> list[tuple[
         if state.post_key_active:
             if pos is not None:
                 head, _tail = buffer.split_at(pos)
-                consumed_key = _tail[:klen]
                 remaining = _tail[klen:]
                 buffer.drain()
                 buffer.push(remaining)
@@ -628,7 +628,6 @@ def _input_key_step(state: _InputKeyState, buffer: RollingBuffer) -> list[tuple[
     if mode == "both":
         if pos is not None:
             head, _tail = buffer.split_at(pos)
-            consumed_key = _tail[:klen]
             remaining = _tail[klen:]
             buffer.drain()
             buffer.push(remaining)
@@ -709,7 +708,6 @@ def main() -> None:
         module.fail_json(**error_result(err))
         return
 
-    clone_current_role = bool(role_clone.get("clone_current_role", True))
     inject_as = role_clone.get("inject_as", "stream_chunk")
     extra_vars = role_clone.get("extra_vars", {}) or {}
 
@@ -845,10 +843,8 @@ def main() -> None:
             proc.terminate()
             proc.wait(timeout=5)
         except Exception:
-            try:
+            with suppress(Exception):
                 proc.kill()
-            except Exception:
-                pass
 
     # Final drain dispatch if any bytes remain.
     if key_state is not None:

@@ -34,12 +34,21 @@ ALLOWLIST = frozenset({
     "token_window_monitor.py",
     # Bounded service-readiness loop; it never occupies a delegated agent slot.
     "smoke_daemon.py",
+    # Bounded infrastructure readiness/locking loops surface attempt heartbeats.
+    "collection_lock.py",
+    "postgres_e2e_runner.py",
+    # Background lifecycle supervisors are signal-stoppable and continuously observable.
+    "disk-guard.sh",
+    "e2e_supervisor.py",
     # Release-only CI observers are bounded, emit heartbeats, and remain blocked
     # from delegated-agent prompts by enforce-no-wait.ts.
     "ci_annotations_poll.py",
     "ci_await.py",
     "ci_poll.py",
     "ci_push_and_verify.sh",
+    "ci_signal_exact_sha.py",
+    # The local-model E2E readiness loop is bounded to 120 seconds and test-owned.
+    "test_llama_3_2_game_gen.py",
 })
 
 

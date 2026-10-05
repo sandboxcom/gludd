@@ -4,3 +4,6 @@ socket_path: /tmp/app.sock
 app_module: app:application
 processes: "{{ ansible_processor_vcpus * 2 + 1 }}"
 threads: 1
+web_server_managed_python_interpreter: ""
+web_server_managed_python_lock_sha256: ""
+web_server_previous_python_interpreter: ""

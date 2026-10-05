@@ -31,41 +31,22 @@
 
 - name: Run trace evidence analysis
   block:
-    - name: Examine evidence via trace_evidence_examiner module_utils
-      ansible.builtin.script:
-        cmd: |
-          import json, sys
-          sys.path.insert(0, "{{ playbook_dir }}/../../..")
-          from ansible_collections.general_ludd.forensics.plugins.module_utils.trace_evidence_examiner import (
-              examine_trace_evidence, write_verdict
-          )
-          sample = json.loads('''{{ trace_evidence_sample_data | to_json }}''')
-          reference = json.loads('''{{ trace_evidence_reference_data | to_json }}''')
-          result = examine_trace_evidence(
-              evidence_type="{{ trace_evidence_type }}",
-              sample_data=sample,
-              reference_data=reference,
-          )
-          path = write_verdict(result, "{{ trace_evidence_output_dir }}")
-          print(json.dumps({
-              "status": "success",
-              "path": str(path),
-              "evidence_type": "{{ trace_evidence_type }}",
-              "match_result": result["match_result"],
-              "confidence": result["confidence"],
-          }))
-        executable: python3
+    - name: Examine evidence via packaged forensics module
+      general_ludd.forensics.forensic_analysis:
+        operation: trace
+        evidence_type: "{{ trace_evidence_type }}"
+        sample: "{{ trace_evidence_sample_data }}"
+        reference: "{{ trace_evidence_reference_data }}"
+        output_dir: "{{ trace_evidence_output_dir }}"
       register: trace_evidence_result
-      failed_when: false
-      changed_when: false
       when: trace_evidence_enabled | bool
 
     - name: Parse trace evidence result
       ansible.builtin.set_fact:
-        trace_evidence_output: "{{ trace_evidence_result.stdout | from_json }}"
+        trace_evidence_output: "{{ trace_evidence_result.result }}"
       when:
         - trace_evidence_enabled | bool
-        - trace_evidence_result.rc == 0
+        - trace_evidence_result.result is defined
 
     - name: Register verdict fact
       ansible.builtin.set_fact:
@@ -74,10 +55,17 @@
           findings: "{{ trace_evidence_output.match_result }}"
           match_result: "{{ trace_evidence_output.match_result }}"
           confidence: "{{ trace_evidence_output.confidence }}"
-          output_path: "{{ trace_evidence_output.path }}"
+          output_path: "{{ trace_evidence_output.output_path }}"
       when:
         - trace_evidence_enabled | bool
-        - trace_evidence_result.rc == 0
+        - trace_evidence_result.result is defined
+
+    - name: Write trace evidence verdict artifact
+      ansible.builtin.copy:
+        content: "{{ trace_evidence_output | to_nice_json }}"
+        dest: "{{ trace_evidence_output.output_path }}"
+        mode: "0644"
+      when: trace_evidence_result.result is defined
 
   rescue:
     - name: Write failure verdict artifact
@@ -85,7 +73,7 @@
         content: |
           {{ {'role': 'trace_evidence_examiner', 'status': 'failed',
               'evidence_type': trace_evidence_type,
-              'error': trace_evidence_result.stderr | default('unknown error')} | to_nice_json }}
+              'error': trace_evidence_result.msg | default('unknown error')} | to_nice_json }}
         dest: "{{ trace_evidence_output_dir }}/trace_evidence_verdict.json"
         mode: "0644"
       failed_when: false

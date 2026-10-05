@@ -153,14 +153,19 @@ class TestArgvShape:
         args.config_dir = None
         args.templates_dir = None
         args.playbooks_dir = None
+        # pid_file unset on the real args namespace; a MagicMock would return a
+        # MagicMock from getattr() and corrupt the daemon pid-file JSON.
+        args.pid_file = None
 
         fake_proc = MagicMock()
         fake_proc.wait.return_value = 0
         fake_proc.returncode = 0
 
-        with patch("subprocess.Popen", return_value=fake_proc) as mock_popen, \
-                patch("sys.exit") as mock_exit, \
-                patch("signal.signal"):
+        with (
+            patch("subprocess.Popen", return_value=fake_proc) as mock_popen,
+            patch("sys.exit") as mock_exit,
+            patch("signal.signal"),
+        ):
             cli._cmd_daemon(args)
 
         assert mock_popen.called

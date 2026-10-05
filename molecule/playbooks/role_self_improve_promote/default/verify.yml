@@ -49,12 +49,6 @@
         fail_msg: "promotion_result should report rollback: {{ promo }}"
         success_msg: "promotion_result: success=false, rolled_back=true."
 
-    - name: Stop mock daemon
-      ansible.builtin.shell:
-        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
-      changed_when: false
-      failed_when: false
-
     - name: Remove scenario artifacts
       ansible.builtin.file:
         path: "{{ item }}"

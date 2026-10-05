@@ -64,6 +64,7 @@ _SCANNED: list[EnvUsage] = []
 def _scan() -> None:
     if _SCANNED:
         return
+    seen: set[tuple[str, str, int]] = set()
     for root_dir in (_SRC, _SCRIPTS):
         for py_file in sorted(root_dir.rglob("*.py")):
             if "__pycache__" in str(py_file):
@@ -94,6 +95,15 @@ def _scan() -> None:
                         ):
                             continue
                         is_get = pat is _OS_ENV_GET_RE or pat is _GLUDD_ENV_VAR_RE or pat is _OS_ENV_POP_RE
+                        # One physical call site can match several patterns (e.g.
+                        # os.environ.get("GLUDD_X") matches both the GLUDD_
+                        # literal regex and the os.environ.get regex). Record each
+                        # (name, file, line) exactly once so "multiple call
+                        # sites" means distinct sites, not regex overlap.
+                        key = (name, str(py_file), lineno)
+                        if key in seen:
+                            continue
+                        seen.add(key)
                         _SCANNED.append(EnvUsage(name, str(py_file), lineno, line, is_get=is_get))
 
     _SCANNED.sort(key=lambda e: e.var_name)
@@ -183,7 +193,7 @@ class TestGLUDDSecurityClassification:
         """Env vars matching secret/credential patterns are explicitly flagged."""
         secrets = [v for v in _GLUDD_VARS if _SECRET_PATTERN_RE.search(v)]
         non_secret_names = [
-            "GLUDD_PSK",
+            "GLUDD_AUTH_PSK",
             "GLUDD_PSK_DISABLE",
             "GLUDD_PSK_IDENTITY_TTL_SECONDS",
             "GLUDD_PSK_ROTATION_OVERLAP_SECONDS",
@@ -201,22 +211,22 @@ class TestGLUDDSecurityClassification:
             )
 
     def test_psK_not_in_env_secrets_allowlist(self):
-        """GLUDD_PSK must NEVER appear in secrets/env.py allowlist patterns."""
+        """GLUDD_AUTH_PSK must NEVER appear in secrets/env.py allowlist patterns."""
         env_py = _SRC / "general_ludd" / "secrets" / "env.py"
         if not env_py.exists():
             pytest.skip("secrets/env.py not found")
         text = env_py.read_text()
-        assert "GLUDD_PSK" not in text, (
-            "GLUDD_PSK erroneously appears in secrets/env.py allowlist — "
+        assert "GLUDD_AUTH_PSK" not in text, (
+            "GLUDD_AUTH_PSK erroneously appears in secrets/env.py allowlist — "
             "it must NEVER be resolvable via the ambient-env secrets pathway"
         )
 
     def test_gludd_psk_not_os_environ_get_without_strip(self):
-        """GLUDD_PSK reads should use .strip() to avoid whitespace mismatch."""
-        for u in _usages_for("GLUDD_PSK"):
+        """GLUDD_AUTH_PSK reads should use .strip() to avoid whitespace mismatch."""
+        for u in _usages_for("GLUDD_AUTH_PSK"):
             if ".get(" in u.raw_line:
                 assert ".strip()" in u.raw_line or "strip()" in u.raw_line, (
-                    f"GLUDD_PSK read at {u.file_path}:{u.line} lacks .strip(): {u.raw_line.strip()}"
+                    f"GLUDD_AUTH_PSK read at {u.file_path}:{u.line} lacks .strip(): {u.raw_line.strip()}"
                 )
 
 
@@ -365,10 +375,10 @@ class TestSecretsManagerAllowlist:
 
 class TestAuthVarsConfig:
     def test_auth_vars_consistent_across_daemon_and_worker(self):
-        """Auth posture vars (GLUDD_PSK, GLUDD_REQUIRE_AUTH, ...) read with
+        """Auth posture vars (GLUDD_AUTH_PSK, GLUDD_REQUIRE_AUTH, ...) read with
         consistent semantics in daemon and worker."""
         auth_vars = [
-            "GLUDD_PSK",
+            "GLUDD_AUTH_PSK",
             "GLUDD_REQUIRE_AUTH",
             "GLUDD_PSK_DISABLE",
             "GLUDD_ALLOW_NO_AUTH",
@@ -411,7 +421,7 @@ class TestEnvVarSourceTracking:
             "GLUDD_TICK_INTERVAL",
             "GLUDD_LOG_LEVEL",
             "GLUDD_WRITER_MODE",
-            "GLUDD_PSK",
+            "GLUDD_AUTH_PSK",
             "GLUDD_REQUIRE_AUTH",
             "GLUDD_ALLOW_NO_AUTH",
             "GLUDD_TERRAFORM_STACKS_DIR",
@@ -428,7 +438,7 @@ class TestEnvVarSourceTracking:
         if not worker_path.exists():
             pytest.skip("worker/app.py not found")
         text = worker_path.read_text()
-        for var in ("GLUDD_PSK", "GLUDD_WORKER_ID", "GLUDD_CONFIG_DIR", "GLUDD_JOB_TIMEOUT_MAX"):
+        for var in ("GLUDD_AUTH_PSK", "GLUDD_WORKER_ID", "GLUDD_CONFIG_DIR", "GLUDD_JOB_TIMEOUT_MAX"):
             assert var in text, f"{var} should be read by worker/app.py"
 
 

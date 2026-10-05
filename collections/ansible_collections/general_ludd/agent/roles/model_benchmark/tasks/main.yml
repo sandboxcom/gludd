@@ -1,4 +1,14 @@
 ---
+- name: Preflight managed-host runtime
+  ansible.builtin.include_role:
+    name: general_ludd.agent.managed_python_preflight
+    tasks_from: main
+    public: false
+  vars:
+    managed_python_preflight_interpreter: "{{ ansible_python_interpreter }}"
+    managed_python_preflight_lock_sha256: "{{ gludd_managed_python_lock_sha256 }}"
+    managed_python_preflight_previous_interpreter: "{{ gludd_previous_python_interpreter | default('') }}"
+
 - name: "Validate benchmark inputs"
   ansible.builtin.assert:
     that:
@@ -22,7 +32,6 @@
     dest: "{{ output_dir }}/_mt_bench.py"
     mode: "0700"
     content: |
-      #!/usr/bin/env python3
       """MT-Bench evaluation pipeline using model_client for API calls."""
       from __future__ import annotations
 
@@ -30,16 +39,6 @@
       import os
       import sys
       import time
-      from pathlib import Path
-
-      _SRC = Path(__file__).resolve().parents[6] / "src"
-      if _SRC.is_dir() and str(_SRC) not in sys.path:
-          sys.path.insert(0, str(_SRC))
-
-      _COLLECTION = Path(__file__).resolve().parents[3]
-      if str(_COLLECTION) not in sys.path:
-          sys.path.insert(0, str(_COLLECTION))
-
       from ansible_collections.general_ludd.agent.plugins.module_utils.model_client import (
           ModelClient,
       )
@@ -220,14 +219,13 @@
           print(json.dumps(metadata, indent=2))
 
 - name: "Run MT-Bench evaluation pipeline"
-  ansible.builtin.command: "{{ ansible_python_interpreter | default('python3') }} {{ output_dir }}/_mt_bench.py {{ model_profile }} {{ judge_profile }} {{ output_dir }}"
+  ansible.builtin.command: "{{ ansible_python_interpreter }} {{ output_dir }}/_mt_bench.py {{ model_profile }} {{ judge_profile }} {{ output_dir }}"
   register: _bench_result
   changed_when: true
   environment:
     GLUDD_MODEL_PROFILE_ID: "{{ model_profile }}"
     GLUDD_MODEL_PROVIDER: "{{ model_provider | default('deepseek') }}"
     GLUDD_MODEL_NAME: "{{ model_name | default('') }}"
-    PYTHONPATH: "{{ lookup('ansible.builtin.env', 'PYTHONPATH') | default('') }}:{{ playbook_dir | default(omit) }}"
 
 - name: "Report benchmark stdout"
   ansible.builtin.debug:

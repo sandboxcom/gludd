@@ -204,7 +204,7 @@ class LoggingConfig(BaseModel):
 Env overrides (pydantic-settings `env_prefix="GLUDD_"`,
 `env_nested_delimiter="__"`, matching `user_config.py:157-161`):
 
-```
+```text
 GLUDD_LOGGING__ENABLED=true
 GLUDD_LOGGING__COMPONENT_LEVELS='{"gunicorn.access":"DEBUG","general_ludd.agents":"INFO"}'
 GLUDD_LOGGING__SINKS='[{"name":"json_out","destination":"file","file_path":"logs/gludd.json.log","format":"json","level":"INFO"},{"name":"syslog_out","destination":"syslog","format":"syslog","level":"WARNING"}]'

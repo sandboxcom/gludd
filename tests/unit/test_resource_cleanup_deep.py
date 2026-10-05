@@ -211,11 +211,18 @@ class TestConnectionPoolDrain:
 
     def test_closed_engine_does_not_leak_set_entries(self) -> None:
         initial = len(_closed_engines)
+        engine_refs: list[weakref.ReferenceType[Any]] = []
         for _ in range(5):
             e: Any = MagicMock()
             e.sync_engine = MagicMock()
             close_engine(e)
-        assert len(_closed_engines) >= initial + 5
+            assert _engine_closed(e)
+            engine_refs.append(weakref.ref(e))
+            del e
+
+        gc.collect()
+        assert all(reference() is None for reference in engine_refs)
+        assert len(_closed_engines) == initial
 
 
 # ============================================================================

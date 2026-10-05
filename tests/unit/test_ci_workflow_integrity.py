@@ -1,18 +1,23 @@
 """Deep structural tests for .github/workflows/build.yml integrity."""
 
+from __future__ import annotations
+
 import pathlib
+from typing import Any
 
 import yaml
 
 WORKFLOW_PATH = pathlib.Path(__file__).parent.parent.parent / ".github" / "workflows" / "build.yml"
+Workflow = dict[object, Any]
 
 
-def _load_workflow():
+def _load_workflow() -> Workflow:
     content = WORKFLOW_PATH.read_text()
-    return yaml.safe_load(content)
+    parsed: Workflow = yaml.safe_load(content)
+    return parsed
 
 
-def _extract_step_names(steps):
+def _extract_step_names(steps: list[Workflow]) -> set[str]:
     names: set[str] = set()
     for step in steps:
         if isinstance(step, dict) and "name" in step:
@@ -20,16 +25,16 @@ def _extract_step_names(steps):
     return names
 
 
-def _collect_job_refs(needs_value):
+def _collect_job_refs(needs_value: object) -> set[str]:
     if isinstance(needs_value, str):
         return {needs_value}
     if isinstance(needs_value, list):
-        return set(needs_value)
+        return {str(value) for value in needs_value}
     return set()
 
 
 class TestAllNeedsResolveToRealJobs:
-    def test_all_needs_references_real_jobs(self):
+    def test_all_needs_references_real_jobs(self) -> None:
         wf = _load_workflow()
         jobs = wf.get("jobs", {})
         missing: list[tuple[str, str]] = []
@@ -44,7 +49,7 @@ class TestAllNeedsResolveToRealJobs:
 
 
 class TestNoCircularDependencies:
-    def test_no_circular_dependencies(self):
+    def test_no_circular_dependencies(self) -> None:
         wf = _load_workflow()
         jobs = wf.get("jobs", {})
         graph: dict[str, set[str]] = {}
@@ -54,7 +59,7 @@ class TestNoCircularDependencies:
         visiting: set[str] = set()
         visited: set[str] = set()
 
-        def dfs(node):
+        def dfs(node: str) -> bool:
             if node in visiting:
                 return True
             if node in visited:
@@ -72,19 +77,19 @@ class TestNoCircularDependencies:
 
 
 class TestVersionIsRootJob:
-    def test_version_has_no_needs(self):
+    def test_version_has_no_needs(self) -> None:
         wf = _load_workflow()
         version = wf["jobs"].get("version", {})
         needs = version.get("needs")
         assert needs is None or needs == [], f"version job should have no needs, got {needs!r}"
 
-    def test_version_produces_outputs(self):
+    def test_version_produces_outputs(self) -> None:
         wf = _load_workflow()
         version = wf["jobs"]["version"]
         assert "outputs" in version
         assert "version" in version["outputs"]
 
-    def test_version_has_timeout(self):
+    def test_version_has_timeout(self) -> None:
         wf = _load_workflow()
         version = wf["jobs"]["version"]
         assert "timeout-minutes" in version
@@ -92,25 +97,25 @@ class TestVersionIsRootJob:
 
 
 class TestGateJobStructure:
-    def test_gate_needs_version(self):
+    def test_gate_needs_version(self) -> None:
         wf = _load_workflow()
         gate = wf["jobs"]["gate"]
         assert _collect_job_refs(gate.get("needs", [])) == {"version"}
 
-    def test_gate_has_matrix(self):
+    def test_gate_has_matrix(self) -> None:
         wf = _load_workflow()
         gate = wf["jobs"]["gate"]
         matrix = gate.get("strategy", {}).get("matrix", {})
         python_versions = matrix.get("python-version", [])
         assert len(python_versions) >= 2, f"gate matrix should have ≥2 Python versions, got {python_versions}"
 
-    def test_gate_has_timeout(self):
+    def test_gate_has_timeout(self) -> None:
         wf = _load_workflow()
         gate = wf["jobs"]["gate"]
         assert "timeout-minutes" in gate
         assert gate["timeout-minutes"] > 0
 
-    def test_gate_matrix_fail_fast_is_false(self):
+    def test_gate_matrix_fail_fast_is_false(self) -> None:
         wf = _load_workflow()
         gate = wf["jobs"]["gate"]
         strategy = gate.get("strategy", {})
@@ -118,33 +123,59 @@ class TestGateJobStructure:
 
 
 class TestTestShardStructure:
-    def test_test_shard_needs_version_and_gate(self):
+    def test_test_shard_needs_version_and_gate(self) -> None:
         wf = _load_workflow()
         test_shard = wf["jobs"]["test-shard"]
         assert _collect_job_refs(test_shard.get("needs", [])) == {"version", "gate"}
 
-    def test_test_shard_matrix_has_all_entries(self):
+    def test_test_shard_matrix_has_all_entries(self) -> None:
         wf = _load_workflow()
         shard = wf["jobs"]["test-shard"]
-        include = shard.get("strategy", {}).get("matrix", {}).get("include", [])
-        names = {entry["shard"] for entry in include}
-        expected = {"unit-1a1", "unit-1a2", "unit-1b", "unit-1d", "unit-2", "unit-3", "other"}
+        names = set(shard.get("strategy", {}).get("matrix", {}).get("shard", []))
+        expected = {
+            "unit-1a1",
+            "unit-1a2",
+            "unit-1b",
+            "unit-1d",
+            "unit-2",
+            "unit-3a",
+            "unit-3b",
+            "other",
+        }
         assert names == expected, f"Expected shards {expected!r}, got {names!r}"
 
-    def test_every_shard_has_testpaths(self):
+    def test_oversized_unit_3_is_partitioned_without_overlap(self) -> None:
+        from scripts.ci_named_shard_files import SHARDS
+
+        assert SHARDS["unit-3a"][0] == ("tests/unit/test_[n-r]*.py",)
+        assert SHARDS["unit-3b"][0] == (
+            "tests/unit/test_[s-z]*.py",
+            "tests/unit/secrets/",
+        )
+
+    def test_each_unit_shard_has_a_bounded_hosted_step_budget(self) -> None:
+        wf = _load_workflow()
+        job = wf["jobs"]["test-shard"]
+        steps = wf["jobs"]["test-shard"]["steps"]
+        test_step = next(step for step in steps if str(step.get("name", "")).startswith("Test (shard"))
+
+        assert test_step["timeout-minutes"] >= 90
+        assert test_step["timeout-minutes"] <= job["timeout-minutes"] - 15
+
+    def test_workflow_does_not_duplicate_canonical_testpaths(self) -> None:
         wf = _load_workflow()
         shard = wf["jobs"]["test-shard"]
         include = shard.get("strategy", {}).get("matrix", {}).get("include", [])
         for entry in include:
-            assert "testpaths" in entry, f"Shard {entry.get('shard', '?')} missing testpaths"
-            assert len(entry["testpaths"]) > 0, f"Shard {entry.get('shard', '?')} testpaths is empty"
+            assert "testpaths" not in entry
+            assert "exclude" not in entry
 
-    def test_test_shard_has_timeout(self):
+    def test_test_shard_has_timeout(self) -> None:
         wf = _load_workflow()
         test_shard = wf["jobs"]["test-shard"]
         assert "timeout-minutes" in test_shard
 
-    def test_test_shard_fail_fast_is_false(self):
+    def test_test_shard_fail_fast_is_false(self) -> None:
         wf = _load_workflow()
         test_shard = wf["jobs"]["test-shard"]
         strategy = test_shard.get("strategy", {})
@@ -152,26 +183,39 @@ class TestTestShardStructure:
 
 
 class TestCoverageJobStructure:
-    def test_coverage_needs_version_and_test_shard(self):
+    def test_coverage_needs_version_and_test_shard(self) -> None:
         wf = _load_workflow()
         coverage = wf["jobs"]["coverage"]
         assert _collect_job_refs(coverage.get("needs", [])) == {"version", "test-shard"}
 
-    def test_coverage_has_timeout(self):
+    def test_coverage_has_timeout(self) -> None:
         wf = _load_workflow()
         coverage = wf["jobs"]["coverage"]
         assert "timeout-minutes" in coverage
 
 
+class TestGameBuildingJobStructure:
+    def test_game_building_installs_locked_media_extra_before_tests(self) -> None:
+        wf = _load_workflow()
+        steps = wf["jobs"]["game-building"]["steps"]
+        commands = [str(step.get("run", "")) for step in steps if isinstance(step, dict)]
+        command = next(command for command in commands if "make test-games" in command)
+
+        assert "uv sync --frozen --extra game-e2e" in command
+        assert command.index("uv sync --frozen --extra game-e2e") < command.index(
+            "make test-games"
+        )
+
+
 class TestPlatformBuildJobStructure:
     PLATFORM_JOBS: tuple[str, ...] = ("linux", "macos", "windows", "termux")
 
-    def test_all_platform_jobs_exist(self):
+    def test_all_platform_jobs_exist(self) -> None:
         wf = _load_workflow()
         for job_name in self.PLATFORM_JOBS:
             assert job_name in wf["jobs"], f"Missing platform build job: {job_name}"
 
-    def test_platform_jobs_need_version_and_gate(self):
+    def test_platform_jobs_need_version_and_gate(self) -> None:
         wf = _load_workflow()
         for job_name in self.PLATFORM_JOBS:
             job = wf["jobs"][job_name]
@@ -179,13 +223,13 @@ class TestPlatformBuildJobStructure:
                 f"{job_name} needs {_collect_job_refs(job.get('needs', []))}"
             )
 
-    def test_platform_jobs_have_timeout(self):
+    def test_platform_jobs_have_timeout(self) -> None:
         wf = _load_workflow()
         for job_name in self.PLATFORM_JOBS:
             job = wf["jobs"][job_name]
             assert "timeout-minutes" in job, f"{job_name} missing timeout-minutes"
 
-    def test_platform_jobs_have_runs_on(self):
+    def test_platform_jobs_have_runs_on(self) -> None:
         wf = _load_workflow()
         for job_name in self.PLATFORM_JOBS:
             job = wf["jobs"][job_name]
@@ -198,16 +242,19 @@ class TestReleaseJobStructure:
         {
             "version",
             "gate",
+            "release_source_proof",
+            "freellmapi-upstream-build",
             "test-shard",
             "coverage",
             "molecule",
             "container",
+            "ansible-ee",
             "game-building",
             *PLATFORM_JOBS,
         }
     )
 
-    def test_release_needs_gate_tests_and_all_artifact_producers(self):
+    def test_release_needs_gate_tests_and_all_artifact_producers(self) -> None:
         wf = _load_workflow()
         release = wf["jobs"]["release"]
         needs = _collect_job_refs(release.get("needs", []))
@@ -215,27 +262,128 @@ class TestReleaseJobStructure:
             f"release needs {needs!r}, expected {self.RELEASE_PREREQUISITES!r}"
         )
 
-    def test_release_only_runs_on_tags(self):
+    def test_release_only_runs_on_tags(self) -> None:
         wf = _load_workflow()
         release = wf["jobs"]["release"]
         condition = release.get("if", "")
         assert "refs/tags/v" in condition
 
-    def test_release_has_timeout(self):
+    def test_release_has_timeout(self) -> None:
         wf = _load_workflow()
         release = wf["jobs"]["release"]
         assert "timeout-minutes" in release
 
 
+class TestReleaseSourceEvidenceReuse:
+    """A tag may reuse only a successful development run for its exact SHA."""
+
+    HEAVY_VALIDATION_JOBS: tuple[str, ...] = (
+        "freellmapi-upstream-build",
+        "test-shard",
+        "coverage",
+        "molecule",
+        "game-building",
+    )
+    TAG_ARTIFACT_JOBS: tuple[str, ...] = (
+        "linux",
+        "macos",
+        "windows",
+        "termux",
+        "container",
+        "ansible-ee",
+    )
+
+    def test_tag_source_proof_is_exact_sha_and_development_scoped(self) -> None:
+        wf = _load_workflow()
+        proof = wf["jobs"]["release_source_proof"]
+
+        assert _collect_job_refs(proof.get("needs", [])) == {"version"}
+        assert "startsWith(github.ref, 'refs/tags/v')" in str(proof.get("if", ""))
+        checkout = next(
+            step
+            for step in proof["steps"]
+            if str(step.get("uses", "")).startswith("actions/checkout@")
+        )
+        assert checkout["with"]["ref"] == "${{ github.sha }}"
+        commands = "\n".join(str(step.get("run", "")) for step in proof["steps"])
+        assert 'python scripts/require_ci_green.py "$GITHUB_SHA" development' in commands
+        proof_step = next(step for step in proof["steps"] if "require_ci_green.py" in str(step.get("run", "")))
+        assert proof_step["env"]["GH_TOKEN"] == "${{ github.token }}"
+
+    def test_tag_skips_only_validation_already_proved_for_exact_sha(self) -> None:
+        wf = _load_workflow()
+        jobs = wf["jobs"]
+
+        for name in ("freellmapi-upstream-build", "test-shard", "molecule"):
+            assert "!startsWith(github.ref, 'refs/tags/v')" in str(jobs[name].get("if", ""))
+        assert _collect_job_refs(jobs["coverage"].get("needs", [])) == {
+            "version",
+            "test-shard",
+        }
+        assert "!startsWith(github.ref, 'refs/tags/v')" in str(
+            jobs["game-building"].get("if", "")
+        )
+
+        for name in self.TAG_ARTIFACT_JOBS:
+            condition = str(jobs[name].get("if", ""))
+            assert "startsWith(github.ref, 'refs/tags/v')" in condition
+            checkout = next(
+                step
+                for step in jobs[name]["steps"]
+                if str(step.get("uses", "")).startswith("actions/checkout@")
+            )
+            assert checkout["with"]["ref"] == "${{ github.sha }}"
+
+    def test_release_fails_closed_on_proof_or_dependency_result_drift(self) -> None:
+        wf = _load_workflow()
+        release = wf["jobs"]["release"]
+        condition = str(release.get("if", ""))
+
+        assert "!cancelled()" in condition
+        assert "needs.release_source_proof.result == 'success'" in condition
+        assert "needs.gate.result == 'success'" in condition
+        for name in self.HEAVY_VALIDATION_JOBS:
+            expression = (
+                f"needs.{name}.result" if "-" not in name else f"needs['{name}'].result"
+            )
+            assert f"{expression} == 'skipped'" in condition
+        for name in self.TAG_ARTIFACT_JOBS:
+            expression = (
+                f"needs.{name}.result" if "-" not in name else f"needs['{name}'].result"
+            )
+            assert f"{expression} == 'success'" in condition
+
+    def test_feature_doc_pins_practitioner_evidence_zdd_and_measured_bound(self) -> None:
+        text = (
+            WORKFLOW_PATH.parents[2]
+            / "docs"
+            / "features"
+            / "BETA4_DUAL_TRACK_CI.md"
+        ).read_text(encoding="utf-8")
+
+        for required in (
+            "Exact-SHA tag validation reuse",
+            "GitHub Community discussion #27031",
+            "2021-07-02",
+            "GitHub Community discussion #44396",
+            "2023-01-15",
+            "75-minute reduction",
+            "16 duplicate hosted jobs",
+            "ZDD",
+            "Rollback",
+        ):
+            assert required in text
+
+
 class TestNoDuplicateJobNames:
-    def test_no_duplicate_job_names(self):
+    def test_no_duplicate_job_names(self) -> None:
         wf = _load_workflow()
         jobs = wf.get("jobs", {})
         assert len(jobs) == len(set(jobs)), "Duplicate job names found"
 
 
 class TestEveryJobHasTimeout:
-    def test_every_job_has_timeout_minutes(self):
+    def test_every_job_has_timeout_minutes(self) -> None:
         wf = _load_workflow()
         missing: list[str] = []
         for job_name, job_def in wf["jobs"].items():
@@ -245,7 +393,7 @@ class TestEveryJobHasTimeout:
 
 
 class TestEveryJobHasRunsOn:
-    def test_every_job_has_runs_on(self):
+    def test_every_job_has_runs_on(self) -> None:
         wf = _load_workflow()
         missing: list[str] = []
         for job_name, job_def in wf["jobs"].items():
@@ -255,7 +403,7 @@ class TestEveryJobHasRunsOn:
 
 
 class TestAllJobsReachableFromVersion:
-    def test_all_jobs_reachable_from_version_or_root(self):
+    def test_all_jobs_reachable_from_version_or_root(self) -> None:
         wf = _load_workflow()
         jobs = wf["jobs"]
         reachable: set[str] = set()
@@ -279,45 +427,55 @@ class TestAllJobsReachableFromVersion:
 
 
 class TestWorkflowLevelStructure:
-    def test_concurrency_group_is_defined(self):
+    def test_concurrency_group_is_defined(self) -> None:
         wf = _load_workflow()
         assert "concurrency" in wf
         concurrency = wf["concurrency"]
         assert "group" in concurrency, "concurrency group missing"
 
-    def test_permissions_defined(self):
+    def test_permissions_defined(self) -> None:
         wf = _load_workflow()
         assert "permissions" in wf
         perms = wf["permissions"]
         assert "contents" in perms
         assert "packages" in perms
 
-    def test_on_triggers_include_push_and_pr(self):
+    def test_on_triggers_include_push_and_pr(self) -> None:
         wf = _load_workflow()
         on = wf.get("on", wf.get(True, {}))
+        assert isinstance(on, dict), "workflow triggers must be a mapping"
         assert "push" in on
         assert "pull_request" in on
 
-    def test_on_tag_pattern_is_v_star(self):
+    def test_on_tag_pattern_is_v_star(self) -> None:
         wf = _load_workflow()
         on = wf.get("on", wf.get(True, {}))
+        assert isinstance(on, dict), "workflow triggers must be a mapping"
         push = on.get("push", {})
+        assert isinstance(push, dict), "workflow push trigger must be a mapping"
         tags = push.get("tags", [])
+        assert isinstance(tags, list), "workflow push tags must be a list"
         assert "v*" in tags, f"Expected 'v*' in tag triggers, got {tags!r}"
 
 
 class TestMoleculeJobStructure:
-    def test_molecule_needs_version_and_gate(self):
+    def test_molecule_needs_version_and_gate(self) -> None:
         wf = _load_workflow()
         molecule = wf["jobs"]["molecule"]
         assert _collect_job_refs(molecule.get("needs", [])) == {"version", "gate"}
 
-    def test_molecule_has_timeout(self):
+    def test_molecule_has_timeout(self) -> None:
         wf = _load_workflow()
         molecule = wf["jobs"]["molecule"]
         assert "timeout-minutes" in molecule
 
-    def test_molecule_matrix_has_4_shards(self):
+    def test_molecule_timeout_covers_two_bounded_attempts(self) -> None:
+        wf = _load_workflow()
+        timeout = wf["jobs"]["molecule"]["timeout-minutes"]
+
+        assert 30 <= timeout <= 45
+
+    def test_molecule_matrix_has_4_shards(self) -> None:
         wf = _load_workflow()
         molecule = wf["jobs"]["molecule"]
         shards = molecule.get("strategy", {}).get("matrix", {}).get("shard", [])
@@ -325,7 +483,7 @@ class TestMoleculeJobStructure:
 
 
 class TestPlatformJobArtifactNames:
-    def test_linux_upload_artifact_name(self):
+    def test_linux_upload_artifact_name(self) -> None:
         wf = _load_workflow()
         uploads = [
             s
@@ -335,7 +493,7 @@ class TestPlatformJobArtifactNames:
         names = {u.get("with", {}).get("name", "") for u in uploads}
         assert "gludd-linux-x86_64" in names, f"Expected gludd-linux-x86_64 artifact, got {names}"
 
-    def test_macos_upload_artifact_name(self):
+    def test_macos_upload_artifact_name(self) -> None:
         wf = _load_workflow()
         uploads = [
             s
@@ -345,7 +503,7 @@ class TestPlatformJobArtifactNames:
         names = {u.get("with", {}).get("name", "") for u in uploads}
         assert "gludd-macos-arm64" in names, f"Expected gludd-macos-arm64 artifact, got {names}"
 
-    def test_windows_upload_artifact_name(self):
+    def test_windows_upload_artifact_name(self) -> None:
         wf = _load_workflow()
         uploads = [
             s
@@ -355,7 +513,7 @@ class TestPlatformJobArtifactNames:
         names = {u.get("with", {}).get("name", "") for u in uploads}
         assert "gludd-windows-x86_64" in names, f"Expected gludd-windows-x86_64 artifact, got {names}"
 
-    def test_termux_upload_artifact_name(self):
+    def test_termux_upload_artifact_name(self) -> None:
         wf = _load_workflow()
         uploads = [
             s

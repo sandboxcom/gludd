@@ -24,7 +24,7 @@ VERIFIER_PATH = ROOT / ".opencode" / "scripts" / "verify-plugins.mjs"
 OPENCODE_CONFIG = ROOT / "opencode.json"
 
 sys.path.insert(0, str(ROOT / "scripts"))
-import release_readiness as readiness  # type: ignore[import-not-found]  # noqa: E402
+import release_readiness as readiness  # noqa: E402
 
 _HARNESS_SPEC = importlib.util.spec_from_file_location("release_smoke_harness", HARNESS_PATH)
 assert _HARNESS_SPEC and _HARNESS_SPEC.loader
@@ -162,13 +162,20 @@ def test_release_version_check_uses_canonical_helper() -> None:
     assert valid, detail
 
 
-def test_release_tasks_track_only_unchecked_beta3_items(tmp_path: Path) -> None:
-    """Release preflight must block unchecked beta.3 work and ignore unrelated IDs."""
+def test_release_tasks_track_only_current_release_items(tmp_path: Path) -> None:
+    """Release preflight derives task selection from the canonical release policy."""
 
+    tag = readiness.DEFAULT_RELEASE_TAG
+    prefix = readiness.RELEASE_TASK_PREFIXES[tag][0]
+    release_action = next(iter(readiness.RELEASE_ACTION_TASKS[tag]))
+    pending_task = f"{prefix}999"
+    completed_task = f"{prefix}998"
+    assert pending_task != release_action
     (tmp_path / "TASKS.md").write_text(
-        "- [ ] T-BETA3-SMOKE — configure smoke matrix\n"
-        "- [x] T-BETA3-DONE — already certified\n"
+        f"- [ ] {pending_task} — configure smoke matrix\n"
+        f"- [x] {completed_task} — already certified\n"
+        f"- [ ] {release_action} — release action handled after readiness\n"
         "- [ ] OTHER-ITEM — unrelated follow-up\n",
         encoding="utf-8",
     )
-    assert readiness._incomplete_tasks(tmp_path) == ["T-BETA3-SMOKE"]
+    assert readiness._incomplete_tasks(tmp_path, tag=tag) == [pending_task]

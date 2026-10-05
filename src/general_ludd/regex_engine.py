@@ -1,5 +1,4 @@
-"""Regex engine with compilation, matching, groups, assertions, backreferences,
-and catastrophic-backtracking detection.
+"""Regex engine with compilation, matching, groups, and safety analysis.
 
 Built on Python ``re`` for correctness but adds safety analysis that warns or
 aborts on patterns known to cause exponential backtracking.
@@ -50,6 +49,7 @@ class MatchResult:
     )
 
     def __init__(self, match: re.Match[str] | None, string: str) -> None:
+        """Capture a native match and the searched input string."""
         self._match = match
         self._string = string
         if match is not None:
@@ -67,41 +67,51 @@ class MatchResult:
 
     @property
     def matched(self) -> bool:
+        """Return whether the underlying regular expression matched."""
         return self._match is not None
 
     @property
     def string(self) -> str:
+        """Return the original searched string."""
         return self._string
 
     @property
     def groups(self) -> tuple[str | None, ...]:
+        """Return all captured positional groups."""
         return self._groups
 
     def group(self, index: int | str = 0) -> str | None:
+        """Return one captured group, or ``None`` when unmatched."""
         if self._match is None:
             return None
         return self._match.group(index)
 
     @property
     def groupdict(self) -> dict[str, str | None]:
+        """Return captured named groups."""
         return self._groupdict
 
     @property
     def span(self) -> tuple[int, int]:
+        """Return the matched half-open span, or ``(-1, -1)``."""
         return self._span
 
     @property
     def start(self) -> int:
+        """Return the start offset, or ``-1`` when unmatched."""
         return self._start
 
     @property
     def end(self) -> int:
+        """Return the end offset, or ``-1`` when unmatched."""
         return self._end
 
     def __bool__(self) -> bool:
+        """Treat a result as true exactly when it matched."""
         return self.matched
 
     def __repr__(self) -> str:
+        """Return a bounded diagnostic representation."""
         status = "matched" if self.matched else "not matched"
         return f"MatchResult({status}, span={self._span})"
 
@@ -116,6 +126,7 @@ class CompiledPattern:
         pattern: str,
         flags: re.RegexFlag = re.NOFLAG,
     ) -> None:
+        """Compile ``pattern`` and retain its static safety findings."""
         self._source = pattern
         self._flags = flags
         self._dangers = _analyze_backtracking_dangers(pattern)
@@ -124,17 +135,21 @@ class CompiledPattern:
 
     @property
     def source(self) -> str:
+        """Return the original regular-expression source."""
         return self._source
 
     @property
     def dangers(self) -> list[BacktrackingDanger]:
+        """Return a copy of detected backtracking dangers."""
         return list(self._dangers)
 
     @property
     def has_dangers(self) -> bool:
+        """Return whether static analysis found a danger."""
         return len(self._dangers) > 0
 
     def match(self, text: str, pos: int | None = None, endpos: int | None = None) -> MatchResult:
+        """Match from the beginning of the requested input window."""
         if pos is not None or endpos is not None:
             m = self._re.match(text, pos or 0, endpos or len(text))
         else:
@@ -142,6 +157,7 @@ class CompiledPattern:
         return MatchResult(m, text)
 
     def search(self, text: str, pos: int | None = None, endpos: int | None = None) -> MatchResult:
+        """Search within the requested input window."""
         if pos is not None or endpos is not None:
             m = self._re.search(text, pos or 0, endpos or len(text))
         else:
@@ -149,35 +165,43 @@ class CompiledPattern:
         return MatchResult(m, text)
 
     def findall(self, text: str, pos: int = 0, endpos: int | None = None) -> list[t.Any]:
+        """Return every non-overlapping match in the input window."""
         return self._re.findall(text, pos, endpos or len(text))
 
     def finditer(self, text: str, pos: int = 0, endpos: int | None = None) -> t.Iterator[MatchResult]:
+        """Yield wrapped matches from the input window."""
         for m in self._re.finditer(text, pos, endpos or len(text)):
             yield MatchResult(m, text)
 
     def split(self, text: str, maxsplit: int = 0) -> list[str]:
+        """Split text at pattern matches."""
         return self._re.split(text, maxsplit)
 
     def sub(self, repl: str | t.Callable[[re.Match[str]], str], text: str, count: int = 0) -> str:
+        """Replace pattern matches and return the resulting string."""
         return self._re.sub(repl, text, count)
 
     def subn(self, repl: str | t.Callable[[re.Match[str]], str], text: str, count: int = 0) -> tuple[str, int]:
+        """Replace matches and return the string and replacement count."""
         return self._re.subn(repl, text, count)
 
     @property
     def groups(self) -> int:
+        """Return the number of capturing groups."""
         return self._re.groups
 
     @property
     def groupindex(self) -> t.Mapping[str, int]:
+        """Return the named-group index mapping."""
         return self._re.groupindex
 
     def __repr__(self) -> str:
+        """Return a diagnostic representation without matched input data."""
         return f"CompiledPattern({self._source!r}, flags={self._flags!r})"
 
 
 class RegexEngine:
-    """Regex engine with catastrophic-backtracking detection.
+    r"""Regex engine with catastrophic-backtracking detection.
 
     Usage::
 
@@ -190,6 +214,7 @@ class RegexEngine:
     __slots__ = ("_strict", "_timeout_ms")
 
     def __init__(self, strict: bool = False, timeout_ms: int = 5000) -> None:
+        """Configure strict static rejection and the reserved timeout value."""
         self._strict = strict
         self._timeout_ms = timeout_ms
 
@@ -198,6 +223,7 @@ class RegexEngine:
         pattern: str,
         flags: re.RegexFlag = re.NOFLAG,
     ) -> CompiledPattern:
+        """Compile a pattern and optionally reject static safety findings."""
         cp = CompiledPattern(pattern, flags)
         if self._strict and cp.has_dangers:
             raise CatastrophicBacktrackingError(
@@ -207,16 +233,20 @@ class RegexEngine:
         return cp
 
     def match(self, pattern: str, text: str, flags: re.RegexFlag = re.NOFLAG) -> MatchResult:
+        """Compile and match a pattern from the beginning of text."""
         return self.compile(pattern, flags).match(text)
 
     def search(self, pattern: str, text: str, flags: re.RegexFlag = re.NOFLAG) -> MatchResult:
+        """Compile and search for a pattern within text."""
         return self.compile(pattern, flags).search(text)
 
     def is_safe(self, pattern: str) -> bool:
+        """Return whether static analysis finds no backtracking danger."""
         cp = self.compile(pattern)
         return not cp.has_dangers
 
     def check_pattern(self, pattern: str) -> list[BacktrackingDanger]:
+        """Return all static backtracking findings for a pattern."""
         return self.compile(pattern).dangers
 
 
@@ -333,6 +363,9 @@ def _contains_quantified_branch(group_content: str) -> bool:
                 elif group_content[j] == ")":
                     depth -= 1
                 j += 1
+            inner_end = j - 1 if depth == 0 else j
+            if _contains_quantified_branch(group_content[i + 1 : inner_end]):
+                return True
             if j < len(group_content) and group_content[j] in "*+":
                 return True
             i = j

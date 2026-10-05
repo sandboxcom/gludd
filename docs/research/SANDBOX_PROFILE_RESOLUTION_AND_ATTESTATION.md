@@ -1,7 +1,7 @@
 # Sandbox profile resolution and runtime attestation
 
-**Feature:** `SEC-SBX-001` first executable slice  
-**Implementation status:** production dispatch admission wired; real backend probes remain open  
+**Feature:** `SEC-SBX-001` first executable slice
+**Implementation status:** production dispatch admission wired; real backend probes remain open
 **Last reviewed:** 2026-08-01
 
 ## Scope and completion boundary

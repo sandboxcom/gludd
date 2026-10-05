@@ -57,7 +57,9 @@ _COLOR_RESULTS = {
 class HttpGet(Protocol):
     """Injectable transport: maps a URL + headers to an (status, json) pair."""
 
-    def __call__(self, url: str, headers: dict[str, str]) -> HttpResponse: ...
+    def __call__(self, url: str, headers: dict[str, str]) -> HttpResponse:
+        """Fetch ``url`` with ``headers`` and return ``(status_code, parsed_json)``."""
+        ...
 
 
 class Record(TypedDict):
@@ -94,6 +96,7 @@ class JenkinsSource:
     KIND = "pipeline"
 
     def __init__(self, config: dict[str, object], *, http_get: HttpGet | None = None) -> None:
+        """Build the source from connector config; requires a non-empty ``base_url``."""
         base_url = str(config.get("base_url", "")).rstrip("/")
         if not base_url:
             raise ValueError("base_url is required")
@@ -170,7 +173,7 @@ class JenkinsSource:
     def _extract_builds(payload: object) -> list[dict[str, object]]:
         builds: list[dict[str, object]] = []
         if isinstance(payload, dict):
-            raw_builds = payload.get("builds") or payload.get("jobs")
+            raw_builds = payload.get("builds")
             if isinstance(raw_builds, list):
                 for item in raw_builds:
                     if isinstance(item, dict):

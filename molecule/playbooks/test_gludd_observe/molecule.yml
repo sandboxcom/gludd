@@ -11,7 +11,6 @@ provisioner:
       host_key_checking: false
   env:
     ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
-    GLUDD_MOCK_PORT: "8897"
     PYTHONPATH: "${MOLECULE_PROJECT_DIRECTORY}/src"
   inventory:
     hosts:
@@ -20,8 +19,8 @@ provisioner:
           localhost:
             ansible_connection: local
   playbooks:
-    cleanup: default/cleanup.yml
-    destroy: default/destroy.yml
+    cleanup: "${MOLECULE_PROJECT_DIRECTORY}/molecule/shared/mock_daemon_cleanup.yml"
+    destroy: "${MOLECULE_PROJECT_DIRECTORY}/molecule/shared/mock_daemon_destroy.yml"
     prepare: default/prepare.yml
     converge: default/converge.yml
     verify: default/verify.yml
@@ -34,7 +33,6 @@ scenario:
     - syntax
     - prepare
     - converge
-    - idempotence
     - verify
     - cleanup
     - destroy

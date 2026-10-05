@@ -3,6 +3,15 @@
 # timers, unattended-upgrades, cron, logrotate.
 # All mutating operations default OFF via defaults/main.yml.
 
+- name: Resolve the managed-host Python runtime before mutation
+  ansible.builtin.include_role:
+    name: general_ludd.os_expert.managed_python_preflight
+    public: false
+    rolespec_validate: true
+  vars:
+    os_expert_python_preflight_contract: "{{ os_expert_python_contract | default('discovered') }}"
+    os_expert_python_preflight_managed_interpreter: "{{ os_expert_managed_python_interpreter | default('') }}"
+
 - name: Create artifact directory
   when: ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
   ansible.builtin.file:
@@ -10,7 +19,7 @@
     state: directory
     mode: "0755"
 
-- name: Run structured audit via python backend
+- name: Run structured audit via managed runtime
   when:
     - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
     - run_backend | default(true) | bool
@@ -22,9 +31,12 @@
         mode: "0755"
 
     - name: Run audit — collect systemd, cron, logrotate, unattended as JSON
-      ansible.builtin.command: >
-        python3 {{ artifact_dir }}/linux_automation_audit.py
-        --output {{ artifact_dir }}/automation_audit.json
+      ansible.builtin.command:
+        argv:
+          - "{{ _os_expert_python_runtime.executable }}"
+          - "{{ artifact_dir }}/linux_automation_audit.py"
+          - --output
+          - "{{ artifact_dir }}/automation_audit.json"
       register: _backend_result
       changed_when: false
       ignore_errors: true

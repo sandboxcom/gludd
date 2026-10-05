@@ -697,11 +697,11 @@ construction is asserted to pass a non-`None` `inbound_queue`
 ### H-ADMIN-PSK-ONLY (HIGH) — entire /admin/* mutating surface has no capability/RBAC check, only the shared PSK
 
 **Defect:** every `/admin/*` endpoint is gated by nothing but the single
-shared `GLUDD_PSK` (`auth_and_stats_middleware`, `daemon.py:2468-2523`,
+shared `GLUDD_AUTH_PSK` (`auth_and_stats_middleware`, `daemon.py:2468-2523`,
 constant-time `check_bearer_token`) — there is no `@Depends`/router split by
 privilege tier and zero `can_invoke`/`has_permission` calls in any router
 handler. Every dispatched agent holds this same PSK
-(`renderers/runner.py:227-229` injects `GLUDD_PSK` into the agent subprocess
+(`renderers/runner.py:227-229` injects `GLUDD_AUTH_PSK` into the agent subprocess
 env), so any agent — or any caller who obtains a leaked PSK — can reach the
 entire privileged surface: compute deploy/destroy, spend reconfigure, STS
 issue/revoke, perm-spec `PUT` (`security.py:406`), escalation approve/deny,
@@ -902,7 +902,7 @@ cannot catch because they always start from a fresh `upgrade` at base.
 
 ### H-OBS-TENANT-LEAK (HIGH, CONFIRMED) — observability/reporting endpoints leak cross-tenant data because the PSK carries no tenant identity
 
-**Defect:** the daemon's single global `GLUDD_PSK` middleware
+**Defect:** the daemon's single global `GLUDD_AUTH_PSK` middleware
 (`daemon.py:2468-2504`) authenticates a request but carries **no tenant
 identity** — `AuthPosture` has no `project_id` field (`security/auth.py:32-49`).
 Consequently every `project_id` query param across the observability/reporting
