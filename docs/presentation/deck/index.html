@@ -885,7 +885,39 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19g: S83.115 X.509 CHAIN VALIDATION -->
+<!-- SLIDE 19g: S83.114 FAIL-CLOSED CHEMISTRY ENTITY RESOLUTION -->
+<!-- ============================================================ -->
+<section data-contract="s83-114-chemistry-entity-resolution">
+  <p class="stage-kicker">Chemistry contract &middot; typed failure to reversible rollout</p>
+  <h2>S83.114 &mdash; Chemistry identities <span class="badge-green">Fail closed</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Evidence, never inference</h3>
+      <ul class="bullets-tight">
+        <li>Only an unknown representation may carry the <strong>complete empty sentinel</strong>; one-sided empty states are rejected.</li>
+        <li>Stereo text evidence stays <code>specified / partial / unknown</code>; isotope evidence stays <code>specified / natural / unknown</code>.</li>
+        <li>The submitted text survives canonicalization, while the marker adapter remains a narrow <strong>RDKit adapter seam</strong>, not a molecular parser.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Measured and bounded</h3>
+      <ul class="bullets-tight">
+        <li><strong>Tests:</strong> 116/116 warning-strict focused + adjacent checks</li>
+        <li><strong>Coverage:</strong> 94% aggregate; <code>core.py</code> / <code>schemas.py</code> = 92% / 99%</li>
+        <li><strong>Resources:</strong> fixed regex scans, linear input work, constant state, and zero network access</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">
+    ZDD canary status counts distinguish unknown, partial, natural, and specified evidence.
+    Keep resolution and validation on the same worker; on rollback, drain or pin sentinel-bearing requests
+    before a source-only rollback.
+  </p>
+  <p class="cite">Sources: docs/features/CHEMISTRY_ENTITY_FAIL_CLOSED_RESOLUTION.md &middot; Pydantic model validators &middot; RDKit stereochemistry guidance and long-lived practitioner threads</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19h: S83.115 X.509 CHAIN VALIDATION -->
 <!-- ============================================================ -->
 <section data-contract="s83-115-x509-chain-validation">
   <p class="stage-kicker">Security contract &middot; standards-consistent issuance to rollback</p>
