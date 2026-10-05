@@ -93,7 +93,7 @@
     &mdash; explained, with exact code paths
   </p>
   <p style="margin-top:30px; font-size:0.5em; color:#484f58;">
-    v0.1.0-beta.2 &middot; MIT License &middot; built 2026-07-14
+    v{{VERSION}} &middot; MIT License &middot; commit {{GIT_SHA}} &middot; generated {{GENERATED_AT}}
   </p>
 </section>
 
@@ -188,7 +188,7 @@ graph TD
     </div>
   </div>
   <ul class="bullets-tight">
-    <li class="fragment"><strong>Wired at boot:</strong> 24 model providers, 109 Ansible roles, 14 enforcement plugins, 27 DB tables</li>
+    <li class="fragment"><strong>Wired at boot:</strong> 24 model providers, {{ROLE_COUNT}} Ansible roles, 14 enforcement plugins, 27 DB tables</li>
     <li class="fragment"><strong>Routers registered:</strong> todos, review, admin, MCP, self-improve, compute, pause, remediation, eval, security, account, memory, worktree, stream, files, facts, ornith, benchmark, model-performance</li>
     <li class="fragment"><strong>Daemon state:</strong> single source of truth (&lt;code&gt;app.state&lt;/code&gt;) — DB factory, controllers, agent registry, dispatcher, all in one process</li>
   </ul>
@@ -797,6 +797,41 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
+<!-- SLIDE 19e: S83.157 NEXT BOUNDED GPU PROOF -->
+<!-- ============================================================ -->
+<section data-contract="s83-157-next-live-proof">
+  <p class="stage-kicker">Decision &middot; 2026-10-05 &middot; next live proof</p>
+  <h2>S83.157 &mdash; bounded alternate-region T4 proof</h2>
+  <div class="two-col">
+    <div>
+      <h3>One placement at a time</h3>
+      <ul class="bullets-tight">
+        <li><strong>Profile:</strong> one owner-tagged <code>Consumption-GPU-NC8as-T4</code> app/environment pair</li>
+        <li><strong>Pins:</strong> one task, model revision, and image digest; <code>minReplicas=1</code>, <code>maxReplicas=1</code></li>
+        <li><strong>Lease:</strong> <code>$5 / 60 min</code>, acquisition through independently verified cleanup</li>
+        <li><strong>T4 order:</strong> <code>westus</code> &rarr; <code>westus2</code> &rarr; <code>canadacentral</code></li>
+        <li><strong>A100:</strong> only after two cleaned placement failures</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Evidence before quality</h3>
+      <ul class="bullets-tight">
+        <li>Bind status and replicas to the <strong>exact revision</strong></li>
+        <li>Retain <strong>startup + readiness probes</strong> and app/environment <strong>system events</strong></li>
+        <li>Require in-container <strong>CUDA attestation</strong> and revision/pod <code>GpuUtilizationPercentage</code></li>
+        <li>On every terminal path: <strong>destroy + verified absence</strong> before failover</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">
+    Never score placement as model quality. Placement, image, probe, CUDA, metric,
+    timeout, and cleanup outcomes stay in the operational channel; inference quality
+    begins only after every readiness and GPU check succeeds.
+  </p>
+  <p class="cite">Sources: docs/features/SELF_IMPROVEMENT_MIXED_MODELS.md &middot; docs/research/AZURE_TERRAFORM_EVENT_ELASTICITY_E2E_EVIDENCE.md</p>
+</section>
+
+<!-- ============================================================ -->
 <!-- SLIDE 20: SECURITY -->
 <!-- ============================================================ -->
 <section>
@@ -871,12 +906,12 @@ graph TD
       <span class="cite"><code>find src -name '*.py'</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">38,207</div>
+      <div class="number">{{TEST_COUNT}}</div>
       <div class="label">tests collected</div>
       <span class="cite"><code>make test-count</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">111</div>
+      <div class="number">{{ROLE_COUNT}}</div>
       <div class="label">Ansible roles</div>
       <span class="cite"><code>make collection-roles</code></span>
     </div>
@@ -1056,12 +1091,12 @@ make init</code></pre>
   </p>
   <div class="metrics-grid">
     <div class="metric-box">
-      <div class="number">v0.1.0-beta.2</div>
+      <div class="number">v{{VERSION}}</div>
       <div class="label">current version</div>
       <span class="cite"><code>pyproject.toml</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">38,207</div>
+      <div class="number">{{TEST_COUNT}}</div>
       <div class="label">tests collected</div>
       <span class="cite"><code>make test-count</code></span>
     </div>
@@ -1133,7 +1168,7 @@ make init</code></pre>
   <p style="color:#8b949e; margin-top:20px;">Questions?</p>
   <p style="font-size:0.6em; margin-top:40px;">
     gludd &mdash; Autonomous Software Development<br>
-    v0.1.0-beta.2 &middot; MIT License &middot; built 2026-07-14
+    v{{VERSION}} &middot; MIT License &middot; commit {{GIT_SHA}} &middot; generated {{GENERATED_AT}}
   </p>
   <p style="font-size:0.5em; margin-top:20px;">
     <a href="https://github.com/sandboxcom/gludd">github.com/sandboxcom/gludd</a><br>
