@@ -1219,6 +1219,34 @@ flowchart LR
 </section>
 
 <!-- ============================================================ -->
+<!-- SLIDE 19k: DECISION-LOG CODIFICATION -->
+<!-- ============================================================ -->
+<section data-contract="decision-log-codification-v1">
+  <p class="stage-kicker">Repeated decisions &middot; verified evidence to reversible automation</p>
+  <h2>Decision-log codification <span class="badge-yellow">Service ready; daemon wiring pending</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Trust only exact evidence</h3>
+      <ul class="bullets-tight">
+        <li><strong>Verified signed bundles:</strong> <code>DecisionLogAnalyzer</code> mints source markers only after complete <code>RunBundleStore.read_verified()</code> output.</li>
+        <li><strong>Exact context or abstain:</strong> project, policy, guards, schema, and an observed context signature must match; uncertainty returns <code>DecisionAbstentionV1</code>.</li>
+        <li><strong>zero-LLM hit:</strong> <code>DecisionResolver</code> runs one verified leaf through the deterministic <code>RuleEngine</code>, or calls the supplied fallback once after abstention.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Approval and ZDD lifecycle</h3>
+      <ul class="bullets-tight">
+        <li><strong>Human approval:</strong> an authorized person approves one exact candidate/report digest; create-only HMAC receipts cannot be rewritten.</li>
+        <li><strong>Stages:</strong> shadow 0% &rarr; canary 1% &rarr; 10% &rarr; 50% &rarr; active 100%, with stable project-scoped cohorts.</li>
+        <li><strong>Atomic rollback:</strong> restore the newest verified compatible generation, or remove the pointer so all traffic abstains.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">A 48-bundle end-to-end core test proves analysis, approval, activation, a zero-fallback hit, fallback, and rollback. Recorder, daemon/event-loop, durable multiworker, CLI/API, and live-traffic integration remain; no live avoided-call claim is made yet.</p>
+  <p class="cite">Sources: docs/features/DECISION_LOG_CODIFICATION.md &middot; RapidFuzz #432 &middot; scikit-learn #15629 / discussion #25411 &middot; OPA #2379 / #1514</p>
+</section>
+
+<!-- ============================================================ -->
 <!-- SLIDE 20: SECURITY -->
 <!-- ============================================================ -->
 <section>
