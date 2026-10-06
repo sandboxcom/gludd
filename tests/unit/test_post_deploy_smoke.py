@@ -205,7 +205,7 @@ class TestPublishedRollbackReceipt:
         matches = [
             step
             for step in steps
-            if "rollback receipt" in step["name"].lower()
+            if step["name"].lower() == "write checksum-bound rollback receipt"
         ]
         assert len(matches) == 1, (
             "release job must contain exactly one checksum-bound rollback receipt step"
@@ -260,3 +260,54 @@ class TestPublishedRollbackReceipt:
 
         assert body.count('sha256sum "$active_work"') == 2
         assert body.count('sha256sum "$active_route"') >= 1
+
+
+class TestPublishedRollbackReceiptReplay:
+    """Published bytes, not the runner's staging directory, are authoritative."""
+
+    def _published_replay_step(self) -> dict[str, str]:
+        steps = _release_job_steps(_workflow_source())
+        matches = [
+            step
+            for step in steps
+            if "verify published rollback receipt" in step["name"].lower()
+        ]
+        assert len(matches) == 1, (
+            "release job must contain exactly one published rollback receipt replay"
+        )
+        return matches[0]
+
+    def test_replay_downloads_the_exact_checksum_bound_evidence(self) -> None:
+        body = self._published_replay_step()["body"]
+
+        for needle in (
+            'gh release download "$TAG"',
+            'gludd-rollback-receipt-${VERSION}.json',
+            'gludd-release-manifest-${VERSION}.json',
+            'gludd-${VERSION}-linux-x86_64.tar.gz',
+            'gludd-smoke-*-${VERSION}.json',
+            'SHA256SUMS',
+            'verify-published-rollback',
+        ):
+            assert needle in body
+        assert "release-assets" not in body
+        assert "|| true" not in body
+
+    def test_replay_runs_after_publish_and_before_remote_completeness(self) -> None:
+        src = _workflow_source()
+        publish = src.index("uses: softprops/action-gh-release@")
+        replay = src.index("- name: Verify published rollback receipt")
+        completeness = src.index("- name: Verify release completeness")
+
+        assert publish < replay < completeness
+
+    def test_replay_is_namespaced_and_cleanup_preserves_primary_failure(self) -> None:
+        body = self._published_replay_step()["body"]
+
+        assert (
+            "gludd-published-rollback-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            in body
+        )
+        assert "primary_status=$?" in body
+        assert "return \"$primary_status\"" in body
+        assert "set -euo pipefail" in body

@@ -2119,6 +2119,42 @@ jobs:
           files: release-assets/*
           fail_on_unmatched_files: true
           generate_release_notes: true
+      - name: Verify published rollback receipt
+        # Re-download the smallest complete receipt evidence set. The local
+        # staging directory is not publication evidence: hosted asset bytes,
+        # their aggregate checksums, and their manifest must agree again.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: release-published-rollback-receipt ==="
+          TAG="${{ github.ref_name }}"
+          published_root="/tmp/gludd-published-rollback-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup_published_rollback() {
+            primary_status=$?
+            cleanup_failed=0
+            if ! rm -rf "$published_root"; then
+              echo "::error::published rollback evidence cleanup failed"
+              cleanup_failed=1
+            fi
+            if [ "$primary_status" -ne 0 ]; then
+              return "$primary_status"
+            fi
+            return "$cleanup_failed"
+          }
+          trap cleanup_published_rollback EXIT
+
+          mkdir -p "$published_root"
+          gh release download "$TAG" \
+            --repo "${{ github.repository }}" \
+            --dir "$published_root" \
+            --pattern "gludd-rollback-receipt-${VERSION}.json" \
+            --pattern "gludd-release-manifest-${VERSION}.json" \
+            --pattern "gludd-${VERSION}-linux-x86_64.tar.gz" \
+            --pattern "gludd-smoke-*-${VERSION}.json" \
+            --pattern "SHA256SUMS"
+          uv run python scripts/verify_release_asset_matrix.py \
+            verify-published-rollback "$published_root" "$VERSION"
       - name: Verify release completeness (blocking)
         # Single source of truth for "the release actually shipped": the same
         # scripts/verify_release_completeness.py used locally checks all 28
