@@ -200,13 +200,14 @@ def test_validate_reports_missing_artifact(tmp_path: Path, monkeypatch: pytest.M
 def test_validate_reports_dependency_leaks_and_missing_controller(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake_project = {
+    root_project = {
         "project": {
             "dependencies": ["ansible-core==2", "ansible-runner==2", "ansible-builder==3"],
-            "optional-dependencies": {"ansible-controller": []},
         }
     }
-    monkeypatch.setattr(tomllib, "loads", lambda _text: fake_project)
+    controller_project = {"project": {"dependencies": []}}
+    projects = iter((root_project, controller_project))
+    monkeypatch.setattr(tomllib, "loads", lambda _text: next(projects))
     errors = artifacts.validate_files()
     assert {error for error in errors if "dependency" in error} == {
         "core dependency leak: ansible-core",

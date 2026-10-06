@@ -217,13 +217,6 @@ jobs:
             AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS=21600
         env:
           GLUDD_AUTH_PSK: ""
-      - name: Azure Container App coverage (hermetic)
-        if: matrix.python-version == '3.11'
-        run: |
-          echo "=== CI PHASE: azure-containerapp-coverage ==="
-          make test-azure-containerapp-coverage
-        env:
-          GLUDD_AUTH_PSK: ""
       - name: Lint
         run: |
           echo "=== CI PHASE: lint ==="
@@ -231,6 +224,13 @@ jobs:
             echo "::error::LINT FAILED — ruff found violations. Run 'make lint' locally for details."
             exit 1
           }
+        env:
+          GLUDD_AUTH_PSK: ""
+      - name: Azure Container App coverage (hermetic)
+        if: ${{ !cancelled() && matrix.python-version == '3.11' }}
+        run: |
+          echo "=== CI PHASE: azure-containerapp-coverage ==="
+          make test-azure-containerapp-coverage
         env:
           GLUDD_AUTH_PSK: ""
       - name: Typecheck
