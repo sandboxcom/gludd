@@ -4605,6 +4605,8 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
                         "job_id": job.job_id,
                         "playbook": job.playbook,
                         "queue": job.queue,
+                        "work_type": job.work_type,
+                        "resource_profile": job.resource_profile,
                         "exit_code": data.get("exit_code", 0),
                         "result_summary": data.get("result_summary", ""),
                         "project_id": job.project_id,

@@ -1,7 +1,7 @@
 """Tests for the background-gate infrastructure (Makefile targets + markers).
 
-Reads the Makefile as text and asserts the new targets, nohup usage, PID file,
-and streaming phase markers exist. Mirrors test_guardrails.py::TestMakefileTargets.
+Reads the Makefile as text and asserts the session launcher, PID file, and
+streaming phase markers exist. Mirrors test_guardrails.py::TestMakefileTargets.
 """
 
 import subprocess
@@ -63,19 +63,20 @@ def test_gate_writes_terminal_marker() -> None:
     )
 
 
-def test_gate_background_uses_nohup() -> None:
-    """gate-background must use nohup so the launched gate survives shell exit."""
+def test_gate_background_uses_repo_owned_session_launcher() -> None:
+    """gate-background delegates admission, identity, and timeout ownership."""
     content = _content()
     # Isolate the gate-background recipe block.
     idx = content.find("gate-background:")
     assert idx != -1
     # The next top-level target marks the end of the recipe.
-    tail = content[idx:]
-    # Restrict to ~2000 chars so we don't accidentally match a later target.
-    recipe_block = tail[:2000]
-    assert "nohup" in recipe_block, (
-        "gate-background recipe must use nohup to detach the gate from the shell"
-    )
+    end = content.index("# Managed command runners", idx)
+    recipe_block = content[idx:end]
+    assert "scripts/start_gate_background.py" in recipe_block
+    assert '--timeout-seconds "$(GATE_TIMEOUT)"' in recipe_block
+    assert '--validate-only "$(GATE_BACKGROUND_VALIDATE_ONLY)"' in recipe_block
+    assert "nohup" not in recipe_block
+    assert "( sleep" not in recipe_block
 
 
 def test_gate_background_writes_pid_file() -> None:
@@ -83,9 +84,9 @@ def test_gate_background_writes_pid_file() -> None:
     content = _content()
     idx = content.find("gate-background:")
     recipe_block = content[idx:idx + 2000]
-    assert ".gate-background.pid" in recipe_block, (
-        "gate-background recipe must write .gate-background.pid"
-    )
+    launcher = (ROOT / "scripts/start_gate_background.py").read_text()
+    assert "scripts/start_gate_background.py" in recipe_block
+    assert 'pid_file=resolved / ".gate-background.pid"' in launcher
 
 
 def test_gate_status_check_reads_pid_file() -> None:
@@ -115,17 +116,16 @@ def test_gate_background_observed_keeps_the_launch_owner_alive() -> None:
     assert "GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY" in recipe_block
 
 
-def test_gate_background_refusal_and_launch_share_one_shell() -> None:
-    """A duplicate refusal must stop before the launch and PID-file write."""
+def test_gate_background_has_one_python_owned_launch_step() -> None:
+    """One Python transaction owns duplicate admission through PID publication."""
     content = _content()
     start = content.index("gate-background:")
     end = content.index("# Managed command runners", start)
     recipe_block = content[start:end]
 
     assert recipe_block.count("\n\t@") == 1
-    assert recipe_block.index("refusing to launch duplicate") < recipe_block.index(
-        "nohup"
-    )
+    assert "scripts/start_gate_background.py" in recipe_block
+    assert "refusing to launch duplicate" not in recipe_block
 
 
 def test_background_launchers_are_safe_under_make_dry_run() -> None:
@@ -174,10 +174,11 @@ def test_gate_background_duplicate_does_not_replace_live_pid(
                 "GATE_TIMEOUT=7200",
             ],
             cwd=tmp_path,
-            check=True,
+            check=False,
             capture_output=True,
             text=True,
         )
+        assert result.returncode == 0, result.stdout + result.stderr
         assert "refusing to launch duplicate" in result.stdout
         assert pid_file.read_text() == f"{owner.pid}\n"
     finally:

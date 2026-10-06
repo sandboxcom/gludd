@@ -1356,6 +1356,21 @@
       "behavior": "make test-failures TEST_FAILURES_CACHE=/tmp/gludd-no-prior-failures-contract.json TEST_FAILURES_LIMIT=5"
     },
     {
+      "name": "lint-python",
+      "make_variables": [],
+      "behavior": "make lint-python"
+    },
+    {
+      "name": "lint-make",
+      "make_variables": [],
+      "behavior": "make lint-make"
+    },
+    {
+      "name": "gate-background",
+      "make_variables": ["GATE_TIMEOUT", "GATE_BACKGROUND_VALIDATE_ONLY"],
+      "behavior": "make gate-background GATE_TIMEOUT=3600 GATE_BACKGROUND_VALIDATE_ONLY=1"
+    },
+    {
       "name": "gate-background-observed",
       "make_variables": ["GATE_TIMEOUT", "GATE_POLL_INTERVAL", "GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY"],
       "behavior": "make gate-background-observed GATE_TIMEOUT=7200 GATE_POLL_INTERVAL=60 GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY=1"
