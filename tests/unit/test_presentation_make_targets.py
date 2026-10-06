@@ -59,6 +59,10 @@ def test_presentation_browser_target_has_explicit_owned_bounds() -> None:
     assert "--validate-only" in presentation_fragment
     assert "--run" in presentation_fragment
     assert "presentation-browser-test" in makefile
+    assert (
+        "presentation-browser-test   Validate/run bounded Chromium acceptance "
+        "(PRESENTATION_BROWSER_VALIDATE_ONLY=0|1)"
+    ) in makefile
     assert _contract("presentation-browser-test") == {
         "name": "presentation-browser-test",
         "make_variables": [
@@ -99,6 +103,10 @@ def test_presentation_browser_install_is_read_only_by_default() -> None:
     ):
         assert argument in presentation_fragment
     assert "presentation-browser-install" in makefile
+    assert (
+        "presentation-browser-install Check/install pinned Chromium "
+        "(PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=0|1)"
+    ) in makefile
     assert _contract("presentation-browser-install") == {
         "name": "presentation-browser-install",
         "make_variables": [
