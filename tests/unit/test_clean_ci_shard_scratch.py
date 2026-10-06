@@ -79,6 +79,41 @@ def test_stale_unit_shard_directory_is_removed(tmp_path: Path) -> None:
     assert str(stale) in result["removed"]
 
 
+def test_session_scratch_reclaims_only_stale_idle_generated_roots(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    stale_test_count = tmp_path / "gludd-s83-161-test-count"
+    stale_observed = tmp_path / "gludd-s83-162-observed"
+    recent = tmp_path / "gludd-s83-163-test-count"
+    active = tmp_path / "gludd-s83-164-observed"
+    unknown = tmp_path / "gludd-s83-165-private-evidence"
+    for path in (stale_test_count, stale_observed, recent, active, unknown):
+        path.mkdir()
+        (path / "evidence.log").write_text("generated\n", encoding="utf-8")
+    for path in (stale_test_count, stale_observed, active, unknown):
+        _age_path(path, 7200)
+
+    result = module.clean_ci_shard_scratch(
+        tmp_root=tmp_path,
+        min_age_seconds=3600,
+        active_process_pids=lambda path: [4242] if path == active else [],
+    )
+
+    assert result["removed"] == sorted(
+        (str(stale_test_count), str(stale_observed))
+    )
+    assert result["skipped"] == [
+        f"{recent}:recent",
+        f"{active}:active-pids=4242",
+    ]
+    assert not stale_test_count.exists()
+    assert not stale_observed.exists()
+    assert recent.is_dir()
+    assert active.is_dir()
+    assert unknown.is_dir()
+
+
 def test_inactive_gate_unit_root_is_removed(tmp_path: Path) -> None:
     module = _load_module()
     stale = tmp_path / "gludd-gate-unit-3-abcd1234"

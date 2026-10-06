@@ -2029,6 +2029,45 @@ def test_stale_owned_node_cache_cleanup_is_exact_and_visible(
     assert "action=node-download-cache status=complete inspected=2 removed=1" in output
 
 
+def test_node_cache_cleanup_discovers_per_task_roots_and_preserves_unsafe_ones(
+    tmp_path: Path,
+) -> None:
+    approved = tmp_path.resolve()
+    stale = approved / "gludd-npm-cache-s83-163"
+    recent = approved / "gludd-npm-cache-s83-164"
+    active = approved / "gludd-npm-cache-s83-165"
+    unknown = approved / "gludd-npm-cache-s83-166-copy"
+    for cache in (stale, recent, active, unknown):
+        cache.mkdir()
+        (cache / "content.bin").write_bytes(b"regenerable")
+    for cache in (stale, active, unknown):
+        for path in (cache / "content.bin", cache):
+            os.utime(path, (100.0, 100.0))
+
+    result = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=None,
+        approved_tmp_root=approved,
+        now_epoch=10_000,
+        min_age_seconds=3_600,
+        active_process_pids=lambda path: [7331] if path == active else [],
+    )
+
+    assert result.removed == (str(stale),)
+    assert result.skipped == tuple(
+        sorted(
+            (
+                f"{recent}:recent",
+                f"{active}:active-pids=7331",
+                f"{unknown}:unapproved-cache-name",
+            )
+        )
+    )
+    assert not stale.exists()
+    assert recent.is_dir()
+    assert active.is_dir()
+    assert unknown.is_dir()
+
+
 def test_node_cache_cleanup_refuses_unsafe_fresh_and_unbounded_candidates(
     tmp_path: Path,
 ) -> None:

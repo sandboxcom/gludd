@@ -34,6 +34,11 @@ PATTERNS = (
     "gludd-testunit-*",
     "gludd-testspecific-*",
     "gludd-testfiles-*",
+    "gludd-s*-*-test-count",
+    "gludd-s*-*-observed",
+)
+SESSION_SCRATCH_NAME_PATTERN = re.compile(
+    r"gludd-s[0-9]+-[0-9]+-(?:test-count|observed)\Z"
 )
 LEASE_MARKER_TOKENS = frozenset({"lease", "lock", "pid"})
 GENERATED_FILE_SUFFIXES = frozenset(
@@ -64,6 +69,10 @@ def iter_candidates(tmp_root: Path) -> list[Path]:
     candidates: dict[str, Path] = {}
     for pattern in PATTERNS:
         for path in tmp_root.glob(pattern):
+            if path.name.startswith("gludd-s") and not SESSION_SCRATCH_NAME_PATTERN.fullmatch(
+                path.name
+            ):
+                continue
             candidates[str(path)] = path
     return [candidates[key] for key in sorted(candidates)]
 

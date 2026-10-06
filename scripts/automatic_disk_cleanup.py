@@ -65,6 +65,10 @@ OWNED_NODE_CACHE_ROOTS = (
     Path("/tmp/gludd-npm-cache-public-v1"),
 )
 OWNED_NODE_CACHE_NAMES = frozenset(path.name for path in OWNED_NODE_CACHE_ROOTS)
+OWNED_TASK_NODE_CACHE_NAME_PATTERN = re.compile(
+    r"gludd-npm-cache-s[0-9]+-[0-9]+\Z"
+)
+NODE_CACHE_DISCOVERY_PATTERN = "gludd-npm-cache*"
 OWNED_TERRAFORM_CACHE_ROOTS = (
     Path("/tmp/gludd-azure-containerapp-live-proof"),
     Path("/tmp/gludd-azure-containerapp-environments"),
@@ -82,7 +86,7 @@ MAX_PREFLIGHT_CLEANUP_PASSES = 8
 MAX_CLEANUP_DETAILS_PER_KIND = 20
 DEFAULT_NODE_CACHE_MIN_AGE_SECONDS = 6 * 60 * 60
 MAX_NODE_CACHE_ENTRIES = 50_000
-MAX_NODE_CACHE_CANDIDATES = len(OWNED_NODE_CACHE_ROOTS)
+MAX_NODE_CACHE_CANDIDATES = 64
 REGENERABLE_IGNORED_DIR_NAMES = frozenset(
     {".hypothesis", "__pycache__", "node_modules", *GENERATED_CACHE_DIR_NAMES}
 )
@@ -1806,9 +1810,27 @@ def _active_node_package_manager_pids(cache_root: Path) -> list[int]:
     return sorted(active_pids)
 
 
+def _is_owned_node_cache_name(name: str) -> bool:
+    """Recognize canonical shared caches and strict session/task cache names."""
+    return (
+        name in OWNED_NODE_CACHE_NAMES
+        or OWNED_TASK_NODE_CACHE_NAME_PATTERN.fullmatch(name) is not None
+    )
+
+
+def _discover_node_cache_roots(approved_tmp_root: Path) -> tuple[Path, ...]:
+    """Return bounded direct-child node cache candidates for strict validation."""
+    return tuple(
+        sorted(
+            approved_tmp_root.glob(NODE_CACHE_DISCOVERY_PATTERN),
+            key=lambda path: os.fsencode(path.name),
+        )
+    )
+
+
 def clean_stale_node_download_caches(
     *,
-    cache_roots: Sequence[Path] = OWNED_NODE_CACHE_ROOTS,
+    cache_roots: Sequence[Path] | None = None,
     approved_tmp_root: Path = Path("/tmp"),
     now_epoch: float | None = None,
     min_age_seconds: int = DEFAULT_NODE_CACHE_MIN_AGE_SECONDS,
@@ -1818,7 +1840,21 @@ def clean_stale_node_download_caches(
     dry_run: bool = False,
 ) -> CleanupResult:
     """Remove only exact, stale Gludd npm caches after two idle proofs."""
-    candidates = tuple(dict.fromkeys(cache_roots))
+    try:
+        candidates = tuple(
+            dict.fromkeys(
+                _discover_node_cache_roots(approved_tmp_root)
+                if cache_roots is None
+                else cache_roots
+            )
+        )
+    except (OSError, RuntimeError):
+        print(
+            "phase=cleanup action=node-download-cache status=complete "
+            "inspected=0 removed=0 skipped=0 errors=1 entries=0",
+            flush=True,
+        )
+        return CleanupResult((), (), ("node-download-cache:discovery-failed",))
     print(
         "phase=cleanup action=node-download-cache status=starting "
         f"candidates={len(candidates)}",
@@ -1854,7 +1890,7 @@ def clean_stale_node_download_caches(
 
     current_time_ns = int((time.time() if now_epoch is None else now_epoch) * 1e9)
     for cache_root in candidates:
-        if cache_root.name not in OWNED_NODE_CACHE_NAMES:
+        if not _is_owned_node_cache_name(cache_root.name):
             skipped.append(f"{cache_root}:unapproved-cache-name")
             continue
         try:
