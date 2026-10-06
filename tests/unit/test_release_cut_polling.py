@@ -2,9 +2,11 @@
 
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 
 def _recipe(target: str) -> str:
-    content = (Path(__file__).resolve().parents[2] / "Makefile").read_text()
+    content = compose_makefile(Path(__file__).resolve().parents[2] / "Makefile")
     marker = f"\n{target}:"
     start = content.index(marker)
     end = content.find("\n\n", start)

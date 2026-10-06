@@ -1306,6 +1306,16 @@
       "behavior": "make check-generated-artifact-hygiene"
     },
     {
+      "name": "check-file-line-limits",
+      "make_variables": ["FILE_LINE_LIMIT_POLICY"],
+      "behavior": "make check-file-line-limits FILE_LINE_LIMIT_POLICY=config/file_line_limits.json"
+    },
+    {
+      "name": "split-makefile-layout",
+      "make_variables": ["MAKEFILE_SPLIT_APPLY"],
+      "behavior": "make split-makefile-layout MAKEFILE_SPLIT_APPLY=0"
+    },
+    {
       "name": "update-collection-python-boundary-inventory",
       "make_variables": ["COLLECTION_PYTHON_BOUNDARY_ROOT", "COLLECTION_PYTHON_BOUNDARY_INVENTORY"],
       "behavior": "make update-collection-python-boundary-inventory COLLECTION_PYTHON_BOUNDARY_ROOT=collections/ansible_collections COLLECTION_PYTHON_BOUNDARY_INVENTORY=/tmp/gludd-collection-python-boundary-contract.json"

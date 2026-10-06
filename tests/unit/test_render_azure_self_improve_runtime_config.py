@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from scripts import render_azure_self_improve_runtime_config as subject
+from scripts.makefile_layout import compose_makefile
 
 from general_ludd.self_improve.azure_model_selection import (
     azure_model_deployment_identity_digest,
@@ -272,7 +273,7 @@ def test_renderer_rejects_incomplete_or_ambiguous_authentication(
 
 
 def test_make_target_runs_real_benchmark_with_one_temporary_config() -> None:
-    makefile = Path("Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(Path("Makefile"))
     recipe = makefile.split("\nazure-self-improve-live-proof:", 1)[1].split(
         "\n\n", 1
     )[0]
@@ -303,7 +304,7 @@ def test_make_target_runs_real_benchmark_with_one_temporary_config() -> None:
 
 
 def test_live_proof_target_never_replaces_its_python_phases_with_echo() -> None:
-    makefile = Path("Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(Path("Makefile"))
     no_uv_goals = makefile.split("_NO_UV_SYNC_GOALS :=", 1)[1].split(
         "ifneq (,$(filter $(_NO_UV_SYNC_GOALS)",
         1,
@@ -325,7 +326,7 @@ def test_operational_renderer_contains_no_named_model_default() -> None:
 
 
 def test_live_config_requests_the_locked_azure_dependency_extra() -> None:
-    makefile = Path("Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(Path("Makefile"))
     recipe = makefile.split("\ntest-self-improve:", 1)[1].split("\n\n", 1)[0]
 
     assert "$(if $(strip $(SELF_IMPROVE_CONFIG_FILE)),--extra azure,)" in recipe

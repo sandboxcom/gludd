@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 from scripts import check_make_help
+from scripts.makefile_layout import compose_makefile
 
 
 def test_public_targets_are_listed_in_help() -> None:
@@ -36,11 +37,11 @@ def test_search_target_defaults_to_workspace_not_shell_path() -> None:
     )
 
     assert proc.returncode == 0, proc.stderr + proc.stdout
-    assert "Makefile:" in proc.stdout
+    assert "make/" in proc.stdout and ".mk:" in proc.stdout
 
 
 def test_search_target_is_portable_and_avoids_xargs_match_status() -> None:
-    content = Path("Makefile").read_text()
+    content = compose_makefile(Path("Makefile"))
     start = content.index("\nsearch:")
     end = content.index("\n\n", start)
     section = content[start:end]

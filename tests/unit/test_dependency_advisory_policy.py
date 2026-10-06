@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 PYPROJECT = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-MAKEFILE = (ROOT / "Makefile").read_text(encoding="utf-8")
+MAKEFILE = compose_makefile(ROOT / "Makefile")
 SECURITY = (ROOT / "docs" / "SECURITY.md").read_text(encoding="utf-8")
 
 

@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 SPEC = ROOT / "gludd.spec"
@@ -115,7 +116,7 @@ def test_gate_runs_opa_policy_validation() -> None:
 
 def test_opa_make_target_has_container_fallback() -> None:
     """Guard: OPA validation must work on runners without a host OPA binary."""
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     start = makefile.find("test-opa-policies:")
     assert start >= 0, "Makefile lost the test-opa-policies target"
     block = makefile[start : makefile.find("\n\n", start)]

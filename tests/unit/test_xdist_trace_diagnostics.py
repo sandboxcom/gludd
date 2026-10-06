@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 
 def test_trace_event_writes_jsonl_with_resource_fields(
@@ -470,7 +471,7 @@ def test_summary_normalizes_legacy_macos_rss_bytes_without_inflation(
 
 
 def test_make_targets_run_traced_full_suite() -> None:
-    makefile = Path("Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(Path("Makefile"))
 
     assert chr(10) + "test-xdist-trace:" in makefile
     assert "scripts/run_xdist_trace.py" in makefile

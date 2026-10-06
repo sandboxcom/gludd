@@ -18,6 +18,7 @@ from scripts.freellmapi_upstream_admission import (
     validate_existing_lock,
     write_candidate_lock,
 )
+from scripts.makefile_layout import compose_makefile
 
 _ROOT = Path(__file__).resolve().parents[2]
 _COMMIT = "4" * 40
@@ -498,7 +499,7 @@ def test_entrypoint_converts_typed_errors_to_content_free_json(
 
 
 def test_make_target_exposes_serial_universal_update_contract() -> None:
-    makefile = (_ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(_ROOT / "Makefile")
     target = makefile.split("\nfreellmapi-upstream-admission:", 1)[1].split("\n\n", 1)[0]
     assert "scripts/freellmapi_upstream_admission.py" in target
     assert "FREELLMAPI_ADMISSION_LIVE" in target

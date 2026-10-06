@@ -5,12 +5,14 @@ import os
 import re
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 _PROJECT = Path(__file__).resolve().parent.parent.parent
 _HOOK = _PROJECT / "scripts" / "hooks" / "pre-commit-lint"
 
 
 def _makefile() -> str:
-    return (_PROJECT / "Makefile").read_text(encoding="utf-8")
+    return compose_makefile(_PROJECT / "Makefile")
 
 
 class TestPreCommitLintHook:

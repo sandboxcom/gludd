@@ -11,6 +11,7 @@ from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 from general_ludd.azure import accelerator_role as subject
 
@@ -592,7 +593,7 @@ def test_make_target_and_contract_offer_one_sdk_apply_command() -> None:
     assert result.returncode == 0, result.stderr.decode(errors="replace")
     assert b"state=validated" in result.stdout
     assert SUBSCRIPTION_ID.encode() not in result.stdout + result.stderr
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     assert "azure-accelerator-role-apply:" in makefile
     assert "python -m general_ludd.azure.accelerator_role" in makefile
     contract = json.loads(

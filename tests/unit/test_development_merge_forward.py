@@ -6,6 +6,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -32,7 +34,7 @@ def _run_batch(*variables: str) -> subprocess.CompletedProcess[str]:
 
 
 def _recipe() -> str:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     match = re.search(
         r"^development-merge-forward:\n(?P<recipe>(?:\t.*\n)+)",
         makefile,
@@ -132,7 +134,7 @@ def test_batch_ancestry_dry_run_is_auditable_and_non_mutating() -> None:
 
 
 def test_batch_ancestry_target_has_atomic_apply_guards() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     match = re.search(
         r"^development-merge-forward-batch:\n(?P<recipe>(?:\t.*(?:\n|$))+)",
         makefile,

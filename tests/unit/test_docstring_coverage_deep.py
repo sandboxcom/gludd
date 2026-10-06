@@ -12,6 +12,8 @@ import subprocess
 import tomllib
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 DOCSTRING_FIXTURE = "src/general_ludd/security/xmss.py"
 
@@ -62,7 +64,7 @@ def test_docstring_policy_is_registered_and_commit_guarded() -> None:
     assert entry["make_variables"] == ["DOCSTRING_FILES"]
     assert entry["behavior"] == ("make lint-docstrings DOCSTRING_FILES=src/general_ludd/security/xmss.py")
 
-    makefile = (ROOT / "Makefile").read_text()
+    makefile = compose_makefile(ROOT / "Makefile")
     for target in ("git-commit", "commit-no-verify", "repo-commit", "ship-commit"):
         declaration = next(line for line in makefile.splitlines() if line.startswith(f"{target}:"))
         assert "_commit-docstring-guard" in declaration
@@ -73,7 +75,7 @@ def test_docstring_policy_is_registered_and_commit_guarded() -> None:
 
 def test_commit_guard_flattens_multiline_staged_source_paths() -> None:
     """Multiple staged source paths must remain one safe recursive Make argument."""
-    lines = (ROOT / "Makefile").read_text().splitlines()
+    lines = compose_makefile(ROOT / "Makefile").splitlines()
     target_index = lines.index("_commit-docstring-guard:")
     recipe = lines[target_index + 1]
     assert "| tr '\\n' ' '" in recipe

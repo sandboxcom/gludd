@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 FAILED_SHA = "a" * 40
 FIX_SHA = "b" * 40
@@ -175,7 +176,7 @@ def test_repository_ledger_make_contract_and_evidence_are_wired() -> None:
         ),
     ) == []
 
-    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(REPOSITORY_ROOT / "Makefile")
     assert "check-release-failure-ledger:" in makefile
     assert "RELEASE_FAILURE_LEDGER ?=" in makefile
     contracts = json.loads(

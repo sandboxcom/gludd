@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
+from scripts.makefile_layout import compose_makefile
 from scripts.process_cleanup import ProcessInfo
 from scripts.task_watchdog import (
     _parse_etime,
@@ -410,7 +411,7 @@ class TestFindHungProcesses:
     def test_gate_entrypoints_carry_legacy_watchdog_exclusion_marker(self) -> None:
         """Every long-lived gate layer must survive an older linked-worktree watchdog."""
         root = Path(__file__).resolve().parents[2]
-        makefile = (root / "Makefile").read_text(encoding="utf-8")
+        makefile = compose_makefile(root / "Makefile")
         gate_runner = (root / "scripts" / "run_gate.sh").read_text(encoding="utf-8")
 
         assert "_integration-health-watchdog-owned-gate" in makefile
