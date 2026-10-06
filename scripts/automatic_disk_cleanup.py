@@ -159,6 +159,14 @@ class LifecycleDecision:
     cache_only: bool = False
 
 
+@dataclass(frozen=True)
+class WorktreeEnvironmentSnapshot:
+    """Stable clean-HEAD and root identity proof for environment reclamation."""
+
+    head: str
+    root_identity: tuple[int, int, int, int, int]
+
+
 ActiveBranches = Callable[[], frozenset[str]]
 ActiveProcessPids = Callable[[Path], list[int]]
 OwnedProcessPids = Callable[[], frozenset[int]]
@@ -172,6 +180,10 @@ LifecycleProof = Callable[
 ]
 RemoveMaterialization = Callable[
     [prune_worktrees_safe.WorktreeRecord, bool], LifecycleDecision
+]
+InspectInactiveWorktree = Callable[
+    [prune_worktrees_safe.WorktreeRecord],
+    tuple[LifecycleDecision, WorktreeEnvironmentSnapshot | None],
 ]
 
 
@@ -995,6 +1007,86 @@ def _matching_refreshed_record(
     )
 
 
+def _worktree_environment_root_identity(
+    metadata: os.stat_result,
+) -> tuple[int, int, int, int, int]:
+    """Return mutation-sensitive identity fields for one worktree root."""
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+    )
+
+
+def _inspect_inactive_worktree_environment(
+    record: prune_worktrees_safe.WorktreeRecord,
+    *,
+    run_git: Callable[..., subprocess.CompletedProcess[str]] = (
+        prune_worktrees_safe._git
+    ),
+) -> tuple[LifecycleDecision, WorktreeEnvironmentSnapshot | None]:
+    """Prove one registered worktree has a stable clean HEAD without links."""
+    path = record.path
+    try:
+        initial_metadata = path.lstat()
+        canonical_path = path.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return LifecycleDecision(False, "worktree root inspection failed", True), None
+    if (
+        record.branch is None
+        or record.locked
+        or record.prunable
+        or stat.S_ISLNK(initial_metadata.st_mode)
+        or not stat.S_ISDIR(initial_metadata.st_mode)
+        or canonical_path != path
+    ):
+        return LifecycleDecision(False, "unsafe worktree root", True), None
+
+    try:
+        initial_head = run_git(
+            "-C", str(path), "rev-parse", "--verify", "HEAD^{commit}", check=False
+        )
+        if initial_head.returncode != 0 or not initial_head.stdout.strip():
+            return LifecycleDecision(False, "worktree HEAD inspection failed", True), None
+        status = run_git(
+            "-C",
+            str(path),
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            check=False,
+        )
+        if status.returncode != 0:
+            return (
+                LifecycleDecision(False, "worktree status inspection failed", True),
+                None,
+            )
+        if status.stdout:
+            return LifecycleDecision(False, "dirty worktree"), None
+        final_head = run_git(
+            "-C", str(path), "rev-parse", "--verify", "HEAD^{commit}", check=False
+        )
+        final_metadata = path.lstat()
+    except (OSError, RuntimeError, subprocess.SubprocessError):
+        return LifecycleDecision(False, "worktree revalidation failed", True), None
+    if final_head.returncode != 0 or not final_head.stdout.strip():
+        return LifecycleDecision(False, "worktree HEAD revalidation failed", True), None
+
+    initial_identity = _worktree_environment_root_identity(initial_metadata)
+    final_identity = _worktree_environment_root_identity(final_metadata)
+    initial_revision = initial_head.stdout.strip()
+    final_revision = final_head.stdout.strip()
+    if initial_identity != final_identity or initial_revision != final_revision:
+        return LifecycleDecision(False, "worktree changed during inspection"), None
+    return (
+        LifecycleDecision(True, "clean inactive worktree"),
+        WorktreeEnvironmentSnapshot(initial_revision, initial_identity),
+    )
+
+
 def _invoking_cache_is_safe(worktree: Path, relative_cache: Path) -> bool:
     """Validate every component of one exact invoking-worktree cache path."""
     if relative_cache.is_absolute() or not relative_cache.parts:
@@ -1261,6 +1353,9 @@ def clean_inactive_worktree_caches(
     active_workstream_leases: ActiveWorkstreamLeases | None = None,
     lifecycle_proof: LifecycleProof | None = None,
     active_process_pids: ActiveProcessPids = clean_ci_shard_scratch._active_process_pids,
+    inspect_inactive_worktree: InspectInactiveWorktree = (
+        _inspect_inactive_worktree_environment
+    ),
     remove_tree: RemoveTree = _remove_tree,
     remove_materialization: RemoveMaterialization | None = None,
     max_materializations: int = MAX_WORKTREE_MATERIALIZATIONS,
@@ -1394,13 +1489,37 @@ def clean_inactive_worktree_caches(
             candidate_record: prune_worktrees_safe.WorktreeRecord = record,
             candidate_path: Path = path,
             required_lease: WorkstreamLease | None = completion_lease,
+            candidate_refreshed_active: frozenset[str] = refreshed_active,
+            candidate_refreshed_leases: Mapping[
+                str, WorkstreamLease
+            ] = refreshed_leases,
         ) -> bool:
-            """Repeat the full completion proof immediately before env removal."""
+            """Repeat ownership and worktree proofs immediately before removal."""
+            inactive_snapshot: WorktreeEnvironmentSnapshot | None = None
             if required_lease is None:
-                skipped.append(
-                    f"{cache}:completion proof required for tool environment"
+                if (
+                    active_workstream_leases is None
+                    or candidate_record.branch in initial_active
+                    or candidate_record.branch in initial_leases
+                    or candidate_record.branch in candidate_refreshed_active
+                    or candidate_record.branch in candidate_refreshed_leases
+                ):
+                    skipped.append(
+                        f"{cache}:completion proof required for tool environment"
+                    )
+                    return False
+                initial_decision, inactive_snapshot = inspect_inactive_worktree(
+                    candidate_record
                 )
-                return False
+                if initial_decision.error:
+                    errors.append(f"{cache}:{initial_decision.reason}")
+                    return False
+                if not initial_decision.reclaimable:
+                    skipped.append(f"{cache}:{initial_decision.reason}")
+                    return False
+                if inactive_snapshot is None:
+                    errors.append(f"{cache}:worktree inspection evidence missing")
+                    return False
             try:
                 environment_records = refresh_records()
                 environment_active = active_branches()
@@ -1418,26 +1537,49 @@ def clean_inactive_worktree_caches(
             if environment_record is None:
                 skipped.append(f"{cache}:tool environment registration changed")
                 return False
-            if (
-                candidate_record.branch not in environment_active
-                or environment_leases.get(candidate_record.branch) != required_lease
-            ):
-                skipped.append(f"{cache}:tool environment lease changed")
-                return False
-            environment_lifecycle = lifecycle_decision(
-                environment_record, environment_leases
-            )
-            if environment_lifecycle.error:
-                errors.append(f"{cache}:{environment_lifecycle.reason}")
-                return False
-            if not environment_lifecycle.reclaimable:
-                skipped.append(f"{cache}:{environment_lifecycle.reason}")
-                return False
-            if environment_lifecycle.cache_only:
-                skipped.append(
-                    f"{cache}:tool environment completion proof downgraded"
+            if required_lease is None:
+                if candidate_record.branch in environment_active:
+                    skipped.append(f"{cache}:became active logical workstream")
+                    return False
+                if candidate_record.branch in environment_leases:
+                    skipped.append(f"{cache}:tool environment lease changed")
+                    return False
+                final_decision, final_snapshot = inspect_inactive_worktree(
+                    environment_record
                 )
-                return False
+                if final_decision.error:
+                    errors.append(f"{cache}:{final_decision.reason}")
+                    return False
+                if not final_decision.reclaimable:
+                    skipped.append(f"{cache}:{final_decision.reason}")
+                    return False
+                if final_snapshot is None:
+                    errors.append(f"{cache}:worktree inspection evidence missing")
+                    return False
+                if final_snapshot != inactive_snapshot:
+                    skipped.append(f"{cache}:tool environment worktree changed")
+                    return False
+            else:
+                if (
+                    candidate_record.branch not in environment_active
+                    or environment_leases.get(candidate_record.branch) != required_lease
+                ):
+                    skipped.append(f"{cache}:tool environment lease changed")
+                    return False
+                environment_lifecycle = lifecycle_decision(
+                    environment_record, environment_leases
+                )
+                if environment_lifecycle.error:
+                    errors.append(f"{cache}:{environment_lifecycle.reason}")
+                    return False
+                if not environment_lifecycle.reclaimable:
+                    skipped.append(f"{cache}:{environment_lifecycle.reason}")
+                    return False
+                if environment_lifecycle.cache_only:
+                    skipped.append(
+                        f"{cache}:tool environment completion proof downgraded"
+                    )
+                    return False
             try:
                 environment_pids = active_process_pids(candidate_path)
             except ProcessInspectionError:

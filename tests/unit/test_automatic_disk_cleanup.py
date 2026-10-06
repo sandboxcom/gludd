@@ -1224,6 +1224,207 @@ def test_completed_idle_proof_allows_tool_environment_reclamation(
     assert str(tool_environment) in result.removed
 
 
+def test_clean_inactive_unleased_worktree_reclaims_tool_environment_after_double_proof(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "gludd-worktrees"
+    record = _record(root / "inactive", "feature/inactive")
+    tool_environment = record.path / ".venv"
+    tool_environment.mkdir()
+    snapshot = automatic_disk_cleanup.WorktreeEnvironmentSnapshot(
+        head="branch-head",
+        root_identity=(1, 2, 3, 4, 5),
+    )
+    inspections: list[WorktreeRecord] = []
+    process_reads: list[Path] = []
+
+    def inspect(candidate: WorktreeRecord):
+        inspections.append(candidate)
+        return (
+            automatic_disk_cleanup.LifecycleDecision(True, "clean inactive worktree"),
+            snapshot,
+        )
+
+    def process_pids(path: Path) -> list[int]:
+        process_reads.append(path)
+        return []
+
+    result = automatic_disk_cleanup.clean_inactive_worktree_caches(
+        records=[record],
+        approved_roots=(root,),
+        protected_paths=frozenset(),
+        active_branches=lambda: frozenset(),
+        active_workstream_leases=lambda: {},
+        lifecycle_proof=lambda _record, _lease: automatic_disk_cleanup.LifecycleDecision(
+            False, "unintegrated worktree"
+        ),
+        refresh_records=lambda: [record],
+        active_process_pids=process_pids,
+        inspect_inactive_worktree=inspect,
+    )
+
+    assert not tool_environment.exists()
+    assert result.removed == (str(tool_environment),)
+    assert result.skipped == ()
+    assert result.errors == ()
+    assert inspections == [record, record]
+    assert process_reads == [record.path, record.path, record.path]
+
+
+@pytest.mark.parametrize(
+    ("race", "expected_reason"),
+    [
+        ("active", "became active logical workstream"),
+        ("lease", "tool environment lease changed"),
+        ("pid", "active-pids=7331"),
+        ("snapshot", "tool environment worktree changed"),
+    ],
+)
+def test_inactive_tool_environment_revalidation_preserves_new_owners_and_changes(
+    tmp_path: Path,
+    race: str,
+    expected_reason: str,
+) -> None:
+    root = tmp_path / "gludd-worktrees"
+    record = _record(root / race, f"feature/{race}")
+    tool_environment = record.path / ".venv"
+    tool_environment.mkdir()
+    lease = automatic_disk_cleanup.WorkstreamLease(
+        branch=record.branch or "", worktree=record.path, updated_epoch=2
+    )
+    active_reads = iter(
+        (
+            frozenset(),
+            frozenset(),
+            frozenset({record.branch or ""}) if race == "active" else frozenset(),
+        )
+    )
+    lease_reads = iter(
+        (
+            {},
+            {},
+            {record.branch or "": lease} if race == "lease" else {},
+        )
+    )
+    process_reads = iter(([], [], [7331] if race == "pid" else []))
+    snapshots = iter(
+        (
+            automatic_disk_cleanup.WorktreeEnvironmentSnapshot(
+                "branch-head", (1, 2, 3, 4, 5)
+            ),
+            automatic_disk_cleanup.WorktreeEnvironmentSnapshot(
+                "changed-head" if race == "snapshot" else "branch-head",
+                (1, 2, 3, 4, 5),
+            ),
+        )
+    )
+
+    result = automatic_disk_cleanup.clean_inactive_worktree_caches(
+        records=[record],
+        approved_roots=(root,),
+        protected_paths=frozenset(),
+        active_branches=lambda: next(active_reads),
+        active_workstream_leases=lambda: next(lease_reads),
+        lifecycle_proof=lambda _record, _lease: automatic_disk_cleanup.LifecycleDecision(
+            False, "unintegrated worktree"
+        ),
+        refresh_records=lambda: [record],
+        active_process_pids=lambda _path: next(process_reads),
+        inspect_inactive_worktree=lambda _record: (
+            automatic_disk_cleanup.LifecycleDecision(True, "clean inactive worktree"),
+            next(snapshots),
+        ),
+    )
+
+    assert tool_environment.is_dir()
+    assert result.removed == ()
+    assert result.errors == ()
+    assert any(expected_reason in item for item in result.skipped)
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_reason", "expected_error"),
+    [
+        ("dirty", "dirty worktree", False),
+        ("unknown", "worktree status inspection failed", True),
+        ("changing", "worktree changed during inspection", False),
+        ("symlink", "unsafe worktree root", True),
+    ],
+)
+def test_inactive_worktree_inspection_fails_closed(
+    tmp_path: Path,
+    case: str,
+    expected_reason: str,
+    expected_error: bool,
+) -> None:
+    root = tmp_path / "gludd-worktrees"
+    if case == "symlink":
+        target = root / "target"
+        target.mkdir(parents=True)
+        path = root / "linked"
+        path.symlink_to(target, target_is_directory=True)
+        record = WorktreeRecord(path=path, branch="feature/linked", locked=False)
+    else:
+        record = _record(root / case, f"feature/{case}")
+    head_reads = iter(("branch-head\n", "changed-head\n"))
+
+    def run_git(*args: str, check: bool = False) -> subprocess.CompletedProcess[str]:
+        assert check is False
+        if "status" in args:
+            if case == "unknown":
+                return subprocess.CompletedProcess(args, 1, "", "unavailable")
+            return subprocess.CompletedProcess(
+                args, 0, " M tracked.py\x00" if case == "dirty" else "", ""
+            )
+        if "rev-parse" in args:
+            head = next(head_reads) if case == "changing" else "branch-head\n"
+            return subprocess.CompletedProcess(args, 0, head, "")
+        raise AssertionError(f"unexpected git args: {args}")
+
+    decision, snapshot = automatic_disk_cleanup._inspect_inactive_worktree_environment(
+        record,
+        run_git=run_git,
+    )
+
+    assert decision == automatic_disk_cleanup.LifecycleDecision(
+        False, expected_reason, expected_error
+    )
+    assert snapshot is None
+
+
+def test_inactive_worktree_inspection_proves_a_stable_clean_head(
+    tmp_path: Path,
+) -> None:
+    record = _record(
+        tmp_path / "gludd-worktrees" / "clean",
+        "feature/clean",
+    )
+    calls: list[tuple[str, ...]] = []
+
+    def run_git(*args: str, check: bool = False) -> subprocess.CompletedProcess[str]:
+        assert check is False
+        calls.append(args)
+        if "status" in args:
+            return subprocess.CompletedProcess(args, 0, "", "")
+        if "rev-parse" in args:
+            return subprocess.CompletedProcess(args, 0, "branch-head\n", "")
+        raise AssertionError(f"unexpected git args: {args}")
+
+    decision, snapshot = automatic_disk_cleanup._inspect_inactive_worktree_environment(
+        record,
+        run_git=run_git,
+    )
+
+    assert decision == automatic_disk_cleanup.LifecycleDecision(
+        True, "clean inactive worktree"
+    )
+    assert snapshot is not None
+    assert snapshot.head == "branch-head"
+    assert len(snapshot.root_identity) == 5
+    assert sum("rev-parse" in args for args in calls) == 2
+    assert sum("status" in args for args in calls) == 1
+
+
 def test_dry_run_preserves_generated_caches_and_materialization(tmp_path: Path) -> None:
     root = tmp_path / "gludd-worktrees"
     record = _record(root / "done", "feature/done")
@@ -2934,7 +3135,7 @@ def test_default_cleanup_discovers_and_preserves_git_worktrees(
     result = automatic_disk_cleanup._automatic_cleanup()
 
     assert result.removed == (str(invoking_cache), str(main_cache), str(stale_file))
-    assert any("completion proof required" in item for item in result.skipped)
+    assert any("worktree HEAD inspection failed" in item for item in result.errors)
     assert cache.exists()
     assert finished.path.exists()
     assert main.path.exists()
