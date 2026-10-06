@@ -29,10 +29,37 @@ def browser_events(page: Any) -> dict[str, list[str]]:
         "request_failures": [],
         "http_failures": [],
     }
-    page.on(
-        "console",
-        lambda message: events["console_errors"].append(message.text) if message.type == "error" else None,
+    page.add_init_script(
+        """
+        (() => {
+          window.gluddInvalidGeometryWrites = [];
+          const invalid = /(?:undefined|NaN|Infinity)/;
+          for (const method of ['setAttribute', 'setAttributeNS']) {
+            const original = Element.prototype[method];
+            Element.prototype[method] = function(...args) {
+              const value = String(args[args.length - 1]);
+              if (invalid.test(value) && window.gluddInvalidGeometryWrites.length < 20) {
+                window.gluddInvalidGeometryWrites.push({
+                  method,
+                  name: String(args[args.length - 2]),
+                  stack: new Error('invalid geometry write').stack || '',
+                  tag: this.tagName || '',
+                  value,
+                });
+              }
+              return original.apply(this, args);
+            };
+          }
+        })();
+        """
     )
+    def record_console(message: Any) -> None:
+        if message.type != "error":
+            return
+        active = page.evaluate("window.gluddPresentationActiveDiagram ?? null")
+        events["console_errors"].append(f"diagram={active} {message.text}")
+
+    page.on("console", record_console)
     page.on("pageerror", lambda error: events["page_errors"].append(str(error)))
     page.on(
         "requestfailed",

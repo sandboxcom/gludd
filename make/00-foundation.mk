@@ -362,7 +362,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         vm-image-build vm-image-list vm-image-clean \
         verify-feature-claims audit-coverage gate-audit coverage-json \
         tf-cache-setup tf-init tf-init-local tf-validate tf-cache-warm tf-versions-check tf-clean \
-        deck deck-serve deck-preview deck-data deck-honesty vendor-presentation-assets presentation-browser-install presentation-browser-test \
+        deck deck-serve deck-preview deck-data deck-honesty vendor-presentation-assets presentation-browser-install presentation-browser-test presentation-safari-test presentation-pages-probe \
         script-count strip-enforce-stop test-hooks-live test-hook-runtime e2e-setup-test-project test-opencode-e2e test-opencode-e2e-hour \
         verify-enforcement \
     ci-view ci-rerun ci-recover-runner-acquisition ci-failure-status ci-failure-repair ci-failure-push-guard ci-trigger ci-active ci-job-log ci-job-failure-context ci-artifact-download ci-artifact-context ci-pyinstaller-warning-audit ci-coverage-artifact-audit ci-coverage-gap-plan ci-shards-log-context \
@@ -434,8 +434,10 @@ help:
 	@echo "  check-file-line-limits  Require every tracked text file to stay below 2500 lines (FILE_LINE_LIMIT_POLICY)"
 	@echo "  split-makefile-layout  Validate/apply the ordered make/*.mk layout (MAKEFILE_SPLIT_APPLY=0|1)"
 	@echo "  vendor-presentation-assets  Validate/refresh pinned Reveal.js assets (PRESENTATION_VENDOR_VALIDATE_ONLY=0|1)"
-	@echo "  presentation-browser-install Check/install pinned Chromium (PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=0|1)"
-	@echo "  presentation-browser-test   Validate/run bounded Chromium acceptance (PRESENTATION_BROWSER_VALIDATE_ONLY=0|1)"
+	@echo "  presentation-browser-install Check/install pinned Chromium + WebKit (PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=0|1)"
+	@echo "  presentation-browser-test   Validate/run bounded Chromium + WebKit acceptance (PRESENTATION_BROWSER_VALIDATE_ONLY=0|1)"
+	@echo "  presentation-safari-test    Validate/run bounded native Safari smoke (PRESENTATION_SAFARI_VALIDATE_ONLY=0|1)"
+	@echo "  presentation-pages-probe    Compare the public Pages artifact with an expected exact SHA"
 	@echo "  lint-fix              Run ruff with auto-fix"
 	@echo "  lint-fix-files        Run ruff auto-fix on FILES only"
 	@echo "  typecheck             Run mypy"

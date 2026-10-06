@@ -28,7 +28,8 @@ def test_deck_uses_only_owned_relative_runtime_assets() -> None:
         "./vendor/reveal/plugin/notes/notes.js",
         "./vendor/mermaid/mermaid.js",
         "./vendor/ace/ace.js",
-        "./presentation.js",
+        "./presentation.js?v={{GIT_SHA_FULL}}",
+        "./presentation.css?v={{GIT_SHA_FULL}}",
     ):
         assert asset in html
     assert "./vendor/reveal/theme/black.css" not in html
@@ -63,30 +64,52 @@ def test_vendor_manifest_is_exact_and_digest_bound() -> None:
     assert actual == expected
 
 
-def test_runtime_serializes_visible_slide_rendering_and_keeps_failures_visible() -> None:
-    """Source code must pin the hidden-slide and concurrent-render regressions."""
+def test_runtime_eagerly_renders_once_and_keeps_failures_visible() -> None:
+    """Static charts use the awaited direct API without slide-visit retries."""
     runtime = (DECK / "presentation.js").read_text(encoding="utf-8")
 
     for token in (
-        "slidetransitionend",
         "overviewhidden",
         "requestAnimationFrame",
         "offsetParent",
         "getBoundingClientRect",
-        "requestedDiagram",
-        "awaitRenderOutcome",
+        "renderPendingDiagrams",
+        "validateVisibleGeometry",
+        "hasInvalidSvgAttributes",
+        "gludd-mermaid-stage",
+        "gludd-mermaid-deferred",
+        "createRenderStage",
+        "placeInStage",
+        "document.fonts.ready",
+        "window.gluddMermaid",
+        "await mermaidApi.render(",
+        "htmlLabels: false",
         "data-mermaid-state",
         "renderer-unavailable",
         "invalid-source",
         "invalid-geometry",
-        "render-timeout",
         "Diagram render failed",
         "gluddPresentationHealth",
-        'typeof window.RevealMermaid === "function"',
+        "gluddPresentationClientErrors",
     ):
         assert token in runtime
+    for legacy_retry in ("requestedDiagram", "awaitRenderOutcome", "RENDER_TIMEOUT_MS"):
+        assert legacy_retry not in runtime
     assert "mermaid.run({" not in runtime
     assert "document.querySelectorAll('.mermaid')" not in runtime
+    assert "await awaitRenderBatch([diagram], deadline);" in runtime
+    assert "revealMermaid.init" not in runtime
+    assert "console.error =" not in runtime
+
+
+def test_mermaid_staging_area_is_measurable_while_offscreen() -> None:
+    """Mermaid may not measure charts inside hidden Reveal sections."""
+    styles = (DECK / "presentation.css").read_text(encoding="utf-8")
+
+    assert ".gludd-mermaid-stage" in styles
+    assert "opacity: 0" in styles
+    assert "visibility: hidden" not in styles
+    assert "html.gludd-mermaid-prerender" not in styles
 
 
 def test_presentation_javascript_is_valid() -> None:
