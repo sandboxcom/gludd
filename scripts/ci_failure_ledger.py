@@ -29,6 +29,7 @@ DEFAULT_REPOSITORY = "sandboxcom/gludd"
 LEDGER_VERSION = 1
 MAX_LEDGER_BYTES = 2 * 1024 * 1024
 FULL_SHA = re.compile(r"[0-9a-f]{40}\Z")
+RUN_KEY = re.compile(r"(?P<run_id>[1-9][0-9]*)(?::(?P<attempt>[1-9][0-9]*))?\Z")
 REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
 MAKE_TARGET = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
 MAKE_VARIABLE = re.compile(r"[A-Z][A-Z0-9_]*=.*\Z")
@@ -67,17 +68,24 @@ def validate_ledger(ledger: dict[str, Any]) -> None:
         raise LedgerError("unsupported ledger version")
     runs = _require_mapping(ledger.get("runs"), "runs")
     families = _require_mapping(ledger.get("families"), "families")
-    for run_id, run in runs.items():
-        if not str(run_id).isdigit():
-            raise LedgerError(f"invalid run key: {run_id!r}")
-        record = _require_mapping(run, f"run {run_id}")
-        if str(record.get("run_id")) != str(run_id):
-            raise LedgerError(f"run {run_id} identity mismatch")
+    for run_key, run in runs.items():
+        match = RUN_KEY.fullmatch(str(run_key))
+        if match is None:
+            raise LedgerError(f"invalid run key: {run_key!r}")
+        record = _require_mapping(run, f"run {run_key}")
+        if str(record.get("run_id")) != match.group("run_id"):
+            raise LedgerError(f"run {run_key} identity mismatch")
+        key_attempt = match.group("attempt")
+        record_attempt = record.get("attempt")
+        if key_attempt is not None and str(record_attempt) != key_attempt:
+            raise LedgerError(f"run {run_key} attempt mismatch")
+        if key_attempt is None and record_attempt not in (None, 1):
+            raise LedgerError(f"run {run_key} attempt requires a qualified key")
         if FULL_SHA.fullmatch(str(record.get("sha") or "")) is None:
-            raise LedgerError(f"run {run_id} has invalid SHA")
+            raise LedgerError(f"run {run_key} has invalid SHA")
         digest = str(record.get("payload_fingerprint") or "")
         if re.fullmatch(r"[0-9a-f]{64}", digest) is None:
-            raise LedgerError(f"run {run_id} has invalid payload fingerprint")
+            raise LedgerError(f"run {run_key} has invalid payload fingerprint")
     for family_id, family in families.items():
         if re.fullmatch(r"[0-9a-f]{64}", str(family_id)) is None:
             raise LedgerError(f"invalid family key: {family_id!r}")

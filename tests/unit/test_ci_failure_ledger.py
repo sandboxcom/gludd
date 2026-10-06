@@ -99,6 +99,18 @@ def test_reobserving_same_terminal_run_is_idempotent() -> None:
     assert all(len(family["occurrences"]) == 1 for family in ledger["families"].values())
 
 
+def test_validate_accepts_attempt_qualified_historical_run_keys() -> None:
+    """Ledgers written for workflow retries remain readable by every guard."""
+    module = _load()
+    ledger = module.new_ledger()
+    module.observe_payload(ledger, _failed_payload(), observed_at="first")
+    retry = ledger["runs"].pop("101")
+    retry["attempt"] = 2
+    ledger["runs"]["101:2"] = retry
+
+    module.validate_ledger(ledger)
+
+
 def test_terminal_run_identity_cannot_be_silently_rewritten() -> None:
     module = _load()
     ledger = module.new_ledger()
