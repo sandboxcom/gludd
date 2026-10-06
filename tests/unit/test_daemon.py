@@ -396,6 +396,25 @@ class TestDaemonLifespan:
 
 
 class TestExtendedSubsystemsWiring:
+    def test_extended_state_initialization_is_idempotent(self):
+        """The extracted base initializer creates and reuses shared state."""
+        from fastapi import FastAPI
+
+        from general_ludd.daemon import _ensure_extended_state
+
+        app = FastAPI()
+        _ensure_extended_state(app)
+        first_metrics = app.state._metrics_collector
+        first_registry = app.state._model_registry
+
+        _ensure_extended_state(app)
+
+        assert app.state._metrics_collector is first_metrics
+        assert app.state._model_registry is first_registry
+        assert app.state._receiver_buffer is not None
+        assert app.state._project_manager is not None
+        assert app.state._utilization_tracker is not None
+
     def test_extended_subsystems_includes_skill_registry(self):
         from fastapi import FastAPI
 

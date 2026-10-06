@@ -107,6 +107,30 @@ make ci-failure-push-guard \
 
 Both guards enumerate every blocker rather than returning after the first.
 
+## Diagnose a completed job while its workflow is active
+
+GitHub exposes logs at the job lifecycle boundary, while `gh run view --log
+--job` can withhold them until every sibling job in the workflow is terminal.
+Use the run-bound diagnostic instead:
+
+```console
+make ci-job-failure-context \
+  RUN=<immutable-run-id> \
+  JOB=<completed-job-id> \
+  PATTERN=SHARD-FAIL \
+  BEFORE=8 \
+  AFTER=12 \
+  MAX_MATCHES=10 \
+  CI_JOB_CONTEXT_VALIDATE_ONLY=0
+```
+
+The target first proves that `JOB` belongs to `RUN`, then uses GitHub's
+authenticated workflow-job log endpoint. The temporary log lives under the
+external Gludd resource namespace and is removed at exit. An API error, empty
+log, missing literal pattern, invalid numeric bound, or run/job mismatch fails
+closed. `BEFORE`, `AFTER`, and `MAX_MATCHES` bound output without silently
+discarding later independent failure batches.
+
 ## Practitioner findings
 
 This design addresses failure modes reported by GitHub Actions users:
@@ -140,6 +164,15 @@ This design addresses failure modes reported by GitHub Actions users:
   parallelism and bounds only this proven infrastructure retry instead of
   permanently slowing every healthy run
   ([GitHub matrix documentation](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/run-job-variations#defining-the-maximum-number-of-concurrent-jobs)).
+- GitHub CLI users report that selecting a completed job with `gh run view
+  --log --job` can still wait for the entire workflow
+  ([cli/cli #4575](https://github.com/cli/cli/issues/4575)); related reports
+  cover unavailable or inconsistent job-log retrieval
+  ([#4712](https://github.com/cli/cli/issues/4712),
+  [#11059](https://github.com/cli/cli/issues/11059), and
+  [#11109](https://github.com/cli/cli/issues/11109)). GitHub's
+  [workflow jobs REST API](https://docs.github.com/en/rest/actions/workflow-jobs)
+  therefore supplies Gludd's per-job diagnostic boundary.
 
 Consequently, Gludd records the first terminal evidence before any retry,
 keys it by immutable run ID and exact SHA, and treats a retry as an exception

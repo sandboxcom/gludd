@@ -731,7 +731,7 @@ help:
 	@echo ""
 	@echo "  --- CI ---"
 	@echo "  ci-kill-zombie          cancel a CI run via gh run cancel"
-	@echo "  ci-job-failure-context  bounded authenticated failure context (RUN, JOB, PATTERN)"
+	@echo "  ci-job-failure-context  bounded authenticated failure context (RUN, JOB, PATTERN, BEFORE, AFTER, MAX_MATCHES)"
 	@echo "  ci-artifact-download    atomically download one exact run-bound GHA artifact (RUN, ARTIFACT, CI_ARTIFACT_OUTPUT_ROOT, CI_ARTIFACT_HEARTBEAT_SECS, CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY)"
 	@echo "  ci-artifact-context     bounded context from one downloaded exact-run artifact (RUN, ARTIFACT, CI_ARTIFACT_FILE, PATTERN, BEFORE, AFTER, MAX_MATCHES, CI_ARTIFACT_CONTEXT_VALIDATE_ONLY)"
 	@echo "  ci-pyinstaller-warning-audit replay the complete warning graph from one exact-run artifact (RUN, ARTIFACT, PYINSTALLER_WARNING_*, CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY)"
@@ -1345,7 +1345,7 @@ ci-job-log-by-name:
 	@[ -n "$(RUN)" ] && [ -n "$(JOB_NAME)" ] && [ -n "$(PATTERN)" ] || { echo "Usage: make ci-job-log-by-name RUN=<run-id> JOB_NAME=<substring> PATTERN=<literal> [BEFORE=10] [AFTER=30]"; exit 2; }
 	@JOB_ID=$$(gh run view -R sandboxcom/gludd "$(RUN)" --json jobs --jq '.jobs[] | select(.name | contains("$(JOB_NAME)")) | .databaseId' | head -1); \
 	[ -n "$$JOB_ID" ] || { echo "ci-job-log-by-name: no job matching '$(JOB_NAME)'"; exit 1; }; \
-	$(MAKE) --no-print-directory ci-job-failure-context RUN="$(RUN)" JOB="$$JOB_ID" PATTERN="$(PATTERN)" BEFORE="$(or $(BEFORE),10)" AFTER="$(or $(AFTER),30)"
+	$(MAKE) --no-print-directory ci-job-failure-context RUN="$(RUN)" JOB="$$JOB_ID" PATTERN="$(PATTERN)" BEFORE="$(or $(BEFORE),10)" AFTER="$(or $(AFTER),30)" MAX_MATCHES="$(or $(MAX_MATCHES),5)"
 
 repro-caplog-secrets:
 	$(UV) run python -m pytest tests/unit/test_secrets_log_sanitization.py::test_resolve_exc_message_sanitized -n 2 --dist loadgroup -v -s
@@ -5041,10 +5041,10 @@ ci-job-log:
 
 CI_JOB_CONTEXT_VALIDATE_ONLY ?= 0
 ci-job-failure-context:
-	@[ -n "$(RUN)" ] && [ -n "$(JOB)" ] && [ -n "$(PATTERN)" ] || { echo "Usage: make ci-job-failure-context RUN=<run-id> JOB=<numeric-job-id> PATTERN=<literal> BEFORE=10 AFTER=30"; exit 2; }
-	@case "$(RUN):$(JOB):$(or $(BEFORE),10):$(or $(AFTER),30):$(CI_JOB_CONTEXT_VALIDATE_ONLY)" in *[!0-9:]*) echo "RUN, JOB, BEFORE, AFTER, and CI_JOB_CONTEXT_VALIDATE_ONLY must be numeric"; exit 2 ;; esac
+	@[ -n "$(RUN)" ] && [ -n "$(JOB)" ] && [ -n "$(PATTERN)" ] || { echo "Usage: make ci-job-failure-context RUN=<run-id> JOB=<numeric-job-id> PATTERN=<literal> BEFORE=10 AFTER=30 MAX_MATCHES=5"; exit 2; }
+	@case "$(RUN):$(JOB):$(or $(BEFORE),10):$(or $(AFTER),30):$(or $(MAX_MATCHES),5):$(CI_JOB_CONTEXT_VALIDATE_ONLY)" in *[!0-9:]*) echo "RUN, JOB, BEFORE, AFTER, MAX_MATCHES, and CI_JOB_CONTEXT_VALIDATE_ONLY must be numeric"; exit 2 ;; esac
 	@case "$(CI_JOB_CONTEXT_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_JOB_CONTEXT_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
-	@if [ "$(CI_JOB_CONTEXT_VALIDATE_ONLY)" = "1" ]; then echo "CI-JOB-CONTEXT VALIDATED run=$(RUN) job=$(JOB) before=$(or $(BEFORE),10) after=$(or $(AFTER),30)"; exit 0; fi; \
+	@if [ "$(CI_JOB_CONTEXT_VALIDATE_ONLY)" = "1" ]; then echo "CI-JOB-CONTEXT VALIDATED run=$(RUN) job=$(JOB) before=$(or $(BEFORE),10) after=$(or $(AFTER),30) max_matches=$(or $(MAX_MATCHES),5)"; exit 0; fi; \
 	RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
 	mkdir -p "$$RESOURCE_ROOT"; \
 	LOG=$$(mktemp "$$RESOURCE_ROOT/ci-job-$(RUN)-$(JOB).log.XXXXXX"); \
@@ -5052,10 +5052,14 @@ ci-job-failure-context:
 	BOUND=$$(gh run view -R sandboxcom/gludd "$(RUN)" --json jobs --jq '.jobs[] | select(.databaseId == $(JOB)) | .databaseId'); \
 	RC=$$?; if [ $$RC -ne 0 ]; then echo "ci-job-failure-context: job lookup failed rc=$$RC"; exit $$RC; fi; \
 	if [ "$$BOUND" != "$(JOB)" ]; then echo "ci-job-failure-context: job $(JOB) is not bound to run $(RUN)"; exit 1; fi; \
-	gh run view -R sandboxcom/gludd --log --job="$(JOB)" > "$$LOG"; \
+	gh api --method GET \
+		-H "Accept: application/vnd.github+json" \
+		-H "X-GitHub-Api-Version: 2026-03-10" \
+		"repos/sandboxcom/gludd/actions/jobs/$(JOB)/logs" > "$$LOG"; \
 	RC=$$?; if [ $$RC -ne 0 ]; then echo "ci-job-failure-context: log fetch failed rc=$$RC"; exit $$RC; fi; \
+	if [ ! -s "$$LOG" ]; then echo "ci-job-failure-context: downloaded log is empty"; exit 1; fi; \
 	if ! grep -F -q -- "$(PATTERN)" "$$LOG"; then echo "ci-job-failure-context: pattern not found: $(PATTERN)"; exit 1; fi; \
-	$(PYTHON) scripts/ci_shards_log_context.py --artifact-root "$$RESOURCE_ROOT" --artifact-file "$$(basename "$$LOG")" --pattern "$(PATTERN)" --before "$(or $(BEFORE),10)" --after "$(or $(AFTER),30)" --max-matches 1
+	$(PYTHON) scripts/ci_shards_log_context.py --artifact-root "$$RESOURCE_ROOT" --artifact-file "$$(basename "$$LOG")" --pattern "$(PATTERN)" --before "$(or $(BEFORE),10)" --after "$(or $(AFTER),30)" --max-matches "$(or $(MAX_MATCHES),5)"
 
 CI_ARTIFACT_OUTPUT_ROOT ?= RESOURCE_ROOT
 CI_ARTIFACT_HEARTBEAT_SECS ?= 10

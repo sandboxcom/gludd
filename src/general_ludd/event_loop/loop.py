@@ -41,6 +41,7 @@ from general_ludd.db.repository import (
 from general_ludd.db.tenant import reset_tenant as _reset_tenant
 from general_ludd.db.tenant import set_tenant as _set_tenant
 from general_ludd.event_loop import runtime_helpers as _runtime_helpers
+from general_ludd.event_loop import task_routing as _task_routing
 from general_ludd.event_loop.decision_reconciliation import (
     reconcile_completed_decisions,
 )
@@ -137,6 +138,28 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Compatibility surface: callers historically imported these private helpers
+# from ``event_loop.loop``. Keep those objects available while the cohesive
+# implementation lives in the smaller routing module.
+_CODE_WORK_TYPES = _task_routing.CODE_WORK_TYPES
+_TOOL_USE_WORK_TYPES = _task_routing.TOOL_USE_WORK_TYPES
+_WORK_TYPE_TASK_TYPE_MAP = _task_routing.WORK_TYPE_TASK_TYPE_MAP
+_WORK_TYPE_PLAYBOOK_MAP = _task_routing.WORK_TYPE_PLAYBOOK_MAP
+_compute_todo_estimate = _task_routing.compute_todo_estimate
+_format_acceptance_criteria = _task_routing.format_acceptance_criteria
+_playbook_for_work_type = _task_routing.playbook_for_work_type
+_resolve_prompt_text_static = _task_routing.resolve_prompt_text_static
+_self_update_work_item_from_todo = _task_routing.self_update_work_item_from_todo
+
+
+def _work_type_to_task_type(work_type: str) -> TaskType:
+    """Map through compatibility globals retained for existing patch points."""
+    mapped = _WORK_TYPE_TASK_TYPE_MAP.get(work_type, "feature")
+    try:
+        return TaskType(mapped)
+    except ValueError:
+        return TaskType.FEATURE
+
 
 class _FileClaimConflict(Exception):
     """Signal that a todo's delivery would clobber another worker's file.
@@ -187,195 +210,6 @@ PROVISION_PHASE_INDEX = PHASE_ORDER.index("reconcile_compute_demand")
 # post-dispatch phases.
 DISPATCH_PHASE_INDEX = PHASE_ORDER.index("dispatch_execute_jobs")
 RELEASE_PHASE_INDEX = PHASE_ORDER.index("release_compute_demand")
-
-
-# Two-phase generation (keystone): Phase 1 (``invoke_model_for_generation``) is
-# tool-free BY DESIGN (CA-T9) — it asks the model for text and never binds tools.
-# Phase 2 runs the fully-built ``ToolCallLoop`` for work types whose execution
-# genuinely needs autonomous tool use (the model decides which MCP tools to call,
-# the loop executes them, feeds results back, and iterates). This frozenset is the
-# (tunable) gate for which work types get Phase 2; it now includes code-generation
-# work types (code, bug_fix, refactor, feature, test) so the model can iterate on
-# code based on test failures — with safety guards (budget check, token limit,
-# adversarial scan, per-iteration timeout, work-type-specific max iterations).
-# Phase 2 additionally requires both an MCP client and a model gateway to be
-# wired; absent either, the tick falls through to Phase-1-only output.
-_TOOL_USE_WORK_TYPES: frozenset[str] = frozenset(
-    {"analysis", "audit", "code", "bug_fix", "refactor", "feature", "test"}
-)
-
-_CODE_WORK_TYPES: frozenset[str] = frozenset({"code", "bug_fix", "refactor", "feature", "test"})
-
-
-def _format_acceptance_criteria(raw_ac: str | None) -> str:
-    if not raw_ac:
-        return ""
-    try:
-        parsed = json.loads(raw_ac)
-    except (json.JSONDecodeError, TypeError):
-        return raw_ac
-    if not isinstance(parsed, list):
-        return raw_ac
-    if not parsed:
-        return ""
-    return "\n".join(f"- {c}" for c in parsed)
-
-
-def _self_update_work_item_from_todo(todo: Any, todo_id: str) -> Any:
-    """Build a Scheduler ``WorkItem`` for a ``self_update``-queue todo.
-
-    The intake half of the pipeline (:func:`priority.to_todo_spec`) writes a
-    ``tier:<value>`` tag onto the backlog row. This inverts that: it digs the
-    apply tier back out of the todo's tags and feeds it through
-    :func:`priority.work_item_for_tier` so code-tier self-updates serialise on
-    ``self_update:code`` and config-tier on ``self_update:config`` — without
-    round-tripping the original :class:`SelfUpdatePlan` (which is not carried
-    on the todo row).
-
-    Fail-closed: an unknown / missing tier becomes a greenfield work item
-    (empty resources) so a malformed tag never blocks real work. Mirrors
-    ``ApplyTier.REFUSED`` handling in :func:`priority.work_item_for_tier`.
-    """
-    from general_ludd.self_update.model import ApplyTier
-    from general_ludd.self_update.priority import work_item_for_tier
-
-    tags = getattr(todo, "tags", None) or []
-    tier_value = ""
-    for tag in tags:
-        if isinstance(tag, str) and tag.startswith("tier:"):
-            tier_value = tag.split(":", 1)[1].strip()
-            break
-    try:
-        tier = ApplyTier(tier_value)
-    except ValueError:
-        tier = ApplyTier.REFUSED
-    return work_item_for_tier(tier, todo_id)
-
-
-def _resolve_prompt_text_static(
-    prompt_registry: Any,
-    prompt_profile: str | None,
-    **kwargs: object,
-) -> str | None:
-    project_templates_dir: object = kwargs.pop("project_templates_dir", None)
-    if not prompt_profile:
-        return None
-    if project_templates_dir is not None:
-        from pathlib import Path as _Path
-
-        tmpl_path = _Path(str(project_templates_dir)) / prompt_profile
-        if tmpl_path.is_file():
-            try:
-                from jinja2 import FileSystemLoader as _FSL
-                from jinja2.sandbox import SandboxedEnvironment as _Env
-
-                env = _Env(loader=_FSL(str(project_templates_dir)), autoescape=True)
-                tmpl = env.get_template(prompt_profile)
-                return tmpl.render(**kwargs)
-            except Exception:
-                logger.debug(
-                    "Jinja project-template render failed for profile %r; falling through to registry render",
-                    prompt_profile,
-                    exc_info=True,
-                )
-    if prompt_registry is None:
-        return None
-    try:
-        result: str = prompt_registry.render(prompt_profile, **kwargs)
-        return result
-    except Exception:
-        logger.warning(
-            "Registry render failed for prompt profile %r; returning no prompt text",
-            prompt_profile,
-            exc_info=True,
-        )
-        return None
-
-
-_WORK_TYPE_TASK_TYPE_MAP: dict[str, str] = {
-    "bug_fix": "bug_fix",
-    "code": "feature",
-    "test": "test_write",
-    "review": "code_review",
-    "refactor": "refactor",
-    "docs": "documentation",
-    "infra": "feature",
-    "prompt": "feature",
-    "analysis": "feature",
-    "audit": "feature",
-    "release": "feature",
-    "dependency": "feature",
-    "security": "security_fix",
-    "model": "feature",
-    "unknown": "feature",
-    "model_decision": "feature",
-    "langgraph_generate": "feature",
-    "enforcement_gate": "feature",
-    "enforcement_gate_push_guard": "feature",
-    "enforcement_gate_check": "feature",
-}
-
-
-def _work_type_to_task_type(work_type: str) -> TaskType:
-    mapped = _WORK_TYPE_TASK_TYPE_MAP.get(work_type, "feature")
-    try:
-        return TaskType(mapped)
-    except ValueError:
-        return TaskType.FEATURE
-
-
-_WORK_TYPE_PLAYBOOK_MAP: dict[str, str] = {
-    "code": "validate_task.yml",
-    "test": "molecule_test.yml",
-    "analysis": "gap_analysis.yml",
-    "audit": "log_audit.yml",
-    "prompt": "prompt_eval.yml",
-    "self_improve": "self_improve_harness.yml",
-    "dependency": "dependency_update.yml",
-    "review": "return_review.yml",
-    "docs": "noop.yml",
-    "infra": "noop.yml",
-    "security": "noop.yml",
-    "model": "noop.yml",
-    "release": "noop.yml",
-    "model_decision": "langgraph_decide.yml",
-    "langgraph_generate": "langchain_generate.yml",
-    "enforcement_gate": "enforcement_gate.yml",
-    "enforcement_gate_push_guard": "enforcement_gate.yml",
-    "enforcement_gate_check": "enforcement_gate.yml",
-}
-
-
-def _playbook_for_work_type(
-    work_type: str,
-    default: str = "noop.yml",
-    *,
-    project_id: str | None = None,
-    workspaces: dict[str, Any] | None = None,
-) -> str:
-    ws = workspaces.get(project_id) if workspaces and project_id else None
-    if ws is not None and hasattr(ws, "playbooks_dir"):
-        from pathlib import Path as _Path
-
-        pb_path = _Path(ws.playbooks_dir) / f"{work_type}.yml"
-        if pb_path.is_file():
-            return str(pb_path)
-    return _WORK_TYPE_PLAYBOOK_MAP.get(work_type, default)
-
-
-_RESOURCE_BASE_COST: dict[str, float] = {
-    "low_resource": 0.05,
-    "medium_resource": 0.25,
-    "high_resource": 1.0,
-}
-
-
-def _compute_todo_estimate(todo: object) -> float:
-    resource_profile: str = getattr(todo, "resource_profile", "low_resource") or "low_resource"
-    confidence: float | None = getattr(todo, "confidence", None)
-    base_cost = _RESOURCE_BASE_COST.get(resource_profile, 0.05)
-    effective_confidence = 0.5 if confidence is None else float(confidence)
-    return round(base_cost * (1.5 - effective_confidence), 4)
 
 
 class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
@@ -836,6 +670,40 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
         async with self._tick_lock:
             return await self._tick_once()
 
+    def _restore_tick_checkpoint(self) -> None:
+        """Restore durable state before running a new tick, when available."""
+        if self._checkpointer is None:
+            return
+        previous = self._checkpointer.get("last_tick")
+        if not previous:
+            return
+        self._tick_state = previous.get("_tick_state", {})
+        for key in previous.get("_applied_decision_keys", []):
+            if key not in self._applied_decisions:
+                self._applied_decisions[key] = None
+        for key in previous.get("_pushed_work_keys", []):
+            if key not in self._pushed_work:
+                self._pushed_work[key] = None
+        self._push_retry_count = previous.get(
+            "_push_retry_count", self._push_retry_count
+        )
+
+    def _record_tick_completion(self, tick_id: str, started_at: float) -> None:
+        """Publish final tick metrics and persist the durable checkpoint."""
+        elapsed = time.monotonic() - started_at
+        self._tick_metrics["tick_duration_ms"] = elapsed * 1000
+        if self._daemon_state is not None:
+            self._daemon_state["tick_metrics"] = dict(self._tick_metrics)
+        if self._checkpointer is not None:
+            state = {
+                "_tick_state": dict(self._tick_state),
+                "_applied_decision_keys": list(self._applied_decisions.keys()),
+                "_pushed_work_keys": list(self._pushed_work.keys()),
+                "_push_retry_count": dict(self._push_retry_count),
+            }
+            self._checkpointer.put(tick_id, state)
+            self._checkpointer.put("last_tick", state)
+
     async def _tick_once(self) -> dict[str, Any]:
         self._tick_state = {}
         self._total_ticks += 1
@@ -849,17 +717,7 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
             "decisions_applied": 0,
             "leases_reclaimed": 0,
         }
-        if self._checkpointer is not None:
-            previous = self._checkpointer.get("last_tick")
-            if previous:
-                self._tick_state = previous.get("_tick_state", {})
-                for key in previous.get("_applied_decision_keys", []):
-                    if key not in self._applied_decisions:
-                        self._applied_decisions[key] = None
-                for key in previous.get("_pushed_work_keys", []):
-                    if key not in self._pushed_work:
-                        self._pushed_work[key] = None
-                self._push_retry_count = previous.get("_push_retry_count", self._push_retry_count)
+        self._restore_tick_checkpoint()
         # M14 (W3.14): select ONE project per tick before phases run; reset after.
         self._tick_project_id = self._select_tick_project_id()
         # C.3: propagate tenant context into thread-pool workers so sessions
@@ -943,19 +801,7 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
             # C.3: clear tenant context after tick so thread workers in
             # subsequent ticks do not inherit a stale project_id.
             _reset_tenant(_tenant_token)
-        elapsed = time.monotonic() - start
-        self._tick_metrics["tick_duration_ms"] = elapsed * 1000
-        if self._daemon_state is not None:
-            self._daemon_state["tick_metrics"] = dict(self._tick_metrics)
-        if self._checkpointer is not None:
-            state = {
-                "_tick_state": dict(self._tick_state),
-                "_applied_decision_keys": list(self._applied_decisions.keys()),
-                "_pushed_work_keys": list(self._pushed_work.keys()),
-                "_push_retry_count": dict(self._push_retry_count),
-            }
-            self._checkpointer.put(tick_id, state)
-            self._checkpointer.put("last_tick", state)
+        self._record_tick_completion(tick_id, start)
         return self._tick_metrics
 
     async def _run_phases(self) -> None:

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
@@ -22,6 +24,74 @@ class TestEventLoopImports:
         from general_ludd.event_loop.loop import _FileClaimConflict
 
         assert issubclass(_FileClaimConflict, Exception)
+
+
+def test_restore_tick_checkpoint_recovers_all_durable_ledgers() -> None:
+    """The extracted checkpoint helper restores each persisted tick ledger."""
+    from general_ludd.event_loop.loop import EventLoop
+
+    class Checkpointer:
+        def get(self, key: str) -> dict[str, object]:
+            assert key == "last_tick"
+            return {
+                "_tick_state": {"phase": "dispatch"},
+                "_applied_decision_keys": ["decision-1"],
+                "_pushed_work_keys": ["work-1"],
+                "_push_retry_count": {"work-1": 2},
+            }
+
+    state = cast(
+        "EventLoop",
+        SimpleNamespace(
+            _checkpointer=Checkpointer(),
+            _tick_state={},
+            _applied_decisions={},
+            _pushed_work={},
+            _push_retry_count={},
+        ),
+    )
+
+    EventLoop._restore_tick_checkpoint(state)
+
+    assert state._tick_state == {"phase": "dispatch"}
+    assert state._applied_decisions == {"decision-1": None}
+    assert state._pushed_work == {"work-1": None}
+    assert state._push_retry_count == {"work-1": 2}
+
+
+def test_record_tick_completion_persists_metrics_and_checkpoint(monkeypatch) -> None:
+    """Tick finalization updates observers and both durable checkpoint keys."""
+    from general_ludd.event_loop import loop
+    from general_ludd.event_loop.loop import EventLoop
+
+    class Checkpointer:
+        def __init__(self) -> None:
+            self.puts: list[tuple[str, dict[str, object]]] = []
+
+        def put(self, key: str, value: dict[str, object]) -> None:
+            self.puts.append((key, value))
+
+    checkpointer = Checkpointer()
+    state = cast(
+        "EventLoop",
+        SimpleNamespace(
+            _tick_metrics={"total_ticks": 3},
+            _daemon_state={},
+            _checkpointer=checkpointer,
+            _tick_state={"phase": "complete"},
+            _applied_decisions={"decision-1": None},
+            _pushed_work={"work-1": None},
+            _push_retry_count={"work-1": 2},
+        ),
+    )
+    monkeypatch.setattr(loop.time, "monotonic", lambda: 12.5)
+
+    EventLoop._record_tick_completion(state, "tick_3", 10.0)
+
+    assert state._tick_metrics["tick_duration_ms"] == 2500.0
+    assert state._daemon_state["tick_metrics"] == state._tick_metrics
+    assert [key for key, _value in checkpointer.puts] == ["tick_3", "last_tick"]
+    assert checkpointer.puts[0][1] == checkpointer.puts[1][1]
 
 
 class TestTaskTypeHelpers:
