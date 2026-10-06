@@ -406,7 +406,8 @@ class TestEnvVarSourceTracking:
         daemon_path = _SRC / "general_ludd" / "daemon.py"
         if not daemon_path.exists():
             pytest.skip("daemon.py not found")
-        text = daemon_path.read_text()
+        lifecycle_path = daemon_path.parent / "daemon_components" / "lifecycle.py"
+        text = daemon_path.read_text() + lifecycle_path.read_text()
         daemon_vars = set(_GLUDD_ENV_VAR_RE.findall(text))
         daemon_vars_os = set(m.group(1) for m in _OS_ENV_GET_RE.finditer(text) if m.group(1).startswith("GLUDD_"))
         all_daemon = daemon_vars | daemon_vars_os
@@ -430,7 +431,8 @@ class TestEnvVarSourceTracking:
         }
         missing_in_daemon = doc_expected_in_daemon - all_daemon
         assert not missing_in_daemon, (
-            f"CONFIG_REFERENCE.md daemon/runtime vars not found in daemon.py: {missing_in_daemon}"
+            "CONFIG_REFERENCE.md daemon/runtime vars not found in the daemon "
+            f"facade or lifecycle component: {missing_in_daemon}"
         )
 
     def test_worker_reads_auth_vars(self):
