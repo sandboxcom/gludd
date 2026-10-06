@@ -3099,3 +3099,15 @@ def test_feature_document_records_zdd_rollback_and_long_lived_reports() -> None:
     assert "github.com/pytest-dev/pytest/discussions/10325" in document
     assert "Eight passes" in document
     assert "lsof" in document
+
+
+def test_gate_lifecycle_documents_owned_node_cache_reclamation() -> None:
+    document = (
+        ROOT / "docs" / "features" / "GATE_RESOURCE_LIFECYCLE.md"
+    ).read_text(encoding="utf-8")
+
+    assert "gludd-npm-cache-public-v1" in document
+    assert "50,000" in document
+    assert "zero-byte regular-file lookalikes" in document
+    assert "github.com/npm/cli/issues/3176" in document
+    assert "github.com/npm/npm/issues/2500" in document

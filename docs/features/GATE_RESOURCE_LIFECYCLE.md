@@ -144,6 +144,48 @@ Make/test/documentation revert after active new-format gates exit; restoring
 the shared `/tmp` log while concurrent worktrees run would knowingly restore
 cross-run evidence corruption.
 
+### Owned Node download-cache reclamation
+
+The machine-readable disk classification on 2026-10-05 measured 143.1 MiB of
+counted Gludd scratch. Its largest root was an 83.9 MiB generated cache inside a
+registered, dirty worktree with a live pytest process, so that root was not a
+safe cleanup candidate. The next largest proven project-owned class was the
+17.3 MiB `/tmp/gludd-npm-cache-public-v1` download cache. A similarly named
+`gludd-npm-cache-s83-163` root is not part of the canonical contract and remains
+untouched.
+
+The same inspection corrected a misleading initial theory: the accumulated
+`gludd-test-fc-*.sock` paths were zero-byte regular-file lookalikes created by
+mock tests, not Unix socket inodes. The generated-scratch cleaner continues to
+refuse those files as unsupported rather than treating a suffix as ownership.
+Only a real socket inode receives the existing socket-owner checks.
+
+The automatic disk preflight now reclaims only the exact direct children
+`gludd-npm-cache` and `gludd-npm-cache-public-v1` of the canonical temporary
+root. A candidate must be a real directory, not a symlink or special file. A
+bounded walk rejects symlinks, special entries, and trees over 50,000 entries;
+the newest observed entry must be at least six hours old. Two process-table
+checks refuse any `npm`, `npx`, npm CLI, or exact-cache-path owner. The complete
+tree identity is then recomputed, and the root receives an immediate `lstat`
+identity check before removal. Changed, fresh, ambiguous, active, raced, or
+uninspectable candidates fail closed.
+
+Every pass emits candidate, inspected-entry, removed, skipped, and error counts.
+An absent exact cache is a converged state, so repeated pressure checks remain
+idempotent. This is a zero-downtime cleanup: installed dependencies and lockfiles
+are outside the cache, active package-manager work is protected, and a later
+locked `npm ci` recreates the download cache on demand. Rollback is a code and
+test revert; already reclaimed bytes are regenerable and require no data
+migration or service restart.
+
+The policy follows two long-lived practitioner reports. npm CLI issue
+[#3176](https://github.com/npm/cli/issues/3176) shows `_cacache` changing and
+growing across repeated `npm ci` runs. The 2012 npm issue
+[#2500](https://github.com/npm/npm/issues/2500) records shared-cache corruption
+under concurrent installs and explicitly questions whether cleaning in parallel
+is safe. Those reports support an age boundary plus two idle-owner proofs, not
+an unconditional recursive deletion.
+
 ### Distribution cleanup
 
 `make clean CLEAN_VALIDATE_ONLY=1` is the safe behavioral contract. Actual mode
