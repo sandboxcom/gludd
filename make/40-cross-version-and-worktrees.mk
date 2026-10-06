@@ -110,13 +110,19 @@ verify-secrets:
 verify-secrets-safe:
 	@{ $(PYTHON) scripts/verify_secrets_baseline.py; RC=$$?; if [ $$RC -eq 2 ]; then echo "[verify-secrets] trufflehog not installed — skipping verification (non-fatal)"; exit 0; fi; exit $$RC; }
 
-# secrets-baseline: rebuild the .secrets.baseline
+# secrets-baseline: atomically refresh and verify the canonical baseline.
+SECRETS_BASELINE_FILE ?= .secrets.baseline
+POLICY ?= config/detect_secrets_baseline_policy.json
+REPO_ROOT ?= $(CURDIR)
+EXECUTABLE ?= detect-secrets
+
 secrets-baseline:
-	@echo "[secrets-baseline] scanning tracked files with detect-secrets (typically 30-90s on this repo)..."
-	@$(UV) run detect-secrets scan --exclude-files '$(SECRETS_EXCLUDE_FILES)' > .secrets.baseline.tmp
-	@$(PYTHON) -c "import json; d=json.load(open('.secrets.baseline.tmp')); print('[secrets-baseline] OK: valid JSON, %d files carry flagged (baselined) secrets' % len(d.get('results', {})))"
-	@mv -f .secrets.baseline.tmp .secrets.baseline
-	@echo "[secrets-baseline] wrote .secrets.baseline ($$(wc -c < .secrets.baseline | tr -d ' ') bytes)"
+	@$(UV) run python scripts/manage_secrets_baseline.py refresh --baseline "$(SECRETS_BASELINE_FILE)" --policy "$(POLICY)" --repo-root "$(REPO_ROOT)" --executable "$(EXECUTABLE)"
+	@$(UV) run python scripts/manage_secrets_baseline.py check --baseline "$(SECRETS_BASELINE_FILE)" --policy "$(POLICY)" --repo-root "$(REPO_ROOT)" --executable "$(EXECUTABLE)"
+
+# secrets-baseline-check: validate canonical structure without refreshing.
+secrets-baseline-check:
+	@$(UV) run python scripts/manage_secrets_baseline.py check --baseline "$(SECRETS_BASELINE_FILE)" --policy "$(POLICY)" --repo-root "$(REPO_ROOT)" --executable "$(EXECUTABLE)"
 
 # security-audit: all phases emit bounded JSON heartbeats and timings. The
 # detect-secrets child is deliberately silenced so credential values cannot be
