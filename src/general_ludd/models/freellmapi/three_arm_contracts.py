@@ -445,7 +445,20 @@ def _thresholds(value: object) -> ThreeArmThresholds:
     record = _mapping(value, fault)
     if dict(record) != _THRESHOLDS:
         _fail(fault)
-    return ThreeArmThresholds(**cast(dict[str, object], dict(record)))  # type: ignore[arg-type]
+    return ThreeArmThresholds(
+        bootstrap_confidence=cast(float, record["bootstrap_confidence"]),
+        bootstrap_samples=cast(int, record["bootstrap_samples"]),
+        bootstrap_seed=cast(int, record["bootstrap_seed"]),
+        quality_lcb_min=cast(float, record["quality_lcb_min"]),
+        mcnemar_p_max=cast(float, record["mcnemar_p_max"]),
+        max_stratum_loss=cast(float, record["max_stratum_loss"]),
+        p95_added_latency_ms=cast(float, record["p95_added_latency_ms"]),
+        max_call_latency_ms=cast(float, record["max_call_latency_ms"]),
+        rss_delta_mib=cast(float, record["rss_delta_mib"]),
+        max_cost_usd=cast(float, record["max_cost_usd"]),
+        max_bridge_faults=cast(int, record["max_bridge_faults"]),
+        node_tolerance=cast(float, record["node_tolerance"]),
+    )
 
 
 def validate_three_arm_documents(
