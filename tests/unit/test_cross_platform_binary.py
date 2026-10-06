@@ -17,6 +17,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SPEC_PATH = REPO_ROOT / "gludd.spec"
@@ -61,7 +62,7 @@ def test_tracked_paths_are_windows_checkout_compatible() -> None:
 
 def test_gate_checks_tracked_paths_before_platform_fanout() -> None:
     """The Linux gate must reject Windows-invalid paths before build fanout."""
-    makefile = MAKEFILE_PATH.read_text(encoding="utf-8")
+    makefile = compose_makefile(MAKEFILE_PATH)
     gate = makefile.split("\ngate:", 1)[1].split("\n\n", 1)[0]
     gate_preflights = makefile.split("GATE_PREFLIGHT_TARGETS :=", 1)[1].split(
         "GATE_PREFLIGHT_STATUS", 1

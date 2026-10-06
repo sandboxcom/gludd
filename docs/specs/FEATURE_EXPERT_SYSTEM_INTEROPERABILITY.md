@@ -2231,12 +2231,24 @@ This feature is done only when:
 10. `make gate` is green on the development commit and TASKS evidence references
     the exact gate result.
 
-## 23. Operational-failure regression traceability
+## 23. Operational-failure and practitioner evidence regression traceability
 
 Each practitioner or maintainer report in the companion research document MUST
 remain tied to executable behavior. An implementation is non-conformant if it
 removes a mapped regression without replacing it with an equal or stronger
 test.
+
+The durable practitioner evidence includes
+[AutoGen issue #165](https://github.com/microsoft/autogen/issues/165) on
+unbounded chat history and brittle terminal-message parsing,
+[LangGraph discussion #744](https://github.com/langchain-ai/langgraph/discussions/744)
+on duplicate execution at converging edges,
+[AutoGen discussion #2301](https://github.com/microsoft/autogen/discussions/2301)
+on reconstructing resumable group-chat state, and the long-lived
+[Temporal compensation forum report](https://community.temporal.io/t/exception-on-compensation/2403)
+on retries exhausting or interrupting cleanup. These reports motivate the
+idempotent join, complete checkpoint, and independently durable compensation
+contracts below; they are operational evidence, not universal framework claims.
 
 | Operational report | Normative requirements | Required acceptance coverage |
 |---|---|---|
