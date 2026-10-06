@@ -3856,6 +3856,9 @@ def create_daemon_app(
     )
     from general_ludd.routers import azure_cost as azure_cost_router
     from general_ludd.routers import (
+        decision_codification as decision_codification_router,
+    )
+    from general_ludd.routers import (
         hardware as hardware_router,
     )
     from general_ludd.routers.azure_cost import (
@@ -3904,6 +3907,7 @@ def create_daemon_app(
     quantization.register(app, daemon_state)
     reload.register(app, daemon_state)
     replays.register(app, daemon_state)
+    decision_codification_router.register(app, daemon_state)
     worktree.register(app, daemon_state)
     ansible.register(app, daemon_state)
     azure_cost_router.register(app, daemon_state)
