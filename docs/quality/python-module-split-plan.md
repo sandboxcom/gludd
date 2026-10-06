@@ -237,6 +237,19 @@ without importing `EventLoop`. Widely patched functions such as `release_lease`,
 `asyncio.to_thread`, `apply_rule_actions`, and generation invocation are
 resolved through facade-owned ports rather than captured at mixin import time.
 
+Forum evidence checked on 2026-10-06 reinforces both compatibility choices. A
+[Python Help discussion about splitting a large class][python-mixin-thread]
+recommends behavior-only mixins that do not initialize or own state; accordingly,
+the extracted lifecycle mixins leave all mutable state and construction in
+`EventLoop`. A [long-running pytest monkeypatch discussion][patch-lookup-thread]
+documents that imported names stay bound in the namespace that uses them and
+must be patched there. The facade therefore rebinds extracted method globals to
+`general_ludd.event_loop.loop`, and the split characterization test pins that
+legacy lookup seam instead of requiring downstream test rewrites.
+
+[python-mixin-thread]: https://discuss.python.org/t/split-pyqt-project-in-many-files/11400
+[patch-lookup-thread]: https://stackoverflow.com/questions/31306080/pytest-monkeypatch-isnt-working-on-imported-function/31746577
+
 ### Daemon
 
 `config.py` owns startup overlays and model profiles; `secrets.py` owns resolver
