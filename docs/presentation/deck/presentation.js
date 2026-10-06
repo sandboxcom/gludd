@@ -3,7 +3,8 @@
   "use strict";
 
   const VALID_STATES = new Set(["pending", "rendering", "rendered", "failed"]);
-  const BATCH_DEADLINE_MS = 5000;
+  const DIAGRAM_DEADLINE_MS = 10000;
+  const SVG_VIEWPORT_PADDING = 16;
   const BOOT_DIAGNOSTIC = "Presentation scripts did not finish; diagram source remains available.";
   const sourceByDiagram = new WeakMap();
   const failureReported = new WeakSet();
@@ -106,6 +107,26 @@
     return { height: viewBox[3], width: viewBox[2] };
   }
 
+  function normalizeSvgTextAlignment(svg) {
+    if (!svg) {
+      return false;
+    }
+    for (const label of svg.querySelectorAll("text")) {
+      const rows = Array.from(label.children).filter((child) => (
+        child.matches("tspan.text-outer-tspan.row")
+      ));
+      if (rows.length < 2) {
+        continue;
+      }
+      label.setAttribute("text-anchor", "middle");
+      for (const row of rows) {
+        row.setAttribute("text-anchor", "middle");
+      }
+    }
+    svg.dataset.gluddTextAlignment = "centered";
+    return true;
+  }
+
   function validSvgMetadata(diagram) {
     const svg = diagram.querySelector("svg");
     return Boolean(
@@ -114,6 +135,28 @@
       viewBoxDimensions(svg) &&
       !hasInvalidSvgAttributes(svg),
     );
+  }
+
+  function renderedVisual(diagram) {
+    return diagram.querySelector("img.mermaid-image, svg");
+  }
+
+  function validImageMetadata(diagram) {
+    const image = diagram.querySelector("img.mermaid-image");
+    return Boolean(
+      image &&
+      diagram.querySelectorAll("img.mermaid-image").length === 1 &&
+      diagram.querySelectorAll("svg").length === 0 &&
+      image.complete &&
+      Number.isFinite(image.naturalWidth) &&
+      Number.isFinite(image.naturalHeight) &&
+      image.naturalWidth > 0 &&
+      image.naturalHeight > 0,
+    );
+  }
+
+  function validRenderedVisual(diagram) {
+    return validImageMetadata(diagram) || validSvgMetadata(diagram);
   }
 
   function hasInvalidSvgAttributes(svg) {
@@ -149,11 +192,11 @@
   }
 
   function positiveGeometry(diagram) {
-    const svg = diagram.querySelector("svg");
-    if (!svg || !validSvgMetadata(diagram)) {
+    const visual = renderedVisual(diagram);
+    if (!visual || !validRenderedVisual(diagram)) {
       return false;
     }
-    const rect = svg.getBoundingClientRect();
+    const rect = visual.getBoundingClientRect();
     return (
       Number.isFinite(rect.width) &&
       Number.isFinite(rect.height) &&
@@ -168,13 +211,81 @@
     if (!svg || !dimensions || hasInvalidSvgAttributes(svg)) {
       return false;
     }
+    const viewBox = (svg.getAttribute("viewBox") || "").trim().split(/[ ,]+/).map(Number);
+    const padded = {
+      height: dimensions.height + SVG_VIEWPORT_PADDING * 2,
+      width: dimensions.width + SVG_VIEWPORT_PADDING * 2,
+      x: viewBox[0] - SVG_VIEWPORT_PADDING,
+      y: viewBox[1] - SVG_VIEWPORT_PADDING,
+    };
+    normalizeSvgTextAlignment(svg);
+    svg.dataset.gluddViewportPadding = String(SVG_VIEWPORT_PADDING);
+    svg.setAttribute("viewBox", `${padded.x} ${padded.y} ${padded.width} ${padded.height}`);
     diagram.dataset.mermaidViewport = "stable";
-    diagram.style.aspectRatio = `${dimensions.width} / ${dimensions.height}`;
+    diagram.style.aspectRatio = `${padded.width} / ${padded.height}`;
+    diagram.style.maxWidth = "100%";
+    diagram.style.width = `${padded.width}px`;
+    svg.setAttribute("height", String(padded.height));
+    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    svg.setAttribute("width", String(padded.width));
+    return true;
+  }
+
+  function createSvgImage(svgMarkup, dimensions) {
+    const image = new Image();
+    image.alt = "Rendered Mermaid diagram";
+    image.className = "mermaid-image";
+    image.decoding = "sync";
+    image.height = Math.ceil(dimensions.height);
+    image.width = Math.ceil(dimensions.width);
+    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgMarkup)}`;
+    return image;
+  }
+
+  async function awaitImageReady(image, deadline) {
+    if (image.complete) {
+      return image.naturalWidth > 0 && image.naturalHeight > 0;
+    }
+    return new Promise((resolve) => {
+      let finished = false;
+      const finish = (ready) => {
+        if (finished) {
+          return;
+        }
+        finished = true;
+        image.removeEventListener("load", loaded);
+        image.removeEventListener("error", failed);
+        resolve(ready);
+      };
+      const loaded = () => finish(image.naturalWidth > 0 && image.naturalHeight > 0);
+      const failed = () => finish(false);
+      const poll = () => {
+        if (finished) {
+          return;
+        }
+        if (image.complete) {
+          loaded();
+        } else if (window.performance.now() >= deadline) {
+          finish(false);
+        } else {
+          window.requestAnimationFrame(poll);
+        }
+      };
+      image.addEventListener("load", loaded, { once: true });
+      image.addEventListener("error", failed, { once: true });
+      window.requestAnimationFrame(poll);
+    });
+  }
+
+  function stabilizeImageViewport(diagram, image, dimensions) {
+    if (!image || !dimensions || !image.complete || image.naturalWidth <= 0 || image.naturalHeight <= 0) {
+      return false;
+    }
+    diagram.dataset.mermaidViewport = "stable";
     diagram.style.maxWidth = "100%";
     diagram.style.width = `${dimensions.width}px`;
-    svg.setAttribute("height", String(dimensions.height));
-    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
-    svg.setAttribute("width", String(dimensions.width));
+    image.height = Math.ceil(dimensions.height);
+    image.width = Math.ceil(dimensions.width);
     return true;
   }
 
@@ -214,7 +325,7 @@
   }
 
   function afterRender(diagram) {
-    if (!validSvgMetadata(diagram)) {
+    if (!validRenderedVisual(diagram)) {
       failDiagram(diagram, "invalid-geometry");
     }
   }
@@ -325,8 +436,19 @@
         failDiagram(diagram, "render-timeout");
         return;
       }
-      diagram.innerHTML = result.svg;
-      if (!stabilizeSvgViewport(diagram)) {
+      const stabilizedSvg = scratch.querySelector("svg");
+      const dimensions = viewBoxDimensions(stabilizedSvg);
+      if (!dimensions) {
+        failDiagram(diagram, "invalid-geometry");
+        return;
+      }
+      const image = createSvgImage(stabilizedSvg.outerHTML, dimensions);
+      diagram.replaceChildren(image);
+      if (!await awaitImageReady(image, deadline)) {
+        failDiagram(diagram, "render-timeout");
+        return;
+      }
+      if (!stabilizeImageViewport(diagram, image, dimensions)) {
         failDiagram(diagram, "invalid-geometry");
         return;
       }
@@ -355,7 +477,6 @@
       return;
     }
     const stage = createRenderStage();
-    const deadline = window.performance.now() + BATCH_DEADLINE_MS;
     for (const diagram of candidates) {
       diagram.classList.add("gludd-mermaid-deferred");
     }
@@ -367,9 +488,7 @@
       await animationFrame();
       initializeMermaid();
       for (const [index, diagram] of candidates.entries()) {
-        if (window.performance.now() >= deadline) {
-          break;
-        }
+        const deadline = window.performance.now() + DIAGRAM_DEADLINE_MS;
         window.gluddPresentationActiveDiagram = index;
         diagram.classList.remove("gludd-mermaid-deferred");
         try {
@@ -416,7 +535,7 @@
     for (const diagram of diagramNodes()) {
       const state = VALID_STATES.has(diagram.dataset.mermaidState) ? diagram.dataset.mermaidState : "pending";
       summary[state] += 1;
-      if (state !== "rendered" || !validSvgMetadata(diagram)) {
+      if (state !== "rendered" || !validRenderedVisual(diagram)) {
         summary.unrendered += 1;
       }
       const category = diagram.dataset.mermaidError;
@@ -608,7 +727,7 @@
     minScale: 0.2,
     maxScale: 1.8,
     overflow: "scroll",
-    transition: "slide",
+    transition: "fade",
     transitionSpeed: "default",
     backgroundTransition: "fade",
     slideNumber: "c/t",
@@ -617,6 +736,10 @@
       htmlLabels: false,
       flowchart: {
         htmlLabels: false,
+        minNodeWidth: 140,
+        nodeSpacing: 30,
+        rankSpacing: 35,
+        wrappingWidth: 160,
       },
       securityLevel: "strict",
       theme: "base",

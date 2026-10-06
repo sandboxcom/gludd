@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 import time
@@ -74,12 +75,12 @@ def test_direct_mermaid_render_is_geometry_clean(
     }
 
 
-def test_live_diagram_stays_in_reveal_and_gets_a_stable_svg_viewport(
+def test_live_diagram_stays_in_reveal_as_a_decoded_svg_image(
     page: Any,
     presentation_url: str,
     browser_events: dict[str, list[str]],
 ) -> None:
-    """Safari must not inherit an offscreen SVG paint tree after rendering."""
+    """Safari must not inherit an offscreen inline-SVG paint tree."""
     _load(page, presentation_url)
 
     result = page.evaluate(
@@ -105,44 +106,43 @@ def test_live_diagram_stays_in_reveal_and_gets_a_stable_svg_viewport(
           ));
           observer.disconnect();
 
-          const svg = diagram.querySelector('svg');
-          const rect = svg?.getBoundingClientRect() || {width: 0, height: 0};
-          const diagramStyle = getComputedStyle(diagram);
+          const image = diagram.querySelector('img.mermaid-image');
+          const rect = image?.getBoundingClientRect() || {width: 0, height: 0};
           return {
-            aspectRatio: diagramStyle.aspectRatio,
+            complete: image?.complete || false,
             height: rect.height,
-            heightAttribute: svg?.getAttribute('height') || '',
-            invalidAttributes: svg ? [svg, ...svg.querySelectorAll('*')].flatMap((node) =>
-              Array.from(node.attributes).filter((attribute) =>
-                /(?:undefined|NaN|Infinity)/.test(attribute.value)
-              )
-            ).length : 1,
+            heightAttribute: image?.getAttribute('height') || '',
+            inlineSvgCount: diagram.querySelectorAll('svg').length,
             leftRevealSlide,
-            preserveAspectRatio: svg?.getAttribute('preserveAspectRatio') || '',
+            naturalHeight: image?.naturalHeight || 0,
+            naturalWidth: image?.naturalWidth || 0,
+            sourceIsSvg: image?.src.startsWith('data:image/svg+xml;charset=utf-8,') || false,
             state: diagram.dataset.mermaidState,
             viewport: diagram.dataset.mermaidViewport || '',
             width: rect.width,
-            widthAttribute: svg?.getAttribute('width') || '',
+            widthAttribute: image?.getAttribute('width') || '',
           };
         }
         """
     )
 
     assert result == {
-        "aspectRatio": result["aspectRatio"],
+        "complete": True,
         "height": result["height"],
         "heightAttribute": result["heightAttribute"],
-        "invalidAttributes": 0,
+        "inlineSvgCount": 0,
         "leftRevealSlide": False,
-        "preserveAspectRatio": "xMidYMid meet",
+        "naturalHeight": result["naturalHeight"],
+        "naturalWidth": result["naturalWidth"],
+        "sourceIsSvg": True,
         "state": "rendered",
         "viewport": "stable",
         "width": result["width"],
         "widthAttribute": result["widthAttribute"],
     }
-    assert result["aspectRatio"] != "auto"
     assert float(result["widthAttribute"]) > 0
     assert float(result["heightAttribute"]) > 0
+    assert result["naturalWidth"] > 0 and result["naturalHeight"] > 0
     assert result["width"] > 0 and result["height"] > 0
     assert browser_events == {
         "console_errors": [],
@@ -280,11 +280,23 @@ def _load(page: Any, url: str) -> None:
 
 
 def _visit_slide(page: Any, horizontal: int, vertical: int) -> None:
-    """Navigate to one slide and await two layout frames plus rendering."""
+    """Navigate to one slide and await the Reveal transition plus rendering."""
     page.evaluate(
         """
         async ([horizontal, vertical]) => {
+          const settled = new Promise((resolve) => {
+            let finished = false;
+            const finish = () => {
+              if (finished) return;
+              finished = true;
+              Reveal.off('slidetransitionend', finish);
+              resolve();
+            };
+            Reveal.on('slidetransitionend', finish);
+            setTimeout(finish, 1200);
+          });
           Reveal.slide(horizontal, vertical);
+          await settled;
           await new Promise((resolve) => requestAnimationFrame(
             () => requestAnimationFrame(resolve),
           ));
@@ -302,32 +314,38 @@ def _visit_slide(page: Any, horizontal: int, vertical: int) -> None:
 
 
 def _assert_visible_diagrams(page: Any) -> None:
-    """Require an actual positive SVG, not merely an inserted element."""
+    """Require a decoded positive vector image, not merely an inserted node."""
     results = page.eval_on_selector_all(
         "section.present .mermaid",
         """
         (nodes) => nodes.map((node) => {
-          const svgs = node.querySelectorAll('svg');
-          const svg = svgs[0];
-          const rect = svg ? svg.getBoundingClientRect() : {width: 0, height: 0};
-          const viewBox = svg ? (svg.getAttribute('viewBox') || '').trim().split(/[ ,]+/).map(Number) : [];
+          const images = node.querySelectorAll('img.mermaid-image');
+          const image = images[0];
+          const rect = image ? image.getBoundingClientRect() : {width: 0, height: 0};
           return {
+            complete: image?.complete || false,
+            imageCount: images.length,
+            inlineSvgCount: node.querySelectorAll('svg').length,
+            naturalHeight: image?.naturalHeight || 0,
+            naturalWidth: image?.naturalWidth || 0,
+            source: image?.src || '',
             state: node.dataset.mermaidState,
-            svgCount: svgs.length,
             width: rect.width,
             height: rect.height,
-            viewBox,
           };
         })
         """,
     )
     for result in results:
         assert result["state"] == "rendered", result
-        assert result["svgCount"] == 1
+        assert result["complete"] is True
+        assert result["imageCount"] == 1
+        assert result["inlineSvgCount"] == 0
+        assert result["naturalWidth"] > 0
+        assert result["naturalHeight"] > 0
+        assert result["source"].startswith("data:image/svg+xml;charset=utf-8,")
         assert result["width"] > 0
         assert result["height"] > 0
-        assert len(result["viewBox"]) == 4
-        assert result["viewBox"][2] > 0 and result["viewBox"][3] > 0
 
 
 def test_cold_and_cached_load_prepare_every_chart_within_budget(
@@ -378,20 +396,25 @@ def test_cold_and_cached_load_prepare_every_chart_within_budget(
             ".mermaid",
             """
             (nodes) => nodes.map((node) => ({
+              complete: node.querySelector('img.mermaid-image')?.complete || false,
+              imageCount: node.querySelectorAll('img.mermaid-image').length,
+              inlineSvgCount: node.querySelectorAll('svg').length,
+              naturalHeight: node.querySelector('img.mermaid-image')?.naturalHeight || 0,
+              naturalWidth: node.querySelector('img.mermaid-image')?.naturalWidth || 0,
+              source: node.querySelector('img.mermaid-image')?.src || '',
               state: node.dataset.mermaidState,
-              svgCount: node.querySelectorAll('svg').length,
-              viewBox: (node.querySelector('svg')?.getAttribute('viewBox') || '')
-                .trim().split(/[ ,]+/).map(Number),
             }))
             """,
         )
         assert metadata
         assert all(
             item["state"] == "rendered"
-            and item["svgCount"] == 1
-            and len(item["viewBox"]) == 4
-            and item["viewBox"][2] > 0
-            and item["viewBox"][3] > 0
+            and item["complete"]
+            and item["imageCount"] == 1
+            and item["inlineSvgCount"] == 0
+            and item["naturalWidth"] > 0
+            and item["naturalHeight"] > 0
+            and item["source"].startswith("data:image/svg+xml;charset=utf-8,")
             for item in metadata
         )
         invalid_attributes = page.eval_on_selector_all(
@@ -424,6 +447,207 @@ def test_cold_and_cached_load_prepare_every_chart_within_budget(
         "request_failures": [],
         "http_failures": [],
     }
+
+
+def test_inline_svg_layout_collapse_cannot_hide_rendered_charts(
+    page: Any,
+    presentation_url: str,
+    browser_events: dict[str, list[str]],
+) -> None:
+    """Simulate Safari's inline-SVG sizing failure at the live paint boundary."""
+    _load(page, presentation_url)
+    page.add_style_tag(
+        content=".reveal .mermaid > svg { width: 0 !important; height: 0 !important; }"
+    )
+    horizontal, vertical = page.evaluate(
+        """
+        () => {
+          const slide = Reveal.getSlides().find((candidate) => candidate.querySelector('.mermaid'));
+          const indices = Reveal.getIndices(slide);
+          return [indices.h, indices.v];
+        }
+        """
+    )
+    _visit_slide(page, horizontal, vertical)
+    _assert_visible_diagrams(page)
+    assert browser_events == {
+        "console_errors": [],
+        "page_errors": [],
+        "request_failures": [],
+        "http_failures": [],
+    }
+
+
+def test_every_mermaid_label_fits_inside_the_encoded_svg_viewport(
+    page: Any,
+    presentation_url: str,
+) -> None:
+    """Decoded SVGs must retain every label inside their own painted viewport."""
+    _load(page, presentation_url)
+    failures = page.evaluate(
+        """
+        async () => {
+          await document.fonts?.ready;
+          const stage = document.createElement('div');
+          stage.className = 'gludd-mermaid-stage';
+          document.body.append(stage);
+          const failures = [];
+          for (const [diagramIndex, image] of Array.from(
+            document.querySelectorAll('img.mermaid-image')
+          ).entries()) {
+            const encoded = image.src.split(',', 2)[1] || '';
+            const markup = decodeURIComponent(encoded);
+            const parsed = new DOMParser().parseFromString(markup, 'image/svg+xml');
+            const svg = document.importNode(parsed.documentElement, true);
+            stage.append(svg);
+            await new Promise((resolve) => requestAnimationFrame(
+              () => requestAnimationFrame(resolve),
+            ));
+            const viewport = svg.getBoundingClientRect();
+            for (const label of svg.querySelectorAll('text')) {
+              const box = label.getBoundingClientRect();
+              const tolerance = 0.5;
+              const sides = [];
+              if (box.left < viewport.left - tolerance) sides.push('left');
+              if (box.top < viewport.top - tolerance) sides.push('top');
+              if (box.right > viewport.right + tolerance) sides.push('right');
+              if (box.bottom > viewport.bottom + tolerance) sides.push('bottom');
+              if (sides.length) {
+                failures.push({
+                  diagramIndex,
+                  kind: 'viewport',
+                  markup: label.outerHTML.slice(0, 500),
+                  sides,
+                  text: (label.textContent || '').trim().slice(0, 100),
+                });
+              }
+              const lines = Array.from(label.querySelectorAll(':scope > tspan.text-outer-tspan.row'));
+              if (lines.length > 1) {
+                const centers = lines.map((line) => {
+                  const rect = line.getBoundingClientRect();
+                  return rect.left + rect.width / 2;
+                });
+                const spread = Math.max(...centers) - Math.min(...centers);
+                if (spread > 1) {
+                  failures.push({
+                    diagramIndex,
+                    kind: 'multiline-alignment',
+                    markup: label.outerHTML.slice(0, 500),
+                    spread,
+                    text: (label.textContent || '').trim().slice(0, 100),
+                  });
+                }
+              }
+            }
+            svg.remove();
+          }
+          stage.remove();
+          return failures;
+        }
+        """
+    )
+    if failures:
+        print(f"presentation-mermaid-label diagnostics={json.dumps(failures[:5], sort_keys=True)}")
+    assert failures == []
+
+
+def test_every_slide_keeps_visible_content_inside_the_reveal_canvas(
+    page: Any,
+    presentation_url: str,
+) -> None:
+    """Text and charts may scroll internally but may not paint off-slide."""
+    _load(page, presentation_url)
+    indices = page.evaluate(
+        "Reveal.getSlides().map((slide) => { const i = Reveal.getIndices(slide); return [i.h, i.v]; })"
+    )
+    failures: list[dict[str, Any]] = []
+    output = Path(
+        os.environ.get("GLUDD_PRESENTATION_BROWSER_OUTPUT", "/tmp/gludd-presentation-browser")
+    ) / "layout-overflow"
+    capture_layout = os.environ.get("GLUDD_PRESENTATION_CAPTURE_LAYOUT") == "1"
+    for horizontal, vertical in indices:
+        _visit_slide(page, horizontal, vertical)
+        overflow = page.evaluate(
+            """
+            () => {
+              const slide = Reveal.getCurrentSlide();
+              slide.querySelectorAll('.fragment').forEach((fragment) => {
+                fragment.classList.add('visible');
+              });
+              Reveal.layout();
+              const boundary = Reveal.getSlidesElement().getBoundingClientRect();
+              const tolerance = 2;
+              const selector = [
+                'h1', 'h2', 'h3', 'p', 'li', 'pre', 'table', '.two-col', '.metrics-grid',
+                '.diagram-wrap', '.mermaid-image'
+              ].join(',');
+              const nodes = [slide, ...slide.querySelectorAll(selector)];
+              const boundsFailures = nodes.flatMap((node) => {
+                const style = getComputedStyle(node);
+                const rect = node.getBoundingClientRect();
+                const hidden = style.display === 'none' || style.visibility === 'hidden';
+                if (hidden || rect.width === 0 || rect.height === 0) {
+                  return [];
+                }
+                const sides = [];
+                if (rect.left < boundary.left - tolerance) sides.push('left');
+                if (rect.right > boundary.right + tolerance) sides.push('right');
+                if (rect.top < boundary.top - tolerance) sides.push('top');
+                if (rect.bottom > boundary.bottom + tolerance) sides.push('bottom');
+                return sides.length ? [{
+                  className: node.className || '',
+                  sides,
+                  tagName: node.tagName,
+                  text: (node.textContent || '').trim().slice(0, 100),
+                }] : [];
+              });
+              const legibilityFailures = Array.from(
+                slide.querySelectorAll('img.mermaid-image')
+              ).flatMap((image) => {
+                const imageRect = image.getBoundingClientRect();
+                const encoded = image.src.split(',', 2)[1] || '';
+                const parsed = new DOMParser().parseFromString(
+                  decodeURIComponent(encoded),
+                  'image/svg+xml',
+                );
+                const viewBox = parsed.documentElement.getAttribute('viewBox')
+                  ?.trim().split(/[ ,]+/).map(Number) || [];
+                if (viewBox.length !== 4 || viewBox[2] <= 0 || viewBox[3] <= 0) {
+                  return [{className: image.className, kind: 'invalid-viewbox'}];
+                }
+                const effectiveFontPixels = 16 * Math.min(
+                  imageRect.width / viewBox[2],
+                  imageRect.height / viewBox[3],
+                );
+                return effectiveFontPixels < 8 ? [{
+                  className: image.className,
+                  effectiveFontPixels,
+                  kind: 'illegible-chart-text',
+                }] : [];
+              });
+              return [...boundsFailures, ...legibilityFailures];
+            }
+            """
+        )
+        if capture_layout and page.locator("section.present .mermaid-image").count():
+            capture = output.parent / "layout-captures" / f"slide-{horizontal}-{vertical}.png"
+            capture.parent.mkdir(parents=True, exist_ok=True)
+            page.screenshot(path=str(capture), full_page=True)
+        if overflow:
+            output.mkdir(parents=True, exist_ok=True)
+            image = output / f"slide-{horizontal}-{vertical}.png"
+            page.screenshot(path=str(image), full_page=True)
+            failures.append(
+                {
+                    "horizontal": horizontal,
+                    "vertical": vertical,
+                    "overflow": overflow,
+                    "screenshot": str(image),
+                }
+            )
+    if failures:
+        print(f"presentation-layout-overflow diagnostics={json.dumps(failures, sort_keys=True)}")
+    assert failures == []
 
 
 def test_pages_subpath_navigation_renders_every_diagram(

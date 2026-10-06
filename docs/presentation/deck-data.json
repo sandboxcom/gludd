@@ -11,8 +11,8 @@
     },
     {
       "name": "Enforcement plugins",
-      "pct": "13/13 BLOCKING",
-      "evidence": "100+ hook-runtime tests pass"
+      "pct": "manifest-verified BLOCKING",
+      "evidence": "hook-runtime acceptance passes"
     },
     {
       "name": "Terraform",

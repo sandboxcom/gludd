@@ -273,14 +273,13 @@ const done = arguments[arguments.length - 1];
     }
     throw new Error('readiness-timeout');
   };
-  const invalid = /(?:undefined|NaN|Infinity)/;
   const started = performance.now();
-  await waitUntil(() => window.gluddPresentationReady === true, 5000);
+  await waitUntil(() => window.gluddPresentationReady === true, 15000);
   await waitUntil(() => {
     const health = window.gluddPresentationHealth();
     return health.rendered > 0 && health.pending === 0 && health.rendering === 0 &&
       health.failed === 0 && health.unrendered === 0;
-  }, 5000);
+  }, 15000);
   const readinessMs = performance.now() - started;
   const failures = [];
   const slides = Reveal.getSlides();
@@ -290,20 +289,14 @@ const done = arguments[arguments.length - 1];
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     await window.gluddPresentationRenderVisible();
     for (const [chartIndex, chart] of Array.from(slide.querySelectorAll('.mermaid')).entries()) {
-      const svg = chart.querySelector('svg');
-      const rect = svg?.getBoundingClientRect() || {width: 0, height: 0};
-      const viewBox = (svg?.getAttribute('viewBox') || '').trim().split(/[ ,]+/).map(Number);
-      const badAttribute = svg && [svg, ...svg.querySelectorAll('*')].some((node) =>
-        Array.from(node.attributes).some((attribute) => invalid.test(attribute.value))
-      );
-      const badForeignObject = svg && Array.from(svg.querySelectorAll('foreignObject')).some((node) => {
-        const box = node.getBoundingClientRect();
-        return !Number.isFinite(box.width) || !Number.isFinite(box.height) ||
-          box.width <= 0 || box.height <= 0;
-      });
-      if (chart.dataset.mermaidState !== 'rendered' || !svg || rect.width <= 0 || rect.height <= 0 ||
-          viewBox.length !== 4 || !viewBox.every(Number.isFinite) || viewBox[2] <= 0 || viewBox[3] <= 0 ||
-          badAttribute || badForeignObject) {
+      const image = chart.querySelector('img.mermaid-image');
+      const rect = image?.getBoundingClientRect() || {width: 0, height: 0};
+      const sourceIsSvg = image?.src.startsWith('data:image/svg+xml;charset=utf-8,') || false;
+      if (chart.dataset.mermaidState !== 'rendered' || !image || !image.complete ||
+          image.naturalWidth <= 0 || image.naturalHeight <= 0 ||
+          chart.querySelectorAll('svg').length !== 0 || !sourceIsSvg ||
+          !Number.isFinite(rect.width) || !Number.isFinite(rect.height) ||
+          rect.width <= 0 || rect.height <= 0) {
         failures.push({chartIndex, slideIndex});
       }
     }

@@ -274,11 +274,23 @@ The deck delegates Mermaid parsing and layout to the runtime carried by vendored
 itself. After fonts are ready, it renders into a dedicated fixed-width,
 opacity-zero scratch node attached directly to `document.body`, outside Reveal
 transforms and hidden slides. The authored node never leaves its Reveal slide.
-The controller awaits `gluddMermaid.render()`, validates scratch geometry, copies
-fresh SVG markup into the live node, and sets explicit intrinsic width, height,
-aspect ratio, and `preserveAspectRatio` before hiding source. It exposes a
-source-preserving `pending`/`rendering`/`rendered`/`failed` state. Root and
-flowchart HTML labels are disabled.
+The controller awaits `gluddMermaid.render()`, validates every descendant of the
+scratch SVG, then URL-encodes that validated SVG into a decoded
+`data:image/svg+xml` replaced image with explicit intrinsic width and height.
+Before serialization, the controller writes explicit `text-anchor="middle"`
+attributes on Mermaid's outer text rows and expands the SVG view box by 16
+units on every edge. This avoids relying on inherited alignment inside a data
+image and gives glyph paint a deterministic safety margin. The live image keeps
+its intrinsic aspect ratio and is capped at 500 logical pixels (320 on compact
+mixed-content slides); diagram explanations that cannot fit beside that bound
+are placed on the next slide instead of being clipped below Reveal's canvas.
+The live Reveal slide therefore never depends on Safari laying out an inline SVG
+whose percentage height is derived from a transformed or aspect-ratio container.
+Each diagram receives an independent ten-second deadline, so one slow chart can
+no longer consume the shared budget and force every later chart to fail. The
+controller retains the source-preserving
+`pending`/`rendering`/`rendered`/`failed` state. Root and flowchart HTML labels
+remain disabled.
 
 The captured WebKit failure was not merely a slow load. Mermaid's
 `positionEdgeLabel` wrote `translate(undefined, NaN)` for a valid authored
@@ -311,30 +323,60 @@ Safari's stale intrinsic SVG geometry and developer-tools-triggered relayout are
 tracked in [WebKit bug 198609](https://bugs.webkit.org/show_bug.cgi?id=198609),
 and a macOS Safari practitioner report is retained in
 [GitHub Community discussion 12523](https://github.com/orgs/community/discussions/12523).
+The replaced-image boundary additionally follows the long-lived inline-SVG
+percentage-sizing reports in
+[WebKit bug 68995](https://bugs.webkit.org/show_bug.cgi?id=68995) and
+[WebKit bug 82489](https://bugs.webkit.org/show_bug.cgi?id=82489), plus the
+practitioner cases where inline SVG is absent or incorrectly sized only in
+[Safari](https://stackoverflow.com/questions/25090516/inline-svg-breaks-in-safari-and-mobile-safari/78364325)
+and the responsive-SVG discussion on the
+[Apple Developer Forums](https://developer.apple.com/forums/thread/685035).
+Mermaid's long-lived reports also document off-center multi-line SVG labels when
+HTML labels are disabled
+([mermaid-js/mermaid#1177](https://github.com/mermaid-js/mermaid/issues/1177))
+and flowchart differences when decoded as an image
+([mermaid-js/mermaid#1572](https://github.com/mermaid-js/mermaid/issues/1572)).
+The newer fractional-device-pixel wrapping report
+([mermaid-js/mermaid#7794](https://github.com/mermaid-js/mermaid/issues/7794))
+reinforces why the acceptance contract measures actual painted text boxes rather
+than assuming generated markup is aligned.
 Those reports cover hidden-slide zero geometry, concurrent asynchronous renders,
 visibility-triggered recovery, reload/zoom-sensitive WebKit layout, invalid
 descendant transforms, and clipped text; an SVG-exists assertion alone would
 not catch those failures.
 
 The browser contract serves the exact Pages upload tree below `/gludd/`. In both
-Chromium and WebKit it requires all charts to reach valid SVG metadata within
-five seconds on a cold load and a cached reload, visits every chart forward and
-backward, proves direct hash navigation and reload, exercises the same artifact
-over `file://`, and requires positive rendered geometry. A script-blocking CSP
+Chromium and WebKit it requires all charts to become decoded SVG images with
+positive natural and client dimensions on a cold load and a cached reload,
+visits every chart forward and backward, proves direct hash navigation and
+reload, exercises the same artifact over `file://`, and injects a rule that
+collapses every live inline SVG to zero dimensions. Charts must remain visible
+because no live inline SVG is permitted. A script-blocking CSP
 must leave the static diagnostic visible. Malformed-source, blocked-asset,
 source-viewer, console, network, and HTTP failure paths remain strict. Runtime JS
 and CSS URLs carry the exact 40-character build SHA so a Safari cache cannot
 combine old controller code with new deck markup.
+The layout audit waits for `slidetransitionend`, reveals every fragment, and
+compares every text, table, and diagram boundary with Reveal's logical canvas;
+it also decodes every image and verifies that each painted label stays within
+the SVG viewport and each multi-line row shares one horizontal center. The deck
+also derives the on-screen font scale from each image and its SVG view box and
+rejects chart text below eight CSS pixels at the 1280x720 acceptance viewport.
+Long workflows are arranged as short vertical groups across the slide so that
+fitting the canvas does not merely trade clipping for unreadably small text. The deck
+uses a fade transition so neighboring slide content never flies through the
+viewport and resembles persistent off-screen text.
 
 The 2026-10-06 macOS reproduction separated delivery failures instead of
-guessing from Playwright. The native and static build initially stopped before
-browser launch because an authored `daemon.py:1-3126` citation exceeded the
-current file; that drift is repaired. The public Pages probe still reports
-`published display revision is missing`, so the public URL is legacy rather
-than evidence for current development. After the build repair, `safaridriver`
-reaches session creation and then reports Remote Automation disabled (exit 3).
-Native compatibility therefore remains pending even though the new invariant
-tests pass in Chromium and Playwright WebKit.
+guessing from Playwright. The exact deployed public revision
+`1d1cf6b8559d574d04418df52acbec535f16b1cd` passed the revision probe, yet the
+operator still observed no charts in Safari. That report invalidated the prior
+WebKit-only completion claim and motivated the replaced-image boundary above.
+The native runner reaches session creation and then reports Remote Automation
+disabled (exit 3), so native automated compatibility remains pending until that
+operator-controlled setting is enabled. The user-visible Safari failure is
+treated as authoritative evidence even while Chromium and Playwright WebKit
+pass.
 
 Playwright WebKit is deliberately not called native Safari. The separate
 `make presentation-safari-test` target uses `/usr/bin/safaridriver`, is bounded,
@@ -352,6 +394,10 @@ plain clicks open the same citation in a vendored read-only Ace viewer with the
 range selected and scrolled into view. The `/__gludd_source__` endpoint accepts
 only build-generated allowlisted UTF-8 files, rejects traversal and symlink
 escapes, caps response size, and is absent from the static Pages artifact.
+When a browser closes a cached preview socket during teardown, the local server
+suppresses only `ConnectionResetError` and `BrokenPipeError`; every unexpected
+server exception still uses the standard traceback path. A focused regression
+pins both sides of that diagnostic boundary.
 
 The Pages workflow builds one directory and tests that resolved directory below
 `/gludd/` on `development`, `master`, and relevant pull requests. Development is

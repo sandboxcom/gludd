@@ -510,6 +510,20 @@ def source_request_handler(
     return SourceRequestHandler
 
 
+class DeckThreadingHTTPServer(http.server.ThreadingHTTPServer):
+    """Keep expected browser disconnects from obscuring preview diagnostics."""
+
+    def handle_error(
+        self,
+        request: object,
+        client_address: tuple[str, int],
+    ) -> None:
+        error = sys.exception()
+        if isinstance(error, (BrokenPipeError, ConnectionResetError)):
+            return
+        super().handle_error(request, client_address)
+
+
 def serve_deck(port: int = 8080, serve_dir: Path = DECK_DIR, *, url_prefix: str = "") -> None:
     """Serve the deck and bounded source viewer on the loopback interface."""
     allowlist = _load_source_allowlist(serve_dir)
@@ -522,7 +536,7 @@ def serve_deck(port: int = 8080, serve_dir: Path = DECK_DIR, *, url_prefix: str 
     shown_prefix = "/" + url_prefix.strip("/") + "/" if url_prefix.strip("/") else "/"
     print(f"Serving deck at http://127.0.0.1:{port}{shown_prefix}", flush=True)
     print("Press Ctrl+C to stop.")
-    with http.server.ThreadingHTTPServer(("127.0.0.1", port), handler) as httpd:
+    with DeckThreadingHTTPServer(("127.0.0.1", port), handler) as httpd:
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:

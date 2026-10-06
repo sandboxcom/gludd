@@ -293,9 +293,43 @@ def test_serve_deck_binds_loopback_and_stops_cleanly(
         def serve_forever(self) -> None:
             raise KeyboardInterrupt
 
-    monkeypatch.setattr(build_deck.http.server, "ThreadingHTTPServer", FakeServer)
+    monkeypatch.setattr(build_deck, "DeckThreadingHTTPServer", FakeServer)
     build_deck.serve_deck(8123, serve_dir=tmp_path, url_prefix="gludd")
     assert observed["address"] == ("127.0.0.1", 8123)
+
+
+@pytest.mark.parametrize("error_type", (ConnectionResetError, BrokenPipeError))
+def test_preview_server_suppresses_only_expected_client_disconnects(
+    error_type: type[OSError],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """WebKit closing a cached socket must not dump an irrelevant traceback."""
+    delegated: list[tuple[object, tuple[str, int]]] = []
+
+    def record_unexpected(
+        _server: object,
+        request: object,
+        client_address: tuple[str, int],
+    ) -> None:
+        delegated.append((request, client_address))
+
+    monkeypatch.setattr(ThreadingHTTPServer, "handle_error", record_unexpected)
+    server = object.__new__(build_deck.DeckThreadingHTTPServer)
+    address = ("127.0.0.1", 43123)
+    try:
+        raise error_type("browser closed a cached connection")
+    except error_type:
+        server.handle_error(object(), address)
+    assert delegated == []
+    assert capsys.readouterr().err == ""
+
+    request = object()
+    try:
+        raise RuntimeError("unexpected server failure")
+    except RuntimeError:
+        server.handle_error(request, address)
+    assert delegated == [(request, address)]
 
 
 def test_honesty_check_reports_every_banned_token() -> None:
