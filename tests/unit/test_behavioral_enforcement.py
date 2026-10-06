@@ -1800,17 +1800,11 @@ class TestAB026DiskUsageGuard:
         assert guard_exists_in_makefile("_disk-usage-guard"), "AB026: _disk-usage-guard missing"
 
     def test_guard_checks_disk_usage(self):
-        content = makefile_text()
-        idx = content.find("_disk-usage-guard:")
-        assert idx != -1
-        block = content[idx : idx + 500]
+        block = target_recipe("_disk-usage-guard")
         assert "df " in block or "USAGE" in block, "AB026: _disk-usage-guard does not check disk usage"
 
     def test_guard_blocks_at_threshold(self):
-        content = makefile_text()
-        idx = content.find("_disk-usage-guard:")
-        assert idx != -1
-        block = content[idx : idx + 500]
+        block = target_recipe("_disk-usage-guard")
         assert "exit 1" in block, "AB026: _disk-usage-guard does not block"
 
 
