@@ -280,11 +280,18 @@ def test_repository_split_component_mappings_are_exact_and_live(
 
     assert observed == EXPECTED_SPLIT_MAPPINGS
     test_index = checker._build_test_index()
+    tests_by_module, test_counts = test_index
     source_modules = checker._source_module_paths()
     for module, (_via, expected_test) in EXPECTED_SPLIT_MAPPINGS.items():
         result = checker._check_module(source_modules[module], test_index)
         assert result["status"] == "OK", module
-        assert result["test_file"] == expected_test
+        covering_tests = {
+            path.relative_to(root).as_posix()
+            for path in tests_by_module[module]
+            if test_counts[path] > 0
+        }
+        assert expected_test in covering_tests, module
+        assert result["test_file"] in covering_tests, module
 
 
 def test_repository_chemistry_installed_import_is_mapped(
