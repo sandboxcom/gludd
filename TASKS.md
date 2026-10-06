@@ -124,9 +124,22 @@ all 3,409 integration tests with 13 intentional skips, then exposed one stale
 coverage-report assertion: the configured indirect event-loop mapping was still
 exact, but a newer direct import proof was correctly selected for reporting. The
 repaired contract retains the exact configured-mapping assertion and accepts only
-a live selected covering test; its complete file passes 20/20 with Ruff and strict
-mypy green. Commit, restarted exact-head gate, and development push remain
-required.
+ a live selected covering test; its complete file passes 20/20 with Ruff and strict
+ mypy green. Commit `c0e9f6e53` records that repair. The restarted exact-head gate
+ and development push remain required.
+
+S83.171 exact-gate continuation: the restarted gate again passed every preflight
+and all 3,409 integration tests with 13 intentional skips, then exposed four
+pytest setup errors in the Linear URL rejection matrix. The parametrized name
+`base_url` collided with pytest-base-url's fixture; commit `04d251a6f` renames it
+without weakening any assertion, and the complete file passes 36/36. The same gate
+was then terminated by its own nested signal test because that fixture isolated the
+status and lock files but inherited the enclosing checkout's project root. Commit
+`482e49a98` isolates project, resource, status, and lock roots under the test's
+temporary directory and adds a regression; all 17 gate-async tests pass while the
+foreign candidate gate PID survives. Repository collection is clean at 119,396
+selected tests with 17 intentional deselections. A final exact-head gate and
+development push remain required.
 
 S83.166 2026-09-29 failure-ownership continuation: hosted runs `36524447124` and `36524447101` are now ingested as nine independent failure families instead of one mutable branch verdict. The durable CI failure ledger rejects contradictory terminal payloads and unchanged failed-SHA reruns, preserves sibling and recurrent failures, requires a descendant repair commit plus exact Make evidence, blocks pushes with open/non-ancestral families, and resolves only the matching workflow/job after hosted success. Its replay passes 27/27 at 96% branch-aware coverage with every measured production file above 75%. The same runs exposed two PyInstaller graphs for one SHA because one workflow floated Python and the lock while the other used Python 3.12.14 plus frozen sync; all Linux/molecule producers now pin the exact patch and frozen lock, audit and upload the raw warning graph, and the combined regression surface passes 120/120. The dead Ansible EE base digest now has a fail-fast exact-manifest check and an atomic verified refresh transaction; its 36-test artifact replay and live Quay manifest check are green. Exact repair commits, a complete candidate gate, hosted all-workflow replay, the predecessor live proofs, publication, deployment, and rollback remain open.
 
