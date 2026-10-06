@@ -6,9 +6,13 @@ import ast
 import importlib
 import inspect
 import json
+import runpy
+import sys
 from pathlib import Path
 from types import ModuleType
 from typing import Any
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 FACADE = ROOT / "scripts" / "test_hook_runtime.py"
@@ -178,3 +182,42 @@ def test_facade_helper_imports_and_cli_remain_compatible() -> None:
     source = FACADE.read_text(encoding="utf-8")
     assert 'if __name__ == "__main__":' in source
     assert 'pytest.main([__file__, "-v", *sys.argv[1:]])' in source
+
+
+def test_allow_results_cover_clean_tree_compatibility_branches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Allowed hook results retain the permissive side of conditional assertions."""
+    core = importlib.import_module("hook_runtime.cases_core")
+    safety = importlib.import_module("hook_runtime.cases_safety")
+
+    monkeypatch.setattr(core, "_run_ts", lambda *_args, **_kwargs: None)
+    core.test_clean_tree_hook_clean_tree_allows_dispatch()
+
+    monkeypatch.setattr(safety, "_run_ts", lambda *_args, **_kwargs: None)
+    safety.test_clean_tree_dispatch_allowed()
+    monkeypatch.setattr(
+        safety,
+        "_run_ts",
+        lambda *_args, **_kwargs: {"allowed": True},
+    )
+    safety.test_clean_tree_hook_throws_on_execsync_failure()
+
+
+def test_facade_main_preserves_direct_cli_exit_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Direct execution forwards the historical argv and pytest exit status."""
+    calls: list[list[str]] = []
+
+    def fake_pytest_main(args: list[str]) -> int:
+        calls.append(args)
+        return 17
+
+    monkeypatch.setattr(pytest, "main", fake_pytest_main)
+    monkeypatch.setattr(sys, "argv", [str(FACADE)])
+    with pytest.raises(SystemExit) as raised:
+        runpy.run_path(str(FACADE), run_name="__main__")
+
+    assert raised.value.code == 17
+    assert calls == [[str(FACADE), "-v"]]
