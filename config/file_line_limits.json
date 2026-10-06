@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "max_lines_exclusive": 2500,
+  "non_text_paths": [
+    {
+      "path": "external/llamacpp",
+      "reason": "Git submodule gitlink; repository metadata rather than a text file"
+    }
+  ]
+}

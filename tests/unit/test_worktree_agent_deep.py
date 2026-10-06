@@ -16,6 +16,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 from general_ludd.git_automation.types import MergeResult, WorktreeInfo, WorktreeResult
 from general_ludd.git_automation.worktree import (
@@ -1036,11 +1037,11 @@ class TestVenvSharing:
     """The cleaner delegates scoped ownership decisions to its Python owner."""
 
     def test_makefile_has_clean_worktree_venvs_target(self) -> None:
-        makefile = (ROOT / "Makefile").read_text()
+        makefile = compose_makefile(ROOT / "Makefile")
         assert "clean-worktree-venvs:" in makefile
 
     def test_makefile_venv_cleanup_targets_agent_prefix(self) -> None:
-        makefile = (ROOT / "Makefile").read_text()
+        makefile = compose_makefile(ROOT / "Makefile")
         cleaner = (ROOT / "scripts" / "clean_worktree_venvs.py").read_text()
         target = makefile.split("clean-worktree-venvs:", 1)[1].split(
             "clean-worktree-caches:", 1

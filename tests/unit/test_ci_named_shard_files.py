@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 import yaml
 from coverage import Coverage, CoverageData
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "scripts"
@@ -225,7 +226,7 @@ def test_bounded_pytest_batches_do_not_nest_xdist_controller_and_worker() -> Non
 
 
 def test_coverage_files_target_preserves_aggregate_and_per_file_floors() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     recipe = makefile.split("coverage-files:", 1)[1].split("gate-async:", 1)[0]
 
     assert '--threshold="$(COVERAGE_AGGREGATE_MIN)"' in recipe
@@ -233,7 +234,7 @@ def test_coverage_files_target_preserves_aggregate_and_per_file_floors() -> None
 
 
 def test_coverage_files_target_namespaces_ansible_temp_under_owned_basetemp() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     recipe = makefile.split("coverage-files:", 1)[1].split("gate-async:", 1)[0]
 
     assert 'mkdir -p "$$BT/ansible-local"' in recipe
@@ -242,7 +243,7 @@ def test_coverage_files_target_namespaces_ansible_temp_under_owned_basetemp() ->
 
 def test_local_and_hosted_named_shards_use_one_bounded_runner() -> None:
     """GHA and local release evidence must execute the same shard owner."""
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
     local_recipe = makefile.split("test-ci-shard:", 1)[1].split("test-ci-shard-summary:", 1)[0]
     hosted_recipe = workflow.split("- name: Test (shard ${{ matrix.shard }}", 1)[1].split(
@@ -282,7 +283,7 @@ def test_hosted_coverage_artifact_includes_hidden_coverage_database() -> None:
 def test_local_and_hosted_shard_batches_share_safe_file_bound() -> None:
     """Hosted workers must not retain a 64-file process lifetime."""
     module = _load_script("run_ci_shards_serial")
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
     local_recipe = makefile.split("test-ci-shard:", 1)[1].split("test-ci-shard-summary:", 1)[0]
 

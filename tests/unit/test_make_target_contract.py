@@ -10,6 +10,7 @@ from scripts.check_make_target_contract import (
     load_contract,
     validate_contract,
 )
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -21,7 +22,7 @@ def test_make_target_contract_is_valid() -> None:
 
 
 def test_sync_llama_cpp_uses_locked_extra_and_dry_run_contract() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     target = makefile.split("\nsync-llama-cpp:", 1)[1].split("\n\n", 1)[0]
 
     assert "0.1.0-beta" not in target
@@ -35,7 +36,7 @@ def test_sync_llama_cpp_uses_locked_extra_and_dry_run_contract() -> None:
 
 
 def test_typecheck_scope_keeps_errors_but_drops_global_unused_override_noise() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     command = next(line for line in makefile.splitlines() if "run mypy" in line and "$(FILES)" in line)
 
     assert "--no-warn-unused-configs" in command
@@ -79,7 +80,7 @@ def test_azure_and_runpod_wrappers_use_declared_variables() -> None:
 
 
 def test_development_conflict_recovery_is_tracked_and_dry_runnable() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     assert "resolve-development-conflicts:" in makefile
     assert 'APPLY="$(APPLY)"' in makefile
     assert 'MERGE_SOURCE="$(MERGE_SOURCE)"' in makefile
@@ -115,7 +116,7 @@ def test_development_conflict_recovery_is_tracked_and_dry_runnable() -> None:
 
 
 def test_patch_equivalence_target_uses_git_cherry() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     assert "git-patch-equivalence:" in makefile
     assert 'PATCH_UPSTREAM="$(PATCH_UPSTREAM)"' in makefile
     assert 'PATCH_HEAD="$(PATCH_HEAD)"' in makefile

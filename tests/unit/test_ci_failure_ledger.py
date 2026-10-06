@@ -11,6 +11,7 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "ci_failure_ledger.py"
@@ -294,7 +295,7 @@ def _target_block(source: str, name: str) -> str:
 
 
 def test_make_wiring_observes_before_rerun_and_guards_every_push_path() -> None:
-    source = (ROOT / "Makefile").read_text(encoding="utf-8")
+    source = compose_makefile(ROOT / "Makefile")
     view = _target_block(source, "ci-view")
     rerun = _target_block(source, "ci-rerun")
     recover = _target_block(source, "ci-recover-runner-acquisition")
@@ -882,7 +883,7 @@ def test_exact_sha_observer_collects_all_fetch_errors_without_short_circuiting()
 
 
 def test_pipeline_status_automatically_observes_all_exact_sha_workflows() -> None:
-    source = (ROOT / "Makefile").read_text(encoding="utf-8")
+    source = compose_makefile(ROOT / "Makefile")
     block = _target_block(source, "pipeline-status")
     assert "scripts/ci_failure_ledger.py observe-sha" in block
     assert block.index("observe-sha") < block.index("scripts/pipeline_status.py")

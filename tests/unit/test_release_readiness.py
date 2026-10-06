@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 from general_ludd.review.release_forecast import Blocker, RunObservation
 
@@ -919,7 +920,7 @@ def test_incomplete_tasks_rejects_unmapped_release(tmp_path: Path) -> None:
 
 
 def test_release_readiness_make_target_is_safe_and_contracted() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     assert "\nrelease-readiness:" in makefile
     assert 'RELEASE_READINESS_VALIDATE_ONLY="$(RELEASE_READINESS_VALIDATE_ONLY)"' in makefile
     contract = json.loads((ROOT / "config" / "make_target_contract.json").read_text(encoding="utf-8"))
@@ -1004,7 +1005,7 @@ def test_readiness_remediation_documentation_pins_safe_operator_boundaries() -> 
 
 
 def test_make_ps_delegates_to_shared_process_inventory() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     ps_recipe = makefile.split("\nps:\n", maxsplit=1)[1].split("\n\n", maxsplit=1)[0]
     assert "scripts/active_work_status.py --process-table" in ps_recipe
 

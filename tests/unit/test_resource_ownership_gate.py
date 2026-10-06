@@ -15,6 +15,7 @@ from scripts.check_resource_ownership import (
     validate_inventory,
     write_inventory,
 )
+from scripts.makefile_layout import compose_makefile
 
 
 def _scan(tmp_path: Path, source: str) -> list[ResourceEvidence]:
@@ -645,7 +646,7 @@ def test_secrets_filter_excludes_only_generated_ownership_inventory() -> None:
 
 
 def test_secrets_baseline_regeneration_preserves_exact_inventory_filter() -> None:
-    makefile = Path("Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(Path("Makefile"))
 
     assert (
         "SECRETS_EXCLUDE_FILES ?= "

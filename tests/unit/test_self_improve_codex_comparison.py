@@ -13,6 +13,7 @@ from types import ModuleType
 from typing import Any, TypedDict, Unpack, cast
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 import general_ludd.self_improve.codex_comparison as comparison_module
 from general_ludd.self_improve.codex_comparison import (
@@ -3488,7 +3489,7 @@ def test_self_improve_runner_uses_local_model_and_make_only_git_workflow() -> No
 
 
 def test_make_contract_forwards_local_comparison_inputs() -> None:
-    makefile = Path("Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(Path("Makefile"))
     contract = Path("config/make_target_contract.json").read_text(encoding="utf-8")
     for token in (
         "SELF_IMPROVE_CONTRACT_FILE",

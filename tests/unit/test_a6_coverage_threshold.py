@@ -6,6 +6,8 @@ import re
 import tomllib
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 
 class TestPyprojectCoverageThreshold:
     def test_fail_under_is_at_least_85(self) -> None:
@@ -80,7 +82,7 @@ class TestBuildYmlNoFailUnderZeroWorkaround:
         )
 
     def test_ci_gate_exact_still_references_fail_under_85(self) -> None:
-        content = Path("Makefile").read_text()
+        content = compose_makefile(Path("Makefile"))
         assert "fail_under=85" in content, (
             "Makefile ci-gate-exact comment must still reference fail_under=85"
         )

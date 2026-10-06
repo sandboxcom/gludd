@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import yaml
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 INVENTORY = ROOT / "config" / "ansible_syntax_inventory.yml"
@@ -19,6 +20,6 @@ def test_syntax_inventory_covers_local_and_model_worker_playbooks() -> None:
 
 def test_ansible_syntax_target_uses_the_tracked_inventory() -> None:
     """The release syntax target must consume the warning-free inventory."""
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
 
     assert "-i config/ansible_syntax_inventory.yml --syntax-check" in makefile

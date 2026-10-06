@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = "test-self-improve-failure-corpus"
 
@@ -17,7 +19,7 @@ def _target_body(makefile: str, target: str) -> str:
 
 
 def test_make_target_is_offline_and_uses_explicit_corpus_path() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     body = _target_body(makefile, TARGET)
 
     assert (
@@ -29,7 +31,7 @@ def test_make_target_is_offline_and_uses_explicit_corpus_path() -> None:
 
 
 def test_make_help_and_machine_contract_include_safe_behavior() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     contract = json.loads(
         (ROOT / "config/make_target_contract.json").read_text(encoding="utf-8")
     )

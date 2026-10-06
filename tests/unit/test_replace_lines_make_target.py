@@ -2,9 +2,11 @@
 
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 
 def _target_body(name: str) -> str:
-    text = Path("Makefile").read_text(encoding="utf-8")
+    text = compose_makefile(Path("Makefile"))
     marker = f"{name}:\n"
     start = text.index(marker) + len(marker)
     end = text.find("\n\n", start)
