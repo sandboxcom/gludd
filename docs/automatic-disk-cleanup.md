@@ -123,15 +123,35 @@ pass closed. This permits stale `.json`, `.js`, `.md`, and abandoned socket node
 to converge without deleting active sockets, ownership leases, or unproven
 evidence.
 
+The owned-download tier also admits the exact
+`/tmp/gludd-playwright-browsers` root used by the presentation browser target.
+It uses the existing node-download cache boundary rather than a broad `/tmp`
+glob: every entry must be a real file or directory, the bounded tree snapshot
+must remain unchanged, the newest entry must be at least six hours old, and two
+process censuses must find neither an npm-like installer nor a command naming
+the exact cache path. A running Chromium, WebKit, or Firefox executable names
+that root in its command path and therefore protects the installation. Only an
+idle, stale installation is removed, and the pinned presentation browser install
+target regenerates it before later browser acceptance. This makes the disk
+preflight zero-downtime for an in-flight browser gate while allowing a
+multi-gigabyte, fully reproducible download cache to participate in bounded
+pressure recovery. Like the shared uv cache, it remains visible in classification
+but is not charged to the 100 MB ephemeral-test-scratch budget; its bytes still
+contribute to the repository-volume percentage that triggers cleanup.
+
 The other recovery tier targets only the exact resolved
 `/tmp/gludd-uv-cache-public-v2` directory. It refuses symlinks, scans the system
-process table twice before mutation, and skips pruning if any `uv` owner is
-visible or inspection is ambiguous. When idle, it first calls uv's lock-aware
-`cache prune`, performs a third system-wide owner check, and then calls uv's
-lock-aware `cache clean` for remaining regenerable entries. Both operations use
-the exact cache root and bounded lock/process timeouts; files are never deleted
-directly. A concurrent uv user is protected by both the three checks and uv's
-cache locking.
+process table before admission, and skips pruning if any `uv` owner is visible
+or inspection is ambiguous. It must then acquire Gludd's cache-external exclusive
+lease and repeat the process census inside that lease. Serial shard runners hold
+the shared side for their complete lifetime, including the period after `uv run`
+has become a Python process whose command no longer names uv. A busy lease emits
+its bounded owner-root receipts and leaves the cache untouched. When idle, the
+cleaner calls uv's lock-aware `cache prune`, performs a final system-wide owner
+check, and calls uv's lock-aware `cache clean` while still holding the exclusive
+lease. Both operations use the exact cache root and bounded lock/process
+timeouts; files are never deleted directly. The external lease closes the
+launch-to-descendant gap while uv's internal locking protects uv operations.
 
 After every cleanup pass it re-runs both canonical measurements. A healthy
 measurement returns zero. Residual pressure may trigger another pass only after
@@ -203,7 +223,14 @@ back the automation itself, revert the feature commit. Archived `.gate-logs`
 remain under `.git/gludd-release-evidence` and can be moved into a recreated
 checkout using the fsynced rehydration manifest. The prior read-only checker remains in
 `scripts/check_disk_usage.py`, and no data migration or service restart is
-required. Do not weaken the fail-closed threshold recheck as a rollback shortcut.
+required. Reverting the Playwright allowlist stops future automatic browser-cache
+removal; an already reclaimed installation is restored with
+`make presentation-browser-install PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=0`.
+Remove the shared-cache lease only after all reported shard holders exit; its
+lock and token-owned receipts are regenerable control-plane evidence outside the
+cache, so rollback needs no migration or service restart. Reverting it while a
+holder runs would restore the check-to-clean race.
+Do not weaken the fail-closed threshold recheck as a rollback shortcut.
 
 ## Long-lived user reports considered
 
@@ -213,8 +240,17 @@ required. Do not weaken the fail-closed threshold recheck as a rollback shortcut
   instead of relying on model memory after one incomplete cleanup pass.
 - [uv issue 11694](https://github.com/astral-sh/uv/issues/11694) reports cache
   pruning breaking a still-running `uvx` process. The Gludd preflight therefore
-  requires two system-wide idle checks and delegates pruning to uv's locked
-  operation instead of deleting shared-cache files itself.
+  requires its consumer lease plus repeated system-wide idle checks and delegates
+  pruning to uv's locked operation instead of deleting shared-cache files itself.
+- [uv issue 13883](https://github.com/astral-sh/uv/issues/13883) is the upstream
+  cross-operation locking tracker and explicitly includes making `uv cache clean`
+  safe alongside other uv operations. Gludd's lease additionally covers the
+  launched Python descendant after no uv process remains visible.
+- [uv issue 5731](https://github.com/astral-sh/uv/issues/5731) records shared
+  self-hosted runner caches growing to roughly 40 GB and operators scheduling
+  cache cleanup between jobs. This supports bounded automatic reclamation, while
+  shared/exclusive admission prevents "between jobs" from being guessed from a
+  transient process-table snapshot.
 - [Orca issue 10562](https://github.com/stablyai/orca/issues/10562) reports that
   deleting worktrees externally can strand agent and terminal process trees.
   Gludd consequently requires a stable completion lease, repeated PID and Git
@@ -238,6 +274,16 @@ required. Do not weaken the fail-closed threshold recheck as a rollback shortcut
   explicit test namespaces and its own registered disposable worktree caches,
   while using registration, process, age, type, and identity proofs rather than
   deleting arbitrary `/tmp` content.
+- [Playwright issue 15990](https://github.com/microsoft/playwright/issues/15990),
+  opened in 2022, reports automatic browser garbage collection removing binaries
+  that another project still needed. Gludd therefore requires two exact-path
+  process checks and an unchanged tree instead of treating browser downloads as
+  disposable merely because they are old.
+- [Playwright issue 7249](https://github.com/microsoft/playwright/issues/7249),
+  opened in 2021 and still receiving CI cache guidance years later, documents
+  the recurring practice of caching Playwright browser binaries and reinstalling
+  them on a miss. This supports classifying the exact Gludd browser root as
+  regenerable while keeping installation explicit and pinned.
 - [Terraform issue 38376](https://github.com/hashicorp/terraform/issues/38376)
   records sustained demand to reuse providers across modules without repeated
   downloads. Gludd retains that supported shared-cache design during normal use,

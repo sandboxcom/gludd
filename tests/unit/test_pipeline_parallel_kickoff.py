@@ -352,13 +352,13 @@ console.log(JSON.stringify({{
 """
     result = _run_ts(code)
     assert result == {
-        "ids": ["S83.157", "S83.158", "S83.163", "S83.166"],
+        "ids": ["S83.157", "S83.166"],
         "scope": {
             "kind": "milestone",
             "label": "v0.1.1",
             "range": "S83.157-S83.168",
             "raw_count": 6,
-            "eligible_count": 4,
+            "eligible_count": 2,
         },
     }
 

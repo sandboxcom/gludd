@@ -3,9 +3,10 @@
 
 Generated caches are removed from an idle invoking worktree or from inactive
 worktrees. This includes the invoking checkout's exact regenerable Terraform
-provider cache while preserving state. A complete, clean checkout may also be
-dematerialized after its exact branch and commit are proven durable. The shared
-uv cache is pruned through uv only after ownership is idle.
+provider cache while preserving state and the exact shared Playwright browser
+download root. A complete, clean checkout may also be dematerialized after its
+exact branch and commit are proven durable. The shared uv cache is pruned through
+uv only after ownership is idle.
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
     import check_disk_usage
     import clean_ci_shard_scratch
     import prune_worktrees_safe
+    from scripts import uv_cache_lease
 
     workstream_registry: Any
 else:
@@ -39,6 +41,7 @@ else:
     clean_ci_shard_scratch = importlib.import_module("scripts.clean_ci_shard_scratch")
     prune_worktrees_safe = importlib.import_module("scripts.prune_worktrees_safe")
     workstream_registry = importlib.import_module("scripts.workstream_registry")
+    uv_cache_lease = importlib.import_module("scripts.uv_cache_lease")
 
 DISPOSABLE_CACHE_DIR_NAMES = (
     ".mypy_cache",
@@ -63,6 +66,7 @@ SHARED_UV_CACHE_ROOT = Path("/tmp/gludd-uv-cache-public-v2")
 OWNED_NODE_CACHE_ROOTS = (
     Path("/tmp/gludd-npm-cache"),
     Path("/tmp/gludd-npm-cache-public-v1"),
+    Path("/tmp/gludd-playwright-browsers"),
 )
 OWNED_NODE_CACHE_NAMES = frozenset(path.name for path in OWNED_NODE_CACHE_ROOTS)
 OWNED_TASK_NODE_CACHE_NAME_PATTERN = re.compile(
@@ -1820,10 +1824,11 @@ def prune_shared_uv_cache(
     active_uv_pids: Callable[[], list[int]] = _active_uv_process_pids,
     run_prune: Callable[[Path], bool] = _run_uv_cache_prune,
     run_clean: Callable[[Path], bool] = _run_uv_cache_clean,
+    cache_lease: Callable[..., Any] = uv_cache_lease.exclusive_uv_cache_lease,
     dry_run: bool = False,
     missing_is_clean: bool = False,
 ) -> CleanupResult:
-    """Prune the exact shared uv cache only after two system-wide idle checks."""
+    """Prune the exact shared cache only with idle-process and lease proof."""
     try:
         approved = approved_cache_root.resolve()
     except (OSError, RuntimeError):
@@ -1862,51 +1867,100 @@ def prune_shared_uv_cache(
             (f"{cache_root}:active-uv-pids={','.join(str(pid) for pid in first_pids)}",),
             (),
         )
-    try:
-        refreshed_pids = active_uv_pids()
-    except ProcessInspectionError:
-        return CleanupResult((), (), (f"{cache_root}:uv-process-revalidation-failed",))
-    if refreshed_pids:
-        return CleanupResult(
-            (),
-            (
-                f"{cache_root}:active-uv-pids="
-                f"{','.join(str(pid) for pid in refreshed_pids)}",
-            ),
-            (),
-        )
     if dry_run:
+        try:
+            refreshed_pids = active_uv_pids()
+        except ProcessInspectionError:
+            return CleanupResult(
+                (), (), (f"{cache_root}:uv-process-revalidation-failed",)
+            )
+        if refreshed_pids:
+            return CleanupResult(
+                (),
+                (
+                    f"{cache_root}:active-uv-pids="
+                    f"{','.join(str(pid) for pid in refreshed_pids)}",
+                ),
+                (),
+            )
         return CleanupResult((), (f"{cache_root}:would prune shared uv cache",), ())
-    print(
-        "phase=cleanup action=uv-cache-prune status=starting "
-        f"path={json.dumps(str(cache_root))}",
-        flush=True,
-    )
-    if not run_prune(cache_root):
-        return CleanupResult((), (), (f"{cache_root}:uv-cache-prune-failed",))
     try:
-        final_pids = active_uv_pids()
-    except ProcessInspectionError:
-        return CleanupResult((), (), (f"{cache_root}:uv-process-final-check-failed",))
-    if final_pids:
-        return CleanupResult(
-            (str(cache_root),),
-            (f"{cache_root}:active-uv-pids={','.join(str(pid) for pid in final_pids)}",),
-            (),
+        lease_context = cache_lease(
+            cache_root,
+            owner_root=Path.cwd().resolve(),
         )
-    print(
-        "phase=cleanup action=uv-cache-clean status=starting "
-        f"path={json.dumps(str(cache_root))}",
-        flush=True,
-    )
-    if not run_clean(cache_root):
-        return CleanupResult((), (), (f"{cache_root}:uv-cache-clean-failed",))
-    print(
-        "phase=cleanup action=uv-cache-clean status=complete "
-        f"path={json.dumps(str(cache_root))}",
-        flush=True,
-    )
-    return CleanupResult((str(cache_root),), (), ())
+        with lease_context as lease:
+            if not lease.acquired:
+                roots = sorted(
+                    {
+                        str(owner.get("owner_root"))
+                        for owner in lease.owners
+                        if isinstance(owner, Mapping)
+                        and isinstance(owner.get("owner_root"), str)
+                    }
+                )
+                owner_text = ",".join(roots) if roots else "unknown"
+                return CleanupResult(
+                    (),
+                    (f"{cache_root}:active-uv-cache-lease={owner_text}",),
+                    (),
+                )
+            try:
+                refreshed_pids = active_uv_pids()
+            except ProcessInspectionError:
+                return CleanupResult(
+                    (), (), (f"{cache_root}:uv-process-revalidation-failed",)
+                )
+            if refreshed_pids:
+                return CleanupResult(
+                    (),
+                    (
+                        f"{cache_root}:active-uv-pids="
+                        f"{','.join(str(pid) for pid in refreshed_pids)}",
+                    ),
+                    (),
+                )
+            print(
+                "phase=cleanup action=uv-cache-prune status=starting "
+                f"path={json.dumps(str(cache_root))}",
+                flush=True,
+            )
+            if not run_prune(cache_root):
+                return CleanupResult(
+                    (), (), (f"{cache_root}:uv-cache-prune-failed",)
+                )
+            try:
+                final_pids = active_uv_pids()
+            except ProcessInspectionError:
+                return CleanupResult(
+                    (), (), (f"{cache_root}:uv-process-final-check-failed",)
+                )
+            if final_pids:
+                return CleanupResult(
+                    (str(cache_root),),
+                    (
+                        f"{cache_root}:active-uv-pids="
+                        f"{','.join(str(pid) for pid in final_pids)}",
+                    ),
+                    (),
+                )
+            print(
+                "phase=cleanup action=uv-cache-clean status=starting "
+                f"path={json.dumps(str(cache_root))}",
+                flush=True,
+            )
+            if not run_clean(cache_root):
+                return CleanupResult(
+                    (), (), (f"{cache_root}:uv-cache-clean-failed",)
+                )
+            print(
+                "phase=cleanup action=uv-cache-clean status=complete "
+                f"path={json.dumps(str(cache_root))}",
+                flush=True,
+            )
+            return CleanupResult((str(cache_root),), (), ())
+    except (OSError, RuntimeError, ValueError, TypeError):
+        return CleanupResult((), (), (f"{cache_root}:uv-cache-lease-failed",))
 
 
 def _combine_cleanup_results(*results: CleanupResult) -> CleanupResult:
@@ -2012,9 +2066,17 @@ def _is_owned_node_cache_name(name: str) -> bool:
 
 def _discover_node_cache_roots(approved_tmp_root: Path) -> tuple[Path, ...]:
     """Return bounded direct-child node cache candidates for strict validation."""
+    candidates = set(approved_tmp_root.glob(NODE_CACHE_DISCOVERY_PATTERN))
+    for cache_name in OWNED_NODE_CACHE_NAMES:
+        exact_cache = approved_tmp_root / cache_name
+        try:
+            exact_cache.lstat()
+        except FileNotFoundError:
+            continue
+        candidates.add(exact_cache)
     return tuple(
         sorted(
-            approved_tmp_root.glob(NODE_CACHE_DISCOVERY_PATTERN),
+            candidates,
             key=lambda path: os.fsencode(path.name),
         )
     )
@@ -2031,7 +2093,7 @@ def clean_stale_node_download_caches(
     remove_tree: RemoveTree = _remove_tree,
     dry_run: bool = False,
 ) -> CleanupResult:
-    """Remove only exact, stale Gludd npm caches after two idle proofs."""
+    """Remove only exact, stale Gludd node-tool caches after two idle proofs."""
     try:
         candidates = tuple(
             dict.fromkeys(

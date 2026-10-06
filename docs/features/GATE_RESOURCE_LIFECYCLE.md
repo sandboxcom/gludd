@@ -110,6 +110,119 @@ the owning process group can outlive an intermediate controller. These reports
 support explicit record ownership and observability; they do not establish the
 sender of Gludd's still-unattributed gate `SIGTERM`.
 
+### Cross-worktree signal and shared-cache admission
+
+The 2026-10-06 durable run `20261006T165826Z-85906a42` narrows the failure
+without inventing attribution. Its gate owner (PID/PGID/SID 85644) and
+worktree namespace survived to publish the failure attestation and release its
+lock. The serial `unit-1b:batch-001` runner reported `SHARD-SIGNAL signal=15`
+after its pytest child had passed through 78 percent, then performed its owned
+`TERM`-to-`KILL` child cleanup and returned 143. The earlier
+`unit-1a2:batch-004` receipt has the same cancellation shape. Neither retained
+task-watchdog output nor the old agent-watchdog log contains a matching sender
+PID, root, or signal receipt. Those artifacts therefore prove the receiver and
+exclude a pytest assertion or gate-root timeout, but the exact historical sender
+is unrecoverable. That audit gap is itself part of the repair.
+
+The reproducible cross-worktree sender class was host-global task state consumed
+by `agent_watchdog.py`: a recorded PID could belong to another registered
+worktree, while the old timeout path sent bare `SIGTERM` and `SIGKILL`. A
+regression injects that foreign PID/root collision and proves that neither signal
+is sent. All task and background-gate timeout cleanup now snapshots the live
+process, admits its exact current working directory or command namespace only
+when it belongs to the invoking checkout, records its start token, and
+revalidates PID, token, command, cwd, and namespace before escalation. A refusal
+preserves the foreign process and its PID record. Every decision is appended to
+the invoking namespace's `agent-watchdog-task-signals.jsonl`, including sender
+PID/root/namespace and target PID/start token/command/cwd, so a future signal has
+an exact attributable receipt. Owned timeout cleanup retains its bounded
+`TERM`-then-`KILL` behavior.
+
+This deliberately reuses the exact namespace/cwd matcher introduced by
+`df219b953` and the PID/start-identity revalidation pattern from `055f5efc`;
+it does not add a competing process-ownership policy.
+
+The same incident was followed by a missing temporary path under the shared uv
+cache, showing a second cross-worktree check/action race. Looking only for a
+currently visible `uv` executable is insufficient once `uv run` has replaced
+itself with a long-lived Python test. Serial shard runners now hold a shared
+kernel lease for their entire lifetime. Automatic prune/clean must acquire the
+exclusive side and repeat its process census inside that lease; on contention it
+reports the exact owner root and namespace and leaves the cache untouched. The
+lock and token-owned receipts live beside, not inside, the cache so `uv cache
+clean` cannot delete its own admission authority.
+
+This extra lease is supported by long-lived upstream reports, not an assumption
+that uv's internal command locking covers launched descendants. [uv issue
+11694](https://github.com/astral-sh/uv/issues/11694) demonstrates pruning files
+used by a still-running `uvx` process. [uv issue
+13883](https://github.com/astral-sh/uv/issues/13883) tracks stronger locking for
+parallel and cross-operation safety, including cache cleanup. [uv issue
+5731](https://github.com/astral-sh/uv/issues/5731) records self-hosted caches
+growing to roughly 40 GB and operators cleaning them between jobs. Together they
+justify bounded cleanup, but only after Gludd's longer-lived consumer lease says
+the cache is idle.
+
+Rollout is ZDD because the change is local control-plane admission: it starts no
+service, changes no schema, and does not interrupt a running shard. New runners
+acquire the shared lease before starting work; cleanup simply skips while a
+holder exists. Roll back only after all reported lease holders exit, then revert
+the code/tests/documentation. Lock files and JSON receipts are regenerable
+diagnostics outside the cache; no data migration or deployed-service restart is
+required. Do not bypass the lease with direct cache deletion during rollback.
+
+#### Managed-session SIGTERM recovery
+
+The later gate `20261006T180248Z-fcc617de` fixed the remaining ownership
+boundary. It started at `2026-10-06T18:02:48.071216Z` and its retained state
+finished at `19:59:28.711149Z`, after 7,000.640 seconds. The configured gate
+watcher deadline was 7,200 seconds, the state classified the result as
+`gate-exited`, and no gate-kill, task-watchdog, agent-watchdog, or timeout
+receipt claimed the signal. Only the serial runner recorded `SIGTERM` and
+returned 143 at `unit-3b:batch-019`; the detached gate owner remained live and
+continued to its smoke phase. Replaying that exact batch and file order passed
+all 437 tests. Those facts exclude a failing batch and every Gludd-owned
+termination path. The exact historical sender PID was not retained, but the
+7,000-second boundary and surviving detached owner identify expiry of the
+managed foreground command session as the causal ownership class rather than a
+flaky test.
+
+The background launcher now passes its immutable run ID and state-file path to
+the gate. A serial runner may repeat the exact interrupted batch once, and only
+for `SIGTERM`/143, when that state is a regular file at the invoking checkout's
+canonical path and proves the same run, root, live PID, and live session are
+still `running`. `SIGINT`, direct gates, a missing or conflicting identity, an
+`ABORTED` marker, a second signal, and every state carrying termination intent
+remain terminal. Watcher timeout and explicit gate-kill paths publish that
+intent atomically before their first signal. Recovery first removes partial
+pytest and coverage state, rechecks disk headroom, appends an fsynced
+`signal-recovery.jsonl` receipt, and re-executes the same command before later
+batches may continue. It neither turns 143 green nor silently skips the batch.
+
+Process visibility observes the same checkout boundary. A generic `make` or
+`uv` parent no longer transfers ownership to the observer's namespace when its
+leaf interpreter, cwd, or resource root belongs to another registered worktree.
+Conflicting root evidence rejects the complete connected tree before worker
+leases are counted. This pins the live incident shape in which a closeout
+snapshot claimed a `coverage-audit` lease while the executable actually came
+from `v012-compose-test-consumers` or `v012-nonmake-contracts`.
+
+The upstream practitioner record supports detaching durable work from an
+interactive tool session and retaining a bounded recovery path. OpenAI Codex
+[issue 10957](https://github.com/openai/codex/issues/10957) reports unified-exec
+long-running background commands unexpectedly becoming waited work and then
+stopping. Codex [issue 4337](https://github.com/openai/codex/issues/4337)
+discusses tool timeouts and whole-process-group cleanup. These reports establish
+the failure class; the retained Gludd timestamps, signal line, and ownership
+records establish this incident.
+
+The delivery remains zero-downtime: no application service, schema, listener,
+or worker limit changes. Existing gates retain their loaded runner; newly
+launched gates gain the identity handoff and bounded exact-batch recovery.
+Rollback is a single code/test/documentation revert after any new-format gate
+exits. Do not roll back only the termination-intent publication, because that
+would make an owned timeout indistinguishable from an expiring command session.
+
 ### Concurrent gate-lite evidence
 
 Two linked worktrees can safely execute their bounded two-worker `gate-lite`
@@ -414,6 +527,48 @@ Long-lived practitioner reports establish why every boundary is necessary:
   reported in 2019, records cancellation leaving a stale lock that breaks the
   next CI job. Gludd removes only unchanged, proven-owned locks and retains a
   fail-closed record whenever terminal cleanup is incomplete.
+
+#### Async wrapper command boundary
+
+`gate_async.sh` has two deliberately different ownership modes. With its
+default complete `make gate` command, it may invoke `kill_owned_gate.py`: the
+child acquires this checkout's `gate-run.lock`, and that lock admits the verified
+descendant-tree terminator. An explicitly injected `GATE_CMD` is the test seam
+and owns only the captured direct child PID. It must never inspect, terminate,
+or attribute failure from a checkout-wide lock, because a full-gate test runs
+the stub beneath an enclosing gate that legitimately owns that lock.
+
+The signal boundary remains one atomic transition in either mode. `INT` and
+`TERM` mask re-entry, terminate only admitted work, publish `ABORTED` with
+explicit `130` or `143`, release only the launcher's async lock, and leave an
+already published success untouched. A deterministic acceptance case places an
+unreadable foreign `gate-run.lock` beside the injected command and requires both
+signals to return their exact code, report `cleanup_rc=0`, and preserve that
+foreign record byte-for-byte. This reproduces the full-gate nesting failure
+without creating or signaling an unrelated process.
+
+The focused replay passes 67/67 and measures the maintained Python terminator
+at 91% branch-aware coverage, with its only measured file above the 75%
+per-file floor. Bash is outside Python line instrumentation; its real process
+contract is exercised directly by the six signal cases, complete 18-case async
+suite, 154-case shell replay, and the repaired 184-case original gate batch.
+
+Long-lived practitioner reports explain both halves of the contract. The
+[background-process Ctrl-C report](https://unix.stackexchange.com/questions/513781/regain-ability-to-use-c-to-close-backgrounded-then-effectively-foregrounded-p)
+recommends acting on the exact `$!` child and cautions that spawned descendants
+need a separately proven boundary. The
+[Bash `wait` and trapped-signal report](https://unix.stackexchange.com/questions/384691/when-typing-ctrl-c-in-a-terminal-why-isnt-the-foreground-job-terminated-until)
+shows that `wait` can return `128+signal` while an ignored asynchronous child is
+still alive. Gludd therefore records the signal exit independently from cleanup
+success and never promotes a checkout-wide lock into ownership for an injected
+command.
+
+Rollout and rollback are ZDD. The change affects only future signal handlers;
+it starts or restarts no application process, listener, daemon, schema,
+credential, or deployment. Existing launchers may finish normally. Rollback
+waits for terminal evidence and released async ownership before reverting the
+script. Default gates retain the descendant terminator in both directions;
+rolling back only reintroduces the nested-test false cleanup failure.
 
 #### Legacy-watchdog compatibility shield
 

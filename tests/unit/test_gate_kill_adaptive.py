@@ -109,6 +109,22 @@ def test_gate_kill_terminates_owned_tree_across_process_groups(tmp_path: Path) -
     root = tmp_path / "checkout"
     root.mkdir()
     lock = _owned_lock(root, pid=100, started_at="root-start")
+    background_state = root / ".gate-logs" / "gate-background-state.json"
+    background_state.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "gludd_gate_background",
+                "state": "running",
+                "run_id": "owned-run",
+                "pid": 100,
+                "project_root": str(root.resolve()),
+                "termination_reason": None,
+                "termination_requested_at": None,
+            }
+        ),
+        encoding="utf-8",
+    )
     live = {
         100: ProcessRecord(100, 1, 10, "make gate gludd_watchdog_owned_gate=1", 100, "root-start"),
         200: ProcessRecord(200, 100, 9, "bash scripts/run_gate.sh", 100, "shell-start"),
@@ -123,6 +139,10 @@ def test_gate_kill_terminates_owned_tree_across_process_groups(tmp_path: Path) -
         return list(live.values())
 
     def send(pid: int, signum: signal.Signals) -> None:
+        state = json.loads(background_state.read_text(encoding="utf-8"))
+        assert state["state"] == "terminating"
+        assert state["termination_reason"] == "gate-kill-requested"
+        assert isinstance(state["termination_requested_at"], str)
         signals.append((pid, signum))
         if signum == signal.SIGTERM and pid in {100, 200}:
             live.pop(pid)

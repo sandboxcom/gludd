@@ -1589,14 +1589,16 @@ _disk-usage-guard:
 	@AVAILABLE_KIB=$$(df -Pk "$(CURDIR)" | awk 'END {print $$4}'); \
 	USAGE=$$(df -Pk "$(CURDIR)" | awk 'END {gsub(/%/,"",$$5); print $$5}'); \
 	MIN_FREE_KIB=$$(($(DISK_MIN_FREE_GIB) * 1024 * 1024)); \
+	AVAILABLE_BYTES=$$((AVAILABLE_KIB * 1024)); \
+	REQUIRED_BYTES=$$((MIN_FREE_KIB * 1024)); \
 	AVAILABLE_GIB=$$((AVAILABLE_KIB / 1024 / 1024)); \
 	if [ "$$AVAILABLE_KIB" -lt "$$MIN_FREE_KIB" ]; then \
-		echo "DISK-HEADROOM-GUARD: available=$$AVAILABLE_GIB GiB required=$(DISK_MIN_FREE_GIB) GiB BLOCKED."; \
+		echo "DISK-HEADROOM-GUARD: available=$$AVAILABLE_GIB GiB required=$(DISK_MIN_FREE_GIB) GiB available_bytes=$$AVAILABLE_BYTES required_bytes=$$REQUIRED_BYTES BLOCKED."; \
 		exit 1; \
 	elif [ "$$USAGE" -gt 90 ]; then \
-		echo "DISK-HEADROOM-GUARD: available_gib=$$AVAILABLE_GIB required_gib=$(DISK_MIN_FREE_GIB) usage=$${USAGE}% — high utilization, headroom sufficient."; \
+		echo "DISK-HEADROOM-GUARD: available_gib=$$AVAILABLE_GIB required_gib=$(DISK_MIN_FREE_GIB) available_bytes=$$AVAILABLE_BYTES required_bytes=$$REQUIRED_BYTES usage=$${USAGE}% — high utilization, headroom sufficient."; \
 	fi; \
-	echo "_disk-usage-guard: PASS available_gib=$$AVAILABLE_GIB required_gib=$(DISK_MIN_FREE_GIB) usage=$${USAGE}%"
+	echo "_disk-usage-guard: PASS available_gib=$$AVAILABLE_GIB required_gib=$(DISK_MIN_FREE_GIB) available_bytes=$$AVAILABLE_BYTES required_bytes=$$REQUIRED_BYTES usage=$${USAGE}%"
 
 # AB027 — check-worktree-staleness: flags git worktrees older than 24h.
 # Stale worktrees consume disk (~320MB each) and must be merged or cleaned up.

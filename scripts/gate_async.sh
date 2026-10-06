@@ -30,6 +30,13 @@ set -euo pipefail
 
 REF="${1:-}"
 
+# An injected command is a test seam, not proof that this launcher owns the
+# checkout-wide gate-run lock.  Remember the distinction before applying the
+# default so signal cleanup cannot claim an enclosing gate as its descendant.
+GATE_CMD_IS_INJECTED=0
+if [ "${GATE_CMD+x}" = "x" ]; then
+    GATE_CMD_IS_INJECTED=1
+fi
 GATE_CMD="${GATE_CMD:-make gate gludd_watchdog_owned_gate=1}"
 STATUS_FILE="${STATUS_FILE:-.gate-status}"
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -200,16 +207,24 @@ _release_lock() {
 
 _terminate_owned_gate() {
     local cleanup_rc=0
-    # The whole-gate lock proves the descendant tree before any signal.  This
-    # maintained terminator performs bounded TERM/KILL escalation and retains
-    # fail-closed ownership evidence if a survivor cannot be stopped.
-    APPLY=1 GLUDD_PROJECT_ROOT="${PROJECT_ROOT}" \
-        python3 "${GATE_KILL_SCRIPT}" || cleanup_rc=$?
+    # Only the default whole-gate command can own this checkout's gate-run
+    # lock.  Tests inject bounded stub commands while already running beneath a
+    # real gate; asking the checkout-wide terminator to clean those stubs would
+    # inspect the enclosing gate and falsely report (or attempt) foreign work.
+    if [ "${GATE_CMD_IS_INJECTED}" -eq 0 ]; then
+        # The whole-gate lock proves the descendant tree before any signal.
+        # This maintained terminator performs bounded TERM/KILL escalation and
+        # retains fail-closed ownership evidence if a survivor cannot stop.
+        APPLY=1 GLUDD_PROJECT_ROOT="${PROJECT_ROOT}" \
+            python3 "${GATE_KILL_SCRIPT}" || cleanup_rc=$?
+    fi
 
     # A signal can land in the short admission window before `make gate`
-    # publishes gate-run.lock.  The direct child PID is still exact ownership;
-    # TERM it without guessing at unrelated processes.
+    # publishes gate-run.lock.  An injected command owns only this direct child.
+    # In both cases the PID is exact ownership; TERM it without guessing at
+    # unrelated processes.
     if [ -n "${GATE_CHILD_PID}" ] && kill -0 "${GATE_CHILD_PID}" 2>/dev/null; then
+        echo "[gate-kill] signal=SIGTERM direct-child pid=${GATE_CHILD_PID}"
         kill -TERM "${GATE_CHILD_PID}" 2>/dev/null || true
     fi
     return "${cleanup_rc}"

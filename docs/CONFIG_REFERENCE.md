@@ -171,6 +171,8 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_GATE_FRESHNESS_SECS` | Auto-indexed (see source) | — | optional | `scripts/gate_status_attestation.py:313` |
 | `GLUDD_GATE_KEY_PATH` | Auto-indexed (see source) | — | optional | `scripts/gate_status_attestation.py:306` |
 | `GLUDD_GATE_REFRESH_LOCK_TIMEOUT` | Auto-indexed (see source) | — | optional | `scripts/collection_lock.py:56` |
+| `GLUDD_GATE_RUN_ID` | Immutable identity injected into a detached gate and every child process so observers can correlate receipts with the exact run. Set automatically by `gate-background-observed`; do not override it for production launches. | — | optional | `scripts/start_gate_background.py:554` |
+| `GLUDD_GATE_STATE_FILE` | Absolute path to the worktree-local JSON state receipt for the detached gate. Set automatically by `gate-background-observed`; consumers must validate it with `GLUDD_GATE_RUN_ID`. | — | optional | `scripts/start_gate_background.py:555` |
 | `GLUDD_GGUF_MODEL_DIR` | Auto-indexed (see source) | — | optional | `src/general_ludd/cloud/model_sources.py:27` |
 | `GLUDD_GHA_SIGNAL_STATE_DIR` | Auto-indexed (see source) | — | optional | `scripts/ci_signal_exact_sha.py:468` |
 | `GLUDD_GOOGLE_API_KEY` | Auto-indexed (see source) | — | optional | `src/general_ludd/ansible/credential_proxy.py:304` |

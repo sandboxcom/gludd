@@ -1,0 +1,119 @@
+{
+  "build_and_release": {
+    "conclusion": "success",
+    "jobs": {
+      "expected_skipped": [
+        "release",
+        "release_source_proof"
+      ],
+      "failed": 0,
+      "other": 2,
+      "passed": 27,
+      "running": 0
+    },
+    "run_id": 37427487620,
+    "status": "completed",
+    "task_proofs": {
+      "s83_158_claim_before_provision": {
+        "cloud_credentials_present": false,
+        "conclusion": "success",
+        "job": "claim-before-provision-acceptance",
+        "live_cloud_requested": false,
+        "tests_failed": 0,
+        "tests_passed": 97
+      },
+      "s83_163_provider_e2e": {
+        "conclusion": "success",
+        "job": "e2e-providers",
+        "live_provider_inputs_present": false,
+        "satisfies_live_provider_proof": false,
+        "tests_passed": 2,
+        "tests_skipped": 27
+      },
+      "s83_163_hermetic_workload": {
+        "accepted_decision": "accepted",
+        "claims_distinct_and_released": true,
+        "evidence_id": "sha256:c10ad98649ef38af34d5b72999019ef90682abdb1ae9ce02537280b610b3aceb",
+        "rejected_decision": "rejected",
+        "runtime_admitted": false,
+        "source": "docs/evidence/freellmapi_self_improvement_workload_proof.json"
+      },
+      "s83_163_live_provider_receipt": {
+        "accepted_count": 0,
+        "decision": "live_provider_rejected",
+        "evidence_id": "sha256:dd1732ff83f62d8799155f69369ab5c8c098b5cc918ae6dbdc770949757e6b20",
+        "external_opt_in": true,
+        "provenance_evidence_id": "sha256:0e9fdb5759bef683c5a71f929cba4d551c1b65784f362536f5e404ae5f186bc1",
+        "provider_failure": "rate_limited",
+        "provisioned_compute_remaining": 0,
+        "queue_empty_after": true,
+        "request_count": 1,
+        "rollback_evidence_id": "sha256:23acd0ada46af06655f1292063599f31e14a847b3b76731916f71e826485f000",
+        "runtime_admitted": false,
+        "satisfies_bounded_live_provider_proof": true,
+        "source": "config/freellmapi/live_provider_receipt.json"
+      },
+      "s83_163_upstream_build": [
+        {
+          "decision": "upstream_build_verified",
+          "evidence_id": "sha256:8b4a0e81c66b10b041269d7e5fbdb6b9c529357829528bc1dcc231c9bfb37c6e",
+          "failed_step": null,
+          "job": "freellmapi-upstream-build (20.20.2)",
+          "node_version": "v20.20.2",
+          "runtime_admitted": false,
+          "step_count": 6
+        },
+        {
+          "decision": "upstream_build_verified",
+          "evidence_id": "sha256:14a75c3456717165016829e98b0bf795bbebf234634d24a0dd552bf9a9f82b85",
+          "failed_step": null,
+          "job": "freellmapi-upstream-build (22.23.2)",
+          "node_version": "v22.23.2",
+          "runtime_admitted": false,
+          "step_count": 6
+        }
+      ]
+    },
+    "url": "https://github.com/sandboxcom/gludd/actions/runs/37427487620",
+    "workflow": "Build and Release"
+  },
+  "candidate_sha": "26e95a6f5749d96ba752e0a824dc8cbad6e256c6",
+  "evidence_id": "sha256:30f2f6e0ade146fbaef0ad632d521581fb17e37c6c05e17d01ac1b54f88d8eb8",
+  "gate": "s83-hosted-candidate-evidence-v1",
+  "molecule": {
+    "conclusion": "success",
+    "jobs_failed": 0,
+    "jobs_other": 0,
+    "jobs_passed": 6,
+    "jobs_running": 0,
+    "run_id": 37427534191,
+    "status": "completed",
+    "url": "https://github.com/sandboxcom/gludd/actions/runs/37427534191",
+    "workflow": "Molecule Tests"
+  },
+  "observed_on": "2026-10-06",
+  "repository": "sandboxcom/gludd",
+  "schema_version": 1,
+  "task_assessments": {
+    "S83.157": {
+      "complete": false,
+      "remaining": [
+        "positive GPU utilization and accepted mixed-provider proof"
+      ]
+    },
+    "S83.158": {
+      "complete": true,
+      "remaining": []
+    },
+    "S83.163": {
+      "complete": true,
+      "remaining": []
+    },
+    "S83.166": {
+      "complete": false,
+      "remaining": [
+        "publication, deployment, and rollback verification"
+      ]
+    }
+  }
+}

@@ -10,17 +10,21 @@ import json
 import os
 import re
 import subprocess
+from collections.abc import Mapping
 from contextlib import suppress
 from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING or __package__:
+    from scripts.process_cleanup import _snapshot_process_cwds
     from scripts.resource_arbiter import resource_path, resource_root
     from scripts.task_scope import task_inventory as _task_inventory
 else:  # pragma: no cover - direct script execution
+    _process_cleanup = import_module("process_cleanup")
     _resource_arbiter = import_module("resource_arbiter")
     _task_scope = import_module("task" + "_scope")
+    _snapshot_process_cwds = _process_cleanup._snapshot_process_cwds
     resource_path = _resource_arbiter.resource_path
     resource_root = _resource_arbiter.resource_root
     _task_inventory = _task_scope.task_inventory
@@ -188,8 +192,17 @@ def _owned_processes_from_output(
     *,
     repository_roots: tuple[Path, ...],
     resource_roots: tuple[Path, ...],
+    ownership_root: Path | None = None,
+    process_cwds: Mapping[int, str] | None = None,
 ) -> list[dict[str, str]]:
-    """Filter a process table to tracked commands with repository ownership."""
+    """Filter tracked process trees using non-conflicting checkout evidence.
+
+    The unscoped form remains useful for a repository-wide diagnostic.  A
+    scoped caller admits a connected tree only when every visible repository,
+    resource, and cwd marker resolves to that one checkout.  This prevents a
+    generic ``make`` parent from lending the observer's namespace to a sibling
+    worktree interpreter.
+    """
     candidates: list[dict[str, str]] = []
     for line in output.splitlines():
         fields = line.strip().split(None, 2)
@@ -202,31 +215,85 @@ def _owned_processes_from_output(
             {"pid": pid, "ppid": ppid, "command": command, "task": _task_label(command)}
         )
 
-    ownership_roots = (*repository_roots, *resource_roots)
-    owned_pids = {
-        process["pid"]
-        for process in candidates
-        if any(_command_mentions_path(process["command"], root) for root in ownership_roots)
-        or any(
-            token in process["command"] for token in _LOCAL_INFERENCE_PROCESS_TOKENS
-        )
+    canonical_repositories = {
+        str(root.resolve(strict=False)): root for root in repository_roots
     }
+    canonical_owner = (
+        str(ownership_root.resolve(strict=False)) if ownership_root is not None else None
+    )
+    current_resource = (
+        str(resource_root(ownership_root).resolve(strict=False))
+        if ownership_root is not None
+        else None
+    )
+    cwd_by_pid = process_cwds or {}
 
-    # A controller may have a relative argv while its interpreter-backed child
-    # carries the checkout path. Keep tracked ancestors and descendants in the
-    # same process tree, but never bridge to an unrelated untracked process.
-    changed = True
-    while changed:
-        changed = False
-        for process in candidates:
-            if process["pid"] in owned_pids:
+    evidence: dict[str, set[str]] = {}
+    for process in candidates:
+        roots: set[str] = set()
+        command = process["command"]
+        for canonical, repository_root in canonical_repositories.items():
+            if _command_mentions_path(command, repository_root):
+                roots.add(canonical)
+        for resource in resource_roots:
+            if not _command_mentions_path(command, resource):
                 continue
-            if process["ppid"] in owned_pids or any(
-                child["ppid"] == process["pid"] and child["pid"] in owned_pids
-                for child in candidates
-            ):
-                owned_pids.add(process["pid"])
-                changed = True
+            canonical_resource = str(resource.resolve(strict=False))
+            roots.add(
+                canonical_owner
+                if canonical_owner is not None and canonical_resource == current_resource
+                else f"resource:{canonical_resource}"
+            )
+        try:
+            cwd = Path(cwd_by_pid[int(process["pid"])]).resolve(strict=False)
+        except (KeyError, OSError, RuntimeError, ValueError):
+            pass
+        else:
+            for canonical, repository_root in canonical_repositories.items():
+                try:
+                    cwd.relative_to(repository_root.resolve(strict=False))
+                except (OSError, RuntimeError, ValueError):
+                    continue
+                roots.add(canonical)
+        evidence[process["pid"]] = roots
+
+    by_pid = {process["pid"]: process for process in candidates}
+    neighbors: dict[str, set[str]] = {pid: set() for pid in by_pid}
+    for process in candidates:
+        pid = process["pid"]
+        parent = process["ppid"]
+        if parent in by_pid:
+            neighbors[pid].add(parent)
+            neighbors[parent].add(pid)
+
+    owned_pids: set[str] = set()
+    visited: set[str] = set()
+    for process in candidates:
+        start = process["pid"]
+        if start in visited:
+            continue
+        component: set[str] = set()
+        pending = [start]
+        while pending:
+            pid = pending.pop()
+            if pid in component:
+                continue
+            component.add(pid)
+            pending.extend(neighbors[pid] - component)
+        visited.update(component)
+        component_evidence = set().union(*(evidence[pid] for pid in component))
+        pathless_inference = any(
+            any(token in by_pid[pid]["command"] for token in _LOCAL_INFERENCE_PROCESS_TOKENS)
+            for pid in component
+        )
+        if canonical_owner is None:
+            admitted = bool(component_evidence) or pathless_inference
+        else:
+            admitted = component_evidence == {canonical_owner} or (
+                not component_evidence and pathless_inference
+            )
+        if admitted:
+            owned_pids.update(component)
 
     return [process for process in candidates if process["pid"] in owned_pids]
 
@@ -384,14 +451,21 @@ def _processes() -> list[dict[str, str]]:
         timeout=10,
         check=True,
     )
+    candidate_pids = [
+        int(row["pid"])
+        for row in _process_rows(result.stdout)
+        if any(token in row["command"] for token in _TRACKED_PROCESS_TOKENS)
+    ]
     tracked = _owned_processes_from_output(
         result.stdout,
         repository_roots=repository_roots,
         resource_roots=_owned_resource_roots(repository_roots),
+        ownership_root=ROOT,
+        process_cwds=_snapshot_process_cwds(candidate_pids),
     )
     observed = _observer_owned_processes_from_output(
         result.stdout,
-        repository_roots=repository_roots,
+        repository_roots=(ROOT,),
     )
     merged = {process["pid"]: process for process in tracked}
     for process in observed:

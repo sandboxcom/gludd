@@ -43,6 +43,9 @@ ALLOWLIST = frozenset({
     # Detached gate-session supervisor: bounded to the configured gate timeout,
     # exits with the exact child, emits state/heartbeats, and occupies no agent slot.
     "start_gate_background.py",
+    # UV cache lease admission is a bounded, heartbeat-emitting lock wait used by
+    # the shard runner; it never polls CI or occupies a delegated-agent slot.
+    "uv_cache_lease.py",
     # Release-only CI observers are bounded, emit heartbeats, and remain blocked
     # from delegated-agent prompts by enforce-no-wait.ts.
     "ci_annotations_poll.py",

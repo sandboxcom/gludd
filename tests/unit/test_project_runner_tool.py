@@ -22,6 +22,19 @@ from general_ludd.mcp.client import MCPClient
 from general_ludd.mcp.registry import MCPTool, MCPToolRegistry
 
 
+@pytest.fixture(autouse=True)
+def _isolate_gate_project_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the gate launcher's project root out of each test's jail policy.
+
+    Background gates deliberately export ``GLUDD_PROJECT_ROOT`` for process
+    ownership.  These unit tests configure their own temporary jail through
+    ``default_workspace`` and must not inherit that unrelated launcher root.
+    Individual tests may still set the variable after this fixture runs when
+    they are exercising the explicit override contract.
+    """
+    monkeypatch.delenv("GLUDD_PROJECT_ROOT", raising=False)
+
+
 def _make_client() -> MCPClient:
     """MCPClient with no external servers — only the builtin will be present."""
     return MCPClient(configs={}, registry=MCPToolRegistry())
@@ -105,6 +118,33 @@ class TestRegisterBuiltinMechanism:
 
 
 class TestRunProjectCheckDispatch:
+    @pytest.mark.asyncio
+    async def test_explicit_project_root_override_is_honored(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """An intentional runtime override still replaces the configured jail."""
+        configured_jail = tmp_path / "configured"
+        configured_jail.mkdir()
+        override_jail = tmp_path / "override"
+        override_jail.mkdir()
+        target = override_jail / "target"
+        target.mkdir()
+        _write_true_project(target)
+        monkeypatch.setenv("GLUDD_PROJECT_ROOT", str(override_jail))
+
+        client = _make_client()
+        register_builtins(client, default_workspace=str(configured_jail))
+
+        result = await client.call_tool(
+            BUILTIN_SERVER_ID,
+            "run_project_check",
+            {"check_name": "test", "workspace": str(target)},
+        )
+
+        assert result["passed"] is True
+
     @pytest.mark.asyncio
     async def test_dispatch_returns_passed_check_result(self, tmp_path: Path) -> None:
         _write_true_project(tmp_path)

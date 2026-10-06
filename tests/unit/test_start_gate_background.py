@@ -88,6 +88,42 @@ def test_launch_publishes_exact_session_pid_state_and_log(
         _stop(result)
 
 
+def test_launch_exports_exact_gate_identity_for_signal_admission(tmp_path: Path) -> None:
+    """Gate descendants receive the exact inherited run/state pair used for retries."""
+
+    receipt = tmp_path / "child-environment.json"
+    command = [
+        sys.executable,
+        "-c",
+        (
+            "import json,os,sys,time; "
+            "open(sys.argv[1], 'w').write(json.dumps({"
+            "'run_id': os.environ.get('GLUDD_GATE_RUN_ID'), "
+            "'state_file': os.environ.get('GLUDD_GATE_STATE_FILE')})); "
+            "time.sleep(0.05)"
+        ),
+        str(receipt),
+    ]
+    result = launch_gate(
+        tmp_path,
+        command,
+        timeout_seconds=30,
+        start_watcher=False,
+    )
+    assert result.process is not None
+    assert result.identity is not None
+    try:
+        assert result.process.wait(timeout=5) == 0
+        inherited = json.loads(receipt.read_text(encoding="utf-8"))
+        assert inherited == {
+            "run_id": result.identity.run_id,
+            "state_file": str(GatePaths.for_root(tmp_path).state_file),
+        }
+    finally:
+        if result.process.poll() is None:
+            _stop(result)
+
+
 def test_live_duplicate_refuses_without_replacing_identity(tmp_path: Path) -> None:
     first = launch_gate(
         tmp_path,
@@ -161,6 +197,46 @@ def test_timeout_terminates_exact_session_and_removes_owned_pid(tmp_path: Path) 
     state = json.loads(paths.state_file.read_text(encoding="utf-8"))
     assert state["state"] == "timed_out"
     assert state["termination_reason"] == "gate-timeout"
+
+
+def test_timeout_publishes_termination_intent_before_signalling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Owned timeout signals are distinguishable from a tool-session SIGTERM."""
+
+    result = launch_gate(
+        tmp_path,
+        _sleep_command(),
+        timeout_seconds=30,
+        start_watcher=False,
+    )
+    assert result.identity is not None
+    observed: dict[str, object] = {}
+
+    def capture_intent(*_args: object, **_kwargs: object) -> None:
+        observed.update(
+            json.loads(
+                GatePaths.for_root(tmp_path).state_file.read_text(encoding="utf-8")
+            )
+        )
+
+    monkeypatch.setattr(launcher, "_terminate_session", capture_intent)
+    try:
+        assert (
+            watch_gate(
+                result.identity,
+                GatePaths.for_root(tmp_path),
+                timeout_seconds=0.01,
+                poll_seconds=0.001,
+                grace_seconds=0.01,
+            )
+            == "timed_out"
+        )
+        assert observed["state"] == "terminating"
+        assert observed["termination_reason"] == "gate-timeout-requested"
+        assert isinstance(observed["termination_requested_at"], str)
+    finally:
+        _stop(result)
 
 
 def test_timeout_escalates_for_owned_group_after_leader_exits(

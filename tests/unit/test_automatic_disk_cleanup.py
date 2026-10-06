@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import ast
+import contextlib
 import json
 import os
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from scripts import automatic_disk_cleanup
@@ -2361,6 +2363,37 @@ def test_shared_uv_cache_preserves_active_or_ambiguous_owners(tmp_path: Path) ->
     assert final_race.skipped == (f"{cache}:active-uv-pids=987",)
 
 
+def test_shared_uv_cache_refuses_a_foreign_worktree_lease(tmp_path: Path) -> None:
+    """Cleanup cannot mutate a host cache leased by a sibling worktree."""
+    cache = tmp_path / "gludd-uv-cache-public-v2"
+    cache.mkdir()
+    foreign_root = tmp_path / "worktree-b"
+    foreign_root.mkdir()
+    mutations: list[str] = []
+
+    @contextlib.contextmanager
+    def busy_lease(_cache_root: Path, *, owner_root: Path):
+        assert owner_root.resolve() != foreign_root.resolve()
+        yield SimpleNamespace(
+            acquired=False,
+            owners=({"owner_root": str(foreign_root.resolve())},),
+        )
+
+    result = automatic_disk_cleanup.prune_shared_uv_cache(
+        cache_root=cache,
+        approved_cache_root=cache,
+        active_uv_pids=lambda: [],
+        run_prune=lambda _path: mutations.append("prune") is None,
+        run_clean=lambda _path: mutations.append("clean") is None,
+        cache_lease=busy_lease,
+    )
+
+    assert mutations == []
+    assert result.skipped == (
+        f"{cache}:active-uv-cache-lease={foreign_root.resolve()}",
+    )
+
+
 def test_unsafe_cache_file_and_removal_failure_are_reported(tmp_path: Path) -> None:
     root = tmp_path / "gludd-worktrees"
     record = _record(root / "finished", "feature/finished")
@@ -2429,6 +2462,44 @@ def test_stale_generated_scratch_cleanup_maps_refusals_and_errors(
     output = capsys.readouterr().out
     assert "action=stale-generated-scratch status=starting" in output
     assert "action=stale-generated-scratch status=complete" in output
+
+
+def test_stale_playwright_browser_cache_is_owned_and_process_safe(
+    tmp_path: Path,
+) -> None:
+    approved = tmp_path.resolve()
+    cache = approved / "gludd-playwright-browsers"
+    cache.mkdir()
+    browser = cache / "webkit" / "browser"
+    browser.parent.mkdir()
+    browser.write_bytes(b"regenerable")
+    for path in (browser, browser.parent, cache):
+        os.utime(path, (100.0, 100.0))
+
+    assert automatic_disk_cleanup._discover_node_cache_roots(approved) == (cache,)
+
+    active = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(cache,),
+        approved_tmp_root=approved,
+        now_epoch=10_000,
+        min_age_seconds=3_600,
+        active_process_pids=lambda _path: [7331],
+    )
+
+    assert active.skipped == (f"{cache}:active-pids=7331",)
+    assert cache.is_dir()
+
+    idle = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(cache,),
+        approved_tmp_root=approved,
+        now_epoch=10_000,
+        min_age_seconds=3_600,
+        active_process_pids=lambda _path: [],
+    )
+
+    assert idle.removed == (str(cache),)
+    assert idle.errors == ()
+    assert not cache.exists()
 
 
 def test_stale_owned_node_cache_cleanup_is_exact_and_visible(
@@ -3567,6 +3638,8 @@ def test_feature_document_records_zdd_rollback_and_long_lived_reports() -> None:
     assert "Rollback" in document
     assert "github.com/astral-sh/uv/issues/11432" in document
     assert "github.com/astral-sh/uv/issues/11694" in document
+    assert "github.com/astral-sh/uv/issues/13883" in document
+    assert "github.com/astral-sh/uv/issues/5731" in document
     assert "github.com/stablyai/orca/issues/10562" in document
     assert "github.com/python/cpython/issues/111246" in document
     assert "github.com/pytest-dev/pytest/discussions/10325" in document
@@ -3584,3 +3657,16 @@ def test_gate_lifecycle_documents_owned_node_cache_reclamation() -> None:
     assert "zero-byte regular-file lookalikes" in document
     assert "github.com/npm/cli/issues/3176" in document
     assert "github.com/npm/npm/issues/2500" in document
+
+
+def test_gate_lifecycle_documents_cross_worktree_signal_admission() -> None:
+    document = (
+        ROOT / "docs" / "features" / "GATE_RESOURCE_LIFECYCLE.md"
+    ).read_text(encoding="utf-8")
+
+    assert "20261006T165826Z-85906a42" in document
+    assert "agent-watchdog-task-signals.jsonl" in document
+    assert "exact historical sender" in document
+    assert "is unrecoverable" in document
+    assert "Rollout is ZDD" in document
+    assert "github.com/astral-sh/uv/issues/13883" in document

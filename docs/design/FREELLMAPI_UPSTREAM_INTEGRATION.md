@@ -904,6 +904,35 @@ or upstream tests into locally owned implementations.
 | Import upstream catalog directly as truth | A signature authenticates bytes, not provider terms, privacy, task fit, or measured quality. |
 | Import upstream discovery, routing, health, failover, envelopes, scheduling, or lifecycle | Duplicates Gludd authority, splits evidence ownership, and creates behavior that cannot be independently disabled for regression and ablation. |
 
+## Exact hosted boundary (2026-10-06)
+
+Build and Release run `37427487620` is bound to exact candidate
+`26e95a6f5749d96ba752e0a824dc8cbad6e256c6`. Its Node `v20.20.2` and
+`v22.23.2` jobs each completed all six exact-source phases with decision
+`upstream_build_verified`, no failed step, and `runtime_admitted: false`. This
+satisfies the previously open hosted upstream-build checkpoint without changing
+the measured HOLD or the serving `v0.9.9` artifact.
+
+The same workflow's green `e2e-providers` job is not used as live proof: it
+received no vLLM, llama.cpp, Azure, AWS, GCP, or RunPod live inputs and reported
+2 passed with 27 skipped tests. The separate tracked receipt is the qualifying
+opt-in boundary. `config/freellmapi/live_provider_receipt.json` records one real
+Z.AI request with `external_opt_in: true`, the honest
+`live_provider_rejected`/`rate_limited` result, zero retained tokens, an empty
+queue, and zero provisioned compute remaining. The rollback and release
+provenance receipts bind its evidence ID while retaining HOLD and
+`runtime_admitted: false`.
+
+That fail-closed result satisfies the task's bounded live-provider proof; it is
+not relabeled as provider success or promotion. This distinction follows the
+practitioner evidence in [issue #608][issue-608] and
+[issue #1210][issue-1210] below: catalog reachability can coexist with unusable
+credentials, and a real provider may terminate through a typed rate limit. With
+the content-addressed accepted/rejected hermetic workload pair and both hosted
+exact-source builds also verified, S83.163 is complete. The exact run
+observations and completion decisions are content-addressed in
+[`s83_hosted_candidate_26e95a6f.json`](../evidence/s83_hosted_candidate_26e95a6f.json).
+
 ## Practitioner and maintenance evidence
 
 The project is young, so no multi-year FreeLLMAPI issue history exists. The

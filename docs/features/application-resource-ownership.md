@@ -200,6 +200,27 @@ the catch-all backlog described in #9575 into current milestone ownership, and
 must derive its count from the same enumerated connection used by status so it
 cannot reproduce the divergent aggregate in #193565.
 
+## Exact hosted closeout evidence (2026-10-06)
+
+Candidate `26e95a6f5749d96ba752e0a824dc8cbad6e256c6` completed hosted
+Build and Release run `37427487620` with 27 passing jobs and zero failures. The
+only two non-passing jobs were the intentionally skipped `release` and
+`release_source_proof` tag-only stages. Its dedicated
+`claim-before-provision-acceptance` job passed 97 tests with all Azure identity
+variables empty, live cloud execution disabled, and outbound proxies confined to
+an unreachable loopback port. Hosted Molecule run `37427534191` independently
+completed all six jobs successfully.
+
+This closes S83.158 because the exact candidate exercised the same durable
+discover, rank, claim, provision, perform, verify, and release contract already
+proved locally, while making accidental paid acquisition fail before spend. The
+content-addressed
+[`s83_hosted_candidate_26e95a6f.json`](../evidence/s83_hosted_candidate_26e95a6f.json)
+receipt binds both immutable run identities and the task decision. The long-lived
+practitioner reports #9575 and #193565 above remain relevant: completion is
+derived from enumerated task/run evidence rather than an aggregate green badge,
+and no later release task is closed by this narrower proof.
+
 ## Resource bounds and operations
 
 Validation is a single Python AST pass over explicit paths, starts no daemon, and
