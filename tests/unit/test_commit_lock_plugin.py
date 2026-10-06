@@ -267,11 +267,15 @@ class TestMakefileLockTarget:
     def test_commit_lock_acquire_uses_flock_or_fcntl(self):
         makefile = MAKEFILE_PATH.read_text()
         target_block = re.search(
-            r"_commit-lock-acquire:\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
+            r"_commit-lock-acquire:[^\n]*\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
             makefile,
             re.DOTALL,
         )
         assert target_block, "_commit-lock-acquire recipe block not found"
+        declaration = makefile[target_block.start() : target_block.start(1)]
+        assert "_gate-mutation-guard" in declaration, (
+            "_commit-lock-acquire must preserve the active-gate history guard"
+        )
         recipe = target_block.group(1)
         assert "flock" in recipe or "fcntl" in recipe, (
             "_commit-lock-acquire must use flock or fcntl fallback"

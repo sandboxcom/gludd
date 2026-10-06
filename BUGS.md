@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-05 — (resolved locally; replacement exact gate required) Combined candidate exposed unowned quality and repair-selector drift
+
+- **What happened**: The first combined development head passed its 218 affected gate-lifecycle tests, then the CI-ledger evidence replay exposed two additional deterministic failures before push: 222 source files were below the unchanged maintainability-index floor budget of 220, and the commit-lock structural test could no longer parse the intentional `_gate-mutation-guard` prerequisite. The push guard also printed abbreviated 12-character family IDs even though the repair command accepts only complete 64-character identities.
+- **Root cause**: Passive FreeLLMAPI replay contracts and persistent-vector trie primitives remained embedded in already dense implementation modules. Separately, the structural parser assumed a prerequisite-free target declaration, and the status surface shortened an identifier that was also an operator input.
+- **Fix applied**: Passive three-arm value contracts and persistent-vector trie primitives now have cohesive modules while their established imports retain object identity. The lock test accepts prerequisites and independently requires the active-gate mutation guard. CI status and push blockers now emit complete copyable family identities.
+- **Evidence**: The maintainability count and lock regression pass without raising either threshold; the behavior replay passes 72/72; persistent-vector coverage is 98% for both measured files; the complete FreeLLMAPI three-arm profile passes 77/77 at 92% aggregate with every file above 75%; scoped lint, types, docstrings, and TDD checks are green. Exact commit, full gate, and hosted proof remain required.
+- **Practitioner evidence**: `docs/features/CI_FAILURE_LEDGER.md` retains the long-lived GitHub Actions reports about duplicate candidates, exact-head identity, partial reruns, and artifact loss. Those reports reinforce using immutable, directly reusable identifiers at every repair boundary rather than asking an operator to reconstruct hidden state.
+- **Lesson**: Validate the merged candidate rather than only its parents, and never abbreviate an identity on the surface that an adjacent command requires as exact input.
+
 ### 2026-10-05 — (replayed locally; replacement hosted proof required) Active-workflow snapshot understated the terminal failure set
 
 - **What happened**: While Build/Release run `37381218767` was still active, three completed unit jobs exposed four assertions and were reported as the complete repair set. The terminal run actually had four failed jobs: `other` batch 22 later added both `fake-local` and `fake-azure` cases of `test_self_improvement_uses_common_todo_ranking_compute_and_real_edit`, each observing `['present']` instead of the required `['present', 'absent']` sandbox-state sequence.

@@ -209,6 +209,26 @@ def test_push_guard_reports_all_open_failures_not_only_the_first() -> None:
     }
 
 
+def test_status_and_push_guard_expose_copyable_full_family_ids() -> None:
+    """Repair instructions must not expose an unusable abbreviated selector."""
+    module = _load()
+    ledger = module.new_ledger()
+    module.observe_payload(ledger, _failed_payload(), observed_at="first")
+    family_ids = sorted(ledger["families"])
+
+    status = "\n".join(module.status_lines(ledger))
+    blockers = "\n".join(
+        module.guard_push(
+            ledger,
+            SHA_REPAIR,
+            is_ancestor=lambda _old, _new: True,
+        )
+    )
+
+    assert all(f"family={family_id}" in status for family_id in family_ids)
+    assert all(f"family={family_id}" in blockers for family_id in family_ids)
+
+
 def test_verified_repair_receipts_unlock_descendant_push_but_never_failed_sha() -> None:
     module = _load()
     ledger = module.new_ledger()

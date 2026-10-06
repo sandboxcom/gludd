@@ -148,6 +148,28 @@ and bounded context from each failed job. On candidate
 `fake-azure` cases pass together 2/2; that is local repair evidence, not hosted
 resolution. A replacement exact-SHA workflow must still resolve the families.
 
+## Candidate-merge repair preflight
+
+The combined v0.1.1 candidate demonstrated why repair evidence runs before a
+push. Parent branches were independently green, but their merged source set
+contained 222 files below the unchanged maintainability-index floor budget of
+220, and one structural lock test still assumed that `_commit-lock-acquire` had
+no prerequisite. Cohesive extraction restored the existing budget, while the
+test now parses prerequisites and independently requires the active-gate
+history guard. No threshold or production behavior was weakened.
+
+Repair selectors are exact identities. `ci-failure-status` and the central push
+guard therefore emit the complete 64-character `family_id`; the repair command
+accepts that value directly. Short display-only prefixes are not actionable
+repair input. Evidence variables remain structured one-assignment arguments;
+when one family needs multiple node IDs, use a deterministic test target or a
+bounded filename glob rather than embedding shell syntax.
+
+This boundary applies the same practitioner lessons recorded below: duplicate
+checks and partial reruns make branch labels ambiguous, so the candidate SHA,
+failure family, evidence command, and hosted resolution must all be immutable
+and directly reusable.
+
 ## Practitioner findings
 
 This design addresses failure modes reported by GitHub Actions users:

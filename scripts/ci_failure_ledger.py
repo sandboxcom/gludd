@@ -459,7 +459,7 @@ def guard_push(
         if family["branch"] != branch or family["status"] == "resolved":
             continue
         failed_sha = _latest_failed_sha(family)
-        label = f"{family['workflow']}/{family['job']} family={family_id[:12]}"
+        label = f"{family['workflow']}/{family['job']} family={family_id}"
         if head_sha == failed_sha:
             blockers.append(f"{label}: push is the same SHA as the recorded failure")
         elif family["status"] == "open":
@@ -486,7 +486,7 @@ def status_lines(ledger: dict[str, Any]) -> list[str]:
         steps = ", ".join(family["failed_steps"])
         lines.append(
             f"{status.upper()} {family['branch']} {family['workflow']}/{family['job']} "
-            f"family={family_id[:12]} steps={steps} occurrences={len(family['occurrences'])}"
+            f"family={family_id} steps={steps} occurrences={len(family['occurrences'])}"
         )
     lines.append(
         "CI_FAILURE_LEDGER_SUMMARY "

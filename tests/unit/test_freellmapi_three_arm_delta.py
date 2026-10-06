@@ -19,10 +19,22 @@ from general_ludd.models.freellmapi.three_arm_delta import (
     exact_mcnemar_pvalue,
     paired_bootstrap_lcb,
 )
+from general_ludd.models.freellmapi.three_arm_types import (
+    ReplayObservation as CanonicalReplayObservation,
+)
+from general_ludd.models.freellmapi.three_arm_types import (
+    ReplayResources as CanonicalReplayResources,
+)
 
 CANDIDATE_ID = "sha256:69d63b09199c37f38c02c711559b15e0fd5dc5ecc0e64e2d94c597dc5e5d3998"
 CANDIDATE_BUNDLE = "e9e5d87a0d1e9697e0681b52afb719b7fd1fcdd601bd7fcbaf430cc502114845"
 ADMITTED_BUNDLE = "d3078364c02f482909681e21895c4e86dc11cc66c1da7ae2007ad35b096ddf7d"
+
+
+def test_delta_reexports_canonical_observation_contracts() -> None:
+    """The statistics facade must preserve its established import surface."""
+    assert ReplayObservation is CanonicalReplayObservation
+    assert ReplayResources is CanonicalReplayResources
 
 
 def _contracts():  # type: ignore[no-untyped-def]
