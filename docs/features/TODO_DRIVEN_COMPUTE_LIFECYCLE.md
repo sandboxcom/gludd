@@ -243,11 +243,18 @@ Every lifecycle transition is content-free and secret-safe:
 
 The hermetic E2E in
 `tests/e2e/test_self_improve_private_policy_e2e.py` runs the real managed
-self-improvement service for local and Azure-shaped provider modes. It persists
-ordinary and self-improvement todos in the real repository, proves common
-priority ranking, reconciles compute, applies an approved file edit, records the
-provider/evaluator/outcome evidence, and reconciles compute absent after demand
-reaches zero.
+self-improvement service for local and Azure-shaped provider modes. Its durable
+chain case lets the periodic producer discover and persist the self-improvement
+todo, replaces the bounded request with its immutable prepared plan, and uses
+`SelfImproveApprovalManager` to release it. The normal scheduler then ranks and
+claims it, provisions the fake execution environment, applies a real public-file
+edit, persists the managed task-return identity, verifies completion evidence,
+requires a promotion receipt, commits `complete`, and releases the exact owned
+environment. The case never injects a self-improvement todo row and never uses
+cancellation to manufacture zero demand. A companion ranking case persists an
+ordinary competitor and proves the approved self-improvement item wins the
+shared priority queue. Both cases assert content-free traces and exclude private
+paths, source canaries, and provider credentials.
 
 `tests/security/test_eventloop_redteam.py` runs the same two-session claim race
 with simultaneous `asyncio.gather()` calls for ordinary and managed
@@ -401,7 +408,7 @@ chained shutdown handler independently, preserving zero-downtime operation.
 
 ## Long-lived operator reports that shaped the design
 
-Research refreshed on 2026-09-27 includes these scheduler and worker reports:
+Research refreshed on 2026-10-05 includes these scheduler and worker reports:
 
 - SQLAlchemy users have repeatedly asked how to make competing updates safe;
   maintainers clarify that `with_for_update()` affects a preceding `SELECT`,
@@ -417,6 +424,18 @@ Research refreshed on 2026-09-27 includes these scheduler and worker reports:
   broker copies. Gludd keeps resume claiming, todo CAS, and execution leases as
   separate durable fences and makes malformed claim state fail closed:
   [Celery discussion #9460](https://github.com/celery/celery/discussions/9460).
+- An Azure Container Apps operator reported a queue-driven, long-running worker
+  being scaled down before it finished and before its locked message could be
+  deleted. Gludd therefore counts `active`, `awaiting_result`,
+  `reviewing_return`, and `needs_more_work` as retained demand and releases only
+  after the terminal database commit:
+  [Azure Container Apps discussion #725](https://github.com/microsoft/azure-container-apps/discussions/725).
+- Another event-driven Container Apps report found that suspend/resume could
+  leave five messages unprocessed and wake only on the sixth, even after scaler
+  threshold changes. Gludd records discovery, approval, claim, and ownership in
+  its own durable repository instead of treating a provider queue threshold as
+  the work ledger:
+  [Azure Container Apps issue #1458](https://github.com/microsoft/azure-container-apps/issues/1458).
 - Sidekiq's long-lived FAQ warns both that a job can run before the creating
   database transaction commits and that restarted work is at-least-once. Gludd
   therefore closes the claim transaction before its first provider side effect
