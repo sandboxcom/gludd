@@ -13,15 +13,21 @@ import pytest
 from scripts.verify_release_asset_matrix import (
     FOUNDATION_RELEASE_NAMES,
     REQUIRED_SMOKE_CHECKS,
+    ROLLBACK_RECEIPT_SCHEMA_VERSION,
     distribution_version,
     main,
     referenced_collection_artifacts,
     verify_release_asset_matrix,
     write_release_manifest,
+    write_rollback_receipt,
 )
 
 VERSION = "0.1.0-beta.4"
 DIST_VERSION = "0.1.0b4"
+PRIOR_VERSION = "0.1.0-beta.3"
+SOURCE_SHA = "a" * 40
+PRIOR_ROUTE_SHA256 = "b" * 64
+ACTIVE_WORK_SHA256 = "c" * 64
 
 
 def _collection_tar(path: Path, name: str, version: str) -> None:
@@ -103,6 +109,36 @@ def _refresh_checksums(assets: Path) -> None:
     (assets / "SHA256SUMS").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _receipt_evidence_sha256(payload: dict[str, object]) -> str:
+    evidence = dict(payload)
+    evidence.pop("evidence_sha256", None)
+    encoded = json.dumps(
+        evidence,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _write_valid_rollback_receipt(assets: Path) -> Path:
+    return write_rollback_receipt(
+        assets,
+        VERSION,
+        source_sha=SOURCE_SHA,
+        prior_version=PRIOR_VERSION,
+        candidate_asset=f"gludd-{VERSION}-linux-x86_64.tar.gz",
+        candidate_observed_version=VERSION,
+        restored_observed_version=PRIOR_VERSION,
+        candidate_health="passed",
+        restored_health="passed",
+        prior_route_before_sha256=PRIOR_ROUTE_SHA256,
+        prior_route_after_sha256=PRIOR_ROUTE_SHA256,
+        active_work_before_sha256=ACTIVE_WORK_SHA256,
+        active_work_after_sha256=ACTIVE_WORK_SHA256,
+    )
+
+
 def _complete_matrix(tmp_path: Path) -> tuple[Path, Path]:
     repo, assets = tmp_path / "repo", tmp_path / "assets"
     config = repo / "config" / "ansible"
@@ -175,6 +211,8 @@ def _complete_matrix(tmp_path: Path) -> tuple[Path, Path]:
 
     _python_distributions(assets)
 
+    _write_valid_rollback_receipt(assets)
+
     manifest = assets / f"gludd-release-manifest-{VERSION}.json"
     manifest.write_text(
         json.dumps(
@@ -199,6 +237,343 @@ def _complete_matrix(tmp_path: Path) -> tuple[Path, Path]:
 def test_complete_release_asset_matrix_passes(tmp_path: Path) -> None:
     assets, repo = _complete_matrix(tmp_path)
     assert verify_release_asset_matrix(assets, VERSION, repo) == []
+
+
+def test_rollback_receipt_is_checksum_bound_and_fans_in_every_category(
+    tmp_path: Path,
+) -> None:
+    assets, _repo = _complete_matrix(tmp_path)
+    receipt = assets / f"gludd-rollback-receipt-{VERSION}.json"
+    payload = json.loads(receipt.read_text(encoding="utf-8"))
+
+    assert payload["schema_version"] == ROLLBACK_RECEIPT_SCHEMA_VERSION
+    assert payload["version"] == VERSION
+    assert payload["source_sha"] == SOURCE_SHA
+    assert payload["candidate"] == {
+        "activation": "passed",
+        "asset": f"gludd-{VERSION}-linux-x86_64.tar.gz",
+        "health": "passed",
+        "observed_version": VERSION,
+        "sha256": hashlib.sha256(
+            (assets / f"gludd-{VERSION}-linux-x86_64.tar.gz").read_bytes()
+        ).hexdigest(),
+    }
+    assert payload["rollback"] == {
+        "health": "passed",
+        "immutable": True,
+        "observed_version": PRIOR_VERSION,
+        "prior_route_sha256": PRIOR_ROUTE_SHA256,
+        "prior_version": PRIOR_VERSION,
+        "restoration": "passed",
+        "restored_route_sha256": PRIOR_ROUTE_SHA256,
+    }
+    assert payload["active_work"] == {
+        "after_sha256": ACTIVE_WORK_SHA256,
+        "before_sha256": ACTIVE_WORK_SHA256,
+        "unchanged": True,
+    }
+    fan_in = payload["platform_fan_in"]
+    assert fan_in["status"] == "passed"
+    assert fan_in["categories"] == sorted(REQUIRED_SMOKE_CHECKS)
+    assert set(fan_in["attestations"]) == {
+        f"gludd-smoke-all-{VERSION}.json"
+    }
+    assert payload["evidence_sha256"] == _receipt_evidence_sha256(payload)
+
+    checksum_line = next(
+        line
+        for line in (assets / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
+        if line.endswith(f"  {receipt.name}")
+    )
+    assert checksum_line.split()[0] == hashlib.sha256(receipt.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize(
+    ("section", "field", "value", "error_fragment"),
+    [
+        ("candidate", "activation", "failed", "candidate activation"),
+        ("candidate", "observed_version", "wrong", "candidate version"),
+        ("candidate", "health", "failed", "candidate health"),
+        ("rollback", "restoration", "failed", "prior restoration"),
+        ("rollback", "observed_version", "wrong", "restored version"),
+        ("rollback", "health", "failed", "restored health"),
+        ("rollback", "restored_route_sha256", "d" * 64, "not immutable"),
+        ("active_work", "after_sha256", "d" * 64, "active work changed"),
+    ],
+)
+def test_rollback_receipt_rejects_false_or_inconsistent_proof(
+    tmp_path: Path,
+    section: str,
+    field: str,
+    value: object,
+    error_fragment: str,
+) -> None:
+    assets, repo = _complete_matrix(tmp_path)
+    receipt = assets / f"gludd-rollback-receipt-{VERSION}.json"
+    payload = json.loads(receipt.read_text(encoding="utf-8"))
+    payload[section][field] = value
+    payload["evidence_sha256"] = _receipt_evidence_sha256(payload)
+    receipt.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _refresh_checksums(assets)
+
+    assert any(
+        error_fragment in error
+        for error in verify_release_asset_matrix(assets, VERSION, repo)
+    )
+
+
+def test_rollback_receipt_rejects_incomplete_or_rebound_platform_fan_in(
+    tmp_path: Path,
+) -> None:
+    assets, repo = _complete_matrix(tmp_path)
+    receipt = assets / f"gludd-rollback-receipt-{VERSION}.json"
+    payload = json.loads(receipt.read_text(encoding="utf-8"))
+    payload["platform_fan_in"]["categories"].pop()
+    payload["platform_fan_in"]["attestations"] = {"invented.json": "d" * 64}
+    payload["evidence_sha256"] = _receipt_evidence_sha256(payload)
+    receipt.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _refresh_checksums(assets)
+
+    errors = verify_release_asset_matrix(assets, VERSION, repo)
+    assert any("platform category fan-in is incomplete" in error for error in errors)
+    assert any("smoke attestation digest fan-in is stale" in error for error in errors)
+
+
+def test_rollback_receipt_rejects_tampering_even_with_refreshed_outer_checksum(
+    tmp_path: Path,
+) -> None:
+    assets, repo = _complete_matrix(tmp_path)
+    receipt = assets / f"gludd-rollback-receipt-{VERSION}.json"
+    payload = json.loads(receipt.read_text(encoding="utf-8"))
+    payload["active_work"]["unchanged"] = False
+    receipt.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _refresh_checksums(assets)
+
+    errors = verify_release_asset_matrix(assets, VERSION, repo)
+    assert any("receipt evidence digest mismatch" in error for error in errors)
+    assert any("active work changed" in error for error in errors)
+
+
+def test_rollback_receipt_is_bound_to_manifest_source_and_candidate_bytes(
+    tmp_path: Path,
+) -> None:
+    assets, repo = _complete_matrix(tmp_path)
+    receipt = assets / f"gludd-rollback-receipt-{VERSION}.json"
+    payload = json.loads(receipt.read_text(encoding="utf-8"))
+    payload["source_sha"] = "d" * 40
+    payload["evidence_sha256"] = _receipt_evidence_sha256(payload)
+    receipt.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    candidate = assets / f"gludd-{VERSION}-linux-x86_64.tar.gz"
+    candidate.write_bytes(candidate.read_bytes() + b"rebound")
+    _refresh_checksums(assets)
+
+    errors = verify_release_asset_matrix(assets, VERSION, repo)
+    assert any("source SHA does not match release manifest" in error for error in errors)
+    assert any("candidate checksum mismatch" in error for error in errors)
+
+
+def test_missing_or_malformed_rollback_receipt_fails_closed(tmp_path: Path) -> None:
+    assets, repo = _complete_matrix(tmp_path)
+    receipt = assets / f"gludd-rollback-receipt-{VERSION}.json"
+    receipt.unlink()
+    assert any(
+        "missing rollback receipt" in error
+        for error in verify_release_asset_matrix(assets, VERSION, repo)
+    )
+
+    receipt.write_text("[]\n", encoding="utf-8")
+    _refresh_checksums(assets)
+    assert any(
+        "JSON root must be an object" in error
+        for error in verify_release_asset_matrix(assets, VERSION, repo)
+    )
+
+
+@pytest.mark.parametrize(
+    ("case", "error_fragment"),
+    [
+        ("root_fields", "schema fields"),
+        ("schema_version", "schema version"),
+        ("release_version", "release version"),
+        ("source_sha", "source SHA is invalid"),
+        ("candidate_object", "candidate evidence must be an object"),
+        ("candidate_fields", "candidate evidence fields"),
+        ("candidate_asset_unsafe", "candidate asset name is unsafe"),
+        ("candidate_asset_missing", "candidate asset is missing"),
+        ("candidate_sha", "candidate checksum mismatch"),
+        ("rollback_object", "prior restoration evidence must be an object"),
+        ("rollback_fields", "prior restoration fields"),
+        ("prior_version_empty", "prior version is invalid"),
+        ("prior_version_same", "prior version is not distinct"),
+        ("rollback_digest", "prior route digests are invalid"),
+        ("rollback_immutable", "prior restoration is not immutable"),
+        ("active_work_object", "active work evidence must be an object"),
+        ("active_work_fields", "active work evidence fields"),
+        ("active_work_digest", "active work changed"),
+        ("fan_in_object", "platform fan-in must be an object"),
+        ("fan_in_fields", "platform fan-in fields"),
+        ("fan_in_status", "platform fan-in is not passed"),
+    ],
+)
+def test_rollback_receipt_schema_refuses_incomplete_or_ambiguous_claims(
+    tmp_path: Path,
+    case: str,
+    error_fragment: str,
+) -> None:
+    assets, repo = _complete_matrix(tmp_path)
+    receipt = assets / f"gludd-rollback-receipt-{VERSION}.json"
+    payload = json.loads(receipt.read_text(encoding="utf-8"))
+
+    if case == "root_fields":
+        payload["unexpected"] = True
+    elif case == "schema_version":
+        payload["schema_version"] = 2
+    elif case == "release_version":
+        payload["version"] = "wrong"
+    elif case == "source_sha":
+        payload["source_sha"] = "short"
+    elif case == "candidate_object":
+        payload["candidate"] = []
+    elif case == "candidate_fields":
+        payload["candidate"].pop("activation")
+    elif case == "candidate_asset_unsafe":
+        payload["candidate"]["asset"] = "../artifact"
+    elif case == "candidate_asset_missing":
+        payload["candidate"]["asset"] = "absent.tar.gz"
+    elif case == "candidate_sha":
+        payload["candidate"]["sha256"] = "d" * 64
+    elif case == "rollback_object":
+        payload["rollback"] = []
+    elif case == "rollback_fields":
+        payload["rollback"].pop("restoration")
+    elif case == "prior_version_empty":
+        payload["rollback"]["prior_version"] = ""
+    elif case == "prior_version_same":
+        payload["rollback"]["prior_version"] = VERSION
+        payload["rollback"]["observed_version"] = VERSION
+    elif case == "rollback_digest":
+        payload["rollback"]["prior_route_sha256"] = "short"
+    elif case == "rollback_immutable":
+        payload["rollback"]["immutable"] = False
+    elif case == "active_work_object":
+        payload["active_work"] = []
+    elif case == "active_work_fields":
+        payload["active_work"].pop("unchanged")
+    elif case == "active_work_digest":
+        payload["active_work"]["before_sha256"] = "short"
+    elif case == "fan_in_object":
+        payload["platform_fan_in"] = []
+    elif case == "fan_in_fields":
+        payload["platform_fan_in"].pop("status")
+    elif case == "fan_in_status":
+        payload["platform_fan_in"]["status"] = "failed"
+    else:
+        raise AssertionError(case)
+
+    payload["evidence_sha256"] = _receipt_evidence_sha256(payload)
+    receipt.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _refresh_checksums(assets)
+
+    assert any(
+        error_fragment in error
+        for error in verify_release_asset_matrix(assets, VERSION, repo)
+    )
+
+
+def test_write_rollback_receipt_refuses_unproven_or_ambiguous_evidence(
+    tmp_path: Path,
+) -> None:
+    assets, _repo = _complete_matrix(tmp_path)
+    candidate = assets / f"gludd-{VERSION}-linux-x86_64.tar.gz"
+    candidate_sha256 = hashlib.sha256(candidate.read_bytes()).hexdigest()
+
+    with pytest.raises(ValueError, match="active work"):
+        write_rollback_receipt(
+            assets,
+            VERSION,
+            source_sha=SOURCE_SHA,
+            prior_version=PRIOR_VERSION,
+            candidate_asset=candidate.name,
+            candidate_observed_version=VERSION,
+            restored_observed_version=PRIOR_VERSION,
+            candidate_health="passed",
+            restored_health="passed",
+            prior_route_before_sha256=PRIOR_ROUTE_SHA256,
+            prior_route_after_sha256=PRIOR_ROUTE_SHA256,
+            active_work_before_sha256=ACTIVE_WORK_SHA256,
+            active_work_after_sha256="d" * 64,
+        )
+
+    with pytest.raises(ValueError, match="distinct"):
+        write_rollback_receipt(
+            assets,
+            VERSION,
+            source_sha=SOURCE_SHA,
+            prior_version=PRIOR_VERSION,
+            candidate_asset=candidate.name,
+            candidate_observed_version=VERSION,
+            restored_observed_version=PRIOR_VERSION,
+            candidate_health="passed",
+            restored_health="passed",
+            prior_route_before_sha256=candidate_sha256,
+            prior_route_after_sha256=candidate_sha256,
+            active_work_before_sha256=ACTIVE_WORK_SHA256,
+            active_work_after_sha256=ACTIVE_WORK_SHA256,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error_fragment"),
+    [
+        ("source_sha", "short", "source SHA"),
+        ("prior_version", VERSION, "prior version"),
+        ("candidate_observed_version", "wrong", "candidate observed version"),
+        ("restored_observed_version", "wrong", "restored observed version"),
+        ("candidate_health", "failed", "health"),
+        ("restored_health", "failed", "health"),
+        ("candidate_asset", "../unsafe", "safe basename"),
+        ("candidate_asset", "absent.tar.gz", "non-empty staged file"),
+        ("prior_route_before_sha256", "short", "prior route evidence"),
+        ("prior_route_after_sha256", "d" * 64, "not immutable"),
+        ("active_work_before_sha256", "short", "active work evidence"),
+    ],
+)
+def test_write_rollback_receipt_validates_every_external_claim(
+    tmp_path: Path,
+    field: str,
+    value: str,
+    error_fragment: str,
+) -> None:
+    assets, _repo = _complete_matrix(tmp_path)
+    kwargs = {
+        "source_sha": SOURCE_SHA,
+        "prior_version": PRIOR_VERSION,
+        "candidate_asset": f"gludd-{VERSION}-linux-x86_64.tar.gz",
+        "candidate_observed_version": VERSION,
+        "restored_observed_version": PRIOR_VERSION,
+        "candidate_health": "passed",
+        "restored_health": "passed",
+        "prior_route_before_sha256": PRIOR_ROUTE_SHA256,
+        "prior_route_after_sha256": PRIOR_ROUTE_SHA256,
+        "active_work_before_sha256": ACTIVE_WORK_SHA256,
+        "active_work_after_sha256": ACTIVE_WORK_SHA256,
+    }
+    kwargs[field] = value
+
+    with pytest.raises(ValueError, match=error_fragment):
+        write_rollback_receipt(assets, VERSION, **kwargs)
+
+
+def test_write_rollback_receipt_requires_complete_smoke_fan_in(tmp_path: Path) -> None:
+    assets, _repo = _complete_matrix(tmp_path)
+    smoke = assets / f"gludd-smoke-all-{VERSION}.json"
+    smoke.write_text(
+        json.dumps({"version": VERSION, "checks": {"linux_tar": "passed"}}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="platform smoke fan-in incomplete"):
+        _write_valid_rollback_receipt(assets)
 
 
 def test_missing_platform_package_fails_closed(tmp_path: Path) -> None:
@@ -607,6 +982,37 @@ def test_empty_asset_stale_foundation_and_installer_shebang_are_rejected(
 
 def test_write_manifest_and_cli_modes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assets, repo = _complete_matrix(tmp_path)
+    assert main(
+        [
+            "write-rollback-receipt",
+            str(assets),
+            VERSION,
+            "--source-sha",
+            "b" * 40,
+            "--prior-version",
+            PRIOR_VERSION,
+            "--candidate-asset",
+            f"gludd-{VERSION}-linux-x86_64.tar.gz",
+            "--candidate-observed-version",
+            VERSION,
+            "--restored-observed-version",
+            PRIOR_VERSION,
+            "--candidate-health",
+            "passed",
+            "--restored-health",
+            "passed",
+            "--prior-route-before-sha256",
+            PRIOR_ROUTE_SHA256,
+            "--prior-route-after-sha256",
+            PRIOR_ROUTE_SHA256,
+            "--active-work-before-sha256",
+            ACTIVE_WORK_SHA256,
+            "--active-work-after-sha256",
+            ACTIVE_WORK_SHA256,
+        ]
+    ) == 0
+    assert "ROLLBACK_RECEIPT_WRITTEN" in capsys.readouterr().out
+
     manifest = write_release_manifest(assets, VERSION, "b" * 40)
     payload = json.loads(manifest.read_text(encoding="utf-8"))
     assert payload["source_sha"] == "b" * 40
@@ -615,7 +1021,7 @@ def test_write_manifest_and_cli_modes(tmp_path: Path, capsys: pytest.CaptureFixt
     with pytest.raises(ValueError, match="source SHA"):
         write_release_manifest(assets, VERSION, "short")
 
-    assert main(["write-manifest", str(assets), VERSION, "--source-sha", "c" * 40]) == 0
+    assert main(["write-manifest", str(assets), VERSION, "--source-sha", "b" * 40]) == 0
     assert "RELEASE_MANIFEST_WRITTEN" in capsys.readouterr().out
 
     lines = [

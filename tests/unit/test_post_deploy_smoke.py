@@ -195,3 +195,68 @@ class TestPostDeployDebValidation:
         assert needle in src, (
             f"release job must reference '{needle}' for .deb post-deploy validation"
         )
+
+
+class TestPublishedRollbackReceipt:
+    """The published matrix must carry a hermetic, fail-closed rollback proof."""
+
+    def _receipt_step(self) -> dict[str, str]:
+        steps = _release_job_steps(_workflow_source())
+        matches = [
+            step
+            for step in steps
+            if "rollback receipt" in step["name"].lower()
+        ]
+        assert len(matches) == 1, (
+            "release job must contain exactly one checksum-bound rollback receipt step"
+        )
+        return matches[0]
+
+    def test_receipt_rehearsal_is_hermetic_and_uses_the_matrix_verifier(self) -> None:
+        body = self._receipt_step()["body"]
+
+        assert "write-rollback-receipt" in body
+        assert "gludd-rollback-rehearsal-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" in body
+        assert "--candidate-observed-version" in body
+        assert "--restored-observed-version" in body
+        assert "--prior-route-before-sha256" in body
+        assert "--prior-route-after-sha256" in body
+        assert "--active-work-before-sha256" in body
+        assert "--active-work-after-sha256" in body
+        assert "0.1.0-beta.4" in body
+        assert not re.search(
+            r"\b(?:gh|curl|wget|kubectl|helm|docker\s+push|az|aws|gcloud)\b",
+            body,
+            re.IGNORECASE,
+        ), "rollback rehearsal must not publish, deploy, or mutate a network service"
+
+    def test_receipt_is_created_before_manifest_checksum_attestation_and_publish(
+        self,
+    ) -> None:
+        src = _workflow_source()
+        receipt = src.index("- name: Write checksum-bound rollback receipt")
+        manifest = src.index("- name: Write release provenance manifest")
+        checksums = src.index("- name: Generate SHA256SUMS aggregate")
+        attestation = src.index("- name: Attest release asset provenance")
+        publish = src.index("uses: softprops/action-gh-release@")
+
+        assert receipt < manifest < checksums < attestation < publish
+
+    def test_receipt_rehearsal_proves_activation_restoration_and_work_continuity(
+        self,
+    ) -> None:
+        body = self._receipt_step()["body"]
+
+        for needle in (
+            'tar -xzf "$candidate_archive"',
+            '"$candidate_binary" version',
+            '"$candidate_binary" --help',
+            'cp "$prior_route" "$active_route"',
+            'cmp "$prior_route" "$active_route"',
+            'candidate_health="passed"',
+            'restored_health="passed"',
+        ):
+            assert needle in body
+
+        assert body.count('sha256sum "$active_work"') == 2
+        assert body.count('sha256sum "$active_route"') >= 1
