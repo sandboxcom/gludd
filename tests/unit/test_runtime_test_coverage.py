@@ -22,6 +22,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 HOOK_RUNTIME = ROOT / "scripts" / "test_hook_runtime.py"
+HOOK_RUNTIME_CASES = (
+    ROOT / "scripts" / "hook_runtime" / "cases_core.py",
+    ROOT / "scripts" / "hook_runtime" / "cases_scheduling.py",
+    ROOT / "scripts" / "hook_runtime" / "cases_safety.py",
+    ROOT / "scripts" / "hook_runtime" / "cases_lifecycle.py",
+)
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 PLUGINS_DIR = ROOT / ".opencode" / "plugins"
 
@@ -29,6 +35,14 @@ EXEMPT = {
     "shared.ts",
     "hot_reload.ts",
 }
+
+
+def _runtime_source() -> str:
+    """Return the explicit facade and case-module source as one audit stream."""
+    return "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (HOOK_RUNTIME, *HOOK_RUNTIME_CASES)
+    )
 
 # ---- source analysis helpers ----
 
@@ -50,7 +64,7 @@ def _plugin_basenames_from_test_source() -> set[str]:
       2. Factory helper:  _factory_plugin_code("enforce-XXX.ts", ...)
       3. PluginAPI helper: _pluginapi_code("enforce-XXX.ts", ...)
     """
-    source = HOOK_RUNTIME.read_text()
+    source = _runtime_source()
     imported = set(
         re.findall(r"await import\('[^']*/(enforce-\w[\w-]*\.ts)'\)", source)
     )
@@ -70,12 +84,12 @@ def _plugin_basenames_from_test_source() -> set[str]:
 
 def _test_function_names() -> set[str]:
     """Return all test_* function names in the runtime test file."""
-    source = HOOK_RUNTIME.read_text()
-    tree = ast.parse(source)
     return {
         node.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
+        for path in HOOK_RUNTIME_CASES
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if isinstance(node, ast.FunctionDef)
+        and node.name.startswith("test_")
     }
 
 
@@ -112,7 +126,7 @@ def _plugin_to_test_map() -> dict[str, list[str]]:
       # enforce-clean-tree.ts  ─  exports pure functions + PluginAPI hook
       # ── enforce-floor.ts  —  runtime tests: text.complete, ...
     """
-    source = HOOK_RUNTIME.read_text()
+    source = _runtime_source()
     lines = source.split("\n")
 
     # Match any comment line containing a plugin filename as a distinct word
@@ -165,21 +179,22 @@ def _plugin_to_test_map() -> dict[str, list[str]]:
 
 def _extract_test_body_lines(test_name: str) -> list[str]:
     """Extract the body lines of a test function (robust to docstring deindents)."""
-    source = HOOK_RUNTIME.read_text()
-    lines = source.split("\n")
-    result: list[str] = []
-    in_test = False
-    for line in lines:
-        if line.startswith(f"def {test_name}"):
-            in_test = True
-            continue
-        if not in_test:
-            continue
-        # Stop at the next top-level def or `if __name__`
-        if re.match(r"^(def test_|if __name__)", line):
-            break
-        result.append(line)
-    return result
+    for path in HOOK_RUNTIME_CASES:
+        lines = path.read_text(encoding="utf-8").split("\n")
+        result: list[str] = []
+        in_test = False
+        for line in lines:
+            if line.startswith(f"def {test_name}"):
+                in_test = True
+                continue
+            if not in_test:
+                continue
+            if re.match(r"^(def test_|if __name__)", line):
+                break
+            result.append(line)
+        if in_test:
+            return result
+    return []
 
 
 # ---- structural pin tests ----

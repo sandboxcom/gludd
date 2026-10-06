@@ -25,6 +25,8 @@ from types import ModuleType
 
 ROOT = Path(__file__).resolve().parents[2]
 HARNESS_PATH = ROOT / "scripts" / "test_hook_runtime.py"
+FIXTURES_PATH = ROOT / "scripts" / "hook_runtime" / "fixtures.py"
+CASE_PATHS = tuple(sorted((ROOT / "scripts" / "hook_runtime").glob("cases_*.py")))
 DIRTY_FIXTURE_GLOB = "gludd-hook-test-dirty-*.txt"
 EXPECTED_CALL_SITES = 7
 
@@ -48,6 +50,14 @@ harness = _load_harness()
 
 def _harness_source() -> str:
     return HARNESS_PATH.read_text()
+
+
+def _fixtures_source() -> str:
+    return FIXTURES_PATH.read_text()
+
+
+def _case_source() -> str:
+    return "\n".join(path.read_text() for path in CASE_PATHS)
 
 
 def _extract_function(source: str, name: str) -> str:
@@ -95,7 +105,7 @@ class TestDirtyFixtureLivesInsideCheckout:
 
     def test_dirty_test_path_source_joins_root_with_scripts(self):
         # === Arrange ===
-        source = _harness_source()
+        source = _fixtures_source()
 
         # === Act ===
         body = _extract_function(source, "_dirty_test_path")
@@ -110,7 +120,7 @@ class TestCleanupGlobCoversFixtures:
 
     def test_cleanup_globs_fixture_pattern_under_scripts(self):
         # === Arrange ===
-        source = _harness_source()
+        source = _fixtures_source()
 
         # === Act ===
         body = _extract_function(source, "_remove_legacy_workspace_artifacts")
@@ -139,7 +149,7 @@ class TestCallSitesStillRouteThroughBuilder:
 
     def test_dirty_test_path_has_seven_call_sites(self):
         # === Arrange ===
-        source = _harness_source()
+        source = _case_source()
 
         # === Act ===
         call_lines = [
@@ -155,7 +165,7 @@ class TestCallSitesStillRouteThroughBuilder:
 
     def test_every_call_site_is_an_assignment_under_test(self):
         # === Arrange ===
-        source = _harness_source()
+        source = _case_source()
 
         # === Act ===
         assignments = re.findall(

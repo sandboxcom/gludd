@@ -1,0 +1,1150 @@
+{
+  "version": 1,
+  "source_sha256_before_split": "ecc0f7069d97c81deb90abda46f1ebd7364eaaded995ebd82b32e3ad77c6b37d",
+  "case_modules": [
+    "cases_core",
+    "cases_scheduling",
+    "cases_safety",
+    "cases_lifecycle"
+  ],
+  "cases": [
+    {
+      "name": "test_runtime_state_root_honors_isolated_directory",
+      "arguments_ast": "arguments(args=[arg(arg='monkeypatch', annotation=Attribute(value=Name(id='pytest', ctx=Load()), attr='MonkeyPatch', ctx=Load())), arg(arg='tmp_path', annotation=Name(id='Path', ctx=Load()))])",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_runtime_state_path_redirects_only_known_global_state",
+      "arguments_ast": "arguments(args=[arg(arg='monkeypatch', annotation=Attribute(value=Name(id='pytest', ctx=Load()), attr='MonkeyPatch', ctx=Load())), arg(arg='tmp_path', annotation=Name(id='Path', ctx=Load()))])",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_run_ts_returns_none_for_empty_stdout",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_run_ts_ignores_non_json_diagnostics",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_run_ts_namespaces_streak_state_per_invocation",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_shared_explicit_non_subagent_ignores_stale_pid_marker",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_clean_tree_get_git_status",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_clean_tree_is_dirty_in_real_repo",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_clean_tree_count_dirty_files_zero",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_clean_tree_count_dirty_files_nonzero",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_clean_tree_build_deny_message",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_clean_tree_dispatch_tools_defined",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_clean_tree_hook_dispatch_with_dirty_tree",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_clean_tree_hook_clean_tree_allows_dispatch",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_clean_tree_env_disable",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_clean_tree_subagent_skip",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_enhancement_enhancement_keywords_classify_correctly",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_enhancement_fix_keywords_classify_correctly",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_enhancement_unknown_defaults_to_fix",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_enhancement_wave_80pct_fixes_triggers_text_complete_block",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": [
+        "Call(func=Attribute(value=Attribute(value=Name(id='pytest', ctx=Load()), attr='mark', ctx=Load()), attr='skip', ctx=Load()), keywords=[keyword(arg='reason', value=Constant(value='text.complete removed in opencode 1.17.9'))])"
+      ]
+    },
+    {
+      "name": "test_enhancement_wave_50pct_allowed",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": [
+        "Call(func=Attribute(value=Attribute(value=Name(id='pytest', ctx=Load()), attr='mark', ctx=Load()), attr='skip', ctx=Load()), keywords=[keyword(arg='reason', value=Constant(value='text.complete removed in opencode 1.17.9'))])"
+      ]
+    },
+    {
+      "name": "test_enhancement_env_disable",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_enhancement_subagent_skip",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_enhancement_fix_ratio_ok",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_enhancement_fix_ratio_violation_blocked",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_enhancement_fix_ratio_text_blocked",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": [
+        "Call(func=Attribute(value=Attribute(value=Name(id='pytest', ctx=Load()), attr='mark', ctx=Load()), attr='skip', ctx=Load()), keywords=[keyword(arg='reason', value=Constant(value='text.complete removed in opencode 1.17.9'))])"
+      ]
+    },
+    {
+      "name": "test_enhancement_block_env_disabled",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": [
+        "Call(func=Attribute(value=Attribute(value=Name(id='pytest', ctx=Load()), attr='mark', ctx=Load()), attr='skip', ctx=Load()), keywords=[keyword(arg='reason', value=Constant(value='text.complete removed in opencode 1.17.9'))])"
+      ]
+    },
+    {
+      "name": "test_enhancement_wave_too_small",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": [
+        "Call(func=Attribute(value=Attribute(value=Name(id='pytest', ctx=Load()), attr='mark', ctx=Load()), attr='skip', ctx=Load()), keywords=[keyword(arg='reason', value=Constant(value='text.complete removed in opencode 1.17.9'))])"
+      ]
+    },
+    {
+      "name": "test_delegate_streak_zero_allowed",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_delegate_streak_at_threshold_denied",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_delegate_read_tool_not_counted",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_delegate_env_disable",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_deadline_task_within_timeout_allowed",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_deadline_task_over_timeout_blocked",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_deadline_env_disable",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_deadline_block_env_disabled",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_deadline_subagent_guard",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_deadline_corrupt_state_fail_open",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_deadline_no_state_file_fail_open",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_floor_dispatch_resets_streak",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_floor_streak_zero_non_dispatch_allowed",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_floor_streak_max_plus_one_denied",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_floor_subagent_env_skip",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_floor_corrupt_state_fail_open",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_floor_read_tool_not_blocked",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_floor_text_complete_blocks_on_zero_dispatches",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": [
+        "Call(func=Attribute(value=Attribute(value=Name(id='pytest', ctx=Load()), attr='mark', ctx=Load()), attr='skip', ctx=Load()), keywords=[keyword(arg='reason', value=Constant(value='text.complete removed in opencode 1.17.9'))])"
+      ]
+    },
+    {
+      "name": "test_floor_message_shape_one_dispatch_denied",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": [
+        "Call(func=Attribute(value=Attribute(value=Name(id='pytest', ctx=Load()), attr='mark', ctx=Load()), attr='skip', ctx=Load()), keywords=[keyword(arg='reason', value=Constant(value='text.complete removed in opencode 1.17.9'))])"
+      ]
+    },
+    {
+      "name": "test_floor_result_grace_denies_non_dispatch",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": [
+        "Call(func=Attribute(value=Attribute(value=Name(id='pytest', ctx=Load()), attr='mark', ctx=Load()), attr='skip', ctx=Load()), keywords=[keyword(arg='reason', value=Constant(value='text.complete removed in opencode 1.17.9'))])"
+      ]
+    },
+    {
+      "name": "test_floor_text_complete_subagent_skip",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": [
+        "Call(func=Attribute(value=Attribute(value=Name(id='pytest', ctx=Load()), attr='mark', ctx=Load()), attr='skip', ctx=Load()), keywords=[keyword(arg='reason', value=Constant(value='text.complete removed in opencode 1.17.9'))])"
+      ]
+    },
+    {
+      "name": "test_floor_disengage_allows_after_streak_breach",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_multitask_text_complete_blocks_thin_wave",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_multitask_enough_dispatches",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_multitask_single_dispatch_blocked",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": [
+        "Call(func=Attribute(value=Attribute(value=Name(id='pytest', ctx=Load()), attr='mark', ctx=Load()), attr='skip', ctx=Load()), keywords=[keyword(arg='reason', value=Constant(value='text.complete removed in opencode 1.17.9'))])"
+      ]
+    },
+    {
+      "name": "test_multitask_zero_dispatch_text_blocked",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": [
+        "Call(func=Attribute(value=Attribute(value=Name(id='pytest', ctx=Load()), attr='mark', ctx=Load()), attr='skip', ctx=Load()), keywords=[keyword(arg='reason', value=Constant(value='text.complete removed in opencode 1.17.9'))])"
+      ]
+    },
+    {
+      "name": "test_multitask_subagent_guard",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_multitask_env_disabled",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_multitask_configured_minimum_hard_block",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_multitask_dispatch_ceiling_blocked",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_multitask_consecutive_non_dispatch_blocked",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_multitask_corrupt_state_fail_open",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_multitask_zero_floor_keeps_inline_mutation_available",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_multitask_text_only_response_next_tool_blocked",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_multitask_zero_dispatch_text_blocked_after_prior_dispatch",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_stop_pending_work_text_blanked",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": [
+        "Call(func=Attribute(value=Attribute(value=Name(id='pytest', ctx=Load()), attr='mark', ctx=Load()), attr='skip', ctx=Load()), keywords=[keyword(arg='reason', value=Constant(value='text.complete removed in opencode 1.17.9'))])"
+      ]
+    },
+    {
+      "name": "test_stop_no_pending_work",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": [
+        "Call(func=Attribute(value=Attribute(value=Name(id='pytest', ctx=Load()), attr='mark', ctx=Load()), attr='skip', ctx=Load()), keywords=[keyword(arg='reason', value=Constant(value='text.complete removed in opencode 1.17.9'))])"
+      ]
+    },
+    {
+      "name": "test_stop_env_disabled",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": [
+        "Call(func=Attribute(value=Attribute(value=Name(id='pytest', ctx=Load()), attr='mark', ctx=Load()), attr='skip', ctx=Load()), keywords=[keyword(arg='reason', value=Constant(value='text.complete removed in opencode 1.17.9'))])"
+      ]
+    },
+    {
+      "name": "test_stop_corrupt_state",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": [
+        "Call(func=Attribute(value=Attribute(value=Name(id='pytest', ctx=Load()), attr='mark', ctx=Load()), attr='skip', ctx=Load()), keywords=[keyword(arg='reason', value=Constant(value='text.complete removed in opencode 1.17.9'))])"
+      ]
+    },
+    {
+      "name": "test_stop_block_persists_across_turns",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": [
+        "Call(func=Attribute(value=Attribute(value=Name(id='pytest', ctx=Load()), attr='mark', ctx=Load()), attr='skip', ctx=Load()), keywords=[keyword(arg='reason', value=Constant(value='text.complete removed in opencode 1.17.9'))])"
+      ]
+    },
+    {
+      "name": "test_stop_block_cleared_by_dispatch",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_stop_no_pending_work_allows",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": [
+        "Call(func=Attribute(value=Attribute(value=Name(id='pytest', ctx=Load()), attr='mark', ctx=Load()), attr='skip', ctx=Load()), keywords=[keyword(arg='reason', value=Constant(value='text.complete removed in opencode 1.17.9'))])"
+      ]
+    },
+    {
+      "name": "test_stop_subagent_block_guard",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_stop_task_result_passes_through_gate_red",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": [
+        "Call(func=Attribute(value=Attribute(value=Name(id='pytest', ctx=Load()), attr='mark', ctx=Load()), attr='skip', ctx=Load()), keywords=[keyword(arg='reason', value=Constant(value='text.complete removed in opencode 1.17.9'))])"
+      ]
+    },
+    {
+      "name": "test_stop_permission_seeking_want_me_to_blocked",
+      "arguments_ast": "arguments(args=[arg(arg='tmp_path', annotation=Name(id='Path', ctx=Load()))])",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_stop_permission_seeking_should_i_blocked",
+      "arguments_ast": "arguments(args=[arg(arg='tmp_path', annotation=Name(id='Path', ctx=Load()))])",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_stop_permission_seeking_export_matches",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_stop_status_summary_blocked_despite_evidence",
+      "arguments_ast": "arguments(args=[arg(arg='tmp_path', annotation=Name(id='Path', ctx=Load()))])",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_stop_status_summary_export_matches",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_clean_tree_dispatch_allowed",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_clean_tree_dirty_dispatch_blocked",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_clean_tree_env_disabled",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_clean_tree_subagent_guard",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_clean_tree_isTreeDirty_empty_string",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_clean_tree_countDirtyFiles_edge_cases",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_clean_tree_countDirtyFiles_single_line",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_clean_tree_non_dispatch_tool_not_blocked",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_clean_tree_buildDenyMessage_edge_cases",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_clean_tree_getGitStatus_real_repo_returns_string",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_clean_tree_hook_throws_on_execsync_failure",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_verified_claim_with_evidence",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_verified_claim_no_evidence_blocked",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_verified_claims_commit_unverified_msg_blocked",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_verified_claims_commit_verified_msg_allowed",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_verified_claims_subagent_skip",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_no_suppression_plain_comment",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_no_suppression_noqa_blocked",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_no_suppression_type_ignore_blocked",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_no_suppression_allowlisted_file",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_no_wait_sleep_blocked",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_no_wait_gate_tail_blocked",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_no_wait_subagent_bypass",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_no_wait_env_disabled",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_no_wait_corrupt_input_fail_open",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_deletion_under_threshold_allowed",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_deletion_over_threshold_blocked",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_deletion_subagent_guard",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_deletion_env_disabled",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_session_start_fresh_no_reads_mutation_denied",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_session_start_read_tool_always_allowed",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_session_start_subagent_guard",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_session_start_env_disable",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_session_start_corrupt_state_fail_open",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_session_start_read_task_file_sets_readsDone",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_session_start_read_bugs_md_sets_readsDone",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_session_start_read_non_task_file_does_not_set_readsDone",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_session_start_dispatch_increment_default_adaptive",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_session_start_explicit_minimum_denies_under_dispatch",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_make_allows_make_target",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_make_denies_cd_command",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_make_denies_python",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_make_denies_pip",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_make_denies_git",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_make_denies_metachar_pipe",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_make_denies_metachar_semicolon",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_make_denies_metachar_and",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_make_denies_metachar_dollar",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_make_denies_redirect",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_make_subagent_guard",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_make_disengage_escape",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_make_allows_make_lint",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_make_denies_python3",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_make_denies_gh",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_make_denies_cat",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_make_denies_git_status",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_make_denies_pipe_in_make_args",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_make_denies_and_in_make_args",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_additive_task_runtime_hook_invocation",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_anti_essay_runtime_hook_invocation",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_anti_essay_blocks_explanation_status_phrase_with_pending_work",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_audit_runtime_hook_invocation",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_batch_push_runtime_hook_invocation",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_branch_discipline_runtime_hook_invocation",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_context_runtime_hook_invocation",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_deliverable_runtime_hook_invocation",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_depth_runtime_hook_invocation",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_directives_runtime_hook_invocation",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_floor_v2_runtime_hook_invocation",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_no_ci_poll_runtime_hook_invocation",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_no_suppressions_runtime_hook_invocation",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_objective_runtime_hook_invocation",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_pipeline_kickoff_runtime_hook_invocation",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_release_deadline_runtime_hook_invocation",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_task_tracking_runtime_hook_invocation",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_tdd_runtime_hook_invocation",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_test_integrity_runtime_hook_invocation",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_worktree_runtime_hook_invocation",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_watchdog_event_hook_runtime_invocation",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_watchdog_plugin_loads_report_alive",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_watchdog_plugin_loads_no_error",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_watchdog_plugin_subagent_context",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_watchdog_plugin_env_disabled",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_watchdog_plugin_loads_with_corrupt_pid_file",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_commit_lock_allowed_no_lock",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_commit_lock_fresh_lock_denies",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_commit_lock_stale_break_allows",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_commit_lock_non_commit_allowed",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_commit_lock_subagent_guard",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_commit_lock_env_disable",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_commit_lock_after_releases_lock",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "test_commit_lock_is_commit_command",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    }
+  ],
+  "helpers": [
+    {
+      "name": "_runtime_state_root",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Name(id='Path', ctx=Load())",
+      "decorators_ast": []
+    },
+    {
+      "name": "_runtime_state_path",
+      "arguments_ast": "arguments(args=[arg(arg='path', annotation=Name(id='str', ctx=Load()))])",
+      "returns_ast": "Name(id='str', ctx=Load())",
+      "decorators_ast": []
+    },
+    {
+      "name": "_dirty_test_path",
+      "arguments_ast": "arguments(args=[arg(arg='label', annotation=Name(id='str', ctx=Load()))])",
+      "returns_ast": "Name(id='str', ctx=Load())",
+      "decorators_ast": []
+    },
+    {
+      "name": "_remove_legacy_workspace_artifacts",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "_cleanup_legacy_workspace_artifacts",
+      "arguments_ast": "arguments()",
+      "returns_ast": "Subscript(value=Name(id='Iterator', ctx=Load()), slice=Constant(value=None), ctx=Load())",
+      "decorators_ast": [
+        "Call(func=Attribute(value=Name(id='pytest', ctx=Load()), attr='fixture', ctx=Load()), keywords=[keyword(arg='scope', value=Constant(value='session')), keyword(arg='autouse', value=Constant(value=True))])"
+      ]
+    },
+    {
+      "name": "_run_ts",
+      "arguments_ast": "arguments(args=[arg(arg='ts_code', annotation=Name(id='str', ctx=Load())), arg(arg='env_override', annotation=BinOp(left=Subscript(value=Name(id='dict', ctx=Load()), slice=Tuple(elts=[Name(id='str', ctx=Load()), Name(id='str', ctx=Load())], ctx=Load()), ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='timeout', annotation=Name(id='int', ctx=Load())), arg(arg='cwd', annotation=BinOp(left=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Subscript(value=Attribute(value=Name(id='os', ctx=Load()), attr='PathLike', ctx=Load()), slice=Name(id='str', ctx=Load()), ctx=Load())), op=BitOr(), right=Constant(value=None)))], defaults=[Constant(value=None), Constant(value=15), Constant(value=None)])",
+      "returns_ast": "Name(id='Any', ctx=Load())",
+      "decorators_ast": []
+    },
+    {
+      "name": "_factory_plugin_code",
+      "arguments_ast": "arguments(args=[arg(arg='plugin_rel_path', annotation=Name(id='str', ctx=Load())), arg(arg='hook_name', annotation=Name(id='str', ctx=Load())), arg(arg='call_code', annotation=Name(id='str', ctx=Load()))])",
+      "returns_ast": "Name(id='str', ctx=Load())",
+      "decorators_ast": []
+    },
+    {
+      "name": "_pluginapi_code",
+      "arguments_ast": "arguments(args=[arg(arg='plugin_rel_path', annotation=Name(id='str', ctx=Load())), arg(arg='call_code', annotation=Name(id='str', ctx=Load()))])",
+      "returns_ast": "Name(id='str', ctx=Load())",
+      "decorators_ast": []
+    },
+    {
+      "name": "_clean_state_files",
+      "arguments_ast": "arguments(vararg=arg(arg='paths', annotation=Name(id='str', ctx=Load())))",
+      "returns_ast": "Constant(value=None)",
+      "decorators_ast": []
+    },
+    {
+      "name": "_with_open_work",
+      "arguments_ast": "arguments(args=[arg(arg='env', annotation=Subscript(value=Name(id='dict', ctx=Load()), slice=Tuple(elts=[Name(id='str', ctx=Load()), Name(id='str', ctx=Load())], ctx=Load()), ctx=Load())), arg(arg='tmp_tasks', annotation=Name(id='str', ctx=Load()))])",
+      "returns_ast": "Subscript(value=Name(id='tuple', ctx=Load()), slice=Tuple(elts=[Subscript(value=Name(id='dict', ctx=Load()), slice=Tuple(elts=[Name(id='str', ctx=Load()), Name(id='str', ctx=Load())], ctx=Load()), ctx=Load()), Name(id='str', ctx=Load())], ctx=Load()), ctx=Load())",
+      "decorators_ast": []
+    },
+    {
+      "name": "_hermetic_project_root",
+      "arguments_ast": "arguments(args=[arg(arg='tmp_path', annotation=Name(id='Path', ctx=Load()))])",
+      "returns_ast": "Name(id='Path', ctx=Load())",
+      "decorators_ast": []
+    },
+    {
+      "name": "_fresh_session_state",
+      "arguments_ast": "arguments(args=[arg(arg='state_path', annotation=Name(id='str', ctx=Load()))], kwarg=arg(arg='overrides', annotation=Name(id='object', ctx=Load())))",
+      "returns_ast": "Subscript(value=Name(id='dict', ctx=Load()), slice=Tuple(elts=[Name(id='str', ctx=Load()), Name(id='object', ctx=Load())], ctx=Load()), ctx=Load())",
+      "decorators_ast": []
+    },
+    {
+      "name": "_session_start_dispatch_then_bash",
+      "arguments_ast": "arguments(args=[arg(arg='configured_min', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None)))])",
+      "returns_ast": "Subscript(value=Name(id='dict', ctx=Load()), slice=Tuple(elts=[Name(id='str', ctx=Load()), Name(id='Any', ctx=Load())], ctx=Load()), ctx=Load())",
+      "decorators_ast": []
+    },
+    {
+      "name": "_enforce_make_bash_test",
+      "arguments_ast": "arguments(args=[arg(arg='command', annotation=Name(id='str', ctx=Load())), arg(arg='env_override', annotation=BinOp(left=Subscript(value=Name(id='dict', ctx=Load()), slice=Tuple(elts=[Name(id='str', ctx=Load()), Name(id='str', ctx=Load())], ctx=Load()), ctx=Load()), op=BitOr(), right=Constant(value=None)))], defaults=[Constant(value=None)])",
+      "returns_ast": "Subscript(value=Name(id='dict', ctx=Load()), slice=Tuple(elts=[Name(id='str', ctx=Load()), Name(id='Any', ctx=Load())], ctx=Load()), ctx=Load())",
+      "decorators_ast": []
+    }
+  ]
+}
