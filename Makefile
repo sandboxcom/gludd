@@ -8700,44 +8700,11 @@ gate-logs:
 		fi; \
 	done
 
-# Force-kill a running background gate: SIGTERM then SIGKILL after 5s.
+# Force-kill one identity-verified gate tree: descendants first, bounded TERM,
+# then KILL. The Python owner writes terminal status/evidence and releases only
+# lock records whose PID identities belong to the verified tree.
 gate-kill:
-	@# Terminate only adaptive full-gate trees owned by this checkout; coverage
-	@# audits and E2E pytest trees are intentionally excluded by command identity.
 	@APPLY=1 /usr/bin/python3 scripts/kill_owned_gate.py
-	@PID=$$(cat .gate-background.pid 2>/dev/null || echo ""); \
-	if [ -n "$$PID" ] && kill -0 "$$PID" 2>/dev/null; then \
-		echo "[gate-kill] sending SIGTERM to pid=$$PID"; \
-		kill -TERM "$$PID" 2>/dev/null || true; \
-		ELAPSED=0; \
-		while [ $$ELAPSED -lt 10 ] && kill -0 "$$PID" 2>/dev/null; do sleep 1; ELAPSED=$$((ELAPSED+1)); done; \
-		if kill -0 "$$PID" 2>/dev/null; then \
-			echo "[gate-kill] sending SIGKILL to pid=$$PID"; \
-			kill -KILL "$$PID" 2>/dev/null || true; \
-		fi; \
-		rm -f .gate-background.pid; \
-		echo "[gate-kill] done"; \
-	else \
-		echo "(no running background gate found)"; \
-	fi
-	@LOCK_PID=$$(cat /tmp/gludd-gate.lock 2>/dev/null || echo ""); \
-	if [ -n "$$LOCK_PID" ] && kill -0 "$$LOCK_PID" 2>/dev/null; then \
-		echo "[gate-kill] killing stale gate lock holder pid=$$LOCK_PID"; \
-		kill -TERM "$$LOCK_PID" 2>/dev/null || true; \
-		sleep 2; \
-		kill -KILL "$$LOCK_PID" 2>/dev/null || true; \
-	fi; \
-	PROJECT_NAMESPACE=$$($(PYTHON) scripts/resource_arbiter.py namespace); \
-	NAMESPACED_LOCK="$${TMPDIR:-/tmp}/gludd-resources/$$PROJECT_NAMESPACE/async-gate.lock"; \
-	NAMESPACED_PID=$$(cat "$$NAMESPACED_LOCK" 2>/dev/null || echo ""); \
-	if [ -n "$$NAMESPACED_PID" ] && kill -0 "$$NAMESPACED_PID" 2>/dev/null; then \
-		echo "[gate-kill] killing namespaced async-gate holder pid=$$NAMESPACED_PID"; \
-		kill -TERM "$$NAMESPACED_PID" 2>/dev/null || true; \
-		sleep 2; \
-		kill -KILL "$$NAMESPACED_PID" 2>/dev/null || true; \
-	fi; \
-	rm -f /tmp/gludd-gate.lock "$$NAMESPACED_LOCK"
-	@pkill -f 'gludd-gate' 2>/dev/null || true
 
 # Force-kill a running background gate-lite: SIGTERM then SIGKILL after 10s.
 gate-lite-kill:
