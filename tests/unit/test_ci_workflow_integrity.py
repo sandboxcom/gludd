@@ -360,7 +360,8 @@ class TestReleaseSourceEvidenceReuse:
             WORKFLOW_PATH.parents[2]
             / "docs"
             / "features"
-            / "BETA4_DUAL_TRACK_CI.md"
+            / "beta4-dual-track-ci"
+            / "exact-sha-promotion.md"
         ).read_text(encoding="utf-8")
 
         for required in (

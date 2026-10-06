@@ -22,7 +22,14 @@ _SCRIPT = _ROOT / "scripts" / "audit_pyinstaller_warnings.py"
 _LINUX_POLICY = _ROOT / "config" / "pyinstaller-warning-allowlist-linux.json"
 _LINUX_BUILDER_DOCKERFILE = _ROOT / "config" / "containers" / "linux-binary.Dockerfile"
 _CONNECTOR_REGISTRY = _ROOT / "src" / "general_ludd" / "connectors" / "registry.py"
-_PRICING_SOURCES = _ROOT / "src" / "general_ludd" / "pricing_intel" / "sources.py"
+_CLOUD_COMPUTE_SOURCE = (
+    _ROOT
+    / "src"
+    / "general_ludd"
+    / "pricing_intel"
+    / "source_components"
+    / "cloud_compute.py"
+)
 _PYINSTALLER_VERSION = "6.20.0"
 _EMPTY_TRANSITIVE_DIGEST = hashlib.sha256(b"").hexdigest()
 _CONTROLLER_RUNTIME_EDGES = {
@@ -894,6 +901,6 @@ def test_connector_registry_avoids_pyinstaller_path_pseudo_module() -> None:
 
 
 def test_optional_gcp_sdk_import_is_locally_guarded() -> None:
-    source = _PRICING_SOURCES.read_text(encoding="utf-8")
+    source = _CLOUD_COMPUTE_SOURCE.read_text(encoding="utf-8")
 
     assert ("try:\n            from google.cloud import billing\n        except ImportError as exc:") in source
