@@ -87,6 +87,31 @@ def test_timeout_returns_observable_124(monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert runner.run_plan(plan) == 124
 
 
+def test_browser_install_is_exact_and_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Installation may acquire Chromium only and verifies the resulting binary."""
+    plan = runner.build_plan(
+        browser="chromium",
+        browser_root=Path("/tmp/gludd-browser-install-test"),
+        output_root=Path("/tmp/gludd-presentation-install-test"),
+        timeout_seconds=120,
+    )
+    monkeypatch.setattr(runner, "validate_plan", lambda _plan: None)
+    verified: list[runner.BrowserPlan] = []
+    monkeypatch.setattr(runner, "_require_browser_executable", verified.append)
+    captured: list[tuple[str, ...]] = []
+
+    def complete(command: tuple[str, ...], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        captured.append(command)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(runner.subprocess, "run", complete)
+
+    assert runner.install_browser(plan) == 0
+    assert captured == [(runner.sys.executable, "-m", "playwright", "install", "chromium")]
+    assert verified == [plan]
+
+
 def test_plan_rejects_unbounded_timeout() -> None:
     """The make target cannot accidentally disable the process deadline."""
     with pytest.raises(ValueError, match="between 30 and 900"):
