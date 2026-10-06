@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "check_disk_usage.py"
@@ -434,7 +435,7 @@ def test_main_names_largest_counted_roots(
 
 def test_disk_checks_use_portable_system_tools_without_project_venv() -> None:
     guard_source = DISK_GUARD_SCRIPT.read_text()
-    make_source = MAKEFILE.read_text()
+    make_source = compose_makefile(MAKEFILE)
     no_uv_goals = make_source.split("_NO_UV_SYNC_GOALS :=", 1)[1].split(
         "ifneq", 1
     )[0]

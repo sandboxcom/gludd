@@ -17,14 +17,23 @@ import sys
 import time
 from pathlib import Path
 
+try:
+    from scripts.makefile_layout import compose_makefile
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parent.parent
 MAKEFILE_PATH = ROOT / "Makefile"
 TMP_DIR = Path("/tmp")
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
+BEHAVIORAL_TEST_FILES = (
+    ROOT / "tests" / "unit" / "test_behavioral_enforcement.py",
+    ROOT / "tests" / "unit" / "test_behavioral_enforcement_runtime.py",
+)
 
 
 def _makefile_text() -> str:
-    return MAKEFILE_PATH.read_text()
+    return compose_makefile(MAKEFILE_PATH)
 
 
 def _target_exists(target: str) -> bool:
@@ -45,12 +54,6 @@ def _check_running_pid(pid: int) -> bool:
 
 def check_ab061_state_file_integrity() -> dict:
     findings: list[str] = []
-    state_pattern = re.compile(r"^/tmp/gludd-.*\.json$")
-    required_keys_map: dict[str, list[str]] = {
-        "enhancement-ratio": ["wave", "session_fixes", "session_enhancements"],
-        "session-start": ["dispatch_count", "first_dispatch_epoch"],
-        "tool-streak": ["count", "last_dispatch_epoch"],
-    }
     corrupt_files: list[str] = []
 
     for fpath in TMP_DIR.glob("gludd-*.json"):
@@ -66,8 +69,7 @@ def check_ab061_state_file_integrity() -> dict:
     if corrupt_files:
         findings.append(f"Corrupt state files: {', '.join(corrupt_files)}")
 
-    auto_reset_re = re.compile(r"(?i)(crash.?recovery|reset|recreate|default)")
-    if not str(MAKEFILE_PATH.read_text()).count("clean-tmp:"):
+    if not _makefile_text().count("clean-tmp:"):
         findings.append("No clean-tmp target for auto-reset of stale state")
 
     return {
@@ -118,12 +120,13 @@ def check_ab063_stale_state_files() -> dict:
         if isinstance(data, list):
             continue
         pid = data.get("pid") or data.get("stored_pid") or data.get("recorded_pid")
-        if pid and isinstance(pid, int) and pid > 1:
-            if not _check_running_pid(pid):
-                mtime_days = (time.time() - fpath.stat().st_mtime) / 86400
-                if mtime_days > 1:
-                    stale_count += 1
-                    findings.append(f"Stale PID {pid} in {fpath.name} (mtime {mtime_days:.1f}d ago)")
+        if pid and isinstance(pid, int) and pid > 1 and not _check_running_pid(pid):
+            mtime_days = (time.time() - fpath.stat().st_mtime) / 86400
+            if mtime_days > 1:
+                stale_count += 1
+                findings.append(
+                    f"Stale PID {pid} in {fpath.name} (mtime {mtime_days:.1f}d ago)"
+                )
 
     if stale_count > 3:
         findings.append(f"{stale_count} stale state files need cleanup via make clean-tmp")
@@ -183,17 +186,21 @@ def check_ab065_gate_observability() -> dict:
 
 def check_ab066_enforcement_coverage() -> dict:
     findings: list[str] = []
-    test_file = ROOT / "tests" / "unit" / "test_behavioral_enforcement.py"
-    if not test_file.exists():
-        findings.append("test_behavioral_enforcement.py missing")
-        return {"spec": "AB066", "status": "FAIL", "findings": findings}
+    test_contents: list[str] = []
+    for test_file in BEHAVIORAL_TEST_FILES:
+        if not test_file.exists():
+            findings.append(f"{test_file.name} missing")
+            continue
+        test_contents.append(test_file.read_text(encoding="utf-8"))
 
-    test_content = test_file.read_text()
+    test_content = "\n".join(test_contents)
     for plugin_file in sorted(PLUGIN_DIR.glob("enforce-*.ts")):
         name = plugin_file.stem.replace("enforce-", "")
         display = plugin_file.name
         if name not in test_content:
-            findings.append(f"{display}: no test coverage in test_behavioral_enforcement.py")
+            findings.append(
+                f"{display}: no test coverage in the behavioral enforcement test modules"
+            )
 
     return {"spec": "AB066", "status": "FAIL" if findings else "PASS", "findings": findings}
 
@@ -204,7 +211,6 @@ def check_ab066_enforcement_coverage() -> dict:
 def check_ab067_target_timeouts() -> dict:
     findings: list[str] = []
     text = _makefile_text()
-    long_cmds = ["pytest", ".venv/bin/python", "ansible-runner", "molecule test"]
     long_targets_re = re.compile(r"^(gate|test-unit|test |qa |validate|test-integration|test-e2e):", re.MULTILINE)
 
     for m in long_targets_re.finditer(text):
@@ -441,9 +447,6 @@ def check_ab076_enforcement_decisions() -> dict:
 
 def check_ab077_make_target_invocations() -> dict:
     findings: list[str] = []
-    invocation_log = TMP_DIR / "gludd-make-invocations.log"
-    has_logging = invocation_log.exists()
-
     text = _makefile_text()
     for target_key in ["batch-push", "git-push-sandboxcom", "git-merge", "git-tag-push", "release-cut"]:
         if target_key in text:
@@ -498,7 +501,11 @@ def check_ab079_session_boundary_state() -> dict:
     ratchet_yml = ROOT / "config" / "ratchet.yml"
     if ratchet_yml.exists():
         content = ratchet_yml.read_text()
-        lines = [l for l in content.split("\n") if l.strip() and not l.strip().startswith("#")]
+        lines = [
+            line
+            for line in content.split("\n")
+            if line.strip() and not line.strip().startswith("#")
+        ]
         if not lines:
             findings.append("ratchet.yml is empty despite having known-unfixed work")
 
@@ -655,11 +662,6 @@ def check_ab087_recipe_side_effects() -> dict:
     findings: list[str] = []
     text = _makefile_text()
     targets_re = re.compile(r"^([a-zA-Z_][a-zA-Z0-9_-]*):", re.MULTILINE)
-    side_effect_patterns: dict[str, str] = {
-        "clean-tmp": "clean-tmp",
-        "reload-enforcement": "reload-enforcement",
-        "crash-recovery": "crash-recovery",
-    }
 
     for match in targets_re.finditer(text):
         target = match.group(1)
@@ -840,8 +842,6 @@ def check_ab093_wave_completion() -> dict:
 
 def check_ab094_bypass_trail() -> dict:
     findings: list[str] = []
-    bypass_file = TMP_DIR / "gludd-bypass-audit.json"
-
     if not _target_exists("audit-bypass-trail"):
         findings.append("audit-bypass-trail target missing")
 
@@ -942,8 +942,6 @@ def check_ab097_task_hopping() -> dict:
 
 def check_ab098_config_drift() -> dict:
     findings: list[str] = []
-    drift_file = TMP_DIR / "gludd-config-drift.json"
-
     for plugin_file in PLUGIN_DIR.glob("enforce-*.ts"):
         content = plugin_file.read_text()
         env_defaults = re.findall(r"(GLUDD_\w+).*?=\s*(\w+)", content)
@@ -960,8 +958,6 @@ def check_ab098_config_drift() -> dict:
 
 def check_ab099_hygiene_score() -> dict:
     findings: list[str] = []
-    hygiene_file = TMP_DIR / "gludd-hygiene-score.json"
-
     if not _target_exists("audit-hygiene-score"):
         findings.append("audit-hygiene-score target missing")
 
