@@ -40,7 +40,11 @@ def test_pages_installs_linux_webkit_dependencies_before_launch() -> None:
     assert workflow.index(deps_target) < workflow.index(browser_target)
     assert workflow.index(deps_target) < workflow.index(test_target)
     assert "presentation-browser-install-deps:" in make_fragment
-    assert 'playwright install-deps "$$browser"' in make_fragment
+    assert "--install-browser-with-deps" in make_fragment
+    assert "scripts/run_presentation_browser_tests.py" in make_fragment
+    assert "PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers" in workflow
+    assert "PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser" in workflow
+    assert "PRESENTATION_BROWSER_INSTALL_TIMEOUT=600" in workflow
 
 
 def test_pages_deploys_only_the_validated_master_artifact() -> None:
