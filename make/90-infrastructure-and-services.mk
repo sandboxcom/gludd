@@ -74,6 +74,23 @@ tf-clean:
 #   make deck-honesty    — lint the deck HTML for banned marketing tokens
 DECK_DIR := docs/presentation/deck
 DECK_DATA := docs/presentation/deck-data.json
+PRESENTATION_VENDOR_VALIDATE_ONLY ?= 1
+PRESENTATION_BROWSER_VALIDATE_ONLY ?= 1
+PRESENTATION_BROWSER_ROOT ?= /tmp/gludd-playwright-browsers
+PRESENTATION_BROWSER_OUTPUT ?= /tmp/gludd-presentation-browser
+PRESENTATION_BROWSER_TIMEOUT ?= 300
+
+vendor-presentation-assets:
+	@case "$(PRESENTATION_VENDOR_VALIDATE_ONLY)" in 0|1) ;; *) echo "PRESENTATION_VENDOR_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@$(UV) run python scripts/vendor_presentation_assets.py $(if $(filter 1,$(PRESENTATION_VENDOR_VALIDATE_ONLY)),--validate-only,--refresh)
+
+presentation-browser-test:
+	@case "$(PRESENTATION_BROWSER_VALIDATE_ONLY)" in 0|1) ;; *) echo "PRESENTATION_BROWSER_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@$(UV) run python scripts/run_presentation_browser_tests.py \
+		$(if $(filter 1,$(PRESENTATION_BROWSER_VALIDATE_ONLY)),--validate-only,--run) \
+		--browser-root "$(PRESENTATION_BROWSER_ROOT)" \
+		--output-root "$(PRESENTATION_BROWSER_OUTPUT)" \
+		--timeout-seconds "$(PRESENTATION_BROWSER_TIMEOUT)"
 
 deck:
 	@echo "=== BUILDING DECK ==="
@@ -210,4 +227,3 @@ test-scapy-adapter:
 	else \
 		echo "scapy not installed — skipping scapy adapter tests"; \
 	fi
-

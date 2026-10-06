@@ -1384,6 +1384,21 @@
       "name": "gate-background-observed",
       "make_variables": ["GATE_TIMEOUT", "GATE_POLL_INTERVAL", "GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY"],
       "behavior": "make gate-background-observed GATE_TIMEOUT=7200 GATE_POLL_INTERVAL=60 GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "vendor-presentation-assets",
+      "make_variables": ["PRESENTATION_VENDOR_VALIDATE_ONLY"],
+      "behavior": "make vendor-presentation-assets PRESENTATION_VENDOR_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "presentation-browser-test",
+      "make_variables": [
+        "PRESENTATION_BROWSER_VALIDATE_ONLY",
+        "PRESENTATION_BROWSER_ROOT",
+        "PRESENTATION_BROWSER_OUTPUT",
+        "PRESENTATION_BROWSER_TIMEOUT"
+      ],
+      "behavior": "make presentation-browser-test PRESENTATION_BROWSER_VALIDATE_ONLY=1 PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser PRESENTATION_BROWSER_TIMEOUT=300"
     }
   ]
 }
