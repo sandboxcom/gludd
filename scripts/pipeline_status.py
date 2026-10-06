@@ -1,8 +1,8 @@
 """Exact-SHA local-gate and hosted-workflow status.
 
-The hosted side deliberately queries every workflow for one pushed commit and
-then selects the newest push run per workflow. Missing evidence, GitHub lookup
-errors, and non-terminal runs are not green states.
+The hosted side deliberately queries every workflow for one exact commit and
+then selects the newest push or manual-dispatch run per workflow. Missing
+evidence, GitHub lookup errors, and non-terminal runs are not green states.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import re
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -23,6 +23,7 @@ DEFAULT_REPO = "sandboxcom/gludd"
 DEFAULT_BRANCH = "development"
 DEFAULT_REMOTE = "sandboxcom"
 DEFAULT_REQUIRED_WORKFLOWS = ("Build and Release", "Molecule Tests")
+DEFAULT_RUN_EVENTS = frozenset(("push", "workflow_dispatch"))
 SHA_RE = re.compile(r"[0-9a-f]{40}\Z")
 NON_TERMINAL = {"in_progress", "pending", "queued", "requested", "waiting"}
 
@@ -64,14 +65,17 @@ class PipelineSummary:
 
     @property
     def failures(self) -> tuple[WorkflowRun, ...]:
+        """Return terminal runs whose conclusion is not successful."""
         return tuple(run for run in self.runs if run.state == "failure")
 
     @property
     def pending(self) -> tuple[WorkflowRun, ...]:
+        """Return runs that have not reached a terminal conclusion."""
         return tuple(run for run in self.runs if run.state == "pending")
 
     @property
     def successes(self) -> tuple[WorkflowRun, ...]:
+        """Return completed successful runs."""
         return tuple(run for run in self.runs if run.state == "success")
 
     @property
@@ -125,16 +129,16 @@ def evaluate_runs(
     sha: str,
     *,
     branch: str,
-    event: str = "push",
+    events: Collection[str] = DEFAULT_RUN_EVENTS,
     required_workflows: Sequence[str] = DEFAULT_REQUIRED_WORKFLOWS,
 ) -> PipelineSummary:
-    """Evaluate newest exact-SHA run for every workflow, not merely one run."""
+    """Evaluate the newest eligible exact-SHA run for every workflow."""
     matching = [
         run
         for run in runs
         if str(run.get("headSha") or "") == sha
         and str(run.get("headBranch") or "") == branch
-        and str(run.get("event") or "") == event
+        and str(run.get("event") or "") in events
         and str(run.get("workflowName") or "").strip()
     ]
     newest: dict[str, dict[str, Any]] = {}

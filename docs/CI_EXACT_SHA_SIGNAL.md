@@ -94,12 +94,16 @@ make pipeline-status PIPELINE_STATUS_REPO=sandboxcom/gludd PIPELINE_STATUS_BRANC
 
 The collector resolves `refs/heads/<branch>` when no SHA is supplied, queries
 all runs for that full commit with `gh run list --commit`, and chooses the
-newest run independently for every required workflow. A release verdict is
-green only when both `Build and Release` and `Molecule Tests` have a terminal
-`success` conclusion for that exact SHA. A missing workflow, an active run, a
-failed run, an empty remote ref, or a GitHub API error is a non-green result.
-It never substitutes the newest run on the branch and never reduces the result
-set to the first workflow returned by GitHub.
+newest eligible run independently for every required workflow. Eligible runs
+are exact-branch, exact-SHA `push` or `workflow_dispatch` runs. Manual dispatch
+is essential for candidate branches because the tracked push triggers cover
+only `development`, `master`, and `main`; excluding it made a real queued run
+look absent. A release verdict is still green only when both `Build and Release`
+and `Molecule Tests` have a terminal `success` conclusion for that exact SHA.
+A missing workflow, an active run, a failed run, an empty remote ref, or a
+GitHub API error is a non-green result. It never substitutes the newest run on
+the branch and never reduces the result set to the first workflow returned by
+GitHub.
 
 `make verify-state` delegates its CI section to this same collector, and
 `make require-ci-green` consumes the collector's pure evaluator and fetch
@@ -133,6 +137,14 @@ make coverage-files COVERAGE_TESTFILES='tests/unit/test_pipeline_status_exact_sh
   ([cli/cli#6221](https://github.com/cli/cli/issues/6221)). Therefore Gludd does
   not interpret the first list row as the branch verdict: it collects the
   newest exact-SHA run for every required workflow and reports each result.
+- GitHub Community discussion
+  [#24626](https://github.com/orgs/community/discussions/24626) has tracked
+  filtered Actions queries returning an empty or stale result despite visible
+  runs since 2021; GitHub CLI issue
+  [#5474](https://github.com/cli/cli/issues/5474) records the same symptom for
+  non-default branches. Therefore an empty filtered response remains
+  `INCOMPLETE`, never green, and every returned run is rechecked locally against
+  its exact SHA, branch, eligible event, and required workflow identity.
 - The GitHub CLI documents that [`gh workflow run` creates a dispatch and
   returns the created run URL when available](https://cli.github.com/manual/gh_workflow_run).
   It also documents that [`gh run list` supports `--commit` and exposes

@@ -4,6 +4,16 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-05 — (resolved locally; exact-candidate gate required) Candidate status discarded manual workflow runs
+
+- **What happened**: Exact-SHA `make pipeline-status` for branch `agent/core-dependency-inventory-1b` and commit `9ee5d221ee99615a19075b02888eb61c96a6afd2` reported no workflow runs, while immutable run `37407005371` was visibly queued for that exact branch and commit.
+- **Root cause**: Non-default candidate branches are outside the tracked workflows' push branch lists and therefore use `workflow_dispatch`. The collector fetched the run but its local evaluator admitted only `push`, silently turning valid candidate evidence into an empty set; the adjacent failure-ledger observer duplicated the same event restriction.
+- **Fix applied**: Exact-SHA status and terminal failure observation now admit both `push` and `workflow_dispatch` while retaining exact SHA, exact branch, newest-per-workflow selection, and the unchanged `Build and Release` plus `Molecule Tests` requirement. Unsupported events remain excluded and missing siblings remain non-green.
+- **Evidence**: Both regressions failed first by returning empty results. Their repaired replays pass, and the live command now reports run `37407005371` as `PENDING` while separately retaining `Molecule Tests` as missing and returning nonzero.
+- **Practitioner evidence**: GitHub Community discussion [#24626](https://github.com/orgs/community/discussions/24626) has recorded Actions filters returning empty or stale results despite visible runs since 2021, while GitHub CLI issue [#5474](https://github.com/cli/cli/issues/5474) records the same failure shape for non-default branches. `docs/CI_EXACT_SHA_SIGNAL.md` keeps those findings beside the exact-identity contract.
+- **ZDD and rollback**: This is a read-only observability change with no service, schema, listener, credential, or deployment mutation. New status invocations use the broader eligible-event set immediately; rollback restores the former parser but would again hide manually dispatched candidate runs.
+- **Lesson**: Trigger type is part of candidate identity, not a proxy for evidence quality. A manual run that is bound to the exact branch and SHA must remain visible, while completeness still comes from the full required-workflow set.
+
 ### 2026-10-05 — (resolved locally; exact-candidate gate required) Interrupted async gate retained a false `RUNNING` receipt
 
 - **What happened**: `scripts/gate_async.sh` atomically published `RUNNING <epoch> <pid>`, but direct `SIGINT` or `SIGTERM` termination stopped the wrapper before its ordinary PASS/FAIL epilogue. Readers then saw a permanently active gate even though the owner was gone, and the portable PID-file lock remained until a later launcher diagnosed it as stale.

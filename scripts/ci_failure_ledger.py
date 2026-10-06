@@ -34,6 +34,7 @@ MAKE_TARGET = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
 MAKE_VARIABLE = re.compile(r"[A-Z][A-Z0-9_]*=.*\Z")
 SUCCESS_CONCLUSIONS = {"success", "skipped", "neutral"}
 FAILURE_STATUSES = {"open", "repaired", "resolved"}
+OBSERVABLE_RUN_EVENTS = frozenset(("push", "workflow_dispatch"))
 RUN_FIELDS = (
     "attempt,databaseId,headSha,headBranch,status,conclusion,url,workflowName,jobs"
 )
@@ -658,7 +659,7 @@ def observe_exact_sha(
         if (
             str(run.get("headSha") or "") != sha
             or str(run.get("headBranch") or "") != branch
-            or str(run.get("event") or "") != "push"
+            or str(run.get("event") or "") not in OBSERVABLE_RUN_EVENTS
             or not workflow
         ):
             continue
@@ -961,6 +962,7 @@ def _command_push(args: argparse.Namespace) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Run the selected failure-ledger command and fail closed on input errors."""
     args = _parser().parse_args(argv)
     try:
         handlers = {

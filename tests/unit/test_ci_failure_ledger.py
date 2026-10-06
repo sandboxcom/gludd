@@ -839,6 +839,48 @@ def test_exact_sha_observer_records_newest_terminal_run_from_every_workflow() ->
     assert set(ledger["runs"]) == {"101", "201"}
 
 
+def test_exact_sha_observer_records_dispatched_non_default_branch_run() -> None:
+    module = _load()
+    ledger = module.new_ledger()
+    branch = "agent/core-dependency-inventory-1b"
+    run_id = 37407005371
+    index = [
+        {
+            "databaseId": run_id,
+            "headSha": SHA_FAILED,
+            "headBranch": branch,
+            "event": "workflow_dispatch",
+            "workflowName": "Build and Release",
+            "status": "completed",
+            "conclusion": "failure",
+            "createdAt": "2026-10-06T03:01:35Z",
+        }
+    ]
+
+    def fetcher(selected_run_id: int, _repository: str) -> dict[str, Any]:
+        payload = _payload(
+            selected_run_id,
+            SHA_FAILED,
+            [_job("unit", "failure", "Run tests")],
+        )
+        payload["headBranch"] = branch
+        return payload
+
+    results, errors = module.observe_exact_sha(
+        ledger,
+        index,
+        sha=SHA_FAILED,
+        branch=branch,
+        repository="sandboxcom/gludd",
+        observed_at="now",
+        fetcher=fetcher,
+    )
+
+    assert results == [(run_id, "recorded")]
+    assert errors == []
+    assert set(ledger["runs"]) == {str(run_id)}
+
+
 def test_exact_sha_observer_collects_all_fetch_errors_without_short_circuiting() -> None:
     module = _load()
     ledger = module.new_ledger()

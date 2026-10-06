@@ -103,7 +103,7 @@ def test_exact_sha_summary_normalizes_unknown_workflow_and_invalid_run_id() -> N
             _run("Build and Release", 124),
             _run("Molecule Tests", 101),
             malformed,
-            _run("Wrong event", 7, event="workflow_dispatch"),
+            _run("Wrong event", 7, event="schedule"),
         ],
         SHA,
         branch="development",
@@ -116,6 +116,28 @@ def test_exact_sha_summary_normalizes_unknown_workflow_and_invalid_run_id() -> N
         "Extra Workflow",
     ]
     assert summary.runs[-1].run_id == 0
+
+
+def test_exact_sha_summary_observes_dispatched_non_default_branch_run() -> None:
+    branch = "agent/core-dependency-inventory-1b"
+    dispatched = _run(
+        "Build and Release",
+        37407005371,
+        status="queued",
+        conclusion="",
+        event="workflow_dispatch",
+    )
+    dispatched["headBranch"] = branch
+
+    summary = pipeline_status.evaluate_runs([dispatched], SHA, branch=branch)
+
+    assert [run.run_id for run in summary.runs] == [37407005371]
+    assert summary.pending == summary.runs
+    assert summary.missing_workflows == ("Molecule Tests",)
+    assert summary.exit_code == 2
+    rendered = "\n".join(summary.lines())
+    assert "PENDING Build and Release run 37407005371" in rendered
+    assert "missing required workflow: Molecule Tests" in rendered
 
 
 @pytest.mark.parametrize(

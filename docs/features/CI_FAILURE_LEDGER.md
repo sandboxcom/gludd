@@ -44,12 +44,14 @@ being misreported as a successful deployment.
 failed steps before it prints the ledger. It no longer treats successful API
 access as a successful build.
 
-`make pipeline-status` resolves the exact pushed SHA, selects the newest run
-for every workflow, and observes every terminal run into the ledger before
-returning the all-workflow verdict. Observation and verdict collection both
-run even if one fails; their exit codes are combined afterward. This removes
-the prior memory-dependent step of noticing a sibling workflow and manually
-running `ci-view` for it.
+`make pipeline-status` resolves the exact pushed SHA, selects the newest
+exact-branch `push` or `workflow_dispatch` run for every workflow, and observes
+every terminal run into the ledger before returning the all-workflow verdict.
+This includes manually dispatched candidate-branch runs without relaxing the
+required-workflow set. Observation and verdict collection both run even if one
+fails; their exit codes are combined afterward. This removes the prior
+memory-dependent step of noticing a sibling workflow and manually running
+`ci-view` for it.
 
 `make ci-rerun` first invokes `ci-view`, then blocks a rerun of the unchanged
 failed SHA. The only exception is an explicit operational experiment with both
