@@ -81,7 +81,7 @@ disk-cleanup-preflight:
 		echo "Usage: make disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0|1 DISK_CLEANUP_PREFLIGHT_DRY_RUN=0|1 DISK_CLEANUP_RECEIPT_GRACE_SECONDS='>=1800'"; \
 		exit 2; \
 	elif [ "$(DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY)" = "1" ]; then \
-		$(MAKE) --no-print-directory test-files TESTFILES=tests/unit/test_automatic_disk_cleanup.py PYTEST_ARGS='-q -n 0'; \
+		$(MAKE) --no-print-directory test-files TESTFILES='tests/unit/test_automatic_disk_cleanup.py tests/unit/test_automatic_disk_cleanup_resources.py' PYTEST_ARGS='-q -n 0'; \
 	elif [ "$(DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY)" = "0" ] && [ "$(DISK_CLEANUP_PREFLIGHT_DRY_RUN)" = "1" ]; then \
 		$(SYSTEM_PYTHON) -m scripts.automatic_disk_cleanup --dry-run --receipt-grace-seconds "$(DISK_CLEANUP_RECEIPT_GRACE_SECONDS)"; \
 	elif [ "$(DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY)" = "0" ] && [ "$(DISK_CLEANUP_PREFLIGHT_DRY_RUN)" = "0" ]; then \
@@ -94,7 +94,7 @@ disk-cleanup-preflight:
 # Compatibility entry point used by the pre-commit hook.
 check-disk:
 	@if [ "$(CHECK_DISK_VALIDATE_ONLY)" = "1" ]; then \
-		$(MAKE) --no-print-directory test-files TESTFILES='tests/unit/test_check_disk_usage.py tests/unit/test_automatic_disk_cleanup.py' PYTEST_ARGS='-q -n 0'; \
+		$(MAKE) --no-print-directory test-files TESTFILES='tests/unit/test_check_disk_usage.py tests/unit/test_automatic_disk_cleanup.py tests/unit/test_automatic_disk_cleanup_resources.py' PYTEST_ARGS='-q -n 0'; \
 	elif [ "$(CHECK_DISK_VALIDATE_ONLY)" = "0" ]; then \
 		$(MAKE) --no-print-directory disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0 DISK_CLEANUP_PREFLIGHT_DRY_RUN=0 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800; \
 	else \
@@ -1162,4 +1162,3 @@ ci-verify-wait: _require-gh
 # Guard: ensure gh CLI is available
 _require-gh:
 	@command -v gh >/dev/null 2>&1 || { echo "ERROR: gh CLI not found. Install with: make ci-install-gh"; exit 1; }
-
