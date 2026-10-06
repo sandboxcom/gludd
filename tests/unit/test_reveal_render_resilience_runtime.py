@@ -28,7 +28,8 @@ def test_deck_uses_only_owned_relative_runtime_assets() -> None:
         "./vendor/reveal/plugin/notes/notes.js",
         "./vendor/mermaid/mermaid.js",
         "./vendor/ace/ace.js",
-        "./presentation.js",
+        "./presentation.js?v={{GIT_SHA_FULL}}",
+        "./presentation.css?v={{GIT_SHA_FULL}}",
     ):
         assert asset in html
     assert "./vendor/reveal/theme/black.css" not in html
@@ -63,28 +64,29 @@ def test_vendor_manifest_is_exact_and_digest_bound() -> None:
     assert actual == expected
 
 
-def test_runtime_serializes_visible_slide_rendering_and_keeps_failures_visible() -> None:
-    """Source code must pin the hidden-slide and concurrent-render regressions."""
+def test_runtime_eagerly_renders_once_and_keeps_failures_visible() -> None:
+    """Static charts render in the plugin lifecycle without slide-visit retries."""
     runtime = (DECK / "presentation.js").read_text(encoding="utf-8")
 
     for token in (
-        "slidetransitionend",
         "overviewhidden",
         "requestAnimationFrame",
         "offsetParent",
         "getBoundingClientRect",
-        "requestedDiagram",
-        "awaitRenderOutcome",
+        "renderPendingDiagrams",
+        "validateVisibleGeometry",
+        "gludd-mermaid-prerender",
         "data-mermaid-state",
         "renderer-unavailable",
         "invalid-source",
         "invalid-geometry",
-        "render-timeout",
         "Diagram render failed",
         "gluddPresentationHealth",
         'typeof window.RevealMermaid === "function"',
     ):
         assert token in runtime
+    for legacy_retry in ("requestedDiagram", "awaitRenderOutcome", "RENDER_TIMEOUT_MS"):
+        assert legacy_retry not in runtime
     assert "mermaid.run({" not in runtime
     assert "document.querySelectorAll('.mermaid')" not in runtime
 
@@ -213,13 +215,14 @@ def test_source_endpoint_rejects_symlink_escape(tmp_path: Path) -> None:
 
 def test_full_sha_is_available_to_the_deck_template() -> None:
     """Public citation URLs may not use the seven-character display SHA."""
+    full_sha = "a" * 40
     html, missing = build_deck.apply_tokens(
         "{{GIT_SHA}} {{GIT_SHA_FULL}}",
         {
             "git_sha": "1234567",
-            "git_sha_full": "1234567890abcdef1234567890abcdef12345678",
+            "git_sha_full": full_sha,
         },
     )
 
     assert missing == ["{{VERSION}}", "{{TEST_COUNT}}", "{{ROLE_COUNT}}", "{{GENERATED_AT}}"]
-    assert html == "1234567 1234567890abcdef1234567890abcdef12345678"
+    assert html == f"1234567 {full_sha}"

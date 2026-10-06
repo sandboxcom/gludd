@@ -205,8 +205,9 @@ templated partial so untrusted run-log strings can't SSTI the deck).
 | `deck-verify` | run the a11y/visual-qa skill (Deliverable B) on built deck; fail build on a11y/density/overlap errors | `deck`, Deliverable B skill |
 | `deck-serve` | static serve build/ | `deck` |
 | `vendor-presentation-assets` | fail-closed digest/license validation; explicit refresh mode | vendored manifest |
-| `presentation-browser-install` | validate/install pinned Chromium in a namespaced cache | `presentation-test` extra |
-| `presentation-browser-test` | serial `/gludd/` Chromium acceptance with retained diagnostics | built deck + Chromium |
+| `presentation-browser-install` | validate/install pinned Chromium and WebKit in a namespaced cache | `presentation-test` extra |
+| `presentation-browser-test` | serial `/gludd/` Chromium + WebKit acceptance with retained diagnostics | exact built deck + both engines |
+| `presentation-pages-probe` | cache-busted, content-free comparison of the live Pages revision to one exact SHA | public Pages URL |
 
 `deck-verify` closes the loop: **the deck about gludd is itself validated by a gludd
 skill.** That is the linkage between the two deliverables.
@@ -251,9 +252,9 @@ So ~60% of the deck (all of §1–§4) is buildable from current artifacts today
 
 ## 7. Remaining data dependencies / risks
 
-- The presentation browser lane now uses pinned Playwright and Chromium. Run
+- The presentation browser lane now uses pinned Playwright Chromium and WebKit. Run
   `make presentation-browser-install` once for the namespaced browser cache,
-  then `make presentation-browser-test`; absence of Chromium fails closed with
+  then `make presentation-browser-test`; absence of either engine fails closed with
   the exact installation command instead of skipping the checks.
 - Greenfield E2E flow may not exist yet as a runnable target — if not, §5.3–5.4 are
   design-only until it lands.
@@ -268,10 +269,14 @@ The reveal.js deck is separate from GitHub Markdown and keeps using the existing
 
 ## Resilient runtime and source navigation — v0.1.2
 
-The deck registers `reveal.js-mermaid-plugin@11.15.0` and delegates Mermaid
-parsing and layout to that maintained integration. A small controller serializes
-render attempts after Reveal visibility events, checks positive SVG geometry,
-and exposes a source-preserving `pending`/`rendering`/`rendered`/`failed` state.
+The deck delegates Mermaid parsing and layout to the vendored
+`reveal.js-mermaid-plugin@11.15.0`. Reveal normally applies `display: none` to
+inactive slides; both Mermaid and browsers can consequently measure hidden
+labels as zero or `NaN`. The controller now gives every inactive slide an
+off-screen but measurable layout for one bounded batch, renders all authored
+charts before `gluddPresentationReady`, then removes that temporary layout.
+It validates the visible SVG again after two animation frames on navigation and
+exposes a source-preserving `pending`/`rendering`/`rendered`/`failed` state.
 Failures are announced accessibly and categorized without including diagram
 source or stack traces. Pages has no runtime CDN dependency.
 
@@ -281,10 +286,20 @@ This behavior intentionally preserves the long-lived practitioner evidence in
 [`mermaid-js/mermaid#3577`](https://github.com/mermaid-js/mermaid/issues/3577),
 [`mgaitan/sphinxcontrib-mermaid#126`](https://github.com/mgaitan/sphinxcontrib-mermaid/issues/126),
 and
-[`zjffun/reveal.js-mermaid-plugin#5`](https://github.com/zjffun/reveal.js-mermaid-plugin/issues/5).
+[`zjffun/reveal.js-mermaid-plugin#5`](https://github.com/zjffun/reveal.js-mermaid-plugin/issues/5),
+plus the Safari/macOS initial-layout report
+[`mermaid-js/mermaid#7323`](https://github.com/mermaid-js/mermaid/issues/7323).
 Those reports cover hidden-slide zero geometry, concurrent asynchronous renders,
-visibility-triggered recovery, and clipped text; an SVG-exists assertion alone
-would not catch those failures.
+visibility-triggered recovery, reload/zoom-sensitive WebKit layout, and clipped
+text; an SVG-exists assertion alone would not catch those failures.
+
+The browser contract serves the exact Pages upload tree below `/gludd/`. In both
+Chromium and WebKit it requires all charts to reach valid SVG metadata within
+five seconds on a cold load and a cached reload, visits every chart forward and
+backward, requires positive rendered geometry, and exercises malformed-source,
+blocked-asset, source-viewer, console, network, and HTTP failure paths. Runtime
+JS and CSS URLs carry the exact 40-character build SHA so a Safari cache cannot
+combine old controller code with new deck markup.
 
 At build time, repository `file:line` citations become immutable GitHub blob
 links for the exact 40-character commit. On the loopback-only preview server,
@@ -294,6 +309,20 @@ only build-generated allowlisted UTF-8 files, rejects traversal and symlink
 escapes, caps response size, and is absent from the static Pages artifact.
 
 The Pages workflow builds one directory, tests that resolved directory below
-`/gludd/`, then preserves the same validated files for deployment. Development
-pushes and relevant pull requests validate without deploying; only `master`
-receives Pages permissions and can deploy.
+`/gludd/`, then preserves and deploys the same validated files only from
+`master`. Development pushes and pull requests validate but cannot overwrite
+the public presentation. `presentation-pages-probe` fetches the public artifact
+with cache bypass and fails unless its embedded full SHA equals the expected
+master SHA.
+
+Pre-fix deployment evidence on 2026-10-06 was explicitly stale: Pages run
+`37434869685` validated commit `8ef55fdab99e3a180113c90e2115d048b5c20c94`
+but skipped deployment, while the public artifact did not contain even a short
+revision marker (`published display revision is missing`). It therefore could
+not represent the release branch. The new workflow closes that boundary; until
+its master push completes, the public URL remains legacy.
+
+ZDD rollback is a master revert to the last browser-green release commit followed
+by the same workflow. The deploy job consumes only the artifact from
+its required validation job, and the revision probe provides the post-deploy
+identity check; no in-place Pages mutation or unverified fallback is used.
