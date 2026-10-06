@@ -984,12 +984,13 @@ flowchart LR
   <p class="stage-kicker">Chemistry contract &middot; typed failure to reversible rollout</p>
   <h2>S83.114 &mdash; Chemistry identities <span class="badge-green">Fail closed</span></h2>
   <div data-contract="v0.1.2-completed-backlog">
-    <h3>v0.1.2 completed backlog <span class="badge-green">4 formally closed</span></h3>
+    <h3>v0.1.2 completed backlog <span class="badge-green">5 formally closed</span></h3>
     <ol style="font-size:0.48em;">
       <li><strong>S83.114 &mdash; Fail-closed chemistry entity resolution</strong></li>
       <li><strong>S83.115 &mdash; Standards-consistent X.509 chain validation</strong></li>
       <li><strong>S83.116 &mdash; Monotonic debounce, throttle, and watchdog state</strong></li>
       <li><strong>S83.117 &mdash; Authenticated TLS 1.3 state and directional records</strong></li>
+      <li><strong>S83.128 &mdash; invoking-worktree-safe virtual-environment reclamation</strong></li>
     </ol>
     <p class="honest-note" style="font-size:0.42em;"><strong>Implemented &ne; closed:</strong> S83.158 and S83.166 retain open exact-head/hosted release evidence and are not counted here.</p>
   </div>
@@ -1223,7 +1224,7 @@ flowchart LR
 <!-- ============================================================ -->
 <section data-contract="decision-log-codification-v1">
   <p class="stage-kicker">Repeated decisions &middot; verified evidence to reversible automation</p>
-  <h2>Decision-log codification <span class="badge-yellow">Opt-in adapter ready; live flow pending</span></h2>
+  <h2>Decision-log codification <span class="badge-yellow">Bounded analysis API ready; live flow pending</span></h2>
   <div class="two-col">
     <div>
       <h3>Trust only exact evidence</h3>
@@ -1232,18 +1233,22 @@ flowchart LR
         <li><strong>Exact context or abstain:</strong> project, policy, guards, schema, and an observed context signature must match; uncertainty returns <code>DecisionAbstentionV1</code>.</li>
         <li><strong>zero-LLM hit:</strong> <code>DecisionResolver</code> runs one verified leaf through the deterministic <code>RuleEngine</code>, or calls the supplied fallback once after abstention.</li>
         <li><strong>Safe opt-in:</strong> <code>DecisionCodificationAdapter</code> binds project and policy through daemon/EventLoop injection and is disabled by default.</li>
+        <li><strong>Auth before analysis:</strong> <code>/api/v1/decision-codification/analyze</code> requires matching authenticated, request, and adapter project scope.</li>
+        <li><strong>Bounded request:</strong> 1-256 unique safe run IDs, a 64 KiB body, strict digests and time/use bounds.</li>
       </ul>
     </div>
     <div>
       <h3>Approval and ZDD lifecycle</h3>
       <ul class="bullets-tight">
         <li><strong>Human approval:</strong> an authorized person approves one exact candidate/report digest; create-only HMAC receipts cannot be rewritten.</li>
+        <li><strong>Safe response:</strong> at most 128 digest/count summaries plus closed rejection enums; no evidence, project IDs, run IDs, or keys.</li>
+        <li><strong>Analysis only:</strong> no approval or activation, lifecycle write, or active-pointer mutation.</li>
         <li><strong>Stages:</strong> shadow 0% &rarr; canary 1% &rarr; 10% &rarr; 50% &rarr; active 100%, with stable project-scoped cohorts.</li>
         <li><strong>Atomic rollback:</strong> restore the newest verified compatible generation, or remove the pointer so all traffic abstains.</li>
       </ul>
     </div>
   </div>
-  <p class="honest-note">Core and adapter tests prove analysis, approval, activation, zero fallback on an exact hit, one fallback after abstention, and rollback. Automatic decision-point invocation, recorder/outcome feedback, durable multiworker storage, config, CLI/API, and live-traffic evidence remain; no live avoided-call claim is made yet.</p>
+  <p class="honest-note">Core and adapter tests prove analysis, approval, activation, zero fallback on an exact hit, one fallback after abstention, and rollback. The HTTP route is authenticated, bounded, content-safe, and proposal-only. CLI, live-flow, durable config pending; recorder/outcome feedback, multiworker storage, and live-traffic evidence also remain. No live avoided-call claim is made yet.</p>
   <p class="cite">Sources: docs/features/DECISION_LOG_CODIFICATION.md &middot; RapidFuzz #432 &middot; scikit-learn #15629 / discussion #25411 &middot; OPA #2379 / #1514</p>
 </section>
 
