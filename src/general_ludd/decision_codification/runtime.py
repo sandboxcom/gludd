@@ -14,7 +14,7 @@ from general_ludd.decision_codification.artifact_store import (
 from general_ludd.decision_codification.rollout import RolloutController, RolloutError
 from general_ludd.decision_codification.schema import (
     DecisionAbstentionV1,
-    DecisionEnvelopeV1,
+    DecisionContextV1,
     DecisionKind,
     DecisionRuleBundleV1,
     FallbackReason,
@@ -26,7 +26,7 @@ from general_ludd.decision_codification.schema import (
 from general_ludd.decision_codification.telemetry import DecisionCodificationTelemetry
 from general_ludd.rules.engine import Rule, RuleEngine
 
-SafetyCheck = Callable[[str, DecisionEnvelopeV1], bool]
+SafetyCheck = Callable[[str, DecisionContextV1], bool]
 _RESERVED_RUNTIME_FEATURES: dict[str, object] = {"codification_known": True}
 
 
@@ -46,7 +46,7 @@ class CodifiedDecision:
 
     decision: str
     leaf_id: str
-    envelope_id: str
+    context_id: str
     candidate_digest: str
     rollout_stage: RolloutStage
     side_effect_id: str
@@ -119,7 +119,7 @@ class DecisionRuntime:
         if artifacts is not rollout.artifacts:
             raise ValueError("runtime and rollout must share one artifact store")
         self._rollout = rollout
-        self._safety_check = safety_check or (lambda decision, envelope: True)
+        self._safety_check = safety_check or (lambda decision, context: True)
         self._rules = rule_adapter or RulesEngineAdapter()
         self._telemetry = telemetry or DecisionCodificationTelemetry()
 
@@ -128,7 +128,7 @@ class DecisionRuntime:
         *,
         project_id: str,
         decision_kind: DecisionKind,
-        normalized: DecisionEnvelopeV1 | NormalizationRefusalV1,
+        normalized: DecisionContextV1 | NormalizationRefusalV1,
         correlation_id: str,
         policy_digest: str,
         now: datetime,
@@ -141,7 +141,7 @@ class DecisionRuntime:
                 FallbackReason.NORMALIZATION_REFUSED,
                 normalization_reason=normalized.reason,
             )
-        envelope = normalized
+        context_input = normalized
         pointer = self._rollout.current(project_id, decision_kind)
         if pointer is None:
             reason = (
@@ -154,14 +154,14 @@ class DecisionRuntime:
             return self._abstain(
                 decision_kind,
                 FallbackReason.REVOKED,
-                envelope=envelope,
+                context=context_input,
                 candidate_digest=pointer.candidate_digest,
             )
         if self._rollout.is_drift_held(pointer.candidate_digest):
             return self._abstain(
                 decision_kind,
                 FallbackReason.DRIFT_HOLD,
-                envelope=envelope,
+                context=context_input,
                 candidate_digest=pointer.candidate_digest,
             )
         try:
@@ -171,67 +171,74 @@ class DecisionRuntime:
             return self._abstain(
                 decision_kind,
                 FallbackReason.INTEGRITY_FAILURE,
-                envelope=envelope,
+                context=context_input,
                 candidate_digest=pointer.candidate_digest,
             )
 
         try:
-            if envelope.project_id != project_id or envelope.decision_kind is not decision_kind:
+            if (
+                context_input.project_id != project_id
+                or context_input.decision_kind is not decision_kind
+            ):
                 return self._abstain(
                     decision_kind,
                     FallbackReason.SCOPE_MISS,
-                    envelope=envelope,
+                    context=context_input,
                     candidate_digest=bundle.candidate_digest,
                 )
             if now >= bundle.expires_at or now >= receipt.expires_at:
                 return self._abstain(
                     decision_kind,
                     FallbackReason.EXPIRED,
-                    envelope=envelope,
+                    context=context_input,
                     candidate_digest=bundle.candidate_digest,
                 )
-            if envelope.feature_schema != bundle.feature_schema:
+            if context_input.feature_schema != bundle.feature_schema:
                 return self._abstain(
                     decision_kind,
                     FallbackReason.SCOPE_MISS,
-                    envelope=envelope,
+                    context=context_input,
                     candidate_digest=bundle.candidate_digest,
                 )
-            expected_guards = {
-                "action_vocabulary": f"{bundle.decision_kind.value}.v1",
-                "operation_class": bundle.decision_kind.value,
-                "risk_band": bundle.risk_scope,
-            }
-            if envelope.exact_guards != expected_guards:
+            if (
+                context_input.exact_guards.get("action_vocabulary")
+                != f"{bundle.decision_kind.value}.v1"
+                or context_input.exact_guards.get("risk_band") != bundle.risk_scope
+                or context_input.context_signature
+                not in bundle.observed_context_digests
+            ):
                 return self._abstain(
                     decision_kind,
                     FallbackReason.SCOPE_MISS,
-                    envelope=envelope,
+                    context=context_input,
                     candidate_digest=bundle.candidate_digest,
                 )
-            if policy_digest not in bundle.policy_compatibility:
+            if (
+                context_input.policy_digest != policy_digest
+                or policy_digest not in bundle.policy_compatibility
+            ):
                 self._rollout.mark_drift_hold(project_id, decision_kind, "policy_changed")
                 return self._abstain(
                     decision_kind,
                     FallbackReason.POLICY_CHANGED,
-                    envelope=envelope,
+                    context=context_input,
                     candidate_digest=bundle.candidate_digest,
                 )
             if not self._rollout.selected_for_execution(pointer, correlation_id):
                 return self._abstain(
                     decision_kind,
                     FallbackReason.CANARY_EXCLUDED,
-                    envelope=envelope,
+                    context=context_input,
                     candidate_digest=bundle.candidate_digest,
                 )
 
-            context: dict[str, object] = dict(envelope.exact_guards)
-            for name, value in envelope.features.items():
+            context: dict[str, object] = dict(context_input.exact_guards)
+            for name, value in context_input.features.items():
                 if name in context and context[name] != value:
                     return self._abstain(
                         decision_kind,
                         FallbackReason.SCOPE_MISS,
-                        envelope=envelope,
+                        context=context_input,
                         candidate_digest=bundle.candidate_digest,
                     )
                 context[name] = value
@@ -242,7 +249,7 @@ class DecisionRuntime:
                 return self._abstain(
                     decision_kind,
                     FallbackReason.SCOPE_MISS,
-                    envelope=envelope,
+                    context=context_input,
                     candidate_digest=bundle.candidate_digest,
                 )
             leaf_ids = self._rules.matching_leaf_ids(bundle, context)
@@ -253,14 +260,14 @@ class DecisionRuntime:
                 return self._abstain(
                     decision_kind,
                     FallbackReason.MULTIPLE_LEAVES,
-                    envelope=envelope,
+                    context=context_input,
                     candidate_digest=bundle.candidate_digest,
                 )
             if not leaf_ids:
                 return self._abstain(
                     decision_kind,
                     FallbackReason.NO_LEAF,
-                    envelope=envelope,
+                    context=context_input,
                     candidate_digest=bundle.candidate_digest,
                 )
             leaf = next(item for item in bundle.leaves if item.leaf_id == leaf_ids[0])
@@ -268,22 +275,22 @@ class DecisionRuntime:
                 return self._abstain(
                     decision_kind,
                     FallbackReason.NO_LEAF,
-                    envelope=envelope,
+                    context=context_input,
                     candidate_digest=bundle.candidate_digest,
                 )
-            if not self._safety_check(leaf.decision, envelope):
+            if not self._safety_check(leaf.decision, context_input):
                 self._rollout.mark_drift_hold(
                     project_id, decision_kind, "policy_changed"
                 )
                 return self._abstain(
                     decision_kind,
                     FallbackReason.POLICY_CHANGED,
-                    envelope=envelope,
+                    context=context_input,
                     candidate_digest=bundle.candidate_digest,
                 )
             application_id = canonical_sha256({
                 "candidate_digest": bundle.candidate_digest,
-                "envelope_id": envelope.envelope_id,
+                "context_id": context_input.context_id,
                 "correlation_id": correlation_id,
                 "side_effect_id": side_effect_id,
             })
@@ -295,11 +302,11 @@ class DecisionRuntime:
                 return self._abstain(
                     decision_kind,
                     FallbackReason.EXPIRED,
-                    envelope=envelope,
+                    context=context_input,
                     candidate_digest=bundle.candidate_digest,
                 )
             decision_receipt_digest = canonical_sha256({
-                "input_envelope_digest": envelope.envelope_id,
+                "input_context_digest": context_input.context_id,
                 "rule_bundle_digest": bundle.candidate_digest,
                 "leaf_id": leaf.leaf_id,
                 "result": leaf.decision,
@@ -312,7 +319,7 @@ class DecisionRuntime:
             return CodifiedDecision(
                 decision=leaf.decision,
                 leaf_id=leaf.leaf_id,
-                envelope_id=envelope.envelope_id,
+                context_id=context_input.context_id,
                 candidate_digest=bundle.candidate_digest,
                 rollout_stage=pointer.stage,
                 side_effect_id=side_effect_id,
@@ -322,7 +329,7 @@ class DecisionRuntime:
             return self._abstain(
                 decision_kind,
                 FallbackReason.RUNTIME_ERROR,
-                envelope=envelope,
+                context=context_input,
                 candidate_digest=bundle.candidate_digest,
             )
 
@@ -332,7 +339,7 @@ class DecisionRuntime:
         reason: FallbackReason,
         *,
         normalization_reason: NormalizationRefusalReason | None = None,
-        envelope: DecisionEnvelopeV1 | None = None,
+        context: DecisionContextV1 | None = None,
         candidate_digest: str | None = None,
     ) -> DecisionAbstentionV1:
         self._telemetry.lookup(decision_kind.value, "abstained", "none")
@@ -340,7 +347,7 @@ class DecisionRuntime:
         return DecisionAbstentionV1(
             reason=reason,
             normalization_reason=normalization_reason,
-            envelope_id=envelope.envelope_id if envelope is not None else None,
+            context_id=context.context_id if context is not None else None,
             candidate_digest=candidate_digest,
         )
 

@@ -94,7 +94,7 @@ def _bundle() -> DecisionRuleBundleV1:
         corpus_digest=SHA_A,
         training_recipe_digest=SHA_B,
         dependency_lock_digest=SHA_C,
-        evaluator_report_digest=SHA_A,
+        observed_context_digests=(SHA_E,),
         created_at=NOW,
         expires_at=NOW + timedelta(days=90),
         maximum_use_count=100,

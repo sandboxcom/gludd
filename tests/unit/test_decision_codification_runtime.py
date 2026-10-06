@@ -21,7 +21,7 @@ from general_ludd.decision_codification.runtime import (
 from general_ludd.decision_codification.schema import (
     ApprovalReceiptV1,
     DecisionAbstentionV1,
-    DecisionEnvelopeV1,
+    DecisionContextV1,
     DecisionKind,
     DecisionRuleBundleV1,
     DecisionRuleLeafV1,
@@ -30,9 +30,6 @@ from general_ludd.decision_codification.schema import (
     NormalizationRefusalReason,
     NormalizationRefusalV1,
     OutcomeCountsV1,
-    OutcomeEvidenceV1,
-    RedactionSummaryV1,
-    VerifiedOutcome,
 )
 
 SHA_A = "sha256:" + "a" * 64
@@ -94,7 +91,7 @@ def _bundle(
         corpus_digest=SHA_A,
         training_recipe_digest=SHA_B,
         dependency_lock_digest=SHA_C,
-        evaluator_report_digest=SHA_F,
+        observed_context_digests=(_context().context_signature,),
         created_at=NOW - timedelta(days=1),
         expires_at=expires_at or NOW + timedelta(days=90),
         maximum_use_count=2,
@@ -116,7 +113,7 @@ def _receipt(
         previous_receipt_digest=previous,
         candidate_digest=bundle.candidate_digest,
         corpus_digest=bundle.corpus_digest,
-        evaluator_report_digest=bundle.evaluator_report_digest,
+        evaluator_report_digest=SHA_F,
         feature_schema=bundle.feature_schema,
         policy_digest=SHA_E,
         source_code_digest=SHA_B,
@@ -134,33 +131,19 @@ def _receipt(
     )
 
 
-def _envelope(*, work_type: str = "code") -> DecisionEnvelopeV1:
-    return DecisionEnvelopeV1.create(
-        schema="gludd.decision-envelope/v1",
-        source_run_id="run-1",
-        source_event_digest=SHA_A,
-        source_bundle_digest=SHA_B,
+def _context(*, work_type: str = "code") -> DecisionContextV1:
+    return DecisionContextV1.create(
+        schema="gludd.decision-context/v1",
         project_id="project-1",
         decision_kind="review",
         feature_schema=SHA_D,
         policy_digest=SHA_E,
-        occurred_at=NOW,
         exact_guards={
             "action_vocabulary": "review.v1",
-            "operation_class": "review",
+            "operation_class": "review_change",
             "risk_band": "low",
         },
         features={"risk_band": "low", "work_type": work_type},
-        decision="approve",
-        verified_outcome="success",
-        outcome_evidence=OutcomeEvidenceV1(
-            decision_event_digest=SHA_A,
-            outcome=VerifiedOutcome.SUCCESS,
-            terminal_event_ids=("terminal-1",),
-            gate_digests=(SHA_C,),
-            status_digests=(),
-        ),
-        redaction=RedactionSummaryV1(count=0, kinds=()),
     )
 
 
@@ -209,7 +192,7 @@ def _runtime(
 
 def _lookup(
     runtime: DecisionRuntime,
-    value: DecisionEnvelopeV1 | NormalizationRefusalV1,
+    value: DecisionContextV1 | NormalizationRefusalV1,
     *,
     project_id: str = "project-1",
     policy_digest: str = SHA_E,
@@ -228,15 +211,16 @@ def _lookup(
 
 def test_exact_lookup_is_rules_engine_backed_and_idempotent(tmp_path: Path) -> None:
     runtime, controller, bundle = _runtime(tmp_path)
-    envelope = _envelope()
+    context = _context()
 
-    first = _lookup(runtime, envelope)
-    second = _lookup(runtime, envelope)
+    first = _lookup(runtime, context)
+    second = _lookup(runtime, context)
 
     assert isinstance(first, CodifiedDecision)
     assert first == second
     assert first.decision == "approve"
     assert first.leaf_id == "approve"
+    assert first.context_id == context.context_id
     assert first.candidate_digest == bundle.candidate_digest
     assert controller.use_count(bundle.candidate_digest) == 1
 
@@ -247,7 +231,7 @@ def test_reserved_known_guard_is_injected_only_after_scope_validation(
     bundle = _bundle(feature_id="codification_known", feature_value=True)
     runtime, _, _ = _runtime(tmp_path, bundle=bundle)
 
-    result = _lookup(runtime, _envelope())
+    result = _lookup(runtime, _context())
 
     assert isinstance(result, CodifiedDecision)
     assert result.decision == "approve"
@@ -265,14 +249,14 @@ def test_reserved_known_guard_is_injected_only_after_scope_validation(
             SHA_E,
             FallbackReason.NORMALIZATION_REFUSED,
         ),
-        (_envelope(), "project-2", SHA_E, FallbackReason.NO_ACTIVE_RULE),
-        (_envelope(), "project-1", SHA_F, FallbackReason.POLICY_CHANGED),
-        (_envelope(work_type="docs"), "project-1", SHA_E, FallbackReason.NO_LEAF),
+        (_context(), "project-2", SHA_E, FallbackReason.NO_ACTIVE_RULE),
+        (_context(), "project-1", SHA_F, FallbackReason.POLICY_CHANGED),
+        (_context(work_type="docs"), "project-1", SHA_E, FallbackReason.SCOPE_MISS),
     ],
 )
 def test_lookup_returns_closed_typed_abstentions(
     tmp_path: Path,
-    value: DecisionEnvelopeV1 | NormalizationRefusalV1,
+    value: DecisionContextV1 | NormalizationRefusalV1,
     project_id: str,
     policy_digest: str,
     reason: FallbackReason,
@@ -292,25 +276,25 @@ def test_lookup_returns_closed_typed_abstentions(
 
 def test_shadow_expiry_revocation_and_drift_hold_never_execute(tmp_path: Path) -> None:
     shadow, _, _ = _runtime(tmp_path / "shadow", active=False)
-    result = _lookup(shadow, _envelope())
+    result = _lookup(shadow, _context())
     assert isinstance(result, DecisionAbstentionV1)
     assert result.reason is FallbackReason.CANARY_EXCLUDED
 
     expired_bundle = _bundle(expires_at=NOW - timedelta(seconds=1))
     expired, _, _ = _runtime(tmp_path / "expired", bundle=expired_bundle)
-    result = _lookup(expired, _envelope())
+    result = _lookup(expired, _context())
     assert isinstance(result, DecisionAbstentionV1)
     assert result.reason is FallbackReason.EXPIRED
 
     held, controller, bundle = _runtime(tmp_path / "held")
     controller.mark_drift_hold("project-1", DecisionKind.REVIEW, "failure_rate")
-    result = _lookup(held, _envelope())
+    result = _lookup(held, _context())
     assert isinstance(result, DecisionAbstentionV1)
     assert result.reason is FallbackReason.DRIFT_HOLD
 
     revoked, controller, bundle = _runtime(tmp_path / "revoked")
     controller.force_revoke_for_integrity(bundle.candidate_digest)
-    result = _lookup(revoked, _envelope())
+    result = _lookup(revoked, _context())
     assert isinstance(result, DecisionAbstentionV1)
     assert result.reason is FallbackReason.REVOKED
 
@@ -327,7 +311,7 @@ def test_shadow_expiry_revocation_and_drift_hold_never_execute(tmp_path: Path) -
     assert controller.revoke(
         revocation, expected_candidate_digest=bundle.candidate_digest
     )
-    result = _lookup(revoked, _envelope())
+    result = _lookup(revoked, _context())
     assert isinstance(result, DecisionAbstentionV1)
     assert result.reason is FallbackReason.REVOKED
 
@@ -344,23 +328,23 @@ def test_ambiguity_policy_refusal_and_internal_error_fail_closed(
     ambiguous, controller, bundle = _runtime(
         tmp_path / "ambiguous", rule_adapter=_Ambiguous()
     )
-    result = _lookup(ambiguous, _envelope())
+    result = _lookup(ambiguous, _context())
     assert isinstance(result, DecisionAbstentionV1)
     assert result.reason is FallbackReason.MULTIPLE_LEAVES
     assert controller.is_drift_held(bundle.candidate_digest)
 
     refused, _, _ = _runtime(
-        tmp_path / "refused", safety_check=lambda decision, envelope: False
+        tmp_path / "refused", safety_check=lambda decision, context: False
     )
-    result = _lookup(refused, _envelope())
+    result = _lookup(refused, _context())
     assert isinstance(result, DecisionAbstentionV1)
     assert result.reason is FallbackReason.POLICY_CHANGED
 
-    def _raise(decision: str, envelope: DecisionEnvelopeV1) -> bool:
+    def _raise(decision: str, context: DecisionContextV1) -> bool:
         raise RuntimeError("must not escape")
 
     broken, _, _ = _runtime(tmp_path / "broken", safety_check=_raise)
-    result = _lookup(broken, _envelope())
+    result = _lookup(broken, _context())
     assert isinstance(result, DecisionAbstentionV1)
     assert result.reason is FallbackReason.RUNTIME_ERROR
 
@@ -370,12 +354,12 @@ def test_use_limit_expires_generation_without_double_counting_retries(
 ) -> None:
     runtime, controller, bundle = _runtime(tmp_path)
 
-    assert isinstance(_lookup(runtime, _envelope()), CodifiedDecision)
+    assert isinstance(_lookup(runtime, _context()), CodifiedDecision)
     assert isinstance(
-        _lookup(runtime, _envelope(), correlation_id="correlation-2"),
+        _lookup(runtime, _context(), correlation_id="correlation-2"),
         CodifiedDecision,
     )
-    third = _lookup(runtime, _envelope(), correlation_id="correlation-3")
+    third = _lookup(runtime, _context(), correlation_id="correlation-3")
 
     assert isinstance(third, DecisionAbstentionV1)
     assert third.reason is FallbackReason.EXPIRED
