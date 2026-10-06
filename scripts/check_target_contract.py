@@ -17,6 +17,11 @@ try:
 except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
     from makefile_layout import compose_makefile
 
+try:
+    from scripts.behavioral_specs import load_behavioral_specs
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from behavioral_specs import load_behavioral_specs
+
 ROOT = Path(__file__).resolve().parent.parent
 MAKEFILE = ROOT / "Makefile"
 SPECS_FILE = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
@@ -33,7 +38,7 @@ def find_target_enforcement(spec_id: str) -> str | None:
     if not SPECS_FILE.exists():
         return None
 
-    content = SPECS_FILE.read_text()
+    content = load_behavioral_specs(SPECS_FILE)
     in_spec = False
 
     for line in content.split("\n"):

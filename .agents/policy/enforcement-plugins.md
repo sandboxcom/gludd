@@ -50,5 +50,3 @@ make verify-enforcement        # Check all plugins are healthy
 ```
 
 **Key insight:** plugins that only block `edit/write/bash` or `task/agent` do NOT block `read`/`grep`/`glob` calls. The agent can always read files to diagnose blocked edits. Plugins marked "↳ reads excluded" explicitly skip read tools.
-
-

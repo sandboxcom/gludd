@@ -43,7 +43,7 @@
 .metric-box .cite { font-size: 0.4em; color: #484f58; display: block; margin-top: 4px; }
 .fragment.small { font-size: 0.75em; }
 .diagram-wrap { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin: 16px auto; max-width: 94%; text-align: center; }
-.diagram-wrap img { width: 100%; height: auto; display: block; }
+.diagram-wrap img { max-width: 100%; height: auto; display: block; margin-inline: auto; }
 .reveal .mermaid svg { max-width: 100%; height: auto; }
 .reveal .mermaid { max-width: 100%; overflow-x: auto; }
 .honest-note { border-left: 3px solid #d29922; padding-left: 12px; color: #d29922; font-size: 0.55em; margin-top: 12px; }
@@ -206,8 +206,8 @@ graph TD
       <h3>Render without moving live slides</h3>
       <ul class="bullets-tight">
         <li>After fonts load, render <strong>one diagram at a time</strong> in an independent body scratch node</li>
-        <li>Keep the authored node in Reveal; copy only a <strong>completed, validated SVG</strong></li>
-        <li>Pin a numeric SVG viewport so Safari cannot retain stale intrinsic geometry</li>
+        <li>Keep the authored node in Reveal; decode each validated SVG as a <strong>replaced image</strong></li>
+        <li>Give every image explicit intrinsic dimensions and every diagram its own deadline</li>
         <li>Reject descendant <code>undefined</code>, <code>NaN</code>, or <code>Infinity</code> geometry</li>
         <li>Keep accessible Mermaid source visible for every isolated failure</li>
       </ul>
@@ -215,8 +215,9 @@ graph TD
     <div>
       <h3>Prove the artifact users receive</h3>
       <ul class="bullets-tight">
-        <li><strong>Chromium + WebKit:</strong> cold/cache, every slide, resize, source viewer, and failure fallbacks</li>
-        <li><strong>Native Safari:</strong> a separate bounded <code>safaridriver</code> target; WebKit is never relabeled Safari</li>
+        <li><strong>Chromium + WebKit:</strong> cold/cache, every slide, resize, decoded-image geometry, and failure fallbacks</li>
+        <li><strong>Safari regression:</strong> forced inline-SVG collapse must not hide any chart</li>
+        <li><strong>Native Safari:</strong> separate bounded <code>safaridriver</code>; operator automation remains required</li>
         <li><strong>Pages:</strong> development validates; master alone deploys the exact tested SHA</li>
         <li><strong>ZDD:</strong> controller and manifest-bound Mermaid transform roll back together</li>
       </ul>
@@ -238,41 +239,62 @@ graph TD
   <p>Nine stages, each backed by a named function and a database table. The next slides walk each one.</p>
   <div class="diagram-wrap">
     <div class="mermaid">
-flowchart TD
-  n1["1 Submit<br/>routers/todos.py"] --> n2["2 Tick loop<br/>event_loop/loop.py"]
-  n2 --> n3["3 Schedule<br/>event_loop/scheduler.py"]
-  n3 --> n4["4 Claim<br/>db/repository.py"]
-  n4 --> n5["5 Dispatch<br/>loop.py _dispatch_execute_job"]
-  n5 --> n6["6 Model call<br/>models/gateway.py"]
-  n6 --> n7["7 Execute<br/>ansible/runner.py or worker/app.py"]
-  n7 --> n8["8 Review<br/>review/reviewer.py"]
-  n8 --> n9["9 Reconcile + commit<br/>git_automation/repo.py"]
-  n8 -.->|reject: retry| n6
+flowchart LR
+  subgraph Intake["Intake"]
+    direction TB
+    n1["1 Submit — routers/todos.py"] --> n2["2 Tick — event_loop/loop.py"]
+    n2 --> n3["3 Schedule — scheduler.py"]
+  end
+  subgraph Work["Own + generate"]
+    direction TB
+    n4["4 Claim — db/repository.py"] --> n5["5 Dispatch — _dispatch_execute_job"]
+    n5 --> n6["6 Model call — models/gateway.py"]
+  end
+  subgraph Delivery["Execute + deliver"]
+    direction TB
+    n7["7 Execute — runner or worker"] --> n8["8 Review — reviewer.py"]
+    n8 --> n9["9 Reconcile + commit — repo.py"]
+  end
+  Intake --> Work --> Delivery
+  Delivery -.->|reject: retry| Work
     </div>
   </div>
-  <div data-contract="s83-158-claim-before-provision" data-proof="s83-158-durable-chain-acceptance">
-    <p><strong>Claim-before-provision ownership path</strong></p>
-    <ol class="bullets-tight" style="font-size:0.58em;">
-      <li>Produce durable todo</li>
-      <li>Approval boundary</li>
-      <li>Claim + lease</li>
-      <li>Commit + close</li>
-      <li>Provision</li>
-      <li>Execute + verify</li>
-      <li>Terminal commit</li>
-      <li>Exact release</li>
-    </ol>
-    <p class="honest-note">Guarantees zero pre-claim compute; a losing or restarted worker preserves foreign ownership.</p>
-    <ul class="bullets-tight" style="font-size:0.52em;">
-      <li>Commit failure: rollback + clear detached claim; no provision or dispatch.</li>
-      <li>Competing workers + restart: one durable winner, exactly one provision.</li>
-      <li>Non-runnable work: zero allocation.</li>
-      <li>Hermetic closure: producer discovery &rarr; approval manager &rarr; ranked claim &rarr; fake-local/fake-Azure edit &rarr; evidence review + promotion receipt &rarr; <code>complete</code> &rarr; exact release; no injected self-improve row or cancellation.</li>
-      <li><strong>Completed delivery:</strong> exact project workspace + intended task branch; <strong>Absent or unsafe scope: zero Git mutation.</strong></li>
-    </ul>
-    <p class="cite">Contracts: docs/features/TODO_DRIVEN_COMPUTE_LIFECYCLE.md &middot; docs/features/application-resource-ownership.md; proof: tests/e2e/test_self_improve_private_policy_e2e.py</p>
-  </div>
   <p class="cite">Source: code-trace audit, verified against src/general_ludd/ on 2026-07-12T10:39:48Z</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 5a: CLAIM-BEFORE-PROVISION PROOF -->
+<!-- ============================================================ -->
+<section data-contract="s83-158-claim-before-provision" data-proof="s83-158-durable-chain-acceptance">
+  <p class="stage-kicker">Flagship flow &middot; ownership boundary</p>
+  <h2>Claim before provision</h2>
+  <div class="two-col">
+    <div>
+      <h3>Durable ownership path</h3>
+      <ol class="bullets-tight" style="font-size:0.7em;">
+        <li>Produce durable todo</li>
+        <li>Approval boundary</li>
+        <li>Claim + lease</li>
+        <li>Commit + close</li>
+        <li>Provision</li>
+        <li>Execute + verify</li>
+        <li>Terminal commit</li>
+        <li>Exact release</li>
+      </ol>
+    </div>
+    <div>
+      <h3>Fail-closed proof</h3>
+      <p class="honest-note">Zero pre-claim compute; a losing or restarted worker preserves foreign ownership.</p>
+      <ul class="bullets-tight" style="font-size:0.58em;">
+        <li>Commit failure rolls back and clears the detached claim; no provision or dispatch.</li>
+        <li>Competing workers plus restart produce one durable winner and exactly one provision.</li>
+        <li>Non-runnable work allocates nothing.</li>
+        <li>Hermetic closure proves discovery &rarr; approval &rarr; claim &rarr; edit &rarr; review &rarr; completion &rarr; exact release.</li>
+        <li><strong>Completed delivery:</strong> exact workspace and intended task branch. <strong>Unsafe scope:</strong> zero Git mutation.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="cite">Contracts: docs/features/TODO_DRIVEN_COMPUTE_LIFECYCLE.md &middot; docs/features/application-resource-ownership.md; proof: tests/e2e/test_self_improve_private_policy_e2e.py</p>
 </section>
 
 <!-- ============================================================ -->
@@ -378,18 +400,23 @@ flowchart TD
   <p>The load-bearing phases of <span class="path">PHASE_ORDER</span>, in the exact order they cross short database sessions and sessionless provider-effect boundaries.</p>
   <div class="diagram-wrap">
     <div class="mermaid">
-flowchart TD
-  A["load_config<br/>snapshot"] --> B["claim + dispatch<br/>return review"]
-  B --> C["run_scheduler<br/>promote due todos"]
-  C --> D["producer + approval<br/>boundary"]
-  D --> E["claim todo +<br/>execution lease"]
-  E --> F["commit + close<br/>claim session"]
-  F --> G["provision exact<br/>owned compute"]
-  G --> H["dispatch, execute<br/>+ verify"]
-  H --> I["terminal commit"]
-  I --> J["release exact<br/>owned compute"]
-  J --> K["emit_tick_metrics"]
-  K -.->|next tick ~1s| A
+flowchart LR
+  subgraph Observe["Observe + approve"]
+    direction TB
+    A["load config snapshot"] --> B["claim + dispatch return review"]
+    B --> C["run scheduler"] --> D["producer + approval boundary"]
+  end
+  subgraph Execute["Own + execute"]
+    direction TB
+    E["claim todo + lease"] --> F["commit + close claim session"]
+    F --> G["provision exact compute"] --> H["dispatch + verify"]
+  end
+  subgraph Finish["Finish + release"]
+    direction TB
+    I["terminal commit"] --> J["release exact compute"] --> K["emit tick metrics"]
+  end
+  Observe --> Execute --> Finish
+  Finish -.->|next tick ~1s| Observe
     </div>
   </div>
   <p class="cite">Source: src/general_ludd/event_loop/loop.py:151-177 (PHASE_ORDER)</p>
@@ -447,9 +474,9 @@ flowchart TD
   <div class="stage-kicker">Flagship flow &middot; stage 5 of 9</div>
   <h2><span class="step-number">5</span>Dispatch &mdash; the spend gate</h2>
   <p><span class="path">_dispatch_execute_job</span> (<span class="path">event_loop/loop.py:1844</span>) runs from the <code>dispatch_execute_jobs</code> phase &mdash; but it checks the budget before it checks anything else.</p>
-  <div class="diagram-wrap">
+  <div class="diagram-wrap diagram-compact">
     <div class="mermaid">
-flowchart TD
+flowchart LR
   A["_dispatch_execute_job"] --> B{"SpendLimiter.try_charge<br/>(in-memory gate)"}
   B -->|accepted| C["proceed to model call"]
   B -->|rejected| D["defer todo<br/>(retry later tick)"]
@@ -517,14 +544,18 @@ flowchart TD
   <h2>Submit &rarr; execute, and what each step writes</h2>
   <div class="diagram-wrap">
     <div class="mermaid">
-flowchart TD
-  s1["1 POST /api/todos<br/>(You -> routers/todos.py)"] --> s2["2 INSERT todos<br/>(BACKLOG)"]
-  s2 --> s3["3 claim QUEUED -> ACTIVE<br/>+ todo_events (EventLoop)"]
-  s3 --> s4["4 SpendLimiter.try_charge<br/>(gate)"]
-  s4 --> s5["5 call_model<br/>(models/gateway.py)"]
-  s5 --> s6["6 INSERT model_call_logs"]
-  s6 --> s7["7 execute job<br/>(runner / worker)"]
-  s7 --> s8["8 INSERT task_returns<br/>(unreviewed)"]
+flowchart LR
+  subgraph Durable["Durable intake"]
+    direction TB
+    s1["1 POST /api/todos"] --> s2["2 INSERT todos — BACKLOG"]
+    s2 --> s3["3 claim ACTIVE + todo_events"] --> s4["4 SpendLimiter gate"]
+  end
+  subgraph Effects["Effects + result"]
+    direction TB
+    s5["5 call_model"] --> s6["6 INSERT model_call_logs"]
+    s6 --> s7["7 execute — runner or worker"] --> s8["8 INSERT task_returns"]
+  end
+  Durable --> Effects
     </div>
   </div>
   <p class="cite">Source: routers/todos.py api_add_todo, event_loop/loop.py (_dispatch_execute_job, _persist_task_return), models/gateway.py call_model</p>
@@ -562,7 +593,7 @@ flowchart TD
   <h2>The review loop, in detail</h2>
   <div class="diagram-wrap">
     <div class="mermaid">
-flowchart TD
+flowchart LR
   A["Execute (stage 7)<br/>job result"] --> B["INSERT task_returns<br/>(loop.py:3016)"]
   B --> C["ReturnReviewer.review_return()<br/>adversarial scan + JSON-fence-tolerant parse"]
   C --> D{"output parsed?"}
@@ -608,25 +639,43 @@ flowchart TD
   <p>Every hop from HTTP submission to a git commit, with the file that implements it.</p>
   <div class="diagram-wrap">
     <div class="mermaid">
-flowchart TD
-  A["POST /api/todos<br/>routers/todos.py:170"] --> B["todos table<br/>db/models.py:180"]
-  B --> C["EventLoop tick<br/>PHASE_ORDER (event_loop/loop.py)"]
-  C --> D["claim_runnable + bucket_leases<br/>db/repository.py"]
-  D --> E["dispatch_execute_jobs<br/>event_loop/loop.py"]
-  E --> F["two-phase model call<br/>models/job_invocation.py + execution/tool_loop.py"]
-  F --> G["task_returns<br/>_persist_task_return (loop.py:3068)"]
-  G --> H["review -&gt; task_decisions<br/>review/reviewer.py"]
-  H --> I["reconcile + commit<br/>loop.py:3066 -&gt; git_automation/repo.py:180"]
+flowchart LR
+  subgraph Intake["Intake"]
+    direction TB
+    A["POST /api/todos"] --> B["INSERT todos"] --> C["EventLoop tick"]
+  end
+  subgraph Execution["Claim + execute"]
+    direction TB
+    D["claim + bucket lease"] --> E["dispatch execute job"] --> F["two-phase model call"]
+  end
+  subgraph Delivery["Review + deliver"]
+    direction TB
+    G["persist task return"] --> H["review → task decision"] --> I["reconcile + git commit"]
+  end
+  Intake --> Execution --> Delivery
     </div>
   </div>
-  <ul class="bullets-tight">
-    <li class="fragment"><span class="path">Submit</span> &mdash; <span class="path">routers/todos.py:170</span> inserts one <code>todos</code> row (<span class="path">db/models.py:180</span>)</li>
-    <li class="fragment"><span class="path">Claim</span> &mdash; version-guarded CAS in <span class="path">db/repository.py</span> (<span class="path">claim_runnable</span>), leased via <code>bucket_leases</code></li>
-    <li class="fragment"><span class="path">Dispatch</span> &mdash; <span class="path">event_loop/loop.py</span> (<span class="path">dispatch_execute_jobs</span>) builds the <code>JobSpec</code> and runs the model</li>
-    <li class="fragment"><span class="path">Two-phase model call</span> &mdash; tool-free generation (<span class="path">models/job_invocation.py</span> via <span class="path">models/gateway.py</span>), then the autonomous tool loop (<span class="path">execution/tool_loop.py</span>)</li>
-    <li class="fragment"><span class="path">Return &amp; review</span> &mdash; worker output lands in <code>task_returns</code> (<span class="path">loop.py:3068</span>); a second model reviews it (<span class="path">review/reviewer.py</span>) and writes <code>task_decisions</code></li>
-    <li class="fragment"><span class="path">Reconcile + commit</span> &mdash; <span class="path">loop.py:3066</span> applies the decision; <span class="path">git_automation/repo.py:180</span> commits + pushes</li>
-  </ul>
+  <p class="cite">Source: code-trace audit against src/general_ludd/ on 2026-07-12T10:39:48Z</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 15c: COMPLETE CODE PATH ANNOTATIONS -->
+<!-- ============================================================ -->
+<section>
+  <div class="stage-kicker">Flagship flow &middot; durable effects</div>
+  <h2>The complete code path &mdash; what each hop persists</h2>
+  <div class="two-col">
+    <ul class="bullets-tight">
+      <li><span class="path">Submit</span> &mdash; <span class="path">routers/todos.py:170</span> inserts one <code>todos</code> row (<span class="path">db/models.py:180</span>)</li>
+      <li><span class="path">Claim</span> &mdash; version-guarded CAS in <span class="path">db/repository.py</span>, leased via <code>bucket_leases</code></li>
+      <li><span class="path">Dispatch</span> &mdash; <span class="path">event_loop/loop.py</span> builds the <code>JobSpec</code> and runs the model</li>
+    </ul>
+    <ul class="bullets-tight">
+      <li><span class="path">Two-phase model call</span> &mdash; tool-free generation, then the autonomous tool loop</li>
+      <li><span class="path">Return &amp; review</span> &mdash; worker output lands in <code>task_returns</code>; a second model writes <code>task_decisions</code></li>
+      <li><span class="path">Reconcile + commit</span> &mdash; the decision is applied before <span class="path">git_automation/repo.py:180</span> commits and pushes</li>
+    </ul>
+  </div>
   <p class="cite">Source: code-trace audit against src/general_ludd/ on 2026-07-12T10:39:48Z</p>
 </section>
 
@@ -1300,58 +1349,77 @@ flowchart LR
   <p>gludd has <strong>three layers of protection</strong> on every action:</p>
   <ul>
     <li><span class="badge-blue">Layer 1</span> <strong>Permissions</strong> &mdash; hard rules on what gludd is allowed to do</li>
-    <li><span class="badge-blue">Layer 2</span> <strong>Runtime guards</strong> &mdash; 11 plugins that watch every action in real time</li>
+    <li><span class="badge-blue">Layer 2</span> <strong>Runtime guards</strong> &mdash; registered blocking plugins watch every action in real time</li>
     <li><span class="badge-blue">Layer 3</span> <strong>Prompt rules</strong> &mdash; the AI is instructed to follow safe practices</li>
   </ul>
   <div class="diagram-wrap">
     <div class="mermaid">
 graph TD
-  L1["Layer 1 - Permissions<br/>hard rules in config files"] --> L2["Layer 2 - Runtime Guards<br/>11 plugins watch every action"]
-  L2 --> L3["Layer 3 - Prompt Rules<br/>AI instructed to follow safe practices"]
+  L1["Layer 1 - Permissions: hard config rules"] --> L2["Layer 2 - Runtime Guards: manifest-verified hooks"]
+  L2 --> L3["Layer 3 - Prompt Rules: explicit safety practices"]
     </div>
   </div>
   <p><strong>Security findings: 14 of 15 fixed</strong> &mdash; one remains open and tracked.</p>
-  <p class="cite">13 BLOCKING enforcement plugins <span class="badge-green">VERIFIED</span> &middot; 99 hook-runtime tests &middot; 14/15 findings fixed &middot; Source: <code>.opencode/plugin/</code>, <code>docs/audit/</code></p>
+  <p class="cite">Registered enforcement plugins <span class="badge-green">VERIFIED</span> &middot; hook-runtime suite &middot; 14/15 findings fixed &middot; Source: <code>.opencode/plugin/</code>, <code>docs/audit/</code></p>
 </section>
 
 <!-- ============================================================ -->
 <!-- SLIDE 20b: GUARDRAILS ARCHITECTURE -->
 <!-- ============================================================ -->
 <section>
-  <h2>Guardrails architecture &mdash; 14 plugins, 3 layers</h2>
+  <h2>Guardrails architecture &mdash; 3 enforceable layers</h2>
   <p>Every agent action passes through <strong>three enforceable layers</strong>. No single layer is trusted alone.</p>
   <div class="diagram-wrap">
     <div class="mermaid">
-graph TD
-  subgraph L1["Layer 1 — Config (hard gate)"]
-    C1["opencode.json<br/>permission block"]
-    C2["Make only: deny *,<br/>allow make *"]
-  end
-  subgraph L2["Layer 2 — Runtime (real-time hooks)"]
-    P1["enforce-make.ts<br/>Bash make-only"]
-    P2["enforce-floor.ts<br/>agent-count floor"]
-    P3["enforce-stop.ts<br/>premature-stop block"]
-    P4["enforce-delegate.ts<br/>delegation budget"]
-    P5["enforce-no-wait.ts<br/>anti-wait CI poll"]
-    P6["enforce-session-start.ts<br/>dispatch-on-start"]
-    P7["enforce-verified-claims.ts<br/>evidence-required"]
-    P8["enforce-clean-tree.ts<br/>dirty-tree dispatch deny"]
-    P9["+5 more plugins<br/>(13 BLOCKING total)"]
-  end
-  subgraph L3["Layer 3 — Prompt (instruction)"]
-    D1["AGENTS.md<br/>policy sections"]
-    D2["TDD, commit-after-green,<br/>guardrail integrity..."]
-  end
-  L1 --> L2 --> L3
+flowchart LR
+  C["Layer 1 — Config: permission + Make-only gate"]
+  R["Layer 2 — Runtime: blocking hooks"]
+  P["Layer 3 — Prompt: TDD + evidence policy"]
+  C --> R --> P
     </div>
   </div>
-  <ul class="bullets-tight">
-    <li class="fragment"><strong>13 BLOCKING plugins</strong> in <span class="path">.opencode/plugin/</span>, all hot-reload capable, zero advisory-only</li>
-    <li class="fragment"><strong>99 hook-runtime tests</strong> across 52 functional tests in 8 plugins (<span class="path">make test-hook-runtime</span>)</li>
-    <li class="fragment"><strong>Fail-open on error</strong>: a broken hook never blocks legitimate work; the next layer still enforces</li>
-    <li class="fragment">All 13 verified active via <span class="path">make verify-plugin-manifest</span></li>
+  <p class="cite">Source: .opencode/plugin/, opencode.json, tests/unit/test_*_plugin*.py</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 20c: RUNTIME GUARD GROUPS -->
+<!-- ============================================================ -->
+<section>
+  <h2>Runtime guardrails &mdash; grouped for inspection</h2>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart LR
+  subgraph Actions["Action boundaries"]
+    direction TB
+    A1["Make-only shell"] --> A2["clean-tree gate"] --> A3["no suppression"]
+  end
+  subgraph Workflow["Workflow discipline"]
+    direction TB
+    W1["agent floor"] --> W2["delegation budget"] --> W3["session-start dispatch"]
+  end
+  subgraph Evidence["Evidence + safety"]
+    direction TB
+    E1["verified claims"] --> E2["premature-stop block"] --> E3["deadline + no-wait"]
+  end
+  Actions --> Workflow --> Evidence
+    </div>
+  </div>
+  <p class="cite">Representative groups from .opencode/plugin/; blocking plugins are verified by the manifest and hook-runtime suites.</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 20d: GUARDRAIL PROOF -->
+<!-- ============================================================ -->
+<section>
+  <h2>Guardrails architecture &mdash; measured proof</h2>
+  <ul>
+    <li><strong>Every registered plugin is blocking</strong> in <span class="path">.opencode/plugin/</span>; zero are advisory-only</li>
+    <li><strong>Hook-runtime acceptance</strong> exercises the active plugins through <span class="path">make test-hook-runtime</span></li>
+    <li><strong>Fail-open on hook error:</strong> a broken hook does not block legitimate work; the next layer still enforces</li>
+    <li>Every registered hook is verified via <span class="path">make verify-plugin-manifest</span></li>
   </ul>
-  <p class="cite">Source: .opencode/plugin/ (13 BLOCKING), opencode.json, tests/unit/test_*_plugin*.py</p>
+  <p class="honest-note">The runtime, configuration, and prompt layers are independently testable; no single layer is treated as sufficient evidence.</p>
+  <p class="cite">Source: .opencode/plugin/, opencode.json, tests/unit/test_*_plugin*.py</p>
 </section>
 
 <!-- ============================================================ -->
@@ -1579,7 +1647,7 @@ make init</code></pre>
       <span class="cite"><code>254 total</code></span>
     </div>
     <div class="metric-box">
-      <div class="number">13 BLOCKING</div>
+      <div class="number">BLOCKING</div>
       <div class="label">enforcement plugins</div>
       <span class="cite"><code>make verify-plugin-manifest</code></span>
     </div>

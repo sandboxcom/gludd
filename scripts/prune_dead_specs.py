@@ -12,6 +12,13 @@ import re
 import sys
 from pathlib import Path
 
+try:
+    from scripts.behavioral_specs import load_behavioral_specs, write_behavioral_specs
+    from scripts.makefile_layout import compose_makefile
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from behavioral_specs import load_behavioral_specs, write_behavioral_specs
+    from makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_FILE = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
 MAKEFILE = ROOT / "Makefile"
@@ -25,7 +32,7 @@ TARGET_REF_RE = re.compile(r"`(?:make\s+)?([a-zA-Z0-9_\-]+)`")
 def load_makefile_targets() -> set[str]:
     targets: set[str] = set()
     if MAKEFILE.exists():
-        for line in MAKEFILE.read_text().splitlines():
+        for line in compose_makefile(MAKEFILE).splitlines():
             m = re.match(r"^([a-zA-Z0-9_\-]+):", line)
             if m:
                 targets.add(m.group(1))
@@ -66,13 +73,11 @@ def main() -> int:
         print(f"ERROR: {SPECS_FILE} not found")
         return 1
 
-    text = SPECS_FILE.read_text(encoding="utf-8")
+    text = load_behavioral_specs(SPECS_FILE)
     targets = load_makefile_targets()
 
     dead_ids: set[str] = set()
-    pos = 0
     for m in SPEC_RE.finditer(text):
-        start = m.start()
         next_m = SPEC_RE.search(text, m.end())
         end = next_m.start() if next_m else len(text)
         body = text[m.end() : end].strip()
@@ -103,7 +108,7 @@ def main() -> int:
             new_lines.append(line)
 
     new_text = "".join(new_lines)
-    SPECS_FILE.write_text(new_text, encoding="utf-8")
+    write_behavioral_specs(new_text, SPECS_FILE)
 
     print(f"Pruned {len(dead_ids)} dead specs from {SPECS_FILE.name}")
     return 0

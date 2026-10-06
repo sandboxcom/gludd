@@ -136,4 +136,3 @@ Run `make help` for the full categorized list (~100 targets). Key targets below.
 - `make git-index` - Index git log into SQLite (.gludd/git_history.db)
 - `make git-search Q='...'` - Search indexed git history
 - `make git-stats` - Show git history index statistics
-

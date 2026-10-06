@@ -583,4 +583,3 @@ member changes an authoritative pointer; successful promotion exposes exactly
 one compatible generation; rollback restores the complete last-known-good
 bundle within its recovery objective while preserving provenance and rejected
 evidence.
-

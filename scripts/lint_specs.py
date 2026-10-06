@@ -11,6 +11,11 @@ import re
 import sys
 from pathlib import Path
 
+try:
+    from scripts.behavioral_specs import load_behavioral_specs
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from behavioral_specs import load_behavioral_specs
+
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_FILE = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
 
@@ -28,7 +33,7 @@ FILLER_PATTERNS = [
 
 
 def _parse_specs() -> list[dict]:
-    text = SPECS_FILE.read_text()
+    text = load_behavioral_specs(SPECS_FILE)
     specs: list[dict] = []
     current: dict | None = None
     fields: set[str] = set()

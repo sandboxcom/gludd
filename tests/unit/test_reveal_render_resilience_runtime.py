@@ -122,6 +122,78 @@ def test_mermaid_staging_area_is_measurable_while_offscreen() -> None:
     assert "html.gludd-mermaid-prerender" not in styles
 
 
+def test_live_mermaid_visual_avoids_inline_svg_percentage_sizing() -> None:
+    """Safari receives a decoded replaced image, not fragile inline SVG layout."""
+    runtime = (DECK / "presentation.js").read_text(encoding="utf-8")
+    styles = (DECK / "presentation.css").read_text(encoding="utf-8")
+
+    for token in (
+        "createSvgImage",
+        "awaitImageReady",
+        "mermaid-image",
+        "naturalWidth",
+        "encodeURIComponent",
+    ):
+        assert token in runtime
+    assert '.reveal .mermaid[data-mermaid-viewport="stable"] > svg' not in styles
+    assert ".mermaid-image" in styles
+    assert "height: auto" in styles
+
+
+def test_mermaid_images_are_padded_centered_and_height_bounded() -> None:
+    """Safari receives explicit text alignment and a bounded logical viewport."""
+    runtime = (DECK / "presentation.js").read_text(encoding="utf-8")
+    styles = (DECK / "presentation.css").read_text(encoding="utf-8")
+
+    for token in (
+        "SVG_VIEWPORT_PADDING",
+        "normalizeSvgTextAlignment",
+        'text-anchor", "middle"',
+        "stabilizedSvg.outerHTML",
+        "gluddViewportPadding",
+    ):
+        assert token in runtime
+    assert "max-height: var(--gludd-diagram-max-height)" in styles
+    assert "--gludd-diagram-max-height: 500px" in styles
+    assert "width: auto" in styles
+
+
+def test_slide_transition_does_not_fly_neighboring_content_through_the_canvas() -> None:
+    """Navigation must not present adjacent slide text as off-screen content."""
+    runtime = (DECK / "presentation.js").read_text(encoding="utf-8")
+
+    assert 'transition: "fade"' in runtime
+    assert 'transition: "slide"' not in runtime
+
+
+def test_guardrail_overview_labels_do_not_depend_on_html_break_layout() -> None:
+    """Critical chart labels stay readable when WebKit flattens Mermaid breaks."""
+    html = (DECK / "index.html").read_text(encoding="utf-8")
+
+    for label in (
+        'C["Layer 1 — Config: permission + Make-only gate"]',
+        'R["Layer 2 — Runtime: blocking hooks"]',
+        'P["Layer 3 — Prompt: TDD + evidence policy"]',
+    ):
+        assert label in html
+    for fragile_label in (
+        'C["Layer 1 — Config<br/>permission + Make-only gate"]',
+        'R["Layer 2 — Runtime<br/>13 blocking hooks"]',
+        'P["Layer 3 — Prompt<br/>TDD + evidence policy"]',
+    ):
+        assert fragile_label not in html
+
+
+def test_each_mermaid_diagram_gets_an_independent_render_deadline() -> None:
+    """One slow Safari chart cannot spend the deadline for every later chart."""
+    runtime = (DECK / "presentation.js").read_text(encoding="utf-8")
+
+    assert "DIAGRAM_DEADLINE_MS" in runtime
+    assert "BATCH_DEADLINE_MS" not in runtime
+    loop = runtime.split("for (const [index, diagram] of candidates.entries())", 1)[1]
+    assert "window.performance.now() + DIAGRAM_DEADLINE_MS" in loop
+
+
 def test_boot_diagnostic_is_visible_until_runtime_proves_health() -> None:
     """A parser, file-origin, or CSP failure must be visible without JavaScript."""
     html = (DECK / "index.html").read_text(encoding="utf-8")

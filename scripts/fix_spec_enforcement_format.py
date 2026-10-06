@@ -6,6 +6,13 @@ import re
 import sys
 from pathlib import Path
 
+try:
+    from scripts.behavioral_specs import load_behavioral_specs, write_behavioral_specs
+    from scripts.makefile_layout import compose_makefile
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from behavioral_specs import load_behavioral_specs, write_behavioral_specs
+    from makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_FILE = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
 MAKEFILE = ROOT / "Makefile"
@@ -18,7 +25,7 @@ FILLER = re.compile(r"(planned|TODO|TBD|not yet|future|upcoming)", re.IGNORECASE
 
 
 def parse_specs():
-    text = SPECS_FILE.read_text()
+    text = load_behavioral_specs(SPECS_FILE)
     specs = []
     current = None
     in_enforcement = False
@@ -83,7 +90,7 @@ def is_covered(enforcement_text):
 
     for m_make in re.finditer(r"`make\s+([\w\-]+)`", enforcement_text):
         target = m_make.group(1)
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         if re.search(rf"^{re.escape(target)}:\s", content, re.MULTILINE):
             return True
 
@@ -97,7 +104,7 @@ def is_covered(enforcement_text):
 
     for m_makefile in re.finditer(r"Makefile\s+`([\w\-]+)`", enforcement_text):
         target = m_makefile.group(1)
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         if re.search(rf"^{re.escape(target)}:\s", content, re.MULTILINE):
             return True
 
@@ -105,7 +112,7 @@ def is_covered(enforcement_text):
 
 
 def _target_exists(target: str) -> bool:
-    content = MAKEFILE.read_text()
+    content = compose_makefile(MAKEFILE)
     return bool(re.search(rf"^{re.escape(target)}:\s", content, re.MULTILINE))
 
 
@@ -207,7 +214,7 @@ def fix_enforcement_text(spec):
     # --- Phase 8: "`make <target> --flag` variant" -> "`make <target>-variant`" ---
     def _fix_variant(m):
         base = m.group(1)
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         for suffix in ["-no-fail-fast"]:
             candidate = f"{base}{suffix}"
             if re.search(rf"^{re.escape(candidate)}:\s", content, re.MULTILINE):
@@ -571,7 +578,7 @@ def main():
     print(f"Uncovered before: {len(uncovered_before)}/{len(specs)}")
 
     # Read the file
-    lines = SPECS_FILE.read_text().split("\n")
+    lines = load_behavioral_specs(SPECS_FILE).split("\n")
     changes = 0
 
     for spec in specs:
@@ -613,7 +620,7 @@ def main():
         print(f"  FIX  {spec['id']}: {enf[:60]}... -> {fixed[:60]}...")
 
     # Write back
-    SPECS_FILE.write_text("\n".join(lines) + "\n")
+    write_behavioral_specs("\n".join(lines) + "\n", SPECS_FILE)
     print(f"\n{changes} specs fixed, {len(uncovered_before) - changes} left unfixed")
 
     # Re-verify

@@ -26,12 +26,30 @@ body {
   margin-inline: auto;
 }
 
-.reveal .mermaid[data-mermaid-viewport="stable"] > svg,
 .gludd-mermaid-stage .mermaid[data-mermaid-viewport="stable"] > svg {
   display: block;
-  height: 100%;
+  height: auto;
   max-width: none;
   width: 100%;
+}
+
+.reveal .mermaid[data-mermaid-viewport="stable"] > .mermaid-image {
+  display: block;
+  height: auto;
+  margin-inline: auto;
+  max-height: var(--gludd-diagram-max-height);
+  max-width: 100%;
+  object-fit: contain;
+  width: auto;
+}
+
+.reveal .diagram-wrap {
+  --gludd-diagram-max-height: 500px;
+  box-sizing: border-box;
+}
+
+.reveal .diagram-wrap.diagram-compact {
+  --gludd-diagram-max-height: 320px;
 }
 
 .mermaid-host {

@@ -58,6 +58,19 @@ def test_managed_runner_reexports_extracted_boundaries_by_identity() -> None:
         assert exported.__module__ == facade.__name__
 
 
+def test_managed_runner_declares_cross_module_compatibility_exports() -> None:
+    """Typed consumers must see every supported facade compatibility seam."""
+    expected = {
+        "GeneratedProposal",
+        "_OutcomeAdapterFactory",
+        "_ProposalGenerator",
+    }
+
+    assert expected <= set(facade.__all__)
+    assert facade._OutcomeAdapterFactory is boundaries._OutcomeAdapterFactory
+    assert facade._ProposalGenerator is boundaries._ProposalGenerator
+
+
 def test_managed_runner_facade_stays_below_the_repository_line_limit() -> None:
     """The orchestration facade must not regress into another oversized module."""
     assert len(_RUNNER_SOURCE.read_text(encoding="utf-8").splitlines()) < 2_500

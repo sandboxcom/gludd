@@ -123,7 +123,10 @@ def test_smoke_script_checks_every_chart_navigation_and_source_viewer() -> None:
         "gluddPresentationHealth",
         "Reveal.getSlides()",
         "getBoundingClientRect",
-        "undefined|NaN|Infinity",
+        "img.mermaid-image",
+        "naturalWidth",
+        "data:image/svg+xml;charset=utf-8,",
+        "querySelectorAll('svg').length !== 0",
         "source-viewer-dialog",
         "getReadOnly()",
     ):
