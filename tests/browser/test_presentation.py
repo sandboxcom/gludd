@@ -11,6 +11,7 @@ from http.server import ThreadingHTTPServer
 from typing import Any
 
 import pytest
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from scripts import build_deck
 
 pytestmark = pytest.mark.presentation_browser
@@ -19,6 +20,57 @@ pytestmark = pytest.mark.presentation_browser
 def test_required_browser_matrix(browser_name: str) -> None:
     """The Pages acceptance is intentionally limited to both supported engines."""
     assert browser_name in {"chromium", "webkit"}
+
+
+def test_direct_mermaid_render_is_geometry_clean(
+    page: Any,
+    presentation_url: str,
+    browser_events: dict[str, list[str]],
+) -> None:
+    """The direct supported API must finish before a completed SVG is inserted."""
+    page.route(
+        "**/presentation.js*",
+        lambda route: route.fulfill(status=200, content_type="application/javascript", body=""),
+    )
+    response = page.goto(presentation_url, wait_until="networkidle")
+    assert response is not None and response.ok
+    page.wait_for_function("typeof window.gluddMermaid?.render === 'function'")
+    result = page.evaluate(
+        """
+        async () => {
+          const stage = document.createElement('div');
+          stage.className = 'gludd-mermaid-stage';
+          document.body.append(stage);
+          window.gluddMermaid.initialize({
+            startOnLoad: false,
+            htmlLabels: false,
+            securityLevel: 'strict',
+            flowchart: {htmlLabels: false},
+          });
+          const rendered = await window.gluddMermaid.render(
+            'gludd-direct-api-probe',
+            'flowchart TD\\n  start --> finish',
+            stage,
+          );
+          stage.innerHTML = rendered.svg;
+          const svg = stage.querySelector('svg');
+          const rect = svg.getBoundingClientRect();
+          const invalid = Array.from(svg.querySelectorAll('*')).flatMap((node) =>
+            Array.from(node.attributes).filter((attribute) =>
+              /(?:undefined|NaN|Infinity)/.test(attribute.value))
+          );
+          return {height: rect.height, invalid: invalid.length, width: rect.width};
+        }
+        """
+    )
+    assert result["invalid"] == 0
+    assert result["width"] > 0 and result["height"] > 0
+    assert browser_events == {
+        "console_errors": [],
+        "page_errors": [],
+        "request_failures": [],
+        "http_failures": [],
+    }
 
 
 @pytest.fixture(scope="module")
@@ -112,7 +164,7 @@ def _assert_visible_diagrams(page: Any) -> None:
         """,
     )
     for result in results:
-        assert result["state"] == "rendered"
+        assert result["state"] == "rendered", result
         assert result["svgCount"] == 1
         assert result["width"] > 0
         assert result["height"] > 0
@@ -129,16 +181,35 @@ def test_cold_and_cached_load_prepare_every_chart_within_budget(
     for cache_state in ("cold", "cached"):
         started = time.monotonic()
         _load(page, presentation_url)
-        page.wait_for_function(
-            """
-            () => {
-              const health = window.gluddPresentationHealth();
-              return health.rendered > 0 && health.pending === 0 &&
-                health.rendering === 0 && health.failed === 0 && health.unrendered === 0;
-            }
-            """,
-            timeout=5_000,
-        )
+        try:
+            page.wait_for_function(
+                """
+                () => {
+                  const health = window.gluddPresentationHealth();
+                  return health.rendered > 0 && health.pending === 0 &&
+                    health.rendering === 0 && health.failed === 0 && health.unrendered === 0;
+                }
+                """,
+                timeout=5_000,
+            )
+        except PlaywrightTimeoutError:
+            diagnostics = page.eval_on_selector_all(
+                ".mermaid",
+                """
+                (nodes) => ({
+                  health: window.gluddPresentationHealth(),
+                  diagrams: nodes.map((node, index) => ({
+                    index,
+                    error: node.dataset.mermaidError || '',
+                    geometry: node.dataset.mermaidGeometry || '',
+                    state: node.dataset.mermaidState || '',
+                    text: node.textContent.slice(0, 80),
+                  })),
+                })
+                """,
+            )
+            print(f"presentation-timeout diagnostics={json.dumps(diagnostics, sort_keys=True)}", flush=True)
+            raise
         elapsed = time.monotonic() - started
         print(
             f"presentation-readiness cache={cache_state} seconds={elapsed:.3f}",
@@ -165,6 +236,30 @@ def test_cold_and_cached_load_prepare_every_chart_within_budget(
             and item["viewBox"][3] > 0
             for item in metadata
         )
+        invalid_attributes = page.eval_on_selector_all(
+            ".mermaid svg *",
+            """
+            (nodes) => nodes.flatMap((node) => Array.from(node.attributes)
+              .filter((attribute) => /(?:undefined|NaN)/.test(attribute.value))
+              .map((attribute) => ({
+                attribute: attribute.name,
+                className: node.getAttribute('class') || '',
+                tagName: node.tagName,
+                value: attribute.value,
+              })))
+            """,
+        )
+        assert invalid_attributes == []
+    if browser_events["console_errors"]:
+        geometry_writes = page.evaluate(
+            """
+            () => ({
+              directApi: typeof window.mermaid,
+              writes: window.gluddInvalidGeometryWrites || [],
+            })
+            """
+        )
+        print(f"presentation-console diagnostics={json.dumps(geometry_writes, sort_keys=True)}", flush=True)
     assert browser_events == {
         "console_errors": [],
         "page_errors": [],

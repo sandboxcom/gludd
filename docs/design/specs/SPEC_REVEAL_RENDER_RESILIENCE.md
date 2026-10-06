@@ -1,6 +1,7 @@
 # Reveal.js Render Resilience and Source-Link Specification
 
-Status: implementation-ready
+Status: implemented; Chromium and Playwright WebKit verified, native Safari
+verification pending the operator-controlled Remote Automation setting
 Contract version: `reveal-render-resilience/v1`
 Scope: the generated Reveal.js deck, GitHub Pages artifact, local preview
 server, source citations, and presentation-focused browser tests
@@ -8,50 +9,40 @@ server, source citations, and presentation-focused browser tests
 ## Outcome
 
 The presentation must never silently replace a Mermaid chart with empty space.
-It must render diagrams only when Reveal has made their slide measurable,
-serialize asynchronous rendering, and expose a readable source fallback on
-every failure. The published artifact must be self-contained and work below the
-GitHub Pages project prefix `/gludd/` without runtime CDN availability.
+It renders one diagram at a time in a measurable scratch node attached directly
+to `document.body`, outside Reveal transforms and hidden slides, and inserts only
+a completed, validated SVG. Every failure exposes a readable source fallback.
+The published artifact is self-contained and works below the GitHub Pages
+project prefix `/gludd/` without runtime CDN availability.
 
 Every citation that names a repository file must be an immutable GitHub link.
 When it names a line or range, the link must include the corresponding GitHub
 `#L` anchor. The same anchor opens a read-only local code viewer during
 `make deck-serve`, with the cited range selected and scrolled into view.
 
-## Current failure and root cause
+## Observed failure and root cause
 
-The tracked deck currently loads
-`reveal.js-mermaid-plugin@2.1.0` as a script but does not register
-`RevealMermaid` in Reveal's plugin list. It instead calls the bundled global
-Mermaid API directly:
+The old controller rendered the entire deck while Reveal kept inactive slides
+under `display: none`, allowed overlapping asynchronous work, and treated the
+presence of an outer SVG as success. WebKit could therefore receive an empty or
+invalid diagram without a durable error state.
 
-1. after `Reveal.initialize()` resolves, `mermaid.run()` scans every diagram;
-2. Reveal keeps non-current slides under `display: none`, so most diagram
-   containers do not have measurable geometry at that moment;
-3. `slidechanged` fires at the beginning of a transition and calls a second
-   `mermaid.run()` without await; and
-4. there is no rejection handler, state marker, source fallback, or test that
-   proves an SVG is visible.
+Instrumentation around every SVG attribute write captured the decisive failure
+in the vendored Mermaid 11.15 runtime: `positionEdgeLabel` attempted to write
+`transform="translate(undefined, NaN)"`. An A/B reproduction through both the
+Reveal plugin and Mermaid's direct `mermaid.render(uniqueId, source, element)`
+API produced the same stack. The failure is in Mermaid edge-label geometry, not
+the plugin adapter. Mermaid had finite coordinates calculated from the path, but
+the branch selected absent `edge.x` and `edge.y` values instead.
 
-This is two independent, reproducible races rather than a syntax-only problem.
-Mermaid's long-lived
-[`mermaid-js/mermaid#1846`](https://github.com/mermaid-js/mermaid/issues/1846)
-reports that a chart rendered beneath `display: none` is blank when later made
-visible. The Reveal-specific
-[`mermaid-js/mermaid#1824`](https://github.com/mermaid-js/mermaid/issues/1824)
-shows later slides receiving a `16` by `16` view box. Mermaid maintainers also
-record in
-[`mermaid-js/mermaid#3577`](https://github.com/mermaid-js/mermaid/issues/3577)
-that asynchronous renders cannot safely run concurrently and calls made in
-succession without await can fail inconsistently without an obvious error.
-
-The timing in the deck is therefore exactly the timing the upstream projects
-warn about. Reveal documents that `slidechanged` fires immediately, while
-[`slidetransitionend`](https://revealjs.com/events/#slide-transition-end) fires
-after the new slide is fully visible. Mermaid documents `await mermaid.run()`
-as the supported complex-integration API and recommends `startOnLoad: false`
-for caller-controlled rendering in its
-[`mermaid.run` guidance](https://mermaid.js.org/config/usage.html#using-mermaid-run).
+The repaired boundary is deliberately small. The vendoring tool applies the
+reviewed `mermaid-webkit-geometry-v2` transform to exactly two known
+`positionEdgeLabel` branches, requires exact match counts, and records both
+upstream and transformed SHA-256 values in the manifest. Missing or changed
+boundaries fail closed. This is not a user-agent workaround. The controller also
+disables HTML labels, waits for fonts, and renders serially in a fixed-width,
+opacity-zero body scratch node before validating every descendant attribute and
+moving the completed SVG into Reveal.
 
 ## Practitioner evidence retained with the feature
 
@@ -74,6 +65,14 @@ These reports are regression inputs, not incidental research notes:
 - [`zjffun/reveal.js-mermaid-plugin#5`](https://github.com/zjffun/reveal.js-mermaid-plugin/issues/5)
   records inherited Reveal `pre` line-height clipping diagram text. Browser
   acceptance must check bounding boxes, not merely the existence of an SVG.
+- [`gitlab-org/gitlab-docs#599`](https://gitlab.com/gitlab-org/gitlab-docs/-/issues/599)
+  records the exact `translate(undefined, NaN)` symptom when Mermaid diagrams
+  are initialized inside hidden tabs.
+- [`mermaid-js/mermaid#8113`](https://github.com/mermaid-js/mermaid/issues/8113)
+  documents viewport-versus-user-unit measurement drift beneath transformed
+  containers and recommends measuring in an untransformed body scratch area.
+- [`mermaid-js/mermaid#7323`](https://github.com/mermaid-js/mermaid/issues/7323)
+  records Safari diagrams and labels that appear only after reload or zoom.
 
 The implementation documentation must keep these links. They explain why a
 static syntax lint and an assertion for `<svg>` alone are insufficient.
@@ -82,18 +81,18 @@ static syntax lint and an assertion for `<svg>` alone are insufficient.
 
 ### Mermaid integration
 
-Use the maintained, Reveal-specific
+Vendor the maintained
 [`reveal.js-mermaid-plugin@11.15.0`](https://github.com/zjffun/reveal.js-mermaid-plugin)
-and register `RevealMermaid` in the `plugins` array. Version `11.15.0` was the
-current published plugin during this design review and carries Mermaid
-`11.15.0`; it replaces the three-year-old `2.1.0` bundle. Its documented
-integration exists specifically because direct Mermaid start-on-load can be
-wrong under Reveal.
+bundle because it carries the pinned Mermaid 11.15 runtime, but do not delegate
+render scheduling to the plugin. The reviewed vendor transform exposes that
+runtime as `globalThis.gluddMermaid`. The controller calls the supported awaited
+`gluddMermaid.render()` API once per diagram, with `startOnLoad: false` and
+`htmlLabels: false`. Reveal still owns slides and navigation; Gludd owns the
+render lifecycle and validation boundary.
 
-Do not write a second Mermaid parser or layout engine. A small Gludd runtime
-controller may own health state, visibility scheduling, fallback text, and
-telemetry around the upstream plugin. It must not duplicate Mermaid syntax or
-rendering logic.
+Do not write a second Mermaid parser or layout engine. The Gludd controller owns
+health state, serialization, the body scratch node, fallback text, and
+content-free telemetry. Mermaid remains the sole parser and layout engine.
 
 ### Local code viewer
 
@@ -114,11 +113,19 @@ distribution works as a pinned static asset without a JavaScript build system.
 ### Browser proof
 
 Use the official Python Playwright stack, pinned as `playwright==1.63.0` and
-`pytest-playwright==0.9.0` in a presentation-test dependency group. The
+`pytest-playwright==0.9.0` in a presentation-test dependency group. Chromium
+and Playwright WebKit are both mandatory. The
 [official test-runner documentation](https://playwright.dev/python/docs/intro)
 recommends the pytest plugin. Chromium installation and cache paths must be
 owned by Gludd, namespaced to this project, bounded, and observable through
 make targets; browser tests must not silently skip in the Pages workflow.
+
+Playwright WebKit is not native Safari. On macOS,
+`make presentation-safari-test` provides a separate bounded W3C WebDriver
+smoke. It never enables or prompts for Safari Remote Automation. If that setting
+is disabled, the target exits `3`, writes a content-free
+`remote-automation-disabled` report, and prints the exact operator action. A
+native Safari compatibility claim remains pending until that target passes.
 
 ## Asset ownership and Pages subpath contract
 
@@ -168,29 +175,25 @@ bounded timeout gets `render-timeout`. Failures are announced with an ARIA live
 status, are sent to `console.error` once, and never leave an empty diagram host.
 The original source must remain recoverable for retry and diagnostics.
 
-### Visibility and serialization
+### Measurable staging and serialization
 
-Register the upstream Mermaid bundle as a Reveal plugin so Reveal waits for its
-asynchronous initialization. Set Mermaid `startOnLoad: false`; remove the two
-manual whole-document `mermaid.run()` calls.
-
-The controller queues work from Reveal `ready`, `slidetransitionend`,
-`overviewhidden`, and print/PDF preparation. Interactive mode selects Mermaid
-nodes from the current visible slide only. It waits one animation frame, then
-checks `offsetParent`, a non-empty client rectangle, and computed visibility
-before invoking the upstream renderer. There is one in-flight render promise
-for the entire deck. Repeated events coalesce by diagram identity and never
-start competing calls.
+Set Mermaid `startOnLoad: false` and `htmlLabels: false`; never call a
+whole-document `mermaid.run()`. After Reveal initialization and
+`document.fonts.ready`, queue authored diagrams in document order. Move only the
+current source host into a fixed-width, opacity-zero scratch node attached
+directly to `document.body`, call and await `gluddMermaid.render()`, validate the
+result, then restore the host and insert the completed SVG. There is one
+in-flight render promise for the deck, so no two Mermaid layouts compete.
 
 Successful diagrams are idempotent. Navigation does not destroy a good SVG or
-render it a second time. A node in `failed` state may be retried once after it
-becomes visible if its prior category was `invalid-geometry` or
-`render-timeout`; invalid source is not retried until content changes. Print
-mode renders slides sequentially in document order after Reveal has prepared
-print layout.
+render it a second time. Each diagram has an isolated error boundary: one bad
+source becomes a readable failure, while later diagrams continue. Print mode
+uses the same serial document order.
 
-After each success, verify both a finite positive viewBox and a non-zero
-bounding box. A present-but-empty SVG is a failure. At stable deck idle, the
+After each success, verify a finite positive viewBox, finite positive SVG client
+and bounding boxes, every descendant attribute, and every `foreignObject`
+geometry. Any `undefined`, `NaN`, or `Infinity` token is a failure. A
+present-but-empty SVG is a failure. At stable deck idle, the
 health summary must report the exact totals for pending, rendering, rendered,
 and failed. The normal deck acceptance condition is zero unrendered diagrams,
 where unrendered means pending, rendering, failed, missing SVG, or invalid
@@ -273,7 +276,7 @@ does not exist in the static Pages artifact.
 
 ### Browser tests
 
-The mandatory headless Chromium test serves the final artifact below
+The mandatory Chromium and Playwright WebKit tests serve the final artifact below
 `http://127.0.0.1:{ephemeral-port}/gludd/`; fixed port `8080` is forbidden in
 parallel tests. It captures console errors, page errors, failed requests, and
 all same-origin response statuses. It must:
@@ -294,13 +297,21 @@ all same-origin response statuses. It must:
 9. run a blocked asset fault by aborting the Mermaid bundle request and prove
    every diagram remains readable as source with `renderer-unavailable`; and
 10. repeat at a narrow viewport and after a resize event to catch clipped or
-    zero-sized diagrams.
+    zero-sized diagrams; and
+11. run the direct Mermaid API A/B probe and reject any descendant geometry
+    containing `undefined`, `NaN`, or `Infinity`.
 
 The invalid diagram and blocked asset cases are expected failures and must not
 be counted as unexplained console errors. All other warnings and errors fail the
 suite. On failure, retain an HTML snapshot, screenshot, console/request log,
 diagram state inventory, and Playwright trace in a namespaced temporary output
 directory.
+
+The native Safari smoke is a distinct macOS operator target, not an alias for
+Playwright WebKit. It repeats cold and cached readiness, visits every Reveal
+slide, validates every chart and descendant geometry, opens the read-only source
+viewer, and rejects any content-free client error category. Remote Automation
+disabled is a visible, machine-readable blocked state rather than a skip.
 
 ### GitHub Pages workflow
 
@@ -346,23 +357,27 @@ an older browser still sees diagram text.
 Before promotion, push the integrated commit to remote `development` and let
 the non-deploying Pages validation run there. After the full project gate and
 remote CI are green, promote through the existing development-to-release flow.
-The protected release branch alone deploys Pages.
+Only `master` preserves the validated artifact and deploys Pages.
 
-Rollback reverts the runtime controller and asset reference commit while
-retaining the original Mermaid source and public GitHub links. Do not roll back
-to un-awaited whole-document `mermaid.run()` calls or CDN-only assets. If an
-upstream renderer regression is discovered, pin the last green vendored
-manifest and keep fail-visible source active; no service downtime or database
-operation is involved.
+Rollback reverts the controller and the exact manifest-bound vendor transform
+together while retaining original Mermaid source and public GitHub links. Do
+not roll back to un-awaited whole-document `mermaid.run()` calls or CDN-only
+assets. If an upstream renderer changes the two reviewed patch boundaries,
+vendoring fails closed; pin the last browser-green transformed digest and keep
+fail-visible source active. No service downtime or database operation is
+involved.
 
 ## Acceptance criteria
 
-- The tracked deck contains no direct `mermaid.run()` and registers the pinned
-  `RevealMermaid` plugin.
+- The tracked deck contains no `mermaid.run()` and uses the pinned, awaited
+  `gluddMermaid.render()` boundary one diagram at a time.
 - The published artifact has no runtime CDN dependency and works under both `/`
   and `/gludd/` with no 404.
-- Forward/back navigation and resize leave every valid diagram with one
+- Chromium and Playwright WebKit cold/cache, forward/back navigation, and resize
+  leave every valid diagram with one
   positive-size SVG and zero unrendered diagrams.
+- The native Safari target either passes the same geometry contract or fails
+  closed with durable operator guidance; WebKit is never reported as Safari.
 - Invalid syntax, invalid geometry, timeout, and blocked asset faults are
   visible, categorized, bounded, and retain original source.
 - Every repository file reference is a GitHub blob link; every cited line or

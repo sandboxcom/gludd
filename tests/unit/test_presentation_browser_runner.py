@@ -28,6 +28,7 @@ def test_plan_is_serial_pinned_and_namespaced() -> None:
     assert ("-n", "0") in pairs
     assert ("-m", "presentation_browser") in pairs
     assert ("--tracing", "retain-on-failure") in pairs
+    assert "--capture=tee-sys" in plan.command
 
 
 def test_webkit_plan_is_a_first_class_browser_contract() -> None:

@@ -68,6 +68,7 @@ def build_plan(
         "retain-on-failure",
         "--output",
         str(safe_output_root),
+        "--capture=tee-sys",
         "-W",
         "error",
     )

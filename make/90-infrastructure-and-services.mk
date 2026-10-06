@@ -82,6 +82,10 @@ PRESENTATION_BROWSER_ROOT ?= /tmp/gludd-playwright-browsers
 PRESENTATION_BROWSER_OUTPUT ?= /tmp/gludd-presentation-browser
 PRESENTATION_BROWSER_TIMEOUT ?= 300
 PRESENTATION_BROWSER_INSTALL_TIMEOUT ?= 600
+PRESENTATION_SAFARI_VALIDATE_ONLY ?= 1
+PRESENTATION_SAFARI_DRIVER ?= /usr/bin/safaridriver
+PRESENTATION_SAFARI_OUTPUT ?= /tmp/gludd-presentation-safari
+PRESENTATION_SAFARI_TIMEOUT ?= 60
 PRESENTATION_PAGES_PROBE_VALIDATE_ONLY ?= 1
 PRESENTATION_PAGES_URL ?= https://sandboxcom.github.io/gludd/
 PRESENTATION_PAGES_EXPECTED_SHA ?=
@@ -114,6 +118,14 @@ presentation-browser-install:
 			--output-root "$(PRESENTATION_BROWSER_OUTPUT)/$$browser" \
 			--timeout-seconds "$(PRESENTATION_BROWSER_INSTALL_TIMEOUT)" || exit $$?; \
 	done
+
+presentation-safari-test:
+	@case "$(PRESENTATION_SAFARI_VALIDATE_ONLY)" in 0|1) ;; *) echo "PRESENTATION_SAFARI_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@$(UV) run python -m scripts.run_presentation_safari_smoke \
+		$(if $(filter 1,$(PRESENTATION_SAFARI_VALIDATE_ONLY)),--validate-only,--run) \
+		--driver "$(PRESENTATION_SAFARI_DRIVER)" \
+		--output-root "$(PRESENTATION_SAFARI_OUTPUT)" \
+		--timeout-seconds "$(PRESENTATION_SAFARI_TIMEOUT)"
 
 presentation-pages-probe:
 	@case "$(PRESENTATION_PAGES_PROBE_VALIDATE_ONLY)" in 0|1) ;; *) echo "PRESENTATION_PAGES_PROBE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac

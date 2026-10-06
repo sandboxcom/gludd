@@ -12,11 +12,13 @@ on:
       - 'pyproject.toml'
       - 'scripts/build_deck.py'
       - 'scripts/run_presentation_browser_tests.py'
+      - 'scripts/run_presentation_safari_smoke.py'
       - 'scripts/probe_presentation_pages.py'
       - 'scripts/vendor_presentation_assets.py'
       - 'tests/browser/**'
       - 'tests/unit/test_pages_presentation_resilience.py'
       - 'tests/unit/test_presentation_browser_runner.py'
+      - 'tests/unit/test_presentation_safari_runner.py'
       - 'tests/unit/test_presentation_pages_probe.py'
       - 'tests/unit/test_reveal_render_resilience_runtime.py'
       - 'tests/unit/test_vendor_presentation_assets.py'
@@ -77,7 +79,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
       - name: Preserve validated Pages directory
-        if: github.event_name == 'push' && github.ref == 'refs/heads/development'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: gludd-pages-deck
@@ -87,7 +89,7 @@ jobs:
 
   deploy:
     needs: validate
-    if: github.event_name == 'push' && github.ref == 'refs/heads/development'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     permissions:
       contents: read
       pages: write

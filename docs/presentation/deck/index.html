@@ -147,13 +147,13 @@
   <div class="diagram-wrap">
     <div class="mermaid">
 graph TD
-  User["You"] -->|POST /api/todos| Daemon["daemon.py + EventLoop<br/>event_loop/loop.py"]
-  Daemon -->|dispatch| Model["Model gateway<br/>models/gateway.py"]
-  Daemon -->|execute| Runner["Ansible / worker<br/>ansible/runner.py, worker/app.py"]
-  Model --> Review["Reviewer<br/>review/reviewer.py"]
+  User["You"] -->|POST /api/todos| Daemon["daemon.py + EventLoop - event_loop/loop.py"]
+  Daemon -->|dispatch| Model["Model gateway - models/gateway.py"]
+  Daemon -->|execute| Runner["Ansible / worker - ansible/runner.py, worker/app.py"]
+  Model --> Review["Reviewer - review/reviewer.py"]
   Runner --> Review
-  Review -->|approve| Git[("git_automation/repo.py<br/>commit + push")]
-  Daemon -.->|next tick, ~1s| Daemon
+  Review -->|approve| Git["git_automation/repo.py - commit + push"]
+  Timer["~1s timer"] -.->|next tick| Daemon
     </div>
   </div>
   <p class="cite">Source: src/general_ludd/daemon.py, src/general_ludd/event_loop/loop.py</p>
@@ -193,6 +193,40 @@ graph TD
     <li class="fragment"><strong>Daemon state:</strong> single source of truth (&lt;code&gt;app.state&lt;/code&gt;) — DB factory, controllers, agent registry, dispatcher, all in one process</li>
   </ul>
   <p class="cite">Source: src/general_ludd/daemon.py:1-3126, src/general_ludd/event_loop/loop.py</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 4c: PRESENTATION RENDERING RELIABILITY -->
+<!-- ============================================================ -->
+<section data-contract="presentation-browser-resilience">
+  <p class="stage-kicker">Documentation reliability &middot; v0.1.2</p>
+  <h2>Every diagram now has a measured browser proof</h2>
+  <div class="two-col">
+    <div>
+      <h3>Render outside hidden slides</h3>
+      <ul class="bullets-tight">
+        <li>After fonts load, render <strong>one diagram at a time</strong> in a fixed-width body scratch node</li>
+        <li>Await the pinned Mermaid API and insert only a <strong>completed, validated SVG</strong></li>
+        <li>Reject descendant <code>undefined</code>, <code>NaN</code>, or <code>Infinity</code> geometry</li>
+        <li>Keep accessible Mermaid source visible for every isolated failure</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Prove the artifact users receive</h3>
+      <ul class="bullets-tight">
+        <li><strong>Chromium + WebKit:</strong> cold/cache, every slide, resize, source viewer, and failure fallbacks</li>
+        <li><strong>Native Safari:</strong> a separate bounded <code>safaridriver</code> target; WebKit is never relabeled Safari</li>
+        <li><strong>Pages:</strong> development validates; master alone deploys the exact tested SHA</li>
+        <li><strong>ZDD:</strong> controller and manifest-bound Mermaid transform roll back together</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">
+    The native Safari probe currently reports Remote Automation disabled and keeps
+    exact operator guidance. Safari compatibility remains pending until that
+    user-controlled setting is enabled and the same geometry contract passes.
+  </p>
+  <p class="cite">Sources: docs/presentation/deck/presentation.js, scripts/vendor_presentation_assets.py, scripts/run_presentation_browser_tests.py, scripts/run_presentation_safari_smoke.py, tests/browser/test_presentation.py</p>
 </section>
 
 <!-- ============================================================ -->
