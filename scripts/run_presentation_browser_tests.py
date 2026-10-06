@@ -90,7 +90,7 @@ def validate_plan(plan: BrowserPlan) -> None:
         raise RuntimeError("presentation browser command is not a direct bounded argv")
 
 
-def _require_browser_executable(plan: BrowserPlan) -> None:
+def _require_browser_executable(plan: BrowserPlan) -> Path:
     """Fail with the owned install target when Chromium is unavailable."""
     os.environ["PLAYWRIGHT_BROWSERS_PATH"] = plan.browser_root
     try:
@@ -101,6 +101,32 @@ def _require_browser_executable(plan: BrowserPlan) -> None:
         executable = Path(playwright.chromium.executable_path)
     if not executable.is_file():
         raise RuntimeError("Chromium is not installed; run make presentation-browser-install")
+    return executable
+
+
+def install_browser(plan: BrowserPlan) -> int:
+    """Install only pinned Chromium into the explicit project-owned cache."""
+    validate_plan(plan)
+    Path(plan.browser_root).mkdir(parents=True, exist_ok=True)
+    environment = os.environ.copy()
+    environment["PLAYWRIGHT_BROWSERS_PATH"] = plan.browser_root
+    command = (sys.executable, "-m", "playwright", "install", "chromium")
+    print("presentation-browser phase=install status=starting", flush=True)
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=ROOT,
+            env=environment,
+            timeout=plan.timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        print("presentation-browser phase=install status=timeout", flush=True)
+        return 124
+    if completed.returncode == 0:
+        _require_browser_executable(plan)
+    print(f"presentation-browser phase=install status=finished exit={completed.returncode}", flush=True)
+    return completed.returncode
 
 
 def run_plan(plan: BrowserPlan) -> int:
@@ -133,6 +159,8 @@ def main() -> None:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--validate-only", action="store_true", help="print and validate plan without side effects")
     mode.add_argument("--run", action="store_true", help="launch the pinned Chromium acceptance")
+    mode.add_argument("--check-browser", action="store_true", help="verify pinned Chromium without writing")
+    mode.add_argument("--install-browser", action="store_true", help="install pinned Chromium into the owned cache")
     parser.add_argument("--browser", default="chromium")
     parser.add_argument("--browser-root", type=Path, default=DEFAULT_BROWSER_ROOT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
@@ -148,6 +176,13 @@ def main() -> None:
         validate_plan(plan)
         print(json.dumps(asdict(plan), indent=2, sort_keys=True))
         return
+    if args.check_browser:
+        validate_plan(plan)
+        executable = _require_browser_executable(plan)
+        print(json.dumps({"browser": plan.browser, "executable": str(executable), "status": "available"}))
+        return
+    if args.install_browser:
+        raise SystemExit(install_browser(plan))
     raise SystemExit(run_plan(plan))
 
 
