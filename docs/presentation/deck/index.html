@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>gludd — Autonomous Software Development</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/black.css">
+<link rel="stylesheet" href="./vendor/reveal/reveal.css">
+<link rel="stylesheet" href="./presentation.css">
 <style>
 :root {
   --r-heading-text-transform: none;
@@ -1610,46 +1610,32 @@ make init</code></pre>
 </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/highlight.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
-<!-- Mermaid plugin for inline diagrams -->
-<script src="https://cdn.jsdelivr.net/npm/reveal.js-mermaid-plugin@2.1.0/plugin/mermaid/mermaid.js"></script>
-<script>
-Reveal.initialize({
-  hash: true,
-  center: true,
-  width: 1150,
-  height: 820,
-  margin: 0.045,
-  minScale: 0.2,
-  maxScale: 1.8,
-  overflow: 'scroll',
-  transition: 'slide',
-  transitionSpeed: 'default',
-  backgroundTransition: 'fade',
-  slideNumber: 'c/t',
-  plugins: [ RevealHighlight, RevealNotes ]
-}).then(() => {
-  mermaid.initialize({
-    startOnLoad: false,
-    theme: 'base',
-    themeVariables: {
-      primaryColor: '#161b22',
-      primaryTextColor: '#c9d1d9',
-      primaryBorderColor: '#58a6ff',
-      lineColor: '#58a6ff',
-      secondaryColor: '#1f6feb',
-      tertiaryColor: '#238636',
-      background: '#161b22',
-      mainBkg: '#161b22',
-      secondBkg: '#1f6feb',
-      fontSize: '16px'
-    }
-  });
-  mermaid.run();
-  Reveal.on('slidechanged', () => mermaid.run());
-});
-</script>
+<p id="presentation-render-status" role="status" aria-live="polite" hidden></p>
+<dialog id="source-viewer-dialog" aria-labelledby="source-viewer-path">
+  <div class="source-viewer-header">
+    <strong id="source-viewer-path">Repository source</strong>
+    <span class="source-viewer-actions">
+      <a id="source-viewer-github" href="https://github.com/sandboxcom/gludd">Open on GitHub</a>
+      <button id="source-viewer-close" type="button">Close</button>
+    </span>
+  </div>
+  <div id="source-viewer-editor" aria-label="Read-only repository source"></div>
+</dialog>
+
+<script src="./vendor/reveal/reveal.js"></script>
+<script src="./vendor/reveal/plugin/highlight/highlight.js"></script>
+<script src="./vendor/reveal/plugin/notes/notes.js"></script>
+<script src="./vendor/mermaid/mermaid.js"></script>
+<script src="./vendor/ace/ace.js"></script>
+<script src="./vendor/ace/theme-tomorrow_night.js"></script>
+<script src="./vendor/ace/mode-css.js"></script>
+<script src="./vendor/ace/mode-html.js"></script>
+<script src="./vendor/ace/mode-javascript.js"></script>
+<script src="./vendor/ace/mode-json.js"></script>
+<script src="./vendor/ace/mode-markdown.js"></script>
+<script src="./vendor/ace/mode-python.js"></script>
+<script src="./vendor/ace/mode-sh.js"></script>
+<script src="./vendor/ace/mode-yaml.js"></script>
+<script src="./presentation.js"></script>
 </body>
 </html>

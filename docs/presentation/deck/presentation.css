@@ -1,0 +1,120 @@
+html,
+body {
+  background: #0d1117;
+}
+
+.mermaid-host {
+  min-height: 2rem;
+  position: relative;
+}
+
+.mermaid-source {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  color: #c9d1d9;
+  font-size: 0.45em;
+  line-height: 1.35;
+  margin: 0;
+  max-height: 22rem;
+  overflow: auto;
+  padding: 0.75rem;
+  text-align: left;
+  white-space: pre-wrap;
+}
+
+.mermaid-host[data-mermaid-state="rendered"] > .mermaid-source,
+.mermaid-host[data-mermaid-state="rendered"] > .mermaid-failure {
+  display: none;
+}
+
+.mermaid-host[data-mermaid-state="failed"] > .mermaid {
+  display: none;
+}
+
+.mermaid-failure,
+#presentation-render-status {
+  background: #2d1b16;
+  border: 1px solid #d29922;
+  color: #f0c674;
+  font-size: 0.5em;
+  padding: 0.5rem;
+}
+
+#presentation-render-status {
+  bottom: 0.5rem;
+  left: 0.5rem;
+  margin: 0;
+  position: fixed;
+  z-index: 30;
+}
+
+.source-link {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 0.15em;
+}
+
+#source-viewer-dialog {
+  background: #0d1117;
+  border: 1px solid #58a6ff;
+  color: #c9d1d9;
+  height: min(82vh, 900px);
+  padding: 0;
+  width: min(92vw, 1200px);
+}
+
+#source-viewer-dialog::backdrop {
+  background: rgb(1 4 9 / 82%);
+}
+
+.source-viewer-header {
+  align-items: center;
+  border-bottom: 1px solid #30363d;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.65rem 0.8rem;
+}
+
+#source-viewer-path {
+  color: #79c0ff;
+  font-family: "SF Mono", Menlo, Monaco, monospace;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.source-viewer-actions {
+  align-items: center;
+  display: flex;
+  flex: none;
+  gap: 0.75rem;
+}
+
+#source-viewer-editor {
+  height: calc(100% - 3.25rem);
+  width: 100%;
+}
+
+#source-viewer-close {
+  background: #21262d;
+  border: 1px solid #8b949e;
+  color: #f0f6fc;
+  cursor: pointer;
+  padding: 0.35rem 0.6rem;
+}
+
+@media (max-width: 640px) {
+  #source-viewer-dialog {
+    height: 94vh;
+    width: 96vw;
+  }
+
+  .source-viewer-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  #source-viewer-editor {
+    height: calc(100% - 5.5rem);
+  }
+}

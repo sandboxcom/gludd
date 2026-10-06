@@ -330,7 +330,7 @@ class TestConcurrencyAndPermissions:
         data = _load_yaml(WORKFLOW_DIR / "pages.yml")
         concurrency = data.get("concurrency", {})
         assert "group" in concurrency
-        assert concurrency["group"] == "pages"
+        assert concurrency["group"] == "presentation-pages-${{ github.ref }}"
 
     def test_molecule_yml_has_concurrency_group(self):
         data = _load_yaml(WORKFLOW_DIR / "molecule.yml")
@@ -339,9 +339,12 @@ class TestConcurrencyAndPermissions:
     def test_pages_yml_permissions_are_scoped(self):
         data = _load_yaml(WORKFLOW_DIR / "pages.yml")
         perms = data.get("permissions", {})
-        assert perms.get("contents") == "read"
-        assert "pages" in perms
-        assert perms.get("id-token") == "write"
+        assert perms == {"contents": "read"}
+        assert data["jobs"]["deploy"].get("permissions") == {
+            "contents": "read",
+            "pages": "write",
+            "id-token": "write",
+        }
 
 
 class TestJobTimeouts:
