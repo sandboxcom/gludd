@@ -232,6 +232,18 @@ CI-failure-ledger, and PyInstaller-receipt acquisitions had not landed with the
 matching inventory entries. The complete preflight ledger retained all three
 hashes while continuing later checks. After reviewing the actual acquisition and
 teardown pairs, the canonical writer admitted them as one counted inventory
-update; read-only validation now reports 212 owned resources and the checker
-suite passes 32/32. This is not a baseline bypass: code and inventory remain one
-commit, and a future source-hash change fails closed again.
+update; read-only validation at that release head reported 212 owned resources
+and the checker suite passed 32/32. This was not a baseline bypass: code and
+inventory remained one commit, and a future source-hash change still fails
+closed.
+
+The 2026-10-06 module-split reconciliation applied the same rule. Seventeen
+records moved from the hook-runtime script, daemon facade, event-loop facade,
+and pricing-source facade into their exact extracted modules. Eleven additional
+owned resources in build, dependency, presentation, secrets, and decision-log
+helpers were reviewed and admitted. Read-only validation now reports 237 owned
+resources. A repository-level regression test scans both application source
+trees against the checked-in inventory, so a future split must land its exact
+resource locations in the same change. This preserves the explicit state-move
+lesson in the Terraform practitioner reports above: relocation is recorded, not
+silently discarded or excused by a broader allowlist.
