@@ -338,4 +338,3 @@ write-gate-safe-hook:
 	@mkdir -p .claude/hooks
 	@python3 scripts/gen_gate_safe_hook.py .claude/hooks/agent_floor_stop.sh
 	@echo "write-gate-safe-hook done"
-

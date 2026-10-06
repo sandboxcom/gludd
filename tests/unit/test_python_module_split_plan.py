@@ -84,4 +84,3 @@ def test_plan_pins_automated_compatibility_and_disjoint_wave_gates() -> None:
     assert "db/repository.py` (owner A)" in text
     assert "agent_watchdog.py` (owner B)" in text
     assert "No two owners in a wave" in text
-
