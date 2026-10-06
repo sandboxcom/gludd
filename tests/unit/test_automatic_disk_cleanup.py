@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import subprocess
@@ -13,6 +14,27 @@ from scripts.automatic_disk_cleanup import DiskSnapshot
 from scripts.prune_worktrees_safe import WorktreeRecord
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_runtime_type_aliases_remain_importable_on_system_python_3_9() -> None:
+    """Postponed annotations do not defer a top-level type-alias expression."""
+    source_path = ROOT / "scripts" / "automatic_disk_cleanup.py"
+    module = ast.parse(source_path.read_text(encoding="utf-8"))
+    aliases = {
+        target.id: statement.value
+        for statement in module.body
+        if isinstance(statement, ast.Assign)
+        for target in statement.targets
+        if isinstance(target, ast.Name)
+    }
+
+    alias = aliases["InspectInactiveWorktree"]
+    runtime_pipe_unions = [
+        node
+        for node in ast.walk(alias)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr)
+    ]
+    assert not runtime_pipe_unions
 
 
 def _fake_git_for_lifecycle(

@@ -183,7 +183,7 @@ RemoveMaterialization = Callable[
 ]
 InspectInactiveWorktree = Callable[
     [prune_worktrees_safe.WorktreeRecord],
-    tuple[LifecycleDecision, WorktreeEnvironmentSnapshot | None],
+    tuple[LifecycleDecision, "WorktreeEnvironmentSnapshot | None"],
 ]
 
 
