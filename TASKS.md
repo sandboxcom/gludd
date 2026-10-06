@@ -24,6 +24,60 @@ prevents prior-release assignments, the ledger, release notes, and exact Git
 ancestry from drifting independently.
 <!-- /v0.1.2-completed-backlog -->
 
+- [ ] S91.3 — **Make every OpenCode enforcement runtime surface retain executable Git metadata across checkouts** across `opencode.json`, `tests/unit/test_enforcement_executable_modes.py`, `docs/features/OPENCODE_ENFORCEMENT_EXECUTABLE_MODES.md`, and the explicit source inventory below: normalize the candidate Git modes to `100755` without changing source bytes; derive the invariant from configured plugins plus their shared libraries, implementation modules, and direct Node runtime tests; inspect the Git index so the check remains stable when host filesystems or `core.fileMode` settings hide worktree permission drift; and keep behavioral hook execution as the separate runtime proof. | evidence: the failing-first focused regression reported every candidate index entry as `100644`, including the 42 pre-existing worktree mode edits and five uncovered support surfaces; after staging the complete 47-file inventory, the focused Git-index regression passes 1/1, hook runtime passes 151 with 18 intentional skips, the plugin manifest passes 108/108, Node v26 parse/factory compatibility passes 5/5, Markdown lint reports zero issues, task integrity, ledger validation, and 50-path registration are green, and collection succeeds with 119,335 selected tests, 15 intentional deselections, and zero errors; commit and exact-head full-gate evidence remain pending | priority: high | effort: XS | status: in_progress
+
+  S91.3 owns this exact enforcement-mode inventory:
+
+  ```text
+  .opencode/lib/dispatch_dedup.ts
+  .opencode/lib/enforce_tdd_logic.ts
+  .opencode/lib/hot_reload.ts
+  .opencode/lib/multitask_config.ts
+  .opencode/lib/pipeline_kickoff.ts
+  .opencode/lib/plugin_test_exports.ts
+  .opencode/lib/shared.ts
+  .opencode/plugin/enforce-additive-task.ts
+  .opencode/plugin/enforce-anti-essay.ts
+  .opencode/plugin/enforce-audit.ts
+  .opencode/plugin/enforce-batch-push.ts
+  .opencode/plugin/enforce-branch-discipline.ts
+  .opencode/plugin/enforce-clean-tree.ts
+  .opencode/plugin/enforce-commit-lock.ts
+  .opencode/plugin/enforce-context.ts
+  .opencode/plugin/enforce-deadline.ts
+  .opencode/plugin/enforce-delegate.ts
+  .opencode/plugin/enforce-deletion-gate.ts
+  .opencode/plugin/enforce-deliverable.ts
+  .opencode/plugin/enforce-depth.test.node.mjs
+  .opencode/plugin/enforce-depth.ts
+  .opencode/plugin/enforce-directives.ts
+  .opencode/plugin/enforce-enhancement-ratio.ts
+  .opencode/plugin/enforce-floor-v2.ts
+  .opencode/plugin/enforce-floor.ts
+  .opencode/plugin/enforce-make.ts
+  .opencode/plugin/enforce-multitask.test.node.mjs
+  .opencode/plugin/enforce-multitask.ts
+  .opencode/plugin/enforce-no-ci-poll.ts
+  .opencode/plugin/enforce-no-suppressions.ts
+  .opencode/plugin/enforce-no-wait.ts
+  .opencode/plugin/enforce-objective.ts
+  .opencode/plugin/enforce-pipeline-kickoff.ts
+  .opencode/plugin/enforce-release-deadline.ts
+  .opencode/plugin/enforce-session-start.ts
+  .opencode/plugin/enforce-stop.ts
+  .opencode/plugin/enforce-task-tracking.test.node.mjs
+  .opencode/plugin/enforce-task-tracking.ts
+  .opencode/plugin/enforce-tdd.test.node.mjs
+  .opencode/plugin/enforce-tdd.ts
+  .opencode/plugin/enforce-test-integrity.ts
+  .opencode/plugin/enforce-verified-claims.ts
+  .opencode/plugin/enforce-worktree.ts
+  .opencode/plugin/impl/enforce_directives_impl.ts
+  .opencode/plugin/impl/enforce_make_impl.ts
+  .opencode/plugin/impl/enforce_stop_impl.ts
+  .opencode/plugins/watchdog.ts
+  ```
+
 - [ ] S83.170 - **Keep Reveal.js Mermaid labels aligned and every presentation element inside the visible canvas in Safari-class rendering** across `docs/presentation/DESIGN_revealjs_deck.md`, `docs/presentation/deck-data.json`, `docs/presentation/deck/index.html`, `docs/presentation/deck/presentation.css`, `docs/presentation/deck/presentation.js`, `scripts/build_deck.py`, `scripts/run_presentation_safari_smoke.py`, `tests/browser/test_presentation.py`, `tests/unit/test_presentation_safari_runner.py`, `tests/unit/test_reveal_render_resilience_coverage.py`, and `tests/unit/test_reveal_render_resilience_runtime.py`: normalize multiline SVG anchors, add a bounded padded viewport, render decoded replaced images with explicit intrinsic geometry, split and regroup overloaded charts, use non-sweeping transitions, reject off-canvas text/diagrams across every slide and fragment, require at least eight effective CSS pixels for chart text, and keep local preview diagnostics free of expected browser-disconnect tracebacks without hiding unexpected failures. | evidence: the strengthened post-transition canvas audit reproduced nine overflowing slides before repair; a failing-first guardrail-label regression pinned WebKit-flattened Mermaid breaks; final canonical WebKit acceptance passes 14/14 in 185.35 seconds with every encoded-SVG label, slide, fragment, Pages-subpath navigation, hash reload, source link, and visible failure fallback verified; the focused presentation suite passes 126/126 at 93% aggregate coverage with all five measured production files at 88%-98%, and the disconnect boundary passes for both reset and broken-pipe errors while delegating unexpected exceptions; Chromium acceptance previously passed 14/14; scoped Python and Markdown lint, 16-asset integrity, and the 108-check plugin manifest are green; native Safari remains honestly unclaimed because operator-controlled Remote Automation is disabled; exact-head full gate, commit, and development push remain required before completion or v0.1.2 assignment | priority: high | effort: S | status: in_progress
 
 S83.166 2026-09-29 failure-ownership continuation: hosted runs `36524447124` and `36524447101` are now ingested as nine independent failure families instead of one mutable branch verdict. The durable CI failure ledger rejects contradictory terminal payloads and unchanged failed-SHA reruns, preserves sibling and recurrent failures, requires a descendant repair commit plus exact Make evidence, blocks pushes with open/non-ancestral families, and resolves only the matching workflow/job after hosted success. Its replay passes 27/27 at 96% branch-aware coverage with every measured production file above 75%. The same runs exposed two PyInstaller graphs for one SHA because one workflow floated Python and the lock while the other used Python 3.12.14 plus frozen sync; all Linux/molecule producers now pin the exact patch and frozen lock, audit and upload the raw warning graph, and the combined regression surface passes 120/120. The dead Ansible EE base digest now has a fail-fast exact-manifest check and an atomic verified refresh transaction; its 36-test artifact replay and live Quay manifest check are green. Exact repair commits, a complete candidate gate, hosted all-workflow replay, the predecessor live proofs, publication, deployment, and rollback remain open.
