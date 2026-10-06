@@ -1,6 +1,6 @@
 # Decision-log codification
 
-**Status:** Core implemented; daemon integration pending.
+**Status:** Core and opt-in application adapter implemented; automatic live-flow integration pending.
 
 **Presentation contract:** `decision-log-codification-v1`
 
@@ -19,11 +19,14 @@ telemetry all have focused unit tests. `DecisionLogAnalyzer` converts verified
 run bundles into evaluated candidates, while `DecisionResolver` executes an
 exact codified hit or invokes the supplied agent fallback exactly once after a
 typed abstention. An end-to-end core test covers signed evidence, approval,
-activation, a zero-call rule hit, fallback, and rollback. The feature is not yet
-wired into the daemon, event loop, durable database, recorder, CLI, or API.
-Therefore no production traffic is currently served by a codified rule, and
-avoided-call metrics remain an integration outcome rather than a deployed
-claim.
+activation, a zero-call rule hit, fallback, and rollback.
+`DecisionCodificationAdapter` now binds the verified reader, runtime, project,
+and policy to an explicit daemon/EventLoop injection. It is disabled by default,
+so existing agent behavior is unchanged. Automatic live-flow invocation,
+durable database/configuration, recorder capture, outcome feedback, CLI, and API
+remain pending. Therefore no production traffic is currently served by a
+codified rule, and avoided-call metrics remain an integration outcome rather
+than a deployed claim.
 
 ```text
 verified replay bundle -> safe envelope -> offline candidate + replay report
@@ -101,8 +104,10 @@ uncertainty returns `DecisionAbstentionV1` with a closed reason such as
 existing deterministic `RuleEngine`. `DecisionResolver` owns the other half of
 the standalone contract: it invokes the supplied agent/LLM fallback exactly
 once for each `DecisionAbstentionV1`, validates the returned action against the
-closed vocabulary, and preserves the bounded abstention reason. Daemon wiring
-must supply that existing fallback adapter and outcome recording.
+closed vocabulary, and preserves the bounded abstention reason.
+`DecisionCodificationAdapter` exposes that contract through an immutable
+project/policy binding. The application caller must still choose the decision
+point, supply its existing fallback, and record terminal outcomes.
 
 ## Immutable human approval
 
@@ -176,15 +181,20 @@ abstention. They do not justify fuzzy runtime matching or autonomous approval.
 
 ## Integration and verification
 
-The standalone service now owns verified source-marker construction, bounded
-analysis, lookup/fallback orchestration, and end-to-end core ZDD evidence. Its
-48-bundle test demonstrates candidate mining, exact human approval, activation,
-a zero-fallback rule hit, an unseen-context fallback, and rollback continuity.
+The service now owns verified source-marker construction, bounded analysis,
+lookup/fallback orchestration, and end-to-end core ZDD evidence. Its 48-bundle
+test demonstrates candidate mining, exact human approval, activation, a
+zero-fallback rule hit, an unseen-context fallback, and rollback continuity.
+`DecisionCodificationAdapter` additionally supplies explicit injection through
+daemon application state and `EventLoop`; integration tests prove the default
+is disabled, an exact hit makes no fallback call, and every tested abstention
+makes exactly one fallback call.
 
 The single-writer production integration slice still owns automatic replay
-capture, daemon/event-loop invocation, terminal outcome feedback, durable
-multiworker repositories and migration, permissions, config, and CLI/API.
-Shared schema and infrastructure changes must land once and merge forward.
+capture, automatic live-flow invocation at selected decision points, terminal
+outcome feedback, durable multiworker repositories and migration, permissions,
+configuration, and CLI/API. Shared schema and infrastructure changes must land
+once and merge forward.
 
 Focused tests live under `tests/unit/test_decision_codification_*.py`. The
 documentation drift test is

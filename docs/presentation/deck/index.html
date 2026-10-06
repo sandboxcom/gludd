@@ -1223,7 +1223,7 @@ flowchart LR
 <!-- ============================================================ -->
 <section data-contract="decision-log-codification-v1">
   <p class="stage-kicker">Repeated decisions &middot; verified evidence to reversible automation</p>
-  <h2>Decision-log codification <span class="badge-yellow">Service ready; daemon wiring pending</span></h2>
+  <h2>Decision-log codification <span class="badge-yellow">Opt-in adapter ready; live flow pending</span></h2>
   <div class="two-col">
     <div>
       <h3>Trust only exact evidence</h3>
@@ -1231,6 +1231,7 @@ flowchart LR
         <li><strong>Verified signed bundles:</strong> <code>DecisionLogAnalyzer</code> mints source markers only after complete <code>RunBundleStore.read_verified()</code> output.</li>
         <li><strong>Exact context or abstain:</strong> project, policy, guards, schema, and an observed context signature must match; uncertainty returns <code>DecisionAbstentionV1</code>.</li>
         <li><strong>zero-LLM hit:</strong> <code>DecisionResolver</code> runs one verified leaf through the deterministic <code>RuleEngine</code>, or calls the supplied fallback once after abstention.</li>
+        <li><strong>Safe opt-in:</strong> <code>DecisionCodificationAdapter</code> binds project and policy through daemon/EventLoop injection and is disabled by default.</li>
       </ul>
     </div>
     <div>
@@ -1242,7 +1243,7 @@ flowchart LR
       </ul>
     </div>
   </div>
-  <p class="honest-note">A 48-bundle end-to-end core test proves analysis, approval, activation, a zero-fallback hit, fallback, and rollback. Recorder, daemon/event-loop, durable multiworker, CLI/API, and live-traffic integration remain; no live avoided-call claim is made yet.</p>
+  <p class="honest-note">Core and adapter tests prove analysis, approval, activation, zero fallback on an exact hit, one fallback after abstention, and rollback. Automatic decision-point invocation, recorder/outcome feedback, durable multiworker storage, config, CLI/API, and live-traffic evidence remain; no live avoided-call claim is made yet.</p>
   <p class="cite">Sources: docs/features/DECISION_LOG_CODIFICATION.md &middot; RapidFuzz #432 &middot; scikit-learn #15629 / discussion #25411 &middot; OPA #2379 / #1514</p>
 </section>
 

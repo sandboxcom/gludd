@@ -17,7 +17,9 @@ ZDD rollout controller, telemetry, and service orchestration now live in
 `tests/unit/test_decision_codification_*.py`. `DecisionLogAnalyzer` reads only
 verified signed bundles and produces replay-evaluated candidates;
 `DecisionResolver` returns an exact codified decision or invokes the supplied
-agent fallback exactly once after typed abstention.
+agent fallback exactly once after typed abstention. `DecisionCodificationAdapter`
+binds those capabilities to one immutable project/policy scope and is available
+through explicit injection into daemon application state and `EventLoop`.
 
 The core enforces exact observed-context signatures, typed abstention,
 create-only HMAC-authenticated artifacts, digest-bound human approval, stable
@@ -30,10 +32,12 @@ approval, staged activation, an exact zero-fallback hit, an unseen-context
 fallback, and atomic rollback. `DecisionLogAnalyzer` alone mints
 `VerifiedDecisionSourceV1` after `read_verified()` succeeds.
 
-The single-writer R4 integration remains: recorder emission, daemon/event-loop
-invocation and terminal outcome feedback, durable database repositories and
-migration, permissions, config, and CLI/API are not yet wired. No production
-traffic is claimed to use this core today.
+The adapter is disabled by default, and integration coverage proves that exact
+active rules skip fallback while every tested abstention calls it exactly once.
+The single-writer R4 integration remains: recorder emission, automatic
+live-flow invocation at selected decision points, terminal outcome feedback,
+durable database repositories and migration, permissions, config, and CLI/API
+are not yet wired. No production traffic is claimed to use this core today.
 
 ## 1. Outcome and non-goals
 
@@ -546,10 +550,19 @@ and evaluates candidates, chooses exact rules without a model call, and invokes
 the supplied agent fallback exactly once on abstention. Its end-to-end test
 covers approval, activation, a zero-fallback hit, a fallback miss, and rollback.
 
-### Slice R4: single-writer production integration (remaining)
+### Slice R4a: opt-in application binding (landed)
 
-One integration owner alone edits shared surfaces: replay capture,
-daemon/event-loop invocation and outcome feedback, database
+`DecisionCodificationAdapter` combines the verified analyzer and deterministic
+resolver under one validated project/policy binding. Daemon application state
+and `EventLoop` accept it only through explicit injection; the default remains
+`None`. Integration coverage proves zero fallback calls for an exact active
+rule, one call per tested abstention, and fail-closed invalid bindings and
+unverified evidence.
+
+### Slice R4b: single-writer production integration (remaining)
+
+One integration owner alone edits shared surfaces: replay capture, automatic
+live-flow invocation and outcome feedback, database
 models/repositories/migration, permissions, config, CLI/API, and make contracts.
 This slice adds production integration and live-traffic ZDD evidence. No second
 branch independently creates the migration, config keys, make targets, or

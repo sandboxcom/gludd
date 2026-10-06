@@ -23,13 +23,16 @@ def test_feature_guide_pins_safe_runtime_and_rollout_boundaries() -> None:
     feature = FEATURE.read_text(encoding="utf-8")
 
     for marker in (
-        "Core implemented; daemon integration pending",
+        "Core and opt-in application adapter implemented",
+        "automatic live-flow integration pending",
         "RunBundleStore.read_verified()",
         "VerifiedDecisionSourceV1",
         "Exact-context abstention",
         "DecisionAbstentionV1",
         "DecisionLogAnalyzer",
         "DecisionResolver",
+        "DecisionCodificationAdapter",
+        "disabled by default",
         "zero-LLM hit",
         "shadow -> canary -> canary_10 -> canary_50 -> active",
         "Atomic rollback",
@@ -60,6 +63,8 @@ def test_design_spec_records_implemented_core_and_pending_integration() -> None:
     assert "## 0. Implementation status (2026-10-06)" in spec
     assert "DecisionLogAnalyzer" in spec
     assert "DecisionResolver" in spec
+    assert "DecisionCodificationAdapter" in spec
+    assert "explicit injection" in spec
     assert "single-writer R4 integration remains" in spec
 
 
@@ -80,6 +85,8 @@ def test_reveal_deck_mirrors_the_decision_codification_contract() -> None:
         "zero-LLM hit",
         "DecisionLogAnalyzer",
         "DecisionResolver",
+        "DecisionCodificationAdapter",
+        "disabled by default",
         "docs/features/DECISION_LOG_CODIFICATION.md",
     ):
         assert marker in slide
