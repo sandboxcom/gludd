@@ -17,6 +17,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Event
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -32,6 +33,7 @@ DEFAULT_POLL_SECONDS = 0.1
 LEGACY_GATE_LOCK_FIELDS = frozenset({"pid", "started_at"})
 LEGACY_LOCK_CLOCK_SLOP_SECONDS = 2.0
 LEGACY_LOCK_MAX_ACQUIRE_DELAY_SECONDS = 300.0
+_POLL_EVENT = Event()
 
 _MAKE_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:[+:?!])?=.*$")
 _SAFE_NAMESPACE = re.compile(r"^[A-Za-z0-9_.-]+$")
@@ -553,7 +555,7 @@ def _wait_for_exit(
     poll_seconds: float,
     records_reader: RecordsReader,
     monotonic: Callable[[], float],
-    sleep: Callable[[float], None],
+    wait: Callable[[float], object],
 ) -> list[_TargetProcess]:
     bounded_timeout = max(0.0, timeout)
     bounded_poll = max(0.01, poll_seconds)
@@ -563,7 +565,7 @@ def _wait_for_exit(
         survivors = _owned_survivors(targets, records_reader)
         if not survivors or monotonic() >= deadline:
             return survivors
-        sleep(min(bounded_poll, max(0.0, deadline - monotonic())))
+        wait(min(bounded_poll, max(0.0, deadline - monotonic())))
     return _owned_survivors(targets, records_reader)
 
 
@@ -671,7 +673,7 @@ def terminate_owned_gate(
     records_reader: RecordsReader | None = None,
     signal_sender: SignalSender = os.kill,
     monotonic: Callable[[], float] = time.monotonic,
-    sleep: Callable[[float], None] = time.sleep,
+    wait: Callable[[float], object] = _POLL_EVENT.wait,
 ) -> TerminationResult:
     """Terminate an exact owned tree with TERM, bounded wait, then KILL."""
     canonical_root = project_root.resolve()
@@ -718,7 +720,7 @@ def terminate_owned_gate(
         poll_seconds=poll_seconds,
         records_reader=reader,
         monotonic=monotonic,
-        sleep=sleep,
+        wait=wait,
     )
     kill_pids: list[int] = []
     kill_skipped: list[int] = []
@@ -735,7 +737,7 @@ def terminate_owned_gate(
             poll_seconds=poll_seconds,
             records_reader=reader,
             monotonic=monotonic,
-            sleep=sleep,
+            wait=wait,
         )
 
     survivor_pids = sorted(target.record.pid for target in survivors)

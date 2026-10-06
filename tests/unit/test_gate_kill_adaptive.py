@@ -137,7 +137,7 @@ def test_gate_kill_terminates_owned_tree_across_process_groups(tmp_path: Path) -
         records_reader=records,
         signal_sender=send,
         monotonic=clock.monotonic,
-        sleep=clock.sleep,
+        wait=clock.sleep,
     )
 
     term_pids = [pid for pid, signum in signals if signum == signal.SIGTERM]
@@ -215,7 +215,7 @@ def test_gate_kill_terminates_exact_legacy_owner_for_same_namespace(
         records_reader=records,
         signal_sender=send,
         monotonic=clock.monotonic,
-        sleep=clock.sleep,
+        wait=clock.sleep,
     )
 
     assert result.success
@@ -360,7 +360,7 @@ def test_gate_kill_legacy_failure_promotes_retryable_fail_closed_lock(
         records_reader=lambda: list(live.values()),
         signal_sender=lambda pid, signum: signals.append((pid, signum)),
         monotonic=lambda: 0.0,
-        sleep=lambda _seconds: None,
+        wait=lambda _seconds: None,
     )
 
     assert not failed.success
@@ -638,7 +638,7 @@ def test_gate_kill_revalidates_start_time_and_fails_closed(tmp_path: Path) -> No
         records_reader=records,
         signal_sender=lambda pid, signum: signals.append((pid, signum)),
         monotonic=lambda: 0.0,
-        sleep=lambda _seconds: None,
+        wait=lambda _seconds: None,
     )
 
     assert all(pid != 200 for pid, _signum in signals)
