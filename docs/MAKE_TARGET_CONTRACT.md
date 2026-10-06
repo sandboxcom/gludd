@@ -41,6 +41,14 @@ mypy collaborator suggested colon-separated `MYPYPATH` entries with explicit
 package bases. Gludd applies that narrow path configuration through the tracked
 Make target instead of per-file suppressions.
 
+## Patch-equivalent cherry-pick rejection
+
+The single and list cherry-pick targets use Git-native patch identity before
+mutation and expose non-mutating behavioral examples through
+`CHERRY_PICK_VALIDATE_ONLY=1`. The complete behavior, rollback boundary, and
+practitioner evidence are documented in
+[PATCH_EQUIVALENT_CHERRY_PICK_GUARD.md](features/PATCH_EQUIVALENT_CHERRY_PICK_GUARD.md).
+
 ## Integration temporary paths
 
 `make integration-health` gives pytest a short, process-unique `/tmp/gi-*`

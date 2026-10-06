@@ -155,6 +155,15 @@ class TestGitWorkflowTargetRecipeContent:
         assert "git cherry-pick" in recipe, (
             "git-cherry-pick must use 'git cherry-pick'"
         )
+        assert "_git-cherry-pick-patch-guard" in recipe
+
+    def test_cherry_pick_targets_keep_active_gate_guard(self):
+        makefile = _makefile_src()
+        for target in ("git-cherry-pick", "git-cherry-pick-list"):
+            header = next(
+                line for line in makefile.splitlines() if line.startswith(f"{target}:")
+            )
+            assert "_gate-mutation-guard" in header
 
     def test_cherry_pick_list_preflights_shared_file_overlap(self):
         recipe = self._recipe("git-cherry-pick-list")
@@ -163,6 +172,10 @@ class TestGitWorkflowTargetRecipeContent:
         assert "TASKS.md" in recipe
         assert "Makefile" in recipe
         assert "git status --porcelain" in recipe
+        assert "_git-cherry-pick-patch-guard" in recipe
+        assert recipe.index("_git-cherry-pick-patch-guard") < recipe.index(
+            'git cherry-pick "$$SHA"'
+        )
 
     def test_documented_targets_all_exist(self):
         """All 17 targets listed in AGENTS.md git workflow section must exist."""
@@ -197,7 +210,7 @@ class TestGitWorkflowTargetRecipeContent:
 def test_git_cherry_pick_list_batches_shas_in_order() -> None:
     makefile = _makefile_src()
     match = re.search(
-        r"""^git-cherry-pick-list:
+        r"""^git-cherry-pick-list:[^\n]*
 (.*?)(?=
 [a-zA-Z_-]+:|\Z)""",
         makefile,

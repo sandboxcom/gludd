@@ -149,6 +149,7 @@ def test_history_mutation_targets_depend_on_active_gate_guard() -> None:
         "gated-merge:",
         "git-checkout:",
         "git-cherry-pick:",
+        "git-cherry-pick-list:",
     )
 
     for target in guarded_headers:

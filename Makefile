@@ -3,6 +3,7 @@ FILES ?=
 TESTFILE ?=
 REF ?=
 TARGET ?= master
+CHERRY_PICK_VALIDATE_ONLY ?= 0
 MYPY_MAX := 0
 MYPY_NULL_CACHE := $(if $(filter Windows_NT,$(OS)),nul,/dev/null)
 OPENCODE_DB ?= ~/.local/share/opencode/opencode.db
@@ -349,7 +350,7 @@ PYTEST_VERBOSITY ?= -v
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
         git-status git-init git-add git-commit git-log git-diff git-reset \
         git-branch git-checkout git-merge git-staged git-stash git-stash-pop \
-        git-merge-abort resolve-development-conflicts git-rebase-abort git-rebase-continue git-rebase-skip git-uncommit-last git-reset-hard git-cherry-pick git-cherry-pick-list \
+        git-merge-abort resolve-development-conflicts git-rebase-abort git-rebase-continue git-rebase-skip git-uncommit-last git-reset-hard _git-cherry-pick-patch-guard git-cherry-pick git-cherry-pick-list \
         submodule-init submodule-update submodule-status submodule-pin \
         repo-status repo-diff repo-staged repo-log \
         feature-start feature-done test-and-commit preflight \
@@ -636,8 +637,8 @@ help:
 	@echo "  git-rebase-abort      Abort an in-progress rebase"
 	@echo "  git-rebase-continue   Continue after resolving rebase conflicts"
 	@echo "  git-rebase-skip       Skip duplicate/current rebase commit"
-	@echo "  git-cherry-pick SHA=<commit> Cherry-pick a specific commit"
-	@echo "  git-cherry-pick-list SHAS='a b ...' Cherry-pick commits in order"
+	@echo "  git-cherry-pick SHA=<commit> CHERRY_PICK_VALIDATE_ONLY=0|1  Preflight patch identity, then cherry-pick one unique commit"
+	@echo "  git-cherry-pick-list SHAS='a b ...' CHERRY_PICK_VALIDATE_ONLY=0|1  Preflight the complete list, then cherry-pick in order"
 	@echo "  feature-start MSG='...' Create and switch to feature branch"
 	@echo "  feature-done MSG='...' Test, merge to master with --no-ff"
 	@echo "  agent-worktree BRANCH=<name>  Isolated git worktree for a subagent (no shared-tree races)"
@@ -5998,15 +5999,47 @@ git-reset-hard:
 	@git reset --hard "$(MSG)"
 	@echo "Hard reset to $(MSG) — all uncommitted changes discarded."
 
+_git-cherry-pick-patch-guard:
+	@SHA="$(SHA)"; \
+	[ -n "$$SHA" ] || { echo "CHERRY_PICK_PREFLIGHT_UNCLASSIFIED reason=missing-commit"; exit 2; }; \
+	case "$$SHA" in -*) echo "CHERRY_PICK_PREFLIGHT_UNCLASSIFIED commit=$$SHA reason=leading-dash"; exit 2;; esac; \
+	RESOLVED=$$(git rev-parse --verify "$${SHA}^{commit}" 2>/dev/null) || { echo "CHERRY_PICK_PREFLIGHT_UNCLASSIFIED commit=$$SHA reason=invalid-commit"; exit 2; }; \
+	if git merge-base --is-ancestor "$$RESOLVED" HEAD; then \
+		echo "PATCH_EQUIVALENT_CHERRY_PICK_BLOCKED commit=$$RESOLVED reason=already-reachable"; \
+		exit 3; \
+	fi; \
+	CHERRY=$$(git cherry HEAD "$$RESOLVED") || { echo "CHERRY_PICK_PREFLIGHT_UNCLASSIFIED commit=$$RESOLVED reason=git-cherry-failed"; exit 2; }; \
+	STATUS=$$(echo "$$CHERRY" | awk -v sha="$$RESOLVED" '$$2 == sha { print $$1; exit }'); \
+	case "$$STATUS" in \
+		-) echo "PATCH_EQUIVALENT_CHERRY_PICK_BLOCKED commit=$$RESOLVED reason=equivalent-patch-already-in-head"; exit 3;; \
+		+) echo "CHERRY_PICK_PREFLIGHT_OK commit=$$RESOLVED patch=unique";; \
+		*) echo "CHERRY_PICK_PREFLIGHT_UNCLASSIFIED commit=$$RESOLVED reason=missing-git-cherry-record"; exit 2;; \
+	esac
+
 git-cherry-pick: _gate-mutation-guard
-	@if [ -z "$(SHA)" ]; then echo "Usage: make git-cherry-pick SHA=<commit>"; exit 1; fi
-	@git cherry-pick "$(SHA)"
+	@case "$(CHERRY_PICK_VALIDATE_ONLY)" in 0|1) ;; *) echo "ERROR: CHERRY_PICK_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac; \
+	if [ -z "$(SHA)" ]; then echo "Usage: make git-cherry-pick SHA=<commit> CHERRY_PICK_VALIDATE_ONLY=0|1"; exit 1; fi; \
+	if [ "$(CHERRY_PICK_VALIDATE_ONLY)" = "1" ]; then \
+		git rev-parse --verify "$(SHA)^{commit}" >/dev/null || exit 2; \
+		echo "CHERRY_PICK_VALIDATED commit=$(SHA) mode=single"; \
+	else \
+		$(MAKE) --no-print-directory -f "$(abspath $(firstword $(MAKEFILE_LIST)))" _git-cherry-pick-patch-guard SHA="$(SHA)" && git cherry-pick "$(SHA)"; \
+	fi
 
 
-git-cherry-pick-list:
-	@[ -n "$(SHAS)" ] || { echo "Usage: make git-cherry-pick-list SHAS='sha1 sha2 ...'"; exit 1; }
-	@[ -z "$$(git status --porcelain)" ] || { echo "ERROR: clean tree required before cherry-pick preflight"; exit 1; }
-	@for SHA in $(SHAS); do \
+git-cherry-pick-list: _gate-mutation-guard
+	@case "$(CHERRY_PICK_VALIDATE_ONLY)" in 0|1) ;; *) echo "ERROR: CHERRY_PICK_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac; \
+	[ -n "$(SHAS)" ] || { echo "Usage: make git-cherry-pick-list SHAS='sha1 sha2 ...' CHERRY_PICK_VALIDATE_ONLY=0|1"; exit 1; }; \
+	if [ "$(CHERRY_PICK_VALIDATE_ONLY)" = "1" ]; then \
+		for SHA in $(SHAS); do git rev-parse --verify "$${SHA}^{commit}" >/dev/null || exit 2; done; \
+		echo "CHERRY_PICK_VALIDATED commits=$(SHAS) mode=list"; \
+		exit 0; \
+	fi; \
+	[ -z "$$(git status --porcelain)" ] || { echo "ERROR: clean tree required before cherry-pick preflight"; exit 1; }; \
+	for SHA in $(SHAS); do \
+		$(MAKE) --no-print-directory -f "$(abspath $(firstword $(MAKEFILE_LIST)))" _git-cherry-pick-patch-guard SHA="$$SHA" || exit 1; \
+	done; \
+	for SHA in $(SHAS); do \
 		echo "=== cherry-pick $$SHA ==="; \
 		BASE=$$(git merge-base HEAD "$$SHA") || exit 1; \
 		INCOMING=$$(git diff --name-only "$$SHA^" "$$SHA"); \
