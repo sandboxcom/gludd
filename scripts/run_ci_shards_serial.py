@@ -18,7 +18,7 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -285,6 +285,103 @@ def _is_cancellation_returncode(returncode: int) -> bool:
     return returncode in _CANCELLATION_RETURN_CODES
 
 
+def _managed_gate_signal_retry_allowed(
+    returncode: int,
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> bool:
+    """Admit one SIGTERM retry only under the exact live launcher identity.
+
+    A direct gate or an owned timeout/kill remains terminal. The retry exists
+    for an external command-session owner terminating the current batch while
+    the independently owned background gate is still healthy.
+    """
+    if returncode != 128 + int(signal.SIGTERM) or os.name != "posix":
+        return False
+    inherited = os.environ if environ is None else environ
+    run_id = inherited.get("GLUDD_GATE_RUN_ID", "").strip()
+    raw_state_path = inherited.get("GLUDD_GATE_STATE_FILE", "").strip()
+    if not run_id or not raw_state_path:
+        return False
+    expected_state_path = (ROOT / ".gate-logs" / "gate-background-state.json").resolve()
+    try:
+        configured_state_path = Path(raw_state_path)
+        state_path = configured_state_path.resolve(strict=True)
+        if (
+            state_path != expected_state_path
+            or configured_state_path.is_symlink()
+            or not configured_state_path.is_file()
+        ):
+            return False
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, RuntimeError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    pid = payload.get("pid")
+    session_id = payload.get("session_id")
+    if (
+        payload.get("schema_version") != 1
+        or payload.get("kind") != "gludd_gate_background"
+        or payload.get("state") != "running"
+        or payload.get("run_id") != run_id
+        or payload.get("project_root") != str(ROOT.resolve())
+        or payload.get("termination_reason") is not None
+        or payload.get("termination_requested_at") is not None
+        or isinstance(pid, bool)
+        or not isinstance(pid, int)
+        or pid <= 1
+        or isinstance(session_id, bool)
+        or not isinstance(session_id, int)
+        or session_id <= 1
+    ):
+        return False
+    try:
+        if os.getsid(0) != session_id or os.getsid(pid) != session_id:
+            return False
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    try:
+        status = (ROOT / ".gate-status").read_text(encoding="utf-8")
+    except OSError:
+        status = ""
+    return "=== GATE: ABORTED" not in status
+
+
+def _record_managed_gate_signal_retry(*, label: str, returncode: int, attempt: int) -> bool:
+    """Append an auditable recovery receipt before repeating an exact batch."""
+    receipt = _RESOURCE_PATHS.root / "signal-recovery.jsonl"
+    payload = {
+        "schema_version": 1,
+        "kind": "managed_gate_signal_retry",
+        "recorded_at": _utc_now(),
+        "gate_run_id": os.environ.get("GLUDD_GATE_RUN_ID", ""),
+        "gate_state_file": os.environ.get("GLUDD_GATE_STATE_FILE", ""),
+        "runner_pid": os.getpid(),
+        "session_id": os.getsid(0) if os.name == "posix" else None,
+        "label": label,
+        "returncode": returncode,
+        "signal": int(signal.SIGTERM),
+        "attempt": attempt,
+        "classification": "external-unowned-signal",
+    }
+    try:
+        receipt.parent.mkdir(parents=True, exist_ok=True)
+        with receipt.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+    except OSError as exc:
+        print(
+            f"SHARD-SIGNAL-RETRY-REFUSED label={label} reason=receipt-write-failed "
+            f"error={type(exc).__name__}:{exc}",
+            flush=True,
+        )
+        return False
+    return True
+
+
 def _is_collect_all_pytest_returncode(returncode: int) -> bool:
     """Return whether a pytest result is evidence to retain while continuing."""
     return returncode in _COLLECT_ALL_PYTEST_RETURN_CODES
@@ -352,6 +449,7 @@ COVERAGE_JSON = _RESOURCE_PATHS.coverage_json
 COVERAGE_AUDIT = _RESOURCE_PATHS.coverage_audit
 GREENLET_COVERAGE_CONFIG = ROOT / ".coveragerc-greenlet"
 MAX_FILES_PER_BATCH = 16
+MAX_MANAGED_GATE_SIGNAL_RETRIES = 1
 DEFAULT_HEARTBEAT_SECONDS = 30.0
 DEFAULT_NO_PROGRESS_SECONDS = 10.0 * 60.0
 WORKER_DEATH_EXIT_CODE = 70
@@ -552,6 +650,37 @@ def _cleanup_owned_tmpdir_safely(path: Path, *, context: str) -> int:
             flush=True,
         )
         return CLEANUP_FAILURE_EXIT_CODE
+
+
+def _reset_interrupted_batch(
+    batchtemp: Path,
+    owned_tmpdir: Path,
+    *,
+    context: str,
+) -> int:
+    """Erase partial pytest/coverage state before one exact signal retry."""
+    tmp_cleanup_rc = _cleanup_owned_tmpdir_safely(
+        owned_tmpdir,
+        context=f"{context}:tmpdir",
+    )
+    batch_cleanup_rc = _cleanup_owned_tree(
+        batchtemp,
+        context=f"{context}:coverage",
+    )
+    cleanup_rc = tmp_cleanup_rc or batch_cleanup_rc
+    if cleanup_rc:
+        return cleanup_rc
+    try:
+        owned_tmpdir.mkdir(parents=True)
+        batchtemp.mkdir(parents=True)
+    except OSError as exc:
+        print(
+            f"SHARD-SIGNAL-RETRY-REFUSED label={context} reason=reset-failed "
+            f"error={type(exc).__name__}:{exc}",
+            flush=True,
+        )
+        return CLEANUP_FAILURE_EXIT_CODE
+    return 0
 
 
 @contextlib.contextmanager
@@ -1604,24 +1733,66 @@ def run(
                     safety_stop_rc = INTERPRETER_DRIFT_EXIT_CODE
                     shard_failed = True
                     break
-                rc = _run_owned_pytest(
-                    _pytest_command(
-                        shard,
-                        files,
+                batch_label = f"{shard}:batch-{batch_index:03d}"
+                signal_retry_attempts = 0
+                while True:
+                    rc = _run_owned_pytest(
+                        _pytest_command(
+                            shard,
+                            files,
+                            owned_tmpdir,
+                            pytest_args,
+                            watchdog_owned_gate=watchdog_owned_gate,
+                        ),
+                        env=_owned_test_environment(env),
+                        label=batch_label,
+                        heartbeat_seconds=heartbeat_seconds,
+                        no_progress_seconds=no_progress_seconds,
+                    )
+                    if not _interpreter_is_unchanged(
+                        expected_interpreter,
+                        context=f"{batch_label}:after",
+                    ):
+                        rc = INTERPRETER_DRIFT_EXIT_CODE
+                        break
+                    if (
+                        not watchdog_owned_gate
+                        or signal_retry_attempts >= MAX_MANAGED_GATE_SIGNAL_RETRIES
+                        or not _managed_gate_signal_retry_allowed(rc)
+                    ):
+                        break
+                    reset_rc = _reset_interrupted_batch(
+                        batchtemp,
                         owned_tmpdir,
-                        pytest_args,
-                        watchdog_owned_gate=watchdog_owned_gate,
-                    ),
-                    env=_owned_test_environment(env),
-                    label=f"{shard}:batch-{batch_index:03d}",
-                    heartbeat_seconds=heartbeat_seconds,
-                    no_progress_seconds=no_progress_seconds,
-                )
-                if not _interpreter_is_unchanged(
-                    expected_interpreter,
-                    context=f"{shard}:batch-{batch_index:03d}:after",
-                ):
-                    rc = INTERPRETER_DRIFT_EXIT_CODE
+                        context=f"{batch_label}:signal-retry",
+                    )
+                    _record_phase_result(
+                        phase_results,
+                        f"{failure_phase}:signal-retry-cleanup",
+                        reset_rc,
+                    )
+                    if reset_rc:
+                        rc = reset_rc
+                        break
+                    if not _disk_headroom_available(
+                        workspace,
+                        context=f"{batch_label}:signal-retry",
+                    ):
+                        rc = DISK_HEADROOM_EXIT_CODE
+                        break
+                    signal_retry_attempts += 1
+                    if not _record_managed_gate_signal_retry(
+                        label=batch_label,
+                        returncode=rc,
+                        attempt=signal_retry_attempts,
+                    ):
+                        break
+                    print(
+                        f"SHARD-SIGNAL-RETRY label={batch_label} "
+                        f"attempt={signal_retry_attempts}/{MAX_MANAGED_GATE_SIGNAL_RETRIES} "
+                        "exact-batch=true later-batches=continuing",
+                        flush=True,
+                    )
                 _record_phase_result(phase_results, failure_phase, rc)
                 coverage_saved = _save_shard_coverage(
                     shard,

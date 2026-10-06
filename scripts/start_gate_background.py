@@ -388,6 +388,18 @@ def watch_gate(
         if log_path is None:
             return "superseded"
 
+        requested_at = _utc_now()
+        if not _merge_state(
+            paths,
+            identity,
+            {
+                "state": "terminating",
+                "termination_reason": "gate-timeout-requested",
+                "termination_requested_at": requested_at,
+            },
+        ):
+            return "superseded"
+
         timeout_text = _format_seconds(timeout_seconds)
         _append_log(
             log_path,
@@ -463,6 +475,7 @@ def _state_payload(
         "updated_at": started_at,
         "finished_at": None,
         "termination_reason": None,
+        "termination_requested_at": None,
     }
 
 
@@ -538,6 +551,8 @@ def launch_gate(
         environment = os.environ.copy()
         environment["GLUDD_PROJECT_ROOT"] = str(paths.project_root)
         environment["GLUDD_PROJECT_NAMESPACE"] = namespace
+        environment["GLUDD_GATE_RUN_ID"] = run_id
+        environment["GLUDD_GATE_STATE_FILE"] = str(paths.state_file)
 
         with log_path.open("wb") as log_file:
             header = (

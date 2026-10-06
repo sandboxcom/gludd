@@ -7,6 +7,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 import re
 import shutil
 import signal
@@ -1166,6 +1167,127 @@ def test_serial_runner_stops_the_whole_plan_after_one_interrupted_batch(
         == 128 + signal.SIGINT
     )
     assert started == ["unit-1b:batch-001"]
+
+
+def test_watchdog_owned_gate_retries_unowned_sigterm_then_continues_plan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A managed-session SIGTERM retries the exact batch once under gate identity."""
+
+    module = _load_script("run_ci_shards_serial")
+    resources = module.ResourcePaths(
+        root=tmp_path / "resources",
+        coverage_shards=tmp_path / "resources" / "coverage-fragments",
+        coverage_json=tmp_path / "resources" / "coverage.json",
+        coverage_audit=tmp_path / "resources" / "coverage-audit.json",
+        attestation=tmp_path / "resources" / "attestation.json",
+        resume=tmp_path / "resources" / "resume.json",
+    )
+    started: list[str] = []
+    returncodes = iter((128 + signal.SIGTERM, 0, 0))
+
+    def run_owned(*_args: object, label: str, **_kwargs: object) -> int:
+        started.append(label)
+        return next(returncodes)
+
+    monkeypatch.setattr(module, "_resource_paths", lambda: resources)
+    monkeypatch.setattr(module, "_RESOURCE_PATHS", resources)
+    monkeypatch.setattr(module, "COVERAGE_SHARDS", resources.coverage_shards)
+    monkeypatch.setattr(module, "COVERAGE_JSON", resources.coverage_json)
+    monkeypatch.setattr(module, "COVERAGE_AUDIT", resources.coverage_audit)
+    monkeypatch.setattr(module, "expand_shard", lambda _shard: ["a.py", "b.py"])
+    monkeypatch.setattr(module, "_run_owned_pytest", run_owned)
+    monkeypatch.setattr(module, "_save_shard_coverage", lambda *_args: True)
+    monkeypatch.setattr(module, "_cleanup_owned_tmpdir", lambda _path: 0)
+    monkeypatch.setattr(module, "_run_command", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(
+        module,
+        "_managed_gate_signal_retry_allowed",
+        lambda returncode, **_kwargs: returncode == 128 + signal.SIGTERM,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        module,
+        "_reset_interrupted_batch",
+        lambda *_args, **_kwargs: 0,
+        raising=False,
+    )
+
+    assert (
+        module.run(
+            ["unit-3b"],
+            [],
+            max_files_per_batch=1,
+            run_isolated=False,
+            aggregate_coverage=False,
+            watchdog_owned_gate=True,
+        )
+        == 0
+    )
+    assert started == [
+        "unit-3b:batch-001",
+        "unit-3b:batch-001",
+        "unit-3b:batch-002",
+    ]
+    output = capsys.readouterr().out
+    assert "SHARD-SIGNAL-RETRY label=unit-3b:batch-001 attempt=1/1" in output
+    assert "later-batches=not-started" not in output
+    receipt = json.loads(
+        (resources.root / "signal-recovery.jsonl").read_text(encoding="utf-8")
+    )
+    assert receipt["kind"] == "managed_gate_signal_retry"
+    assert receipt["label"] == "unit-3b:batch-001"
+    assert receipt["returncode"] == 128 + signal.SIGTERM
+    assert receipt["attempt"] == 1
+
+
+def test_managed_gate_signal_retry_requires_exact_running_launcher_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SIGINT, stale state, and an owned termination request never retry."""
+
+    module = _load_script("run_ci_shards_serial")
+    state_path = tmp_path / ".gate-logs" / "gate-background-state.json"
+    state_path.parent.mkdir(parents=True)
+    run_id = "20261006T180248Z-fcc617de"
+    state = {
+        "schema_version": 1,
+        "kind": "gludd_gate_background",
+        "state": "running",
+        "run_id": run_id,
+        "pid": os.getpid(),
+        "session_id": os.getsid(0),
+        "project_root": str(tmp_path.resolve()),
+        "termination_reason": None,
+        "termination_requested_at": None,
+    }
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    inherited = {
+        "GLUDD_GATE_RUN_ID": run_id,
+        "GLUDD_GATE_STATE_FILE": str(state_path),
+    }
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+
+    assert module._managed_gate_signal_retry_allowed(
+        128 + signal.SIGTERM,
+        environ=inherited,
+    )
+    assert not module._managed_gate_signal_retry_allowed(
+        128 + signal.SIGINT,
+        environ=inherited,
+    )
+
+    state["state"] = "terminating"
+    state["termination_reason"] = "gate-timeout-requested"
+    state["termination_requested_at"] = "2026-10-06T20:02:48Z"
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    assert not module._managed_gate_signal_retry_allowed(
+        128 + signal.SIGTERM,
+        environ=inherited,
+    )
 
 
 def test_serial_runner_stops_after_failed_batch_without_coverage(

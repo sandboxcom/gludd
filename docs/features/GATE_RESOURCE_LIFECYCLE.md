@@ -171,6 +171,58 @@ the code/tests/documentation. Lock files and JSON receipts are regenerable
 diagnostics outside the cache; no data migration or deployed-service restart is
 required. Do not bypass the lease with direct cache deletion during rollback.
 
+#### Managed-session SIGTERM recovery
+
+The later gate `20261006T180248Z-fcc617de` fixed the remaining ownership
+boundary. It started at `2026-10-06T18:02:48.071216Z` and its retained state
+finished at `19:59:28.711149Z`, after 7,000.640 seconds. The configured gate
+watcher deadline was 7,200 seconds, the state classified the result as
+`gate-exited`, and no gate-kill, task-watchdog, agent-watchdog, or timeout
+receipt claimed the signal. Only the serial runner recorded `SIGTERM` and
+returned 143 at `unit-3b:batch-019`; the detached gate owner remained live and
+continued to its smoke phase. Replaying that exact batch and file order passed
+all 437 tests. Those facts exclude a failing batch and every Gludd-owned
+termination path. The exact historical sender PID was not retained, but the
+7,000-second boundary and surviving detached owner identify expiry of the
+managed foreground command session as the causal ownership class rather than a
+flaky test.
+
+The background launcher now passes its immutable run ID and state-file path to
+the gate. A serial runner may repeat the exact interrupted batch once, and only
+for `SIGTERM`/143, when that state is a regular file at the invoking checkout's
+canonical path and proves the same run, root, live PID, and live session are
+still `running`. `SIGINT`, direct gates, a missing or conflicting identity, an
+`ABORTED` marker, a second signal, and every state carrying termination intent
+remain terminal. Watcher timeout and explicit gate-kill paths publish that
+intent atomically before their first signal. Recovery first removes partial
+pytest and coverage state, rechecks disk headroom, appends an fsynced
+`signal-recovery.jsonl` receipt, and re-executes the same command before later
+batches may continue. It neither turns 143 green nor silently skips the batch.
+
+Process visibility observes the same checkout boundary. A generic `make` or
+`uv` parent no longer transfers ownership to the observer's namespace when its
+leaf interpreter, cwd, or resource root belongs to another registered worktree.
+Conflicting root evidence rejects the complete connected tree before worker
+leases are counted. This pins the live incident shape in which a closeout
+snapshot claimed a `coverage-audit` lease while the executable actually came
+from `v012-compose-test-consumers` or `v012-nonmake-contracts`.
+
+The upstream practitioner record supports detaching durable work from an
+interactive tool session and retaining a bounded recovery path. OpenAI Codex
+[issue 10957](https://github.com/openai/codex/issues/10957) reports unified-exec
+long-running background commands unexpectedly becoming waited work and then
+stopping. Codex [issue 4337](https://github.com/openai/codex/issues/4337)
+discusses tool timeouts and whole-process-group cleanup. These reports establish
+the failure class; the retained Gludd timestamps, signal line, and ownership
+records establish this incident.
+
+The delivery remains zero-downtime: no application service, schema, listener,
+or worker limit changes. Existing gates retain their loaded runner; newly
+launched gates gain the identity handoff and bounded exact-batch recovery.
+Rollback is a single code/test/documentation revert after any new-format gate
+exits. Do not roll back only the termination-intent publication, because that
+would make an owned timeout indistinguishable from an expiring command session.
+
 ### Concurrent gate-lite evidence
 
 Two linked worktrees can safely execute their bounded two-worker `gate-lite`

@@ -270,6 +270,62 @@ def test_owned_process_inventory_keeps_tracked_supervisor_tree() -> None:
     assert [process["pid"] for process in processes] == ["401", "402", "403"]
 
 
+def test_owned_process_inventory_refuses_foreign_worktree_chain_for_local_leases() -> None:
+    """A generic parent cannot transfer a sibling interpreter into this namespace."""
+
+    closeout = Path("/private/tmp/gludd-worktrees/agent/candidate-hosted-evidence-closeout")
+    foreign = Path("/private/tmp/gludd-worktrees/agent/v012-compose-test-consumers")
+    process_table = "\n".join(
+        (
+            "89629 1 make test-files TESTFILES=tests/unit/test_coverage_audit.py",
+            "89698 89629 /bin/sh -c uv run python -m pytest tests/unit/test_coverage_audit.py",
+            "89701 89698 uv run python -m pytest tests/unit/test_coverage_audit.py",
+            (
+                f"89702 89701 {foreign}/.venv/bin/python3 -m pytest "
+                "tests/unit/test_coverage_audit.py"
+            ),
+        )
+    )
+
+    processes = active_work_status._owned_processes_from_output(
+        process_table,
+        repository_roots=(closeout, foreign),
+        resource_roots=(),
+        ownership_root=closeout,
+        process_cwds={
+            89629: str(foreign),
+            89698: str(foreign),
+            89701: str(foreign),
+            89702: str(foreign),
+        },
+    )
+
+    assert processes == []
+
+
+def test_owned_process_inventory_refuses_mixed_cwd_and_executable_roots() -> None:
+    """Conflicting cwd/executable evidence fails closed for the whole process tree."""
+
+    closeout = Path("/private/tmp/gludd-worktrees/agent/candidate-hosted-evidence-closeout")
+    foreign = Path("/private/tmp/gludd-worktrees/agent/v012-nonmake-contracts")
+    process_table = "\n".join(
+        (
+            "91000 1 make test-files TESTFILES=tests/unit/test_signal.py",
+            f"91001 91000 {foreign}/.venv/bin/python3 -m pytest tests/unit/test_signal.py",
+        )
+    )
+
+    processes = active_work_status._owned_processes_from_output(
+        process_table,
+        repository_roots=(closeout, foreign),
+        resource_roots=(),
+        ownership_root=closeout,
+        process_cwds={91000: str(closeout), 91001: str(closeout)},
+    )
+
+    assert processes == []
+
+
 def test_observer_inventory_surfaces_live_self_improve_process_tree(
     tmp_path: Path,
 ) -> None:
@@ -499,6 +555,12 @@ def test_process_query_uses_registered_and_resource_roots(
         "_owned_resource_roots",
         lambda _roots: (Path("/tmp/gludd-resources/gludd-a1b2"),),
     )
+    monkeypatch.setattr(
+        active_work_status,
+        "_snapshot_process_cwds",
+        lambda _pids: {101: "/repo/gludd"},
+    )
+    monkeypatch.setattr(active_work_status, "ROOT", Path("/repo/gludd"))
 
     def fake_run(command: list[str], **kwargs: object) -> SimpleNamespace:
         assert command == ["ps", "-axo", "pid=,ppid=,command="]

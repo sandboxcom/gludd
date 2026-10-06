@@ -149,6 +149,36 @@ def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _publish_background_termination_intent(
+    project_root: Path,
+    targets: list[_TargetProcess],
+) -> bool:
+    """Publish explicit gate-kill ownership before sending the first signal."""
+    state_path = project_root / ".gate-logs" / "gate-background-state.json"
+    payload = _read_json(state_path)
+    if payload is None or payload.get("state") not in {"running", "terminating"}:
+        return True
+    target_pids = {target.record.pid for target in targets}
+    if (
+        payload.get("schema_version") != 1
+        or payload.get("kind") != "gludd_gate_background"
+        or payload.get("project_root") != str(project_root.resolve())
+        or payload.get("pid") not in target_pids
+    ):
+        return False
+    requested_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    payload.update(
+        {
+            "state": "terminating",
+            "termination_reason": "gate-kill-requested",
+            "termination_requested_at": requested_at,
+            "updated_at": requested_at,
+        }
+    )
+    _write_json_atomic(state_path, payload)
+    return True
+
+
 def _write_text_atomic(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(
@@ -707,6 +737,11 @@ def terminate_owned_gate(
             refusal = "legacy gate lock changed during validation"
             print(f"[gate-kill] REFUSED: {refusal}", flush=True)
             return TerminationResult(success=False, refusal_reason=refusal)
+
+    if not _publish_background_termination_intent(canonical_root, targets):
+        refusal = "background gate identity conflicts with validated gate tree"
+        print(f"[gate-kill] REFUSED: {refusal}", flush=True)
+        return TerminationResult(success=False, refusal_reason=refusal)
 
     term_pids, term_skipped = _signal_targets(
         targets,
