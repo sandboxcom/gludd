@@ -110,6 +110,67 @@ the owning process group can outlive an intermediate controller. These reports
 support explicit record ownership and observability; they do not establish the
 sender of Gludd's still-unattributed gate `SIGTERM`.
 
+### Cross-worktree signal and shared-cache admission
+
+The 2026-10-06 durable run `20261006T165826Z-85906a42` narrows the failure
+without inventing attribution. Its gate owner (PID/PGID/SID 85644) and
+worktree namespace survived to publish the failure attestation and release its
+lock. The serial `unit-1b:batch-001` runner reported `SHARD-SIGNAL signal=15`
+after its pytest child had passed through 78 percent, then performed its owned
+`TERM`-to-`KILL` child cleanup and returned 143. The earlier
+`unit-1a2:batch-004` receipt has the same cancellation shape. Neither retained
+task-watchdog output nor the old agent-watchdog log contains a matching sender
+PID, root, or signal receipt. Those artifacts therefore prove the receiver and
+exclude a pytest assertion or gate-root timeout, but the exact historical sender
+is unrecoverable. That audit gap is itself part of the repair.
+
+The reproducible cross-worktree sender class was host-global task state consumed
+by `agent_watchdog.py`: a recorded PID could belong to another registered
+worktree, while the old timeout path sent bare `SIGTERM` and `SIGKILL`. A
+regression injects that foreign PID/root collision and proves that neither signal
+is sent. All task and background-gate timeout cleanup now snapshots the live
+process, admits its exact current working directory or command namespace only
+when it belongs to the invoking checkout, records its start token, and
+revalidates PID, token, command, cwd, and namespace before escalation. A refusal
+preserves the foreign process and its PID record. Every decision is appended to
+the invoking namespace's `agent-watchdog-task-signals.jsonl`, including sender
+PID/root/namespace and target PID/start token/command/cwd, so a future signal has
+an exact attributable receipt. Owned timeout cleanup retains its bounded
+`TERM`-then-`KILL` behavior.
+
+This deliberately reuses the exact namespace/cwd matcher introduced by
+`df219b953` and the PID/start-identity revalidation pattern from `055f5efc`;
+it does not add a competing process-ownership policy.
+
+The same incident was followed by a missing temporary path under the shared uv
+cache, showing a second cross-worktree check/action race. Looking only for a
+currently visible `uv` executable is insufficient once `uv run` has replaced
+itself with a long-lived Python test. Serial shard runners now hold a shared
+kernel lease for their entire lifetime. Automatic prune/clean must acquire the
+exclusive side and repeat its process census inside that lease; on contention it
+reports the exact owner root and namespace and leaves the cache untouched. The
+lock and token-owned receipts live beside, not inside, the cache so `uv cache
+clean` cannot delete its own admission authority.
+
+This extra lease is supported by long-lived upstream reports, not an assumption
+that uv's internal command locking covers launched descendants. [uv issue
+11694](https://github.com/astral-sh/uv/issues/11694) demonstrates pruning files
+used by a still-running `uvx` process. [uv issue
+13883](https://github.com/astral-sh/uv/issues/13883) tracks stronger locking for
+parallel and cross-operation safety, including cache cleanup. [uv issue
+5731](https://github.com/astral-sh/uv/issues/5731) records self-hosted caches
+growing to roughly 40 GB and operators cleaning them between jobs. Together they
+justify bounded cleanup, but only after Gludd's longer-lived consumer lease says
+the cache is idle.
+
+Rollout is ZDD because the change is local control-plane admission: it starts no
+service, changes no schema, and does not interrupt a running shard. New runners
+acquire the shared lease before starting work; cleanup simply skips while a
+holder exists. Roll back only after all reported lease holders exit, then revert
+the code/tests/documentation. Lock files and JSON receipts are regenerable
+diagnostics outside the cache; no data migration or deployed-service restart is
+required. Do not bypass the lease with direct cache deletion during rollback.
+
 ### Concurrent gate-lite evidence
 
 Two linked worktrees can safely execute their bounded two-worker `gate-lite`

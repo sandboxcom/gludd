@@ -196,8 +196,8 @@ def _cwd_matches_namespace(cwd: str | None, namespace: str) -> bool:
     return True
 
 
-def _process_matches_namespace(process: ProcessInfo, namespace: str) -> bool:
-    """Match a process using command-path or live-cwd namespace evidence."""
+def process_matches_namespace(process: ProcessInfo, namespace: str) -> bool:
+    """Match one process using exact command-path or live-cwd evidence."""
     return namespace_matches(process.command, namespace) or _cwd_matches_namespace(
         process.cwd, namespace
     )
@@ -285,7 +285,7 @@ def namespaced_process_tree(
     matching_descendants = [
         process
         for process in descendants
-        if _process_matches_namespace(process, namespace)
+        if process_matches_namespace(process, namespace)
     ]
     root_command_matches = namespace_matches(root.command, namespace)
     make_identity_proof = _is_make_process(root.command) and (

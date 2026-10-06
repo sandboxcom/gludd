@@ -8,12 +8,14 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 import pytest
+from scripts.process_cleanup import ProcessInfo
 
 ROOT = Path(__file__).parent.parent.parent
 SCRIPT_PATH = ROOT / "scripts" / "agent_watchdog.py"
@@ -45,6 +47,91 @@ CONTINUE_DIRECTIVE = aw.CONTINUE_DIRECTIVE
 def check_and_reset() -> dict:
     """Run a deterministic cycle without launching a repository-wide scan."""
     return aw.check_and_reset(secrets_check=lambda: None)
+
+
+def test_stalled_task_cleanup_refuses_a_foreign_worktree_pid(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A host-global task record cannot authorize a sibling checkout signal."""
+    owned_root = tmp_path / "worktree-a"
+    foreign_root = tmp_path / "worktree-b"
+    owned_root.mkdir()
+    foreign_root.mkdir()
+    target = ProcessInfo(
+        4242,
+        1,
+        900.0,
+        f"python {owned_root}/scripts/run_ci_shards_serial.py --watchdog-owned-gate",
+        cwd=str(foreign_root),
+    )
+    signals: list[tuple[int, int]] = []
+
+    monkeypatch.setattr(aw, "_WORKSPACE", owned_root)
+    monkeypatch.setattr(aw, "snapshot_processes", lambda _pid: {target.pid: target})
+    monkeypatch.setattr(aw.os, "kill", lambda pid, sig: signals.append((pid, sig)))
+    monkeypatch.setattr(aw, "TASK_SIGNAL_AUDIT_FILE", tmp_path / "signals.jsonl")
+
+    assert aw.kill_stalled_task(target.pid) is False
+    assert signals == []
+    receipt = json.loads((tmp_path / "signals.jsonl").read_text().splitlines()[-1])
+    assert receipt["outcome"] == "refused_foreign_namespace"
+    assert receipt["sender_root"] == str(owned_root.resolve())
+    assert receipt["target_cwd"] == str(foreign_root)
+
+
+def test_stalled_task_cleanup_preserves_owned_term_to_kill_timeout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An exact same-worktree process still receives bounded TERM then KILL."""
+    owned_root = tmp_path / "worktree-a"
+    owned_root.mkdir()
+    target = ProcessInfo(
+        4343,
+        1,
+        900.0,
+        "python scripts/run_ci_shards_serial.py --watchdog-owned-gate",
+        cwd=str(owned_root),
+    )
+    signals: list[tuple[int, int]] = []
+
+    monkeypatch.setattr(aw, "_WORKSPACE", owned_root)
+    monkeypatch.setattr(aw, "snapshot_processes", lambda _pid: {target.pid: target})
+    monkeypatch.setattr(aw, "_process_start_time", lambda _pid: "same-start")
+    monkeypatch.setattr(aw.os, "kill", lambda pid, sig: signals.append((pid, sig)))
+    monkeypatch.setattr(aw.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(aw, "TASK_SIGNAL_AUDIT_FILE", tmp_path / "signals.jsonl")
+
+    assert aw.kill_stalled_task(target.pid) is True
+    assert signals == [
+        (target.pid, signal.SIGTERM),
+        (target.pid, signal.SIGKILL),
+    ]
+
+
+def test_stalled_task_cleanup_revalidates_before_sigkill(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """PID reuse after TERM cannot transfer KILL authority to another root."""
+    owned_root = tmp_path / "worktree-a"
+    foreign_root = tmp_path / "worktree-b"
+    owned_root.mkdir()
+    foreign_root.mkdir()
+    owned = ProcessInfo(4444, 1, 900.0, "python worker.py", cwd=str(owned_root))
+    reused = ProcessInfo(4444, 1, 1.0, "python worker.py", cwd=str(foreign_root))
+    snapshots = iter(({owned.pid: owned}, {reused.pid: reused}))
+    signals: list[tuple[int, int]] = []
+
+    monkeypatch.setattr(aw, "_WORKSPACE", owned_root)
+    monkeypatch.setattr(aw, "snapshot_processes", lambda _pid: next(snapshots))
+    monkeypatch.setattr(aw, "_process_start_time", lambda _pid: "start-token")
+    monkeypatch.setattr(aw.os, "kill", lambda pid, sig: signals.append((pid, sig)))
+    monkeypatch.setattr(aw.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(aw, "TASK_SIGNAL_AUDIT_FILE", tmp_path / "signals.jsonl")
+
+    assert aw.kill_stalled_task(owned.pid) is True
+    assert signals == [(owned.pid, signal.SIGTERM)]
+    receipt = json.loads((tmp_path / "signals.jsonl").read_text().splitlines()[-1])
+    assert receipt["outcome"] == "kill_refused_identity_changed"
 _check_force_dispatch = aw._check_force_dispatch
 _is_force_dispatch_active = aw._is_force_dispatch_active
 FORCE_DISPATCH_FILE = aw.FORCE_DISPATCH_FILE

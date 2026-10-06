@@ -33,11 +33,13 @@ if TYPE_CHECKING:
     from scripts.gate_status_attestation import repository_state_id
     from scripts.resource_arbiter import resource_root as project_resource_root
     from scripts.run_ci_shards_parallel import _env_for_shard, _parse_shards
+    from scripts.uv_cache_lease import shared_uv_cache_lease
 else:
     from ci_named_shard_files import ISOLATED_TESTS, SHARDS, expand_shard
     from gate_status_attestation import repository_state_id
     from resource_arbiter import resource_root as project_resource_root
     from run_ci_shards_parallel import _env_for_shard, _parse_shards
+    from uv_cache_lease import shared_uv_cache_lease
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
@@ -55,6 +57,13 @@ MAKE_RECURSION_ENV_VARS = (
     "MAKEOVERRIDES",
     "GNUMAKEFLAGS",
 )
+DEFAULT_SHARED_UV_CACHE_ROOT = Path("/tmp/gludd-uv-cache-public-v2")
+
+
+def _shared_uv_cache_root() -> Path:
+    """Resolve the exact host cache protected for the shard lifetime."""
+    configured = os.environ.get("UV_CACHE_DIR", "").strip()
+    return Path(configured).expanduser().resolve() if configured else DEFAULT_SHARED_UV_CACHE_ROOT
 
 
 def canonical_json_sha256(payload: object) -> str:
@@ -1920,18 +1929,24 @@ def main() -> int:
             if args.allow_dirty_worktree:
                 initial_worktree_state = _worktree_state_id()
                 identity["worktree_state_id"] = initial_worktree_state
-            returncode = run(
-                shards,
-                pytest_args,
-                max_files_per_batch=args.max_files_per_batch,
-                heartbeat_seconds=args.heartbeat_seconds,
-                no_progress_seconds=args.no_progress_seconds,
-                run_isolated=not args.skip_isolated,
-                aggregate_coverage=not args.skip_aggregate,
-                coverage_output=args.coverage_output,
-                resume_path=resume_path,
-                watchdog_owned_gate=args.watchdog_owned_gate,
-            )
+            with shared_uv_cache_lease(
+                _shared_uv_cache_root(),
+                owner_root=ROOT,
+            ) as cache_lease:
+                if not cache_lease.acquired:
+                    raise RuntimeError("shared uv cache lease acquisition timed out")
+                returncode = run(
+                    shards,
+                    pytest_args,
+                    max_files_per_batch=args.max_files_per_batch,
+                    heartbeat_seconds=args.heartbeat_seconds,
+                    no_progress_seconds=args.no_progress_seconds,
+                    run_isolated=not args.skip_isolated,
+                    aggregate_coverage=not args.skip_aggregate,
+                    coverage_output=args.coverage_output,
+                    resume_path=resume_path,
+                    watchdog_owned_gate=args.watchdog_owned_gate,
+                )
             error = None
             if (
                 returncode == 0

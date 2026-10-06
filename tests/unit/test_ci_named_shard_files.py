@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import importlib.util
 import io
@@ -507,6 +508,70 @@ def test_cli_publishes_failed_attestation_when_runner_raises(
     payload = json.loads(destination.read_text(encoding="utf-8"))
     assert payload["status"] == "fail"
     assert payload["error"] == "RuntimeError: boom"
+
+
+def test_serial_runner_holds_shared_uv_cache_lease_while_shards_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A sibling cleanup cannot reclaim uv state beneath an active shard."""
+    module = _load_script("run_ci_shards_serial")
+    resource_paths = module.ResourcePaths(
+        root=tmp_path / "resources",
+        coverage_shards=tmp_path / "resources" / "coverage-fragments",
+        coverage_json=tmp_path / "resources" / "coverage.json",
+        coverage_audit=tmp_path / "resources" / "coverage-audit.json",
+        attestation=tmp_path / "resources" / "attestation.json",
+    )
+    cache_root = tmp_path / "shared-uv-cache"
+    events: list[str] = []
+
+    @contextlib.contextmanager
+    def lease(path: Path, *, owner_root: Path):
+        assert path == cache_root.resolve()
+        assert owner_root == module.ROOT
+        events.append("lease-enter")
+        try:
+            yield type("Lease", (), {"acquired": True})()
+        finally:
+            events.append("lease-exit")
+
+    monkeypatch.setenv("UV_CACHE_DIR", str(cache_root))
+    monkeypatch.setattr(module, "_resource_paths", lambda: resource_paths)
+    monkeypatch.setattr(module, "shared_uv_cache_lease", lease)
+    monkeypatch.setattr(
+        module,
+        "_repository_identity",
+        lambda **_kwargs: {
+            "head_sha": "abc123",
+            "expected_sha": "abc123",
+            "branch": "feature",
+            "clean": True,
+            "exact_sha": True,
+        },
+    )
+    monkeypatch.setattr(
+        module,
+        "_attestation_pairing",
+        lambda *_args, **_kwargs: {
+            "shard_plans": {"unit-2": {"paths": ["tests/unit/a.py"]}},
+            "execution_policy": {"pytest_args": []},
+            "execution_policy_sha256": "policy-digest",
+        },
+    )
+    monkeypatch.setattr(
+        module,
+        "run",
+        lambda *_args, **_kwargs: events.append("run") or 9,
+    )
+    monkeypatch.setattr(
+        module.sys,
+        "argv",
+        ["run_ci_shards_serial.py", "--shards=unit-2"],
+    )
+
+    assert module.main() == 9
+    assert events == ["lease-enter", "run", "lease-exit"]
 
 
 def test_cli_attests_exact_collected_failure_without_stale_coverage(

@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     import check_disk_usage
     import clean_ci_shard_scratch
     import prune_worktrees_safe
+    from scripts import uv_cache_lease
 
     workstream_registry: Any
 else:
@@ -40,6 +41,7 @@ else:
     clean_ci_shard_scratch = importlib.import_module("scripts.clean_ci_shard_scratch")
     prune_worktrees_safe = importlib.import_module("scripts.prune_worktrees_safe")
     workstream_registry = importlib.import_module("scripts.workstream_registry")
+    uv_cache_lease = importlib.import_module("scripts.uv_cache_lease")
 
 DISPOSABLE_CACHE_DIR_NAMES = (
     ".mypy_cache",
@@ -1822,10 +1824,11 @@ def prune_shared_uv_cache(
     active_uv_pids: Callable[[], list[int]] = _active_uv_process_pids,
     run_prune: Callable[[Path], bool] = _run_uv_cache_prune,
     run_clean: Callable[[Path], bool] = _run_uv_cache_clean,
+    cache_lease: Callable[..., Any] = uv_cache_lease.exclusive_uv_cache_lease,
     dry_run: bool = False,
     missing_is_clean: bool = False,
 ) -> CleanupResult:
-    """Prune the exact shared uv cache only after two system-wide idle checks."""
+    """Prune the exact shared cache only with idle-process and lease proof."""
     try:
         approved = approved_cache_root.resolve()
     except (OSError, RuntimeError):
@@ -1864,51 +1867,100 @@ def prune_shared_uv_cache(
             (f"{cache_root}:active-uv-pids={','.join(str(pid) for pid in first_pids)}",),
             (),
         )
-    try:
-        refreshed_pids = active_uv_pids()
-    except ProcessInspectionError:
-        return CleanupResult((), (), (f"{cache_root}:uv-process-revalidation-failed",))
-    if refreshed_pids:
-        return CleanupResult(
-            (),
-            (
-                f"{cache_root}:active-uv-pids="
-                f"{','.join(str(pid) for pid in refreshed_pids)}",
-            ),
-            (),
-        )
     if dry_run:
+        try:
+            refreshed_pids = active_uv_pids()
+        except ProcessInspectionError:
+            return CleanupResult(
+                (), (), (f"{cache_root}:uv-process-revalidation-failed",)
+            )
+        if refreshed_pids:
+            return CleanupResult(
+                (),
+                (
+                    f"{cache_root}:active-uv-pids="
+                    f"{','.join(str(pid) for pid in refreshed_pids)}",
+                ),
+                (),
+            )
         return CleanupResult((), (f"{cache_root}:would prune shared uv cache",), ())
-    print(
-        "phase=cleanup action=uv-cache-prune status=starting "
-        f"path={json.dumps(str(cache_root))}",
-        flush=True,
-    )
-    if not run_prune(cache_root):
-        return CleanupResult((), (), (f"{cache_root}:uv-cache-prune-failed",))
     try:
-        final_pids = active_uv_pids()
-    except ProcessInspectionError:
-        return CleanupResult((), (), (f"{cache_root}:uv-process-final-check-failed",))
-    if final_pids:
-        return CleanupResult(
-            (str(cache_root),),
-            (f"{cache_root}:active-uv-pids={','.join(str(pid) for pid in final_pids)}",),
-            (),
+        lease_context = cache_lease(
+            cache_root,
+            owner_root=Path.cwd().resolve(),
         )
-    print(
-        "phase=cleanup action=uv-cache-clean status=starting "
-        f"path={json.dumps(str(cache_root))}",
-        flush=True,
-    )
-    if not run_clean(cache_root):
-        return CleanupResult((), (), (f"{cache_root}:uv-cache-clean-failed",))
-    print(
-        "phase=cleanup action=uv-cache-clean status=complete "
-        f"path={json.dumps(str(cache_root))}",
-        flush=True,
-    )
-    return CleanupResult((str(cache_root),), (), ())
+        with lease_context as lease:
+            if not lease.acquired:
+                roots = sorted(
+                    {
+                        str(owner.get("owner_root"))
+                        for owner in lease.owners
+                        if isinstance(owner, Mapping)
+                        and isinstance(owner.get("owner_root"), str)
+                    }
+                )
+                owner_text = ",".join(roots) if roots else "unknown"
+                return CleanupResult(
+                    (),
+                    (f"{cache_root}:active-uv-cache-lease={owner_text}",),
+                    (),
+                )
+            try:
+                refreshed_pids = active_uv_pids()
+            except ProcessInspectionError:
+                return CleanupResult(
+                    (), (), (f"{cache_root}:uv-process-revalidation-failed",)
+                )
+            if refreshed_pids:
+                return CleanupResult(
+                    (),
+                    (
+                        f"{cache_root}:active-uv-pids="
+                        f"{','.join(str(pid) for pid in refreshed_pids)}",
+                    ),
+                    (),
+                )
+            print(
+                "phase=cleanup action=uv-cache-prune status=starting "
+                f"path={json.dumps(str(cache_root))}",
+                flush=True,
+            )
+            if not run_prune(cache_root):
+                return CleanupResult(
+                    (), (), (f"{cache_root}:uv-cache-prune-failed",)
+                )
+            try:
+                final_pids = active_uv_pids()
+            except ProcessInspectionError:
+                return CleanupResult(
+                    (), (), (f"{cache_root}:uv-process-final-check-failed",)
+                )
+            if final_pids:
+                return CleanupResult(
+                    (str(cache_root),),
+                    (
+                        f"{cache_root}:active-uv-pids="
+                        f"{','.join(str(pid) for pid in final_pids)}",
+                    ),
+                    (),
+                )
+            print(
+                "phase=cleanup action=uv-cache-clean status=starting "
+                f"path={json.dumps(str(cache_root))}",
+                flush=True,
+            )
+            if not run_clean(cache_root):
+                return CleanupResult(
+                    (), (), (f"{cache_root}:uv-cache-clean-failed",)
+                )
+            print(
+                "phase=cleanup action=uv-cache-clean status=complete "
+                f"path={json.dumps(str(cache_root))}",
+                flush=True,
+            )
+            return CleanupResult((str(cache_root),), (), ())
+    except (OSError, RuntimeError, ValueError, TypeError):
+        return CleanupResult((), (), (f"{cache_root}:uv-cache-lease-failed",))
 
 
 def _combine_cleanup_results(*results: CleanupResult) -> CleanupResult:

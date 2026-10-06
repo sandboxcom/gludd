@@ -141,13 +141,17 @@ contribute to the repository-volume percentage that triggers cleanup.
 
 The other recovery tier targets only the exact resolved
 `/tmp/gludd-uv-cache-public-v2` directory. It refuses symlinks, scans the system
-process table twice before mutation, and skips pruning if any `uv` owner is
-visible or inspection is ambiguous. When idle, it first calls uv's lock-aware
-`cache prune`, performs a third system-wide owner check, and then calls uv's
-lock-aware `cache clean` for remaining regenerable entries. Both operations use
-the exact cache root and bounded lock/process timeouts; files are never deleted
-directly. A concurrent uv user is protected by both the three checks and uv's
-cache locking.
+process table before admission, and skips pruning if any `uv` owner is visible
+or inspection is ambiguous. It must then acquire Gludd's cache-external exclusive
+lease and repeat the process census inside that lease. Serial shard runners hold
+the shared side for their complete lifetime, including the period after `uv run`
+has become a Python process whose command no longer names uv. A busy lease emits
+its bounded owner-root receipts and leaves the cache untouched. When idle, the
+cleaner calls uv's lock-aware `cache prune`, performs a final system-wide owner
+check, and calls uv's lock-aware `cache clean` while still holding the exclusive
+lease. Both operations use the exact cache root and bounded lock/process
+timeouts; files are never deleted directly. The external lease closes the
+launch-to-descendant gap while uv's internal locking protects uv operations.
 
 After every cleanup pass it re-runs both canonical measurements. A healthy
 measurement returns zero. Residual pressure may trigger another pass only after
@@ -222,6 +226,10 @@ checkout using the fsynced rehydration manifest. The prior read-only checker rem
 required. Reverting the Playwright allowlist stops future automatic browser-cache
 removal; an already reclaimed installation is restored with
 `make presentation-browser-install PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=0`.
+Remove the shared-cache lease only after all reported shard holders exit; its
+lock and token-owned receipts are regenerable control-plane evidence outside the
+cache, so rollback needs no migration or service restart. Reverting it while a
+holder runs would restore the check-to-clean race.
 Do not weaken the fail-closed threshold recheck as a rollback shortcut.
 
 ## Long-lived user reports considered
@@ -232,8 +240,17 @@ Do not weaken the fail-closed threshold recheck as a rollback shortcut.
   instead of relying on model memory after one incomplete cleanup pass.
 - [uv issue 11694](https://github.com/astral-sh/uv/issues/11694) reports cache
   pruning breaking a still-running `uvx` process. The Gludd preflight therefore
-  requires two system-wide idle checks and delegates pruning to uv's locked
-  operation instead of deleting shared-cache files itself.
+  requires its consumer lease plus repeated system-wide idle checks and delegates
+  pruning to uv's locked operation instead of deleting shared-cache files itself.
+- [uv issue 13883](https://github.com/astral-sh/uv/issues/13883) is the upstream
+  cross-operation locking tracker and explicitly includes making `uv cache clean`
+  safe alongside other uv operations. Gludd's lease additionally covers the
+  launched Python descendant after no uv process remains visible.
+- [uv issue 5731](https://github.com/astral-sh/uv/issues/5731) records shared
+  self-hosted runner caches growing to roughly 40 GB and operators scheduling
+  cache cleanup between jobs. This supports bounded automatic reclamation, while
+  shared/exclusive admission prevents "between jobs" from being guessed from a
+  transient process-table snapshot.
 - [Orca issue 10562](https://github.com/stablyai/orca/issues/10562) reports that
   deleting worktrees externally can strand agent and terminal process trees.
   Gludd consequently requires a stable completion lease, repeated PID and Git

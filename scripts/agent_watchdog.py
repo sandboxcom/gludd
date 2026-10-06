@@ -60,7 +60,12 @@ from typing import TypedDict
 if __package__ in {None, ""}:  # Direct script execution requires the project root.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.resource_arbiter import project_namespace, resource_path
+from scripts.process_cleanup import (
+    ProcessInfo,
+    process_matches_namespace,
+    snapshot_processes,
+)
+from scripts.resource_arbiter import project_namespace, resource_path, resource_root
 
 
 class DeadlineRecord(TypedDict):
@@ -468,6 +473,9 @@ CI_TRUE_STALL_NO_PUSH_MINUTES = 15
 _WORKSPACE = Path(os.environ.get("GLUDD_WORKSPACE_ROOT", os.getcwd()))
 GATE_PID_FILE = _WORKSPACE / ".gate-background.pid"
 GATE_MAX_RUNTIME_SECS = int(os.environ.get("GATE_WATCHDOG_TIMEOUT", "3600"))
+TASK_SIGNAL_AUDIT_FILE = (
+    resource_root(_WORKSPACE) / "agent-watchdog-task-signals.jsonl"
+)
 _TASKS_MD = _WORKSPACE / "TASKS.md"
 _RATCHET_YML = _WORKSPACE / "config" / "ratchet.yml"
 _GATE_STATUS = _WORKSPACE / ".gate-status"
@@ -1341,13 +1349,23 @@ def _check_gate_background() -> None:
 
         if elapsed > GATE_MAX_RUNTIME_SECS:
             _log(f"GATE STALLED: background gate pid={pid_str} running {elapsed:.0f}s (>1h) - auto-killing")
-            with suppress(Exception):
-                _GATE_STATUS.write_text("GATE_TIMEOUT\n=== GATE: ABORTED (watchdog timeout) ===\n")
             try:
-                os.kill(pid, signal.SIGTERM)
-                time.sleep(10)
-                with suppress(ProcessLookupError):
-                    os.kill(pid, signal.SIGKILL)
+                cleanup_applied = _terminate_owned_task(
+                    pid,
+                    task_name="background-gate",
+                    grace_seconds=10.0,
+                )
+                if not cleanup_applied:
+                    _log(
+                        "GATE KILL REFUSED: "
+                        f"pid={pid_str} was not owned by {_WORKSPACE.resolve()}"
+                    )
+                    return
+                with suppress(Exception):
+                    _GATE_STATUS.write_text(
+                        "GATE_TIMEOUT\n"
+                        "=== GATE: ABORTED (watchdog timeout) ===\n"
+                    )
                 GATE_PID_FILE.unlink(missing_ok=True)
                 _log(f"GATE KILLED: pid={pid_str} after {elapsed:.0f}s")
             except Exception as exc:
@@ -1654,19 +1672,201 @@ def _record_stalled(task_id: str) -> None:
     Path(STALLED_TASKS_FILE).write_text("\n".join(sorted(already)) + "\n")
 
 
-def kill_stalled_task(pid: int) -> None:
-    import signal
+def _append_task_signal_audit(
+    *,
+    pid: int,
+    process: ProcessInfo | None,
+    pid_start_time: str | None,
+    task_name: str,
+    requested_signal: signal.Signals | None,
+    outcome: str,
+) -> None:
+    """Persist who considered or sent a task signal and against which identity."""
+    payload = {
+        "schema_version": 1,
+        "recorded_at": _now(),
+        "sender_pid": os.getpid(),
+        "sender_root": str(_WORKSPACE.resolve()),
+        "sender_namespace": project_namespace(_WORKSPACE),
+        "target_pid": pid,
+        "target_pid_start_time": pid_start_time,
+        "target_command": process.command if process is not None else None,
+        "target_cwd": process.cwd if process is not None else None,
+        "task_name": task_name,
+        "signal": int(requested_signal) if requested_signal is not None else None,
+        "outcome": outcome,
+    }
+    try:
+        audit_path = Path(TASK_SIGNAL_AUDIT_FILE)
+        audit_path.parent.mkdir(parents=True, exist_ok=True)
+        with audit_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+    except (OSError, TypeError, ValueError) as exc:
+        _log(f"TASK SIGNAL AUDIT ERROR: pid={pid} error={exc}")
+
+
+def _task_process_matches_workspace(process: ProcessInfo) -> bool:
+    """Prefer live cwd identity; use exact command paths only when cwd is absent."""
+    workspace = _WORKSPACE.resolve()
+    if process.cwd is None:
+        return process_matches_namespace(process, str(workspace))
+    try:
+        Path(process.cwd).resolve(strict=False).relative_to(workspace)
+    except (OSError, RuntimeError, ValueError):
+        return False
+    return True
+
+
+def _task_process_for_workspace(pid: int) -> tuple[ProcessInfo | None, str]:
+    """Admit one live PID only when its current identity belongs to this root."""
+    if pid <= 1:
+        return None, "refused_invalid_pid"
+    process = snapshot_processes(pid).get(pid)
+    if process is None:
+        return None, "target_gone"
+    if not _task_process_matches_workspace(process):
+        return process, "refused_foreign_namespace"
+    return process, "owned"
+
+
+def _same_task_identity(
+    expected: ProcessInfo,
+    current: ProcessInfo,
+    *,
+    expected_start_time: str | None,
+    current_start_time: str | None,
+) -> bool:
+    """Revalidate PID, start token, command, cwd, and namespace before escalation."""
+    if expected.pid != current.pid:
+        return False
+    if expected_start_time is not None and current_start_time != expected_start_time:
+        return False
+    return (
+        current.command == expected.command
+        and current.cwd == expected.cwd
+        and _task_process_matches_workspace(current)
+    )
+
+
+def _terminate_owned_task(
+    pid: int,
+    *,
+    task_name: str,
+    grace_seconds: float,
+) -> bool:
+    """Bounded TERM-to-KILL cleanup after exact current-worktree admission."""
+    process, admission = _task_process_for_workspace(pid)
+    start_time = _process_start_time(pid) if process is not None else None
+    if admission != "owned" or process is None:
+        _append_task_signal_audit(
+            pid=pid,
+            process=process,
+            pid_start_time=start_time,
+            task_name=task_name,
+            requested_signal=None,
+            outcome=admission,
+        )
+        _log(
+            "TASK KILL REFUSED: "
+            f"task={task_name} pid={pid} outcome={admission} "
+            f"sender_root={_WORKSPACE.resolve()}"
+        )
+        return False
 
     try:
         os.kill(pid, signal.SIGTERM)
-        _log(f"TASK KILL: sent SIGTERM to pid={pid}")
-        time.sleep(5)
-        os.kill(pid, signal.SIGKILL)
-        _log(f"TASK KILL: sent SIGKILL to pid={pid}")
     except ProcessLookupError:
-        _log(f"TASK KILL: pid={pid} already gone")
-    except Exception as exc:
-        _log(f"TASK KILL: error killing pid={pid}: {exc}")
+        outcome = "target_gone_before_term"
+        _log(f"TASK KILL: task={task_name} pid={pid} already gone")
+        _append_task_signal_audit(
+            pid=pid,
+            process=process,
+            pid_start_time=start_time,
+            task_name=task_name,
+            requested_signal=signal.SIGTERM,
+            outcome=outcome,
+        )
+        return False
+    except (PermissionError, OSError) as exc:
+        _log(f"TASK KILL: task={task_name} pid={pid} TERM error: {exc}")
+        _append_task_signal_audit(
+            pid=pid,
+            process=process,
+            pid_start_time=start_time,
+            task_name=task_name,
+            requested_signal=signal.SIGTERM,
+            outcome="term_failed",
+        )
+        return False
+
+    _log(f"TASK KILL: sent SIGTERM to owned task={task_name} pid={pid}")
+    _append_task_signal_audit(
+        pid=pid,
+        process=process,
+        pid_start_time=start_time,
+        task_name=task_name,
+        requested_signal=signal.SIGTERM,
+        outcome="term_sent",
+    )
+    time.sleep(max(0.0, grace_seconds))
+
+    current, current_admission = _task_process_for_workspace(pid)
+    if current is None:
+        _append_task_signal_audit(
+            pid=pid,
+            process=process,
+            pid_start_time=start_time,
+            task_name=task_name,
+            requested_signal=signal.SIGKILL,
+            outcome="gone_after_term",
+        )
+        return True
+    current_start_time = _process_start_time(pid)
+    if current_admission != "owned" or not _same_task_identity(
+        process,
+        current,
+        expected_start_time=start_time,
+        current_start_time=current_start_time,
+    ):
+        _append_task_signal_audit(
+            pid=pid,
+            process=current,
+            pid_start_time=current_start_time,
+            task_name=task_name,
+            requested_signal=signal.SIGKILL,
+            outcome="kill_refused_identity_changed",
+        )
+        _log(
+            "TASK KILL REFUSED: "
+            f"task={task_name} pid={pid} outcome=identity_changed_after_term"
+        )
+        return True
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        outcome = "gone_before_kill"
+    except (PermissionError, OSError) as exc:
+        outcome = "kill_failed"
+        _log(f"TASK KILL: task={task_name} pid={pid} KILL error: {exc}")
+    else:
+        outcome = "kill_sent"
+        _log(f"TASK KILL: sent SIGKILL to owned task={task_name} pid={pid}")
+    _append_task_signal_audit(
+        pid=pid,
+        process=current,
+        pid_start_time=current_start_time,
+        task_name=task_name,
+        requested_signal=signal.SIGKILL,
+        outcome=outcome,
+    )
+    return True
+
+
+def kill_stalled_task(pid: int) -> bool:
+    """Terminate only a stalled process proven to belong to this worktree."""
+    return _terminate_owned_task(pid, task_name="stalled-task", grace_seconds=5.0)
 
 
 # -- Task timing anomaly detection --------------------------------------------
@@ -1774,20 +1974,11 @@ def _flag_anomaly(task_name: str, expected_secs: float, actual_secs: float) -> N
     )
 
 
-def _kill_stalled_task(task_name: str, pid: int | None) -> None:
+def _kill_stalled_task(task_name: str, pid: int | None) -> bool:
     if pid is not None:
-        try:
-            os.kill(pid, signal.SIGTERM)
-            _log(f"KILLED STALLED TASK: {task_name} pid={pid} (SIGTERM)")
-            time.sleep(2)
-            os.kill(pid, signal.SIGKILL)
-            _log(f"KILLED STALLED TASK: {task_name} pid={pid} (SIGKILL)")
-        except ProcessLookupError:
-            _log(f"STALLED TASK: {task_name} pid={pid} already exited")
-        except Exception as exc:
-            _log(f"STALLED TASK: {task_name} pid={pid} kill error: {exc}")
-    else:
-        _log(f"STALLED TASK KILLED: {task_name} (no pid available for kill)")
+        return _terminate_owned_task(pid, task_name=task_name, grace_seconds=2.0)
+    _log(f"STALLED TASK NOT KILLED: {task_name} (no pid available for kill)")
+    return False
 
 
 def check_task_timings() -> None:
@@ -1815,8 +2006,9 @@ def check_task_timings() -> None:
         elapsed = now - started
 
         if elapsed > TASK_STALL_TIMEOUT:
-            _kill_stalled_task(name, pid)
-            _log(f"STALLED TASK KILLED: {name} running {elapsed:.0f}s")
+            killed = _kill_stalled_task(name, pid)
+            action = "KILLED" if killed else "PRESERVED"
+            _log(f"STALLED TASK {action}: {name} running {elapsed:.0f}s")
 
         timings = _read_task_timings()
         if name in timings:

@@ -141,17 +141,48 @@ def test_watchdog_check_gate_background_kills_stale(tmp_path, monkeypatch):
     os.utime(str(pid_file), (mtime_in_past, mtime_in_past))
 
     calls = []
+    terminated = []
 
     def fake_kill(pid, sig):
         calls.append((pid, sig))
 
+    def terminate_owned(pid, *, task_name, grace_seconds):
+        terminated.append((pid, task_name, grace_seconds))
+        return True
+
+    monkeypatch.setattr(aw, "_terminate_owned_task", terminate_owned)
     with patch.object(os, "kill", side_effect=fake_kill):
         aw._check_gate_background()
 
-    assert len(calls) >= 1, (
-        "_check_gate_background must attempt to kill stale gate process, "
-        f"got {len(calls)} calls: {calls}"
+    assert calls == [(99999, 0)]
+    assert terminated == [(99999, "background-gate", 10.0)]
+    assert not pid_file.exists()
+    assert "GATE_TIMEOUT" in status_file.read_text()
+
+
+def test_watchdog_check_gate_background_preserves_unowned_pid(
+    tmp_path, monkeypatch
+):
+    import scripts.agent_watchdog as aw
+
+    pid_file = tmp_path / ".gate-background.pid"
+    status_file = tmp_path / ".gate-status"
+    monkeypatch.setattr(aw, "GATE_PID_FILE", pid_file)
+    monkeypatch.setattr(aw, "_GATE_STATUS", status_file)
+    pid_file.write_text("99998")
+    mtime_in_past = time.time() - 4000
+    os.utime(str(pid_file), (mtime_in_past, mtime_in_past))
+    monkeypatch.setattr(
+        aw,
+        "_terminate_owned_task",
+        lambda _pid, *, task_name, grace_seconds: False,
     )
+
+    with patch.object(os, "kill", return_value=None):
+        aw._check_gate_background()
+
+    assert pid_file.read_text() == "99998"
+    assert not status_file.exists()
 
 
 def test_watchdog_detects_stale_gate_status(tmp_path, monkeypatch):
