@@ -1372,16 +1372,6 @@
         "PRESENTATION_PAGES_PROBE_TIMEOUT"
       ],
       "behavior": "make presentation-pages-probe PRESENTATION_PAGES_PROBE_VALIDATE_ONLY=1 PRESENTATION_PAGES_URL=https://sandboxcom.github.io/gludd/ PRESENTATION_PAGES_EXPECTED_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa PRESENTATION_PAGES_PROBE_TIMEOUT=20"
-    },
-    {
-      "name": "secrets-baseline-check",
-      "make_variables": [
-        "SECRETS_BASELINE_FILE",
-        "POLICY",
-        "REPO_ROOT",
-        "EXECUTABLE"
-      ],
-      "behavior": "make secrets-baseline-check SECRETS_BASELINE_FILE=.secrets.baseline POLICY=config/detect_secrets_baseline_policy.json REPO_ROOT=. EXECUTABLE=detect-secrets"
     }
   ]
 }

@@ -118,13 +118,13 @@ def test_mermaid_patch_exposes_direct_api_and_guards_edge_geometry() -> None:
     assert asset.transform == "mermaid-webkit-geometry-v2"
 
 
-def test_immutable_vendor_tree_uses_path_level_secret_scanner_policy() -> None:
-    """Pinned third-party bytes use one audited path policy, never digest suppressions."""
+def test_immutable_vendor_tree_uses_path_level_hook_policy() -> None:
+    """Pinned bytes use audited path policies, never digest suppressions or rewrites."""
     root = Path(__file__).resolve().parents[2]
     pre_commit = (root / ".pre-commit-config.yaml").read_text(encoding="utf-8")
     makefile = (root / "Makefile").read_text(encoding="utf-8")
 
-    assert pre_commit.count(r"docs/presentation/deck/vendor/.*") == 2
+    assert pre_commit.count("docs/presentation/deck/vendor/") == 4
     assert r"^docs/presentation/deck/vendor/.*$$" in makefile
 
 
