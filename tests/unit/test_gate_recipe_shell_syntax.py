@@ -2,11 +2,13 @@
 
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 MAKEFILE = Path(__file__).parents[2] / "Makefile"
 
 
 def _gate_recipe() -> str:
-    content = MAKEFILE.read_text()
+    content = compose_makefile(MAKEFILE)
     start = content.index("\ngate:")
     next_target = content.index("\ngate-lite:", start)
     return content[start:next_target]

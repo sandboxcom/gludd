@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 MAKEFILE = Path(__file__).parent.parent.parent / "Makefile"
 
@@ -62,7 +63,7 @@ def test_makefile_parses() -> None:
 
 def test_makefile_no_tabs_in_phony() -> None:
     """.PHONY continuation lines must use spaces, not tabs."""
-    content = MAKEFILE.read_text()
+    content = compose_makefile(MAKEFILE)
     in_phony = False
     for i, line in enumerate(content.split("\n"), 1):
         if line.strip().startswith(".PHONY:"):
@@ -79,7 +80,7 @@ def test_makefile_no_tabs_in_phony() -> None:
 
 def _parse_targets() -> tuple[dict[str, int], list[str], list[tuple[int, str]]]:
     """Return {target_name: line_number} for all non-.PHONY targets."""
-    content = MAKEFILE.read_text()
+    content = compose_makefile(MAKEFILE)
     lines = content.split("\n")
     targets: dict[str, int] = {}
     in_phony = False
@@ -167,7 +168,7 @@ def test_blank_line_between_targets() -> None:
 
 def test_phony_targets_have_no_file() -> None:
     """Targets listed in .PHONY must not also be real file targets on disk."""
-    content = MAKEFILE.read_text()
+    content = compose_makefile(MAKEFILE)
     phony_names: set[str] = set()
     in_phony = False
     for line in content.split("\n"):
@@ -198,7 +199,7 @@ _VAR_ASSIGN_LINE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*\s*[+?]?=')
 
 def test_variable_format() -> None:
     """Variable assignments should use := (simple-expanded) or ?= consistently."""
-    content = MAKEFILE.read_text()
+    content = compose_makefile(MAKEFILE)
     lines = content.split("\n")
     violations: list[str] = []
     for i, line in enumerate(lines, 1):
@@ -218,7 +219,7 @@ def test_variable_format() -> None:
 
 def test_no_trailing_whitespace() -> None:
     """No lines should have trailing spaces or tabs."""
-    content = MAKEFILE.read_text()
+    content = compose_makefile(MAKEFILE)
     violations: list[str] = []
     for i, line in enumerate(content.split("\n"), 1):
         if line != line.rstrip():

@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
@@ -18,7 +19,7 @@ MAKEFILE = ROOT / "Makefile"
 
 def _make_target_block(target: str) -> str:
     """Return one top-level Make target without depending on GNU make parsing."""
-    text = MAKEFILE.read_text(encoding="utf-8")
+    text = compose_makefile(MAKEFILE)
     start = text.find(f"{target}:")
     assert start >= 0, f"Makefile lost the {target} target"
     end = text.find("\n\n", start)
@@ -137,7 +138,7 @@ def test_rpm_package_creates_portable_rpmbuild_tree() -> None:
 
 def test_rpm_package_build_tree_is_namespaced_to_checkout() -> None:
     """Parallel projects/releases must not share one fixed temporary RPM tree."""
-    makefile = MAKEFILE.read_text(encoding="utf-8")
+    makefile = compose_makefile(MAKEFILE)
     block = _make_target_block("rpm-package")
     assert "RPMBUILD_DIR := $(abspath dist/rpmbuild)" in makefile
     assert "/tmp/gludd-rpmbuild" not in block, (
@@ -148,7 +149,7 @@ def test_rpm_package_build_tree_is_namespaced_to_checkout() -> None:
 
 def test_clean_preserves_tracked_distribution_templates() -> None:
     """Clean generated outputs through Git's ignore contract, not all of dist/."""
-    makefile = MAKEFILE.read_text(encoding="utf-8")
+    makefile = compose_makefile(MAKEFILE)
     start = makefile.index("\nclean:\n") + 1
     block = makefile[start : makefile.index("\n\n", start)]
 

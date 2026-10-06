@@ -8,6 +8,8 @@ bypass targets (`-nv`, `force-push`) are exempt from this check.
 import re
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 MAKEFILE = Path(__file__).parent.parent.parent / "Makefile"
 
 
@@ -34,7 +36,7 @@ class TestP19NoVerifyNeverDefault:
     """P19 — --no-verify and COMMIT_THRESHOLD=1 must not be defaults."""
 
     def test_no_verify_restricted_to_nv_prefixed_targets(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         all_targets = _target_names(content)
         user_facing = sorted(
             t
@@ -60,7 +62,7 @@ class TestP19NoVerifyNeverDefault:
         )
 
     def test_commit_threshold_not_hardcoded_default(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         all_targets = _target_names(content)
         opt_in_targets = {"batch-push-nv", "batch-push", "deploy-and-forget"}
         custom_var_targets = {"_push-parameter-audit", "_force-push-audit"}
@@ -84,7 +86,7 @@ class TestP19NoVerifyNeverDefault:
         )
 
     def test_push_targets_have_guard(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         push_targets = [
             "git-push-sandboxcom",
             "git-push-sandboxcom-nv",

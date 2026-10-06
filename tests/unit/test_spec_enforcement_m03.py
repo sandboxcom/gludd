@@ -7,6 +7,8 @@ freshness or run CI checks before merging.
 
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 MAKEFILE = Path(__file__).parent.parent.parent / "Makefile"
 
 
@@ -24,7 +26,7 @@ class TestM03PreMergeGateGreen:
     """M03 — merge targets verify gate or CI before merging."""
 
     def test_development_merge_to_master_checks_ci(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         recipe = _find_target_recipe(content, "development-merge-to-master")
         assert recipe, "M03: development-merge-to-master must exist"
         assert "merge-ready" in recipe or "require-ci-green" in recipe, (
@@ -32,7 +34,7 @@ class TestM03PreMergeGateGreen:
         )
 
     def test_merge_ready_target_exists(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         recipe = _find_target_recipe(content, "merge-ready")
         assert recipe, "M03: merge-ready target must exist"
         assert "assert-clean" in recipe or "assert-merge-ready" in recipe, (
@@ -40,17 +42,17 @@ class TestM03PreMergeGateGreen:
         )
 
     def test_gated_merge_target_exists(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         recipe = _find_target_recipe(content, "gated-merge")
         assert recipe, "M03: gated-merge target must exist"
 
     def test_ship_async_checks_gate_before_merge(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         recipe = _find_target_recipe(content, "ship-async")
         assert recipe, "M03: ship-async target must exist"
 
     def test_feature_done_runs_tests_before_merge(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         recipe = _find_target_recipe(content, "feature-done")
         assert recipe, "M03: feature-done target must exist"
         assert "pytest" in recipe or "test" in recipe, "M03: feature-done must run tests before merging"

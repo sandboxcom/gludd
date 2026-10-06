@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 MAKEFILE_PATH = ROOT / "Makefile"
@@ -18,7 +19,7 @@ PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 
 
 def makefile_text() -> str:
-    return MAKEFILE_PATH.read_text()
+    return compose_makefile(MAKEFILE_PATH)
 
 
 def agents_text() -> str:

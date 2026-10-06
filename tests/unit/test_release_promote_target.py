@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 from scripts.check_make_target_contract import _stanzas
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
@@ -14,7 +15,7 @@ CONTRACT = ROOT / "config" / "make_target_contract.json"
 
 
 def _target_block(name: str) -> str:
-    content = MAKEFILE.read_text(encoding="utf-8")
+    content = compose_makefile(MAKEFILE)
     marker = f"\n{name}:"
     start = content.index(marker)
     end = content.find("\n\n", start)
@@ -97,7 +98,7 @@ def test_missing_tag_and_invalid_mode_fail_before_topology_checks() -> None:
 
 def test_public_help_and_make_contract_include_safe_behavior() -> None:
     """The documented command must be mechanically discoverable and runnable."""
-    makefile = MAKEFILE.read_text(encoding="utf-8")
+    makefile = compose_makefile(MAKEFILE)
     payload = json.loads(CONTRACT.read_text(encoding="utf-8"))
     entries = {entry["name"]: entry for entry in payload["targets"]}
 

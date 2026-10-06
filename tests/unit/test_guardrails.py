@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 from general_ludd import __version__
 from tests.unit._plugin_contract import plugin_contract_source
@@ -26,7 +27,7 @@ class TestMakefileTargets:
         assert MAKEFILE.exists(), "Makefile must exist"
 
     def test_makefile_has_required_targets(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         required = [
             "init",
             "sync",
@@ -49,7 +50,7 @@ class TestMakefileTargets:
             assert f"{target}:" in content, f"Makefile missing target: {target}"
 
     def test_makefile_targets_listed_in_phony(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         assert ".PHONY" in content
         assert "test" in content
         assert "lint" in content
@@ -263,7 +264,7 @@ class TestBashGuardrailPrompting:
 
 class TestTDDGuardrail:
     def test_makefile_has_test_and_commit_target(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         assert "test-and-commit:" in content, "Makefile must have test-and-commit target"
 
     def test_plugin_emits_tdd_reminder_on_src_edit(self) -> None:
@@ -311,7 +312,7 @@ class TestGuardrailIntegrity:
 
 class TestCommitAfterGreenGuardrail:
     def test_makefile_test_and_commit_runs_tests_first(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         tac_start = content.index("\ntest-and-commit:")
         tac_end = content.index("\n\n", tac_start) if "\n\n" in content[tac_start:] else len(content)
         tac_section = content[tac_start:tac_end]
@@ -334,7 +335,7 @@ class TestCommitAfterGreenGuardrail:
         )
 
     def test_makefile_test_and_commit_rejects_if_tests_fail(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         tac_start = content.index("\ntest-and-commit:")
         tac_end = content.index("\n\n", tac_start) if "\n\n" in content[tac_start:] else len(content)
         tac_section = content[tac_start:tac_end]
@@ -350,7 +351,7 @@ class TestCommitAfterGreenGuardrail:
             assert pytest_line < commit_line, "Tests must run before commit in test-and-commit target"
 
     def test_makefile_test_and_commit_supports_custom_msg(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         assert "MSG" in content, "test-and-commit should support MSG variable"
         tac_start = content.index("test-and-commit:")
         tac_end = content.index("\n\n", tac_start) if "\n\n" in content[tac_start:] else len(content)
@@ -373,7 +374,7 @@ class TestCommitAfterGreenGuardrail:
     def test_commit_guardrail_has_all_three_layers(self) -> None:
         content_plugin = PLUGIN_CONTRACT
         content_agents = AGENTS_MD.read_text()
-        content_makefile = MAKEFILE.read_text()
+        content_makefile = compose_makefile(MAKEFILE)
         assert "COMMIT REMINDER" in content_plugin
         assert "commit" in content_agents.lower()
         assert "test-and-commit" in content_makefile

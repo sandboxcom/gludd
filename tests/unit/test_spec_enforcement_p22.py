@@ -9,6 +9,8 @@ import re
 from pathlib import Path
 from typing import ClassVar
 
+from scripts.makefile_layout import compose_makefile
+
 MAKEFILE = Path(__file__).parent.parent.parent / "Makefile"
 
 
@@ -65,7 +67,7 @@ class TestP22PushGuardNotCircumventable:
     ]
 
     def test_every_push_target_has_push_rate_guard(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         graph = _build_dependency_graph(content)
         missing = []
         for target in self._PUSH_TARGETS:
@@ -79,7 +81,7 @@ class TestP22PushGuardNotCircumventable:
         assert not missing, "P22 VIOLATION — push targets without _push-rate-guard:\n" + "\n".join(missing)
 
     def test_force_push_still_goes_through_guard(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         graph = _build_dependency_graph(content)
         if "force-push" in graph:
             deps = _transitive_prereqs(graph, "force-push")
@@ -95,7 +97,7 @@ class TestP22PushGuardNotCircumventable:
             )
 
     def test_master_force_push_uses_push_rate_guard(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         graph = _build_dependency_graph(content)
         if "master-force-push" in graph:
             recipe_str = content

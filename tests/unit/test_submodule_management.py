@@ -16,6 +16,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
@@ -24,7 +25,7 @@ GITMODULES = ROOT / ".gitmodules"
 
 def _recipe(target: str) -> str:
     """Extract the full recipe body for a make target. Assert target exists."""
-    content = MAKEFILE.read_text()
+    content = compose_makefile(MAKEFILE)
     marker = f"\n{target}:"
     assert marker in content, f"Makefile target '{target}' not found"
     start = content.index(marker) + len(marker)
@@ -97,7 +98,7 @@ class TestSubmoduleInit:
         assert "SUBMODULE_INIT_VALIDATED" in recipe
 
     def test_phony_listed(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         assert "submodule-init" in content, "submodule-init must be in .PHONY"
 
 
@@ -121,7 +122,7 @@ class TestSubmoduleUpdate:
 
     def test_phony_listed(self) -> None:
         _recipe("submodule-update")
-        assert "submodule-update" in MAKEFILE.read_text(), "submodule-update must be in .PHONY"
+        assert "submodule-update" in compose_makefile(MAKEFILE), "submodule-update must be in .PHONY"
 
 
 class TestSubmoduleStatus:
@@ -141,7 +142,7 @@ class TestSubmoduleStatus:
         assert "git submodule status" in recipe
 
     def test_phony_listed(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         assert "submodule-status" in content, "submodule-status must be in .PHONY"
 
 
@@ -171,7 +172,7 @@ class TestSubmodulePin:
         )
 
     def test_phony_listed(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         assert "submodule-pin" in content, "submodule-pin must be in .PHONY"
 
 

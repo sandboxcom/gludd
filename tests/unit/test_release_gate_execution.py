@@ -10,13 +10,14 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 
 
 def _makefile() -> str:
-    return MAKEFILE.read_text(encoding="utf-8")
+    return compose_makefile(MAKEFILE)
 
 
 def _target_block(name: str) -> str:

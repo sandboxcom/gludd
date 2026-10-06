@@ -5,13 +5,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
 
 
 def _target_body(name: str) -> str:
-    content = MAKEFILE.read_text(encoding="utf-8")
+    content = compose_makefile(MAKEFILE)
     start = content.index(f"{name}:")
     return content[start:].split("\n\n", 1)[0]
 
@@ -22,7 +24,7 @@ def _contract_entry(name: str) -> dict[str, object]:
 
 
 def test_game_target_defaults_to_owned_hermetic_lifecycle() -> None:
-    content = MAKEFILE.read_text(encoding="utf-8")
+    content = compose_makefile(MAKEFILE)
     body = _target_body("test-e2e-games-local-model")
 
     assert "LOCAL_MODEL_E2E_MODE ?= hermetic" in content
@@ -32,7 +34,7 @@ def test_game_target_defaults_to_owned_hermetic_lifecycle() -> None:
 
 
 def test_managed_game_target_forwards_artifact_and_runs_real_lifecycle_acceptance() -> None:
-    content = MAKEFILE.read_text(encoding="utf-8")
+    content = compose_makefile(MAKEFILE)
     body = _target_body("test-e2e-games-local-model")
 
     assert "LOCAL_MODEL_PATH ?=" in content
@@ -67,13 +69,14 @@ def test_game_target_contract_requires_explicit_external_endpoint() -> None:
     assert "LOCAL_MODEL_GAME=snake" in str(entry["behavior"])
 
 
-def test_inference_target_uses_locked_extra_and_explicit_artifact() -> None:
-    content = MAKEFILE.read_text(encoding="utf-8")
+def test_inference_target_uses_locked_profile_and_explicit_artifact() -> None:
+    content = compose_makefile(MAKEFILE)
     body = _target_body("test-local-model-inference")
 
     assert "LOCAL_MODEL_INFERENCE_MODEL_PATH ?=" in content
     assert "LOCAL_MODEL_INFERENCE_VALIDATE_ONLY ?= 0" in content
-    assert "--extra local-inference" in body
+    assert "sync DEPENDENCY_PROFILE_SET=local-inference" in body
+    assert "DEPENDENCY_PROFILE_VALIDATE_ONLY=1" in body
     assert "scripts/local_model_inference_smoke.py" in body
     assert "glob.glob" not in body
 
@@ -88,10 +91,10 @@ def test_inference_target_contract_has_safe_behavioral_example() -> None:
     assert "LOCAL_MODEL_INFERENCE_VALIDATE_ONLY=1" in str(entry["behavior"])
 
 
-def test_game_pipeline_target_uses_locked_local_inference_extra() -> None:
+def test_game_pipeline_target_uses_locked_local_inference_profile() -> None:
     body = _target_body("test-e2e-game-pipeline")
 
-    assert "--extra local-inference" in body
+    assert "sync DEPENDENCY_PROFILE_SET=ci-local-inference" in body
     assert "GLUDD_LIVE_MODEL_E2E=\"1\"" in body
 
 
