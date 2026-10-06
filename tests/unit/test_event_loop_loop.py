@@ -95,6 +95,25 @@ def test_record_tick_completion_persists_metrics_and_checkpoint(monkeypatch) -> 
 
 
 class TestTaskTypeHelpers:
+    def test_wrapper_delegates_to_universal_routing_helper(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Normal production routing must execute the extracted helper."""
+        from general_ludd.event_loop import task_routing
+        from general_ludd.event_loop.loop import _work_type_to_task_type
+        from general_ludd.schemas.benchmark import TaskType
+
+        calls: list[str] = []
+
+        def route(work_type: str) -> TaskType:
+            calls.append(work_type)
+            return TaskType.DOCUMENTATION
+
+        monkeypatch.setattr(task_routing, "work_type_to_task_type", route)
+
+        assert _work_type_to_task_type("docs") is TaskType.DOCUMENTATION
+        assert calls == ["docs"]
+
     def test_work_type_to_task_type_known_mapping(self) -> None:
         from general_ludd.event_loop.loop import _work_type_to_task_type
         from general_ludd.schemas.benchmark import TaskType
