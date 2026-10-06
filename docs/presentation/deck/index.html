@@ -1088,6 +1088,15 @@ graph TD
     <li><strong>Choose lifecycle explicitly:</strong> pre-startup <code>/readyz</code> proves the 503 boundary; context-managed startup proves 200 readiness; model-health checks keep a per-app in-memory database.</li>
     <li><strong>Keep shutdown observable:</strong> a closed log stream falls back to stderr file descriptor 2, then restore handlers + propagation after cleanup.</li>
   </ol>
+  <div data-contract="owned-node-cache-reclamation">
+    <p><strong>Measured disk-pressure recovery:</strong> 142.2 MiB &rarr; 52.6 MiB.</p>
+    <ul class="bullets-tight" style="font-size:0.58em;">
+      <li>Reclaim only exact stale, inactive, owned npm caches.</li>
+      <li>Refuse regular <code>.sock</code> lookalikes and ambiguous or active caches.</li>
+      <li>Recompute the complete tree identity and perform immediate <code>lstat</code> revalidation before deletion.</li>
+    </ul>
+    <p class="cite">Source: docs/features/GATE_RESOURCE_LIFECYCLE.md</p>
+  </div>
   <p class="honest-note">No new runtime service or persisted schema: validation happens before network work, test state is namespaced, lifespan ownership is explicit, and late cleanup remains visible.</p>
   <p class="cite">Sources: docs/features/SERVICE_DISCOVERY_SEARCH_TERM_SCHEMA.md &middot; docs/features/FLOOR_TEST_ENV_ISOLATION.md &middot; docs/features/READINESS_LIFESPAN_TESTING.md &middot; docs/features/RESOURCE_LIFECYCLE_SHUTDOWN_LOGGING.md</p>
 </section>
