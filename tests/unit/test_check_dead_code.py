@@ -20,6 +20,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "check_dead_code.py"
 
@@ -498,7 +499,7 @@ class TestQuietOutput:
 class TestMakeTargetExists:
     def test_makefile_has_check_dead_code_target(self) -> None:
         makefile = Path(__file__).resolve().parents[2] / "Makefile"
-        content = makefile.read_text()
+        content = compose_makefile(makefile)
         assert "\ncheck-dead-code:" in content
         assert "\ncheck-dead-code-json:" in content
         assert "\ncheck-dead-code-quiet:" in content

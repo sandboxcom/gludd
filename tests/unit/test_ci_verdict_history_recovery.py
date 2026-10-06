@@ -2,11 +2,13 @@
 
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 MAKEFILE = Path(__file__).resolve().parents[2] / "Makefile"
 
 
 def _target_block(start_marker: str, end_marker: str) -> str:
-    text = MAKEFILE.read_text(encoding="utf-8")
+    text = compose_makefile(MAKEFILE)
     start = text.index(start_marker)
     end = text.index(end_marker, start)
     return text[start:end]

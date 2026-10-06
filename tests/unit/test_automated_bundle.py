@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 
 class TestAutomatedBundle:
     def test_download_script_exists(self):
@@ -20,13 +22,13 @@ class TestAutomatedBundle:
     def test_bundle_binaries_make_target_invokes_download(self):
         repo_root = Path(__file__).parent.parent.parent
         makefile = repo_root / "Makefile"
-        content = makefile.read_text()
+        content = compose_makefile(makefile)
         assert "download_bundled_binaries.py" in content
 
     def test_dist_target_depends_on_bundle_binaries(self):
         repo_root = Path(__file__).parent.parent.parent
         makefile = repo_root / "Makefile"
-        content = makefile.read_text()
+        content = compose_makefile(makefile)
         assert "bundle-binaries" in content
 
     def test_bootstrapper_has_download_all_method(self):

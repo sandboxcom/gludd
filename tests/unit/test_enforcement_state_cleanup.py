@@ -5,6 +5,8 @@ The old broad cleanup target was replaced by a scoped live-state reset.
 
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
 
@@ -21,7 +23,7 @@ EXPECTED_FILES = [
 
 
 def _recipe(target: str) -> str:
-    content = MAKEFILE.read_text()
+    content = compose_makefile(MAKEFILE)
     marker = f"\n{target}:"
     assert marker in content, f"Makefile target '{target}' not found"
     start = content.index(marker) + len(marker)

@@ -13,6 +13,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 GATE_ASYNC_SH = Path(__file__).parent.parent.parent / "scripts" / "gate_async.sh"
 MAKEFILE = GATE_ASYNC_SH.parent.parent / "Makefile"
 
@@ -21,7 +23,7 @@ def test_default_gate_command_invokes_whole_gate_without_recursion() -> None:
     text = GATE_ASYNC_SH.read_text(encoding="utf-8")
     assert 'GATE_CMD="${GATE_CMD:-make gate gludd_watchdog_owned_gate=1}"' in text
 
-    makefile = MAKEFILE.read_text(encoding="utf-8")
+    makefile = compose_makefile(MAKEFILE)
     gate_start = makefile.index("gate: _gate-run-lock-acquire")
     gate_end = makefile.index("# gate-lite:", gate_start)
     assert "gate_async.sh" not in makefile[gate_start:gate_end]

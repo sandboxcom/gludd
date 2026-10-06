@@ -10,6 +10,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -51,8 +53,13 @@ class TestPyprojectCoverageConfig:
         assert 'omit = ["tests/*"]' in content
 
     def test_pytest_cov_in_dev_dependencies(self):
-        content = (ROOT / "pyproject.toml").read_text()
-        assert "pytest-cov" in content, "pytest-cov must be in dev dependencies for --cov-branch support"
+        content = (
+            ROOT / "requirements" / "profiles" / "dev-test" / "pyproject.toml"
+        ).read_text()
+        assert "pytest-cov" in content, (
+            "pytest-cov must be in the dev-test dependency profile for "
+            "--cov-branch support"
+        )
 
     def test_branch_coverage_not_enabled_by_default_no_issue(self):
         content = (ROOT / "pyproject.toml").read_text()
@@ -163,40 +170,40 @@ class TestMakefileCoverageContract:
     MAKEFILE = ROOT / "Makefile"
 
     def test_audit_coverage_target_exists(self):
-        content = self.MAKEFILE.read_text()
+        content = compose_makefile(self.MAKEFILE)
         assert "audit-coverage:" in content
 
     def test_gate_audit_target_exists(self):
-        content = self.MAKEFILE.read_text()
+        content = compose_makefile(self.MAKEFILE)
         assert "gate-audit:" in content
 
     def test_coverage_json_target_exists(self):
-        content = self.MAKEFILE.read_text()
+        content = compose_makefile(self.MAKEFILE)
         assert "coverage-json:" in content
 
     def test_audit_coverage_uses_project_python(self):
-        content = self.MAKEFILE.read_text()
+        content = compose_makefile(self.MAKEFILE)
         start = content.index("audit-coverage:")
         recipe = content[start : content.find("\n\n", start)]
         assert "$(UV) run python scripts/audit_coverage.py" in recipe
 
     def test_audit_coverage_supports_threshold_override(self):
-        content = self.MAKEFILE.read_text()
+        content = compose_makefile(self.MAKEFILE)
         assert "THRESHOLD ?= 85" in content, "Makefile must allow THRESHOLD override for branch coverage audit"
 
     def test_gate_audit_runs_both_gate_and_audit(self):
-        content = self.MAKEFILE.read_text()
+        content = compose_makefile(self.MAKEFILE)
         start = content.index("gate-audit:")
         recipe = content[start : content.find("\n\n", start)]
         assert "gate" in recipe
         assert "audit-coverage" in recipe
 
     def test_audit_coverage_in_phony(self):
-        content = self.MAKEFILE.read_text()
+        content = compose_makefile(self.MAKEFILE)
         assert "audit-coverage" in content
 
     def test_audit_coverage_in_help(self):
-        content = self.MAKEFILE.read_text()
+        content = compose_makefile(self.MAKEFILE)
         assert "Run coverage audit" in content
 
 
