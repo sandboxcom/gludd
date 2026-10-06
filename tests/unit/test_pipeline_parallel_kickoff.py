@@ -101,6 +101,268 @@ console.log(JSON.stringify({{
     assert result == {"oneSlot": ["a"], "full": [], "empty": []}
 
 
+def test_active_release_scope_excludes_backlog_and_unscoped_candidates(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "TASKS.md").write_text(
+        """# Tasks
+
+The fail-closed v0.1.1 milestone is the exact task set S83.157\u2013S83.168.
+
+- [ ] S83.157 - Finish accelerator proof | status: in_progress
+- [ ] S83.166 - Publish the release | status: in_progress
+- [ ] S91.1 - Refactor later orchestration | status: in_progress
+""",
+        encoding="utf-8",
+    )
+    env = _runtime_env(
+        tmp_path,
+        todos=[
+            {
+                "id": "S83.157",
+                "content": "Finish S83.157 accelerator proof for v0.1.1",
+                "status": "pending",
+            },
+            {
+                "id": "S91.1",
+                "content": "Start S91.1 backlog orchestration refactor",
+                "status": "pending",
+            },
+            {
+                "id": "S83.166.2",
+                "content": "Repair S83.166.2 release dependency admission",
+                "status": "pending",
+            },
+            {
+                "id": "future-release",
+                "content": "Collect the next release backlog",
+                "status": "pending",
+            },
+        ],
+    )
+    code = f"""
+import pluginFactory from {PLUGIN!r}
+import * as fs from 'node:fs'
+const plugin = await pluginFactory({{}})
+const input = {{tool: 'bash', args: {{command: 'make gate-async'}}}}
+const output = {{args: {{command: 'make gate-async'}}}}
+await plugin['tool.execute.before'](input, output)
+await plugin['tool.execute.after'](
+  input,
+  {{args: output.args, result: '', metadata: {{exitCode: 0}}}},
+)
+const state = JSON.parse(fs.readFileSync(process.env.GLUDD_PIPELINE_KICKOFF_STATE, 'utf8'))
+console.log(JSON.stringify({{
+  ids: state.candidates.map(item => item.id),
+  scope: state.candidate_scope,
+}}))
+"""
+    result = _run_ts(code, env)
+    assert result == {
+        "ids": ["s83-157", "s83-166-2"],
+        "scope": {
+            "kind": "milestone",
+            "label": "v0.1.1",
+            "range": "S83.157-S83.168",
+            "raw_count": 4,
+            "eligible_count": 2,
+        },
+    }
+
+
+def test_ambiguous_release_metadata_fails_closed_to_zero_candidates(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "TASKS.md").write_text(
+        """# Tasks
+
+The v0.1.1 milestone is the exact task set S83.157-S83.168.
+The v0.1.2 milestone is the exact task set S91.1-S91.9.
+""",
+        encoding="utf-8",
+    )
+    env = _runtime_env(
+        tmp_path,
+        todos=[
+            {"id": "S83.157", "content": "Finish S83.157 release proof"},
+            {"id": "S91.1", "content": "Start S91.1 later release work"},
+        ],
+    )
+    code = f"""
+import pluginFactory from {PLUGIN!r}
+import * as fs from 'node:fs'
+const plugin = await pluginFactory({{}})
+const launch = {{tool: 'bash', args: {{command: 'make gate-async'}}}}
+const output = {{args: {{command: 'make gate-async'}}}}
+await plugin['tool.execute.before'](launch, output)
+await plugin['tool.execute.after'](
+  launch,
+  {{args: output.args, result: '', metadata: {{exitCode: 0}}}},
+)
+const state = JSON.parse(fs.readFileSync(process.env.GLUDD_PIPELINE_KICKOFF_STATE, 'utf8'))
+const invented = await plugin['tool.execute.before'](
+  {{tool: 'task', args: {{prompt:
+    '[pipeline-task:filler] Implement unrelated filler work. ' +
+    'Create and use an isolated git worktree. ' +
+    'Never edit the frozen tested checkout.'
+  }}}},
+  {{}},
+)
+console.log(JSON.stringify({{
+  candidates: state.candidates,
+  scope: state.candidate_scope,
+  invented: invented?.permissionDecision ?? null,
+}}))
+"""
+    result = _run_ts(code, env)
+    assert result == {
+        "candidates": [],
+        "scope": {
+            "kind": "ambiguous",
+            "label": "",
+            "range": "",
+            "raw_count": 2,
+            "eligible_count": 0,
+        },
+        "invented": "deny",
+    }
+
+
+def test_non_release_ledger_keeps_ordinary_candidates(tmp_path: Path) -> None:
+    (tmp_path / "TASKS.md").write_text(
+        "# Ordinary project tasks\n\n- [ ] Improve the parser\n",
+        encoding="utf-8",
+    )
+    env = _runtime_env(
+        tmp_path,
+        todos=[
+            {
+                "id": "parser",
+                "content": "Implement ordinary parser improvements",
+                "status": "pending",
+            }
+        ],
+    )
+    code = f"""
+import pluginFactory from {PLUGIN!r}
+import * as fs from 'node:fs'
+const plugin = await pluginFactory({{}})
+const input = {{tool: 'bash', args: {{command: 'make gate-async'}}}}
+const output = {{args: {{command: 'make gate-async'}}}}
+await plugin['tool.execute.before'](input, output)
+await plugin['tool.execute.after'](
+  input,
+  {{args: output.args, result: '', metadata: {{exitCode: 0}}}},
+)
+const state = JSON.parse(fs.readFileSync(process.env.GLUDD_PIPELINE_KICKOFF_STATE, 'utf8'))
+console.log(JSON.stringify({{
+  ids: state.candidates.map(item => item.id),
+  scope: state.candidate_scope,
+}}))
+"""
+    result = _run_ts(code, env)
+    assert result == {
+        "ids": ["parser"],
+        "scope": {
+            "kind": "repository",
+            "label": "",
+            "range": "",
+            "raw_count": 1,
+            "eligible_count": 1,
+        },
+    }
+
+
+def test_completed_historical_milestone_releases_later_candidates() -> None:
+    code = f"""
+import {{ scopePipelineCandidates }} from {MODULE!r}
+const ledger = `# Tasks
+
+The v0.1.1 milestone is the exact task set S83.157-S83.168.
+
+- [x] S83.157 - Accelerator proof | status: completed
+- [x] S83.166 - Publish release | status: done
+`
+const result = scopePipelineCandidates([
+  {{id: 'S91.1', content: 'Implement S91.1 next-release orchestration'}},
+  {{id: 'ordinary', content: 'Implement ordinary repository maintenance'}},
+], ledger)
+console.log(JSON.stringify(result))
+"""
+    result = _run_ts(code)
+    assert result == {
+        "candidates": [
+            {
+                "id": "S91.1",
+                "content": "Implement S91.1 next-release orchestration",
+            },
+            {
+                "id": "ordinary",
+                "content": "Implement ordinary repository maintenance",
+            },
+        ],
+        "scope": {
+            "kind": "repository",
+            "label": "",
+            "range": "",
+            "raw_count": 2,
+            "eligible_count": 2,
+        },
+    }
+
+
+def test_checked_in_progress_task_keeps_release_scope_active() -> None:
+    code = f"""
+import {{ scopePipelineCandidates }} from {MODULE!r}
+const ledger = `# Tasks
+
+The v0.1.1 milestone is the exact task set S83.157-S83.168.
+
+- [x] S83.157 - Contradictory completion | status: in_progress
+`
+const result = scopePipelineCandidates([
+  {{id: 'S83.157', content: 'Finish S83.157 active release proof'}},
+  {{id: 'S91.1', content: 'Implement S91.1 later work'}},
+], ledger)
+console.log(JSON.stringify({{
+  ids: result.candidates.map(item => item.id),
+  kind: result.scope.kind,
+}}))
+"""
+    assert _run_ts(code) == {"ids": ["S83.157"], "kind": "milestone"}
+
+
+def test_current_tasks_ledger_selects_only_open_v011_work() -> None:
+    code = f"""
+import {{ readFileSync }} from 'node:fs'
+import {{ scopePipelineCandidates }} from {MODULE!r}
+const ledger = readFileSync({str(ROOT / 'TASKS.md')!r}, 'utf8')
+const result = scopePipelineCandidates([
+  {{id: 'S83.157', content: 'Finish S83.157 live proof'}},
+  {{id: 'S83.158', content: 'Finish S83.158 scheduler proof'}},
+  {{id: 'S83.163', content: 'Finish S83.163 integration proof'}},
+  {{id: 'S83.166', content: 'Finish S83.166 release proof'}},
+  {{id: 'S91.1', content: 'Start S91.1 backlog work'}},
+  {{id: 'future', content: 'Collect a later release backlog'}},
+], ledger)
+console.log(JSON.stringify({{
+  ids: result.candidates.map(item => item.id),
+  scope: result.scope,
+}}))
+"""
+    result = _run_ts(code)
+    assert result == {
+        "ids": ["S83.157", "S83.158", "S83.163", "S83.166"],
+        "scope": {
+            "kind": "milestone",
+            "label": "v0.1.1",
+            "range": "S83.157-S83.168",
+            "raw_count": 6,
+            "eligible_count": 4,
+        },
+    }
+
+
 def test_kickoff_receipt_path_is_namespaced_per_checkout() -> None:
     code = f"""
 import {{ projectKickoffStatePath }} from {MODULE!r}
@@ -946,6 +1208,10 @@ def test_pipeline_plugin_live_activation_is_built_and_documented() -> None:
     doc = (ROOT / "docs" / "features" / "PIPELINE_PARALLEL_KICKOFF.md").read_text(
         encoding="utf-8"
     )
+    assert "github.com/openai/codex/issues/48184" in doc
+    assert "github.com/openai/codex/issues/23937" in doc
+    assert "active release milestone" in doc
+    assert "ZDD and rollback" in doc
     assert "github.com/anomalyco/opencode/issues/39987" in doc
     assert "github.com/anomalyco/opencode/issues/42898" in doc
     assert "make hot-reload-plugins" in doc

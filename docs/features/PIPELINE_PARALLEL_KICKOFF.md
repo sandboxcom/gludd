@@ -16,19 +16,28 @@ work that can proceed in isolated worktrees.
    already-running agents, and capacity is refreshed before every dispatch so
    a worker started after kickoff still consumes a slot. The plugin does not
    parse a second backlog or invent work.
-3. Candidates are deduplicated, dependency-ready, and pairwise file-disjoint,
+3. If `TASKS.md` declares one active release milestone as an exact task range,
+   source records are admitted only when every explicit task ID maps to a
+   currently open parent task in that range. Nested task IDs inherit their
+   parent task's scope. Later-release, completed, backlog, mixed-scope, and
+   unscoped records are excluded. Conflicting, malformed, or unreadable release
+   metadata fails closed to zero candidates. Once every task in a valid
+   historical milestone is checked with a compatible completion status, the
+   milestone is inactive and ordinary repository-wide candidate behavior
+   resumes; repositories with no versioned milestone use that behavior too.
+4. Candidates are deduplicated, dependency-ready, and pairwise file-disjoint,
    following the repository `OrchestrationPlanner` resource contract. Polling,
    status watching, placeholders, and other filler are discarded.
-4. The batch is capped at three total workers, including the in-flight estimate.
+5. The batch is capped at three total workers, including the in-flight estimate.
    An empty batch is valid and never creates quota-filling tasks.
-5. The emitted candidate batch is digest-bound at kickoff. Only an exact emitted
+6. The emitted candidate batch is digest-bound at kickoff. Only an exact emitted
    prompt may be dispatched; changing its objective, paths, task label, or receipt
    state fails closed. Content hashes reject the same task under a different ID.
-6. Every emitted prompt names the frozen ref and checkout and affirmatively
+7. Every emitted prompt names the frozen ref and checkout and affirmatively
    requires creation and use of a new isolated git worktree. Negated or merely
    descriptive worktree language is rejected. While the pipeline is active,
    writes and non-read-only Make targets in the tested checkout are rejected.
-7. A terminal receipt unfreezes only its own checkout. Its path must remain under
+8. A terminal receipt unfreezes only its own checkout. Its path must remain under
    the frozen checkout, its content must differ from the pre-launch baseline,
    gate receipt epochs must not predate kickoff, and ship success must name the
    exact tested ref. The last receipt line is authoritative, so an older success
@@ -57,6 +66,19 @@ The machine-readable receipt is stored at a checkout-namespaced
   terminal can silently open the base checkout instead of the active worktree.
   This is why receipts and prompts include the absolute frozen checkout path,
   not just a branch name.
+- [Codex issue #48184](https://github.com/openai/codex/issues/48184) records an
+  uninterrupted long-running task switching to unrelated invented work and asks
+  the runtime to preserve an explicit task pointer and reject unauthorized scope
+  changes. The active milestone range is that durable pointer at kickoff.
+- [Codex issue #23937](https://github.com/openai/codex/issues/23937) has remained
+  reproducible across multiple releases and reports unrelated sessions appearing
+  in the current agent tree. It reinforces filtering shared orchestration state
+  by explicit ownership instead of assuming every visible record belongs here.
+- [OpenCode issue #41358](https://github.com/anomalyco/opencode/issues/41358)
+  includes multiple reporters of goal drift after long-session compaction and
+  recommends retaining the original goal across the continuation boundary. The
+  frozen milestone receipt provides that stable scope even if later state files
+  accumulate more work.
 - [OpenCode issue #39987](https://github.com/anomalyco/opencode/issues/39987)
   records that plugin/config changes may require an explicit reload or the next
   process launch. This is why activation below distinguishes registration from
@@ -87,6 +109,27 @@ invalid module falls back to the startup-loaded implementation; it is not proof
 that the edit is live. If the module is absent, the runtime test fails, or live
 behavior still reflects the old implementation, Restart OpenCode and re-run the
 narrow pipeline-kickoff tests before depending on the freeze.
+
+## Active milestone ZDD and rollback
+
+Milestone selection is a read-only pre-launch admission step. It reads the task
+ledger and the three existing candidate sources, writes no source queue, and
+persists the selected scope and counts with the new kickoff receipt. A running
+pipeline and its already frozen batch are never rewritten; the next kickoff
+adopts the new selector without stopping a gate, service, listener, or worker.
+The scope receipt is launch-digest-bound alongside the exact candidate batch.
+When the last active milestone task completes, the next kickoff returns to
+repository-wide selection instead of retaining a historical release freeze.
+
+For a source-only rollout, run `make hot-reload-plugins`, confirm
+`gludd-hot-pipeline-kickoff.js` with `make hot-reload-status`, and execute
+`make test-hook-runtime`. The bundle includes both the plugin and its selector
+library. If the wrapper was not already registered, restart OpenCode once as
+described above. Rollback restores the prior plugin and library together and
+rebuilds the hot module; an existing immutable kickoff receipt remains usable
+until its own terminal evidence or expiry. `GLUDD_PIPELINE_KICKOFF_ENFORCE=0`
+is the emergency fail-open control, but it also removes checkout freezing and is
+not a substitute for reverting a bad selector.
 
 ## Operator controls
 

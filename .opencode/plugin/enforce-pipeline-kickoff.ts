@@ -30,8 +30,10 @@ import {
   isLongPipelineLaunch,
   isUsefulObjective,
   projectKickoffStatePath,
+  scopePipelineCandidates,
   withFrozenRef,
   type PipelineCandidate,
+  type PipelineCandidateScope,
 } from "../lib/pipeline_kickoff.ts"
 
 const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
@@ -75,6 +77,7 @@ interface PipelineKickoffState {
   updated_at: number
   existing_in_flight?: number
   candidates: PipelineCandidate[]
+  candidate_scope?: PipelineCandidateScope
   candidate_batch_digest: string
   dispatched_keys: string[]
   launch_digest?: string
@@ -156,6 +159,9 @@ function fileDigest(filePath: string): string | undefined {
 }
 
 function launchBindingDigest(state: PipelineKickoffState): string {
+  const scopePayload = state.candidate_scope === undefined
+    ? {}
+    : { candidate_scope: state.candidate_scope }
   const payload = {
     version: state.version,
     pipeline_target: state.pipeline_target,
@@ -167,6 +173,7 @@ function launchBindingDigest(state: PipelineKickoffState): string {
     candidate_batch_digest: state.candidate_batch_digest,
     status_path: state.status_path ?? null,
     status_baseline_digest: state.status_baseline_digest ?? null,
+    ...scopePayload,
   }
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex")
 }
@@ -218,6 +225,17 @@ function rawCandidatesFromExistingState(): unknown[] {
   return candidates
 }
 
+function readTasksLedger(root: string): string | null | undefined {
+  const configuredPath = process.env.GLUDD_TASKS_MD
+  const tasksPath = configuredPath || path.join(root, "TASKS.md")
+  if (!fs.existsSync(tasksPath)) return configuredPath ? null : undefined
+  try {
+    return fs.readFileSync(tasksPath, "utf8")
+  } catch {
+    return null
+  }
+}
+
 function estimatedInFlight(): number {
   const multitaskPath = process.env.GLUDD_MULTITASK_STATE_FILE || "/tmp/gludd-multitask-state.json"
   const state = readJsonFile<Record<string, unknown>>(multitaskPath, {})
@@ -229,7 +247,11 @@ function prepareState(command: string): PipelineKickoffState {
   const root = path.resolve(getProjectRoot())
   const testedRef = captureTestedRef(root)
   const inFlight = estimatedInFlight()
-  const batch = consolidateCandidateBatch(rawCandidatesFromExistingState(), inFlight)
+  const scoped = scopePipelineCandidates(
+    rawCandidatesFromExistingState(),
+    readTasksLedger(root),
+  )
+  const batch = consolidateCandidateBatch(scoped.candidates, inFlight)
     .map(candidate => {
       const dispatchPrompt = buildIsolatedDispatchPrompt(candidate, testedRef, root)
       return {
@@ -251,6 +273,7 @@ function prepareState(command: string): PipelineKickoffState {
     updated_at: now,
     existing_in_flight: inFlight,
     candidates: batch,
+    candidate_scope: scoped.scope,
     candidate_batch_digest: candidateBatchDigest(testedRef, root, batch),
     dispatched_keys: [],
     status_path: null,
@@ -347,7 +370,12 @@ function active(state: PipelineKickoffState | null): state is PipelineKickoffSta
 }
 
 function exposeKickoff(output: unknown, state: PipelineKickoffState): void {
-  const notice = formatKickoffNotice(state.tested_ref, state.tested_worktree, state.candidates)
+  const notice = formatKickoffNotice(
+    state.tested_ref,
+    state.tested_worktree,
+    state.candidates,
+    state.candidate_scope,
+  )
   let exposed = false
   try {
     if (output && typeof output === "object") {

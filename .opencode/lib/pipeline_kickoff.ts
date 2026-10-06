@@ -36,7 +36,41 @@ export interface PipelineCandidate {
   dispatch_prompt?: string
 }
 
+export interface PipelineCandidateScope {
+  kind: "repository" | "milestone" | "ambiguous"
+  label: string
+  range: string
+  raw_count: number
+  eligible_count: number
+}
+
+export interface ScopedPipelineCandidates {
+  candidates: unknown[]
+  scope: PipelineCandidateScope
+}
+
 type CandidateRecord = Record<string, unknown>
+
+const RELEASE_MILESTONE_HINT_RE =
+  /\bv\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?\s+milestone[^\r\n]{0,160}\bexact\s+task\s+set\b/gi
+const RELEASE_MILESTONE_RE =
+  /\b(v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\s+milestone\s+is\s+the\s+exact\s+task\s+set\s+([A-Za-z]+\d+)\.(\d+)\s*[-\u2013]\s*([A-Za-z]+\d+)\.(\d+)/gi
+const CANDIDATE_TASK_ID_RE = /\b([A-Z][A-Z0-9]*\d)\.(\d+)(?:\.\d+)*\b/g
+const LEDGER_TASK_RE =
+  /^\s*[-*]\s+\[([ xX])\]\s+([A-Z][A-Z0-9]*\d)\.(\d+)(?:\.\d+)*\b(.*)$/gm
+const TASK_STATUS_RE = /\bstatus:\s*([^\s|,;]+)/i
+const COMPLETED_TASK_STATUSES = new Set(["complete", "completed", "done"])
+const CANDIDATE_SCOPE_FIELDS = Object.freeze([
+  "id",
+  "task_id",
+  "objective",
+  "task_item",
+  "content",
+  "title",
+  "text",
+  "command",
+  "description",
+])
 
 function asRecord(value: unknown): CandidateRecord | null {
   if (typeof value === "string") return { content: value }
@@ -66,6 +100,197 @@ function normalize(value: string): string {
 function safeId(value: string): string {
   const cleaned = value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
   return cleaned.slice(0, 48) || "independent-work"
+}
+
+function candidateScopeText(value: unknown): string {
+  if (typeof value === "string") return value
+  const record = asRecord(value)
+  if (record === null) return ""
+  return CANDIDATE_SCOPE_FIELDS
+    .map(field => record[field])
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .join("\n")
+}
+
+function candidateIsInMilestone(
+  candidate: unknown,
+  prefix: string,
+  start: number,
+  end: number,
+  activeRoots: ReadonlySet<string>,
+): boolean {
+  const references = Array.from(candidateScopeText(candidate).matchAll(CANDIDATE_TASK_ID_RE))
+  if (references.length === 0) return false
+  return references.every(reference =>
+    reference[1].toLowerCase() === prefix.toLowerCase() &&
+    Number(reference[2]) >= start &&
+    Number(reference[2]) <= end &&
+    activeRoots.has(`${reference[1].toLowerCase()}.${Number(reference[2])}`)
+  )
+}
+
+function milestoneTaskRoots(
+  tasksLedger: string,
+  prefix: string,
+  start: number,
+  end: number,
+): { defined: Set<string>; active: Set<string> } {
+  const defined = new Set<string>()
+  const active = new Set<string>()
+  for (const task of tasksLedger.matchAll(LEDGER_TASK_RE)) {
+    const taskPrefix = task[2]
+    const taskNumber = Number(task[3])
+    if (
+      taskPrefix.toLowerCase() !== prefix.toLowerCase() ||
+      !Number.isSafeInteger(taskNumber) ||
+      taskNumber < start ||
+      taskNumber > end
+    ) {
+      continue
+    }
+    const root = `${taskPrefix.toLowerCase()}.${taskNumber}`
+    defined.add(root)
+    const status = task[4].match(TASK_STATUS_RE)?.[1]
+      ?.toLowerCase()
+      .replace(/[|,;.]+$/, "")
+    const checked = task[1].toLowerCase() === "x"
+    if (!checked || (status !== undefined && !COMPLETED_TASK_STATUSES.has(status))) {
+      active.add(root)
+    }
+  }
+  return { defined, active }
+}
+
+/**
+ * Bind orchestration candidates to the one explicitly active release milestone.
+ *
+ * A repository without versioned milestone metadata keeps its ordinary task
+ * behavior. Once release metadata is present, exactly one valid declaration is
+ * required and every candidate must carry only currently open task IDs inside
+ * that range. Missing, conflicting, or malformed release metadata yields an
+ * empty batch; a fully completed historical declaration releases repository
+ * candidates again.
+ */
+export function scopePipelineCandidates(
+  rawCandidates: readonly unknown[],
+  tasksLedger: string | null | undefined,
+): ScopedPipelineCandidates {
+  const raw = [...rawCandidates]
+  if (tasksLedger === undefined) {
+    return {
+      candidates: raw,
+      scope: {
+        kind: "repository",
+        label: "",
+        range: "",
+        raw_count: raw.length,
+        eligible_count: raw.length,
+      },
+    }
+  }
+  if (tasksLedger === null) {
+    return {
+      candidates: [],
+      scope: {
+        kind: "ambiguous",
+        label: "",
+        range: "",
+        raw_count: raw.length,
+        eligible_count: 0,
+      },
+    }
+  }
+
+  const hints = tasksLedger.match(RELEASE_MILESTONE_HINT_RE) ?? []
+  const declarations = Array.from(tasksLedger.matchAll(RELEASE_MILESTONE_RE))
+  if (hints.length === 0) {
+    return {
+      candidates: raw,
+      scope: {
+        kind: "repository",
+        label: "",
+        range: "",
+        raw_count: raw.length,
+        eligible_count: raw.length,
+      },
+    }
+  }
+  if (hints.length !== 1 || declarations.length !== 1) {
+    return {
+      candidates: [],
+      scope: {
+        kind: "ambiguous",
+        label: "",
+        range: "",
+        raw_count: raw.length,
+        eligible_count: 0,
+      },
+    }
+  }
+
+  const declaration = declarations[0]
+  const label = declaration[1]
+  const prefix = declaration[2]
+  const start = Number(declaration[3])
+  const endPrefix = declaration[4]
+  const end = Number(declaration[5])
+  if (
+    prefix.toLowerCase() !== endPrefix.toLowerCase() ||
+    !Number.isSafeInteger(start) ||
+    !Number.isSafeInteger(end) ||
+    end < start
+  ) {
+    return {
+      candidates: [],
+      scope: {
+        kind: "ambiguous",
+        label: "",
+        range: "",
+        raw_count: raw.length,
+        eligible_count: 0,
+      },
+    }
+  }
+
+  const taskRoots = milestoneTaskRoots(tasksLedger, prefix, start, end)
+  if (taskRoots.defined.size === 0) {
+    return {
+      candidates: [],
+      scope: {
+        kind: "ambiguous",
+        label: "",
+        range: "",
+        raw_count: raw.length,
+        eligible_count: 0,
+      },
+    }
+  }
+  if (taskRoots.active.size === 0) {
+    return {
+      candidates: raw,
+      scope: {
+        kind: "repository",
+        label: "",
+        range: "",
+        raw_count: raw.length,
+        eligible_count: raw.length,
+      },
+    }
+  }
+
+  const candidates = raw.filter(candidate =>
+    candidateIsInMilestone(candidate, prefix, start, end, taskRoots.active)
+  )
+  return {
+    candidates,
+    scope: {
+      kind: "milestone",
+      label,
+      range: `${prefix}.${start}-${prefix}.${end}`,
+      raw_count: raw.length,
+      eligible_count: candidates.length,
+    },
+  }
 }
 
 export function isUsefulObjective(objective: string): boolean {
@@ -229,11 +454,20 @@ export function formatKickoffNotice(
   testedRef: string,
   testedWorktree: string,
   candidates: readonly PipelineCandidate[],
+  scope?: PipelineCandidateScope,
 ): string {
   const lines = [
     "PIPELINE PARALLEL KICKOFF",
     `Frozen tested checkout: ${testedWorktree} @ ${testedRef}`,
   ]
+  if (scope?.kind === "milestone") {
+    lines.push(
+      `Candidate scope: ${scope.label} ${scope.range} ` +
+      `(${scope.eligible_count}/${scope.raw_count} source records eligible).`,
+    )
+  } else if (scope?.kind === "ambiguous") {
+    lines.push("Candidate scope: ambiguous release metadata (fail-closed).")
+  }
   if (candidates.length === 0) {
     lines.push("Independent candidate batch: 0 (valid; do not create filler work).")
   } else {
