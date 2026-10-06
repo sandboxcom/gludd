@@ -384,7 +384,8 @@ def test_make_and_gha_contracts_pin_node_matrix_and_release_dependency() -> None
     assert "make freellmapi-upstream-build" in job
     assert "FREELLMAPI_BUILD_LIVE=1" in job
     release = workflow.split("\n  release:", 1)[1]
-    assert "freellmapi-upstream-build" in release.split("\n", 4)[1]
+    needs_line = next(line for line in release.splitlines() if line.startswith("    needs:"))
+    assert "freellmapi-upstream-build" in needs_line
 
 
 def test_public_helpers_are_content_free_hashes_only() -> None:
