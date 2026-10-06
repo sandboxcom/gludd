@@ -58,8 +58,8 @@ _OR_MODELS: dict[str, dict[str, str]] = {
 # ---------------------------------------------------------------------------
 
 _KEY_SENTINEL = object()
-_DS_KEY_CACHE: str | None | object = _KEY_SENTINEL
-_OR_KEY_CACHE: str | None | object = _KEY_SENTINEL
+_DS_KEY_CACHE: str | object | None = _KEY_SENTINEL
+_OR_KEY_CACHE: str | object | None = _KEY_SENTINEL
 
 
 def _load_ds_key() -> str | None:
@@ -461,7 +461,8 @@ class TestCIModelPipeline:
     """
 
     @pytest.fixture(scope="class")
-    def gateways(self) -> dict[str, Any]:
+    @classmethod
+    def gateways(cls) -> dict[str, Any]:
         gws: dict[str, Any] = {}
         if not _DS_SKIP:
             gws["deepseek"] = {"type": "ds", "gateway": _build_ds_gateway(), "pid": "ci-ds"}
