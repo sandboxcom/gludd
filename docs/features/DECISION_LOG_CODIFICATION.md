@@ -1,7 +1,7 @@
 # Decision-log codification
 
-**Status:** Core and opt-in application adapter implemented; bounded authenticated
-analysis API implemented; automatic live-flow integration pending.
+**Status:** Core and bounded authenticated analysis API implemented; CLI and
+opt-in live REVIEW integration implemented; durable integration pending.
 
 **Presentation contract:** `decision-log-codification-v1`
 
@@ -22,13 +22,15 @@ exact codified hit or invokes the supplied agent fallback exactly once after a
 typed abstention. An end-to-end core test covers signed evidence, approval,
 activation, a zero-call rule hit, fallback, and rollback.
 `DecisionCodificationAdapter` now binds the verified reader, runtime, project,
-and policy to an explicit daemon/EventLoop injection. It is disabled by default,
-so existing agent behavior is unchanged. An authenticated, analysis-only HTTP
-route now exposes that adapter without exposing executable artifacts or lifecycle
-controls. Automatic live-flow invocation, durable database/configuration,
-recorder capture, outcome feedback, and CLI remain pending. Therefore no
-production traffic is currently served by a codified rule, and avoided-call
-metrics remain an integration outcome rather than a deployed claim.
+and policy to an explicit daemon/EventLoop injection. It remains opt-in and
+disabled by default, so existing behavior is unchanged unless an operator
+injects it. The authenticated, analysis-only HTTP route and operator CLI expose
+proposal analysis without executable artifacts or lifecycle controls. The live
+in-process REVIEW decision point can use the injected adapter, but no deployment
+claim follows from that wiring: durable multiworker configuration,
+recorder/outcome feedback, and deployed live-traffic proof remain pending.
+Avoided-call metrics therefore remain an integration outcome rather than a
+deployed claim.
 
 ```text
 verified replay bundle -> safe envelope -> offline candidate + replay report
@@ -68,7 +70,7 @@ construct one from an arbitrary log or an unverified bundle. The remaining
 recorder integration supplies the signed decision events; it does not weaken
 this verified-read boundary.
 
-## Bounded authenticated analysis API
+## Bounded authenticated analysis API and CLI
 
 `POST /api/v1/decision-codification/analyze` exposes proposal-side analysis
 through the `analyze_decision_logs` handler. The existing daemon
@@ -97,9 +99,20 @@ Validation, scope, and backend failures use bounded generic errors rather than
 reflecting input or exception content.
 
 This endpoint does not approve or activate a candidate, mutate a lifecycle
-pointer, or expose signing material. CLI, automatic live-flow invocation, and
-durable configuration remain pending. The API therefore adds a safe operator
+pointer, or expose signing material. The API therefore adds a safe operator
 analysis boundary, not autonomous decision execution.
+
+`gludd decision-codification analyze` is the matching proposal-only operator
+surface. It requires an explicit `--project`, 1-256 repeated `--run-id` values,
+SHA-256 training-recipe and dependency-lock digests, timezone-aware
+`--created-at` and `--expires-at` values with a positive lifetime of at most 366
+days, `--maximum-use-count` from 1-1,000,000, and
+`--estimated-tokens-per-call` from 0-10,000,000. It uses the existing
+`GLUDD_AUTH_PSK` project-bound bearer authentication and accepts no credential or
+key on the command line. The client refuses redirects, applies a fixed request
+timeout, enforces a 128 KiB response cap while streaming, and validates the
+strict `DecisionAnalysisResponse` before printing safe summaries only. It has no
+lifecycle, key, artifact, or evidence surface.
 
 ## Offline learning is proposal-only
 
@@ -143,6 +156,31 @@ closed vocabulary, and preserves the bounded abstention reason.
 `DecisionCodificationAdapter` exposes that contract through an immutable
 project/policy binding. The application caller must still choose the decision
 point, supply its existing fallback, and record terminal outcomes.
+
+### Opt-in live REVIEW integration
+
+The in-process return-review path now supplies `DecisionKind.REVIEW` to an
+explicitly injected adapter. The adapter remains opt-in and disabled by default;
+without it, the established reviewer path is unchanged. With it, an exact
+REVIEW hit skips the reviewer, while abstention or adapter error invokes the
+reviewer exactly once off-loop through the event loop's bounded worker path.
+
+The only codified REVIEW action mapping is deliberately conservative:
+`approve -> complete`, `request_changes -> needs_more_work`, and
+`reject -> failed`. Fallback-only reviewer decisions retain their original
+`TaskDecision`; when the resolver needs a closed REVIEW action, `blocked`,
+`manual_hold`, `ignore_duplicate`, and unknown values are represented as
+non-approval `reject`. Invalid codified actions or missing digest attribution
+fail closed to the reviewer.
+
+The live path preserves stable idempotency inputs: retries derive stable
+correlation and side-effect IDs from the return ID,
+`return-review:{return_id}` and `task-decision:{return_id}`. Managed
+self-improvement refuses codified resolution during normalization and uses the
+existing reviewer/promotion path. Codification-specific audit data keeps
+content-free attribution: decision source, candidate and receipt digests, and
+closed fallback/normalization reasons only, never result summaries or feature
+values.
 
 ## Immutable human approval
 
@@ -222,14 +260,18 @@ test demonstrates candidate mining, exact human approval, activation, a
 zero-fallback rule hit, an unseen-context fallback, and rollback continuity.
 `DecisionCodificationAdapter` additionally supplies explicit injection through
 daemon application state and `EventLoop`; integration tests prove the default
-is disabled, an exact hit makes no fallback call, and every tested abstention
-makes exactly one fallback call.
+is disabled. Live REVIEW tests prove an exact hit makes no reviewer call, every
+tested abstention or adapter failure makes exactly one reviewer call off-loop,
+managed self-improvement refuses codified resolution, and retry identities and
+content-free attribution remain stable. CLI tests cover request construction,
+existing authentication, response bounds, safe output, and fixed diagnostics.
 
-The single-writer production integration slice still owns automatic replay
-capture, automatic live-flow invocation at selected decision points, terminal
-outcome feedback, durable multiworker repositories and migration, permissions,
-durable configuration, and CLI. Shared schema and infrastructure changes must
-land once and merge forward.
+The remaining single-writer production integration owns automatic replay
+capture, terminal outcome feedback, durable multiworker repositories and
+migration, permissions, and durable configuration. In short, durable
+multiworker configuration, recorder/outcome feedback, and deployed live-traffic
+proof remain pending. Shared schema and infrastructure changes must land once
+and merge forward.
 
 Focused tests live under `tests/unit/test_decision_codification_*.py`. The
 documentation drift test is

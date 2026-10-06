@@ -1228,31 +1228,32 @@ flowchart LR
 <!-- ============================================================ -->
 <section data-contract="decision-log-codification-v1">
   <p class="stage-kicker">Repeated decisions &middot; verified evidence to reversible automation</p>
-  <h2>Decision-log codification <span class="badge-yellow">Bounded analysis API ready; live flow pending</span></h2>
+  <h2>Decision-log codification <span class="badge-yellow">CLI + opt-in REVIEW ready; durable proof pending</span></h2>
   <div class="two-col">
     <div>
       <h3>Trust only exact evidence</h3>
-      <ul class="bullets-tight">
+      <ul class="bullets-tight" style="font-size:0.58em;">
         <li><strong>Verified signed bundles:</strong> <code>DecisionLogAnalyzer</code> mints source markers only after complete <code>RunBundleStore.read_verified()</code> output.</li>
         <li><strong>Exact context or abstain:</strong> project, policy, guards, schema, and an observed context signature must match; uncertainty returns <code>DecisionAbstentionV1</code>.</li>
-        <li><strong>zero-LLM hit:</strong> <code>DecisionResolver</code> runs one verified leaf through the deterministic <code>RuleEngine</code>, or calls the supplied fallback once after abstention.</li>
-        <li><strong>Safe opt-in:</strong> <code>DecisionCodificationAdapter</code> binds project and policy through daemon/EventLoop injection and is disabled by default.</li>
-        <li><strong>Auth before analysis:</strong> <code>/api/v1/decision-codification/analyze</code> requires matching authenticated, request, and adapter project scope.</li>
-        <li><strong>Bounded request:</strong> 1-256 unique safe run IDs, a 64 KiB body, strict digests and time/use bounds.</li>
+        <li><strong>zero-LLM hit / Live REVIEW:</strong> <code>DecisionResolver</code> exact hit: zero reviewer calls; abstention/error: one off-loop reviewer call.</li>
+        <li><strong>Conservative mapping:</strong> approve -> complete; request_changes -> needs_more_work; reject -> failed.</li>
+        <li><strong>Stable idempotency:</strong> stable correlation + side-effect IDs; managed self-improvement refuses codified resolution.</li>
+        <li><strong>Safe opt-in:</strong> <code>DecisionCodificationAdapter</code> is opt-in; disabled by default. Codification keeps content-free attribution to source, digests, and closed reasons.</li>
       </ul>
     </div>
     <div>
-      <h3>Approval and ZDD lifecycle</h3>
-      <ul class="bullets-tight">
-        <li><strong>Human approval:</strong> an authorized person approves one exact candidate/report digest; create-only HMAC receipts cannot be rewritten.</li>
-        <li><strong>Safe response:</strong> at most 128 digest/count summaries plus closed rejection enums; no evidence, project IDs, run IDs, or keys.</li>
-        <li><strong>Analysis only:</strong> no approval or activation, lifecycle write, or active-pointer mutation.</li>
-        <li><strong>Stages:</strong> shadow 0% &rarr; canary 1% &rarr; 10% &rarr; 50% &rarr; active 100%, with stable project-scoped cohorts.</li>
-        <li><strong>Atomic rollback:</strong> restore the newest verified compatible generation, or remove the pointer so all traffic abstains.</li>
+      <h3>Bounded API, CLI, and lifecycle</h3>
+      <ul class="bullets-tight" style="font-size:0.58em;">
+        <li><strong>Auth before analysis:</strong> <code>/api/v1/decision-codification/analyze</code> requires matching authenticated, request, and adapter project scope.</li>
+        <li><strong>Bounded request:</strong> 1-256 unique safe run IDs, a 64 KiB body, strict digests and time/use bounds.</li>
+        <li><strong>CLI:</strong> <code>gludd decision-codification analyze</code> has explicit project/run/digest/time/use bounds and existing auth.</li>
+        <li><strong>Safe output:</strong> 128 KiB response cap; safe summaries only (at most 128 digest/count summaries); no lifecycle/key/artifact/evidence surface.</li>
+        <li><strong>Analysis only:</strong> no approval or activation; Human approval remains bound to one exact candidate/report digest.</li>
+        <li><strong>ZDD:</strong> shadow 0% &rarr; canary 1% &rarr; 10% &rarr; 50% &rarr; active 100%. <strong>Atomic rollback:</strong> restore a verified generation or make all traffic abstain.</li>
       </ul>
     </div>
   </div>
-  <p class="honest-note">Core and adapter tests prove analysis, approval, activation, zero fallback on an exact hit, one fallback after abstention, and rollback. The HTTP route is authenticated, bounded, content-safe, and proposal-only. CLI, live-flow, durable config pending; recorder/outcome feedback, multiworker storage, and live-traffic evidence also remain. No live avoided-call claim is made yet.</p>
+  <p class="honest-note">Core tests prove the proposal and lifecycle; live REVIEW and CLI tests prove the bounded integration above. The adapter remains opt-in/default-disabled; durable multiworker configuration, recorder/outcome feedback, and deployed live-traffic proof remain pending. No live avoided-call claim is made.</p>
   <p class="cite">Sources: docs/features/DECISION_LOG_CODIFICATION.md &middot; RapidFuzz #432 &middot; scikit-learn #15629 / discussion #25411 &middot; OPA #2379 / #1514</p>
 </section>
 

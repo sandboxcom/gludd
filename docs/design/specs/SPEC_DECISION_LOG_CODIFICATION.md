@@ -1,13 +1,14 @@
 # Decision-log mining and deterministic codification
 
-**Status: CORE AND ANALYSIS API IMPLEMENTED; LIVE INTEGRATION PENDING**
+**Status: CORE, ANALYSIS API, CLI, AND OPT-IN LIVE REVIEW IMPLEMENTED;
+DURABLE INTEGRATION PENDING**
 
 **Scope:** Mine repeated, successful agent decisions into reviewable, versioned
 decision trees that Gludd can execute without an agent/LLM call. This document
 specifies the safe evidence boundary, offline learner, authenticated analysis
-API, approval lifecycle, runtime lookup, and zero-downtime operation. The
-standalone core and bounded analysis API are implemented; automatic daemon/event-
-loop activation and durable multiworker integration are not.
+API and CLI, approval lifecycle, runtime lookup, and zero-downtime operation.
+The standalone core, bounded analysis surfaces, and opt-in live REVIEW decision
+point are implemented; durable multiworker operation and deployed proof are not.
 
 ## 0. Implementation status (2026-10-06)
 
@@ -22,7 +23,10 @@ agent fallback exactly once after typed abstention. `DecisionCodificationAdapter
 binds those capabilities to one immutable project/policy scope and is available
 through explicit injection into daemon application state and `EventLoop`.
 `POST /api/v1/decision-codification/analyze` now exposes that adapter through a
-bounded authenticated, analysis-only HTTP surface.
+bounded authenticated, analysis-only HTTP surface, and
+`gludd decision-codification analyze` provides its bounded operator client. The
+in-process return-review path can now resolve `DecisionKind.REVIEW` through the
+injected adapter.
 
 The core enforces exact observed-context signatures, typed abstention,
 create-only HMAC-authenticated artifacts, digest-bound human approval, stable
@@ -35,12 +39,13 @@ approval, staged activation, an exact zero-fallback hit, an unseen-context
 fallback, and atomic rollback. `DecisionLogAnalyzer` alone mints
 `VerifiedDecisionSourceV1` after `read_verified()` succeeds.
 
-The adapter is disabled by default, and integration coverage proves that exact
-active rules skip fallback while every tested abstention calls it exactly once.
-The single-writer R4 integration remains for recorder emission, automatic
-live-flow invocation at selected decision points, terminal outcome feedback,
-durable database repositories and migration, durable configuration, and CLI.
-No production traffic is claimed to use this core today.
+The adapter is opt-in and disabled by default. Live REVIEW coverage proves that
+exact active rules skip the reviewer while abstention and adapter failures call
+it exactly once off-loop. The remaining single-writer integration is recorder
+emission and terminal outcome feedback plus durable repositories, migration,
+and configuration. Thus durable multiworker configuration, recorder/outcome
+feedback, and deployed live-traffic proof remain pending. No production traffic
+is claimed to use this core today.
 
 ## 1. Outcome and non-goals
 
@@ -124,7 +129,7 @@ can propose but cannot approve. An approver can approve only an exact digest. A
 runtime worker can execute only an active, verified generation. An agent cannot
 write directly to the active pointer.
 
-### 3.1 Bounded authenticated analysis API
+### 3.1 Bounded authenticated analysis API and CLI
 
 `POST /api/v1/decision-codification/analyze` calls `analyze_decision_logs` and
 accepts `DecisionAnalysisRequest`; successful calls return
@@ -150,10 +155,22 @@ counts, and closed rejection enums. Project IDs, run IDs, events, normalized
 evidence, exported rules, receipt bodies, credentials, and exception text are
 not serialized. Validation and analysis errors are generic and content-free.
 
-The route does not approve or activate candidates, write lifecycle receipts,
-or move an active pointer. CLI, automatic live-flow invocation, and durable
-configuration remain pending. Approval and rollout continue through their
-separate human-authorized lifecycle.
+`gludd decision-codification analyze` constructs that exact request. It requires
+an explicit `--project`, 1-256 repeated `--run-id` values, SHA-256
+training-recipe and dependency-lock digests, timezone-aware `--created-at` and
+`--expires-at` values with a positive lifetime of at most 366 days,
+`--maximum-use-count` from 1-1,000,000, and
+`--estimated-tokens-per-call` from 0-10,000,000. The command reuses
+`GLUDD_AUTH_PSK` for existing project-bound daemon authentication, refuses
+redirects, and applies a fixed request timeout. It enforces a 128 KiB response
+cap while streaming, validates `DecisionAnalysisResponse`, and prints safe
+summaries only.
+
+The API does not approve or activate candidates, write lifecycle receipts, or
+move an active pointer; the CLI likewise exposes analysis only. The CLI accepts
+no credential or key argument and has no lifecycle, key, artifact, or evidence
+surface. Approval and rollout continue through their separate human-authorized
+lifecycle.
 
 ## 4. Normalized decision envelope
 
@@ -372,6 +389,31 @@ Fallback reasons are a closed enum: `no_active_rule`, `scope_miss`,
 `expired`, `revoked`, `canary_excluded`, `drift_hold`, `integrity_failure`, and
 `runtime_error`. Failures never silently select a default action.
 
+### 9.1 Opt-in live REVIEW integration
+
+The in-process return-review decision point supplies `DecisionKind.REVIEW` only
+when `DecisionCodificationAdapter` was explicitly injected. The adapter remains
+opt-in and disabled by default; otherwise the established reviewer path is
+unchanged. An exact REVIEW hit skips the reviewer. Any abstention or adapter
+error invokes the reviewer exactly once off-loop through the event loop's
+bounded worker execution.
+
+Only three codified actions map into `TaskDecision`:
+`approve -> complete`, `request_changes -> needs_more_work`, and
+`reject -> failed`. The resolver represents fallback-only `blocked`,
+`manual_hold`, `ignore_duplicate`, and unknown reviewer decisions as the
+conservative non-approval action `reject`, while returning the reviewer's
+original `TaskDecision` unchanged. An invalid codified action or missing digest
+attribution fails closed to review.
+
+The path keeps stable idempotency inputs: the return ID derives stable
+correlation and side-effect IDs, `return-review:{return_id}` and
+`task-decision:{return_id}`. The bounded feature projection never infers risk,
+and managed self-improvement refuses codified resolution during normalization.
+Audit records add content-free attribution only: resolution source, candidate
+and decision-receipt digests, and closed fallback or normalization reasons,
+never return summaries or feature values.
+
 ## 10. Drift, expiry, and revocation
 
 Every applied rule receives a terminal outcome when one becomes available.
@@ -491,6 +533,10 @@ Tests follow TDD and include:
 - immutable approval, chained receipt, authorization, expiry, renewal,
   revocation, and tamper tests;
 - exact lookup/fallback/idempotency tests for every refusal reason;
+- live REVIEW tests for exact-hit bypass, one off-loop fallback, conservative
+  action mapping, managed self-improvement refusal, and content-free attribution;
+- CLI tests for bounded request construction, existing authentication, response
+  size/schema validation, safe output, and fixed content-free errors;
 - multiworker atomic pointer, canary bucketing, in-flight generation binding,
   ZDD promotion, and rollback tests;
 - metrics cardinality and privacy tests;
@@ -534,6 +580,12 @@ unit, integration, ZDD, replay, privacy, and coverage phases.
 - **DLC-AC-14:** API requests and responses remain bounded and content-safe;
   the endpoint exposes no evidence, executable rule, approval, activation, or
   key material.
+- **DLC-AC-15:** An injected live REVIEW exact hit skips the reviewer;
+  abstention or error invokes it exactly once off-loop, and the default-disabled
+  path remains unchanged.
+- **DLC-AC-16:** The proposal-only CLI preserves API bounds and existing auth,
+  enforces its response cap, validates safe summaries, and exposes no lifecycle,
+  key, artifact, or evidence input.
 
 ## 16. Landing record and remaining ownership
 
@@ -613,14 +665,23 @@ counts, and closed rejection enums. Focused tests cover authentication ordering,
 exact project scope, parameter and body bounds, forbidden lifecycle fields,
 content-safe errors, and the absence of approval or activation behavior.
 
-### Slice R4c: single-writer production integration (remaining)
+### Slice R4c: operator CLI and opt-in live REVIEW (landed)
 
-One integration owner alone edits shared surfaces: replay capture, automatic
-live-flow invocation and outcome feedback, database
-models/repositories/migration, durable config, CLI, and make contracts. This
-slice adds production integration and live-traffic ZDD evidence. No second
-branch independently creates the migration, config keys, make targets, or
-daemon wiring.
+The proposal-only CLI validates the strict request, reuses existing daemon
+authentication, bounds and validates the response, and prints safe summaries.
+The in-process REVIEW decision point uses an explicitly injected adapter off-loop
+with exact-hit reviewer bypass, one-call fallback, stable retry identities,
+conservative action mapping, managed self-improvement refusal, and content-free
+attribution.
+
+### Slice R4d: durable production integration (remaining)
+
+One integration owner alone edits the remaining shared surfaces: replay capture,
+outcome feedback, database models/repositories/migration, durable multiworker
+config, and make contracts. Durable multiworker configuration,
+recorder/outcome feedback, and deployed live-traffic proof remain pending. No
+second branch independently creates the migration, config keys, make targets,
+or daemon wiring.
 
 ## 17. Primary documentation and user/forum findings
 
