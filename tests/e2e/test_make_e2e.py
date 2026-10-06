@@ -13,6 +13,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-make.ts"
 
@@ -34,6 +36,7 @@ def _run_plugin(
         env["OPENCODE_SUBAGENT"] = ""
         env["GLUDD_GATE_PYTEST_RUNNING"] = "0"
         env["GLUDD_GATE_BASETEMP"] = "/tmp/gludd-gate-basetemp-non-existent"
+        env["GLUDD_HOT_MODULE_PREFIX"] = "/tmp/gludd-make-e2e-no-hot-module-"
         if env_override:
             env.update(env_override)
         proc = subprocess.run(
@@ -107,6 +110,118 @@ def test_unknown_make_target_blocked():
     assert result is not None
     assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
     assert "unknown Make target" in result.get("message", "")
+
+
+def test_target_from_explicit_make_fragment_allowed(tmp_path: Path):
+    """Targets in ordered explicit make/*.mk fragments are discoverable."""
+    make_dir = tmp_path / "make"
+    make_dir.mkdir()
+    (tmp_path / "Makefile").write_text("include make/10-quality.mk\n")
+    (make_dir / "10-quality.mk").write_text("lint:\n\t@true\n")
+
+    result = _bash_assert(
+        _bash_code("make lint"),
+        env_override={"GLUDD_REPO_ROOT": str(tmp_path)},
+    )
+
+    assert result is None or result.get("permissionDecision") != "deny", (
+        f"included make target should be allowed, got: {result}"
+    )
+
+
+def test_unknown_target_with_valid_explicit_fragments_is_denied(tmp_path: Path):
+    """A valid split layout does not weaken unknown-target denial."""
+    make_dir = tmp_path / "make"
+    make_dir.mkdir()
+    (tmp_path / "Makefile").write_text("include make/10-quality.mk\n")
+    (make_dir / "10-quality.mk").write_text("lint:\n\t@true\n")
+
+    result = _bash_assert(
+        _bash_code("make absent-target"),
+        env_override={"GLUDD_REPO_ROOT": str(tmp_path)},
+    )
+
+    assert result is not None
+    assert result.get("permissionDecision") == "deny"
+    assert "unknown Make target 'absent-target'" in result.get("message", "")
+
+
+def test_invalid_hot_module_falls_back_to_include_aware_default(tmp_path: Path):
+    """A broken hot override retains the compiled include-aware enforcement."""
+    make_dir = tmp_path / "make"
+    make_dir.mkdir()
+    (tmp_path / "Makefile").write_text("include make/10-quality.mk\n")
+    (make_dir / "10-quality.mk").write_text("lint:\n\t@true\n")
+    hot_prefix = tmp_path / "broken-hot-"
+    (tmp_path / "broken-hot-enforce-make.js").write_text("not valid javascript {{{\n")
+
+    result = _bash_assert(
+        _bash_code("make lint"),
+        env_override={
+            "GLUDD_REPO_ROOT": str(tmp_path),
+            "GLUDD_HOT_MODULE_PREFIX": str(hot_prefix),
+        },
+    )
+
+    assert result is None or result.get("permissionDecision") != "deny", (
+        f"invalid hot module must fall back to include-aware defaults, got: {result}"
+    )
+
+
+def test_symlinked_make_directory_outside_repo_fails_closed(tmp_path: Path):
+    """An exact include cannot escape through a symlinked make/ directory."""
+    repo = tmp_path / "repo"
+    external = tmp_path / "external"
+    repo.mkdir()
+    external.mkdir()
+    (repo / "Makefile").write_text("include make/10-quality.mk\n")
+    (external / "10-quality.mk").write_text("lint:\n\t@true\n")
+    (repo / "make").symlink_to(external, target_is_directory=True)
+
+    result = _bash_assert(
+        _bash_code("make lint"),
+        env_override={"GLUDD_REPO_ROOT": str(repo)},
+    )
+
+    assert result is not None
+    assert result.get("permissionDecision") == "deny"
+    assert "unknown Make target 'lint'" in result.get("message", "")
+
+
+@pytest.mark.parametrize(
+    "unsafe_include",
+    [
+        "include make/../outside.mk",
+        "include other/outside.mk",
+        "include $(MAKE_FRAGMENT)",
+        "-include make/10-quality.mk",
+        "include make/10-quality.mk\ninclude make/10-quality.mk",
+    ],
+    ids=["traversal", "outside", "dynamic", "optional", "duplicate"],
+)
+def test_unsafe_fragment_layouts_fail_closed_without_content_leak(
+    tmp_path: Path,
+    unsafe_include: str,
+):
+    """Ambiguous or unsafe include layouts deny even root-declared targets."""
+    marker = "private-layout-marker-must-not-leak"
+    make_dir = tmp_path / "make"
+    make_dir.mkdir()
+    (tmp_path / "Makefile").write_text(
+        f"{unsafe_include}\nlayout-probe:\n\t@echo {marker}\n"
+    )
+    (make_dir / "10-quality.mk").write_text("layout-probe:\n\t@true\n")
+
+    result = _bash_assert(
+        _bash_code("make layout-probe"),
+        env_override={"GLUDD_REPO_ROOT": str(tmp_path)},
+    )
+
+    assert result is not None
+    assert result.get("permissionDecision") == "deny"
+    message = result.get("message", "")
+    assert "unknown Make target 'layout-probe'" in message
+    assert marker not in message
 
 
 def test_pipe_metachar_blocked():
