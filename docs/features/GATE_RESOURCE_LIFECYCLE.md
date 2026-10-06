@@ -287,6 +287,134 @@ when intermediate descendants exit. Gludd therefore discovers repository
 membership from Git, protects each recorded owner tree, and verifies command
 identity again immediately before signaling.
 
+#### Identity-verified gate-tree termination
+
+The historical force-kill path selected one PID from a host-global lock or a
+background PID file, sent signals only to that process, and then removed lock
+records whether or not descendants survived. Killing the root was not proof
+that pytest, xdist, coverage, or shard-runner descendants had stopped. A reused
+PID or another checkout's similarly shaped command could also make a broad
+process-group signal destructive. The replacement contract acts only on the
+tree rooted at the checkout's verified gate owner and never treats lock removal
+as termination evidence.
+
+**Marked ownership and legacy migration.** New gates publish
+`.gate-logs/gate-run.lock` atomically with marker `gludd-gate-run-v1`, state
+`active`, the owner PID, its stable `ps` start time, canonical checkout root,
+and derived project namespace. Admission requires every field to match the
+current checkout and live owner command. A marked `termination_failed` record
+is retryable only through the exact target identities retained by the failed
+attempt; normal gate acquisition and repository mutation continue to refuse it.
+
+A rolling upgrade may encounter the exact legacy `{"pid", "started_at"}` lock
+whose second field is the acquisition epoch. It is admitted only when all of
+these independent facts agree:
+
+- the schema has exactly those two fields and the PID is greater than one;
+- the PID is live and its `ps` start time places lock acquisition from two
+  seconds before through 300 seconds after process start;
+- the command is one direct `make` or `gmake` invocation of only `gate` or
+  `gate-refresh`, allowing only the known directory/silence flags and Make
+  assignments;
+- the live process working directory resolves to this canonical checkout; and
+- its explicit `GLUDD_PROJECT_NAMESPACE`, or the default namespace when no
+  override exists, equals this checkout's derived namespace.
+
+Together these checks revalidate PID, start time, command, checkout root, and project namespace
+before a legacy record gains destructive authority.
+
+The complete legacy proof and unchanged two-field lock are checked again
+immediately before the first signal. An ambiguous schema, unreadable working
+directory or environment, extra target, clock mismatch, root mismatch, or
+namespace mismatch refuses without signaling or rewriting the record. A fully
+terminated legacy run removes its lock and records `lock_schema: legacy` in the
+evidence. If any verified survivor remains, the lock is atomically migrated to
+the marked format with state `termination_failed`, stable owner identity,
+canonical root and namespace, and the exact target inventory. Migration never
+turns incomplete cleanup into an active or absent lock.
+
+**Descendant-first measured boundary.** After ownership admission, one bounded
+process-table snapshot builds the owner tree through PPID lineage, including
+descendants in different process groups. The order is deepest descendant first,
+with PID as the deterministic tie-breaker. Immediately before every signal,
+the candidate must still have the same PID, start time, and complete command;
+an exited candidate is converged, while a reused or inaccessible identity is
+skipped and prevents a success claim. Root and namespace come from the admitted
+lock and live owner, and the ownership lock is revalidated again before any
+lock mutation.
+
+Each still-owned candidate receives `SIGTERM`. The production defaults poll at
+100 ms through a 10-second `SIGTERM` grace. Only verified survivors then receive
+`SIGKILL`, followed by a one-second `SIGKILL` observation using the same 100 ms
+poll. No signal is sent to a sibling outside the admitted tree, and no negative
+process-group signal is used. The snapshot is intentionally finite: a process
+created after admission is not guessed into the target set. A replacement gate
+therefore remains forbidden until the recorded owner and every admitted target
+are terminal and the primary ownership lock has been released.
+
+**Terminal evidence, refusal, and resource release.** An applied, admitted
+attempt atomically publishes `.gate-status` with either `gate-kill terminated`
+or `gate-kill termination-failed`, the survivor list, and
+`=== GATE: ABORTED ===`. It also writes
+`.gate-logs/gate-kill-evidence.json` with the lock schema, root, namespace,
+recorded time, outcome, TERM/KILL/skipped/survivor PID sets, and every target's
+PID, PPID, process group, start time, command, and depth. `ABORTED` is the only
+terminal claim for an operator-requested kill; it can never become PASS or
+ordinary test FAIL evidence.
+
+On complete termination, the primary lock remains in place while auxiliary
+`.gate-background.pid` and namespaced `async-gate.lock` / `gate.lock` records
+are removed only when their PID belongs to the verified target set. The primary
+lock is then removed only if its marker, PID, start time, and namespace still
+match the admitted record. A live survivor, permission failure, identity
+replacement, or failed post-KILL observation retains a marked
+`termination_failed` lock and blocks a replacement gate. A missing lock is an
+idempotent no-op; an existing unreadable or mismatched lock is a refusal. Dry
+run reports the exact plan without signals, status changes, evidence writes, or
+lock cleanup.
+
+**Zero-downtime delivery and rollback.** This is a gate control-plane change:
+it adds no application listener, schema, credential, daemon, or production
+restart. New gates write the marked schema while an already-running legacy gate
+keeps its record, so mixed-version rollout needs no hot adoption. To replace a
+gate, stop new admission, terminate the exact old owner, require ABORTED status
+plus JSON evidence with no survivors, and only then start the replacement gate
+through normal acquisition. Application traffic continues throughout that ZDD
+replacement-gate flow.
+
+Rollback is also ordered. Stop new gate admission, use the new terminator to
+finish or retry every marked `active` / `termination_failed` owner, require the
+same terminal evidence and absent ownership lock, and only then revert the
+scripts and tests. Manually deleting a marked lock, starting an overlapping
+gate, or reverting while a marked owner remains live is outside the rollback
+contract because the legacy implementation cannot prove that ownership.
+
+The acceptance replay is warning-strict and covers a four-level tree spanning
+three process groups, TERM-only exits, KILL escalation, PID reuse, wrong roots
+and namespaces, permission/refusal paths, fail-closed retry, auxiliary-lock
+ownership, and an unrelated sibling that receives no signal. The default
+10-second + one-second deadlines and 100 ms observation interval are runtime
+bounds, not estimates derived from test duration. The merged focused family
+passes 47/47 tests with warnings treated as errors; targeted coverage measures
+`kill_owned_gate.py` at 91%, above the 85% aggregate and 75% per-file floors.
+
+Long-lived practitioner reports establish why every boundary is necessary:
+
+- [CPython issue #111873](https://github.com/python/cpython/issues/111873), open
+  since 2023, reproduces `ProcessPoolExecutor` workers surviving a killed parent
+  on Linux and macOS and notes that parent-PID polling can fail after PID reuse.
+- [GitHub Actions runner issue #3341](https://github.com/actions/runner/issues/3341),
+  open since 2024, shows a runner logging "kill entire process tree" while the
+  cited path killed only the root process.
+- [Bazel issue #11910](https://github.com/bazelbuild/bazel/issues/11910), filed
+  in 2020, reports builds and tests killed after a waited PID was reused as a
+  different process-group identity. Gludd therefore revalidates stable process
+  identity and signals individual descendants rather than a recycled group ID.
+- [GitLab Runner issue #6189](https://gitlab.com/gitlab-org/gitlab-runner/-/issues/6189),
+  reported in 2019, records cancellation leaving a stale lock that breaks the
+  next CI job. Gludd removes only unchanged, proven-owned locks and retains a
+  fail-closed record whenever terminal cleanup is incomplete.
+
 #### Legacy-watchdog compatibility shield
 
 Repository-wide owner discovery protects gates only after every task watchdog
