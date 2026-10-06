@@ -85,8 +85,9 @@ class TestGitWorkflowTargetRecipeContent:
 
     def _recipe(self, target: str) -> str | None:
         m = re.search(
-            rf"{re.escape(target)}:\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
-            _makefile_src(), re.DOTALL,
+            rf"^{re.escape(target)}:[^\n]*\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
+            _makefile_src(),
+            re.DOTALL | re.MULTILINE,
         )
         return m.group(1) if m else None
 
