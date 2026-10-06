@@ -131,9 +131,8 @@ from general_ludd.self_improve.runtime import build_managed_self_improve_runner
 _runtime_lease_bucket_key = _runtime_helpers.runtime_lease_bucket_key
 
 if TYPE_CHECKING:
-    # TYPE_CHECKING-only: avoids a runtime import cycle and keeps the drain
-    # hook decoupled from the IPC layer at import time. ``WriteQueue`` is only
-    # used as a type annotation on the ``inbound_queue`` kwarg.
+    # TYPE_CHECKING-only: keep injected boundaries decoupled at import time.
+    from general_ludd.decision_codification.service import DecisionCodificationAdapter
     from general_ludd.ipc.queue import WriteQueue
 
 logger = logging.getLogger(__name__)
@@ -285,12 +284,14 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
             [AsyncSession, Path, str], Any
         ]
         | None = None,
+        decision_codification: DecisionCodificationAdapter | None = None,
     ) -> None:
         """Initialize the loop and its injected service boundaries."""
         self.worker_base_url = worker_base_url
         self.config = config or {}
         self._daemon_state = daemon_state
         self._run_recorder = run_recorder
+        self._decision_codification = decision_codification
         self._prompt_variant_selector = prompt_variant_selector
         self._checkpointer = checkpointer
         self._utilization_tracker = utilization_tracker
@@ -459,6 +460,11 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
         self._inbound_queue: WriteQueue | None = inbound_queue
         self._service_discovery = service_discovery
         self._service_discovery_last_run: float = 0.0
+
+    @property
+    def decision_codification(self) -> DecisionCodificationAdapter | None:
+        """Return the immutable opt-in decision-codification boundary."""
+        return self._decision_codification
 
     def _track_background_task(self, task: asyncio.Task[None]) -> None:
         """Register a fire-and-forget task so its reference is held until done.

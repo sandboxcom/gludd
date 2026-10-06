@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator, Callable, Iterator, MutableMapping, M
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import yaml
 from fastapi import FastAPI
@@ -164,6 +164,9 @@ from general_ludd.sts.rotator import (
 )
 from general_ludd.util.async_lifecycle import quiesce_task_before_drain
 from general_ludd.writer import WriterProcess
+
+if TYPE_CHECKING:
+    from general_ludd.decision_codification.service import DecisionCodificationAdapter
 
 _DEAD_CODE_REFS: list[object] = [
     _dc_VMSandboxHealth,
@@ -2387,6 +2390,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             compaction_controller=getattr(app.state, "_compaction_aggressiveness_controller", None),
             credit_tracker=getattr(app.state, "_credit_tracker", None),
             service_discovery=service_discovery,
+            decision_codification=app.state.decision_codification,
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner
@@ -3255,8 +3259,18 @@ def create_daemon_app(
     templates_dir: str | None = None,
     playbooks_dir: str | None = None,
     _db_path_override: str | None = None,
+    decision_codification: DecisionCodificationAdapter | None = None,
 ) -> FastAPI:
     """Create the FastAPI daemon app with the full lifespan wiring."""
+    if decision_codification is not None:
+        from general_ludd.decision_codification.service import (
+            DecisionCodificationAdapter as _DecisionCodificationAdapter,
+        )
+
+        if not isinstance(decision_codification, _DecisionCodificationAdapter):
+            raise TypeError(
+                "decision_codification must be a verified DecisionCodificationAdapter"
+            )
     if tick_interval is None:
         env_tick = os.environ.get("GLUDD_TICK_INTERVAL")
         tick_interval = float(env_tick) if env_tick else 1.0
@@ -3321,6 +3335,7 @@ def create_daemon_app(
     app.state._stats_start_time = time.monotonic()
     app.state._stats_requests = 0
     app.state._stats_responses = 0
+    app.state.decision_codification = decision_codification
 
     from general_ludd.planning.critique import PlanCritique
 
