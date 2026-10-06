@@ -90,6 +90,7 @@ EXPECTED_TOP = {
     "model",
     "self-improve",
     "remediation",
+    "decision-codification",
     "ornith",
     "searx",
     "service",
