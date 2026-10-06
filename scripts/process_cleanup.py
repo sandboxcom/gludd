@@ -12,12 +12,16 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
+import shlex
 import signal
 import subprocess
 import sys
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+
+_MAX_CWD_SNAPSHOT_PIDS = 256
 
 
 @dataclass(frozen=True)
@@ -28,6 +32,7 @@ class ProcessInfo:
     ppid: int
     elapsed_secs: float
     command: str
+    cwd: str | None = None
 
 
 def _parse_elapsed(value: str) -> float:
@@ -66,8 +71,8 @@ def parse_process_table(output: str) -> dict[int, ProcessInfo]:
     return records
 
 
-def snapshot_processes() -> dict[int, ProcessInfo]:
-    """Return one bounded process snapshot; an unavailable ``ps`` is empty."""
+def snapshot_processes(root_pid: int | None = None) -> dict[int, ProcessInfo]:
+    """Return one bounded process snapshot, optionally including one tree's cwd."""
     try:
         result = subprocess.run(
             ["ps", "-eo", "pid,ppid,etime,command"],
@@ -78,7 +83,67 @@ def snapshot_processes() -> dict[int, ProcessInfo]:
         )
     except (OSError, subprocess.SubprocessError):
         return {}
-    return parse_process_table(result.stdout)
+    table = parse_process_table(result.stdout)
+    if root_pid is None or root_pid not in table:
+        return table
+
+    tree = [*descendant_processes(table, root_pid), table[root_pid]]
+    cwds = _snapshot_process_cwds([process.pid for process in tree])
+    for pid, cwd in cwds.items():
+        process = table.get(pid)
+        if process is not None:
+            table[pid] = replace(process, cwd=cwd)
+    return table
+
+
+def _snapshot_process_cwds(pids: list[int]) -> dict[int, str]:
+    """Capture cwd evidence for a bounded PID set, failing closed per PID."""
+    unique_pids = list(dict.fromkeys(pid for pid in pids if pid > 0))
+    bounded_pids = unique_pids[-_MAX_CWD_SNAPSHOT_PIDS:]
+    cwds: dict[int, str] = {}
+    unresolved: list[int] = []
+    for pid in bounded_pids:
+        try:
+            cwd = os.readlink(f"/proc/{pid}/cwd")
+        except OSError:
+            unresolved.append(pid)
+            continue
+        if Path(cwd).is_absolute():
+            cwds[pid] = cwd
+
+    if not unresolved:
+        return cwds
+    try:
+        result = subprocess.run(
+            [
+                "lsof",
+                "-a",
+                "-p",
+                ",".join(str(pid) for pid in unresolved),
+                "-d",
+                "cwd",
+                "-Fn",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return cwds
+
+    current_pid: int | None = None
+    for line in result.stdout.splitlines():
+        if line.startswith("p"):
+            try:
+                current_pid = int(line[1:])
+            except ValueError:
+                current_pid = None
+        elif line.startswith("n") and current_pid in unresolved:
+            cwd = line[1:]
+            if Path(cwd).is_absolute():
+                cwds[current_pid] = cwd
+    return cwds
 
 
 def descendant_processes(
@@ -105,7 +170,46 @@ def descendant_processes(
 def namespace_matches(command: str, namespace: str) -> bool:
     """Return whether a command belongs to this exact project namespace."""
     marker = str(namespace).strip()
-    return bool(marker) and marker in command
+    if not marker:
+        return False
+    try:
+        resolved_marker = str(Path(marker).resolve(strict=False))
+    except (OSError, RuntimeError):
+        resolved_marker = marker
+    for candidate in {marker, resolved_marker}:
+        pattern = rf"(?<![A-Za-z0-9_.-]){re.escape(candidate)}(?=$|[/\s'\"=:,;)])"
+        if re.search(pattern, command):
+            return True
+    return False
+
+
+def _cwd_matches_namespace(cwd: str | None, namespace: str) -> bool:
+    """Return whether cwd is the namespace or one of its descendants."""
+    if cwd is None:
+        return False
+    try:
+        cwd_path = Path(cwd).resolve(strict=False)
+        namespace_path = Path(namespace).resolve(strict=False)
+        cwd_path.relative_to(namespace_path)
+    except (OSError, RuntimeError, ValueError):
+        return False
+    return True
+
+
+def _process_matches_namespace(process: ProcessInfo, namespace: str) -> bool:
+    """Match a process using command-path or live-cwd namespace evidence."""
+    return namespace_matches(process.command, namespace) or _cwd_matches_namespace(
+        process.cwd, namespace
+    )
+
+
+def _is_make_process(command: str) -> bool:
+    """Recognize the narrow parent launcher allowed to use descendant proof."""
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return False
+    return bool(words) and Path(words[0]).name in {"make", "gmake"}
 
 
 def process_group_alive(process_group_id: int) -> bool:
@@ -163,8 +267,8 @@ def terminate_tree(
 ) -> list[int]:
     """Terminate a namespaced process tree, children first.
 
-    Every candidate is checked against the namespace immediately before the
-    signal.  A reused PID from another project is skipped and never killed.
+    The supplied table is the bounded identity snapshot used for admission.
+    A reused PID whose current identity belongs elsewhere is never selected.
     """
     candidates = namespaced_process_tree(table, root_pid, namespace=namespace)
     return _terminate_processes(candidates, sig=sig)
@@ -173,15 +277,23 @@ def terminate_tree(
 def namespaced_process_tree(
     table: Mapping[int, ProcessInfo], root_pid: int, *, namespace: str
 ) -> list[ProcessInfo]:
-    """Select one tree only when its root belongs to the exact namespace."""
+    """Select one tree only when its root has fail-closed ownership proof."""
     root = table.get(root_pid)
-    if root is None or not namespace_matches(root.command, namespace):
+    if root is None:
         return []
-    return [
+    descendants = descendant_processes(table, root_pid)
+    matching_descendants = [
         process
-        for process in [*descendant_processes(table, root_pid), root]
-        if namespace_matches(process.command, namespace)
+        for process in descendants
+        if _process_matches_namespace(process, namespace)
     ]
+    root_command_matches = namespace_matches(root.command, namespace)
+    make_identity_proof = _is_make_process(root.command) and (
+        _cwd_matches_namespace(root.cwd, namespace) or bool(matching_descendants)
+    )
+    if not root_command_matches and not make_identity_proof:
+        return []
+    return [*matching_descendants, root]
 
 
 def _terminate_processes(
@@ -212,12 +324,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.root_pid <= 0 or not namespace_path.is_absolute() or namespace_path == Path("/"):
         parser.error("root PID must be positive and namespace must be a non-root absolute path")
 
-    table = snapshot_processes()
+    table = snapshot_processes(args.root_pid)
     root = table.get(args.root_pid)
     if root is None:
         print(f"process not found: pid={args.root_pid}", file=sys.stderr)
         return 2
-    if not namespace_matches(root.command, namespace):
+    candidates = namespaced_process_tree(table, args.root_pid, namespace=namespace)
+    if not candidates:
         print(
             "namespace mismatch: "
             f"pid={args.root_pid} namespace={namespace} command={root.command}",
@@ -225,7 +338,6 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    candidates = namespaced_process_tree(table, args.root_pid, namespace=namespace)
     candidate_pids = [process.pid for process in candidates]
     if args.validate_only:
         print(
