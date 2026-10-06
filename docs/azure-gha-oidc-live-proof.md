@@ -27,12 +27,52 @@ Define these Environment variables:
 - `AZURE_CONTAINERAPP_LOCATION`
 - `AZURE_CONTAINERAPP_WORKLOAD_PROFILE`
 
+Populate and verify those identifiers through the repository-owned controller:
+
+```sh
+make azure-containerapp-live-environment-config \
+  AZURE_LIVE_CONFIG_REPO=sandboxcom/gludd \
+  AZURE_LIVE_CONFIG_GITHUB_ENVIRONMENT=azure-containerapp-live \
+  AZURE_LIVE_CONFIG_AUTH_FILE=/protected/azure-accelerator-auth.json \
+  AZURE_LIVE_CONFIG_RESOURCE_GROUP=gludd-models-eastus \
+  AZURE_LIVE_CONFIG_CONTAINERAPP_ENVIRONMENT=gludd-gpu-environment \
+  AZURE_LIVE_CONFIG_LOCATION=eastus \
+  AZURE_LIVE_CONFIG_WORKLOAD_PROFILE=gpu-t4 \
+  AZURE_LIVE_CONFIG_VALIDATE_ONLY=0
+```
+
+Validation-only mode is the default and does not read the credential file or
+contact GitHub. Live mode loads the protected credential through Gludd's canonical
+credential reader, transfers only the client, tenant, and subscription IDs, and
+never transfers `client_secret`. It inventories the protected Environment without
+printing values, verifies all seven resulting variables, and restores every
+changed variable if any write or verification fails.
+
 Define the non-secret repository variable
 `AZURE_CONTAINERAPP_LIVE_ENABLED=true` only when scheduled and manually
 dispatched live proofs should be admitted. Job-level conditions are evaluated
 before Environment variables are loaded, so the enable switch intentionally is
 a repository variable. Removing it or setting it to any other value makes the
 weekly schedule a zero-compute skipped job.
+
+Use the repository-owned controller instead of an untracked `gh` invocation:
+
+```sh
+make azure-containerapp-live-workflow-gate \
+  AZURE_LIVE_GATE_REPO=sandboxcom/gludd \
+  AZURE_LIVE_GATE_ENABLED=1 \
+  AZURE_LIVE_GATE_VALIDATE_ONLY=0
+```
+
+The target defaults to validation-only mode, disables interactive GitHub CLI
+prompts, reads the existing variable inventory without logging it, updates only
+`AZURE_CONTAINERAPP_LIVE_ENABLED`, verifies the stored value, and restores the
+previous state if verification fails. After dispatching the exact candidate,
+wait until the `live-proof` job has entered `in_progress`; then run the same
+target with `AZURE_LIVE_GATE_ENABLED=0`. Disabling before job admission can make
+the job skip because GitHub evaluates the job-level condition at admission.
+This short enable window also prevents the weekly schedule from provisioning
+compute unexpectedly.
 
 On the existing accelerator Entra application, create one federated identity
 credential with:
@@ -99,6 +139,31 @@ OIDC setup failures as generic Azure failures:
 - [Azure Identity issue 45900](https://github.com/Azure/azure-sdk-for-python/issues/45900)
   exposed workload/managed-identity client-ID coupling in broad default chains;
   Gludd constructs `WorkloadIdentityCredential` directly.
+- [GitHub Community discussion 42133](https://github.com/orgs/community/discussions/42133)
+  records the recurring confusion between shell/environment variables and the
+  Actions `vars` context, and confirms that repository variables can be changed
+  through the GitHub API. Gludd uses the maintained `gh variable` boundary and
+  verifies the result instead of editing workflow source or assuming propagation.
+- [GitHub Community discussion 143795](https://github.com/orgs/community/discussions/143795)
+  demonstrates that a manual dispatch can still yield a skipped job when its
+  job-level condition excludes that event. Gludd therefore treats a dispatched
+  run as insufficient evidence and waits for `live-proof` job admission before
+  closing the enable window.
+
+The 2026-10-05 exact-candidate replay confirmed both failure modes operationally:
+the first dispatch skipped while the repository switch was absent, and the next
+run acquired GitHub's OIDC assertion but failed before provisioning because all
+seven protected Environment identifiers were absent. The owned controllers now
+make both states explicit, verified, reversible operations; a dispatch alone is
+not counted as live-proof evidence.
+
+The 2026-10-06 replay then reached model selection and runtime compilation, but
+failed closed before provisioning because the workflow paired the catalog-truth
+task with the release candidate's arbitrary `HEAD~1` to `HEAD` diff. A task and
+its reference patch are one immutable evaluation unit; the checked-out release
+SHA supplies executable code, not a substitute benchmark answer. The workflow
+now consumes the same pinned S83.134 baseline/reference constants as the local
+catalog-truth sentinel, and tests prohibit candidate-derived comparison refs.
 
 GitHub documents the OIDC permission and protected-Environment pattern in
 [Configuring OpenID Connect in Azure](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-azure).
@@ -106,3 +171,5 @@ Microsoft documents the Entra federated-credential exchange in
 [Authenticate to Azure from GitHub Actions by OIDC](https://learn.microsoft.com/en-us/azure/developer/github/connect-from-azure-openid-connect).
 The Azure SDK constructor contract is documented under
 [`WorkloadIdentityCredential`](https://learn.microsoft.com/en-us/python/api/azure-identity/azure.identity.workloadidentitycredential).
+The repository-variable command boundary follows the maintained
+[`gh variable set`](https://cli.github.com/manual/gh_variable_set) contract.

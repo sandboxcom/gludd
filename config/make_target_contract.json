@@ -966,6 +966,29 @@
       "behavior": "make check-dispatch-dedup"
     },
     {
+      "name": "azure-containerapp-live-workflow-gate",
+      "make_variables": [
+        "AZURE_LIVE_GATE_REPO",
+        "AZURE_LIVE_GATE_ENABLED",
+        "AZURE_LIVE_GATE_VALIDATE_ONLY"
+      ],
+      "behavior": "make azure-containerapp-live-workflow-gate AZURE_LIVE_GATE_REPO=sandboxcom/gludd AZURE_LIVE_GATE_ENABLED=1 AZURE_LIVE_GATE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "azure-containerapp-live-environment-config",
+      "make_variables": [
+        "AZURE_LIVE_CONFIG_REPO",
+        "AZURE_LIVE_CONFIG_GITHUB_ENVIRONMENT",
+        "AZURE_LIVE_CONFIG_AUTH_FILE",
+        "AZURE_LIVE_CONFIG_RESOURCE_GROUP",
+        "AZURE_LIVE_CONFIG_CONTAINERAPP_ENVIRONMENT",
+        "AZURE_LIVE_CONFIG_LOCATION",
+        "AZURE_LIVE_CONFIG_WORKLOAD_PROFILE",
+        "AZURE_LIVE_CONFIG_VALIDATE_ONLY"
+      ],
+      "behavior": "make azure-containerapp-live-environment-config AZURE_LIVE_CONFIG_REPO=sandboxcom/gludd AZURE_LIVE_CONFIG_GITHUB_ENVIRONMENT=azure-containerapp-live AZURE_LIVE_CONFIG_AUTH_FILE=/tmp/gludd-azure-auth.json AZURE_LIVE_CONFIG_RESOURCE_GROUP=gludd-models-eastus AZURE_LIVE_CONFIG_CONTAINERAPP_ENVIRONMENT=gludd-gpu-environment AZURE_LIVE_CONFIG_LOCATION=eastus AZURE_LIVE_CONFIG_WORKLOAD_PROFILE=gpu-t4 AZURE_LIVE_CONFIG_VALIDATE_ONLY=1"
+    },
+    {
       "name": "ci-trigger-committed-head",
       "make_variables": [
         "EXAMPLE",

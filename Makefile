@@ -131,6 +131,8 @@ AZURE_SELF_IMPROVE_MODEL_CATALOG ?= config/self-improve/azure-model-catalog-ci.j
 AZURE_SELF_IMPROVE_EVIDENCE_FILE ?= .gludd/capability-evidence.json
 AZURE_SELF_IMPROVE_REGISTRY_CACHE ?= .gludd/model-registry-cache
 AZURE_SELF_IMPROVE_TASK_FILE ?= config/self-improve/catalog-truth.json
+SELF_IMPROVE_CATALOG_TRUTH_BASELINE_REF := eac05dc88c03f14fbd7dd5f4c6d72943609d9e26
+SELF_IMPROVE_CATALOG_TRUTH_REFERENCE_REF := 80b381bd87f32487d784964ce93566e3b016b191
 SELF_IMPROVE_CATALOG_LIVE ?= 0
 SELF_IMPROVE_MULTIFILE_LIVE ?= 0
 SELF_IMPROVE_FAILURE_CORPUS_FILE ?= config/self-improve/failure-corpus.json
@@ -216,6 +218,39 @@ export _GLUDD_AZURE_CONTAINERAPP_ENVIRONMENT_RAW
 export _GLUDD_AZURE_CONTAINERAPP_WORKLOAD_PROFILE_NAME_RAW
 export _GLUDD_AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE_RAW
 export _GLUDD_AZURE_CONTAINERAPP_LOCATION_RAW
+AZURE_LIVE_GATE_REPO ?= sandboxcom/gludd
+AZURE_LIVE_GATE_ENABLED ?= 0
+AZURE_LIVE_GATE_VALIDATE_ONLY ?= 1
+override _GLUDD_AZURE_LIVE_GATE_REPO_RAW := $(value AZURE_LIVE_GATE_REPO)
+override _GLUDD_AZURE_LIVE_GATE_ENABLED_RAW := $(value AZURE_LIVE_GATE_ENABLED)
+override _GLUDD_AZURE_LIVE_GATE_VALIDATE_ONLY_RAW := $(value AZURE_LIVE_GATE_VALIDATE_ONLY)
+export _GLUDD_AZURE_LIVE_GATE_REPO_RAW
+export _GLUDD_AZURE_LIVE_GATE_ENABLED_RAW
+export _GLUDD_AZURE_LIVE_GATE_VALIDATE_ONLY_RAW
+AZURE_LIVE_CONFIG_REPO ?= sandboxcom/gludd
+AZURE_LIVE_CONFIG_GITHUB_ENVIRONMENT ?= azure-containerapp-live
+AZURE_LIVE_CONFIG_AUTH_FILE ?=
+AZURE_LIVE_CONFIG_RESOURCE_GROUP ?= gludd-models-eastus
+AZURE_LIVE_CONFIG_CONTAINERAPP_ENVIRONMENT ?= gludd-gpu-environment
+AZURE_LIVE_CONFIG_LOCATION ?= eastus
+AZURE_LIVE_CONFIG_WORKLOAD_PROFILE ?= gpu-t4
+AZURE_LIVE_CONFIG_VALIDATE_ONLY ?= 1
+override _GLUDD_AZURE_LIVE_CONFIG_REPO_RAW := $(value AZURE_LIVE_CONFIG_REPO)
+override _GLUDD_AZURE_LIVE_CONFIG_GITHUB_ENVIRONMENT_RAW := $(value AZURE_LIVE_CONFIG_GITHUB_ENVIRONMENT)
+override _GLUDD_AZURE_LIVE_CONFIG_AUTH_FILE_RAW := $(value AZURE_LIVE_CONFIG_AUTH_FILE)
+override _GLUDD_AZURE_LIVE_CONFIG_RESOURCE_GROUP_RAW := $(value AZURE_LIVE_CONFIG_RESOURCE_GROUP)
+override _GLUDD_AZURE_LIVE_CONFIG_CONTAINERAPP_ENVIRONMENT_RAW := $(value AZURE_LIVE_CONFIG_CONTAINERAPP_ENVIRONMENT)
+override _GLUDD_AZURE_LIVE_CONFIG_LOCATION_RAW := $(value AZURE_LIVE_CONFIG_LOCATION)
+override _GLUDD_AZURE_LIVE_CONFIG_WORKLOAD_PROFILE_RAW := $(value AZURE_LIVE_CONFIG_WORKLOAD_PROFILE)
+override _GLUDD_AZURE_LIVE_CONFIG_VALIDATE_ONLY_RAW := $(value AZURE_LIVE_CONFIG_VALIDATE_ONLY)
+export _GLUDD_AZURE_LIVE_CONFIG_REPO_RAW
+export _GLUDD_AZURE_LIVE_CONFIG_GITHUB_ENVIRONMENT_RAW
+export _GLUDD_AZURE_LIVE_CONFIG_AUTH_FILE_RAW
+export _GLUDD_AZURE_LIVE_CONFIG_RESOURCE_GROUP_RAW
+export _GLUDD_AZURE_LIVE_CONFIG_CONTAINERAPP_ENVIRONMENT_RAW
+export _GLUDD_AZURE_LIVE_CONFIG_LOCATION_RAW
+export _GLUDD_AZURE_LIVE_CONFIG_WORKLOAD_PROFILE_RAW
+export _GLUDD_AZURE_LIVE_CONFIG_VALIDATE_ONLY_RAW
 RECONCILE_QUIET_PROGRESS ?= 0
 MARKDOWN_FILES ?=
 MARKDOWNLINT_CONFIG ?= config/markdownlint-cli2.jsonc
@@ -282,7 +317,7 @@ _NO_UV_SYNC_GOALS := \
     cache-resource-inventory cache-resource-remove tmp-gludd-usage tmp-gludd-worktree-usage \
     tmp-gludd-clean-ci-shards tmp-gludd-clean-ci-shards-now tmp-gludd-clean-orphan-worktrees-now \
     clean clean-artifacts clean-worktree-venvs clean-worktree-caches active-work-status ps agent-worktree agent-worktree-base azure-self-improve-auth-args \
-    development-merge-forward development-merge-forward-batch uv-cache-path
+    development-merge-forward development-merge-forward-batch uv-cache-path azure-containerapp-live-workflow-gate
 ifneq (,$(filter $(_NO_UV_SYNC_GOALS),$(MAKECMDGOALS)))
 override UV := echo
 else
@@ -540,6 +575,8 @@ help:
 	@echo "  provider-harness      Validate Azure/RunPod credentials, billing bounds, and optional Gludd telemetry"
 	@echo "  azure-harness         Azure provider harness (LIVE=1 for read-only credential check)"
 	@echo "  azure-cleanup-inspect Read-only provisioning states for Gludd Azure E2E resource groups"
+	@echo "  azure-containerapp-live-workflow-gate  Validate/set the protected GHA live-proof switch (AZURE_LIVE_GATE_*)"
+	@echo "  azure-containerapp-live-environment-config  Validate/set protected GHA Azure identifiers (AZURE_LIVE_CONFIG_*)"
 	@echo "  runpod-harness        RunPod provider harness (LIVE=1 for read-only credential check)"
 	@echo "  test-opa-policies     Execute Rego policy tests when opa is installed"
 	@echo "  check-make-target-contract  Validate target variables, help, and behavioral examples"
@@ -6222,6 +6259,29 @@ azure-containerapp-terraform-phase: tf-cache-setup
 			--json-file "$(AZURE_CONTAINERAPP_TF_JSON_FILE)"; \
 	fi
 
+# Control only the repository variable that guards the protected, bounded live
+# workflow. Validation is the default and performs no network request.
+.PHONY: azure-containerapp-live-workflow-gate
+azure-containerapp-live-workflow-gate:
+	@$(PYTHON) scripts/set_azure_live_workflow_gate.py \
+		--repository "$${_GLUDD_AZURE_LIVE_GATE_REPO_RAW}" \
+		--enabled "$${_GLUDD_AZURE_LIVE_GATE_ENABLED_RAW}" \
+		--validate-only "$${_GLUDD_AZURE_LIVE_GATE_VALIDATE_ONLY_RAW}"
+
+# Populate only non-secret protected Environment variables from the private,
+# race-safe Azure credential loader. Validation is network- and secret-read-free.
+.PHONY: azure-containerapp-live-environment-config
+azure-containerapp-live-environment-config:
+	@$(UV) run python scripts/configure_azure_live_github_environment.py \
+		--repository "$${_GLUDD_AZURE_LIVE_CONFIG_REPO_RAW}" \
+		--github-environment "$${_GLUDD_AZURE_LIVE_CONFIG_GITHUB_ENVIRONMENT_RAW}" \
+		--auth-file "$${_GLUDD_AZURE_LIVE_CONFIG_AUTH_FILE_RAW}" \
+		--resource-group "$${_GLUDD_AZURE_LIVE_CONFIG_RESOURCE_GROUP_RAW}" \
+		--containerapp-environment "$${_GLUDD_AZURE_LIVE_CONFIG_CONTAINERAPP_ENVIRONMENT_RAW}" \
+		--location "$${_GLUDD_AZURE_LIVE_CONFIG_LOCATION_RAW}" \
+		--workload-profile "$${_GLUDD_AZURE_LIVE_CONFIG_WORKLOAD_PROFILE_RAW}" \
+		--validate-only "$${_GLUDD_AZURE_LIVE_CONFIG_VALIDATE_ONLY_RAW}"
+
 # Hermetic by default; live mode accepts one explicit private auth contract.
 azure-containerapp-live-proof:
 	@# Inputs: AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT AZURE_CONTAINERAPP_LIVE_PROOF_WORKLOAD_PROFILE_NAME AZURE_CONTAINERAPP_LIVE_PROOF_LOCATION AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES AZURE_CONTAINERAPP_LIVE_PROOF_LIVE AZURE_CONTAINERAPP_LIVE_PROOF_ACKNOWLEDGEMENT AZURE_CONTAINERAPP_LIVE_PROOF_PROJECT_ROOT AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS
@@ -6310,8 +6370,8 @@ azure-self-improve-live-proof:
 			[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID is required for workload identity" >&2; exit 2; } ;; \
 		*) echo "AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE must be file or workload_identity" >&2; exit 2 ;; \
 	esac
-	@[ -n "$(SELF_IMPROVE_BASELINE_REF)" ] || { echo "SELF_IMPROVE_BASELINE_REF is required" >&2; exit 2; }
-	@[ -n "$(SELF_IMPROVE_REFERENCE_REF)" ] || { echo "SELF_IMPROVE_REFERENCE_REF is required" >&2; exit 2; }
+	@[ -n "$(or $(SELF_IMPROVE_BASELINE_REF),$(SELF_IMPROVE_CATALOG_TRUTH_BASELINE_REF))" ] || { echo "SELF_IMPROVE_BASELINE_REF is required" >&2; exit 2; }
+	@[ -n "$(or $(SELF_IMPROVE_REFERENCE_REF),$(SELF_IMPROVE_CATALOG_TRUTH_REFERENCE_REF))" ] || { echo "SELF_IMPROVE_REFERENCE_REF is required" >&2; exit 2; }
 	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID is required" >&2; exit 2; }
 	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP is required" >&2; exit 2; }
 	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_ENVIRONMENT is required" >&2; exit 2; }
@@ -6349,7 +6409,7 @@ azure-self-improve-live-proof:
 			--idle-retention-seconds "$(AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS)" \
 			--output "$$runtime_file"; \
 		echo "AZURE_SELF_IMPROVE_PHASE phase=mixed_candidate_evaluation secret_output=false"; \
-		$(MAKE) --no-print-directory test-self-improve TARGET="$(TARGET)" SELF_IMPROVE_MODEL_PATH="$(SELF_IMPROVE_MODEL_PATH)" SELF_IMPROVE_CONFIG_FILE="$$runtime_file" SELF_IMPROVE_BASELINE_REF="$(SELF_IMPROVE_BASELINE_REF)" SELF_IMPROVE_REFERENCE_REF="$(SELF_IMPROVE_REFERENCE_REF)" SELF_IMPROVE_TASK_FILE="$(AZURE_SELF_IMPROVE_TASK_FILE)" SELF_IMPROVE_MAX_ATTEMPTS=1 SELF_IMPROVE_VALIDATE_ONLY=$(if $(filter 1,$(AZURE_CONTAINERAPP_LIVE_PROOF_LIVE)),0,1)
+		$(MAKE) --no-print-directory test-self-improve TARGET="$(TARGET)" SELF_IMPROVE_MODEL_PATH="$(SELF_IMPROVE_MODEL_PATH)" SELF_IMPROVE_CONFIG_FILE="$$runtime_file" SELF_IMPROVE_BASELINE_REF="$(or $(SELF_IMPROVE_BASELINE_REF),$(SELF_IMPROVE_CATALOG_TRUTH_BASELINE_REF))" SELF_IMPROVE_REFERENCE_REF="$(or $(SELF_IMPROVE_REFERENCE_REF),$(SELF_IMPROVE_CATALOG_TRUTH_REFERENCE_REF))" SELF_IMPROVE_TASK_FILE="$(AZURE_SELF_IMPROVE_TASK_FILE)" SELF_IMPROVE_MAX_ATTEMPTS=1 SELF_IMPROVE_VALIDATE_ONLY=$(if $(filter 1,$(AZURE_CONTAINERAPP_LIVE_PROOF_LIVE)),0,1)
 
 # Usage: make test-self-improve TARGET=name [SELF_IMPROVE_MODEL_PATH=optional override] [SELF_IMPROVE_CONFIG_FILE=optional.json] SELF_IMPROVE_BASELINE_REF=<sha> SELF_IMPROVE_REFERENCE_REF=<sha> SELF_IMPROVE_TASK_FILE=task.json SELF_IMPROVE_VALIDATE_ONLY=0
 test-self-improve:
@@ -6376,7 +6436,7 @@ test-self-improve-catalog-truth:
 	@case "$(SELF_IMPROVE_CATALOG_LIVE)" in 0|1) ;; *) echo "SELF_IMPROVE_CATALOG_LIVE must be 0 or 1"; exit 2;; esac
 	@ACTUAL_FIXTURE_SHA256="$$($(PYTHON) -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "config/self-improve/catalog-truth.json")"; \
 		[ "$$ACTUAL_FIXTURE_SHA256" = "67e59f242aba0ade9b5992354daf5f0ec2392df3627ef0c929596011cfe5c30e" ] || { echo "catalog-truth fixture drift: expected=67e59f242aba0ade9b5992354daf5f0ec2392df3627ef0c929596011cfe5c30e actual=$$ACTUAL_FIXTURE_SHA256"; exit 2; }
-	@$(MAKE) --no-print-directory test-self-improve TARGET=catalog-truth SELF_IMPROVE_MODEL_PATH= SELF_IMPROVE_BASELINE_REF=eac05dc88c03f14fbd7dd5f4c6d72943609d9e26 SELF_IMPROVE_REFERENCE_REF=80b381bd87f32487d784964ce93566e3b016b191 SELF_IMPROVE_TASK_FILE=config/self-improve/catalog-truth.json SELF_IMPROVE_MAX_ATTEMPTS=2 SELF_IMPROVE_VALIDATE_ONLY="$(if $(filter 1,$(SELF_IMPROVE_CATALOG_LIVE)),0,1)"
+	@$(MAKE) --no-print-directory test-self-improve TARGET=catalog-truth SELF_IMPROVE_MODEL_PATH= SELF_IMPROVE_BASELINE_REF="$(SELF_IMPROVE_CATALOG_TRUTH_BASELINE_REF)" SELF_IMPROVE_REFERENCE_REF="$(SELF_IMPROVE_CATALOG_TRUTH_REFERENCE_REF)" SELF_IMPROVE_TASK_FILE=config/self-improve/catalog-truth.json SELF_IMPROVE_MAX_ATTEMPTS=2 SELF_IMPROVE_VALIDATE_ONLY="$(if $(filter 1,$(SELF_IMPROVE_CATALOG_LIVE)),0,1)"
 
 # Fast deterministic replay of typed failures; never loads or downloads a model.
 test-self-improve-failure-corpus:

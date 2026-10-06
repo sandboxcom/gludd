@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "azure-containerapp-live.yml"
+MAKEFILE = ROOT / "Makefile"
 
 
 def test_live_workflow_uses_protected_oidc_without_static_credentials() -> None:
@@ -55,12 +56,26 @@ def test_live_workflow_calls_only_the_bounded_make_contract() -> None:
     assert re.search(r"timeout-minutes:\s+75\b", workflow)
 
 
-def test_live_workflow_supplies_self_improve_comparison_refs() -> None:
+def test_live_workflow_uses_catalog_bound_refs_not_candidate_commit() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
+    makefile = MAKEFILE.read_text(encoding="utf-8")
 
-    assert "id: self-improve-refs" in workflow
-    assert 'echo "reference=${{ github.sha }}"' in workflow
-    assert "git rev-parse HEAD~1" in workflow
-    assert "SELF_IMPROVE_BASELINE_REF: ${{ steps.self-improve-refs.outputs.baseline }}" in workflow
-    assert "SELF_IMPROVE_REFERENCE_REF: ${{ steps.self-improve-refs.outputs.reference }}" in workflow
+    assert "Resolve self-improve comparison refs" not in workflow
+    assert "github.sha" not in workflow
+    assert "HEAD~1" not in workflow
+    assert "SELF_IMPROVE_BASELINE_REF:" not in workflow
+    assert "SELF_IMPROVE_REFERENCE_REF:" not in workflow
+    assert (
+        "SELF_IMPROVE_CATALOG_TRUTH_BASELINE_REF := "
+        "eac05dc88c03f14fbd7dd5f4c6d72943609d9e26"
+    ) in makefile
+    assert (
+        "SELF_IMPROVE_CATALOG_TRUTH_REFERENCE_REF := "
+        "80b381bd87f32487d784964ce93566e3b016b191"
+    ) in makefile
+    azure_recipe = makefile.split("azure-self-improve-live-proof:", 1)[1].split(
+        "\n\n", 1
+    )[0]
+    assert "$(SELF_IMPROVE_CATALOG_TRUTH_BASELINE_REF)" in azure_recipe
+    assert "$(SELF_IMPROVE_CATALOG_TRUTH_REFERENCE_REF)" in azure_recipe
     assert "TARGET: azure-containerapp-live" in workflow
