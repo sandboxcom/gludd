@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from scripts.collection_lock import collection_lock
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).parents[2]
 
@@ -57,13 +58,13 @@ def test_collection_lock_rejects_invalid_timeout(tmp_path: Path) -> None:
 
 
 def test_collect_check_uses_project_collection_lock() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     target = makefile.split("collect-check:", 1)[1].split("\n\n", 1)[0]
     assert "scripts/collection_lock.py --run" in target
 
 
 def test_collect_check_confines_ansible_temp_to_owned_observed_root() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     target = makefile.split("collect-check:", 1)[1].split("\n\n", 1)[0]
 
     assert 'ANSIBLE_TMP="$(OBSERVED_ROOT)/ansible-local-' in target
@@ -72,6 +73,6 @@ def test_collect_check_confines_ansible_temp_to_owned_observed_root() -> None:
 
 
 def test_gate_refresh_uses_singleton_project_resource_lock() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     target = makefile.split("gate-refresh:", 1)[1].split("\n\n", 1)[0]
     assert "scripts/collection_lock.py --resource gate-refresh --run" in target

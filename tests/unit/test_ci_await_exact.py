@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -445,7 +446,7 @@ def test_main_forwards_valid_configuration_to_wait(
 
 
 def _recipe(target: str) -> str:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     start = makefile.index(f"\n{target}:")
     end = makefile.find("\n\n", start)
     return makefile[start : len(makefile) if end == -1 else end]

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from scripts.codex_stop_guard import confirm, run
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -15,7 +16,7 @@ def test_codex_stop_guard_script_exists_and_is_executable_contract():
 
 
 def test_codex_stop_guard_make_target_is_documented():
-    makefile = (ROOT / "Makefile").read_text()
+    makefile = compose_makefile(ROOT / "Makefile")
     assert "codex-stop-guard:" in makefile
     assert "codex-stop-guard" in makefile.split("help:", 1)[1]
 

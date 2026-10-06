@@ -10,6 +10,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNNER = ROOT / "scripts" / "run_ci_shards_serial.py"
@@ -41,7 +42,7 @@ def _load_runner() -> ModuleType:
 
 
 def _target_block(name: str, next_name: str) -> str:
-    source = (ROOT / "Makefile").read_text(encoding="utf-8")
+    source = compose_makefile(ROOT / "Makefile")
     return source.split(f"{name}:", 1)[1].split(f"{next_name}:", 1)[0]
 
 

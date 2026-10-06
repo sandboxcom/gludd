@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from scripts import branch_reconciliation_inventory as inventory
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).parent.parent.parent
 TARGET_HEAD = "a" * 40
@@ -548,7 +549,7 @@ def test_main_emits_machine_readable_error(capsys: pytest.CaptureFixture[str]) -
 
 
 def test_make_target_and_contract_are_tracked() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     contract = json.loads(
         (ROOT / "config" / "make_target_contract.json").read_text(encoding="utf-8")
     )
@@ -803,7 +804,7 @@ def test_main_quiet_progress_preserves_structured_nonzero_failure(
 
 
 def test_exhaustive_make_target_and_contract_are_tracked() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     contract = json.loads(
         (ROOT / "config" / "make_target_contract.json").read_text(encoding="utf-8")
     )

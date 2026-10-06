@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 E2E_TEST = "tests/e2e/test_self_improve_private_policy_e2e.py"
 
@@ -24,7 +26,7 @@ def _load_shard_registry() -> ModuleType:
 
 def test_private_policy_e2e_has_one_local_and_hosted_release_contract() -> None:
     """The same warnings-as-errors suite must run directly and in GHA."""
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     contract = json.loads(
         (ROOT / "config" / "make_target_contract.json").read_text(encoding="utf-8")
     )

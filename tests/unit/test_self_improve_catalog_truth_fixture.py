@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
 from scripts.run_self_improve_e2e import TaskSpec
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -93,7 +94,7 @@ def test_catalog_truth_fixture_bytes_are_immutable() -> None:
 
 
 def test_catalog_truth_make_target_is_pinned_and_safe_by_default() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     target = _target_block(makefile, "test-self-improve-catalog-truth")
 
     assert "SELF_IMPROVE_CATALOG_LIVE ?= 0" in makefile
@@ -138,7 +139,7 @@ def test_catalog_truth_target_has_complete_safe_make_contract() -> None:
             "SELF_IMPROVE_CATALOG_LIVE=0"
         ),
     }
-    help_text = (ROOT / "Makefile").read_text(encoding="utf-8")
+    help_text = compose_makefile(ROOT / "Makefile")
     assert "test-self-improve-catalog-truth" in help_text.split(
         "# --- Git ---", 1
     )[0]

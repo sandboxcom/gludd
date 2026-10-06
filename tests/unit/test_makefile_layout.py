@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import sys
 from pathlib import Path
@@ -109,3 +110,24 @@ def test_repository_makefile_is_a_small_explicit_fragment_entrypoint() -> None:
     assert "help:" in composed
     assert "check-file-line-limits:" in composed
     assert "release-promote:" in composed
+
+
+def test_tests_read_the_logical_makefile_instead_of_only_the_entrypoint() -> None:
+    violations: list[str] = []
+    for path in sorted((ROOT / "tests").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                continue
+            if node.func.attr != "read_text":
+                continue
+            if any(
+                isinstance(part, ast.Constant) and part.value == "Makefile"
+                for part in ast.walk(node.func.value)
+            ):
+                violations.append(f"{path.relative_to(ROOT)}:{node.lineno}")
+
+    assert violations == [], (
+        "tests must use scripts.makefile_layout.compose_makefile for logical "
+        f"Makefile reads: {violations}"
+    )

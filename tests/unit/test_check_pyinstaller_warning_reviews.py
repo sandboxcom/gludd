@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 from scripts import check_pyinstaller_warning_reviews as review_check
+from scripts.makefile_layout import compose_makefile
 
 _OLD = "1" * 64
 _NEW = "a" * 64
@@ -129,7 +130,7 @@ def test_unchanged_accepted_digest_set_needs_no_new_receipt(tmp_path: Path) -> N
 
 
 def test_make_gate_runs_review_checker() -> None:
-    makefile = (Path(__file__).resolve().parents[2] / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(Path(__file__).resolve().parents[2] / "Makefile")
 
     gate = makefile.split("\ngate:", 1)[1].split("\n\n", 1)[0]
     gate_preflights = makefile.split("GATE_PREFLIGHT_TARGETS :=", 1)[1].split(

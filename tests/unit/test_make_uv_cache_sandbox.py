@@ -7,13 +7,15 @@ import re
 import subprocess
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 SAFE_CACHE = "/tmp/gludd-uv-cache-public-v2"
 
 
 def _recipe(target: str) -> str:
     """Return the indented recipe body for a single Makefile target."""
-    lines = (ROOT / "Makefile").read_text(encoding="utf-8").splitlines()
+    lines = compose_makefile(ROOT / "Makefile").splitlines()
     body: list[str] = []
     in_target = False
     for line in lines:
@@ -28,7 +30,7 @@ def _recipe(target: str) -> str:
 
 
 def test_make_overrides_ambient_uv_cache_with_writable_shared_cache() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
 
     assert f"GLUDD_UV_CACHE_DIR ?= {SAFE_CACHE}" in makefile
     assert "override UV_CACHE_DIR := $(GLUDD_UV_CACHE_DIR)" in makefile

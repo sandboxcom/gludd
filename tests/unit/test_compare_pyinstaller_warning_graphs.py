@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from scripts import audit_pyinstaller_warnings as warning_audit
 from scripts import compare_pyinstaller_warning_graphs as comparison
+from scripts.makefile_layout import compose_makefile
 
 
 def _warning(module: str, importer: str, flags: str = "optional") -> str:
@@ -138,7 +139,7 @@ def test_comparator_reuses_the_fail_closed_audit_parser() -> None:
 
 
 def test_makefile_exposes_review_receipt_target() -> None:
-    makefile = (Path(__file__).resolve().parents[2] / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(Path(__file__).resolve().parents[2] / "Makefile")
 
     assert "\ncompare-linux-pyinstaller-warnings:" in makefile
     assert '--before "$(PYINSTALLER_WARNING_BEFORE)"' in makefile

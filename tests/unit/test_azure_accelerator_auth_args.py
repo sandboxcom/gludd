@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from scripts import render_azure_accelerator_auth_args as subject
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 SUBSCRIPTION_ID = "11111111-2222-3333-4444-555555555555"
@@ -448,7 +449,7 @@ def test_both_streams_invoke_one_fake_azure_process(tmp_path: Path) -> None:
 
 
 def test_help_contract_docs_and_gitignore_pin_accelerator_workflow() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     contract = json.loads((ROOT / "config/make_target_contract.json").read_text())
     docs = (ROOT / "docs/azure-iam-setup.md").read_text(encoding="utf-8")
     iam_docs = (ROOT / "config/infra/IAM_README.md").read_text(encoding="utf-8")
@@ -493,7 +494,7 @@ def test_help_contract_docs_and_gitignore_pin_accelerator_workflow() -> None:
 
 def test_renderer_and_make_targets_never_receive_a_credential() -> None:
     script = Path(subject.__file__).read_text(encoding="utf-8")
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     role_target = makefile.split("azure-accelerator-role-args:", 1)[1].split("\n\n", 1)[0]
     auth_target = makefile.split("azure-accelerator-auth-args:", 1)[1].split("\n\n", 1)[0]
 
@@ -505,7 +506,7 @@ def test_renderer_and_make_targets_never_receive_a_credential() -> None:
 
 
 def test_makefile_exposes_secret_stdin_durable_store_contract() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
 
     assert "azure-accelerator-auth-store:" in makefile
     assert "scripts/store_azure_accelerator_credentials.py" in makefile

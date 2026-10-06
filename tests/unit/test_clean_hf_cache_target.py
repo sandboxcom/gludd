@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 import general_ludd.self_improve.model_lifecycle as lifecycle
 from general_ludd.self_improve.hf_cache_delete import CacheDeletionError
@@ -17,7 +18,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _make_target_body(name: str) -> str:
-    makefile = (_REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(_REPO_ROOT / "Makefile")
     marker = f"\n{name}:"
     start = makefile.index(marker) + 1
     remainder = makefile[start:]
@@ -31,7 +32,7 @@ def test_clean_hf_cache_delegates_to_the_lifecycle_manager() -> None:
     assert "python scripts/clean_hf_cache.py" in body
     assert "python -m general_ludd.self_improve.model_lifecycle" not in body
     assert "CLEAN_HF_CACHE_ROOT" in body
-    makefile = (_REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(_REPO_ROOT / "Makefile")
     assert (
         "CLEAN_HF_CACHE_ROOT ?= $(GLUDD_SELF_IMPROVE_MODEL_CACHE)"
         in makefile

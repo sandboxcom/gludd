@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -348,7 +349,7 @@ def test_main_honors_explicit_sha_and_required_workflow(
 
 
 def test_make_target_forwards_explicit_identity_and_has_safe_contract() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     block = makefile.split("pipeline-status:", maxsplit=1)[1].split("\n\n", maxsplit=1)[0]
     assert "PIPELINE_STATUS_REPO" in block
     assert "PIPELINE_STATUS_BRANCH" in block
@@ -375,7 +376,7 @@ def test_make_target_forwards_explicit_identity_and_has_safe_contract() -> None:
 
 
 def test_verify_state_uses_current_branch_instead_of_master_remote() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     block = makefile.split("verify-state:", maxsplit=1)[1].split("\n\ngha-usage:", maxsplit=1)[0]
     assert "refs/heads/master" not in block
     assert "refs/heads/$$BRANCH" in block

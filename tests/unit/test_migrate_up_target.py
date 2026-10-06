@@ -7,13 +7,14 @@ import subprocess
 from pathlib import Path
 
 import sqlalchemy as sa
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_migrate_up_target_is_parameterized_and_documented() -> None:
     """Pin the make-only migration surface and every required variable."""
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     target = makefile.split("\nmigrate-up:\n", 1)[1].split("\n\n", 1)[0]
     assert 'test -n "$(strip $(MIGRATE_DATABASE_URL))"' in target
     assert 'test -n "$(strip $(MIGRATE_REVISION))"' in target

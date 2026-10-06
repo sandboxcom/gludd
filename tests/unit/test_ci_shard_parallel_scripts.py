@@ -10,6 +10,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_NAMES = (
@@ -133,7 +134,7 @@ def test_background_shard_runner_forwards_the_finite_deadline() -> None:
     assert source.count('"--max-runtime-seconds"') == 2
     assert '"max_runtime_seconds": args.max_runtime_seconds' in source
 
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     deadline_arg = '--max-runtime-seconds "$(or $(MAX_RUNTIME_SECONDS),3600)"'
     assert makefile.count(deadline_arg) == 2
 

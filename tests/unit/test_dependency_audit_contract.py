@@ -8,11 +8,13 @@ import subprocess
 import tomllib
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_dependency_audit_target_is_fail_closed_and_contract_tracked() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     target = makefile.split("\ndeps-audit:", 1)[1].split("\n\n", 1)[0]
 
     assert "|| true" not in target

@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from scripts import automatic_disk_cleanup
 from scripts.automatic_disk_cleanup import DiskSnapshot
+from scripts.makefile_layout import compose_makefile
 from scripts.prune_worktrees_safe import WorktreeRecord
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -3062,7 +3063,7 @@ def test_main_configures_receipt_grace_and_enforces_minimum(
 
 
 def test_make_and_precommit_gates_run_the_automatic_preflight() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     hooks = (ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
     target = makefile.split("\ndisk-cleanup-preflight:\n", 1)[1].split(
         "\ncheck-disk:", 1

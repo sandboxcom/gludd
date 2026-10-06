@@ -14,6 +14,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 from pydantic import ValidationError
+from scripts.makefile_layout import compose_makefile
 
 from general_ludd.ansible.isolation import ProcessIsolationConfig
 
@@ -129,7 +130,7 @@ def test_execution_environment_uses_supported_published_beta4_base_index() -> No
 
 def test_ee_build_target_forwards_namespaced_docker_config() -> None:
     """A real EE build must be able to use the project-owned Lima engine."""
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     contract = json.loads((ROOT / "config/make_target_contract.json").read_text(encoding="utf-8"))
     target = next(item for item in contract["targets"] if item["name"] == "build-ansible-execution-environment")
     assert "ANSIBLE_EE_DOCKER_CONFIG ?=" in makefile

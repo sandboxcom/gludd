@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 from scripts import check_dispatch_dedup
+from scripts.makefile_layout import compose_makefile
 
 from tests.unit._hook_fixtures import HookEnv, hook_plugin_env_impl
 
@@ -164,7 +165,7 @@ def test_dispatch_dedup_contract_is_not_a_placeholder() -> None:
         encoding="utf-8"
     )
     owner = (root / ".opencode/lib/dispatch_dedup.ts").read_text(encoding="utf-8")
-    makefile = (root / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(root / "Makefile")
     checker = (root / "scripts/check_dispatch_dedup.py").read_text(encoding="utf-8")
     documentation = (root / "docs/WAVE_ENFORCEMENT.md").read_text(encoding="utf-8")
 
