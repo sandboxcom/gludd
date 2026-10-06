@@ -48,7 +48,7 @@ import tempfile
 import unittest.mock as _mock_mod
 from collections.abc import Iterator, Mapping
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
 from typing import Any, cast
@@ -163,6 +163,7 @@ _PYTEST_TEMP_ROOT_PREFIXES = (
     "gludd-xdist-trace-",
     "pytest-",
 )
+_GIT_ADVISORY_LOCK_FILENAME = "gludd-git.lock"
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +172,12 @@ class _WorktreeConfinement:
 
     active_root: Path
     canonical_root: Path
+    _pytest_temp_roots: set[Path] = field(
+        default_factory=set,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "active_root", self.active_root.resolve())
@@ -248,6 +255,54 @@ class _WorktreeConfinement:
     def _is_within(path: Path, root: Path) -> bool:
         return path == root or path.is_relative_to(root)
 
+    @staticmethod
+    def _relative_below_root_alias(
+        candidate: Path,
+        resolved: Path,
+        raw_root: Path,
+    ) -> Path | None:
+        """Return one relative path only when aliases do not change its suffix."""
+        try:
+            resolved_root = raw_root.resolve(strict=True)
+            resolved_relative = resolved.relative_to(resolved_root)
+        except (FileNotFoundError, OSError, RuntimeError, ValueError):
+            return None
+        try:
+            candidate_relative = candidate.relative_to(raw_root)
+        except ValueError:
+            if candidate != resolved:
+                return None
+            candidate_relative = resolved_relative
+        if candidate_relative != resolved_relative:
+            return None
+        return resolved_relative
+
+    def _record_pytest_temp_root(self, value: object) -> None:
+        """Record a direct system-temp child created during this pytest run."""
+        if isinstance(value, bytes):
+            value = os.fsdecode(value)
+        if not isinstance(value, (str, os.PathLike)):
+            return
+        try:
+            candidate = Path(value)
+        except (TypeError, ValueError):
+            return
+        if not candidate.is_absolute() or ".." in candidate.parts:
+            return
+        try:
+            resolved_parent = candidate.parent.resolve(strict=True)
+        except (FileNotFoundError, OSError, RuntimeError, ValueError):
+            return
+        for raw_temp_root in (Path(tempfile.gettempdir()), Path("/tmp")):
+            relative = self._relative_below_root_alias(
+                candidate.parent,
+                resolved_parent,
+                raw_temp_root,
+            )
+            if relative == Path("."):
+                self._pytest_temp_roots.add(candidate)
+                return
+
     def _deny_canonical_path(
         self,
         event: str,
@@ -258,6 +313,11 @@ class _WorktreeConfinement:
         if path is None or self._is_within(path, self.active_root):
             return
         if self._is_within(path, self.canonical_root):
+            shared_lock = (
+                self.canonical_root / ".git" / _GIT_ADVISORY_LOCK_FILENAME
+            )
+            if event in {"open", "os.utime"} and path == shared_lock:
+                return
             raise PermissionError(
                 f"pytest worktree confinement denied {event} in canonical "
                 f"main checkout {self.canonical_root}; active checkout is "
@@ -357,6 +417,32 @@ class _WorktreeConfinement:
             )
         return False
 
+    @classmethod
+    def _repository_mutation_root(
+        cls,
+        value: object,
+        requested_cwd: object,
+    ) -> object:
+        """Resolve the repository selector used by one mutating command."""
+        argv = cls._subprocess_argv(value)
+        if not argv or Path(argv[0]).name != "git":
+            return requested_cwd
+        explicit_roots: list[str] = []
+        index = 1
+        while index < len(argv):
+            if argv[index] == "-C":
+                if index + 1 >= len(argv):
+                    return None
+                explicit_roots.append(argv[index + 1])
+                index += 2
+                continue
+            index += 1
+        if not explicit_roots:
+            return requested_cwd
+        if len(explicit_roots) != 1:
+            return None
+        return explicit_roots[0]
+
     def _is_canonical_isolated_pytest_repository(self, value: object) -> bool:
         """Return whether ``value`` is one canonical pytest-owned temp repo."""
         if isinstance(value, bytes):
@@ -373,27 +459,29 @@ class _WorktreeConfinement:
             resolved = candidate.resolve(strict=True)
         except (FileNotFoundError, OSError, RuntimeError, ValueError):
             return False
-        if resolved != candidate:
-            return False
         if self._is_within(resolved, self.active_root) or self._is_within(
             resolved, self.canonical_root
         ):
             return False
         relative: Path | None = None
         for raw_temp_root in (Path(tempfile.gettempdir()), Path("/tmp")):
-            try:
-                temp_root = raw_temp_root.resolve(strict=True)
-                relative = resolved.relative_to(temp_root)
+            relative = self._relative_below_root_alias(
+                candidate,
+                resolved,
+                raw_temp_root,
+            )
+            if relative is not None:
                 break
-            except (FileNotFoundError, OSError, RuntimeError, ValueError):
-                continue
-        if relative is None:
-            return False
-        if not any(
+        named_pytest_root = relative is not None and any(
             component == "pytest"
             or component.startswith(_PYTEST_TEMP_ROOT_PREFIXES)
             for component in relative.parts
-        ):
+        )
+        registered_temp_root = any(
+            self._relative_below_root_alias(candidate, resolved, temp_root) is not None
+            for temp_root in self._pytest_temp_roots
+        )
+        if not named_pytest_root and not registered_temp_root:
             return False
         git_marker = resolved / ".git"
         if git_marker.is_symlink():
@@ -412,6 +500,10 @@ class _WorktreeConfinement:
 
     def audit(self, event: str, args: tuple[object, ...]) -> None:
         """Enforce the boundary at CPython file, cwd, and process events."""
+        if event == "tempfile.mkdtemp" and args:
+            self._record_pytest_temp_root(args[0])
+            return
+
         if event == "open" and len(args) >= 3:
             mode = args[1]
             flags = args[2]
@@ -433,7 +525,9 @@ class _WorktreeConfinement:
             self._deny_subprocess_payload("argv", args[1])
             if self._is_repository_mutation(
                 args[1]
-            ) and not self._is_canonical_isolated_pytest_repository(requested_cwd):
+            ) and not self._is_canonical_isolated_pytest_repository(
+                self._repository_mutation_root(args[1], requested_cwd)
+            ):
                 raise PermissionError(
                     "pytest worktree confinement denied repository mutation "
                     "subprocess outside a canonical isolated pytest temp "

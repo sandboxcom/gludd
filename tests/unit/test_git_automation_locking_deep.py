@@ -639,8 +639,14 @@ class TestAsyncGitRepoLockEdge:
         assert shutdown_spy.called
 
     @pytest.mark.asyncio
-    async def test_double_exit_is_idempotent(self) -> None:
-        cm = await locking.async_git_repo_lock(".", timeout=1.0, stale_after=60.0)
+    async def test_double_exit_is_idempotent(self, tmp_path: Path) -> None:
+        repo = tmp_path / "repo"
+        (repo / ".git").mkdir(parents=True)
+        cm = await locking.async_git_repo_lock(
+            str(repo),
+            timeout=1.0,
+            stale_after=60.0,
+        )
         try:
             with cm:
                 pass

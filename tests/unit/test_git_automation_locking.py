@@ -112,6 +112,30 @@ class TestGetInprocessLock:
         assert a is not b
 
 
+class TestResetAfterFork:
+    def test_closes_descriptors_and_clears_inherited_state(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        closed: list[int] = []
+        key = "inherited-repo"
+        locking._file_lock_fds[key] = 73
+        locking._file_lock_depth[key] = 1
+        locking._file_lock_owner[key] = (1234, 5678)
+        locking._repo_locks[key] = threading.RLock()
+        old_guard = locking._registry_guard
+        monkeypatch.setattr(locking.os, "close", closed.append)
+
+        locking._reset_after_fork()
+
+        assert closed == [73]
+        assert locking._file_lock_fds == {}
+        assert locking._file_lock_depth == {}
+        assert locking._file_lock_owner == {}
+        assert locking._repo_locks == {}
+        assert locking._registry_guard is not old_guard
+
+
 class TestGitDir:
     def test_returns_dot_git_when_directory_exists(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -275,6 +299,16 @@ class TestGitDirWorktree:
                 f.write("gitdir: /nonexistent/path\n")
             assert locking._git_dir(tmpdir) is None
 
+    def test_git_common_directory_resolves_regular_repo(self, tmp_path: Path) -> None:
+        repo = tmp_path / "repo"
+        git_dir = repo / ".git"
+        git_dir.mkdir(parents=True)
+
+        assert locking.git_common_directory(str(repo)) == os.path.realpath(git_dir)
+
+    def test_git_common_directory_returns_none_outside_repo(self, tmp_path: Path) -> None:
+        assert locking.git_common_directory(str(tmp_path)) is None
+
 
 class TestBreakIfStale:
     def test_keeps_fresh_lock(self) -> None:
@@ -334,6 +368,24 @@ class TestFileLock:
         ):
             assert locking._file_lock_depth.get(key, 0) == 0
 
+    def test_discards_inherited_owner_state_before_acquiring(self, tmp_path: Path) -> None:
+        key = "inherited-owner"
+        inherited_path = tmp_path / "inherited.lock"
+        inherited_fd = os.open(inherited_path, os.O_CREAT | os.O_RDWR, 0o600)
+        locking._file_lock_fds[key] = inherited_fd
+        locking._file_lock_depth[key] = 1
+        locking._file_lock_owner[key] = (os.getpid() + 1, threading.get_ident())
+
+        with locking._file_lock(str(tmp_path), key, timeout=1.0, stale_after=60.0):
+            assert locking._file_lock_owner[key] == (
+                os.getpid(),
+                threading.get_ident(),
+            )
+
+        assert key not in locking._file_lock_fds
+        assert key not in locking._file_lock_owner
+        assert locking._file_lock_depth[key] == 0
+
     def test_times_out_on_contended_lock(self) -> None:
         if not locking._HAVE_FCNTL:
             pytest.skip("fcntl not available on this platform")
@@ -362,18 +414,26 @@ class TestFileLock:
 
 
 class TestGitRepoLock:
-    def test_acquires_and_releases_inprocess_lock(self) -> None:
-        git_dir = locking._git_dir(".")
-        key = locking._normalize(git_dir) if git_dir is not None else locking._normalize(".")
-        with locking.git_repo_lock(".", timeout=1.0, stale_after=60.0):
+    def test_acquires_and_releases_inprocess_lock(self, tmp_path: Path) -> None:
+        repo = tmp_path / "repo"
+        (repo / ".git").mkdir(parents=True)
+        git_dir = locking._git_dir(str(repo))
+        key = (
+            locking._normalize(git_dir)
+            if git_dir is not None
+            else locking._normalize(str(repo))
+        )
+        with locking.git_repo_lock(str(repo), timeout=1.0, stale_after=60.0):
             rlock = locking._repo_locks.get(key)
             assert rlock is not None
             acquired = rlock.acquire(blocking=False)
             if acquired:
                 rlock.release()
 
-    def test_context_manager_contract(self) -> None:
-        with locking.git_repo_lock(".", timeout=1.0, stale_after=60.0):
+    def test_context_manager_contract(self, tmp_path: Path) -> None:
+        repo = tmp_path / "repo"
+        (repo / ".git").mkdir(parents=True)
+        with locking.git_repo_lock(str(repo), timeout=1.0, stale_after=60.0):
             pass
 
     def test_no_dot_git_directory_uses_inprocess_only(self) -> None:
@@ -589,8 +649,14 @@ class TestGitRepoLockWorktree:
 
 class TestAsyncGitRepoLock:
     @pytest.mark.asyncio
-    async def test_returns_context_manager(self) -> None:
-        cm = await locking.async_git_repo_lock(".", timeout=1.0, stale_after=60.0)
+    async def test_returns_context_manager(self, tmp_path: Path) -> None:
+        repo = tmp_path / "repo"
+        (repo / ".git").mkdir(parents=True)
+        cm = await locking.async_git_repo_lock(
+            str(repo),
+            timeout=1.0,
+            stale_after=60.0,
+        )
         try:
             assert hasattr(cm, "__enter__")
             assert hasattr(cm, "__exit__")
@@ -598,8 +664,17 @@ class TestAsyncGitRepoLock:
             cm.__exit__(None, None, None)
 
     @pytest.mark.asyncio
-    async def test_context_manager_releases_on_executor_thread(self) -> None:
-        cm = await locking.async_git_repo_lock(".", timeout=1.0, stale_after=60.0)
+    async def test_context_manager_releases_on_executor_thread(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        repo = tmp_path / "repo"
+        (repo / ".git").mkdir(parents=True)
+        cm = await locking.async_git_repo_lock(
+            str(repo),
+            timeout=1.0,
+            stale_after=60.0,
+        )
         with cm:
             pass
 

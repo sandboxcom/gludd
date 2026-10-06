@@ -86,6 +86,25 @@ worktree remain permitted. A test run started in canonical main installs no
 cross-checkout hook. This makes the active worktree the mutation boundary while
 preserving structural tests that need read-only visibility into main metadata.
 
+Git-focused tests need two narrower capabilities without weakening that
+boundary. A mutating `git -C <repository>` command now derives its repository
+identity from the single absolute `-C` selector instead of an inherited
+working directory. Repositories remain eligible only when they contain a real
+`.git` marker and are either below pytest's named base directory or below a
+direct system-temporary child observed through Python's `tempfile.mkdtemp`
+audit event. The latter admits `tempfile.TemporaryDirectory` fixtures while an
+unregistered temporary repository, a relative path, traversal, or a symlink
+below the trusted root still fails closed. Alias comparison preserves the path
+suffix below the trusted root, so macOS's system `/var` to `/private/var` alias
+is accepted without accepting a repository-specific symlink.
+
+A linked worktree also shares Git coordination state with canonical main. The
+only canonical-main mutation exception is `open` or `os.utime` on the exact
+`.git/gludd-git.lock` advisory mutex used by the repository serializer. Git's
+`index.lock`, lookalike filenames, source files, and every other canonical-main
+path retain the denial. This lets tests acquire the same common-directory lock
+as production without granting a general write capability into main.
+
 ## Practitioner evidence
 
 The long-running Stack Overflow Q&A
@@ -100,6 +119,24 @@ shows absolute worktree metadata becoming invalid when the same checkout is
 observed through a different host path, with symlinks suggested as an aliasing
 workaround. It supports resolving aliases before comparing or operating on
 worktree paths.
+
+The six-year pytest discussion
+[Configure basetemp in ini config file](https://github.com/pytest-dev/pytest/discussions/7876)
+records users encountering macOS's long `tempfile.gettempdir()` path while
+trying to keep pytest temporary roots predictable. A separate multi-year
+pyfakefs discussion,
+[Fake directory missing on local test, but adding it breaks the pipeline](https://github.com/pytest-dev/pyfakefs/discussions/790),
+documents the same platform split: macOS temporary storage resolves below
+`/private/tmp` or `/var/folders` while Linux commonly uses `/tmp`. Together
+they support trusting the resolved system temp-root identity while preserving
+the relative suffix as the symlink-escape check.
+
+Git's
+[worktree documentation](https://github.com/git/git/blob/master/Documentation/git-worktree.adoc)
+defines each linked checkout's private `$GIT_DIR` and the shared
+`$GIT_COMMON_DIR` that points back to main's Git directory. That topology is
+why the advisory mutex has one exact common-directory exception rather than a
+broad exception for canonical-main Git metadata.
 
 Pytest's long-lived user report
 [`--ignore` option is not relative to `rootdir`?](https://github.com/pytest-dev/pytest/issues/6399)
@@ -172,7 +209,8 @@ The pytest regressions additionally cover linked-worktree main discovery,
 write-open and atomic-rename denial, process `cwd`/argv/explicit and inherited
 environment denial, symlink-alias `chdir` denial, collection-phase process
 denial with the exact version-probe exception, and branch-backed worktree
-creation denial. The 12 focused regressions pass, the release-integrity suite
-passes from the linked worktree, and the exact guarded `make test-count`
-collected 117,301 tests with zero errors. Canonical main was clean at the same
-development commit before and after the exact-scope replay.
+creation denial. They also cover an explicit `git -C` repository, system
+temp-root aliases, audit-registered `TemporaryDirectory` roots, rejection of
+unregistered roots, and the exact shared advisory-lock exception. The focused
+confinement module and the affected receipt, worktree, locking, and execution
+delivery suites pass from a linked worktree.

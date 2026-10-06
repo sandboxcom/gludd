@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -402,7 +403,7 @@ def test_confinement_allows_literal_pytest_basetemp_component(
     main, linked = _linked_checkout(tmp_path)
     isolated_repo = tmp_path / "ci-basetemp" / "pytest" / "case" / "isolated-repo"
     (isolated_repo / ".git").mkdir(parents=True)
-    monkeypatch.setattr(pytest_config.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
 
     _guard(main, linked).audit(
         "subprocess.Popen",
@@ -413,6 +414,111 @@ def test_confinement_allows_literal_pytest_basetemp_component(
             {},
         ),
     )
+
+
+def test_confinement_allows_git_dash_c_mutation_in_pytest_tmp_repo(
+    tmp_path: Path,
+) -> None:
+    """An absolute ``git -C`` identifies the isolated repo when cwd is inherited."""
+    main, linked = _linked_checkout(tmp_path)
+    isolated_repo = tmp_path / "isolated-repo"
+    (isolated_repo / ".git").mkdir(parents=True)
+    guard = _guard(main, linked)
+
+    guard.audit(
+        "subprocess.Popen",
+        (
+            "git",
+            ("git", "-C", str(isolated_repo), "switch", "-c", "feature-test"),
+            None,
+            {},
+        ),
+    )
+
+    with pytest.raises(PermissionError, match="repository mutation subprocess"):
+        guard.audit(
+            "subprocess.Popen",
+            (
+                "git",
+                ("git", "-C", str(linked), "switch", "-c", "feature-test"),
+                None,
+                {},
+            ),
+        )
+
+
+def test_confinement_accepts_trusted_temp_root_alias_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A platform temp-root alias is safe, but a repository alias is not."""
+    main, linked = _linked_checkout(tmp_path)
+    physical_temp = tmp_path / "physical-temp"
+    physical_temp.mkdir()
+    temp_alias = tmp_path / "temp-alias"
+    temp_alias.symlink_to(physical_temp, target_is_directory=True)
+    isolated_repo = physical_temp / "pytest-case" / "isolated-repo"
+    (isolated_repo / ".git").mkdir(parents=True)
+    repo_alias = physical_temp / "pytest-case" / "repo-alias"
+    repo_alias.symlink_to(isolated_repo, target_is_directory=True)
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(temp_alias))
+    guard = _guard(main, linked)
+    mutation = ("git", "switch", "-c", "feature-test")
+
+    guard.audit(
+        "subprocess.Popen",
+        ("git", mutation, str(temp_alias / "pytest-case" / "isolated-repo"), {}),
+    )
+    with pytest.raises(PermissionError, match="repository mutation subprocess"):
+        guard.audit("subprocess.Popen", ("git", mutation, str(repo_alias), {}))
+
+
+def test_confinement_allows_only_registered_temporary_directory_repos(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Runtime temp roots are admitted only after their creation audit event."""
+    main, linked = _linked_checkout(tmp_path)
+    system_temp = tmp_path / "system-temp"
+    system_temp.mkdir()
+    owned_root = system_temp / "tmp-owned"
+    unowned_root = system_temp / "tmp-unowned"
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(system_temp))
+    monkeypatch.setattr(pytest_config, "_PYTEST_TEMP_ROOT_PREFIXES", ("never-",))
+    guard = _guard(main, linked)
+
+    guard.audit("tempfile.mkdtemp", (str(owned_root),))
+    (owned_root / "repo" / ".git").mkdir(parents=True)
+    (unowned_root / "repo" / ".git").mkdir(parents=True)
+    mutation = ("git", "worktree", "add", "target", "-b", "feature-test")
+
+    guard.audit(
+        "subprocess.Popen",
+        ("git", mutation, str(owned_root / "repo"), {}),
+    )
+    with pytest.raises(PermissionError, match="repository mutation subprocess"):
+        guard.audit(
+            "subprocess.Popen",
+            ("git", mutation, str(unowned_root / "repo"), {}),
+        )
+
+
+def test_confinement_allows_only_common_git_lock_metadata(tmp_path: Path) -> None:
+    """The linked checkout may coordinate via its exact shared advisory lock."""
+    main, linked = _linked_checkout(tmp_path)
+    guard = _guard(main, linked)
+    advisory_lock = main / ".git" / "gludd-git.lock"
+
+    guard.audit("open", (advisory_lock, None, os.O_CREAT | os.O_RDWR))
+    guard.audit("os.utime", (advisory_lock, None, None, -1))
+
+    for unsafe_path in (
+        main / ".git" / "index.lock",
+        main / ".git" / "gludd-git.lock.extra",
+        main / "Makefile",
+    ):
+        with pytest.raises(PermissionError, match="canonical main checkout"):
+            guard.audit("open", (unsafe_path, "w", os.O_CREAT | os.O_WRONLY))
 
 
 def test_confinement_denies_git_mutation_for_unsafe_repository_cwd(
