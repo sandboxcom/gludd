@@ -22,7 +22,11 @@ def test_ci_job_failure_context_is_authenticated_bounded_and_fail_closed() -> No
 
     assert "gh run view -R sandboxcom/gludd" in block
     assert "--json jobs" in block
-    assert "--log --job=" in block
+    assert "gh api --method GET" in block
+    assert "repos/sandboxcom/gludd/actions/jobs/$(JOB)/logs" in block
+    assert "X-GitHub-Api-Version: 2026-03-10" in block
+    assert "--log --job=" not in block
+    assert 'if [ ! -s "$$LOG" ]' in block
     assert "scripts/resource_arbiter.py root" in block
     assert 'mkdir -p "$$RESOURCE_ROOT"' in block
     assert 'mktemp "$$RESOURCE_ROOT/ci-job-$(RUN)-$(JOB).log.XXXXXX"' in block
@@ -37,6 +41,7 @@ def test_ci_job_failure_context_is_authenticated_bounded_and_fail_closed() -> No
         "$(PATTERN)",
         "$(BEFORE)",
         "$(AFTER)",
+        "$(MAX_MATCHES)",
         "$(CI_JOB_CONTEXT_VALIDATE_ONLY)",
     ):
         assert variable in block
@@ -248,11 +253,12 @@ def test_new_ci_targets_have_safe_behavioral_contracts() -> None:
             "PATTERN",
             "BEFORE",
             "AFTER",
+            "MAX_MATCHES",
             "CI_JOB_CONTEXT_VALIDATE_ONLY",
         ],
         "behavior": (
             "make ci-job-failure-context RUN=1 JOB=1 PATTERN=FAILED "
-            "BEFORE=2 AFTER=4 CI_JOB_CONTEXT_VALIDATE_ONLY=1"
+            "BEFORE=2 AFTER=4 MAX_MATCHES=5 CI_JOB_CONTEXT_VALIDATE_ONLY=1"
         ),
     }
     assert contracts["ci-artifact-download"] == {
