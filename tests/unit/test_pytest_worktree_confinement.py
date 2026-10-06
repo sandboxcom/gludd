@@ -374,6 +374,57 @@ def test_confinement_denies_git_worktree_creation_during_test(tmp_path: Path) ->
         )
 
 
+def test_confinement_allows_git_mutation_in_canonical_pytest_tmp_repo(
+    tmp_path: Path,
+) -> None:
+    """A test may mutate its own canonical, isolated temporary repository."""
+    main, linked = _linked_checkout(tmp_path)
+    isolated_repo = tmp_path / "isolated-repo"
+    (isolated_repo / ".git").mkdir(parents=True)
+    guard = _guard(main, linked)
+
+    guard.audit(
+        "subprocess.Popen",
+        (
+            "git",
+            ("git", "checkout", "-b", "feature-test"),
+            str(isolated_repo),
+            {},
+        ),
+    )
+
+
+def test_confinement_denies_git_mutation_for_unsafe_repository_cwd(
+    tmp_path: Path,
+) -> None:
+    """Missing, relative, traversing, symlinked, and non-repo cwd fail closed."""
+    main, linked = _linked_checkout(tmp_path)
+    isolated_repo = tmp_path / "isolated-repo"
+    (isolated_repo / ".git").mkdir(parents=True)
+    alias = tmp_path / "repo-alias"
+    alias.symlink_to(isolated_repo, target_is_directory=True)
+    not_repo = tmp_path / "not-repo"
+    not_repo.mkdir()
+    guard = _guard(main, linked)
+    mutation = ("git", "worktree", "add", "target", "-b", "feature-test")
+
+    unsafe_cwds: tuple[str | None, ...] = (
+        None,
+        isolated_repo.name,
+        str(isolated_repo / ".." / isolated_repo.name),
+        str(alias),
+        str(tmp_path / "missing-repo"),
+        str(not_repo),
+        str(linked),
+    )
+    for cwd in unsafe_cwds:
+        with pytest.raises(PermissionError, match="repository mutation subprocess"):
+            guard.audit("subprocess.Popen", ("git", mutation, cwd, {}))
+
+    with pytest.raises(PermissionError, match="canonical main checkout"):
+        guard.audit("subprocess.Popen", ("git", mutation, str(main), {}))
+
+
 def test_confinement_denies_chdir_into_canonical_main_alias(tmp_path: Path) -> None:
     """A symlink alias cannot make later relative writes escape the worktree."""
     main, linked = _linked_checkout(tmp_path)

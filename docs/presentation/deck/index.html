@@ -885,7 +885,39 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19f.1: S83.113 QEMU IMPORT ISOLATION -->
+<!-- SLIDE 19f.1: S83.103 CANONICAL WORKTREE CREATION PATHS -->
+<!-- ============================================================ -->
+<section data-contract="s83-103-canonical-worktree-paths">
+  <p class="stage-kicker">Git safety contract &middot; canonical identity to reversible rollout</p>
+  <h2>S83.103 &mdash; Worktree creation paths <span class="badge-green">Project confined</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Authorize before mutation</h3>
+      <ul class="bullets-tight">
+        <li>Reject a leading dash or <strong>raw .. traversal</strong> before any Git mutation or storage acquisition.</li>
+        <li>Compare resolved filesystem identities so a directory <strong>symlink escape</strong> cannot redirect Git outside the repository boundary.</li>
+        <li>Accept only this repository's state root; a <strong>foreign project namespace</strong> grants no authority.</li>
+        <li>Compatibility stays exact: <code>gludd-worktree-</code> plus <strong>32 lowercase hexadecimal</strong> UUID characters below the canonical platform temp root.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Measured and bounded</h3>
+      <ul class="bullets-tight">
+        <li><strong>Tests:</strong> 35/35 warning-strict path + adjacent checks; 421/421 Git repository family</li>
+        <li><strong>Coverage:</strong> <code>repo.py</code> = 86.00% line + branch aggregate</li>
+        <li><strong>Resources:</strong> bounded in-process checks, one existing bounded Git subprocess, zero network or background workers</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">
+    ZDD uses rolling replacement: old and new workers may overlap because each validates its own request.
+    Invalid paths leave no partial worktree; a source-only rollback needs no schema, data, or service migration.
+  </p>
+  <p class="cite">Sources: docs/features/GIT_WORKTREE_CREATION_PATHS.md &middot; long-lived Stack Overflow worktree and symlink reports</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19f.2: S83.113 QEMU IMPORT ISOLATION -->
 <!-- ============================================================ -->
 <section data-contract="s83-113-qemu-import-isolation">
   <p class="stage-kicker">Test-isolation contract &middot; reversible module-graph probes</p>

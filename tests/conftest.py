@@ -44,6 +44,7 @@ import shlex
 import shutil
 import socket
 import sys
+import tempfile
 import unittest.mock as _mock_mod
 from collections.abc import Iterator, Mapping
 from contextlib import suppress
@@ -146,6 +147,22 @@ _MUTATING_PATH_EVENTS: dict[str, tuple[int, ...]] = {
     "os.utime": (0,),
 }
 _PYTEST_COLLECTION_ACTIVE = False
+_PYTEST_TEMP_ROOT_PREFIXES = (
+    "gludd-coverage-files-",
+    "gludd-gate-",
+    "gludd-hangdbg",
+    "gludd-iso-",
+    "gludd-node-v26-",
+    "gludd-oc-boot-",
+    "gludd-test-",
+    "gludd-testfiles-",
+    "gludd-testspecific-",
+    "gludd-testunit-",
+    "gludd-windows-paths-",
+    "gludd-xdist-",
+    "gludd-xdist-trace-",
+    "pytest-",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -340,6 +357,48 @@ class _WorktreeConfinement:
             )
         return False
 
+    def _is_canonical_isolated_pytest_repository(self, value: object) -> bool:
+        """Return whether ``value`` is one canonical pytest-owned temp repo."""
+        if isinstance(value, bytes):
+            value = os.fsdecode(value)
+        if not isinstance(value, (str, os.PathLike)):
+            return False
+        try:
+            candidate = Path(value)
+        except (TypeError, ValueError):
+            return False
+        if not candidate.is_absolute() or ".." in candidate.parts:
+            return False
+        try:
+            resolved = candidate.resolve(strict=True)
+        except (FileNotFoundError, OSError, RuntimeError, ValueError):
+            return False
+        if resolved != candidate:
+            return False
+        if self._is_within(resolved, self.active_root) or self._is_within(
+            resolved, self.canonical_root
+        ):
+            return False
+        relative: Path | None = None
+        for raw_temp_root in (Path(tempfile.gettempdir()), Path("/tmp")):
+            try:
+                temp_root = raw_temp_root.resolve(strict=True)
+                relative = resolved.relative_to(temp_root)
+                break
+            except (FileNotFoundError, OSError, RuntimeError, ValueError):
+                continue
+        if relative is None:
+            return False
+        if not any(
+            component.startswith(_PYTEST_TEMP_ROOT_PREFIXES)
+            for component in relative.parts
+        ):
+            return False
+        git_marker = resolved / ".git"
+        if git_marker.is_symlink():
+            return False
+        return git_marker.is_dir() or git_marker.is_file()
+
     @classmethod
     def _is_side_effect_free_version_probe(cls, value: object) -> bool:
         """Return whether collection is only querying one executable version."""
@@ -367,14 +426,17 @@ class _WorktreeConfinement:
             return
 
         if event == "subprocess.Popen" and len(args) >= 3:
-            cwd = args[2] if args[2] is not None else Path.cwd()
+            requested_cwd = args[2]
+            cwd = requested_cwd if requested_cwd is not None else Path.cwd()
             self._deny_canonical_path(event, cwd)
             self._deny_subprocess_payload("argv", args[1])
-            if self._is_repository_mutation(args[1]):
+            if self._is_repository_mutation(
+                args[1]
+            ) and not self._is_canonical_isolated_pytest_repository(requested_cwd):
                 raise PermissionError(
                     "pytest worktree confinement denied repository mutation "
-                    "subprocess; tests may inspect but cannot create branches "
-                    "or worktrees"
+                    "subprocess outside a canonical isolated pytest temp "
+                    "repository"
                 )
             environment = args[3] if len(args) >= 4 and args[3] is not None else os.environ
             self._deny_subprocess_payload("environment", environment)
