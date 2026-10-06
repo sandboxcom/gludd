@@ -7,6 +7,8 @@ fresh. The `_gate-fresh-check` mechanism must be fail-closed.
 from pathlib import Path
 from typing import ClassVar
 
+from scripts.makefile_layout import compose_makefile
+
 MAKEFILE = Path(__file__).parent.parent.parent / "Makefile"
 
 
@@ -32,12 +34,12 @@ class TestG01G02GateMustPassBeforeCommit:
     ]
 
     def test_gate_fresh_check_target_exists(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         recipe = _find_recipe(content, "_gate-fresh-check")
         assert recipe, "G01: _gate-fresh-check target must exist"
 
     def test_gate_fresh_check_is_fail_closed(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         recipe = _find_recipe(content, "_gate-fresh-check")
         if not recipe:
             return
@@ -46,7 +48,7 @@ class TestG01G02GateMustPassBeforeCommit:
         )
 
     def test_commit_targets_reference_gate_fresh_check(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         checked = 0
         missing = []
         for target in self._COMMIT_TARGETS:
@@ -65,7 +67,7 @@ class TestG01G02GateMustPassBeforeCommit:
         )
 
     def test_test_and_commit_is_allowlisted(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         recipe = _find_recipe(content, "test-and-commit")
         if not recipe:
             return

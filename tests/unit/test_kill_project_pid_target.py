@@ -5,12 +5,14 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 
 
 def _recipe(target: str) -> str:
-    source = MAKEFILE.read_text()
+    source = compose_makefile(MAKEFILE)
     match = re.search(
         rf"(?m)^{re.escape(target)}:\n((?:\t.*\n)+)",
         source,

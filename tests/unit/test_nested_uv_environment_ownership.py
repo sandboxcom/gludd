@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 
 
 def _recipe(target: str) -> str:
     """Return one target recipe from the repository Makefile."""
-    content = MAKEFILE.read_text()
+    content = compose_makefile(MAKEFILE)
     return content.split(f"{target}:\n", 1)[1].split("\n\n", 1)[0]
 
 

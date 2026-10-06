@@ -3,13 +3,15 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 BUILD_WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
 
 
 def _makefile() -> str:
-    return MAKEFILE.read_text()
+    return compose_makefile(MAKEFILE)
 
 
 def _target_line(target: str) -> str:
@@ -336,7 +338,8 @@ def test_workflow_state_targets_do_not_dirty_lockfile_with_uv_run() -> None:
     assert "GLUDD_XDIST_WORKERS=\"$(GLUDD_XDIST_WORKERS)\" python3 -c" not in makefile
     assert "VERSION := $(shell $(UV) run python" not in makefile
     assert (
-        'VERSION = $(shell UV_CACHE_DIR="$(GLUDD_UV_CACHE_DIR)" $(UV) run python'
+        'VERSION = $(shell UV_CACHE_DIR="$(GLUDD_UV_CACHE_DIR)" '
+        "$(UV) run --no-sync python"
         in makefile
     )
     no_uv_goals = makefile.split("_NO_UV_SYNC_GOALS :=", 1)[1].split("ifneq", 1)[0]

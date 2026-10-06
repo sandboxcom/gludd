@@ -5,11 +5,13 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 _MAKEFILE = Path(__file__).resolve().parents[2] / "Makefile"
 
 
 def _makefile() -> str:
-    return _MAKEFILE.read_text(encoding="utf-8")
+    return compose_makefile(_MAKEFILE)
 
 
 def test_gate_preflights_are_recipe_work_not_fail_fast_prerequisites() -> None:

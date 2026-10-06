@@ -21,12 +21,14 @@ def test_make_target_contract_is_valid() -> None:
     assert errors == [], "\n".join(errors)
 
 
-def test_sync_llama_cpp_uses_locked_extra_and_dry_run_contract() -> None:
+def test_sync_llama_cpp_uses_locked_profile_and_dry_run_contract() -> None:
     makefile = compose_makefile(ROOT / "Makefile")
     target = makefile.split("\nsync-llama-cpp:", 1)[1].split("\n\n", 1)[0]
 
     assert "0.1.0-beta" not in target
-    assert "sync --locked --extra local-inference" in target
+    assert "sync" in target
+    assert "DEPENDENCY_PROFILE_SET=local-inference" in target
+    assert "DEPENDENCY_PROFILE_VALIDATE_ONLY=$(SYNC_LLAMA_CPP_VALIDATE_ONLY)" in target
     assert "SYNC_LLAMA_CPP_VALIDATE_ONLY" in target
 
     contract = load_contract(ROOT / "config/make_target_contract.json")
