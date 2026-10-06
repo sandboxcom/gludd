@@ -1,0 +1,52 @@
+{
+  "indirect_test_mappings": {
+    "general_ludd.cli_commands.parser": {
+      "via": "general_ludd.cli",
+      "tests": [
+        "tests/unit/test_cli_module_split.py"
+      ]
+    },
+    "general_ludd.daemon_components.ports": {
+      "via": "general_ludd.daemon",
+      "tests": [
+        "tests/unit/test_daemon_module_split_compat.py"
+      ]
+    },
+    "general_ludd.event_loop.compute_lifecycle": {
+      "via": "general_ludd.event_loop.loop",
+      "tests": [
+        "tests/unit/test_event_loop_module_split.py"
+      ]
+    },
+    "general_ludd.event_loop.decision_completion": {
+      "via": "general_ludd.event_loop.loop",
+      "tests": [
+        "tests/unit/test_event_loop_module_split.py"
+      ]
+    },
+    "general_ludd.event_loop.execution_dispatch": {
+      "via": "general_ludd.event_loop.loop",
+      "tests": [
+        "tests/unit/test_event_loop_module_split.py"
+      ]
+    },
+    "general_ludd.event_loop.review_dispatch": {
+      "via": "general_ludd.event_loop.loop",
+      "tests": [
+        "tests/unit/test_event_loop_module_split.py"
+      ]
+    },
+    "general_ludd.event_loop.self_improve_lifecycle": {
+      "via": "general_ludd.event_loop.loop",
+      "tests": [
+        "tests/unit/test_event_loop_module_split.py"
+      ]
+    },
+    "general_ludd.event_loop.tick_lifecycle": {
+      "via": "general_ludd.event_loop.loop",
+      "tests": [
+        "tests/unit/test_event_loop_module_split.py"
+      ]
+    }
+  }
+}
