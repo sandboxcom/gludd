@@ -173,7 +173,13 @@ class TestLanggraphCallModelReturnsStructuredError:
 
     def test_closure_return_type_is_str_not_optional(self) -> None:
         """The _langgraph_call_model closure must return str, not str|None."""
-        daemon_path = Path(__file__).parent.parent.parent / "src" / "general_ludd" / "daemon.py"
+        daemon_path = (
+            Path(__file__).parent.parent.parent
+            / "src"
+            / "general_ludd"
+            / "daemon_components"
+            / "lifecycle.py"
+        )
         source = daemon_path.read_text(encoding="utf-8")
 
         # Find the line with the closure definition and extract the full
@@ -218,7 +224,13 @@ class TestLanggraphCallModelReturnsStructuredError:
 
     def test_closure_raises_not_returns_none(self) -> None:
         """The except block must raise, not 'return None'."""
-        daemon_path = Path(__file__).parent.parent.parent / "src" / "general_ludd" / "daemon.py"
+        daemon_path = (
+            Path(__file__).parent.parent.parent
+            / "src"
+            / "general_ludd"
+            / "daemon_components"
+            / "lifecycle.py"
+        )
         source = daemon_path.read_text(encoding="utf-8")
 
         idx = source.index("def _langgraph_call_model")

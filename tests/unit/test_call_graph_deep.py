@@ -551,7 +551,7 @@ def test_event_loop_tick_calls_phase_methods() -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# Test 12 — daemon.py lifespan wires event_loop subsystems back to app.state
+# Test 12 — lifecycle component wires event_loop subsystems back to app.state
 # ═══════════════════════════════════════════════════════════════════════
 
 _EXPECTED_APP_STATE_ATTRS: frozenset[str] = frozenset(
@@ -573,7 +573,9 @@ _EXPECTED_APP_STATE_ATTRS: frozenset[str] = frozenset(
 
 
 def test_daemon_lifespan_wires_expected_app_state() -> None:
-    daemon_source = (SRC_PKG / "daemon.py").read_text()
+    daemon_source = (SRC_PKG / "daemon.py").read_text() + (
+        SRC_PKG / "daemon_components" / "lifecycle.py"
+    ).read_text()
     import re
 
     attrs: set[str] = set()
@@ -606,8 +608,8 @@ def test_callgraph_has_expected_api() -> None:
 
 
 def test_daemon_lifespan_constructs_event_loop() -> None:
-    daemon_source = (SRC_PKG / "daemon.py").read_text()
-    assert "EventLoop(" in daemon_source, "daemon.py never constructs EventLoop"
+    daemon_source = (SRC_PKG / "daemon_components" / "lifecycle.py").read_text()
+    assert "EventLoop(" in daemon_source, "lifecycle.py never constructs EventLoop"
 
 
 # ═══════════════════════════════════════════════════════════════════════

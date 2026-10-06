@@ -149,8 +149,8 @@ class TestPromptEnhancerWiring:
         import ast
         import importlib
 
-        daemon_mod = importlib.import_module("general_ludd.daemon")
-        source_file = daemon_mod.__file__
+        lifecycle_mod = importlib.import_module("general_ludd.daemon_components.lifecycle")
+        source_file = lifecycle_mod.__file__
         assert source_file is not None
 
         with open(source_file) as f:
@@ -165,4 +165,4 @@ class TestPromptEnhancerWiring:
                         enhancer_stored = True
                         break
 
-        assert enhancer_stored, "PromptEnhancer must be stored on app.state._prompt_enhancer in daemon.py"
+        assert enhancer_stored, "PromptEnhancer must be stored on app.state._prompt_enhancer in lifecycle.py"

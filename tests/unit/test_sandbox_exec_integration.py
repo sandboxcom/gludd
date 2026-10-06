@@ -65,14 +65,18 @@ class TestSandboxExecutorWiring:
 
     def test_instantiated_in_daemon_py(self) -> None:
         root = Path(__file__).parent.parent.parent
-        daemon_path = root / "src" / "general_ludd" / "daemon.py"
-        source = daemon_path.read_text()
+        lifecycle_path = (
+            root / "src" / "general_ludd" / "daemon_components" / "lifecycle.py"
+        )
+        source = lifecycle_path.read_text()
         assert "SandboxExecutor(timeout=30)" in source
 
     def test_passed_to_event_loop_constructor(self) -> None:
         root = Path(__file__).parent.parent.parent
-        daemon_path = root / "src" / "general_ludd" / "daemon.py"
-        tree = ast.parse(daemon_path.read_text())
+        lifecycle_path = (
+            root / "src" / "general_ludd" / "daemon_components" / "lifecycle.py"
+        )
+        tree = ast.parse(lifecycle_path.read_text())
 
         sandbox_kwarg_found = False
         for node in ast.walk(tree):
@@ -88,7 +92,7 @@ class TestSandboxExecutorWiring:
             if sandbox_kwarg_found:
                 break
         assert sandbox_kwarg_found, (
-            "sandbox_executor not found as kwarg in daemon.py EventLoop constructor call"
+            "sandbox_executor not found as kwarg in lifecycle.py EventLoop constructor call"
         )
 
     def test_event_loop_stores_sandbox_executor(self) -> None:
