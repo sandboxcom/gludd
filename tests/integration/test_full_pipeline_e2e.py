@@ -88,7 +88,7 @@ async def _create_test_infra():
 
 class TestFullPipelineE2E:
     @pytest.mark.asyncio
-    async def test_todo_from_api_to_reconciled_status(self):
+    async def test_todo_from_api_to_reconciled_status(self, tmp_path: Path):
         engine, factory, client, _app = await _create_test_infra()
 
         resp = await client.post(
@@ -110,7 +110,7 @@ class TestFullPipelineE2E:
             db_todo = await repo.get_by_id(todo_id)
             assert db_todo is not None
 
-        with tempfile.TemporaryDirectory() as ws:
+        with tempfile.TemporaryDirectory(dir=tmp_path) as ws:
             _init_git_repo(ws)
 
             mock_gateway = MagicMock()

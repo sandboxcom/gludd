@@ -31,6 +31,12 @@ class _FakeGit:
         self.committed: list[str] = []
         _FakeGit.instances.append(self)
 
+    def current_branch(self) -> str:
+        return "main"
+
+    def create_branch(self, name: str) -> str:
+        return name
+
     def commit(self, message: str) -> str:
         self.committed.append(message)
         return "deadbeef" * 5

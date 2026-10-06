@@ -162,8 +162,9 @@ class TestCommitOffload:
         todo.project_id = None
 
         repo = MagicMock()
+        repo.current_branch.return_value = "gludd/todo-c2-git"
         repo.commit.return_value = "abc123"
-        repo.push.return_value = None
+        repo.push.return_value = True
 
         calls: list[tuple[Any, tuple, dict]] = []
         with (
@@ -185,6 +186,101 @@ class TestCommitOffload:
         # commit/push were never called inline on the loop thread.
         repo.commit.assert_called_once()
         repo.push.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_delivery_creates_default_task_branch_before_commit(self) -> None:
+        """A trunk checkout must move onto the todo branch before committing."""
+        loop = EventLoop()
+        todo = MagicMock(
+            todo_id="TODO-C2-BRANCH",
+            title="deliver on a task branch",
+            branch_name=None,
+            worktree="/tmp/wt-c2-branch",
+            project_id=None,
+        )
+        repo = MagicMock()
+        repo.current_branch.return_value = "main"
+        repo.commit.return_value = "abc123"
+        repo.push.return_value = True
+        calls: list[tuple[Any, tuple, dict]] = []
+
+        with (
+            patch(
+                "general_ludd.event_loop.loop.asyncio.to_thread",
+                _recording_to_thread(calls),
+            ),
+            patch(
+                "general_ludd.git_automation.repo.GitAutomation",
+                return_value=repo,
+            ),
+        ):
+            await loop._try_commit_completed_work(todo)
+
+        repo.create_branch.assert_called_once_with("gludd/todo-c2-branch")
+        offloaded_fns = [call[0] for call in calls]
+        assert offloaded_fns.index(repo.create_branch) < offloaded_fns.index(repo.commit)
+        repo.push.assert_called_once_with(branch="gludd/todo-c2-branch")
+
+    @pytest.mark.asyncio
+    async def test_delivery_preserves_existing_intended_branch(self) -> None:
+        """An already-correct worktree branch must not be recreated."""
+        loop = EventLoop()
+        todo = MagicMock(
+            todo_id="TODO-C2-EXISTING",
+            title="keep the task branch",
+            branch_name=None,
+            worktree="/tmp/wt-c2-existing",
+            project_id=None,
+        )
+        repo = MagicMock()
+        existing_branch = "gludd/TODO-C2-EXISTING-keep-the-task-branch"
+        repo.current_branch.return_value = existing_branch
+        repo.commit.return_value = "abc123"
+        repo.push.return_value = True
+
+        with (
+            patch(
+                "general_ludd.event_loop.loop.asyncio.to_thread",
+                _recording_to_thread([]),
+            ),
+            patch(
+                "general_ludd.git_automation.repo.GitAutomation",
+                return_value=repo,
+            ),
+        ):
+            await loop._try_commit_completed_work(todo)
+
+        repo.create_branch.assert_not_called()
+        repo.push.assert_called_once_with(branch=existing_branch)
+
+    @pytest.mark.asyncio
+    async def test_delivery_fails_closed_when_push_returns_false(self) -> None:
+        """A false push result cannot be logged or ledgered as delivered."""
+        loop = EventLoop()
+        todo = MagicMock(
+            todo_id="TODO-C2-PUSH",
+            title="surface push failure",
+            branch_name="gludd/TODO-C2-PUSH",
+            worktree="/tmp/wt-c2-push",
+            project_id=None,
+        )
+        repo = MagicMock()
+        repo.current_branch.return_value = "gludd/TODO-C2-PUSH"
+        repo.commit.return_value = "abc123"
+        repo.push.return_value = False
+
+        with (
+            patch(
+                "general_ludd.event_loop.loop.asyncio.to_thread",
+                _recording_to_thread([]),
+            ),
+            patch(
+                "general_ludd.git_automation.repo.GitAutomation",
+                return_value=repo,
+            ),
+            pytest.raises(RuntimeError, match="push returned false"),
+        ):
+            await loop._try_commit_completed_work(todo)
 
     @pytest.mark.asyncio
     async def test_no_worktree_skips_git_entirely(self) -> None:
