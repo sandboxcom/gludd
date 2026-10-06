@@ -95,9 +95,7 @@ from general_ludd.self_improve.managed_runner_boundaries import (
     _ManagedAttemptContext,
     _ManagedRunState,
     _ModelManagerFactory,
-    _OutcomeAdapterFactory,
     _PendingSyntaxRepair,
-    _ProposalGenerator,
     _RemoteProposalCodecFactory,
     _Reservation,
     _RoutingLocalProposalBackend,
@@ -107,11 +105,16 @@ from general_ludd.self_improve.managed_runner_boundaries import (
     _FailureLoader as _FailureLoader,
 )
 from general_ludd.self_improve.managed_runner_boundaries import (
+    _OutcomeAdapterFactory as _OutcomeAdapterFactory,
+)
+from general_ludd.self_improve.managed_runner_boundaries import (
     _OutcomeRecorder as _OutcomeRecorder,
+)
+from general_ludd.self_improve.managed_runner_boundaries import (
+    _ProposalGenerator as _ProposalGenerator,
 )
 from general_ludd.self_improve.managed_runner_contracts import (
     AttemptResult,
-    GeneratedProposal,
     PlanBoundProposal,
     PromptPlan,
     TaskSpec,
@@ -128,6 +131,9 @@ from general_ludd.self_improve.managed_runner_contracts import (
     _validate_attempt_identity_digest,
     _validate_digest,
     _validate_reference,
+)
+from general_ludd.self_improve.managed_runner_contracts import (
+    GeneratedProposal as GeneratedProposal,
 )
 from general_ludd.self_improve.managed_runner_contracts import (
     _non_negative_integer as _non_negative_integer,
@@ -2342,6 +2348,7 @@ __all__ = (
     "ApprovedSelfImprovePlan",
     "AttemptResult",
     "CapabilityEvidenceOutcomeAdapter",
+    "GeneratedProposal",
     "LocalProposalBackendAdapter",
     "LocalProposalInvocation",
     "ManagedOutcomeAdapter",
@@ -2354,6 +2361,8 @@ __all__ = (
     "PromptShard",
     "SelfImprovePolicyViolation",
     "TaskSpec",
+    "_OutcomeAdapterFactory",
+    "_ProposalGenerator",
     "_attempt_identity_digest",
     "_build_validation_retry_prompt_plan",
     "_is_safe_make_command",

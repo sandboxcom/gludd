@@ -90,6 +90,12 @@ from general_ludd.self_improve.codex_protocol import (
     ValidationRetryProtocol as ValidationRetryProtocol,
 )
 from general_ludd.self_improve.codex_protocol import (
+    _safe_compact_policy_telemetry as _safe_compact_policy_telemetry,
+)
+from general_ludd.self_improve.codex_protocol import (
+    _safe_compact_scope_telemetry as _safe_compact_scope_telemetry,
+)
+from general_ludd.self_improve.codex_protocol import (
     encode_prompt_batch as encode_prompt_batch,
 )
 

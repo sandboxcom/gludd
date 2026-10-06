@@ -11,6 +11,7 @@ from typing import Any, TypedDict, Unpack, cast
 import pytest
 
 import general_ludd.self_improve.codex_comparison as comparison_module
+import general_ludd.self_improve.codex_protocol as protocol_module
 from general_ludd.self_improve.codex_comparison import (
     CandidateEvidence,
     CodexReference,
@@ -94,6 +95,18 @@ def _reference() -> CodexReference:
         test_files=frozenset({"tests/unit/test_example.py"}),
         changed_lines=10,
         elapsed_seconds=10.0,
+    )
+
+
+def test_private_compact_telemetry_compatibility_exports_are_explicit() -> None:
+    """Managed-runner imports retain typed identity with the protocol owner."""
+    assert (
+        comparison_module._safe_compact_policy_telemetry
+        is protocol_module._safe_compact_policy_telemetry
+    )
+    assert (
+        comparison_module._safe_compact_scope_telemetry
+        is protocol_module._safe_compact_scope_telemetry
     )
 
 
