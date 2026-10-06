@@ -55,7 +55,32 @@ def test_stale_owner_is_reclaimed(tmp_path: Path) -> None:
     result = _run("acquire", lock, os.getpid())
 
     assert result.returncode == 0, result.stderr
-    assert json.loads(lock.read_text(encoding="utf-8"))["pid"] == os.getpid()
+    payload = json.loads(lock.read_text(encoding="utf-8"))
+    assert payload["pid"] == os.getpid()
+    assert payload["marker"] == lock_module.GATE_LOCK_MARKER
+    assert payload["state"] == "active"
+    assert payload["pid_started_at"]
+    assert payload["project_root"] == str(ROOT)
+
+
+def test_termination_failed_owner_is_not_reclaimed(tmp_path: Path) -> None:
+    lock = tmp_path / "gate.lock"
+    lock.write_text(
+        json.dumps(
+            {
+                "pid": 999_999_999,
+                "state": "termination_failed",
+                "survivor_pids": [1234],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run("acquire", lock, os.getpid())
+
+    assert result.returncode != 0
+    assert "termination failed" in (result.stdout + result.stderr)
+    assert lock.exists()
 
 
 def test_only_owner_can_release_lock(tmp_path: Path) -> None:

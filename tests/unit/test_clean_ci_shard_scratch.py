@@ -413,6 +413,26 @@ def test_stale_unowned_socket_is_removed(short_socket_root: Path) -> None:
     assert result == {"removed": [str(socket_path)], "skipped": []}
 
 
+def test_firecracker_socket_lookalike_regular_file_is_refused(tmp_path: Path) -> None:
+    module = _load_module()
+    lookalike = tmp_path / "gludd-test-fc-31337-1790838250838.sock"
+    lookalike.write_bytes(b"")
+    _age_path(lookalike, 7200)
+
+    result = module.clean_ci_shard_scratch(
+        tmp_root=tmp_path,
+        min_age_seconds=3600,
+        active_process_pids=lambda _path: [],
+        active_socket_pids=lambda _path: [],
+    )
+
+    assert lookalike.is_file()
+    assert result == {
+        "removed": [],
+        "skipped": [f"{lookalike}:unsupported-generated-file"],
+    }
+
+
 def test_lease_markers_and_symlinks_are_never_removed(tmp_path: Path) -> None:
     module = _load_module()
     lease = tmp_path / "gludd-test-runtime.lock"

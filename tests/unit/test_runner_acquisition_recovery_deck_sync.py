@@ -30,7 +30,7 @@ def test_deck_pins_ledger_first_runner_recovery_in_order() -> None:
     )
     positions = [section.index(marker) for marker in ordered_markers]
     assert positions == sorted(positions)
-    assert deck.count("<section") == 49
+    assert deck.count("<section") == 50
     assert deck.index('data-contract="hosted-runner-capacity"') < deck.index(
         'data-contract="runner-acquisition-recovery"'
     )

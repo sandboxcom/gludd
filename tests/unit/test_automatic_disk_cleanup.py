@@ -1997,6 +1997,306 @@ def test_stale_generated_scratch_cleanup_maps_refusals_and_errors(
     assert "action=stale-generated-scratch status=complete" in output
 
 
+def test_stale_owned_node_cache_cleanup_is_exact_and_visible(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    approved = tmp_path.resolve()
+    cache = approved / "gludd-npm-cache-public-v1"
+    cache.mkdir()
+    payload = cache / "_cacache" / "content.bin"
+    payload.parent.mkdir()
+    payload.write_bytes(b"regenerable")
+    ambiguous = approved / "gludd-npm-cache-public-v1-copy"
+    ambiguous.mkdir()
+    for path in (payload, payload.parent, cache, ambiguous):
+        os.utime(path, (100.0, 100.0))
+
+    result = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(cache, ambiguous),
+        approved_tmp_root=approved,
+        now_epoch=10_000,
+        min_age_seconds=3_600,
+        active_process_pids=lambda _path: [],
+    )
+
+    assert result.removed == (str(cache),)
+    assert result.skipped == (f"{ambiguous}:unapproved-cache-name",)
+    assert result.errors == ()
+    assert not cache.exists()
+    assert ambiguous.is_dir()
+    output = capsys.readouterr().out
+    assert "action=node-download-cache status=starting candidates=2" in output
+    assert "action=node-download-cache status=complete inspected=2 removed=1" in output
+
+
+def test_node_cache_cleanup_refuses_unsafe_fresh_and_unbounded_candidates(
+    tmp_path: Path,
+) -> None:
+    approved = tmp_path.resolve()
+    cache = approved / "gludd-npm-cache-public-v1"
+
+    cache.write_text("not a directory\n", encoding="utf-8")
+    regular = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(cache,),
+        approved_tmp_root=approved,
+        now_epoch=10_000,
+        min_age_seconds=3_600,
+        active_process_pids=lambda _path: [],
+    )
+    assert regular.skipped == (f"{cache}:unsupported-file-type",)
+    cache.unlink()
+
+    external = tmp_path / "external-cache"
+    external.mkdir()
+    cache.symlink_to(external, target_is_directory=True)
+    linked = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(cache,),
+        approved_tmp_root=approved,
+        now_epoch=10_000,
+        min_age_seconds=3_600,
+        active_process_pids=lambda _path: [],
+    )
+    assert linked.skipped == (f"{cache}:symlink",)
+    cache.unlink()
+
+    cache.mkdir()
+    fresh = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(cache,),
+        approved_tmp_root=approved,
+        now_epoch=10_000,
+        min_age_seconds=3_600,
+        active_process_pids=lambda _path: [],
+    )
+    assert fresh.skipped == (f"{cache}:recent",)
+    os.utime(cache, (100.0, 100.0))
+    (cache / "one").write_bytes(b"1")
+    (cache / "two").write_bytes(b"2")
+    for child in cache.iterdir():
+        os.utime(child, (100.0, 100.0))
+    os.utime(cache, (100.0, 100.0))
+    bounded = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(cache,),
+        approved_tmp_root=approved,
+        now_epoch=10_000,
+        min_age_seconds=3_600,
+        max_entries=1,
+        active_process_pids=lambda _path: [],
+    )
+    assert bounded.skipped == (f"{cache}:entry-limit",)
+    assert cache.is_dir()
+
+
+def test_node_cache_cleanup_refuses_active_and_raced_owners(tmp_path: Path) -> None:
+    approved = tmp_path.resolve()
+    cache = approved / "gludd-npm-cache-public-v1"
+    cache.mkdir()
+    os.utime(cache, (100.0, 100.0))
+
+    active = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(cache,),
+        approved_tmp_root=approved,
+        now_epoch=10_000,
+        min_age_seconds=3_600,
+        active_process_pids=lambda _path: [7331],
+    )
+    assert active.skipped == (f"{cache}:active-pids=7331",)
+
+    calls = 0
+
+    def race_after_initial_inspection(path: Path) -> list[int]:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            (path / "raced").write_text("new cache entry\n", encoding="utf-8")
+        return []
+
+    raced = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(cache,),
+        approved_tmp_root=approved,
+        now_epoch=10_000,
+        min_age_seconds=3_600,
+        active_process_pids=race_after_initial_inspection,
+    )
+    assert raced.skipped == (f"{cache}:identity-changed",)
+    assert cache.is_dir()
+
+
+def test_node_cache_cleanup_additional_fail_closed_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    approved = tmp_path.resolve()
+    cache = approved / "gludd-npm-cache-public-v1"
+
+    invalid = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(),
+        approved_tmp_root=approved,
+        min_age_seconds=-1,
+        active_process_pids=lambda _path: [],
+    )
+    assert invalid.errors == ("node-download-cache:invalid-bound",)
+
+    missing_root = tmp_path / "missing-root"
+    unavailable = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(),
+        approved_tmp_root=missing_root,
+        active_process_pids=lambda _path: [],
+    )
+    assert unavailable.errors == (f"{missing_root}:temp-root-inspection-failed",)
+
+    absent = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(cache,),
+        approved_tmp_root=approved,
+        active_process_pids=lambda _path: [],
+    )
+    assert absent.skipped == (f"{cache}:cache-absent",)
+
+    outside_root = tmp_path / "outside"
+    outside_root.mkdir()
+    outside = outside_root / cache.name
+    outside.mkdir()
+    outside_result = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(outside,),
+        approved_tmp_root=approved,
+        active_process_pids=lambda _path: [],
+    )
+    assert outside_result.skipped == (f"{outside}:outside-canonical-temp-root",)
+
+    cache.mkdir()
+    linked_target = tmp_path / "linked-target"
+    linked_target.write_text("preserve\n", encoding="utf-8")
+    (cache / "link").symlink_to(linked_target)
+    os.utime(cache, (100.0, 100.0))
+    unsafe = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(cache,),
+        approved_tmp_root=approved,
+        now_epoch=10_000,
+        min_age_seconds=3_600,
+        active_process_pids=lambda _path: [],
+    )
+    assert unsafe.skipped == (f"{cache}:unsafe-tree-entry",)
+    assert linked_target.read_text(encoding="utf-8") == "preserve\n"
+    (cache / "link").unlink()
+
+    def stale_cache() -> None:
+        for child in cache.iterdir():
+            if child.is_dir():
+                automatic_disk_cleanup._remove_tree(child)
+            else:
+                child.unlink()
+        os.utime(cache, (100.0, 100.0))
+
+    stale_cache()
+
+    def fail_process(_path: Path) -> list[int]:
+        raise automatic_disk_cleanup.ProcessInspectionError("unavailable")
+
+    initial_failure = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(cache,),
+        approved_tmp_root=approved,
+        now_epoch=10_000,
+        min_age_seconds=3_600,
+        active_process_pids=fail_process,
+    )
+    assert initial_failure.errors == (f"{cache}:process-inspection-failed",)
+
+    process_reads: list[list[int] | Exception] = [
+        [],
+        automatic_disk_cleanup.ProcessInspectionError("late"),
+    ]
+
+    def fail_process_recheck(_path: Path) -> list[int]:
+        value = process_reads.pop(0)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    recheck_failure = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(cache,),
+        approved_tmp_root=approved,
+        now_epoch=10_000,
+        min_age_seconds=3_600,
+        active_process_pids=fail_process_recheck,
+    )
+    assert recheck_failure.errors == (f"{cache}:process-revalidation-failed",)
+
+    active_reads = iter(([], [8123]))
+    late_active = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(cache,),
+        approved_tmp_root=approved,
+        now_epoch=10_000,
+        min_age_seconds=3_600,
+        active_process_pids=lambda _path: next(active_reads),
+    )
+    assert late_active.skipped == (f"{cache}:active-pids=8123",)
+
+    dry_run = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(cache,),
+        approved_tmp_root=approved,
+        now_epoch=10_000,
+        min_age_seconds=3_600,
+        active_process_pids=lambda _path: [],
+        dry_run=True,
+    )
+    assert dry_run.skipped == (f"{cache}:would remove node download cache",)
+
+    def refuse_removal(_path: Path) -> None:
+        raise PermissionError("refused")
+
+    removal_failure = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(cache,),
+        approved_tmp_root=approved,
+        now_epoch=10_000,
+        min_age_seconds=3_600,
+        active_process_pids=lambda _path: [],
+        remove_tree=refuse_removal,
+    )
+    assert removal_failure.errors == (f"{cache}:removal-failed",)
+
+    verification_failure = automatic_disk_cleanup.clean_stale_node_download_caches(
+        cache_roots=(cache,),
+        approved_tmp_root=approved,
+        now_epoch=10_000,
+        min_age_seconds=3_600,
+        active_process_pids=lambda _path: [],
+        remove_tree=lambda _path: None,
+    )
+    assert verification_failure.errors == (f"{cache}:removal-verification-failed",)
+
+
+def test_default_node_package_manager_census_is_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process_output = (
+        "bad-line\n"
+        "not-a-pid npm ci\n"
+        "123 /usr/local/bin/npm ci\n"
+        "456 /usr/bin/node /usr/local/lib/node_modules/npm/bin/npm-cli.js ci\n"
+        "789 /usr/bin/node application.js\n"
+    )
+    monkeypatch.setattr(
+        automatic_disk_cleanup.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 0, process_output, ""
+        ),
+    )
+    monkeypatch.setattr(automatic_disk_cleanup.os, "getpid", lambda: 999)
+
+    assert automatic_disk_cleanup._active_node_package_manager_pids(
+        Path("/tmp/gludd-npm-cache-public-v1")
+    ) == [123, 456]
+
+    monkeypatch.setattr(
+        automatic_disk_cleanup.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("unavailable")),
+    )
+    with pytest.raises(automatic_disk_cleanup.ProcessInspectionError):
+        automatic_disk_cleanup._active_node_package_manager_pids(
+            Path("/tmp/gludd-npm-cache-public-v1")
+        )
+
+
 def test_preflight_is_noop_when_both_thresholds_are_healthy(capsys: pytest.CaptureFixture[str]) -> None:
     cleanup_calls = 0
 
@@ -2545,6 +2845,7 @@ def test_default_cleanup_discovers_and_preserves_git_worktrees(
         lambda **kwargs: {"removed": [str(stale_file)], "skipped": []},
     )
     uv_cleanup_calls: list[tuple[bool, bool]] = []
+    node_cleanup_calls: list[bool] = []
     terraform_cleanup_calls: list[bool] = []
     invoking_cleanup_calls: list[dict[str, object]] = []
     invoking_cache = tmp_path / "invoking" / ".pytest_cache"
@@ -2569,6 +2870,16 @@ def test_default_cleanup_discovers_and_preserves_git_worktrees(
 
     monkeypatch.setattr(automatic_disk_cleanup, "prune_shared_uv_cache", uv_cleanup)
 
+    def node_cleanup(
+        *, dry_run: bool = False
+    ) -> automatic_disk_cleanup.CleanupResult:
+        node_cleanup_calls.append(dry_run)
+        return automatic_disk_cleanup.CleanupResult((), (), ())
+
+    monkeypatch.setattr(
+        automatic_disk_cleanup, "clean_stale_node_download_caches", node_cleanup
+    )
+
     def terraform_cleanup(
         *, dry_run: bool = False
     ) -> automatic_disk_cleanup.CleanupResult:
@@ -2589,6 +2900,7 @@ def test_default_cleanup_discovers_and_preserves_git_worktrees(
     assert finished.path.exists()
     assert main.path.exists()
     assert uv_cleanup_calls == [(False, True)]
+    assert node_cleanup_calls == [False]
     assert terraform_cleanup_calls == [False]
     assert len(invoking_cleanup_calls) == 2
     assert invoking_cleanup_calls[0]["records"] == records
@@ -2654,6 +2966,14 @@ def test_default_cleanup_runs_independent_reclaimers_after_discovery_failure(
         "clean_stale_generated_scratch",
         lambda **_kwargs: automatic_disk_cleanup.CleanupResult((str(stale),), (), ()),
     )
+    node_cache = tmp_path / "node-cache"
+    monkeypatch.setattr(
+        automatic_disk_cleanup,
+        "clean_stale_node_download_caches",
+        lambda **_kwargs: automatic_disk_cleanup.CleanupResult(
+            (str(node_cache),), (), ()
+        ),
+    )
     monkeypatch.setattr(
         automatic_disk_cleanup,
         "prune_shared_uv_cache",
@@ -2667,7 +2987,12 @@ def test_default_cleanup_runs_independent_reclaimers_after_discovery_failure(
 
     result = automatic_disk_cleanup._automatic_cleanup()
 
-    assert result.removed == (str(stale), str(uv_cache), str(providers))
+    assert result.removed == (
+        str(stale),
+        str(node_cache),
+        str(uv_cache),
+        str(providers),
+    )
     assert result.errors == ("worktree-discovery:inspection-failed",)
 
 
@@ -2774,3 +3099,15 @@ def test_feature_document_records_zdd_rollback_and_long_lived_reports() -> None:
     assert "github.com/pytest-dev/pytest/discussions/10325" in document
     assert "Eight passes" in document
     assert "lsof" in document
+
+
+def test_gate_lifecycle_documents_owned_node_cache_reclamation() -> None:
+    document = (
+        ROOT / "docs" / "features" / "GATE_RESOURCE_LIFECYCLE.md"
+    ).read_text(encoding="utf-8")
+
+    assert "gludd-npm-cache-public-v1" in document
+    assert "50,000" in document
+    assert "zero-byte regular-file lookalikes" in document
+    assert "github.com/npm/cli/issues/3176" in document
+    assert "github.com/npm/npm/issues/2500" in document

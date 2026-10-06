@@ -81,7 +81,7 @@
     },
     {
       "path": "scripts/check_integration_health.py",
-      "line": 253,
+      "line": 286,
       "column": 15,
       "kind": "process",
       "owner": "main",
@@ -245,6 +245,28 @@
       "owned": true
     },
     {
+      "path": "scripts/kill_owned_gate.py",
+      "line": 126,
+      "column": 33,
+      "kind": "temp-artifact",
+      "owner": "_write_json_atomic",
+      "acquisition": "tempfile.mkstemp(prefix=f'.{path.name}.', suffix='.tmp', dir=path.parent)",
+      "teardown": "temporary.unlink(missing_ok=True)",
+      "source_hash": "707559e458bc5b4f444245fc3958eb53cb72d469bd682baf84963e71ce358f4d",
+      "owned": true
+    },
+    {
+      "path": "scripts/kill_owned_gate.py",
+      "line": 143,
+      "column": 33,
+      "kind": "temp-artifact",
+      "owner": "_write_text_atomic",
+      "acquisition": "tempfile.mkstemp(prefix=f'.{path.name}.', suffix='.tmp', dir=path.parent)",
+      "teardown": "temporary.unlink(missing_ok=True)",
+      "source_hash": "3e8817da601e058562ba70d1c58f3772543c0366d8cea14667217322d61a09bc",
+      "owned": true
+    },
+    {
       "path": "scripts/opencode_boot_smoke.py",
       "line": 97,
       "column": 11,
@@ -367,7 +389,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 479,
+      "line": 489,
       "column": 16,
       "kind": "temp-artifact",
       "owner": "_owned_socket_safe_tmpdir",
@@ -378,7 +400,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 766,
+      "line": 786,
       "column": 14,
       "kind": "process",
       "owner": "_run_owned_pytest",
@@ -389,7 +411,7 @@
     },
     {
       "path": "scripts/run_ci_shards_serial.py",
-      "line": 1398,
+      "line": 1421,
       "column": 29,
       "kind": "temp-artifact",
       "owner": "run",
@@ -565,7 +587,7 @@
     },
     {
       "path": "scripts/task_watchdog.py",
-      "line": 448,
+      "line": 464,
       "column": 17,
       "kind": "temp-artifact",
       "owner": "record_kill",
@@ -1423,7 +1445,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 998,
+      "line": 866,
       "column": 22,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1434,7 +1456,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 1010,
+      "line": 878,
       "column": 27,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1445,7 +1467,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 1024,
+      "line": 892,
       "column": 32,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1456,7 +1478,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 2627,
+      "line": 2495,
       "column": 29,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job_isolated",
@@ -1467,7 +1489,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3775,
+      "line": 3643,
       "column": 26,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -1478,7 +1500,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3833,
+      "line": 3701,
       "column": 27,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -2369,7 +2391,7 @@
     },
     {
       "path": "src/general_ludd/util/debounce_v2.py",
-      "line": 186,
+      "line": 185,
       "column": 27,
       "kind": "async-task",
       "owner": "AsyncDebounceV2.__call__",
@@ -2380,7 +2402,7 @@
     },
     {
       "path": "src/general_ludd/util/debounce_v2.py",
-      "line": 216,
+      "line": 215,
       "column": 21,
       "kind": "async-task",
       "owner": "AsyncDebounceV2.__call__",

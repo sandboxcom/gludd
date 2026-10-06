@@ -1088,6 +1088,27 @@ graph TD
     <li><strong>Choose lifecycle explicitly:</strong> pre-startup <code>/readyz</code> proves the 503 boundary; context-managed startup proves 200 readiness; model-health checks keep a per-app in-memory database.</li>
     <li><strong>Keep shutdown observable:</strong> a closed log stream falls back to stderr file descriptor 2, then restore handlers + propagation after cleanup.</li>
   </ol>
+  <div data-contract="owned-node-cache-reclamation">
+    <p><strong>Measured disk-pressure recovery:</strong> 142.2 MiB &rarr; 52.6 MiB.</p>
+    <ul class="bullets-tight" style="font-size:0.58em;">
+      <li>Reclaim only exact stale, inactive, owned npm caches.</li>
+      <li>Refuse regular <code>.sock</code> lookalikes and ambiguous or active caches.</li>
+      <li>Recompute the complete tree identity and perform immediate <code>lstat</code> revalidation before deletion.</li>
+    </ul>
+    <p class="cite">Source: docs/features/GATE_RESOURCE_LIFECYCLE.md</p>
+  </div>
+  <div data-contract="gate-tree-termination">
+    <p><strong>Identity-verified gate-tree termination</strong> <span class="badge-green">47/47 warning-strict</span></p>
+    <ul class="bullets-tight" style="font-size:0.52em; columns:2; column-gap:22px;">
+      <li>Accept one marked <code>gludd-gate-run-v1</code> lock or one exact legacy <code>{pid, started_at}</code> lock; failed legacy cleanup migrates to the marked schema.</li>
+      <li>Revalidate PID + start + command + root + namespace, then signal the deepest descendant first across process groups; unrelated PIDs remain untouched.</li>
+      <li><strong>Measured coverage:</strong> <code>kill_owned_gate.py</code> 91%; aggregate and every touched file remain above 85% / 75%.</li>
+      <li><strong>Bounds:</strong> <code>SIGTERM</code> &rarr; 10 s at 100 ms polls; <code>SIGKILL</code> &rarr; 1 s.</li>
+      <li>Publish ABORTED status + JSON evidence; a survivor retains <code>termination_failed</code> and blocks a replacement gate.</li>
+      <li><strong>ZDD:</strong> keep the running gate's schema, replace only after exact terminal evidence, and roll back only after marked owners clear.</li>
+    </ul>
+    <p class="cite">Contract: docs/features/GATE_RESOURCE_LIFECYCLE.md &middot; CPython #111873 &middot; Actions runner #3341 &middot; Bazel #11910 &middot; GitLab Runner #6189</p>
+  </div>
   <p class="honest-note">No new runtime service or persisted schema: validation happens before network work, test state is namespaced, lifespan ownership is explicit, and late cleanup remains visible.</p>
   <p class="cite">Sources: docs/features/SERVICE_DISCOVERY_SEARCH_TERM_SCHEMA.md &middot; docs/features/FLOOR_TEST_ENV_ISOLATION.md &middot; docs/features/READINESS_LIFESPAN_TESTING.md &middot; docs/features/RESOURCE_LIFECYCLE_SHUTDOWN_LOGGING.md</p>
 </section>
