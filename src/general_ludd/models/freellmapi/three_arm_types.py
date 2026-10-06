@@ -54,4 +54,3 @@ class ThreeArmDecision:
     candidate_max_latency_ms: float
     rss_delta_mib: float
     bridge_fault_count: int
-

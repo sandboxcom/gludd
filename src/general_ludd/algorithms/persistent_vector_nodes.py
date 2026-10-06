@@ -86,4 +86,3 @@ def _pop_tail(cnt: int, shift: int, root: list[Any]) -> list[Any] | None:
     if subidx == 0:
         return None
     return _node_copy_set(root, subidx, None)
-

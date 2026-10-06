@@ -26,4 +26,3 @@ def test_three_arm_delta_preserves_public_value_type_identity() -> None:
     assert ExportedReplayResources is ReplayResources
     assert ExportedArmComparison is ArmComparison
     assert ExportedThreeArmDecision is ThreeArmDecision
-
