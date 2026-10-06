@@ -76,9 +76,11 @@ DECK_DIR := docs/presentation/deck
 DECK_DATA := docs/presentation/deck-data.json
 PRESENTATION_VENDOR_VALIDATE_ONLY ?= 1
 PRESENTATION_BROWSER_VALIDATE_ONLY ?= 1
+PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY ?= 1
 PRESENTATION_BROWSER_ROOT ?= /tmp/gludd-playwright-browsers
 PRESENTATION_BROWSER_OUTPUT ?= /tmp/gludd-presentation-browser
 PRESENTATION_BROWSER_TIMEOUT ?= 300
+PRESENTATION_BROWSER_INSTALL_TIMEOUT ?= 600
 
 vendor-presentation-assets:
 	@case "$(PRESENTATION_VENDOR_VALIDATE_ONLY)" in 0|1) ;; *) echo "PRESENTATION_VENDOR_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
@@ -86,11 +88,19 @@ vendor-presentation-assets:
 
 presentation-browser-test:
 	@case "$(PRESENTATION_BROWSER_VALIDATE_ONLY)" in 0|1) ;; *) echo "PRESENTATION_BROWSER_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
-	@$(UV) run python scripts/run_presentation_browser_tests.py \
+	@$(UV) run --extra presentation-test python scripts/run_presentation_browser_tests.py \
 		$(if $(filter 1,$(PRESENTATION_BROWSER_VALIDATE_ONLY)),--validate-only,--run) \
 		--browser-root "$(PRESENTATION_BROWSER_ROOT)" \
 		--output-root "$(PRESENTATION_BROWSER_OUTPUT)" \
 		--timeout-seconds "$(PRESENTATION_BROWSER_TIMEOUT)"
+
+presentation-browser-install:
+	@case "$(PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY)" in 0|1) ;; *) echo "PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@$(UV) run --extra presentation-test python scripts/run_presentation_browser_tests.py \
+		$(if $(filter 1,$(PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY)),--check-browser,--install-browser) \
+		--browser-root "$(PRESENTATION_BROWSER_ROOT)" \
+		--output-root "$(PRESENTATION_BROWSER_OUTPUT)" \
+		--timeout-seconds "$(PRESENTATION_BROWSER_INSTALL_TIMEOUT)"
 
 deck:
 	@echo "=== BUILDING DECK ==="

@@ -50,7 +50,10 @@ def test_presentation_browser_target_has_explicit_owned_bounds() -> None:
     assert "PRESENTATION_BROWSER_OUTPUT ?= /tmp/gludd-presentation-browser" in presentation_fragment
     assert "PRESENTATION_BROWSER_TIMEOUT ?= 300" in presentation_fragment
     assert "presentation-browser-test:" in presentation_fragment
-    assert "scripts/run_presentation_browser_tests.py" in presentation_fragment
+    assert (
+        "$(UV) run --extra presentation-test python "
+        "scripts/run_presentation_browser_tests.py"
+    ) in presentation_fragment
     for argument in ("--browser-root", "--output-root", "--timeout-seconds"):
         assert argument in presentation_fragment
     assert "--validate-only" in presentation_fragment
@@ -70,5 +73,45 @@ def test_presentation_browser_target_has_explicit_owned_bounds() -> None:
             "PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers "
             "PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser "
             "PRESENTATION_BROWSER_TIMEOUT=300"
+        ),
+    }
+
+
+def test_presentation_browser_install_is_read_only_by_default() -> None:
+    makefile = compose_makefile(ROOT / "Makefile")
+    presentation_fragment = (
+        ROOT / "make" / "90-infrastructure-and-services.mk"
+    ).read_text(encoding="utf-8")
+
+    assert "PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY ?= 1" in presentation_fragment
+    assert "PRESENTATION_BROWSER_INSTALL_TIMEOUT ?= 600" in presentation_fragment
+    assert "presentation-browser-install:" in presentation_fragment
+    assert (
+        "$(UV) run --extra presentation-test python "
+        "scripts/run_presentation_browser_tests.py"
+    ) in presentation_fragment
+    for argument in (
+        "--check-browser",
+        "--install-browser",
+        "--browser-root",
+        "--output-root",
+        "--timeout-seconds",
+    ):
+        assert argument in presentation_fragment
+    assert "presentation-browser-install" in makefile
+    assert _contract("presentation-browser-install") == {
+        "name": "presentation-browser-install",
+        "make_variables": [
+            "PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY",
+            "PRESENTATION_BROWSER_ROOT",
+            "PRESENTATION_BROWSER_OUTPUT",
+            "PRESENTATION_BROWSER_INSTALL_TIMEOUT",
+        ],
+        "behavior": (
+            "make presentation-browser-install "
+            "PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=1 "
+            "PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers "
+            "PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser "
+            "PRESENTATION_BROWSER_INSTALL_TIMEOUT=600"
         ),
     }
