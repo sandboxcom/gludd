@@ -563,7 +563,12 @@ def _scan_mcp_topics(
     data: Any,
     records: dict[str, _Record],
 ) -> int:
-    if path.name != "MCP_TOOLS_TOPICS.yml" or not isinstance(data, Mapping):
+    is_topics_root = path.name == "MCP_TOOLS_TOPICS.yml"
+    is_topics_shard = (
+        path.parent.name == "mcp-tool-topics"
+        and path.suffix.lower() in {".yml", ".yaml"}
+    )
+    if not (is_topics_root or is_topics_shard) or not isinstance(data, Mapping):
         return 0
     source_path = _relative_path(root, path)
     added = 0

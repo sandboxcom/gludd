@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -11,6 +12,7 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "check_generated_artifact_hygiene.py"
@@ -191,6 +193,48 @@ def test_inventory_uses_nul_delimited_exact_tracked_paths(
     ]
 
 
+def test_inventory_expands_mcp_topic_manifest_shards(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest = tmp_path / "docs" / "MCP_TOOLS_TOPICS.yml"
+    shard = tmp_path / "docs" / "mcp-tool-topics" / "topics-001.yml"
+    _write(shard, b"general_ludd.agent.gludd_ping: {}\n")
+    digest = hashlib.sha256(shard.read_bytes()).hexdigest()
+    _write(
+        manifest,
+        (
+            "schema: gludd.mcp-tool-topics.v1\n"
+            "parts:\n"
+            "- path: mcp-tool-topics/topics-001.yml\n"
+            f"  sha256: {digest}\n"
+            "  topic_count: 1\n"
+        ).encode(),
+    )
+    specs = (checker.Artifact("docs/MCP_TOOLS_TOPICS.yml", "yaml"),)
+
+    def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        assert command[-2:] == [
+            "docs/MCP_TOOLS_TOPICS.yml",
+            "docs/mcp-tool-topics/topics-001.yml",
+        ]
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=(
+                b"docs/MCP_TOOLS_TOPICS.yml\x00"
+                b"docs/mcp-tool-topics/topics-001.yml\x00"
+            ),
+            stderr=b"",
+        )
+
+    monkeypatch.setattr(checker.subprocess, "run", fake_run)
+    assert checker.discover_tracked_artifacts(tmp_path, specs) == [
+        (manifest, "yaml"),
+        (shard, "yaml"),
+    ]
+
+
 @pytest.mark.parametrize(
     "result",
     [
@@ -305,7 +349,8 @@ def test_scan_inventory_limit_and_rendering_fail_closed(tmp_path: Path) -> None:
 
 def test_repository_generated_artifacts_are_tracked_and_hygienic() -> None:
     artifacts = checker.discover_tracked_artifacts(ROOT)
-    assert len(artifacts) == 3
+    topic_artifacts = checker.topic_artifact_paths(ROOT / "docs/MCP_TOOLS_TOPICS.yml")
+    assert len(artifacts) == len(checker.ARTIFACTS) + len(topic_artifacts) - 1
     assert checker.check_artifacts(artifacts) == []
 
 
@@ -350,7 +395,7 @@ def _target_prerequisites(makefile: str, target: str) -> list[str]:
 
 
 def test_make_target_is_public_and_delegates_to_the_single_checker() -> None:
-    makefile = MAKEFILE.read_text(encoding="utf-8")
+    makefile = compose_makefile(MAKEFILE)
     stanza = makefile.split("\ncheck-generated-artifact-hygiene:", 1)[1].split(
         "\n\n",
         1,
@@ -367,7 +412,7 @@ def test_make_target_is_public_and_delegates_to_the_single_checker() -> None:
 
 
 def test_checker_follows_disk_preflight_and_precedes_fast_quality_work() -> None:
-    makefile = MAKEFILE.read_text(encoding="utf-8")
+    makefile = compose_makefile(MAKEFILE)
     fast = _target_prerequisites(makefile, "gate-fast")
     full = makefile.split("GATE_PREFLIGHT_TARGETS :=", 1)[1].split(
         "GATE_PREFLIGHT_STATUS", 1
@@ -417,5 +462,8 @@ def test_make_target_contract_is_exact_and_behavior_is_safe() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert result.stdout.strip() == "generated-artifact-hygiene: PASS artifacts=3"
+    expected_count = len(checker.discover_tracked_artifacts(ROOT))
+    assert result.stdout.strip() == (
+        f"generated-artifact-hygiene: PASS artifacts={expected_count}"
+    )
     assert result.stderr == ""

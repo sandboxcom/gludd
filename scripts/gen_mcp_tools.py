@@ -10,7 +10,8 @@ for each one, builds:
     ``AnsibleModule(argument_spec=...)`` (type / required / choices / default per
     option) — written to ``docs/MCP_TOOLS_MANIFEST.json``;
   * a topic — the module's full DOCUMENTATION / EXAMPLES / RETURN YAML blocks —
-    written to ``docs/MCP_TOOLS_TOPICS.yml``.
+    written as the ``docs/MCP_TOOLS_TOPICS.yml`` integrity manifest plus bounded
+    ``docs/mcp-tool-topics/*.yml`` shards.
 
 The gludd_* modules carry their documentation either as YAML blocks inside the
 module docstring (top-level ``DOCUMENTATION:`` / ``EXAMPLES:`` / ``RETURN:``
@@ -31,9 +32,17 @@ import ast
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
+
+if TYPE_CHECKING:
+    from scripts.mcp_topics import write_topics
+else:
+    try:
+        from scripts.mcp_topics import write_topics
+    except ModuleNotFoundError:  # Direct ``python scripts/gen_mcp_tools.py`` execution.
+        from mcp_topics import write_topics
 
 ROOT = Path(__file__).resolve().parent.parent
 MODULES_DIR = (
@@ -417,10 +426,7 @@ def write_artifacts(tool_defs: list[dict[str, Any]], topics: dict[str, Any]) -> 
         json.dumps(tool_defs, indent=2, sort_keys=False, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
-    TOPICS_PATH.write_text(
-        yaml.safe_dump(topics, sort_keys=True, default_flow_style=False, allow_unicode=True),
-        encoding="utf-8",
-    )
+    write_topics(TOPICS_PATH, topics)
 
 
 def main(argv: list[str] | None = None) -> int:

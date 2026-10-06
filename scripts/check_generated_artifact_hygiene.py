@@ -16,9 +16,17 @@ import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import yaml
+
+if TYPE_CHECKING:
+    from scripts.mcp_topics import TopicsManifestError, load_topics, topic_artifact_paths
+else:
+    try:
+        from scripts.mcp_topics import TopicsManifestError, load_topics, topic_artifact_paths
+    except ModuleNotFoundError:  # Direct script execution keeps ``scripts`` on sys.path.
+        from mcp_topics import TopicsManifestError, load_topics, topic_artifact_paths
 
 ROOT = Path(__file__).resolve().parent.parent
 MAX_ARTIFACT_BYTES = 4 * 1024 * 1024
@@ -61,6 +69,28 @@ ARTIFACTS: tuple[Artifact, ...] = (
 )
 
 
+def _expanded_specs(root: Path, specs: Sequence[Artifact]) -> tuple[Artifact, ...]:
+    """Expand the canonical MCP topic root into integrity-checked shards."""
+    expanded: list[Artifact] = []
+    for artifact in specs:
+        expanded.append(artifact)
+        if artifact.relative_path != "docs/MCP_TOOLS_TOPICS.yml":
+            continue
+        manifest = root / artifact.relative_path
+        try:
+            load_topics(manifest)
+            paths = topic_artifact_paths(manifest)
+        except TopicsManifestError as exc:
+            raise InventoryError(f"invalid MCP topic artifact set: {exc}") from exc
+        for path in paths[1:]:
+            try:
+                relative = path.relative_to(root.resolve()).as_posix()
+            except ValueError as exc:
+                raise InventoryError("MCP topic shard escapes repository root") from exc
+            expanded.append(Artifact(relative, "yaml"))
+    return tuple(expanded)
+
+
 def _validate_specs(specs: Sequence[Artifact]) -> None:
     if not specs:
         raise InventoryError("canonical artifact inventory is empty")
@@ -99,7 +129,9 @@ def discover_tracked_artifacts(
     """Resolve canonical artifacts only when Git proves every path is tracked."""
 
     _validate_specs(specs)
-    expected = [artifact.relative_path for artifact in specs]
+    expanded_specs = _expanded_specs(root.resolve(), specs)
+    _validate_specs(expanded_specs)
+    expected = [artifact.relative_path for artifact in expanded_specs]
     command = ["git", "-C", str(root), "ls-files", "-z", "--", *expected]
     try:
         result = subprocess.run(
@@ -140,7 +172,7 @@ def discover_tracked_artifacts(
             details.append(f"unexpected={','.join(unexpected)}")
         raise InventoryError("Git artifact inventory mismatch: " + " ".join(details))
 
-    return [(root / artifact.relative_path, artifact.kind) for artifact in specs]
+    return [(root / artifact.relative_path, artifact.kind) for artifact in expanded_specs]
 
 
 def _finding(path: Path, message: str, line: int | None = None) -> Finding:
