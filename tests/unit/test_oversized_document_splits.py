@@ -11,6 +11,8 @@ BETA4_CI = ROOT / "docs/features/BETA4_DUAL_TRACK_CI.md"
 BETA4_PROMOTION = BETA4_CI.parent / "beta4-dual-track-ci" / "exact-sha-promotion.md"
 INTEROP_SPEC = ROOT / "docs/specs/FEATURE_EXPERT_SYSTEM_INTEROPERABILITY.md"
 INTEROP_EXTENSIONS = INTEROP_SPEC.parent / "expert-system-interoperability" / "domain-extensions.md"
+SPRINT0 = ROOT / "docs/internal/sprint0.md"
+SPRINT0_OPERATIONS = SPRINT0.parent / "sprint0" / "implementation-and-operations.md"
 
 
 def test_ml_ai_spec_routes_continual_evolution_below_line_limit() -> None:
@@ -56,3 +58,16 @@ def test_interoperability_spec_routes_domain_extensions_below_line_limit() -> No
         assert marker not in core
         assert marker in extensions
     assert len(extensions.splitlines()) < 2_500
+
+
+def test_sprint0_routes_implementation_operations_below_line_limit() -> None:
+    """Keep the original architecture plan compact and its execution record linked."""
+    architecture = SPRINT0.read_text(encoding="utf-8")
+    operations = SPRINT0_OPERATIONS.read_text(encoding="utf-8")
+
+    assert len(architecture.splitlines()) < 2_500
+    assert "[implementation and operations](sprint0/implementation-and-operations.md)" in architecture
+    for marker in ("## 15. Model Gateway And Model Profiles", "## 28. Living Notes"):
+        assert marker not in architecture
+        assert marker in operations
+    assert len(operations.splitlines()) < 2_500
