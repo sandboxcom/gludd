@@ -9,6 +9,8 @@ ML_SPEC = ROOT / "docs/design/specs/SPEC_ML_AI_EXPERT_AND_SAFE_SELF_IMPROVEMENT.
 ML_CONTINUAL = ML_SPEC.parent / "ml-ai-expert" / "continual-evolution.md"
 BETA4_CI = ROOT / "docs/features/BETA4_DUAL_TRACK_CI.md"
 BETA4_PROMOTION = BETA4_CI.parent / "beta4-dual-track-ci" / "exact-sha-promotion.md"
+INTEROP_SPEC = ROOT / "docs/specs/FEATURE_EXPERT_SYSTEM_INTEROPERABILITY.md"
+INTEROP_EXTENSIONS = INTEROP_SPEC.parent / "expert-system-interoperability" / "domain-extensions.md"
 
 
 def test_ml_ai_spec_routes_continual_evolution_below_line_limit() -> None:
@@ -38,3 +40,19 @@ def test_beta4_ci_routes_exact_sha_operations_below_line_limit() -> None:
         assert marker not in overview
         assert marker in promotion
     assert len(promotion.splitlines()) < 2_500
+
+
+def test_interoperability_spec_routes_domain_extensions_below_line_limit() -> None:
+    """Keep the core contract readable while preserving advanced domain rules."""
+    core = INTEROP_SPEC.read_text(encoding="utf-8")
+    extensions = INTEROP_EXTENSIONS.read_text(encoding="utf-8")
+
+    assert len(core.splitlines()) < 2_500
+    assert "[domain extensions and evidence](expert-system-interoperability/domain-extensions.md)" in core
+    for marker in (
+        "## 24. Rights, privacy, regulated transfer, drift, language, and embodied time",
+        "## 27. Practitioner evidence, ZDD, and rollback",
+    ):
+        assert marker not in core
+        assert marker in extensions
+    assert len(extensions.splitlines()) < 2_500
