@@ -16,6 +16,7 @@ import hashlib
 import importlib
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -59,6 +60,11 @@ GENERATED_CACHE_DIR_NAMES = (
 )
 DEFAULT_TMP_WORKTREE_ROOT = Path("/tmp/gludd-worktrees")
 SHARED_UV_CACHE_ROOT = Path("/tmp/gludd-uv-cache-public-v2")
+OWNED_NODE_CACHE_ROOTS = (
+    Path("/tmp/gludd-npm-cache"),
+    Path("/tmp/gludd-npm-cache-public-v1"),
+)
+OWNED_NODE_CACHE_NAMES = frozenset(path.name for path in OWNED_NODE_CACHE_ROOTS)
 OWNED_TERRAFORM_CACHE_ROOTS = (
     Path("/tmp/gludd-azure-containerapp-live-proof"),
     Path("/tmp/gludd-azure-containerapp-environments"),
@@ -74,6 +80,9 @@ MAX_WORKTREE_MATERIALIZATIONS = 4
 MAX_EVIDENCE_RELOCATIONS = 16
 MAX_PREFLIGHT_CLEANUP_PASSES = 8
 MAX_CLEANUP_DETAILS_PER_KIND = 20
+DEFAULT_NODE_CACHE_MIN_AGE_SECONDS = 6 * 60 * 60
+MAX_NODE_CACHE_ENTRIES = 50_000
+MAX_NODE_CACHE_CANDIDATES = len(OWNED_NODE_CACHE_ROOTS)
 REGENERABLE_IGNORED_DIR_NAMES = frozenset(
     {".hypothesis", "__pycache__", "node_modules", *GENERATED_CACHE_DIR_NAMES}
 )
@@ -107,6 +116,16 @@ class CleanupResult:
     removed: tuple[str, ...]
     skipped: tuple[str, ...]
     errors: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class CacheTreeSnapshot:
+    """Bounded identity and age evidence for one generated cache tree."""
+
+    digest: str
+    entry_count: int
+    latest_mtime_ns: int
+    root_identity: tuple[int, int, int, int, int]
 
 
 @dataclass(frozen=True)
@@ -1702,6 +1721,262 @@ def _combine_cleanup_results(*results: CleanupResult) -> CleanupResult:
     )
 
 
+def _node_cache_metadata_identity(
+    metadata: os.stat_result,
+) -> tuple[int, int, int, int, int]:
+    """Return mutation-sensitive identity fields for one cache entry."""
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+    )
+
+
+def _node_cache_tree_snapshot(
+    cache_root: Path, *, max_entries: int
+) -> CacheTreeSnapshot:
+    """Hash a cache tree without following links and within a strict entry cap."""
+    pending = [cache_root]
+    entry_count = 0
+    latest_mtime_ns = 0
+    digest = hashlib.sha256()
+    root_identity: tuple[int, int, int, int, int] | None = None
+    while pending:
+        path = pending.pop()
+        metadata = path.lstat()
+        identity = _node_cache_metadata_identity(metadata)
+        if path == cache_root:
+            root_identity = identity
+        else:
+            entry_count += 1
+            if entry_count > max_entries:
+                raise OverflowError("node cache entry limit exceeded")
+        if stat.S_ISLNK(metadata.st_mode):
+            raise ValueError("node cache contains a symlink")
+        if not (stat.S_ISDIR(metadata.st_mode) or stat.S_ISREG(metadata.st_mode)):
+            raise ValueError("node cache contains an unsupported entry")
+        latest_mtime_ns = max(latest_mtime_ns, metadata.st_mtime_ns)
+        relative = path.relative_to(cache_root)
+        digest.update(os.fsencode(str(relative)))
+        digest.update(repr(identity).encode("ascii"))
+        if stat.S_ISDIR(metadata.st_mode):
+            children = sorted(path.iterdir(), key=lambda item: os.fsencode(item.name))
+            pending.extend(reversed(children))
+    if root_identity is None:
+        raise OSError("node cache root disappeared")
+    return CacheTreeSnapshot(
+        digest=digest.hexdigest(),
+        entry_count=entry_count,
+        latest_mtime_ns=latest_mtime_ns,
+        root_identity=root_identity,
+    )
+
+
+def _active_node_package_manager_pids(cache_root: Path) -> list[int]:
+    """Return npm-like processes or processes naming the shared cache root."""
+    try:
+        completed = subprocess.run(
+            ["/bin/ps", "-axo", "pid=,command="],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=clean_ci_shard_scratch.PROCESS_INSPECTION_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ProcessInspectionError("node cache process inspection failed") from exc
+
+    cache_text = os.fsdecode(os.fsencode(cache_root.resolve()))
+    cache_pattern = re.compile(re.escape(cache_text) + r"(?=$|[/\s'\"])")
+    active_pids: set[int] = set()
+    for line in completed.stdout.splitlines():
+        fields = line.strip().split(maxsplit=1)
+        if len(fields) != 2:
+            continue
+        try:
+            pid = int(fields[0])
+        except ValueError:
+            continue
+        command = fields[1]
+        executable = Path(command.split(maxsplit=1)[0]).name.casefold()
+        npm_process = executable in {"npm", "npx"} or "npm-cli.js" in command
+        if pid != os.getpid() and (npm_process or cache_pattern.search(command)):
+            active_pids.add(pid)
+    return sorted(active_pids)
+
+
+def clean_stale_node_download_caches(
+    *,
+    cache_roots: Sequence[Path] = OWNED_NODE_CACHE_ROOTS,
+    approved_tmp_root: Path = Path("/tmp"),
+    now_epoch: float | None = None,
+    min_age_seconds: int = DEFAULT_NODE_CACHE_MIN_AGE_SECONDS,
+    max_entries: int = MAX_NODE_CACHE_ENTRIES,
+    active_process_pids: ActiveProcessPids = _active_node_package_manager_pids,
+    remove_tree: RemoveTree = _remove_tree,
+    dry_run: bool = False,
+) -> CleanupResult:
+    """Remove only exact, stale Gludd npm caches after two idle proofs."""
+    candidates = tuple(dict.fromkeys(cache_roots))
+    print(
+        "phase=cleanup action=node-download-cache status=starting "
+        f"candidates={len(candidates)}",
+        flush=True,
+    )
+    removed: list[str] = []
+    skipped: list[str] = []
+    errors: list[str] = []
+    inspected_entries = 0
+    if (
+        min_age_seconds < 0
+        or max_entries < 1
+        or len(candidates) > MAX_NODE_CACHE_CANDIDATES
+    ):
+        errors.append("node-download-cache:invalid-bound")
+        print(
+            "phase=cleanup action=node-download-cache status=complete "
+            "inspected=0 removed=0 skipped=0 errors=1 entries=0",
+            flush=True,
+        )
+        return CleanupResult((), (), tuple(errors))
+
+    try:
+        canonical_tmp_root = approved_tmp_root.resolve(strict=True)
+    except (OSError, RuntimeError):
+        errors.append(f"{approved_tmp_root}:temp-root-inspection-failed")
+        print(
+            "phase=cleanup action=node-download-cache status=complete "
+            "inspected=0 removed=0 skipped=0 errors=1 entries=0",
+            flush=True,
+        )
+        return CleanupResult((), (), tuple(errors))
+
+    current_time_ns = int((time.time() if now_epoch is None else now_epoch) * 1e9)
+    for cache_root in candidates:
+        if cache_root.name not in OWNED_NODE_CACHE_NAMES:
+            skipped.append(f"{cache_root}:unapproved-cache-name")
+            continue
+        try:
+            metadata = cache_root.lstat()
+        except FileNotFoundError:
+            skipped.append(f"{cache_root}:cache-absent")
+            continue
+        except OSError:
+            errors.append(f"{cache_root}:identity-inspection-failed")
+            continue
+        if stat.S_ISLNK(metadata.st_mode):
+            skipped.append(f"{cache_root}:symlink")
+            continue
+        if not stat.S_ISDIR(metadata.st_mode):
+            skipped.append(f"{cache_root}:unsupported-file-type")
+            continue
+        try:
+            canonical_parent = cache_root.parent.resolve(strict=True)
+            canonical_cache = cache_root.resolve(strict=True)
+        except (OSError, RuntimeError):
+            errors.append(f"{cache_root}:canonical-inspection-failed")
+            continue
+        if (
+            canonical_parent != canonical_tmp_root
+            or canonical_cache != canonical_tmp_root / cache_root.name
+        ):
+            skipped.append(f"{cache_root}:outside-canonical-temp-root")
+            continue
+        try:
+            initial = _node_cache_tree_snapshot(
+                cache_root, max_entries=max_entries
+            )
+        except OverflowError:
+            skipped.append(f"{cache_root}:entry-limit")
+            continue
+        except ValueError:
+            skipped.append(f"{cache_root}:unsafe-tree-entry")
+            continue
+        except (OSError, RuntimeError):
+            errors.append(f"{cache_root}:tree-inspection-failed")
+            continue
+        inspected_entries += initial.entry_count
+        if current_time_ns - initial.latest_mtime_ns < min_age_seconds * 1_000_000_000:
+            skipped.append(f"{cache_root}:recent")
+            continue
+        try:
+            initial_pids = active_process_pids(cache_root)
+        except ProcessInspectionError:
+            errors.append(f"{cache_root}:process-inspection-failed")
+            continue
+        if initial_pids:
+            skipped.append(
+                f"{cache_root}:active-pids="
+                f"{','.join(str(pid) for pid in initial_pids)}"
+            )
+            continue
+        try:
+            final_pids = active_process_pids(cache_root)
+        except ProcessInspectionError:
+            errors.append(f"{cache_root}:process-revalidation-failed")
+            continue
+        if final_pids:
+            skipped.append(
+                f"{cache_root}:active-pids="
+                f"{','.join(str(pid) for pid in final_pids)}"
+            )
+            continue
+        try:
+            refreshed = _node_cache_tree_snapshot(
+                cache_root, max_entries=max_entries
+            )
+        except OverflowError:
+            skipped.append(f"{cache_root}:entry-limit")
+            continue
+        except ValueError:
+            skipped.append(f"{cache_root}:unsafe-tree-entry")
+            continue
+        except (OSError, RuntimeError):
+            skipped.append(f"{cache_root}:identity-revalidation-failed")
+            continue
+        if refreshed != initial:
+            skipped.append(f"{cache_root}:identity-changed")
+            continue
+        if dry_run:
+            skipped.append(f"{cache_root}:would remove node download cache")
+            continue
+        print(
+            "phase=cleanup action=node-download-cache-remove status=starting "
+            f"path={json.dumps(str(cache_root))} entries={initial.entry_count}",
+            flush=True,
+        )
+        try:
+            immediate_metadata = cache_root.lstat()
+        except OSError:
+            skipped.append(f"{cache_root}:identity-revalidation-failed")
+            continue
+        if _node_cache_metadata_identity(immediate_metadata) != initial.root_identity:
+            skipped.append(f"{cache_root}:identity-changed")
+            continue
+        try:
+            remove_tree(cache_root)
+        except OSError:
+            errors.append(f"{cache_root}:removal-failed")
+            continue
+        if cache_root.exists() or cache_root.is_symlink():
+            errors.append(f"{cache_root}:removal-verification-failed")
+            continue
+        removed.append(str(cache_root))
+
+    print(
+        "phase=cleanup action=node-download-cache status=complete "
+        f"inspected={len(candidates)} removed={len(removed)} "
+        f"skipped={len(skipped)} errors={len(errors)} entries={inspected_entries}",
+        flush=True,
+    )
+    return CleanupResult(
+        removed=tuple(sorted(removed)),
+        skipped=tuple(sorted(skipped)),
+        errors=tuple(sorted(errors)),
+    )
+
+
 def _expected_generated_scratch_refusal(item: str) -> bool:
     """Return whether a generated-scratch skip is an intentional protection."""
     reason = item.rsplit(":", maxsplit=1)[-1]
@@ -1862,6 +2137,7 @@ def _automatic_cleanup(
         )
 
     scratch_result = clean_stale_generated_scratch(dry_run=dry_run)
+    node_cache_result = clean_stale_node_download_caches(dry_run=dry_run)
     uv_result = prune_shared_uv_cache(
         dry_run=dry_run,
         missing_is_clean=True,
@@ -1875,6 +2151,7 @@ def _automatic_cleanup(
         main_cache_result,
         scratch_result,
         worktree_result,
+        node_cache_result,
         uv_result,
         terraform_provider_result,
     )
