@@ -650,6 +650,107 @@ def test_every_slide_keeps_visible_content_inside_the_reveal_canvas(
     assert failures == []
 
 
+def test_narrow_tall_canvas_keeps_prose_and_diagram_labels_readable(
+    page: Any,
+    presentation_url: str,
+) -> None:
+    """Portrait layouts must contain prose without shrinking chart labels away."""
+    page.set_viewport_size({"width": 430, "height": 932})
+    _load(page, presentation_url)
+    failures = page.evaluate(
+        """
+        () => {
+          Reveal.getSlides().forEach((slide) => {
+            slide.querySelectorAll('.fragment').forEach((fragment) => {
+              fragment.classList.add('visible');
+            });
+          });
+          Reveal.layout();
+          const boundary = document.querySelector('.reveal').getBoundingClientRect();
+          const tolerance = 2;
+          return Reveal.getSlides().flatMap((slide) => {
+              const slideFailures = [];
+              slide.querySelectorAll('.fragment').forEach((fragment) => {
+                fragment.classList.add('visible');
+              });
+              const proseFailures = Array.from(
+                slide.querySelectorAll('h1, h2, h3, p, li, pre, td, th')
+              ).flatMap((node) => {
+                const style = getComputedStyle(node);
+                const range = document.createRange();
+                range.selectNodeContents(node);
+                const lines = Array.from(range.getClientRects());
+                const clipped = lines.some((line) => (
+                  line.left < boundary.left - tolerance ||
+                  line.right > boundary.right + tolerance
+                ));
+                return clipped && style.display !== 'none' && style.visibility !== 'hidden'
+                  ? [{kind: 'prose-horizontal-clip', tagName: node.tagName,
+                      text: (node.textContent || '').trim().slice(0, 100)}]
+                  : [];
+              });
+              const slideStyle = getComputedStyle(slide);
+              if (
+                slide.scrollHeight > slide.clientHeight + tolerance &&
+                !['auto', 'scroll'].includes(slideStyle.overflowY)
+              ) {
+                proseFailures.push({kind: 'prose-vertical-inaccessible'});
+              }
+              const diagramFailures = Array.from(
+                slide.querySelectorAll('img.mermaid-image')
+              ).flatMap((image) => {
+                const imageRect = image.getBoundingClientRect();
+                const scroller = image.closest('.mermaid');
+                const scrollerRect = scroller.getBoundingClientRect();
+                const encoded = image.src.split(',', 2)[1] || '';
+                const parsed = new DOMParser().parseFromString(
+                  decodeURIComponent(encoded),
+                  'image/svg+xml',
+                );
+                const viewBox = parsed.documentElement.getAttribute('viewBox')
+                  ?.trim().split(/[ ,]+/).map(Number) || [];
+                if (viewBox.length !== 4 || viewBox[2] <= 0 || viewBox[3] <= 0) {
+                  return [{kind: 'invalid-viewbox'}];
+                }
+                const effectiveFontPixels = 16 * Math.min(
+                  imageRect.width / viewBox[2],
+                  imageRect.height / viewBox[3],
+                );
+                const horizontallyScrollable =
+                  scroller.scrollWidth > scroller.clientWidth + tolerance &&
+                  ['auto', 'scroll'].includes(getComputedStyle(scroller).overflowX);
+                const centered = Math.abs(
+                  (imageRect.left + imageRect.right) / 2 -
+                  (scrollerRect.left + scrollerRect.right) / 2
+                ) <= tolerance;
+                const issues = [];
+                if (
+                  scrollerRect.left < boundary.left - tolerance ||
+                  scrollerRect.right > boundary.right + tolerance
+                ) {
+                  issues.push('off-canvas');
+                }
+                if (!centered && !horizontallyScrollable) issues.push('unaligned');
+                if (effectiveFontPixels < 8) issues.push('illegible-chart-text');
+                return issues.length ? [{effectiveFontPixels, issues}] : [];
+              });
+              slideFailures.push(...proseFailures, ...diagramFailures);
+              if (!slideFailures.length) return [];
+              const indices = Reveal.getIndices(slide);
+              return [{
+                horizontal: indices.h,
+                vertical: indices.v,
+                failures: slideFailures,
+              }];
+          });
+        }
+        """
+    )
+    if failures:
+        print(f"presentation-portrait-layout diagnostics={json.dumps(failures, sort_keys=True)}")
+    assert failures == []
+
+
 def test_pages_subpath_navigation_renders_every_diagram(
     page: Any,
     presentation_url: str,
