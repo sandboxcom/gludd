@@ -10,6 +10,13 @@ import sys
 from pathlib import Path
 from typing import TypedDict
 
+try:
+    from scripts.behavioral_specs import load_behavioral_specs
+    from scripts.makefile_layout import compose_makefile
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from behavioral_specs import load_behavioral_specs
+    from makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_FILE = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
 MAKEFILE = ROOT / "Makefile"
@@ -39,7 +46,7 @@ class SpecRecord(TypedDict):
 
 def _parse_specs() -> list[SpecRecord]:
     """Parse BEHAVIORAL_SPECS.md into a list of spec dicts."""
-    text = SPECS_FILE.read_text()
+    text = load_behavioral_specs(SPECS_FILE)
     specs: list[SpecRecord] = []
     current: SpecRecord | None = None
     in_enforcement = False
@@ -111,7 +118,7 @@ def _enforcement_exists(enforcement: str) -> bool:
 
     for m_make in re.finditer(r"`make\s+([\w\-]+)`", enforcement):
         target = m_make.group(1)
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         if re.search(rf"^{re.escape(target)}:\s", content, re.MULTILINE):
             return True
 
@@ -127,7 +134,7 @@ def _enforcement_exists(enforcement: str) -> bool:
 
     for m_makefile in re.finditer(r"Makefile\s+`([\w\-]+)`", enforcement):
         target = m_makefile.group(1)
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         if re.search(rf"^{re.escape(target)}:\s", content, re.MULTILINE):
             return True
 

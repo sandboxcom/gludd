@@ -13,6 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_FILE = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
+SPECS_SHARDS = ROOT / "docs" / "specs" / "behavioral"
 
 SPEC_ID_RE = re.compile(r"^### (A[AB]\d{3}) —")
 
@@ -22,7 +23,14 @@ def diff_added_spec_ids() -> tuple[int, int]:
     import subprocess
 
     cp = subprocess.run(
-        ["git", "diff", "--cached", "--", str(SPECS_FILE)],
+        [
+            "git",
+            "diff",
+            "--cached",
+            "--",
+            str(SPECS_FILE),
+            str(SPECS_SHARDS),
+        ],
         capture_output=True,
         text=True,
     )
@@ -35,9 +43,10 @@ def diff_added_spec_ids() -> tuple[int, int]:
         if line.startswith("+") and not line.startswith("+++"):
             if SPEC_ID_RE.match(line.lstrip("+")):
                 added_ids += 1
-        elif line.startswith("+") or line.startswith("-"):
-            if not line.startswith("---") and not line.startswith("+++"):
-                modified_lines += 1
+        elif (line.startswith("+") or line.startswith("-")) and not (
+            line.startswith("---") or line.startswith("+++")
+        ):
+            modified_lines += 1
 
     return added_ids, max(modified_lines - added_ids, 0)
 
@@ -53,7 +62,10 @@ def main() -> int:
         capture_output=True,
         text=True,
     )
-    if "BEHAVIORAL_SPECS.md" not in cp.stdout:
+    if (
+        "docs/specs/BEHAVIORAL_SPECS.md" not in cp.stdout
+        and "docs/specs/behavioral/" not in cp.stdout
+    ):
         return 0
 
     added, modified = diff_added_spec_ids()

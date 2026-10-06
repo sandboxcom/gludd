@@ -4,17 +4,23 @@
 Run: .venv/bin/python scripts/fix_enforcement_lines.py
 """
 import re
+from pathlib import Path
 
-PATH = "docs/specs/BEHAVIORAL_SPECS.md"
+try:
+    from scripts.behavioral_specs import load_behavioral_specs, write_behavioral_specs
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from behavioral_specs import load_behavioral_specs, write_behavioral_specs
 
-with open(PATH) as f:
-    text = f.read()
+PATH = Path("docs/specs/BEHAVIORAL_SPECS.md")
+
+text = load_behavioral_specs(PATH)
 
 lines = text.split('\n')
 changes = 0
 
 # The two regex patterns that must match:
-# 1. For test_all_specs_have_enforcement: **Enforcement:**\s*(`.+?`|enforce-|Makefile|AGENTS\.md|scripts/|plugin|test-quality\b)
+# 1. For test_all_specs_have_enforcement:
+#    **Enforcement:**\s*(`.+?`|enforce-|Makefile|AGENTS\.md|scripts/|plugin|test-quality\b)
 # 2. For group tests: (AGENTS\.md|enforce-|Makefile|scripts/|plugin) — scans whole block
 
 # Pattern for enforcement lines that need fixing:
@@ -63,7 +69,7 @@ for i, line in enumerate(lines):
         after = rest[len('COST-EFFICIENCY DIRECTIVE'):].strip()
         lines[i] = f'{prefix} AGENTS.md "Cost-Efficiency Directive" {after}'.strip()
         changes += 1
-        print(f'  Fixed COST-EFFICIENCY -> AGENTS.md')
+        print('  Fixed COST-EFFICIENCY -> AGENTS.md')
 
     elif rest.startswith('agent_watchdog.py'):
         idx = rest.find(' ')
@@ -72,17 +78,17 @@ for i, line in enumerate(lines):
         else:
             lines[i] = f'{prefix} scripts/agent_watchdog.py'
         changes += 1
-        print(f'  Fixed agent_watchdog.py -> scripts/')
+        print('  Fixed agent_watchdog.py -> scripts/')
 
     elif rest.startswith('daemon'):
         lines[i] = f'{prefix} AGENTS.md {rest}'
         changes += 1
-        print(f'  Fixed daemon... -> AGENTS.md')
+        print('  Fixed daemon... -> AGENTS.md')
 
     elif rest.startswith('Plugin'):
         lines[i] = f'{prefix} plugin{rest[6:]}'
         changes += 1
-        print(f'  Fixed Plugin -> plugin')
+        print('  Fixed Plugin -> plugin')
 
     else:
         # Unrecognized — add AGENTS.md
@@ -90,7 +96,6 @@ for i, line in enumerate(lines):
         changes += 1
         print(f'  Default fix: {rest[:60]}... -> AGENTS.md')
 
-with open(PATH, 'w') as f:
-    f.write('\n'.join(lines) + '\n')
+write_behavioral_specs('\n'.join(lines) + '\n', PATH)
 
 print(f'\nTotal changes: {changes}')

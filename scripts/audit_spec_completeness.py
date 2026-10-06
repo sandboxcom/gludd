@@ -7,10 +7,14 @@ performing that behavior). Flags violations in real-time.
 Exit 0 if no violations, exit 1 if violations found.
 """
 
-import json
 import re
 import sys
 from pathlib import Path
+
+try:
+    from scripts.behavioral_specs import load_behavioral_specs
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from behavioral_specs import load_behavioral_specs
 
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_FILE = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
@@ -93,7 +97,7 @@ def _find_spec_text(spec_id: str) -> str | None:
     """Find the spec text for a given spec ID."""
     if not SPECS_FILE.exists():
         return None
-    content = SPECS_FILE.read_text()
+    content = load_behavioral_specs(SPECS_FILE)
     pattern = rf"### {re.escape(spec_id)} — .+?\n(?=### |\Z)"
     m = re.search(pattern, content, re.DOTALL)
     return m.group(0) if m else None

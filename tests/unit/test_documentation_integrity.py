@@ -10,6 +10,8 @@ import re
 from pathlib import Path
 from typing import ClassVar
 
+from scripts.behavioral_specs import load_behavioral_specs
+
 ROOT = Path(__file__).resolve().parents[2]
 DOCS = ROOT / "docs"
 ARCH = DOCS / "architecture.md"
@@ -25,6 +27,8 @@ PYPROJECT = ROOT / "pyproject.toml"
 
 
 def _read(path: Path) -> str:
+    if path.name == "BEHAVIORAL_SPECS.md":
+        return load_behavioral_specs(path)
     return path.read_text()
 
 

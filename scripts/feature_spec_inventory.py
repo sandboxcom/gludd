@@ -32,6 +32,11 @@ import check_spec_enforcement_coverage as enforcement_coverage_audit
 import spec_generator_loop as generator_audit
 import yaml
 
+try:
+    from scripts.behavioral_specs import load_behavioral_specs
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from behavioral_specs import load_behavioral_specs
+
 DOC_SUFFIXES = {".md", ".yml", ".yaml", ".json"}
 STATUSES = ("implemented", "partial", "unimplemented", "unknown")
 
@@ -724,7 +729,9 @@ def _scan_markdown_file(
     records: dict[str, _Record],
 ) -> tuple[int, str, str]:
     source_path = _relative_path(root, path)
-    if path.name == "BEHAVIORAL_SPECS.md":
+    if path.name == "BEHAVIORAL_SPECS.md" or (
+        path.parent.name == "behavioral" and path.parent.parent.name == "specs"
+    ):
         return 0, "excluded", "opencode-behavioral-separate"
     if _is_opencode_only(path, text):
         return 0, "excluded", "opencode-or-enforcement-only"
@@ -869,7 +876,7 @@ def _parse_behavioral_specs(path: Path) -> list[dict[str, str]]:
         return []
     specs: list[dict[str, str]] = []
     current: dict[str, str] | None = None
-    for line in path.read_text().splitlines():
+    for line in load_behavioral_specs(path).splitlines():
         match = BEHAVIORAL_HEADER_RE.match(line)
         if match:
             if current is not None:
