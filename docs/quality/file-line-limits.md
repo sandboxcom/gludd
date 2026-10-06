@@ -57,3 +57,51 @@ cohesive ownership boundaries, preserve its public imports or entrypoint, add
 focused regression tests, and rerun the checker. Do not add a text-file
 exception to make the gate pass; the exception policy exists only for tracked
 entries that cannot be decoded as text.
+
+## Initial post-split remediation inventory
+
+The first complete inventory after splitting the Makefile contains 31 tracked
+text files. Counts below are physical lines, including blanks and comments.
+
+### Production source and maintenance scripts (11)
+
+- `src/general_ludd/event_loop/loop.py` — 5,494
+- `src/general_ludd/cli.py` — 5,129
+- `src/general_ludd/models/gateway.py` — 4,083
+- `src/general_ludd/daemon.py` — 4,076
+- `scripts/test_hook_runtime.py` — 3,885
+- `scripts/agent_watchdog.py` — 3,884
+- `src/general_ludd/self_improve/codex_comparison.py` — 3,674
+- `src/general_ludd/db/repository.py` — 3,513
+- `src/general_ludd/self_improve/managed_runner.py` — 3,246
+- `src/general_ludd/self_improve/runtime.py` — 3,230
+- `src/general_ludd/pricing_intel/sources.py` — 2,500
+
+### Tests (9)
+
+- `tests/e2e/test_game_building_deepseek.py` — 4,034
+- `tests/unit/test_self_improve_codex_comparison.py` — 3,712
+- `tests/unit/test_ci_named_shard_files.py` — 3,546
+- `tests/unit/test_automatic_disk_cleanup.py` — 3,113
+- `tests/unit/test_behavioral_enforcement.py` — 2,993
+- `tests/unit/test_self_improve_codex_runner.py` — 2,923
+- `tests/unit/test_probabilistic_deep.py` — 2,864
+- `tests/e2e/test_connectors_batch5_workflows.py` — 2,540
+- `tests/unit/test_routers_endpoints.py` — 2,521
+
+### Documentation, specifications, and skills (9)
+
+- `docs/specs/BEHAVIORAL_SPECS.md` — 21,495
+- `docs/internal/sprint0.md` — 3,970
+- `.opencode/skills/go-expert/SKILL.md` — 3,581
+- `docs/MCP_TOOLS_TOPICS.yml` — 3,581
+- `AGENTS.md` — 3,540
+- `docs/specs/FEATURE_EXPERT_SYSTEM_INTEROPERABILITY.md` — 3,303
+- `docs/features/BETA4_DUAL_TRACK_CI.md` — 2,877
+- `docs/design/specs/SPEC_ML_AI_EXPERT_AND_SAFE_SELF_IMPROVEMENT.md` — 2,758
+- `.opencode/skills/java-expert/SKILL.md` — 2,613
+
+### Generated and lock artifacts (2)
+
+- `.secrets.baseline` — 208,277
+- `uv.lock` — 9,090
