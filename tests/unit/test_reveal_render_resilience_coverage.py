@@ -231,6 +231,43 @@ def test_source_handler_serves_prefixed_assets_and_bounded_source(tmp_path: Path
         thread.join(timeout=2)
 
 
+def test_source_handler_keeps_hash_navigation_revalidation_on_a_2xx_response(
+    tmp_path: Path,
+) -> None:
+    """WebKit's conditional top-level navigation must not surface a 304 response."""
+    site = tmp_path / "site"
+    site.mkdir()
+    (site / "index.html").write_text("ready", encoding="utf-8")
+    handler = build_deck.source_request_handler(
+        serve_dir=site,
+        repo_root=tmp_path,
+        allowlist=frozenset(),
+        url_prefix="/gludd/",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    url = f"http://{host}:{port}/gludd/"
+    try:
+        with urllib.request.urlopen(url, timeout=2) as response:
+            modified = response.headers["Last-Modified"]
+            cache_control = response.headers["Cache-Control"]
+        request = urllib.request.Request(url, headers={"If-Modified-Since": modified})
+        try:
+            with urllib.request.urlopen(request, timeout=2) as response:
+                status = response.status
+        except urllib.error.HTTPError as error:
+            status = error.code
+            error.close()
+        assert cache_control == "no-store"
+        assert status == 200
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
 def test_serve_deck_binds_loopback_and_stops_cleanly(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

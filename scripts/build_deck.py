@@ -457,12 +457,24 @@ def source_request_handler(
             if request.path == "/__gludd_source__":
                 self._serve_source(request.query)
                 return
+            static_path = request.path
             if normalized_prefix and (
                 request.path == normalized_prefix or request.path.startswith(normalized_prefix + "/")
             ):
                 suffix = request.path[len(normalized_prefix):] or "/"
                 self.path = suffix + (("?" + request.query) if request.query else "")
+                static_path = suffix
+            self._no_store_document = static_path in {"", "/", "/index.html"}
+            if self._no_store_document:
+                for header in ("If-Modified-Since", "If-None-Match"):
+                    if header in self.headers:
+                        del self.headers[header]
             super().do_GET()
+
+        def end_headers(self) -> None:
+            if getattr(self, "_no_store_document", False):
+                self.send_header("Cache-Control", "no-store")
+            super().end_headers()
 
         def _serve_source(self, query: str) -> None:
             values = parse_qs(query, keep_blank_values=True)

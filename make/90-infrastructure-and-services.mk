@@ -124,11 +124,12 @@ presentation-browser-install-deps:
 	@case "$(PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY)" in 0|1) ;; *) echo "PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
 	@for browser in $(PRESENTATION_BROWSER_ENGINES); do \
 		echo "presentation-browser matrix browser=$$browser phase=install-deps"; \
-		if [ "$(PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY)" = "1" ]; then \
-			echo "presentation-browser install-deps browser=$$browser status=validated"; \
-		else \
-			$(UV) run --extra presentation-test playwright install-deps "$$browser" || exit $$?; \
-		fi; \
+		$(UV) run --extra presentation-test python scripts/run_presentation_browser_tests.py \
+			$(if $(filter 1,$(PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY)),--validate-only,--install-browser-with-deps) \
+			--browser "$$browser" \
+			--browser-root "$(PRESENTATION_BROWSER_ROOT)" \
+			--output-root "$(PRESENTATION_BROWSER_OUTPUT)/$$browser" \
+			--timeout-seconds "$(PRESENTATION_BROWSER_INSTALL_TIMEOUT)" || exit $$?; \
 	done
 
 presentation-safari-test:
