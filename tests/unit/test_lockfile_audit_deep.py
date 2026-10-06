@@ -20,6 +20,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 UV_LOCK = ROOT / "uv.lock"
 PYPROJECT = ROOT / "pyproject.toml"
+PROFILE_CATALOG = ROOT / "config/dependency_profiles.toml"
 
 SHA256_RE = re.compile(r"^sha256:[a-f0-9]{64}$")
 PEP440_RE = re.compile(
@@ -215,6 +216,10 @@ def _pyproject_data() -> dict[str, Any]:
     return tomllib.loads(PYPROJECT.read_text())
 
 
+def _profile_catalog() -> dict[str, Any]:
+    return tomllib.loads(PROFILE_CATALOG.read_text(encoding="utf-8"))
+
+
 # ---- Fixtures ----
 
 
@@ -328,43 +333,33 @@ class TestNoYankedAssurance:
                 assert pattern not in name, f"{pkg['name']} matches yanked indicator '{pattern}'"
 
 
-# ---- Extras consistency ----
+# ---- Dependency-profile consistency ----
 
 
 class TestExtrasConsistency:
-    def test_provides_extras_matches_pyproject(self, lock_full: dict[str, Any], pyproject: dict[str, Any]) -> None:
-        pyproject_extras = set(pyproject["project"].get("optional-dependencies", {}).keys())
-        m = re.search(r"provides-extras\s*=\s*\[([^\]]+)\]", lock_full["raw"])
-        assert m, "uv.lock missing provides-extras"
-        lock_extras = {e.strip().strip('"').strip("'") for e in m.group(1).split(",")}
-        assert pyproject_extras == lock_extras, (
-            f"Extras mismatch: pyproject has {pyproject_extras}, lock has {lock_extras}"
-        )
+    def test_root_lock_has_no_legacy_extra_resolution(
+        self,
+        lock_full: dict[str, Any],
+        pyproject: dict[str, Any],
+    ) -> None:
+        assert "optional-dependencies" not in pyproject["project"]
+        assert "provides-extras" not in lock_full["raw"]
 
-    def test_dev_group_deps_match_optional_deps(self, pyproject: dict[str, Any]) -> None:
-        opt_dev = set(
-            d.split(">=")[0].split("==")[0].split("[")[0].split("<")[0].strip().lower()
-            for d in pyproject["project"].get("optional-dependencies", {}).get("dev", [])
-        )
-        dep_group_dev = set(
-            d.split(">=")[0].split("==")[0].split("[")[0].split("<")[0].strip().lower()
-            for d in pyproject.get("dependency-groups", {}).get("dev", [])
-        )
-        assert opt_dev & dep_group_dev, (
-            f"dev optional-deps {opt_dev} and dependency-groups.dev {dep_group_dev} have no overlap"
-        )
+    def test_ci_profiles_include_development_profiles(self) -> None:
+        catalog = _profile_catalog()
+        development = set(catalog["sets"]["development"]["profiles"])
+        ci = set(catalog["sets"]["ci"]["profiles"])
+        assert development < ci
 
-    def test_game_e2e_is_subset_of_e2e_all(self, pyproject: dict[str, Any]) -> None:
-        extras: dict[str, list[str]] = pyproject["project"]["optional-dependencies"]
-        game = {d.split(">=")[0].split("==")[0].strip() for d in extras.get("game-e2e", [])}
-        e2e_all = {d.split(">=")[0].split("==")[0].strip() for d in extras.get("e2e-all", [])}
-        missing = game - e2e_all
-        assert not missing, f"game-e2e deps not in e2e-all: {missing}"
+    def test_game_e2e_is_subset_of_e2e_all(self) -> None:
+        catalog = _profile_catalog()
+        game = set(catalog["sets"]["game-e2e"]["profiles"])
+        e2e_all = set(catalog["sets"]["e2e-all"]["profiles"])
+        assert game <= e2e_all
 
-    def test_sandbox_extra_is_empty(self, pyproject: dict[str, Any]) -> None:
-        extras: dict[str, list[str]] = pyproject["project"]["optional-dependencies"]
-        sandbox = extras.get("sandbox", [])
-        assert sandbox == [] or sandbox == [""], f"sandbox extra should be empty, got: {sandbox}"
+    def test_sandbox_set_is_core_runtime_only(self) -> None:
+        catalog = _profile_catalog()
+        assert catalog["sets"]["sandbox"]["profiles"] == ["agent-runtime"]
 
 
 # ---- Source distribution availability ----

@@ -1,0 +1,253 @@
+schema-version = 1
+max-lock-lines = 2499
+audit-ignore = ["CVE-2025-69872", "PYSEC-2026-3552"]
+
+[profiles.agent-runtime]
+project = "requirements/profiles/agent-runtime"
+
+[profiles.ansible-controller]
+project = "requirements/profiles/ansible-controller"
+
+[profiles.aws]
+project = "requirements/profiles/aws"
+
+[profiles.azure]
+project = "requirements/profiles/azure"
+
+[profiles.benchmark]
+project = "requirements/profiles/benchmark"
+audit-ignore = [
+    "GHSA-8mgp-746c-j5xp",
+    "GHSA-g4r7-86gm-pgqc",
+]
+
+[profiles.cuda-inference]
+project = "requirements/profiles/cuda-inference"
+audit-ignore = [
+    "GHSA-h35f-9h28-mq5c",
+]
+
+[profiles.cuda-inference-mcp]
+project = "requirements/profiles/cuda-inference-mcp"
+
+[profiles.dev-ansible]
+project = "requirements/profiles/dev-ansible"
+
+[profiles.dev-build]
+project = "requirements/profiles/dev-build"
+
+[profiles.dev-quality]
+project = "requirements/profiles/dev-quality"
+
+[profiles.dev-science]
+project = "requirements/profiles/dev-science"
+
+[profiles.dev-security]
+project = "requirements/profiles/dev-security"
+
+[profiles.dev-test]
+project = "requirements/profiles/dev-test"
+
+[profiles.decision-codification]
+project = "requirements/profiles/decision-codification"
+
+[profiles.game-e2e]
+project = "requirements/profiles/game-e2e"
+
+[profiles.gcp]
+project = "requirements/profiles/gcp"
+
+[profiles.hindsight]
+project = "requirements/profiles/hindsight"
+
+[profiles.local-inference]
+project = "requirements/profiles/local-inference"
+audit-ignore = ["CVE-2025-69872"]
+
+[profiles.mysql]
+project = "requirements/profiles/mysql"
+
+[profiles.networking]
+project = "requirements/profiles/networking"
+
+[profiles.observability]
+project = "requirements/profiles/observability"
+
+[profiles.platform-sandbox]
+project = "requirements/profiles/platform-sandbox"
+
+[profiles.presentation-test]
+project = "requirements/profiles/presentation-test"
+
+[profiles.vmware]
+project = "requirements/profiles/vmware"
+
+[profiles.xml-security]
+project = "requirements/profiles/xml-security"
+
+[sets.core]
+profiles = ["agent-runtime"]
+
+[sets.audit-runtime]
+profiles = [
+    "agent-runtime",
+    "ansible-controller",
+    "aws",
+    "gcp",
+    "azure",
+    "observability",
+    "game-e2e",
+    "mysql",
+    "vmware",
+    "networking",
+    "hindsight",
+    "benchmark",
+    "decision-codification",
+    "xml-security",
+    "platform-sandbox",
+    "local-inference",
+    "cuda-inference",
+    "cuda-inference-mcp",
+]
+
+[sets.build-azure]
+profiles = ["agent-runtime", "azure", "dev-build"]
+
+[sets.build]
+profiles = ["agent-runtime", "dev-build"]
+
+[sets.ci]
+profiles = [
+    "agent-runtime",
+    "ansible-controller",
+    "dev-test",
+    "dev-quality",
+    "dev-security",
+    "dev-build",
+    "dev-ansible",
+    "dev-science",
+    "presentation-test",
+]
+
+[sets.ci-game-e2e]
+profiles = [
+    "agent-runtime",
+    "ansible-controller",
+    "dev-test",
+    "dev-quality",
+    "dev-security",
+    "dev-build",
+    "dev-ansible",
+    "dev-science",
+    "presentation-test",
+    "game-e2e",
+]
+
+[sets.ci-azure]
+profiles = [
+    "agent-runtime",
+    "ansible-controller",
+    "dev-test",
+    "dev-quality",
+    "dev-security",
+    "dev-build",
+    "dev-ansible",
+    "dev-science",
+    "presentation-test",
+    "azure",
+]
+
+[sets.ci-local-inference]
+profiles = [
+    "agent-runtime",
+    "ansible-controller",
+    "dev-test",
+    "dev-quality",
+    "dev-security",
+    "dev-build",
+    "dev-ansible",
+    "dev-science",
+    "presentation-test",
+    "local-inference",
+]
+
+[sets.development]
+profiles = [
+    "agent-runtime",
+    "ansible-controller",
+    "dev-test",
+    "dev-quality",
+    "dev-security",
+    "dev-build",
+    "dev-ansible",
+    "dev-science",
+]
+
+[sets.ansible-controller]
+profiles = ["agent-runtime", "ansible-controller"]
+
+[sets.aws]
+profiles = ["agent-runtime", "aws"]
+
+[sets.azure]
+profiles = ["agent-runtime", "azure"]
+
+[sets.benchmark]
+profiles = ["agent-runtime", "benchmark"]
+
+[sets.cuda-inference]
+profiles = ["agent-runtime", "cuda-inference", "cuda-inference-mcp"]
+
+[sets.decision-codification]
+profiles = ["agent-runtime", "decision-codification"]
+
+[sets.e2e-all]
+profiles = ["agent-runtime", "game-e2e", "azure"]
+
+[sets.game-e2e]
+profiles = ["agent-runtime", "game-e2e"]
+
+[sets.gcp]
+profiles = ["agent-runtime", "gcp"]
+
+[sets.hindsight]
+profiles = ["agent-runtime", "hindsight"]
+
+[sets.local-inference]
+profiles = ["agent-runtime", "local-inference"]
+
+[sets.mysql]
+profiles = ["agent-runtime", "mysql"]
+
+[sets.networking]
+profiles = ["agent-runtime", "networking"]
+
+[sets.observability]
+profiles = ["agent-runtime", "observability"]
+
+[sets.platform-sandbox]
+profiles = ["agent-runtime", "platform-sandbox"]
+
+[sets.presentation-test]
+profiles = ["agent-runtime", "presentation-test"]
+
+[sets.sandbox]
+profiles = ["agent-runtime"]
+
+[sets.sbom]
+profiles = [
+    "agent-runtime",
+    "ansible-controller",
+    "dev-test",
+    "dev-quality",
+    "dev-security",
+    "dev-build",
+    "dev-ansible",
+    "dev-science",
+]
+
+[sets.vmware]
+profiles = ["agent-runtime", "vmware"]
+
+[sets.xml-security]
+profiles = ["agent-runtime", "xml-security"]

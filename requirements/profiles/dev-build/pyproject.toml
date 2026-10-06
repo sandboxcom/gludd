@@ -1,0 +1,12 @@
+[project]
+name = "gludd-profile-dev-build"
+version = "0"
+requires-python = ">=3.11"
+dependencies = [
+    "pyinstaller>=6.0.0",
+    "pip>=26.2",
+    "setuptools>=83.0.0",
+]
+
+[tool.uv]
+package = false

@@ -11,13 +11,14 @@ SPEC = ROOT / "docs/design/specs/SPEC_DECISION_LOG_CODIFICATION.md"
 
 def test_offline_learner_is_a_direct_pinned_dependency() -> None:
     """Mining must not depend on an accidental benchmark dependency edge."""
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    project = tomllib.loads(
+        (
+            ROOT / "requirements/profiles/decision-codification/pyproject.toml"
+        ).read_text(encoding="utf-8")
+    )
     requirement = "scikit-learn==1.9.0"
 
-    assert requirement in project["project"]["optional-dependencies"][
-        "decision-codification"
-    ]
-    assert requirement in project["dependency-groups"]["dev"]
+    assert requirement in project["project"]["dependencies"]
 
 
 def _spec_text() -> str:

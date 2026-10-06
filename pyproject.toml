@@ -41,12 +41,6 @@ dependencies = [
     "requests>=2.32.0",
     "tree-sitter>=0.24.0",
     "tree-sitter-python>=0.23.0",
-    "huggingface-hub>=0.28.0",
-    "langgraph>=0.2.0",
-    "langsmith>=0.8.18",
-    "langchain-core>=0.3.0",
-    "langchain-openai>=0.3.0",
-    "openai>=1.66.0",
     "watchdog>=6.0.0",
     "rich>=13.0.0",
     "diskcache>=5.6.3,<6",
@@ -59,146 +53,19 @@ dependencies = [
     "quickjs-ng==0.16.2.1",
 ]
 
-[project.optional-dependencies]
-ansible-controller = [
-    "ansible-core>=2.19.11,<2.20; python_version < '3.12'",
-    "ansible-core>=2.21.2,<2.22; python_version >= '3.12'",
-    "ansible-runner>=2.4.0",
-    "ansible-builder>=3.1.1,<3.2",
-]
-dev = [
-    "pytest>=8.0.0",
-    "pytest-cov>=6.0.0",
-    "pytest-asyncio>=0.25.0",
-    "pytest-xdist>=3.5.0",
-    "pytest-timeout>=2.3.0",
-    "ansible-core>=2.19.11,<2.20; python_version < '3.12'",
-    "ansible-core>=2.21.2,<2.22; python_version >= '3.12'",
-    "ansible-runner>=2.4.0",
-    "ansible-builder>=3.1.1,<3.2",
-    "httpx2>=2.7.0",
-    "ruff>=0.8.0",
-    "mypy>=1.13.0",
-    "pre-commit>=4.0.0",
-    "pytest-ansible>=24.0.0",
-    "molecule>=24.0.0",
-    "molecule-plugins[docker]>=25.8.12",
-    "ansible-lint>=24.0.0",
-    "types-requests>=2.32.0",
-    "types-psutil>=6.0.0",
-    "types-gunicorn>=26.0.0.20260518",
-    "types-defusedxml>=0.7.0.20240218",
-    "aiosqlite>=0.20.0",
-    "pyinstaller>=6.0.0",
-    "bandit>=1.8.0",
-    "cyclonedx-py>=0.7.0",
-    "pip-audit>=0.3.0",
-    "pip>=26.2",
-    "setuptools>=83.0.0",
-    "hypothesis>=6.0.0",
-    "numpy>=1.26.0",
-    "scipy>=1.11.0",
-    "scikit-learn==1.9.0",
-    "PyWavelets>=1.4",
-    "pycryptodome>=3.20.0",
-    "shamir>=17.12.0",
-    "srptools>=1.0.0",
-]
-presentation-test = [
-    "playwright==1.63.0",
-    "pytest-playwright==0.9.0",
-]
-local-inference = [
-    "llama-cpp-python[server]>=0.3.0",
-]
-cuda-inference = [
-    "vllm>=0.6.0",
-    "torch>=2.6.0",
-]
-aws = [
-    "boto3>=1.34.0",
-]
-gcp = [
-    "google-api-python-client>=2.100.0",
-    "google-auth>=2.25.0",
-    "google-cloud-core>=2.3.0",
-]
-azure = [
-    "azure-identity>=1.16.0",
-    "azure-mgmt-cognitiveservices>=14.1.0,<15",
-    "azure-mgmt-costmanagement==5.0.0b1",
-    "azure-mgmt-compute>=31.0.0",
-    "azure-mgmt-authorization>=4.0.0",
-    "azure-mgmt-appcontainers>=5.0.0,<6",
-    "azure-mgmt-monitor>=7.0.0,<8",
-    "azure-mgmt-resource>=23.0.0",
-]
-observability = [
-    "opentelemetry-api>=1.20.0",
-    "opentelemetry-sdk>=1.20.0",
-    "opentelemetry-proto>=1.20.0",
-    "opentelemetry-exporter-otlp-proto-grpc>=1.20.0",
-]
-sandbox = [
-]
-game-e2e = [
-    "numpy>=1.26.0",
-    "pygame>=2.5.0",
-    "pillow>=12.3.0",
-    "scikit-image>=0.22.0",
-    "opencv-python-headless>=4.9.0,<4.13",
-    "yt-dlp>=2025.1.15",
-]
-e2e-all = [
-    "numpy>=1.26.0",
-    "pygame>=2.5.0",
-    "pillow>=12.3.0",
-    "scikit-image>=0.22.0",
-    "opencv-python-headless>=4.9.0,<4.13",
-    "yt-dlp>=2025.1.15",
-    "langchain-openai>=0.3.0",
-    "azure-identity>=1.16.0",
-    "azure-mgmt-cognitiveservices>=14.1.0,<15",
-    "azure-mgmt-costmanagement==5.0.0b1",
-    "azure-mgmt-compute>=31.0.0",
-    "azure-mgmt-authorization>=4.0.0",
-    "azure-mgmt-appcontainers>=5.0.0,<6",
-    "azure-mgmt-monitor>=7.0.0,<8",
-    "azure-mgmt-resource>=23.0.0",
-]
-mysql = [
-    "pymysql>=1.1.0",
-]
-vmware = [
-    "pyvmomi>=8.0.0",
-]
-networking = [
-    "scapy>=2.5.0",
-]
-hindsight = [
-    "hindsight-client>=0.8.4",
-]
-benchmark = [
-    "lm-eval>=0.4.12",
-]
-decision-codification = [
-    "scikit-learn==1.9.0",
-]
-xml-security = [
-    "lxml>=5.0.0",
-    "xmlsec>=1.3.0",
-]
-platform-sandbox = [
-    "landlock>=1.0.0.dev5; sys_platform == 'linux'",
-    "pywin32>=306; sys_platform == 'win32'",
-]
-
 [project.scripts]
 gludd = "general_ludd.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.uv]
+constraint-dependencies = [
+    "anyio>=4.14.2",
+    "mako>=1.4.2",
+    "urllib3>=2.8.0",
+]
 
 [tool.hatch.build.targets.sdist]
 include = ["src/general_ludd", "LICENSE", "THIRD_PARTY_LICENSES.md", "README.md"]
@@ -312,111 +179,4 @@ exclude_also = [
     "pragma: no cover",
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
-]
-
-[tool.deptry]
-optional_dependencies_dev_groups = ["dev"]
-known_first_party = ["ansible_collections"]
-
-[tool.deptry.package_module_name_map]
-"annotated-types" = "annotated_types"
-"azure-identity" = "azure"
-"azure-mgmt-authorization" = "azure"
-"azure-mgmt-appcontainers" = "azure"
-"azure-mgmt-cognitiveservices" = "azure"
-"azure-mgmt-compute" = "azure"
-"azure-mgmt-costmanagement" = "azure"
-"azure-mgmt-monitor" = "azure"
-"azure-mgmt-resource" = "azure"
-"boto3" = "boto3"
-"google-api-python-client" = "googleapiclient"
-"google-auth" = "google"
-"google-cloud-core" = "google"
-"hindsight-client" = "hindsight_client"
-"landlock" = "landlock"
-"langchain-core" = "langchain_core"
-"langchain-openai" = "langchain_openai"
-"llama-cpp-python" = "llama_cpp"
-"lm-eval" = "lm_eval"
-"lxml" = "lxml"
-"opencv-python-headless" = "cv2"
-"openai" = "openai"
-"opentelemetry-api" = "opentelemetry"
-"opentelemetry-exporter-otlp-proto-grpc" = "opentelemetry"
-"opentelemetry-proto" = "opentelemetry"
-"opentelemetry-sdk" = "opentelemetry"
-"pillow" = "PIL"
-"pygame" = "pygame"
-"pymysql" = "pymysql"
-"pyvmomi" = ["pyVim", "pyVmomi"]
-"pywavelets" = "pywt"
-"pywin32" = ["win32", "win32security"]
-"quickjs-ng" = "quickjs"
-"scapy" = "scapy"
-"scikit-image" = "skimage"
-"torch" = "torch"
-"vllm" = "vllm"
-"xmlsec" = "xmlsec"
-"yt-dlp" = "yt_dlp"
-
-[tool.deptry.per_rule_ignores]
-DEP002 = [
-    "aiosqlite",
-    "ansible-builder",
-    "boto3",
-    "greenlet",
-    "gunicorn",
-    "langchain-openai",
-    "llama-cpp-python",
-    "msgpack",
-    "opentelemetry-api",
-    "opentelemetry-exporter-otlp-proto-grpc",
-    "opentelemetry-proto",
-    "opentelemetry-sdk",
-    "pillow",
-    "torch",
-    "uvicorn-worker",
-    "vllm",
-]
-
-[dependency-groups]
-dev = [
-    "pytest>=8.0.0",
-    "pytest-cov>=6.0.0",
-    "pytest-asyncio>=0.25.0",
-    "pytest-xdist>=3.5.0",
-    "pytest-timeout>=2.3.0",
-    "ansible-core>=2.19.11,<2.20; python_version < '3.12'",
-    "ansible-core>=2.21.2,<2.22; python_version >= '3.12'",
-    "ansible-runner>=2.4.0",
-    "ansible-builder>=3.1.1,<3.2",
-    "httpx2>=2.7.0",
-    "ruff>=0.8.0",
-    "mypy>=1.13.0",
-    "pre-commit>=4.0.0",
-    "detect-secrets>=1.5.0",
-    "types-requests>=2.32.0",
-    "types-psutil>=6.0.0",
-    "types-gunicorn>=26.0.0.20260518",
-    "types-defusedxml>=0.7.0.20240218",
-    "aiosqlite>=0.20.0",
-    "pyinstaller>=6.0.0",
-    "bandit>=1.8.0",
-    "cyclonedx-py>=0.7.0",
-    "pip-audit>=0.3.0",
-    "deptry>=0.20.0",
-    "molecule>=24.0.0",
-    "molecule-plugins[docker]>=25.8.12",
-    "ansible-lint>=24.0.0",
-    "pytest-ansible>=24.0.0",
-    "pip>=26.2",
-    "setuptools>=83.0.0",
-    "hypothesis>=6.0.0",
-    "numpy>=1.26.0",
-    "scipy>=1.11.0",
-    "scikit-learn==1.9.0",
-    "PyWavelets>=1.4",
-    "pycryptodome>=3.20.0",
-    "shamir>=17.12.0",
-    "srptools>=1.0.0",
 ]

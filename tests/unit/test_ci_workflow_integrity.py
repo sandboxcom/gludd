@@ -201,8 +201,9 @@ class TestGameBuildingJobStructure:
         commands = [str(step.get("run", "")) for step in steps if isinstance(step, dict)]
         command = next(command for command in commands if "make test-games" in command)
 
-        assert "uv sync --frozen --extra game-e2e" in command
-        assert command.index("uv sync --frozen --extra game-e2e") < command.index(
+        profile_sync = "scripts/dependency_profiles.py sync --set ci-game-e2e"
+        assert profile_sync in command
+        assert command.index(profile_sync) < command.index(
             "make test-games"
         )
 
@@ -359,7 +360,8 @@ class TestReleaseSourceEvidenceReuse:
             WORKFLOW_PATH.parents[2]
             / "docs"
             / "features"
-            / "BETA4_DUAL_TRACK_CI.md"
+            / "beta4-dual-track-ci"
+            / "exact-sha-promotion.md"
         ).read_text(encoding="utf-8")
 
         for required in (

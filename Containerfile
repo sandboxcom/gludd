@@ -6,10 +6,21 @@ RUN pip install --no-cache-dir uv
 WORKDIR /build
 
 COPY pyproject.toml uv.lock README.md LICENSE THIRD_PARTY_LICENSES.md ./
+COPY config/dependency_profiles.toml config/dependency_profiles.toml
+COPY scripts/dependency_profiles.py scripts/dependency_profiles.py
+COPY requirements/profiles requirements/profiles
 COPY src/ src/
 
-RUN uv sync --frozen --no-dev --no-install-project
+RUN python scripts/dependency_profiles.py sync \
+        --root /build \
+        --manifest config/dependency_profiles.toml \
+        --set core \
+        --environment /build/.venv \
+        --python 3.11 \
+        --uv uv \
+        --no-install-project
 RUN uv build --out-dir /build/dist
+RUN uv pip install --python /build/.venv/bin/python --no-deps /build/dist/*.whl
 
 # Stage 2: Runtime
 FROM python:3.11-slim
@@ -34,10 +45,8 @@ RUN groupadd --system gludd && \
 
 WORKDIR /app
 
-COPY --from=builder /build/dist/*.whl /tmp/wheels/
-
-RUN pip install --no-cache-dir /tmp/wheels/*.whl && \
-    rm -rf /tmp/wheels
+COPY --from=builder /build/.venv /app/.venv
+ENV PATH="/app/.venv/bin:${PATH}"
 
 COPY config/ config/
 COPY playbooks/ playbooks/

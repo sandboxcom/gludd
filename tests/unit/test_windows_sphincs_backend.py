@@ -137,16 +137,18 @@ def test_frozen_spec_explicitly_includes_python_and_native_backend() -> None:
     } <= _hidden_imports()
 
 
-def test_windows_job_uses_frozen_install_and_warning_error_smoke() -> None:
+def test_windows_job_uses_locked_profile_install_and_warning_error_smoke() -> None:
     job = _windows_job()
-    sync = "uv sync --frozen --extra azure --python 3.12"
+    sync = (
+        "python scripts/dependency_profiles.py sync --set build-azure "
+        "--environment .venv --python 3.12"
+    )
     smoke = (
-        "uv run --frozen --python 3.12 python -W error "
+        "uv run --no-sync --python 3.12 python -W error "
         "scripts/smoke_sphincs_backend.py"
     )
     build = (
-        "uv run --frozen --extra azure --python 3.12 "
-        "pyinstaller gludd.spec --clean --noconfirm"
+        "uv run --no-sync --python 3.12 pyinstaller gludd.spec --clean --noconfirm"
     )
     assert sync in job
     assert smoke in job

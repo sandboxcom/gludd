@@ -19,6 +19,8 @@ def test_dependency_audit_target_is_fail_closed_and_contract_tracked() -> None:
 
     assert "|| true" not in target
     assert "deptry src" in target
+    assert "--config config/deptry_profiles.toml" in target
+    assert "--requirements-files" in target
 
     contract = json.loads((ROOT / "config" / "make_target_contract.json").read_text(encoding="utf-8"))
     entry = next(item for item in contract["targets"] if item["name"] == "deps-audit")
@@ -28,9 +30,14 @@ def test_dependency_audit_target_is_fail_closed_and_contract_tracked() -> None:
 
 def test_deptry_models_dev_groups_namespaces_and_import_names() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    deptry = project["tool"]["deptry"]
+    assert "deptry" not in project.get("tool", {})
+    config = tomllib.loads(
+        (ROOT / "config" / "deptry_profiles.toml").read_text(encoding="utf-8")
+    )
+    deptry = config["tool"]["deptry"]
 
-    assert deptry["optional_dependencies_dev_groups"] == ["dev"]
+    assert "project" not in config
+    assert "optional_dependencies_dev_groups" not in deptry
     assert "ansible_collections" in deptry["known_first_party"]
     mappings = deptry["package_module_name_map"]
     assert mappings["llama-cpp-python"] == "llama_cpp"
@@ -42,8 +49,10 @@ def test_deptry_models_dev_groups_namespaces_and_import_names() -> None:
 
 def test_hindsight_optional_dependency_is_statically_auditable() -> None:
     """Keep the optional Hindsight import visible without a DEP002 suppression."""
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    ignored = project["tool"]["deptry"]["per_rule_ignores"]["DEP002"]
+    config = tomllib.loads(
+        (ROOT / "config" / "deptry_profiles.toml").read_text(encoding="utf-8")
+    )
+    ignored = config["tool"]["deptry"]["per_rule_ignores"]["DEP002"]
     assert "hindsight-client" not in ignored
 
     source = (ROOT / "src" / "general_ludd" / "memory" / "hindsight_adapter.py").read_text(encoding="utf-8")
@@ -57,8 +66,10 @@ def test_hindsight_optional_dependency_is_statically_auditable() -> None:
 
 def test_quickjs_runtime_dependency_is_statically_auditable() -> None:
     """Keep the lazy QuickJS engine visible without a DEP002 suppression."""
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    deptry = project["tool"]["deptry"]
+    config = tomllib.loads(
+        (ROOT / "config" / "deptry_profiles.toml").read_text(encoding="utf-8")
+    )
+    deptry = config["tool"]["deptry"]
     assert deptry["package_module_name_map"]["quickjs-ng"] == "quickjs"
     assert "quickjs-ng" not in deptry["per_rule_ignores"]["DEP002"]
 
@@ -75,8 +86,10 @@ def test_quickjs_runtime_dependency_is_statically_auditable() -> None:
 
 def test_ansible_builder_module_entrypoint_is_explicitly_adjudicated() -> None:
     """Keep controller-only builder ownership narrow and documented."""
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    ignored = project["tool"]["deptry"]["per_rule_ignores"]["DEP002"]
+    config = tomllib.loads(
+        (ROOT / "config" / "deptry_profiles.toml").read_text(encoding="utf-8")
+    )
+    ignored = config["tool"]["deptry"]["per_rule_ignores"]["DEP002"]
     assert "ansible-builder" in ignored
 
     source = (ROOT / "scripts" / "ansible_runtime_artifacts.py").read_text(encoding="utf-8")
@@ -90,13 +103,33 @@ def test_ansible_builder_module_entrypoint_is_explicitly_adjudicated() -> None:
 
 def test_greenlet_async_driver_is_explicitly_adjudicated() -> None:
     """Keep greenlet's SQLAlchemy asyncio ownership visible in the ignore list and docs."""
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    ignored = project["tool"]["deptry"]["per_rule_ignores"]["DEP002"]
+    config = tomllib.loads(
+        (ROOT / "config" / "deptry_profiles.toml").read_text(encoding="utf-8")
+    )
+    ignored = config["tool"]["deptry"]["per_rule_ignores"]["DEP002"]
     assert "greenlet" in ignored
 
     evidence = (ROOT / "docs" / "features" / "DEPENDENCY_TRUTH_AUDIT.md").read_text(encoding="utf-8")
     assert "greenlet" in evidence
     assert "SQLAlchemy" in evidence
+
+
+def test_scikit_learn_dynamic_runtime_is_explicitly_adjudicated() -> None:
+    """Keep the decision-codification plugin visible despite dynamic imports."""
+    config = tomllib.loads(
+        (ROOT / "config" / "deptry_profiles.toml").read_text(encoding="utf-8")
+    )
+    ignored = config["tool"]["deptry"]["per_rule_ignores"]["DEP002"]
+    assert "scikit-learn" in ignored
+
+    similarity = (
+        ROOT / "src/general_ludd/decision_codification/similarity.py"
+    ).read_text(encoding="utf-8")
+    export = (ROOT / "src/general_ludd/decision_codification/export.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'import_module("sklearn.cluster")' in similarity
+    assert 'import_module("sklearn.tree")' in export
 
 
 def test_dependency_audit_evidence_documents_practitioner_and_zdd_contracts() -> None:

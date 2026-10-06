@@ -36,6 +36,29 @@ def _pyproject() -> dict[str, object]:
     return tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
 
+def _profile_set_requirement_names(set_name: str) -> set[str]:
+    catalog = tomllib.loads(
+        (ROOT / "config/dependency_profiles.toml").read_text(encoding="utf-8")
+    )
+    profiles = _table(catalog["profiles"])
+    profile_sets = _table(catalog["sets"])
+    selected = _items(_table(profile_sets[set_name])["profiles"])
+    names: set[str] = set()
+    for profile_name in selected:
+        profile = _table(profiles[str(profile_name)])
+        metadata = tomllib.loads(
+            (ROOT / str(profile["project"]) / "pyproject.toml").read_text(
+                encoding="utf-8"
+            )
+        )
+        project = _table(metadata["project"])
+        names.update(
+            Requirement(str(item)).name.lower()
+            for item in _items(project["dependencies"])
+        )
+    return names
+
+
 def _table(value: object) -> dict[str, object]:
     assert isinstance(value, dict)
     assert all(isinstance(key, str) for key in value)
@@ -150,16 +173,12 @@ def test_asn1_oid_collection_uses_only_stdlib_python() -> None:
     assert import_roots <= {"__future__", "hashlib", "time", "typing", "uuid"}
 
 
-def test_development_and_game_extras_retain_declared_test_runtimes() -> None:
-    metadata = _pyproject()
-    project = _table(metadata["project"])
-    optional = _table(project["optional-dependencies"])
-    dependency_groups = _table(metadata["dependency-groups"])
-    dev = "\n".join(str(item) for item in _items(dependency_groups["dev"])).lower()
-    game = "\n".join(str(item) for item in _items(optional["game-e2e"])).lower()
+def test_development_and_game_profiles_retain_declared_test_runtimes() -> None:
+    development = _profile_set_requirement_names("development")
+    game = _profile_set_requirement_names("game-e2e")
 
     for requirement in ("numpy", "scipy", "pywavelets", "pycryptodome", "shamir", "srptools"):
-        assert requirement in dev
+        assert requirement in development
     assert "numpy" in game
 
 

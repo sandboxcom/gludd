@@ -825,8 +825,9 @@ ci-repro-linux:
 			echo '--- installing make/lsof/curl/git + uv ---'; \
 			apt-get update -qq && apt-get install -y -qq make lsof curl procps git >/dev/null; \
 			pip install -q uv; \
-			echo '--- uv sync (python $(PYV), container-local venv) ---'; \
-			uv sync --python $(PYV); \
+			echo '--- locked profile sync (python $(PYV), container-local venv) ---'; \
+			python scripts/dependency_profiles.py sync --root /work --set ci --environment /opt/venv-linux --python $(PYV); \
+			export UV_NO_SYNC=1; \
 			echo '--- running CI gate command ---'; \
 			make lint typecheck test-count test smoke"; echo $$? > /tmp/gludd-ci-repro-rc ) 2>&1 | tee /tmp/gludd-ci-repro-$(PYV).log; \
 	RC=$$(cat /tmp/gludd-ci-repro-rc 2>/dev/null || echo 1); \
@@ -845,12 +846,18 @@ sast-summary:
 	@$(PYTHON) scripts/summarize_sast.py --report "$(SAST_REPORT)" --output "$(SAST_SUMMARY)" --baseline "$(SAST_BASELINE)"
 
 sbom:
+	@$(MAKE) --no-print-directory sync \
+		DEPENDENCY_PROFILE_SET=sbom \
+		DEPENDENCY_PROFILE_ENVIRONMENT=.venv-sbom \
+		DEPENDENCY_PROFILE_PYTHON=3.11 \
+		DEPENDENCY_PROFILE_VALIDATE_ONLY=0
 	@mkdir -p dist
-	@$(UV) run cyclonedx-py environment .venv -o dist/sbom.json --of JSON
+	@.venv-sbom/bin/cyclonedx-py environment .venv-sbom -o dist/sbom.json --of JSON
 
-# Informational full audit (shows every advisory, never gates).
+# Informational full audit of every committed audit-runtime lock (never gates).
 pip-audit:
-	@$(UV) run pip-audit --desc || true
+	-@UV_NO_SYNC=0 $(UV) run --no-project --python 3.11 python scripts/dependency_profiles.py audit --set audit-runtime \
+		--root "$(CURDIR)" --manifest config/dependency_profiles.toml --uv "$(UV)"
 
 # Gating audit (W5.3): fail-closed on any NEW advisory. The two
 # non-exploitable advisories below are pinned by executable regression guards
@@ -861,10 +868,9 @@ pip-audit:
 #     used anywhere in production source and a structural test fails on adoption.
 # Fixed pip and ansible-core advisories are deliberately not ignored.
 pip-audit-gate:
-	@echo "=== pip-audit (gating, W5.3) — fails on NEW advisories ==="
-	@$(UV) run pip-audit --desc \
-		--ignore-vuln CVE-2025-69872 \
-		--ignore-vuln PYSEC-2026-3552
+	@echo "=== locked profile audit (gating, W5.3) — fails on NEW advisories ==="
+	@UV_NO_SYNC=0 $(UV) run --no-project --python 3.11 python scripts/dependency_profiles.py audit --set audit-runtime \
+		--root "$(CURDIR)" --manifest config/dependency_profiles.toml --uv "$(UV)"
 	@echo "=== pip-audit-gate: no un-adjudicated advisories ==="
 
 pip-upgrade:

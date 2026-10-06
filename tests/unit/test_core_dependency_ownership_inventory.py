@@ -11,6 +11,7 @@ from scripts import check_core_dependency_ownership
 from scripts.check_core_dependency_ownership import (
     audit_repository,
     observed_inventory,
+    write_reconciled_inventory,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -115,6 +116,42 @@ def test_checker_accepts_verified_indirect_runtime_evidence(tmp_path: Path) -> N
         },
     )
 
+    assert audit_repository(tmp_path) == []
+
+
+def test_reconcile_inventory_preserves_adjudicated_runtime_evidence(
+    tmp_path: Path,
+) -> None:
+    evidence = {
+        "path": "src/general_ludd/core.py",
+        "token": "sqlite+aiosqlite",
+    }
+    _write_fixture(
+        tmp_path,
+        core_source='DATABASE_URL = "sqlite+aiosqlite:///state.db"\n',
+        dependency="aiosqlite>=0.20",
+        dependency_name="aiosqlite",
+        record={
+            "disposition": "retain-core",
+            "import_roots": ["aiosqlite"],
+            "core_import_paths": ["src/general_ludd/stale.py"],
+            "collection_import_paths": [],
+            "collection_requirement_paths": [],
+            "runtime_evidence": [evidence],
+        },
+    )
+
+    write_reconciled_inventory(tmp_path)
+
+    inventory = json.loads(
+        (tmp_path / "config/core-python-dependency-ownership.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert inventory["dependencies"]["aiosqlite"]["runtime_evidence"] == [
+        evidence
+    ]
+    assert inventory["dependencies"]["aiosqlite"]["core_import_paths"] == []
     assert audit_repository(tmp_path) == []
 
 
@@ -363,11 +400,10 @@ def test_observed_inventory_uses_deptry_mapping_and_normalized_fallback(
     dependencies = cast(dict[str, dict[str, object]], inventory["dependencies"])
     assert dependencies["fixture-pkg"]["import_roots"] == ["fixture_pkg"]
 
-    pyproject = tmp_path / "pyproject.toml"
-    pyproject.write_text(
-        pyproject.read_text(encoding="utf-8")
-        + "\n[tool.deptry]\n"
-        + 'package_module_name_map = { fixture-pkg = "custom_root" }\n',
+    deptry_config = tmp_path / "config/deptry_profiles.toml"
+    deptry_config.write_text(
+        "[tool.deptry]\n"
+        'package_module_name_map = { fixture-pkg = "custom_root" }\n',
         encoding="utf-8",
     )
     inventory = observed_inventory(tmp_path)

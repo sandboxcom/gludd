@@ -115,9 +115,9 @@ def test_sbom_uses_cyclonedx() -> None:
     _assert_target_recipe_runs("sbom", "cyclonedx-py")
 
 
-def test_pip_audit_runs_pip_audit() -> None:
-    """SEC.17: pip-audit target runs the pip-audit tool."""
-    _assert_target_recipe_runs("pip-audit", "pip-audit")
+def test_pip_audit_runs_uv_audit_across_the_locked_runtime_profile() -> None:
+    """SEC.17: the compatibility target audits the explicit locked profile."""
+    _assert_target_recipe_runs("pip-audit", "dependency_profiles.py audit --set audit-runtime")
 
 
 def test_security_target_aggregates_pipeline() -> None:
