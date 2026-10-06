@@ -205,7 +205,7 @@ templated partial so untrusted run-log strings can't SSTI the deck).
 | `deck-verify` | run the a11y/visual-qa skill (Deliverable B) on built deck; fail build on a11y/density/overlap errors | `deck`, Deliverable B skill |
 | `deck-serve` | static serve build/ | `deck` |
 | `vendor-presentation-assets` | fail-closed digest/license validation; explicit refresh mode | vendored manifest |
-| `presentation-browser-install` | validate/install pinned Chromium and WebKit in a namespaced cache | `presentation-test` extra |
+| `presentation-browser-install` | validate/install pinned Chromium and WebKit in a namespaced cache | locked `ci` profile set (`presentation-test` member) |
 | `presentation-browser-test` | serial `/gludd/` Chromium + WebKit acceptance with retained diagnostics | exact built deck + both engines |
 | `presentation-pages-probe` | cache-busted, content-free comparison of the live Pages revision to one exact SHA | public Pages URL |
 
@@ -442,6 +442,22 @@ unlaunchable:
 and
 [Stack Overflow 79090211](https://stackoverflow.com/questions/79090211/playwright-tests-in-github-actions-error-for-webkit-with-host-system-is-missing).
 The launch probe, rather than workflow-step presence, is the fail-closed proof.
+
+Pages run `37488101748` exposed a separate dependency-environment ownership
+failure: the workflow synced the default `development` set, which intentionally
+omits `presentation-test`, and the dependency installer then failed as
+`.venv/bin/python -m playwright` reported `No module named playwright`. The
+workflow now names the locked `ci` set, `.venv`, and Python 3.11 explicitly
+before any browser operation; that set includes `presentation-test`, so the
+interpreter used by the runner owns the pinned Playwright module. This avoids
+treating an execution-time extra label as proof that the environment contains
+the dependency. Practitioner reports show why this remains an explicit
+contract: [`astral-sh/uv#13319`](https://github.com/astral-sh/uv/issues/13319)
+records a non-default group being removed by a later uv operation, while
+[`astral-sh/uv#14645`](https://github.com/astral-sh/uv/issues/14645) records an
+extra included through a dependency group being absent until explicitly
+selected. The Pages regression therefore pins the install set itself and its
+ordering ahead of the WebKit dependency probe.
 
 ZDD rollback reverts the controller and manifest-bound vendor transform on
 development, validates the last browser-green bytes, then promotes that revert
