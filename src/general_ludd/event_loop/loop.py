@@ -145,6 +145,7 @@ _CODE_WORK_TYPES = _task_routing.CODE_WORK_TYPES
 _TOOL_USE_WORK_TYPES = _task_routing.TOOL_USE_WORK_TYPES
 _WORK_TYPE_TASK_TYPE_MAP = _task_routing.WORK_TYPE_TASK_TYPE_MAP
 _WORK_TYPE_PLAYBOOK_MAP = _task_routing.WORK_TYPE_PLAYBOOK_MAP
+_ROUTING_TASK_TYPE = TaskType
 _compute_todo_estimate = _task_routing.compute_todo_estimate
 _format_acceptance_criteria = _task_routing.format_acceptance_criteria
 _playbook_for_work_type = _task_routing.playbook_for_work_type
@@ -154,6 +155,11 @@ _self_update_work_item_from_todo = _task_routing.self_update_work_item_from_todo
 
 def _work_type_to_task_type(work_type: str) -> TaskType:
     """Map through compatibility globals retained for existing patch points."""
+    if (
+        _WORK_TYPE_TASK_TYPE_MAP is _task_routing.WORK_TYPE_TASK_TYPE_MAP
+        and TaskType is _ROUTING_TASK_TYPE
+    ):
+        return _task_routing.work_type_to_task_type(work_type)
     mapped = _WORK_TYPE_TASK_TYPE_MAP.get(work_type, "feature")
     try:
         return TaskType(mapped)

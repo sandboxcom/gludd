@@ -131,6 +131,23 @@ log, missing literal pattern, invalid numeric bound, or run/job mismatch fails
 closed. `BEFORE`, `AFTER`, and `MAX_MATCHES` bound output without silently
 discarding later independent failure batches.
 
+## Terminal reconciliation of an active-run diagnosis
+
+Per-job access accelerates diagnosis, but it does not make an active workflow's
+job inventory complete. Build/Release run `37381218767` demonstrated the
+difference: three completed failed jobs exposed four structural assertions
+while `test-shard (3.11, other)` was still running. The terminal workflow later
+contained four failed jobs, and `other` contributed two parametrized
+self-improvement assertions. The immutable terminal inventory was therefore
+six assertions, not the interim four.
+
+Gludd now describes an active-run extraction as provisional. A completeness
+claim requires a terminal run summary, enumeration of every non-successful job,
+and bounded context from each failed job. On candidate
+`5142ba735f66fbf074a7ec02d80d0d2ced0b582c`, the two late `fake-local` and
+`fake-azure` cases pass together 2/2; that is local repair evidence, not hosted
+resolution. A replacement exact-SHA workflow must still resolve the families.
+
 ## Practitioner findings
 
 This design addresses failure modes reported by GitHub Actions users:
