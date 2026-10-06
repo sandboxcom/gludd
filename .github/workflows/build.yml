@@ -1799,14 +1799,6 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
   release:
-    needs: [version, gate, claim-before-provision-acceptance, release_source_proof, freellmapi-upstream-build, test-shard, coverage, molecule, linux, macos, windows, termux, container, ansible-ee, game-building]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: write
-      packages: write
-      id-token: write
-      attestations: write
     # A skipped prerequisite normally skips dependent jobs. Here skips are the
     # expected tag state only for heavyweight validation already proved by the
     # exact-SHA development run. Every tag-specific producer must still pass.
@@ -1829,6 +1821,14 @@ jobs:
       needs.termux.result == 'success' &&
       needs.container.result == 'success' &&
       needs['ansible-ee'].result == 'success'
+    needs: [version, gate, claim-before-provision-acceptance, release_source_proof, freellmapi-upstream-build, test-shard, coverage, molecule, linux, macos, windows, termux, container, ansible-ee, game-building]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
