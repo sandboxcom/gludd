@@ -427,6 +427,42 @@ flock-based guard added later (e.g. `.gate-background.pid`'s PID-file guard).
 including the concurrent-refusal case, run several times in a row (flakes need
 repetition to falsify).
 
+### Role: `ci_medic_gate_signal_fixture_isolation`
+
+**Trigger/detection:** a full gate exits with `SIGTERM` while
+`TestGateAsyncSignalTerminalState` is exercising TERM/INT behavior, especially
+when that test is running inside an xdist worker or another checkout has an
+active gate.
+
+**Root-cause signature:** overriding only `STATUS_FILE` and `LOCK_FILE` does not
+isolate signal cleanup. On TERM/INT, `gate_async.sh` also invokes the owned-gate
+terminator with `GLUDD_PROJECT_ROOT`. If the test inherits the enclosing
+checkout as that root, the nested launcher can discover and terminate the very
+full-gate process that is running the test. Production lock/resource namespaces
+were already checkout-path-derived; the missing boundary was the test process
+environment.
+
+**Community evidence:** pytest-xdist users have reported since 2020 that a
+worker may be stopped before slow teardown completes
+([pytest-xdist #537](https://github.com/pytest-dev/pytest-xdist/issues/537)). A
+2021 maintainer discussion likewise notes that workers can be killed for
+multiple reasons and recommends idempotent, leader-owned resource lifecycle
+([pytest-xdist discussion #683](https://github.com/pytest-dev/pytest-xdist/discussions/683)).
+For Gludd, that means a signal regression cannot rely on pytest teardown to
+undo a cross-checkout process mutation; it must be harmless before the signal
+is delivered.
+
+**Fix pattern:** construct one environment for every nested async-gate process
+and bind `GLUDD_PROJECT_ROOT`, `GLUDD_RESOURCE_ROOT`, `STATUS_FILE`, and
+`LOCK_FILE` to the same `tmp_path`. Keep `start_new_session=True` for the nested
+process group. Add a behavioral assertion that gate-kill probes only
+`tmp_path/.gate-logs/gate-run.lock`, never the enclosing checkout.
+
+**Verification:** run
+`make test-specific TESTFILE=tests/unit/test_gate_async.py` while a gate in a
+different worktree is active, then compare `make ps` before and after. The
+foreign gate PID must survive and all signal-terminal tests must pass.
+
 ### Role: `ci_medic_infra_red`
 
 **Trigger/detection:** a red job that is NOT a code-logic regression — it reds
