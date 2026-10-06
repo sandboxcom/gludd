@@ -70,6 +70,44 @@ def _patch_equivalent_fixture(tmp_path: Path) -> tuple[Path, str, str]:
     return repo, unique, duplicate
 
 
+def _intra_list_fixture(tmp_path: Path) -> tuple[Path, str, str, str, str]:
+    """Create dependent unique patches plus two independently copied patches."""
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init")
+    _git(repo, "config", "user.name", "Gludd Tests")
+    _git(repo, "config", "user.email", "gludd-tests@example.invalid")
+
+    state = repo / "state.txt"
+    state.write_text("value=old\n", encoding="utf-8")
+    base = _commit(repo, "base")
+    target_branch = _git(repo, "branch", "--show-current").stdout.strip()
+
+    _git(repo, "switch", "-c", "source-a")
+    chain = repo / "chain.txt"
+    chain.write_text("first\n", encoding="utf-8")
+    dependent_first = _commit(repo, "add chain")
+    chain.write_text("first\nsecond\n", encoding="utf-8")
+    dependent_second = _commit(repo, "extend chain")
+    state.write_text("value=new\n", encoding="utf-8")
+    duplicate_a = _commit(repo, "source-a copied patch")
+
+    _git(repo, "switch", "-c", "source-b", base)
+    state.write_text("value=new\n", encoding="utf-8")
+    duplicate_b = _commit(repo, "source-b copied patch")
+    assert duplicate_a != duplicate_b
+
+    _git(repo, "switch", target_branch)
+    (repo / "target.txt").write_text("unrelated target work\n", encoding="utf-8")
+    _commit(repo, "unrelated target patch")
+
+    assert f"+ {duplicate_a}" in _git(repo, "cherry", "HEAD", duplicate_a).stdout
+    assert f"+ {duplicate_b}" in _git(repo, "cherry", "HEAD", duplicate_b).stdout
+    assert f"- {duplicate_b}" in _git(repo, "cherry", duplicate_a, duplicate_b).stdout
+    return repo, dependent_first, dependent_second, duplicate_a, duplicate_b
+
+
 def _make(
     repo: Path,
     target: str,
@@ -126,6 +164,44 @@ def test_list_target_preflights_every_patch_before_first_mutation(
     assert "PATCH_EQUIVALENT_CHERRY_PICK_BLOCKED" in result.stdout + result.stderr
     assert not (repo / "unique.txt").exists()
     _assert_pristine(repo, head)
+
+
+def test_list_target_blocks_patch_equivalent_entries_before_first_mutation(
+    tmp_path: Path,
+) -> None:
+    repo, dependent_first, _dependent_second, duplicate_a, duplicate_b = (
+        _intra_list_fixture(tmp_path)
+    )
+    head = _git(repo, "rev-parse", "HEAD").stdout.strip()
+
+    result = _make(
+        repo,
+        "git-cherry-pick-list",
+        f"SHAS={dependent_first} {duplicate_a} {duplicate_b}",
+    )
+
+    assert result.returncode != 0
+    assert "PATCH_EQUIVALENT_CHERRY_PICK_LIST_BLOCKED" in result.stdout + result.stderr
+    assert not (repo / "chain.txt").exists()
+    _assert_pristine(repo, head)
+
+
+def test_list_target_preserves_ordered_dependent_unique_commits(
+    tmp_path: Path,
+) -> None:
+    repo, dependent_first, dependent_second, _duplicate_a, _duplicate_b = (
+        _intra_list_fixture(tmp_path)
+    )
+
+    result = _make(
+        repo,
+        "git-cherry-pick-list",
+        f"SHAS={dependent_first} {dependent_second}",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (repo / "chain.txt").read_text(encoding="utf-8") == "first\nsecond\n"
+    assert _git(repo, "status", "--porcelain").stdout == ""
 
 
 @pytest.mark.parametrize(

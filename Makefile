@@ -6036,8 +6036,22 @@ git-cherry-pick-list: _gate-mutation-guard
 		exit 0; \
 	fi; \
 	[ -z "$$(git status --porcelain)" ] || { echo "ERROR: clean tree required before cherry-pick preflight"; exit 1; }; \
+	SEEN_PATCHES=""; \
 	for SHA in $(SHAS); do \
 		$(MAKE) --no-print-directory -f "$(abspath $(firstword $(MAKEFILE_LIST)))" _git-cherry-pick-patch-guard SHA="$$SHA" || exit 1; \
+		RESOLVED=$$(git rev-parse --verify "$${SHA}^{commit}" 2>/dev/null) || { echo "CHERRY_PICK_PREFLIGHT_UNCLASSIFIED commit=$$SHA reason=invalid-commit"; exit 2; }; \
+		PATCH_ID=$$(git show --pretty=format: --no-ext-diff --binary "$$RESOLVED" | git patch-id --stable | awk 'NR == 1 { print $$1 }'); \
+		[ -n "$$PATCH_ID" ] || { echo "CHERRY_PICK_PREFLIGHT_UNCLASSIFIED commit=$$RESOLVED reason=missing-stable-patch-id"; exit 2; }; \
+		FIRST_COMMIT=""; \
+		for SEEN_ENTRY in $$SEEN_PATCHES; do \
+			SEEN_ID=$${SEEN_ENTRY%%:*}; \
+			if [ "$$SEEN_ID" = "$$PATCH_ID" ]; then FIRST_COMMIT=$${SEEN_ENTRY#*:}; break; fi; \
+		done; \
+		if [ -n "$$FIRST_COMMIT" ]; then \
+			echo "PATCH_EQUIVALENT_CHERRY_PICK_LIST_BLOCKED commit=$$RESOLVED equivalent_to=$$FIRST_COMMIT reason=equivalent-patch-in-request"; \
+			exit 3; \
+		fi; \
+		SEEN_PATCHES="$$SEEN_PATCHES $$PATCH_ID:$$RESOLVED"; \
 	done; \
 	for SHA in $(SHAS); do \
 		echo "=== cherry-pick $$SHA ==="; \

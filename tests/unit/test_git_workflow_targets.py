@@ -173,7 +173,11 @@ class TestGitWorkflowTargetRecipeContent:
         assert "Makefile" in recipe
         assert "git status --porcelain" in recipe
         assert "_git-cherry-pick-patch-guard" in recipe
+        assert "git patch-id --stable" in recipe
         assert recipe.index("_git-cherry-pick-patch-guard") < recipe.index(
+            'git cherry-pick "$$SHA"'
+        )
+        assert recipe.index("git patch-id --stable") < recipe.index(
             'git cherry-pick "$$SHA"'
         )
 

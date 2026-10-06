@@ -6,14 +6,19 @@
 the patch it introduces is already represented in `HEAD` under another commit
 ID. Both targets retain the active-gate mutation guard. The list target checks
 every requested commit before applying the first one, so a duplicate later in
-the list cannot leave an earlier unique commit partially integrated.
+the list cannot leave an earlier unique commit partially integrated. This
+includes equivalent patches within the request even when neither patch exists
+in `HEAD` yet.
 
 The guard delegates patch identity to Git itself. It resolves the requested
 commit and reads `git cherry HEAD <resolved-commit>`; Git marks the requested
 commit `-` when an equivalent patch is already upstream and `+` when the patch
 is unique. An invalid ref, an unclassifiable history, an already-reachable
 commit, or a `-` result fails closed before `git cherry-pick` runs. The guard
-does not reproduce Git's patch-ID algorithm in project code.
+does not reproduce Git's patch-ID algorithm in project code. For a list, Git's
+`git patch-id --stable` supplies each requested patch identity; a repeated ID
+fails the complete preflight before mutation. Distinct dependent commits keep
+their requested order and are applied only after every identity check passes.
 
 Use the non-mutating target-contract examples to validate the command surface:
 
