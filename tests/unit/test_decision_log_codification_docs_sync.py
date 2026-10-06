@@ -28,6 +28,8 @@ def test_feature_guide_pins_safe_runtime_and_rollout_boundaries() -> None:
         "VerifiedDecisionSourceV1",
         "Exact-context abstention",
         "DecisionAbstentionV1",
+        "DecisionLogAnalyzer",
+        "DecisionResolver",
         "zero-LLM hit",
         "shadow -> canary -> canary_10 -> canary_50 -> active",
         "Atomic rollback",
@@ -56,6 +58,8 @@ def test_design_spec_records_implemented_core_and_pending_integration() -> None:
 
     assert "**Status: CORE IMPLEMENTED; INTEGRATION PENDING**" in spec
     assert "## 0. Implementation status (2026-10-06)" in spec
+    assert "DecisionLogAnalyzer" in spec
+    assert "DecisionResolver" in spec
     assert "single-writer R4 integration remains" in spec
 
 
@@ -74,6 +78,8 @@ def test_reveal_deck_mirrors_the_decision_codification_contract() -> None:
         "active",
         "Atomic rollback",
         "zero-LLM hit",
+        "DecisionLogAnalyzer",
+        "DecisionResolver",
         "docs/features/DECISION_LOG_CODIFICATION.md",
     ):
         assert marker in slide

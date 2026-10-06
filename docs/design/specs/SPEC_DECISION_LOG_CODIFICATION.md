@@ -12,9 +12,12 @@ daemon/event-loop activation and durable multiworker integration are not.
 
 The contract, normalization, similarity, mining, export, replay evaluation,
 authenticated artifact store, human-approval adapter, deterministic runtime,
-ZDD rollout controller, telemetry, and their focused unit tests now live in
+ZDD rollout controller, telemetry, and service orchestration now live in
 `src/general_ludd/decision_codification/` and
-`tests/unit/test_decision_codification_*.py`.
+`tests/unit/test_decision_codification_*.py`. `DecisionLogAnalyzer` reads only
+verified signed bundles and produces replay-evaluated candidates;
+`DecisionResolver` returns an exact codified decision or invokes the supplied
+agent fallback exactly once after typed abstention.
 
 The core enforces exact observed-context signatures, typed abstention,
 create-only HMAC-authenticated artifacts, digest-bound human approval, stable
@@ -22,11 +25,15 @@ canary buckets, atomic generation pointers, and verified rollback. A codified
 hit uses the existing deterministic rules engine and performs no model or
 network call.
 
-The single-writer R4 integration remains: only a verified replay-store result
-may mint `VerifiedDecisionSourceV1`; recorder emission, daemon/event-loop lookup
-and fallback, terminal outcome feedback, durable database repositories and
-migration, permissions, config, CLI/API, and end-to-end ZDD evidence are not yet
-wired. No production traffic is claimed to use this core today.
+An end-to-end core test feeds 48 signed run bundles through analysis, human
+approval, staged activation, an exact zero-fallback hit, an unseen-context
+fallback, and atomic rollback. `DecisionLogAnalyzer` alone mints
+`VerifiedDecisionSourceV1` after `read_verified()` succeeds.
+
+The single-writer R4 integration remains: recorder emission, daemon/event-loop
+invocation and terminal outcome feedback, durable database repositories and
+migration, permissions, config, and CLI/API are not yet wired. No production
+traffic is claimed to use this core today.
 
 ## 1. Outcome and non-goals
 
@@ -530,12 +537,21 @@ rollback with focused tests.
 Their production and test paths above do not overlap. The runtime consumes R1's
 schemas; neither slice used shared integration files.
 
-### Slice R4: single-writer integration (remaining)
+### Slice R3: verified-log service and fallback orchestration (landed)
 
-One integration owner alone edits shared surfaces: package exports, replay
-capture and verified source-marker construction, event-loop lookup/fallback and
-outcome feedback, database models/repositories/migration, permissions, config,
-CLI/API, and make contracts. This slice adds end-to-end and ZDD tests. No second
+`src/general_ludd/decision_codification/service.py` now supplies
+`DecisionLogAnalyzer` and `DecisionResolver`. The service verifies signed
+project-scoped bundles, enforces 10,000-bundle and 100,000-event bounds, mines
+and evaluates candidates, chooses exact rules without a model call, and invokes
+the supplied agent fallback exactly once on abstention. Its end-to-end test
+covers approval, activation, a zero-fallback hit, a fallback miss, and rollback.
+
+### Slice R4: single-writer production integration (remaining)
+
+One integration owner alone edits shared surfaces: replay capture,
+daemon/event-loop invocation and outcome feedback, database
+models/repositories/migration, permissions, config, CLI/API, and make contracts.
+This slice adds production integration and live-traffic ZDD evidence. No second
 branch independently creates the migration, config keys, make targets, or
 daemon wiring.
 

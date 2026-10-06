@@ -15,10 +15,15 @@ The standalone implementation is in
 `src/general_ludd/decision_codification/`: strict schemas and normalization,
 offline similarity/mining/export/evaluation, authenticated artifact storage,
 human approval, deterministic runtime lookup, rollout, and closed-cardinality
-telemetry all have focused unit tests. It is not yet wired into the daemon,
-event loop, database, recorder, CLI, or API. Therefore no production traffic is
-currently served by a codified rule, and avoided-call metrics remain an
-integration outcome rather than a deployed claim.
+telemetry all have focused unit tests. `DecisionLogAnalyzer` converts verified
+run bundles into evaluated candidates, while `DecisionResolver` executes an
+exact codified hit or invokes the supplied agent fallback exactly once after a
+typed abstention. An end-to-end core test covers signed evidence, approval,
+activation, a zero-call rule hit, fallback, and rollback. The feature is not yet
+wired into the daemon, event loop, durable database, recorder, CLI, or API.
+Therefore no production traffic is currently served by a codified rule, and
+avoided-call metrics remain an integration outcome rather than a deployed
+claim.
 
 ```text
 verified replay bundle -> safe envelope -> offline candidate + replay report
@@ -52,9 +57,11 @@ outcome evidence bound to the same decision-event digest. Unknown fields,
 secrets, free text, unsafe risk bands, unredactable content, and ambiguous
 outcomes return a content-free refusal.
 
-The remaining recorder/store adapter must mint that marker only from the
-`read_verified()` result. Callers must never construct it from an arbitrary log
-or an unverified bundle.
+`DecisionLogAnalyzer` mints that marker internally only after a successful
+`read_verified()` result. Callers cannot provide the marker and must never
+construct one from an arbitrary log or an unverified bundle. The remaining
+recorder integration supplies the signed decision events; it does not weaken
+this verified-read boundary.
 
 ## Offline learning is proposal-only
 
@@ -91,9 +98,11 @@ uncertainty returns `DecisionAbstentionV1` with a closed reason such as
 
 `DecisionRuntime.lookup()` itself does not call a model. A successful
 `CodifiedDecision` is therefore a **zero-LLM hit**: it evaluates through the
-existing deterministic `RuleEngine`. The future integration caller owns the
-other half of the contract: every `DecisionAbstentionV1` must invoke the normal
-agent/LLM fallback and record the bounded reason.
+existing deterministic `RuleEngine`. `DecisionResolver` owns the other half of
+the standalone contract: it invokes the supplied agent/LLM fallback exactly
+once for each `DecisionAbstentionV1`, validates the returned action against the
+closed vocabulary, and preserves the bounded abstention reason. Daemon wiring
+must supply that existing fallback adapter and outcome recording.
 
 ## Immutable human approval
 
@@ -167,11 +176,15 @@ abstention. They do not justify fuzzy runtime matching or autonomous approval.
 
 ## Integration and verification
 
-The single-writer integration slice still owns replay capture and verified
-source-marker construction, event-loop lookup and fallback, terminal outcome
-feedback, durable multiworker repositories and migration, permissions, config,
-CLI/API, and end-to-end ZDD evidence. Shared schema and infrastructure changes
-must land once and merge forward.
+The standalone service now owns verified source-marker construction, bounded
+analysis, lookup/fallback orchestration, and end-to-end core ZDD evidence. Its
+48-bundle test demonstrates candidate mining, exact human approval, activation,
+a zero-fallback rule hit, an unseen-context fallback, and rollback continuity.
+
+The single-writer production integration slice still owns automatic replay
+capture, daemon/event-loop invocation, terminal outcome feedback, durable
+multiworker repositories and migration, permissions, config, and CLI/API.
+Shared schema and infrastructure changes must land once and merge forward.
 
 Focused tests live under `tests/unit/test_decision_codification_*.py`. The
 documentation drift test is
