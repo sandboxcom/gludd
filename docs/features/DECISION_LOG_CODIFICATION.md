@@ -1,6 +1,7 @@
 # Decision-log codification
 
-**Status:** Core and opt-in application adapter implemented; automatic live-flow integration pending.
+**Status:** Core and opt-in application adapter implemented; bounded authenticated
+analysis API implemented; automatic live-flow integration pending.
 
 **Presentation contract:** `decision-log-codification-v1`
 
@@ -22,11 +23,12 @@ typed abstention. An end-to-end core test covers signed evidence, approval,
 activation, a zero-call rule hit, fallback, and rollback.
 `DecisionCodificationAdapter` now binds the verified reader, runtime, project,
 and policy to an explicit daemon/EventLoop injection. It is disabled by default,
-so existing agent behavior is unchanged. Automatic live-flow invocation,
-durable database/configuration, recorder capture, outcome feedback, CLI, and API
-remain pending. Therefore no production traffic is currently served by a
-codified rule, and avoided-call metrics remain an integration outcome rather
-than a deployed claim.
+so existing agent behavior is unchanged. An authenticated, analysis-only HTTP
+route now exposes that adapter without exposing executable artifacts or lifecycle
+controls. Automatic live-flow invocation, durable database/configuration,
+recorder capture, outcome feedback, and CLI remain pending. Therefore no
+production traffic is currently served by a codified rule, and avoided-call
+metrics remain an integration outcome rather than a deployed claim.
 
 ```text
 verified replay bundle -> safe envelope -> offline candidate + replay report
@@ -65,6 +67,39 @@ outcomes return a content-free refusal.
 construct one from an arbitrary log or an unverified bundle. The remaining
 recorder integration supplies the signed decision events; it does not weaken
 this verified-read boundary.
+
+## Bounded authenticated analysis API
+
+`POST /api/v1/decision-codification/analyze` exposes proposal-side analysis
+through the `analyze_decision_logs` handler. The existing daemon
+`auth_and_stats_middleware` remains the outer boundary: authentication and
+authorization run before analysis, so a missing or invalid credential never
+reaches request analysis or the injected adapter. The request `project_id`, the
+authenticated project claim, and the adapter's project binding must agree. The
+adapter also retains its immutable policy binding, giving the call an exact
+project and policy scope that the request cannot widen.
+
+`DecisionAnalysisRequest` is strict and content bounded:
+
+- the JSON body is at most 64 KiB and contains 1-256 unique safe run IDs;
+- project and run identifiers use the existing bounded replay types;
+- training-recipe and dependency-lock values are SHA-256 digests;
+- creation and expiry are timezone-aware, ordered, and at most 366 days apart;
+- maximum uses are 1-1,000,000 and estimated tokens per call are
+  0-10,000,000; and
+- unknown fields are rejected, including activation, approval, or key material.
+
+`DecisionAnalysisResponse` projects at most 128 candidate summaries. Its
+`DecisionCandidateSummary` and `DecisionRejectionSummary` values contain only
+digests, counts, and closed rejection enums. They omit project and run IDs,
+events, normalized evidence, rules, approval receipts, secrets, and keys.
+Validation, scope, and backend failures use bounded generic errors rather than
+reflecting input or exception content.
+
+This endpoint does not approve or activate a candidate, mutate a lifecycle
+pointer, or expose signing material. CLI, automatic live-flow invocation, and
+durable configuration remain pending. The API therefore adds a safe operator
+analysis boundary, not autonomous decision execution.
 
 ## Offline learning is proposal-only
 
@@ -193,8 +228,8 @@ makes exactly one fallback call.
 The single-writer production integration slice still owns automatic replay
 capture, automatic live-flow invocation at selected decision points, terminal
 outcome feedback, durable multiworker repositories and migration, permissions,
-configuration, and CLI/API. Shared schema and infrastructure changes must land
-once and merge forward.
+durable configuration, and CLI. Shared schema and infrastructure changes must
+land once and merge forward.
 
 Focused tests live under `tests/unit/test_decision_codification_*.py`. The
 documentation drift test is
