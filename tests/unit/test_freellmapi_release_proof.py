@@ -668,6 +668,23 @@ def test_rollback_revalidates_candidate_and_corpus_provenance() -> None:
     assert corpus_error.value.fault is FreeLLMAPIReleaseProofFault.ROLLBACK_INVALID
 
 
+def test_rollback_rejects_live_evidence_that_predates_candidate_release() -> None:
+    candidate = _load("upstream_candidate.json")
+    live_receipt = _load("live_provider_receipt.json")
+    live_receipt["observed_at"] = "2026-09-20T15:14:05Z"
+    _resign(live_receipt)
+
+    with pytest.raises(FreeLLMAPIReleaseProofError) as caught:
+        exercise_release_rollback(
+            candidate_lock=candidate,
+            corpus_proof=_load("frozen_corpus_receipt.json"),
+            live_provider_receipt=live_receipt,
+            active_lease_digest="f" * 64,
+        )
+
+    assert caught.value.fault is FreeLLMAPIReleaseProofFault.ROLLBACK_INVALID
+
+
 @pytest.mark.parametrize(
     "shared_field",
     [

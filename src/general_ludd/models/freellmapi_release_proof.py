@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from datetime import datetime
 
 from general_ludd.models.freellmapi_frozen_delta import FreeLLMAPIFrozenDeltaError
 from general_ludd.models.freellmapi_frozen_delta_validation import validate_candidate
@@ -24,6 +25,7 @@ from general_ludd.models.freellmapi_release_common import (
     fail,
     sha256_digest,
     stable_evidence_id,
+    strict_timestamp,
     verify_receipt_identity,
 )
 from general_ludd.models.freellmapi_release_corpus import (
@@ -105,6 +107,22 @@ def _external_block(
     return "_and_".join(blockers)
 
 
+def _validate_live_evidence_chronology(
+    *,
+    candidate_lock: Mapping[str, object],
+    live_provider_receipt: Mapping[str, object],
+) -> None:
+    """Require live evidence to follow the pinned upstream release."""
+    fault = FreeLLMAPIReleaseProofFault.ROLLBACK_INVALID
+    upstream = as_mapping(candidate_lock.get("upstream"), fault)
+    published_at = strict_timestamp(upstream.get("published_at"), fault)
+    observed_at = strict_timestamp(live_provider_receipt.get("observed_at"), fault)
+    published = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
+    observed = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+    if observed < published:
+        fail(fault)
+
+
 def exercise_release_rollback(
     *,
     candidate_lock: Mapping[str, object],
@@ -121,6 +139,10 @@ def exercise_release_rollback(
             live_provider_receipt,
             candidate_id=candidate_id,
             corpus_id=corpus_proof.get("evidence_id"),
+        )
+        _validate_live_evidence_chronology(
+            candidate_lock=candidate_lock,
+            live_provider_receipt=live_provider_receipt,
         )
     except (FreeLLMAPIFrozenDeltaError, FreeLLMAPIReleaseProofError):
         fail(fault)

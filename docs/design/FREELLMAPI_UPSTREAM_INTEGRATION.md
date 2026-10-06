@@ -749,6 +749,17 @@ counts, exact zero-token rejection accounting, a canonical provider, and a typed
 provider failure. Recomputing a receipt hash cannot legitimize contradictory
 accounting or detach rollback from the reviewed provenance root.
 
+The rollback validator also orders the live observation against the pinned
+release lifecycle: `observed_at` must be at or after the candidate's
+`published_at`. A correctly rehashed receipt dated before the release therefore
+fails closed. This keeps the existing bounded Z.AI 429 receipt as external-block
+evidence without retrying an exhausted credential, while preventing it from
+being backdated into release proof. That distinction applies the operator lesson
+from [issue #1210][issue-1210] (high-frequency calls can suspend provider keys)
+and the immutable-release lesson from [issue #1270][issue-1270] (untagged
+`main` commits were presented as updates even though no installable release
+existed).
+
 Provider and build failures remain separate taxonomies. A native HTTP 429 is
 `live_provider_rate_limited`; an unsupported local Node/npm pair is
 `upstream_build_toolchain_invalid`. The release blocker can record both without
