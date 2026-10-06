@@ -1361,7 +1361,7 @@ def clean_inactive_worktree_caches(
     max_materializations: int = MAX_WORKTREE_MATERIALIZATIONS,
     dry_run: bool = False,
 ) -> CleanupResult:
-    """Remove allowlisted caches only from proven inactive Gludd worktrees."""
+    """Reclaim approved caches and proven-retirable Gludd worktrees."""
     removed: list[str] = []
     skipped: list[str] = []
     errors: list[str] = []
@@ -1397,6 +1397,11 @@ def clean_inactive_worktree_caches(
     for record in sorted(records, key=lambda item: str(item.path)):
         path = record.path
         completion_lease: WorkstreamLease | None = None
+        unleased_materialization_candidate = (
+            record.branch is not None
+            and record.branch not in initial_active
+            and record.branch not in initial_leases
+        )
         if not _inside_approved_root(path, approved_roots):
             skipped.append(f"{path}:outside approved namespace")
             continue
@@ -1640,9 +1645,33 @@ def clean_inactive_worktree_caches(
         if materialization_attempts >= max_materializations:
             skipped.append(f"{path}:materialization limit reached")
             continue
-        if completion_lease is None:
+        if completion_lease is None and (
+            active_workstream_leases is None
+            or not unleased_materialization_candidate
+        ):
             skipped.append(f"{path}:completion lease proof unavailable")
             continue
+
+        inactive_snapshot: WorktreeEnvironmentSnapshot | None = None
+        if completion_lease is None:
+            if (
+                record.branch in initial_active
+                or record.branch in initial_leases
+                or record.branch in refreshed_active
+                or record.branch in refreshed_leases
+            ):
+                skipped.append(f"{path}:materialization lease changed")
+                continue
+            initial_decision, inactive_snapshot = inspect_inactive_worktree(record)
+            if initial_decision.error:
+                errors.append(f"{path}:{initial_decision.reason}")
+                continue
+            if not initial_decision.reclaimable:
+                skipped.append(f"{path}:{initial_decision.reason}")
+                continue
+            if inactive_snapshot is None:
+                errors.append(f"{path}:worktree inspection evidence missing")
+                continue
 
         try:
             final_records = refresh_records()
@@ -1659,22 +1688,43 @@ def clean_inactive_worktree_caches(
         if final_record is None:
             skipped.append(f"{path}:materialization registration changed")
             continue
-        if (
-            record.branch not in final_active
-            or final_leases.get(record.branch) != completion_lease
-        ):
-            skipped.append(f"{path}:completion lease changed")
-            continue
-        final_lifecycle = lifecycle_decision(final_record, final_leases)
-        if final_lifecycle.error:
-            errors.append(f"{path}:{final_lifecycle.reason}")
-            continue
-        if not final_lifecycle.reclaimable:
-            skipped.append(f"{path}:{final_lifecycle.reason}")
-            continue
-        if final_lifecycle.cache_only:
-            skipped.append(f"{path}:completion proof downgraded")
-            continue
+        if completion_lease is None:
+            if record.branch in final_active:
+                skipped.append(f"{path}:became active logical workstream")
+                continue
+            if record.branch in final_leases:
+                skipped.append(f"{path}:materialization lease changed")
+                continue
+            final_decision, final_snapshot = inspect_inactive_worktree(final_record)
+            if final_decision.error:
+                errors.append(f"{path}:{final_decision.reason}")
+                continue
+            if not final_decision.reclaimable:
+                skipped.append(f"{path}:{final_decision.reason}")
+                continue
+            if final_snapshot is None:
+                errors.append(f"{path}:worktree inspection evidence missing")
+                continue
+            if final_snapshot != inactive_snapshot:
+                skipped.append(f"{path}:materialization worktree changed")
+                continue
+        else:
+            if (
+                record.branch not in final_active
+                or final_leases.get(record.branch) != completion_lease
+            ):
+                skipped.append(f"{path}:completion lease changed")
+                continue
+            final_lifecycle = lifecycle_decision(final_record, final_leases)
+            if final_lifecycle.error:
+                errors.append(f"{path}:{final_lifecycle.reason}")
+                continue
+            if not final_lifecycle.reclaimable:
+                skipped.append(f"{path}:{final_lifecycle.reason}")
+                continue
+            if final_lifecycle.cache_only:
+                skipped.append(f"{path}:completion proof downgraded")
+                continue
         try:
             final_pids = active_process_pids(path)
         except ProcessInspectionError:

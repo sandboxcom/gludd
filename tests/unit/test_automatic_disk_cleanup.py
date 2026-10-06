@@ -1530,6 +1530,217 @@ def test_completed_materialization_removal_is_bounded_and_revalidated(
     assert any("materialization limit reached" in item for item in result.skipped)
 
 
+def test_unregistered_clean_inactive_materialization_is_removed_after_double_proof(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "gludd-worktrees"
+    record = _record(root / "inactive", "feature/inactive")
+    snapshot = automatic_disk_cleanup.WorktreeEnvironmentSnapshot(
+        head="branch-head",
+        root_identity=(1, 2, 3, 4, 5),
+    )
+    inspections: list[WorktreeRecord] = []
+    process_reads: list[Path] = []
+    remove_calls: list[tuple[Path, bool]] = []
+
+    def inspect(candidate: WorktreeRecord):
+        inspections.append(candidate)
+        return (
+            automatic_disk_cleanup.LifecycleDecision(
+                True, "clean inactive worktree"
+            ),
+            snapshot,
+        )
+
+    def process_pids(path: Path) -> list[int]:
+        process_reads.append(path)
+        return []
+
+    def remove_materialization(
+        candidate: WorktreeRecord, dry_run: bool
+    ) -> automatic_disk_cleanup.LifecycleDecision:
+        remove_calls.append((candidate.path, dry_run))
+        automatic_disk_cleanup._remove_tree(candidate.path)
+        return automatic_disk_cleanup.LifecycleDecision(True, "removed")
+
+    result = automatic_disk_cleanup.clean_inactive_worktree_caches(
+        records=[record],
+        approved_roots=(root,),
+        protected_paths=frozenset(),
+        active_branches=lambda: frozenset(),
+        active_workstream_leases=lambda: {},
+        lifecycle_proof=lambda _record, _lease: (
+            automatic_disk_cleanup.LifecycleDecision(False, "unexpected lease")
+        ),
+        refresh_records=lambda: [record],
+        active_process_pids=process_pids,
+        inspect_inactive_worktree=inspect,
+        remove_materialization=remove_materialization,
+    )
+
+    assert not record.path.exists()
+    assert result.removed == (str(record.path),)
+    assert result.skipped == ()
+    assert result.errors == ()
+    assert inspections == [record, record]
+    assert process_reads == [record.path, record.path, record.path]
+    assert remove_calls == [(record.path, False)]
+
+
+@pytest.mark.parametrize(
+    ("race", "expected_reason"),
+    [
+        ("active", "became active logical workstream"),
+        ("lease", "materialization lease changed"),
+        ("pid", "active-pids=7331"),
+        ("snapshot", "materialization worktree changed"),
+    ],
+)
+def test_unregistered_materialization_revalidation_preserves_new_owners_and_changes(
+    tmp_path: Path,
+    race: str,
+    expected_reason: str,
+) -> None:
+    root = tmp_path / "gludd-worktrees"
+    record = _record(root / race, f"feature/{race}")
+    lease = automatic_disk_cleanup.WorkstreamLease(
+        branch=record.branch or "", worktree=record.path, updated_epoch=2
+    )
+    active_reads = iter(
+        (
+            frozenset(),
+            frozenset(),
+            frozenset({record.branch or ""}) if race == "active" else frozenset(),
+        )
+    )
+    lease_reads = iter(
+        (
+            {},
+            {},
+            {record.branch or "": lease} if race == "lease" else {},
+        )
+    )
+    process_reads = iter(([], [], [7331] if race == "pid" else []))
+    snapshots = iter(
+        (
+            automatic_disk_cleanup.WorktreeEnvironmentSnapshot(
+                "branch-head", (1, 2, 3, 4, 5)
+            ),
+            automatic_disk_cleanup.WorktreeEnvironmentSnapshot(
+                "changed-head" if race == "snapshot" else "branch-head",
+                (1, 2, 3, 4, 5),
+            ),
+        )
+    )
+    remove_calls: list[WorktreeRecord] = []
+
+    result = automatic_disk_cleanup.clean_inactive_worktree_caches(
+        records=[record],
+        approved_roots=(root,),
+        protected_paths=frozenset(),
+        active_branches=lambda: next(active_reads),
+        active_workstream_leases=lambda: next(lease_reads),
+        lifecycle_proof=lambda _record, _lease: (
+            automatic_disk_cleanup.LifecycleDecision(False, "unexpected lease")
+        ),
+        refresh_records=lambda: [record],
+        active_process_pids=lambda _path: next(process_reads),
+        inspect_inactive_worktree=lambda _record: (
+            automatic_disk_cleanup.LifecycleDecision(
+                True, "clean inactive worktree"
+            ),
+            next(snapshots),
+        ),
+        remove_materialization=lambda candidate, _dry_run: (
+            remove_calls.append(candidate)
+            or automatic_disk_cleanup.LifecycleDecision(True, "removed")
+        ),
+    )
+
+    assert record.path.is_dir()
+    assert result.removed == ()
+    assert result.errors == ()
+    assert any(expected_reason in item for item in result.skipped)
+    assert remove_calls == []
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_reason", "expected_error"),
+    [
+        ("initial-dirty", "dirty worktree", False),
+        ("initial-error", "worktree status inspection failed", True),
+        ("initial-missing", "worktree inspection evidence missing", True),
+        ("final-dirty", "dirty worktree", False),
+        ("final-error", "worktree status inspection failed", True),
+        ("final-missing", "worktree inspection evidence missing", True),
+    ],
+)
+def test_unregistered_materialization_refuses_dirty_or_ambiguous_proof(
+    tmp_path: Path,
+    case: str,
+    expected_reason: str,
+    expected_error: bool,
+) -> None:
+    root = tmp_path / "gludd-worktrees"
+    record = _record(root / case, f"feature/{case}")
+    snapshot = automatic_disk_cleanup.WorktreeEnvironmentSnapshot(
+        "branch-head", (1, 2, 3, 4, 5)
+    )
+    inspection_count = 0
+    remove_calls: list[WorktreeRecord] = []
+
+    def inspect(_candidate: WorktreeRecord):
+        nonlocal inspection_count
+        inspection_count += 1
+        is_target = case.startswith("initial") or inspection_count == 2
+        if not is_target:
+            return (
+                automatic_disk_cleanup.LifecycleDecision(
+                    True, "clean inactive worktree"
+                ),
+                snapshot,
+            )
+        if case.endswith("dirty"):
+            return automatic_disk_cleanup.LifecycleDecision(False, "dirty worktree"), None
+        if case.endswith("error"):
+            return (
+                automatic_disk_cleanup.LifecycleDecision(
+                    False, "worktree status inspection failed", True
+                ),
+                None,
+            )
+        return (
+            automatic_disk_cleanup.LifecycleDecision(
+                True, "clean inactive worktree"
+            ),
+            None,
+        )
+
+    result = automatic_disk_cleanup.clean_inactive_worktree_caches(
+        records=[record],
+        approved_roots=(root,),
+        protected_paths=frozenset(),
+        active_branches=lambda: frozenset(),
+        active_workstream_leases=lambda: {},
+        lifecycle_proof=lambda _record, _lease: (
+            automatic_disk_cleanup.LifecycleDecision(False, "unexpected lease")
+        ),
+        refresh_records=lambda: [record],
+        active_process_pids=lambda _path: [],
+        inspect_inactive_worktree=inspect,
+        remove_materialization=lambda candidate, _dry_run: (
+            remove_calls.append(candidate)
+            or automatic_disk_cleanup.LifecycleDecision(True, "removed")
+        ),
+    )
+
+    details = result.errors if expected_error else result.skipped
+    assert record.path.is_dir()
+    assert result.removed == ()
+    assert any(expected_reason in item for item in details)
+    assert remove_calls == []
+
+
 def test_materialization_requires_completion_lease_proof(tmp_path: Path) -> None:
     root = tmp_path / "gludd-worktrees"
     record = _record(root / "unregistered", "feature/unregistered")

@@ -63,18 +63,21 @@ The inactive-worktree tier likewise distinguishes disposable caches from
 dependency environments. Direct-child `.pytest_cache`, `.mypy_cache`, and
 `.ruff_cache` directories may be removed after the cache-safe ownership checks.
 A `.venv` is a tool environment, not an ordinary cache: it is preserved for
-active, receipt-only, and unregistered completion-unproven worktrees. It becomes
-eligible only with the same non-cache-only completed/idle lease proof required
-for materialization retirement. Immediately before `.venv` removal, the
-preflight again verifies the unchanged registration and lease, full lifecycle
-proof, and absence of matching processes. Symlinks, files with an allowlisted
-name, changed registrations, proof downgrades, and inspection failures are
-refused. An inactive unregistered worktree can use the disposable-cache tier,
-but never qualifies for `.venv` or checkout removal because it has no
-completion-lease proof.
+active and receipt-only registered worktrees. It becomes eligible either with
+the same non-cache-only completed/expired lease proof required for registered
+materialization retirement, or when an unleased worktree has an unchanged clean
+HEAD and root identity across two inspections. Immediately before `.venv`
+removal, the preflight again verifies the unchanged Git registration, lease
+absence or lifecycle proof, and absence of matching processes. Symlinks, files
+with an allowlisted name, changed registrations, proof downgrades, and inspection
+failures are refused. The same double inspection now makes a clean, inactive,
+unleased checkout eligible for removal after its disposable caches and tool
+environment are reclaimed. A lease or PID appearing during any recheck protects
+the materialization.
 
-Under continuing pressure, at most four proven-complete materializations are
-removed per cleanup pass. The preflight remeasures both canonical limits after
+Under continuing pressure, at most four proven-complete registered or clean,
+inactive unleased materializations are removed per cleanup pass. The preflight
+remeasures both canonical limits after
 each pass and performs another pass only when scratch MiB or repository-volume
 percentage has strictly decreased. Eight passes is the hard orchestration bound,
 so one invocation can retire no more than 32 proven-complete materializations.
@@ -82,12 +85,15 @@ An unchanged measurement, cleanup refusal/error, inspection error, or exhausted
 pass bound stops fail-closed without asking a model to choose more data. This
 bounded convergence matters when the first safe pass reclaims substantial space
 but the remaining 100 MB scratch or 90% volume threshold is still exceeded.
-Immediately before `git worktree remove` (without `--force`),
-the preflight again requires the same completion lease, unlocked registration,
-no matching PID, no tracked or untracked changes, and an exact local branch ref
-equal to the checkout's existing commit. Ignored content is refused unless it is
-only Python bytecode cache material, `.gate-logs` release evidence, or `.gludd`
-application state. Before every retirement, a collision-proof manifest is
+Immediately before `git worktree remove` (without `--force`), the preflight
+requires either the same completed/expired lease or continuing lease absence,
+an unlocked registration, no matching PID, no tracked or untracked changes, and
+an exact local branch ref equal to the checkout's existing commit. An unleased
+candidate additionally must retain the same clean HEAD and mutation-sensitive
+root identity across two inspections surrounding a fresh Git, lease, and process
+revalidation. Ignored content is refused unless it is only Python bytecode cache
+material, `.gate-logs` release evidence, or `.gludd` application state. Before
+every retirement, a collision-proof manifest is
 fsynced under the repository Git common directory's
 `.git/gludd-release-evidence` archive. It records the exact branch, commit,
 original checkout path, rehydration coordinates, and any preserved paths. Gate
@@ -153,7 +159,10 @@ controller ancestry and never exempts descendants or other path users; it never
 treats the active checkout itself as complete and never removes its environment
 or durable state. The
 active-workstream lease and retained `.venv` protect model-owned work that cannot
-be inferred from operating-system PIDs, including a no-PID thinking interval. Git cleanliness,
+be inferred from operating-system PIDs, including a no-PID thinking interval.
+An unleased worktree needs matching clean snapshots on both sides of refreshed
+Git and ownership inspection, so PID absence alone never proves it disposable.
+Git cleanliness,
 integration ancestry/patch identity, and integration timestamps provide the
 automatic completion signal. An exact-head commit receipt provides the immediate
 cache-safe signal, and its unchanged age plus the configurable minimum grace
@@ -181,10 +190,11 @@ pressure remains, so automation cannot mistake a preview for recovered capacity.
 ## Rollback
 
 The change is operationally reversible because it deletes only regenerable
-cache/test output, an unowned socket node, or a checkout whose exact branch and
-commit remain. A rollback of the convergence loop simply restores the prior
-one-pass orchestration; it does not require a data migration, threshold change,
-or evidence deletion. Re-running the owning test recreates allowlisted scratch
+cache/test output, an unowned socket node, or a clean inactive checkout whose
+exact branch and commit remain. A rollback of unleased materialization reclaim
+simply restores the prior completion-lease-only eligibility rule; it does not
+require a data migration, threshold change, or evidence deletion. Re-running the
+owning test recreates allowlisted scratch
 files, and rebinding recreates an inactive socket node; unknown evidence and
 lease markers are never selected. Re-running `uv sync` recreates tool state;
 pytest, mypy, and Ruff recreate their caches; and
@@ -209,6 +219,14 @@ required. Do not weaken the fail-closed threshold recheck as a rollback shortcut
   deleting worktrees externally can strand agent and terminal process trees.
   Gludd consequently requires a stable completion lease, repeated PID and Git
   checks, and Git's non-forced removal instead of deleting a directory directly.
+- [Claude Code issue 65645](https://github.com/anthropics/claude-code/issues/65645)
+  documents unchanged workflow-agent worktrees and branches accumulating when
+  teardown never runs. This supports a deterministic unleased-worktree fallback
+  instead of assuming the creating agent always performs cleanup.
+- [Claude Code issue 78350](https://github.com/anthropics/claude-code/issues/78350)
+  reports a worktree pool reaping a checkout while its leasing session was still
+  active. Gludd therefore treats every live lease, matching PID, dirty status,
+  or ownership race as a hard preservation signal even under disk pressure.
 - [CPython issue 111246](https://github.com/python/cpython/issues/111246)
   records the Unix-socket cleanup race in which a path can be replaced between
   observation and unlink. Its practitioner discussion specifically recommends
