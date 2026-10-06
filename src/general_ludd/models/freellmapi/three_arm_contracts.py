@@ -10,7 +10,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import NoReturn, cast
+from typing import NoReturn, TypedDict, cast
 
 THREE_ARM_GATE = "freellmapi-exact-three-arm-v1"
 THREE_ARM_SCHEMA_VERSION = 1
@@ -48,7 +48,24 @@ _EXCLUSION_REASONS = (
     "post_freeze_arrival",
     "raw_content_present",
 )
-_THRESHOLDS = {
+class _ThresholdRecord(TypedDict):
+    """Static shape of the preregistered threshold mapping."""
+
+    bootstrap_confidence: float
+    bootstrap_samples: int
+    bootstrap_seed: int
+    quality_lcb_min: float
+    mcnemar_p_max: float
+    max_stratum_loss: float
+    p95_added_latency_ms: float
+    max_call_latency_ms: float
+    rss_delta_mib: float
+    max_cost_usd: float
+    max_bridge_faults: int
+    node_tolerance: float
+
+
+_THRESHOLDS: _ThresholdRecord = {
     "bootstrap_confidence": 0.95,
     "bootstrap_samples": 10_000,
     "bootstrap_seed": 1_630_111,
@@ -445,7 +462,7 @@ def _thresholds(value: object) -> ThreeArmThresholds:
     record = _mapping(value, fault)
     if dict(record) != _THRESHOLDS:
         _fail(fault)
-    return ThreeArmThresholds(**cast(dict[str, object], dict(record)))  # type: ignore[arg-type]
+    return ThreeArmThresholds(**_THRESHOLDS)
 
 
 def validate_three_arm_documents(
