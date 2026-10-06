@@ -172,11 +172,15 @@ body {
   }
 }
 
-/* Reveal's fixed 1150x820 stage becomes an unreadably small landscape strip on
-   portrait phones. Use the available tall canvas at its native scale instead;
+/* Reveal's fixed 1150x820 stage makes text unreadable on portrait phones and
+   short landscape canvases. Use the available canvas at its native scale;
    dense slides scroll vertically, while wide diagrams keep readable labels in
    their existing horizontal scroller. */
-@media (max-width: 640px) and (orientation: portrait) {
+@media (max-width: 640px) and (orientation: portrait), (max-height: 640px) {
+  .reveal {
+    font-size: 21px;
+  }
+
   .reveal .slides {
     bottom: auto !important;
     height: 100% !important;
@@ -223,5 +227,24 @@ body {
   .reveal .mermaid[data-mermaid-viewport="stable"] > .mermaid-image {
     max-height: none;
     max-width: none;
+  }
+
+  .reveal .cite :is(.badge-blue, .badge-green, .badge-red, .badge-yellow) {
+    font-size: 1em;
+  }
+
+  .reveal table {
+    display: table;
+    table-layout: fixed;
+    width: 100%;
+  }
+
+  .reveal :not(pre) > code,
+  .reveal a,
+  .reveal li,
+  .reveal td,
+  .reveal th {
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
 }
