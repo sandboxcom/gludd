@@ -98,3 +98,10 @@ invalid branch rejection before secure-directory/project-state acquisition,
 the adjacent Git automation suites under warnings-as-errors, line-and-branch
 coverage floors, Ruff, strict mypy, source docstrings, Markdown/spec lint, task
 ledger integrity, full collection, and the guarded commit gate.
+
+The reveal.js presentation mirrors this boundary under the stable contract
+token `s83-103-canonical-worktree-paths`. Its focused drift regression pins the
+authorization order, exact compatibility root, measured test and coverage
+evidence, bounded resources, zero-downtime rollout, and source-only rollback.
+The implementation, regression, and original contract remain single-sourced in
+commit `6f3a98ad3`; presentation synchronization does not recreate that code.
