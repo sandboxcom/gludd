@@ -1,12 +1,13 @@
 # Decision-log mining and deterministic codification
 
-**Status: CORE IMPLEMENTED; INTEGRATION PENDING**
+**Status: CORE AND ANALYSIS API IMPLEMENTED; LIVE INTEGRATION PENDING**
 
 **Scope:** Mine repeated, successful agent decisions into reviewable, versioned
 decision trees that Gludd can execute without an agent/LLM call. This document
-specifies the safe evidence boundary, offline learner, approval lifecycle,
-runtime lookup, and zero-downtime operation. The standalone core is implemented;
-daemon/event-loop activation and durable multiworker integration are not.
+specifies the safe evidence boundary, offline learner, authenticated analysis
+API, approval lifecycle, runtime lookup, and zero-downtime operation. The
+standalone core and bounded analysis API are implemented; automatic daemon/event-
+loop activation and durable multiworker integration are not.
 
 ## 0. Implementation status (2026-10-06)
 
@@ -20,6 +21,8 @@ verified signed bundles and produces replay-evaluated candidates;
 agent fallback exactly once after typed abstention. `DecisionCodificationAdapter`
 binds those capabilities to one immutable project/policy scope and is available
 through explicit injection into daemon application state and `EventLoop`.
+`POST /api/v1/decision-codification/analyze` now exposes that adapter through a
+bounded authenticated, analysis-only HTTP surface.
 
 The core enforces exact observed-context signatures, typed abstention,
 create-only HMAC-authenticated artifacts, digest-bound human approval, stable
@@ -34,10 +37,10 @@ fallback, and atomic rollback. `DecisionLogAnalyzer` alone mints
 
 The adapter is disabled by default, and integration coverage proves that exact
 active rules skip fallback while every tested abstention calls it exactly once.
-The single-writer R4 integration remains: recorder emission, automatic
+The single-writer R4 integration remains for recorder emission, automatic
 live-flow invocation at selected decision points, terminal outcome feedback,
-durable database repositories and migration, permissions, config, and CLI/API
-are not yet wired. No production traffic is claimed to use this core today.
+durable database repositories and migration, durable configuration, and CLI.
+No production traffic is claimed to use this core today.
 
 ## 1. Outcome and non-goals
 
@@ -120,6 +123,37 @@ The source, proposal, approval, and activation boundaries are separate. A miner
 can propose but cannot approve. An approver can approve only an exact digest. A
 runtime worker can execute only an active, verified generation. An agent cannot
 write directly to the active pointer.
+
+### 3.1 Bounded authenticated analysis API
+
+`POST /api/v1/decision-codification/analyze` calls `analyze_decision_logs` and
+accepts `DecisionAnalysisRequest`; successful calls return
+`DecisionAnalysisResponse`. The existing daemon `auth_and_stats_middleware`
+remains outside the router, so authentication and authorization run before
+analysis. The route then requires equality among the request `project_id`, the
+authenticated project claim, and the injected adapter's project. The adapter's
+immutable policy binding preserves an exact project and policy scope; callers
+cannot select or widen the policy through the wire contract. Scope mismatches
+return a generic not-found response and never call the analyzer.
+
+The request permits 1-256 unique safe run IDs in a body of at most 64 KiB. It
+also requires bounded project identity, SHA-256 training-recipe and dependency-
+lock digests, timezone-aware creation and expiry with a positive lifetime of no
+more than 366 days, 1-1,000,000 maximum uses, and an estimated 0-10,000,000
+tokens per call. Strict unknown-field rejection excludes activation, approval,
+credential, and key fields. The route passes only validated values to the
+already bounded `DecisionLogAnalyzer` worker thread.
+
+The response contains at most 128 candidate summaries. The safe projections
+`DecisionCandidateSummary` and `DecisionRejectionSummary` contain only digests,
+counts, and closed rejection enums. Project IDs, run IDs, events, normalized
+evidence, exported rules, receipt bodies, credentials, and exception text are
+not serialized. Validation and analysis errors are generic and content-free.
+
+The route does not approve or activate candidates, write lifecycle receipts,
+or move an active pointer. CLI, automatic live-flow invocation, and durable
+configuration remain pending. Approval and rollout continue through their
+separate human-authorized lifecycle.
 
 ## 4. Normalized decision envelope
 
@@ -396,12 +430,17 @@ tasks, or mutate the immutable candidate. This is the ZDD canary contract.
 
 ### 12.2 Hard limits
 
-One mining run is bounded to 10,000 bundles, 100,000 eligible events, 64
+One service mining run is bounded to 10,000 bundles, 100,000 eligible events, 64
 features per envelope, 128 values per feature, 16 KiB per envelope, 128
 candidates, depth 4, 16 leaves, 31 nodes, 60 CPU seconds, and 512 MiB working
 memory. Pairwise similarity partitions larger than 5,000 rows are split by exact
 signature or refused; no unbounded quadratic matrix is allocated. The job is
 namespaced, observable, cancellable, and never runs in the request path.
+
+The HTTP analysis boundary is narrower: a 64 KiB body, 256 unique safe run IDs,
+and 128 candidate summaries. Timestamp lifetime, maximum-use, and token-estimate
+parameters retain the bounds in section 3.1. API validation happens before the
+worker thread is started.
 
 ### 12.3 Closed-cardinality metrics
 
@@ -489,6 +528,12 @@ unit, integration, ZDD, replay, privacy, and coverage phases.
   content or tenant-identifying labels.
 - **DLC-AC-12:** Full tests prove at least 85% aggregate and 75% per-file
   coverage, ZDD behavior, privacy, deterministic replay, and safe fallback.
+- **DLC-AC-13:** The analysis API authenticates before work, enforces exact
+  request/claim/adapter project equality and the adapter's policy binding, and
+  never invokes analysis on a scope mismatch.
+- **DLC-AC-14:** API requests and responses remain bounded and content-safe;
+  the endpoint exposes no evidence, executable rule, approval, activation, or
+  key material.
 
 ## 16. Landing record and remaining ownership
 
@@ -559,12 +604,21 @@ and `EventLoop` accept it only through explicit injection; the default remains
 rule, one call per tested abstention, and fail-closed invalid bindings and
 unverified evidence.
 
-### Slice R4b: single-writer production integration (remaining)
+### Slice R4b: bounded authenticated analysis API (landed)
+
+The daemon now registers `POST /api/v1/decision-codification/analyze` behind its
+existing authentication middleware. The strict request delegates to the
+injected `DecisionCodificationAdapter`; the response projects only safe digests,
+counts, and closed rejection enums. Focused tests cover authentication ordering,
+exact project scope, parameter and body bounds, forbidden lifecycle fields,
+content-safe errors, and the absence of approval or activation behavior.
+
+### Slice R4c: single-writer production integration (remaining)
 
 One integration owner alone edits shared surfaces: replay capture, automatic
 live-flow invocation and outcome feedback, database
-models/repositories/migration, permissions, config, CLI/API, and make contracts.
-This slice adds production integration and live-traffic ZDD evidence. No second
+models/repositories/migration, durable config, CLI, and make contracts. This
+slice adds production integration and live-traffic ZDD evidence. No second
 branch independently creates the migration, config keys, make targets, or
 daemon wiring.
 
