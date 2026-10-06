@@ -98,9 +98,11 @@ def test_secrets_scrub_invokes_audit() -> None:
     _assert_target_recipe_runs("secrets-scrub", "detect-secrets audit")
 
 
-def test_secrets_baseline_writes_baseline() -> None:
-    """SEC.14: secrets-baseline rebuilds .secrets.baseline via detect-secrets."""
-    _assert_target_recipe_runs("secrets-baseline", ".secrets.baseline")
+def test_secrets_baseline_uses_canonical_manager() -> None:
+    """SEC.14: baseline refreshes flow through the canonical manager."""
+    _assert_target_recipe_runs(
+        "secrets-baseline", "scripts/manage_secrets_baseline.py"
+    )
 
 
 def test_sast_uses_bandit() -> None:
