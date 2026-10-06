@@ -3,9 +3,9 @@
 **Last audited: 2026-09-26 on `release-v0.1.1-closeout`. The prior completion claim was invalid: S83.157, S83.158, S83.163, and the terminal S83.166 release action remain open, and S91.1 is reopened for the ownership/concurrency repair. Checked-task status contradictions now fail closed in the ledger validator, active-work inventory, and release readiness. No v0.1.1 promotion is permitted until each open predecessor has independent completion evidence, the exact candidate passes local and hosted gates, and the published artifacts pass deployment and rollback verification.**
 
 <!-- v0.1.2-completed-backlog -->
-**v0.1.2 completed backlog scope (unreleased):** the four formally completed
-post-v0.1.1 backlog items, S83 items 114-117, are assigned to v0.1.2 in ledger
-order:
+**v0.1.2 completed backlog scope (unreleased):** the five formally completed
+post-v0.1.1 backlog items, S83.114-S83.117 and S83.128, are assigned to v0.1.2
+in task order:
 
 | Item | Completed outcome | Primary evidence |
 |---|---|---|
@@ -13,13 +13,15 @@ order:
 | 115 | Standards-consistent X.509 chain validation | `cbda2a47b` |
 | 116 | Monotonic debounce, throttle, and watchdog state | `13b933128`, `dc5082aac` |
 | 117 | Authenticated TLS 1.3 state and directional records | `06c4c9e25`, `96998fcc9` |
+| 128 | Invoking-worktree-safe virtual-environment reclamation | `a596897e3`, `5ec87af01` |
 
-S83.158 and S83.166 remain open despite substantial implementation evidence;
-they require their recorded exact-head/hosted/release proofs before they may be
-added to this completed v0.1.2 scope. `CHANGELOG.md` and the reveal.js contract
-`v0.1.2-completed-backlog` mirror this release assignment.
-`tests/unit/test_v012_completed_backlog_release_sync.py` prevents the ledger,
-release notes, and presentation from drifting independently.
+S83.157, S83.158, S83.163, S83.166, and S83.169 remain open despite substantial
+implementation evidence; they require their recorded exact-head, hosted, or
+release proofs before they may be added to this completed v0.1.2 scope.
+`CHANGELOG.md` and `config/v012_completed_backlog_reconciliation.json` mirror
+this release assignment. `tests/unit/test_v012_completed_backlog_release_sync.py`
+prevents prior-release assignments, the ledger, release notes, and exact Git
+ancestry from drifting independently.
 <!-- /v0.1.2-completed-backlog -->
 
 S83.166 2026-09-29 failure-ownership continuation: hosted runs `36524447124` and `36524447101` are now ingested as nine independent failure families instead of one mutable branch verdict. The durable CI failure ledger rejects contradictory terminal payloads and unchanged failed-SHA reruns, preserves sibling and recurrent failures, requires a descendant repair commit plus exact Make evidence, blocks pushes with open/non-ancestral families, and resolves only the matching workflow/job after hosted success. Its replay passes 27/27 at 96% branch-aware coverage with every measured production file above 75%. The same runs exposed two PyInstaller graphs for one SHA because one workflow floated Python and the lock while the other used Python 3.12.14 plus frozen sync; all Linux/molecule producers now pin the exact patch and frozen lock, audit and upload the raw warning graph, and the combined regression surface passes 120/120. The dead Ansible EE base digest now has a fail-fast exact-manifest check and an atomic verified refresh transaction; its 36-test artifact replay and live Quay manifest check are green. Exact repair commits, a complete candidate gate, hosted all-workflow replay, the predecessor live proofs, publication, deployment, and rollback remain open.

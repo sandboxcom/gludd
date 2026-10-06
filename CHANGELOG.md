@@ -6,7 +6,7 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 This section is the canonical assignment for completed post-v0.1.1 backlog
 work. An item appears here only after its `TASKS.md` checkbox is formally
-closed with test, coverage, documentation, and reveal.js evidence.
+closed with test, coverage, documentation, and exact commit evidence.
 
 ### Completed backlog items
 
@@ -26,12 +26,17 @@ closed with test, coverage, documentation, and reveal.js evidence.
   handshake frames, context-bound CertificateVerify/Finished authentication,
   poisoned failure state, and independent application record protectors are
   enforced. Implementation: `06c4c9e25`; reveal sync: `96998fcc9`.
+- **S83.128 — Invoking-worktree-safe virtual-environment reclamation.** Cleanup
+  now preserves the invoking worktree, refuses active peers and stale or
+  unreadable registration evidence, and reclaims only inactive registered
+  peers. Implementation: `a596897e3`; formal closeout: `5ec87af01`.
 
 ### Release status
 
-S83.158 and S83.166 have substantial implemented evidence but are still open;
-exact-head/hosted release proof remains required. They are implemented but
-still open and are not counted among the four completed v0.1.2 backlog items.
+S83.157, S83.158, S83.163, S83.166, and S83.169 have substantial implemented
+evidence but are still open; their recorded exact-head, hosted, or release proof
+remains required. They are implemented but still open and are not counted among
+the five completed v0.1.2 backlog items.
 
 ## [0.1.1] — 2026-10-05
 
