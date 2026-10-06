@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import tempfile
 import urllib.request
@@ -27,6 +28,7 @@ class Asset:
     destination: str
     license_source: str
     license_destination: str
+    transform: str = "identity"
 
 
 def _cdn(package: str, version: str, source_path: str) -> str:
@@ -62,6 +64,7 @@ ASSETS = (
         "reveal.js-mermaid-plugin", "11.15.0",
         _cdn("reveal.js-mermaid-plugin", "11.15.0", "plugin/mermaid/mermaid.js"),
         "mermaid/mermaid.js", MERMAID_LICENSE, "mermaid/LICENSE",
+        transform="mermaid-webkit-geometry-v2",
     ),
     Asset(
         "ace-builds", "1.44.0", _cdn("ace-builds", "1.44.0", "src-min-noconflict/ace.js"),
@@ -105,6 +108,19 @@ ASSETS = (
     ),
 )
 
+MERMAID_RENDER_NEEDLE = (
+    b"await fL.render(`mermaid-${Math.random().toString(36).substring(2)}`,i)"
+)
+MERMAID_RENDER_REPLACEMENT = (
+    b"await fL.render(`mermaid-${Math.random().toString(36).substring(2)}`,i,e)"
+)
+MERMAID_API_NEEDLE = b",fL=pL;async function gL"
+MERMAID_API_REPLACEMENT = b",fL=pL;globalThis.gluddMermaid=fL;async function gL"
+MERMAID_EDGE_POSITION_NEEDLE = b"t.updatedPath&&(a=n.x,o=n.y)"
+MERMAID_EDGE_POSITION_REPLACEMENT = (
+    b"(t.updatedPath||!Number.isFinite(a)||!Number.isFinite(o))&&(a=n.x,o=n.y)"
+)
+
 
 def _download(url: str) -> bytes:
     """Download one HTTPS resource with a bounded request."""
@@ -116,6 +132,25 @@ def _download(url: str) -> bytes:
     if not payload or len(payload) > 12 * 1024 * 1024:
         raise RuntimeError("asset is empty or exceeds the 12 MiB acquisition bound")
     return payload.replace(b"//# sourceMappingURL=", b"//# source map omitted: ")
+
+
+def _transform_asset(asset: Asset, payload: bytes) -> bytes:
+    """Apply the one reviewed browser-compatibility patch, or preserve bytes."""
+    if asset.transform == "identity":
+        return payload
+    if asset.transform != "mermaid-webkit-geometry-v2":
+        raise RuntimeError("presentation vendor asset transform is unsupported")
+    if payload.count(MERMAID_RENDER_NEEDLE) != 1:
+        raise RuntimeError("Mermaid target-container patch boundary changed upstream")
+    if payload.count(MERMAID_API_NEEDLE) != 1:
+        raise RuntimeError("Mermaid direct API patch boundary changed upstream")
+    if payload.count(MERMAID_EDGE_POSITION_NEEDLE) != 2:
+        raise RuntimeError("Mermaid edge geometry patch boundary changed upstream")
+    return (
+        payload.replace(MERMAID_RENDER_NEEDLE, MERMAID_RENDER_REPLACEMENT)
+        .replace(MERMAID_API_NEEDLE, MERMAID_API_REPLACEMENT)
+        .replace(MERMAID_EDGE_POSITION_NEEDLE, MERMAID_EDGE_POSITION_REPLACEMENT)
+    )
 
 
 def _expected_files() -> set[str]:
@@ -159,6 +194,24 @@ def validate_assets(destination: Path = VENDOR) -> None:
             raise RuntimeError("presentation vendor file is missing") from exc
         if entry.get("sha256") != asset_digest:
             raise RuntimeError("presentation vendor asset digest mismatch")
+        upstream_digest = str(entry.get("upstream_sha256", ""))
+        if not re.fullmatch(r"[0-9a-f]{64}", upstream_digest):
+            raise RuntimeError("presentation vendor upstream digest is invalid")
+        if entry.get("transform") != asset.transform:
+            raise RuntimeError("presentation vendor asset transform mismatch")
+        if asset.transform == "identity" and upstream_digest != asset_digest:
+            raise RuntimeError("identity vendor asset differs from upstream digest")
+        if asset.transform == "mermaid-webkit-geometry-v2":
+            data = (destination / asset.destination).read_bytes()
+            if data.count(MERMAID_RENDER_REPLACEMENT) != 1 or MERMAID_RENDER_NEEDLE in data:
+                raise RuntimeError("Mermaid target-container patch is missing")
+            if data.count(MERMAID_API_REPLACEMENT) != 1 or MERMAID_API_NEEDLE in data:
+                raise RuntimeError("Mermaid direct API patch is missing")
+            if (
+                data.count(MERMAID_EDGE_POSITION_REPLACEMENT) != 2
+                or MERMAID_EDGE_POSITION_NEEDLE in data
+            ):
+                raise RuntimeError("Mermaid edge geometry patch is missing")
         if entry.get("license") != asset.license_destination:
             raise RuntimeError("presentation vendor license path mismatch")
         if entry.get("license_sha256") != license_digest:
@@ -185,7 +238,8 @@ def refresh_assets(destination: Path = VENDOR) -> None:
         manifest_assets: list[dict[str, str]] = []
         licenses: dict[tuple[str, str], bytes] = {}
         for asset in ASSETS:
-            payload = _download(asset.source)
+            upstream_payload = _download(asset.source)
+            payload = _transform_asset(asset, upstream_payload)
             asset_path = output / asset.destination
             asset_path.parent.mkdir(parents=True, exist_ok=True)
             asset_path.write_bytes(payload)
@@ -197,6 +251,8 @@ def refresh_assets(destination: Path = VENDOR) -> None:
                     "package": asset.package,
                     "version": asset.version,
                     "source": asset.source,
+                    "upstream_sha256": hashlib.sha256(upstream_payload).hexdigest(),
+                    "transform": asset.transform,
                     "sha256": hashlib.sha256(payload).hexdigest(),
                     "destination": asset.destination,
                     "license": asset.license_destination,

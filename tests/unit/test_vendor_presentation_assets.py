@@ -12,6 +12,13 @@ from scripts import vendor_presentation_assets as vendor
 
 def _payload(url: str) -> bytes:
     """Return stable synthetic bytes for one pinned URL."""
+    if "reveal.js-mermaid-plugin" in url and url.endswith("mermaid.js"):
+        return (
+            b",fL=pL;async function gL(){};"
+            b"const{svg:t}=await fL.render(`mermaid-${Math.random().toString(36).substring(2)}`,i);"
+            b"t.updatedPath&&(a=n.x,o=n.y);"
+            b"t.updatedPath&&(a=n.x,o=n.y);"
+        )
     return f"owned:{url}\n".encode()
 
 
@@ -31,6 +38,8 @@ def test_refresh_and_validate_exact_vendor_tree(monkeypatch: pytest.MonkeyPatch,
         license_path = destination / entry["license"]
         assert entry["sha256"] == hashlib.sha256(asset.read_bytes()).hexdigest()
         assert entry["license_sha256"] == hashlib.sha256(license_path.read_bytes()).hexdigest()
+        assert entry["transform"] in {"identity", "mermaid-webkit-geometry-v2"}
+        assert len(entry["upstream_sha256"]) == 64
 
     previous = destination.with_name("vendor.previous")
     previous.mkdir()
@@ -93,6 +102,30 @@ def test_inventory_uses_exact_versions(package: str, version: str) -> None:
     assert matching
     assert {asset.version for asset in matching} == {version}
     assert all(f"@{version}/" in asset.source for asset in matching)
+
+
+def test_mermaid_patch_exposes_direct_api_and_guards_edge_geometry() -> None:
+    """The reviewed patch exposes render and repairs missing edge coordinates."""
+    asset = next(item for item in vendor.ASSETS if item.package == "reveal.js-mermaid-plugin")
+    upstream = _payload(asset.source)
+
+    patched = vendor._transform_asset(asset, upstream)
+
+    assert b"substring(2)}`,i,e)" in patched
+    assert b"substring(2)}`,i)" not in patched
+    assert b"globalThis.gluddMermaid=fL" in patched
+    assert patched.count(b"t.updatedPath||!Number.isFinite(a)||!Number.isFinite(o)") == 2
+    assert asset.transform == "mermaid-webkit-geometry-v2"
+
+
+def test_immutable_vendor_tree_uses_path_level_secret_scanner_policy() -> None:
+    """Pinned third-party bytes use one audited path policy, never digest suppressions."""
+    root = Path(__file__).resolve().parents[2]
+    pre_commit = (root / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+    makefile = (root / "Makefile").read_text(encoding="utf-8")
+
+    assert pre_commit.count(r"docs/presentation/deck/vendor/.*") == 2
+    assert r"^docs/presentation/deck/vendor/.*$$" in makefile
 
 
 class _Response:

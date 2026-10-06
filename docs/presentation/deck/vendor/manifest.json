@@ -7,6 +7,8 @@
       "package": "reveal.js",
       "sha256": "9cbc5082797d938f0ee780328790a131ae3d7bc5c09c176e77927c174f29e60a",
       "source": "https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css",
+      "transform": "identity",
+      "upstream_sha256": "9cbc5082797d938f0ee780328790a131ae3d7bc5c09c176e77927c174f29e60a",
       "version": "5.1.0"
     },
     {
@@ -16,6 +18,8 @@
       "package": "reveal.js",
       "sha256": "bbb6f57b0fbf5025797aca25fbac7275fa4c85758ec4a94dcf3dfe1fe510e87f",
       "source": "https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/black.css",
+      "transform": "identity",
+      "upstream_sha256": "bbb6f57b0fbf5025797aca25fbac7275fa4c85758ec4a94dcf3dfe1fe510e87f",
       "version": "5.1.0"
     },
     {
@@ -25,6 +29,8 @@
       "package": "reveal.js",
       "sha256": "58ce92b83d69b5b5810a1b8b24912d25f2152ed3d376ea78a28275f9900f5add",
       "source": "https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js",
+      "transform": "identity",
+      "upstream_sha256": "58ce92b83d69b5b5810a1b8b24912d25f2152ed3d376ea78a28275f9900f5add",
       "version": "5.1.0"
     },
     {
@@ -34,6 +40,8 @@
       "package": "reveal.js",
       "sha256": "3d58fbfb3fb64e4c2c1c0288347ab4174847b281538fe93f056e90b9b5a608ca",
       "source": "https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/highlight.js",
+      "transform": "identity",
+      "upstream_sha256": "3d58fbfb3fb64e4c2c1c0288347ab4174847b281538fe93f056e90b9b5a608ca",
       "version": "5.1.0"
     },
     {
@@ -43,6 +51,8 @@
       "package": "reveal.js",
       "sha256": "288fe7cb27ff696a3e1c137b22b0cd117395a84dba2a703e2bfc3136e65612a8",
       "source": "https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js",
+      "transform": "identity",
+      "upstream_sha256": "288fe7cb27ff696a3e1c137b22b0cd117395a84dba2a703e2bfc3136e65612a8",
       "version": "5.1.0"
     },
     {
@@ -50,8 +60,10 @@
       "license": "mermaid/LICENSE",
       "license_sha256": "604616f109f16bca350874d79cc1a5b55e1ebc28dbe4696ded27fa3ff523ddd1",
       "package": "reveal.js-mermaid-plugin",
-      "sha256": "db99160e9e723dba9fc7fa3513256f97de67404571a159750253b7f1efe7e23c",
+      "sha256": "5a42dd032821f455ef2ba5e59c4387808c8def89d9e7a7873386341eb4ef0068",
       "source": "https://cdn.jsdelivr.net/npm/reveal.js-mermaid-plugin@11.15.0/plugin/mermaid/mermaid.js",
+      "transform": "mermaid-webkit-geometry-v2",
+      "upstream_sha256": "db99160e9e723dba9fc7fa3513256f97de67404571a159750253b7f1efe7e23c",
       "version": "11.15.0"
     },
     {
@@ -61,6 +73,8 @@
       "package": "ace-builds",
       "sha256": "072d13e53d11e2ceccfffe1a0fa7f15cf69c5435d897df53d98c71be1c4a2e7f",
       "source": "https://cdn.jsdelivr.net/npm/ace-builds@1.44.0/src-min-noconflict/ace.js",
+      "transform": "identity",
+      "upstream_sha256": "072d13e53d11e2ceccfffe1a0fa7f15cf69c5435d897df53d98c71be1c4a2e7f",
       "version": "1.44.0"
     },
     {
@@ -70,6 +84,8 @@
       "package": "ace-builds",
       "sha256": "757fb017f0ff7a6f2b47f30a3ff7bd6211529deceebf07909d4647ae1175a38a",
       "source": "https://cdn.jsdelivr.net/npm/ace-builds@1.44.0/src-min-noconflict/theme-tomorrow_night.js",
+      "transform": "identity",
+      "upstream_sha256": "757fb017f0ff7a6f2b47f30a3ff7bd6211529deceebf07909d4647ae1175a38a",
       "version": "1.44.0"
     },
     {
@@ -79,6 +95,8 @@
       "package": "ace-builds",
       "sha256": "cb6877f5c394feb9dc7647edb862b89634b0c3eaa1e26c97499c446035ae6d34",
       "source": "https://cdn.jsdelivr.net/npm/ace-builds@1.44.0/src-min-noconflict/mode-css.js",
+      "transform": "identity",
+      "upstream_sha256": "cb6877f5c394feb9dc7647edb862b89634b0c3eaa1e26c97499c446035ae6d34",
       "version": "1.44.0"
     },
     {
@@ -88,6 +106,8 @@
       "package": "ace-builds",
       "sha256": "71be5cf5d27f53975593cc3a014779c90413de1872473556c06fcba14eb52023",
       "source": "https://cdn.jsdelivr.net/npm/ace-builds@1.44.0/src-min-noconflict/mode-html.js",
+      "transform": "identity",
+      "upstream_sha256": "71be5cf5d27f53975593cc3a014779c90413de1872473556c06fcba14eb52023",
       "version": "1.44.0"
     },
     {
@@ -97,6 +117,8 @@
       "package": "ace-builds",
       "sha256": "85dd763f0290c66e78172693491462d0a426f4457e87f540f92fbd3f36cdf102",
       "source": "https://cdn.jsdelivr.net/npm/ace-builds@1.44.0/src-min-noconflict/mode-javascript.js",
+      "transform": "identity",
+      "upstream_sha256": "85dd763f0290c66e78172693491462d0a426f4457e87f540f92fbd3f36cdf102",
       "version": "1.44.0"
     },
     {
@@ -106,6 +128,8 @@
       "package": "ace-builds",
       "sha256": "010feab73fd75cfcdee30cdc71bdcc868e4f914465a59a7141c5ee4983a8afec",
       "source": "https://cdn.jsdelivr.net/npm/ace-builds@1.44.0/src-min-noconflict/mode-json.js",
+      "transform": "identity",
+      "upstream_sha256": "010feab73fd75cfcdee30cdc71bdcc868e4f914465a59a7141c5ee4983a8afec",
       "version": "1.44.0"
     },
     {
@@ -115,6 +139,8 @@
       "package": "ace-builds",
       "sha256": "7492ad87ce3e6018f45fd79d8f20f782b3b5acbd9b603b3ad6be62fa0d35dac9",
       "source": "https://cdn.jsdelivr.net/npm/ace-builds@1.44.0/src-min-noconflict/mode-markdown.js",
+      "transform": "identity",
+      "upstream_sha256": "7492ad87ce3e6018f45fd79d8f20f782b3b5acbd9b603b3ad6be62fa0d35dac9",
       "version": "1.44.0"
     },
     {
@@ -124,6 +150,8 @@
       "package": "ace-builds",
       "sha256": "88eba07c61f5168ebef54323f6e2d31f7e129c05954ea6aa5a3b0a04a2b03aad",
       "source": "https://cdn.jsdelivr.net/npm/ace-builds@1.44.0/src-min-noconflict/mode-python.js",
+      "transform": "identity",
+      "upstream_sha256": "88eba07c61f5168ebef54323f6e2d31f7e129c05954ea6aa5a3b0a04a2b03aad",
       "version": "1.44.0"
     },
     {
@@ -133,6 +161,8 @@
       "package": "ace-builds",
       "sha256": "0812522a4816737d29a89b601db7f8d603ad1809fd34cd25a31f00d3b731aa54",
       "source": "https://cdn.jsdelivr.net/npm/ace-builds@1.44.0/src-min-noconflict/mode-sh.js",
+      "transform": "identity",
+      "upstream_sha256": "0812522a4816737d29a89b601db7f8d603ad1809fd34cd25a31f00d3b731aa54",
       "version": "1.44.0"
     },
     {
@@ -142,6 +172,8 @@
       "package": "ace-builds",
       "sha256": "24faa242ac5085656ff0b9fe283edc8d8565c2ad84f5a824b5868eb5a7ca5cb3",
       "source": "https://cdn.jsdelivr.net/npm/ace-builds@1.44.0/src-min-noconflict/mode-yaml.js",
+      "transform": "identity",
+      "upstream_sha256": "24faa242ac5085656ff0b9fe283edc8d8565c2ad84f5a824b5868eb5a7ca5cb3",
       "version": "1.44.0"
     }
   ],

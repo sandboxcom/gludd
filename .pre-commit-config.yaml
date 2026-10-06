@@ -30,6 +30,7 @@ repos:
             uv.lock|
             .secrets.baseline|
             \.opencode/plugin-hashes\.json|
+            docs/presentation/deck/vendor/.*|
             dist/.*|
             \.venv/.*|
             \.opencode/node_modules/.*|
@@ -52,6 +53,7 @@ repos:
             uv.lock|
             .secrets.baseline|
             \.opencode/plugin-hashes\.json|
+            docs/presentation/deck/vendor/.*|
             dist/.*|
             \.venv/.*|
             \.opencode/node_modules/.*|

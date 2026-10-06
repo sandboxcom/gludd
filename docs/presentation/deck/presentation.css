@@ -3,17 +3,23 @@ body {
   background: #0d1117;
 }
 
-/* Mermaid measures text while rendering. Reveal normally display:none's every
-   inactive slide, which produces NaN transforms in Chromium and blank SVGs in
-   Safari. Keep inactive slides laid out but invisible for the bounded batch. */
-html.gludd-mermaid-prerender .reveal .slides section {
-  display: block !important;
+/* Mermaid measures text while rendering. Reveal display:none's inactive slides,
+   so pending diagrams render in one opaque-zero, offscreen staging area instead.
+   Unlike visibility:hidden, opacity preserves SVG text geometry in WebKit. */
+.gludd-mermaid-stage {
+  font-size: 40px;
+  left: -200vw;
+  opacity: 0;
+  pointer-events: none;
+  position: fixed;
+  top: 0;
+  width: 1100px;
+  z-index: -1;
 }
 
-html.gludd-mermaid-prerender .reveal .slides section:not(.present) {
-  left: -200vw !important;
-  pointer-events: none !important;
-  visibility: hidden !important;
+.gludd-mermaid-stage .mermaid {
+  display: block;
+  width: 100%;
 }
 
 .mermaid-host {

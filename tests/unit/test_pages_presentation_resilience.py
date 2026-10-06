@@ -26,12 +26,13 @@ def test_pages_validates_development_and_pull_requests_before_upload() -> None:
     assert "continue-on-error" not in workflow
 
 
-def test_pages_deploys_the_validated_master_artifact() -> None:
-    """Only master may publish the exact browser-validated artifact."""
+def test_pages_deploys_only_the_validated_master_artifact() -> None:
+    """Development validates continuously; only the release branch publishes."""
     workflow = WORKFLOW.read_text(encoding="utf-8")
     assert "needs: validate" in workflow
     assert "github.ref == 'refs/heads/master'" in workflow
     assert "github.ref == 'refs/heads/development'" not in workflow
+    assert "github.event_name == 'push'" in workflow
     assert "actions/download-artifact@" in workflow
     assert workflow.index("actions/download-artifact@") < workflow.index("actions/upload-pages-artifact@")
     assert workflow.index("actions/upload-pages-artifact@") < workflow.index("actions/deploy-pages@")
@@ -57,6 +58,8 @@ def test_implementation_guide_keeps_upstream_regressions_and_operations() -> Non
         "mgaitan/sphinxcontrib-mermaid#126",
         "zjffun/reveal.js-mermaid-plugin#5",
         "mermaid-js/mermaid#7323",
+        "gitlab-org/gitlab-docs#599",
+        "mermaid-js/mermaid#8113",
     ):
         assert issue in design
     assert "reveal.js-mermaid-plugin@11.15.0" in design

@@ -121,6 +121,36 @@ def test_presentation_browser_install_is_read_only_by_default() -> None:
     }
 
 
+def test_native_safari_target_is_bounded_and_read_only_by_default() -> None:
+    """Native Safari remains explicit and never enables Remote Automation."""
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+
+    assert "PRESENTATION_SAFARI_VALIDATE_ONLY ?= 1" in makefile
+    assert "PRESENTATION_SAFARI_DRIVER ?= /usr/bin/safaridriver" in makefile
+    assert "PRESENTATION_SAFARI_OUTPUT ?= /tmp/gludd-presentation-safari" in makefile
+    assert "PRESENTATION_SAFARI_TIMEOUT ?= 60" in makefile
+    assert "presentation-safari-test:" in makefile
+    assert "scripts.run_presentation_safari_smoke" in makefile
+    assert "--enable" not in makefile
+    assert "presentation-safari-test" in makefile
+    assert _contract("presentation-safari-test") == {
+        "name": "presentation-safari-test",
+        "make_variables": [
+            "PRESENTATION_SAFARI_VALIDATE_ONLY",
+            "PRESENTATION_SAFARI_DRIVER",
+            "PRESENTATION_SAFARI_OUTPUT",
+            "PRESENTATION_SAFARI_TIMEOUT",
+        ],
+        "behavior": (
+            "make presentation-safari-test "
+            "PRESENTATION_SAFARI_VALIDATE_ONLY=1 "
+            "PRESENTATION_SAFARI_DRIVER=/usr/bin/safaridriver "
+            "PRESENTATION_SAFARI_OUTPUT=/tmp/gludd-presentation-safari "
+            "PRESENTATION_SAFARI_TIMEOUT=60"
+        ),
+    }
+
+
 def test_presentation_pages_probe_is_bounded_and_read_only_by_default() -> None:
     """Public revision checks must be explicit, bounded, and content-free."""
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
