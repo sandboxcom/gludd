@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 
 MAKEFILE = Path(__file__).parent.parent.parent / "Makefile"
+LAUNCHER = MAKEFILE.parent / "scripts/start_gate_background.py"
 
 
 class TestT25BackgroundGatePhaseMarkers:
@@ -26,8 +27,10 @@ class TestT25BackgroundGatePhaseMarkers:
         if end == -1:
             end = len(content)
         recipe = content[idx:end]
-        assert ".gate-logs/gate-" in recipe, "T25: gate-background must write output to .gate-logs/gate-<ts>.log"
-        assert "nohup" in recipe, "T25: gate-background must use nohup for detached execution"
+        assert "scripts/start_gate_background.py" in recipe
+        launcher = LAUNCHER.read_text()
+        assert 'f"gate-{timestamp}-{run_id[-8:]}.log"' in launcher
+        assert "start_new_session=True" in launcher
 
     def test_gate_target_has_minimum_phase_markers(self) -> None:
         content = MAKEFILE.read_text()

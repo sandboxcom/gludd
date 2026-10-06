@@ -448,50 +448,61 @@ and durable process-group ownership in
 
 #### Automation-owned background gates
 
-`gate-background` remains useful from an interactive terminal because it returns
-immediately after `nohup` creates the recursive Make owner. That is not a safe
-ownership transfer in every automation environment. During the v0.1.1 release,
-two clean launches returned a PID and then lost it before the first gate byte;
-the newest logs were empty and the prior status remained in place. The second
-reproduction occurred with no other project process. The runner's exact reaper
-was not observable, so this contract is based on the demonstrated lifecycle
-boundary rather than attributing a signal without evidence.
+`gate-background` returns immediately, but it no longer delegates ownership to
+`nohup` and an untracked shell sleeper. `scripts/start_gate_background.py`
+starts the recursive Make gate with `start_new_session=True`; the published gate
+PID is therefore also its process-group and session leader. A managed caller can
+receive group `SIGTERM` without forwarding it into the gate session. The gate's
+stdout and stderr remain attached to one exact `.gate-logs/gate-*.log`, so phase
+markers are visible through the unchanged `gate-status-check` and `gate-wait`
+interfaces.
 
-`make gate-background-observed` is the automation entrypoint. Its root Make
-process launches the unchanged nonblocking target and immediately enters the
-existing `gate-wait` heartbeat loop. The managed runner therefore continues to
-own a visible parent until the child writes PASS, FAIL, ABORTED, or timeout
-evidence. `GATE_TIMEOUT` and `GATE_POLL_INTERVAL` are forwarded explicitly; a
-launch failure stops before polling, and the terminal child result becomes the
-composite target's result. `GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY=1` verifies
-the bounded plan without starting a gate.
+Each admission publishes an atomic
+`.gate-logs/gate-background-state.json` receipt containing a unique `run_id`,
+PID, OS process-start token, PGID, SID, checkout root, resource namespace,
+command, timeout, and exact log path. `.gate-background.pid` remains the
+compatibility pointer and contains the real Make gate PID, not a wrapper PID.
+Duplicate admission is serialized by a worktree-local file lock and compares
+the receipt to live OS identity; a reused PID is never treated as the old gate.
+An old watcher may update state or remove the PID pointer only while both the
+`run_id` and exact PID identity still match.
 
-Duplicate admission and launch are one shell transaction. An admitted live PID
-returns before `nohup` or PID publication; a stale PID is removed before one new
-owner is started. Launcher recipes use a Make command expanded before recipe
-execution, avoiding GNU Make's rule that direct `$(MAKE)` recipe references run
-even under `-n`. The observed wrapper captures the PID published by its launch
-and passes it as `GATE_EXPECTED_PID` on every poll rather than following a
-replaceable shared PID file. Real behavioral tests pin both boundaries: a live
-subprocess retains its exact PID record after duplicate refusal, and a dry run
-creates neither the record nor the log directory.
+The timeout watcher is also session-isolated, but unlike the former
+`sleep 3600` sidecar it polls the exact identity and exits as soon as the gate
+does. At the deadline it revalidates the current receipt, sends bounded
+`SIGTERM` then `SIGKILL` to only the gate-owned process group, writes the same
+`GATE_TIMEOUT` / ABORTED status contract, and removes only its own PID pointer.
+If watcher creation fails, launch is rolled back and the gate is reaped before
+the command returns. This closes the orphan-helper path while preserving PID,
+status, timeout, log, namespace, and waiter compatibility.
 
-This is ZDD for application services: it changes only the release-control
-process tree, creates no listener or schema, and leaves the interactive target
-compatible. Existing gates are neither restarted nor adopted. Rollback removes
-the composite target after any live observed owner exits; operators can still
-use `gate-background` interactively or a foreground `gate` while accepting that
-their caller must remain authoritative. GNU Make's
-[POSIX jobserver documentation](https://www.gnu.org/software/make/manual/html_node/POSIX-Jobserver.html)
-records recursive children's dependency on calling-Make resources. GitHub
-Actions runner [issue #4601](https://github.com/actions/runner/issues/4601)
-documents explicit orphan-process cleanup, and runner
-[issue #1309](https://github.com/actions/runner/issues/1309) records externally
-selected termination signals. Those practitioner reports reinforce the rule:
-`nohup` changes terminal behavior; it does not prove durable runner ownership.
-GNU Make's [recursive invocation contract](https://www.gnu.org/software/make/manual/html_node/MAKE-Variable.html)
-additionally explains why direct `MAKE` references require an explicit dry-run
-boundary.
+`make gate-background-observed` remains the automation entrypoint when a runner
+requires a visible top-level owner. It launches the same session-isolated gate
+and enters `gate-wait`; `GATE_TIMEOUT` and `GATE_POLL_INTERVAL` remain explicit,
+and `GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY=1` still verifies the bounded plan
+without starting work. The direct target now also exposes
+`GATE_BACKGROUND_VALIDATE_ONLY=1` for a side-effect-free contract check. GNU
+Make dry-run stays inert because its recipe contains no direct `$(MAKE)` token.
+
+The practitioner history is unusually consistent. A Stack Overflow question
+open since 2011 reports that `nohup` children still died with their caller; its
+maintained answer identifies a distinct process group and Python's modern
+`start_new_session=True` as the relevant boundary
+([Stack Overflow](https://stackoverflow.com/questions/6011235/run-a-program-from-python-and-have-it-continue-to-run-after-the-script-is-kille)).
+GitHub Actions users have reported background build servers being collected at
+job completion since 2020
+([runner issue #598](https://github.com/actions/runner/issues/598)), while a
+later report shows the inverse failure: a snapshot-based cleanup can miss a
+new child and leave it reparented indefinitely
+([runner issue #4601](https://github.com/actions/runner/issues/4601)). Together
+they support explicit session boundaries plus an identity-aware, bounded owner;
+neither `nohup` alone nor broad process-table cleanup supplies both properties.
+
+This rollout is ZDD for application services: it changes only the local
+release-control process tree, opens no listener, changes no schema, and neither
+restarts nor adopts a running gate. Existing PID/status/wait callers keep their
+paths and meanings. Rollback is a Makefile-and-launcher revert performed only
+after the recorded run reaches a terminal state; no service cutover is needed.
 
 #### Candidate history freeze
 

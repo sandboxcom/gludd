@@ -7,6 +7,7 @@ the gate-status file must be fail-closed (missing file = red).
 from pathlib import Path
 
 MAKEFILE = Path(__file__).parent.parent.parent / "Makefile"
+GATE_BACKGROUND_LAUNCHER = MAKEFILE.parent / "scripts/start_gate_background.py"
 
 
 def _find_recipe(content: str, target: str) -> str:
@@ -37,7 +38,9 @@ class TestG05G06GateFreshnessEnforcement:
         recipe = _find_recipe(content, "gate-background")
         if not recipe:
             return
-        assert "gate-status" in recipe or ".gate-status" in recipe, (
+        launcher = GATE_BACKGROUND_LAUNCHER.read_text()
+        assert "scripts/start_gate_background.py" in recipe
+        assert 'status_file=resolved / ".gate-status"' in launcher, (
             "G05: gate-background must write .gate-status on completion"
         )
 

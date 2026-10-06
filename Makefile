@@ -19,6 +19,8 @@ OPENCODE_MAINTENANCE_FORCE ?= 0
 GLUDD_TASK_TIMEOUT ?= 300
 TIMEOUT ?= 3600
 GATE_POLL_INTERVAL ?= 60
+GATE_TIMEOUT ?= 3600
+GATE_BACKGROUND_VALIDATE_ONLY ?= 0
 GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY ?= 0
 GATE_EXPECTED_PID ?=
 # Expand MAKE before recipe execution so launcher recipes are ordinary commands
@@ -422,6 +424,8 @@ help:
 	@echo "  test-atomic-validate    verify atomic target creation with tempfile validation"
 	@echo "  gate-check              Run gate check"
 	@echo "  lint                  Run ruff linter"
+	@echo "  lint-python           Run the canonical Python Ruff gate (application + tests)"
+	@echo "  lint-make             Run duplicate-target, parity, and Make dry-run validation"
 	@echo "  lint-files            Run ruff linter on FILES only"
 	@echo "  lint-markdown         Run locked markdownlint-cli2 (MARKDOWN_FILES, MARKDOWNLINT_CONFIG)"
 	@echo "  lint-docstrings       Run locked Ruff docstring rules on DOCSTRING_FILES"
@@ -439,6 +443,7 @@ help:
 	@echo "  edit-makefile-target  Edit a Makefile target definition via a file"
 	@echo "  validate-makefile     Validate Makefile targets for duplicates"
 	@echo "  gate                  Full gate: lint + typecheck + collect-check + test"
+	@echo "  gate-background           Launch one identity-tracked gate in an isolated session"
 	@echo "  gate-background-observed  Launch the detached gate and keep its automation owner alive while polling"
 	@echo "  gate-refresh          Refresh fast phases; stream fallback test node IDs (GATE_REFRESH_VALIDATE_ONLY=0|1)"
 	@echo "  gate-lite             Local validation (lint+typecheck+collect+smoke+unit@2w); no OOM"
@@ -1088,6 +1093,10 @@ check-pytest:
 
 lint:
 	@$(UV) run ruff check src tests
+
+lint-python: lint
+
+lint-make: validate-makefile
 
 # AGENTS.md OD.10 fast commit preflight.  Keep this intentionally bounded:
 # the release/full-suite gate remains a separate workflow.
@@ -8499,48 +8508,17 @@ gate-async:
 gate-status:
 	@if [ -f .gate-status ]; then cat .gate-status; else echo "(no .gate-status found)"; fi
 
-# Launch gate detached via nohup; returns PID immediately (<1s).
-# Writes output to .gate-logs/gate-<ts>.log, PID to .gate-background.pid.
-# Startup check: if a stale PID file exists (process dead), clean it.
-# If an existing gate is alive for >2h, auto-kill it and warn before launching.
+# Launch the gate through the repository-owned Python session launcher. It
+# atomically publishes the exact PID/start-token/session/log identity, starts a
+# bounded watcher, and returns immediately. The watcher exits with the gate and
+# removes .gate-background.pid only when the receipt still names its exact PID.
 gate-background:
-	@mkdir -p .gate-logs; \
-	GATE_TIMEOUT_OVERRIDE=$${GATE_TIMEOUT:-3600}; \
-	STALE_PID=$$(cat .gate-background.pid 2>/dev/null || echo ""); \
-	GATE_PID_NOW=$$(date +%s); \
-	if [ -n "$$STALE_PID" ]; then \
-		if kill -0 "$$STALE_PID" 2>/dev/null; then \
-			GATE_MTIME=$$(stat -f %m .gate-background.pid 2>/dev/null || stat -c %Y .gate-background.pid 2>/dev/null || echo 0); \
-			ELAPSED=$$(( GATE_PID_NOW - GATE_MTIME )); \
-			if [ "$$ELAPSED" -gt "$$GATE_TIMEOUT_OVERRIDE" ]; then \
-				echo "[gate-background] WARNING: existing gate running for $$ELAPSED s (>$$GATE_TIMEOUT_OVERRIDE s) - auto-killing staled process"; \
-				$(_GATE_MAKE) gate-kill || exit $$?; \
-			else \
-				echo "[gate-background] gate already running (pid=$$STALE_PID elapsed=$$ELAPSED s) - refusing to launch duplicate"; \
-				exit 0; \
-			fi; \
-		else \
-			echo "[gate-background] removing stale PID file (pid=$$STALE_PID not alive)"; \
-			rm -f .gate-background.pid; \
-		fi; \
-	fi; \
-	nohup $(_GATE_MAKE) gate gludd_watchdog_owned_gate=1 > .gate-logs/gate-$$(date +%Y%m%d%H%M%S).log 2>&1 & \
-	EXPECTED_PID=$$!; \
-	echo "$$EXPECTED_PID" | tee .gate-background.pid; \
-	GATE_TIMEOUT_VAL=$${GATE_TIMEOUT:-3600}; \
-	( sleep $$GATE_TIMEOUT_VAL; \
-	  if [ -f .gate-background.pid ]; then \
-	    PID_TO_KILL=$$(cat .gate-background.pid 2>/dev/null); \
-	    if [ -n "$$PID_TO_KILL" ] && [ "$$PID_TO_KILL" = "$$EXPECTED_PID" ] && kill -0 "$$PID_TO_KILL" 2>/dev/null; then \
-	      echo "GATE_TIMEOUT" > .gate-status; \
-	      echo "=== GATE: ABORTED (timeout $$GATE_TIMEOUT_VAL s) ===" >> .gate-logs/gate-$$(ls -t .gate-logs/gate-*.log 2>/dev/null | head -1); \
-	      kill -TERM "$$PID_TO_KILL" 2>/dev/null; \
-	      sleep 10; \
-	      kill -KILL "$$PID_TO_KILL" 2>/dev/null; \
-	      rm -f .gate-background.pid; \
-	      echo "[gate-background-timeout] killed PID $$PID_TO_KILL after $$GATE_TIMEOUT_VAL s timeout"; \
-	    fi; \
-	  fi ) > /dev/null 2>&1 &
+	@$(UV) run --project "$(abspath $(dir $(lastword $(MAKEFILE_LIST))))" python "$(abspath $(dir $(lastword $(MAKEFILE_LIST))))/scripts/start_gate_background.py" \
+		--project-root "$(CURDIR)" \
+		--make-command "$(_GATE_MAKE)" \
+		--makefile "$(abspath $(lastword $(MAKEFILE_LIST)))" \
+		--timeout-seconds "$(GATE_TIMEOUT)" \
+		--validate-only "$(GATE_BACKGROUND_VALIDATE_ONLY)"
 
 # Managed command runners may reap detached descendants as soon as their root
 # command exits. Keep that root Make invocation alive while the ordinary
