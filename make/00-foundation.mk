@@ -947,7 +947,8 @@ setup-dirs:
 
 init: setup-dirs
 	@if [ ! -f pyproject.toml ]; then echo "ERROR: pyproject.toml missing"; exit 1; fi
-	@if command -v $(UV) >/dev/null 2>&1; then echo "Using uv..."; $(UV) sync; else echo "uv not found, using pip..."; $(PYTHON) -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"; fi
+	@command -v $(UV) >/dev/null 2>&1 || { echo "uv is required for locked dependency profiles"; exit 1; }
+	@$(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=development DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=0
 	@$(MAKE) --no-print-directory install-hooks
 
 DEPENDENCY_PROFILE_SET ?= development
@@ -975,12 +976,20 @@ migrate-up:
 	@DATABASE_URL="$(MIGRATE_DATABASE_URL)" $(UV) run alembic upgrade "$(MIGRATE_REVISION)"
 
 sync-local-inference:
-	@$(UV) sync --locked --extra local-inference
+	@$(MAKE) --no-print-directory sync \
+		DEPENDENCY_PROFILE_SET=local-inference \
+		DEPENDENCY_PROFILE_ENVIRONMENT=.venv \
+		DEPENDENCY_PROFILE_PYTHON= \
+		DEPENDENCY_PROFILE_VALIDATE_ONLY=0
 
 SYNC_LLAMA_CPP_VALIDATE_ONLY ?= 0
 sync-llama-cpp:
 	@case "$(SYNC_LLAMA_CPP_VALIDATE_ONLY)" in 0|1) ;; *) echo "SYNC_LLAMA_CPP_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
-	@$(UV) sync --locked --extra local-inference $(if $(filter 1,$(SYNC_LLAMA_CPP_VALIDATE_ONLY)),--dry-run,)
+	@$(MAKE) --no-print-directory sync \
+		DEPENDENCY_PROFILE_SET=local-inference \
+		DEPENDENCY_PROFILE_ENVIRONMENT=.venv \
+		DEPENDENCY_PROFILE_PYTHON= \
+		DEPENDENCY_PROFILE_VALIDATE_ONLY=$(SYNC_LLAMA_CPP_VALIDATE_ONLY)
 
 ANSIBLE_EE_VALIDATE_ONLY ?= 1
 ANSIBLE_EE_RUNTIME ?= podman
@@ -1108,9 +1117,8 @@ freellmapi-three-arm-replay:
 			--repository-root "$(CURDIR)"
 
 install-pip:
-	@$(PYTHON) -m venv .venv
-	@. .venv/bin/activate && pip install --upgrade pip
-	@. .venv/bin/activate && pip install -e ".[dev]"
+	@echo "install-pip is a compatibility alias for the locked development profile"
+	@$(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=development DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=0
 
 version:
 	@$(UV) run python -c "from general_ludd import __version__; print(f'general-ludd-agent {__version__}')"

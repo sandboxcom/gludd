@@ -6,12 +6,17 @@ version = "0"
 # this already large profile lock.
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    # Preserve the pre-split resolution. Newer vLLM releases materially change
-    # the runtime graph and must be admitted as a separate dependency update.
-    "vllm==0.8.5.post1",
-    "torch==2.6.0",
+    "vllm==0.30.0",
+    "torch==2.13.0",
 ]
 
 [tool.uv]
 package = false
 environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+# vLLM's MCP server branch is locked independently and composed by the
+# cuda-inference set. This preserves the complete installed graph while each
+# uv project remains below the repository's 2,500-line lock ceiling.
+exclude-dependencies = [
+    "mcp",
+]
+override-dependencies = ["setuptools>=83.0.0"]

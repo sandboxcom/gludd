@@ -325,8 +325,9 @@ def test_operational_renderer_contains_no_named_model_default() -> None:
     assert "a100_max_replicas" not in source
 
 
-def test_live_config_requests_the_locked_azure_dependency_extra() -> None:
+def test_live_config_requests_the_locked_azure_dependency_profile() -> None:
     makefile = compose_makefile(Path("Makefile"))
     recipe = makefile.split("\ntest-self-improve:", 1)[1].split("\n\n", 1)[0]
 
-    assert "$(if $(strip $(SELF_IMPROVE_CONFIG_FILE)),--extra azure,)" in recipe
+    assert "DEPENDENCY_PROFILE_SET=ci-azure" in recipe
+    assert "--extra azure" not in recipe

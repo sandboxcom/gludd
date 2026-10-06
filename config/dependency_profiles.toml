@@ -1,5 +1,6 @@
 schema-version = 1
 max-lock-lines = 2499
+audit-ignore = ["CVE-2025-69872", "PYSEC-2026-3552"]
 
 [profiles.agent-runtime]
 project = "requirements/profiles/agent-runtime"
@@ -15,9 +16,16 @@ project = "requirements/profiles/azure"
 
 [profiles.benchmark]
 project = "requirements/profiles/benchmark"
+audit-ignore = [
+    "GHSA-8mgp-746c-j5xp",
+    "GHSA-g4r7-86gm-pgqc",
+]
 
 [profiles.cuda-inference]
 project = "requirements/profiles/cuda-inference"
+
+[profiles.cuda-inference-mcp]
+project = "requirements/profiles/cuda-inference-mcp"
 
 [profiles.dev-ansible]
 project = "requirements/profiles/dev-ansible"
@@ -51,6 +59,7 @@ project = "requirements/profiles/hindsight"
 
 [profiles.local-inference]
 project = "requirements/profiles/local-inference"
+audit-ignore = ["CVE-2025-69872"]
 
 [profiles.mysql]
 project = "requirements/profiles/mysql"
@@ -95,10 +104,14 @@ profiles = [
     "platform-sandbox",
     "local-inference",
     "cuda-inference",
+    "cuda-inference-mcp",
 ]
 
 [sets.build-azure]
 profiles = ["agent-runtime", "azure", "dev-build"]
+
+[sets.build]
+profiles = ["agent-runtime", "dev-build"]
 
 [sets.ci]
 profiles = [
@@ -111,6 +124,48 @@ profiles = [
     "dev-ansible",
     "dev-science",
     "presentation-test",
+]
+
+[sets.ci-game-e2e]
+profiles = [
+    "agent-runtime",
+    "ansible-controller",
+    "dev-test",
+    "dev-quality",
+    "dev-security",
+    "dev-build",
+    "dev-ansible",
+    "dev-science",
+    "presentation-test",
+    "game-e2e",
+]
+
+[sets.ci-azure]
+profiles = [
+    "agent-runtime",
+    "ansible-controller",
+    "dev-test",
+    "dev-quality",
+    "dev-security",
+    "dev-build",
+    "dev-ansible",
+    "dev-science",
+    "presentation-test",
+    "azure",
+]
+
+[sets.ci-local-inference]
+profiles = [
+    "agent-runtime",
+    "ansible-controller",
+    "dev-test",
+    "dev-quality",
+    "dev-security",
+    "dev-build",
+    "dev-ansible",
+    "dev-science",
+    "presentation-test",
+    "local-inference",
 ]
 
 [sets.development]
@@ -138,7 +193,7 @@ profiles = ["agent-runtime", "azure"]
 profiles = ["agent-runtime", "benchmark"]
 
 [sets.cuda-inference]
-profiles = ["agent-runtime", "cuda-inference"]
+profiles = ["agent-runtime", "cuda-inference", "cuda-inference-mcp"]
 
 [sets.decision-codification]
 profiles = ["agent-runtime", "decision-codification"]

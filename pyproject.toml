@@ -60,6 +60,13 @@ gludd = "general_ludd.cli:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.uv]
+constraint-dependencies = [
+    "anyio>=4.14.2",
+    "mako>=1.4.2",
+    "urllib3>=2.8.0",
+]
+
 [tool.hatch.build.targets.sdist]
 include = ["src/general_ludd", "LICENSE", "THIRD_PARTY_LICENSES.md", "README.md"]
 

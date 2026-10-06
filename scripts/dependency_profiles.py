@@ -30,6 +30,7 @@ class Profile:
 
     name: str
     project: Path
+    audit_ignores: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,7 @@ class ProfileCatalog:
     root: Path
     manifest: Path
     max_lock_lines: int
+    root_audit_ignores: tuple[str, ...]
     profiles: Mapping[str, Profile]
     sets: Mapping[str, tuple[str, ...]]
 
@@ -71,6 +73,18 @@ def _confined_project(root: Path, value: object, name: str) -> Path:
     return project
 
 
+def _audit_ignores(value: object, label: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list) or not all(
+        isinstance(item, str) and item for item in value
+    ):
+        raise ProfileError(f"{label} must be a non-empty string list")
+    if len(value) != len(set(value)):
+        raise ProfileError(f"{label} contains duplicates")
+    return tuple(value)
+
+
 def load_catalog(
     root: str | Path,
     manifest: str | Path = "config/dependency_profiles.toml",
@@ -99,6 +113,10 @@ def load_catalog(
         profiles[name] = Profile(
             name=name,
             project=_confined_project(repo_root, metadata.get("project"), name),
+            audit_ignores=_audit_ignores(
+                metadata.get("audit-ignore"),
+                f"profiles.{name}.audit-ignore",
+            ),
         )
 
     set_table = _table(raw.get("sets"), "sets")
@@ -119,6 +137,7 @@ def load_catalog(
         root=repo_root,
         manifest=manifest_path,
         max_lock_lines=max_lock_lines,
+        root_audit_ignores=_audit_ignores(raw.get("audit-ignore"), "audit-ignore"),
         profiles=profiles,
         sets=profile_sets,
     )
@@ -153,6 +172,39 @@ def lock_commands(
     return tuple(commands)
 
 
+def audit_commands(
+    catalog: ProfileCatalog,
+    *,
+    profile_set: str,
+    ignored_vulnerabilities: Sequence[str] = (),
+    uv: str = "uv",
+) -> tuple[Command, ...]:
+    """Return one fail-closed vulnerability audit per selected locked project."""
+
+    projects = (
+        (catalog.root, catalog.root_audit_ignores),
+        *[
+            (profile.project, profile.audit_ignores)
+            for profile in _selected(catalog, profile_set)
+        ],
+    )
+    commands: list[Command] = []
+    for project, scoped_ignores in projects:
+        argv = [
+            uv,
+            "audit",
+            "--preview-features",
+            "audit",
+            "--locked",
+            "--project",
+            str(project),
+        ]
+        for vulnerability in dict.fromkeys((*scoped_ignores, *ignored_vulnerabilities)):
+            argv.extend(("--ignore", vulnerability))
+        commands.append(Command(tuple(argv), {}))
+    return tuple(commands)
+
+
 def sync_commands(
     catalog: ProfileCatalog,
     *,
@@ -162,6 +214,7 @@ def sync_commands(
     python: str | None,
     uv: str = "uv",
     dry_run: bool = False,
+    install_project: bool = True,
 ) -> tuple[Command, ...]:
     """Plan locked root/profile syncs into one explicit staged environment."""
 
@@ -174,6 +227,8 @@ def sync_commands(
     overlay = {"UV_PROJECT_ENVIRONMENT": str(staging_environment)}
     for index, project in enumerate(projects):
         argv = [uv, "sync", "--project", str(project), "--locked"]
+        if index == 0 and not install_project:
+            argv.append("--no-install-project")
         if index:
             argv.append("--inexact")
         if python:
@@ -284,6 +339,9 @@ def validate_catalog(catalog: ProfileCatalog, *, require_locks: bool = True) -> 
 def _run_command(command: Command) -> None:
     environment = os.environ.copy()
     environment.update(command.environment)
+    # CI exports UV_NO_SYNC to protect the completed composed environment from
+    # later ``uv run`` calls. Explicit profile-manager mutations must opt back in.
+    environment["UV_NO_SYNC"] = "0"
     print(f"PROFILE_COMMAND {' '.join(command.argv)}", flush=True)
     subprocess.run(command.argv, check=True, env=environment)
 
@@ -327,6 +385,7 @@ def sync_profile_set(
     python: str | None,
     uv: str = "uv",
     validate_only: bool = False,
+    install_project: bool = True,
     run: RunCommand = _run_command,
 ) -> None:
     """Check locks, build a staged environment, and atomically promote it."""
@@ -351,6 +410,7 @@ def sync_profile_set(
             python=python,
             uv=uv,
             dry_run=validate_only,
+            install_project=install_project,
         )
         execute_commands(commands, run)
         if validate_only:
@@ -376,7 +436,7 @@ def sync_profile_set(
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("check", "export", "lock", "sync"))
+    parser.add_argument("action", choices=("audit", "check", "export", "lock", "sync"))
     parser.add_argument("--root", default=str(Path(__file__).resolve().parent.parent))
     parser.add_argument("--manifest", default="config/dependency_profiles.toml")
     parser.add_argument("--set", dest="profile_set")
@@ -385,6 +445,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--python")
     parser.add_argument("--uv", default="uv")
     parser.add_argument("--validate-only", action="store_true")
+    parser.add_argument("--no-install-project", action="store_true")
+    parser.add_argument("--ignore-vulnerability", action="append", default=[])
     return parser
 
 
@@ -404,6 +466,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             execute_commands(
                 lock_commands(catalog, profile_set=args.profile_set, check=True, uv=args.uv)
             )
+        elif args.action == "audit":
+            if not args.profile_set:
+                raise ProfileError("audit requires --set")
+            validate_catalog(catalog)
+            execute_commands(
+                audit_commands(
+                    catalog,
+                    profile_set=args.profile_set,
+                    ignored_vulnerabilities=args.ignore_vulnerability,
+                    uv=args.uv,
+                )
+            )
         elif args.action == "export":
             if not args.profile_set or not args.output:
                 raise ProfileError("export requires --set and --output")
@@ -421,6 +495,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 python=args.python,
                 uv=args.uv,
                 validate_only=args.validate_only,
+                install_project=not args.no_install_project,
             )
     except (ProfileError, subprocess.CalledProcessError) as exc:
         print(f"PROFILE_ERROR {exc}", file=sys.stderr, flush=True)

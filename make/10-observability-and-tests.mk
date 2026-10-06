@@ -25,9 +25,9 @@ test-specific-pyver:
 		cleanup() { RC=$$?; trap - EXIT INT TERM; rm -rf "$$WORK"; exit $$RC; }; \
 		trap cleanup EXIT INT TERM; \
 		export UV_PROJECT_ENVIRONMENT="$$WORK/.venv"; \
-		$(UV) sync --python "$(PYTHON_VERSION)"; \
+		UV_NO_SYNC=0 $(UV) run --no-project --python 3.11 python scripts/dependency_profiles.py sync --root "$(CURDIR)" --set ci --environment "$$WORK/.venv" --python "$(PYTHON_VERSION)"; \
 		BT="$$WORK/pytest"; \
-		$(UV) run --python "$(PYTHON_VERSION)" python -m pytest $(TESTFILE) -n 1 --dist loadgroup --max-worker-restart=0 -v -W error $(PYTEST_ARGS) --basetemp="$$BT"
+		$(UV) run --no-sync --python "$(PYTHON_VERSION)" python -m pytest $(TESTFILE) -n 1 --dist loadgroup --max-worker-restart=0 -v -W error $(PYTEST_ARGS) --basetemp="$$BT"
 
 test-files:
 	@if [ -z "$(TESTFILES)" ]; then echo "Usage: make test-files TESTFILES='tests/unit/test_a.py tests/unit/test_b.py'"; exit 1; fi
@@ -1213,13 +1213,15 @@ test-e2e-providers:
 
 # Game E2E tests — AI generates games, compares against reference gameplay
 test-e2e-games:
+	@$(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=ci-game-e2e DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=0
 	@ARM_CLIENT_ID="$${ARM_CLIENT_ID:-}" ARM_CLIENT_SECRET="$${ARM_CLIENT_SECRET:-}" \
 	 ARM_TENANT_ID="$${ARM_TENANT_ID:-}" ARM_SUBSCRIPTION_ID="$${ARM_SUBSCRIPTION_ID:-}" \
 	 AZURE_MODEL="$${AZURE_MODEL:-}" AZURE_BASE_URL="$${AZURE_BASE_URL:-}" \
-	 $(UV) run --extra game-e2e pytest tests/e2e/game_e2e/ -v -m "e2e and not azure_provision" $(PYTEST_ARGS)
+	 $(UV) run --no-sync pytest tests/e2e/game_e2e/ -v -m "e2e and not azure_provision" $(PYTEST_ARGS)
 
 game-reference-preflight:
-	@$(UV) run --extra game-e2e python scripts/game_reference_preflight.py \
+	@$(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=game-e2e DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=$(GAME_E2E_REFERENCE_VALIDATE_ONLY)
+	@$(UV) run --no-sync python scripts/game_reference_preflight.py \
 		--cache-dir "$(GAME_E2E_REFERENCE_CACHE_DIR)" \
 		--allow-network "$(GAME_E2E_REFERENCE_NETWORK)" \
 		--validate-only "$(GAME_E2E_REFERENCE_VALIDATE_ONLY)"
@@ -1229,6 +1231,7 @@ test-e2e-games-provision:
 	@test -r "$(AZURE_E2E_ENV_FILE)" || { echo "AZURE_E2E_ENV_FILE_UNREADABLE path=$(AZURE_E2E_ENV_FILE)"; exit 2; }
 	@case "$(GAME_E2E_TIMEOUT_SECS)" in ''|*[!0-9]*) echo "GAME_E2E_TIMEOUT_SECS must be an integer >=3600"; exit 2;; esac; \
 	 if [ "$(GAME_E2E_TIMEOUT_SECS)" -lt 3600 ]; then echo "GAME_E2E_TIMEOUT_SECS must be >=3600"; exit 2; fi
+	@if [ "$(AZURE_E2E_VALIDATE_ONLY)" != "1" ]; then $(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=ci-game-e2e DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=0; fi
 	@. "$(AZURE_E2E_ENV_FILE)"; \
 	 if [ "$(AZURE_E2E_VALIDATE_ONLY)" = "1" ]; then \
 	   echo "GAME_E2E_ENV_FILE_OK path=$(AZURE_E2E_ENV_FILE) timeout_seconds=$(GAME_E2E_TIMEOUT_SECS)"; \
@@ -1239,7 +1242,7 @@ test-e2e-games-provision:
 	 export AZURE_MODEL AZURE_BASE_URL AZURE_GPU_TYPE AZURE_PROVISION_ENGINE; \
 	 AZURE_PROVISION_E2E=1 GLUDD_E2E_MAX_SPEND_USD="$${GLUDD_E2E_MAX_SPEND_USD:-$(GLUDD_E2E_MAX_SPEND_USD)}" \
 	 GAME_E2E_REFERENCE_NETWORK="$(GAME_E2E_REFERENCE_NETWORK)" GAME_E2E_REFERENCE_CACHE_DIR="$(GAME_E2E_REFERENCE_CACHE_DIR)" \
-	 $(UV) run --extra game-e2e python scripts/e2e_log_capture.py --timeout "$(GAME_E2E_TIMEOUT_SECS)" --cmd "$(UV) run --extra game-e2e pytest tests/e2e/game_e2e/ -v -s -m azure_provision --timeout=$(GAME_E2E_TIMEOUT_SECS) --log-cli-level=INFO" --label games-provision --tee
+	 $(UV) run --no-sync python scripts/e2e_log_capture.py --timeout "$(GAME_E2E_TIMEOUT_SECS)" --cmd "$(UV) run --no-sync pytest tests/e2e/game_e2e/ -v -s -m azure_provision --timeout=$(GAME_E2E_TIMEOUT_SECS) --log-cli-level=INFO" --label games-provision --tee
 
 # AWS E2E — env-pointer (CI-friendly, no provisioning)
 test-e2e-aws:
@@ -1359,7 +1362,8 @@ test-games:
 	@$(UV) run python -m pytest tests/e2e/test_game_building_deepseek.py $(_XD) -v $(PYTEST_ARGS)
 
 test-e2e-games-local:
-	@$(UV) run --extra game-e2e pytest tests/unit/test_video_compare.py tests/unit/test_game_gen.py tests/unit/test_game_e2e.py -v $(PYTEST_ARGS)
+	@$(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=ci-game-e2e DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=0
+	@$(UV) run --no-sync pytest tests/unit/test_video_compare.py tests/unit/test_game_gen.py tests/unit/test_game_e2e.py -v $(PYTEST_ARGS)
 
 LOCAL_MODEL_E2E_MODE ?= hermetic
 LOCAL_MODEL_BASE_URL ?=
@@ -1369,9 +1373,10 @@ LOCAL_MODEL_GAME ?= snake
 LOCAL_MODEL_PATH ?=
 
 test-e2e-games-local-model:
+	@$(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=$(if $(filter managed,$(LOCAL_MODEL_E2E_MODE)),ci-local-inference,ci) DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=0
 	@if [ "$(LOCAL_MODEL_E2E_MODE)" = "managed" ]; then \
 		GLUDD_MANAGED_LOCAL_MODEL_E2E=1 LOCAL_MODEL_PATH="$(LOCAL_MODEL_PATH)" \
-		$(UV) run --extra local-inference pytest tests/e2e/test_managed_local_inference_lifecycle.py -v $(PYTEST_ARGS); \
+		$(UV) run --no-sync pytest tests/e2e/test_managed_local_inference_lifecycle.py -v $(PYTEST_ARGS); \
 	fi
 	@LOCAL_MODEL_E2E_MODE="$(LOCAL_MODEL_E2E_MODE)" \
 	 LOCAL_MODEL_BASE_URL="$(LOCAL_MODEL_BASE_URL)" \
@@ -1380,7 +1385,7 @@ test-e2e-games-local-model:
 	 LOCAL_MODEL_GAME="$(LOCAL_MODEL_GAME)" \
 	 LOCAL_MODEL_PATH="$(LOCAL_MODEL_PATH)" \
 	 PYTEST_ARGS="$(PYTEST_ARGS)" \
-	 $(UV) run $(if $(filter managed,$(LOCAL_MODEL_E2E_MODE)),--extra local-inference,) python -m scripts.run_local_model_game_e2e
+	 $(UV) run --no-sync python -m scripts.run_local_model_game_e2e
 
 # CI/CD multi-model pipeline E2E — reads keys from env or shared key files.
 # DeepSeek + OpenRouter tiers, structural tests when keys are absent.
@@ -1400,11 +1405,12 @@ test-multi-model-pipeline:
 # GAME_DEV_MODEL=Name targets a single model. GAME_DEV_GAME=snake targets one game.
 # Writes results to /tmp/gludd-game-dev-pipeline-results.json
 test-e2e-game-pipeline:
+	@$(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=ci-local-inference DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=0
 	@GLUDD_LIVE_MODEL_E2E="1" \
 	 GAME_DEV_CI_SAFE="$${CI_SAFE:-1}" \
 	 GAME_DEV_MODEL="$${GAME_DEV_MODEL:-}" \
 	 GAME_DEV_GAME="$${GAME_DEV_GAME:-}" \
-	 $(UV) run --extra local-inference pytest tests/e2e/test_game_dev_full_pipeline.py -v -s $(PYTEST_ARGS)
+	 $(UV) run --no-sync pytest tests/e2e/test_game_dev_full_pipeline.py -v -s $(PYTEST_ARGS)
 
 test-local-model-pipeline:
 	@$(UV) run pytest tests/e2e/test_local_model_multi_pipeline.py tests/e2e/test_local_model_discovery_eval.py -v -s $(PYTEST_ARGS)

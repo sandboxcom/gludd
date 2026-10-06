@@ -105,15 +105,16 @@ test-local-model-inference:
 		echo "ERROR: LOCAL_MODEL_INFERENCE_VALIDATE_ONLY must be 0 or 1"; exit 2; \
 	fi
 	@if [ "$(LOCAL_MODEL_INFERENCE_VALIDATE_ONLY)" = "1" ]; then \
-		UV_NO_PROGRESS=1 $(UV) sync --extra local-inference --locked --dry-run; \
-		echo "LOCAL_MODEL_INFERENCE_CONFIG_OK extra=local-inference model_path=$(LOCAL_MODEL_INFERENCE_MODEL_PATH)"; \
+		$(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=local-inference DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=1; \
+		echo "LOCAL_MODEL_INFERENCE_CONFIG_OK profile_set=local-inference model_path=$(LOCAL_MODEL_INFERENCE_MODEL_PATH)"; \
 	else \
 		if [ ! -r "$(LOCAL_MODEL_INFERENCE_MODEL_PATH)" ]; then \
 			echo "ERROR: GGUF artifact not readable: $(LOCAL_MODEL_INFERENCE_MODEL_PATH)"; \
 			echo "Run make e2e-download-small-model or set LOCAL_MODEL_INFERENCE_MODEL_PATH explicitly."; \
 			exit 2; \
 		fi; \
-		UV_NO_PROGRESS=1 $(UV) run --extra local-inference python scripts/local_model_inference_smoke.py \
+		$(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=local-inference DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=0; \
+		UV_NO_PROGRESS=1 $(UV) run --no-sync python scripts/local_model_inference_smoke.py \
 			--model-path "$(LOCAL_MODEL_INFERENCE_MODEL_PATH)"; \
 	fi
 
