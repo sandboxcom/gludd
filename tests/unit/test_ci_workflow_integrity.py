@@ -242,6 +242,7 @@ class TestReleaseJobStructure:
         {
             "version",
             "gate",
+            "claim-before-provision-acceptance",
             "release_source_proof",
             "freellmapi-upstream-build",
             "test-shard",

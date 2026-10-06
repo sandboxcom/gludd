@@ -235,7 +235,9 @@ class TestBuildYmlPlatformCoverage:
     def test_linux_job_exists(self, build_yml_text: str) -> None:
         """Linux x86_64 build job exists."""
         assert re.search(r"^  linux\s*:", build_yml_text, re.MULTILINE), "build.yml must define a 'linux:' build job"
-        assert "runs-on: ubuntu-latest" in build_yml_text, "linux job must run on ubuntu-latest"
+        assert "runs-on: ubuntu-24.04" in build_yml_text, (
+            "linux job must run on the pinned ubuntu-24.04 image"
+        )
         # Linux x86_64 produces a tarball + .deb + .rpm.
         assert "linux-x86_64.tar.gz" in build_yml_text, "linux job must produce a linux-x86_64 tarball artifact"
 
