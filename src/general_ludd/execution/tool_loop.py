@@ -17,9 +17,9 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, cast
 
 from general_ludd.compaction.aggressive import compact_dicts
+from general_ludd.dispatch.limits import MAX_CALLS_PER_REQUEST
 from general_ludd.mcp.registry import MCPToolRegistry
 from general_ludd.mcp.transport import MCPTransportError
-from general_ludd.routers.dispatch import MAX_CALLS_PER_REQUEST
 from general_ludd.schemas.job import JobSpec
 from general_ludd.security.capability_lattice import check_dispatch, role_may_dispatch
 
@@ -98,6 +98,8 @@ class ToolLoopExhausted(RuntimeError):
 
 
 class ToolCallLoop:
+    """Run bounded model/tool conversations through an MCP client."""
+
     def __init__(
         self,
         model_gateway: Any,
@@ -116,6 +118,7 @@ class ToolCallLoop:
         per_iteration_timeout: float | None = None,
         work_type_max_iterations: dict[str, int] | None = None,
     ) -> None:
+        """Configure model, capability, compaction, and resource guards."""
         self._gateway = model_gateway
         self._mcp_client = mcp_client
         self._max_iterations = max_iterations
@@ -179,6 +182,7 @@ class ToolCallLoop:
         return tool.server_id
 
     def is_available(self) -> bool:
+        """Return whether an MCP client is available for tool execution."""
         return self._mcp_client is not None
 
     async def run_with_tools(
@@ -187,6 +191,7 @@ class ToolCallLoop:
         system_prompt: str,
         user_prompt: str,
     ) -> str:
+        """Run a bounded tool loop and return the final assistant response."""
         if self._mcp_client is None:
             return cast(str, await self._call_model(job, system_prompt, user_prompt))
 

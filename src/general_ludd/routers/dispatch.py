@@ -21,13 +21,10 @@ from general_ludd.dispatch.dynamic_dispatcher import (
     ToolCall,
     parse_tool_calls,
 )
+from general_ludd.dispatch.limits import MAX_CALLS_PER_REQUEST as MAX_CALLS_PER_REQUEST
 from general_ludd.dispatch.router import CapabilityRouter
 
 logger = logging.getLogger(__name__)
-
-# Per-request tool_calls cap (D-16): unbounded model tool calls = unbounded
-# cost.  Any request carrying more than this many calls is rejected with 422.
-MAX_CALLS_PER_REQUEST = 20
 
 # Bounded ring-buffer for recent dispatch history (facts facet).
 _MAX_RECENT_DISPATCHES = 50
@@ -58,7 +55,6 @@ def register(
     privileged tool-calls. Pass an explicit role (or ``UNRESTRICTED_ROLE``) to
     widen this deliberately.
     """
-
     dispatcher = DynamicDispatcher(
         role_handler=role_handler,
         mcp_handler=mcp_handler,

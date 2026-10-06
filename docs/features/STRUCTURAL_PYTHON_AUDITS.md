@@ -32,3 +32,20 @@ Class containers in these audits use function-scoped fixtures because each fixtu
 class-instance lifecycle ambiguity reported by users in
 [pytest issue #10819](https://github.com/pytest-dev/pytest/issues/10819), which pytest 9.1 deprecated ahead of removal in
 pytest 10.
+
+## Dependency graph semantics
+
+The architectural graph keeps two views of imports:
+
+- The complete static graph includes deferred imports and enforces package-layer boundaries.
+- The initialization graph excludes function-local and `TYPE_CHECKING` imports and detects only cycles that can execute
+  while modules load.
+
+CLI independence is enforced between feature roots such as `cli_model` and `cli_payment`. Modules inside the
+`cli_commands` package remain one feature, while `cli_commands.parser` is the declared composition root that wires the
+independent features into one command tree.
+
+The D-16 tool-call ceiling is owned by `general_ludd.dispatch.limits`, below HTTP and worker adapters. The router keeps
+its public compatibility export, but event-loop, worker, and tool-loop code no longer depend upward on the presentation
+layer. The job schema's denial-audit path deliberately delegates to the canonical fail-closed persistence redactor; that
+single security edge is documented explicitly rather than weakening the general layer rule.

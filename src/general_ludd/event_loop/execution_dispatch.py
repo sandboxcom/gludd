@@ -1191,7 +1191,7 @@ class ExecutionDispatchMixin:
                 from general_ludd.dispatch.dynamic_dispatcher import (
                     structured_tool_calls_to_calls,
                 )
-                from general_ludd.routers.dispatch import MAX_CALLS_PER_REQUEST
+                from general_ludd.dispatch.limits import MAX_CALLS_PER_REQUEST
 
                 # Dispatch the model's STRUCTURED tool_calls directly. The legacy
                 # path re-parsed the TEXT (parse_tool_calls(model_response)) which

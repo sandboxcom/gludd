@@ -13,6 +13,7 @@ import ast
 import os
 import sys
 from collections import deque
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -110,19 +111,86 @@ def _static_imports(path: Path) -> set[str]:
     return imports
 
 
-def _full_import_graph(*, exclude_init: bool = True) -> dict[str, set[str]]:
+def _is_type_checking_guard(node: ast.expr) -> bool:
+    return (isinstance(node, ast.Name) and node.id == "TYPE_CHECKING") or (
+        isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "typing"
+        and node.attr == "TYPE_CHECKING"
+    )
+
+
+class _RuntimeImportVisitor(ast.NodeVisitor):
+    """Collect imports executed while a module body is initialized."""
+
+    def __init__(self) -> None:
+        self.imports: set[str] = set()
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            if _subpackage_of(alias.name, PKG_NAME):
+                self.imports.add(alias.name)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if node.module is not None and _subpackage_of(node.module, PKG_NAME):
+            self.imports.add(node.module)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        return
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        return
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        return
+
+    def visit_If(self, node: ast.If) -> None:
+        if _is_type_checking_guard(node.test):
+            for statement in node.orelse:
+                self.visit(statement)
+            return
+        self.generic_visit(node)
+
+
+def _runtime_imports(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(), filename=str(path))
+    visitor = _RuntimeImportVisitor()
+    visitor.visit(tree)
+    return visitor.imports
+
+
+def _full_import_graph(
+    *,
+    exclude_init: bool = True,
+    import_collector: Callable[[Path], set[str]] = _static_imports,
+) -> dict[str, set[str]]:
     graph: dict[str, set[str]] = {}
     for p in _FILE_PATHS:
         mod = _path_to_module(p)
         if exclude_init and p.name == "__init__.py":
             continue
-        imports = _static_imports(p)
+        imports = import_collector(p)
         imports.discard(mod)
         graph[mod] = imports
     return graph
 
 
 _GRAPH = _full_import_graph(exclude_init=True)
+_RUNTIME_GRAPH = _full_import_graph(exclude_init=True, import_collector=_runtime_imports)
+
+
+def test_runtime_imports_only_include_module_initialization_edges(tmp_path: Path) -> None:
+    source = tmp_path / "subject.py"
+    source.write_text(
+        "from typing import TYPE_CHECKING\n"
+        "from general_ludd.config import settings\n"
+        "if TYPE_CHECKING:\n"
+        "    from general_ludd.self_improve import codex_protocol\n"
+        "def deferred():\n"
+        "    from general_ludd.routers import dispatch\n"
+    )
+
+    assert _runtime_imports(source) == {"general_ludd.config"}
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -288,6 +356,7 @@ BUSINESS_PACKAGES: frozenset[str] = frozenset(
         "general_ludd.worker",
         "general_ludd.worktree",
         "general_ludd.writer",
+        "general_ludd.decision_codification",
     }
 )
 
@@ -300,6 +369,8 @@ PRESENTATION_PACKAGES: frozenset[str] = frozenset(
         "general_ludd.chat",
         "general_ludd.web_server_utils",
         "general_ludd.cli",
+        "general_ludd.cli_commands",
+        "general_ludd.cli_decision_codification",
         "general_ludd.cli_account",
         "general_ludd.cli_audit_plugins",
         "general_ludd.cli_collection",
@@ -318,6 +389,7 @@ PRESENTATION_PACKAGES: frozenset[str] = frozenset(
         "general_ludd.cli_self_improve",
         "general_ludd.cli_service_commands",
         "general_ludd.cli_spec_quality",
+        "general_ludd.daemon_components",
     }
 )
 
@@ -384,9 +456,7 @@ _LAYER_VIOLATION_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
         ("general_ludd.daemon", "general_ludd.routers"),
         ("general_ludd.daemon", "general_ludd.web_server_utils"),
         ("general_ludd.event_loop.loop", "general_ludd.routers.dispatch"),
-        ("general_ludd.execution.tool_loop", "general_ludd.routers.dispatch"),
         ("general_ludd.worker.app", "general_ludd.daemon_wiring"),
-        ("general_ludd.worker.app", "general_ludd.routers.dispatch"),
         ("general_ludd.config.deployment_optimization", "general_ludd.infra.deployment_optimizer"),
         ("general_ludd.config.model_routing", "general_ludd.models.router"),
         ("general_ludd.db.azure_cost_repository", "general_ludd.infra.azure_cost_reconciliation"),
@@ -395,6 +465,9 @@ _LAYER_VIOLATION_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
         ("general_ludd.quality.project_gate", "general_ludd.project_runner"),
         ("general_ludd.validation.runner", "general_ludd.worktree.core"),
         ("general_ludd.security.sandboxes.vm.contracts", "general_ludd.sandbox.contracts"),
+        # Denial-audit serialization is a security boundary by design; the
+        # schema delegates to the one fail-closed persistence redactor.
+        ("general_ludd.schemas.job", "general_ludd.security.redaction"),
         ("general_ludd.sts.injector", "general_ludd.agents.dispatcher"),
         ("general_ludd.sts.injector", "general_ludd.agents.types"),
         ("general_ludd.benchmark.langgraph_bench", "general_ludd.review.langgraph_reviewer"),
@@ -471,7 +544,7 @@ def test_all_subpackages_classified() -> None:
 
 
 def test_no_circular_imports_in_graph() -> None:
-    graph = _GRAPH
+    graph = _RUNTIME_GRAPH
     visited: set[str] = set()
     rec_stack: set[str] = set()
     cycles: list[list[str]] = []
@@ -734,15 +807,36 @@ def test_core_is_depended_upon() -> None:
 # ═══════════════════════════════════════════════════════════════════
 
 
+_CLI_COMPOSITION_MODULES: frozenset[str] = frozenset(
+    {
+        "general_ludd.cli",
+        "general_ludd.cli_commands.parser",
+    }
+)
+
+
+def _cli_feature(module: str) -> str | None:
+    parts = module.split(".")
+    if len(parts) < 2 or not parts[1].startswith("cli"):
+        return None
+    return ".".join(parts[:2])
+
+
+def test_cli_feature_keeps_package_internals_with_their_feature() -> None:
+    assert _cli_feature("general_ludd.cli_commands.tui_views") == "general_ludd.cli_commands"
+    assert _cli_feature("general_ludd.cli_decision_codification") == "general_ludd.cli_decision_codification"
+    assert _cli_feature("general_ludd.dispatch.router") is None
+
+
 def test_cli_submodules_no_cross_imports() -> None:
     violations: list[str] = []
     for mod, deps in sorted(_GRAPH.items()):
-        if mod == "general_ludd.cli":
-            continue
-        if not mod.startswith("general_ludd.cli"):
+        source_feature = _cli_feature(mod)
+        if source_feature is None or mod in _CLI_COMPOSITION_MODULES:
             continue
         for dep in deps:
-            if dep.startswith("general_ludd.cli") and dep != mod:
+            dependency_feature = _cli_feature(dep)
+            if dependency_feature is not None and dependency_feature != source_feature:
                 violations.append(f"{mod} imports sibling {dep}")
     assert not violations, f"Found {len(violations)} CLI-cross-import(s):\n" + "\n".join(violations)
 
