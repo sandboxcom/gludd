@@ -4,6 +4,15 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-05 — (resolved locally; replacement exact gate required) Candidate accumulated four structural-contract failures
+
+- **What happened**: Hosted run `37381218767` completed all batches in its failed jobs and retained four exact regressions: `event_loop/loop.py` grew to 5,594 lines against the 5,500-line ceiling; that same drift broke the v0.1.1 repair contract; two additional functions crossed the repository's long-function budget; and a legacy binary test still required `ubuntu-latest` after the hosted-capacity repair deliberately pinned Ubuntu 24.04.
+- **Root cause**: General work-type routing, prompt resolution, playbook selection, and cost estimation remained embedded in the event-loop orchestration monolith. Unrelated feature additions therefore consumed its file and function budgets. Separately, two tests owned the Linux runner-image invariant and only the newer capacity contract had been updated.
+- **Fix applied**: The provider- and domain-neutral routing helpers now live in `event_loop/task_routing.py`; `loop.py` retains compatibility exports so callers and patch points do not break. Tick checkpoint restoration and extended daemon-state initialization are cohesive helpers, reducing two functions below the enforced threshold without raising any budget. The legacy cross-platform test now asserts the same explicit Ubuntu 24.04 image as the canonical hosted-capacity contract.
+- **Evidence**: All four exact hosted failures were reproduced locally before repair and now pass together. The routing compatibility and behavioral slice passes 64/64; the broader routing coverage replay passes 135 with one intentional skip at 97% branch-aware coverage; scoped Ruff and strict mypy are green. The full affected 310-test replay, task/resource checks, clean commit, integration, and replacement exact gate remain required.
+- **Practitioner evidence**: `docs/features/HOSTED_RUNNER_CAPACITY.md` records long-lived runner-acquisition reports and GitHub's runner-image lifecycle that require an explicit image pin. `docs/features/UNIVERSAL_TASK_RUNTIME.md` records FreeLLMAPI operator reports #880 and #1218 that motivate keeping provider discovery separate from stable universal routing rather than growing domain-specific branches inside the event loop.
+- **Lesson**: A shared orchestrator should compose small universal policies, not own every policy body. Structural tests that duplicate an invariant must point at the same exact value or they become delayed failures instead of independent protection.
+
 ### 2026-10-05 — (resolved locally; replacement hosted proof required) Completed job logs were hidden behind an active workflow
 
 - **What happened**: Build run `37381218767` had completed failed test jobs while a sibling job was still running. The existing diagnostic target delegated to `gh run view --log --job`, which refused to return any job log until the entire workflow completed. The first workaround also bounded extraction to one match, hiding a second independent failure in the same shard.

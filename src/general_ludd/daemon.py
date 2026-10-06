@@ -3136,10 +3136,8 @@ def _get_or_create_subsystems(app: FastAPI) -> dict[str, Any]:
     }
 
 
-def _get_or_create_extended_subsystems(
-    app: FastAPI,
-    session_factory: Any | None = None,
-) -> dict[str, Any]:
+def _ensure_extended_state(app: FastAPI) -> None:
+    """Create reusable extended subsystem state without replacing live owners."""
     if not hasattr(app.state, "_metrics_collector") or app.state._metrics_collector is None:
         app.state._metrics_collector = MetricsCollector()
     if not hasattr(app.state, "_recent_traces") or app.state._recent_traces is None:
@@ -3155,12 +3153,19 @@ def _get_or_create_extended_subsystems(
             retention_s=3600,
         )
     if not hasattr(app.state, "_project_manager") or app.state._project_manager is None:
-        startup_cfg = app.state._startup_config if hasattr(app.state, "_startup_config") else {}
-        app.state._project_manager = seed_from_config(startup_cfg)
+        startup_config = getattr(app.state, "_startup_config", {})
+        app.state._project_manager = seed_from_config(startup_config)
     if not hasattr(app.state, "_utilization_tracker") or app.state._utilization_tracker is None:
         app.state._utilization_tracker = UtilizationTracker()
     if not hasattr(app.state, "_model_registry") or app.state._model_registry is None:
         app.state._model_registry = ModelRegistry()
+
+
+def _get_or_create_extended_subsystems(
+    app: FastAPI,
+    session_factory: Any | None = None,
+) -> dict[str, Any]:
+    _ensure_extended_state(app)
     if not hasattr(app.state, "_skill_registry") or app.state._skill_registry is None:
         registry = SkillRegistry()
         config_dir = getattr(app.state, "_config_dir", None)

@@ -25,6 +25,22 @@ request presented to a registry or target set that supports only
 `self_improve.proposal` is refused with explicit adapter or target evidence; it
 is never rewritten into a self-improvement task.
 
+## Event-loop routing boundary
+
+The durable event loop consumes the same universal intent without owning domain
+implementations. `general_ludd.event_loop.task_routing` contains the stable
+work-type taxonomy, prompt resolution, playbook selection, scheduler work-item
+mapping, and cost estimate. `event_loop.loop` composes those policies and keeps
+compatibility exports for existing callers; it does not acquire a special
+self-improvement routing branch.
+
+This boundary also limits release risk. Routing policy can be tested at 97%
+branch-aware coverage without importing or measuring the 5,000-line lifecycle
+orchestrator, while the loop's existing compatibility tests prove that old
+imports and patch points retain their behavior. Adding a chemistry, firmware,
+or future domain adapter therefore does not require expanding the event-loop
+module or changing a self-improvement package.
+
 ## Provider and profile-origin evidence
 
 The invocation provider and the source of a model profile are different facts.

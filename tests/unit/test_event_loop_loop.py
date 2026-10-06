@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
@@ -22,6 +24,39 @@ class TestEventLoopImports:
         from general_ludd.event_loop.loop import _FileClaimConflict
 
         assert issubclass(_FileClaimConflict, Exception)
+
+
+def test_restore_tick_checkpoint_recovers_all_durable_ledgers() -> None:
+    """The extracted checkpoint helper restores each persisted tick ledger."""
+    from general_ludd.event_loop.loop import EventLoop
+
+    class Checkpointer:
+        def get(self, key: str) -> dict[str, object]:
+            assert key == "last_tick"
+            return {
+                "_tick_state": {"phase": "dispatch"},
+                "_applied_decision_keys": ["decision-1"],
+                "_pushed_work_keys": ["work-1"],
+                "_push_retry_count": {"work-1": 2},
+            }
+
+    state = cast(
+        "EventLoop",
+        SimpleNamespace(
+            _checkpointer=Checkpointer(),
+            _tick_state={},
+            _applied_decisions={},
+            _pushed_work={},
+            _push_retry_count={},
+        ),
+    )
+
+    EventLoop._restore_tick_checkpoint(state)
+
+    assert state._tick_state == {"phase": "dispatch"}
+    assert state._applied_decisions == {"decision-1": None}
+    assert state._pushed_work == {"work-1": None}
+    assert state._push_retry_count == {"work-1": 2}
 
 
 class TestTaskTypeHelpers:
