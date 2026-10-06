@@ -27,6 +27,19 @@ def test_pages_validates_development_and_pull_requests_before_upload() -> None:
     assert "continue-on-error" not in workflow
 
 
+def test_pages_syncs_the_ci_profile_that_owns_playwright() -> None:
+    """The browser runner must execute inside the locked presentation environment."""
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    sync = workflow.index("make sync")
+    deps = workflow.index("make presentation-browser-install-deps")
+
+    assert "DEPENDENCY_PROFILE_SET=ci" in workflow
+    assert "DEPENDENCY_PROFILE_ENVIRONMENT=.venv" in workflow
+    assert "DEPENDENCY_PROFILE_PYTHON=3.11" in workflow
+    assert "DEPENDENCY_PROFILE_VALIDATE_ONLY=0" in workflow
+    assert sync < deps
+
+
 def test_pages_installs_linux_webkit_dependencies_before_launch() -> None:
     """The hosted WebKit lane must install its Linux shared libraries first."""
     workflow = WORKFLOW.read_text(encoding="utf-8")
@@ -85,6 +98,8 @@ def test_implementation_guide_keeps_upstream_regressions_and_operations() -> Non
         "mermaid-js/mermaid#8113",
         "bugs.webkit.org/show_bug.cgi?id=198609",
         "github.com/orgs/community/discussions/12523",
+        "astral-sh/uv/issues/13319",
+        "astral-sh/uv/issues/14645",
     ):
         assert issue in design
     assert "reveal.js-mermaid-plugin@11.15.0" in design

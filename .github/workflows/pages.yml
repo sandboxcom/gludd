@@ -49,7 +49,12 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
       - name: Install locked dependencies
-        run: make sync
+        run: >-
+          make sync
+          DEPENDENCY_PROFILE_SET=ci
+          DEPENDENCY_PROFILE_ENVIRONMENT=.venv
+          DEPENDENCY_PROFILE_PYTHON=3.11
+          DEPENDENCY_PROFILE_VALIDATE_ONLY=0
       - name: Verify vendored presentation assets
         run: make vendor-presentation-assets PRESENTATION_VENDOR_VALIDATE_ONLY=1
       - name: Build exact Pages directory
