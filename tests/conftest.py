@@ -390,7 +390,8 @@ class _WorktreeConfinement:
         if relative is None:
             return False
         if not any(
-            component.startswith(_PYTEST_TEMP_ROOT_PREFIXES)
+            component == "pytest"
+            or component.startswith(_PYTEST_TEMP_ROOT_PREFIXES)
             for component in relative.parts
         ):
             return False

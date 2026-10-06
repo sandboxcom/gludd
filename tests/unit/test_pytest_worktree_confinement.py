@@ -394,6 +394,27 @@ def test_confinement_allows_git_mutation_in_canonical_pytest_tmp_repo(
     )
 
 
+def test_confinement_allows_literal_pytest_basetemp_component(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CI may place its isolated repository below a literal ``pytest`` root."""
+    main, linked = _linked_checkout(tmp_path)
+    isolated_repo = tmp_path / "ci-basetemp" / "pytest" / "case" / "isolated-repo"
+    (isolated_repo / ".git").mkdir(parents=True)
+    monkeypatch.setattr(pytest_config.tempfile, "gettempdir", lambda: str(tmp_path))
+
+    _guard(main, linked).audit(
+        "subprocess.Popen",
+        (
+            "git",
+            ("git", "checkout", "-b", "feature-test"),
+            str(isolated_repo),
+            {},
+        ),
+    )
+
+
 def test_confinement_denies_git_mutation_for_unsafe_repository_cwd(
     tmp_path: Path,
 ) -> None:
