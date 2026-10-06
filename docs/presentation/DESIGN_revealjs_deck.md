@@ -1,6 +1,6 @@
 # DESIGN — reveal.js Deck: "gludd, honestly"
 
-Status: DESIGN ONLY (not built). Author: presentation design task, 2026-06-18.
+Status: IMPLEMENTED; browser/Pages resilience added for v0.1.2. Original design: 2026-06-18.
 Target output: a reveal.js HTML deck driven by gludd's **live E2E test artifacts**, not hand-authored screenshots.
 
 > Honesty contract (inherited from README + BUGS.md): every maturity claim on a
@@ -165,9 +165,10 @@ docs/presentation/
 └── build/index.html                 # GENERATED final deck, gitignored
 ```
 
-- reveal.js itself is **vendored or pinned** (a `deck/vendor/reveal.js@x.y.z/`) — no
-  CDN at present-time, so the deck renders offline (matches gludd's offline-fallback
-  ethos). Pin the exact version; record it in `deck/vendor/VERSION`.
+- Reveal.js 5.1.0, `reveal.js-mermaid-plugin@11.15.0`, and
+  `ace-builds@1.44.0` are vendored beneath `deck/vendor/`. Their exact package,
+  version, source URL, license, and SHA-256 are recorded in
+  `deck/vendor/manifest.json`; the build validates the complete tree before use.
 - `deck-data.json`, `build/` are gitignored (regenerated). The **template + partials +
   theme are committed**; the data is not.
 
@@ -194,7 +195,7 @@ templated partial so untrusted run-log strings can't SSTI the deck).
 
 ---
 
-## 4. Build pipeline (make targets to add)
+## 4. Build and verification pipeline
 
 | Target | Does | Depends on |
 |---|---|---|
@@ -203,6 +204,10 @@ templated partial so untrusted run-log strings can't SSTI the deck).
 | `deck` | render template+partials with deck-data.json → build/index.html | `deck-data` |
 | `deck-verify` | run the a11y/visual-qa skill (Deliverable B) on built deck; fail build on a11y/density/overlap errors | `deck`, Deliverable B skill |
 | `deck-serve` | static serve build/ | `deck` |
+| `vendor-presentation-assets` | fail-closed digest/license validation; explicit refresh mode | vendored manifest |
+| `presentation-browser-install` | validate/install pinned Chromium and WebKit in a namespaced cache | `presentation-test` extra |
+| `presentation-browser-test` | serial `/gludd/` Chromium + WebKit acceptance with retained diagnostics | exact built deck + both engines |
+| `presentation-pages-probe` | cache-busted, content-free comparison of the live Pages revision to one exact SHA | public Pages URL |
 
 `deck-verify` closes the loop: **the deck about gludd is itself validated by a gludd
 skill.** That is the linkage between the two deliverables.
@@ -245,10 +250,12 @@ So ~60% of the deck (all of §1–§4) is buildable from current artifacts today
 
 ---
 
-## 7. Open dependencies / risks
+## 7. Remaining data dependencies / risks
 
-- No headless browser in repo → §5.4 and `deck-verify` both need Deliverable B's
-  Playwright addition. **This is the single hard dependency.**
+- The presentation browser lane now uses pinned Playwright Chromium and WebKit. Run
+  `make presentation-browser-install` once for the namespaced browser cache,
+  then `make presentation-browser-test`; absence of either engine fails closed with
+  the exact installation command instead of skipping the checks.
 - Greenfield E2E flow may not exist yet as a runnable target — if not, §5.3–5.4 are
   design-only until it lands.
 - Dogfood monkeypatches dispatch → §5.2 numbers are "structurally real, dispatch
@@ -258,4 +265,91 @@ So ~60% of the deck (all of §1–§4) is buildable from current artifacts today
 
 Markdown docs use Mermaid fenced code blocks because GitHub renders Mermaid natively in repository Markdown, issues, pull requests, discussions, gists, and wikis. Do not add a third-party GitHub Mermaid plugin for Markdown diagrams unless GitHub native rendering fails for a documented reason. GitHub docs warn that third-party Mermaid plugins can cause rendering errors.
 
-The reveal.js deck is separate from GitHub Markdown and keeps using the existing reveal.js Mermaid plugin. Keep the source diagram in Mermaid so README, design docs, and the deck can share the same diagram vocabulary.
+The reveal.js deck is separate from GitHub Markdown. It vendors the Mermaid runtime carried by the reveal.js Mermaid plugin, but Gludd owns an awaited, per-diagram render boundary. Keep source diagrams in Mermaid so README, design docs, and the deck can share the same diagram vocabulary.
+
+## Resilient runtime and source navigation — v0.1.2
+
+The deck delegates Mermaid parsing and layout to the runtime carried by vendored
+`reveal.js-mermaid-plugin@11.15.0`, while the controller schedules the work
+itself. After fonts are ready, it moves one source host at a time into a
+fixed-width, opacity-zero scratch node attached directly to `document.body`,
+outside Reveal transforms and hidden slides. It awaits
+`gluddMermaid.render()`, inserts only the completed SVG, and exposes a
+source-preserving `pending`/`rendering`/`rendered`/`failed` state. Root and
+flowchart HTML labels are disabled.
+
+The captured WebKit failure was not merely a slow load. Mermaid's
+`positionEdgeLabel` wrote `translate(undefined, NaN)` for a valid authored
+chart. The same stack reproduced through both the plugin and direct Mermaid API.
+The vendoring tool therefore applies the reviewed `mermaid-webkit-geometry-v2`
+transform to exactly two known edge-label branches, using Mermaid's already
+calculated path coordinates when `edge.x` or `edge.y` is non-finite. Exact match
+counts and pre/post SHA-256 values are manifest-bound; changed upstream bytes
+fail closed. The runtime rejects non-finite values in every descendant SVG
+attribute, nonpositive `foreignObject` geometry, and invalid SVG client/bounding
+boxes. One failed diagram retains readable source without failing later charts.
+
+This behavior intentionally preserves the long-lived practitioner evidence in
+[`mermaid-js/mermaid#1846`](https://github.com/mermaid-js/mermaid/issues/1846),
+[`mermaid-js/mermaid#1824`](https://github.com/mermaid-js/mermaid/issues/1824),
+[`mermaid-js/mermaid#3577`](https://github.com/mermaid-js/mermaid/issues/3577),
+[`mgaitan/sphinxcontrib-mermaid#126`](https://github.com/mgaitan/sphinxcontrib-mermaid/issues/126),
+and
+[`zjffun/reveal.js-mermaid-plugin#5`](https://github.com/zjffun/reveal.js-mermaid-plugin/issues/5),
+plus the Safari/macOS initial-layout report
+[`mermaid-js/mermaid#7323`](https://github.com/mermaid-js/mermaid/issues/7323).
+The exact invalid transform is also reported in
+[`gitlab-org/gitlab-docs#599`](https://gitlab.com/gitlab-org/gitlab-docs/-/issues/599),
+and transformed-container unit mismatches plus the body-scratch mitigation are
+tracked in
+[`mermaid-js/mermaid#8113`](https://github.com/mermaid-js/mermaid/issues/8113).
+Those reports cover hidden-slide zero geometry, concurrent asynchronous renders,
+visibility-triggered recovery, reload/zoom-sensitive WebKit layout, invalid
+descendant transforms, and clipped text; an SVG-exists assertion alone would
+not catch those failures.
+
+The browser contract serves the exact Pages upload tree below `/gludd/`. In both
+Chromium and WebKit it requires all charts to reach valid SVG metadata within
+five seconds on a cold load and a cached reload, visits every chart forward and
+backward, requires positive rendered geometry, and exercises malformed-source,
+blocked-asset, source-viewer, console, network, and HTTP failure paths. Runtime
+JS and CSS URLs carry the exact 40-character build SHA so a Safari cache cannot
+combine old controller code with new deck markup.
+
+Playwright WebKit is deliberately not called native Safari. The separate
+`make presentation-safari-test` target uses `/usr/bin/safaridriver`, is bounded,
+serves the exact `/gludd/` artifact, and repeats cold/cache, every-slide geometry,
+client-error, and source-viewer checks. It never enables or prompts for Remote
+Automation. On the 2026-10-06 macOS probe that operator setting was disabled, so
+the target exited `3` and retained a content-free
+`remote-automation-disabled` report with the exact Safari menu action. Native
+Safari compatibility remains pending until the operator enables that setting
+and this target passes; Chromium and Playwright WebKit evidence remains valid.
+
+At build time, repository `file:line` citations become immutable GitHub blob
+links for the exact 40-character commit. On the loopback-only preview server,
+plain clicks open the same citation in a vendored read-only Ace viewer with the
+range selected and scrolled into view. The `/__gludd_source__` endpoint accepts
+only build-generated allowlisted UTF-8 files, rejects traversal and symlink
+escapes, caps response size, and is absent from the static Pages artifact.
+
+The Pages workflow builds one directory and tests that resolved directory below
+`/gludd/` on `development`, `master`, and relevant pull requests. Development is
+validation-only. A push to `master` alone preserves and deploys the validated
+files. `presentation-pages-probe` fetches the public artifact with cache bypass
+and fails unless its embedded full SHA equals the deploying master SHA.
+
+Pre-fix deployment evidence on 2026-10-06 was explicitly stale: Pages run
+`37434869685` validated commit `8ef55fdab99e3a180113c90e2115d048b5c20c94`
+but skipped deployment, while the public artifact did not contain even a short
+revision marker (`published display revision is missing`). It therefore could
+not represent current development. The public URL remains legacy until the
+browser-green change is promoted to `master` and its deploy plus revision probe
+pass.
+
+ZDD rollback reverts the controller and manifest-bound vendor transform on
+development, validates the last browser-green bytes, then promotes that revert
+through the normal master-only release flow. The deploy job consumes only the
+artifact from its required validation job, and the revision probe provides the
+post-deploy identity check; no in-place Pages mutation or unverified fallback
+is used.

@@ -103,6 +103,10 @@ dev = [
     "shamir>=17.12.0",
     "srptools>=1.0.0",
 ]
+presentation-test = [
+    "playwright==1.63.0",
+    "pytest-playwright==0.9.0",
+]
 local-inference = [
     "llama-cpp-python[server]>=0.3.0",
 ]
@@ -275,7 +279,7 @@ disable_error_code = ["type-arg"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-v --tb=short --ignore=tests/fixtures -m \"not hook_live\""
+addopts = "-v --tb=short --ignore=tests/fixtures -m \"not hook_live and not presentation_browser\""
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 timeout = 180
@@ -287,6 +291,7 @@ markers = [
     "requires_postgres: skip unless POSTGRES_AVAILABLE=1 is set in env or port 5432 is open",
     "azure_provision: full Azure GPU VM/Container App provisioning E2E — opt-in, costly, manual",
     "hook_live: exercises a real opencode CLI against the .opencode/plugin/*.ts hooks; excluded from the default run (`-m \"not hook_live\"` in addopts) — run via `make test-hooks-live` or `-m hook_live`",
+    "presentation_browser: mandatory Chromium acceptance run by the dedicated presentation browser target",
     "slow: tests that are known to take longer than normal (network, model inference, large fixtures)",
     "network: tests that require explicit external network access",
     "local_model: tests that require a locally running model endpoint",
