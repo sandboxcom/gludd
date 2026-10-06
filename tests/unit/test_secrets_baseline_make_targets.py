@@ -76,4 +76,3 @@ def test_secrets_baseline_check_is_read_only_and_contracted() -> None:
             "REPO_ROOT=. EXECUTABLE=detect-secrets"
         ),
     }
-
