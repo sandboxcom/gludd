@@ -71,19 +71,15 @@ def test_gate_atomic_publication_scratch_is_ignored() -> None:
 
 
 def test_gate_kill_waits_10s_before_sigkill():
+    from scripts.kill_owned_gate import DEFAULT_GRACE_SECONDS
+
     content = _makefile_content()
     idx = content.find("gate-kill:")
     assert idx != -1
-    recipe_block = content[idx : idx + 800]
-    assert "-lt 10" in recipe_block, (
-        "gate-kill must wait 10 seconds before SIGKILL"
-    )
-    assert "kill -TERM" in recipe_block, (
-        "gate-kill must send SIGTERM first"
-    )
-    assert "kill -KILL" in recipe_block, (
-        "gate-kill must send SIGKILL after wait"
-    )
+    recipe_block = content[idx : content.find("\n\n", idx)]
+    assert DEFAULT_GRACE_SECONDS == 10.0
+    assert "kill_owned_gate.py" in recipe_block
+    assert "APPLY=1" in recipe_block
 
 
 def test_gate_background_has_timeout_watcher():
