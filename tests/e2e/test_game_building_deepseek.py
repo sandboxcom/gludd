@@ -21,6 +21,12 @@ from tests.e2e._game_building_deepseek_definitions import (
     _export_observability_report,
     _init_game_obs,
 )
+from tests.e2e._game_building_deepseek_definitions import (
+    _SKIP_REASON as _SKIP_REASON,
+)
+from tests.e2e._game_building_deepseek_definitions import (
+    _get_deepseek_key as _get_deepseek_key,
+)
 from tests.e2e._game_building_deepseek_runtime import (
     _GAME_PERSISTENCE_PARAMS,
     _call_deepseek,

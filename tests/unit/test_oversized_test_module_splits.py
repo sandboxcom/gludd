@@ -6,6 +6,9 @@ from pathlib import Path
 
 import pytest
 
+from tests.e2e import _game_building_deepseek_definitions as definitions
+from tests.e2e import test_game_building_deepseek as legacy_game_suite
+
 ROOT = Path(__file__).resolve().parents[2]
 SPLIT_TEST_FAMILY_PATHS = (
     "tests/e2e/_game_building_deepseek_definitions.py",
@@ -38,3 +41,9 @@ def test_split_test_module_stays_below_repository_line_limit(relative_path: str)
     line_count = len(path.read_text(encoding="utf-8").splitlines())
 
     assert line_count < 2_500, f"{relative_path}: {line_count} lines"
+
+
+def test_game_building_split_preserves_legacy_fixture_exports() -> None:
+    """Keep imports used by the per-game fixture modules collection-safe."""
+    assert legacy_game_suite._SKIP_REASON == definitions._SKIP_REASON
+    assert legacy_game_suite._get_deepseek_key is definitions._get_deepseek_key
