@@ -26,13 +26,24 @@
     },
     {
       "path": "scripts/ansible_runtime_artifacts.py",
-      "line": 181,
+      "line": 182,
       "column": 13,
       "kind": "temp-artifact",
       "owner": "_atomic_write_text",
       "acquisition": "tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent, prefix=f'.{path.name}.', delete=False)",
       "teardown": "context-manager-exit",
       "source_hash": "1856ccddf5a24a36fd22246ad72e0013f01f7f9c1fc4d6204de577d6e356d96c",
+      "owned": true
+    },
+    {
+      "path": "scripts/behavioral_specs.py",
+      "line": 296,
+      "column": 28,
+      "kind": "temp-artifact",
+      "owner": "_atomic_write",
+      "acquisition": "tempfile.mkstemp(dir=path.parent, prefix=f'.{path.name}.', suffix='.tmp')",
+      "teardown": "temporary_path.unlink(missing_ok=True)",
+      "source_hash": "f1d1d1b41a47b6abe1676f3ad91ad1bed2511b918df8f993f2f78fb2c4dc5795",
       "owned": true
     },
     {
@@ -80,6 +91,17 @@
       "owned": true
     },
     {
+      "path": "scripts/check_core_dependency_ownership.py",
+      "line": 397,
+      "column": 13,
+      "kind": "temp-artifact",
+      "owner": "write_reconciled_inventory",
+      "acquisition": "tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', prefix=f'.{destination.name}.', dir=destination.parent, delete=False)",
+      "teardown": "context-manager-exit",
+      "source_hash": "e0219148007089753f5dfcf6063aabee3d8348829490a022d31b2f972ff29ab9",
+      "owned": true
+    },
+    {
       "path": "scripts/check_integration_health.py",
       "line": 286,
       "column": 15,
@@ -110,6 +132,28 @@
       "acquisition": "tempfile.mkstemp(prefix=f'.{path.name}.', suffix='.tmp', dir=path.parent)",
       "teardown": "temporary_path.unlink()",
       "source_hash": "6e9f41548c23e7b6a3eef2daa1e68a0677dad0d713e4a953a31e31e43b32ee57",
+      "owned": true
+    },
+    {
+      "path": "scripts/dependency_profiles.py",
+      "line": 271,
+      "column": 13,
+      "kind": "temp-artifact",
+      "owner": "write_requirements",
+      "acquisition": "tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', prefix=f'.{output.name}.', dir=output.parent, delete=False)",
+      "teardown": "context-manager-exit",
+      "source_hash": "e7900d566492bd5e1200d5e7402009d2d1fec2b87c5ef52021dc4d13c1afa46e",
+      "owned": true
+    },
+    {
+      "path": "scripts/dependency_profiles.py",
+      "line": 404,
+      "column": 8,
+      "kind": "temp-artifact",
+      "owner": "sync_profile_set",
+      "acquisition": "tempfile.mkdtemp(prefix=f'.{environment.name}.profile-stage-', dir=environment.parent)",
+      "teardown": "shutil.rmtree(stage_parent)",
+      "source_hash": "80e6d045f4d64231128888d4fc8273caa86008749454b9f5b8d60959adb79fb4",
       "owned": true
     },
     {
@@ -245,6 +289,17 @@
       "owned": true
     },
     {
+      "path": "scripts/hook_runtime/runner.py",
+      "line": 40,
+      "column": 9,
+      "kind": "temp-artifact",
+      "owner": "_run_ts",
+      "acquisition": "tempfile.NamedTemporaryFile(mode='w', suffix='.ts', dir=str(state_root), prefix=f'hook_test_{_tmp_counter}_', delete=False)",
+      "teardown": "context-manager-exit",
+      "source_hash": "cc3076f47d8acdd69a9d55e73701b0cd0dfc14abffae687c117e6974c0df3472",
+      "owned": true
+    },
+    {
       "path": "scripts/kill_owned_gate.py",
       "line": 140,
       "column": 33,
@@ -264,6 +319,28 @@
       "acquisition": "tempfile.mkstemp(prefix=f'.{path.name}.', suffix='.tmp', dir=path.parent)",
       "teardown": "temporary.unlink(missing_ok=True)",
       "source_hash": "3e8817da601e058562ba70d1c58f3772543c0366d8cea14667217322d61a09bc",
+      "owned": true
+    },
+    {
+      "path": "scripts/manage_secrets_baseline.py",
+      "line": 272,
+      "column": 27,
+      "kind": "temp-artifact",
+      "owner": "_write_atomic",
+      "acquisition": "tempfile.mkstemp(prefix=f'.{path.name}.', suffix='.tmp', dir=path.parent)",
+      "teardown": "temp_path.unlink(missing_ok=True)",
+      "source_hash": "c72de7252741e2105d8552f2d938fefc5b3a43f7688116a181af63f2bd27ac66",
+      "owned": true
+    },
+    {
+      "path": "scripts/manage_secrets_baseline.py",
+      "line": 385,
+      "column": 27,
+      "kind": "temp-artifact",
+      "owner": "refresh",
+      "acquisition": "tempfile.mkstemp(prefix='gludd-detect-secrets-scan.', suffix='.json')",
+      "teardown": "scan_path.unlink(missing_ok=True)",
+      "source_hash": "2e47f8694f504626633241369a96a36c89babcb764c802da04d8093d6cbbff0c",
       "owned": true
     },
     {
@@ -487,6 +564,28 @@
       "owned": true
     },
     {
+      "path": "scripts/run_presentation_safari_smoke.py",
+      "line": 190,
+      "column": 14,
+      "kind": "process",
+      "owner": "_running_driver",
+      "acquisition": "subprocess.Popen((plan.driver_path, '--port', str(port)), cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)",
+      "teardown": "process.kill(); process.terminate(); process.wait(timeout=5)",
+      "source_hash": "dadbbec64cb065ef82888a18f777577a2627f16b8bf2e4f75521588b02bf12b0",
+      "owned": true
+    },
+    {
+      "path": "scripts/run_presentation_safari_smoke.py",
+      "line": 228,
+      "column": 9,
+      "kind": "temp-artifact",
+      "owner": "_served_artifact",
+      "acquisition": "tempfile.TemporaryDirectory(prefix='artifact-', dir=output_root)",
+      "teardown": "context-manager-exit",
+      "source_hash": "14afae241386c2342d06c115a10b3f56c268f861d7ddd5f02cb56dd08a134e39",
+      "owned": true
+    },
+    {
       "path": "scripts/run_unit_shards.py",
       "line": 69,
       "column": 11,
@@ -539,6 +638,17 @@
       "acquisition": "subprocess.Popen(cmd, stdout=log_handle, stderr=subprocess.STDOUT, env=env, start_new_session=True)",
       "teardown": "ownership-transfer:return (proc, log_handle)",
       "source_hash": "e421e276c2ab45b949b1fc6877eaaa6000c7a43f692d20d745d75e8ec82b7c96",
+      "owned": true
+    },
+    {
+      "path": "scripts/split_makefile.py",
+      "line": 108,
+      "column": 33,
+      "kind": "temp-artifact",
+      "owner": "_atomic_write",
+      "acquisition": "tempfile.mkstemp(dir=path.parent, prefix=f'.{path.name}.', suffix='.tmp')",
+      "teardown": "temporary.unlink()",
+      "source_hash": "2d15bf26febaf5931a3efbbc7160d3302582b385bcac10934ca402a81888fa43",
       "owned": true
     },
     {
@@ -627,17 +737,6 @@
       "acquisition": "tempfile.NamedTemporaryFile('w', encoding='utf-8', dir=p.parent, prefix=f'.{p.name}.', suffix='.tmp', delete=False)",
       "teardown": "context-manager-exit",
       "source_hash": "c33fc23d7046279c8b872bbf0a73bfa0251138b430b3ac198337aacc6172cc6e",
-      "owned": true
-    },
-    {
-      "path": "scripts/test_hook_runtime.py",
-      "line": 168,
-      "column": 9,
-      "kind": "temp-artifact",
-      "owner": "_run_ts",
-      "acquisition": "tempfile.NamedTemporaryFile(mode='w', suffix='.ts', dir=str(state_root), prefix=f'hook_test_{_tmp_counter}_', delete=False)",
-      "teardown": "context-manager-exit",
-      "source_hash": "cc3076f47d8acdd69a9d55e73701b0cd0dfc14abffae687c117e6974c0df3472",
       "owned": true
     },
     {
@@ -759,6 +858,17 @@
       "acquisition": "tempfile.TemporaryDirectory(prefix='gludd-release-checksum-')",
       "teardown": "context-manager-exit",
       "source_hash": "37afa69003879ca79068a5d24e0b2a88f053255154aef2faefd8784688596d4b",
+      "owned": true
+    },
+    {
+      "path": "scripts/vendor_presentation_assets.py",
+      "line": 233,
+      "column": 9,
+      "kind": "temp-artifact",
+      "owner": "refresh_assets",
+      "acquisition": "tempfile.TemporaryDirectory(prefix='.gludd-presentation-vendor-', dir=destination.parent)",
+      "teardown": "context-manager-exit",
+      "source_hash": "c7379ada8a6b593a36ddc8761719fc815936b2820a5a381df2baecf81265222d",
       "owned": true
     },
     {
@@ -961,13 +1071,24 @@
     },
     {
       "path": "src/general_ludd/cli.py",
-      "line": 1985,
+      "line": 639,
       "column": 11,
       "kind": "process",
       "owner": "_cmd_daemon",
       "acquisition": "subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=child_stdout, stderr=child_stderr, start_new_session=True, close_fds=True, env=env)",
       "teardown": "ownership-transfer:persisted-detached-pid",
       "source_hash": "00be0538424e89662295880f487c5ceb98a3b3bf0031e399a10157af65b70dfa",
+      "owned": true
+    },
+    {
+      "path": "src/general_ludd/cli_decision_codification.py",
+      "line": 133,
+      "column": 13,
+      "kind": "client",
+      "owner": "_post_analysis",
+      "acquisition": "httpx.Client(timeout=httpx.Timeout(_REQUEST_TIMEOUT_SECONDS), follow_redirects=False, trust_env=False)",
+      "teardown": "context-manager-exit",
+      "source_hash": "b32d2292cd31e7278ce5439a1d2ca507f7f370e81723a0acfd47d20206e097e8",
       "owned": true
     },
     {
@@ -1390,7 +1511,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 1160,
+      "line": 1165,
       "column": 15,
       "kind": "async-task",
       "owner": "_build_self_update_audit_sink._sink",
@@ -1401,7 +1522,7 @@
     },
     {
       "path": "src/general_ludd/daemon.py",
-      "line": 1216,
+      "line": 1221,
       "column": 15,
       "kind": "client",
       "owner": "_warm_start_local_models",
@@ -1411,47 +1532,47 @@
       "owned": true
     },
     {
-      "path": "src/general_ludd/daemon.py",
-      "line": 1304,
+      "path": "src/general_ludd/daemon_components/lifecycle.py",
+      "line": 169,
       "column": 18,
       "kind": "service",
-      "owner": "_lifespan",
+      "owner": "lifespan",
       "acquisition": "WriterProcess(config=dict(db_config))",
       "teardown": "asyncio.to_thread(_writer_process_ref.stop)",
-      "source_hash": "abf18e145dabc96a44a7e5c4961c3b88a276b5e17069d549c37a1b2aa84c3823",
+      "source_hash": "0ceed6a3f2177687ce12b3fb3cd9d1d522bb5eece9202a6d3044fc26dd9935c3",
       "owned": true
     },
     {
-      "path": "src/general_ludd/daemon.py",
-      "line": 2436,
+      "path": "src/general_ludd/daemon_components/lifecycle.py",
+      "line": 1302,
       "column": 15,
       "kind": "async-task",
-      "owner": "_lifespan",
+      "owner": "lifespan",
       "acquisition": "asyncio.create_task(event_loop.run_forever(interval=tick_interval))",
       "teardown": "await agent.research(query=task.prompt); await model_gateway.call_model_with_retry(profile_id, [{'role': 'user', 'content': task.prompt}], **call_kwargs); await quiesce_task_before_drain(task, request_stop=_el.stop, drain=_el.shutdown, timeout_seconds=5.0); ownership-transfer:quiesce_task_before_drain(task, request_stop=_el.stop, drain=_el.shutdown, timeout_seconds=5.0); quiesce_task_before_drain(task, request_stop=_el.stop, drain=_el.shutdown, timeout_seconds=5.0)",
-      "source_hash": "33f071e78a37f5b14e20702701613eb75f4077dfc36393c9cf1adbb7da4107ce",
+      "source_hash": "4bde939f83958ffe96f12b719bc291e3f8341ae4abe5c50fa0c58b025770e02d",
       "owned": true
     },
     {
-      "path": "src/general_ludd/daemon.py",
-      "line": 2688,
+      "path": "src/general_ludd/daemon_components/lifecycle.py",
+      "line": 1554,
       "column": 36,
       "kind": "async-task",
-      "owner": "_lifespan",
+      "owner": "lifespan",
       "acquisition": "asyncio.create_task(_init_preflight())",
       "teardown": "await preflight_task_ref; preflight_task_ref.cancel()",
-      "source_hash": "71cd2e482775ec5132fc4960ec4fd734a5bb0841b73e078917f3205903328eed",
+      "source_hash": "331976434d3389fceb0f30aa0e00fc1d7d33edde3c4401dc7ae51331fc974e5a",
       "owned": true
     },
     {
-      "path": "src/general_ludd/daemon.py",
-      "line": 2785,
+      "path": "src/general_ludd/daemon_components/lifecycle.py",
+      "line": 1651,
       "column": 39,
       "kind": "async-task",
-      "owner": "_lifespan",
+      "owner": "lifespan",
       "acquisition": "asyncio.create_task(_op_sched._background_loop(stop_event=app.state._off_peak_stop))",
       "teardown": "_op_task.cancel(); await _op_task",
-      "source_hash": "62eb9999bc98850e166cf1aedf81389eaf9c4909a173ba8671db61b5f4dc90f7",
+      "source_hash": "404ccb07509faf974a04958cbcede0be1da854ebe029b77cce668ae1ed87d8e9",
       "owned": true
     },
     {
@@ -1477,69 +1598,69 @@
       "owned": true
     },
     {
-      "path": "src/general_ludd/event_loop/loop.py",
-      "line": 872,
-      "column": 22,
-      "kind": "async-task",
-      "owner": "EventLoop._run_playbook_with_lease_supervision",
-      "acquisition": "asyncio.create_task(self._bounded_to_thread(self._runner.run_playbook, playbook_name=playbook, private_data_dir=private_data_dir, env=env, cancel_requested=supervisor.is_cancellation_requested))",
-      "teardown": "await asyncio.shield(runner_task); await self._await_terminal_task(runner_task); ownership-transfer:return await asyncio.shield(runner_task)",
-      "source_hash": "16722bb4816482ff5bbb1080e8df43d122b9318e2550fdf40e5e28db3fd64fb4",
-      "owned": true
-    },
-    {
-      "path": "src/general_ludd/event_loop/loop.py",
-      "line": 884,
-      "column": 27,
-      "kind": "async-task",
-      "owner": "EventLoop._run_playbook_with_lease_supervision",
-      "acquisition": "asyncio.create_task(supervisor.request_cancellation())",
-      "teardown": "await self._await_terminal_task(request_task)",
-      "source_hash": "feae3fb7188486783fbb3d21b7c5d040f69387dd13e385ed2d96fa9a45b98e28",
-      "owned": true
-    },
-    {
-      "path": "src/general_ludd/event_loop/loop.py",
-      "line": 898,
-      "column": 32,
-      "kind": "async-task",
-      "owner": "EventLoop._run_playbook_with_lease_supervision",
-      "acquisition": "asyncio.create_task(supervisor.confirm_termination())",
-      "teardown": "await self._await_terminal_task(confirmation_task)",
-      "source_hash": "b68c8439b3e19be5fb09849b86c5eee8711346669cdba945356d86fe1a8689a3",
-      "owned": true
-    },
-    {
-      "path": "src/general_ludd/event_loop/loop.py",
-      "line": 2501,
+      "path": "src/general_ludd/event_loop/execution_dispatch.py",
+      "line": 315,
       "column": 29,
       "kind": "async-task",
-      "owner": "EventLoop._dispatch_execute_job_isolated",
+      "owner": "ExecutionDispatchMixin._dispatch_execute_job_isolated",
       "acquisition": "asyncio.create_task(lease_supervisor.run(heartbeat_immediately=False))",
       "teardown": "await self._stop_execution_lease_heartbeat(lease_supervisor, heartbeat_task); ownership-transfer:self._stop_execution_lease_heartbeat(lease_supervisor, heartbeat_task)",
-      "source_hash": "c81bec764b9fcceaf1a5d2f6bfdbef06de64465cd1758389f1782eb82cce1c62",
+      "source_hash": "8125ceda7147a78e74eaedf44b6b264fb2467020028e62e9b2e8245cbe25221a",
       "owned": true
     },
     {
-      "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3649,
+      "path": "src/general_ludd/event_loop/execution_dispatch.py",
+      "line": 1463,
       "column": 26,
       "kind": "async-task",
-      "owner": "EventLoop._dispatch_execute_job",
+      "owner": "ExecutionDispatchMixin._dispatch_execute_job",
       "acquisition": "asyncio.create_task(record_job_benchmark(self._benchmark_recorder, model_profile=resolved_model_profile, prompt_profile=resolved_prompt_profile, work_type=work_type, success=True, input_tokens=len(prompt_text or '') // 4))",
       "teardown": "ownership-transfer:self._track_background_task(_bt)",
-      "source_hash": "6f7fc15e1591ef3799d203753901d44463ccd12f2b7df42f99a9d54819de0601",
+      "source_hash": "27f575f0d376468198731aad9873acce7a2619fbbd5e75f29dc1050fd6cabaec",
       "owned": true
     },
     {
-      "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3707,
+      "path": "src/general_ludd/event_loop/execution_dispatch.py",
+      "line": 1521,
       "column": 27,
       "kind": "async-task",
-      "owner": "EventLoop._dispatch_execute_job",
+      "owner": "ExecutionDispatchMixin._dispatch_execute_job",
       "acquisition": "asyncio.create_task(self._benchmark_recorder.record_from_trace(_trace, success=True))",
       "teardown": "ownership-transfer:self._track_background_task(_tbt)",
-      "source_hash": "fadd656f36e9ff6ad6dfe0c3446ad823cd74549dddbdcb84e7baf32625eac988",
+      "source_hash": "4aa05c1f23749dfddfd7f70464f0cd516bf926b3ad020e83d47987022b586746",
+      "owned": true
+    },
+    {
+      "path": "src/general_ludd/event_loop/tick_lifecycle.py",
+      "line": 513,
+      "column": 22,
+      "kind": "async-task",
+      "owner": "TickLifecycleMixin._run_playbook_with_lease_supervision",
+      "acquisition": "asyncio.create_task(self._bounded_to_thread(self._runner.run_playbook, playbook_name=playbook, private_data_dir=private_data_dir, env=env, cancel_requested=supervisor.is_cancellation_requested))",
+      "teardown": "await asyncio.shield(runner_task); await self._await_terminal_task(runner_task); ownership-transfer:return await asyncio.shield(runner_task)",
+      "source_hash": "663c1c2cbbb8db21d94b3c96a01e52db8da3dc742fec3d26f6ae095e7d8a07ac",
+      "owned": true
+    },
+    {
+      "path": "src/general_ludd/event_loop/tick_lifecycle.py",
+      "line": 525,
+      "column": 27,
+      "kind": "async-task",
+      "owner": "TickLifecycleMixin._run_playbook_with_lease_supervision",
+      "acquisition": "asyncio.create_task(supervisor.request_cancellation())",
+      "teardown": "await self._await_terminal_task(request_task)",
+      "source_hash": "631dfbd4c2134c3b6a1e08e11eeb920cfb9f8ff0c35cc9770952a6dc5e7a4ef5",
+      "owned": true
+    },
+    {
+      "path": "src/general_ludd/event_loop/tick_lifecycle.py",
+      "line": 539,
+      "column": 32,
+      "kind": "async-task",
+      "owner": "TickLifecycleMixin._run_playbook_with_lease_supervision",
+      "acquisition": "asyncio.create_task(supervisor.confirm_termination())",
+      "teardown": "await self._await_terminal_task(confirmation_task)",
+      "source_hash": "1b8a45a1b566d5a7bd9c2a687dbc47d198cb7dff7723db1be75cbe3ecbfad301",
       "owned": true
     },
     {
@@ -1939,19 +2060,8 @@
       "owned": true
     },
     {
-      "path": "src/general_ludd/pricing_intel/sources.py",
-      "line": 162,
-      "column": 17,
-      "kind": "client",
-      "owner": "OpenRouterSource.fetch_model_prices",
-      "acquisition": "httpx.Client(timeout=20.0)",
-      "teardown": "context-manager-exit",
-      "source_hash": "8f5e2b220bb9419ef930924c7cda28c14b7bb06304311697dddedb65ca03aeae",
-      "owned": true
-    },
-    {
-      "path": "src/general_ludd/pricing_intel/sources.py",
-      "line": 632,
+      "path": "src/general_ludd/pricing_intel/source_components/cloud_compute.py",
+      "line": 239,
       "column": 17,
       "kind": "client",
       "owner": "RunPodPricingSource.fetch_compute_prices",
@@ -1961,19 +2071,8 @@
       "owned": true
     },
     {
-      "path": "src/general_ludd/pricing_intel/sources.py",
-      "line": 1832,
-      "column": 17,
-      "kind": "client",
-      "owner": "LiteLLMJSONSource.fetch_model_prices",
-      "acquisition": "httpx.Client(timeout=20.0)",
-      "teardown": "context-manager-exit",
-      "source_hash": "61e70c59712bfe4bc81a4eeb7d6627e488bcc0f878ace7951c099fb4c8931806",
-      "owned": true
-    },
-    {
-      "path": "src/general_ludd/pricing_intel/sources.py",
-      "line": 2158,
+      "path": "src/general_ludd/pricing_intel/source_components/cloud_compute.py",
+      "line": 1213,
       "column": 17,
       "kind": "client",
       "owner": "LambdaLabsPricingSource.fetch_compute_prices",
@@ -1983,8 +2082,30 @@
       "owned": true
     },
     {
-      "path": "src/general_ludd/pricing_intel/sources.py",
-      "line": 2288,
+      "path": "src/general_ludd/pricing_intel/source_components/model_apis.py",
+      "line": 88,
+      "column": 17,
+      "kind": "client",
+      "owner": "OpenRouterSource.fetch_model_prices",
+      "acquisition": "httpx.Client(timeout=20.0)",
+      "teardown": "context-manager-exit",
+      "source_hash": "8f5e2b220bb9419ef930924c7cda28c14b7bb06304311697dddedb65ca03aeae",
+      "owned": true
+    },
+    {
+      "path": "src/general_ludd/pricing_intel/source_components/model_apis.py",
+      "line": 640,
+      "column": 17,
+      "kind": "client",
+      "owner": "LiteLLMJSONSource.fetch_model_prices",
+      "acquisition": "httpx.Client(timeout=20.0)",
+      "teardown": "context-manager-exit",
+      "source_hash": "61e70c59712bfe4bc81a4eeb7d6627e488bcc0f878ace7951c099fb4c8931806",
+      "owned": true
+    },
+    {
+      "path": "src/general_ludd/pricing_intel/source_components/model_apis.py",
+      "line": 790,
       "column": 17,
       "kind": "client",
       "owner": "HuggingFacePricingSource.fetch_compute_prices",
@@ -1994,8 +2115,8 @@
       "owned": true
     },
     {
-      "path": "src/general_ludd/pricing_intel/sources.py",
-      "line": 2412,
+      "path": "src/general_ludd/pricing_intel/source_components/model_apis.py",
+      "line": 914,
       "column": 17,
       "kind": "client",
       "owner": "ZAIPricingSource.fetch_model_prices",
@@ -2347,7 +2468,7 @@
     },
     {
       "path": "src/general_ludd/self_improve/runtime.py",
-      "line": 374,
+      "line": 412,
       "column": 15,
       "kind": "process",
       "owner": "MakeRunner._run_observable_argv",

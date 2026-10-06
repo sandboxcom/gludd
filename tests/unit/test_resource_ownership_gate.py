@@ -335,6 +335,18 @@ def run() -> None:
     assert any(error.startswith("stale inventory:") for error in errors)
 
 
+def test_checked_in_inventory_matches_current_application_resources() -> None:
+    """Keep split modules and newly owned resources in the checked-in inventory."""
+    root = Path(__file__).resolve().parents[2]
+    findings = scan_paths(
+        [root / "src" / "general_ludd", root / "scripts"],
+        root=root,
+    )
+    inventory = load_inventory(root / "config" / "resource_ownership_inventory.json")
+
+    assert validate_inventory(findings, inventory) == []
+
+
 def test_inventory_identity_survives_coordinate_only_relocation(tmp_path: Path) -> None:
     """Moving unchanged owned code must not invalidate release evidence."""
     original = _scan(
@@ -653,4 +665,4 @@ def test_secrets_baseline_regeneration_preserves_exact_inventory_filter() -> Non
         "sandboxcom_github_rsa|sandboxcom_github_rsa.pub|"
         r"^config/resource_ownership_inventory\.json$"
     ) in makefile
-    assert makefile.count("--exclude-files '$(SECRETS_EXCLUDE_FILES)'") == 2
+    assert makefile.count("--exclude-files '$(SECRETS_EXCLUDE_FILES)'") == 1
