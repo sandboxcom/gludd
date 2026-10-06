@@ -6,6 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "pages.yml"
+MAKE_FRAGMENT = ROOT / "make" / "90-infrastructure-and-services.mk"
 DESIGN = ROOT / "docs" / "presentation" / "DESIGN_revealjs_deck.md"
 BROWSER_TEST = ROOT / "tests" / "browser" / "test_presentation.py"
 
@@ -24,6 +25,22 @@ def test_pages_validates_development_and_pull_requests_before_upload() -> None:
     assert build < browser < upload
     assert "path: docs/presentation/deck" in workflow
     assert "continue-on-error" not in workflow
+
+
+def test_pages_installs_linux_webkit_dependencies_before_launch() -> None:
+    """The hosted WebKit lane must install its Linux shared libraries first."""
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    make_fragment = MAKE_FRAGMENT.read_text(encoding="utf-8")
+
+    deps_target = "make presentation-browser-install-deps"
+    browser_target = "make presentation-browser-install\n"
+    test_target = "make presentation-browser-test"
+    assert deps_target in workflow
+    assert 'PRESENTATION_BROWSER_ENGINES="webkit"' in workflow
+    assert workflow.index(deps_target) < workflow.index(browser_target)
+    assert workflow.index(deps_target) < workflow.index(test_target)
+    assert "presentation-browser-install-deps:" in make_fragment
+    assert 'playwright install-deps "$$browser"' in make_fragment
 
 
 def test_pages_deploys_only_the_validated_master_artifact() -> None:

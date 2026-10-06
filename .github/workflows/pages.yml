@@ -54,7 +54,12 @@ jobs:
         run: make vendor-presentation-assets PRESENTATION_VENDOR_VALIDATE_ONLY=1
       - name: Build exact Pages directory
         run: make deck-build
-      - name: Install pinned Chromium
+      - name: Install Playwright WebKit system dependencies
+        run: >-
+          make presentation-browser-install-deps
+          PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY=0
+          PRESENTATION_BROWSER_ENGINES="webkit"
+      - name: Install pinned browsers
         run: >-
           make presentation-browser-install
           PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=0

@@ -82,6 +82,7 @@ PRESENTATION_BROWSER_ROOT ?= /tmp/gludd-playwright-browsers
 PRESENTATION_BROWSER_OUTPUT ?= /tmp/gludd-presentation-browser
 PRESENTATION_BROWSER_TIMEOUT ?= 300
 PRESENTATION_BROWSER_INSTALL_TIMEOUT ?= 600
+PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY ?= 1
 PRESENTATION_SAFARI_VALIDATE_ONLY ?= 1
 PRESENTATION_SAFARI_DRIVER ?= /usr/bin/safaridriver
 PRESENTATION_SAFARI_OUTPUT ?= /tmp/gludd-presentation-safari
@@ -117,6 +118,17 @@ presentation-browser-install:
 			--browser-root "$(PRESENTATION_BROWSER_ROOT)" \
 			--output-root "$(PRESENTATION_BROWSER_OUTPUT)/$$browser" \
 			--timeout-seconds "$(PRESENTATION_BROWSER_INSTALL_TIMEOUT)" || exit $$?; \
+	done
+
+presentation-browser-install-deps:
+	@case "$(PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY)" in 0|1) ;; *) echo "PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@for browser in $(PRESENTATION_BROWSER_ENGINES); do \
+		echo "presentation-browser matrix browser=$$browser phase=install-deps"; \
+		if [ "$(PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY)" = "1" ]; then \
+			echo "presentation-browser install-deps browser=$$browser status=validated"; \
+		else \
+			$(UV) run --extra presentation-test playwright install-deps "$$browser" || exit $$?; \
+		fi; \
 	done
 
 presentation-safari-test:
