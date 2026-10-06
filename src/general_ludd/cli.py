@@ -1180,6 +1180,12 @@ def _build_parser_uncached() -> tuple[argparse.ArgumentParser, dict[str, argpars
     add_remediation_subparser(sub)
     remediation_parser = sub.choices["remediation"]
 
+    # `gludd decision-codification` — bounded, proposal-only decision analysis.
+    from general_ludd.cli_decision_codification import add_decision_codification_subparser
+
+    add_decision_codification_subparser(sub)
+    decision_codification_parser = sub.choices["decision-codification"]
+
     # `gludd ornith` — Ornith self-improving coding-agent integration.
     from general_ludd.cli_ornith import add_ornith_subparser
 
@@ -1418,6 +1424,7 @@ def _build_parser_uncached() -> tuple[argparse.ArgumentParser, dict[str, argpars
         "human-todo": human_todo_parser,
         "self-improve": self_improve_parser,
         "remediation": remediation_parser,
+        "decision-codification": decision_codification_parser,
         "ornith": ornith_parser,
         "deploy-check": deploy_check_parser,
         "core-changes": core_changes_parser,
