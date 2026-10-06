@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import signal
 from pathlib import Path
 from unittest.mock import patch
 
@@ -135,17 +136,20 @@ def test_terminate_tree_is_fail_open_on_signal_errors() -> None:
         assert terminate_tree(table, 10, namespace="/tmp/gludd-alpha") == []
 
 
-def test_cli_validate_only_checks_config_without_process_table(
+def test_cli_validate_only_checks_same_live_identity_as_apply(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    table = {10: ProcessInfo(10, 1, 900, "/tmp/gludd-contract/run")}
     with (
-        patch("scripts.process_cleanup.snapshot_processes") as snapshot,
+        patch(
+            "scripts.process_cleanup.snapshot_processes", return_value=table
+        ) as snapshot,
         patch("scripts.process_cleanup.os.kill") as kill,
     ):
         result = process_cleanup.main(
             [
                 "--root-pid",
-                "1",
+                "10",
                 "--namespace",
                 "/tmp/gludd-contract",
                 "--validate-only",
@@ -153,9 +157,61 @@ def test_cli_validate_only_checks_config_without_process_table(
         )
 
     assert result == 0
-    snapshot.assert_not_called()
+    snapshot.assert_called_once_with()
     kill.assert_not_called()
     assert "PROCESS-CLEANUP-VALIDATION PASS" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("table", "error"),
+    [
+        ({}, "process not found"),
+        (
+            {10: ProcessInfo(10, 1, 900, "/tmp/gludd-other/run")},
+            "namespace mismatch",
+        ),
+    ],
+)
+def test_cli_validate_only_rejects_the_same_identity_failures_as_apply(
+    table: dict[int, ProcessInfo],
+    error: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with (
+        patch("scripts.process_cleanup.snapshot_processes", return_value=table),
+        patch("scripts.process_cleanup.os.kill") as kill,
+    ):
+        result = process_cleanup.main(
+            [
+                "--root-pid",
+                "10",
+                "--namespace",
+                "/tmp/gludd-contract",
+                "--validate-only",
+            ]
+        )
+
+    assert result == 2
+    kill.assert_not_called()
+    assert error in capsys.readouterr().err
+
+
+def test_process_group_liveness_and_signal_helpers_are_bounded() -> None:
+    with patch("scripts.process_cleanup.os.killpg") as kill_group:
+        assert process_cleanup.process_group_alive(42) is True
+        assert process_cleanup.signal_process_group(42, signal.SIGTERM) is True
+    assert [call.args for call in kill_group.call_args_list] == [
+        (42, 0),
+        (42, signal.SIGTERM),
+    ]
+
+    with patch(
+        "scripts.process_cleanup.os.killpg", side_effect=ProcessLookupError
+    ) as kill_group:
+        assert process_cleanup.process_group_alive(42) is False
+        assert process_cleanup.signal_process_group(42, signal.SIGKILL) is False
+    assert kill_group.call_count == 2
+    assert process_cleanup.process_group_alive(1) is False
 
 
 def test_cli_dry_run_proves_the_same_identity_as_apply(

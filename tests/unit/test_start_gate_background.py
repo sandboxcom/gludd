@@ -163,6 +163,37 @@ def test_timeout_terminates_exact_session_and_removes_owned_pid(tmp_path: Path) 
     assert state["termination_reason"] == "gate-timeout"
 
 
+def test_timeout_escalates_for_owned_group_after_leader_exits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    identity = GateIdentity("run", 4242, "started", 4242, 4242)
+    state_checks = 0
+
+    def process_state(_identity: GateIdentity) -> str:
+        nonlocal state_checks
+        state_checks += 1
+        return "owned" if state_checks == 1 else "gone"
+
+    group_states = iter((True, True, False))
+    signals: list[signal.Signals] = []
+    monkeypatch.setattr(launcher, "_process_state", process_state)
+    monkeypatch.setattr(
+        launcher,
+        "process_group_alive",
+        lambda _process_group_id: next(group_states, False),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        os,
+        "killpg",
+        lambda _process_group_id, signum: signals.append(signum),
+    )
+
+    launcher._terminate_session(identity, grace_seconds=0, poll_seconds=0.001)
+
+    assert signals == [signal.SIGTERM, signal.SIGKILL]
+
+
 def test_identity_mismatch_never_signals_reused_pid(tmp_path: Path) -> None:
     result = launch_gate(
         tmp_path,
@@ -641,4 +672,3 @@ def test_cli_watch_mode_publishes_finished_result(tmp_path: Path) -> None:
         )
         == 0
     )
-

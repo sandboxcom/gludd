@@ -108,6 +108,33 @@ def namespace_matches(command: str, namespace: str) -> bool:
     return bool(marker) and marker in command
 
 
+def process_group_alive(process_group_id: int) -> bool:
+    """Return whether an owned POSIX process group still has a live member."""
+    if process_group_id <= 1 or os.name != "posix":
+        return False
+    try:
+        os.killpg(process_group_id, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # The group exists, even though this owner can no longer signal it.
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def signal_process_group(process_group_id: int, sig: signal.Signals) -> bool:
+    """Signal one explicitly owned POSIX process group, containing races."""
+    if process_group_id <= 1 or os.name != "posix":
+        return False
+    try:
+        os.killpg(process_group_id, sig)
+    except (ProcessLookupError, PermissionError, OSError):
+        return False
+    return True
+
+
 def load_lock_owner(path: str | Path, namespace: str) -> int | None:
     """Read a JSON lock owner only when its PID and namespace are valid.
 
@@ -139,14 +166,30 @@ def terminate_tree(
     Every candidate is checked against the namespace immediately before the
     signal.  A reused PID from another project is skipped and never killed.
     """
+    candidates = namespaced_process_tree(table, root_pid, namespace=namespace)
+    return _terminate_processes(candidates, sig=sig)
+
+
+def namespaced_process_tree(
+    table: Mapping[int, ProcessInfo], root_pid: int, *, namespace: str
+) -> list[ProcessInfo]:
+    """Select one tree only when its root belongs to the exact namespace."""
     root = table.get(root_pid)
     if root is None or not namespace_matches(root.command, namespace):
         return []
-    candidates = [*descendant_processes(table, root_pid), root]
+    return [
+        process
+        for process in [*descendant_processes(table, root_pid), root]
+        if namespace_matches(process.command, namespace)
+    ]
+
+
+def _terminate_processes(
+    candidates: list[ProcessInfo], *, sig: signal.Signals
+) -> list[int]:
+    """Signal a previously admitted child-before-parent process selection."""
     killed: list[int] = []
     for process in candidates:
-        if not namespace_matches(process.command, namespace):
-            continue
         try:
             os.kill(process.pid, sig)
         except (ProcessLookupError, PermissionError, OSError):
@@ -169,13 +212,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.root_pid <= 0 or not namespace_path.is_absolute() or namespace_path == Path("/"):
         parser.error("root PID must be positive and namespace must be a non-root absolute path")
 
-    if args.validate_only:
-        print(
-            "PROCESS-CLEANUP-VALIDATION PASS "
-            f"pid={args.root_pid} namespace={namespace} apply={int(args.apply)}"
-        )
-        return 0
-
     table = snapshot_processes()
     root = table.get(args.root_pid)
     if root is None:
@@ -189,20 +225,25 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    candidates = [
-        process.pid
-        for process in [*descendant_processes(table, args.root_pid), root]
-        if namespace_matches(process.command, namespace)
-    ]
+    candidates = namespaced_process_tree(table, args.root_pid, namespace=namespace)
+    candidate_pids = [process.pid for process in candidates]
+    if args.validate_only:
+        print(
+            "PROCESS-CLEANUP-VALIDATION PASS "
+            f"pid={args.root_pid} namespace={namespace} apply={int(args.apply)} "
+            "candidates=" + ",".join(str(pid) for pid in candidate_pids)
+        )
+        return 0
+
     if not args.apply:
         print(
             "PROCESS-CLEANUP-DRY-RUN "
             f"pid={args.root_pid} namespace={namespace} candidates="
-            + ",".join(str(pid) for pid in candidates)
+            + ",".join(str(pid) for pid in candidate_pids)
         )
         return 0
 
-    killed = terminate_tree(table, args.root_pid, namespace=namespace)
+    killed = _terminate_processes(candidates, sig=signal.SIGTERM)
     print("PROCESS-CLEANUP-APPLIED killed=" + ",".join(str(pid) for pid in killed))
     return 0 if args.root_pid in killed else 1
 

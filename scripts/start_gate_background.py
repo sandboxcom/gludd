@@ -28,11 +28,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO
 
 if TYPE_CHECKING:
+    from scripts.process_cleanup import process_group_alive, signal_process_group
     from scripts.resource_arbiter import project_namespace
 else:
     if __package__:
+        from scripts.process_cleanup import process_group_alive, signal_process_group
         from scripts.resource_arbiter import project_namespace
     else:
+        from process_cleanup import process_group_alive, signal_process_group
         from resource_arbiter import project_namespace
 
 
@@ -295,11 +298,7 @@ def _current_log_path(paths: GatePaths, identity: GateIdentity) -> Path | None:
 def _signal_session(identity: GateIdentity, signum: signal.Signals) -> bool:
     if _process_state(identity) != "owned":
         return False
-    try:
-        os.killpg(identity.process_group_id, signum)
-    except (ProcessLookupError, PermissionError):
-        return False
-    return True
+    return signal_process_group(identity.process_group_id, signum)
 
 
 def _terminate_session(
@@ -309,17 +308,23 @@ def _terminate_session(
     poll_seconds: float = DEFAULT_POLL_SECONDS,
 ) -> None:
     """TERM then KILL only the launched session after exact revalidation."""
-    _signal_session(identity, signal.SIGTERM)
+    if not _signal_session(identity, signal.SIGTERM):
+        return
+
+    # The leader may exit before descendants finish their own cleanup.  Once
+    # admitted by its exact PID/start/session identity, the process-group ID
+    # remains bound to that group until its last member exits, so keep watching
+    # the group rather than treating leader exit as full-tree completion.
     deadline = time.monotonic() + max(0.0, grace_seconds)
-    while _process_state(identity) == "owned" and time.monotonic() < deadline:
+    while process_group_alive(identity.process_group_id) and time.monotonic() < deadline:
         time.sleep(min(max(poll_seconds, 0.001), max(0.0, deadline - time.monotonic())))
-    if _process_state(identity) == "owned":
-        _signal_session(identity, signal.SIGKILL)
+    if process_group_alive(identity.process_group_id):
+        signal_process_group(identity.process_group_id, signal.SIGKILL)
         kill_deadline = time.monotonic() + max(
             poll_seconds, min(grace_seconds, 1.0)
         )
         while (
-            _process_state(identity) == "owned"
+            process_group_alive(identity.process_group_id)
             and time.monotonic() < kill_deadline
         ):
             time.sleep(

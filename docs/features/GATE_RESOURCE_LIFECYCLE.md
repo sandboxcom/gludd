@@ -476,6 +476,24 @@ If watcher creation fails, launch is rolled back and the gate is reaped before
 the command returns. This closes the orphan-helper path while preserving PID,
 status, timeout, log, namespace, and waiter compatibility.
 
+A later timeout exposed an important distinction between the process-group
+leader and the group it owns. Recursive Make exited promptly after `SIGTERM`,
+while the serial shard runner was still performing its bounded signal cleanup.
+The watcher saw the leader disappear, recorded `GATE_TIMEOUT`, and stopped
+before escalating the still-live group. It now uses the exact PID, OS start
+token, PGID, and SID to admit the first signal, then polls that admitted PGID
+until the final group member exits. A PGID remains bound while that group has a
+member, so leader exit cannot transfer authority; survivors receive the bounded
+`SIGKILL` escalation without widening cleanup to a name or global process scan.
+
+This is the same failure class practitioners report in pytest-timeout
+[#159](https://github.com/pytest-dev/pytest-timeout/issues/159), where killing
+pytest leaves subprocesses reparented, and
+[#134](https://github.com/pytest-dev/pytest-timeout/issues/134), where skipped
+fixture teardown leaves an opened process behind. The reports reinforce that a
+timeout result is not cleanup evidence: the external owner must retain a stable
+group handle and prove that the group becomes empty.
+
 `make gate-background-observed` remains the automation entrypoint when a runner
 requires a visible top-level owner. It launches the same session-isolated gate
 and enters `gate-wait`; `GATE_TIMEOUT` and `GATE_POLL_INTERVAL` remain explicit,
@@ -497,6 +515,12 @@ new child and leave it reparented indefinitely
 ([runner issue #4601](https://github.com/actions/runner/issues/4601)). Together
 they support explicit session boundaries plus an identity-aware, bounded owner;
 neither `nohup` alone nor broad process-table cleanup supplies both properties.
+
+The emergency `terminate-project-process-tree` path follows the same fail-closed
+rule in validation and apply modes. Both take one bounded process snapshot,
+require the root PID to be present, and require the same namespace match before
+listing or signaling any descendant. Validation performs no signal, but it can
+no longer approve a PID/namespace pair that apply would reject.
 
 This rollout is ZDD for application services: it changes only the local
 release-control process tree, opens no listener, changes no schema, and neither
