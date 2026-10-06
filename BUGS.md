@@ -4,6 +4,16 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-10-06 — (resolved locally; exact-candidate gate required) Live observed gate was reported as stalled
+
+- **What happened**: `make pipeline-status` reported `STALLED` while `gate-background-observed` still owned a live gate and its exact log continued to advance. `.gate-status` remained at its initial `RUNNING` timestamp during the long phase.
+- **Root cause**: The local collector treated `.gate-status` as both terminal evidence and the only activity heartbeat. The background launcher intentionally updates the status file only at lifecycle transitions and records ongoing work in the exact receipt-owned log, so a healthy phase longer than 120 seconds became a false stall.
+- **Fix applied**: The collector now admits a fresh log mtime only when the durable receipt is `running`, its PID matches `.gate-background.pid`, its project root matches the invoking checkout, and its resolved `gate-*.log` stays directly under that checkout's `.gate-logs`. It reports `ACTIVE` when that exact log is fresh, reports both ages when status and log are stale, and ignores missing, malformed, terminal, mismatched, or path-escaping receipts. Log activity never becomes PASS evidence.
+- **Evidence**: A failing-first regression reproduced the false `STALLED` result with a 499-second-old status marker and a 25-second-old exact gate log. The repaired regression and ownership-negative cases are green; focused coverage, lint, types, collection, and commit evidence are recorded in the owning task entry. The parent-owned exact-candidate gate remains required before promotion.
+- **Practitioner evidence**: GitHub Community discussion [#125010](https://github.com/orgs/community/discussions/125010) records jobs processing or completing while workflow status remained queued/not-started, and long-running discussion [#52284](https://github.com/orgs/community/discussions/52284) records buffered progress output across hosted and self-hosted runners. `docs/CI_EXACT_SHA_SIGNAL.md` keeps the resulting operator contract: identity-bound activity can refute a stale diagnosis, but only terminal evidence can establish success.
+- **ZDD and rollback**: This is a read-only status calculation. It starts, stops, and reloads no process and changes no listener, schema, credential, or deployment. New invocations adopt it immediately; rollback reverts the collector without disturbing a running gate or its authoritative terminal receipt.
+- **Lesson**: A transition marker and a heartbeat are distinct evidence streams. Correlate the heartbeat to exact live ownership before using it for liveness, and never promote liveness into success.
+
 ### 2026-10-06 — (resolved locally; exact-candidate gate required) Pytest confinement rejected its configured integration basetemp
 
 - **What happened**: The watchdog-owned integration gate failed `tests/integration/test_full_pipeline_e2e.py::TestFullPipelineE2E::test_todo_from_api_to_reconciled_status` with zero `gludd/` branches. `ExecutionEngine` swallowed the branch-creation exception as designed, and reconciliation logged that pytest worktree confinement had denied the isolated repository mutation.

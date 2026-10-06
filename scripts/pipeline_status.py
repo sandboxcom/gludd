@@ -26,6 +26,7 @@ DEFAULT_REQUIRED_WORKFLOWS = ("Build and Release", "Molecule Tests")
 DEFAULT_RUN_EVENTS = frozenset(("push", "workflow_dispatch"))
 SHA_RE = re.compile(r"[0-9a-f]{40}\Z")
 NON_TERMINAL = {"in_progress", "pending", "queued", "requested", "waiting"}
+LOCAL_GATE_STALE_SECONDS = 120
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -246,6 +247,34 @@ def remote_head(
     return sha
 
 
+def _current_gate_log_age(pid: int, now: int) -> int | None:
+    """Return age of the exact running gate log named by its durable receipt."""
+    project_root = Path.cwd().resolve()
+    log_dir = (project_root / ".gate-logs").resolve()
+    state_file = log_dir / "gate-background-state.json"
+    try:
+        payload: object = json.loads(state_file.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            return None
+        raw_log_path = payload.get("log_path")
+        raw_project_root = payload.get("project_root")
+        if not isinstance(raw_log_path, str) or not isinstance(raw_project_root, str):
+            return None
+        log_path = Path(raw_log_path).resolve()
+        if (
+            payload.get("state") != "running"
+            or payload.get("pid") != pid
+            or Path(raw_project_root).resolve() != project_root
+            or log_path.parent != log_dir
+            or not log_path.name.startswith("gate-")
+            or log_path.suffix != ".log"
+        ):
+            return None
+        return max(0, now - int(log_path.stat().st_mtime))
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError, ValueError):
+        return None
+
+
 def local_gate() -> None:
     """Print the current local gate marker and stale/dead diagnostics."""
     gate = Path(".gate-status")
@@ -261,10 +290,23 @@ def local_gate() -> None:
     if not pid:
         return
     try:
-        os.kill(int(pid), 0)
-        age = int(time.time()) - int(gate.stat().st_mtime)
-        if age > 120:
-            print(f"  STALLED: .gate-status not updated for {age} seconds")
+        running_pid = int(pid)
+        os.kill(running_pid, 0)
+        now = int(time.time())
+        age = max(0, now - int(gate.stat().st_mtime))
+        if age > LOCAL_GATE_STALE_SECONDS:
+            log_age = _current_gate_log_age(running_pid, now)
+            if log_age is not None and log_age <= LOCAL_GATE_STALE_SECONDS:
+                print(f"  ACTIVE: background gate log updated {log_age} seconds ago")
+            else:
+                suffix = (
+                    f"; background gate log not updated for {log_age} seconds"
+                    if log_age is not None
+                    else ""
+                )
+                print(
+                    f"  STALLED: .gate-status not updated for {age} seconds{suffix}"
+                )
     except (OSError, ValueError):
         print(f"  DEAD: pid={pid} no longer running")
 

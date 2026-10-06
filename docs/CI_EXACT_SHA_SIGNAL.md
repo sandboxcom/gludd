@@ -111,9 +111,32 @@ adapter as the release precondition. This keeps interactive status, automation,
 and release evidence on one implementation and prevents a status path from
 claiming green while another required workflow is red.
 
+### Local gate liveness
+
+`.gate-status` is terminal evidence, not a per-phase heartbeat. A long-running
+`gate-background-observed` invocation can therefore leave that file unchanged
+while its exact gate process and log continue to advance. `pipeline-status`
+reports `ACTIVE` instead of `STALLED` when the status marker is older than 120
+seconds but the exact receipt-owned log has changed within that window.
+
+The activity fallback is intentionally narrow. The receipt must be `running`,
+its PID must match `.gate-background.pid`, its project root must match the
+invoking checkout, and its resolved `gate-*.log` must remain directly inside
+that checkout's `.gate-logs` directory. Missing, malformed, terminal,
+cross-project, PID-mismatched, or path-escaping receipts are ignored. If both
+the status marker and the admitted log are older than 120 seconds, the output
+reports both ages as `STALLED`. Log activity is liveness evidence only; it can
+never produce PASS or satisfy the exact-SHA release verdict.
+
+This is a read-only ZDD diagnostic change. It starts, stops, and reloads no
+process and changes no listener, schema, credential, or deployment. New status
+calls adopt it immediately. Rollback is a code revert; running gates continue
+under their existing owner and their terminal receipts remain authoritative.
+
 The regression suite covers multiple workflows for one SHA, superseded runs,
 missing and pending workflows, API failures, remote-ref resolution, and the
-network-free validation contract. Its focused coverage gate is:
+network-free validation contract. It also covers fresh and stale exact-run log
+heartbeats plus rejection of unowned receipts. Its focused coverage gate is:
 
 ```text
 make coverage-files COVERAGE_TESTFILES='tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_require_ci_green.py tests/unit/test_require_ci_green_detect_branch.py' COVERAGE_CONFIG=config/coverage_pipeline_status.ini COVERAGE_REPORT=.gate-logs/coverage-pipeline-status.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=1 OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=300 OBSERVED_RETAIN_RUNS=20
@@ -145,6 +168,17 @@ make coverage-files COVERAGE_TESTFILES='tests/unit/test_pipeline_status_exact_sh
   non-default branches. Therefore an empty filtered response remains
   `INCOMPLETE`, never green, and every returned run is rechecked locally against
   its exact SHA, branch, eligible event, and required workflow identity.
+- In GitHub Community discussion
+  [#125010](https://github.com/orgs/community/discussions/125010), practitioners
+  reported workflows remaining queued or not-started while their jobs were
+  actually processing or had completed. Discussion
+  [#52284](https://github.com/orgs/community/discussions/52284) separately
+  records years of user reports that long-running Actions output can be
+  buffered instead of displayed in real time. These are different platform
+  layers from Gludd's local gate, but the durable lesson is the same: a status
+  sentinel and an activity stream answer different questions. Gludd admits its
+  exact local log only as liveness evidence and retains terminal status as the
+  sole verdict.
 - The GitHub CLI documents that [`gh workflow run` creates a dispatch and
   returns the created run URL when available](https://cli.github.com/manual/gh_workflow_run).
   It also documents that [`gh run list` supports `--commit` and exposes

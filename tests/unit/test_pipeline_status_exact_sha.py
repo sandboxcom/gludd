@@ -275,10 +275,119 @@ def test_local_gate_reports_missing_dead_and_stalled_states(
 
     pid_file.write_text("42", encoding="utf-8")
     os.utime(gate, (1, 1))
-    monkeypatch.setattr(pipeline_status.time, "time", lambda: 500)
-    monkeypatch.setattr(pipeline_status.os, "kill", lambda _pid, _signal: None)
+    monkeypatch.setattr("pipeline_status.time.time", lambda: 500)
+    monkeypatch.setattr("pipeline_status.os.kill", lambda _pid, _signal: None)
     pipeline_status.local_gate()
     assert "STALLED" in capsys.readouterr().out
+
+
+def test_local_gate_uses_current_background_log_as_activity_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    gate = tmp_path / ".gate-status"
+    pid_file = tmp_path / ".gate-background.pid"
+    log_dir = tmp_path / ".gate-logs"
+    log_dir.mkdir()
+    gate_log = log_dir / "gate-20261006-current.log"
+    state_file = log_dir / "gate-background-state.json"
+
+    gate.write_text("RUNNING\n", encoding="utf-8")
+    pid_file.write_text("42\n", encoding="utf-8")
+    gate_log.write_text("[gate 12:00:00] phase unit-tests\n", encoding="utf-8")
+    state_file.write_text(
+        json.dumps(
+            {
+                "state": "running",
+                "pid": 42,
+                "project_root": str(tmp_path.resolve()),
+                "log_path": str(gate_log.resolve()),
+            }
+        ),
+        encoding="utf-8",
+    )
+    os.utime(gate, (1, 1))
+    os.utime(gate_log, (475, 475))
+    monkeypatch.setattr("pipeline_status.time.time", lambda: 500)
+    monkeypatch.setattr("pipeline_status.os.kill", lambda _pid, _signal: None)
+
+    pipeline_status.local_gate()
+
+    output = capsys.readouterr().out
+    assert "STALLED" not in output
+    assert "ACTIVE: background gate log updated 25 seconds ago" in output
+
+
+def test_local_gate_reports_both_stale_status_and_stale_owned_log(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    gate = tmp_path / ".gate-status"
+    pid_file = tmp_path / ".gate-background.pid"
+    log_dir = tmp_path / ".gate-logs"
+    log_dir.mkdir()
+    gate_log = log_dir / "gate-20261006-stale.log"
+    gate.write_text("RUNNING\n", encoding="utf-8")
+    pid_file.write_text("42\n", encoding="utf-8")
+    gate_log.write_text("last progress\n", encoding="utf-8")
+    (log_dir / "gate-background-state.json").write_text(
+        json.dumps(
+            {
+                "state": "running",
+                "pid": 42,
+                "project_root": str(tmp_path.resolve()),
+                "log_path": str(gate_log.resolve()),
+            }
+        ),
+        encoding="utf-8",
+    )
+    os.utime(gate, (1, 1))
+    os.utime(gate_log, (200, 200))
+    monkeypatch.setattr("pipeline_status.time.time", lambda: 500)
+    monkeypatch.setattr("pipeline_status.os.kill", lambda _pid, _signal: None)
+
+    pipeline_status.local_gate()
+
+    output = capsys.readouterr().out
+    assert "STALLED: .gate-status not updated for 499 seconds" in output
+    assert "background gate log not updated for 300 seconds" in output
+
+
+@pytest.mark.parametrize(
+    "receipt_update",
+    [
+        {"state": "finished"},
+        {"pid": 99},
+        {"project_root": "/tmp/unrelated-project"},
+        {"log_path": "/tmp/gate-unowned.log"},
+    ],
+)
+def test_current_gate_log_age_rejects_unowned_receipts(
+    receipt_update: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    log_dir = tmp_path / ".gate-logs"
+    log_dir.mkdir()
+    gate_log = log_dir / "gate-20261006-current.log"
+    gate_log.write_text("progress\n", encoding="utf-8")
+    receipt: dict[str, object] = {
+        "state": "running",
+        "pid": 42,
+        "project_root": str(tmp_path.resolve()),
+        "log_path": str(gate_log.resolve()),
+    }
+    receipt.update(receipt_update)
+    (log_dir / "gate-background-state.json").write_text(
+        json.dumps(receipt), encoding="utf-8"
+    )
+
+    assert pipeline_status._current_gate_log_age(42, 500) is None
 
 
 def test_local_gate_tolerates_missing_empty_and_fresh_pid_evidence(
@@ -300,8 +409,8 @@ def test_local_gate_tolerates_missing_empty_and_fresh_pid_evidence(
 
     pid_file.write_text("42", encoding="utf-8")
     current_mtime = gate.stat().st_mtime
-    monkeypatch.setattr(pipeline_status.time, "time", lambda: current_mtime)
-    monkeypatch.setattr(pipeline_status.os, "kill", lambda _pid, _signal: None)
+    monkeypatch.setattr("pipeline_status.time.time", lambda: current_mtime)
+    monkeypatch.setattr("pipeline_status.os.kill", lambda _pid, _signal: None)
     pipeline_status.local_gate()
     output = capsys.readouterr().out
     assert "STALLED" not in output
