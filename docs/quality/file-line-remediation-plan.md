@@ -14,30 +14,33 @@ split on behavior boundaries, not arbitrary line ranges.
 
 ## Format decisions and evidence
 
-### detect-secrets baseline: repair, then canonical compaction
+### detect-secrets baseline: repaired and canonically compacted
 
-The current baseline contains findings for `.secrets.baseline` itself and omits
-the upstream `is_baseline_file` filter. That recursive inventory accounts for
-most of its 208,277 lines. The first implementation step is therefore to restore
-the official baseline-file filter and regenerate against the exact tracked-file
-inventory. The maintained update command removes findings that no longer exist
-while preserving labels, as documented in the
+The pre-migration baseline contained findings for `.secrets.baseline` itself and
+omitted the upstream `is_baseline_file` filter. That recursive inventory
+accounted for most of its 208,277 lines. The replacement uses
+`scripts/manage_secrets_baseline.py` to run the maintained
+`detect-secrets scan --baseline` update boundary with the official filter and
+the exact exclusions in `config/detect_secrets_baseline_policy.json`. Upstream
+scan evidence prunes stale findings while surviving audit labels, plugin
+configuration, and fingerprint multiplicity are checked before publication, as
+documented in the
 [detect-secrets README](https://github.com/Yelp/detect-secrets/blob/master/README.md).
 The upstream design treats a baseline as one JSON document containing settings
 and a `SecretsCollection`, so directory fragmentation would break the supported
 CLI boundary; see the
 [baseline design](https://github.com/Yelp/detect-secrets/blob/master/docs/design.md).
 
-After de-recursion, an atomic JSON serializer uses sorted keys and compact
-separators. Whitespace is not part of the JSON data model, so `scan --baseline`,
-the pre-commit hook, and `audit --stats` continue to consume the same non-slim
-baseline. Gludd must not use upstream `--slim`: the official help says slim
-baselines cannot be audited. Normalized JSON equality before and after
-compaction, exact finding identity, hook behavior, audit behavior, and a second
-regeneration with zero diff are mandatory. A long-lived practitioner question,
-[detect-secrets issue 246](https://github.com/Yelp/detect-secrets/issues/246),
-shows why the update and hook roles must remain distinct; the project must not
-replace them with an ad-hoc scanner.
+The resulting non-slim baseline is one canonical physical line containing 337
+result paths and 934 findings. Its atomic JSON serializer uses sorted keys and
+compact separators; the mature hook still rejects a new credential fixture and
+`audit --stats` reads it. Gludd does not use upstream `--slim`, so the artifact
+remains auditable. Failure before the final same-directory `os.replace` leaves
+the predecessor intact, and one Git revert rolls back the policy, manager, and
+baseline together. The long-lived practitioner question in
+[detect-secrets issue 246](https://github.com/Yelp/detect-secrets/issues/246)
+shows why update and hook roles remain distinct; Gludd did not add an ad-hoc
+scanner.
 
 ### uv lock: supported profile fragmentation, never hand-minification
 

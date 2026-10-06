@@ -342,7 +342,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         status-snapshot audit-evidence deps-audit dogfood-features ruff-audit check-make-help \
         skill-install skill-list bootstrap-skills scan-tool-usage \
          scan-secrets scan-secrets-baseline clean-untracked clean-hooks clean-plugins \
-         secrets-scrub secrets-scan secrets-baseline security-audit clean-artifacts health-check \
+         secrets-scrub secrets-scan secrets-baseline secrets-baseline-check security-audit clean-artifacts health-check \
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
          git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count git-patch-equivalence branches-unmerged-development branch-reconciliation-inventory branch-reconciliation-summary check-git-hygiene cache-disk cache-clean disk-user-caches cache-resource-inventory cache-resource-remove rm-files commit-and-ship commit-and-ship-push compute-model-hashes \
@@ -665,7 +665,8 @@ help:
 	@echo "  --- Secrets + Security ---"
 	@echo "  secrets-scan          Scan for secrets against baseline (read-only)"
 	@echo "  secrets-scrub         Interactive secret audit + scrub"
-	@echo "  secrets-baseline      Rebuild .secrets.baseline"
+	@echo "  secrets-baseline      Refresh and verify canonical .secrets.baseline"
+	@echo "  secrets-baseline-check Verify canonical .secrets.baseline without mutation (SECRETS_BASELINE_FILE, POLICY, REPO_ROOT, EXECUTABLE)"
 	@echo "  scan-secrets          Alias for secrets-scan"
 	@echo "  scan-secrets-baseline Alias for secrets-baseline"
 	@echo "  sast-summary          Summarize Bandit JSON by severity/rule/file with baseline deltas (SAST_REPORT, SAST_SUMMARY, SAST_BASELINE)"

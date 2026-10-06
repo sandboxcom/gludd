@@ -955,5 +955,3 @@ def verify_features(game_id: str, module: Any) -> list[str]:
     if fn is None:
         return [f"no verifier registered for game {game_id!r}"]
     return fn(module)
-
-

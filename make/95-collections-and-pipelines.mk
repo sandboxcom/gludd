@@ -785,4 +785,3 @@ print('OK: rag.py delegates to HashEmbedder + ModelGateway'); \
 
 user-test-batch:
 	@$(UV) run python scripts/run_user_test_batch.py
-

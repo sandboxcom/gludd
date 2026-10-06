@@ -7,12 +7,24 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 from scripts import vendor_presentation_assets as vendor
 
 
 def _payload(url: str) -> bytes:
     """Return stable synthetic bytes for one pinned URL."""
     return f"owned:{url}\n".encode()
+
+
+def test_precommit_formatters_preserve_digest_pinned_vendor_bytes() -> None:
+    """Generic text formatters must not rewrite immutable vendored assets."""
+    root = Path(__file__).resolve().parents[2]
+    config = yaml.safe_load((root / ".pre-commit-config.yaml").read_text(encoding="utf-8"))
+    hook_repo = next(repo for repo in config["repos"] if repo["repo"].endswith("pre-commit-hooks"))
+    hooks = {hook["id"]: hook for hook in hook_repo["hooks"]}
+
+    for hook_id in ("trailing-whitespace", "end-of-file-fixer"):
+        assert "docs/presentation/deck/vendor/" in hooks[hook_id].get("exclude", "")
 
 
 def test_refresh_and_validate_exact_vendor_tree(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

@@ -1726,4 +1726,3 @@ molecule-test-shard:
 # Usage: make log-agent-result AGENT_ID=agent-foo RESULT_SUMMARY="fixed X"
 log-agent-result:
 	@$(UV) run python3 scripts/log_agent_result.py
-

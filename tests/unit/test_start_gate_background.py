@@ -641,4 +641,3 @@ def test_cli_watch_mode_publishes_finished_result(tmp_path: Path) -> None:
         )
         == 0
     )
-

@@ -279,4 +279,3 @@ enforcement-status:
 #   make static-coverage [THRESHOLD=85]
 static-coverage:
 	@THRESHOLD=$(or $(THRESHOLD),85) $(PYTHON) scripts/static_coverage_audit.py
-

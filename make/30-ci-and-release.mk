@@ -1352,4 +1352,3 @@ ci-status-api:
 	curl -sf -H "Authorization: Bearer $$TOKEN" -H "Accept: application/vnd.github+json" \
 		"https://api.github.com/repos/sandboxcom/gludd/actions/runs?per_page=8" 2>&1 | \
 		$(PYTHON) -c "import sys,json; d=json.load(sys.stdin); [print(r['created_at'], r['head_branch'], r['status'], r['conclusion'], r['html_url']) for r in d.get('workflow_runs',[])]" 2>&1 || echo "ci-status-api-failed"
-
