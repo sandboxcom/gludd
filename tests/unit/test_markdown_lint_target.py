@@ -30,8 +30,8 @@ def test_lint_markdown_runs_locked_cli_against_explicit_file() -> None:
     )
     output = result.stdout + result.stderr
     assert result.returncode == 0, output
-    assert "Linting: 1 file" in output
-    assert "Summary: 0 issues in 0 files" in output
+    assert f"MARKDOWNLINT_INPUTS files={FEATURE_DOC}" in output
+    assert "ERROR:" not in output
 
 
 def test_lint_markdown_requires_explicit_files() -> None:
@@ -45,9 +45,42 @@ def test_lint_markdown_requires_explicit_files() -> None:
     assert "Usage: make lint-markdown" in output
 
 
+def test_lint_markdown_accepts_one_literal_recursive_glob() -> None:
+    result = _run_make(
+        "lint-markdown",
+        'MARKDOWN_FILES="**/*.md"',
+        f"MARKDOWNLINT_CONFIG={CONFIG}",
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "too many arguments" not in output
+    assert "MARKDOWNLINT_INPUTS files=**/*.md" in output
+
+
 def test_lint_markdown_dependency_and_contract_are_exactly_pinned() -> None:
     package = json.loads((ROOT / ".opencode" / "package.json").read_text())
-    assert package["devDependencies"]["markdownlint-cli2"] == "0.23.2"
+    assert package["devDependencies"]["markdownlint-cli"] == "0.49.1"
+    assert "markdownlint-cli2" not in package["devDependencies"]
+    assert package["overrides"] == {
+        "js-yaml": "5.4.1",
+        "katex": "0.18.2",
+        "smol-toml": "1.9.0",
+    }
+
+    lock = json.loads((ROOT / ".opencode" / "package-lock.json").read_text())
+    packages = lock["packages"]
+    assert "node_modules/braces" not in packages
+    assert packages["node_modules/js-yaml"]["version"] == "5.4.1"
+    assert packages["node_modules/katex"]["version"] == "0.18.2"
+    assert packages["node_modules/smol-toml"]["version"] == "1.9.0"
+
+    makefile = (ROOT / "Makefile").read_text()
+    target = makefile.split("\nlint-markdown:\n", maxsplit=1)[1].split(
+        "\n\nlint-fix:", maxsplit=1
+    )[0]
+    assert ".opencode/node_modules/.bin/markdownlint " in target
+    assert ".opencode/node_modules/.bin/markdownlint-cli2" not in target
+    assert '--configPointer "/config"' in target
 
     contract = json.loads(
         (ROOT / "config" / "make_target_contract.json").read_text()

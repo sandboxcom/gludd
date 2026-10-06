@@ -427,7 +427,7 @@ help:
 	@echo "  lint-python           Run the canonical Python Ruff gate (application + tests)"
 	@echo "  lint-make             Run duplicate-target, parity, and Make dry-run validation"
 	@echo "  lint-files            Run ruff linter on FILES only"
-	@echo "  lint-markdown         Run locked markdownlint-cli2 (MARKDOWN_FILES, MARKDOWNLINT_CONFIG)"
+	@echo "  lint-markdown         Run locked markdownlint-cli (MARKDOWN_FILES, MARKDOWNLINT_CONFIG)"
 	@echo "  lint-docstrings       Run locked Ruff docstring rules on DOCSTRING_FILES"
 	@echo "  lint-fix              Run ruff with auto-fix"
 	@echo "  lint-fix-files        Run ruff auto-fix on FILES only"
@@ -1117,16 +1117,17 @@ lint-docstrings:
 	@$(UV) run ruff check --select D --config pyproject.toml $(DOCSTRING_FILES)
 
 lint-markdown:
-	@if [ -z "$(MARKDOWN_FILES)" ] || [ -z "$(MARKDOWNLINT_CONFIG)" ]; then \
+	@if [ -z '$(strip $(MARKDOWN_FILES))' ] || [ -z '$(strip $(MARKDOWNLINT_CONFIG))' ]; then \
 		echo "Usage: make lint-markdown MARKDOWN_FILES='README.md docs/file.md' MARKDOWNLINT_CONFIG=config/markdownlint-cli2.jsonc"; \
 		exit 2; \
 	fi
 	@if [ ! -f "$(MARKDOWNLINT_CONFIG)" ]; then echo "ERROR: Markdown config not found: $(MARKDOWNLINT_CONFIG)"; exit 2; fi
-	@if [ ! -x ".opencode/node_modules/.bin/markdownlint-cli2" ]; then \
-		echo "INFO: locked markdownlint-cli2 not found; syncing locked Node deps"; \
-		$(MAKE) node-deps-sync || { echo "ERROR: locked markdownlint-cli2 is unavailable and node-deps-sync failed"; exit 2; }; \
+	@if [ ! -x ".opencode/node_modules/.bin/markdownlint" ]; then \
+		echo "INFO: locked markdownlint-cli not found; syncing locked Node deps"; \
+		$(MAKE) node-deps-sync || { echo "ERROR: locked markdownlint-cli is unavailable and node-deps-sync failed"; exit 2; }; \
 	fi
-	@.opencode/node_modules/.bin/markdownlint-cli2 --config "$(MARKDOWNLINT_CONFIG)" $(MARKDOWN_FILES)
+	@echo "MARKDOWNLINT_INPUTS files=$(MARKDOWN_FILES)"
+	@.opencode/node_modules/.bin/markdownlint --config "$(MARKDOWNLINT_CONFIG)" --configPointer "/config" --ignore-path ".gitignore" $(MARKDOWN_FILES)
 
 lint-fix:
 	@$(UV) run ruff check --fix --unsafe-fixes src tests

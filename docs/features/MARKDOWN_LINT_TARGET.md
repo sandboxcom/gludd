@@ -2,8 +2,8 @@
 
 ## Purpose
 
-Gludd now exposes one repository-owned Markdown lint command backed by the
-maintained markdownlint-cli2 package. The target replaces an advertised but
+Gludd exposes one repository-owned Markdown lint command backed by the
+maintained markdownlint-cli package. The target replaces an advertised but
 missing Make rule and prevents contributors from depending on a global binary,
 an unpinned npx download, or an untracked helper script.
 
@@ -21,14 +21,16 @@ an unpinned npx download, or an untracked helper script.
 - The checked-in configuration disables inline Markdown suppressions.
 - The initial rule set enforces heading progression and ATX form, trailing
   whitespace, hard tabs, heading spacing, and a final newline.
-- Found files, linted-file count, and the final issue count remain visible.
+- The exact requested inputs are printed before linting, and every finding is
+  emitted by the upstream CLI.
 - The target performs no write or auto-fix operation.
 
-markdownlint-cli2 0.23.2 is pinned exactly in the existing OpenCode Node package
+markdownlint-cli 0.49.1 is pinned exactly in the existing OpenCode Node package
 and lock. Its upstream documentation recommends local development dependency
-installation and supports explicit configuration plus file globs:
+installation and supports explicit configuration, a JSON Pointer into a nested
+configuration, and file globs:
 
-https://www.npmjs.com/package/markdownlint-cli2
+https://www.npmjs.com/package/markdownlint-cli
 
 ## Practitioner evidence
 
@@ -46,13 +48,28 @@ style opinion against a large legacy documentation tree:
 
 https://github.com/DavidAnson/markdownlint/issues/45
 
+markdownlint-cli issue #650 records an npm 12 user whose pre-commit environment
+passed a removed npm flag. Gludd therefore installs the tracked lock directly
+through node-deps-sync instead of delegating installation to pre-commit:
+
+https://github.com/igorshubovych/markdownlint-cli/issues/650
+
+The braces issue #70 documents a stack-exhaustion vulnerability with no patched
+release. markdownlint-cli2 pulled that package through its glob stack, so Gludd
+changed to markdownlint-cli, whose tinyglobby/minimatch stack does not install
+braces:
+
+https://github.com/micromatch/braces/issues/70
+
 ## Security and compatibility
 
 The target never executes repository Markdown, downloads plugins, or enables
 custom rules. Inline configuration is disabled so a document cannot waive a
 finding with an HTML comment. The local binary and transitive packages are
 resolved by package-lock integrity hashes through the existing namespaced npm
-cache and registry contract.
+cache and registry contract. Exact overrides pin the first patched releases of
+js-yaml (5.4.1), KaTeX (0.18.2), and smol-toml (1.9.0); the dependency test also
+proves that braces is absent from the lock.
 
 Existing Make callers are unaffected because the rule was previously missing.
 The help entry and make-target contract now state both variables. More rules can
@@ -72,8 +89,8 @@ uninterrupted.
 
 One short-lived Node process handles only the explicit files. There is no
 daemon, cache outside the existing project-namespaced npm cache, background
-worker, or unbounded repository walk. Standard output identifies found files,
-the number linted, and the terminal issue total.
+worker, or implicit repository walk. Standard output identifies the requested
+inputs before the upstream CLI emits any findings.
 
 ## Verification
 
