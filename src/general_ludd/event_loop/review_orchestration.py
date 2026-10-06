@@ -4,8 +4,20 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, cast
 
+from general_ludd.decision_codification.schema import (
+    DecisionKind,
+    FallbackReason,
+    NormalizationRefusalReason,
+)
+from general_ludd.decision_codification.service import (
+    DecisionCodificationAdapter,
+    DecisionResolution,
+    DecisionResolutionSource,
+)
 from general_ludd.event_loop.review_compaction import update_compaction_accuracy
 from general_ludd.schemas.task_decision import TaskDecision
 from general_ludd.schemas.task_return import TaskReturn
@@ -15,6 +27,51 @@ from general_ludd.self_improve.staging import (
 )
 
 logger = logging.getLogger(__name__)
+
+_CODIFIED_REVIEW_ACTIONS = {
+    "approve": "complete",
+    "request_changes": "needs_more_work",
+    "reject": "failed",
+}
+_TASK_DECISION_REVIEW_ACTIONS = {
+    "complete": "approve",
+    "needs_more_work": "request_changes",
+    "failed": "reject",
+    # These fallback-only decisions have no codified equivalent.  The resolver
+    # still requires one closed REVIEW action, but the captured TaskDecision is
+    # returned unchanged; use the conservative non-approval action here.
+    "blocked": "reject",
+    "manual_hold": "reject",
+    "ignore_duplicate": "reject",
+}
+_STRING_CONTEXT_FEATURES = (
+    "work_type",
+    "queue",
+    "risk_band",
+    "resource_profile",
+    "provider_class",
+)
+_BOOLEAN_CONTEXT_FEATURES = (
+    "approval_required",
+    "reversible",
+    "required_evidence",
+)
+_INTEGER_CONTEXT_FEATURES = (
+    "retry_count",
+    "estimated_cost_microusd",
+    "latency_ms",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _ReviewDecisionAttribution:
+    """Content-free provenance for one adapter-enabled live review."""
+
+    source: DecisionResolutionSource
+    candidate_digest: str | None = None
+    decision_receipt_digest: str | None = None
+    fallback_reason: FallbackReason | None = None
+    normalization_reason: NormalizationRefusalReason | None = None
 
 
 def is_managed_self_improve_todo(todo: object) -> bool:
@@ -65,6 +122,163 @@ def _task_return_from_record(record: Any) -> TaskReturn:
     )
 
 
+def _review_context_features(record: Any, task_return: TaskReturn) -> object:
+    """Project one return into the bounded live REVIEW feature vocabulary.
+
+    Risk is deliberately never inferred.  A producer/recorder must supply an
+    explicit low- or medium-risk band; missing, high-risk, or unsupported values
+    reach the adapter as an ineligible context and therefore abstain.
+    """
+    if not isinstance(task_return.todo_id, str) or not task_return.todo_id:
+        return None
+
+    features: dict[str, object] = {
+        "operation_class": "review",
+        "fallback_allowed": True,
+    }
+    for name in _STRING_CONTEXT_FEATURES:
+        value = safe_string_attribute(record, name)
+        if value is not None:
+            features[name] = value
+    for name in _BOOLEAN_CONTEXT_FEATURES:
+        value = getattr(record, name, None)
+        if type(value) is bool:
+            features[name] = value
+    for name in _INTEGER_CONTEXT_FEATURES:
+        value = getattr(record, name, None)
+        if type(value) is int:
+            features[name] = value
+    exit_code = getattr(record, "exit_code", None)
+    if type(exit_code) is int:
+        features["status"] = "succeeded" if exit_code == 0 else "failed"
+    return features
+
+
+def _is_sha256_digest(value: object) -> bool:
+    """Return whether a value is one exact lowercase SHA-256 identifier."""
+    if not isinstance(value, str) or not value.startswith("sha256:"):
+        return False
+    digest = value.removeprefix("sha256:")
+    return len(digest) == 64 and all(char in "0123456789abcdef" for char in digest)
+
+
+def _attribution_from_resolution(
+    resolution: DecisionResolution,
+) -> _ReviewDecisionAttribution:
+    """Reduce a resolution to closed reasons and digest-only attribution."""
+    abstention = resolution.abstention
+    return _ReviewDecisionAttribution(
+        source=resolution.source,
+        candidate_digest=resolution.candidate_digest,
+        decision_receipt_digest=resolution.decision_receipt_digest,
+        fallback_reason=abstention.reason if abstention is not None else None,
+        normalization_reason=(
+            abstention.normalization_reason if abstention is not None else None
+        ),
+    )
+
+
+def _codified_task_decision(
+    task_return: TaskReturn,
+    resolution: DecisionResolution,
+) -> TaskDecision:
+    """Map only a fully attributed closed REVIEW hit into a TaskDecision."""
+    mapped = _CODIFIED_REVIEW_ACTIONS.get(resolution.decision)
+    if (
+        resolution.source is not DecisionResolutionSource.CODIFIED
+        or mapped is None
+        or resolution.abstention is not None
+        or not _is_sha256_digest(resolution.candidate_digest)
+        or not _is_sha256_digest(resolution.decision_receipt_digest)
+        or not isinstance(task_return.todo_id, str)
+        or not task_return.todo_id
+    ):
+        raise ValueError("invalid codified REVIEW resolution")
+    assert resolution.decision_receipt_digest is not None
+    return TaskDecision(
+        return_id=task_return.return_id,
+        matched_todo_id=task_return.todo_id,
+        decision=mapped,
+        confidence=1.0,
+        evidence_refs=[resolution.decision_receipt_digest],
+    )
+
+
+def _review_action_for_fallback(decision: TaskDecision) -> str:
+    """Return a closed resolver action without narrowing fallback semantics."""
+    return _TASK_DECISION_REVIEW_ACTIONS.get(decision.decision, "reject")
+
+
+def _resolve_codified_or_review(
+    adapter: DecisionCodificationAdapter,
+    reviewer: Any,
+    record: Any,
+    task_return: TaskReturn,
+) -> tuple[TaskDecision, _ReviewDecisionAttribution]:
+    """Run exact local resolution and at most one reviewer call in one worker."""
+    fallback_attempted = False
+    fallback_decision: TaskDecision | None = None
+
+    def fallback(_abstention: object) -> str:
+        nonlocal fallback_attempted, fallback_decision
+        fallback_attempted = True
+        reviewed = reviewer.review_return(
+            task_return,
+            candidate_todos=[],
+            artifacts=[],
+        )
+        if not isinstance(reviewed, TaskDecision):
+            raise TypeError("reviewer returned an invalid TaskDecision")
+        fallback_decision = reviewed
+        return _review_action_for_fallback(reviewed)
+
+    try:
+        project_id = safe_string_attribute(record, "project_id", "") or ""
+        resolution = adapter.resolve(
+            project_id=project_id,
+            decision_kind=DecisionKind.REVIEW,
+            features=_review_context_features(record, task_return),
+            correlation_id=f"return-review:{task_return.return_id}",
+            now=datetime.now(UTC),
+            side_effect_id=f"task-decision:{task_return.return_id}",
+            fallback=fallback,
+        )
+        if not isinstance(resolution, DecisionResolution):
+            raise TypeError("decision adapter returned an invalid resolution")
+        attribution = _attribution_from_resolution(resolution)
+        if resolution.source is DecisionResolutionSource.CODIFIED:
+            return _codified_task_decision(task_return, resolution), attribution
+        if (
+            resolution.source is DecisionResolutionSource.AGENT_FALLBACK
+            and resolution.abstention is not None
+            and fallback_decision is not None
+        ):
+            return fallback_decision, attribution
+        raise ValueError("decision adapter returned inconsistent fallback state")
+    except Exception as exc:
+        logger.warning(
+            "Decision codification failed closed for return %s (%s)",
+            task_return.return_id,
+            type(exc).__name__,
+        )
+        runtime_attribution = _ReviewDecisionAttribution(
+            source=DecisionResolutionSource.AGENT_FALLBACK,
+            fallback_reason=FallbackReason.RUNTIME_ERROR,
+        )
+        if fallback_decision is not None:
+            return fallback_decision, runtime_attribution
+        if fallback_attempted:
+            raise
+        reviewed = reviewer.review_return(
+            task_return,
+            candidate_todos=[],
+            artifacts=[],
+        )
+        if not isinstance(reviewed, TaskDecision):
+            raise TypeError("reviewer returned an invalid TaskDecision") from exc
+        return reviewed, runtime_attribution
+
+
 async def _review_or_manual_hold(
     loop: Any,
     reviewer: Any,
@@ -88,6 +302,37 @@ async def _review_or_manual_hold(
             decision="manual_hold",
             confidence=0.0,
             audit_notes=[f"Reviewer error: {exc}"],
+        )
+
+
+async def _codified_review_or_manual_hold(
+    loop: Any,
+    adapter: DecisionCodificationAdapter,
+    reviewer: Any,
+    record: Any,
+    task_return: TaskReturn,
+) -> tuple[TaskDecision, _ReviewDecisionAttribution | None]:
+    """Resolve an adapter-enabled review off-loop with legacy error handling."""
+    try:
+        result = await loop._bounded_to_thread(
+            _resolve_codified_or_review,
+            adapter,
+            reviewer,
+            record,
+            task_return,
+        )
+        return cast(tuple[TaskDecision, _ReviewDecisionAttribution], result)
+    except Exception as exc:
+        logger.error("Reviewer raised for return %s: %s", task_return.return_id, exc)
+        return (
+            TaskDecision(
+                return_id=task_return.return_id,
+                matched_todo_id=task_return.todo_id,
+                decision="manual_hold",
+                confidence=0.0,
+                audit_notes=[f"Reviewer error: {exc}"],
+            ),
+            None,
         )
 
 
@@ -173,22 +418,34 @@ async def _write_review_audit(
     record: Any,
     decision: TaskDecision,
     return_id: str,
+    attribution: _ReviewDecisionAttribution | None = None,
 ) -> None:
     if loop._audit_repo is None:
         return
+    details: dict[str, object] = {
+        "decision": decision.decision,
+        "confidence": decision.confidence,
+        "matched_todo_id": decision.matched_todo_id,
+    }
+    if attribution is not None:
+        details["decision_source"] = attribution.source.value
+        if attribution.candidate_digest is not None:
+            details["candidate_digest"] = attribution.candidate_digest
+        if attribution.decision_receipt_digest is not None:
+            details["decision_receipt_digest"] = (
+                attribution.decision_receipt_digest
+            )
+        if attribution.fallback_reason is not None:
+            details["fallback_reason"] = attribution.fallback_reason.value
+        if attribution.normalization_reason is not None:
+            details["normalization_reason"] = attribution.normalization_reason.value
     try:
         await loop._audit_repo.create(
             event_type="return_reviewed",
             entity_type="task_return",
             entity_id=return_id,
             project_id=getattr(record, "project_id", None),
-            details=json.dumps(
-                {
-                    "decision": decision.decision,
-                    "confidence": decision.confidence,
-                    "matched_todo_id": decision.matched_todo_id,
-                }
-            ),
+            details=json.dumps(details),
         )
     except Exception:
         logger.warning(
@@ -206,7 +463,18 @@ class EventLoopReviewMixin:
         loop: Any = self
         reviewer = _selected_reviewer(loop)
         task_return = _task_return_from_record(record)
-        decision = await _review_or_manual_hold(loop, reviewer, task_return)
+        attribution: _ReviewDecisionAttribution | None = None
+        adapter = getattr(loop, "_decision_codification", None)
+        if adapter is None:
+            decision = await _review_or_manual_hold(loop, reviewer, task_return)
+        else:
+            decision, attribution = await _codified_review_or_manual_hold(
+                loop,
+                adapter,
+                reviewer,
+                record,
+                task_return,
+            )
         assert loop._todo_repo is not None
         assert loop._active_session is not None
         promotion_receipt, proceed = await _managed_promotion(
@@ -225,7 +493,13 @@ class EventLoopReviewMixin:
             promotion_receipt,
         ):
             return
-        await _write_review_audit(loop, record, decision, task_return.return_id)
+        await _write_review_audit(
+            loop,
+            record,
+            decision,
+            task_return.return_id,
+            attribution,
+        )
         logger.info(
             "In-process review for return %s -> %s",
             task_return.return_id,
