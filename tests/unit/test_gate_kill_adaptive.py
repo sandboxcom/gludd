@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import json
+import os as os_module
 import signal
+import subprocess as subprocess_module
+from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -82,6 +86,25 @@ def _owned_lock(root: Path, *, pid: int, started_at: str) -> Path:
     return lock
 
 
+def _legacy_lock(root: Path, *, pid: int, started_at: float) -> Path:
+    lock = root / ".gate-logs" / "gate-run.lock"
+    lock.parent.mkdir(parents=True)
+    lock.write_text(
+        json.dumps({"pid": pid, "started_at": started_at}) + "\n",
+        encoding="utf-8",
+    )
+    (root / ".gate-background.pid").write_text(f"{pid}\n", encoding="utf-8")
+    (root / ".gate-status").write_text(f"RUNNING 1 {pid}\n", encoding="utf-8")
+    return lock
+
+
+_LEGACY_OWNER_STARTED_AT = "Mon Oct  5 12:34:56 2026"
+_LEGACY_LOCK_STARTED_AT = (
+    datetime.strptime(_LEGACY_OWNER_STARTED_AT, "%a %b %d %H:%M:%S %Y").timestamp()
+    + 1.0
+)
+
+
 def test_gate_kill_terminates_owned_tree_across_process_groups(tmp_path: Path) -> None:
     root = tmp_path / "checkout"
     root.mkdir()
@@ -131,6 +154,461 @@ def test_gate_kill_terminates_owned_tree_across_process_groups(tmp_path: Path) -
     assert evidence["outcome"] == "terminated"
     assert evidence["term_pids"] == [400, 300, 200, 100]
     assert evidence["kill_pids"] == [400, 300]
+
+
+def test_gate_kill_terminates_exact_legacy_owner_for_same_namespace(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "checkout"
+    root.mkdir()
+    lock = _legacy_lock(root, pid=100, started_at=_LEGACY_LOCK_STARTED_AT)
+    namespace = project_namespace(root)
+    live = {
+        100: ProcessRecord(
+            100,
+            1,
+            10,
+            "make --no-print-directory gate gludd_watchdog_owned_gate=1",
+            100,
+            _LEGACY_OWNER_STARTED_AT,
+            str(root.resolve()),
+            namespace,
+        ),
+        200: ProcessRecord(
+            200,
+            100,
+            9,
+            "python -m pytest tests/unit",
+            200,
+            "Mon Oct  5 12:34:57 2026",
+        ),
+        999: ProcessRecord(
+            999,
+            1,
+            99,
+            "make gate",
+            999,
+            _LEGACY_OWNER_STARTED_AT,
+            str(tmp_path / "other-checkout"),
+            "other-project-deadbeef0000",
+        ),
+    }
+    signals: list[tuple[int, signal.Signals]] = []
+    clock = _Clock()
+
+    def records() -> list[ProcessRecord]:
+        return list(live.values())
+
+    def send(pid: int, signum: signal.Signals) -> None:
+        signals.append((pid, signum))
+        if signum == signal.SIGTERM and pid == 100:
+            live.pop(pid)
+        if signum == signal.SIGKILL:
+            live.pop(pid)
+
+    result = terminate_owned_gate(
+        root,
+        apply=True,
+        grace_seconds=0.1,
+        kill_wait_seconds=0.1,
+        poll_seconds=0.05,
+        records_reader=records,
+        signal_sender=send,
+        monotonic=clock.monotonic,
+        sleep=clock.sleep,
+    )
+
+    assert result.success
+    assert result.term_pids == (200, 100)
+    assert result.kill_pids == (200,)
+    assert all(pid != 999 for pid, _signum in signals)
+    assert not lock.exists()
+    assert "=== GATE: ABORTED ===" in (root / ".gate-status").read_text()
+    evidence = json.loads(
+        (root / ".gate-logs" / "gate-kill-evidence.json").read_text()
+    )
+    assert evidence["lock_schema"] == "legacy"
+    assert evidence["project_root"] == str(root.resolve())
+    assert evidence["project_namespace"] == namespace
+
+
+@pytest.mark.parametrize(
+    ("violation", "reason"),
+    [
+        ("dead", "legacy gate owner is no longer running"),
+        ("start", "legacy gate owner start time mismatch"),
+        ("command", "legacy gate owner command mismatch"),
+        ("root", "legacy gate owner project root mismatch"),
+        ("namespace", "legacy gate owner project namespace mismatch"),
+    ],
+)
+def test_gate_kill_legacy_owner_refuses_every_unproven_identity_dimension(
+    tmp_path: Path, violation: str, reason: str
+) -> None:
+    root = tmp_path / "checkout"
+    root.mkdir()
+    lock = _legacy_lock(root, pid=100, started_at=_LEGACY_LOCK_STARTED_AT)
+    namespace = project_namespace(root)
+    owner = ProcessRecord(
+        100,
+        1,
+        10,
+        "make gate",
+        100,
+        _LEGACY_OWNER_STARTED_AT,
+        str(root.resolve()),
+        namespace,
+    )
+    if violation == "dead":
+        records: list[ProcessRecord] = []
+    else:
+        if violation == "start":
+            owner = replace(owner, started_at="Tue Oct  6 12:34:56 2026")
+        elif violation == "command":
+            owner = replace(owner, command="make test gate")
+        elif violation == "root":
+            owner = replace(owner, cwd=str(tmp_path / "other-checkout"))
+        elif violation == "namespace":
+            owner = replace(
+                owner, project_namespace="other-project-deadbeef0000"
+            )
+        records = [owner]
+    signals: list[tuple[int, signal.Signals]] = []
+
+    result = terminate_owned_gate(
+        root,
+        apply=True,
+        records_reader=lambda: records,
+        signal_sender=lambda pid, signum: signals.append((pid, signum)),
+    )
+
+    assert not result.success
+    assert result.refusal_reason == reason
+    assert signals == []
+    assert json.loads(lock.read_text()) == {
+        "pid": 100,
+        "started_at": _LEGACY_LOCK_STARTED_AT,
+    }
+
+
+def test_gate_kill_legacy_schema_fails_closed_when_ambiguous(tmp_path: Path) -> None:
+    root = tmp_path / "checkout"
+    root.mkdir()
+    lock = _legacy_lock(root, pid=100, started_at=_LEGACY_LOCK_STARTED_AT)
+    payload = json.loads(lock.read_text())
+    payload["unexpected"] = "field"
+    lock.write_text(json.dumps(payload), encoding="utf-8")
+    signals: list[tuple[int, signal.Signals]] = []
+
+    result = terminate_owned_gate(
+        root,
+        apply=True,
+        records_reader=lambda: [
+            ProcessRecord(
+                100,
+                1,
+                10,
+                "make gate",
+                100,
+                _LEGACY_OWNER_STARTED_AT,
+                str(root.resolve()),
+                project_namespace(root),
+            )
+        ],
+        signal_sender=lambda pid, signum: signals.append((pid, signum)),
+    )
+
+    assert not result.success
+    assert result.refusal_reason == "gate lock marker mismatch"
+    assert signals == []
+
+
+def test_gate_kill_legacy_failure_promotes_retryable_fail_closed_lock(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "checkout"
+    root.mkdir()
+    lock = _legacy_lock(root, pid=100, started_at=_LEGACY_LOCK_STARTED_AT)
+    namespace = project_namespace(root)
+    live = {
+        100: ProcessRecord(
+            100,
+            1,
+            10,
+            "make gate",
+            100,
+            _LEGACY_OWNER_STARTED_AT,
+            str(root.resolve()),
+            namespace,
+        ),
+        200: ProcessRecord(
+            200,
+            100,
+            9,
+            "python -m pytest tests/unit",
+            200,
+            "Mon Oct  5 12:34:57 2026",
+        ),
+    }
+    signals: list[tuple[int, signal.Signals]] = []
+
+    failed = terminate_owned_gate(
+        root,
+        apply=True,
+        grace_seconds=0.0,
+        kill_wait_seconds=0.0,
+        records_reader=lambda: list(live.values()),
+        signal_sender=lambda pid, signum: signals.append((pid, signum)),
+        monotonic=lambda: 0.0,
+        sleep=lambda _seconds: None,
+    )
+
+    assert not failed.success
+    assert failed.survivor_pids == (100, 200)
+    assert signals == [
+        (200, signal.SIGTERM),
+        (100, signal.SIGTERM),
+        (200, signal.SIGKILL),
+        (100, signal.SIGKILL),
+    ]
+    terminal = json.loads(lock.read_text())
+    assert terminal["marker"] == GATE_LOCK_MARKER
+    assert terminal["state"] == "termination_failed"
+    assert terminal["pid_started_at"] == _LEGACY_OWNER_STARTED_AT
+    assert terminal["project_root"] == str(root.resolve())
+    assert terminal["project_namespace"] == namespace
+    assert terminal["survivor_pids"] == [100, 200]
+    assert "=== GATE: ABORTED ===" in (root / ".gate-status").read_text()
+    evidence = json.loads(
+        (root / ".gate-logs" / "gate-kill-evidence.json").read_text()
+    )
+    assert evidence["outcome"] == "termination_failed"
+    assert evidence["lock_schema"] == "legacy"
+
+    def terminate_on_retry(pid: int, _signum: signal.Signals) -> None:
+        live.pop(pid)
+
+    retried = terminate_owned_gate(
+        root,
+        apply=True,
+        records_reader=lambda: list(live.values()),
+        signal_sender=terminate_on_retry,
+    )
+
+    assert retried.success
+    assert not lock.exists()
+
+
+def test_gate_kill_legacy_lock_change_refuses_before_first_signal(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "checkout"
+    root.mkdir()
+    lock = _legacy_lock(root, pid=100, started_at=_LEGACY_LOCK_STARTED_AT)
+    owner = ProcessRecord(
+        100,
+        1,
+        10,
+        "make gate",
+        100,
+        _LEGACY_OWNER_STARTED_AT,
+        str(root.resolve()),
+        project_namespace(root),
+    )
+    reads = 0
+    signals: list[tuple[int, signal.Signals]] = []
+
+    def records() -> list[ProcessRecord]:
+        nonlocal reads
+        reads += 1
+        if reads == 2:
+            lock.write_text(
+                json.dumps(
+                    {"pid": 100, "started_at": _LEGACY_LOCK_STARTED_AT + 0.5}
+                ),
+                encoding="utf-8",
+            )
+        return [owner]
+
+    result = terminate_owned_gate(
+        root,
+        apply=True,
+        records_reader=records,
+        signal_sender=lambda pid, signum: signals.append((pid, signum)),
+    )
+
+    assert not result.success
+    assert result.refusal_reason == "legacy gate lock changed during validation"
+    assert signals == []
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("/usr/bin/make --no-print-directory gate NAME=value", True),
+        ("gmake -s gate-refresh", True),
+        ("make -C /checkout gate", True),
+        ("make -C/checkout gate", True),
+        ("make --directory=/checkout gate", True),
+        ("make -C", False),
+        ("make --directory= gate", False),
+        ("make 'unterminated", False),
+        ("make test gate", False),
+        ("make gate lint", False),
+        ("make --file=/tmp/other.mk gate", False),
+        ("sh -c 'make gate'", False),
+    ],
+)
+def test_legacy_gate_command_requires_one_exact_gate_target(
+    command: str, expected: bool
+) -> None:
+    assert gate_kill._is_exact_legacy_gate_command(command) is expected
+
+
+def test_legacy_process_cwd_uses_stable_os_sources(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "checkout"
+    root.mkdir()
+    assert gate_kill._process_cwd(1) is None
+
+    monkeypatch.setattr(os_module, "readlink", lambda _path: str(root))
+    assert gate_kill._process_cwd(100) == root.resolve()
+
+    def missing_proc(_path: str) -> str:
+        raise FileNotFoundError
+
+    monkeypatch.setattr(os_module, "readlink", missing_proc)
+    monkeypatch.setattr(Path, "is_file", lambda _path: True)
+    attempts = iter(
+        [
+            SimpleNamespace(returncode=1, stdout=""),
+            SimpleNamespace(returncode=0, stdout=f"p100\nfcwd\nn{root}\n"),
+        ]
+    )
+    monkeypatch.setattr(
+        subprocess_module,
+        "run",
+        lambda *_args, **_kwargs: next(attempts),
+    )
+
+    assert gate_kill._process_cwd(100) == root.resolve()
+
+
+def test_legacy_process_namespace_reads_proc_and_ps_fallbacks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        Path,
+        "read_bytes",
+        lambda _path: b"A=1\0GLUDD_PROJECT_NAMESPACE=checkout-abcd1234\0",
+    )
+    assert gate_kill._process_namespace_override(100) == (
+        True,
+        "checkout-abcd1234",
+    )
+
+    monkeypatch.setattr(Path, "read_bytes", lambda _path: b"A=1\0")
+    assert gate_kill._process_namespace_override(100) == (True, None)
+
+    monkeypatch.setattr(
+        Path,
+        "read_bytes",
+        lambda _path: (
+            b"GLUDD_PROJECT_NAMESPACE=one\0GLUDD_PROJECT_NAMESPACE=two\0"
+        ),
+    )
+    assert gate_kill._process_namespace_override(100) == (False, None)
+
+    def missing_environ(_path: Path) -> bytes:
+        raise FileNotFoundError
+
+    monkeypatch.setattr(Path, "read_bytes", missing_environ)
+    outputs = iter(
+        [
+            SimpleNamespace(
+                returncode=0,
+                stdout=(
+                    "make gate PATH=/usr/bin "
+                    "GLUDD_PROJECT_NAMESPACE=checkout-abcd1234 A=1"
+                ),
+            ),
+            SimpleNamespace(returncode=0, stdout="make gate PATH=/usr/bin A=1"),
+            SimpleNamespace(returncode=0, stdout="make gate"),
+            SimpleNamespace(returncode=1, stdout=""),
+        ]
+    )
+    monkeypatch.setattr(
+        subprocess_module,
+        "run",
+        lambda *_args, **_kwargs: next(outputs),
+    )
+
+    assert gate_kill._process_namespace_override(100) == (
+        True,
+        "checkout-abcd1234",
+    )
+    assert gate_kill._process_namespace_override(100) == (True, None)
+    assert gate_kill._process_namespace_override(100) == (False, None)
+    assert gate_kill._process_namespace_override(100) == (False, None)
+
+
+def test_legacy_owner_context_fails_closed_without_root_or_namespace(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "checkout"
+    root.mkdir()
+    owner = ProcessRecord(100, 1, 0, "make gate", 100, _LEGACY_OWNER_STARTED_AT)
+
+    monkeypatch.setattr(gate_kill, "_process_cwd", lambda _pid: root)
+    monkeypatch.setattr(
+        gate_kill, "_process_namespace_override", lambda _pid: (True, None)
+    )
+    assert gate_kill._legacy_owner_context(owner) == (
+        root.resolve(),
+        gate_kill._default_project_namespace(root),
+    )
+
+    monkeypatch.setattr(
+        gate_kill,
+        "_process_namespace_override",
+        lambda _pid: (True, "explicit-namespace"),
+    )
+    assert gate_kill._legacy_owner_context(owner) == (
+        root.resolve(),
+        "explicit-namespace",
+    )
+
+    monkeypatch.setattr(
+        gate_kill, "_process_namespace_override", lambda _pid: (False, None)
+    )
+    assert gate_kill._legacy_owner_context(owner) == (root.resolve(), None)
+
+    invalid = replace(owner, cwd=str(root), project_namespace="../unsafe")
+    assert gate_kill._legacy_owner_context(invalid) == (root.resolve(), None)
+
+    monkeypatch.setattr(gate_kill, "_process_cwd", lambda _pid: None)
+    assert gate_kill._legacy_owner_context(owner) == (None, None)
+
+
+@pytest.mark.parametrize(
+    ("lock_started_at", "owner_started_at"),
+    [
+        (True, _LEGACY_OWNER_STARTED_AT),
+        ("not-an-epoch", _LEGACY_OWNER_STARTED_AT),
+        (float("nan"), _LEGACY_OWNER_STARTED_AT),
+        (-1.0, _LEGACY_OWNER_STARTED_AT),
+        (_LEGACY_LOCK_STARTED_AT, ""),
+        (_LEGACY_LOCK_STARTED_AT, "not-a-ps-start-token"),
+        (_LEGACY_LOCK_STARTED_AT + 1_000.0, _LEGACY_OWNER_STARTED_AT),
+    ],
+)
+def test_legacy_start_identity_rejects_ambiguous_values(
+    lock_started_at: object, owner_started_at: str
+) -> None:
+    assert not gate_kill._legacy_started_at_matches(
+        lock_started_at, owner_started_at
+    )
 
 
 def test_gate_kill_revalidates_start_time_and_fails_closed(tmp_path: Path) -> None:
@@ -204,7 +682,7 @@ def test_process_snapshot_parses_stable_start_identity(
         " abc 1 2 Mon Oct 5 12:34:56 2026 ignored\n"
     )
     monkeypatch.setattr(
-        gate_kill.subprocess,
+        subprocess_module,
         "run",
         lambda *_args, **_kwargs: SimpleNamespace(stdout=output),
     )
@@ -320,11 +798,14 @@ def test_gate_kill_retries_fail_closed_lock_with_exact_identities(
     lock.write_text(json.dumps(payload), encoding="utf-8")
     live = {100: ProcessRecord(100, 1, 0, "make gate", 100, "root-start")}
 
+    def send(pid: int, _signum: signal.Signals) -> None:
+        live.pop(pid)
+
     result = terminate_owned_gate(
         root,
         apply=True,
         records_reader=lambda: list(live.values()),
-        signal_sender=lambda pid, _signum: live.pop(pid),
+        signal_sender=send,
     )
 
     assert result.success
