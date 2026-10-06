@@ -57,6 +57,8 @@ def build_plan(
         "-m",
         "pytest",
         str(TEST_FILE.relative_to(ROOT)),
+        "-m",
+        "presentation_browser",
         "-n",
         "0",
         "--browser",

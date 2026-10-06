@@ -8,9 +8,13 @@
   const sourceByDiagram = new WeakMap();
   const failureReported = new WeakSet();
   const queuedReasons = new Set();
+  const revealMermaid = typeof window.RevealMermaid === "function"
+    ? window.RevealMermaid()
+    : window.RevealMermaid;
   let renderQueue = Promise.resolve();
   let queueScheduled = false;
   let revealReady = false;
+  let requestedDiagram = null;
 
   function diagramNodes() {
     return Array.from(document.querySelectorAll(".mermaid"));
@@ -122,6 +126,9 @@
   }
 
   function beforeRender(diagram) {
+    if (diagram !== requestedDiagram) {
+      return false;
+    }
     const state = diagram.dataset.mermaidState || "pending";
     if (state === "rendered" || state === "rendering") {
       return false;
@@ -174,21 +181,67 @@
     return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
   }
 
-  function withTimeout(promise, timeoutMs) {
-    let timer;
-    const timeout = new Promise((_, reject) => {
-      timer = window.setTimeout(() => {
-        const error = new Error("bounded render timeout");
-        error.name = "RenderTimeout";
-        reject(error);
-      }, timeoutMs);
-    });
-    return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer));
+  function renderEligible(diagram) {
+    const state = diagram.dataset.mermaidState || "pending";
+    if (state === "pending") {
+      return true;
+    }
+    if (state !== "failed") {
+      return false;
+    }
+    const category = diagram.dataset.mermaidError || "";
+    const attempts = Number(diagram.dataset.mermaidRetries || "0");
+    return RETRYABLE.has(category) && attempts < 1;
+  }
+
+  async function awaitRenderOutcome(diagram) {
+    const source = (sourceByDiagram.get(diagram) || "").trim();
+    const deadline = window.performance.now() + RENDER_TIMEOUT_MS;
+    while (window.performance.now() < deadline) {
+      await animationFrame();
+      const state = diagram.dataset.mermaidState;
+      if (state === "rendered" || state === "failed") {
+        return;
+      }
+      if (
+        state === "rendering" &&
+        !diagram.querySelector("svg") &&
+        diagram.textContent.trim() !== source
+      ) {
+        failDiagram(diagram, "invalid-source");
+        return;
+      }
+    }
+    const error = new Error("bounded render timeout");
+    error.name = "RenderTimeout";
+    throw error;
+  }
+
+  async function renderOne(diagram) {
+    requestedDiagram = diagram;
+    const originalConsoleError = console.error;
+    console.error = (...args) => {
+      const detail = args[1];
+      if (detail && typeof detail === "object" && "graphDefinition" in detail) {
+        return;
+      }
+      originalConsoleError(...args);
+    };
+    try {
+      revealMermaid.init(window.Reveal);
+      await awaitRenderOutcome(diagram);
+    } catch (error) {
+      const category = error?.name === "RenderTimeout" ? "render-timeout" : classifyRenderFailure(error);
+      failDiagram(diagram, category);
+    } finally {
+      requestedDiagram = null;
+      console.error = originalConsoleError;
+    }
   }
 
   async function renderVisibleDiagrams() {
     await animationFrame();
-    if (!window.RevealMermaid || typeof window.RevealMermaid.init !== "function") {
+    if (!revealMermaid || typeof revealMermaid.init !== "function") {
       for (const diagram of diagramNodes()) {
         if (diagram.dataset.mermaidState !== "rendered") {
           failDiagram(diagram, "renderer-unavailable");
@@ -196,15 +249,14 @@
       }
       return;
     }
-    try {
-      await withTimeout(Promise.resolve(window.RevealMermaid.init(window.Reveal)), RENDER_TIMEOUT_MS);
-    } catch (error) {
-      const category = error?.name === "RenderTimeout" ? "render-timeout" : classifyRenderFailure(error);
-      for (const diagram of diagramNodes()) {
-        if (diagram.dataset.mermaidState === "rendering") {
-          failDiagram(diagram, category);
-        }
-      }
+    let candidate = diagramNodes().find(
+      (diagram) => renderEligible(diagram) && isMeasurable(diagram),
+    );
+    while (candidate) {
+      await renderOne(candidate);
+      candidate = diagramNodes().find(
+        (diagram) => renderEligible(diagram) && isMeasurable(diagram),
+      );
     }
   }
 
@@ -351,8 +403,10 @@
     editor.setValue(text, -1);
     const Range = window.ace.require("ace/range").Range;
     const lastLine = text.split("\n")[range.end - 1] || "";
-    editor.selection.setSelectionRange(new Range(range.start - 1, 0, range.end - 1, lastLine.length));
+    const selection = new Range(range.start - 1, 0, range.end - 1, lastLine.length);
+    editor.selection.setSelectionRange(selection);
     editor.gotoLine(range.start, 0, true);
+    editor.selection.setSelectionRange(selection);
     viewerTrigger = anchor;
     dialog.showModal();
     editor.focus();
@@ -405,8 +459,8 @@
   };
 
   const plugins = [window.RevealHighlight, window.RevealNotes].filter(Boolean);
-  if (window.RevealMermaid) {
-    plugins.push(window.RevealMermaid);
+  if (revealMermaid) {
+    plugins.push(revealMermaid);
   }
   const mermaidPlugin = {
     beforeRender,
@@ -450,7 +504,7 @@
     requestRender("ready");
   }).catch(() => {
     for (const diagram of diagramNodes()) {
-      failDiagram(diagram, window.RevealMermaid ? "invalid-source" : "renderer-unavailable");
+      failDiagram(diagram, revealMermaid ? "invalid-source" : "renderer-unavailable");
     }
   });
 

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import subprocess
+import sys
+from dataclasses import replace
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
 
 import pytest
 from scripts import run_presentation_browser_tests as runner
@@ -21,10 +24,10 @@ def test_plan_is_serial_pinned_and_namespaced() -> None:
     assert plan.browser == "chromium"
     assert plan.timeout_seconds == 120
     assert plan.command[0] == runner.sys.executable
-    assert plan.command[4:6] == ("-n", "0")
-    assert ("--tracing", "retain-on-failure") in tuple(
-        zip(plan.command, plan.command[1:], strict=False)
-    )
+    pairs = tuple(zip(plan.command, plan.command[1:], strict=False))
+    assert ("-n", "0") in pairs
+    assert ("-m", "presentation_browser") in pairs
+    assert ("--tracing", "retain-on-failure") in pairs
 
 
 @pytest.mark.parametrize(
@@ -121,3 +124,145 @@ def test_plan_rejects_unbounded_timeout() -> None:
             output_root=Path("/tmp/gludd-presentation-unit"),
             timeout_seconds=901,
         )
+
+
+def test_plan_rejects_wrong_browser_and_short_timeout() -> None:
+    """The runner cannot silently change engine or drop its lower bound."""
+    common = {
+        "browser_root": Path("/tmp/gludd-browser-unit"),
+        "output_root": Path("/tmp/gludd-presentation-unit"),
+    }
+    with pytest.raises(ValueError, match="requires Chromium"):
+        runner.build_plan(browser="firefox", timeout_seconds=120, **common)
+    with pytest.raises(ValueError, match="between 30 and 900"):
+        runner.build_plan(browser="chromium", timeout_seconds=29, **common)
+
+
+def test_validate_plan_fails_closed_for_missing_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Static validation rejects every incomplete or indirect execution plan."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    test_file = root / "tests" / "browser" / "test_presentation.py"
+    monkeypatch.setattr(runner, "ROOT", root)
+    monkeypatch.setattr(runner, "TEST_FILE", test_file)
+    plan = runner.build_plan(
+        browser="chromium",
+        browser_root=Path("/tmp/gludd-browser-validation"),
+        output_root=Path("/tmp/gludd-presentation-validation"),
+        timeout_seconds=120,
+    )
+    with pytest.raises(RuntimeError, match="test file is missing"):
+        runner.validate_plan(plan)
+
+    test_file.parent.mkdir(parents=True)
+    test_file.write_text("pass\n", encoding="utf-8")
+    (root / "pyproject.toml").write_text('deps = ["playwright==1.63.0"]\n', encoding="utf-8")
+    with pytest.raises(RuntimeError, match="pytest-playwright"):
+        runner.validate_plan(plan)
+
+    (root / "pyproject.toml").write_text(
+        'deps = ["playwright==1.63.0", "pytest-playwright==0.9.0"]\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(RuntimeError, match="direct bounded argv"):
+        runner.validate_plan(replace(plan, command=("shell",)))
+
+
+def test_browser_executable_check_handles_available_and_missing_binary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The read-only check resolves Playwright's executable and fails visibly."""
+    executable = tmp_path / "chromium"
+    executable.write_text("binary", encoding="utf-8")
+
+    class FakePlaywright:
+        def __init__(self, path: Path) -> None:
+            self.chromium = SimpleNamespace(executable_path=str(path))
+
+        def __enter__(self) -> FakePlaywright:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+    sync_api = ModuleType("playwright.sync_api")
+    sync_api.sync_playwright = lambda: FakePlaywright(executable)  # type: ignore[attr-defined]
+    playwright = ModuleType("playwright")
+    monkeypatch.setitem(sys.modules, "playwright", playwright)
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", sync_api)
+    plan = runner.build_plan(
+        browser="chromium",
+        browser_root=Path("/tmp/gludd-browser-check"),
+        output_root=Path("/tmp/gludd-presentation-check"),
+        timeout_seconds=120,
+    )
+    assert runner._require_browser_executable(plan) == executable
+
+    executable.unlink()
+    with pytest.raises(RuntimeError, match="Chromium is not installed"):
+        runner._require_browser_executable(plan)
+
+
+def test_install_and_run_propagate_timeout_and_exit_codes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both subprocess boundaries preserve failures and conventional timeouts."""
+    plan = runner.build_plan(
+        browser="chromium",
+        browser_root=Path("/tmp/gludd-browser-results"),
+        output_root=Path("/tmp/gludd-presentation-results"),
+        timeout_seconds=30,
+    )
+    monkeypatch.setattr(runner, "validate_plan", lambda _plan: None)
+    monkeypatch.setattr(runner, "_require_browser_executable", lambda _plan: Path("/tmp/chromium"))
+
+    def timeout(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del args, kwargs
+        raise subprocess.TimeoutExpired(("browser",), 30)
+
+    monkeypatch.setattr(runner.subprocess, "run", timeout)
+    assert runner.install_browser(plan) == 124
+
+    monkeypatch.setattr(
+        runner.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 7),
+    )
+    assert runner.install_browser(plan) == 7
+    assert runner.run_plan(plan) == 7
+
+
+def test_main_dispatches_each_explicit_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CLI modes delegate exactly once and retain downstream status codes."""
+    plan = runner.build_plan(
+        browser="chromium",
+        browser_root=Path("/tmp/gludd-browser-main"),
+        output_root=Path("/tmp/gludd-presentation-main"),
+        timeout_seconds=120,
+    )
+    monkeypatch.setattr(runner, "build_plan", lambda **kwargs: plan)
+    validated: list[runner.BrowserPlan] = []
+    monkeypatch.setattr(runner, "validate_plan", validated.append)
+    monkeypatch.setattr(runner, "_require_browser_executable", lambda _plan: Path("/tmp/chromium"))
+
+    monkeypatch.setattr(runner.sys, "argv", ["runner", "--validate-only"])
+    runner.main()
+    monkeypatch.setattr(runner.sys, "argv", ["runner", "--check-browser"])
+    runner.main()
+    assert validated == [plan, plan]
+
+    monkeypatch.setattr(runner, "install_browser", lambda _plan: 17)
+    monkeypatch.setattr(runner.sys, "argv", ["runner", "--install-browser"])
+    with pytest.raises(SystemExit) as installed:
+        runner.main()
+    assert installed.value.code == 17
+
+    monkeypatch.setattr(runner, "run_plan", lambda _plan: 23)
+    monkeypatch.setattr(runner.sys, "argv", ["runner", "--run"])
+    with pytest.raises(SystemExit) as run:
+        runner.main()
+    assert run.value.code == 23

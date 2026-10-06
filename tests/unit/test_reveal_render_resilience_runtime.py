@@ -23,7 +23,6 @@ def test_deck_uses_only_owned_relative_runtime_assets() -> None:
     assert "@latest" not in html
     for asset in (
         "./vendor/reveal/reveal.css",
-        "./vendor/reveal/theme/black.css",
         "./vendor/reveal/reveal.js",
         "./vendor/reveal/plugin/highlight/highlight.js",
         "./vendor/reveal/plugin/notes/notes.js",
@@ -32,6 +31,7 @@ def test_deck_uses_only_owned_relative_runtime_assets() -> None:
         "./presentation.js",
     ):
         assert asset in html
+    assert "./vendor/reveal/theme/black.css" not in html
 
 
 def test_vendor_manifest_is_exact_and_digest_bound() -> None:
@@ -73,6 +73,8 @@ def test_runtime_serializes_visible_slide_rendering_and_keeps_failures_visible()
         "requestAnimationFrame",
         "offsetParent",
         "getBoundingClientRect",
+        "requestedDiagram",
+        "awaitRenderOutcome",
         "data-mermaid-state",
         "renderer-unavailable",
         "invalid-source",
@@ -80,6 +82,7 @@ def test_runtime_serializes_visible_slide_rendering_and_keeps_failures_visible()
         "render-timeout",
         "Diagram render failed",
         "gluddPresentationHealth",
+        'typeof window.RevealMermaid === "function"',
     ):
         assert token in runtime
     assert "mermaid.run({" not in runtime

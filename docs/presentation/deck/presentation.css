@@ -1,3 +1,8 @@
+html,
+body {
+  background: #0d1117;
+}
+
 .mermaid-host {
   min-height: 2rem;
   position: relative;

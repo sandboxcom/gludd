@@ -243,12 +243,17 @@ def test_blocked_mermaid_asset_keeps_all_source_readable(
     health = page.evaluate("window.gluddPresentationHealth()")
     assert health["failed"] > 0
     assert health["errors"] == {"renderer-unavailable": health["failed"]}
-    visible_sources = page.locator(
-        ".mermaid-host[data-mermaid-state='failed'] .mermaid-source:visible"
-    ).count()
-    assert visible_sources == health["failed"]
-    _visit_slide(page, 1, 0)
-    assert page.evaluate("Reveal.getIndices().h") == 1
+    assert page.locator(
+        ".mermaid-host[data-mermaid-state='failed'] .mermaid-source"
+    ).count() == health["failed"]
+    indices = page.evaluate(
+        "Reveal.getSlides().map((slide) => { const i = Reveal.getIndices(slide); return [i.h, i.v]; })"
+    )
+    for horizontal, vertical in indices:
+        _visit_slide(page, horizontal, vertical)
+        hosts = page.locator("section.present .mermaid-host[data-mermaid-state='failed']")
+        for index in range(hosts.count()):
+            assert hosts.nth(index).locator(".mermaid-source").is_visible()
     assert browser_events["page_errors"] == []
     assert browser_events["http_failures"] == []
     assert all("/vendor/mermaid/mermaid.js" in url for url in browser_events["request_failures"])
