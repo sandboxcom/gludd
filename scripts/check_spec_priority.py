@@ -19,6 +19,13 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+try:
+    from scripts.behavioral_specs import load_behavioral_specs
+    from scripts.makefile_layout import compose_makefile
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from behavioral_specs import load_behavioral_specs
+    from makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_PATH = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
 MAKEFILE_PATH = ROOT / "Makefile"
@@ -134,7 +141,7 @@ def parse_specs() -> list[dict]:
         print(f"ERROR: {SPECS_PATH} not found")
         return []
 
-    content = SPECS_PATH.read_text()
+    content = load_behavioral_specs(SPECS_PATH)
     specs: list[dict] = []
 
     # Match spec headers: ### AA001 — title or ### P01 — title
@@ -175,7 +182,7 @@ def check_enforcement_exists(spec: dict) -> bool:
     if guard_match:
         guard_name = guard_match.group(1).strip("`")
         # Check if it's a Makefile target
-        makefile_text = MAKEFILE_PATH.read_text()
+        makefile_text = compose_makefile(MAKEFILE_PATH)
         if re.search(rf"^{guard_name}:", makefile_text, re.MULTILINE):
             return True
         # Check if it's a plugin
@@ -197,7 +204,7 @@ def check_enforcement_exists(spec: dict) -> bool:
     target_match = re.search(r"make\s+([\w_-]+)", enforcement)
     if target_match:
         target_name = target_match.group(1)
-        makefile_text = MAKEFILE_PATH.read_text()
+        makefile_text = compose_makefile(MAKEFILE_PATH)
         return bool(re.search(rf"^{target_name}:", makefile_text, re.MULTILINE))
 
     # Check for script references
@@ -206,10 +213,7 @@ def check_enforcement_exists(spec: dict) -> bool:
         return (ROOT / "scripts" / (script_match.group(1) + ".py")).exists()
 
     # Check for AGENTS.md section references
-    if "agents.md" in enforcement:
-        return True
-
-    return False
+    return "agents.md" in enforcement
 
 
 def main() -> int:
@@ -226,9 +230,8 @@ def main() -> int:
         spec["priority"] = priority
         priorities[priority].append(spec)
 
-        if priority in ("P0", "P1"):
-            if not check_enforcement_exists(spec):
-                unimplemented_p0_p1.append(f"{spec['id']} ({priority}): {spec['title']}")
+        if priority in ("P0", "P1") and not check_enforcement_exists(spec):
+            unimplemented_p0_p1.append(f"{spec['id']} ({priority}): {spec['title']}")
 
     # Report distribution
     total = len(specs)

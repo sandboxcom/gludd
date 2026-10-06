@@ -8,6 +8,7 @@ import re
 import subprocess
 from pathlib import Path
 
+from scripts.behavioral_specs import load_behavioral_specs
 from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -226,7 +227,11 @@ def test_active_policy_specs_share_the_canonical_three_agent_contract() -> None:
     )
     violations: list[str] = []
     for path in ACTIVE_POLICY_FILES:
-        source = path.read_text().lower()
+        source = (
+            load_behavioral_specs(path)
+            if path.name == "BEHAVIORAL_SPECS.md"
+            else path.read_text()
+        ).lower()
         for pattern in forbidden:
             if re.search(pattern, source):
                 violations.append(f"{path.name}: {pattern}")

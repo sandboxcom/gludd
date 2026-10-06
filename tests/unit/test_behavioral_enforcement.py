@@ -8,11 +8,18 @@ import re
 from pathlib import Path
 
 import pytest
+from scripts.behavioral_specs import load_behavioral_specs
 from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 MAKEFILE_PATH = ROOT / "Makefile"
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
+BEHAVIORAL_SPECS_PATH = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
+
+
+def behavioral_specs_text() -> str:
+    """Return the validated, ordered behavioral-spec corpus."""
+    return load_behavioral_specs(BEHAVIORAL_SPECS_PATH)
 
 
 def makefile_text() -> str:
@@ -1062,7 +1069,7 @@ class TestAB042DuplicateDispatches:
     """AB042: dispatch dedup guard — no duplicate tasks in same wave."""
 
     def test_ab042_spec_has_enforcement(self):
-        spec_text = (ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md").read_text()
+        spec_text = behavioral_specs_text()
         idx = spec_text.find("### AB042")
         assert idx != -1, "AB042 spec not found"
         block = spec_text[idx : idx + 500]
@@ -1080,7 +1087,7 @@ class TestAB043StaleCommit:
     """AB043: commit with stale/unprocessed subagent results."""
 
     def test_ab043_spec_has_enforcement(self):
-        spec_text = (ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md").read_text()
+        spec_text = behavioral_specs_text()
         idx = spec_text.find("### AB043")
         assert idx != -1, "AB043 spec not found"
         block = spec_text[idx : idx + 500]
@@ -1096,7 +1103,7 @@ class TestAB044GateAwareness:
     """AB044: agent ignores red gate after subagent return."""
 
     def test_ab044_spec_has_enforcement(self):
-        spec_text = (ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md").read_text()
+        spec_text = behavioral_specs_text()
         idx = spec_text.find("### AB044")
         assert idx != -1, "AB044 spec not found"
         block = spec_text[idx : idx + 500]
@@ -1112,7 +1119,7 @@ class TestAB045DispatchDiscipline:
     """AB045: pre-dispatch checklist must run before every wave."""
 
     def test_ab045_spec_has_enforcement(self):
-        spec_text = (ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md").read_text()
+        spec_text = behavioral_specs_text()
         idx = spec_text.find("### AB045")
         assert idx != -1, "AB045 spec not found"
         block = spec_text[idx : idx + 500]
@@ -1128,7 +1135,7 @@ class TestAB046PriorityOrder:
     """AB046: subagent results processed in priority order."""
 
     def test_ab046_spec_has_enforcement(self):
-        spec_text = (ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md").read_text()
+        spec_text = behavioral_specs_text()
         idx = spec_text.find("### AB046")
         assert idx != -1, "AB046 spec not found"
         block = spec_text[idx : idx + 500]
@@ -1185,7 +1192,7 @@ class TestAB049AbandonedMerges:
     """AB049: merge conflicts must be resolved, never abandoned."""
 
     def test_ab049_spec_has_enforcement(self):
-        spec_text = (ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md").read_text()
+        spec_text = behavioral_specs_text()
         idx = spec_text.find("### AB049")
         assert idx != -1, "AB049 spec not found"
         block = spec_text[idx : idx + 500]
@@ -1201,7 +1208,7 @@ class TestAB050ContextBudget:
     """AB050: subagent context must not exceed token budget."""
 
     def test_ab050_spec_mentions_line_limit(self):
-        spec_text = (ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md").read_text()
+        spec_text = behavioral_specs_text()
         idx = spec_text.find("### AB050")
         assert idx != -1, "AB050 spec not found"
         block = spec_text[idx : idx + 500]
@@ -1217,7 +1224,7 @@ class TestAB051StaleSessions:
     """AB051: stale subagent sessions (>30 min idle) must not be resumed."""
 
     def test_ab051_spec_mentions_timeout(self):
-        spec_text = (ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md").read_text()
+        spec_text = behavioral_specs_text()
         idx = spec_text.find("### AB051")
         assert idx != -1, "AB051 spec not found"
         block = spec_text[idx : idx + 500]
@@ -1249,7 +1256,7 @@ class TestAB053ModelSelection:
     """AB053: model selection must match task complexity."""
 
     def test_ab053_spec_has_enforcement(self):
-        spec_text = (ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md").read_text()
+        spec_text = behavioral_specs_text()
         idx = spec_text.find("### AB053")
         assert idx != -1, "AB053 spec not found"
         block = spec_text[idx : idx + 500]
@@ -1286,7 +1293,7 @@ class TestAB055ResultProcessing:
     """AB055: subagent results must be processed in ≤30 seconds."""
 
     def test_ab055_spec_has_enforcement(self):
-        spec_text = (ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md").read_text()
+        spec_text = behavioral_specs_text()
         idx = spec_text.find("### AB055")
         assert idx != -1, "AB055 spec not found"
         block = spec_text[idx : idx + 500]
@@ -1336,7 +1343,7 @@ class TestAB058DispatchPrompts:
     """AB058: subagent dispatch prompts must list available tools."""
 
     def test_ab058_spec_has_enforcement(self):
-        spec_text = (ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md").read_text()
+        spec_text = behavioral_specs_text()
         idx = spec_text.find("### AB058")
         assert idx != -1, "AB058 spec not found"
         block = spec_text[idx : idx + 500]
@@ -1352,7 +1359,7 @@ class TestAB059BranchDiscipline:
     """AB059: subagent results must be committed to the correct branch."""
 
     def test_ab059_spec_has_enforcement(self):
-        spec_text = (ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md").read_text()
+        spec_text = behavioral_specs_text()
         idx = spec_text.find("### AB059")
         assert idx != -1, "AB059 spec not found"
         block = spec_text[idx : idx + 500]

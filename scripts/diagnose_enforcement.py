@@ -1,8 +1,14 @@
 """Diagnose why specific specs fail _enforcement_exists."""
 
 import re
-import sys
 from pathlib import Path
+
+try:
+    from scripts.behavioral_specs import load_behavioral_specs
+    from scripts.makefile_layout import compose_makefile
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from behavioral_specs import load_behavioral_specs
+    from makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_FILE = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
@@ -39,7 +45,7 @@ def check(text):
 
     for m in re.finditer(r"`make\s+([\w\-]+)`", text):
         target = m.group(1)
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         if re.search(rf"^{re.escape(target)}:\s", content, re.MULTILINE):
             return True, f"make target: {target}"
         else:
@@ -63,7 +69,7 @@ def check(text):
 
 
 # Find the specs
-content = SPECS_FILE.read_text()
+content = load_behavioral_specs(SPECS_FILE)
 target_ids = ["V95", "Y37", "Y47", "Y100"]
 
 for tid in target_ids:
@@ -73,10 +79,7 @@ for tid in target_ids:
         # Extract from this position until next ### or end
         start = m.start()
         next_spec = re.search(r"^### [A-Z]+\d+ — ", content[start + len(m.group()) :], re.MULTILINE)
-        if next_spec:
-            end = start + len(m.group()) + next_spec.start()
-        else:
-            end = len(content)
+        end = start + len(m.group()) + next_spec.start() if next_spec else len(content)
         block = content[start:end]
         enf = parse_spec(block)
         ok, reason = check(enf)
