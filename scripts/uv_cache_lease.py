@@ -17,7 +17,7 @@ import time
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 try:
@@ -26,6 +26,7 @@ except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
     from resource_arbiter import project_namespace
 
 _MAX_OWNER_RECEIPTS = 64
+_UTC = timezone(timedelta(0))
 
 
 @dataclass(frozen=True)
@@ -110,7 +111,7 @@ def _write_owner_receipt(
         "owner_root": str(resolved_root),
         "owner_namespace": namespace,
         "cache_root": str(paths.cache_root),
-        "acquired_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "acquired_at": datetime.now(_UTC).isoformat(timespec="seconds"),
     }
     try:
         temporary.write_text(

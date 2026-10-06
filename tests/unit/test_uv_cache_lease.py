@@ -8,6 +8,14 @@ from pathlib import Path
 import pytest
 
 
+def test_uv_cache_lease_uses_pre_python_311_datetime_api() -> None:
+    """Keep the system-Python disk preflight importable on macOS Python 3.9."""
+    source = Path("scripts/uv_cache_lease.py").read_text(encoding="utf-8")
+
+    assert "from datetime import UTC" not in source
+    assert "_UTC = timezone(timedelta(0))" in source
+
+
 def test_shared_uv_cache_lease_publishes_and_releases_exact_owner(
     tmp_path: Path,
 ) -> None:
