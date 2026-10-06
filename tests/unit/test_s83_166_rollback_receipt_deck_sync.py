@@ -35,6 +35,9 @@ def test_deck_publishes_checksum_bound_rollback_receipt_in_order() -> None:
         "Restoration",
         "Active work",
         "Publication binding",
+        "Published-byte acquisition",
+        "Local replay gate",
+        "Bounded cleanup",
         "Mutation boundary",
     )
     positions = [contract.index(marker) for marker in ordered_markers]
@@ -47,6 +50,12 @@ def test_deck_publishes_checksum_bound_rollback_receipt_in_order() -> None:
         "byte-identical prior route restored",
         "active-work SHA unchanged",
         "inventoried, checksummed, and attested",
+        "After publication",
+        "rollback receipt, checksum index, release manifest, candidate archive, and smoke attestations",
+        "verify-published-rollback",
+        "before remote completeness",
+        "run/attempt-namespaced",
+        "cleanup failure blocks the job",
         "zero new network mutation",
         "docs/RELEASE_RUNBOOK.md",
         "Argo Rollouts #501",
@@ -92,7 +101,17 @@ def test_deck_preserves_prior_contract_and_slide_inventory() -> None:
     assert deck.count(f'data-contract="{CONTRACT_TOKEN}"') == 1
     assert deck.count(f'data-contract="{PRESERVED_CONTRACT}"') == 1
     assert deck.count(f'data-contract="{REPLAY_SCHEMA_TOKEN}"') == 1
-    assert deck.count("<section") == 51
+    assert deck.count("<section") == 52
+    assert deck.count('data-contract="decision-log-codification-v1"') == 1
+    assert "/api/v1/decision-codification/analyze" in deck
+    assert deck.count('data-contract="v0.1.2-completed-backlog"') == 1
+    completed_panel = deck.split(
+        '<div data-contract="v0.1.2-completed-backlog">', 1
+    )[1].split("</div>", 1)[0]
+    assert "5 formally closed" in completed_panel
+    assert "S83.128" in completed_panel
+    assert "<li><strong>S83.158" not in completed_panel
+    assert "<li><strong>S83.166" not in completed_panel
     for token in (
         "{{VERSION}}",
         "{{TEST_COUNT}}",
