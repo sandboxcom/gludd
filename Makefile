@@ -328,7 +328,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         vm-image-build vm-image-list vm-image-clean \
         verify-feature-claims audit-coverage gate-audit coverage-json \
         tf-cache-setup tf-init tf-init-local tf-validate tf-cache-warm tf-versions-check tf-clean \
-        deck deck-serve deck-preview deck-data deck-honesty vendor-presentation-assets presentation-browser-install presentation-browser-test presentation-safari-test presentation-pages-probe \
+        deck deck-serve deck-preview deck-data deck-honesty vendor-presentation-assets presentation-browser-install presentation-browser-install-deps presentation-browser-test presentation-safari-test presentation-pages-probe \
         script-count strip-enforce-stop test-hooks-live test-hook-runtime e2e-setup-test-project test-opencode-e2e test-opencode-e2e-hour \
         verify-enforcement \
     ci-view ci-rerun ci-failure-status ci-failure-repair ci-failure-push-guard ci-trigger ci-active ci-job-log ci-job-failure-context ci-artifact-download ci-artifact-context ci-pyinstaller-warning-audit ci-coverage-artifact-audit ci-coverage-gap-plan ci-shards-log-context \
@@ -396,6 +396,7 @@ help:
 	@echo "  lint-docstrings       Run locked Ruff docstring rules on DOCSTRING_FILES"
 	@echo "  vendor-presentation-assets  Validate/refresh pinned Reveal.js assets (PRESENTATION_VENDOR_VALIDATE_ONLY=0|1)"
 	@echo "  presentation-browser-install Check/install pinned Chromium + WebKit (PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=0|1)"
+	@echo "  presentation-browser-install-deps Validate/install and launch-probe browser system dependencies (PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY=0|1)"
 	@echo "  presentation-browser-test   Validate/run bounded Chromium + WebKit acceptance (PRESENTATION_BROWSER_VALIDATE_ONLY=0|1)"
 	@echo "  presentation-safari-test    Validate/run bounded native Safari smoke (PRESENTATION_SAFARI_VALIDATE_ONLY=0|1)"
 	@echo "  presentation-pages-probe    Compare the public Pages artifact with an expected exact SHA"
@@ -9141,6 +9142,7 @@ PRESENTATION_BROWSER_ROOT ?= /tmp/gludd-playwright-browsers
 PRESENTATION_BROWSER_OUTPUT ?= /tmp/gludd-presentation-browser
 PRESENTATION_BROWSER_TIMEOUT ?= 300
 PRESENTATION_BROWSER_INSTALL_TIMEOUT ?= 600
+PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY ?= 1
 PRESENTATION_SAFARI_VALIDATE_ONLY ?= 1
 PRESENTATION_SAFARI_DRIVER ?= /usr/bin/safaridriver
 PRESENTATION_SAFARI_OUTPUT ?= /tmp/gludd-presentation-safari
@@ -9172,6 +9174,18 @@ presentation-browser-install:
 		echo "presentation-browser matrix browser=$$browser phase=install"; \
 		$(UV) run --extra presentation-test python scripts/run_presentation_browser_tests.py \
 			$(if $(filter 1,$(PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY)),--check-browser,--install-browser) \
+			--browser "$$browser" \
+			--browser-root "$(PRESENTATION_BROWSER_ROOT)" \
+			--output-root "$(PRESENTATION_BROWSER_OUTPUT)/$$browser" \
+			--timeout-seconds "$(PRESENTATION_BROWSER_INSTALL_TIMEOUT)" || exit $$?; \
+	done
+
+presentation-browser-install-deps:
+	@case "$(PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY)" in 0|1) ;; *) echo "PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@for browser in $(PRESENTATION_BROWSER_ENGINES); do \
+		echo "presentation-browser matrix browser=$$browser phase=install-deps"; \
+		$(UV) run --extra presentation-test python scripts/run_presentation_browser_tests.py \
+			$(if $(filter 1,$(PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY)),--validate-only,--install-browser-with-deps) \
 			--browser "$$browser" \
 			--browser-root "$(PRESENTATION_BROWSER_ROOT)" \
 			--output-root "$(PRESENTATION_BROWSER_OUTPUT)/$$browser" \

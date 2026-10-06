@@ -114,13 +114,38 @@ def _require_browser_executable(plan: BrowserPlan) -> Path:
     return executable
 
 
-def install_browser(plan: BrowserPlan) -> int:
-    """Install one pinned engine into the explicit project-owned cache."""
+def _require_browser_launchable(plan: BrowserPlan) -> None:
+    """Launch and close one engine so missing host libraries fail immediately."""
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = plan.browser_root
+    try:
+        from playwright.sync_api import Error as PlaywrightError
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise RuntimeError("Playwright is not installed; run make sync") from exc
+    try:
+        with sync_playwright() as playwright:
+            runtime = getattr(playwright, plan.browser).launch(headless=True)
+            runtime.close()
+    except PlaywrightError as exc:
+        label = _browser_label(plan.browser)
+        raise RuntimeError(f"{label} cannot launch after dependency installation") from exc
+
+
+def install_browser(plan: BrowserPlan, *, with_dependencies: bool = False) -> int:
+    """Install one pinned engine and optionally its host-library contract."""
     validate_plan(plan)
     Path(plan.browser_root).mkdir(parents=True, exist_ok=True)
     environment = os.environ.copy()
     environment["PLAYWRIGHT_BROWSERS_PATH"] = plan.browser_root
-    command = (sys.executable, "-m", "playwright", "install", plan.browser)
+    dependency_arguments = ("--with-deps",) if with_dependencies else ()
+    command = (
+        sys.executable,
+        "-m",
+        "playwright",
+        "install",
+        *dependency_arguments,
+        plan.browser,
+    )
     print(
         f"presentation-browser browser={plan.browser} phase=install status=starting",
         flush=True,
@@ -141,6 +166,8 @@ def install_browser(plan: BrowserPlan) -> int:
         return 124
     if completed.returncode == 0:
         _require_browser_executable(plan)
+        if with_dependencies:
+            _require_browser_launchable(plan)
     print(
         f"presentation-browser browser={plan.browser} phase=install "
         f"status=finished exit={completed.returncode}",
@@ -191,6 +218,11 @@ def main() -> None:
     mode.add_argument("--run", action="store_true", help="launch the pinned browser acceptance")
     mode.add_argument("--check-browser", action="store_true", help="verify the pinned browser without writing")
     mode.add_argument("--install-browser", action="store_true", help="install the pinned browser into the owned cache")
+    mode.add_argument(
+        "--install-browser-with-deps",
+        action="store_true",
+        help="install the pinned browser plus host libraries, then launch-probe it",
+    )
     parser.add_argument("--browser", default="chromium")
     parser.add_argument("--browser-root", type=Path, default=DEFAULT_BROWSER_ROOT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
@@ -213,6 +245,8 @@ def main() -> None:
         return
     if args.install_browser:
         raise SystemExit(install_browser(plan))
+    if args.install_browser_with_deps:
+        raise SystemExit(install_browser(plan, with_dependencies=True))
     raise SystemExit(run_plan(plan))
 
 

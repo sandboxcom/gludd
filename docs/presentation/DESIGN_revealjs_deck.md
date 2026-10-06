@@ -347,6 +347,36 @@ not represent current development. The public URL remains legacy until the
 browser-green change is promoted to `master` and its deploy plus revision probe
 pass.
 
+The merge-forward browser regression was a separate HTTP cache-boundary bug.
+On WebKit's second direct-hash navigation, `SimpleHTTPRequestHandler` honored
+the top-level document's `If-Modified-Since` header and returned `304`.
+Playwright correctly exposes that navigation response as non-OK, so acceptance
+stopped before it could assert chart repaint. The preview server now marks only
+the deck document (`/gludd/`, `/gludd/index.html`) `Cache-Control: no-store` and
+removes its conditional validators; fingerprinted assets remain cacheable. A
+regression test sends the same conditional request and requires a `200` body.
+This matches Playwright's reported `304` response semantics in
+[`microsoft/playwright#29441`](https://github.com/microsoft/playwright/issues/29441)
+without weakening navigation or geometry assertions.
+
+Hosted-runner evidence has the same strict provenance boundary. Pages run
+`37455701172` tested commit `9cccc35c4435983679ac315d0e5fa63ebed7310c`
+and failed every WebKit launch for missing GTK/GStreamer and related Linux
+libraries; that historical job contained no dependency-install step, so it is
+not evidence that the current contract failed. The current job invokes the
+locked Python runtime's official `playwright install --with-deps webkit` path in
+the namespaced browser cache, under a hard timeout, and then performs a real
+headless WebKit launch probe before starting acceptance. This follows
+[Playwright's CI guidance](https://playwright.dev/docs/ci) and
+[browser installation guidance](https://playwright.dev/docs/browsers), while
+retaining practitioner reports where nominal installs still left hosted WebKit
+unlaunchable:
+[`microsoft/playwright#27255`](https://github.com/microsoft/playwright/issues/27255),
+[`microsoft/playwright#30538`](https://github.com/microsoft/playwright/issues/30538),
+and
+[Stack Overflow 79090211](https://stackoverflow.com/questions/79090211/playwright-tests-in-github-actions-error-for-webkit-with-host-system-is-missing).
+The launch probe, rather than workflow-step presence, is the fail-closed proof.
+
 ZDD rollback reverts the controller and manifest-bound vendor transform on
 development, validates the last browser-green bytes, then promotes that revert
 through the normal master-only release flow. The deploy job consumes only the

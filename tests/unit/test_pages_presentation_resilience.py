@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "pages.yml"
 DESIGN = ROOT / "docs" / "presentation" / "DESIGN_revealjs_deck.md"
 BROWSER_TEST = ROOT / "tests" / "browser" / "test_presentation.py"
+MAKEFILE = ROOT / "Makefile"
 
 
 def test_pages_validates_development_and_pull_requests_before_upload() -> None:
@@ -25,6 +26,25 @@ def test_pages_validates_development_and_pull_requests_before_upload() -> None:
     assert "path: docs/presentation/deck" in workflow
     assert "continue-on-error" not in workflow
 
+
+def test_pages_installs_linux_webkit_dependencies_before_launch() -> None:
+    """The hosted WebKit lane must install its Linux shared libraries first."""
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    makefile = MAKEFILE.read_text(encoding="utf-8")
+
+    deps_target = "make presentation-browser-install-deps"
+    browser_target = "make presentation-browser-install\n"
+    test_target = "make presentation-browser-test"
+    assert deps_target in workflow
+    assert 'PRESENTATION_BROWSER_ENGINES="webkit"' in workflow
+    assert workflow.index(deps_target) < workflow.index(browser_target)
+    assert workflow.index(deps_target) < workflow.index(test_target)
+    assert "presentation-browser-install-deps:" in makefile
+    assert "--install-browser-with-deps" in makefile
+    assert "scripts/run_presentation_browser_tests.py" in makefile
+    assert "PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers" in workflow
+    assert "PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser" in workflow
+    assert "PRESENTATION_BROWSER_INSTALL_TIMEOUT=600" in workflow
 
 def test_pages_deploys_only_the_validated_master_artifact() -> None:
     """Development validates continuously; only the release branch publishes."""

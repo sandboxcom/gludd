@@ -21,6 +21,7 @@ def test_deck_uses_only_owned_relative_runtime_assets() -> None:
     assert "cdn.jsdelivr.net" not in html
     assert "unpkg.com" not in html
     assert "@latest" not in html
+    assert html.count('<div class="mermaid">') == 25
     for asset in (
         "./vendor/reveal/reveal.css",
         "./vendor/reveal/reveal.js",

@@ -134,6 +134,52 @@ def test_browser_install_is_exact_and_bounded(
     assert verified == [plan]
 
 
+def test_browser_install_with_dependencies_uses_the_locked_runtime_and_launch_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hosted WebKit uses Playwright's combined install and verifies it launches."""
+    plan = runner.build_plan(
+        browser="webkit",
+        browser_root=Path("/tmp/gludd-browser-deps-test"),
+        output_root=Path("/tmp/gludd-presentation-deps-test"),
+        timeout_seconds=120,
+    )
+    monkeypatch.setattr(runner, "validate_plan", lambda _plan: None)
+    binaries: list[runner.BrowserPlan] = []
+    launches: list[runner.BrowserPlan] = []
+    monkeypatch.setattr(runner, "_require_browser_executable", binaries.append)
+    monkeypatch.setattr(runner, "_require_browser_launchable", launches.append)
+    captured: list[tuple[tuple[str, ...], str]] = []
+
+    def complete(
+        command: tuple[str, ...],
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        environment = kwargs["env"]
+        assert isinstance(environment, dict)
+        captured.append((command, str(environment["PLAYWRIGHT_BROWSERS_PATH"])))
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(runner.subprocess, "run", complete)
+
+    assert runner.install_browser(plan, with_dependencies=True) == 0
+    assert captured == [
+        (
+            (
+                runner.sys.executable,
+                "-m",
+                "playwright",
+                "install",
+                "--with-deps",
+                "webkit",
+            ),
+            plan.browser_root,
+        )
+    ]
+    assert binaries == [plan]
+    assert launches == [plan]
+
+
 def test_plan_rejects_unbounded_timeout() -> None:
     """The make target cannot accidentally disable the process deadline."""
     with pytest.raises(ValueError, match="between 30 and 900"):
@@ -258,6 +304,59 @@ def test_webkit_executable_check_uses_webkit_runtime(
     assert runner._require_browser_executable(plan) == webkit_executable
 
 
+def test_webkit_launch_probe_closes_runtime_and_reports_missing_host_libraries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dependency installation is accepted only after the selected engine launches."""
+    closed: list[bool] = []
+
+    class FakePlaywrightError(Exception):
+        pass
+
+    class FakeBrowser:
+        def close(self) -> None:
+            closed.append(True)
+
+    class FakeBrowserType:
+        def __init__(self, *, failure: bool) -> None:
+            self.failure = failure
+
+        def launch(self, *, headless: bool) -> FakeBrowser:
+            assert headless is True
+            if self.failure:
+                raise FakePlaywrightError("missing libgtk-4.so.1")
+            return FakeBrowser()
+
+    class FakePlaywright:
+        def __init__(self, *, failure: bool) -> None:
+            self.webkit = FakeBrowserType(failure=failure)
+
+        def __enter__(self) -> FakePlaywright:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+    sync_api = ModuleType("playwright.sync_api")
+    sync_api.Error = FakePlaywrightError  # type: ignore[attr-defined]
+    sync_api.sync_playwright = lambda: FakePlaywright(failure=False)  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "playwright", ModuleType("playwright"))
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", sync_api)
+    plan = runner.build_plan(
+        browser="webkit",
+        browser_root=Path("/tmp/gludd-browser-launch-check"),
+        output_root=Path("/tmp/gludd-presentation-launch-check"),
+        timeout_seconds=120,
+    )
+
+    runner._require_browser_launchable(plan)
+    assert closed == [True]
+
+    sync_api.sync_playwright = lambda: FakePlaywright(failure=True)  # type: ignore[attr-defined]
+    with pytest.raises(RuntimeError, match="WebKit cannot launch"):
+        runner._require_browser_launchable(plan)
+
+
 def test_install_and_run_propagate_timeout_and_exit_codes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -311,6 +410,16 @@ def test_main_dispatches_each_explicit_mode(monkeypatch: pytest.MonkeyPatch) -> 
     with pytest.raises(SystemExit) as installed:
         runner.main()
     assert installed.value.code == 17
+
+    monkeypatch.setattr(
+        runner,
+        "install_browser",
+        lambda _plan, *, with_dependencies=False: 29 if with_dependencies else 17,
+    )
+    monkeypatch.setattr(runner.sys, "argv", ["runner", "--install-browser-with-deps"])
+    with pytest.raises(SystemExit) as installed_with_deps:
+        runner.main()
+    assert installed_with_deps.value.code == 29
 
     monkeypatch.setattr(runner, "run_plan", lambda _plan: 23)
     monkeypatch.setattr(runner.sys, "argv", ["runner", "--run"])

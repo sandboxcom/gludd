@@ -116,7 +116,8 @@ def presentation_url(tmp_path_factory: pytest.TempPathFactory) -> Generator[str,
 def _load(page: Any, url: str) -> None:
     """Load the deck and wait for Reveal plus the Gludd lifecycle controller."""
     response = page.goto(url, wait_until="networkidle")
-    assert response is not None and response.ok
+    status = None if response is None else response.status
+    assert response is not None and response.ok, f"top-level presentation response status={status}"
     page.wait_for_function("window.gluddPresentationReady === true")
     page.wait_for_function("typeof window.gluddPresentationHealth === 'function'")
 

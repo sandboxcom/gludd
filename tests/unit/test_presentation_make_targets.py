@@ -121,6 +121,35 @@ def test_presentation_browser_install_is_read_only_by_default() -> None:
     }
 
 
+def test_presentation_browser_dependency_install_is_bounded_and_runtime_verified() -> None:
+    """The hosted Linux lane installs and launch-probes the exact pinned engine."""
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+
+    assert "presentation-browser-install-deps:" in makefile
+    assert "scripts/run_presentation_browser_tests.py" in makefile
+    assert "--install-browser-with-deps" in makefile
+    assert 'playwright install-deps "$$browser"' not in makefile
+    assert "presentation-browser-install-deps" in makefile
+    assert _contract("presentation-browser-install-deps") == {
+        "name": "presentation-browser-install-deps",
+        "make_variables": [
+            "PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY",
+            "PRESENTATION_BROWSER_ENGINES",
+            "PRESENTATION_BROWSER_ROOT",
+            "PRESENTATION_BROWSER_OUTPUT",
+            "PRESENTATION_BROWSER_INSTALL_TIMEOUT",
+        ],
+        "behavior": (
+            "make presentation-browser-install-deps "
+            "PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY=1 "
+            "PRESENTATION_BROWSER_ENGINES='webkit' "
+            "PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers "
+            "PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser "
+            "PRESENTATION_BROWSER_INSTALL_TIMEOUT=600"
+        ),
+    }
+
+
 def test_native_safari_target_is_bounded_and_read_only_by_default() -> None:
     """Native Safari remains explicit and never enables Remote Automation."""
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")

@@ -54,7 +54,15 @@ jobs:
         run: make vendor-presentation-assets PRESENTATION_VENDOR_VALIDATE_ONLY=1
       - name: Build exact Pages directory
         run: make deck-build
-      - name: Install pinned Chromium
+      - name: Install and launch-probe pinned WebKit system dependencies
+        run: >-
+          make presentation-browser-install-deps
+          PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY=0
+          PRESENTATION_BROWSER_ENGINES="webkit"
+          PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers
+          PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser
+          PRESENTATION_BROWSER_INSTALL_TIMEOUT=600
+      - name: Install pinned browsers
         run: >-
           make presentation-browser-install
           PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=0
