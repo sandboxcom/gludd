@@ -415,6 +415,48 @@ Long-lived practitioner reports establish why every boundary is necessary:
   next CI job. Gludd removes only unchanged, proven-owned locks and retains a
   fail-closed record whenever terminal cleanup is incomplete.
 
+#### Async wrapper command boundary
+
+`gate_async.sh` has two deliberately different ownership modes. With its
+default complete `make gate` command, it may invoke `kill_owned_gate.py`: the
+child acquires this checkout's `gate-run.lock`, and that lock admits the verified
+descendant-tree terminator. An explicitly injected `GATE_CMD` is the test seam
+and owns only the captured direct child PID. It must never inspect, terminate,
+or attribute failure from a checkout-wide lock, because a full-gate test runs
+the stub beneath an enclosing gate that legitimately owns that lock.
+
+The signal boundary remains one atomic transition in either mode. `INT` and
+`TERM` mask re-entry, terminate only admitted work, publish `ABORTED` with
+explicit `130` or `143`, release only the launcher's async lock, and leave an
+already published success untouched. A deterministic acceptance case places an
+unreadable foreign `gate-run.lock` beside the injected command and requires both
+signals to return their exact code, report `cleanup_rc=0`, and preserve that
+foreign record byte-for-byte. This reproduces the full-gate nesting failure
+without creating or signaling an unrelated process.
+
+The focused replay passes 67/67 and measures the maintained Python terminator
+at 91% branch-aware coverage, with its only measured file above the 75%
+per-file floor. Bash is outside Python line instrumentation; its real process
+contract is exercised directly by the six signal cases, complete 18-case async
+suite, 154-case shell replay, and the repaired 184-case original gate batch.
+
+Long-lived practitioner reports explain both halves of the contract. The
+[background-process Ctrl-C report](https://unix.stackexchange.com/questions/513781/regain-ability-to-use-c-to-close-backgrounded-then-effectively-foregrounded-p)
+recommends acting on the exact `$!` child and cautions that spawned descendants
+need a separately proven boundary. The
+[Bash `wait` and trapped-signal report](https://unix.stackexchange.com/questions/384691/when-typing-ctrl-c-in-a-terminal-why-isnt-the-foreground-job-terminated-until)
+shows that `wait` can return `128+signal` while an ignored asynchronous child is
+still alive. Gludd therefore records the signal exit independently from cleanup
+success and never promotes a checkout-wide lock into ownership for an injected
+command.
+
+Rollout and rollback are ZDD. The change affects only future signal handlers;
+it starts or restarts no application process, listener, daemon, schema,
+credential, or deployment. Existing launchers may finish normally. Rollback
+waits for terminal evidence and released async ownership before reverting the
+script. Default gates retain the descendant terminator in both directions;
+rolling back only reintroduces the nested-test false cleanup failure.
+
 #### Legacy-watchdog compatibility shield
 
 Repository-wide owner discovery protects gates only after every task watchdog

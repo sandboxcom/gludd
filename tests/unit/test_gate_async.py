@@ -13,6 +13,8 @@ import subprocess
 import time
 from pathlib import Path
 
+import pytest
+
 GATE_ASYNC_SH = Path(__file__).parent.parent.parent / "scripts" / "gate_async.sh"
 MAKEFILE = GATE_ASYNC_SH.parent.parent / "Makefile"
 
@@ -72,6 +74,7 @@ def _interrupt_running_gate(
     caught_signal: signal.Signals,
     *,
     signal_process_group: bool = True,
+    extra_env: dict[str, str] | None = None,
 ) -> tuple[int, str, str, Path, Path]:
     """Start an isolated gate, signal its process group, and collect evidence."""
     status = tmp_path / "gate-status"
@@ -86,6 +89,8 @@ def _interrupt_running_gate(
             "GLUDD_GATE_ASYNC_FORCE_PIDFILE": "1",
         }
     )
+    if extra_env:
+        env.update(extra_env)
     proc = subprocess.Popen(
         ["bash", str(GATE_ASYNC_SH)],
         stdout=subprocess.PIPE,
@@ -261,6 +266,43 @@ class TestGateAsyncSignalTerminalState:
         assert lines[1] == "=== GATE: ABORTED ==="
         assert not lock.exists(), "SIGINT must release its owned PID lock"
         assert not list(tmp_path.glob("gate-status.*.tmp"))
+
+    @pytest.mark.parametrize(
+        ("caught_signal", "signal_name", "signal_rc"),
+        [
+            (signal.SIGINT, "INT", 130),
+            (signal.SIGTERM, "TERM", 143),
+        ],
+    )
+    def test_injected_command_does_not_claim_unrelated_gate_lock(
+        self,
+        tmp_path: Path,
+        caught_signal: signal.Signals,
+        signal_name: str,
+        signal_rc: int,
+    ) -> None:
+        """Stub cleanup must not inspect or mutate an enclosing gate's lock."""
+        gate_log_dir = tmp_path / ".gate-logs"
+        gate_log_dir.mkdir()
+        unrelated_lock = gate_log_dir / "gate-run.lock"
+        unrelated_lock.write_text("not-this-launcher's-lock\n", encoding="utf-8")
+
+        result, stdout, stderr, status, _lock = _interrupt_running_gate(
+            tmp_path,
+            caught_signal,
+            extra_env={"GLUDD_PROJECT_ROOT": str(tmp_path)},
+        )
+
+        assert result == signal_rc, f"stdout: {stdout}\nstderr: {stderr}"
+        parts = status.read_text(encoding="utf-8").splitlines()[0].split()
+        assert parts[2:] == [
+            f"signal={signal_name}",
+            f"rc={signal_rc}",
+            "cleanup_rc=0",
+        ]
+        assert unrelated_lock.read_text(encoding="utf-8") == (
+            "not-this-launcher's-lock\n"
+        )
 
     def test_parent_only_signal_terminates_owned_child(self, tmp_path: Path) -> None:
         """External TERM of the wrapper must not orphan its gate child."""
