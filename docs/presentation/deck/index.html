@@ -203,10 +203,11 @@ graph TD
   <h2>Every diagram now has a measured browser proof</h2>
   <div class="two-col">
     <div>
-      <h3>Render outside hidden slides</h3>
+      <h3>Render without moving live slides</h3>
       <ul class="bullets-tight">
-        <li>After fonts load, render <strong>one diagram at a time</strong> in a fixed-width body scratch node</li>
-        <li>Await the pinned Mermaid API and insert only a <strong>completed, validated SVG</strong></li>
+        <li>After fonts load, render <strong>one diagram at a time</strong> in an independent body scratch node</li>
+        <li>Keep the authored node in Reveal; copy only a <strong>completed, validated SVG</strong></li>
+        <li>Pin a numeric SVG viewport so Safari cannot retain stale intrinsic geometry</li>
         <li>Reject descendant <code>undefined</code>, <code>NaN</code>, or <code>Infinity</code> geometry</li>
         <li>Keep accessible Mermaid source visible for every isolated failure</li>
       </ul>
@@ -1644,7 +1645,7 @@ make init</code></pre>
 </div>
 </div>
 
-<p id="presentation-render-status" role="status" aria-live="polite" hidden></p>
+<p id="presentation-render-status" role="status" aria-live="polite">Presentation scripts did not finish; diagram source remains available.</p>
 <dialog id="source-viewer-dialog" aria-labelledby="source-viewer-path">
   <div class="source-viewer-header">
     <strong id="source-viewer-path">Repository source</strong>

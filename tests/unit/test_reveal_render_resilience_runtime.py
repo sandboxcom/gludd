@@ -79,7 +79,12 @@ def test_runtime_eagerly_renders_once_and_keeps_failures_visible() -> None:
         "gludd-mermaid-stage",
         "gludd-mermaid-deferred",
         "createRenderStage",
-        "placeInStage",
+        "createRenderScratch",
+        "stabilizeSvgViewport",
+        "viewBoxDimensions",
+        "mermaidViewport",
+        "preserveAspectRatio",
+        "BOOT_DIAGNOSTIC",
         "document.fonts.ready",
         "window.gluddMermaid",
         "await mermaidApi.render(",
@@ -93,11 +98,16 @@ def test_runtime_eagerly_renders_once_and_keeps_failures_visible() -> None:
         "gluddPresentationClientErrors",
     ):
         assert token in runtime
-    for legacy_retry in ("requestedDiagram", "awaitRenderOutcome", "RENDER_TIMEOUT_MS"):
+    for legacy_retry in (
+        "requestedDiagram",
+        "awaitRenderOutcome",
+        "RENDER_TIMEOUT_MS",
+        "placeInStage",
+    ):
         assert legacy_retry not in runtime
     assert "mermaid.run({" not in runtime
     assert "document.querySelectorAll('.mermaid')" not in runtime
-    assert "await awaitRenderBatch([diagram], deadline);" in runtime
+    assert "await awaitStableSvg(scratch, deadline)" in runtime
     assert "revealMermaid.init" not in runtime
     assert "console.error =" not in runtime
 
@@ -110,6 +120,17 @@ def test_mermaid_staging_area_is_measurable_while_offscreen() -> None:
     assert "opacity: 0" in styles
     assert "visibility: hidden" not in styles
     assert "html.gludd-mermaid-prerender" not in styles
+
+
+def test_boot_diagnostic_is_visible_until_runtime_proves_health() -> None:
+    """A parser, file-origin, or CSP failure must be visible without JavaScript."""
+    html = (DECK / "index.html").read_text(encoding="utf-8")
+
+    assert (
+        '<p id="presentation-render-status" role="status" aria-live="polite">'
+        "Presentation scripts did not finish; diagram source remains available."
+        "</p>"
+    ) in html
 
 
 def test_presentation_javascript_is_valid() -> None:

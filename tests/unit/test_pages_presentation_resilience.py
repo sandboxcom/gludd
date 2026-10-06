@@ -57,9 +57,13 @@ def test_implementation_guide_keeps_upstream_regressions_and_operations() -> Non
         "mermaid-js/mermaid#3577",
         "mgaitan/sphinxcontrib-mermaid#126",
         "zjffun/reveal.js-mermaid-plugin#5",
+        "mermaid-js/mermaid#5122",
+        "mermaid-js/mermaid#6666",
         "mermaid-js/mermaid#7323",
         "gitlab-org/gitlab-docs#599",
         "mermaid-js/mermaid#8113",
+        "bugs.webkit.org/show_bug.cgi?id=198609",
+        "github.com/orgs/community/discussions/12523",
     ):
         assert issue in design
     assert "reveal.js-mermaid-plugin@11.15.0" in design

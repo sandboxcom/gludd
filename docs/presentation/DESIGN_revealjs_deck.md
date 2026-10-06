@@ -271,10 +271,12 @@ The reveal.js deck is separate from GitHub Markdown. It vendors the Mermaid runt
 
 The deck delegates Mermaid parsing and layout to the runtime carried by vendored
 `reveal.js-mermaid-plugin@11.15.0`, while the controller schedules the work
-itself. After fonts are ready, it moves one source host at a time into a
-fixed-width, opacity-zero scratch node attached directly to `document.body`,
-outside Reveal transforms and hidden slides. It awaits
-`gluddMermaid.render()`, inserts only the completed SVG, and exposes a
+itself. After fonts are ready, it renders into a dedicated fixed-width,
+opacity-zero scratch node attached directly to `document.body`, outside Reveal
+transforms and hidden slides. The authored node never leaves its Reveal slide.
+The controller awaits `gluddMermaid.render()`, validates scratch geometry, copies
+fresh SVG markup into the live node, and sets explicit intrinsic width, height,
+aspect ratio, and `preserveAspectRatio` before hiding source. It exposes a
 source-preserving `pending`/`rendering`/`rendered`/`failed` state. Root and
 flowchart HTML labels are disabled.
 
@@ -293,6 +295,8 @@ This behavior intentionally preserves the long-lived practitioner evidence in
 [`mermaid-js/mermaid#1846`](https://github.com/mermaid-js/mermaid/issues/1846),
 [`mermaid-js/mermaid#1824`](https://github.com/mermaid-js/mermaid/issues/1824),
 [`mermaid-js/mermaid#3577`](https://github.com/mermaid-js/mermaid/issues/3577),
+[`mermaid-js/mermaid#5122`](https://github.com/mermaid-js/mermaid/issues/5122),
+[`mermaid-js/mermaid#6666`](https://github.com/mermaid-js/mermaid/issues/6666),
 [`mgaitan/sphinxcontrib-mermaid#126`](https://github.com/mgaitan/sphinxcontrib-mermaid/issues/126),
 and
 [`zjffun/reveal.js-mermaid-plugin#5`](https://github.com/zjffun/reveal.js-mermaid-plugin/issues/5),
@@ -303,6 +307,10 @@ The exact invalid transform is also reported in
 and transformed-container unit mismatches plus the body-scratch mitigation are
 tracked in
 [`mermaid-js/mermaid#8113`](https://github.com/mermaid-js/mermaid/issues/8113).
+Safari's stale intrinsic SVG geometry and developer-tools-triggered relayout are
+tracked in [WebKit bug 198609](https://bugs.webkit.org/show_bug.cgi?id=198609),
+and a macOS Safari practitioner report is retained in
+[GitHub Community discussion 12523](https://github.com/orgs/community/discussions/12523).
 Those reports cover hidden-slide zero geometry, concurrent asynchronous renders,
 visibility-triggered recovery, reload/zoom-sensitive WebKit layout, invalid
 descendant transforms, and clipped text; an SVG-exists assertion alone would
@@ -311,10 +319,22 @@ not catch those failures.
 The browser contract serves the exact Pages upload tree below `/gludd/`. In both
 Chromium and WebKit it requires all charts to reach valid SVG metadata within
 five seconds on a cold load and a cached reload, visits every chart forward and
-backward, requires positive rendered geometry, and exercises malformed-source,
-blocked-asset, source-viewer, console, network, and HTTP failure paths. Runtime
-JS and CSS URLs carry the exact 40-character build SHA so a Safari cache cannot
+backward, proves direct hash navigation and reload, exercises the same artifact
+over `file://`, and requires positive rendered geometry. A script-blocking CSP
+must leave the static diagnostic visible. Malformed-source, blocked-asset,
+source-viewer, console, network, and HTTP failure paths remain strict. Runtime JS
+and CSS URLs carry the exact 40-character build SHA so a Safari cache cannot
 combine old controller code with new deck markup.
+
+The 2026-10-06 macOS reproduction separated delivery failures instead of
+guessing from Playwright. The native and static build initially stopped before
+browser launch because an authored `daemon.py:1-3126` citation exceeded the
+current file; that drift is repaired. The public Pages probe still reports
+`published display revision is missing`, so the public URL is legacy rather
+than evidence for current development. After the build repair, `safaridriver`
+reaches session creation and then reports Remote Automation disabled (exit 3).
+Native compatibility therefore remains pending even though the new invariant
+tests pass in Chromium and Playwright WebKit.
 
 Playwright WebKit is deliberately not called native Safari. The separate
 `make presentation-safari-test` target uses `/usr/bin/safaridriver`, is bounded,
