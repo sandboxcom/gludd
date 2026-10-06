@@ -440,6 +440,8 @@ def test_reference_generator_emits_no_trailing_whitespace(tmp_path: Path) -> Non
     content = ref_gen.generate(tmp_path / "MCP_TOOL_REFERENCE.md")
     violations = [line for line in content.splitlines() if line != line.rstrip()]
     assert violations == []
+    assert content.endswith("\n")
+    assert not content.endswith("\n\n")
 
 
 def test_reference_generate_rejects_non_array_manifest(
