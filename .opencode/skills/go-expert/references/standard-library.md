@@ -732,4 +732,3 @@ b := unsafe.Slice(unsafe.StringData(s), len(s)) // string → byte slice, no cop
 ```
 
 ---
-
