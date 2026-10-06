@@ -164,6 +164,7 @@ class RunRecorder:
         event_path = f"{events_dir}/{sequence}.json"
         capture_path = f"{capture_dir}/{sequence}.json"
 
+        event_type = dict.get(event, "type")
         redacted = redact_for_persistence(event, limits=self._redaction_limits)
         # The total-byte fail-closed marker is scalar; keep the historical
         # replay return type while the sidecar explains why content is gone.
@@ -193,7 +194,7 @@ class RunRecorder:
         except Exception:
             self._remove_if_exists(capture_path)
             raise
-        return event.get("type"), metadata
+        return event_type, metadata
 
     def replay(self, run_id: str) -> list[dict[str, Any]]:
         """Return captured events in sequence order using the legacy shape."""

@@ -343,8 +343,7 @@ class RunBundleStore:
         except Exception as exc:
             self._telemetry.record_failure(self._failure_reason(exc))
             self._telemetry.operation("record", "failure")
-            supplied_type = event.get("type") if isinstance(event, Mapping) else None
-            self._telemetry.record_seconds(supplied_type, time.perf_counter() - started)
+            self._telemetry.record_seconds(None, time.perf_counter() - started)
             raise
         self._telemetry.events_recorded(EVENT_SCHEMA_V1, envelope.type)
         for kind in envelope.redaction.kinds:

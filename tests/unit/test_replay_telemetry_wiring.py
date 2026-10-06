@@ -345,6 +345,38 @@ class _FailingBackend:
         return fail
 
 
+class _ExplosiveGetDict(dict[str, Any]):
+    def get(self, key: str, default: object = None) -> Any:
+        del key, default
+        raise RuntimeError("telemetry must not inspect source mappings")
+
+
+def test_telemetry_never_adds_source_mapping_reads_or_masks_storage_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    telemetry = ReplayTelemetry(_FailingBackend())
+    store = _store(tmp_path / "v1", telemetry)
+    event = _ExplosiveGetDict(_event())
+
+    def fail_write(path: Path, payload: bytes) -> None:
+        del path, payload
+        raise OSError("original-storage-error")
+
+    monkeypatch.setattr(store, "_atomic_write", fail_write)
+    with pytest.raises(OSError, match="original-storage-error"):
+        store.append_event("mapping-run", event)
+
+    recorder = RunRecorder(
+        store=FileStore(root_path=str(tmp_path / "legacy")),
+        telemetry=telemetry,
+    )
+    recorder.record(
+        "mapping-legacy-run",
+        _ExplosiveGetDict({"type": "run.started", "ok": True}),
+    )
+
+
 def test_failing_exporter_never_changes_record_verify_or_read_behavior(
     tmp_path: Path,
 ) -> None:
