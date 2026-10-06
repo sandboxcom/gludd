@@ -8,7 +8,6 @@ import re
 import threading
 import time
 from collections.abc import Generator
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -258,7 +257,7 @@ def presentation_url(tmp_path_factory: pytest.TempPathFactory) -> Generator[str,
         allowlist=frozenset(payload["paths"]),
         url_prefix="/gludd/",
     )
-    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    server = build_deck.DeckThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=server.serve_forever, name="gludd-presentation-browser", daemon=True)
     thread.start()
     host, port = server.server_address

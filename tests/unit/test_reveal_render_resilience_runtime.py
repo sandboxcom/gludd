@@ -12,6 +12,7 @@ from scripts import build_deck
 
 ROOT = Path(__file__).parent.parent.parent
 DECK = ROOT / "docs" / "presentation" / "deck"
+BROWSER_TEST = ROOT / "tests" / "browser" / "test_presentation.py"
 
 
 def test_deck_uses_only_owned_relative_runtime_assets() -> None:
@@ -62,6 +63,14 @@ def test_vendor_manifest_is_exact_and_digest_bound() -> None:
     }
     expected = destinations | {item["license"] for item in manifest["assets"]}
     assert actual == expected
+
+
+def test_browser_acceptance_uses_the_disconnect_safe_preview_server() -> None:
+    """Live-browser tests must exercise the production server error boundary."""
+    browser_suite = BROWSER_TEST.read_text(encoding="utf-8")
+
+    assert "build_deck.DeckThreadingHTTPServer" in browser_suite
+    assert "from http.server import ThreadingHTTPServer" not in browser_suite
 
 
 def test_runtime_eagerly_renders_once_and_keeps_failures_visible() -> None:
