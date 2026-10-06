@@ -171,6 +171,7 @@
       "collection_requirement_paths": [],
       "core_import_paths": [
         "src/general_ludd/daemon.py",
+        "src/general_ludd/daemon_components/lifecycle.py",
         "src/general_ludd/receiver/router.py",
         "src/general_ludd/renderers/runner.py",
         "src/general_ludd/routers/__init__.py",
@@ -187,6 +188,7 @@
         "src/general_ludd/routers/compaction_aggressiveness.py",
         "src/general_ludd/routers/compute.py",
         "src/general_ludd/routers/coordination.py",
+        "src/general_ludd/routers/decision_codification.py",
         "src/general_ludd/routers/deployments.py",
         "src/general_ludd/routers/dispatch.py",
         "src/general_ludd/routers/embeddings.py",
@@ -255,23 +257,12 @@
       "core_import_paths": [
         "src/general_ludd/agents/dispatch_checkpoint.py",
         "src/general_ludd/azure/accelerator_credential_store.py",
+        "src/general_ludd/replay/store.py",
         "src/general_ludd/security/sandboxes/vm/image_builder.py"
       ],
       "disposition": "retain-core",
       "import_roots": [
         "filelock"
-      ],
-      "runtime_evidence": []
-    },
-    "gunicorn": {
-      "collection_import_paths": [],
-      "collection_requirement_paths": [],
-      "core_import_paths": [
-        "src/general_ludd/cli.py"
-      ],
-      "disposition": "retain-core",
-      "import_roots": [
-        "gunicorn"
       ],
       "runtime_evidence": []
     },
@@ -290,6 +281,18 @@
         }
       ]
     },
+    "gunicorn": {
+      "collection_import_paths": [],
+      "collection_requirement_paths": [],
+      "core_import_paths": [
+        "src/general_ludd/cli_commands/daemon_control.py"
+      ],
+      "disposition": "retain-core",
+      "import_roots": [
+        "gunicorn"
+      ],
+      "runtime_evidence": []
+    },
     "httpx": {
       "collection_import_paths": [
         "collections/ansible_collections/general_ludd/chat/plugins/modules/chat_send.py"
@@ -301,6 +304,8 @@
         "src/general_ludd/chat/session.py",
         "src/general_ludd/cli.py",
         "src/general_ludd/cli_account.py",
+        "src/general_ludd/cli_commands/tui_views.py",
+        "src/general_ludd/cli_decision_codification.py",
         "src/general_ludd/cli_deploy_check.py",
         "src/general_ludd/cli_human_todos.py",
         "src/general_ludd/cli_ornith.py",
@@ -379,9 +384,13 @@
         "src/general_ludd/issue_sources/servicenow.py",
         "src/general_ludd/issue_sources/trello.py",
         "src/general_ludd/models/gateway.py",
+        "src/general_ludd/models/gateway_streaming.py",
+        "src/general_ludd/models/gateway_types.py",
         "src/general_ludd/models/openrouter_discovery.py",
         "src/general_ludd/models/quantization.py",
         "src/general_ludd/models/timeout_detector.py",
+        "src/general_ludd/pricing_intel/source_components/cloud_compute.py",
+        "src/general_ludd/pricing_intel/source_components/model_apis.py",
         "src/general_ludd/pricing_intel/sources.py",
         "src/general_ludd/project_runner/dast.py",
         "src/general_ludd/reload/worker_broadcast.py",
@@ -401,23 +410,6 @@
       "disposition": "retain-core",
       "import_roots": [
         "httpx"
-      ],
-      "runtime_evidence": []
-    },
-    "huggingface-hub": {
-      "collection_import_paths": [],
-      "collection_requirement_paths": [],
-      "core_import_paths": [
-        "src/general_ludd/cloud/model_sources.py",
-        "src/general_ludd/models/model_registry.py",
-        "src/general_ludd/self_improve/hf_cache_delete.py",
-        "src/general_ludd/self_improve/model_lifecycle.py",
-        "src/general_ludd/small_models/download.py",
-        "src/general_ludd/small_models/model_hash_db.py"
-      ],
-      "disposition": "retain-core",
-      "import_roots": [
-        "huggingface_hub"
       ],
       "runtime_evidence": []
     },
@@ -441,7 +433,7 @@
         "src/general_ludd/ansible/core_runner.py",
         "src/general_ludd/ansible/templating.py",
         "src/general_ludd/dispatch/variable_store.py",
-        "src/general_ludd/event_loop/loop.py",
+        "src/general_ludd/event_loop/task_routing.py",
         "src/general_ludd/langchain/prompt_adapter.py",
         "src/general_ludd/output_templates.py",
         "src/general_ludd/prompts/registry.py",
@@ -471,67 +463,6 @@
       ],
       "runtime_evidence": []
     },
-    "langchain-core": {
-      "collection_import_paths": [],
-      "collection_requirement_paths": [],
-      "core_import_paths": [
-        "src/general_ludd/execution/langgraph_agent.py",
-        "src/general_ludd/langchain/prompt_adapter.py",
-        "src/general_ludd/models/langchain_retry.py",
-        "src/general_ludd/models/langchain_router.py"
-      ],
-      "disposition": "retain-core",
-      "import_roots": [
-        "langchain_core"
-      ],
-      "runtime_evidence": []
-    },
-    "langchain-openai": {
-      "collection_import_paths": [],
-      "collection_requirement_paths": [],
-      "core_import_paths": [],
-      "disposition": "retain-core",
-      "import_roots": [
-        "langchain_openai"
-      ],
-      "runtime_evidence": [
-        {
-          "path": "src/general_ludd/models/provider_registry.py",
-          "token": "_DEFAULT_PROVIDER_PACKAGE = \"langchain_openai\""
-        }
-      ]
-    },
-    "langgraph": {
-      "collection_import_paths": [],
-      "collection_requirement_paths": [],
-      "core_import_paths": [
-        "src/general_ludd/execution/graph_checkpointer.py",
-        "src/general_ludd/execution/human_gate.py",
-        "src/general_ludd/execution/langgraph_agent.py",
-        "src/general_ludd/execution/map_reduce_executor.py",
-        "src/general_ludd/memory/cross_conversation.py",
-        "src/general_ludd/models/langgraph_gateway.py",
-        "src/general_ludd/review/langgraph_consensus.py",
-        "src/general_ludd/review/langgraph_reviewer.py"
-      ],
-      "disposition": "retain-core",
-      "import_roots": [
-        "langgraph"
-      ],
-      "runtime_evidence": []
-    },
-    "langsmith": {
-      "collection_import_paths": [],
-      "collection_requirement_paths": [],
-      "core_import_paths": [
-        "src/general_ludd/observability/langsmith_tracer.py"
-      ],
-      "disposition": "retain-core",
-      "import_roots": [
-        "langsmith"
-      ],
-      "runtime_evidence": []
-    },
     "msgpack": {
       "collection_import_paths": [],
       "collection_requirement_paths": [],
@@ -546,21 +477,6 @@
           "token": "importlib.import_module(\"msgpack\")"
         }
       ]
-    },
-    "openai": {
-      "collection_import_paths": [],
-      "collection_requirement_paths": [],
-      "core_import_paths": [
-        "src/general_ludd/models/gateway.py",
-        "src/general_ludd/models/timeout_detector.py",
-        "src/general_ludd/self_improve/azure_backend.py",
-        "src/general_ludd/skills/embeddings.py"
-      ],
-      "disposition": "retain-core",
-      "import_roots": [
-        "openai"
-      ],
-      "runtime_evidence": []
     },
     "pathspec": {
       "collection_import_paths": [],
@@ -619,7 +535,8 @@
         "src/general_ludd/controllers/load_scrape.py",
         "src/general_ludd/controllers/pid.py",
         "src/general_ludd/daemon.py",
-        "src/general_ludd/event_loop/loop.py",
+        "src/general_ludd/event_loop/compute_lifecycle.py",
+        "src/general_ludd/event_loop/decision_completion.py",
         "src/general_ludd/hardware/probe.py",
         "src/general_ludd/hardware/survey.py",
         "src/general_ludd/health/local_model_check.py",
@@ -668,6 +585,7 @@
         "src/general_ludd/chemistry/entities.py",
         "src/general_ludd/chemistry/polymer_design.py",
         "src/general_ludd/chemistry/schemas.py",
+        "src/general_ludd/cli_decision_codification.py",
         "src/general_ludd/code_intelligence/complexity_scorer.py",
         "src/general_ludd/compaction/arena.py",
         "src/general_ludd/compaction/base.py",
@@ -678,6 +596,10 @@
         "src/general_ludd/controllers/pause_contracts.py",
         "src/general_ludd/controllers/pause_controller.py",
         "src/general_ludd/daemon.py",
+        "src/general_ludd/decision_codification/artifact_store.py",
+        "src/general_ludd/decision_codification/normalize.py",
+        "src/general_ludd/decision_codification/schema.py",
+        "src/general_ludd/decision_codification/service.py",
         "src/general_ludd/dogfood/runner.py",
         "src/general_ludd/git_release/contracts.py",
         "src/general_ludd/git_release/reviewed_head_integration.py",
@@ -693,7 +615,7 @@
         "src/general_ludd/mcp/config.py",
         "src/general_ludd/mcp/registry.py",
         "src/general_ludd/model_weights/schema.py",
-        "src/general_ludd/models/gateway.py",
+        "src/general_ludd/models/gateway_types.py",
         "src/general_ludd/models/langgraph_gateway.py",
         "src/general_ludd/planning/artifact.py",
         "src/general_ludd/planning/debt_applier.py",
@@ -702,6 +624,9 @@
         "src/general_ludd/project_runner/dast.py",
         "src/general_ludd/project_runner/profile.py",
         "src/general_ludd/renderers/schema.py",
+        "src/general_ludd/replay/legacy.py",
+        "src/general_ludd/replay/schema.py",
+        "src/general_ludd/replay/store.py",
         "src/general_ludd/retrieval/agentic_context.py",
         "src/general_ludd/retrieval/research_index.py",
         "src/general_ludd/review/conversation.py",
@@ -715,6 +640,7 @@
         "src/general_ludd/routers/benchmark.py",
         "src/general_ludd/routers/chat.py",
         "src/general_ludd/routers/coordination.py",
+        "src/general_ludd/routers/decision_codification.py",
         "src/general_ludd/routers/deployments.py",
         "src/general_ludd/routers/embeddings.py",
         "src/general_ludd/routers/environment.py",
@@ -850,6 +776,7 @@
       "collection_import_paths": [],
       "collection_requirement_paths": [],
       "core_import_paths": [
+        "src/general_ludd/models/freellmapi/candidate_bundle.py",
         "src/general_ludd/models/freellmapi_scoring_kernel.py"
       ],
       "disposition": "retain-core",
@@ -862,7 +789,8 @@
       "collection_import_paths": [],
       "collection_requirement_paths": [],
       "core_import_paths": [
-        "src/general_ludd/algorithms/edit_distance.py"
+        "src/general_ludd/algorithms/edit_distance.py",
+        "src/general_ludd/decision_codification/similarity.py"
       ],
       "disposition": "retain-core",
       "import_roots": [
@@ -889,7 +817,7 @@
       "collection_requirement_paths": [],
       "core_import_paths": [
         "src/general_ludd/chat/formatter.py",
-        "src/general_ludd/cli.py",
+        "src/general_ludd/cli_commands/tui_views.py",
         "src/general_ludd/tui/runner.py",
         "src/general_ludd/tui/tables.py"
       ],
@@ -923,16 +851,27 @@
         "src/general_ludd/db/models.py",
         "src/general_ludd/db/promotion_repository.py",
         "src/general_ludd/db/promotion_repository_support.py",
-        "src/general_ludd/db/repository.py",
+        "src/general_ludd/db/repositories/memory.py",
+        "src/general_ludd/db/repositories/messaging.py",
+        "src/general_ludd/db/repositories/metrics.py",
+        "src/general_ludd/db/repositories/operations.py",
+        "src/general_ludd/db/repositories/projects.py",
+        "src/general_ludd/db/repositories/shared.py",
+        "src/general_ludd/db/repositories/todos.py",
         "src/general_ludd/db/session.py",
         "src/general_ludd/db/task_decisions_retention.py",
+        "src/general_ludd/event_loop/compute_lifecycle.py",
         "src/general_ludd/event_loop/decision_reconciliation.py",
+        "src/general_ludd/event_loop/execution_dispatch.py",
         "src/general_ludd/event_loop/execution_supervision.py",
         "src/general_ludd/event_loop/lease.py",
         "src/general_ludd/event_loop/lease_cancellation.py",
         "src/general_ludd/event_loop/lease_recovery.py",
         "src/general_ludd/event_loop/loop.py",
         "src/general_ludd/event_loop/loop_handlers.py",
+        "src/general_ludd/event_loop/review_dispatch.py",
+        "src/general_ludd/event_loop/self_improve_lifecycle.py",
+        "src/general_ludd/event_loop/tick_lifecycle.py",
         "src/general_ludd/infra/deployment.py",
         "src/general_ludd/infra/deployment_events.py",
         "src/general_ludd/ornith/outcome_observer.py",
@@ -985,7 +924,8 @@
       "collection_import_paths": [],
       "collection_requirement_paths": [],
       "core_import_paths": [
-        "src/general_ludd/models/gateway.py"
+        "src/general_ludd/models/gateway.py",
+        "src/general_ludd/models/gateway_streaming.py"
       ],
       "disposition": "retain-core",
       "import_roots": [

@@ -768,8 +768,23 @@ audit-schema:
 
 deps-audit:
 	@echo "=== Dependency Audit (deptry, fail-closed) ==="
-	@$(UV) run deptry src
+	@REQUIREMENTS_FILE="$$(mktemp /tmp/gludd-deptry-requirements.XXXXXX)"; \
+		trap 'rm -f "$$REQUIREMENTS_FILE"' EXIT HUP INT TERM; \
+		UV_NO_SYNC=0 $(UV) run --no-project --python 3.11 python scripts/dependency_profiles.py check \
+			--root "$(CURDIR)" --manifest config/dependency_profiles.toml \
+			--uv "$(UV)" --set audit-runtime; \
+		UV_NO_SYNC=0 $(UV) run --no-project --python 3.11 python scripts/dependency_profiles.py export \
+			--root "$(CURDIR)" --manifest config/dependency_profiles.toml \
+			--set audit-runtime --output "$$REQUIREMENTS_FILE"; \
+		$(UV) run --no-sync deptry src --config config/deptry_profiles.toml \
+			--requirements-files "$$REQUIREMENTS_FILE"
 	@echo "=== Dependency Audit PASS ==="
+
+CORE_DEPENDENCY_OWNERSHIP_REFRESH_VALIDATE_ONLY ?= 1
+core-dependency-ownership-refresh:
+	@case "$(CORE_DEPENDENCY_OWNERSHIP_REFRESH_VALIDATE_ONLY)" in 0|1) ;; *) echo "CORE_DEPENDENCY_OWNERSHIP_REFRESH_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@$(UV) run --no-sync python scripts/check_core_dependency_ownership.py --root "$(CURDIR)" \
+		$(if $(filter 1,$(CORE_DEPENDENCY_OWNERSHIP_REFRESH_VALIDATE_ONLY)),--validate-reconciled,--write-reconciled)
 
 repo-log:
 	@git log --oneline -10 || echo "No git history"
