@@ -1,0 +1,34 @@
+{
+  "accepted_workload": {
+    "candidate_evidence_identity_sha256": "cad4c94910d28d792c9b2a241f2162d98f34566b5a04692ce9e3835f26dbebd7",
+    "claim_sha256": "4118e45345122e4d3a00371273dcfaba98ef57aec88091018e30a9453bba0ba9",
+    "decision": "accepted",
+    "passed": true,
+    "protocol": "gludd-self-improve-workload-v1",
+    "provider": "local_gguf",
+    "response_sha256": "4c2275996204697d8ba99d72bfead757f43d88832042bd3dc83e3040e4307748",
+    "task_sha256": "782ce83a4da6cf18e8f67db56fb34c7e78d6a011c56dac6a4f715dbdb53d0d0c"
+  },
+  "candidate_commit": "4191d8e7abef39fcd93fab009123467036f39750",
+  "candidate_id": "sha256:69d63b09199c37f38c02c711559b15e0fd5dc5ecc0e64e2d94c597dc5e5d3998",
+  "candidate_source_archive_sha256": "9f5156164cfc9b98416014b1ed1a9a49bb0005b32ae64b7a21e4afd8c467a198",
+  "candidate_tag": "v0.11.1",
+  "decision": "workload_pair_verified_rollback_bound_hold",
+  "evidence_id": "sha256:c10ad98649ef38af34d5b72999019ef90682abdb1ae9ce02537280b610b3aceb",
+  "gate": "freellmapi-self-improvement-workload-proof-v1",
+  "promotion_attempted": false,
+  "rejected_workload": {
+    "candidate_evidence_identity_sha256": "cad4c94910d28d792c9b2a241f2162d98f34566b5a04692ce9e3835f26dbebd7",
+    "claim_sha256": "462834f54f440694ede8b73fa56ea09d71364809ec66558d8df46579303f90bf",
+    "decision": "rejected",
+    "passed": false,
+    "protocol": "gludd-self-improve-workload-v1",
+    "provider": "local_gguf",
+    "response_sha256": "91e8cf0f63e742ccd5993190d81b05027adc70a36086115219bf013b9097ff52",
+    "task_sha256": "782ce83a4da6cf18e8f67db56fb34c7e78d6a011c56dac6a4f715dbdb53d0d0c"
+  },
+  "rollback_evidence_id": "sha256:23acd0ada46af06655f1292063599f31e14a847b3b76731916f71e826485f000",
+  "runtime_admitted": false,
+  "schema_version": 1,
+  "serving_artifact_sha256": "d3078364c02f482909681e21895c4e86dc11cc66c1da7ae2007ad35b096ddf7d"
+}

@@ -624,6 +624,40 @@ supply the separate hosted Node 20/22 build, CI provenance, or bounded live call
 The earlier `toolchain_invalid` exact-source attempt remains historical evidence,
 not a promotion result.
 
+#### Durable hermetic self-improvement workload pair
+
+The tracked
+`docs/evidence/freellmapi_self_improvement_workload_proof.json` receipt closes the
+credential-free workload-path gap without changing the release decision. The
+same atomic task and immutable local-model identity run twice through the real
+`SelfImprovementWorkload` orchestration boundary: one hermetic backend response
+is accepted and one is deterministically rejected. Both executions use distinct
+durable todo claims, and the replay asserts that each claim is released. The
+receipt retains only task, response, claim, model, and evidence digests; it
+contains no task text, proposal text, endpoint, credential, or provider body.
+
+The receipt is content-addressed as
+`sha256:c10ad98649ef38af34d5b72999019ef90682abdb1ae9ce02537280b610b3aceb`.
+Its validator rechecks the exact signed `v0.11.1` candidate commit and source
+archive, then verifies rollback receipt
+`sha256:23acd0ada46af06655f1292063599f31e14a847b3b76731916f71e826485f000`.
+The binding requires the active lease to remain unchanged, promotion never to
+have been attempted, and admitted artifact
+`d3078364c02f482909681e21895c4e86dc11cc66c1da7ae2007ad35b096ddf7d` to
+remain protected and serving before and after review. The resulting decision is
+`workload_pair_verified_rollback_bound_hold`, with `runtime_admitted: false`.
+
+This is control-plane and durability evidence, not a quality win, hosted-build
+result, or live-provider success. The 2026-10-06 operator-evidence recheck keeps
+that distinction explicit: [issue #1210][issue-1210] reports high-frequency
+requests suspending multiple AI Studio keys, so the exhausted Z.AI credential is
+not retried; [issue #666][issue-666] shows a router-wide budget aborting a slow
+local provider before its configured timeout; and
+[discussion #533][discussion-533] confirms that a mutable `latest` tag once
+served unreleased `main`. Those reports support one bounded hermetic replay, an
+immutable candidate identity, and no inference from the historical HTTP 429 to
+live success. **HOLD remains mandatory.**
+
 ### S83.163 frozen-delta promotion decision (2026-10-05)
 
 Decision: **HOLD**. The exact three-arm replay is complete, and it does not clear
