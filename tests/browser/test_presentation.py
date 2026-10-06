@@ -8,6 +8,7 @@ import threading
 import time
 from collections.abc import Generator
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -65,6 +66,162 @@ def test_direct_mermaid_render_is_geometry_clean(
     )
     assert result["invalid"] == 0
     assert result["width"] > 0 and result["height"] > 0
+    assert browser_events == {
+        "console_errors": [],
+        "page_errors": [],
+        "request_failures": [],
+        "http_failures": [],
+    }
+
+
+def test_live_diagram_stays_in_reveal_and_gets_a_stable_svg_viewport(
+    page: Any,
+    presentation_url: str,
+    browser_events: dict[str, list[str]],
+) -> None:
+    """Safari must not inherit an offscreen SVG paint tree after rendering."""
+    _load(page, presentation_url)
+
+    result = page.evaluate(
+        """
+        async () => {
+          const slide = Reveal.getCurrentSlide();
+          const wrap = document.createElement('div');
+          wrap.className = 'diagram-wrap';
+          const diagram = document.createElement('div');
+          diagram.className = 'mermaid';
+          diagram.textContent = 'flowchart LR\\n  safari --> visible';
+          wrap.append(diagram);
+          slide.append(wrap);
+
+          let leftRevealSlide = false;
+          const observer = new MutationObserver(() => {
+            if (!slide.contains(diagram)) leftRevealSlide = true;
+          });
+          observer.observe(document.body, {childList: true, subtree: true});
+          await window.gluddPresentationRefresh();
+          await new Promise((resolve) => requestAnimationFrame(
+            () => requestAnimationFrame(resolve),
+          ));
+          observer.disconnect();
+
+          const svg = diagram.querySelector('svg');
+          const rect = svg?.getBoundingClientRect() || {width: 0, height: 0};
+          const diagramStyle = getComputedStyle(diagram);
+          return {
+            aspectRatio: diagramStyle.aspectRatio,
+            height: rect.height,
+            heightAttribute: svg?.getAttribute('height') || '',
+            invalidAttributes: svg ? [svg, ...svg.querySelectorAll('*')].flatMap((node) =>
+              Array.from(node.attributes).filter((attribute) =>
+                /(?:undefined|NaN|Infinity)/.test(attribute.value)
+              )
+            ).length : 1,
+            leftRevealSlide,
+            preserveAspectRatio: svg?.getAttribute('preserveAspectRatio') || '',
+            state: diagram.dataset.mermaidState,
+            viewport: diagram.dataset.mermaidViewport || '',
+            width: rect.width,
+            widthAttribute: svg?.getAttribute('width') || '',
+          };
+        }
+        """
+    )
+
+    assert result == {
+        "aspectRatio": result["aspectRatio"],
+        "height": result["height"],
+        "heightAttribute": result["heightAttribute"],
+        "invalidAttributes": 0,
+        "leftRevealSlide": False,
+        "preserveAspectRatio": "xMidYMid meet",
+        "state": "rendered",
+        "viewport": "stable",
+        "width": result["width"],
+        "widthAttribute": result["widthAttribute"],
+    }
+    assert result["aspectRatio"] != "auto"
+    assert float(result["widthAttribute"]) > 0
+    assert float(result["heightAttribute"]) > 0
+    assert result["width"] > 0 and result["height"] > 0
+    assert browser_events == {
+        "console_errors": [],
+        "page_errors": [],
+        "request_failures": [],
+        "http_failures": [],
+    }
+
+
+def test_script_blocking_csp_keeps_a_static_diagnostic_visible(
+    page: Any,
+    presentation_url: str,
+) -> None:
+    """A CSP or unsupported Safari parser may not leave a silent blank deck."""
+
+    def enforce_script_blocking_csp(route: Any) -> None:
+        response = route.fetch()
+        headers = dict(response.headers)
+        headers["content-security-policy"] = (
+            "default-src 'self'; script-src 'none'; style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; object-src 'none'"
+        )
+        route.fulfill(response=response, headers=headers)
+
+    page.route("**/gludd/", enforce_script_blocking_csp)
+    response = page.goto(presentation_url, wait_until="domcontentloaded")
+
+    assert response is not None and response.ok
+    diagnostic = page.locator("#presentation-render-status")
+    assert diagnostic.is_visible()
+    assert "presentation scripts did not finish" in diagnostic.inner_text().lower()
+    assert page.locator(".mermaid").count() > 0
+
+
+def test_file_url_keeps_full_rendering_and_failure_visibility(
+    page: Any,
+    tmp_path: Path,
+    browser_events: dict[str, list[str]],
+) -> None:
+    """The self-contained artifact must not depend on an HTTP origin."""
+    deck = tmp_path / "file-presentation" / "deck"
+    build_deck.build_preview_copy(
+        deck,
+        data={
+            "version": "0.1.2-file-test",
+            "git_sha": "c" * 7,
+            "git_sha_full": "c" * 40,
+            "test_count": 1,
+            "role_count": 1,
+            "features": [],
+            "generated_at": "2026-10-06T00:00:00Z",
+        },
+    )
+
+    response = page.goto((deck / "index.html").as_uri(), wait_until="networkidle")
+    assert response is not None and response.ok
+    page.wait_for_function("window.gluddPresentationReady === true", timeout=5_000)
+    page.wait_for_function(
+        """
+        () => {
+          const health = window.gluddPresentationHealth();
+          return health.rendered > 0 && health.pending === 0 && health.rendering === 0 &&
+            health.failed === 0 && health.unrendered === 0;
+        }
+        """,
+        timeout=5_000,
+    )
+    first = page.evaluate(
+        """
+        () => {
+          const slide = Reveal.getSlides().find((candidate) => candidate.querySelector('.mermaid'));
+          const indices = Reveal.getIndices(slide);
+          return [indices.h, indices.v];
+        }
+        """
+    )
+    _visit_slide(page, first[0], first[1])
+    _assert_visible_diagrams(page)
+    assert page.locator("#presentation-render-status").is_hidden()
     assert browser_events == {
         "console_errors": [],
         "page_errors": [],
@@ -295,6 +452,41 @@ def test_pages_subpath_navigation_renders_every_diagram(
     assert health["rendered"] == inventory
     assert health["unrendered"] == 0
     assert health["failed"] == 0
+    assert browser_events == {
+        "console_errors": [],
+        "page_errors": [],
+        "request_failures": [],
+        "http_failures": [],
+    }
+
+
+def test_direct_hash_navigation_and_reload_repaint_the_chart(
+    page: Any,
+    presentation_url: str,
+    browser_events: dict[str, list[str]],
+) -> None:
+    """A copied SVG must paint on direct Reveal navigation and cached reload."""
+    _load(page, presentation_url)
+    horizontal, vertical = page.evaluate(
+        """
+        () => {
+          const slide = Reveal.getSlides().find((candidate) => candidate.querySelector('.mermaid'));
+          const indices = Reveal.getIndices(slide);
+          return [indices.h, indices.v];
+        }
+        """
+    )
+    fragment = f"#/{horizontal}" + (f"/{vertical}" if vertical else "")
+
+    page.goto("about:blank")
+    _load(page, f"{presentation_url}{fragment}")
+    _visit_slide(page, horizontal, vertical)
+    _assert_visible_diagrams(page)
+    response = page.reload(wait_until="networkidle")
+    assert response is not None and response.ok
+    page.wait_for_function("window.gluddPresentationReady === true")
+    _visit_slide(page, horizontal, vertical)
+    _assert_visible_diagrams(page)
     assert browser_events == {
         "console_errors": [],
         "page_errors": [],

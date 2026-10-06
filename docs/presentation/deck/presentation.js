@@ -4,6 +4,7 @@
 
   const VALID_STATES = new Set(["pending", "rendering", "rendered", "failed"]);
   const BATCH_DEADLINE_MS = 5000;
+  const BOOT_DIAGNOSTIC = "Presentation scripts did not finish; diagram source remains available.";
   const sourceByDiagram = new WeakMap();
   const failureReported = new WeakSet();
   const queuedReasons = new Set();
@@ -89,18 +90,29 @@
     return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
   }
 
-  function validSvgMetadata(diagram) {
-    const svg = diagram.querySelector("svg");
-    if (!svg || diagram.querySelectorAll("svg").length !== 1) {
-      return false;
+  function viewBoxDimensions(svg) {
+    if (!svg) {
+      return null;
     }
     const viewBox = (svg.getAttribute("viewBox") || "").trim().split(/[ ,]+/).map(Number);
-    return (
-      viewBox.length === 4 &&
-      viewBox.every(Number.isFinite) &&
-      viewBox[2] > 0 &&
-      viewBox[3] > 0 &&
-      !hasInvalidSvgAttributes(svg)
+    if (
+      viewBox.length !== 4 ||
+      !viewBox.every(Number.isFinite) ||
+      viewBox[2] <= 0 ||
+      viewBox[3] <= 0
+    ) {
+      return null;
+    }
+    return { height: viewBox[3], width: viewBox[2] };
+  }
+
+  function validSvgMetadata(diagram) {
+    const svg = diagram.querySelector("svg");
+    return Boolean(
+      svg &&
+      diagram.querySelectorAll("svg").length === 1 &&
+      viewBoxDimensions(svg) &&
+      !hasInvalidSvgAttributes(svg),
     );
   }
 
@@ -148,6 +160,22 @@
       rect.width > 0 &&
       rect.height > 0
     );
+  }
+
+  function stabilizeSvgViewport(diagram) {
+    const svg = diagram.querySelector("svg");
+    const dimensions = viewBoxDimensions(svg);
+    if (!svg || !dimensions || hasInvalidSvgAttributes(svg)) {
+      return false;
+    }
+    diagram.dataset.mermaidViewport = "stable";
+    diagram.style.aspectRatio = `${dimensions.width} / ${dimensions.height}`;
+    diagram.style.maxWidth = "100%";
+    diagram.style.width = `${dimensions.width}px`;
+    svg.setAttribute("height", String(dimensions.height));
+    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    svg.setAttribute("width", String(dimensions.width));
+    return true;
   }
 
   function failDiagram(diagram, category) {
@@ -226,11 +254,12 @@
     return stage;
   }
 
-  function placeInStage(diagram, stage) {
-    const parent = diagram.parentNode;
-    const nextSibling = diagram.nextSibling;
-    stage.append(diagram);
-    return () => parent.insertBefore(diagram, nextSibling);
+  function createRenderScratch(stage) {
+    const scratch = document.createElement("div");
+    scratch.className = "mermaid gludd-mermaid-scratch";
+    scratch.setAttribute("aria-hidden", "true");
+    stage.append(scratch);
+    return scratch;
   }
 
   async function validateVisibleGeometry() {
@@ -247,36 +276,19 @@
     }
   }
 
-  async function awaitRenderBatch(candidates, deadline) {
+  async function awaitStableSvg(container, deadline) {
+    await animationFrame();
+    await animationFrame();
     while (window.performance.now() < deadline) {
-      let active = 0;
-      for (const diagram of candidates) {
-        if (diagram.dataset.mermaidState !== "rendering") {
-          continue;
-        }
-        active += 1;
-        if (validSvgMetadata(diagram) && svgGeometryStatus(diagram.querySelector("svg")) === "ok") {
-          completeRender(diagram);
-          continue;
-        }
-        const source = (sourceByDiagram.get(diagram) || "").trim();
-        if (!diagram.querySelector("svg") && diagram.textContent.trim() !== source) {
-          failDiagram(diagram, "invalid-source");
-        }
-      }
-      if (active === 0 || candidates.every(
-        (diagram) => ["rendered", "failed"].includes(diagram.dataset.mermaidState),
-      )) {
-        return;
+      if (
+        validSvgMetadata(container) &&
+        svgGeometryStatus(container.querySelector("svg")) === "ok"
+      ) {
+        return true;
       }
       await animationFrame();
     }
-    for (const diagram of candidates) {
-      if (diagram.dataset.mermaidState === "rendering") {
-        diagram.dataset.mermaidGeometry = svgGeometryStatus(diagram.querySelector("svg"));
-        failDiagram(diagram, "render-timeout");
-      }
-    }
+    return false;
   }
 
   function initializeMermaid() {
@@ -295,15 +307,37 @@
       return;
     }
     const source = sourceByDiagram.get(diagram) || "";
+    const scratch = createRenderScratch(stage);
     renderSequence += 1;
-    const result = await mermaidApi.render(
-      `gludd-mermaid-${renderSequence}`,
-      source,
-      diagram,
-    );
-    diagram.innerHTML = result.svg;
-    afterRender(diagram);
-    await awaitRenderBatch([diagram], deadline);
+    try {
+      const result = await mermaidApi.render(
+        `gludd-mermaid-${renderSequence}`,
+        source,
+        scratch,
+      );
+      scratch.innerHTML = result.svg;
+      if (!stabilizeSvgViewport(scratch)) {
+        failDiagram(diagram, "invalid-geometry");
+        return;
+      }
+      if (!await awaitStableSvg(scratch, deadline)) {
+        diagram.dataset.mermaidGeometry = svgGeometryStatus(scratch.querySelector("svg"));
+        failDiagram(diagram, "render-timeout");
+        return;
+      }
+      diagram.innerHTML = result.svg;
+      if (!stabilizeSvgViewport(diagram)) {
+        failDiagram(diagram, "invalid-geometry");
+        return;
+      }
+      scratch.remove();
+      afterRender(diagram);
+      if (diagram.dataset.mermaidState === "rendering") {
+        completeRender(diagram);
+      }
+    } finally {
+      scratch.remove();
+    }
   }
 
   async function renderPendingDiagrams() {
@@ -338,13 +372,10 @@
         }
         window.gluddPresentationActiveDiagram = index;
         diagram.classList.remove("gludd-mermaid-deferred");
-        const restoreDiagram = placeInStage(diagram, stage);
         try {
           await renderDiagram(diagram, stage, deadline);
         } catch (error) {
           failDiagram(diagram, classifyRenderFailure(error));
-        } finally {
-          restoreDiagram();
         }
       }
     } finally {
@@ -355,11 +386,9 @@
       stage.remove();
     }
     for (const diagram of candidates) {
-      if (diagram.dataset.mermaidState === "rendered") {
-        completeRender(diagram);
-      } else if (diagram.dataset.mermaidState === "failed") {
+      if (diagram.dataset.mermaidState === "failed") {
         failDiagram(diagram, diagram.dataset.mermaidError || "invalid-geometry");
-      } else {
+      } else if (diagram.dataset.mermaidState !== "rendered") {
         failDiagram(diagram, "render-timeout");
       }
     }
@@ -404,8 +433,13 @@
       return;
     }
     const summary = health();
-    status.hidden = summary.failed === 0;
-    status.textContent = summary.failed ? `${summary.failed} diagram(s) failed; readable source is shown.` : "";
+    const incomplete = summary.pending + summary.rendering + summary.unrendered;
+    status.hidden = summary.failed === 0 && incomplete === 0;
+    status.textContent = summary.failed
+      ? `${summary.failed} diagram(s) failed; readable source is shown.`
+      : incomplete
+        ? BOOT_DIAGNOSTIC
+        : "";
   }
 
   function registerRevealEvents() {

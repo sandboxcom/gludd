@@ -164,7 +164,7 @@ graph TD
 <!-- ============================================================ -->
 <section>
   <h2>Daemon overview &mdash; the central orchestrator</h2>
-  <p><span class="path">src/general_ludd/daemon.py</span> (3,126 lines) is the single entry point. It boots a FastAPI process, wires every subsystem, and runs the EventLoop forever.</p>
+  <p><span class="path">src/general_ludd/daemon.py</span> is the central entry point. It boots a FastAPI process, wires every subsystem, and runs the EventLoop forever.</p>
   <div class="diagram-wrap">
     <div class="mermaid">
 graph TD
@@ -192,7 +192,7 @@ graph TD
     <li class="fragment"><strong>Routers registered:</strong> todos, review, admin, MCP, self-improve, compute, pause, remediation, eval, security, account, memory, worktree, stream, files, facts, ornith, benchmark, model-performance</li>
     <li class="fragment"><strong>Daemon state:</strong> single source of truth (&lt;code&gt;app.state&lt;/code&gt;) — DB factory, controllers, agent registry, dispatcher, all in one process</li>
   </ul>
-  <p class="cite">Source: src/general_ludd/daemon.py:1-3126, src/general_ludd/event_loop/loop.py</p>
+  <p class="cite">Source: src/general_ludd/daemon.py, src/general_ludd/event_loop/loop.py</p>
 </section>
 
 <!-- ============================================================ -->
@@ -203,10 +203,11 @@ graph TD
   <h2>Every diagram now has a measured browser proof</h2>
   <div class="two-col">
     <div>
-      <h3>Render outside hidden slides</h3>
+      <h3>Render without moving live slides</h3>
       <ul class="bullets-tight">
-        <li>After fonts load, render <strong>one diagram at a time</strong> in a fixed-width body scratch node</li>
-        <li>Await the pinned Mermaid API and insert only a <strong>completed, validated SVG</strong></li>
+        <li>After fonts load, render <strong>one diagram at a time</strong> in an independent body scratch node</li>
+        <li>Keep the authored node in Reveal; copy only a <strong>completed, validated SVG</strong></li>
+        <li>Pin a numeric SVG viewport so Safari cannot retain stale intrinsic geometry</li>
         <li>Reject descendant <code>undefined</code>, <code>NaN</code>, or <code>Infinity</code> geometry</li>
         <li>Keep accessible Mermaid source visible for every isolated failure</li>
       </ul>
@@ -1644,7 +1645,7 @@ make init</code></pre>
 </div>
 </div>
 
-<p id="presentation-render-status" role="status" aria-live="polite" hidden></p>
+<p id="presentation-render-status" role="status" aria-live="polite">Presentation scripts did not finish; diagram source remains available.</p>
 <dialog id="source-viewer-dialog" aria-labelledby="source-viewer-path">
   <div class="source-viewer-header">
     <strong id="source-viewer-path">Repository source</strong>

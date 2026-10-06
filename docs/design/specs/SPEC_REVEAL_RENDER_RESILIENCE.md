@@ -10,8 +10,11 @@ server, source citations, and presentation-focused browser tests
 
 The presentation must never silently replace a Mermaid chart with empty space.
 It renders one diagram at a time in a measurable scratch node attached directly
-to `document.body`, outside Reveal transforms and hidden slides, and inserts only
-a completed, validated SVG. Every failure exposes a readable source fallback.
+to `document.body`, outside Reveal transforms and hidden slides. The authored
+diagram never leaves its Reveal slide: the controller validates the scratch SVG,
+copies fresh markup into the live node, and pins an explicit intrinsic width,
+height, aspect ratio, and `preserveAspectRatio`. Every failure exposes a readable
+source fallback.
 The published artifact is self-contained and works below the GitHub Pages
 project prefix `/gludd/` without runtime CDN availability.
 
@@ -41,8 +44,21 @@ reviewed `mermaid-webkit-geometry-v2` transform to exactly two known
 upstream and transformed SHA-256 values in the manifest. Missing or changed
 boundaries fail closed. This is not a user-agent workaround. The controller also
 disables HTML labels, waits for fonts, and renders serially in a fixed-width,
-opacity-zero body scratch node before validating every descendant attribute and
-moving the completed SVG into Reveal.
+opacity-zero body scratch node before validating every descendant attribute. It
+then copies the SVG into Reveal rather than reparenting the live diagram across
+Safari paint trees. A static status is visible before JavaScript runs and is
+hidden only after every real diagram is rendered; parser, CSP, or asset failures
+therefore leave a visible diagnostic even if the controller never starts.
+
+The macOS reproduction has three distinct delivery results and none is relabeled
+as native Safari success. First, both the built/static Pages copy and the native
+runner aborted on a stale out-of-bounds `daemon.py:1-3126` citation; the authored
+citation was made line-count independent and the exact artifact now builds.
+Second, the public Pages probe still reports `published display revision is
+missing`, so that legacy URL cannot demonstrate the development fix. Third, the
+repaired native probe reaches Safari session creation but exits `3` because
+Remote Automation is disabled. Chromium and Playwright WebKit exercise the
+invariants, while native Safari compatibility remains pending operator action.
 
 ## Practitioner evidence retained with the feature
 
@@ -62,6 +78,9 @@ These reports are regression inputs, not incidental research notes:
 - [`mermaid-js/mermaid#4140`](https://github.com/mermaid-js/mermaid/issues/4140)
   attributes an intermittent async render error to competing initialization
   and recommends disabling automatic start.
+- [`mermaid-js/mermaid#3577`](https://github.com/mermaid-js/mermaid/issues/3577)
+  records that Mermaid's asynchronous renderer cannot be called concurrently
+  without await semantics, and that the breakage may be intermittent and silent.
 - [`zjffun/reveal.js-mermaid-plugin#5`](https://github.com/zjffun/reveal.js-mermaid-plugin/issues/5)
   records inherited Reveal `pre` line-height clipping diagram text. Browser
   acceptance must check bounding boxes, not merely the existence of an SVG.
@@ -73,6 +92,17 @@ These reports are regression inputs, not incidental research notes:
   containers and recommends measuring in an untransformed body scratch area.
 - [`mermaid-js/mermaid#7323`](https://github.com/mermaid-js/mermaid/issues/7323)
   records Safari diagrams and labels that appear only after reload or zoom.
+- [`mermaid-js/mermaid#5122`](https://github.com/mermaid-js/mermaid/issues/5122)
+  is a Safari user report for Mermaid label geometry changing under page zoom.
+- [`mermaid-js/mermaid#6666`](https://github.com/mermaid-js/mermaid/issues/6666)
+  records older Safari rejecting a Mermaid 11 bundle before any diagram can be
+  drawn, which is why the boot diagnostic cannot depend on JavaScript.
+- [WebKit bug 198609](https://bugs.webkit.org/show_bug.cgi?id=198609) documents
+  Safari retaining stale outer-SVG intrinsic geometry until a relayout, with
+  developer tools themselves capable of masking the failure.
+- [GitHub Community discussion 12523](https://github.com/orgs/community/discussions/12523)
+  is a practitioner report of Mermaid output failing specifically in Safari on
+  macOS while the same source differed across other delivery contexts.
 
 The implementation documentation must keep these links. They explain why a
 static syntax lint and an assertion for `<svg>` alone are insufficient.
@@ -179,11 +209,12 @@ The original source must remain recoverable for retry and diagnostics.
 
 Set Mermaid `startOnLoad: false` and `htmlLabels: false`; never call a
 whole-document `mermaid.run()`. After Reveal initialization and
-`document.fonts.ready`, queue authored diagrams in document order. Move only the
-current source host into a fixed-width, opacity-zero scratch node attached
-directly to `document.body`, call and await `gluddMermaid.render()`, validate the
-result, then restore the host and insert the completed SVG. There is one
-in-flight render promise for the deck, so no two Mermaid layouts compete.
+`document.fonts.ready`, queue authored diagrams in document order. Keep the
+current visible slide and every inactive authored diagram attached to Reveal.
+Create a separate fixed-width, opacity-zero scratch node directly under
+`document.body`, call and await `gluddMermaid.render()` there, validate the
+result, and copy fresh markup into the authored node. There is one in-flight render
+for the deck, so no two Mermaid layouts compete.
 
 Successful diagrams are idempotent. Navigation does not destroy a good SVG or
 render it a second time. Each diagram has an isolated error boundary: one bad
@@ -299,7 +330,14 @@ all same-origin response statuses. It must:
 10. repeat at a narrow viewport and after a resize event to catch clipped or
     zero-sized diagrams; and
 11. run the direct Mermaid API A/B probe and reject any descendant geometry
-    containing `undefined`, `NaN`, or `Infinity`.
+    containing `undefined`, `NaN`, or `Infinity`;
+12. prove a live chart never leaves its Reveal slide during scratch rendering,
+    receives an explicit stable SVG viewport, and repaints after direct hash
+    navigation plus cached reload;
+13. open the built artifact over `file://` with the same strict geometry and
+    console assertions; and
+14. block scripts with CSP and require the authored boot diagnostic to remain
+    visible instead of presenting silent empty space.
 
 The invalid diagram and blocked asset cases are expected failures and must not
 be counted as unexplained console errors. All other warnings and errors fail the
@@ -378,6 +416,8 @@ involved.
   positive-size SVG and zero unrendered diagrams.
 - The native Safari target either passes the same geometry contract or fails
   closed with durable operator guidance; WebKit is never reported as Safari.
+- Direct hash, reload/cache, `file://`, `/gludd/`, and script-blocking CSP paths
+  produce either positive visible SVG geometry or a visible diagnostic.
 - Invalid syntax, invalid geometry, timeout, and blocked asset faults are
   visible, categorized, bounded, and retain original source.
 - Every repository file reference is a GitHub blob link; every cited line or
