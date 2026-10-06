@@ -7,10 +7,13 @@ uses the right strategy matrix, and covers every scenario directory.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 import yaml
+from scripts.makefile_layout import compose_makefile
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 MOLECULE_YML = PROJECT_ROOT / ".github" / "workflows" / "molecule.yml"
@@ -23,16 +26,16 @@ SCENARIOS_ROOT = PROJECT_ROOT / "molecule" / "playbooks"
 # ---------------------------------------------------------------------------
 
 
-def _parse_molecule_yml() -> dict:
+def _parse_molecule_yml() -> dict[str, Any]:
     with open(MOLECULE_YML) as fh:
-        return yaml.safe_load(fh)
+        return cast(dict[str, Any], yaml.safe_load(fh))
 
 
 def _read_makefile() -> str:
-    return MAKEFILE.read_text()
+    return compose_makefile(MAKEFILE)
 
 
-def _iter_scenario_names(root: Path = SCENARIOS_ROOT):
+def _iter_scenario_names(root: Path = SCENARIOS_ROOT) -> Iterator[str]:
     """Yield the basename of every molecule scenario directory."""
     if not root.is_dir():
         return

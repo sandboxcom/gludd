@@ -94,7 +94,26 @@ replay, without suppressing unexpected server exceptions. The presentation
 unit family passes 98/98, scoped lint and the 10,133-file line-limit check are
 green, and native Safari remains unclaimed until Remote Automation is enabled.
 
-- [ ] S83.171 - **Keep virtual-environment cleanup tests compatible with the composed split-Makefile layout** across `tests/unit/test_clean_worktree_venvs.py`: derive the target recipe from the repository's canonical Makefile composer instead of assuming every target remains in the root include file, while preserving the existing cleanup safety assertions. | evidence: the documented validate-only cleanup example reproduced an `IndexError` when the test searched only the split root Makefile; the failing test now reads the composed layout and the complete cleanup suite passes 16/16; scoped lint, task validators, commit, exact-head full gate, and development push remain required | priority: high | effort: XS | status: in_progress
+S83.170 short-landscape continuation: a new 932x430 all-slide browser audit
+reproduced Reveal stage shrinkage that the portrait and 4:3 lanes did not expose:
+prose painted at 3.37 CSS pixels and Mermaid labels at 4.78-7.98 pixels. Short
+canvases now retain native scale with vertical reachability, a 21-pixel readable
+base, safe table/path wrapping, and horizontally reachable Mermaid diagrams.
+Chromium and Playwright WebKit each pass 16/16 canonical checks plus the 1/1
+compact replay; native Safari remains unclaimed. The design record cites Reveal
+issue 16 and discussion 3448, and commit `0667355127890fdc84d940b011f531c4c79fdd39`
+contains the fail-first regression and repair.
+
+- [ ] S83.171 - **Keep cleanup, Molecule CI, deep Makefile tests, and event-loop structural checks compatible with the composed module layouts** across `tests/unit/test_clean_worktree_venvs.py`, `tests/integration/test_molecule_ci_e2e.py`, `tests/unit/test_makefile_audit_deep.py`, and `tests/unit/test_ab_to_thread_import_smoke.py`: derive target recipes and repository-wide target inventories from the canonical Makefile composer instead of assuming every target remains in the root include file; preserve temporary-working-directory dry-run safety by supplying the repository include path explicitly; inspect the extracted execution-dispatch mixin when pinning its bounded filesystem offloads. | evidence: the documented validate-only cleanup example first reproduced an `IndexError` and the complete cleanup suite now passes 16/16; the exact-head gate then reproduced five Molecule target-discovery failures plus three deep-audit target/include failures; after routing both consumers through the composer and retaining the temporary-directory sentinel assertion, the combined warning-strict replay passes 47/47; a later gate caught the stale monolithic event-loop source assertion, and the refactor-aware smoke file now passes 8/8 with scoped Ruff and strict mypy green; task validators, commit, exact-head full gate, and development push remain required | priority: high | effort: XS | status: in_progress
+
+S83.171 gate-integration continuation: the same exact-head gate exposed eight
+split modules without durable coverage mappings, 45 moved/new resource-ownership
+records, and a valid but 2,613-line generated ownership inventory. The repaired
+audits report 1,297/1,297 modules covered and 237/237 owned resources reconciled.
+The canonical deterministic writer round-trips every field while emitting the
+inventory in 243 lines; the global 10,137-file limit, 116 focused integration
+tests, and 119,395-test collection are green. Exact-head full-gate and push
+evidence remain required.
 
 S83.166 2026-09-29 failure-ownership continuation: hosted runs `36524447124` and `36524447101` are now ingested as nine independent failure families instead of one mutable branch verdict. The durable CI failure ledger rejects contradictory terminal payloads and unchanged failed-SHA reruns, preserves sibling and recurrent failures, requires a descendant repair commit plus exact Make evidence, blocks pushes with open/non-ancestral families, and resolves only the matching workflow/job after hosted success. Its replay passes 27/27 at 96% branch-aware coverage with every measured production file above 75%. The same runs exposed two PyInstaller graphs for one SHA because one workflow floated Python and the lock while the other used Python 3.12.14 plus frozen sync; all Linux/molecule producers now pin the exact patch and frozen lock, audit and upload the raw warning graph, and the combined regression surface passes 120/120. The dead Ansible EE base digest now has a fail-fast exact-manifest check and an atomic verified refresh transaction; its 36-test artifact replay and live Quay manifest check are green. Exact repair commits, a complete candidate gate, hosted all-workflow replay, the predecessor live proofs, publication, deployment, and rollback remain open.
 

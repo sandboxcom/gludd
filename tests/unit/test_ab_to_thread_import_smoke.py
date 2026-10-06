@@ -42,14 +42,14 @@ def test_daemon_imports() -> None:
 def test_skills_router_imports_and_handler_is_async() -> None:
     import general_ludd.routers.skills as skills
 
-    assert skills.asyncio is asyncio
+    assert getattr(skills, "asyncio", None) is asyncio
     assert hasattr(skills, "register")
 
 
 def test_environment_router_imports() -> None:
     import general_ludd.routers.environment as env
 
-    assert env.asyncio is asyncio
+    assert getattr(env, "asyncio", None) is asyncio
     assert hasattr(env, "register")
 
 
@@ -76,9 +76,9 @@ def test_event_loop_dispatch_offloads_present() -> None:
     # _bounded_to_thread (a semaphore-bounded wrapper around asyncio.to_thread).
     import inspect as _inspect
 
-    import general_ludd.event_loop.loop as loop
+    import general_ludd.event_loop.execution_dispatch as execution_dispatch
 
-    src = _inspect.getsource(loop)
+    src = _inspect.getsource(execution_dispatch.ExecutionDispatchMixin._dispatch_execute_job)
     assert "self._bounded_to_thread(self._runner.prepare_job_dirs" in src
     assert "self._runner.write_vars" in src
 
