@@ -688,6 +688,22 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
             "_push_retry_count", self._push_retry_count
         )
 
+    def _record_tick_completion(self, tick_id: str, started_at: float) -> None:
+        """Publish final tick metrics and persist the durable checkpoint."""
+        elapsed = time.monotonic() - started_at
+        self._tick_metrics["tick_duration_ms"] = elapsed * 1000
+        if self._daemon_state is not None:
+            self._daemon_state["tick_metrics"] = dict(self._tick_metrics)
+        if self._checkpointer is not None:
+            state = {
+                "_tick_state": dict(self._tick_state),
+                "_applied_decision_keys": list(self._applied_decisions.keys()),
+                "_pushed_work_keys": list(self._pushed_work.keys()),
+                "_push_retry_count": dict(self._push_retry_count),
+            }
+            self._checkpointer.put(tick_id, state)
+            self._checkpointer.put("last_tick", state)
+
     async def _tick_once(self) -> dict[str, Any]:
         self._tick_state = {}
         self._total_ticks += 1
@@ -785,19 +801,7 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
             # C.3: clear tenant context after tick so thread workers in
             # subsequent ticks do not inherit a stale project_id.
             _reset_tenant(_tenant_token)
-        elapsed = time.monotonic() - start
-        self._tick_metrics["tick_duration_ms"] = elapsed * 1000
-        if self._daemon_state is not None:
-            self._daemon_state["tick_metrics"] = dict(self._tick_metrics)
-        if self._checkpointer is not None:
-            state = {
-                "_tick_state": dict(self._tick_state),
-                "_applied_decision_keys": list(self._applied_decisions.keys()),
-                "_pushed_work_keys": list(self._pushed_work.keys()),
-                "_push_retry_count": dict(self._push_retry_count),
-            }
-            self._checkpointer.put(tick_id, state)
-            self._checkpointer.put("last_tick", state)
+        self._record_tick_completion(tick_id, start)
         return self._tick_metrics
 
     async def _run_phases(self) -> None:

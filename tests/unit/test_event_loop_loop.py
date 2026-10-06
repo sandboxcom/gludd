@@ -59,6 +59,41 @@ def test_restore_tick_checkpoint_recovers_all_durable_ledgers() -> None:
     assert state._push_retry_count == {"work-1": 2}
 
 
+def test_record_tick_completion_persists_metrics_and_checkpoint(monkeypatch) -> None:
+    """Tick finalization updates observers and both durable checkpoint keys."""
+    from general_ludd.event_loop import loop
+    from general_ludd.event_loop.loop import EventLoop
+
+    class Checkpointer:
+        def __init__(self) -> None:
+            self.puts: list[tuple[str, dict[str, object]]] = []
+
+        def put(self, key: str, value: dict[str, object]) -> None:
+            self.puts.append((key, value))
+
+    checkpointer = Checkpointer()
+    state = cast(
+        "EventLoop",
+        SimpleNamespace(
+            _tick_metrics={"total_ticks": 3},
+            _daemon_state={},
+            _checkpointer=checkpointer,
+            _tick_state={"phase": "complete"},
+            _applied_decisions={"decision-1": None},
+            _pushed_work={"work-1": None},
+            _push_retry_count={"work-1": 2},
+        ),
+    )
+    monkeypatch.setattr(loop.time, "monotonic", lambda: 12.5)
+
+    EventLoop._record_tick_completion(state, "tick_3", 10.0)
+
+    assert state._tick_metrics["tick_duration_ms"] == 2500.0
+    assert state._daemon_state["tick_metrics"] == state._tick_metrics
+    assert [key for key, _value in checkpointer.puts] == ["tick_3", "last_tick"]
+    assert checkpointer.puts[0][1] == checkpointer.puts[1][1]
+
+
 class TestTaskTypeHelpers:
     def test_work_type_to_task_type_known_mapping(self) -> None:
         from general_ludd.event_loop.loop import _work_type_to_task_type
