@@ -9,6 +9,19 @@ import pytest
 from scripts.resource_arbiter import project_namespace, project_root, resource_path
 
 
+@pytest.fixture(autouse=True)
+def _isolate_gate_project_scope(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep launcher ownership scope out of per-project arbiter tests.
+
+    Background gates deliberately export ``GLUDD_PROJECT_ROOT`` so their
+    processes share one checkout namespace.  These tests supply independent
+    roots and must not inherit that launcher scope.  Tests exercising explicit
+    overrides set them after this fixture runs.
+    """
+    monkeypatch.delenv("GLUDD_PROJECT_ROOT", raising=False)
+    monkeypatch.delenv("GLUDD_PROJECT_NAMESPACE", raising=False)
+
+
 def test_project_namespace_is_stable_and_path_safe(tmp_path: Path) -> None:
     first = project_namespace(tmp_path)
     second = project_namespace(tmp_path)
