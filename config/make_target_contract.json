@@ -1325,6 +1325,21 @@
       "name": "test-failures",
       "make_variables": ["TEST_FAILURES_CACHE", "TEST_FAILURES_LIMIT"],
       "behavior": "make test-failures TEST_FAILURES_CACHE=/tmp/gludd-no-prior-failures-contract.json TEST_FAILURES_LIMIT=5"
+    },
+    {
+      "name": "vendor-presentation-assets",
+      "make_variables": ["PRESENTATION_VENDOR_VALIDATE_ONLY"],
+      "behavior": "make vendor-presentation-assets PRESENTATION_VENDOR_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "presentation-browser-test",
+      "make_variables": [
+        "PRESENTATION_BROWSER_VALIDATE_ONLY",
+        "PRESENTATION_BROWSER_ROOT",
+        "PRESENTATION_BROWSER_OUTPUT",
+        "PRESENTATION_BROWSER_TIMEOUT"
+      ],
+      "behavior": "make presentation-browser-test PRESENTATION_BROWSER_VALIDATE_ONLY=1 PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser PRESENTATION_BROWSER_TIMEOUT=300"
     }
   ]
 }

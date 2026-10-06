@@ -328,7 +328,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
         vm-image-build vm-image-list vm-image-clean \
         verify-feature-claims audit-coverage gate-audit coverage-json \
         tf-cache-setup tf-init tf-init-local tf-validate tf-cache-warm tf-versions-check tf-clean \
-        deck deck-serve deck-preview deck-data deck-honesty \
+        deck deck-serve deck-preview deck-data deck-honesty vendor-presentation-assets presentation-browser-test \
         script-count strip-enforce-stop test-hooks-live test-hook-runtime e2e-setup-test-project test-opencode-e2e test-opencode-e2e-hour \
         verify-enforcement \
     ci-view ci-rerun ci-failure-status ci-failure-repair ci-failure-push-guard ci-trigger ci-active ci-job-log ci-job-failure-context ci-artifact-download ci-artifact-context ci-pyinstaller-warning-audit ci-coverage-artifact-audit ci-coverage-gap-plan ci-shards-log-context \
@@ -394,6 +394,8 @@ help:
 	@echo "  lint-files            Run ruff linter on FILES only"
 	@echo "  lint-markdown         Run locked markdownlint-cli2 (MARKDOWN_FILES, MARKDOWNLINT_CONFIG)"
 	@echo "  lint-docstrings       Run locked Ruff docstring rules on DOCSTRING_FILES"
+	@echo "  vendor-presentation-assets  Validate/refresh pinned Reveal.js assets (PRESENTATION_VENDOR_VALIDATE_ONLY=0|1)"
+	@echo "  presentation-browser-test   Validate/run bounded Chromium acceptance (PRESENTATION_BROWSER_*)"
 	@echo "  lint-fix              Run ruff with auto-fix"
 	@echo "  lint-fix-files        Run ruff auto-fix on FILES only"
 	@echo "  typecheck             Run mypy"
@@ -9128,6 +9130,23 @@ tf-clean:
 #   make deck-honesty    — lint the deck HTML for banned marketing tokens
 DECK_DIR := docs/presentation/deck
 DECK_DATA := docs/presentation/deck-data.json
+PRESENTATION_VENDOR_VALIDATE_ONLY ?= 1
+PRESENTATION_BROWSER_VALIDATE_ONLY ?= 1
+PRESENTATION_BROWSER_ROOT ?= /tmp/gludd-playwright-browsers
+PRESENTATION_BROWSER_OUTPUT ?= /tmp/gludd-presentation-browser
+PRESENTATION_BROWSER_TIMEOUT ?= 300
+
+vendor-presentation-assets:
+	@case "$(PRESENTATION_VENDOR_VALIDATE_ONLY)" in 0|1) ;; *) echo "PRESENTATION_VENDOR_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@$(UV) run python scripts/vendor_presentation_assets.py $(if $(filter 1,$(PRESENTATION_VENDOR_VALIDATE_ONLY)),--validate-only,--refresh)
+
+presentation-browser-test:
+	@case "$(PRESENTATION_BROWSER_VALIDATE_ONLY)" in 0|1) ;; *) echo "PRESENTATION_BROWSER_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@$(UV) run python scripts/run_presentation_browser_tests.py \
+		$(if $(filter 1,$(PRESENTATION_BROWSER_VALIDATE_ONLY)),--validate-only,--run) \
+		--browser-root "$(PRESENTATION_BROWSER_ROOT)" \
+		--output-root "$(PRESENTATION_BROWSER_OUTPUT)" \
+		--timeout-seconds "$(PRESENTATION_BROWSER_TIMEOUT)"
 
 deck:
 	@echo "=== BUILDING DECK ==="
