@@ -13,6 +13,9 @@ INTEROP_SPEC = ROOT / "docs/specs/FEATURE_EXPERT_SYSTEM_INTEROPERABILITY.md"
 INTEROP_EXTENSIONS = INTEROP_SPEC.parent / "expert-system-interoperability" / "domain-extensions.md"
 SPRINT0 = ROOT / "docs/internal/sprint0.md"
 SPRINT0_OPERATIONS = SPRINT0.parent / "sprint0" / "implementation-and-operations.md"
+AGENT_POLICY = ROOT / "AGENTS.md"
+AGENT_TARGETS = ROOT / ".agents" / "policy" / "key-make-targets.md"
+AGENT_PLUGINS = ROOT / ".agents" / "policy" / "enforcement-plugins.md"
 
 
 def test_ml_ai_spec_routes_continual_evolution_below_line_limit() -> None:
@@ -71,3 +74,22 @@ def test_sprint0_routes_implementation_operations_below_line_limit() -> None:
         assert marker not in architecture
         assert marker in operations
     assert len(operations.splitlines()) < 2_500
+
+
+def test_agent_policy_is_compact_without_losing_core_contracts() -> None:
+    """Keep the auto-loaded policy within the universal file-size budget."""
+    policy = AGENT_POLICY.read_text(encoding="utf-8")
+
+    assert len(policy.splitlines()) < 2_500
+    for marker in (
+        "## Make Target Selection Contract",
+        "## CRITICAL: Single-Source Feature Development",
+        "## CRITICAL: TDD Policy",
+        "## CRITICAL: System-Load Gate Before Dispatch Waves",
+        "## CRITICAL: Root-Cause-Only Fix Policy",
+    ):
+        assert marker in policy
+    assert "[key Make targets](.agents/policy/key-make-targets.md)" in policy
+    assert "[enforcement plugin reference](.agents/policy/enforcement-plugins.md)" in policy
+    assert "## Key Make Targets" in AGENT_TARGETS.read_text(encoding="utf-8")
+    assert "## CRITICAL: Enforcement Plugin Reference" in AGENT_PLUGINS.read_text(encoding="utf-8")
