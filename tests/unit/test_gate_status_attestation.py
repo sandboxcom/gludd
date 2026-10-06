@@ -12,6 +12,7 @@ from scripts.gate_status_attestation import (
     sign_status,
     verify_status,
 )
+from scripts.makefile_layout import compose_makefile
 
 _KEY = b"k" * 32
 _STATE = "state-" + "a" * 64
@@ -247,7 +248,7 @@ def test_uninitialized_submodule_uses_the_pinned_index_gitlink(tmp_path: Path) -
 
 
 def test_makefile_signs_final_gate_and_checks_before_commit() -> None:
-    makefile = (Path(__file__).parents[2] / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(Path(__file__).parents[2] / "Makefile")
 
     assert "scripts/gate_status_attestation.py sign .gate-status" in makefile
     assert "scripts/gate_status_attestation.py verify .gate-status" in makefile

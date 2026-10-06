@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 from scripts import render_azure_self_improve_auth_args as subject
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 SUBSCRIPTION_ID = "11111111-2222-3333-4444-555555555555"
@@ -333,7 +334,7 @@ def test_make_function_shaped_input_is_never_evaluated(tmp_path: Path) -> None:
 
 
 def test_help_contract_docs_and_gitignore_pin_the_one_azure_call_workflow() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     contract = json.loads((ROOT / "config/make_target_contract.json").read_text(encoding="utf-8"))
     docs = (ROOT / "docs/azure-iam-setup.md").read_text(encoding="utf-8")
     normalized_docs = " ".join(docs.split())
@@ -400,7 +401,7 @@ def test_checked_in_custom_role_template_matches_the_emitted_role_and_scope() ->
 
 
 def test_target_and_renderer_never_contain_or_accept_a_credential() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     script = (ROOT / "scripts/render_azure_self_improve_auth_args.py").read_text(encoding="utf-8")
     target_body = makefile.split("azure-self-improve-auth-args:", 1)[1].split("\n\n", 1)[0]
 

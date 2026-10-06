@@ -13,6 +13,7 @@ from typing import ClassVar, NotRequired, TypedDict, cast
 
 import pytest
 import yaml
+from scripts.makefile_layout import compose_makefile
 
 _PROJECT = Path(__file__).resolve().parent.parent.parent
 _CONFIG_PATH = _PROJECT / ".pre-commit-config.yaml"
@@ -152,7 +153,7 @@ class TestLocalHookEntryPoints:
             assert entry == expected, f"hook {hid!r}: entry={entry!r} != expected={expected!r}"
 
     def test_mypy_entry_uses_cross_platform_null_cache_target(self) -> None:
-        makefile = (_PROJECT / "Makefile").read_text(encoding="utf-8")
+        makefile = compose_makefile(_PROJECT / "Makefile")
         assert "MYPY_NULL_CACHE := $(if $(filter Windows_NT,$(OS)),nul,/dev/null)" in makefile
         assert "_precommit-mypy:" in makefile
         assert 'mypy --cache-dir="$(MYPY_NULL_CACHE)" -p general_ludd' in makefile

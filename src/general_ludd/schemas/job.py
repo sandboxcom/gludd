@@ -18,6 +18,8 @@ from typing import ClassVar, Final, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from general_ludd.security.redaction import redact_for_persistence
+
 
 @dataclass(frozen=True, slots=True)
 class JobIngressLimits:
@@ -428,37 +430,15 @@ class WorkCeilingSpec(BaseModel):
 # ── D-09: Bounded denial audit ──
 
 _DENIAL_AUDIT_MAX_BYTES: Final[int] = 131_072
-_REDACTED_FIELDS: Final[frozenset[str]] = frozenset(
-    {
-        "api_key",
-        "psk",
-        "token",
-        "secret",
-        "password",
-        "credential",
-        "authorization",
-        "GLUDD_AUTH_PSK",
-    }
-)
 _JOBSPEC_POLICY_DIGEST_PREFIX: Final[str] = "sha256"
 
 
 def _redact_payload(raw: dict[str, object]) -> dict[str, object]:
-    safe: dict[str, object] = {}
-    for k, v in raw.items():
-        lower = k.lower()
-        if any(needle in lower for needle in _REDACTED_FIELDS):
-            safe[k] = "[REDACTED]"
-        elif isinstance(v, dict):
-            safe[k] = _redact_payload(cast(dict[str, object], v))
-        elif isinstance(v, (list, tuple)):
-            safe[k] = [
-                _redact_payload(cast(dict[str, object], item)) if isinstance(item, dict) else item
-                for item in cast(list[object], v)
-            ]
-        else:
-            safe[k] = v
-    return safe
+    """Preserve marker-based denial-audit redaction via the canonical boundary."""
+    result = redact_for_persistence(raw)
+    if not isinstance(result.value, dict):
+        return {}
+    return cast(dict[str, object], result.value)
 
 
 @dataclass(frozen=True, slots=True)

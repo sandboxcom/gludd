@@ -17,6 +17,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -156,7 +158,7 @@ class TestGateCompletionMarker:
         assert "not fresh and green" in result.stderr
 
     def test_make_target_executes_checker_instead_of_echoing_it(self):
-        makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+        makefile = compose_makefile(REPO_ROOT / "Makefile")
         recipe = makefile.split("\ncheck-gate-fresh:", 1)[1].split("\n\n", 1)[0]
 
         assert "gate_fresh_check.py check" in recipe

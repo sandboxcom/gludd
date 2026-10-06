@@ -701,6 +701,34 @@ def test_process_snapshot_parses_stable_start_identity(
     ]
 
 
+def test_marked_gate_owner_accepts_ps_whitespace_normalization(tmp_path: Path) -> None:
+    """Single-digit lstart days remain the same exact process identity."""
+    root = tmp_path / "checkout"
+    root.mkdir()
+    _owned_lock(
+        root,
+        pid=100,
+        started_at="Mon Oct  5 12:34:56 2026",
+    )
+    owner = ProcessRecord(
+        100,
+        1,
+        0,
+        "make gate gludd_watchdog_owned_gate=1",
+        100,
+        "Mon Oct 5 12:34:56 2026",
+    )
+
+    result = terminate_owned_gate(
+        root,
+        apply=False,
+        records_reader=lambda: [owner],
+    )
+
+    assert result.success is True
+    assert result.term_pids == (100,)
+
+
 @pytest.mark.parametrize(
     ("changes", "owner", "reason"),
     [

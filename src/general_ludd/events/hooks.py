@@ -1,3 +1,5 @@
+"""In-process callbacks and bounded, SSRF-safe webhook delivery."""
+
 from __future__ import annotations
 
 import asyncio
@@ -6,13 +8,14 @@ import threading
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
 # Canonical SSRF predicate — the SINGLE source of truth shared by every guard
 # in the codebase (auth, sanitize, connectors). Do NOT re-implement blocklists
 # here; delegate so they can never drift apart.
+from general_ludd.security.redaction import RedactionLimits, redact_for_persistence
 from general_ludd.security.ssrf import is_url_blocked, resolve_and_pin
 
 logger = logging.getLogger(__name__)
@@ -52,50 +55,36 @@ def _ensure_safe_webhook_url(url: str) -> None:
         )
 
 
-# Secret key patterns — if any of these substrings appear in a payload key
-# (case-insensitive), the key is stripped before the payload is forwarded to
-# an external webhook endpoint (credential-exfil prevention).
-_SECRET_PATTERNS: tuple[str, ...] = (
-    "api_key",
-    "token",
-    "secret",
-    "password",
-    "credential",
-    "authorization",
+_WEBHOOK_REDACTION_LIMITS = RedactionLimits(
+    max_depth=16,
+    max_items=10_000,
+    max_string_chars=65_536,
+    max_total_bytes=1_048_576,
 )
 
 
 def _redact_payload(payload: dict[str, Any], _depth: int = 0) -> dict[str, Any]:
-    """Return a redacted copy of *payload* with secret-looking keys removed.
+    """Preserve the webhook API while delegating to the bounded boundary.
 
-    A key is considered sensitive when its lower-cased name contains any of
-    the substrings listed in ``_SECRET_PATTERNS``.  All other keys are passed
-    through unchanged.
-
-    Recursion: dict values are redacted recursively; list values have each
-    element redacted if it is a dict.  A depth cap of 10 prevents pathological
-    recursion on deeply nested structures.
+    Historically webhook payloads omitted credential-bearing keys rather than
+    retaining a marker, so this adapter deliberately selects ``drop`` mode.
+    ``_depth`` remains accepted for compatibility but cannot weaken redaction.
     """
-    if _depth > 10:
-        return payload
-    result: dict[str, Any] = {}
-    for k, v in payload.items():
-        if any(pattern in k.lower() for pattern in _SECRET_PATTERNS):
-            continue
-        if isinstance(v, dict):
-            result[k] = _redact_payload(v, _depth + 1)
-        elif isinstance(v, list):
-            result[k] = [
-                _redact_payload(item, _depth + 1) if isinstance(item, dict) else item
-                for item in v
-            ]
-        else:
-            result[k] = v
-    return result
+    del _depth
+    result = redact_for_persistence(
+        payload,
+        limits=_WEBHOOK_REDACTION_LIMITS,
+        sensitive_key_action="drop",
+    )
+    if not isinstance(result.value, dict):
+        return {}
+    return cast(dict[str, Any], result.value)
 
 
 @dataclass
 class WebhookConfig:
+    """Immutable-at-dispatch configuration for one webhook destination."""
+
     url: str
     headers: dict[str, str] = field(default_factory=dict, repr=False)
     retry_count: int = 1
@@ -104,6 +93,8 @@ class WebhookConfig:
 
 @dataclass
 class HookRegistration:
+    """One callback or webhook registration for a named event."""
+
     hook_id: str
     event_name: str
     hook_type: str
@@ -113,7 +104,10 @@ class HookRegistration:
 
 
 class HookSystem:
+    """Register and dispatch local callbacks and asynchronous webhooks."""
+
     def __init__(self, event_bus: Any | None = None) -> None:
+        """Initialize an empty registry with an optional audit event bus."""
         self._hooks: dict[str, list[HookRegistration]] = {}
         self._next_cb_id = 0
         self._lock = threading.Lock()
@@ -131,6 +125,7 @@ class HookSystem:
     def register_callback(
         self, event_name: str, callback: Callable[..., Any], priority: int = 100
     ) -> str:
+        """Register a local callback and return its stable hook identifier."""
         with self._lock:
             hook_id = f"hook-cb-{self._next_cb_id}"
             self._next_cb_id += 1
@@ -153,6 +148,7 @@ class HookSystem:
         retry_count: int = 1,
         timeout_seconds: int = 10,
     ) -> str:
+        """Validate and register one bounded public webhook destination."""
         # SSRF guard: reject internal/loopback/link-local/metadata URLs up front
         # so a bad target is never persisted in a HookRegistration.
         _ensure_safe_webhook_url(url)
@@ -178,6 +174,7 @@ class HookSystem:
             return hook_id
 
     def unregister(self, hook_id: str) -> None:
+        """Remove a hook identifier from every event registration list."""
         with self._lock:
             for event_name in list(self._hooks.keys()):
                 self._hooks[event_name] = [
@@ -346,6 +343,7 @@ class HookSystem:
             self._scheduled_webhooks.discard(hook_id)
 
     def list_hooks(self) -> list[HookRegistration]:
+        """Return a snapshot of all currently registered hooks."""
         result = []
         for hooks in self._hooks.values():
             result.extend(hooks)

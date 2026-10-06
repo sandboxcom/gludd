@@ -131,9 +131,8 @@ from general_ludd.self_improve.runtime import build_managed_self_improve_runner
 _runtime_lease_bucket_key = _runtime_helpers.runtime_lease_bucket_key
 
 if TYPE_CHECKING:
-    # TYPE_CHECKING-only: avoids a runtime import cycle and keeps the drain
-    # hook decoupled from the IPC layer at import time. ``WriteQueue`` is only
-    # used as a type annotation on the ``inbound_queue`` kwarg.
+    # TYPE_CHECKING-only: keep injected boundaries decoupled at import time.
+    from general_ludd.decision_codification.service import DecisionCodificationAdapter
     from general_ludd.ipc.queue import WriteQueue
 
 logger = logging.getLogger(__name__)
@@ -285,12 +284,14 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
             [AsyncSession, Path, str], Any
         ]
         | None = None,
+        decision_codification: DecisionCodificationAdapter | None = None,
     ) -> None:
         """Initialize the loop and its injected service boundaries."""
         self.worker_base_url = worker_base_url
         self.config = config or {}
         self._daemon_state = daemon_state
         self._run_recorder = run_recorder
+        self._decision_codification = decision_codification
         self._prompt_variant_selector = prompt_variant_selector
         self._checkpointer = checkpointer
         self._utilization_tracker = utilization_tracker
@@ -459,6 +460,11 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
         self._inbound_queue: WriteQueue | None = inbound_queue
         self._service_discovery = service_discovery
         self._service_discovery_last_run: float = 0.0
+
+    @property
+    def decision_codification(self) -> DecisionCodificationAdapter | None:
+        """Return the immutable opt-in decision-codification boundary."""
+        return self._decision_codification
 
     def _track_background_task(self, task: asyncio.Task[None]) -> None:
         """Register a fire-and-forget task so its reference is held until done.
@@ -4605,6 +4611,8 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
                         "job_id": job.job_id,
                         "playbook": job.playbook,
                         "queue": job.queue,
+                        "work_type": job.work_type,
+                        "resource_profile": job.resource_profile,
                         "exit_code": data.get("exit_code", 0),
                         "result_summary": data.get("result_summary", ""),
                         "project_id": job.project_id,
@@ -4839,8 +4847,9 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
         clobbering), and release the claim once delivery finishes (success OR
         failure). A None registry leaves behaviour unchanged.
         """
-        branch_name = getattr(todo, "branch_name", None) or f"gludd-{todo.todo_id.lower()}"
-        worktree = getattr(todo, "worktree", None)
+        configured_branch = getattr(todo, "branch_name", None)
+        project_id = getattr(todo, "project_id", None)
+        worktree = getattr(todo, "worktree", None) or self._resolve_repo_root(project_id)
         if worktree:
             from general_ludd.git_automation.repo import GitAutomation
 
@@ -4874,6 +4883,19 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
                                 f"file-claim conflict for {worker_id}: {sorted(affected)} contested"
                             )
                         claimed = True
+                current_branch = await self._bounded_to_thread(repo.current_branch)
+                if configured_branch:
+                    branch_name = configured_branch
+                elif current_branch.startswith("gludd/"):
+                    # Execution may already have created a more descriptive
+                    # todo branch. Preserve that exact checkout for delivery.
+                    branch_name = current_branch
+                else:
+                    branch_name = f"gludd/{todo.todo_id.lower()}"
+                if current_branch != branch_name:
+                    # create_branch both creates and checks out the task ref,
+                    # keeping the subsequent commit off trunk.
+                    await self._bounded_to_thread(repo.create_branch, branch_name)
                 # M (LIVE stall fix): commit/push shell out to blocking git.
                 # Even with a per-subprocess timeout, a 60s blocking call inside
                 # the async tick would freeze every other coroutine. Offload to a
@@ -4886,7 +4908,7 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
                 if self._loc_ledger is not None:
                     try:
                         delta = await self._bounded_to_thread(repo.lines_changed_in_commit)
-                        pid = getattr(todo, "project_id", None) or self._tick_project_id or ""
+                        pid = project_id or self._tick_project_id or ""
                         self._loc_ledger.record_loc_changed(pid, delta)
                     except Exception as loc_exc:
                         logger.debug(
@@ -4894,7 +4916,11 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
                             todo.todo_id,
                             loc_exc,
                         )
-                await self._bounded_to_thread(repo.push, branch=branch_name)
+                pushed = await self._bounded_to_thread(repo.push, branch=branch_name)
+                if pushed is not True:
+                    raise RuntimeError(
+                        f"git push returned false for todo {todo.todo_id} on {branch_name}"
+                    )
                 logger.info("H6: committed + pushed %s to %s", todo.todo_id, branch_name)
                 await self._maybe_open_pr(todo, worktree, branch_name)
             except Exception as exc:

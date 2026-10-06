@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>gludd — Autonomous Software Development</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/black.css">
+<link rel="stylesheet" href="./vendor/reveal/reveal.css">
+<link rel="stylesheet" href="./presentation.css">
 <style>
 :root {
   --r-heading-text-transform: none;
@@ -215,7 +215,7 @@ flowchart TD
   n8 -.->|reject: retry| n6
     </div>
   </div>
-  <div data-contract="s83-158-claim-before-provision">
+  <div data-contract="s83-158-claim-before-provision" data-proof="s83-158-durable-chain-acceptance">
     <p><strong>Claim-before-provision ownership path</strong></p>
     <ol class="bullets-tight" style="font-size:0.58em;">
       <li>Produce durable todo</li>
@@ -232,8 +232,10 @@ flowchart TD
       <li>Commit failure: rollback + clear detached claim; no provision or dispatch.</li>
       <li>Competing workers + restart: one durable winner, exactly one provision.</li>
       <li>Non-runnable work: zero allocation.</li>
+      <li>Hermetic closure: producer discovery &rarr; approval manager &rarr; ranked claim &rarr; fake-local/fake-Azure edit &rarr; evidence review + promotion receipt &rarr; <code>complete</code> &rarr; exact release; no injected self-improve row or cancellation.</li>
+      <li><strong>Completed delivery:</strong> exact project workspace + intended task branch; <strong>Absent or unsafe scope: zero Git mutation.</strong></li>
     </ul>
-    <p class="cite">Contract: docs/features/TODO_DRIVEN_COMPUTE_LIFECYCLE.md</p>
+    <p class="cite">Contracts: docs/features/TODO_DRIVEN_COMPUTE_LIFECYCLE.md &middot; docs/features/application-resource-ownership.md; proof: tests/e2e/test_self_improve_private_policy_e2e.py</p>
   </div>
   <p class="cite">Source: code-trace audit, verified against src/general_ludd/ on 2026-07-12T10:39:48Z</p>
 </section>
@@ -822,7 +824,34 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19e: S83.157 NEXT BOUNDED GPU PROOF -->
+<!-- SLIDE 19e: SESSION-ISOLATED ASYNC GATE -->
+<!-- ============================================================ -->
+<section data-contract="gate-session-launcher">
+  <p class="stage-kicker">Release control &middot; identity-bound async work</p>
+  <h2>Background gates survive the caller &mdash; without losing ownership</h2>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart LR
+  C["caller Make<br/>may receive group SIGTERM"] --> L["Python launcher<br/>atomic admission"]
+  L --> G["gate session<br/>PID = PGID = SID"]
+  L --> W["bounded watcher<br/>separate session"]
+  G --> O["exact gate-*.log<br/>phase + terminal markers"]
+  L --> R["atomic receipt<br/>run_id + start token + namespace"]
+  W -->|"exit with gate"| R
+  W -->|"timeout: TERM then KILL<br/>only exact group"| G
+    </div>
+  </div>
+  <ul class="bullets-tight">
+    <li><code>start_new_session=True</code> keeps caller-group termination out of the gate process group</li>
+    <li>The compatibility PID is the real Make gate PID; the receipt binds it to OS start time, log, checkout, and namespace</li>
+    <li>The watcher polls instead of sleeping for an hour, and removes the PID file only if it still owns that exact value</li>
+    <li><code>gate-status-check</code>, <code>gate-wait</code>, timeout markers, and service availability remain unchanged &mdash; a ZDD control-plane swap</li>
+  </ul>
+  <p class="cite">Source: scripts/start_gate_background.py, Makefile gate-background, docs/features/GATE_RESOURCE_LIFECYCLE.md</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19f: S83.157 NEXT BOUNDED GPU PROOF -->
 <!-- ============================================================ -->
 <section data-contract="s83-157-next-live-proof">
   <p class="stage-kicker">Decision &middot; 2026-10-05 &middot; next live proof</p>
@@ -955,6 +984,17 @@ graph TD
 <section data-contract="s83-114-chemistry-entity-resolution">
   <p class="stage-kicker">Chemistry contract &middot; typed failure to reversible rollout</p>
   <h2>S83.114 &mdash; Chemistry identities <span class="badge-green">Fail closed</span></h2>
+  <div data-contract="v0.1.2-completed-backlog">
+    <h3>v0.1.2 completed backlog <span class="badge-green">5 formally closed</span></h3>
+    <ol style="font-size:0.48em;">
+      <li><strong>S83.114 &mdash; Fail-closed chemistry entity resolution</strong></li>
+      <li><strong>S83.115 &mdash; Standards-consistent X.509 chain validation</strong></li>
+      <li><strong>S83.116 &mdash; Monotonic debounce, throttle, and watchdog state</strong></li>
+      <li><strong>S83.117 &mdash; Authenticated TLS 1.3 state and directional records</strong></li>
+      <li><strong>S83.128 &mdash; invoking-worktree-safe virtual-environment reclamation</strong></li>
+    </ol>
+    <p class="honest-note" style="font-size:0.42em;"><strong>Implemented &ne; closed:</strong> S83.158 and S83.166 retain open exact-head/hosted release evidence and are not counted here.</p>
+  </div>
   <div class="two-col">
     <div>
       <h3>Evidence, never inference</h3>
@@ -1151,6 +1191,70 @@ graph TD
   <p class="honest-note" style="font-size:0.48em;">Conclusion alone never authorizes retry. Practitioner reports #27083, #52505, #17854, #186208, #165291, #166283, and #126539 remain tied to the exact guardrails in the source contract.</p>
   <p class="cite">Sources: docs/features/CI_FAILURE_LEDGER.md &middot; Makefile <code>ci-recover-runner-acquisition</code> &middot; tests/unit/test_ci_failure_ledger.py</p>
   </div>
+  <!-- S83.166 PUBLISHED ROLLBACK RECEIPT SUBSECTION -->
+  <div data-contract="s83-166-published-rollback-receipt">
+  <h3>S83.166 &mdash; published rollback receipt <span class="badge-green">CHECKSUM-BOUND</span></h3>
+  <ol class="bullets-tight" style="font-size:0.58em; columns:2; column-gap:22px;">
+    <li><strong>Fan-in:</strong> 15/15 platform-category smoke fan-in must pass before the receipt exists.</li>
+    <li><strong>Candidate activation:</strong> candidate SHA + version + health bind the staged route to the exact release.</li>
+    <li><strong>Restoration:</strong> byte-identical prior route restored, with its version and health rechecked.</li>
+    <li><strong>Active work:</strong> active-work SHA unchanged across the rehearsal.</li>
+    <li><strong>Publication binding:</strong> the receipt is inventoried, checksummed, and attested with the release assets.</li>
+    <li><strong>Published-byte acquisition:</strong> After publication, download the exact rollback receipt, checksum index, release manifest, candidate archive, and smoke attestations.</li>
+    <li><strong>Local replay gate:</strong> <code>verify-published-rollback</code> revalidates receipt/checksum/manifest/candidate/smoke bytes before remote completeness.</li>
+    <li><strong>Bounded cleanup:</strong> use a run/attempt-namespaced directory; cleanup failure blocks the job.</li>
+    <li><strong>Mutation boundary:</strong> zero new network mutation; the proof reuses the hermetic release runner and refuses incomplete or mismatched evidence.</li>
+  </ol>
+  <p class="honest-note" style="font-size:0.46em;">This is a post-publication evidence replay of a build-time rollback rehearsal, not a claim that live production traffic moved. ZDD remains fail-closed: the prior route and active work stay unchanged unless every downloaded receipt invariant passes.</p>
+  <p class="cite">Practitioner evidence: Argo Rollouts #501 &middot; Kubernetes #50021 &middot; GitHub Community #161656 &middot; Source: docs/RELEASE_RUNBOOK.md</p>
+  </div>
+  <!-- G10/RR1/R0 FROZEN REPLAY SCHEMA + LEGACY READ SUBSECTION -->
+  <div data-contract="G10-RR1-R0-SCHEMA-LEGACY">
+  <h3>G10/RR1/R0 &mdash; replay schema and legacy reads <span class="badge-green">FROZEN V1</span></h3>
+  <ol class="bullets-tight" style="font-size:0.58em; columns:2; column-gap:22px;">
+    <li><strong>Frozen v1 surface:</strong> strict frozen v1 manifest/event schemas reject drift before replay evidence can be trusted.</li>
+    <li><strong>Fail closed:</strong> unsafe, traversal, confusable, or device IDs; extras or unknown schemas; and duplicate keys or non-finite JSON are rejected.</li>
+    <li><strong>Canonical integrity:</strong> canonical integrity serialization makes equivalent accepted evidence hash identically.</li>
+    <li><strong>Legacy reads:</strong> ordered legacy reads expose <code>schema=legacy-v0</code> and <code>integrity=unverified</code> without writes.</li>
+    <li><strong>Explicit nonclaim:</strong> recorder, router, CLI, signing, store, simulation, and re-execution remain pending.</li>
+  </ol>
+  <p class="honest-note" style="font-size:0.46em;">This lands parsing, validation, and read-only compatibility only. Legacy evidence stays visibly unverified; no migration, replay execution, or runtime service changes occur.</p>
+  <p class="cite">Sources: src/general_ludd/replay/schema.py &middot; src/general_ludd/replay/legacy.py &middot; tests/unit/test_replay_schema.py &middot; tests/unit/test_replay_legacy.py</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19k: DECISION-LOG CODIFICATION -->
+<!-- ============================================================ -->
+<section data-contract="decision-log-codification-v1">
+  <p class="stage-kicker">Repeated decisions &middot; verified evidence to reversible automation</p>
+  <h2>Decision-log codification <span class="badge-yellow">CLI + opt-in REVIEW ready; durable proof pending</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Trust only exact evidence</h3>
+      <ul class="bullets-tight" style="font-size:0.58em;">
+        <li><strong>Verified signed bundles:</strong> <code>DecisionLogAnalyzer</code> mints source markers only after complete <code>RunBundleStore.read_verified()</code> output.</li>
+        <li><strong>Exact context or abstain:</strong> project, policy, guards, schema, and an observed context signature must match; uncertainty returns <code>DecisionAbstentionV1</code>.</li>
+        <li><strong>zero-LLM hit / Live REVIEW:</strong> <code>DecisionResolver</code> exact hit: zero reviewer calls; abstention/error: one off-loop reviewer call.</li>
+        <li><strong>Conservative mapping:</strong> approve -> complete; request_changes -> needs_more_work; reject -> failed.</li>
+        <li><strong>Stable idempotency:</strong> stable correlation + side-effect IDs; managed self-improvement refuses codified resolution.</li>
+        <li><strong>Safe opt-in:</strong> <code>DecisionCodificationAdapter</code> is opt-in; disabled by default. Codification keeps content-free attribution to source, digests, and closed reasons.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Bounded API, CLI, and lifecycle</h3>
+      <ul class="bullets-tight" style="font-size:0.58em;">
+        <li><strong>Auth before analysis:</strong> <code>/api/v1/decision-codification/analyze</code> requires matching authenticated, request, and adapter project scope.</li>
+        <li><strong>Bounded request:</strong> 1-256 unique safe run IDs, a 64 KiB body, strict digests and time/use bounds.</li>
+        <li><strong>CLI:</strong> <code>gludd decision-codification analyze</code> has explicit project/run/digest/time/use bounds and existing auth.</li>
+        <li><strong>Safe output:</strong> 128 KiB response cap; safe summaries only (at most 128 digest/count summaries); no lifecycle/key/artifact/evidence surface.</li>
+        <li><strong>Analysis only:</strong> no approval or activation; Human approval remains bound to one exact candidate/report digest.</li>
+        <li><strong>ZDD:</strong> shadow 0% &rarr; canary 1% &rarr; 10% &rarr; 50% &rarr; active 100%. <strong>Atomic rollback:</strong> restore a verified generation or make all traffic abstain.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="honest-note">Core tests prove the proposal and lifecycle; live REVIEW and CLI tests prove the bounded integration above. The adapter remains opt-in/default-disabled; durable multiworker configuration, recorder/outcome feedback, and deployed live-traffic proof remain pending. No live avoided-call claim is made.</p>
+  <p class="cite">Sources: docs/features/DECISION_LOG_CODIFICATION.md &middot; RapidFuzz #432 &middot; scikit-learn #15629 / discussion #25411 &middot; OPA #2379 / #1514</p>
 </section>
 
 <!-- ============================================================ -->
@@ -1506,46 +1610,32 @@ make init</code></pre>
 </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/highlight.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
-<!-- Mermaid plugin for inline diagrams -->
-<script src="https://cdn.jsdelivr.net/npm/reveal.js-mermaid-plugin@2.1.0/plugin/mermaid/mermaid.js"></script>
-<script>
-Reveal.initialize({
-  hash: true,
-  center: true,
-  width: 1150,
-  height: 820,
-  margin: 0.045,
-  minScale: 0.2,
-  maxScale: 1.8,
-  overflow: 'scroll',
-  transition: 'slide',
-  transitionSpeed: 'default',
-  backgroundTransition: 'fade',
-  slideNumber: 'c/t',
-  plugins: [ RevealHighlight, RevealNotes ]
-}).then(() => {
-  mermaid.initialize({
-    startOnLoad: false,
-    theme: 'base',
-    themeVariables: {
-      primaryColor: '#161b22',
-      primaryTextColor: '#c9d1d9',
-      primaryBorderColor: '#58a6ff',
-      lineColor: '#58a6ff',
-      secondaryColor: '#1f6feb',
-      tertiaryColor: '#238636',
-      background: '#161b22',
-      mainBkg: '#161b22',
-      secondBkg: '#1f6feb',
-      fontSize: '16px'
-    }
-  });
-  mermaid.run();
-  Reveal.on('slidechanged', () => mermaid.run());
-});
-</script>
+<p id="presentation-render-status" role="status" aria-live="polite" hidden></p>
+<dialog id="source-viewer-dialog" aria-labelledby="source-viewer-path">
+  <div class="source-viewer-header">
+    <strong id="source-viewer-path">Repository source</strong>
+    <span class="source-viewer-actions">
+      <a id="source-viewer-github" href="https://github.com/sandboxcom/gludd">Open on GitHub</a>
+      <button id="source-viewer-close" type="button">Close</button>
+    </span>
+  </div>
+  <div id="source-viewer-editor" aria-label="Read-only repository source"></div>
+</dialog>
+
+<script src="./vendor/reveal/reveal.js"></script>
+<script src="./vendor/reveal/plugin/highlight/highlight.js"></script>
+<script src="./vendor/reveal/plugin/notes/notes.js"></script>
+<script src="./vendor/mermaid/mermaid.js"></script>
+<script src="./vendor/ace/ace.js"></script>
+<script src="./vendor/ace/theme-tomorrow_night.js"></script>
+<script src="./vendor/ace/mode-css.js"></script>
+<script src="./vendor/ace/mode-html.js"></script>
+<script src="./vendor/ace/mode-javascript.js"></script>
+<script src="./vendor/ace/mode-json.js"></script>
+<script src="./vendor/ace/mode-markdown.js"></script>
+<script src="./vendor/ace/mode-python.js"></script>
+<script src="./vendor/ace/mode-sh.js"></script>
+<script src="./vendor/ace/mode-yaml.js"></script>
+<script src="./presentation.js"></script>
 </body>
 </html>

@@ -246,7 +246,7 @@
     },
     {
       "path": "scripts/kill_owned_gate.py",
-      "line": 126,
+      "line": 140,
       "column": 33,
       "kind": "temp-artifact",
       "owner": "_write_json_atomic",
@@ -257,7 +257,7 @@
     },
     {
       "path": "scripts/kill_owned_gate.py",
-      "line": 143,
+      "line": 157,
       "column": 33,
       "kind": "temp-artifact",
       "owner": "_write_text_atomic",
@@ -550,6 +550,39 @@
       "acquisition": "subprocess.Popen(command, stdout=log_file, stderr=subprocess.STDOUT, start_new_session=True)",
       "teardown": "ownership-transfer:persisted-detached-pid",
       "source_hash": "729840e07cb507bfb849f5c613d9dabcdda2bd49270db99f1a422f87fa1f27ba",
+      "owned": true
+    },
+    {
+      "path": "scripts/start_gate_background.py",
+      "line": 101,
+      "column": 33,
+      "kind": "temp-artifact",
+      "owner": "_atomic_write",
+      "acquisition": "tempfile.mkstemp(prefix=f'.{path.name}.', suffix='.tmp', dir=path.parent)",
+      "teardown": "temporary.unlink(missing_ok=True)",
+      "source_hash": "ac27004a136aaf5f47e4939f8507fd55f4db065a5272e82d8079ae2b4028b3b9",
+      "owned": true
+    },
+    {
+      "path": "scripts/start_gate_background.py",
+      "line": 487,
+      "column": 11,
+      "kind": "process",
+      "owner": "_start_watcher",
+      "acquisition": "subprocess.Popen(command, cwd=paths.project_root, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)",
+      "teardown": "ownership-transfer:return",
+      "source_hash": "4e785aaafcda0af68ba48051301441344ae89de76ce20b40bd2e62073039b771",
+      "owned": true
+    },
+    {
+      "path": "scripts/start_gate_background.py",
+      "line": 545,
+      "column": 22,
+      "kind": "process",
+      "owner": "launch_gate",
+      "acquisition": "subprocess.Popen(list(gate_command), cwd=paths.project_root, env=environment, stdout=log_file, stderr=subprocess.STDOUT, start_new_session=True)",
+      "teardown": "ownership-transfer:persisted-detached-pid; ownership-transfer:return GateLaunch(True, identity, log_path, process, watchdog)",
+      "source_hash": "e94686a331e3fc94a841b4d9242c28a9c1471aaaba8caf9844118a439d67767a",
       "owned": true
     },
     {
@@ -1445,7 +1478,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 866,
+      "line": 872,
       "column": 22,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1456,7 +1489,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 878,
+      "line": 884,
       "column": 27,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1467,7 +1500,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 892,
+      "line": 898,
       "column": 32,
       "kind": "async-task",
       "owner": "EventLoop._run_playbook_with_lease_supervision",
@@ -1478,7 +1511,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 2495,
+      "line": 2501,
       "column": 29,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job_isolated",
@@ -1489,7 +1522,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3643,
+      "line": 3649,
       "column": 26,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -1500,7 +1533,7 @@
     },
     {
       "path": "src/general_ludd/event_loop/loop.py",
-      "line": 3701,
+      "line": 3707,
       "column": 27,
       "kind": "async-task",
       "owner": "EventLoop._dispatch_execute_job",
@@ -1522,7 +1555,7 @@
     },
     {
       "path": "src/general_ludd/events/hooks.py",
-      "line": 292,
+      "line": 289,
       "column": 23,
       "kind": "client",
       "owner": "HookSystem._fire_webhook._do_post_async",
@@ -1544,7 +1577,7 @@
     },
     {
       "path": "src/general_ludd/execution/engine.py",
-      "line": 817,
+      "line": 825,
       "column": 23,
       "kind": "async-task",
       "owner": "ExecutionEngine.execute_async",
@@ -1555,7 +1588,7 @@
     },
     {
       "path": "src/general_ludd/execution/engine.py",
-      "line": 1050,
+      "line": 1058,
       "column": 17,
       "kind": "temp-artifact",
       "owner": "ExecutionEngine._apply_unified_diff",
@@ -2024,6 +2057,17 @@
       "acquisition": "tempfile.TemporaryDirectory(prefix=f'gludd-render-{spec.name}-')",
       "teardown": "artifact_owner.cleanup()",
       "source_hash": "40677e13959b495e2918ea41142be9d71eb17c1578f09451c399285a21446f7b",
+      "owned": true
+    },
+    {
+      "path": "src/general_ludd/replay/service.py",
+      "line": 712,
+      "column": 17,
+      "kind": "temp-artifact",
+      "owner": "ReplayService._export_iterator",
+      "acquisition": "tempfile.TemporaryFile(mode='w+b')",
+      "teardown": "context-manager-exit",
+      "source_hash": "67bf2b944bcdaf35e0cb58745c2d5de7c5ca61b04a8fdaacf23bdc4d334a00b8",
       "owned": true
     },
     {

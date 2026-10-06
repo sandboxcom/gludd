@@ -2,7 +2,7 @@
 
 Covers:
 - gate-cleanup kills stale process (SIGTERM → 10s wait → SIGKILL)
-- gate-background sets timeout (GATE_TIMEOUT env var, ABORTED marker)
+- gate-background delegates timeout cleanup to the session launcher
 - watchdog _check_gate_background detects stale gate
 """
 
@@ -90,19 +90,18 @@ def test_gate_background_has_timeout_watcher():
     assert "GATE_TIMEOUT" in recipe_block, (
         "gate-background must reference GATE_TIMEOUT env var"
     )
-    assert "sleep $$GATE_TIMEOUT_VAL" in recipe_block, (
-        "gate-background must spawn timeout watcher with sleep"
-    )
-    assert "GATE: ABORTED" in recipe_block, (
-        "gate-background timeout must write ABORTED marker"
-    )
+    assert "scripts/start_gate_background.py" in recipe_block
+    launcher = (ROOT / "scripts/start_gate_background.py").read_text()
+    assert "start_new_session=True" in launcher
+    assert "=== GATE: ABORTED (timeout {timeout_text}s) ===" in launcher
 
 
 def test_gate_background_timeout_default_3600():
     content = _makefile_content()
     idx = content.find("gate-background:")
     recipe_block = content[idx : idx + 3000]
-    assert ":-3600" in recipe_block, (
+    assert "GATE_TIMEOUT ?= 3600" in content
+    assert '--timeout-seconds "$(GATE_TIMEOUT)"' in recipe_block, (
         "gate-background must default GATE_TIMEOUT to 3600s (1 hour)"
     )
 

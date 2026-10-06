@@ -2,11 +2,11 @@
 
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 
 def test_verify_feature_claims_uses_explicit_localhost_inventory() -> None:
-    makefile = (Path(__file__).resolve().parents[2] / "Makefile").read_text(
-        encoding="utf-8"
-    )
+    makefile = compose_makefile(Path(__file__).resolve().parents[2] / "Makefile")
     marker = "verify-feature-claims:"
     assert marker in makefile
     recipe = makefile.split(marker, 1)[1].split("\n\n", 1)[0]

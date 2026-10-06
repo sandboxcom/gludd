@@ -1306,6 +1306,16 @@
       "behavior": "make check-generated-artifact-hygiene"
     },
     {
+      "name": "check-file-line-limits",
+      "make_variables": ["FILE_LINE_LIMIT_POLICY"],
+      "behavior": "make check-file-line-limits FILE_LINE_LIMIT_POLICY=config/file_line_limits.json"
+    },
+    {
+      "name": "split-makefile-layout",
+      "make_variables": ["MAKEFILE_SPLIT_APPLY"],
+      "behavior": "make split-makefile-layout MAKEFILE_SPLIT_APPLY=0"
+    },
+    {
       "name": "update-collection-python-boundary-inventory",
       "make_variables": ["COLLECTION_PYTHON_BOUNDARY_ROOT", "COLLECTION_PYTHON_BOUNDARY_INVENTORY"],
       "behavior": "make update-collection-python-boundary-inventory COLLECTION_PYTHON_BOUNDARY_ROOT=collections/ansible_collections COLLECTION_PYTHON_BOUNDARY_INVENTORY=/tmp/gludd-collection-python-boundary-contract.json"
@@ -1356,9 +1366,49 @@
       "behavior": "make test-failures TEST_FAILURES_CACHE=/tmp/gludd-no-prior-failures-contract.json TEST_FAILURES_LIMIT=5"
     },
     {
+      "name": "lint-python",
+      "make_variables": [],
+      "behavior": "make lint-python"
+    },
+    {
+      "name": "lint-make",
+      "make_variables": [],
+      "behavior": "make lint-make"
+    },
+    {
+      "name": "gate-background",
+      "make_variables": ["GATE_TIMEOUT", "GATE_BACKGROUND_VALIDATE_ONLY"],
+      "behavior": "make gate-background GATE_TIMEOUT=3600 GATE_BACKGROUND_VALIDATE_ONLY=1"
+    },
+    {
       "name": "gate-background-observed",
       "make_variables": ["GATE_TIMEOUT", "GATE_POLL_INTERVAL", "GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY"],
       "behavior": "make gate-background-observed GATE_TIMEOUT=7200 GATE_POLL_INTERVAL=60 GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "vendor-presentation-assets",
+      "make_variables": ["PRESENTATION_VENDOR_VALIDATE_ONLY"],
+      "behavior": "make vendor-presentation-assets PRESENTATION_VENDOR_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "presentation-browser-test",
+      "make_variables": [
+        "PRESENTATION_BROWSER_VALIDATE_ONLY",
+        "PRESENTATION_BROWSER_ROOT",
+        "PRESENTATION_BROWSER_OUTPUT",
+        "PRESENTATION_BROWSER_TIMEOUT"
+      ],
+      "behavior": "make presentation-browser-test PRESENTATION_BROWSER_VALIDATE_ONLY=1 PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser PRESENTATION_BROWSER_TIMEOUT=300"
+    },
+    {
+      "name": "presentation-browser-install",
+      "make_variables": [
+        "PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY",
+        "PRESENTATION_BROWSER_ROOT",
+        "PRESENTATION_BROWSER_OUTPUT",
+        "PRESENTATION_BROWSER_INSTALL_TIMEOUT"
+      ],
+      "behavior": "make presentation-browser-install PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=1 PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser PRESENTATION_BROWSER_INSTALL_TIMEOUT=600"
     }
   ]
 }

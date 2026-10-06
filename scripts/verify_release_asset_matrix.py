@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import json
 import re
 import stat
@@ -15,6 +16,12 @@ from email.parser import Parser
 from pathlib import Path
 
 import yaml
+
+from general_ludd.git_release.release_state import (
+    ReleaseState,
+    ReleaseStateMachine,
+    TransitionError,
+)
 
 FOUNDATION_RELEASE_NAMES = {
     "execution-environment.yml": "ansible-ee-execution-environment.yml",
@@ -47,6 +54,14 @@ REQUIRED_SMOKE_CHECKS = frozenset(
         "install_script",
     }
 )
+
+ROLLBACK_RECEIPT_SCHEMA_VERSION = 1
+MAX_PUBLISHED_ROLLBACK_ERRORS = 24
+MAX_PUBLISHED_JSON_BYTES = 262_144
+MAX_PUBLISHED_CHECKSUM_BYTES = 1_048_576
+MAX_PUBLISHED_CHECKSUM_LINES = 512
+MAX_PUBLISHED_SMOKE_ATTESTATIONS = len(REQUIRED_SMOKE_CHECKS)
+HASH_CHUNK_BYTES = 1_048_576
 
 IMAGE_REFERENCE_RE = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9._/:+-]*@sha256:[0-9a-f]{64}$"
@@ -115,6 +130,7 @@ def _required_names(version: str) -> dict[str, str]:
         "container image metadata": f"gludd-container-{version}.json",
         "collection manifest": f"gludd-collections-{version}.json",
         "release manifest": f"gludd-release-manifest-{version}.json",
+        "rollback receipt": f"gludd-rollback-receipt-{version}.json",
         "SBOM": "sbom.json",
         "installer": "install.sh",
         "license": "LICENSE",
@@ -331,6 +347,181 @@ def _verify_smoke_attestations(asset_dir: Path, version: str) -> list[str]:
     return errors
 
 
+def _canonical_json_sha256(payload: object) -> str:
+    """Hash one deterministic JSON representation used by release receipts."""
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _sha256_file(path: Path) -> str:
+    """Hash a release asset without loading an unbounded artifact into memory."""
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while chunk := stream.read(HASH_CHUNK_BYTES):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _smoke_attestation_digests(asset_dir: Path, version: str) -> dict[str, str]:
+    """Bind every version-scoped smoke attestation by its staged bytes."""
+    return {
+        path.name: _sha256_file(path)
+        for path in sorted(asset_dir.glob(f"gludd-smoke-*-{version}.json"))
+    }
+
+
+def _valid_sha256(value: object) -> bool:
+    return isinstance(value, str) and SHA_RE.fullmatch(value) is not None
+
+
+def _exercise_rollback_state_machine(
+    *, source_sha: str, candidate_digest: str, prior_digest: str
+) -> None:
+    """Exercise the canonical ZDD state graph through candidate rollback."""
+    machine = ReleaseStateMachine(
+        source_sha=source_sha,
+        artifact_digest=candidate_digest,
+    )
+    targets = (
+        ReleaseState.PLAN,
+        ReleaseState.BUILD_ONCE,
+        ReleaseState.VERIFY_OFFLINE,
+        ReleaseState.STAGE,
+        ReleaseState.CANARY,
+    )
+    results = (
+        machine.advance(target=ReleaseState.PLAN),
+        machine.advance(target=ReleaseState.BUILD_ONCE),
+        machine.advance(
+            target=ReleaseState.VERIFY_OFFLINE,
+            gate_evidence=[("release-matrix", "passed", "local://assets")],
+        ),
+        machine.advance(
+            target=ReleaseState.STAGE,
+            artifact_digest=candidate_digest,
+        ),
+        machine.advance(
+            target=ReleaseState.CANARY,
+            health_gate_passed=True,
+            prior_digest=prior_digest,
+        ),
+    )
+    for target, result in zip(targets, results, strict=True):
+        if result.blocked:
+            raise ValueError(
+                "rollback rehearsal blocked at "
+                f"{target.value}: {','.join(result.reasons)}"
+            )
+    machine.rollback(reason="release rollback receipt rehearsal")
+    if machine.serving_digest != prior_digest:
+        raise ValueError("rollback rehearsal did not restore the prior digest")
+
+
+def write_rollback_receipt(
+    asset_dir: Path,
+    version: str,
+    *,
+    source_sha: str,
+    prior_version: str,
+    candidate_asset: str,
+    candidate_observed_version: str,
+    restored_observed_version: str,
+    candidate_health: str,
+    restored_health: str,
+    prior_route_before_sha256: str,
+    prior_route_after_sha256: str,
+    active_work_before_sha256: str,
+    active_work_after_sha256: str,
+) -> Path:
+    """Write a deterministic receipt only for a complete hermetic rollback proof."""
+    if SOURCE_SHA_RE.fullmatch(source_sha) is None:
+        raise ValueError("source SHA must be 40 lowercase hexadecimal characters")
+    if not prior_version or prior_version == version:
+        raise ValueError("prior version must be non-empty and distinct from candidate")
+    if candidate_observed_version != version:
+        raise ValueError("candidate observed version does not match release version")
+    if restored_observed_version != prior_version:
+        raise ValueError("restored observed version does not match prior version")
+    if candidate_health != "passed" or restored_health != "passed":
+        raise ValueError("candidate and restored health must both be passed")
+    if Path(candidate_asset).name != candidate_asset:
+        raise ValueError("candidate asset must be a safe basename")
+    candidate_path = asset_dir / candidate_asset
+    if not candidate_path.is_file() or candidate_path.stat().st_size == 0:
+        raise ValueError("candidate asset must be a non-empty staged file")
+    candidate_digest = _sha256_file(candidate_path)
+
+    route_digests = (prior_route_before_sha256, prior_route_after_sha256)
+    if not all(SHA_RE.fullmatch(value) is not None for value in route_digests):
+        raise ValueError("prior route evidence must use lowercase SHA-256 digests")
+    if not hmac.compare_digest(*route_digests):
+        raise ValueError("prior route changed; restoration is not immutable")
+    if hmac.compare_digest(candidate_digest, prior_route_before_sha256):
+        raise ValueError("candidate and prior route digests must be distinct")
+
+    work_digests = (active_work_before_sha256, active_work_after_sha256)
+    if not all(SHA_RE.fullmatch(value) is not None for value in work_digests):
+        raise ValueError("active work evidence must use lowercase SHA-256 digests")
+    if not hmac.compare_digest(*work_digests):
+        raise ValueError("active work changed during rollback rehearsal")
+
+    smoke_errors = _verify_smoke_attestations(asset_dir, version)
+    if smoke_errors:
+        raise ValueError("platform smoke fan-in incomplete: " + "; ".join(smoke_errors))
+    attestations = _smoke_attestation_digests(asset_dir, version)
+    if not attestations:
+        raise ValueError("platform smoke fan-in has no attestations")
+
+    _exercise_rollback_state_machine(
+        source_sha=source_sha,
+        candidate_digest=candidate_digest,
+        prior_digest=prior_route_before_sha256,
+    )
+    payload: dict[str, object] = {
+        "schema_version": ROLLBACK_RECEIPT_SCHEMA_VERSION,
+        "version": version,
+        "source_sha": source_sha,
+        "candidate": {
+            "activation": "passed",
+            "asset": candidate_asset,
+            "health": candidate_health,
+            "observed_version": candidate_observed_version,
+            "sha256": candidate_digest,
+        },
+        "rollback": {
+            "health": restored_health,
+            "immutable": True,
+            "observed_version": restored_observed_version,
+            "prior_route_sha256": prior_route_before_sha256,
+            "prior_version": prior_version,
+            "restoration": "passed",
+            "restored_route_sha256": prior_route_after_sha256,
+        },
+        "active_work": {
+            "after_sha256": active_work_after_sha256,
+            "before_sha256": active_work_before_sha256,
+            "unchanged": True,
+        },
+        "platform_fan_in": {
+            "attestations": attestations,
+            "categories": sorted(REQUIRED_SMOKE_CHECKS),
+            "status": "passed",
+        },
+    }
+    payload["evidence_sha256"] = _canonical_json_sha256(payload)
+    path = asset_dir / f"gludd-rollback-receipt-{version}.json"
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def _verify_checksums(asset_dir: Path) -> list[str]:
     checksum_file = asset_dir / "SHA256SUMS"
     if not checksum_file.is_file():
@@ -358,7 +549,7 @@ def _verify_checksums(asset_dir: Path) -> list[str]:
     if extra:
         errors.append("checksums reference absent assets: " + ", ".join(extra))
     for name in sorted(expected & recorded.keys()):
-        digest = hashlib.sha256((asset_dir / name).read_bytes()).hexdigest()
+        digest = _sha256_file(asset_dir / name)
         if digest != recorded[name]:
             errors.append(f"checksum mismatch: {name}")
     return errors
@@ -384,6 +575,415 @@ def _verify_install_script(path: Path) -> list[str]:
     if INSTALL_FAIL_FAST_RE.search(text) is None:
         errors.append("install.sh must enable set -euo pipefail")
     return errors
+
+
+def _verify_candidate_receipt_evidence(
+    value: object,
+    *,
+    asset_dir: Path,
+    version: str,
+) -> tuple[list[str], str | None]:
+    errors: list[str] = []
+    candidate_digest: str | None = None
+    if not isinstance(value, dict):
+        errors.append("rollback receipt candidate evidence must be an object")
+        return errors, None
+    expected_fields = {
+        "activation",
+        "asset",
+        "health",
+        "observed_version",
+        "sha256",
+    }
+    if set(value) != expected_fields:
+        errors.append("rollback receipt candidate evidence fields are invalid")
+    if value.get("activation") != "passed":
+        errors.append("rollback receipt candidate activation is not passed")
+    if value.get("health") != "passed":
+        errors.append("rollback receipt candidate health is not passed")
+    if value.get("observed_version") != version:
+        errors.append("rollback receipt candidate version mismatch")
+    candidate_asset = value.get("asset")
+    candidate_sha = value.get("sha256")
+    if (
+        not isinstance(candidate_asset, str)
+        or Path(candidate_asset).name != candidate_asset
+    ):
+        errors.append("rollback receipt candidate asset name is unsafe")
+    elif not (asset_dir / candidate_asset).is_file():
+        errors.append("rollback receipt candidate asset is missing")
+    else:
+        candidate_digest = _sha256_file(asset_dir / candidate_asset)
+        if not isinstance(candidate_sha, str) or not hmac.compare_digest(
+            candidate_sha, candidate_digest
+        ):
+            errors.append("rollback receipt candidate checksum mismatch")
+    return errors, candidate_digest
+
+
+def _verify_restoration_receipt_evidence(
+    value: object,
+    *,
+    version: str,
+) -> tuple[list[str], str | None]:
+    errors: list[str] = []
+    prior_digest: str | None = None
+    if not isinstance(value, dict):
+        errors.append("rollback receipt prior restoration evidence must be an object")
+        return errors, None
+    expected_fields = {
+        "health",
+        "immutable",
+        "observed_version",
+        "prior_route_sha256",
+        "prior_version",
+        "restoration",
+        "restored_route_sha256",
+    }
+    if set(value) != expected_fields:
+        errors.append("rollback receipt prior restoration fields are invalid")
+    prior_version = value.get("prior_version")
+    if not isinstance(prior_version, str) or not prior_version:
+        errors.append("rollback receipt prior version is invalid")
+    if prior_version == version:
+        errors.append("rollback receipt prior version is not distinct")
+    if value.get("restoration") != "passed":
+        errors.append("rollback receipt prior restoration is not passed")
+    if value.get("health") != "passed":
+        errors.append("rollback receipt restored health is not passed")
+    if value.get("observed_version") != prior_version:
+        errors.append("rollback receipt restored version mismatch")
+    before = value.get("prior_route_sha256")
+    after = value.get("restored_route_sha256")
+    if not _valid_sha256(before) or not _valid_sha256(after):
+        errors.append("rollback receipt prior route digests are invalid")
+    elif not hmac.compare_digest(str(before), str(after)):
+        errors.append("rollback receipt prior restoration is not immutable")
+    else:
+        prior_digest = str(before)
+    if value.get("immutable") is not True:
+        errors.append("rollback receipt prior restoration is not immutable")
+    return errors, prior_digest
+
+
+def _verify_active_work_receipt_evidence(value: object) -> list[str]:
+    if not isinstance(value, dict):
+        return ["rollback receipt active work evidence must be an object"]
+    errors: list[str] = []
+    if set(value) != {"after_sha256", "before_sha256", "unchanged"}:
+        errors.append("rollback receipt active work evidence fields are invalid")
+    before = value.get("before_sha256")
+    after = value.get("after_sha256")
+    if (
+        not _valid_sha256(before)
+        or not _valid_sha256(after)
+        or not hmac.compare_digest(str(before), str(after))
+        or value.get("unchanged") is not True
+    ):
+        errors.append("rollback receipt active work changed")
+    return errors
+
+
+def _verify_platform_fan_in_receipt_evidence(
+    value: object,
+    *,
+    asset_dir: Path,
+    version: str,
+) -> list[str]:
+    if not isinstance(value, dict):
+        return ["rollback receipt platform fan-in must be an object"]
+    errors: list[str] = []
+    if set(value) != {"attestations", "categories", "status"}:
+        errors.append("rollback receipt platform fan-in fields are invalid")
+    if value.get("status") != "passed":
+        errors.append("rollback receipt platform fan-in is not passed")
+    if value.get("categories") != sorted(REQUIRED_SMOKE_CHECKS):
+        errors.append("rollback receipt platform category fan-in is incomplete")
+    if value.get("attestations") != _smoke_attestation_digests(asset_dir, version):
+        errors.append("rollback receipt smoke attestation digest fan-in is stale")
+    return errors
+
+
+def _verify_rollback_receipt(
+    path: Path,
+    *,
+    asset_dir: Path,
+    version: str,
+) -> list[str]:
+    """Verify one immutable rollback receipt against the staged matrix."""
+    payload, json_error = _json_object(path)
+    if json_error:
+        return [json_error]
+    errors: list[str] = []
+    expected_root = {
+        "active_work",
+        "candidate",
+        "evidence_sha256",
+        "platform_fan_in",
+        "rollback",
+        "schema_version",
+        "source_sha",
+        "version",
+    }
+    if set(payload) != expected_root:
+        errors.append("rollback receipt schema fields are incomplete or unknown")
+    if payload.get("schema_version") != ROLLBACK_RECEIPT_SCHEMA_VERSION:
+        errors.append("rollback receipt schema version is invalid")
+    if payload.get("version") != version:
+        errors.append("rollback receipt release version mismatch")
+    source_sha = payload.get("source_sha")
+    if not isinstance(source_sha, str) or SOURCE_SHA_RE.fullmatch(source_sha) is None:
+        errors.append("rollback receipt source SHA is invalid")
+    release_manifest = asset_dir / f"gludd-release-manifest-{version}.json"
+    if release_manifest.is_file():
+        manifest_payload, manifest_error = _json_object(release_manifest)
+        if manifest_error is None and manifest_payload.get("source_sha") != source_sha:
+            errors.append("rollback receipt source SHA does not match release manifest")
+
+    candidate_errors, candidate_digest = _verify_candidate_receipt_evidence(
+        payload.get("candidate"),
+        asset_dir=asset_dir,
+        version=version,
+    )
+    errors.extend(candidate_errors)
+    restoration_errors, prior_digest = _verify_restoration_receipt_evidence(
+        payload.get("rollback"),
+        version=version,
+    )
+    errors.extend(restoration_errors)
+    errors.extend(_verify_active_work_receipt_evidence(payload.get("active_work")))
+    errors.extend(
+        _verify_platform_fan_in_receipt_evidence(
+            payload.get("platform_fan_in"),
+            asset_dir=asset_dir,
+            version=version,
+        )
+    )
+
+    expected_evidence = dict(payload)
+    observed_evidence_digest = expected_evidence.pop("evidence_sha256", None)
+    calculated_evidence_digest = _canonical_json_sha256(expected_evidence)
+    if (
+        not isinstance(observed_evidence_digest, str)
+        or not hmac.compare_digest(
+            observed_evidence_digest, calculated_evidence_digest
+        )
+    ):
+        errors.append("rollback receipt evidence digest mismatch")
+
+    if (
+        isinstance(source_sha, str)
+        and SOURCE_SHA_RE.fullmatch(source_sha) is not None
+        and candidate_digest is not None
+        and prior_digest is not None
+    ):
+        try:
+            _exercise_rollback_state_machine(
+                source_sha=source_sha,
+                candidate_digest=candidate_digest,
+                prior_digest=prior_digest,
+            )
+        except (TransitionError, ValueError) as exc:
+            errors.append(f"rollback receipt ZDD replay failed: {exc}")
+    return errors
+
+
+def _bounded_published_rollback_errors(errors: list[str]) -> list[str]:
+    """Return deterministic, content-free diagnostics with a hard output bound."""
+    unique = sorted(set(errors))
+    if len(unique) <= MAX_PUBLISHED_ROLLBACK_ERRORS:
+        return unique
+    retained = unique[: MAX_PUBLISHED_ROLLBACK_ERRORS - 1]
+    retained.append("published rollback validation reached its failure limit")
+    return retained
+
+
+def _published_file_size_error(path: Path, *, label: str, limit: int) -> str | None:
+    """Reject absent, linked, or oversized hosted evidence without reading it."""
+    if not path.is_file() or path.is_symlink():
+        return f"published {label} is missing or unsafe"
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return f"published {label} metadata is unreadable"
+    if size == 0:
+        return f"published {label} is empty"
+    if size > limit:
+        return f"published {label} exceeds its verification size limit"
+    return None
+
+
+def _published_checksum_index(path: Path) -> tuple[dict[str, str], list[str]]:
+    """Parse a bounded aggregate checksum without echoing hosted content."""
+    size_error = _published_file_size_error(
+        path,
+        label="checksum index",
+        limit=MAX_PUBLISHED_CHECKSUM_BYTES,
+    )
+    if size_error:
+        return {}, [size_error]
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return {}, ["published checksum index is not readable UTF-8"]
+    if len(lines) > MAX_PUBLISHED_CHECKSUM_LINES:
+        return {}, ["published checksum index exceeds its line limit"]
+
+    recorded: dict[str, str] = {}
+    errors: list[str] = []
+    for number, raw_line in enumerate(lines, start=1):
+        parts = raw_line.split(maxsplit=1)
+        if len(parts) != 2 or SHA_RE.fullmatch(parts[0]) is None:
+            errors.append(f"published checksum line {number} is malformed")
+            continue
+        name = parts[1].lstrip("*")
+        if Path(name).name != name or name in recorded:
+            errors.append(f"published checksum line {number} has an unsafe identity")
+            continue
+        recorded[name] = parts[0]
+    return recorded, errors
+
+
+def verify_published_rollback_receipt(asset_dir: Path, version: str) -> list[str]:
+    """Revalidate a downloaded rollback receipt and its checksum-bound evidence.
+
+    The caller owns transport. This function intentionally performs no network
+    access, executes no artifact, and reports no hosted file content.
+    """
+    if not asset_dir.is_dir():
+        return ["published rollback evidence directory is missing"]
+
+    receipt_name = f"gludd-rollback-receipt-{version}.json"
+    manifest_name = f"gludd-release-manifest-{version}.json"
+    receipt_path = asset_dir / receipt_name
+    manifest_path = asset_dir / manifest_name
+    checksum_path = asset_dir / "SHA256SUMS"
+    smoke_paths = sorted(asset_dir.glob(f"gludd-smoke-*-{version}.json"))
+    errors: list[str] = []
+
+    receipt_size_error = _published_file_size_error(
+        receipt_path,
+        label="rollback receipt",
+        limit=MAX_PUBLISHED_JSON_BYTES,
+    )
+    if receipt_size_error:
+        errors.append(receipt_size_error)
+    manifest_size_error = _published_file_size_error(
+        manifest_path,
+        label="release manifest",
+        limit=MAX_PUBLISHED_JSON_BYTES,
+    )
+    if manifest_size_error:
+        errors.append(manifest_size_error)
+    if len(smoke_paths) > MAX_PUBLISHED_SMOKE_ATTESTATIONS:
+        errors.append("published smoke attestation count exceeds its limit")
+    smoke_inputs_bounded = len(smoke_paths) <= MAX_PUBLISHED_SMOKE_ATTESTATIONS
+    for smoke_path in smoke_paths[:MAX_PUBLISHED_SMOKE_ATTESTATIONS]:
+        smoke_error = _published_file_size_error(
+            smoke_path,
+            label="smoke attestation",
+            limit=MAX_PUBLISHED_JSON_BYTES,
+        )
+        if smoke_error:
+            errors.append(smoke_error)
+            smoke_inputs_bounded = False
+    if smoke_inputs_bounded and _verify_smoke_attestations(asset_dir, version):
+        errors.append("published smoke attestations do not prove complete passing fan-in")
+
+    receipt_payload: dict[str, object] = {}
+    if receipt_size_error is None:
+        receipt_payload, receipt_error = _json_object(receipt_path)
+        if receipt_error:
+            errors.append("published rollback receipt is not valid JSON")
+        elif smoke_inputs_bounded:
+            errors.extend(
+                _verify_rollback_receipt(
+                    receipt_path,
+                    asset_dir=asset_dir,
+                    version=version,
+                )
+            )
+
+    candidate_name: str | None = None
+    candidate = receipt_payload.get("candidate")
+    if isinstance(candidate, dict):
+        candidate_value = candidate.get("asset")
+        if (
+            isinstance(candidate_value, str)
+            and Path(candidate_value).name == candidate_value
+        ):
+            candidate_name = candidate_value
+
+    attestation_names: set[str] = set()
+    platform_fan_in = receipt_payload.get("platform_fan_in")
+    if isinstance(platform_fan_in, dict):
+        attestations = platform_fan_in.get("attestations")
+        if isinstance(attestations, dict):
+            if len(attestations) > MAX_PUBLISHED_SMOKE_ATTESTATIONS:
+                errors.append("rollback receipt smoke attestation count exceeds its limit")
+            else:
+                attestation_names = {
+                    name
+                    for name in attestations
+                    if isinstance(name, str) and Path(name).name == name
+                }
+
+    manifest_assets: set[str] = set()
+    if manifest_size_error is None:
+        manifest_payload, manifest_error = _json_object(manifest_path)
+        if manifest_error:
+            errors.append("published release manifest is not valid JSON")
+        else:
+            assets_value = manifest_payload.get("assets")
+            if (
+                manifest_payload.get("schema_version") != 1
+                or manifest_payload.get("version") != version
+                or not isinstance(assets_value, list)
+                or not all(isinstance(name, str) for name in assets_value)
+            ):
+                errors.append("published release manifest schema is invalid")
+            else:
+                manifest_assets = set(assets_value)
+                if len(manifest_assets) != len(assets_value):
+                    errors.append("published release manifest has duplicate assets")
+                if receipt_name not in manifest_assets:
+                    errors.append("published manifest does not inventory rollback receipt")
+                if candidate_name is not None and candidate_name not in manifest_assets:
+                    errors.append("published manifest does not inventory candidate artifact")
+                if not attestation_names.issubset(manifest_assets):
+                    errors.append("published manifest does not inventory smoke attestations")
+            if manifest_payload.get("source_sha") != receipt_payload.get("source_sha"):
+                errors.append("published manifest and rollback source SHA differ")
+
+    checksums, checksum_errors = _published_checksum_index(checksum_path)
+    errors.extend(checksum_errors)
+    evidence_labels = {
+        receipt_name: "rollback receipt",
+        manifest_name: "release manifest",
+    }
+    if candidate_name is not None:
+        evidence_labels[candidate_name] = "candidate artifact"
+    for name in attestation_names:
+        evidence_labels[name] = "smoke attestation"
+
+    for name, label in sorted(evidence_labels.items()):
+        evidence_path = asset_dir / name
+        if not evidence_path.is_file() or evidence_path.is_symlink():
+            errors.append(f"published {label} evidence is missing or unsafe")
+            continue
+        expected_digest = checksums.get(name)
+        if expected_digest is None:
+            errors.append(f"published checksum is missing: {label}")
+            continue
+        try:
+            observed_digest = _sha256_file(evidence_path)
+        except OSError:
+            errors.append(f"published {label} evidence is unreadable")
+            continue
+        if not hmac.compare_digest(expected_digest, observed_digest):
+            errors.append(f"published checksum mismatch: {label}")
+
+    return _bounded_published_rollback_errors(errors)
 
 
 def verify_release_asset_matrix(
@@ -466,6 +1066,16 @@ def verify_release_asset_matrix(
     if install.is_file():
         errors.extend(_verify_install_script(install))
 
+    rollback_receipt = asset_dir / f"gludd-rollback-receipt-{version}.json"
+    if rollback_receipt.is_file():
+        errors.extend(
+            _verify_rollback_receipt(
+                rollback_receipt,
+                asset_dir=asset_dir,
+                version=version,
+            )
+        )
+
     manifest = asset_dir / f"gludd-release-manifest-{version}.json"
     if manifest.is_file():
         payload, error = _json_object(manifest)
@@ -526,11 +1136,63 @@ def main(argv: list[str] | None = None) -> int:
     manifest.add_argument("asset_dir", type=Path)
     manifest.add_argument("version")
     manifest.add_argument("--source-sha", required=True)
+    rollback = subparsers.add_parser("write-rollback-receipt")
+    rollback.add_argument("asset_dir", type=Path)
+    rollback.add_argument("version")
+    rollback.add_argument("--source-sha", required=True)
+    rollback.add_argument("--prior-version", required=True)
+    rollback.add_argument("--candidate-asset", required=True)
+    rollback.add_argument("--candidate-observed-version", required=True)
+    rollback.add_argument("--restored-observed-version", required=True)
+    rollback.add_argument("--candidate-health", required=True)
+    rollback.add_argument("--restored-health", required=True)
+    rollback.add_argument("--prior-route-before-sha256", required=True)
+    rollback.add_argument("--prior-route-after-sha256", required=True)
+    rollback.add_argument("--active-work-before-sha256", required=True)
+    rollback.add_argument("--active-work-after-sha256", required=True)
+    published_rollback = subparsers.add_parser("verify-published-rollback")
+    published_rollback.add_argument("asset_dir", type=Path)
+    published_rollback.add_argument("version")
     args = parser.parse_args(argv)
+
+    if args.command == "verify-published-rollback":
+        errors = verify_published_rollback_receipt(
+            args.asset_dir.resolve(),
+            args.version,
+        )
+        for error in errors:
+            print(f"FAIL {error}", file=sys.stderr)
+        if errors:
+            print(
+                f"PUBLISHED_ROLLBACK_RECEIPT_FAIL errors={len(errors)}",
+                flush=True,
+            )
+            return 1
+        print("PUBLISHED_ROLLBACK_RECEIPT_PASS", flush=True)
+        return 0
 
     if args.command == "write-manifest":
         written = write_release_manifest(args.asset_dir, args.version, args.source_sha)
         print(f"RELEASE_MANIFEST_WRITTEN path={written}", flush=True)
+        return 0
+
+    if args.command == "write-rollback-receipt":
+        written = write_rollback_receipt(
+            args.asset_dir,
+            args.version,
+            source_sha=args.source_sha,
+            prior_version=args.prior_version,
+            candidate_asset=args.candidate_asset,
+            candidate_observed_version=args.candidate_observed_version,
+            restored_observed_version=args.restored_observed_version,
+            candidate_health=args.candidate_health,
+            restored_health=args.restored_health,
+            prior_route_before_sha256=args.prior_route_before_sha256,
+            prior_route_after_sha256=args.prior_route_after_sha256,
+            active_work_before_sha256=args.active_work_before_sha256,
+            active_work_after_sha256=args.active_work_after_sha256,
+        )
+        print(f"ROLLBACK_RECEIPT_WRITTEN path={written}", flush=True)
         return 0
 
     errors = verify_release_asset_matrix(

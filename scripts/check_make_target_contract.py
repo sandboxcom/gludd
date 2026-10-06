@@ -13,6 +13,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from scripts.makefile_layout import compose_makefile
+
 TARGET_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_.-]*):")
 
 
@@ -52,7 +54,7 @@ def _help_lines(makefile: str) -> list[str]:
 
 
 def validate_contract(makefile_path: Path, contract: dict[str, Any]) -> list[str]:
-    makefile = makefile_path.read_text(encoding="utf-8")
+    makefile = compose_makefile(makefile_path)
     stanzas = _stanzas(makefile)
     help_lines = _help_lines(makefile)
     errors: list[str] = []

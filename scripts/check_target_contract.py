@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """AB022 — cross-reference behavioral test assertions against Makefile target recipes.
 
-Reads test_behavioral_enforcement.py test classes, extracts target names, finds
-the corresponding BEHAVIORAL_SPECS.md spec, and verifies the Makefile target
-recipe actually implements the described behavior.
+Reads both exact behavioral-enforcement test modules, extracts target names,
+finds the corresponding BEHAVIORAL_SPECS.md spec, and verifies the Makefile
+target recipe actually implements the described behavior.
 
 Flags targets whose recipe is unrelated to their spec's enforcement description.
 """
@@ -12,10 +12,18 @@ import re
 import sys
 from pathlib import Path
 
+try:
+    from scripts.makefile_layout import compose_makefile
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parent.parent
 MAKEFILE = ROOT / "Makefile"
 SPECS_FILE = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
-TEST_FILE = ROOT / "tests" / "unit" / "test_behavioral_enforcement.py"
+BEHAVIORAL_TEST_FILES = (
+    ROOT / "tests" / "unit" / "test_behavioral_enforcement.py",
+    ROOT / "tests" / "unit" / "test_behavioral_enforcement_runtime.py",
+)
 
 SPEC_ENFORCEMENT_RE = re.compile(r"\*\*Enforcement:\*\*\s+(.+)$")
 TARGET_ASSERT_RE = re.compile(r'guard_exists_in_makefile\("([^"]+)"\)')
@@ -42,24 +50,27 @@ def find_target_enforcement(spec_id: str) -> str | None:
 
 
 def main() -> int:
-    if not TEST_FILE.exists():
-        print("check-target-contract: test file not found")
+    missing = [path for path in BEHAVIORAL_TEST_FILES if not path.exists()]
+    if missing:
+        names = ", ".join(path.name for path in missing)
+        print(f"check-target-contract: test file(s) not found: {names}")
         return 0
 
-    test_content = TEST_FILE.read_text()
+    test_content = "\n".join(
+        path.read_text(encoding="utf-8") for path in BEHAVIORAL_TEST_FILES
+    )
+    make_content = compose_makefile(MAKEFILE) if MAKEFILE.exists() else ""
     mismatches: list[str] = []
 
     # Extract test class -> target name
     test_sections = re.split(r"\nclass (Test\w+)\W", test_content)
     for i in range(1, len(test_sections), 2):
-        class_name = test_sections[i]
         class_body = test_sections[i + 1] if i + 1 < len(test_sections) else ""
 
         targets = TARGET_ASSERT_RE.findall(class_body)
         for target in targets:
             # Check target recipe contains relevant keywords
-            if MAKEFILE.exists():
-                make_content = MAKEFILE.read_text()
+            if make_content:
                 idx = make_content.find(f"\n{target}:")
                 if idx != -1:
                     block = make_content[idx : idx + 600]

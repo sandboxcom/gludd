@@ -23,6 +23,7 @@ import textwrap
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -68,7 +69,7 @@ def _makefile_prerequisites(makefile_text: str, target: str) -> list[str]:
 
 def test_release_cut_target_exists() -> None:
     """make release-cut is declared in the Makefile."""
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     assert _find_make_target(makefile, "release-cut"), "release-cut target not found in Makefile"
 
 
@@ -76,7 +77,7 @@ def test_release_cut_requires_tag_argument() -> None:
     """release-cut refuses to run without a TAG argument."""
     # Dry-run: the target should exit non-zero when TAG is empty.
     # We can't run the actual release-cut, but we verify the guard exists.
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     m = re.search(r"^release-cut:\s*$(.+?)(?=^release-deploy|\Z)", makefile, re.MULTILINE | re.DOTALL)
     assert m, "release-cut recipe not found"
     recipe = m.group(1)
@@ -85,7 +86,7 @@ def test_release_cut_requires_tag_argument() -> None:
 
 def test_release_cut_steps_ordered() -> None:
     """release-cut invokes its sub-steps in the correct order."""
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     m = re.search(r"^release-cut:\s*$(.+?)(?=^release-deploy|\Z)", makefile, re.MULTILINE | re.DOTALL)
     assert m
     recipe = m.group(1)
@@ -113,7 +114,7 @@ def test_release_cut_steps_ordered() -> None:
 
 def test_release_cut_all_dependency_targets_exist() -> None:
     """Every target referenced by release-cut is declared in the Makefile."""
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     deps = [
         "require-dual-track-green",
         "check-readme-status",
@@ -129,7 +130,7 @@ def test_release_cut_all_dependency_targets_exist() -> None:
 
 def test_release_deploy_target_exists() -> None:
     """make release-deploy is declared in the Makefile."""
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     assert _find_make_target(makefile, "release-deploy"), "release-deploy target not found"
 
 
@@ -244,7 +245,7 @@ def test_version_from_tag() -> None:
 
 def test_verify_release_completeness_make_target() -> None:
     """make verify-release-completeness exists and requires TAG."""
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     assert _find_make_target(makefile, "verify-release-completeness")
 
     m = re.search(r"^verify-release-completeness:\s*$(.+?)(?=^\S|\Z)", makefile, re.MULTILINE | re.DOTALL)
@@ -426,13 +427,13 @@ def test_metadata_asset_patterns() -> None:
 
 def test_gate_lite_target_exists() -> None:
     """make gate-lite is declared in the Makefile."""
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     assert _find_make_target(makefile, "gate-lite"), "gate-lite target not found"
 
 
 def test_gate_lite_prerequisites_are_valid_targets() -> None:
     """Every prerequisite of gate-lite is itself a declared Makefile target."""
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     prereqs = _makefile_prerequisites(makefile, "gate-lite")
     assert prereqs, "gate-lite has no prerequisites"
     for prereq in prereqs:
@@ -441,7 +442,7 @@ def test_gate_lite_prerequisites_are_valid_targets() -> None:
 
 def test_gate_lite_has_required_phases() -> None:
     """gate-lite runs lint, dead-code, typecheck, collect, smoke, and unit tests."""
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     m = re.search(r"^gate-lite:[^\n]*\n(.*?)(?=^ps-pytest:|\Z)", makefile, re.MULTILINE | re.DOTALL)
     assert m
     recipe = m.group(1)
@@ -453,7 +454,7 @@ def test_gate_lite_has_required_phases() -> None:
 
 def test_check_readme_status_make_target() -> None:
     """make check-readme-status is declared and invokes the script."""
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     assert _find_make_target(makefile, "check-readme-status")
     m = re.search(r"^check-readme-status:\s*$(.+?)(?=^\S|\Z)", makefile, re.MULTILINE | re.DOTALL)
     assert m
@@ -595,7 +596,7 @@ def test_verify_release_artifact_script_exists() -> None:
 
 def test_verify_release_artifact_make_target() -> None:
     """make verify-release-artifact is declared and requires TAG."""
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     assert _find_make_target(makefile, "verify-release-artifact")
     m = re.search(
         r"^verify-release-artifact:\s*$(.+?)(?=^\S|\Z)",
@@ -609,6 +610,6 @@ def test_verify_release_artifact_make_target() -> None:
 
 def test_releasor_operations_make_targets() -> None:
     """release-recut and release-create targets are declared."""
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     for target in ("release-recut", "release-create", "release-delete", "release-view"):
         assert _find_make_target(makefile, target), f"{target} target not found"

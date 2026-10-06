@@ -111,6 +111,11 @@ def _parse_ps_line(line: str) -> ProcessRecord | None:
     )
 
 
+def _normalized_start_identity(value: str) -> str:
+    """Normalize only presentation whitespace in a process start timestamp."""
+    return " ".join(value.split())
+
+
 def _records(project_root: Path) -> list[ProcessRecord]:
     output = subprocess.run(
         ["/bin/ps", "-axo", "pid=,ppid=,pgid=,lstart=,command="],
@@ -469,7 +474,11 @@ def _validate_ownership(
     owner = next((record for record in records if record.pid == owner_pid), None)
     if owner is None:
         return None, "gate owner is no longer running"
-    if not owner_started_at or owner.started_at != owner_started_at:
+    if (
+        not owner_started_at
+        or _normalized_start_identity(owner.started_at)
+        != _normalized_start_identity(owner_started_at)
+    ):
         return None, "gate owner start time mismatch"
     if not _is_gate_owner_command(owner.command):
         return None, "gate owner command mismatch"
