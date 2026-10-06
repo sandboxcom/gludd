@@ -40,6 +40,9 @@ ALLOWLIST = frozenset({
     # Background lifecycle supervisors are signal-stoppable and continuously observable.
     "disk-guard.sh",
     "e2e_supervisor.py",
+    # Detached gate-session supervisor: bounded to the configured gate timeout,
+    # exits with the exact child, emits state/heartbeats, and occupies no agent slot.
+    "start_gate_background.py",
     # Release-only CI observers are bounded, emit heartbeats, and remain blocked
     # from delegated-agent prompts by enforce-no-wait.ts.
     "ci_annotations_poll.py",
