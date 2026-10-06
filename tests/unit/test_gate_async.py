@@ -8,16 +8,23 @@ pytest run is triggered and no real /tmp lock or repo .gate-status is touched.
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import time
 from pathlib import Path
 
 GATE_ASYNC_SH = Path(__file__).parent.parent.parent / "scripts" / "gate_async.sh"
+MAKEFILE = GATE_ASYNC_SH.parent.parent / "Makefile"
 
 
-def test_default_gate_command_invokes_run_gate_through_bash() -> None:
+def test_default_gate_command_invokes_whole_gate_without_recursion() -> None:
     text = GATE_ASYNC_SH.read_text(encoding="utf-8")
-    assert 'GATE_CMD="${GATE_CMD:-bash scripts/run_gate.sh}"' in text
+    assert 'GATE_CMD="${GATE_CMD:-make gate gludd_watchdog_owned_gate=1}"' in text
+
+    makefile = MAKEFILE.read_text(encoding="utf-8")
+    gate_start = makefile.index("gate: _gate-run-lock-acquire")
+    gate_end = makefile.index("# gate-lite:", gate_start)
+    assert "gate_async.sh" not in makefile[gate_start:gate_end]
 
 
 def _run(
@@ -45,6 +52,63 @@ def _run(
     )
 
 
+def _wait_for_status(path: Path, prefix: str, timeout: float = 5.0) -> str:
+    """Return one complete status record once *prefix* is atomically visible."""
+    deadline = time.monotonic() + timeout
+    content = ""
+    while time.monotonic() < deadline:
+        try:
+            content = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            content = ""
+        if content.startswith(prefix):
+            return content
+        time.sleep(0.05)
+    raise AssertionError(f"status never started with {prefix!r}; last value: {content!r}")
+
+
+def _interrupt_running_gate(
+    tmp_path: Path,
+    caught_signal: signal.Signals,
+    *,
+    signal_process_group: bool = True,
+) -> tuple[int, str, str, Path, Path]:
+    """Start an isolated gate, signal its process group, and collect evidence."""
+    status = tmp_path / "gate-status"
+    lock = tmp_path / "gate-async.lock"
+    env = os.environ.copy()
+    env.update(
+        {
+            "GATE_CMD": "sleep 30",
+            "STATUS_FILE": str(status),
+            "LOCK_FILE": str(lock),
+            "GLUDD_GATE_AUTHORIZED": "1",
+            "GLUDD_GATE_ASYNC_FORCE_PIDFILE": "1",
+        }
+    )
+    proc = subprocess.Popen(
+        ["bash", str(GATE_ASYNC_SH)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+        start_new_session=True,
+    )
+    try:
+        _wait_for_status(status, "RUNNING ")
+        if signal_process_group:
+            os.killpg(proc.pid, caught_signal)
+        else:
+            proc.send_signal(caught_signal)
+        stdout, stderr = proc.communicate(timeout=10)
+    except BaseException:
+        if proc.poll() is None:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.communicate(timeout=5)
+        raise
+    return proc.returncode, stdout, stderr, status, lock
+
+
 class TestGateAsyncPassPath:
     """(a) A gate command that exits 0 should write PASS <epoch> to STATUS_FILE."""
 
@@ -67,6 +131,24 @@ class TestGateAsyncPassPath:
         epoch = int(parts[1])
         assert epoch > 1_700_000_000
 
+    def test_full_gate_pass_receipt_is_not_replaced(self, tmp_path: Path) -> None:
+        """The wrapper must retain the full gate's signed-success-shaped receipt."""
+        status = tmp_path / "gate-status"
+        full_receipt = "=== GATE 2026-10-05T00:00:00Z ===\n=== GATE: PASSED ===\n"
+        command = (
+            'printf "=== GATE 2026-10-05T00:00:00Z ===\\n'
+            '=== GATE: PASSED ===\\n" > "$STATUS_FILE"'
+        )
+
+        result = _run(
+            gate_cmd=command,
+            status_file=str(status),
+            lock_file=str(tmp_path / "gate-async.lock"),
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert status.read_text(encoding="utf-8") == full_receipt
+
 
 class TestGateAsyncFailPath:
     """(b) A gate command that exits nonzero should write FAIL <epoch> rc=<n>."""
@@ -85,11 +167,13 @@ class TestGateAsyncFailPath:
         content = Path(status).read_text().strip()
         assert content.startswith("FAIL "), f"status was: {content!r}"
         assert "rc=42" in content, f"status was: {content!r}"
-        parts = content.split()
+        lines = content.splitlines()
+        parts = lines[0].split()
         # format: FAIL <epoch> rc=42
         assert len(parts) == 3
         epoch = int(parts[1])
         assert epoch > 1_700_000_000
+        assert lines[1] == "=== GATE: FAILED ==="
 
     def test_fail_exit_code_propagated(self, tmp_path: Path) -> None:
         status = str(tmp_path / "gate-status")
@@ -102,6 +186,117 @@ class TestGateAsyncFailPath:
         )
 
         assert result.returncode == 7
+
+    def test_signal_killed_child_writes_failed_evidence(self, tmp_path: Path) -> None:
+        """An abnormally terminated gate child must not leave RUNNING behind."""
+        status = tmp_path / "gate-status"
+        lock = tmp_path / "gate-async.lock"
+
+        result = _run(
+            gate_cmd='kill -KILL "$$"',
+            status_file=str(status),
+            lock_file=str(lock),
+            extra_env={"GLUDD_GATE_ASYNC_FORCE_PIDFILE": "1"},
+        )
+
+        assert result.returncode == 137, result.stderr
+        lines = status.read_text(encoding="utf-8").splitlines()
+        parts = lines[0].split()
+        assert parts[0] == "FAIL"
+        assert int(parts[1]) > 1_700_000_000
+        assert parts[2] == "rc=137"
+        assert lines[1] == "=== GATE: FAILED ==="
+        assert not lock.exists(), "abnormal completion must release its PID lock"
+
+    def test_full_gate_failed_receipt_is_not_replaced(self, tmp_path: Path) -> None:
+        """A whole-gate FAILED marker remains the authoritative terminal record."""
+        status = tmp_path / "gate-status"
+        full_receipt = "=== GATE 2026-10-05T00:00:00Z ===\n=== GATE: FAILED ===\n"
+        command = (
+            'printf "=== GATE 2026-10-05T00:00:00Z ===\\n'
+            '=== GATE: FAILED ===\\n" > "$STATUS_FILE"; exit 17'
+        )
+
+        result = _run(
+            gate_cmd=command,
+            status_file=str(status),
+            lock_file=str(tmp_path / "gate-async.lock"),
+        )
+
+        assert result.returncode == 17
+        assert status.read_text(encoding="utf-8") == full_receipt
+
+
+class TestGateAsyncSignalTerminalState:
+    """Signals must publish terminal evidence before releasing owned resources."""
+
+    def test_sigterm_writes_aborted_and_preserves_143(self, tmp_path: Path) -> None:
+        result, stdout, stderr, status, lock = _interrupt_running_gate(
+            tmp_path,
+            signal.SIGTERM,
+        )
+
+        assert result == 143, f"stdout: {stdout}\nstderr: {stderr}"
+        lines = status.read_text(encoding="utf-8").splitlines()
+        parts = lines[0].split()
+        assert parts[0] == "ABORTED"
+        assert int(parts[1]) > 1_700_000_000
+        assert parts[2:] == ["signal=TERM", "rc=143", "cleanup_rc=0"]
+        assert lines[1] == "=== GATE: ABORTED ==="
+        assert not lock.exists(), "SIGTERM must release its owned PID lock"
+        assert not list(tmp_path.glob("gate-status.*.tmp"))
+
+    def test_sigint_writes_aborted_and_preserves_130(self, tmp_path: Path) -> None:
+        result, stdout, stderr, status, lock = _interrupt_running_gate(
+            tmp_path,
+            signal.SIGINT,
+        )
+
+        assert result == 130, f"stdout: {stdout}\nstderr: {stderr}"
+        lines = status.read_text(encoding="utf-8").splitlines()
+        parts = lines[0].split()
+        assert parts[0] == "ABORTED"
+        assert int(parts[1]) > 1_700_000_000
+        assert parts[2:] == ["signal=INT", "rc=130", "cleanup_rc=0"]
+        assert lines[1] == "=== GATE: ABORTED ==="
+        assert not lock.exists(), "SIGINT must release its owned PID lock"
+        assert not list(tmp_path.glob("gate-status.*.tmp"))
+
+    def test_parent_only_signal_terminates_owned_child(self, tmp_path: Path) -> None:
+        """External TERM of the wrapper must not orphan its gate child."""
+        result, stdout, stderr, status, lock = _interrupt_running_gate(
+            tmp_path,
+            signal.SIGTERM,
+            signal_process_group=False,
+        )
+
+        assert result == 143, f"stdout: {stdout}\nstderr: {stderr}"
+        assert status.read_text(encoding="utf-8").startswith("ABORTED ")
+        assert "[gate-kill]" in stdout
+        assert not lock.exists()
+
+    def test_signal_cleanup_never_overwrites_published_pass(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """A late TERM after PASS publication may clean up but cannot turn red."""
+        status = tmp_path / "gate-status"
+        lock = tmp_path / "gate-async.lock"
+        successful_status = "PASS 1700000001"
+
+        result = _run(
+            gate_cmd=(
+                f'printf "{successful_status}\\n" > "$STATUS_FILE"; '
+                'kill -TERM "$PPID"'
+            ),
+            status_file=str(status),
+            lock_file=str(lock),
+            extra_env={"GLUDD_GATE_ASYNC_FORCE_PIDFILE": "1"},
+        )
+
+        assert result.returncode == 143, result.stderr
+        assert status.read_text(encoding="utf-8").strip() == successful_status
+        assert not lock.exists(), "late signal cleanup must release its owned lock"
 
 
 class TestGateAsyncInnerSubshellGuard:
