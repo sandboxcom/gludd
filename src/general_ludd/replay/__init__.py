@@ -1,5 +1,65 @@
-"""G10 Per-run replay — records and replays agent runs."""
+"""G10 per-run replay schemas and compatibility readers."""
 
+from general_ludd.replay.legacy import (
+    LEGACY_INTEGRITY_UNVERIFIED,
+    LEGACY_SCHEMA_V0,
+    LegacyEvent,
+    LegacyReplayError,
+    LegacyReplayReader,
+    LegacyRun,
+    read_legacy_run,
+)
 from general_ludd.replay.recorder import RunRecorder
+from general_ludd.replay.schema import (
+    BUNDLE_SCHEMA_V1,
+    EVENT_SCHEMA_V1,
+    AttachmentV1,
+    BundleManifestV1,
+    CompletenessV1,
+    CorrelationV1,
+    EventEnvelopeV1,
+    MissingSequenceRangeV1,
+    ModelIdentityV1,
+    RedactionV1,
+    ReplaySchemaError,
+    RetentionV1,
+    RuntimeIdentityV1,
+    SafeRunId,
+    SourceIdentityV1,
+    UnsupportedReplaySchemaError,
+    canonical_replay_json,
+    parse_bundle_manifest,
+    parse_event_envelope,
+    validate_run_id,
+)
 
-__all__ = ["RunRecorder"]
+__all__ = [
+    "BUNDLE_SCHEMA_V1",
+    "EVENT_SCHEMA_V1",
+    "LEGACY_INTEGRITY_UNVERIFIED",
+    "LEGACY_SCHEMA_V0",
+    "AttachmentV1",
+    "BundleManifestV1",
+    "CompletenessV1",
+    "CorrelationV1",
+    "EventEnvelopeV1",
+    "LegacyEvent",
+    "LegacyReplayError",
+    "LegacyReplayReader",
+    "LegacyRun",
+    "MissingSequenceRangeV1",
+    "ModelIdentityV1",
+    "RedactionV1",
+    "ReplaySchemaError",
+    "RetentionV1",
+    "RunRecorder",
+    "RuntimeIdentityV1",
+    "SafeRunId",
+    "SourceIdentityV1",
+    "UnsupportedReplaySchemaError",
+    "canonical_replay_json",
+    "parse_bundle_manifest",
+    "parse_event_envelope",
+    "read_legacy_run",
+    "validate_run_id",
+]
