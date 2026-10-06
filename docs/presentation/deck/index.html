@@ -1179,6 +1179,33 @@ flowchart LR
   <p class="honest-note" style="font-size:0.48em;">Conclusion alone never authorizes retry. Practitioner reports #27083, #52505, #17854, #186208, #165291, #166283, and #126539 remain tied to the exact guardrails in the source contract.</p>
   <p class="cite">Sources: docs/features/CI_FAILURE_LEDGER.md &middot; Makefile <code>ci-recover-runner-acquisition</code> &middot; tests/unit/test_ci_failure_ledger.py</p>
   </div>
+  <!-- S83.166 PUBLISHED ROLLBACK RECEIPT SUBSECTION -->
+  <div data-contract="s83-166-published-rollback-receipt">
+  <h3>S83.166 &mdash; published rollback receipt <span class="badge-green">CHECKSUM-BOUND</span></h3>
+  <ol class="bullets-tight" style="font-size:0.58em; columns:2; column-gap:22px;">
+    <li><strong>Fan-in:</strong> 15/15 platform-category smoke fan-in must pass before the receipt exists.</li>
+    <li><strong>Candidate activation:</strong> candidate SHA + version + health bind the staged route to the exact release.</li>
+    <li><strong>Restoration:</strong> byte-identical prior route restored, with its version and health rechecked.</li>
+    <li><strong>Active work:</strong> active-work SHA unchanged across the rehearsal.</li>
+    <li><strong>Publication binding:</strong> the receipt is inventoried, checksummed, and attested with the release assets.</li>
+    <li><strong>Mutation boundary:</strong> zero new network mutation; the proof reuses the hermetic release runner and refuses incomplete or mismatched evidence.</li>
+  </ol>
+  <p class="honest-note" style="font-size:0.46em;">This is a build-time rollback rehearsal, not a claim that live production traffic moved. ZDD remains fail-closed: the prior route and active work stay unchanged unless every receipt invariant passes.</p>
+  <p class="cite">Practitioner evidence: Argo Rollouts #501 &middot; Kubernetes #50021 &middot; GitHub Community #161656 &middot; Source: docs/RELEASE_RUNBOOK.md</p>
+  </div>
+  <!-- G10/RR1/R0 FROZEN REPLAY SCHEMA + LEGACY READ SUBSECTION -->
+  <div data-contract="G10-RR1-R0-SCHEMA-LEGACY">
+  <h3>G10/RR1/R0 &mdash; replay schema and legacy reads <span class="badge-green">FROZEN V1</span></h3>
+  <ol class="bullets-tight" style="font-size:0.58em; columns:2; column-gap:22px;">
+    <li><strong>Frozen v1 surface:</strong> strict frozen v1 manifest/event schemas reject drift before replay evidence can be trusted.</li>
+    <li><strong>Fail closed:</strong> unsafe, traversal, confusable, or device IDs; extras or unknown schemas; and duplicate keys or non-finite JSON are rejected.</li>
+    <li><strong>Canonical integrity:</strong> canonical integrity serialization makes equivalent accepted evidence hash identically.</li>
+    <li><strong>Legacy reads:</strong> ordered legacy reads expose <code>schema=legacy-v0</code> and <code>integrity=unverified</code> without writes.</li>
+    <li><strong>Explicit nonclaim:</strong> recorder, router, CLI, signing, store, simulation, and re-execution remain pending.</li>
+  </ol>
+  <p class="honest-note" style="font-size:0.46em;">This lands parsing, validation, and read-only compatibility only. Legacy evidence stays visibly unverified; no migration, replay execution, or runtime service changes occur.</p>
+  <p class="cite">Sources: src/general_ludd/replay/schema.py &middot; src/general_ludd/replay/legacy.py &middot; tests/unit/test_replay_schema.py &middot; tests/unit/test_replay_legacy.py</p>
+  </div>
 </section>
 
 <!-- ============================================================ -->
