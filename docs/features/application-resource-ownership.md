@@ -33,6 +33,22 @@ one durable winner and one provisioning call.
 Non-runnable work retains zero allocation. A worker without that durable proof
 neither provisions nor tears down foreign compute.
 
+## Completed-delivery Git ownership
+
+The terminal delivery owner resolves the exact project workspace and intended
+task branch before it constructs a mutable Git path. A configured todo branch is
+authoritative; otherwise delivery preserves an existing bounded `gludd/` task
+branch or creates the todo's bounded branch before commit and push. It never
+borrows the daemon's invoking checkout, another project's repository, or trunk
+as an accidental owner.
+
+Absent, ambiguous, nonexistent, or unsafe workspace or branch scope refuses
+every Git mutation. No branch creation, commit, push, or pull-request action is
+attempted, and the todo remains retryable rather than being falsely recorded as
+delivered. This completes the same ownership chain as the durable claim:
+project-scoped claim, post-commit provisioning, terminal verification, scoped
+Git delivery, and exact release all retain one owner identity.
+
 Cloud compute uses a project-scoped composite identity: project, provider, and
 instance identifier. The lifecycle manager permits the same provider-local
 identifier in different projects without overwriting either owner. An unscoped

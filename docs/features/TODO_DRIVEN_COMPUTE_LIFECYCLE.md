@@ -63,6 +63,28 @@ and only then asks the provider to reconcile the exact owned environment to
 `absent`. An unknown demand read or provider failure preserves the resource and
 its ownership record for retry.
 
+## Completed-delivery workspace and branch fence
+
+Completed delivery resolves the exact project workspace and intended task branch
+from the durable todo before commit or push. It never treats the daemon process
+directory, another project's checkout, or the trunk branch as implicit delivery
+authority. An explicitly configured task branch is preserved; otherwise an
+already checked-out `gludd/` task branch is retained or the todo's bounded task
+branch is created and checked out before the completed change is delivered.
+
+If the project workspace is absent, is not a real directory, does not match the
+todo's project scope, or the intended branch is unsafe, the delivery path refuses
+every Git mutation. It neither creates a branch nor commits, pushes, or opens a
+pull request. That refusal leaves the completion unmarked for a bounded retry
+after scope is repaired; it never falls back to the invoking checkout.
+
+This Git fence is downstream of the durable lifecycle above. It does not weaken
+claim-before-provision, permit a foreign worker to provision, or move exact
+release ahead of terminal verification. The same project identity therefore
+binds claim, provision, completed delivery, and release, while the long-lived
+practitioner evidence below remains the rationale for durable rather than
+process-local ownership.
+
 ## Demand states
 
 The database, not a process-local queue, is the source of truth.

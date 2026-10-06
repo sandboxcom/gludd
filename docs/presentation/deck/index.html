@@ -233,8 +233,9 @@ flowchart TD
       <li>Competing workers + restart: one durable winner, exactly one provision.</li>
       <li>Non-runnable work: zero allocation.</li>
       <li>Hermetic closure: producer discovery &rarr; approval manager &rarr; ranked claim &rarr; fake-local/fake-Azure edit &rarr; evidence review + promotion receipt &rarr; <code>complete</code> &rarr; exact release; no injected self-improve row or cancellation.</li>
+      <li><strong>Completed delivery:</strong> exact project workspace + intended task branch; <strong>Absent or unsafe scope: zero Git mutation.</strong></li>
     </ul>
-    <p class="cite">Contract: docs/features/TODO_DRIVEN_COMPUTE_LIFECYCLE.md; proof: tests/e2e/test_self_improve_private_policy_e2e.py</p>
+    <p class="cite">Contracts: docs/features/TODO_DRIVEN_COMPUTE_LIFECYCLE.md &middot; docs/features/application-resource-ownership.md; proof: tests/e2e/test_self_improve_private_policy_e2e.py</p>
   </div>
   <p class="cite">Source: code-trace audit, verified against src/general_ludd/ on 2026-07-12T10:39:48Z</p>
 </section>
@@ -1199,9 +1200,12 @@ flowchart LR
     <li><strong>Restoration:</strong> byte-identical prior route restored, with its version and health rechecked.</li>
     <li><strong>Active work:</strong> active-work SHA unchanged across the rehearsal.</li>
     <li><strong>Publication binding:</strong> the receipt is inventoried, checksummed, and attested with the release assets.</li>
+    <li><strong>Published-byte acquisition:</strong> After publication, download the exact rollback receipt, checksum index, release manifest, candidate archive, and smoke attestations.</li>
+    <li><strong>Local replay gate:</strong> <code>verify-published-rollback</code> revalidates receipt/checksum/manifest/candidate/smoke bytes before remote completeness.</li>
+    <li><strong>Bounded cleanup:</strong> use a run/attempt-namespaced directory; cleanup failure blocks the job.</li>
     <li><strong>Mutation boundary:</strong> zero new network mutation; the proof reuses the hermetic release runner and refuses incomplete or mismatched evidence.</li>
   </ol>
-  <p class="honest-note" style="font-size:0.46em;">This is a build-time rollback rehearsal, not a claim that live production traffic moved. ZDD remains fail-closed: the prior route and active work stay unchanged unless every receipt invariant passes.</p>
+  <p class="honest-note" style="font-size:0.46em;">This is a post-publication evidence replay of a build-time rollback rehearsal, not a claim that live production traffic moved. ZDD remains fail-closed: the prior route and active work stay unchanged unless every downloaded receipt invariant passes.</p>
   <p class="cite">Practitioner evidence: Argo Rollouts #501 &middot; Kubernetes #50021 &middot; GitHub Community #161656 &middot; Source: docs/RELEASE_RUNBOOK.md</p>
   </div>
   <!-- G10/RR1/R0 FROZEN REPLAY SCHEMA + LEGACY READ SUBSECTION -->
