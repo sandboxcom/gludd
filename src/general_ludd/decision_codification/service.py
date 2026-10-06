@@ -9,6 +9,8 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
 
+from pydantic import ConfigDict, TypeAdapter, ValidationError
+
 from general_ludd.decision_codification.evaluate import (
     EvaluationError,
     activation_eligible,
@@ -36,10 +38,13 @@ from general_ludd.decision_codification.schema import (
     VerifiedDecisionSourceV1,
     canonical_sha256,
 )
+from general_ludd.replay.schema import BoundedIdentifier, Sha256Digest
 from general_ludd.replay.store import ReplayStoreError, VerifiedBundle
 
 MAX_ANALYSIS_BUNDLES = 10_000
 MAX_ANALYSIS_EVENTS = 100_000
+_PROJECT_ID_ADAPTER = TypeAdapter(BoundedIdentifier, config=ConfigDict(strict=True))
+_POLICY_DIGEST_ADAPTER = TypeAdapter(Sha256Digest, config=ConfigDict(strict=True))
 
 
 class VerifiedBundleReader(Protocol):
@@ -355,6 +360,120 @@ class DecisionResolver:
         )
 
 
+class DecisionCodificationIntegrationError(ValueError):
+    """Raised when an opt-in application binding is incomplete or invalid."""
+
+
+class DecisionCodificationAdapter:
+    """Bind verified replay analysis and exact resolution to one app scope.
+
+    Constructing this adapter is the opt-in.  The binding freezes the expected
+    project and policy digest so application callers cannot silently widen the
+    analyzer or runtime scope.  The default daemon composition does not create
+    an adapter and therefore preserves the existing agent path unchanged.
+    """
+
+    def __init__(
+        self,
+        *,
+        bundle_reader: VerifiedBundleReader,
+        runtime: DecisionRuntime,
+        project_id: str,
+        policy_digest: str,
+        floors: MiningFloors | None = None,
+    ) -> None:
+        """Validate and bind the existing replay and runtime capabilities."""
+        try:
+            bound_project_id = _PROJECT_ID_ADAPTER.validate_python(
+                project_id,
+                strict=True,
+            )
+        except ValidationError as exc:
+            raise DecisionCodificationIntegrationError(
+                "decision codification requires a valid project binding"
+            ) from exc
+        try:
+            bound_policy_digest = _POLICY_DIGEST_ADAPTER.validate_python(
+                policy_digest,
+                strict=True,
+            )
+        except ValidationError as exc:
+            raise DecisionCodificationIntegrationError(
+                "decision codification requires a valid policy digest"
+            ) from exc
+        if not callable(getattr(bundle_reader, "read_verified", None)):
+            raise DecisionCodificationIntegrationError(
+                "decision codification requires a verified bundle reader"
+            )
+        if not isinstance(runtime, DecisionRuntime):
+            raise DecisionCodificationIntegrationError(
+                "decision codification requires a DecisionRuntime"
+            )
+
+        self._project_id = bound_project_id
+        self._policy_digest = bound_policy_digest
+        self._analyzer = DecisionLogAnalyzer(bundle_reader, floors=floors)
+        self._resolver = DecisionResolver(runtime)
+
+    @property
+    def project_id(self) -> str:
+        """Return the immutable project scope for this application binding."""
+        return self._project_id
+
+    @property
+    def policy_digest(self) -> str:
+        """Return the immutable current-policy scope for this binding."""
+        return self._policy_digest
+
+    def analyze(
+        self,
+        run_ids: Iterable[str],
+        *,
+        training_recipe_digest: str,
+        dependency_lock_digest: str,
+        created_at: datetime,
+        expires_at: datetime,
+        maximum_use_count: int,
+        estimated_tokens_per_call: int = 0,
+    ) -> DecisionAnalysis:
+        """Analyze only verified runs inside the bound application scope."""
+        return self._analyzer.analyze(
+            run_ids,
+            project_id=self._project_id,
+            current_policy_digest=self._policy_digest,
+            training_recipe_digest=training_recipe_digest,
+            dependency_lock_digest=dependency_lock_digest,
+            created_at=created_at,
+            expires_at=expires_at,
+            maximum_use_count=maximum_use_count,
+            estimated_tokens_per_call=estimated_tokens_per_call,
+        )
+
+    def resolve(
+        self,
+        *,
+        project_id: str,
+        decision_kind: DecisionKind,
+        features: object,
+        correlation_id: str,
+        now: datetime,
+        side_effect_id: str,
+        fallback: AgentFallback,
+    ) -> DecisionResolution:
+        """Resolve one exact decision or invoke the supplied fallback once."""
+        return self._resolver.resolve(
+            project_id=project_id,
+            expected_project_id=self._project_id,
+            decision_kind=decision_kind,
+            policy_digest=self._policy_digest,
+            features=features,
+            correlation_id=correlation_id,
+            now=now,
+            side_effect_id=side_effect_id,
+            fallback=fallback,
+        )
+
+
 __all__ = [
     "MAX_ANALYSIS_BUNDLES",
     "MAX_ANALYSIS_EVENTS",
@@ -363,6 +482,8 @@ __all__ = [
     "DecisionAnalysis",
     "DecisionAnalysisError",
     "DecisionCandidate",
+    "DecisionCodificationAdapter",
+    "DecisionCodificationIntegrationError",
     "DecisionLogAnalyzer",
     "DecisionResolution",
     "DecisionResolutionError",
