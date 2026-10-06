@@ -12,6 +12,18 @@ import pytest
 from scripts import run_presentation_browser_tests as runner
 
 
+def _write_presentation_profile(root: Path, dependencies: list[str]) -> Path:
+    profile = root / "requirements" / "profiles" / "presentation-test" / "pyproject.toml"
+    profile.parent.mkdir(parents=True, exist_ok=True)
+    rendered = ", ".join(f'"{dependency}"' for dependency in dependencies)
+    profile.write_text(
+        '[project]\nname = "presentation"\nversion = "0"\n'
+        f"dependencies = [{rendered}]\n",
+        encoding="utf-8",
+    )
+    return profile
+
+
 def test_plan_is_serial_pinned_and_namespaced() -> None:
     """The mandatory browser proof cannot collide with another project run."""
     plan = runner.build_plan(
@@ -66,9 +78,9 @@ def test_validate_plan_is_side_effect_free(monkeypatch: pytest.MonkeyPatch, tmp_
     test_file = root / "tests" / "browser" / "test_presentation.py"
     test_file.parent.mkdir(parents=True)
     test_file.write_text("def test_placeholder(): pass\n", encoding="utf-8")
-    (root / "pyproject.toml").write_text(
-        'presentation-test = ["playwright==1.63.0", "pytest-playwright==0.9.0"]\n',
-        encoding="utf-8",
+    _write_presentation_profile(
+        root,
+        ["playwright==1.63.0", "pytest-playwright==0.9.0"],
     )
     monkeypatch.setattr(runner, "ROOT", root)
     monkeypatch.setattr(runner, "TEST_FILE", test_file)
@@ -83,6 +95,35 @@ def test_validate_plan_is_side_effect_free(monkeypatch: pytest.MonkeyPatch, tmp_
     runner.validate_plan(plan)
 
     assert not output.exists()
+
+
+def test_validate_plan_reads_the_isolated_presentation_profile(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The live runner validates the profile used by the Make target."""
+    root = tmp_path / "repo"
+    test_file = root / "tests" / "browser" / "test_presentation.py"
+    test_file.parent.mkdir(parents=True)
+    test_file.write_text("def test_placeholder(): pass\n", encoding="utf-8")
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "root-without-browser-dependencies"\nversion = "0"\n',
+        encoding="utf-8",
+    )
+    _write_presentation_profile(
+        root,
+        ["playwright==1.63.0", "pytest-playwright==0.9.0"],
+    )
+    monkeypatch.setattr(runner, "ROOT", root)
+    monkeypatch.setattr(runner, "TEST_FILE", test_file)
+    plan = runner.build_plan(
+        browser="webkit",
+        browser_root=Path("/tmp/gludd-browser-profile-test"),
+        output_root=Path("/tmp/gludd-presentation-profile-test"),
+        timeout_seconds=120,
+    )
+
+    runner.validate_plan(plan)
 
 
 def test_timeout_returns_observable_124(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -224,13 +265,13 @@ def test_validate_plan_fails_closed_for_missing_inputs(
 
     test_file.parent.mkdir(parents=True)
     test_file.write_text("pass\n", encoding="utf-8")
-    (root / "pyproject.toml").write_text('deps = ["playwright==1.63.0"]\n', encoding="utf-8")
+    _write_presentation_profile(root, ["playwright==1.63.0"])
     with pytest.raises(RuntimeError, match="pytest-playwright"):
         runner.validate_plan(plan)
 
-    (root / "pyproject.toml").write_text(
-        'deps = ["playwright==1.63.0", "pytest-playwright==0.9.0"]\n',
-        encoding="utf-8",
+    _write_presentation_profile(
+        root,
+        ["playwright==1.63.0", "pytest-playwright==0.9.0"],
     )
     with pytest.raises(RuntimeError, match="direct bounded argv"):
         runner.validate_plan(replace(plan, command=("shell",)))

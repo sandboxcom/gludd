@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -16,6 +17,9 @@ TEST_FILE = ROOT / "tests" / "browser" / "test_presentation.py"
 DEFAULT_OUTPUT_ROOT = Path("/tmp/gludd-presentation-browser")
 DEFAULT_BROWSER_ROOT = Path("/tmp/gludd-playwright-browsers")
 SUPPORTED_BROWSERS = frozenset({"chromium", "webkit"})
+PINNED_PRESENTATION_DEPENDENCIES = frozenset(
+    {"playwright==1.63.0", "pytest-playwright==0.9.0"}
+)
 
 
 @dataclass(frozen=True)
@@ -86,9 +90,20 @@ def validate_plan(plan: BrowserPlan) -> None:
     """Verify static prerequisites without importing or launching a browser."""
     if not TEST_FILE.is_file():
         raise RuntimeError("presentation browser test file is missing")
-    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    for requirement in ('"playwright==1.63.0"', '"pytest-playwright==0.9.0"'):
-        if requirement not in pyproject:
+    profile = ROOT / "requirements" / "profiles" / "presentation-test" / "pyproject.toml"
+    if not profile.is_file():
+        raise RuntimeError("presentation dependency profile is missing")
+    try:
+        profile_data = tomllib.loads(profile.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise RuntimeError("presentation dependency profile is invalid") from exc
+    dependencies = profile_data.get("project", {}).get("dependencies")
+    if not isinstance(dependencies, list) or not all(
+        isinstance(dependency, str) for dependency in dependencies
+    ):
+        raise RuntimeError("presentation dependency profile has invalid dependencies")
+    for requirement in sorted(PINNED_PRESENTATION_DEPENDENCIES):
+        if requirement not in dependencies:
             raise RuntimeError(f"missing pinned presentation dependency: {requirement}")
     if plan.command[0] != sys.executable or "shell" in plan.command:
         raise RuntimeError("presentation browser command is not a direct bounded argv")
