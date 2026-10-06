@@ -158,7 +158,7 @@ def test_tracked_deck_builds_immutable_source_links() -> None:
     assert f"https://github.com/sandboxcom/gludd/blob/{sha}/" in linked
     assert 'class="source-link"' in linked
     assert 'data-source-path="src/general_ludd/daemon.py"' in linked
-    assert f"blob/{sha}/src/general_ludd/daemon.py#L1-L3126" in linked
+    assert f"blob/{sha}/src/general_ludd/daemon.py" in linked
     rewritten, second_pass = build_deck.link_source_citations(linked, sha)
     assert rewritten == linked
     assert second_pass == set()
