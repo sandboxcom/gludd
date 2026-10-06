@@ -224,7 +224,10 @@ def sync_commands(
     if python:
         venv_argv.extend(("--python", python))
     commands: list[Command] = [Command(tuple(venv_argv), {})]
-    overlay = {"UV_PROJECT_ENVIRONMENT": str(staging_environment)}
+    overlay = {
+        "UV_PROJECT_ENVIRONMENT": str(staging_environment),
+        "VIRTUAL_ENV": str(staging_environment),
+    }
     for index, project in enumerate(projects):
         argv = [uv, "sync", "--project", str(project), "--locked"]
         if index == 0 and not install_project:

@@ -848,11 +848,11 @@ sast-summary:
 sbom:
 	@$(MAKE) --no-print-directory sync \
 		DEPENDENCY_PROFILE_SET=sbom \
-		DEPENDENCY_PROFILE_ENVIRONMENT=.venv \
+		DEPENDENCY_PROFILE_ENVIRONMENT=.venv-sbom \
 		DEPENDENCY_PROFILE_PYTHON=3.11 \
 		DEPENDENCY_PROFILE_VALIDATE_ONLY=0
 	@mkdir -p dist
-	@$(UV) run --no-sync cyclonedx-py environment .venv -o dist/sbom.json --of JSON
+	@.venv-sbom/bin/cyclonedx-py environment .venv-sbom -o dist/sbom.json --of JSON
 
 # Informational full audit of every committed audit-runtime lock (never gates).
 pip-audit:

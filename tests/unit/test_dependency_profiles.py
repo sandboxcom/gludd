@@ -109,6 +109,13 @@ def test_root_lock_enforces_current_transitive_security_floors() -> None:
         "mako>=1.4.2",
         "urllib3>=2.8.0",
     ]
+    for profile in ("agent-runtime", "dev-test"):
+        profile_project = _load(
+            ROOT / "requirements/profiles" / profile / "pyproject.toml"
+        )
+        assert profile_project["tool"]["uv"]["constraint-dependencies"] == [
+            "anyio>=4.14.2,<4.15",
+        ]
 
 
 def test_cuda_profile_uses_current_auditable_runtime_versions() -> None:
@@ -120,9 +127,7 @@ def test_cuda_profile_uses_current_auditable_runtime_versions() -> None:
         "torch==2.13.0",
     ]
     assert cuda_config["tool"]["uv"]["exclude-dependencies"] == ["mcp"]
-    assert cuda_config["tool"]["uv"]["override-dependencies"] == [
-        "setuptools>=83.0.0"
-    ]
+    assert "override-dependencies" not in cuda_config["tool"]["uv"]
     cuda_mcp = _load(
         ROOT / "requirements/profiles/cuda-inference-mcp/pyproject.toml"
     )
@@ -134,6 +139,12 @@ def test_cuda_profile_uses_current_auditable_runtime_versions() -> None:
         "cuda-inference",
         "cuda-inference-mcp",
     ]
+    assert catalog["profiles"]["cuda-inference"]["audit-ignore"] == [
+        "GHSA-h35f-9h28-mq5c",
+    ]
+    deptry = _load(ROOT / "config/deptry_profiles.toml")
+    assert deptry["tool"]["deptry"]["package_module_name_map"]["mcp"] == "mcp"
+    assert "mcp" in deptry["tool"]["deptry"]["per_rule_ignores"]["DEP002"]
 
 
 def test_make_commands_never_implicitly_resync_a_composed_profile_environment() -> None:
@@ -141,6 +152,13 @@ def test_make_commands_never_implicitly_resync_a_composed_profile_environment() 
 
     assert "override UV_NO_SYNC := 1" in makefile
     assert "export UV_NO_SYNC" in makefile
+    assert (
+        '$(UV) run --no-sync python -c "from general_ludd import __version__'
+        in makefile
+    )
+    test_count = makefile.split("\ntest-count:\n", 1)[1].split("\ntest-nodeids:\n", 1)[0]
+    assert "$(UV) run --no-sync python scripts/stream_command.py" in test_count
+    assert "$(UV) run --no-sync python -m pytest" in test_count
 
 
 def test_profile_projects_are_independent_and_locks_are_bounded() -> None:
@@ -266,6 +284,10 @@ def test_sync_plan_uses_one_staged_environment_and_locked_inexact_profiles(
         command.environment["UV_PROJECT_ENVIRONMENT"] == str(staging)
         for command in commands[1:]
     )
+    assert all(
+        command.environment["VIRTUAL_ENV"] == str(staging)
+        for command in commands[1:]
+    )
 
 
 def test_dependency_only_sync_skips_installing_the_root_project(tmp_path: Path) -> None:
@@ -373,6 +395,8 @@ def test_ci_container_sbom_and_audit_consumers_name_locked_profile_sets() -> Non
         assert "--no-install-project" in container
         assert "uv sync" not in container
     assert "DEPENDENCY_PROFILE_SET=sbom" in makefile
+    assert "DEPENDENCY_PROFILE_ENVIRONMENT=.venv-sbom" in makefile
+    assert "cyclonedx-py environment .venv-sbom" in makefile
     assert "scripts/dependency_profiles.py audit --set audit-runtime" in makefile
 
 

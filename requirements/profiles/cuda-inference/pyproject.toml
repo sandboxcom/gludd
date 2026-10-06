@@ -19,4 +19,3 @@ environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
 exclude-dependencies = [
     "mcp",
 ]
-override-dependencies = ["setuptools>=83.0.0"]

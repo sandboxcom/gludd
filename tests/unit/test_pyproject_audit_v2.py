@@ -10,19 +10,35 @@ from __future__ import annotations
 
 import importlib
 import tomllib
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from packaging.requirements import Requirement
+from packaging.specifiers import SpecifierSet
 from packaging.utils import canonicalize_name
+from packaging.version import Version
 
 ROOT = Path(__file__).parent.parent.parent
 PYPROJECT = ROOT / "pyproject.toml"
+PROFILE_CATALOG = ROOT / "config/dependency_profiles.toml"
 
 
 def _load() -> dict:
     return tomllib.loads(PYPROJECT.read_text())
+
+
+def _load_profile_catalog() -> dict:
+    return tomllib.loads(PROFILE_CATALOG.read_text())
+
+
+def _load_profile_projects() -> dict[str, dict]:
+    catalog = _load_profile_catalog()
+    return {
+        name: tomllib.loads(
+            (ROOT / profile["project"] / "pyproject.toml").read_text()
+        )
+        for name, profile in catalog["profiles"].items()
+    }
 
 
 def _dep_name(spec: str) -> str:
@@ -35,31 +51,12 @@ def _dep_names(section: list[str] | None) -> set[str]:
     return {_dep_name(s) for s in section}
 
 
-_AGGREGATE_EXTRAS = frozenset({"dev", "e2e-all"})
+def test_profile_catalog_uses_one_independent_project_per_profile() -> None:
+    catalog = _load_profile_catalog()
+    project_paths = [profile["project"] for profile in catalog["profiles"].values()]
 
-
-def _audited_extra_pairs(
-    extras: dict[str, list[str]],
-) -> Iterator[tuple[str, list[str], str, list[str]]]:
-    """Yield pairs of standalone extras whose dependency sets must be disjoint."""
-    standalone = [(name, deps) for name, deps in extras.items() if name not in _AGGREGATE_EXTRAS]
-    for index, (left_name, left_deps) in enumerate(standalone):
-        for right_name, right_deps in standalone[index + 1 :]:
-            yield left_name, left_deps, right_name, right_deps
-
-
-def test_audited_extra_pairs_exclude_only_aggregate_environments() -> None:
-    """Development/superset extras may aggregate, standalone extras may not."""
-    extras = {
-        "dev": ["shared>=1"],
-        "e2e-all": ["shared>=1"],
-        "azure": ["shared>=1"],
-        "aws": ["shared>=1"],
-    }
-
-    pairs = list(_audited_extra_pairs(extras))
-
-    assert [(left, right) for left, _, right, _ in pairs] == [("azure", "aws")]
+    assert len(project_paths) == len(set(project_paths))
+    assert all(path.startswith("requirements/profiles/") for path in project_paths)
 
 
 # ---------------------------------------------------------------------------
@@ -148,8 +145,6 @@ _VALID_LICENSES = {
     "Public Domain",
 }
 
-# Known intentional cross-section overlaps
-_EXPECTED_CROSS_GROUP_DUPES = {"aiosqlite", "langchain-openai"}
 # Known missing [project.urls] — this is a documented gap
 _URL_GAP_MSG = "[project.urls] section is missing — should be added (Homepage, Repository, Documentation, Bug Tracker)"
 
@@ -232,52 +227,41 @@ def test_all_urls_have_valid_schemes():
 
 
 # ---------------------------------------------------------------------------
-# 5. Cross-section duplicate detection (core vs all extras)
+# 5. Independent dependency-profile integrity
 # ---------------------------------------------------------------------------
 
 
-def test_core_deps_not_in_any_extras():
-    data = _load()
-    core = _dep_names(data["project"]["dependencies"])
-    opt = data["project"].get("optional-dependencies", {})
-    for group, deps in opt.items():
-        group_names = _dep_names(deps)
-        dupes = core & group_names
-        unexpected = dupes - _EXPECTED_CROSS_GROUP_DUPES
-        assert not unexpected, f"Core deps duplicated in extras [{group}]: {unexpected}"
+def test_profile_projects_disable_package_builds():
+    for name, data in _load_profile_projects().items():
+        assert data["tool"]["uv"]["package"] is False, name
 
 
-def test_dependency_groups_not_duplicating_core():
-    data = _load()
-    core = _dep_names(data["project"]["dependencies"])
-    groups = data.get("dependency-groups", {})
-    for group, deps in groups.items():
-        group_names = _dep_names(deps)
-        dupes = core & group_names
-        unexpected = dupes - _EXPECTED_CROSS_GROUP_DUPES
-        assert not unexpected, f"Core deps duplicated in dependency-group [{group}]: {unexpected}"
+def test_profile_projects_have_unique_direct_dependencies():
+    for name, data in _load_profile_projects().items():
+        dependencies = data["project"]["dependencies"]
+        assert len(set(dependencies)) == len(dependencies), name
 
 
-def test_no_duplicate_deps_between_extras_groups():
-    data = _load()
-    opt = data["project"].get("optional-dependencies", {})
-    for g1, deps1, g2, deps2 in _audited_extra_pairs(opt):
-        names1 = _dep_names(deps1)
-        names2 = _dep_names(deps2)
-        dupes = names1 & names2
-        assert not dupes, f"Deps duplicated between [{g1}] and [{g2}]: {dupes}"
+def test_profile_projects_do_not_expand_the_root_python_range():
+    candidate_versions = [Version(f"3.{minor}") for minor in range(11, 15)]
+    root_python = SpecifierSet(_load()["project"]["requires-python"])
+    root_versions = {version for version in candidate_versions if version in root_python}
+    for name, data in _load_profile_projects().items():
+        profile_python = SpecifierSet(data["project"]["requires-python"])
+        profile_versions = {
+            version for version in candidate_versions if version in profile_python
+        }
+        assert profile_versions, name
+        assert profile_versions <= root_versions, name
 
 
-def test_no_duplicate_deps_between_dependency_groups():
-    data = _load()
-    dg = data.get("dependency-groups", {})
-    groups = list(dg.items())
-    for i, (g1, deps1) in enumerate(groups):
-        names1 = _dep_names(deps1)
-        for g2, deps2 in groups[i + 1 :]:
-            names2 = _dep_names(deps2)
-            dupes = names1 & names2
-            assert not dupes, f"Deps duplicated between dependency-group [{g1}] and [{g2}]: {dupes}"
+def test_profile_sets_reference_each_profile_at_most_once():
+    catalog = _load_profile_catalog()
+    known_profiles = set(catalog["profiles"])
+    for name, profile_set in catalog["sets"].items():
+        profiles = profile_set["profiles"]
+        assert len(profiles) == len(set(profiles)), name
+        assert set(profiles) <= known_profiles, name
 
 
 # ---------------------------------------------------------------------------

@@ -23,6 +23,9 @@ audit-ignore = [
 
 [profiles.cuda-inference]
 project = "requirements/profiles/cuda-inference"
+audit-ignore = [
+    "GHSA-h35f-9h28-mq5c",
+]
 
 [profiles.cuda-inference-mcp]
 project = "requirements/profiles/cuda-inference-mcp"

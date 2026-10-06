@@ -392,12 +392,12 @@ def test_required_fields_present():
 
 
 def test_e2e_all_superset_of_game_e2e():
-    data = _load()
-    opt = data["project"]["optional-dependencies"]
-    game = _all_dep_names(opt.get("game-e2e", []))
-    e2e = _all_dep_names(opt.get("e2e-all", []))
-    missing = game - e2e
-    assert not missing, f"e2e-all missing game-e2e deps: {missing}"
+    catalog = tomllib.loads(
+        (ROOT / "config/dependency_profiles.toml").read_text(encoding="utf-8")
+    )
+    game = set(catalog["sets"]["game-e2e"]["profiles"])
+    e2e = set(catalog["sets"]["e2e-all"]["profiles"])
+    assert game <= e2e
 
 
 # ---------------------------------------------------------------------------

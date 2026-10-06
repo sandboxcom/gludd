@@ -13,3 +13,4 @@ dependencies = [
 
 [tool.uv]
 package = false
+constraint-dependencies = ["anyio>=4.14.2,<4.15"]

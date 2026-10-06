@@ -8,8 +8,19 @@ PYPROJECT = PROJECT_ROOT / "pyproject.toml"
 SRC_DIR = PROJECT_ROOT / "src"
 
 
-def _load_deps() -> dict[str, str]:
-    data = tomllib.loads(PYPROJECT.read_text())
+def _project(profile: str = "runtime") -> dict:
+    if profile == "runtime":
+        path = PYPROJECT
+    else:
+        catalog = tomllib.loads(
+            (PROJECT_ROOT / "config/dependency_profiles.toml").read_text()
+        )
+        path = PROJECT_ROOT / catalog["profiles"][profile]["project"] / "pyproject.toml"
+    return tomllib.loads(path.read_text())
+
+
+def _load_deps(profile: str = "runtime") -> dict[str, str]:
+    data = _project(profile)
     deps_list: list[str] = data["project"]["dependencies"]
     result = {}
     for dep in deps_list:
@@ -37,7 +48,7 @@ def test_langchain_removed():
 
 
 def test_langchain_openai_kept_for_openai_compatible_providers():
-    deps = _load_deps()
+    deps = _load_deps("agent-runtime")
     assert "langchain-openai" in deps, "OpenAI-compatible providers require langchain-openai"
     registry_source = (
         SRC_DIR / "general_ludd" / "models" / "provider_registry.py"
@@ -46,24 +57,19 @@ def test_langchain_openai_kept_for_openai_compatible_providers():
 
 
 def test_langgraph_kept():
-    deps = _load_deps()
+    deps = _load_deps("agent-runtime")
     assert "langgraph" in deps, "langgraph should be kept in deps"
     assert _has_imports("langgraph"), "langgraph imports should exist in src/"
 
 
 def test_langsmith_kept():
-    deps = _load_deps()
+    deps = _load_deps("agent-runtime")
     assert "langsmith" in deps, "langsmith should be kept in deps"
     assert _has_imports("langsmith"), "langsmith imports should exist in src/"
 
 
 def test_httpx2_kept_for_starlette_testclient():
-    data = tomllib.loads(PYPROJECT.read_text())
-    groups = (
-        data["project"]["optional-dependencies"]["dev"],
-        data["dependency-groups"]["dev"],
-    )
-    for requirements in groups:
-        assert "httpx2>=2.7.0" in requirements
+    requirements = _project("dev-test")["project"]["dependencies"]
+    assert "httpx2>=2.7.0" in requirements
     assert "httpx2" not in _load_deps(), "TestClient backend is development-only"
     assert not _has_imports("httpx2"), "no httpx2 imports should exist in src/"
