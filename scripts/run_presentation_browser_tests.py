@@ -6,20 +6,42 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
-import sys
+import subprocess as subprocess
+import sys as sys
 import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 TEST_FILE = ROOT / "tests" / "browser" / "test_presentation.py"
 DEFAULT_OUTPUT_ROOT = Path("/tmp/gludd-presentation-browser")
 DEFAULT_BROWSER_ROOT = Path("/tmp/gludd-playwright-browsers")
 SUPPORTED_BROWSERS = frozenset({"chromium", "webkit"})
+VIEWPORT_SIZE_ENV = "GLUDD_PRESENTATION_VIEWPORT_SIZE"
+LAYOUT_CONTAINMENT_TEST = (
+    "tests/browser/test_presentation.py::"
+    "test_every_slide_keeps_visible_content_inside_the_reveal_canvas"
+)
 PINNED_PRESENTATION_DEPENDENCIES = frozenset(
     {"playwright==1.63.0", "pytest-playwright==0.9.0"}
 )
+
+
+@dataclass(frozen=True)
+class ViewportRun:
+    """One auditable viewport and its intentionally bounded pytest scope."""
+
+    label: str
+    viewport_width: int
+    viewport_height: int
+    scope: str
+    output_root: str
+    command: tuple[str, ...]
+    enforce_viewport: bool
 
 
 @dataclass(frozen=True)
@@ -31,7 +53,12 @@ class BrowserPlan:
     output_root: str
     test_file: str
     timeout_seconds: int
-    command: tuple[str, ...]
+    runs: tuple[ViewportRun, ...]
+
+    @property
+    def command(self) -> tuple[str, ...]:
+        """Retain the historical primary-command view for callers and diagnostics."""
+        return self.runs[0].command
 
 
 def _safe_owned_tmp(path: Path, *, label: str) -> Path:
@@ -57,24 +84,68 @@ def build_plan(
         raise ValueError("browser timeout must be between 30 and 900 seconds")
     safe_browser_root = _safe_owned_tmp(browser_root, label="browser root")
     safe_output_root = _safe_owned_tmp(output_root, label="output root")
-    command = (
-        sys.executable,
-        "-m",
-        "pytest",
-        str(TEST_FILE.relative_to(ROOT)),
-        "-m",
-        "presentation_browser",
-        "-n",
-        "0",
-        "--browser",
-        browser,
-        "--tracing",
-        "retain-on-failure",
-        "--output",
-        str(safe_output_root),
-        "--capture=tee-sys",
-        "-W",
-        "error",
+
+    def viewport_run(
+        *,
+        label: str,
+        viewport_width: int,
+        viewport_height: int,
+        scope: str,
+        test_selector: str,
+        enforce_viewport: bool = False,
+    ) -> ViewportRun:
+        run_output = safe_output_root / label
+        plugin_arguments = (
+            ("-p", "scripts.run_presentation_browser_tests")
+            if enforce_viewport
+            else ()
+        )
+        command = (
+            sys.executable,
+            "-m",
+            "pytest",
+            *plugin_arguments,
+            test_selector,
+            "-m",
+            "presentation_browser",
+            "-n",
+            "0",
+            "--browser",
+            browser,
+            "--tracing",
+            "retain-on-failure",
+            "--output",
+            str(run_output),
+            "--capture=tee-sys",
+            "-W",
+            "error",
+        )
+        return ViewportRun(
+            label=label,
+            viewport_width=viewport_width,
+            viewport_height=viewport_height,
+            scope=scope,
+            output_root=str(run_output),
+            command=command,
+            enforce_viewport=enforce_viewport,
+        )
+
+    runs = (
+        viewport_run(
+            label="desktop-landscape",
+            viewport_width=1280,
+            viewport_height=720,
+            scope="full-suite",
+            test_selector=str(TEST_FILE.relative_to(ROOT)),
+        ),
+        viewport_run(
+            label="compact-4x3",
+            viewport_width=1024,
+            viewport_height=768,
+            scope="layout-containment",
+            test_selector=LAYOUT_CONTAINMENT_TEST,
+            enforce_viewport=True,
+        ),
     )
     return BrowserPlan(
         browser=browser,
@@ -82,8 +153,39 @@ def build_plan(
         output_root=str(safe_output_root),
         test_file=str(TEST_FILE.relative_to(ROOT)),
         timeout_seconds=timeout_seconds,
-        command=command,
+        runs=runs,
     )
+
+
+def _requested_viewport() -> tuple[int, int] | None:
+    """Parse the CSS-only viewport override used by the focused pytest replay."""
+    rendered = os.environ.get(VIEWPORT_SIZE_ENV)
+    if rendered is None:
+        return None
+    width_text, separator, height_text = rendered.partition("x")
+    try:
+        width = int(width_text)
+        height = int(height_text)
+    except ValueError as exc:
+        raise RuntimeError(f"invalid {VIEWPORT_SIZE_ENV}: {rendered}") from exc
+    if separator != "x" or width <= 0 or height <= 0:
+        raise RuntimeError(f"invalid {VIEWPORT_SIZE_ENV}: {rendered}")
+    return width, height
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Apply an exact viewport marker when this module is loaded as a plugin."""
+    viewport = _requested_viewport()
+    if viewport is None:
+        return
+    import pytest
+
+    width, height = viewport
+    marker = pytest.mark.browser_context_args(
+        viewport={"width": width, "height": height}
+    )
+    for item in items:
+        item.add_marker(marker)
 
 
 def validate_plan(plan: BrowserPlan) -> None:
@@ -105,8 +207,11 @@ def validate_plan(plan: BrowserPlan) -> None:
     for requirement in sorted(PINNED_PRESENTATION_DEPENDENCIES):
         if requirement not in dependencies:
             raise RuntimeError(f"missing pinned presentation dependency: {requirement}")
-    if plan.command[0] != sys.executable or "shell" in plan.command:
-        raise RuntimeError("presentation browser command is not a direct bounded argv")
+    if not plan.runs:
+        raise RuntimeError("presentation viewport matrix is empty")
+    for run in plan.runs:
+        if run.command[0] != sys.executable or "shell" in run.command:
+            raise RuntimeError("presentation browser command is not a direct bounded argv")
 
 
 def _browser_label(browser: str) -> str:
@@ -192,37 +297,49 @@ def install_browser(plan: BrowserPlan, *, with_dependencies: bool = False) -> in
 
 
 def run_plan(plan: BrowserPlan) -> int:
-    """Run browser acceptance once with owned caches and a hard timeout."""
+    """Run the viewport matrix with each direct subprocess independently bounded."""
     validate_plan(plan)
     _require_browser_executable(plan)
-    Path(plan.output_root).mkdir(parents=True, exist_ok=True)
-    environment = os.environ.copy()
-    environment["PLAYWRIGHT_BROWSERS_PATH"] = plan.browser_root
-    environment["GLUDD_PRESENTATION_BROWSER_OUTPUT"] = plan.output_root
-    print(
-        f"presentation-browser browser={plan.browser} phase=pytest status=starting",
-        flush=True,
-    )
-    try:
-        completed = subprocess.run(
-            plan.command,
-            cwd=ROOT,
-            env=environment,
-            timeout=plan.timeout_seconds,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
+    for run in plan.runs:
+        Path(run.output_root).mkdir(parents=True, exist_ok=True)
+        environment = os.environ.copy()
+        environment["PLAYWRIGHT_BROWSERS_PATH"] = plan.browser_root
+        environment["GLUDD_PRESENTATION_BROWSER_OUTPUT"] = run.output_root
+        if run.enforce_viewport:
+            environment[VIEWPORT_SIZE_ENV] = (
+                f"{run.viewport_width}x{run.viewport_height}"
+            )
+        else:
+            environment.pop(VIEWPORT_SIZE_ENV, None)
         print(
-            f"presentation-browser browser={plan.browser} phase=pytest status=timeout",
+            f"presentation-browser browser={plan.browser} run={run.label} "
+            f"viewport={run.viewport_width}x{run.viewport_height} "
+            f"scope={run.scope} phase=pytest status=starting",
             flush=True,
         )
-        return 124
-    print(
-        f"presentation-browser browser={plan.browser} phase=pytest "
-        f"status=finished exit={completed.returncode}",
-        flush=True,
-    )
-    return completed.returncode
+        try:
+            completed = subprocess.run(
+                run.command,
+                cwd=ROOT,
+                env=environment,
+                timeout=plan.timeout_seconds,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            print(
+                f"presentation-browser browser={plan.browser} run={run.label} "
+                "phase=pytest status=timeout",
+                flush=True,
+            )
+            return 124
+        print(
+            f"presentation-browser browser={plan.browser} run={run.label} "
+            f"phase=pytest status=finished exit={completed.returncode}",
+            flush=True,
+        )
+        if completed.returncode != 0:
+            return completed.returncode
+    return 0
 
 
 def main() -> None:
