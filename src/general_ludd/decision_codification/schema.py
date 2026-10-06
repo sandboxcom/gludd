@@ -31,6 +31,7 @@ from general_ludd.replay.schema import (
 )
 
 DECISION_ENVELOPE_SCHEMA_V1 = "gludd.decision-envelope/v1"
+DECISION_CONTEXT_SCHEMA_V1 = "gludd.decision-context/v1"
 DECISION_RULE_BUNDLE_SCHEMA_V1 = "gludd.decision-rule-bundle/v1"
 DECISION_EVALUATION_REPORT_SCHEMA_V1 = "gludd.decision-evaluation-report/v1"
 DECISION_APPROVAL_RECEIPT_SCHEMA_V1 = "gludd.decision-approval-receipt/v1"
@@ -41,6 +42,7 @@ MAX_ENVELOPE_BYTES = 16 * 1024
 MAX_RULE_NODES = 31
 MAX_RULE_LEAVES = 16
 MAX_RULE_DEPTH = 4
+MAX_RULE_CONTEXTS = 128
 _ZERO_SHA256 = "sha256:" + ("0" * 64)
 
 HmacSha256Digest = Annotated[str, Field(pattern=r"^hmac-sha256:[0-9a-f]{64}$")]
@@ -323,6 +325,48 @@ class OutcomeEvidenceV1(_StrictDecisionModel):
         return self
 
 
+class DecisionContextV1(_CanonicalDigestModel):
+    """Canonical pre-decision input for deterministic runtime lookup."""
+
+    _digest_field = "context_id"
+    _maximum_canonical_bytes = MAX_ENVELOPE_BYTES
+
+    schema_version: Literal["gludd.decision-context/v1"] = Field(alias="schema")
+    context_id: Sha256Digest
+    project_id: BoundedIdentifier
+    decision_kind: DecisionKind
+    feature_schema: Sha256Digest
+    policy_digest: Sha256Digest
+    exact_guards: Annotated[
+        dict[BoundedIdentifier, FeatureValue], Field(min_length=1, max_length=16)
+    ]
+    features: Annotated[
+        dict[BoundedIdentifier, FeatureValue], Field(min_length=1, max_length=64)
+    ]
+
+    @field_validator("decision_kind", mode="before")
+    @classmethod
+    def _parse_kind(cls, value: object) -> object:
+        if type(value) is str:
+            return DecisionKind(value)
+        return value
+
+    @field_validator("exact_guards", "features")
+    @classmethod
+    def _maps_are_sorted(
+        cls, value: dict[str, FeatureValue]
+    ) -> dict[str, FeatureValue]:
+        return dict(sorted(value.items()))
+
+    @property
+    def context_signature(self) -> str:
+        """Return the exact guards/features signature used for runtime admission."""
+        return canonical_sha256({
+            "exact_guards": self.exact_guards,
+            "features": self.features,
+        })
+
+
 class DecisionEnvelopeV1(_CanonicalDigestModel):
     """Canonical, content-safe evidence for one verified decision."""
 
@@ -387,6 +431,26 @@ class DecisionEnvelopeV1(_CanonicalDigestModel):
         if self.decision not in DECISION_ACTIONS_V1[self.decision_kind]:
             raise ValueError("decision is outside the decision-kind action vocabulary")
         return self
+
+    @property
+    def context_signature(self) -> str:
+        """Return the exact runtime-context signature represented by this evidence."""
+        return canonical_sha256({
+            "exact_guards": self.exact_guards,
+            "features": self.features,
+        })
+
+    def to_context(self) -> DecisionContextV1:
+        """Project terminal evidence into the pre-decision runtime contract."""
+        return DecisionContextV1.create(
+            schema=DECISION_CONTEXT_SCHEMA_V1,
+            project_id=self.project_id,
+            decision_kind=self.decision_kind,
+            feature_schema=self.feature_schema,
+            policy_digest=self.policy_digest,
+            exact_guards=self.exact_guards,
+            features=self.features,
+        )
 
 
 class OutcomeCountsV1(_StrictDecisionModel):
@@ -457,6 +521,9 @@ class DecisionRuleBundleV1(_CanonicalDigestModel):
         tuple[Sha256Digest, ...], Field(min_length=1, max_length=16)
     ]
     risk_scope: Literal["low", "medium"]
+    observed_context_digests: Annotated[
+        tuple[Sha256Digest, ...], Field(min_length=1, max_length=MAX_RULE_CONTEXTS)
+    ]
     root_id: BoundedIdentifier
     default_leaf_id: BoundedIdentifier
     nodes: Annotated[
@@ -468,7 +535,6 @@ class DecisionRuleBundleV1(_CanonicalDigestModel):
     corpus_digest: Sha256Digest
     training_recipe_digest: Sha256Digest
     dependency_lock_digest: Sha256Digest
-    evaluator_report_digest: Sha256Digest
     created_at: datetime
     expires_at: datetime
     maximum_use_count: Annotated[int, Field(ge=1, le=1_000_000_000)]
@@ -484,6 +550,11 @@ class DecisionRuleBundleV1(_CanonicalDigestModel):
     @classmethod
     def _sort_policy_digests(cls, value: tuple[str, ...]) -> tuple[str, ...]:
         return _sorted_unique(value, label="policy compatibility digests")
+
+    @field_validator("observed_context_digests")
+    @classmethod
+    def _sort_context_digests(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        return _sorted_unique(value, label="observed context digests")
 
     @field_validator("nodes")
     @classmethod
@@ -770,7 +841,7 @@ class DecisionAbstentionV1(_StrictDecisionModel):
     )
     reason: FallbackReason
     normalization_reason: NormalizationRefusalReason | None = None
-    envelope_id: Sha256Digest | None = None
+    context_id: Sha256Digest | None = None
     candidate_digest: Sha256Digest | None = None
 
     @field_validator("reason", mode="before")
@@ -833,16 +904,19 @@ __all__ = [
     "DECISION_ABSTENTION_SCHEMA_V1",
     "DECISION_ACTIONS_V1",
     "DECISION_APPROVAL_RECEIPT_SCHEMA_V1",
+    "DECISION_CONTEXT_SCHEMA_V1",
     "DECISION_ENVELOPE_SCHEMA_V1",
     "DECISION_EVALUATION_REPORT_SCHEMA_V1",
     "DECISION_RULE_BUNDLE_SCHEMA_V1",
     "MAX_ENVELOPE_BYTES",
+    "MAX_RULE_CONTEXTS",
     "MAX_RULE_DEPTH",
     "MAX_RULE_LEAVES",
     "MAX_RULE_NODES",
     "NORMALIZATION_REFUSAL_SCHEMA_V1",
     "ApprovalReceiptV1",
     "DecisionAbstentionV1",
+    "DecisionContextV1",
     "DecisionEnvelopeV1",
     "DecisionKind",
     "DecisionRuleBundleV1",

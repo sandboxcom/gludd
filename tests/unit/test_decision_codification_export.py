@@ -86,7 +86,6 @@ def _export(
         records,
         training_recipe_digest=SHA_D,
         dependency_lock_digest=SHA_E,
-        evaluator_report_digest=SHA_F,
         created_at=START,
         expires_at=START + timedelta(days=90),
         maximum_use_count=10_000,
@@ -236,7 +235,6 @@ def test_exporter_rejects_unavailable_or_malformed_estimators(
     metadata = export_module._ExportMetadata(
         training_recipe_digest=SHA_D,
         dependency_lock_digest=SHA_E,
-        evaluator_report_digest=SHA_F,
         created_at=START,
         expires_at=START + timedelta(days=90),
         maximum_use_count=10_000,

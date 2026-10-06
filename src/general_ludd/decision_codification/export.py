@@ -67,7 +67,6 @@ class OneHotColumn:
 class _ExportMetadata:
     training_recipe_digest: str
     dependency_lock_digest: str
-    evaluator_report_digest: str
     created_at: datetime
     expires_at: datetime
     maximum_use_count: int
@@ -341,6 +340,9 @@ def _export_fitted_tree(
         feature_schema=envelope.feature_schema,
         policy_compatibility=policies,
         risk_scope=risk_scope,
+        observed_context_digests=tuple(sorted({
+            record.envelope.context_signature for record in records
+        })),
         root_id="node-root",
         default_leaf_id=default_leaf_id,
         nodes=tuple(nodes),
@@ -348,7 +350,6 @@ def _export_fitted_tree(
         corpus_digest=metadata.corpus_digest,
         training_recipe_digest=metadata.training_recipe_digest,
         dependency_lock_digest=metadata.dependency_lock_digest,
-        evaluator_report_digest=metadata.evaluator_report_digest,
         created_at=metadata.created_at,
         expires_at=metadata.expires_at,
         maximum_use_count=metadata.maximum_use_count,
@@ -384,7 +385,6 @@ def train_and_export_tree(
     *,
     training_recipe_digest: str,
     dependency_lock_digest: str,
-    evaluator_report_digest: str,
     created_at: datetime,
     expires_at: datetime,
     maximum_use_count: int,
@@ -404,7 +404,6 @@ def train_and_export_tree(
     metadata = _ExportMetadata(
         training_recipe_digest=training_recipe_digest,
         dependency_lock_digest=dependency_lock_digest,
-        evaluator_report_digest=evaluator_report_digest,
         created_at=created_at,
         expires_at=expires_at,
         maximum_use_count=maximum_use_count,

@@ -8,7 +8,9 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from general_ludd.decision_codification.schema import (
     DECISION_ACTIONS_V1,
+    DECISION_CONTEXT_SCHEMA_V1,
     DECISION_ENVELOPE_SCHEMA_V1,
+    DecisionContextV1,
     DecisionEnvelopeV1,
     DecisionKind,
     FeatureValue,
@@ -303,6 +305,66 @@ def _normalize_features(
     return dict(sorted(normalized.items())), None
 
 
+def normalize_decision_context(
+    *,
+    project_id: str,
+    expected_project_id: str,
+    decision_kind: DecisionKind,
+    policy_digest: str,
+    features: object,
+) -> DecisionContextV1 | NormalizationRefusalV1:
+    """Normalize one structured pre-decision context without an answer or outcome."""
+    if (
+        not expected_project_id
+        or not project_id
+        or project_id != expected_project_id
+    ):
+        return _refusal(NormalizationRefusalReason.PROJECT_MISMATCH, decision_kind)
+    if not isinstance(decision_kind, DecisionKind):
+        return _refusal(NormalizationRefusalReason.UNSUPPORTED_EVENT, None)
+    try:
+        validated_policy_digest = _SHA256_ADAPTER.validate_python(
+            policy_digest, strict=True
+        )
+    except ValidationError:
+        return _refusal(
+            NormalizationRefusalReason.MISSING_POLICY_DIGEST, decision_kind
+        )
+    if type(features) is not dict:
+        return _refusal(NormalizationRefusalReason.INVALID_FEATURE, decision_kind)
+    raw_features = cast(dict[str, object], features)
+    if set(raw_features) - set(_FEATURE_RULES):
+        return _refusal(NormalizationRefusalReason.INVALID_FEATURE, decision_kind)
+    redacted = redact_for_persistence(raw_features, limits=_NORMALIZATION_LIMITS)
+    if redacted.metadata.truncated:
+        return _refusal(NormalizationRefusalReason.BOUNDS_EXCEEDED, decision_kind)
+    if redacted.metadata.redaction_count:
+        return _refusal(NormalizationRefusalReason.REDACTION_REQUIRED, decision_kind)
+    normalized, feature_error = _normalize_features(redacted.value)
+    if feature_error is not None or normalized is None:
+        return _refusal(
+            feature_error or NormalizationRefusalReason.INVALID_FEATURE,
+            decision_kind,
+        )
+    exact_guards: dict[str, FeatureValue] = {
+        "action_vocabulary": f"{decision_kind.value}.v1",
+        "operation_class": normalized["operation_class"],
+        "risk_band": normalized["risk_band"],
+    }
+    try:
+        return DecisionContextV1.create(
+            schema=DECISION_CONTEXT_SCHEMA_V1,
+            project_id=project_id,
+            decision_kind=decision_kind,
+            feature_schema=FEATURE_SCHEMA_V1_DIGEST,
+            policy_digest=validated_policy_digest,
+            exact_guards=exact_guards,
+            features=normalized,
+        )
+    except ValidationError:
+        return _refusal(NormalizationRefusalReason.BOUNDS_EXCEEDED, decision_kind)
+
+
 def normalize_verified_decision_event(
     event: EventEnvelopeV1,
     *,
@@ -424,5 +486,6 @@ __all__ = [
     "FEATURE_REGISTRY_V1",
     "FEATURE_SCHEMA_V1_DIGEST",
     "FeatureRuleV1",
+    "normalize_decision_context",
     "normalize_verified_decision_event",
 ]

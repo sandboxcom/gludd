@@ -103,6 +103,7 @@ def apply_exported_rule(
         or envelope.decision_kind is not bundle.decision_kind
         or envelope.feature_schema != bundle.feature_schema
         or envelope.exact_guards.get("risk_band") != bundle.risk_scope
+        or envelope.context_signature not in bundle.observed_context_digests
     ):
         return RuleApplication(ReplayDisposition.SCOPE_MISS)
 

@@ -97,7 +97,6 @@ def _bundle() -> DecisionRuleBundleV1:
         [_evidence(index) for index in range(32)],
         training_recipe_digest=SHA_D,
         dependency_lock_digest=SHA_E,
-        evaluator_report_digest=SHA_F,
         created_at=START,
         expires_at=START + timedelta(days=90),
         maximum_use_count=10_000,
@@ -169,7 +168,6 @@ def test_full_split_digest_binds_export_and_holdout_report_end_to_end() -> None:
         split.training,
         training_recipe_digest=SHA_D,
         dependency_lock_digest=SHA_E,
-        evaluator_report_digest=SHA_F,
         created_at=START,
         expires_at=START + timedelta(days=90),
         maximum_use_count=10_000,
@@ -208,7 +206,7 @@ def test_wrong_decision_unknown_feature_and_policy_mismatch_fail_closed() -> Non
     )
 
     assert report.false_automation_count == 1
-    assert report.unknown_feature_count == 1
+    assert report.unknown_feature_count == 0
     assert report.policy_mismatch_count == 1
     assert report.abstention_count == 2
     assert not activation_eligible(report, bundle)
@@ -239,7 +237,7 @@ def test_runtime_adapter_returns_closed_failures_without_guessing() -> None:
         bundle,
         _evidence(42, missing_route=True).envelope,
         current_policy_digest=SHA_C,
-    ).disposition is ReplayDisposition.UNKNOWN_FEATURE
+    ).disposition is ReplayDisposition.SCOPE_MISS
 
     root = next(node for node in bundle.nodes if node.node_id == bundle.root_id)
 

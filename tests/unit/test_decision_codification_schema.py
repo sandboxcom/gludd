@@ -93,6 +93,7 @@ def _rule_bundle() -> DecisionRuleBundleV1:
         feature_schema=SHA_D,
         policy_compatibility=(SHA_E,),
         risk_scope="low",
+        observed_context_digests=(SHA_F,),
         root_id="node-1",
         default_leaf_id="leaf-abstain",
         nodes=(
@@ -130,7 +131,6 @@ def _rule_bundle() -> DecisionRuleBundleV1:
         corpus_digest=SHA_A,
         training_recipe_digest=SHA_B,
         dependency_lock_digest=SHA_C,
-        evaluator_report_digest=SHA_F,
         created_at=NOW,
         expires_at=NOW + timedelta(days=90),
         maximum_use_count=10_000,
@@ -301,7 +301,7 @@ def test_report_receipt_and_abstention_are_digest_bound_typed_contracts() -> Non
     abstention = DecisionAbstentionV1(
         reason=FallbackReason.NORMALIZATION_REFUSED,
         normalization_reason=NormalizationRefusalReason.INVALID_FEATURE,
-        envelope_id=None,
+        context_id=None,
         candidate_digest=None,
     )
     assert abstention.reason is FallbackReason.NORMALIZATION_REFUSED
