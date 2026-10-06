@@ -4827,6 +4827,26 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
         }
         return mapping.get(decision)
 
+    async def _record_committed_loc_delta(
+        self,
+        todo: Any,
+        repo: Any,
+        project_id: str | None,
+    ) -> None:
+        """Record a commit's LOC delta without interrupting git delivery."""
+        if self._loc_ledger is None:
+            return
+        try:
+            delta = await self._bounded_to_thread(repo.lines_changed_in_commit)
+            pid = project_id or self._tick_project_id or ""
+            self._loc_ledger.record_loc_changed(pid, delta)
+        except Exception as loc_exc:
+            logger.debug(
+                "loc_changed recording failed for %s: %s",
+                todo.todo_id,
+                loc_exc,
+            )
+
     async def _try_commit_completed_work(self, todo: Any) -> None:
         """H6: commit/branch/push completed work via git automation.
 
@@ -4899,17 +4919,7 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
                 # Record the per-commit LOC delta into the accounting ledger
                 # (counted via git show --numstat). Best-effort: a counting
                 # failure must never abort the commit/push flow that follows.
-                if self._loc_ledger is not None:
-                    try:
-                        delta = await self._bounded_to_thread(repo.lines_changed_in_commit)
-                        pid = project_id or self._tick_project_id or ""
-                        self._loc_ledger.record_loc_changed(pid, delta)
-                    except Exception as loc_exc:
-                        logger.debug(
-                            "loc_changed recording failed for %s: %s",
-                            todo.todo_id,
-                            loc_exc,
-                        )
+                await self._record_committed_loc_delta(todo, repo, project_id)
                 pushed = await self._bounded_to_thread(repo.push, branch=branch_name)
                 if pushed is not True:
                     raise RuntimeError(
