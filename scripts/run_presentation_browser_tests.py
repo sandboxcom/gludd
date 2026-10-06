@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 TEST_FILE = ROOT / "tests" / "browser" / "test_presentation.py"
 DEFAULT_OUTPUT_ROOT = Path("/tmp/gludd-presentation-browser")
 DEFAULT_BROWSER_ROOT = Path("/tmp/gludd-playwright-browsers")
+SUPPORTED_BROWSERS = frozenset({"chromium", "webkit"})
 
 
 @dataclass(frozen=True)
@@ -46,8 +47,8 @@ def build_plan(
     timeout_seconds: int,
 ) -> BrowserPlan:
     """Build a bounded pytest-playwright invocation without executing it."""
-    if browser != "chromium":
-        raise ValueError("the presentation contract requires Chromium")
+    if browser not in SUPPORTED_BROWSERS:
+        raise ValueError("the presentation contract requires Chromium or WebKit")
     if not 30 <= timeout_seconds <= 900:
         raise ValueError("browser timeout must be between 30 and 900 seconds")
     safe_browser_root = _safe_owned_tmp(browser_root, label="browser root")
@@ -92,28 +93,37 @@ def validate_plan(plan: BrowserPlan) -> None:
         raise RuntimeError("presentation browser command is not a direct bounded argv")
 
 
+def _browser_label(browser: str) -> str:
+    """Return the user-facing name for one allowlisted engine."""
+    return {"chromium": "Chromium", "webkit": "WebKit"}[browser]
+
+
 def _require_browser_executable(plan: BrowserPlan) -> Path:
-    """Fail with the owned install target when Chromium is unavailable."""
+    """Fail with the owned install target when the requested engine is absent."""
     os.environ["PLAYWRIGHT_BROWSERS_PATH"] = plan.browser_root
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as exc:
         raise RuntimeError("Playwright is not installed; run make sync") from exc
     with sync_playwright() as playwright:
-        executable = Path(playwright.chromium.executable_path)
+        executable = Path(getattr(playwright, plan.browser).executable_path)
     if not executable.is_file():
-        raise RuntimeError("Chromium is not installed; run make presentation-browser-install")
+        label = _browser_label(plan.browser)
+        raise RuntimeError(f"{label} is not installed; run make presentation-browser-install")
     return executable
 
 
 def install_browser(plan: BrowserPlan) -> int:
-    """Install only pinned Chromium into the explicit project-owned cache."""
+    """Install one pinned engine into the explicit project-owned cache."""
     validate_plan(plan)
     Path(plan.browser_root).mkdir(parents=True, exist_ok=True)
     environment = os.environ.copy()
     environment["PLAYWRIGHT_BROWSERS_PATH"] = plan.browser_root
-    command = (sys.executable, "-m", "playwright", "install", "chromium")
-    print("presentation-browser phase=install status=starting", flush=True)
+    command = (sys.executable, "-m", "playwright", "install", plan.browser)
+    print(
+        f"presentation-browser browser={plan.browser} phase=install status=starting",
+        flush=True,
+    )
     try:
         completed = subprocess.run(
             command,
@@ -123,11 +133,18 @@ def install_browser(plan: BrowserPlan) -> int:
             check=False,
         )
     except subprocess.TimeoutExpired:
-        print("presentation-browser phase=install status=timeout", flush=True)
+        print(
+            f"presentation-browser browser={plan.browser} phase=install status=timeout",
+            flush=True,
+        )
         return 124
     if completed.returncode == 0:
         _require_browser_executable(plan)
-    print(f"presentation-browser phase=install status=finished exit={completed.returncode}", flush=True)
+    print(
+        f"presentation-browser browser={plan.browser} phase=install "
+        f"status=finished exit={completed.returncode}",
+        flush=True,
+    )
     return completed.returncode
 
 
@@ -139,7 +156,10 @@ def run_plan(plan: BrowserPlan) -> int:
     environment = os.environ.copy()
     environment["PLAYWRIGHT_BROWSERS_PATH"] = plan.browser_root
     environment["GLUDD_PRESENTATION_BROWSER_OUTPUT"] = plan.output_root
-    print("presentation-browser phase=pytest status=starting", flush=True)
+    print(
+        f"presentation-browser browser={plan.browser} phase=pytest status=starting",
+        flush=True,
+    )
     try:
         completed = subprocess.run(
             plan.command,
@@ -149,9 +169,16 @@ def run_plan(plan: BrowserPlan) -> int:
             check=False,
         )
     except subprocess.TimeoutExpired:
-        print("presentation-browser phase=pytest status=timeout", flush=True)
+        print(
+            f"presentation-browser browser={plan.browser} phase=pytest status=timeout",
+            flush=True,
+        )
         return 124
-    print(f"presentation-browser phase=pytest status=finished exit={completed.returncode}", flush=True)
+    print(
+        f"presentation-browser browser={plan.browser} phase=pytest "
+        f"status=finished exit={completed.returncode}",
+        flush=True,
+    )
     return completed.returncode
 
 
@@ -160,9 +187,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--validate-only", action="store_true", help="print and validate plan without side effects")
-    mode.add_argument("--run", action="store_true", help="launch the pinned Chromium acceptance")
-    mode.add_argument("--check-browser", action="store_true", help="verify pinned Chromium without writing")
-    mode.add_argument("--install-browser", action="store_true", help="install pinned Chromium into the owned cache")
+    mode.add_argument("--run", action="store_true", help="launch the pinned browser acceptance")
+    mode.add_argument("--check-browser", action="store_true", help="verify the pinned browser without writing")
+    mode.add_argument("--install-browser", action="store_true", help="install the pinned browser into the owned cache")
     parser.add_argument("--browser", default="chromium")
     parser.add_argument("--browser-root", type=Path, default=DEFAULT_BROWSER_ROOT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)

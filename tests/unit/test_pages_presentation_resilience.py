@@ -17,6 +17,7 @@ def test_pages_validates_development_and_pull_requests_before_upload() -> None:
     assert "branches: [master, development]" in workflow
     assert "make vendor-presentation-assets PRESENTATION_VENDOR_VALIDATE_ONLY=1" in workflow
     assert "make presentation-browser-install" in workflow
+    assert 'PRESENTATION_BROWSER_ENGINES="chromium webkit"' in workflow
     build = workflow.index("make deck-build")
     browser = workflow.index("make presentation-browser-test")
     upload = workflow.index("actions/upload-artifact@")
@@ -25,14 +26,17 @@ def test_pages_validates_development_and_pull_requests_before_upload() -> None:
     assert "continue-on-error" not in workflow
 
 
-def test_pages_deploys_only_the_validated_release_artifact() -> None:
-    """Deployment must consume the prior job artifact only on master."""
+def test_pages_deploys_the_validated_development_artifact() -> None:
+    """The public preview must advance with the branch users are validating."""
     workflow = WORKFLOW.read_text(encoding="utf-8")
     assert "needs: validate" in workflow
-    assert "github.ref == 'refs/heads/master'" in workflow
+    assert "github.ref == 'refs/heads/development'" in workflow
+    assert "github.event_name == 'push'" in workflow
     assert "actions/download-artifact@" in workflow
     assert workflow.index("actions/download-artifact@") < workflow.index("actions/upload-pages-artifact@")
     assert workflow.index("actions/upload-pages-artifact@") < workflow.index("actions/deploy-pages@")
+    assert workflow.index("actions/deploy-pages@") < workflow.index("make presentation-pages-probe")
+    assert "PRESENTATION_PAGES_EXPECTED_SHA=${{ github.sha }}" in workflow
 
 
 def test_browser_lane_can_serve_the_resolved_upload_tree() -> None:
@@ -52,9 +56,12 @@ def test_implementation_guide_keeps_upstream_regressions_and_operations() -> Non
         "mermaid-js/mermaid#3577",
         "mgaitan/sphinxcontrib-mermaid#126",
         "zjffun/reveal.js-mermaid-plugin#5",
+        "mermaid-js/mermaid#7323",
     ):
         assert issue in design
     assert "reveal.js-mermaid-plugin@11.15.0" in design
     assert "ace-builds@1.44.0" in design
     assert "make presentation-browser-test" in design
+    assert "presentation-pages-probe" in design
+    assert "Chromium and WebKit" in design
     assert "/__gludd_source__" in design

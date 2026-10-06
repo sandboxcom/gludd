@@ -3,6 +3,19 @@ body {
   background: #0d1117;
 }
 
+/* Mermaid measures text while rendering. Reveal normally display:none's every
+   inactive slide, which produces NaN transforms in Chromium and blank SVGs in
+   Safari. Keep inactive slides laid out but invisible for the bounded batch. */
+html.gludd-mermaid-prerender .reveal .slides section {
+  display: block !important;
+}
+
+html.gludd-mermaid-prerender .reveal .slides section:not(.present) {
+  left: -200vw !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+}
+
 .mermaid-host {
   min-height: 2rem;
   position: relative;

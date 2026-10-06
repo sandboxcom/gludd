@@ -30,6 +30,20 @@ def test_plan_is_serial_pinned_and_namespaced() -> None:
     assert ("--tracing", "retain-on-failure") in pairs
 
 
+def test_webkit_plan_is_a_first_class_browser_contract() -> None:
+    """Safari-compatible WebKit must be runnable through the bounded harness."""
+    plan = runner.build_plan(
+        browser="webkit",
+        browser_root=Path("/tmp/gludd-browser-webkit-unit"),
+        output_root=Path("/tmp/gludd-presentation-webkit-unit"),
+        timeout_seconds=120,
+    )
+
+    assert plan.browser == "webkit"
+    pairs = tuple(zip(plan.command, plan.command[1:], strict=False))
+    assert ("--browser", "webkit") in pairs
+
+
 @pytest.mark.parametrize(
     "path",
     (Path("/tmp"), Path("/tmp/presentation"), Path("/var/tmp/gludd-presentation")),
@@ -90,10 +104,14 @@ def test_timeout_returns_observable_124(monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert runner.run_plan(plan) == 124
 
 
-def test_browser_install_is_exact_and_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Installation may acquire Chromium only and verifies the resulting binary."""
+@pytest.mark.parametrize("browser", ("chromium", "webkit"))
+def test_browser_install_is_exact_and_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+    browser: str,
+) -> None:
+    """Installation acquires one requested engine and verifies its binary."""
     plan = runner.build_plan(
-        browser="chromium",
+        browser=browser,
         browser_root=Path("/tmp/gludd-browser-install-test"),
         output_root=Path("/tmp/gludd-presentation-install-test"),
         timeout_seconds=120,
@@ -111,7 +129,7 @@ def test_browser_install_is_exact_and_bounded(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(runner.subprocess, "run", complete)
 
     assert runner.install_browser(plan) == 0
-    assert captured == [(runner.sys.executable, "-m", "playwright", "install", "chromium")]
+    assert captured == [(runner.sys.executable, "-m", "playwright", "install", browser)]
     assert verified == [plan]
 
 
@@ -132,7 +150,7 @@ def test_plan_rejects_wrong_browser_and_short_timeout() -> None:
         "browser_root": Path("/tmp/gludd-browser-unit"),
         "output_root": Path("/tmp/gludd-presentation-unit"),
     }
-    with pytest.raises(ValueError, match="requires Chromium"):
+    with pytest.raises(ValueError, match="Chromium or WebKit"):
         runner.build_plan(browser="firefox", timeout_seconds=120, **common)
     with pytest.raises(ValueError, match="between 30 and 900"):
         runner.build_plan(browser="chromium", timeout_seconds=29, **common)
@@ -205,6 +223,38 @@ def test_browser_executable_check_handles_available_and_missing_binary(
     executable.unlink()
     with pytest.raises(RuntimeError, match="Chromium is not installed"):
         runner._require_browser_executable(plan)
+
+
+def test_webkit_executable_check_uses_webkit_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """WebKit checks must not accidentally inspect the Chromium executable."""
+    webkit_executable = tmp_path / "webkit"
+    webkit_executable.write_text("binary", encoding="utf-8")
+
+    class FakePlaywright:
+        chromium = SimpleNamespace(executable_path=str(tmp_path / "missing-chromium"))
+        webkit = SimpleNamespace(executable_path=str(webkit_executable))
+
+        def __enter__(self) -> FakePlaywright:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+    sync_api = ModuleType("playwright.sync_api")
+    sync_api.sync_playwright = lambda: FakePlaywright()  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "playwright", ModuleType("playwright"))
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", sync_api)
+    plan = runner.build_plan(
+        browser="webkit",
+        browser_root=Path("/tmp/gludd-browser-webkit-check"),
+        output_root=Path("/tmp/gludd-presentation-webkit-check"),
+        timeout_seconds=120,
+    )
+
+    assert runner._require_browser_executable(plan) == webkit_executable
 
 
 def test_install_and_run_propagate_timeout_and_exit_codes(

@@ -1394,21 +1394,33 @@
       "name": "presentation-browser-test",
       "make_variables": [
         "PRESENTATION_BROWSER_VALIDATE_ONLY",
+        "PRESENTATION_BROWSER_ENGINES",
         "PRESENTATION_BROWSER_ROOT",
         "PRESENTATION_BROWSER_OUTPUT",
         "PRESENTATION_BROWSER_TIMEOUT"
       ],
-      "behavior": "make presentation-browser-test PRESENTATION_BROWSER_VALIDATE_ONLY=1 PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser PRESENTATION_BROWSER_TIMEOUT=300"
+      "behavior": "make presentation-browser-test PRESENTATION_BROWSER_VALIDATE_ONLY=1 PRESENTATION_BROWSER_ENGINES='chromium webkit' PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser PRESENTATION_BROWSER_TIMEOUT=300"
     },
     {
       "name": "presentation-browser-install",
       "make_variables": [
         "PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY",
+        "PRESENTATION_BROWSER_ENGINES",
         "PRESENTATION_BROWSER_ROOT",
         "PRESENTATION_BROWSER_OUTPUT",
         "PRESENTATION_BROWSER_INSTALL_TIMEOUT"
       ],
-      "behavior": "make presentation-browser-install PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=1 PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser PRESENTATION_BROWSER_INSTALL_TIMEOUT=600"
+      "behavior": "make presentation-browser-install PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=1 PRESENTATION_BROWSER_ENGINES='chromium webkit' PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser PRESENTATION_BROWSER_INSTALL_TIMEOUT=600"
+    },
+    {
+      "name": "presentation-pages-probe",
+      "make_variables": [
+        "PRESENTATION_PAGES_PROBE_VALIDATE_ONLY",
+        "PRESENTATION_PAGES_URL",
+        "PRESENTATION_PAGES_EXPECTED_SHA",
+        "PRESENTATION_PAGES_PROBE_TIMEOUT"
+      ],
+      "behavior": "make presentation-pages-probe PRESENTATION_PAGES_PROBE_VALIDATE_ONLY=1 PRESENTATION_PAGES_URL=https://sandboxcom.github.io/gludd/ PRESENTATION_PAGES_EXPECTED_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa PRESENTATION_PAGES_PROBE_TIMEOUT=20"
     },
     {
       "name": "secrets-baseline-check",

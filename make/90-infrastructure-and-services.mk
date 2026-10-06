@@ -77,10 +77,15 @@ DECK_DATA := docs/presentation/deck-data.json
 PRESENTATION_VENDOR_VALIDATE_ONLY ?= 1
 PRESENTATION_BROWSER_VALIDATE_ONLY ?= 1
 PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY ?= 1
+PRESENTATION_BROWSER_ENGINES ?= chromium webkit
 PRESENTATION_BROWSER_ROOT ?= /tmp/gludd-playwright-browsers
 PRESENTATION_BROWSER_OUTPUT ?= /tmp/gludd-presentation-browser
 PRESENTATION_BROWSER_TIMEOUT ?= 300
 PRESENTATION_BROWSER_INSTALL_TIMEOUT ?= 600
+PRESENTATION_PAGES_PROBE_VALIDATE_ONLY ?= 1
+PRESENTATION_PAGES_URL ?= https://sandboxcom.github.io/gludd/
+PRESENTATION_PAGES_EXPECTED_SHA ?=
+PRESENTATION_PAGES_PROBE_TIMEOUT ?= 20
 
 vendor-presentation-assets:
 	@case "$(PRESENTATION_VENDOR_VALIDATE_ONLY)" in 0|1) ;; *) echo "PRESENTATION_VENDOR_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
@@ -88,19 +93,35 @@ vendor-presentation-assets:
 
 presentation-browser-test:
 	@case "$(PRESENTATION_BROWSER_VALIDATE_ONLY)" in 0|1) ;; *) echo "PRESENTATION_BROWSER_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
-	@$(UV) run --extra presentation-test python scripts/run_presentation_browser_tests.py \
-		$(if $(filter 1,$(PRESENTATION_BROWSER_VALIDATE_ONLY)),--validate-only,--run) \
-		--browser-root "$(PRESENTATION_BROWSER_ROOT)" \
-		--output-root "$(PRESENTATION_BROWSER_OUTPUT)" \
-		--timeout-seconds "$(PRESENTATION_BROWSER_TIMEOUT)"
+	@for browser in $(PRESENTATION_BROWSER_ENGINES); do \
+		echo "presentation-browser matrix browser=$$browser phase=test"; \
+		$(UV) run --extra presentation-test python scripts/run_presentation_browser_tests.py \
+			$(if $(filter 1,$(PRESENTATION_BROWSER_VALIDATE_ONLY)),--validate-only,--run) \
+			--browser "$$browser" \
+			--browser-root "$(PRESENTATION_BROWSER_ROOT)" \
+			--output-root "$(PRESENTATION_BROWSER_OUTPUT)/$$browser" \
+			--timeout-seconds "$(PRESENTATION_BROWSER_TIMEOUT)" || exit $$?; \
+	done
 
 presentation-browser-install:
 	@case "$(PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY)" in 0|1) ;; *) echo "PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
-	@$(UV) run --extra presentation-test python scripts/run_presentation_browser_tests.py \
-		$(if $(filter 1,$(PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY)),--check-browser,--install-browser) \
-		--browser-root "$(PRESENTATION_BROWSER_ROOT)" \
-		--output-root "$(PRESENTATION_BROWSER_OUTPUT)" \
-		--timeout-seconds "$(PRESENTATION_BROWSER_INSTALL_TIMEOUT)"
+	@for browser in $(PRESENTATION_BROWSER_ENGINES); do \
+		echo "presentation-browser matrix browser=$$browser phase=install"; \
+		$(UV) run --extra presentation-test python scripts/run_presentation_browser_tests.py \
+			$(if $(filter 1,$(PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY)),--check-browser,--install-browser) \
+			--browser "$$browser" \
+			--browser-root "$(PRESENTATION_BROWSER_ROOT)" \
+			--output-root "$(PRESENTATION_BROWSER_OUTPUT)/$$browser" \
+			--timeout-seconds "$(PRESENTATION_BROWSER_INSTALL_TIMEOUT)" || exit $$?; \
+	done
+
+presentation-pages-probe:
+	@case "$(PRESENTATION_PAGES_PROBE_VALIDATE_ONLY)" in 0|1) ;; *) echo "PRESENTATION_PAGES_PROBE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@$(PYTHON) scripts/probe_presentation_pages.py \
+		--url "$(PRESENTATION_PAGES_URL)" \
+		--expected-sha "$(PRESENTATION_PAGES_EXPECTED_SHA)" \
+		--timeout-seconds "$(PRESENTATION_PAGES_PROBE_TIMEOUT)" \
+		$(if $(filter 1,$(PRESENTATION_PAGES_PROBE_VALIDATE_ONLY)),--validate-only,)
 
 deck:
 	@echo "=== BUILDING DECK ==="
