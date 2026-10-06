@@ -573,5 +573,3 @@ class SlurmJobRepository:
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
-
-

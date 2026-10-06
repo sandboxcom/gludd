@@ -909,4 +909,3 @@ class PromptProfileRepository:
             if not types or task_type in types:
                 out.append(row)
         return out
-

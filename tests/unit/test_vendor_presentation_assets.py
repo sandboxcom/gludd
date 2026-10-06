@@ -274,4 +274,3 @@ def test_refresh_cli_delegates_only_after_explicit_flag(
     monkeypatch.setattr("sys.argv", ["vendor_presentation_assets.py", "--refresh"])
     vendor.main()
     assert calls == [destination]
-

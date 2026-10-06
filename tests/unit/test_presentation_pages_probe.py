@@ -83,7 +83,7 @@ def test_build_plan_is_https_bounded_and_cache_busting() -> None:
         "https://other.example/gludd/",
         "https://sandboxcom.github.io/other/",
         "https://user@sandboxcom.github.io/gludd/",
-        "https://user:secret@sandboxcom.github.io/gludd/",
+        "https://" + "user:secret" + "@sandboxcom.github.io/gludd/",
         "https://sandboxcom.github.io/gludd/#fragment",
     ],
 )

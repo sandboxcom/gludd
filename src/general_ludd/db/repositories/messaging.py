@@ -290,5 +290,3 @@ class AgentMessageRepository:
         if created.tzinfo is None:
             created = created.replace(tzinfo=UTC)
         return (now - created).total_seconds() > row.ttl_seconds
-
-
