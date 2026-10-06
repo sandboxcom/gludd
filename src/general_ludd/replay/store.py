@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import os
 import re
+import time
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -31,6 +32,7 @@ from general_ludd.replay.schema import (
     parse_event_envelope,
     validate_run_id,
 )
+from general_ludd.replay.telemetry import ReplayTelemetry
 
 _EVENT_FILENAME = re.compile(r"[0-9]{12}\.json\Z")
 _KEY_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
@@ -110,6 +112,7 @@ class RunBundleStore:
         verification_keys: Mapping[str, bytes] | None = None,
         active_key_id: str | None = None,
         lock_timeout: float = 10.0,
+        telemetry: ReplayTelemetry | None = None,
     ) -> None:
         """Bind a safe root and an optional versioned HMAC key ring."""
         raw_root = Path(root)
@@ -144,6 +147,20 @@ class RunBundleStore:
                 raise ValueError("active_key_id must identify a configured verification key")
         self._verification_keys = keys
         self._active_key_id = active_key_id
+        self._telemetry = telemetry if telemetry is not None else ReplayTelemetry()
+
+    @staticmethod
+    def _failure_reason(exc: Exception) -> str:
+        """Collapse internal exceptions into the bounded telemetry vocabulary."""
+        if isinstance(exc, Timeout):
+            return "concurrency"
+        if isinstance(exc, ReplayIntegrityError):
+            return "integrity"
+        if isinstance(exc, (TypeError, ValueError, ReplayStateError)):
+            return "validation"
+        if isinstance(exc, (OSError, ReplayPathError)):
+            return "storage"
+        return "internal"
 
     @staticmethod
     def _validate_key_id(key_id: str) -> str:
@@ -320,6 +337,27 @@ class RunBundleStore:
         event: Mapping[str, object],
     ) -> EventEnvelopeV1:
         """Allocate, validate, and atomically publish one typed event envelope."""
+        started = time.perf_counter()
+        try:
+            envelope = self._append_event(run_id, event)
+        except Exception as exc:
+            self._telemetry.record_failure(self._failure_reason(exc))
+            self._telemetry.operation("record", "failure")
+            self._telemetry.record_seconds(None, time.perf_counter() - started)
+            raise
+        self._telemetry.events_recorded(EVENT_SCHEMA_V1, envelope.type)
+        for kind in envelope.redaction.kinds:
+            self._telemetry.redactions(kind)
+        self._telemetry.operation("record", "success")
+        self._telemetry.record_seconds(envelope.type, time.perf_counter() - started)
+        return envelope
+
+    def _append_event(
+        self,
+        run_id: str,
+        event: Mapping[str, object],
+    ) -> EventEnvelopeV1:
+        """Perform one append without emitting an outcome before publication."""
         safe_run_id = validate_run_id(run_id)
         supplied = dict(event)
         reserved = sorted(_STORE_MANAGED_EVENT_FIELDS.intersection(supplied))
@@ -363,6 +401,31 @@ class RunBundleStore:
         manifest: BundleManifestV1 | Mapping[str, object],
     ) -> BundleManifestV1:
         """Atomically publish a signed or explicitly unsigned final manifest."""
+        try:
+            finalized = self._finalize(run_id, manifest)
+        except Exception as exc:
+            self._telemetry.record_failure(self._failure_reason(exc))
+            self._telemetry.operation("finalize", "failure")
+            raise
+        self._telemetry.bundle_finalized(finalized.schema_version, finalized.status)
+        for attachment in finalized.attachments:
+            if attachment.truncated:
+                self._telemetry.truncations("attachment")
+        try:
+            _, _, bundle_size = self._collect_tree(self.bundle_path(finalized.run_id))
+        except Exception:
+            pass
+        else:
+            self._telemetry.bundle_bytes(finalized.schema_version, bundle_size)
+        self._telemetry.operation("finalize", "success")
+        return finalized
+
+    def _finalize(
+        self,
+        run_id: str,
+        manifest: BundleManifestV1 | Mapping[str, object],
+    ) -> BundleManifestV1:
+        """Perform finalization without announcing success before commit."""
         safe_run_id = validate_run_id(run_id)
         supplied = self._manifest_payload(manifest)
         if supplied.get("run_id") != safe_run_id:
@@ -571,8 +634,44 @@ class RunBundleStore:
         )
         return verdict, manifest, events
 
+    @staticmethod
+    def _verification_reason(verdict: BundleVerification) -> tuple[str, str]:
+        """Map a detailed verdict to bounded outcome and reason classes."""
+        if verdict.valid and verdict.complete:
+            return "valid", "ok"
+        errors = " ".join(verdict.errors).lower()
+        if "unsupported" in errors and "schema" in errors:
+            return "unsupported", "schema"
+        if "missing" in errors:
+            return "invalid", "missing"
+        if "verification key" in errors:
+            return "invalid", "key"
+        if "hmac" in errors or "signature" in errors:
+            return "invalid", "signature"
+        if "digest" in errors:
+            return "invalid", "digest"
+        if "sequence" in errors or "event_count" in errors or "non-contiguous" in errors:
+            return "invalid", "sequence"
+        if "unexpected" in errors or "extra" in errors:
+            return "invalid", "extra"
+        if "locked" in errors:
+            return "invalid", "storage"
+        return "invalid", "corrupt"
+
     def verify(self, run_id: str) -> BundleVerification:
-        """Verify schema, event digests, ordered index, attachments, and HMAC."""
+        """Verify a bundle and emit one bounded verdict for this public call."""
+        try:
+            verdict = self._verify(run_id)
+        except Exception as exc:
+            reason = "storage" if isinstance(exc, (OSError, ReplayPathError)) else "corrupt"
+            self._telemetry.verification("v1", "error", reason)
+            raise
+        outcome, reason = self._verification_reason(verdict)
+        self._telemetry.verification("v1", outcome, reason)
+        return verdict
+
+    def _verify(self, run_id: str) -> BundleVerification:
+        """Verify without duplicating metrics for internal integrity checks."""
         safe_run_id = validate_run_id(run_id)
         try:
             with self.run_lock(safe_run_id):

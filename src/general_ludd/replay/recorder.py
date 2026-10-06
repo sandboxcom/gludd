@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final, Literal, cast
 
 from general_ludd.filestore.store import FileStore
+from general_ludd.replay.telemetry import ReplayTelemetry
 from general_ludd.security.redaction import (
     RedactionLimits,
     RedactionMetadata,
@@ -128,19 +129,42 @@ class RunRecorder:
         store: FileStore | None = None,
         *,
         redaction_limits: RedactionLimits | None = None,
+        telemetry: ReplayTelemetry | None = None,
     ) -> None:
         """Initialize a recorder with an optional store and bounded limits."""
         self._store = store if store is not None else FileStore(root_path=".gludd/replays")
         self._redaction_limits = redaction_limits or RedactionLimits()
+        self._telemetry = telemetry if telemetry is not None else ReplayTelemetry()
 
     def record(self, run_id: str, event: dict[str, Any]) -> None:
         """Atomically publish one sanitized event and its capture metadata."""
+        try:
+            event_type, metadata = self._record(run_id, event)
+        except Exception as exc:
+            reason = "storage" if isinstance(exc, OSError) else "redaction"
+            self._telemetry.record_failure(reason)
+            self._telemetry.operation("record", "failure")
+            raise
+        self._telemetry.events_recorded("legacy-v0", event_type)
+        for kind in metadata.redaction_kinds:
+            self._telemetry.redactions(kind)
+        if metadata.truncation_count:
+            self._telemetry.truncations("event", count=metadata.truncation_count)
+        self._telemetry.operation("record", "success")
+
+    def _record(
+        self,
+        run_id: str,
+        event: dict[str, Any],
+    ) -> tuple[object, CaptureMetadata]:
+        """Publish one event and return only bounded telemetry evidence."""
         events_dir = f"runs/{run_id}/events"
         capture_dir = f"runs/{run_id}/capture"
         sequence = self._next_seq(events_dir)
         event_path = f"{events_dir}/{sequence}.json"
         capture_path = f"{capture_dir}/{sequence}.json"
 
+        event_type = dict.get(event, "type")
         redacted = redact_for_persistence(event, limits=self._redaction_limits)
         # The total-byte fail-closed marker is scalar; keep the historical
         # replay return type while the sidecar explains why content is gone.
@@ -170,9 +194,21 @@ class RunRecorder:
         except Exception:
             self._remove_if_exists(capture_path)
             raise
+        return event_type, metadata
 
     def replay(self, run_id: str) -> list[dict[str, Any]]:
         """Return captured events in sequence order using the legacy shape."""
+        try:
+            events = self._replay(run_id)
+        except Exception:
+            self._telemetry.operation("show", "failure")
+            raise
+        self._telemetry.legacy_read()
+        self._telemetry.operation("show", "success")
+        return events
+
+    def _replay(self, run_id: str) -> list[dict[str, Any]]:
+        """Read legacy events without announcing a partial read as successful."""
         events_dir = f"runs/{run_id}/events"
         events: list[dict[str, Any]] = []
         for _, name in self._numeric_json_entries(events_dir):
@@ -183,6 +219,17 @@ class RunRecorder:
 
     def capture_metadata(self, run_id: str) -> list[CaptureMetadata]:
         """Return typed content-free capture metadata in event sequence order."""
+        try:
+            captures = self._capture_metadata(run_id)
+        except Exception:
+            self._telemetry.operation("show", "failure")
+            raise
+        self._telemetry.legacy_read()
+        self._telemetry.operation("show", "success")
+        return captures
+
+    def _capture_metadata(self, run_id: str) -> list[CaptureMetadata]:
+        """Read all sidecars before emitting a successful legacy-read metric."""
         capture_dir = f"runs/{run_id}/capture"
         captures: list[CaptureMetadata] = []
         for _, name in self._numeric_json_entries(capture_dir):
@@ -194,11 +241,18 @@ class RunRecorder:
 
     def list_runs(self) -> list[str]:
         """Return recorded run identifiers in lexical order."""
-        runs_dir = "runs"
-        if not self._store.exists(runs_dir):
-            return []
-        entries = self._store.list_dir(runs_dir)
-        return sorted(e["name"] for e in entries if e["is_dir"])
+        try:
+            runs_dir = "runs"
+            if not self._store.exists(runs_dir):
+                runs: list[str] = []
+            else:
+                entries = self._store.list_dir(runs_dir)
+                runs = sorted(e["name"] for e in entries if e["is_dir"])
+        except Exception:
+            self._telemetry.operation("list", "failure")
+            raise
+        self._telemetry.operation("list", "success")
+        return runs
 
     def _numeric_json_entries(self, directory: str) -> list[tuple[int, str]]:
         if not self._store.exists(directory):
