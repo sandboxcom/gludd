@@ -11,6 +11,7 @@ from types import ModuleType, SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "verify_dual_track_ci.py"
@@ -427,7 +428,7 @@ def test_hosted_evidence_rejects_duplicate_shard_attestations(tmp_path: Path) ->
 
 
 def test_release_commands_require_dual_track_evidence() -> None:
-    source = MAKEFILE.read_text(encoding="utf-8")
+    source = compose_makefile(MAKEFILE)
 
     assert "require-dual-track-green:" in source
     dry_run = source.split("_release-dry-run-guard:", 1)[1].split("\n\n", 1)[0]

@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import subprocess
 import uuid
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
@@ -20,7 +22,7 @@ MAKEFILE = ROOT / "Makefile"
 
 def _content() -> str:
     assert MAKEFILE.exists(), "Makefile must exist"
-    return MAKEFILE.read_text()
+    return compose_makefile(MAKEFILE)
 
 
 def _recipe(target: str) -> str:
@@ -114,31 +116,83 @@ class TestAgentWorktreeRecipeShape:
 class TestAgentWorktreeLifecycle:
     """End-to-end: actually create a worktree, then clean it up."""
 
-    @pytest.fixture(autouse=True)
-    def _branch(self) -> str:
+    @pytest.fixture
+    def lifecycle_repo(self, tmp_path: Path) -> Iterator[tuple[Path, str]]:
+        """Build a disposable git repository for worktree mutations."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(
+            ["git", "init"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "tests@example.invalid"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Gludd Tests"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        (repo / "Makefile").write_text(compose_makefile(MAKEFILE), encoding="utf-8")
+        (repo / "seed.txt").write_text("seed\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "add", "Makefile", "seed.txt"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "test: seed isolated repository"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
         # Unique branch per test run so parallel pytest workers never collide.
         tag = uuid.uuid4().hex[:12]
-        self.branch = f"agent-test-{tag}"
-        yield self.branch
+        branch = f"agent-test-{tag}"
+        yield repo, branch
         # Hard cleanup: never leave a worktree behind on a test failure.
-        wt = Path("/tmp/gludd-worktrees") / self.branch
+        wt = Path("/tmp/gludd-worktrees") / branch
         subprocess.run(
             ["git", "worktree", "remove", str(wt), "--force"],
-            cwd=str(ROOT),
+            cwd=repo,
             check=False,
             capture_output=True,
         )
         subprocess.run(
-            ["git", "branch", "-D", self.branch],
-            cwd=str(ROOT),
+            ["git", "branch", "-D", branch],
+            cwd=repo,
             check=False,
             capture_output=True,
         )
 
-    def test_agent_worktree_creates_isolated_checkout(self):
+    def test_agent_worktree_creates_isolated_checkout(
+        self,
+        lifecycle_repo: tuple[Path, str],
+    ) -> None:
+        repo, branch = lifecycle_repo
         result = subprocess.run(
-            ["make", "--no-print-directory", "agent-worktree", f"BRANCH={self.branch}"],
-            cwd=str(ROOT),
+            [
+                "make",
+                "--no-print-directory",
+                "agent-worktree",
+                f"BRANCH={branch}",
+                "UV=true",
+                f"ACTIVE_WORKSTREAM_REGISTRY={repo / '.active-workstreams.json'}",
+            ],
+            cwd=repo,
             capture_output=True,
             text=True,
         )
@@ -168,14 +222,14 @@ class TestAgentWorktreeLifecycle:
             text=True,
             check=False,
         )
-        assert head.returncode == 0 and head.stdout.strip() == self.branch, (
-            f"worktree HEAD is not on branch {self.branch}: "
+        assert head.returncode == 0 and head.stdout.strip() == branch, (
+            f"worktree HEAD is not on branch {branch}: "
             f"rc={head.returncode} out={head.stdout!r}"
         )
         # The worktree is linked to the repo (shows up in `git worktree list`).
         listing = subprocess.run(
             ["git", "worktree", "list"],
-            cwd=str(ROOT),
+            cwd=repo,
             capture_output=True,
             text=True,
             check=True,
@@ -184,21 +238,39 @@ class TestAgentWorktreeLifecycle:
             f"worktree {wt} not registered in `git worktree list`:\n{listing.stdout}"
         )
 
-    def test_agent_cleanup_removes_worktree(self):
+    def test_agent_cleanup_removes_worktree(
+        self,
+        lifecycle_repo: tuple[Path, str],
+    ) -> None:
+        repo, branch = lifecycle_repo
         # Create first, then clean up.
         create = subprocess.run(
-            ["make", "--no-print-directory", "agent-worktree", f"BRANCH={self.branch}"],
-            cwd=str(ROOT),
+            [
+                "make",
+                "--no-print-directory",
+                "agent-worktree",
+                f"BRANCH={branch}",
+                "UV=true",
+                f"ACTIVE_WORKSTREAM_REGISTRY={repo / '.active-workstreams.json'}",
+            ],
+            cwd=repo,
             capture_output=True,
             text=True,
         )
         assert create.returncode == 0, f"setup agent-worktree failed: {create.stderr}"
-        wt = Path("/tmp/gludd-worktrees") / self.branch
+        wt = Path("/tmp/gludd-worktrees") / branch
         assert wt.exists(), "precondition: worktree should exist before cleanup"
 
         cleanup = subprocess.run(
-            ["make", "--no-print-directory", "agent-cleanup", f"BRANCH={self.branch}"],
-            cwd=str(ROOT),
+            [
+                "make",
+                "--no-print-directory",
+                "agent-cleanup",
+                f"BRANCH={branch}",
+                "UV=true",
+                f"ACTIVE_WORKSTREAM_REGISTRY={repo / '.active-workstreams.json'}",
+            ],
+            cwd=repo,
             capture_output=True,
             text=True,
         )
@@ -211,12 +283,12 @@ class TestAgentWorktreeLifecycle:
         )
         # Branch is deleted too.
         branch_check = subprocess.run(
-            ["git", "rev-parse", "--verify", self.branch],
-            cwd=str(ROOT),
+            ["git", "rev-parse", "--verify", branch],
+            cwd=repo,
             capture_output=True,
             text=True,
             check=False,
         )
         assert branch_check.returncode != 0, (
-            f"agent-cleanup did not delete branch {self.branch}"
+            f"agent-cleanup did not delete branch {branch}"
         )

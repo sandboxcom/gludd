@@ -15,6 +15,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode/plugin/enforce-clean-tree.ts"
 HELPERS_PATH = ROOT / ".opencode/lib/plugin_test_exports.ts"
@@ -302,25 +304,25 @@ class TestMakefileStashTargets:
     """Verify git-stash and git-stash-pop Makefile targets exist."""
 
     def test_git_stash_target_exists(self):
-        makefile = MAKEFILE_PATH.read_text()
+        makefile = compose_makefile(MAKEFILE_PATH)
         assert re.search(r"^git-stash:", makefile, re.MULTILINE), (
             "git-stash target missing from Makefile"
         )
 
     def test_git_stash_pop_target_exists(self):
-        makefile = MAKEFILE_PATH.read_text()
+        makefile = compose_makefile(MAKEFILE_PATH)
         assert re.search(r"^git-stash-pop:", makefile, re.MULTILINE), (
             "git-stash-pop target missing from Makefile"
         )
 
     def test_git_stash_in_phony(self):
-        makefile = MAKEFILE_PATH.read_text()
+        makefile = compose_makefile(MAKEFILE_PATH)
         phony_block = makefile.split(".PHONY")[1].split("\n\n")[0]
         assert "git-stash" in phony_block, "git-stash not in .PHONY list"
         assert "git-stash-pop" in phony_block, "git-stash-pop not in .PHONY list"
 
     def test_git_stash_uses_push(self):
-        makefile = MAKEFILE_PATH.read_text()
+        makefile = compose_makefile(MAKEFILE_PATH)
         target_block = re.search(
             r"git-stash:\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)", makefile, re.DOTALL
         )
@@ -330,7 +332,7 @@ class TestMakefileStashTargets:
         )
 
     def test_git_stash_pop_uses_pop(self):
-        makefile = MAKEFILE_PATH.read_text()
+        makefile = compose_makefile(MAKEFILE_PATH)
         target_block = re.search(
             r"git-stash-pop:\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)", makefile, re.DOTALL
         )

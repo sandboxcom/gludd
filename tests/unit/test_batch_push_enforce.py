@@ -19,6 +19,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode/plugin/enforce-batch-push.ts"
 MAKEFILE_PATH = ROOT / "Makefile"
@@ -147,19 +149,19 @@ class TestDenyMessage:
 
 class TestMakefilePushTargets:
     def test_git_push_sandboxcom_target_exists(self):
-        makefile = MAKEFILE_PATH.read_text()
+        makefile = compose_makefile(MAKEFILE_PATH)
         assert re.search(r"^git-push-sandboxcom:", makefile, re.MULTILINE), (
             "git-push-sandboxcom target missing from Makefile"
         )
 
     def test_development_push_target_exists(self):
-        makefile = MAKEFILE_PATH.read_text()
+        makefile = compose_makefile(MAKEFILE_PATH)
         assert re.search(r"^development-push:", makefile, re.MULTILINE), (
             "development-push target missing from Makefile"
         )
 
     def test_development_push_has_ci_busy_check(self):
-        makefile = MAKEFILE_PATH.read_text()
+        makefile = compose_makefile(MAKEFILE_PATH)
         m = re.search(
             r"^development-push:(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
             makefile, re.MULTILINE | re.DOTALL,
@@ -170,7 +172,7 @@ class TestMakefilePushTargets:
         )
 
     def test_push_dev_has_ci_busy_check(self):
-        makefile = MAKEFILE_PATH.read_text()
+        makefile = compose_makefile(MAKEFILE_PATH)
         m = re.search(
             r"^push-dev:(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
             makefile, re.MULTILINE | re.DOTALL,

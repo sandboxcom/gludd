@@ -27,6 +27,8 @@ import os
 import subprocess
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-no-ci-poll.ts"
 NOWAIT_PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-no-wait.ts"
@@ -52,7 +54,7 @@ def _cooldown_src() -> str:
 
 
 def _makefile() -> str:
-    return MAKEFILE.read_text(encoding="utf-8")
+    return compose_makefile(MAKEFILE)
 
 
 def _target_recipe(makefile: str, target: str) -> str:
