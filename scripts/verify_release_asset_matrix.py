@@ -56,6 +56,12 @@ REQUIRED_SMOKE_CHECKS = frozenset(
 )
 
 ROLLBACK_RECEIPT_SCHEMA_VERSION = 1
+MAX_PUBLISHED_ROLLBACK_ERRORS = 24
+MAX_PUBLISHED_JSON_BYTES = 262_144
+MAX_PUBLISHED_CHECKSUM_BYTES = 1_048_576
+MAX_PUBLISHED_CHECKSUM_LINES = 512
+MAX_PUBLISHED_SMOKE_ATTESTATIONS = len(REQUIRED_SMOKE_CHECKS)
+HASH_CHUNK_BYTES = 1_048_576
 
 IMAGE_REFERENCE_RE = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9._/:+-]*@sha256:[0-9a-f]{64}$"
@@ -352,10 +358,19 @@ def _canonical_json_sha256(payload: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _sha256_file(path: Path) -> str:
+    """Hash a release asset without loading an unbounded artifact into memory."""
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while chunk := stream.read(HASH_CHUNK_BYTES):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _smoke_attestation_digests(asset_dir: Path, version: str) -> dict[str, str]:
     """Bind every version-scoped smoke attestation by its staged bytes."""
     return {
-        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        path.name: _sha256_file(path)
         for path in sorted(asset_dir.glob(f"gludd-smoke-*-{version}.json"))
     }
 
@@ -439,7 +454,7 @@ def write_rollback_receipt(
     candidate_path = asset_dir / candidate_asset
     if not candidate_path.is_file() or candidate_path.stat().st_size == 0:
         raise ValueError("candidate asset must be a non-empty staged file")
-    candidate_digest = hashlib.sha256(candidate_path.read_bytes()).hexdigest()
+    candidate_digest = _sha256_file(candidate_path)
 
     route_digests = (prior_route_before_sha256, prior_route_after_sha256)
     if not all(SHA_RE.fullmatch(value) is not None for value in route_digests):
@@ -534,7 +549,7 @@ def _verify_checksums(asset_dir: Path) -> list[str]:
     if extra:
         errors.append("checksums reference absent assets: " + ", ".join(extra))
     for name in sorted(expected & recorded.keys()):
-        digest = hashlib.sha256((asset_dir / name).read_bytes()).hexdigest()
+        digest = _sha256_file(asset_dir / name)
         if digest != recorded[name]:
             errors.append(f"checksum mismatch: {name}")
     return errors
@@ -598,9 +613,7 @@ def _verify_candidate_receipt_evidence(
     elif not (asset_dir / candidate_asset).is_file():
         errors.append("rollback receipt candidate asset is missing")
     else:
-        candidate_digest = hashlib.sha256(
-            (asset_dir / candidate_asset).read_bytes()
-        ).hexdigest()
+        candidate_digest = _sha256_file(asset_dir / candidate_asset)
         if not isinstance(candidate_sha, str) or not hmac.compare_digest(
             candidate_sha, candidate_digest
         ):
@@ -775,6 +788,204 @@ def _verify_rollback_receipt(
     return errors
 
 
+def _bounded_published_rollback_errors(errors: list[str]) -> list[str]:
+    """Return deterministic, content-free diagnostics with a hard output bound."""
+    unique = sorted(set(errors))
+    if len(unique) <= MAX_PUBLISHED_ROLLBACK_ERRORS:
+        return unique
+    retained = unique[: MAX_PUBLISHED_ROLLBACK_ERRORS - 1]
+    retained.append("published rollback validation reached its failure limit")
+    return retained
+
+
+def _published_file_size_error(path: Path, *, label: str, limit: int) -> str | None:
+    """Reject absent, linked, or oversized hosted evidence without reading it."""
+    if not path.is_file() or path.is_symlink():
+        return f"published {label} is missing or unsafe"
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return f"published {label} metadata is unreadable"
+    if size == 0:
+        return f"published {label} is empty"
+    if size > limit:
+        return f"published {label} exceeds its verification size limit"
+    return None
+
+
+def _published_checksum_index(path: Path) -> tuple[dict[str, str], list[str]]:
+    """Parse a bounded aggregate checksum without echoing hosted content."""
+    size_error = _published_file_size_error(
+        path,
+        label="checksum index",
+        limit=MAX_PUBLISHED_CHECKSUM_BYTES,
+    )
+    if size_error:
+        return {}, [size_error]
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return {}, ["published checksum index is not readable UTF-8"]
+    if len(lines) > MAX_PUBLISHED_CHECKSUM_LINES:
+        return {}, ["published checksum index exceeds its line limit"]
+
+    recorded: dict[str, str] = {}
+    errors: list[str] = []
+    for number, raw_line in enumerate(lines, start=1):
+        parts = raw_line.split(maxsplit=1)
+        if len(parts) != 2 or SHA_RE.fullmatch(parts[0]) is None:
+            errors.append(f"published checksum line {number} is malformed")
+            continue
+        name = parts[1].lstrip("*")
+        if Path(name).name != name or name in recorded:
+            errors.append(f"published checksum line {number} has an unsafe identity")
+            continue
+        recorded[name] = parts[0]
+    return recorded, errors
+
+
+def verify_published_rollback_receipt(asset_dir: Path, version: str) -> list[str]:
+    """Revalidate a downloaded rollback receipt and its checksum-bound evidence.
+
+    The caller owns transport. This function intentionally performs no network
+    access, executes no artifact, and reports no hosted file content.
+    """
+    if not asset_dir.is_dir():
+        return ["published rollback evidence directory is missing"]
+
+    receipt_name = f"gludd-rollback-receipt-{version}.json"
+    manifest_name = f"gludd-release-manifest-{version}.json"
+    receipt_path = asset_dir / receipt_name
+    manifest_path = asset_dir / manifest_name
+    checksum_path = asset_dir / "SHA256SUMS"
+    smoke_paths = sorted(asset_dir.glob(f"gludd-smoke-*-{version}.json"))
+    errors: list[str] = []
+
+    receipt_size_error = _published_file_size_error(
+        receipt_path,
+        label="rollback receipt",
+        limit=MAX_PUBLISHED_JSON_BYTES,
+    )
+    if receipt_size_error:
+        errors.append(receipt_size_error)
+    manifest_size_error = _published_file_size_error(
+        manifest_path,
+        label="release manifest",
+        limit=MAX_PUBLISHED_JSON_BYTES,
+    )
+    if manifest_size_error:
+        errors.append(manifest_size_error)
+    if len(smoke_paths) > MAX_PUBLISHED_SMOKE_ATTESTATIONS:
+        errors.append("published smoke attestation count exceeds its limit")
+    smoke_inputs_bounded = len(smoke_paths) <= MAX_PUBLISHED_SMOKE_ATTESTATIONS
+    for smoke_path in smoke_paths[:MAX_PUBLISHED_SMOKE_ATTESTATIONS]:
+        smoke_error = _published_file_size_error(
+            smoke_path,
+            label="smoke attestation",
+            limit=MAX_PUBLISHED_JSON_BYTES,
+        )
+        if smoke_error:
+            errors.append(smoke_error)
+            smoke_inputs_bounded = False
+    if smoke_inputs_bounded and _verify_smoke_attestations(asset_dir, version):
+        errors.append("published smoke attestations do not prove complete passing fan-in")
+
+    receipt_payload: dict[str, object] = {}
+    if receipt_size_error is None:
+        receipt_payload, receipt_error = _json_object(receipt_path)
+        if receipt_error:
+            errors.append("published rollback receipt is not valid JSON")
+        elif smoke_inputs_bounded:
+            errors.extend(
+                _verify_rollback_receipt(
+                    receipt_path,
+                    asset_dir=asset_dir,
+                    version=version,
+                )
+            )
+
+    candidate_name: str | None = None
+    candidate = receipt_payload.get("candidate")
+    if isinstance(candidate, dict):
+        candidate_value = candidate.get("asset")
+        if (
+            isinstance(candidate_value, str)
+            and Path(candidate_value).name == candidate_value
+        ):
+            candidate_name = candidate_value
+
+    attestation_names: set[str] = set()
+    platform_fan_in = receipt_payload.get("platform_fan_in")
+    if isinstance(platform_fan_in, dict):
+        attestations = platform_fan_in.get("attestations")
+        if isinstance(attestations, dict):
+            if len(attestations) > MAX_PUBLISHED_SMOKE_ATTESTATIONS:
+                errors.append("rollback receipt smoke attestation count exceeds its limit")
+            else:
+                attestation_names = {
+                    name
+                    for name in attestations
+                    if isinstance(name, str) and Path(name).name == name
+                }
+
+    manifest_assets: set[str] = set()
+    if manifest_size_error is None:
+        manifest_payload, manifest_error = _json_object(manifest_path)
+        if manifest_error:
+            errors.append("published release manifest is not valid JSON")
+        else:
+            assets_value = manifest_payload.get("assets")
+            if (
+                manifest_payload.get("schema_version") != 1
+                or manifest_payload.get("version") != version
+                or not isinstance(assets_value, list)
+                or not all(isinstance(name, str) for name in assets_value)
+            ):
+                errors.append("published release manifest schema is invalid")
+            else:
+                manifest_assets = set(assets_value)
+                if len(manifest_assets) != len(assets_value):
+                    errors.append("published release manifest has duplicate assets")
+                if receipt_name not in manifest_assets:
+                    errors.append("published manifest does not inventory rollback receipt")
+                if candidate_name is not None and candidate_name not in manifest_assets:
+                    errors.append("published manifest does not inventory candidate artifact")
+                if not attestation_names.issubset(manifest_assets):
+                    errors.append("published manifest does not inventory smoke attestations")
+            if manifest_payload.get("source_sha") != receipt_payload.get("source_sha"):
+                errors.append("published manifest and rollback source SHA differ")
+
+    checksums, checksum_errors = _published_checksum_index(checksum_path)
+    errors.extend(checksum_errors)
+    evidence_labels = {
+        receipt_name: "rollback receipt",
+        manifest_name: "release manifest",
+    }
+    if candidate_name is not None:
+        evidence_labels[candidate_name] = "candidate artifact"
+    for name in attestation_names:
+        evidence_labels[name] = "smoke attestation"
+
+    for name, label in sorted(evidence_labels.items()):
+        evidence_path = asset_dir / name
+        if not evidence_path.is_file() or evidence_path.is_symlink():
+            errors.append(f"published {label} evidence is missing or unsafe")
+            continue
+        expected_digest = checksums.get(name)
+        if expected_digest is None:
+            errors.append(f"published checksum is missing: {label}")
+            continue
+        try:
+            observed_digest = _sha256_file(evidence_path)
+        except OSError:
+            errors.append(f"published {label} evidence is unreadable")
+            continue
+        if not hmac.compare_digest(expected_digest, observed_digest):
+            errors.append(f"published checksum mismatch: {label}")
+
+    return _bounded_published_rollback_errors(errors)
+
+
 def verify_release_asset_matrix(
     asset_dir: Path, version: str, repository_root: Path
 ) -> list[str]:
@@ -939,7 +1150,26 @@ def main(argv: list[str] | None = None) -> int:
     rollback.add_argument("--prior-route-after-sha256", required=True)
     rollback.add_argument("--active-work-before-sha256", required=True)
     rollback.add_argument("--active-work-after-sha256", required=True)
+    published_rollback = subparsers.add_parser("verify-published-rollback")
+    published_rollback.add_argument("asset_dir", type=Path)
+    published_rollback.add_argument("version")
     args = parser.parse_args(argv)
+
+    if args.command == "verify-published-rollback":
+        errors = verify_published_rollback_receipt(
+            args.asset_dir.resolve(),
+            args.version,
+        )
+        for error in errors:
+            print(f"FAIL {error}", file=sys.stderr)
+        if errors:
+            print(
+                f"PUBLISHED_ROLLBACK_RECEIPT_FAIL errors={len(errors)}",
+                flush=True,
+            )
+            return 1
+        print("PUBLISHED_ROLLBACK_RECEIPT_PASS", flush=True)
+        return 0
 
     if args.command == "write-manifest":
         written = write_release_manifest(args.asset_dir, args.version, args.source_sha)

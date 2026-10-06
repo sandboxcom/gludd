@@ -150,6 +150,22 @@ the receipt, `SHA256SUMS` binds its published bytes, and the existing
 control-plane rollback proof, not permission to mutate a live deployment; the
 provider-specific live proof remains a separate release-readiness obligation.
 
+Publication is a second trust boundary. Immediately after the GitHub Release
+action returns, the release job downloads only the published rollback receipt,
+release manifest, `SHA256SUMS`, Linux candidate archive, and complete versioned
+smoke-attestation set into a run-scoped directory. The
+`verify-published-rollback` command then replays the receipt schema and ZDD state
+machine against those downloaded bytes, verifies every evidence file through
+the published aggregate checksum, and requires the manifest to inventory the
+receipt, candidate, and smoke inputs. It never substitutes the runner's
+`release-assets` staging directory for hosted evidence. The following
+post-deploy smoke executes the downloaded candidate's version and help commands.
+Missing, rebound, oversized, linked, malformed, or inconsistent evidence blocks
+the release with bounded diagnostics that do not echo hosted content; cleanup
+preserves the primary failure. This read-only verification cannot shift live
+traffic, so a failure leaves the previously active version and in-flight work
+unchanged.
+
 After the matrix writes and validates `SHA256SUMS`, the release job uses
 `actions/attest` v4.2.2 pinned to commit
 `1e69f48acb82d1966a394da916b4c1698aa569d6`. Its `subject-checksums` input binds
@@ -360,7 +376,9 @@ evidence:
   demonstrates that deleting and re-uploading a release asset under the same
   name changes its digest. Gludd binds the prior route, candidate artifact,
   every smoke attestation, and the receipt itself by SHA-256; a matching name is
-  never treated as immutable identity.
+  never treated as immutable identity. The post-publication replay therefore
+  downloads the hosted evidence and rechecks `SHA256SUMS` instead of trusting
+  the successful upload step or the runner's original staging bytes.
 
 These reports define refusal cases. A digest change, incomplete fan-in, missing
 health/version proof, or active-work drift cannot be waived by a successful

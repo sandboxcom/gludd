@@ -12,11 +12,13 @@ from pathlib import Path
 import pytest
 from scripts.verify_release_asset_matrix import (
     FOUNDATION_RELEASE_NAMES,
+    MAX_PUBLISHED_ROLLBACK_ERRORS,
     REQUIRED_SMOKE_CHECKS,
     ROLLBACK_RECEIPT_SCHEMA_VERSION,
     distribution_version,
     main,
     referenced_collection_artifacts,
+    verify_published_rollback_receipt,
     verify_release_asset_matrix,
     write_release_manifest,
     write_rollback_receipt,
@@ -286,6 +288,125 @@ def test_rollback_receipt_is_checksum_bound_and_fans_in_every_category(
         if line.endswith(f"  {receipt.name}")
     )
     assert checksum_line.split()[0] == hashlib.sha256(receipt.read_bytes()).hexdigest()
+
+
+def test_published_rollback_receipt_revalidates_downloaded_evidence(
+    tmp_path: Path,
+) -> None:
+    """The post-publication verifier must replay the exact downloaded bundle."""
+    assets, _repo = _complete_matrix(tmp_path)
+
+    assert verify_published_rollback_receipt(assets, VERSION) == []
+
+
+def test_published_rollback_receipt_requires_manifest_and_checksum_bindings(
+    tmp_path: Path,
+) -> None:
+    """A valid inner receipt is insufficient without both publication bindings."""
+    assets, _repo = _complete_matrix(tmp_path)
+    receipt_name = f"gludd-rollback-receipt-{VERSION}.json"
+    manifest = assets / f"gludd-release-manifest-{VERSION}.json"
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    manifest_payload["assets"].remove(receipt_name)
+    manifest.write_text(
+        json.dumps(manifest_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _refresh_checksums(assets)
+    checksum_lines = (assets / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
+    (assets / "SHA256SUMS").write_text(
+        "\n".join(
+            ("d" * 64 + f"  {receipt_name}") if line.endswith(f"  {receipt_name}") else line
+            for line in checksum_lines
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    errors = verify_published_rollback_receipt(assets, VERSION)
+
+    assert "published manifest does not inventory rollback receipt" in errors
+    assert "published checksum mismatch: rollback receipt" in errors
+
+
+def test_published_rollback_receipt_rechecks_smoke_contents_after_download(
+    tmp_path: Path,
+) -> None:
+    """Digest-consistent hosted smoke bytes must still prove every category."""
+    assets, _repo = _complete_matrix(tmp_path)
+    smoke = assets / f"gludd-smoke-all-{VERSION}.json"
+    smoke.write_text(
+        json.dumps({"version": VERSION, "checks": {"linux_tar": "passed"}}),
+        encoding="utf-8",
+    )
+    receipt = assets / f"gludd-rollback-receipt-{VERSION}.json"
+    receipt_payload = json.loads(receipt.read_text(encoding="utf-8"))
+    receipt_payload["platform_fan_in"]["attestations"][smoke.name] = hashlib.sha256(
+        smoke.read_bytes()
+    ).hexdigest()
+    receipt_payload["evidence_sha256"] = _receipt_evidence_sha256(receipt_payload)
+    receipt.write_text(json.dumps(receipt_payload), encoding="utf-8")
+    _refresh_checksums(assets)
+
+    errors = verify_published_rollback_receipt(assets, VERSION)
+
+    assert (
+        "published smoke attestations do not prove complete passing fan-in" in errors
+    )
+
+
+def test_published_rollback_failures_are_bounded_and_content_free(
+    tmp_path: Path,
+) -> None:
+    """Malformed hosted bytes cannot echo content or create unbounded diagnostics."""
+    assets, _repo = _complete_matrix(tmp_path)
+    receipt = assets / f"gludd-rollback-receipt-{VERSION}.json"
+    sensitive_marker = "operator-private-material-must-not-appear"
+    receipt.write_text(
+        '{"candidate":"' + sensitive_marker + '",',
+        encoding="utf-8",
+    )
+    (assets / "SHA256SUMS").write_text(
+        "\n".join(f"malformed-{number}-{sensitive_marker}" for number in range(30))
+        + "\n",
+        encoding="utf-8",
+    )
+
+    errors = verify_published_rollback_receipt(assets, VERSION)
+
+    assert errors
+    assert len(errors) == MAX_PUBLISHED_ROLLBACK_ERRORS
+    assert errors[-1] == "published rollback validation reached its failure limit"
+    assert sensitive_marker not in "\n".join(errors)
+
+
+def test_published_rollback_receipt_rejects_missing_and_ambiguous_evidence(
+    tmp_path: Path,
+) -> None:
+    """Hosted evidence must stay bounded, unique, complete, and source-identical."""
+    assert verify_published_rollback_receipt(tmp_path / "absent", VERSION) == [
+        "published rollback evidence directory is missing"
+    ]
+
+    assets, _repo = _complete_matrix(tmp_path)
+    receipt_name = f"gludd-rollback-receipt-{VERSION}.json"
+    candidate_name = f"gludd-{VERSION}-linux-x86_64.tar.gz"
+    smoke_name = f"gludd-smoke-all-{VERSION}.json"
+    manifest = assets / f"gludd-release-manifest-{VERSION}.json"
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    manifest_payload["source_sha"] = "d" * 40
+    manifest_payload["assets"] = [receipt_name, receipt_name]
+    manifest.write_text(json.dumps(manifest_payload), encoding="utf-8")
+    _refresh_checksums(assets)
+
+    errors = verify_published_rollback_receipt(assets, VERSION)
+
+    assert "published release manifest has duplicate assets" in errors
+    assert "published manifest does not inventory candidate artifact" in errors
+    assert "published manifest does not inventory smoke attestations" in errors
+    assert "published manifest and rollback source SHA differ" in errors
+    assert candidate_name not in "\n".join(errors)
+    assert smoke_name not in "\n".join(errors)
 
 
 @pytest.mark.parametrize(
@@ -1030,6 +1151,16 @@ def test_write_manifest_and_cli_modes(tmp_path: Path, capsys: pytest.CaptureFixt
         if path.name != "SHA256SUMS"
     ]
     (assets / "SHA256SUMS").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    assert main(["verify-published-rollback", str(assets), VERSION]) == 0
+    assert "PUBLISHED_ROLLBACK_RECEIPT_PASS" in capsys.readouterr().out
+
+    receipt = assets / f"gludd-rollback-receipt-{VERSION}.json"
+    receipt_bytes = receipt.read_bytes()
+    receipt.unlink()
+    assert main(["verify-published-rollback", str(assets), VERSION]) == 1
+    assert "PUBLISHED_ROLLBACK_RECEIPT_FAIL" in capsys.readouterr().out
+    receipt.write_bytes(receipt_bytes)
+
     assert main(["verify", str(assets), VERSION, "--repository-root", str(repo)]) == 0
     assert "RELEASE_ASSET_MATRIX_PASS" in capsys.readouterr().out
 
