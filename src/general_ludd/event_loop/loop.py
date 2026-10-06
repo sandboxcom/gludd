@@ -4847,8 +4847,9 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
         clobbering), and release the claim once delivery finishes (success OR
         failure). A None registry leaves behaviour unchanged.
         """
-        branch_name = getattr(todo, "branch_name", None) or f"gludd-{todo.todo_id.lower()}"
-        worktree = getattr(todo, "worktree", None)
+        configured_branch = getattr(todo, "branch_name", None)
+        project_id = getattr(todo, "project_id", None)
+        worktree = getattr(todo, "worktree", None) or self._resolve_repo_root(project_id)
         if worktree:
             from general_ludd.git_automation.repo import GitAutomation
 
@@ -4882,6 +4883,19 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
                                 f"file-claim conflict for {worker_id}: {sorted(affected)} contested"
                             )
                         claimed = True
+                current_branch = await self._bounded_to_thread(repo.current_branch)
+                if configured_branch:
+                    branch_name = configured_branch
+                elif current_branch.startswith("gludd/"):
+                    # Execution may already have created a more descriptive
+                    # todo branch. Preserve that exact checkout for delivery.
+                    branch_name = current_branch
+                else:
+                    branch_name = f"gludd/{todo.todo_id.lower()}"
+                if current_branch != branch_name:
+                    # create_branch both creates and checks out the task ref,
+                    # keeping the subsequent commit off trunk.
+                    await self._bounded_to_thread(repo.create_branch, branch_name)
                 # M (LIVE stall fix): commit/push shell out to blocking git.
                 # Even with a per-subprocess timeout, a 60s blocking call inside
                 # the async tick would freeze every other coroutine. Offload to a
@@ -4894,7 +4908,7 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
                 if self._loc_ledger is not None:
                     try:
                         delta = await self._bounded_to_thread(repo.lines_changed_in_commit)
-                        pid = getattr(todo, "project_id", None) or self._tick_project_id or ""
+                        pid = project_id or self._tick_project_id or ""
                         self._loc_ledger.record_loc_changed(pid, delta)
                     except Exception as loc_exc:
                         logger.debug(
@@ -4902,7 +4916,11 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
                             todo.todo_id,
                             loc_exc,
                         )
-                await self._bounded_to_thread(repo.push, branch=branch_name)
+                pushed = await self._bounded_to_thread(repo.push, branch=branch_name)
+                if pushed is not True:
+                    raise RuntimeError(
+                        f"git push returned false for todo {todo.todo_id} on {branch_name}"
+                    )
                 logger.info("H6: committed + pushed %s to %s", todo.todo_id, branch_name)
                 await self._maybe_open_pr(todo, worktree, branch_name)
             except Exception as exc:

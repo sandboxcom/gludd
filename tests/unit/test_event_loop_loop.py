@@ -3,10 +3,56 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
+from unittest.mock import MagicMock
 
 import pytest
+
+
+@pytest.mark.asyncio
+async def test_completed_delivery_uses_project_workspace_and_task_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Delivery resolves the owning project and leaves trunk before commit."""
+    from general_ludd.event_loop.loop import EventLoop
+    from general_ludd.git_automation import repo as repo_module
+
+    project_id = "project-delivery"
+    loop = EventLoop(
+        config={},
+        project_workspace={project_id: SimpleNamespace(repo_dir=tmp_path)},
+    )
+    todo = SimpleNamespace(
+        todo_id="TODO-DELIVERY",
+        title="deliver verified work",
+        branch_name=None,
+        worktree=None,
+        project_id=project_id,
+    )
+    git_repo = MagicMock()
+    git_repo.current_branch.return_value = "main"
+    git_repo.commit.return_value = "abc123"
+    git_repo.push.return_value = True
+    resolved_roots: list[str] = []
+
+    def git_automation(root: str) -> MagicMock:
+        resolved_roots.append(root)
+        return git_repo
+
+    async def no_pr(*_args: object) -> None:
+        return None
+
+    monkeypatch.setattr(repo_module, "GitAutomation", git_automation)
+    monkeypatch.setattr(loop, "_maybe_open_pr", no_pr)
+
+    await loop._try_commit_completed_work(todo)
+
+    assert resolved_roots == [str(tmp_path)]
+    git_repo.create_branch.assert_called_once_with("gludd/todo-delivery")
+    git_repo.commit.assert_called_once_with("[TODO-DELIVERY] deliver verified work")
+    git_repo.push.assert_called_once_with(branch="gludd/todo-delivery")
 
 
 class TestEventLoopImports:
