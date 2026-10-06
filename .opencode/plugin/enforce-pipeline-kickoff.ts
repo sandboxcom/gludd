@@ -44,6 +44,7 @@ const MAX_STATE_AGE_MS = Number.parseInt(
   process.env.GLUDD_PIPELINE_KICKOFF_MAX_AGE_MS || "14400000",
   10,
 )
+const GATE_RECEIPT_PRECISION_MS = 1000
 
 const FROZEN_BASH_ALLOWLIST = new Set([
   "active-work-status",
@@ -286,10 +287,12 @@ function statusPathFor(state: PipelineKickoffState): string | null {
 function terminalReceiptStatus(
   state: PipelineKickoffState,
   content: string,
+  mtimeMs: number,
 ): "complete" | "failed" | null {
   const lines = content.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
   const receipt = lines.at(-1) || ""
   if (state.pipeline_target === "ship-async") {
+    if (mtimeMs < state.created_at) return null
     const passed = receipt.match(/^SHIP PASS\s+(\S+)$/)
     if (passed) return passed[1] === state.tested_ref ? "complete" : null
     return /^SHIP FAIL(?:\s|$)/.test(receipt) ? "failed" : null
@@ -299,11 +302,13 @@ function terminalReceiptStatus(
     const receiptTime = Number(gate[2]) * 1000
     if (
       !Number.isFinite(receiptTime) ||
-      receiptTime + 1000 < state.created_at ||
+      receiptTime + GATE_RECEIPT_PRECISION_MS < state.created_at ||
+      mtimeMs + GATE_RECEIPT_PRECISION_MS < state.created_at ||
       receiptTime > Date.now() + 60_000
     ) return null
     return gate[1] === "PASS" ? "complete" : "failed"
   }
+  if (mtimeMs < state.created_at) return null
   if (/^test PASS\s+0$/.test(receipt)) return "complete"
   if (/^test FAIL(?:\s|$)/.test(receipt)) return "failed"
   return null
@@ -322,11 +327,10 @@ function refreshTerminalState(state: PipelineKickoffState | null): PipelineKicko
   if (!statusPath) return state
   try {
     const stat = fs.statSync(statusPath)
-    if (stat.mtimeMs < state.created_at) return state
     const content = fs.readFileSync(statusPath, "utf8")
     const digest = createHash("sha256").update(content).digest("hex")
     if (state.status_baseline_digest && digest === state.status_baseline_digest) return state
-    const terminalStatus = terminalReceiptStatus(state, content)
+    const terminalStatus = terminalReceiptStatus(state, content, stat.mtimeMs)
     if (terminalStatus) {
       state.status = terminalStatus
       writeState(state)

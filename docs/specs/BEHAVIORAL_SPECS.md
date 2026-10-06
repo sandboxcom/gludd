@@ -1032,6 +1032,7 @@
 **Category:** Parallel Pipeline Orchestration
 **Enforcement:** `enforce-pipeline-kickoff.ts` receipt-mtime and prompt-isolation guards
 **Behavior:** A terminal receipt older than the current launch MUST NOT unfreeze the checkout, and every writing dispatch MUST name an isolated git worktree.
+**Long-lived user evidence:** [Node.js issue #19897](https://github.com/nodejs/node/issues/19897) documents strict `fs.Stats` comparisons breaking across timestamp-rounding changes, while [webpack issue #6527](https://github.com/webpack/webpack/issues/6527) records that filesystem timestamps alone are not reliable content identities. Gate receipts therefore apply their existing one-second epoch precision to the mtime freshness check and retain both the launch-time content digest and embedded receipt epoch as stale-receipt guards; timestamp-free ship and test receipts keep strict mtime ordering.
 
 Each spec defines a behavioral invariant. Each spec MUST have a corresponding
 enforcement mechanism (plugin, Makefile guard, or AGENTS.md policy section) and

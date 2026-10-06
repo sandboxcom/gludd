@@ -272,6 +272,74 @@ console.log(JSON.stringify({{
     assert result == {"candidates": 0, "editAfterPass": None, "status": "complete"}
 
 
+def test_fresh_terminal_receipt_accepts_coarse_filesystem_mtime(
+    tmp_path: Path,
+) -> None:
+    env = _runtime_env(tmp_path, todos=[])
+    code = f"""
+import pluginFactory from {PLUGIN!r}
+import * as fs from 'node:fs'
+const createdAt = 1_800_000_000_123
+Date.now = () => createdAt
+const plugin = await pluginFactory({{}})
+const input = {{tool: 'bash', args: {{command: 'make gate-async'}}}}
+const output = {{args: {{command: 'make gate-async'}}}}
+await plugin['tool.execute.before'](input, output)
+await plugin['tool.execute.after'](input, {{args: output.args, result: '', metadata: {{exitCode: 0}}}})
+const receiptSeconds = Math.floor(createdAt / 1000)
+fs.writeFileSync(process.env.GLUDD_PIPELINE_STATUS_PATH, `PASS ${{receiptSeconds}}\\n`)
+fs.utimesSync(process.env.GLUDD_PIPELINE_STATUS_PATH, receiptSeconds, receiptSeconds)
+const receiptMtime = fs.statSync(process.env.GLUDD_PIPELINE_STATUS_PATH).mtimeMs
+const editAfterPass = await plugin['tool.execute.before'](
+  {{tool: 'edit', args: {{filePath: {str(tmp_path / 'src/a.py')!r}}}}}, {{}})
+const finished = JSON.parse(fs.readFileSync(process.env.GLUDD_PIPELINE_KICKOFF_STATE, 'utf8'))
+console.log(JSON.stringify({{
+  createdAt: finished.created_at,
+  receiptMtime,
+  editAfterPass: editAfterPass ?? null,
+  status: finished.status,
+}}))
+"""
+    result = _run_ts(code, env)
+    assert result == {
+        "createdAt": 1_800_000_000_123,
+        "receiptMtime": 1_800_000_000_000,
+        "editAfterPass": None,
+        "status": "complete",
+    }
+
+
+def test_timestamp_free_receipt_keeps_strict_filesystem_mtime(
+    tmp_path: Path,
+) -> None:
+    env = {
+        **_runtime_env(tmp_path, todos=[]),
+        "GLUDD_PIPELINE_STATUS_PATH": str(tmp_path / ".ship-status"),
+    }
+    tested_ref = env["GLUDD_PIPELINE_TESTED_REF"]
+    code = f"""
+import pluginFactory from {PLUGIN!r}
+import * as fs from 'node:fs'
+const createdAt = 1_800_000_000_123
+Date.now = () => createdAt
+const plugin = await pluginFactory({{}})
+const input = {{tool: 'bash', args: {{command: 'make ship-async'}}}}
+const output = {{args: {{command: 'make ship-async'}}}}
+await plugin['tool.execute.before'](input, output)
+await plugin['tool.execute.after'](input, {{args: output.args, result: '', metadata: {{exitCode: 0}}}})
+fs.writeFileSync(process.env.GLUDD_PIPELINE_STATUS_PATH, 'SHIP PASS {tested_ref}\\n')
+fs.utimesSync(process.env.GLUDD_PIPELINE_STATUS_PATH, 1_800_000_000, 1_800_000_000)
+const editAfterPass = await plugin['tool.execute.before'](
+  {{tool: 'edit', args: {{filePath: {str(tmp_path / 'src/a.py')!r}}}}}, {{}})
+const finished = JSON.parse(fs.readFileSync(process.env.GLUDD_PIPELINE_KICKOFF_STATE, 'utf8'))
+console.log(JSON.stringify({{
+  editAfterPass: editAfterPass?.permissionDecision ?? null,
+  status: finished.status,
+}}))
+"""
+    assert _run_ts(code, env) == {"editAfterPass": "deny", "status": "running"}
+
+
 def test_dispatch_cap_includes_agents_already_in_flight(tmp_path: Path) -> None:
     env = _runtime_env(
         tmp_path,
