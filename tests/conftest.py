@@ -571,16 +571,16 @@ class _WorktreeConfinement:
 
 
 _CANONICAL_MAIN_CHECKOUT = _linked_worktree_main_checkout(_REPO_ROOT)
+_WORKTREE_CONFINEMENT: _WorktreeConfinement | None = None
 if (
     _CANONICAL_MAIN_CHECKOUT is not None
     and _REPO_ROOT.resolve() != _CANONICAL_MAIN_CHECKOUT
 ):
-    sys.addaudithook(
-        _WorktreeConfinement(
-            active_root=_REPO_ROOT,
-            canonical_root=_CANONICAL_MAIN_CHECKOUT,
-        ).audit
+    _WORKTREE_CONFINEMENT = _WorktreeConfinement(
+        active_root=_REPO_ROOT,
+        canonical_root=_CANONICAL_MAIN_CHECKOUT,
     )
+    sys.addaudithook(_WORKTREE_CONFINEMENT.audit)
 
 for _p in (str(_SCRIPTS_DIR), str(_SRC_DIR)):
     if _p not in sys.path:
@@ -644,6 +644,13 @@ def pytest_configure(config: pytest.Config) -> None:
     but is unconditionally disabled in CI (the corresponding env var in
     .github/workflows/build.yml has been removed).
     """
+    # ``integration-health`` assigns an exact per-run ``--basetemp`` whose
+    # ``gi-<project>-<pid>`` name intentionally differs from the ordinary
+    # pytest/gludd prefixes.  Register that configured root with the audit
+    # guard itself; arbitrary sibling temp repositories remain untrusted.
+    if _WORKTREE_CONFINEMENT is not None:
+        _WORKTREE_CONFINEMENT._record_pytest_temp_root(config.option.basetemp)
+
     # RLIMIT_AS is intentionally NOT set here.
     # The adaptive_test.py worker cap is sufficient OOM protection.
     # Uncomment the block below for local memory-pressure debugging:

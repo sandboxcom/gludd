@@ -8,6 +8,8 @@ import sys
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
@@ -500,6 +502,41 @@ def test_confinement_allows_only_registered_temporary_directory_repos(
         guard.audit(
             "subprocess.Popen",
             ("git", mutation, str(unowned_root / "repo"), {}),
+        )
+
+
+def test_pytest_configure_registers_explicit_basetemp_for_isolated_repo(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The exact pytest basetemp is trusted without admitting temp siblings."""
+    main, linked = _linked_checkout(tmp_path)
+    basetemp = tmp_path / "gi-deadbeef-12345"
+    isolated_repo = basetemp / "popen-gw0" / "test_pipeline0" / "repo"
+    outside_repo = tmp_path / "unowned" / "repo"
+    (isolated_repo / ".git").mkdir(parents=True)
+    (outside_repo / ".git").mkdir(parents=True)
+    guard = _guard(main, linked)
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(
+        pytest_config,
+        "_WORKTREE_CONFINEMENT",
+        guard,
+        raising=False,
+    )
+
+    pytest_config.pytest_configure(
+        cast(pytest.Config, SimpleNamespace(option=SimpleNamespace(basetemp=basetemp)))
+    )
+    mutation = ("git", "checkout", "-b", "feature-test")
+    guard.audit(
+        "subprocess.Popen",
+        ("git", mutation, str(isolated_repo), {}),
+    )
+    with pytest.raises(PermissionError, match="repository mutation subprocess"):
+        guard.audit(
+            "subprocess.Popen",
+            ("git", mutation, str(outside_repo), {}),
         )
 
 
