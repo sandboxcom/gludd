@@ -880,15 +880,35 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
                     # then close the transaction before provisioning.  External
                     # lifecycle work must never hold the database writer lock.
                     await self._run_phase_range(0, PROVISION_PHASE_INDEX)
-                    await self._commit_tick_session(session)
+                    claim_commit_succeeded = await self._commit_tick_session(session)
                     self._clear_repos()
                 # Provision and dispatch with NO tick session held. Isolated
                 # per-job sessions are opened inside the dispatcher.
-                await self._run_phase_range(
-                    PROVISION_PHASE_INDEX,
-                    DISPATCH_PHASE_INDEX,
-                )
-                await self._run_phase_range(DISPATCH_PHASE_INDEX, DISPATCH_PHASE_INDEX + 1)
+                if claim_commit_succeeded is False:
+                    # A rolled-back claim is not durable demand.  Discard the
+                    # detached ORM batch so it can neither provision compute nor
+                    # dispatch work that another tick is still free to claim.
+                    self._tick_state["claimed_todos"] = []
+                    self._tick_state["compute_ready"] = False
+                    self._tick_state["compute_demand"] = {
+                        "state": "claim_commit_failed",
+                        "runnable_todos": 0,
+                        "execution_environment": "unchanged",
+                    }
+                    self._tick_metrics["claim_commit_failures"] = 1
+                    logger.error(
+                        "Compute provisioning skipped because the claim transaction "
+                        "did not commit"
+                    )
+                else:
+                    await self._run_phase_range(
+                        PROVISION_PHASE_INDEX,
+                        DISPATCH_PHASE_INDEX,
+                    )
+                    await self._run_phase_range(
+                        DISPATCH_PHASE_INDEX,
+                        DISPATCH_PHASE_INDEX + 1,
+                    )
                 assert self._session_factory is not None
                 for phase_idx in range(DISPATCH_PHASE_INDEX + 1, len(PHASE_ORDER)):
                     if phase_idx == RELEASE_PHASE_INDEX:
@@ -959,9 +979,10 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
         self._audit_repo = None
         self._variable_repo = None
 
-    async def _commit_tick_session(self, session: Any) -> None:
+    async def _commit_tick_session(self, session: Any) -> bool:
         try:
             await session.commit()
+            return True
         except Exception as exc:
             logger.error(
                 "Failed to commit tick session (writes lost): %s",
@@ -970,6 +991,7 @@ class EventLoop(EventLoopReviewMixin, EventLoopHandlers):
             )
             with contextlib.suppress(Exception):
                 await session.rollback()
+            return False
 
     async def _bounded_to_thread(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
         async with self._to_thread_semaphore:

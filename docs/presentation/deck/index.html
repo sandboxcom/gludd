@@ -228,6 +228,11 @@ flowchart TD
       <li>Exact release</li>
     </ol>
     <p class="honest-note">Guarantees zero pre-claim compute; a losing or restarted worker preserves foreign ownership.</p>
+    <ul class="bullets-tight" style="font-size:0.52em;">
+      <li>Commit failure: rollback + clear detached claim; no provision or dispatch.</li>
+      <li>Competing workers + restart: one durable winner, exactly one provision.</li>
+      <li>Non-runnable work: zero allocation.</li>
+    </ul>
     <p class="cite">Contract: docs/features/TODO_DRIVEN_COMPUTE_LIFECYCLE.md</p>
   </div>
   <p class="cite">Source: code-trace audit, verified against src/general_ludd/ on 2026-07-12T10:39:48Z</p>

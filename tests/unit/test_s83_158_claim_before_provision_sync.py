@@ -4,6 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 FEATURE = ROOT / "docs/features/TODO_DRIVEN_COMPUTE_LIFECYCLE.md"
+OWNERSHIP = ROOT / "docs/features/application-resource-ownership.md"
 DECK = ROOT / "docs/presentation/deck/index.html"
 
 
@@ -45,3 +46,41 @@ def test_reveal_deck_mirrors_claim_before_provision_in_order() -> None:
     assert "zero pre-claim compute" in contract
     assert "losing or restarted worker preserves foreign ownership" in contract
     assert "docs/features/TODO_DRIVEN_COMPUTE_LIFECYCLE.md" in contract
+
+
+def test_docs_pin_failed_commit_restart_and_non_runnable_outcomes() -> None:
+    """Both canonical docs must retain the complete durable-claim fence."""
+    feature = FEATURE.read_text(encoding="utf-8")
+    ownership = OWNERSHIP.read_text(encoding="utf-8")
+
+    for marker in (
+        "Commit failure rolls back and clears the detached claimed batch.",
+        "No provider or runner call follows that failed commit.",
+        "Exactly one durable winner causes exactly one provisioning call",
+        "Non-runnable work causes zero compute allocation.",
+    ):
+        assert marker in feature
+
+    for marker in (
+        "## Durable todo claim ownership",
+        "claim commit and session close precede provisioning",
+        "rollback clears the detached claimed batch",
+        "one durable winner and one provisioning call",
+        "Non-runnable work retains zero allocation",
+    ):
+        assert marker in ownership
+
+
+def test_reveal_deck_pins_failed_commit_and_restart_outcomes() -> None:
+    """The presentation must expose failure and restart acceptance outcomes."""
+    content = DECK.read_text(encoding="utf-8")
+    contract = content.split(
+        '<div data-contract="s83-158-claim-before-provision">', 1
+    )[1].split("</div>", 1)[0]
+
+    for marker in (
+        "Commit failure: rollback + clear detached claim; no provision or dispatch.",
+        "Competing workers + restart: one durable winner, exactly one provision.",
+        "Non-runnable work: zero allocation.",
+    ):
+        assert marker in contract

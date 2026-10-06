@@ -41,6 +41,12 @@ from the winning tick's claimed batch, not from a count of merely queued rows.
 That gives an empty queue, approval-only work, and a losing worker **zero
 pre-claim provisioning** and zero pre-claim compute.
 
+Commit failure rolls back and clears the detached claimed batch.
+No provider or runner call follows that failed commit.
+Non-runnable work causes zero compute allocation.
+Exactly one durable winner causes exactly one provisioning call across
+competing workers and restart.
+
 The durable todo compare-and-swap and execution lease are the ownership fence.
 If two workers observe the same candidate, only the winner receives a claimed
 batch and may reconcile compute to `present`; a foreign claim produces no

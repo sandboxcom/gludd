@@ -98,6 +98,46 @@ jobs:
           echo "=== CI PHASE: release-source-proof ==="
           python scripts/require_ci_green.py "$GITHUB_SHA" development
 
+  # Dedicated S83.158 acceptance: the selected tests use only SQLite plus
+  # in-process fake-local/fake-Azure providers. Empty Azure identity variables
+  # and loopback-only proxies make accidental cloud access fail before spend.
+  claim-before-provision-acceptance:
+    needs: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+        with:
+          ref: ${{ github.sha }}
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+      - name: Install locked dependencies
+        run: |
+          echo "=== CI PHASE: claim-before-provision-install ==="
+          make sync
+        env:
+          GLUDD_AUTH_PSK: ""
+      - name: Claim-before-provision local and fake-Azure acceptance
+        run: |
+          echo "=== CI PHASE: claim-before-provision-acceptance ==="
+          make test-files \
+            TESTFILES='tests/unit/test_claim_before_provision_acceptance.py tests/unit/test_db_session_dispatch.py tests/unit/test_tick_session.py tests/unit/test_e10_db_session_dispatch.py tests/unit/test_todo_compute_demand_lifecycle.py tests/e2e/test_self_improve_private_policy_e2e.py' \
+            PYTEST_ARGS='-W error'
+        env:
+          GLUDD_AUTH_PSK: ""
+          AZURE_CLIENT_ID: ""
+          AZURE_TENANT_ID: ""
+          AZURE_CLIENT_SECRET: ""
+          AZURE_SUBSCRIPTION_ID: ""
+          AZURE_CONFIG_DIR: /tmp/gludd-claim-before-provision-no-credentials
+          AZURE_CORE_COLLECT_TELEMETRY: "0"
+          AZURE_CONTAINERAPP_LIVE_PROOF_LIVE: "0"
+          HTTPS_PROXY: http://127.0.0.1:9
+          HTTP_PROXY: http://127.0.0.1:9
+          ALL_PROXY: http://127.0.0.1:9
+          NO_PROXY: ""
+
   gate:
     needs: version
     runs-on: ubuntu-24.04
@@ -1759,7 +1799,7 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
   release:
-    needs: [version, gate, release_source_proof, freellmapi-upstream-build, test-shard, coverage, molecule, linux, macos, windows, termux, container, ansible-ee, game-building]
+    needs: [version, gate, claim-before-provision-acceptance, release_source_proof, freellmapi-upstream-build, test-shard, coverage, molecule, linux, macos, windows, termux, container, ansible-ee, game-building]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -1776,6 +1816,7 @@ jobs:
       !cancelled() &&
       needs.version.result == 'success' &&
       needs.gate.result == 'success' &&
+      needs['claim-before-provision-acceptance'].result == 'success' &&
       needs.release_source_proof.result == 'success' &&
       needs['freellmapi-upstream-build'].result == 'skipped' &&
       needs['test-shard'].result == 'skipped' &&

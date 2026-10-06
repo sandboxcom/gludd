@@ -12,6 +12,7 @@ WORKFLOW_PATH = ROOT / ".github" / "workflows" / "build.yml"
 
 REQUIRED_RELEASE_JOBS = {
     "gate",
+    "claim-before-provision-acceptance",
     "release_source_proof",
     "test-shard",
     "coverage",

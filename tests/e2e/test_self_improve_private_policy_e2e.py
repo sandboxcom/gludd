@@ -483,7 +483,10 @@ async def test_self_improvement_uses_common_todo_ranking_compute_and_real_edit(
             project_workspace={
                 plan.project_id: SimpleNamespace(repo_dir=tmp_path),
             },
-            floor_controller=SimpleNamespace(get_max_active=lambda: 1),
+            floor_controller=cast(
+                Any,
+                SimpleNamespace(get_max_active=lambda: 1),
+            ),
             self_improve_runner_factory=lambda root: _runner(
                 root,
                 mode,
@@ -536,7 +539,7 @@ async def test_self_improvement_uses_common_todo_ranking_compute_and_real_edit(
             loop._active_session = session
             loop._todo_repo = repository
             loop._tick_project_id = plan.project_id
-            await loop._phase_reconcile_compute_demand()
+            await loop._phase_release_compute_demand()
 
         assert [call["state"] for call in lifecycle.calls] == ["present", "absent"]
         assert loop._tick_state["compute_demand"]["runnable_todos"] == 0
