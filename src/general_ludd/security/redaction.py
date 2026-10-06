@@ -49,6 +49,8 @@ _HIDDEN_REASONING_MARKERS: Final[tuple[str, ...]] = (
     "reasoning",
     "thinking",
 )
+_TOKEN_USAGE_KEYS: Final[frozenset[str]] = frozenset({"input", "output"})
+_MAX_TOKEN_USAGE_COUNT: Final[int] = 9_223_372_036_854_775_807
 _URL_RE: Final[re.Pattern[str]] = re.compile(
     r"(?P<url>[A-Za-z][A-Za-z0-9+.-]*://[^\s<>\"']+)"
 )
@@ -160,6 +162,19 @@ def _sensitive_key_kind(key: str) -> str | None:
     if any(marker in normalized for marker in _SECRET_KEY_MARKERS):
         return "secret_key"
     return None
+
+
+def _is_safe_token_usage_counts(key: str, value: object) -> bool:
+    """Accept only the exact, bounded completion-usage counter shape."""
+    if key != "tokens" or type(value) is not dict:
+        return False
+    counts = cast(dict[object, object], value)
+    if frozenset(counts) != _TOKEN_USAGE_KEYS:
+        return False
+    return all(
+        type(count) is int and 0 <= count <= _MAX_TOKEN_USAGE_COUNT
+        for count in counts.values()
+    )
 
 
 def _redact_url(match: re.Match[str], metrics: _Metrics) -> str:
@@ -296,7 +311,9 @@ def redact_for_persistence(
                             continue
                         key = raw_key
                         sensitive_kind = _sensitive_key_kind(key)
-                        if sensitive_kind is not None:
+                        if sensitive_kind is not None and not _is_safe_token_usage_counts(
+                            key, child
+                        ):
                             metrics.redact(sensitive_kind)
                             if sensitive_key_action == "replace":
                                 safe_mapping[key] = REDACTED_VALUE

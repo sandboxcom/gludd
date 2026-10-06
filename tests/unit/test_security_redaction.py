@@ -50,6 +50,52 @@ def test_nested_credentials_and_hidden_reasoning_are_redacted_before_serializati
     assert result.metadata.truncated is False
 
 
+def test_exact_token_usage_counts_are_preserved() -> None:
+    result = redact_for_persistence({"tokens": {"input": 200, "output": 150}})
+
+    assert result.value == {"tokens": {"input": 200, "output": 150}}
+    assert result.metadata.redaction_count == 0
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "token",
+        "Tokens",
+        "access_token",
+        "auth_token",
+        "refresh_tokens",
+        "session_tokens",
+        "token_budget",
+    ],
+)
+def test_only_exact_tokens_key_can_hold_usage_counts(key: str) -> None:
+    result = redact_for_persistence({key: {"input": 200, "output": 150}})
+
+    assert result.value == {key: REDACTED_VALUE}
+    assert result.metadata.redaction_kinds == ("secret_key",)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"input": 200},
+        {"output": 150},
+        {"input": 200, "output": 150, "cached": 25},
+        {"input": "200", "output": 150},
+        {"input": True, "output": 150},
+        {"input": -1, "output": 150},
+        {"input": 200, "output": 2**63},
+        [200, 150],
+    ],
+)
+def test_tokens_key_rejects_non_closed_or_unbounded_usage_shapes(value: object) -> None:
+    result = redact_for_persistence({"tokens": value})
+
+    assert result.value == {"tokens": REDACTED_VALUE}
+    assert result.metadata.redaction_kinds == ("secret_key",)
+
+
 def test_credential_url_and_assignment_text_keep_safe_identity() -> None:
     value = {
         "endpoint": "https://alice:p%40ss@example.test:8443/v1?q=ok&api_key=url-secret#fragment",
