@@ -367,6 +367,20 @@ fitting the canvas does not merely trade clipping for unreadably small text. The
 uses a fade transition so neighboring slide content never flies through the
 viewport and resembles persistent off-screen text.
 
+Safari-like portrait and short-landscape canvases now use the viewport at native
+scale instead of shrinking the fixed 1150x820 Reveal stage. Active slides own
+vertical scrolling from the top edge. The custom no-theme deck establishes a
+21px base in this mode; wide tables and long inline paths wrap, while
+intrinsically sized Mermaid images retain horizontal scrolling when wider than
+the canvas. Browser acceptance measures painted prose and diagram-label scale,
+both canvas edges, and proves that the first and last text remain reachable
+after an actual scroll. This
+guards the long-lived Reveal overflow report where tall content disappeared
+([reveal.js#16](https://github.com/hakimel/reveal.js/issues/16)) and the later
+practitioner discussion where a centered scroller could reach the bottom but
+not the clipped top
+([reveal.js discussion #3448](https://github.com/hakimel/reveal.js/discussions/3448)).
+
 The 2026-10-06 macOS reproduction separated delivery failures instead of
 guessing from Playwright. The exact deployed public revision
 `1d1cf6b8559d574d04418df52acbec535f16b1cd` passed the revision probe, yet the
