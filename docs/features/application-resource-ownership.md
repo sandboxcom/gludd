@@ -247,3 +247,12 @@ trees against the checked-in inventory, so a future split must land its exact
 resource locations in the same change. This preserves the explicit state-move
 lesson in the Terraform practitioner reports above: relocation is recorded, not
 silently discarded or excused by a broader allowlist.
+
+The canonical writer sorts complete evidence records and emits each record as
+one valid JSON object beneath a readable schema header. Output is therefore
+byte-for-byte deterministic regardless of discovery order, and its line count
+is the resource count plus six structural lines. The current 237-resource
+inventory is 243 lines. A 300-record regression round-trips every field through
+the normal loader while remaining below the repository's strict 2,500-line
+ceiling. This keeps the generated artifact within the same policy as handwritten
+files without an exception, schema loss, or manual post-generation minification.
