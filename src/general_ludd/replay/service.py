@@ -29,6 +29,7 @@ from general_ludd.replay.store import (
     RunBundleStore,
     VerifiedBundle,
 )
+from general_ludd.replay.telemetry import ReplayTelemetry
 
 _PROJECT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
 _CURSOR_VERSION = 1
@@ -261,6 +262,7 @@ class ReplayService:
         authorize: ReplayAuthorizer,
         cursor_key: bytes,
         audit: ReplayAuditSink = _noop_audit,
+        telemetry: ReplayTelemetry | None = None,
     ) -> None:
         """Bind storage and request-independent authorization/audit adapters."""
         if not isinstance(cursor_key, bytes) or len(cursor_key) < 16:
@@ -270,6 +272,7 @@ class ReplayService:
         self._authorize = authorize
         self._audit = audit
         self._cursor_key = cursor_key
+        self._telemetry = telemetry if telemetry is not None else ReplayTelemetry()
 
     def _is_authorized(
         self,
@@ -413,6 +416,22 @@ class ReplayService:
         cursor: str | None = None,
     ) -> ReplayPage:
         """Return one authorized, bounded page using a tamper-evident cursor."""
+        try:
+            page = self._list_runs(project_id=project_id, limit=limit, cursor=cursor)
+        except Exception:
+            self._telemetry.operation("list", "failure")
+            raise
+        self._telemetry.operation("list", "success")
+        return page
+
+    def _list_runs(
+        self,
+        *,
+        project_id: str | None,
+        limit: int,
+        cursor: str | None,
+    ) -> ReplayPage:
+        """Build a complete authorized page before emitting its outcome."""
         safe_project_id = _validate_project_id(project_id)
         if (
             not isinstance(limit, int)
@@ -537,6 +556,18 @@ class ReplayService:
 
     def verify(self, run_id: str, *, project_id: str | None) -> ReplayVerification:
         """Return a sanitized integrity verdict for one authorized run."""
+        try:
+            verification = self._verify(run_id, project_id=project_id)
+        except Exception:
+            self._telemetry.operation("verify", "failure")
+            raise
+        self._telemetry.operation(
+            "verify", "success" if verification.valid else "failure"
+        )
+        return verification
+
+    def _verify(self, run_id: str, *, project_id: str | None) -> ReplayVerification:
+        """Verify and audit without duplicating the public operation outcome."""
         entry = self._lookup(run_id, project_id, "replay:read")
         verification = self._verification(self._store.verify(entry.run_id))
         self._emit_audit(
@@ -550,6 +581,18 @@ class ReplayService:
 
     def show(self, run_id: str, *, project_id: str | None) -> ReplayDetail:
         """Return safe bundle metadata, never event payload or attachment bytes."""
+        try:
+            detail = self._show(run_id, project_id=project_id)
+        except Exception:
+            self._telemetry.operation("show", "failure")
+            raise
+        self._telemetry.operation(
+            "show", "success" if detail.verification.valid else "failure"
+        )
+        return detail
+
+    def _show(self, run_id: str, *, project_id: str | None) -> ReplayDetail:
+        """Construct and audit a complete detail response before its outcome."""
         entry = self._lookup(run_id, project_id, "replay:read")
         verification = self._verification(self._store.verify(entry.run_id))
         verified_bundle: VerifiedBundle | None = None
@@ -721,8 +764,10 @@ class ReplayService:
                 while chunk := spool.read(chunk_size):
                     yield chunk
         except ReplayAuditError:
+            self._telemetry.operation("export", "failure")
             raise
         except Exception as exc:
+            self._telemetry.operation("export", "failure")
             self._emit_audit(
                 "export",
                 "failure",
@@ -733,6 +778,8 @@ class ReplayService:
             if isinstance(exc, ReplayExportError):
                 raise
             raise ReplayExportError("replay export unavailable") from exc
+        else:
+            self._telemetry.operation("export", "success")
 
     def stream_export(
         self,
@@ -742,6 +789,24 @@ class ReplayService:
         chunk_size: int = 65_536,
     ) -> Iterator[bytes]:
         """Return a verified ZIP byte stream without accepting an output path."""
+        try:
+            return self._stream_export(
+                run_id,
+                project_id=project_id,
+                chunk_size=chunk_size,
+            )
+        except Exception:
+            self._telemetry.operation("export", "failure")
+            raise
+
+    def _stream_export(
+        self,
+        run_id: str,
+        *,
+        project_id: str | None,
+        chunk_size: int,
+    ) -> Iterator[bytes]:
+        """Validate an export before handing outcome tracking to its iterator."""
         if (
             not isinstance(chunk_size, int)
             or isinstance(chunk_size, bool)
