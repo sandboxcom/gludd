@@ -8,6 +8,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = ROOT / ".opencode" / "lib" / "multitask_config.ts"
 FLOOR_PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-floor.ts"
@@ -89,7 +91,7 @@ def test_canonical_default_is_opt_in_with_three_as_the_ceiling() -> None:
 
 
 def test_reload_enforcement_uses_the_opt_in_bounded_floor() -> None:
-    source = MAKEFILE.read_text()
+    source = compose_makefile(MAKEFILE)
     recipe = source.split("reload-enforcement:", 1)[1].split("rearm-enforcement:", 1)[0]
     assert 'CLAUDE_AGENT_FLOOR:-0' in recipe
     assert 'CLAUDE_AGENT_CEILING:-3' in recipe

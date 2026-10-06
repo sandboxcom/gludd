@@ -8,6 +8,8 @@ Written FIRST (TDD red), then implementation verified against them.
 
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 from tests.unit._plugin_contract import plugin_contract_source
 
 ROOT = Path(__file__).parent.parent.parent
@@ -22,7 +24,7 @@ TEST_COMMIT_GATE = ROOT / "tests" / "unit" / "test_commit_gate_freshness.py"
 
 def _recipe(target: str) -> str:
     """Extract the full recipe body for a make target."""
-    content = MAKEFILE.read_text()
+    content = compose_makefile(MAKEFILE)
     marker = f"\n{target}:"
     assert marker in content, f"Makefile target '{target}' not found"
     start = content.index(marker) + len(marker)
