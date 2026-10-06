@@ -1,12 +1,32 @@
 # Decision-log mining and deterministic codification
 
-**Status: READY-TO-IMPLEMENT**
+**Status: CORE IMPLEMENTED; INTEGRATION PENDING**
 
 **Scope:** Mine repeated, successful agent decisions into reviewable, versioned
 decision trees that Gludd can execute without an agent/LLM call. This document
 specifies the safe evidence boundary, offline learner, approval lifecycle,
-runtime lookup, and zero-downtime operation. It does not claim that the feature
-is implemented.
+runtime lookup, and zero-downtime operation. The standalone core is implemented;
+daemon/event-loop activation and durable multiworker integration are not.
+
+## 0. Implementation status (2026-10-06)
+
+The contract, normalization, similarity, mining, export, replay evaluation,
+authenticated artifact store, human-approval adapter, deterministic runtime,
+ZDD rollout controller, telemetry, and their focused unit tests now live in
+`src/general_ludd/decision_codification/` and
+`tests/unit/test_decision_codification_*.py`.
+
+The core enforces exact observed-context signatures, typed abstention,
+create-only HMAC-authenticated artifacts, digest-bound human approval, stable
+canary buckets, atomic generation pointers, and verified rollback. A codified
+hit uses the existing deterministic rules engine and performs no model or
+network call.
+
+The single-writer R4 integration remains: only a verified replay-store result
+may mint `VerifiedDecisionSourceV1`; recorder emission, daemon/event-loop lookup
+and fallback, terminal outcome feedback, durable database repositories and
+migration, permissions, config, CLI/API, and end-to-end ZDD evidence are not yet
+wired. No production traffic is claimed to use this core today.
 
 ## 1. Outcome and non-goals
 
@@ -30,8 +50,9 @@ runtime.
 
 ## 2. Existing components to reuse
 
-The implementation should compose repository components rather than introduce a
-second event, storage, policy, or rollout stack.
+The implemented core composes repository components, and the remaining
+integration must continue doing so rather than introduce a second event,
+storage, policy, or rollout stack.
 
 | Need | Existing owner | Reuse decision |
 |---|---|---|
@@ -46,10 +67,10 @@ second event, storage, policy, or rollout stack.
 | Gradual rollout | `src/general_ludd/feature_flags/engine.py` | Reuse staged rollout concepts and deterministic entity bucketing; rule activation still needs its own digest-bound generation pointer. |
 | Metrics | `src/general_ludd/replay/telemetry.py` | Follow its injected, no-throw backend and closed-label design. |
 
-`rapidfuzz` is already a direct dependency and provides bounded similarity with
-explicit cutoffs. `scikit-learn` 1.9.0 is already present in `uv.lock` through
-the evaluation stack; the mining feature must declare it directly in the
-appropriate offline extra rather than rely on a transitive dependency.
+`rapidfuzz` is a direct dependency and provides bounded similarity with explicit
+cutoffs. `scikit-learn` 1.9.0 is now declared directly in the applicable project
+dependency sets and locked; the miner does not rely on an accidental transitive
+install.
 
 Use `sklearn.cluster.AgglomerativeClustering` with complete linkage over a
 precomputed distance matrix and `sklearn.tree.DecisionTreeClassifier` for the
@@ -458,20 +479,19 @@ unit, integration, ZDD, replay, privacy, and coverage phases.
 - **DLC-AC-12:** Full tests prove at least 85% aggregate and 75% per-file
   coverage, ZDD behavior, privacy, deterministic replay, and safe fallback.
 
-## 16. Landing plan and parallel ownership
+## 16. Landing record and remaining ownership
 
 Each slice lands once on a feature branch from `development`, passes its focused
 tests, and is merged forward. Shared files have one integration owner.
 
-### Slice R1: contracts and safe normalization
+### Slice R1: contracts and safe normalization (landed)
 
-Create `src/general_ludd/decision_codification/schema.py` and `normalize.py`
-with strict envelope/rule/report/receipt contracts, feature registries, size
-bounds, and content-safe extraction. Add only their focused tests. Declare the
-already-locked learner as a direct offline dependency through the dependency
-owner. This slice establishes interfaces before parallel work starts.
+`src/general_ludd/decision_codification/schema.py` and `normalize.py` now provide
+strict envelope/rule/report/receipt contracts, feature registries, size bounds,
+content-safe extraction, and their focused tests. The learner is directly
+declared and locked.
 
-### Coding agent A: mining and offline evaluation
+### Coding agent A: mining and offline evaluation (landed)
 
 Own only:
 
@@ -484,11 +504,10 @@ Own only:
 - `tests/unit/test_decision_codification_evaluate.py`
 - `tests/unit/test_decision_codification_export.py`
 
-Deliver grouping, deterministic learner/export, corpus digesting, and offline
-replay. Do not edit runtime, storage, event-loop, database, dependency, docs, or
-shared package files.
+These paths now deliver grouping, deterministic learner/export, corpus
+digesting, offline replay, and focused tests without runtime integration.
 
-### Coding agent B: approval, runtime, and ZDD lifecycle
+### Coding agent B: approval, runtime, and ZDD lifecycle (landed)
 
 Own only:
 
@@ -503,24 +522,22 @@ Own only:
 - `tests/unit/test_decision_codification_rollout.py`
 - `tests/unit/test_decision_codification_telemetry.py`
 
-Deliver create-only receipt storage, exact lookup/fallback, closed metrics,
-canary state transitions, expiry/revocation, and rollback. Do not edit mining,
-evaluation, event-loop, database, dependency, docs, or shared package files.
+These paths now deliver create-only receipt storage, exact lookup and typed
+abstention, closed metrics, canary state transitions, expiry/revocation, and
+rollback with focused tests.
 
-**Disjoint ownership:** Both coding agents branch from the merged R1 contract.
-Their production and test paths above do not overlap. Agent B consumes R1's
-schemas; neither agent edits `__init__.py`. This permits parallel work and
-sequential conflict-free merges.
+**Disjoint ownership record:** Both coding slices used the merged R1 contract.
+Their production and test paths above do not overlap. The runtime consumes R1's
+schemas; neither slice used shared integration files.
 
-### Slice R4: single-writer integration
+### Slice R4: single-writer integration (remaining)
 
-After both coding branches merge, one integration owner alone edits shared
-surfaces: package exports, replay event taxonomy/capture, event-loop lookup and
+One integration owner alone edits shared surfaces: package exports, replay
+capture and verified source-marker construction, event-loop lookup/fallback and
 outcome feedback, database models/repositories/migration, permissions, config,
-CLI/API, direct dependency declaration, make contracts, documentation, and the
-reveal.js presentation. This slice adds end-to-end and ZDD tests. No second
-branch independently creates the migration, config keys, make targets, or deck
-slides.
+CLI/API, and make contracts. This slice adds end-to-end and ZDD tests. No second
+branch independently creates the migration, config keys, make targets, or
+daemon wiring.
 
 ## 17. Primary documentation and user/forum findings
 
