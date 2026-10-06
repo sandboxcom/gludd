@@ -3,9 +3,10 @@
 
 Generated caches are removed from an idle invoking worktree or from inactive
 worktrees. This includes the invoking checkout's exact regenerable Terraform
-provider cache while preserving state. A complete, clean checkout may also be
-dematerialized after its exact branch and commit are proven durable. The shared
-uv cache is pruned through uv only after ownership is idle.
+provider cache while preserving state and the exact shared Playwright browser
+download root. A complete, clean checkout may also be dematerialized after its
+exact branch and commit are proven durable. The shared uv cache is pruned through
+uv only after ownership is idle.
 """
 
 from __future__ import annotations
@@ -63,6 +64,7 @@ SHARED_UV_CACHE_ROOT = Path("/tmp/gludd-uv-cache-public-v2")
 OWNED_NODE_CACHE_ROOTS = (
     Path("/tmp/gludd-npm-cache"),
     Path("/tmp/gludd-npm-cache-public-v1"),
+    Path("/tmp/gludd-playwright-browsers"),
 )
 OWNED_NODE_CACHE_NAMES = frozenset(path.name for path in OWNED_NODE_CACHE_ROOTS)
 OWNED_TASK_NODE_CACHE_NAME_PATTERN = re.compile(
@@ -2012,9 +2014,17 @@ def _is_owned_node_cache_name(name: str) -> bool:
 
 def _discover_node_cache_roots(approved_tmp_root: Path) -> tuple[Path, ...]:
     """Return bounded direct-child node cache candidates for strict validation."""
+    candidates = set(approved_tmp_root.glob(NODE_CACHE_DISCOVERY_PATTERN))
+    for cache_name in OWNED_NODE_CACHE_NAMES:
+        exact_cache = approved_tmp_root / cache_name
+        try:
+            exact_cache.lstat()
+        except FileNotFoundError:
+            continue
+        candidates.add(exact_cache)
     return tuple(
         sorted(
-            approved_tmp_root.glob(NODE_CACHE_DISCOVERY_PATTERN),
+            candidates,
             key=lambda path: os.fsencode(path.name),
         )
     )
@@ -2031,7 +2041,7 @@ def clean_stale_node_download_caches(
     remove_tree: RemoveTree = _remove_tree,
     dry_run: bool = False,
 ) -> CleanupResult:
-    """Remove only exact, stale Gludd npm caches after two idle proofs."""
+    """Remove only exact, stale Gludd node-tool caches after two idle proofs."""
     try:
         candidates = tuple(
             dict.fromkeys(
