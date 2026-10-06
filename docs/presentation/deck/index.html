@@ -823,7 +823,34 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19e: S83.157 NEXT BOUNDED GPU PROOF -->
+<!-- SLIDE 19e: SESSION-ISOLATED ASYNC GATE -->
+<!-- ============================================================ -->
+<section data-contract="gate-session-launcher">
+  <p class="stage-kicker">Release control &middot; identity-bound async work</p>
+  <h2>Background gates survive the caller &mdash; without losing ownership</h2>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart LR
+  C["caller Make<br/>may receive group SIGTERM"] --> L["Python launcher<br/>atomic admission"]
+  L --> G["gate session<br/>PID = PGID = SID"]
+  L --> W["bounded watcher<br/>separate session"]
+  G --> O["exact gate-*.log<br/>phase + terminal markers"]
+  L --> R["atomic receipt<br/>run_id + start token + namespace"]
+  W -->|"exit with gate"| R
+  W -->|"timeout: TERM then KILL<br/>only exact group"| G
+    </div>
+  </div>
+  <ul class="bullets-tight">
+    <li><code>start_new_session=True</code> keeps caller-group termination out of the gate process group</li>
+    <li>The compatibility PID is the real Make gate PID; the receipt binds it to OS start time, log, checkout, and namespace</li>
+    <li>The watcher polls instead of sleeping for an hour, and removes the PID file only if it still owns that exact value</li>
+    <li><code>gate-status-check</code>, <code>gate-wait</code>, timeout markers, and service availability remain unchanged &mdash; a ZDD control-plane swap</li>
+  </ul>
+  <p class="cite">Source: scripts/start_gate_background.py, Makefile gate-background, docs/features/GATE_RESOURCE_LIFECYCLE.md</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19f: S83.157 NEXT BOUNDED GPU PROOF -->
 <!-- ============================================================ -->
 <section data-contract="s83-157-next-live-proof">
   <p class="stage-kicker">Decision &middot; 2026-10-05 &middot; next live proof</p>
