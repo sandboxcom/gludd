@@ -20,6 +20,7 @@ import re
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE_PATH = ROOT / "Makefile"
@@ -34,7 +35,7 @@ def _makefile_targets() -> set[str]:
     """Extract top-level Makefile target names (lines with `name:` at column 0)."""
     assert MAKEFILE_PATH.exists(), "Makefile missing at repo root"
     targets: set[str] = set()
-    for line in MAKEFILE_PATH.read_text().splitlines():
+    for line in compose_makefile(MAKEFILE_PATH).splitlines():
         # Top-level target: starts at col 0, contains ':', not a recipe/comment.
         if not line or line[0] in ("#", "\t", " "):
             continue
@@ -46,7 +47,7 @@ def _makefile_targets() -> set[str]:
 
 def _assert_target_recipe_runs(target: str, tool: str) -> None:
     """Confirm the target's recipe actually invokes the named tool."""
-    src = MAKEFILE_PATH.read_text()
+    src = compose_makefile(MAKEFILE_PATH)
     pattern = re.compile(
         rf"^{re.escape(target)}:\s*\n((?:\t[^\n]*\n)+)", re.MULTILINE
     )
@@ -119,7 +120,7 @@ def test_pip_audit_runs_pip_audit() -> None:
 
 def test_security_target_aggregates_pipeline() -> None:
     """`make security` is the aggregate entry point — must chain the SEC subsites."""
-    src = MAKEFILE_PATH.read_text()
+    src = compose_makefile(MAKEFILE_PATH)
     m = re.search(r"^security:\s*(.+)$", src, re.MULTILINE)
     assert m, "no `security:` aggregate line found"
     deps = m.group(1).strip()
