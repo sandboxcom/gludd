@@ -1,4 +1,4 @@
-"""G10 per-run replay schemas and compatibility readers."""
+"""G10 per-run replay schemas, compatibility readers, and v1 storage."""
 
 from general_ludd.replay.legacy import (
     LEGACY_INTEGRITY_UNVERIFIED,
@@ -32,6 +32,16 @@ from general_ludd.replay.schema import (
     parse_event_envelope,
     validate_run_id,
 )
+from general_ludd.replay.store import (
+    BundleVerification,
+    ReplayIntegrityError,
+    ReplayPathError,
+    ReplayStateError,
+    ReplayStoreError,
+    RetentionResult,
+    RunBundleStore,
+    VerifiedBundle,
+)
 
 __all__ = [
     "BUNDLE_SCHEMA_V1",
@@ -40,6 +50,7 @@ __all__ = [
     "LEGACY_SCHEMA_V0",
     "AttachmentV1",
     "BundleManifestV1",
+    "BundleVerification",
     "CompletenessV1",
     "CorrelationV1",
     "EventEnvelopeV1",
@@ -50,13 +61,20 @@ __all__ = [
     "MissingSequenceRangeV1",
     "ModelIdentityV1",
     "RedactionV1",
+    "ReplayIntegrityError",
+    "ReplayPathError",
     "ReplaySchemaError",
+    "ReplayStateError",
+    "ReplayStoreError",
+    "RetentionResult",
     "RetentionV1",
+    "RunBundleStore",
     "RunRecorder",
     "RuntimeIdentityV1",
     "SafeRunId",
     "SourceIdentityV1",
     "UnsupportedReplaySchemaError",
+    "VerifiedBundle",
     "canonical_replay_json",
     "parse_bundle_manifest",
     "parse_event_envelope",
