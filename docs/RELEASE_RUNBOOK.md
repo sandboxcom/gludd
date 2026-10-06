@@ -96,7 +96,7 @@ The release workflow builds, validates, and stages these immutable outputs:
 | Collections | agent, language, networking tarballs and index | build with `ansible-galaxy`; validate archive identities against locked EE requirements |
 | Ansible EE | seven canonical boundary inputs plus image metadata | build with `ansible-builder`, run offline import smoke, push beside active image, record digest |
 | Container | GHCR image metadata | run a namespaced container and wait a bounded 30 seconds for `/healthz` |
-| Metadata | CycloneDX SBOM, install script, licenses, provenance, checksums | validate schemas, execute installer from the Linux archive, and verify exact SHA-256 coverage |
+| Metadata | CycloneDX SBOM, install script, licenses, provenance, rollback receipt, checksums | validate schemas, execute installer from the Linux archive, rehearse rollback, and verify exact SHA-256 coverage |
 
 The completeness verifier recognizes exactly 28 mandatory categories; none are
 optional. The minimum is 30 assets because the runtime-collection category
@@ -119,6 +119,36 @@ Every platform job writes a versioned smoke attestation only after its checks
 pass. `scripts/verify_release_asset_matrix.py` unions those attestations and
 requires all 15 smoke checks before the publishing action runs. Every artifact
 upload sets `if-no-files-found: error`.
+
+The release job also writes
+`gludd-rollback-receipt-<version>.json` before the release manifest,
+`SHA256SUMS`, provenance attestation, or publication. The rehearsal is
+hermetic: it uses only the staged Linux archive and a run-scoped route under
+`/tmp/gludd-rollback-rehearsal-<run>-<attempt>`. It executes the candidate's
+`version` and `--help` commands, activates that exact staged artifact in the
+ephemeral route, restores the byte-identical prior-version route, and hashes a
+fixed in-flight-work snapshot before and after the transition. It does not call
+a cloud, registry, release, or deployment mutation API.
+
+The receipt is accepted only when all of these bindings agree:
+
+- candidate activation, health, observed version, artifact name, and staged
+  artifact SHA-256;
+- the prior version, its route SHA-256 before activation and after restoration,
+  restored health/version, and an explicit immutable-restoration result;
+- identical before/after SHA-256 values for active work;
+- the exact 15-category smoke fan-in and the SHA-256 of every contributing
+  smoke attestation; and
+- the source commit plus a canonical evidence SHA-256 for the receipt body.
+
+The verifier replays the existing release state machine through stage, canary,
+and rollback. A missing category, false status, version drift, changed prior
+route, changed work snapshot, rebound attestation, or altered evidence digest
+refuses the receipt and blocks publication. `write-manifest` then inventories
+the receipt, `SHA256SUMS` binds its published bytes, and the existing
+`actions/attest` step signs the same aggregate checksum subject. This is a
+control-plane rollback proof, not permission to mutate a live deployment; the
+provider-specific live proof remains a separate release-readiness obligation.
 
 After the matrix writes and validates `SHA256SUMS`, the release job uses
 `actions/attest` v4.2.2 pinned to commit
@@ -185,6 +215,13 @@ revision. Never mutate or retag the prior digest. Platform release assets are
 also immutable: a repair must come from the same tagged CI SHA or from a new
 beta tag.
 
+Before publication, inspect the rollback receipt in the staged matrix. Its
+`candidate.sha256` must match the staged Linux archive, both prior-route
+digests and both active-work digests must be identical, and
+`platform_fan_in.categories` must contain the complete 15-check set. Do not
+hand-edit or regenerate the receipt after `SHA256SUMS`; a changed receipt is a
+new candidate and requires the complete release job again.
+
 Installer verification happens entirely in the additive staging directory.
 Failure blocks publication while the active digest and any previously
 published assets remain untouched; rollback is therefore deletion of the
@@ -234,6 +271,12 @@ After traffic is restored, independently verify the prior digest, binary
 version, health endpoint, and absence of v0.1.1-bound new work. Preserve the
 failed deployment and its content-free evidence until the incident record is
 complete.
+
+The published receipt proves that the release lane can activate the exact
+candidate and restore its immutable prior route without changing already-active
+work. It does not replace this live verification: if live health/version or
+work continuity differs from the receipt, refuse completion and keep the prior
+route active.
 
 Never upload a locally built replacement to a published release. Only artifacts
 built by CI from the exact tagged SHA have valid provenance.
@@ -293,6 +336,35 @@ build command or a well-named transfer artifact:
 
 These reports are design evidence, not exceptions. A matching upstream symptom
 still fails the beta4 gate.
+
+### Rollback receipt practitioner evidence
+
+Reviewed on 2026-10-05, long-lived operator reports explain why a successful
+rollback command is not accepted without immutable identity and continuity
+evidence:
+
+- Argo Rollouts
+  [issue #501](https://github.com/argoproj/argo-rollouts/issues/501), opened in
+  2020, records old blue replicas terminating almost immediately despite a
+  configured scale-down delay. The receipt therefore hashes active work before
+  and after the candidate/rollback transition; selecting the old route alone is
+  insufficient.
+- Kubernetes
+  [issue #50021](https://github.com/kubernetes/kubernetes/issues/50021), opened
+  in 2017, records `rollout undo` reporting success while a failed revision
+  remained and rollout status could not reach a healthy terminal state. The
+  receipt consequently requires restored prior version and health evidence in
+  addition to a restoration status string.
+- GitHub Community
+  [discussion #161656](https://github.com/orgs/community/discussions/161656)
+  demonstrates that deleting and re-uploading a release asset under the same
+  name changes its digest. Gludd binds the prior route, candidate artifact,
+  every smoke attestation, and the receipt itself by SHA-256; a matching name is
+  never treated as immutable identity.
+
+These reports define refusal cases. A digest change, incomplete fan-in, missing
+health/version proof, or active-work drift cannot be waived by a successful
+command exit.
 
 ### Signed-tag automation evidence
 

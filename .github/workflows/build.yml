@@ -1922,8 +1922,88 @@ jobs:
           "$install_root/gludd" version
           "$install_root/gludd" --help >/dev/null
           cat > "release-assets/gludd-smoke-release-${VERSION}.json" <<JSON
-          {"version":"${VERSION}","checks":{"sbom":"passed","install_script":"passed"}}
-          JSON
+           {"version":"${VERSION}","checks":{"sbom":"passed","install_script":"passed"}}
+           JSON
+      - name: Write checksum-bound rollback receipt
+        # Hermetic control-plane rehearsal only: it mutates one namespaced /tmp
+        # route, executes the staged candidate, restores the byte-identical
+        # prior route, and proves the in-flight work snapshot never changed.
+        # The receipt is staged before the release manifest/SHA256SUMS so the
+        # existing publish and provenance actions bind it without another upload.
+        run: |
+          set -euo pipefail
+          echo "=== CI PHASE: release-rollback-receipt ==="
+          rollback_root="/tmp/gludd-rollback-rehearsal-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          candidate_dir="$rollback_root/candidate"
+          prior_route="$rollback_root/prior-route.json"
+          candidate_route="$rollback_root/candidate-route.json"
+          active_route="$rollback_root/active-route.json"
+          active_work="$rollback_root/active-work.json"
+          prior_version="0.1.0-beta.4"
+          candidate_archive="release-assets/gludd-${VERSION}-linux-x86_64.tar.gz"
+          cleanup_rollback_rehearsal() {
+            primary_status=$?
+            cleanup_failed=0
+            if ! rm -rf "$rollback_root"; then
+              echo "::error::rollback rehearsal cleanup failed for $rollback_root"
+              cleanup_failed=1
+            fi
+            if [ "$primary_status" -ne 0 ]; then
+              return "$primary_status"
+            fi
+            return "$cleanup_failed"
+          }
+          trap cleanup_rollback_rehearsal EXIT
+
+          mkdir -p "$candidate_dir"
+          printf '%s\n' \
+            "{\"version\":\"${prior_version}\",\"health\":\"passed\",\"route\":\"stable\"}" \
+            > "$prior_route"
+          printf '%s\n' \
+            "{\"version\":\"${VERSION}\",\"health\":\"passed\",\"route\":\"candidate\"}" \
+            > "$candidate_route"
+          printf '%s\n' \
+            '{"work_ids":["release-existing-1","release-existing-2"],"state":"in-flight"}' \
+            > "$active_work"
+
+          cp "$prior_route" "$active_route"
+          prior_route_before_sha256=$(sha256sum "$active_route" | awk '{print $1}')
+          active_work_before_sha256=$(sha256sum "$active_work" | awk '{print $1}')
+
+          tar -xzf "$candidate_archive" -C "$candidate_dir"
+          candidate_binary=$(find "$candidate_dir" -type f -name gludd -print -quit)
+          test -n "$candidate_binary"
+          chmod +x "$candidate_binary"
+          candidate_output=$("$candidate_binary" version 2>&1)
+          printf '%s\n' "$candidate_output" | grep -F "$VERSION"
+          "$candidate_binary" --help >/dev/null
+          candidate_observed_version="$VERSION"
+          candidate_health="passed"
+
+          cp "$candidate_route" "$active_route"
+          grep -F "\"version\":\"${VERSION}\"" "$active_route" >/dev/null
+          cp "$prior_route" "$active_route"
+          cmp "$prior_route" "$active_route"
+          grep -F "\"version\":\"${prior_version}\"" "$active_route" >/dev/null
+          grep -F '"health":"passed"' "$active_route" >/dev/null
+          prior_route_after_sha256=$(sha256sum "$active_route" | awk '{print $1}')
+          active_work_after_sha256=$(sha256sum "$active_work" | awk '{print $1}')
+          restored_observed_version="$prior_version"
+          restored_health="passed"
+
+          uv run python scripts/verify_release_asset_matrix.py \
+            write-rollback-receipt release-assets "$VERSION" \
+            --source-sha "$GITHUB_SHA" \
+            --prior-version "$prior_version" \
+            --candidate-asset "gludd-${VERSION}-linux-x86_64.tar.gz" \
+            --candidate-observed-version "$candidate_observed_version" \
+            --restored-observed-version "$restored_observed_version" \
+            --candidate-health "$candidate_health" \
+            --restored-health "$restored_health" \
+            --prior-route-before-sha256 "$prior_route_before_sha256" \
+            --prior-route-after-sha256 "$prior_route_after_sha256" \
+            --active-work-before-sha256 "$active_work_before_sha256" \
+            --active-work-after-sha256 "$active_work_after_sha256"
       - name: Write release provenance manifest
         run: |
           echo "=== CI PHASE: release-manifest ==="
@@ -2136,6 +2216,7 @@ jobs:
           echo "  Status table      : check step 'Verify status table current' above"
           echo "  SBOM              : check step 'Generate SBOM' above"
           echo "  Stage assets      : check step 'Stage release assets' above"
+          echo "  Rollback receipt  : check step 'Write checksum-bound rollback receipt' above"
           echo "  Pre-publish gate  : check step 'Verify staged assets' above"
           echo "  SHA256SUMS        : check step 'Generate SHA256SUMS aggregate' above"
           echo "  GitHub Release    : check step 'softprops/action-gh-release' above"
