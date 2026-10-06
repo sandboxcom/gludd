@@ -2052,6 +2052,9 @@ cuda-inference = [
     { name = "torch" },
     { name = "vllm" },
 ]
+decision-codification = [
+    { name = "scikit-learn" },
+]
 dev = [
     { name = "aiosqlite" },
     { name = "ansible-builder" },
@@ -2080,6 +2083,7 @@ dev = [
     { name = "pytest-xdist" },
     { name = "pywavelets" },
     { name = "ruff" },
+    { name = "scikit-learn" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "setuptools" },
@@ -2181,6 +2185,7 @@ dev = [
     { name = "pytest-xdist" },
     { name = "pywavelets" },
     { name = "ruff" },
+    { name = "scikit-learn" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "setuptools" },
@@ -2310,6 +2315,8 @@ requires-dist = [
     { name = "scapy", marker = "extra == 'networking'", specifier = ">=2.5.0" },
     { name = "scikit-image", marker = "extra == 'e2e-all'", specifier = ">=0.22.0" },
     { name = "scikit-image", marker = "extra == 'game-e2e'", specifier = ">=0.22.0" },
+    { name = "scikit-learn", marker = "extra == 'decision-codification'", specifier = "==1.9.0" },
+    { name = "scikit-learn", marker = "extra == 'dev'", specifier = "==1.9.0" },
     { name = "scipy", marker = "extra == 'dev'", specifier = ">=1.11.0" },
     { name = "setuptools", marker = "extra == 'dev'", specifier = ">=83.0.0" },
     { name = "shamir", marker = "extra == 'dev'", specifier = ">=17.12.0" },
@@ -2331,7 +2338,7 @@ requires-dist = [
     { name = "yt-dlp", marker = "extra == 'e2e-all'", specifier = ">=2025.1.15" },
     { name = "yt-dlp", marker = "extra == 'game-e2e'", specifier = ">=2025.1.15" },
 ]
-provides-extras = ["ansible-controller", "dev", "local-inference", "cuda-inference", "aws", "gcp", "azure", "observability", "sandbox", "game-e2e", "e2e-all", "mysql", "vmware", "networking", "hindsight", "benchmark", "xml-security", "platform-sandbox"]
+provides-extras = ["ansible-controller", "dev", "local-inference", "cuda-inference", "aws", "gcp", "azure", "observability", "sandbox", "game-e2e", "e2e-all", "mysql", "vmware", "networking", "hindsight", "benchmark", "decision-codification", "xml-security", "platform-sandbox"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -2364,6 +2371,7 @@ dev = [
     { name = "pytest-xdist", specifier = ">=3.5.0" },
     { name = "pywavelets", specifier = ">=1.4" },
     { name = "ruff", specifier = ">=0.8.0" },
+    { name = "scikit-learn", specifier = "==1.9.0" },
     { name = "scipy", specifier = ">=1.11.0" },
     { name = "setuptools", specifier = ">=83.0.0" },
     { name = "shamir", specifier = ">=17.12.0" },
