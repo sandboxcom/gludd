@@ -528,6 +528,22 @@ and prints the complete plan without inspecting release identity, running pytest
 or writing evidence; an empty pytest selector is consequently safe for contract
 checks.
 
+An isolated Python 3.11 validation later exposed a toolchain bootstrap gap: setting
+`UV_PROJECT_ENVIRONMENT` selected the namespaced environment but did not install
+the test-time `coverage` dependency before the runner imported it. Practitioner
+reports describe the same class of environment-selection surprise: uv users have
+found dependencies unavailable when the selected environment was not the one they
+had populated ([uv issue 9067](https://github.com/astral-sh/uv/issues/9067)), and
+the longer-running active-environment discussion records confusion about adding
+development dependencies to a non-default environment
+([uv issue 6612](https://github.com/astral-sh/uv/issues/6612)). The local producer
+now atomically syncs the repository's locked `ci` dependency profile into its
+namespaced Python 3.11 toolchain, then invokes the runner with `--no-sync`. This is
+zero-downtime for other worktrees and running lanes: profile staging completes
+before replacement, and no shared environment is mutated. Rollback is a recipe
+revert plus removal of only that worktree's namespaced toolchain; the next run
+recreates it from the unchanged locks.
+
 Candidate `cf9fcd3d7154e2a03cf3012db74ca92b51dde796` exposed a peer-lane
 cancellation defect after hosted run `32886106353` failed. Cancelling the local
 producer interrupted its active child and cleaned that batch, but the parent
