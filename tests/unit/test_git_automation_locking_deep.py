@@ -640,13 +640,11 @@ class TestAsyncGitRepoLockEdge:
 
     @pytest.mark.asyncio
     async def test_double_exit_is_idempotent(self) -> None:
-        cm = await locking.async_git_repo_lock(".", timeout=1.0, stale_after=60.0)
-        try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cm = await locking.async_git_repo_lock(tmpdir, timeout=1.0, stale_after=60.0)
             with cm:
                 pass
             cm.__exit__(None, None, None)
-        finally:
-            pass
 
 
 # ---------------------------------------------------------------------------
