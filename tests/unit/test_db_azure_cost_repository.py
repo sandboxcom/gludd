@@ -664,6 +664,27 @@ class TestAdvanceState:
                     now=claimed_at,
                 )
 
+    async def test_boolean_fencing_token_is_rejected_instead_of_aliasing_one(
+        self,
+        repo: AzureCostReconciliationRepository,
+    ) -> None:
+        claim = await self._seed_and_claim(repo)
+        assert claim.fencing_token == 1
+        forged = AzureCostLeaseClaim(
+            prediction_id=claim.prediction_id,
+            prediction_version=claim.prediction_version,
+            owner=claim.owner,
+            fencing_token=True,
+            expires_at=claim.expires_at,
+        )
+
+        with pytest.raises(StaleAzureCostLeaseError, match="stale"):
+            await repo.advance_state(
+                forged,
+                AzureCostLedgerState.USAGE_PENDING,
+                now=_now() + timedelta(days=60),
+            )
+
     async def test_expired_owner_is_fenced_after_takeover(
         self,
         repo: AzureCostReconciliationRepository,
