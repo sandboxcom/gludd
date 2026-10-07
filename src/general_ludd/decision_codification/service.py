@@ -27,6 +27,7 @@ from general_ludd.decision_codification.normalize import (
     normalize_decision_context,
     normalize_verified_decision_event,
 )
+from general_ludd.decision_codification.rollout import OutcomeFeedback
 from general_ludd.decision_codification.runtime import CodifiedDecision, DecisionRuntime
 from general_ludd.decision_codification.schema import (
     DECISION_ACTIONS_V1,
@@ -35,7 +36,9 @@ from general_ludd.decision_codification.schema import (
     DecisionRuleBundleV1,
     EvaluationReportV1,
     NormalizationRefusalV1,
+    RolloutStage,
     VerifiedDecisionSourceV1,
+    VerifiedOutcome,
     canonical_sha256,
 )
 from general_ludd.replay.schema import BoundedIdentifier, Sha256Digest
@@ -296,6 +299,10 @@ class DecisionResolution:
     candidate_digest: str | None
     decision_receipt_digest: str | None
     abstention: DecisionAbstentionV1 | None
+    project_id: str | None = None
+    decision_kind: DecisionKind | None = None
+    rollout_stage: RolloutStage | None = None
+    application_id: str | None = None
 
 
 AgentFallback = Callable[[DecisionAbstentionV1], str]
@@ -345,6 +352,10 @@ class DecisionResolver:
                 candidate_digest=result.candidate_digest,
                 decision_receipt_digest=result.decision_receipt_digest,
                 abstention=None,
+                project_id=result.project_id,
+                decision_kind=result.decision_kind,
+                rollout_stage=result.rollout_stage,
+                application_id=result.application_id,
             )
         decision = fallback(result)
         if decision not in DECISION_ACTIONS_V1[decision_kind]:
@@ -357,6 +368,34 @@ class DecisionResolver:
             candidate_digest=result.candidate_digest,
             decision_receipt_digest=None,
             abstention=result,
+            project_id=project_id,
+            decision_kind=decision_kind,
+        )
+
+    def record_application_outcome(
+        self,
+        *,
+        project_id: str,
+        decision_kind: DecisionKind,
+        candidate_digest: str,
+        application_id: str,
+        rollout_stage: RolloutStage,
+        outcome: VerifiedOutcome,
+        occurred_at: datetime,
+        terminal_event_id: str | None,
+        evidence_digest: str | None,
+    ) -> OutcomeFeedback:
+        """Persist terminal feedback for one previously issued exact hit."""
+        return self._runtime.record_application_outcome(
+            project_id=project_id,
+            decision_kind=decision_kind,
+            candidate_digest=candidate_digest,
+            application_id=application_id,
+            rollout_stage=rollout_stage,
+            outcome=outcome,
+            occurred_at=occurred_at,
+            terminal_event_id=terminal_event_id,
+            evidence_digest=evidence_digest,
         )
 
 
@@ -471,6 +510,36 @@ class DecisionCodificationAdapter:
             now=now,
             side_effect_id=side_effect_id,
             fallback=fallback,
+        )
+
+    def record_application_outcome(
+        self,
+        *,
+        project_id: str,
+        decision_kind: DecisionKind,
+        candidate_digest: str,
+        application_id: str,
+        rollout_stage: RolloutStage,
+        outcome: VerifiedOutcome,
+        occurred_at: datetime,
+        terminal_event_id: str | None,
+        evidence_digest: str | None,
+    ) -> OutcomeFeedback:
+        """Record bounded feedback without permitting cross-project widening."""
+        if project_id != self._project_id:
+            raise DecisionCodificationIntegrationError(
+                "decision outcome project scope does not match adapter binding"
+            )
+        return self._resolver.record_application_outcome(
+            project_id=project_id,
+            decision_kind=decision_kind,
+            candidate_digest=candidate_digest,
+            application_id=application_id,
+            rollout_stage=rollout_stage,
+            outcome=outcome,
+            occurred_at=occurred_at,
+            terminal_event_id=terminal_event_id,
+            evidence_digest=evidence_digest,
         )
 
 

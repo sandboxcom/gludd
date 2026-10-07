@@ -18,6 +18,8 @@ from general_ludd.decision_codification.schema import (
     DecisionKind,
     FallbackReason,
     NormalizationRefusalV1,
+    RolloutStage,
+    VerifiedOutcome,
 )
 from general_ludd.decision_codification.service import (
     DecisionResolution,
@@ -29,6 +31,7 @@ from general_ludd.schemas.task_decision import TaskDecision
 POLICY_DIGEST = "sha256:" + "e" * 64
 CANDIDATE_DIGEST = "sha256:" + "a" * 64
 RECEIPT_DIGEST = "sha256:" + "b" * 64
+APPLICATION_DIGEST = "sha256:" + "c" * 64
 
 
 class _Session:
@@ -129,6 +132,29 @@ class _AbstainingAdapter:
             decision_receipt_digest=None,
             abstention=self.abstention,
         )
+
+
+class _RecordingHitAdapter(_HitAdapter):
+    def __init__(self) -> None:
+        super().__init__("approve")
+        self.outcomes: list[dict[str, object]] = []
+
+    def resolve(self, **kwargs: object) -> DecisionResolution:
+        resolved = super().resolve(**kwargs)
+        return DecisionResolution(
+            decision=resolved.decision,
+            source=resolved.source,
+            candidate_digest=resolved.candidate_digest,
+            decision_receipt_digest=resolved.decision_receipt_digest,
+            abstention=None,
+            project_id="project-1",
+            decision_kind=DecisionKind.REVIEW,
+            rollout_stage=RolloutStage.ACTIVE,
+            application_id=APPLICATION_DIGEST,
+        )
+
+    def record_application_outcome(self, **kwargs: object) -> None:
+        self.outcomes.append(kwargs)
 
 
 class _NormalizingAdapter:
@@ -293,6 +319,49 @@ async def test_codified_lookup_uses_repeatable_idempotency_inputs(
     assert adapter.calls[0]["correlation_id"] == adapter.calls[1]["correlation_id"]
     assert adapter.calls[0]["side_effect_id"] == adapter.calls[1]["side_effect_id"]
     assert adapter.calls[0]["features"] == adapter.calls[1]["features"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("apply_fails", "expected_outcome"),
+    [
+        (False, VerifiedOutcome.SUCCESS),
+        (True, VerifiedOutcome.FAILURE),
+    ],
+)
+async def test_codified_application_records_terminal_feedback_off_loop(
+    monkeypatch: pytest.MonkeyPatch,
+    apply_fails: bool,
+    expected_outcome: VerifiedOutcome,
+) -> None:
+    async def _apply(*_args: object, **_kwargs: object) -> None:
+        if apply_fails:
+            raise RuntimeError("content must not reach outcome diagnostics")
+
+    monkeypatch.setattr(
+        "general_ludd.review.decision_applier.apply_decision",
+        _apply,
+    )
+    adapter = _RecordingHitAdapter()
+    reviewer = _Reviewer(RuntimeError("reviewer must not run"))
+    loop = _Loop(reviewer, adapter)
+
+    await loop._review_in_process(_record())
+
+    assert reviewer.calls == 0
+    assert len(adapter.outcomes) == 1
+    assert adapter.outcomes[0] == {
+        "project_id": "project-1",
+        "decision_kind": DecisionKind.REVIEW,
+        "candidate_digest": CANDIDATE_DIGEST,
+        "application_id": APPLICATION_DIGEST,
+        "rollout_stage": RolloutStage.ACTIVE,
+        "outcome": expected_outcome,
+        "occurred_at": adapter.outcomes[0]["occurred_at"],
+        "terminal_event_id": APPLICATION_DIGEST,
+        "evidence_digest": RECEIPT_DIGEST,
+    }
+    assert len(loop.offloaded) == 2
 
 
 @pytest.mark.asyncio

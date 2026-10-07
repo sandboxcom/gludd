@@ -504,6 +504,52 @@ restarts nor adopts a running gate. Existing PID/status/wait callers keep their
 paths and meanings. Rollback is a Makefile-and-launcher revert performed only
 after the recorded run reaches a terminal state; no service cutover is needed.
 
+#### Terminal receipt retirement and failed-kill ownership
+
+A background watcher previously left `.gate-background.pid` and its own
+`watchdog_pid` behind after a normal gate exit. More seriously, the timeout
+path removed the PID receipt and published `timed_out` after its bounded
+TERM/KILL sequence even when the exact gate session was still alive. That made
+an incomplete kill look terminal, abandoned a live process tree, and allowed a
+later launch to overlap it.
+
+Normal completion now acquires the same launch lock used for admission,
+revalidates the run identity and OS absence, atomically marks the receipt
+finished, clears the terminal watcher identity, and removes only the matching
+PID pointer. A concurrent replacement wins cleanly: the old watcher observes a
+different run identity and changes nothing. If process-start inspection is
+temporarily unavailable while the PID still exists, neither retirement nor a
+duplicate launch is allowed.
+
+At timeout, PID/start-token/session identity is checked through TERM, the grace
+period, KILL, and the final observation. Only verified absence or verified PID
+reuse permits `timed_out` plus PID retirement. Any live or unobservable owner
+instead keeps the PID receipt, records `termination_failed` with
+`gate-timeout-termination-failed`, clears only the exiting watcher PID, writes
+`GATE_TIMEOUT_TERMINATION_FAILED`, and returns infrastructure status 125. The
+next launch therefore refuses until the retained owner is safely terminated;
+an operator never has to reconstruct authority from a process-table guess.
+
+The boundary follows long-lived practitioner evidence. The open GitHub Actions
+runner report [#3341](https://github.com/actions/runner/issues/3341) shows a
+controller claiming to kill an entire process tree while killing only the
+root. The psutil design discussion
+[#2400](https://github.com/giampaolo/psutil/issues/2400) documents the remaining
+PID-reuse race between identity validation and signaling, while runner report
+[#4601](https://github.com/actions/runner/issues/4601) demonstrates descendants
+escaping snapshot-based cleanup and remaining alive for hours. These reports
+support retained ownership plus explicit uncertainty; they do not justify a
+broader signal or a success claim after a failed observation.
+
+This remains ZDD and bounded: it starts no additional process, extends no
+deadline, opens no listener, and changes no application state. Normal runs
+leave less stale control state; failed cleanup retains only the existing small
+JSON/PID evidence and live owner it must describe. Rollout affects the next
+watcher invocation. Before rollback, stop admission, resolve every retained
+`termination_failed` owner with the identity-verified gate terminator, require
+terminal evidence and an absent PID pointer, and only then revert. Reverting
+first would restore the ownership-loss window.
+
 #### Candidate history freeze
 
 A clean worktree does not make HEAD immutable. During the first observed

@@ -21,6 +21,9 @@ Gludd applies these rules to its existing SPAKE2+ implementation:
    `PAKEError`; it never becomes an unbounded request.
 5. P-256 and P-384 parameters, point selection, encodings, and derived keys are
    unchanged.
+6. Every correctly shaped peer message is decoded with `cryptography` before
+   raw point arithmetic. A coordinate pair that is not on the selected NIST
+   curve raises `PAKEError` at the protocol boundary.
 
 The previous P-521 `p` literal had two extra hexadecimal digits, while `a` had
 four. The square-root identity was consequently evaluated in the wrong field.
@@ -38,11 +41,12 @@ not add a custom square-root implementation or another cryptographic package.
 
 The existing `cryptography` dependency's
 [`from_encoded_point`](https://cryptography.io/en/latest/hazmat/primitives/asymmetric/ec/#cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePublicKey.from_encoded_point)
-API was also evaluated because it delegates compressed-point decoding and
-validation to a mature backend. Replacing point selection globally would pick
-a parity-specific root and could change successful P-256/P-384 exchanges during
-a rolling deployment. The narrow field correction preserves those established
-protocol results while removing the P-521 failure.
+API delegates SEC1 decoding and curve-membership validation to a maintained
+native backend and documents `ValueError` for an invalid point. Gludd uses that
+API only to validate received uncompressed points before exposing their affine
+coordinates to the existing arithmetic. It does not replace deterministic M/N
+point selection, so successful P-256/P-384 exchanges and wire encodings remain
+unchanged.
 
 [RFC 9383](https://www.rfc-editor.org/rfc/rfc9383.html) remains the protocol
 reference. A future standards-interoperability change to fixed RFC M and N
@@ -59,6 +63,12 @@ shows a derived-secret mismatch resolved by handling P-521 coordinates as 66
 bytes. These reports span multiple ecosystems and support pinning both the
 521-bit field value and its 66-byte wire width in executable tests.
 
+A long-lived [2015 pyca/cryptography practitioner request](https://github.com/pyca/cryptography/issues/2346)
+describes ECDH consumers hand-decoding SEC1 points and asks for backend-owned
+serialization so applications do not need to construct public numbers from raw
+coordinates. That request led to the maintained API used here and supports
+keeping validation out of Gludd's custom arithmetic.
+
 ## Security and constant-time considerations
 
 The field correction restores arithmetic to the approved P-521 group instead
@@ -67,6 +77,11 @@ parameters or unexpected mapping behavior into a typed, fail-closed error. For
 independent candidates on a prime-order curve, exhausting 256 attempts has
 probability at most about `2^-256`; the cap therefore controls denial-of-service
 cost without creating a practical availability downgrade.
+
+Correct length and prefix do not prove that a received SEC1 coordinate pair is
+on the selected curve. Native point decoding now rejects off-curve client and
+server messages before they reach scalar multiplication, preventing unchecked
+attacker-controlled coordinates from entering the legacy raw arithmetic.
 
 The modulus, coefficient, and wire widths are public values. This repair adds no
 new secret-dependent branch. CPython big-integer arithmetic and the surrounding
@@ -101,6 +116,8 @@ session format is displaced.
   messages plus a 66-byte shared result.
 - A deterministic non-residue fixture proves search exhaustion raises after
   exactly 256 candidates.
+- A correct-width P-521 off-curve fixture proves both protocol roles reject the
+  peer message through the typed PAKE error boundary.
 - The complete PAKE suite passes with warnings treated as errors.
 - Aggregate branch coverage remains at least 85 percent, and the touched
   production file remains at least 75 percent for line and branch coverage.
