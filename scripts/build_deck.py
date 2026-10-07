@@ -46,7 +46,7 @@ SOURCE_MAX_BYTES = 2 * 1024 * 1024
 GITHUB_REPOSITORY = "https://github.com/sandboxcom/gludd"
 
 _SOURCE_TOKEN = re.compile(
-    r"(?P<path>(?:\.github|collections|config|docs|infra|molecule|scripts|src|tests)/"
+    r"(?P<path>(?:\.github|collections|config|docs|infra|molecule|playbooks|requirements|scripts|src|tests)/"
     r"[A-Za-z0-9_.@/+\-]+|README\.md|TASKS\.md|BUGS\.md|Makefile|pyproject\.toml)"
     r"(?::(?P<start>[1-9][0-9]*)(?:-(?P<end>[1-9][0-9]*))?)?"
 )

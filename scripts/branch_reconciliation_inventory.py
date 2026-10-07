@@ -566,6 +566,27 @@ def _counts(branches: Sequence[BranchRecord]) -> InventoryCounts:
     }
 
 
+def _verify_terminal_snapshot(
+    branches: Sequence[BranchRecord],
+    target: TargetRecord,
+    *,
+    run: RunFn,
+    cwd: str | None,
+) -> None:
+    """Fail when terminal refs no longer match the classified observations."""
+    terminal_target = _resolve_target(target["input"], run=run, cwd=cwd)
+    if terminal_target != target:
+        raise InventoryError("target changed during exhaustive inventory")
+
+    terminal_entries = _bounded_sorted_local_scan("", run=run, cwd=cwd)
+    terminal_branches = [
+        entry for entry in terminal_entries if entry[0] != target["ref"]
+    ]
+    observed_branches = [(branch["ref"], branch["head"]) for branch in branches]
+    if terminal_branches != observed_branches:
+        raise InventoryError("local branch refs changed during exhaustive inventory")
+
+
 def collect_inventory(
     target: str,
     limit: int,
@@ -667,6 +688,15 @@ def collect_summary(
         after = next_cursor
 
     assert target_record is not None
+    if progress is not None:
+        progress("verify=terminal-ref-snapshot")
+    _verify_terminal_snapshot(
+        branches,
+        target_record,
+        run=run,
+        cwd=cwd,
+    )
+
     grouped: dict[tuple[str, str], SummaryGroup] = {}
     for branch in branches:
         key = (branch["classification"], branch["head"])

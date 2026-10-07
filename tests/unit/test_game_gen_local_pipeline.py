@@ -182,7 +182,8 @@ class TestTaskStepOrdering:
 
 class TestDefaultsCorrectness:
     @pytest.fixture(scope="class")
-    def defaults(self) -> dict[str, Any]:
+    @classmethod
+    def defaults(cls) -> dict[str, Any]:
         return cast(dict[str, Any], _load_yaml("defaults/main.yml"))
 
     def test_server_host_is_loopback(self, defaults: dict[str, Any]) -> None:
@@ -426,7 +427,8 @@ class TestPipelineResilienceConfig:
 
 class TestScriptMirrorsRole:
     @pytest.fixture(scope="class")
-    def script_text(self) -> str:
+    @classmethod
+    def script_text(cls) -> str:
         path = Path("scripts/run_game_gen_local.py")
         assert path.exists(), "run_game_gen_local.py not found"
         return path.read_text()

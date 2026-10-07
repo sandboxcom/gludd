@@ -58,6 +58,7 @@ def test_launch_publishes_exact_session_pid_state_and_log(
     try:
         assert result.launched is True
         assert result.process is not None
+        assert result.log_path is not None
         identity = result.identity
         assert identity is not None
         assert identity.pid == result.process.pid
@@ -95,6 +96,7 @@ def test_live_duplicate_refuses_without_replacing_identity(tmp_path: Path) -> No
         timeout_seconds=30,
         start_watcher=False,
     )
+    assert first.process is not None
     try:
         paths = GatePaths.for_root(tmp_path)
         original_state = paths.state_file.read_text(encoding="utf-8")
@@ -113,6 +115,46 @@ def test_live_duplicate_refuses_without_replacing_identity(tmp_path: Path) -> No
         _stop(first)
 
 
+def test_duplicate_refuses_when_live_identity_observation_is_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = launch_gate(
+        tmp_path,
+        _sleep_command(),
+        timeout_seconds=30,
+        start_watcher=False,
+    )
+    assert first.identity is not None
+    original_probe = launcher._probe_pid_started_at
+    duplicate = None
+    monkeypatch.setattr(
+        launcher,
+        "_probe_pid_started_at",
+        lambda pid: (
+            ("unknown", None)
+            if pid == first.identity.pid
+            else original_probe(pid)
+        ),
+    )
+    try:
+        duplicate = launch_gate(
+            tmp_path,
+            _sleep_command(),
+            timeout_seconds=30,
+            start_watcher=False,
+        )
+
+        assert duplicate.launched is False
+        assert duplicate.process is None
+        assert duplicate.identity == first.identity
+        paths = GatePaths.for_root(tmp_path)
+        assert paths.pid_file.read_text(encoding="utf-8") == f"{first.identity.pid}\n"
+    finally:
+        if duplicate is not None and duplicate.launched:
+            _stop(duplicate)
+        _stop(first)
+
+
 def test_watcher_records_normal_finish_and_exits_with_gate(tmp_path: Path) -> None:
     result = launch_gate(
         tmp_path,
@@ -125,9 +167,12 @@ def test_watcher_records_normal_finish_and_exits_with_gate(tmp_path: Path) -> No
     assert result.process.wait(timeout=5) == 0
     assert result.watchdog_process.wait(timeout=5) == 0
 
-    state = json.loads(GatePaths.for_root(tmp_path).state_file.read_text(encoding="utf-8"))
+    paths = GatePaths.for_root(tmp_path)
+    state = json.loads(paths.state_file.read_text(encoding="utf-8"))
     assert state["state"] == "finished"
     assert state["termination_reason"] == "gate-exited"
+    assert state["watchdog_pid"] is None
+    assert not paths.pid_file.exists()
     assert not process_matches(result.identity)
 
 
@@ -140,6 +185,7 @@ def test_timeout_terminates_exact_session_and_removes_owned_pid(tmp_path: Path) 
     )
     assert result.process is not None
     assert result.identity is not None
+    assert result.log_path is not None
     paths = GatePaths.for_root(tmp_path)
 
     outcome = watch_gate(
@@ -163,6 +209,45 @@ def test_timeout_terminates_exact_session_and_removes_owned_pid(tmp_path: Path) 
     assert state["termination_reason"] == "gate-timeout"
 
 
+def test_timeout_retains_ownership_when_session_cannot_be_terminated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = launch_gate(
+        tmp_path,
+        _sleep_command(),
+        timeout_seconds=30,
+        start_watcher=False,
+    )
+    assert result.process is not None
+    assert result.identity is not None
+    assert result.log_path is not None
+    paths = GatePaths.for_root(tmp_path)
+    monkeypatch.setattr(launcher, "_signal_session", lambda *_args: False)
+
+    try:
+        outcome = watch_gate(
+            result.identity,
+            paths,
+            timeout_seconds=0.01,
+            poll_seconds=0.001,
+            grace_seconds=0.01,
+        )
+
+        assert outcome == "termination_failed"
+        assert process_matches(result.identity)
+        assert paths.pid_file.read_text(encoding="utf-8") == f"{result.identity.pid}\n"
+        assert "GATE_TIMEOUT_TERMINATION_FAILED" in paths.status_file.read_text(
+            encoding="utf-8"
+        )
+        assert "TERMINATION FAILED" in result.log_path.read_text(encoding="utf-8")
+        state = json.loads(paths.state_file.read_text(encoding="utf-8"))
+        assert state["state"] == "termination_failed"
+        assert state["termination_reason"] == "gate-timeout-termination-failed"
+        assert state["watchdog_pid"] is None
+    finally:
+        _stop(result)
+
+
 def test_identity_mismatch_never_signals_reused_pid(tmp_path: Path) -> None:
     result = launch_gate(
         tmp_path,
@@ -184,6 +269,30 @@ def test_identity_mismatch_never_signals_reused_pid(tmp_path: Path) -> None:
         assert outcome == "superseded"
         assert result.process.poll() is None
         assert process_matches(result.identity)
+    finally:
+        _stop(result)
+
+
+def test_unavailable_process_identity_never_retires_a_live_gate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = launch_gate(
+        tmp_path,
+        _sleep_command(),
+        timeout_seconds=30,
+        start_watcher=False,
+    )
+    assert result.identity is not None
+    assert result.process is not None
+    try:
+        monkeypatch.setattr(
+            launcher,
+            "_probe_pid_started_at",
+            lambda _pid: ("unknown", None),
+        )
+
+        assert launcher._watch_outcome_when_not_owned(result.identity) is None
+        assert result.process.poll() is None
     finally:
         _stop(result)
 
@@ -281,8 +390,53 @@ def test_malformed_receipts_and_process_identities_fail_closed(
     def fail_ps(*_args: object, **_kwargs: object) -> object:
         raise OSError("ps unavailable")
 
-    monkeypatch.setattr(launcher.subprocess, "run", fail_ps)
+    monkeypatch.setattr(subprocess, "run", fail_ps)
     assert launcher._pid_started_at(os.getpid()) is None
+
+
+def test_process_probe_and_capture_fail_closed_on_unavailable_os_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    unexpected = subprocess.CompletedProcess(
+        args=["/bin/ps"],
+        returncode=2,
+        stdout="",
+        stderr="ps failed",
+    )
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: unexpected)
+
+    assert launcher._probe_pid_started_at(os.getpid()) == ("unknown", None)
+    assert launcher._pid_started_at(os.getpid()) is None
+
+    monkeypatch.setattr(launcher, "_pid_started_at", lambda _pid: "stable-token")
+
+    def deny_process_group(_pid: int) -> int:
+        raise PermissionError("identity unavailable")
+
+    monkeypatch.setattr(os, "getpgid", deny_process_group)
+    assert launcher._capture_identity(os.getpid(), "run") is None
+
+
+@pytest.mark.parametrize(
+    ("timeout_seconds", "poll_seconds", "grace_seconds"),
+    ((0.0, 0.1, 0.1), (1.0, 0.0, 0.1), (1.0, 0.1, 0.0)),
+)
+def test_watcher_rejects_each_nonpositive_duration(
+    tmp_path: Path,
+    timeout_seconds: float,
+    poll_seconds: float,
+    grace_seconds: float,
+) -> None:
+    identity = GateIdentity("run", 2, "token", 2, 2)
+
+    with pytest.raises(ValueError, match="watcher durations must be positive"):
+        watch_gate(
+            identity,
+            GatePaths.for_root(tmp_path),
+            timeout_seconds=timeout_seconds,
+            poll_seconds=poll_seconds,
+            grace_seconds=grace_seconds,
+        )
 
 
 def test_receipt_log_path_must_stay_inside_gate_log_directory(tmp_path: Path) -> None:
@@ -293,6 +447,7 @@ def test_receipt_log_path_must_stay_inside_gate_log_directory(tmp_path: Path) ->
         start_watcher=False,
     )
     assert result.identity is not None
+    assert result.process is not None
     paths = GatePaths.for_root(tmp_path)
     try:
         state = json.loads(paths.state_file.read_text(encoding="utf-8"))
@@ -322,6 +477,7 @@ def test_live_gate_with_replaced_current_receipt_is_not_signalled(tmp_path: Path
         start_watcher=False,
     )
     assert result.identity is not None
+    assert result.process is not None
     paths = GatePaths.for_root(tmp_path)
     try:
         state = json.loads(paths.state_file.read_text(encoding="utf-8"))
@@ -355,6 +511,7 @@ def test_timeout_escalates_to_sigkill_for_term_ignoring_gate(tmp_path: Path) -> 
         start_watcher=False,
     )
     assert result.identity is not None
+    assert result.process is not None
     assert result.process is not None
     time.sleep(0.05)
     assert (
@@ -405,6 +562,7 @@ def test_finished_gate_state_is_not_overwritten_by_old_watcher(tmp_path: Path) -
         start_watcher=False,
     )
     assert result.identity is not None
+    assert result.process is not None
     paths = GatePaths.for_root(tmp_path)
     newer = json.loads(paths.state_file.read_text(encoding="utf-8"))
     newer["run_id"] = "newer-run"
@@ -497,12 +655,22 @@ def test_gate_session_survives_caller_process_group_sigterm(tmp_path: Path) -> N
 
 
 def _identity_from_state_for_test(state: dict[str, object]) -> GateIdentity:
+    run_id = state["run_id"]
+    pid = state["pid"]
+    pid_started_at = state["pid_started_at"]
+    process_group_id = state["process_group_id"]
+    session_id = state["session_id"]
+    assert isinstance(run_id, str)
+    assert isinstance(pid, int) and not isinstance(pid, bool)
+    assert isinstance(pid_started_at, str)
+    assert isinstance(process_group_id, int) and not isinstance(process_group_id, bool)
+    assert isinstance(session_id, int) and not isinstance(session_id, bool)
     return GateIdentity(
-        run_id=str(state["run_id"]),
-        pid=int(state["pid"]),
-        pid_started_at=str(state["pid_started_at"]),
-        process_group_id=int(state["process_group_id"]),
-        session_id=int(state["session_id"]),
+        run_id=run_id,
+        pid=pid,
+        pid_started_at=pid_started_at,
+        process_group_id=process_group_id,
+        session_id=session_id,
     )
 
 
@@ -641,3 +809,36 @@ def test_cli_watch_mode_publishes_finished_result(tmp_path: Path) -> None:
         )
         == 0
     )
+
+
+def test_cli_watch_mode_reports_unverified_termination_as_infrastructure_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = launch_gate(
+        tmp_path,
+        _sleep_command(),
+        timeout_seconds=30,
+        start_watcher=False,
+    )
+    assert result.identity is not None
+    monkeypatch.setattr(
+        launcher,
+        "watch_gate",
+        lambda *_args, **_kwargs: "termination_failed",
+    )
+    try:
+        assert (
+            main(
+                [
+                    "--project-root",
+                    str(tmp_path),
+                    "--watch-run-id",
+                    result.identity.run_id,
+                    "--timeout-seconds",
+                    "1",
+                ]
+            )
+            == 125
+        )
+    finally:
+        _stop(result)
