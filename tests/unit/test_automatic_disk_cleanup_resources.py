@@ -737,6 +737,36 @@ def test_preflight_cleans_then_rechecks_both_thresholds(capsys: pytest.CaptureFi
     assert "phase=recheck status=healthy" in output
 
 
+def test_preflight_allows_active_scratch_over_soft_cap_when_disk_is_healthy(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    soft_pressure = DiskSnapshot(scratch_mb=178.8, disk_pct=67.0)
+    cleanup_calls = 0
+
+    def cleanup() -> automatic_disk_cleanup.CleanupResult:
+        nonlocal cleanup_calls
+        cleanup_calls += 1
+        return automatic_disk_cleanup.CleanupResult(
+            removed=(),
+            skipped=("/tmp/gludd-molecule-active:active-pids=1234",),
+            errors=(),
+        )
+
+    result = automatic_disk_cleanup.run_preflight(
+        inspect_usage=lambda: soft_pressure,
+        cleanup=cleanup,
+    )
+
+    assert result == 0
+    assert cleanup_calls == 1
+    captured = capsys.readouterr()
+    assert "phase=cleanup action=skip pass=1" in captured.out
+    assert "phase=recheck status=soft-cap pass=1" in captured.out
+    assert "reason=protected-or-recent-scratch" in captured.out
+    assert "scratch_limit_kind=soft" in captured.out
+    assert "disk_limit_kind=hard" in captured.out
+
+
 def test_preflight_repeats_cleanup_while_usage_improves_until_healthy(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -849,16 +879,10 @@ def test_preflight_stops_at_bounded_cleanup_pass_limit(
     assert "phase=recheck status=failed pass=2 reason=pass-limit" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize(
-    "after",
-    [
-        DiskSnapshot(scratch_mb=101.0, disk_pct=20.0),
-        DiskSnapshot(scratch_mb=20.0, disk_pct=91.0),
-    ],
-)
-def test_preflight_fails_closed_when_either_threshold_remains_high(
-    after: DiskSnapshot, capsys: pytest.CaptureFixture[str]
+def test_preflight_fails_closed_when_hard_disk_threshold_remains_high(
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
+    after = DiskSnapshot(scratch_mb=20.0, disk_pct=91.0)
     snapshots = iter((after, after))
 
     result = automatic_disk_cleanup.run_preflight(
@@ -1491,6 +1515,7 @@ def test_feature_document_records_zdd_rollback_and_long_lived_reports() -> None:
     assert "github.com/stablyai/orca/issues/10562" in document
     assert "github.com/python/cpython/issues/111246" in document
     assert "github.com/pytest-dev/pytest/discussions/10325" in document
+    assert "github.com/pytest-dev/pytest/discussions/12283" in document
     assert "Eight passes" in document
     assert "lsof" in document
 
