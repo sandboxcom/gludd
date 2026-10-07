@@ -2,71 +2,86 @@
 
 ## Purpose
 
-Hosted run 37684089683 exposed that the CSS phase invoked an unversioned `npx`
-tool and carried its policy as inline JSON. That bypassed the existing Node lock,
-allowed the selected Stylelint release to change between otherwise identical
-runs, and split local behavior from CI. The phase now calls one public Make
-target backed by an exact package and tracked configuration.
+Hosted run 37684089683 invoked an unversioned CSS linter through `npx` and
+embedded policy in the workflow. Identical source revisions could therefore
+resolve different tools. The hosted phase now delegates to the public
+`lint-css` Make target, an exact Node lock, and a tracked ESLint CSS policy.
+
+## Tool decision
+
+The exact development dependencies are ESLint 10.11.0 and `@eslint/css`
+2.0.0. The repository contains neither Stylelint nor Biome. Current Stylelint
+pulled the unpatched `braces` advisory into the Node graph. Biome provides
+empty-block and duplicate-property checks, but its maintainers describe CSS
+parser validation gaps in [discussion 2422](https://github.com/biomejs/biome/discussions/2422),
+so it could not prove the required invalid-hex failure.
+
+The official [`@eslint/css` package](https://github.com/eslint/css) supplies
+[`no-empty-blocks`](https://github.com/eslint/css/blob/main/docs/rules/no-empty-blocks.md)
+and [`no-invalid-properties`](https://github.com/eslint/css/blob/main/docs/rules/no-invalid-properties.md).
+Its parser runs with tolerant mode disabled, and the invalid-property rule uses
+CSS syntax validation while allowing custom-variable values. Inline ESLint
+configuration is disabled.
+
+The upstream package does not yet have a duplicate-property rule. That gap is
+tracked in [`@eslint/css` issue 495](https://github.com/eslint/css/issues/495).
+The tracked config therefore supplies one narrow ESLint rule following the
+official [custom-rule API](https://eslint.org/docs/latest/extend/custom-rule-tutorial).
+Equal or separated duplicate declarations fail. Consecutive declarations with
+different values remain valid browser fallbacks, including the existing
+`100vh` then `100svh` pattern.
 
 ## Behavioral contract
 
-- Callers run `make lint-css` and explicitly set `CSS_FILES` and
-  `STYLELINT_CONFIG`.
-- Stylelint 17.16.0 is exact-pinned in `.opencode/package.json` and its lock.
-- The same lock advances markdownlint-cli2 to current 0.23.3 so the relock does
-  not retain already-patched parser advisories from 0.23.2.
-- Exact npm overrides select patched KaTeX 0.18.10 and smol-toml 1.9.0 releases
-  for advisories that their current parent package has not yet adopted.
-- The target executes only `.opencode/node_modules/.bin/stylelint`; it never
-  downloads a package through `npx`.
-- A missing local binary is restored through the locked, namespaced
-  `node-deps-sync` contract. Missing inputs or configuration fail closed.
-- The tracked configuration preserves the three hosted rules: empty blocks,
-  invalid hexadecimal colors, and duplicate declarations. Stylelint's documented
-  consecutive-different-value exception admits intentional browser fallbacks such
-  as `100vh` followed by `100svh`, while equal or separated duplicates still fail.
-- `--allow-empty-input` keeps unchanged language families harmless while the
-  explicit file patterns remain visible to callers.
+- Callers explicitly pass `CSS_FILES` and `ESLINT_CSS_CONFIG` to
+  `make lint-css`.
+- The target runs only the lock-installed ESLint executable and explicit
+  config. It never downloads an unpinned package.
+- Empty blocks, invalid hexadecimal colors, equal duplicates, and separated
+  duplicates fail. Valid colors and consecutive different-value fallbacks
+  pass.
+- Missing arguments or configuration fail closed. A missing executable is
+  restored only through the locked, namespaced `node-deps-sync` target.
+- The tracked ignore list excludes `.venv` and locked Node dependency content,
+  so hosted repository globs cannot lint installed third-party stylesheets.
+- `--no-error-on-unmatched-pattern` lets an explicit hosted language glob be
+  empty without weakening checks for files that exist.
 
-Stylelint's [getting-started guide](https://stylelint.io/user-guide/get-started/)
-recommends a local development dependency and a repository configuration file.
-Its [options reference](https://stylelint.io/user-guide/options/) defines the
-explicit config path and empty-input behavior used by the target, and the
-[duplicate-property rule](https://stylelint.io/user-guide/rules/declaration-block-no-duplicate-properties/)
-documents the browser-fallback exception. npm documents that
-[`npm ci`](https://docs.npmjs.com/cli/v11/commands/npm-ci/) installs the dependency
-tree from the committed lock without rewriting it.
+The documented behavioral example is:
 
-## Practitioner evidence
+```text
+make lint-css CSS_FILES=docs/presentation/deck/presentation.css ESLINT_CSS_CONFIG=config/eslint-css.config.mjs
+```
 
-The long-lived Stack Overflow discussion on
-[`npm install` versus `npm ci`](https://stackoverflow.com/questions/52499617/what-is-the-difference-between-npm-install-and-npm-ci/59386596)
-records practitioners relying on the lockfile-specific install for repeatable
-CI. Stylelint issue
-[#4195](https://github.com/stylelint/stylelint/issues/4195) records years-old
-confusion over which configuration is discovered by the CLI. Those reports
-support one exact local binary and one explicit tracked config path rather than
-ambient package resolution or config discovery.
+## Hosted dependency audit
+
+The workflow performs the locked Node sync, then immediately calls the public
+`node-deps-audit` target with an explicit public registry, namespaced cache,
+disabled update notifier, and `NODE_DEPS_AUDIT_LEVEL=low`. Failure stops the
+job before CSS lint. The exact workflow ordering and variables have a
+structural regression test.
+
+Moving Markdown lint to exact-pinned Rumdl also removed markdownlint-cli2's
+path to the same `braces` advisory. The final `.opencode` dependency graph
+reports zero vulnerabilities at the low threshold. There is no advisory
+suppression, npm override, lowered threshold, or unpinned `npx` fallback.
+[`npm ci`](https://docs.npmjs.com/cli/v11/commands/npm-ci/) documents the
+lock-preserving install behavior. A long-running
+[Stack Overflow practitioner discussion](https://stackoverflow.com/questions/52499617/what-is-the-difference-between-npm-install-and-npm-ci/59386596)
+records why teams use that behavior for reproducible CI.
 
 ## Zero-downtime and resources
 
-This change affects build validation only. It starts one bounded Node process,
-no daemon, and no application, database, or deployment migration. Existing
-workers continue serving during rollout; rollback is the prior tooling commit.
-The existing project-scoped npm cache is reused, so concurrent projects do not
-share mutable runtime state.
-
-The October 2026 `braces` stack-exhaustion advisory has no patched release.
-Both current Stylelint and markdownlint-cli2 reach it through their file-glob
-libraries. Hosted inputs are fixed, reviewed glob literals rather than network
-or user data, and execution is a short-lived CI process, so the unavailable
-upstream patch cannot affect a serving Gludd process. The advisory remains
-visible to `node-deps-audit` and must be removed as soon as upstream publishes a
-compatible fix; it is not hidden with an audit suppression or version override.
+This contract changes validation only. Each invocation starts one bounded Node
+process and no daemon, database migration, or serving process. The npm cache is
+project-namespaced, so concurrent Gludd checkouts do not share mutable runtime
+state. Rollout and rollback are independent of application workers and do not
+interrupt requests.
 
 ## Verification
 
-`tests/unit/test_css_lint_target.py` pins the package, lock, configuration,
-Make contract, behavior, and hosted-workflow delegation. The contract's public
-example lints the tracked presentation stylesheet. Make-contract validation,
-YAML lint, Markdown lint, and test collection remain required promotion gates.
+`tests/unit/test_css_lint_target.py` exercises all three required checks, the
+browser-fallback exception, exact package and lock entries, public Make
+contract, hosted delegation, and sync-before-audit ordering. Promotion also
+requires the real CSS glob, Make-contract validation, YAML and Markdown lint,
+focused tests, collection without errors, and a low-threshold Node audit.

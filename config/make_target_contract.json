@@ -509,13 +509,13 @@
     },
     {
       "name": "lint-markdown",
-      "make_variables": ["MARKDOWN_FILES", "MARKDOWNLINT_CONFIG"],
-      "behavior": "make lint-markdown MARKDOWN_FILES=docs/features/XMSS_BACKEND_SAFETY.md MARKDOWNLINT_CONFIG=config/markdownlint-cli2.jsonc"
+      "make_variables": ["MARKDOWN_FILES", "RUMDL_CONFIG", "MARKDOWNLINT_CONFIG"],
+      "behavior": "make lint-markdown MARKDOWN_FILES=docs/features/XMSS_BACKEND_SAFETY.md RUMDL_CONFIG=config/rumdl.toml MARKDOWNLINT_CONFIG=config/rumdl.toml"
     },
     {
       "name": "lint-css",
-      "make_variables": ["CSS_FILES", "STYLELINT_CONFIG"],
-      "behavior": "make lint-css CSS_FILES=docs/presentation/deck/presentation.css STYLELINT_CONFIG=config/stylelint.config.mjs"
+      "make_variables": ["CSS_FILES", "ESLINT_CSS_CONFIG"],
+      "behavior": "make lint-css CSS_FILES=docs/presentation/deck/presentation.css ESLINT_CSS_CONFIG=config/eslint-css.config.mjs"
     },
     {
       "name": "lint-docstrings",
@@ -1362,13 +1362,14 @@
         "INTEGRATION_ADMISSION_VALIDATE_ONLY",
         "FILE_LINE_LIMIT_POLICY",
         "MARKDOWN_FILES",
+        "RUMDL_CONFIG",
         "MARKDOWNLINT_CONFIG",
         "PRESENTATION_BROWSER_ENGINES",
         "PRESENTATION_BROWSER_ROOT",
         "PRESENTATION_BROWSER_OUTPUT",
         "PRESENTATION_BROWSER_TIMEOUT"
       ],
-      "behavior": "make integration-admission INTEGRATION_ADMISSION_VALIDATE_ONLY=1 FILE_LINE_LIMIT_POLICY=config/file_line_limits.json MARKDOWN_FILES=docs/features/INTEGRATION_ADMISSION.md MARKDOWNLINT_CONFIG=config/markdownlint-cli2.jsonc PRESENTATION_BROWSER_ENGINES='chromium webkit' PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-integration-admission-browser PRESENTATION_BROWSER_TIMEOUT=600"
+      "behavior": "make integration-admission INTEGRATION_ADMISSION_VALIDATE_ONLY=1 FILE_LINE_LIMIT_POLICY=config/file_line_limits.json MARKDOWN_FILES=docs/features/INTEGRATION_ADMISSION.md RUMDL_CONFIG=config/rumdl.toml MARKDOWNLINT_CONFIG=config/rumdl.toml PRESENTATION_BROWSER_ENGINES='chromium webkit' PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-integration-admission-browser PRESENTATION_BROWSER_TIMEOUT=600"
     },
     {
       "name": "list-plugins",

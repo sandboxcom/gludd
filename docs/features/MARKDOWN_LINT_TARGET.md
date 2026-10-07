@@ -2,84 +2,80 @@
 
 ## Purpose
 
-Gludd now exposes one repository-owned Markdown lint command backed by the
-maintained markdownlint-cli2 package. The target replaces an advertised but
-missing Make rule and prevents contributors from depending on a global binary,
-an unpinned npx download, or an untracked helper script.
+`make lint-markdown` provides one repository-owned Markdown check without a
+global executable, runtime download, or Node advisory chain. The target now
+uses exact-pinned Rumdl 0.2.73 from the locked `dev-quality` Python profile.
+The OpenCode Node graph contains neither markdownlint-cli nor
+markdownlint-cli2.
 
 ## Behavioral contract
 
-- Callers run make lint-markdown and set MARKDOWN_FILES plus
-  MARKDOWNLINT_CONFIG explicitly.
-- The target uses only the exact binary installed under
-  .opencode/node_modules from the tracked package lock.
-- Missing file arguments or missing configuration fail with exit code 2 and
-  an actionable message.
-- A missing locked binary triggers a locked dependency sync through the
-  repository's node-deps-sync target with the namespaced registry and cache
-  contract; if that sync fails, the target still exits 2 with a visible cause.
-- The checked-in configuration disables inline Markdown suppressions.
-- The initial rule set enforces heading progression and ATX form, trailing
-  whitespace, hard tabs, heading spacing, and a final newline.
-- Found files, linted-file count, and the final issue count remain visible.
-- The target performs no write or auto-fix operation.
+- Callers pass `MARKDOWN_FILES` plus `RUMDL_CONFIG` explicitly.
+- `MARKDOWNLINT_CONFIG` remains a supported compatibility alias for existing
+  callers. Supplying both names with different values fails closed; equal
+  values are accepted during migration.
+- When neither config variable is supplied, the tracked `config/rumdl.toml`
+  policy remains the compatibility default.
+- Missing files or configuration and an unavailable locked executable fail
+  visibly. The executable can be restored only through the locked
+  `development` profile sync.
+- The target is read-only and does not apply fixes.
+- Rumdl caching is disabled, so linting leaves no workspace cache artifact.
 
-markdownlint-cli2 0.23.3 is pinned exactly in the existing OpenCode Node package
-and lock. Its upstream documentation recommends local development dependency
-installation and supports explicit configuration plus file globs:
+The public Make contract exercises both config names with the same tracked
+path:
 
-https://www.npmjs.com/package/markdownlint-cli2
+```text
+make lint-markdown MARKDOWN_FILES=docs/features/XMSS_BACKEND_SAFETY.md RUMDL_CONFIG=config/rumdl.toml MARKDOWNLINT_CONFIG=config/rumdl.toml
+```
 
-## Practitioner evidence
+## Tracked policy
 
-markdownlint-cli2 issue #130 records a user who installed a custom rule but
-received a zero-error result because the configuration was not being loaded as
-expected. The report demonstrates why Gludd passes one explicit tracked config
-path and behavior-tests the visible file and issue counts:
+The allowlist preserves the seven established checks: heading progression
+(MD001), ATX heading style (MD003), trailing whitespace (MD009), hard tabs
+(MD010), missing heading space (MD018), excessive heading spaces (MD019), and
+final newline (MD047). Rumdl's
+[global settings reference](https://github.com/rvben/rumdl/blob/main/docs/global-settings.md)
+documents that `enable` is a strict rule allowlist, while its
+[CLI reference](https://rumdl.dev/usage/cli/) defines the explicit `check` and
+`--config` interface used by the target.
 
-https://github.com/DavidAnson/markdownlint-cli2/issues/130
+Rumdl supports suppression directives in Markdown. Because the prior contract
+forbade document-local waivers, the Make target rejects Rumdl, markdownlint,
+and Prettier lint-control comments before invoking Rumdl. Policy exceptions
+must be reviewed in the tracked configuration. The upstream
+[inline configuration reference](https://github.com/rvben/rumdl/blob/main/docs/inline-configuration.md)
+identifies the directive families covered by this guard.
 
-markdownlint issue #45 remained active across several years and documents a
-valid ordered list being reported under an inferred style mismatch. That
-experience supports a small explicit initial rule set instead of enabling every
-style opinion against a large legacy documentation tree:
+## Tool and practitioner evidence
 
-https://github.com/DavidAnson/markdownlint/issues/45
+Rumdl is a maintained Rust implementation distributed on
+[PyPI](https://pypi.org/project/rumdl/) and supports the required markdownlint
+rule identifiers. A long-lived
+[markdownlint-cli2 configuration issue](https://github.com/DavidAnson/markdownlint-cli2/issues/130)
+records a practitioner receiving a zero-error result when the intended config
+was not loaded. That experience supports an explicit tracked config path and a
+behavioral test. Another multi-year
+[markdownlint rule discussion](https://github.com/DavidAnson/markdownlint/issues/45)
+shows false positives from inferred list style, supporting the small explicit
+rule allowlist instead of enabling every opinion across legacy documents.
 
-## Security and compatibility
+## Security, resources, and zero downtime
 
-The target never executes repository Markdown, downloads plugins, or enables
-custom rules. Inline configuration is disabled so a document cannot waive a
-finding with an HTML comment. The local binary and transitive packages are
-resolved by package-lock integrity hashes through the existing namespaced npm
-cache and registry contract.
+Rumdl is integrity-locked in `requirements/profiles/dev-quality/uv.lock` and
+runs from the project virtual environment. Removing the two Node Markdown
+CLIs eliminated their vulnerable transitive packages; the hosted Node audit
+now passes at the low threshold without overrides or suppressions.
 
-Existing Make callers are unaffected because the rule was previously missing.
-The help entry and make-target contract now state both variables. More rules can
-be enabled additively after current documents are corrected; rule expansion
-must not introduce a hidden baseline or suppression.
-
-## Zero-downtime delivery
-
-This is development-only tooling with no runtime process, database, protocol,
-or deployment mutation. It can roll out before application workers and roll
-back independently. During a mixed-version development window, older checkouts
-lack the target while newer checkouts sync locked dependencies automatically
-and fail closed if that sync fails; production service traffic remains
-uninterrupted.
-
-## Resource and observability contract
-
-One short-lived Node process handles only the explicit files. There is no
-daemon, cache outside the existing project-namespaced npm cache, background
-worker, or unbounded repository walk. Standard output identifies found files,
-the number linted, and the terminal issue total.
+One bounded process examines only explicit files. It starts no daemon, creates
+no shared cache, and changes no runtime, protocol, database, or deployment
+state. Application workers continue serving throughout rollout and rollback.
 
 ## Verification
 
-tests/unit/test_markdown_lint_target.py behavior-tests a successful lint, the
-missing-file failure, the exact package pin, and the make-target contract.
-The documented behavioral example lints the XMSS safety specification with
-zero issues. The Make contract, help inventory, duplicate-target guard, Node
-dependency audit, static checks, collection gate, and full release gate remain
-required before promotion.
+`tests/unit/test_markdown_lint_target.py` proves successful lint, missing-input
+failure, exact profile and lock pins, compatibility-alias behavior,
+conflict rejection, suppression rejection, and the public Make contract. The
+integration-admission regression preserves both config names. The documented
+behavioral example, Markdown lint, Make-contract validation, collection, and
+dependency audits remain required promotion evidence.
