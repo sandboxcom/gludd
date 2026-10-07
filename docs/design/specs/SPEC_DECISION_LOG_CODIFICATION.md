@@ -13,6 +13,12 @@ automatic signed replay capture and deployed proof are not.
 
 ## 0. Implementation status (2026-10-07)
 
+The earlier checkpoint was **CORE, ANALYSIS API, CLI, AND OPT-IN LIVE REVIEW IMPLEMENTED;
+DURABLE INTEGRATION PENDING**. It is retained as status lineage, not as the
+current claim. The status above supersedes it: same-host SQLite WAL durability
+is implemented, while automatic signed capture, multi-host durable integration,
+and deployed proof remain pending.
+
 The contract, normalization, similarity, mining, export, replay evaluation,
 authenticated artifact store, human-approval adapter, deterministic runtime,
 ZDD rollout controller, telemetry, and service orchestration now live in
