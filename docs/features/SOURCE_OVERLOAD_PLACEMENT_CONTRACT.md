@@ -18,6 +18,9 @@ runtime declaration:
 4. The public callable has one source declaration and no `@overload`
    decorators. The union signature remains visible to runtime introspection and
    static analysis.
+5. Runtime dispatch mirrors that union exactly: `ProjectType` instances take the
+   typed path, strings take the legacy path, and every other discriminator is
+   rejected before the process-local registry can change.
 
 The repository-wide structural audit enforces the general placement rule, and
 a registration-specific AST regression pins the single executable declaration.
@@ -51,6 +54,12 @@ remain in the one implementation and continue to fail closed. It adds no dynamic
 dispatch, reflection-based invocation, deserialization, network access, secret
 handling, or authorization path.
 
+The explicit string branch is also a security boundary. Python annotations do
+not enforce runtime input types, so a catch-all legacy branch could otherwise
+accept an arbitrary hashable value when the mapping repeated it as `type_id`.
+The executable declaration now rejects that out-of-union value with `TypeError`
+before mutation; no partially registered value or cleanup work remains.
+
 Removing declaration-only functions avoids constructing redundant function and
 typing-overload registry objects at import time. The repair adds no processes,
 threads, locks, files, dependencies, background work, persistent state, or
@@ -58,21 +67,24 @@ cleanup obligation. The runtime registry and its lifecycle are unchanged.
 
 ## Zero-downtime delivery and rollback
 
-The callable name, accepted arguments, return type, registry semantics, and
-errors are unchanged. There is no database, configuration, API, wire-format, or
-artifact migration. Old and new workers may overlap safely during a rolling
-deployment because their project-type registries are process-local and expose
-the same runtime behavior. Promote after focused tests, coverage, static checks,
-and the full gate are green. Rollback is a source revert or traffic shift to the
-previous worker set; no state repair or compatibility window is required.
+The callable name, union signature, supported arguments, return type, and
+registry semantics are unchanged. Out-of-union discriminators were never part
+of the API and now receive a deterministic `TypeError`. There is no database,
+configuration, wire-format, or artifact migration. Old and new workers may
+overlap safely during a rolling deployment because their project-type registries
+are process-local and expose the same supported behavior. Promote after focused
+tests, coverage, static checks, and the full gate are green. Rollback is a source
+revert or traffic shift to the previous worker set; no state repair or
+compatibility window is required.
 
 ## Verification
 
 - The generic source audit finds no `@overload` declaration in shipped Python
   source.
 - The registration-specific AST regression finds exactly one undecorated source
-  declaration, and the runtime regression exercises both supported forms through
-  that callable.
+  declaration with the canonical union signature, and runtime regressions
+  exercise both supported forms plus out-of-union rejection through that
+  callable.
 - Aggregate line-and-branch coverage remains at least 85 percent, and every
   touched production file remains at least 75 percent for line and branch
   coverage.
