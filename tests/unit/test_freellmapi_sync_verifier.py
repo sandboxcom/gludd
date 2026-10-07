@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import configparser
 import copy
 import hashlib
 import json
 from collections.abc import Iterator
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -37,6 +39,27 @@ def _object_list(value: object) -> list[object]:
 _PROJECT_IDENTITY = _digest("gludd-project-identity")
 _OPERATION_ID = _digest("freellmapi-v012-operation")
 _RELEASE_IDENTITY_PROTOCOL = "gludd-freellmapi-release-identity-v1"
+
+
+def test_repository_owned_coverage_profile_is_complete() -> None:
+    """Keep the focused coverage proof reproducible and exact."""
+    root = Path(__file__).parents[2]
+    profile = root / "config/coverage_freellmapi_sync_verifier.ini"
+    parser = configparser.ConfigParser()
+
+    assert parser.read(profile, encoding="utf-8") == [str(profile)]
+    assert parser.getboolean("run", "branch")
+    assert parser.getboolean("run", "parallel")
+    assert set(parser.get("run", "include").split()) == {
+        "*/src/general_ludd/models/freellmapi_sync_contracts.py",
+        "*/src/general_ludd/models/freellmapi_sync_inventory.py",
+        "*/src/general_ludd/models/freellmapi_sync_plans.py",
+        "*/src/general_ludd/models/freellmapi_sync_verifier.py",
+    }
+    documentation = (
+        root / "docs/features/FREELLMAPI_V012_SYNC_VERIFIER.md"
+    ).read_text(encoding="utf-8")
+    assert "COVERAGE_CONFIG=config/coverage_freellmapi_sync_verifier.ini" in documentation
 
 
 def _canonical_digest(value: object) -> str:
