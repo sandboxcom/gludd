@@ -80,6 +80,10 @@ section[data-contract^="decision-log-codification"] .cite { font-size: 0.6em; li
   .feature-sync-slide .bullets-tight li { font-size: 0.6em; line-height: 1.14; margin-bottom: 2px; }
   .feature-sync-slide .diagram-wrap { margin: 3px auto; padding: 3px; }
   .feature-sync-slide .diagram-wrap .mermaid-image { max-height: 82px !important; max-width: 100% !important; }
+  section[data-contract="s83-101-104-concurrency-authority"] .diagram-wrap .mermaid-image,
+  section[data-contract="s83-108-105-boundary-evidence"] .diagram-wrap .mermaid-image {
+    max-height: 120px !important;
+  }
   .feature-sync-slide .honest-note,
   .feature-sync-slide .cite { font-size: 0.5em; line-height: 1.08; margin: 3px 0; }
   section[data-contract^="decision-log-codification"] {
@@ -1067,11 +1071,34 @@ flowchart LR
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19f.1: S83.103 CANONICAL WORKTREE CREATION PATHS -->
+<!-- SLIDE 19f.1: S83.101 + S83.104 CONCURRENCY AUTHORITY -->
 <!-- ============================================================ -->
-<section data-contract="s83-103-canonical-worktree-paths">
+<section class="feature-sync-slide" data-contract="s83-101-104-concurrency-authority">
+  <p class="stage-kicker">S83.101 / S83.104 &middot; database and process authority</p>
+  <h2>Authority must survive concurrency <span class="badge-yellow">INTEGRATED CANDIDATES &middot; EXACT GATE PENDING</span></h2>
+  <div class="diagram-wrap diagram-compact">
+    <div class="mermaid">
+flowchart LR
+  Claim["S83.101<br/>database lease"] --> Exact["owner + token + expiry<br/>exact or reject"] --> Ledger["cost state + outbox"]
+  Owner["S83.104<br/>PID + thread owner"] --> Inode["stable flock inode<br/>one deadline"] --> Git["bounded Git mutation"]
+    </div>
+  </div>
+  <ul class="bullets-tight feature-sync-grid">
+    <li><strong>S83.101:</strong> validate the complete <strong>owner + fencing token + persisted expiry</strong>; forged extension and exact-boundary expiry fail before mutation.</li>
+    <li><strong>S83.104:</strong> bind re-entry to <strong>PID + thread ownership</strong>, discard fork inheritance, retain one inode, and claim exclusion rather than FIFO fairness.</li>
+    <li><strong>Lease evidence:</strong> <strong>110/110</strong> warning-strict; 95.7% line, 88.9% branch, 94.04% combined coverage.</li>
+    <li><strong>Mutex evidence:</strong> <strong>169/169</strong> warning-strict; 89.0% line, 85.3% branch, 86.36% combined coverage.</li>
+  </ul>
+  <p class="honest-note">Both implementation slices are integrated candidates, but exact-head gate, CI, and promotion evidence remain pending. Neither task is presented as formally complete.</p>
+  <p class="cite">Code: src/general_ludd/db/azure_cost_repository.py:412-438 &middot; src/general_ludd/git_automation/locking.py:98-113 &middot; Contracts: docs/features/AZURE_COST_LEASE_OWNERSHIP.md:24-47 &middot; docs/features/GIT_REPOSITORY_MUTEX.md:23-44</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19f.2: S83.103 CANONICAL WORKTREE CREATION PATHS -->
+<!-- ============================================================ -->
+<section class="feature-sync-slide" data-contract="s83-103-canonical-worktree-paths">
   <p class="stage-kicker">Git safety contract &middot; canonical identity to reversible rollout</p>
-  <h2>S83.103 &mdash; Worktree creation paths <span class="badge-green">Project confined</span></h2>
+  <h2>S83.103 &mdash; Worktree creation paths <span class="badge-yellow">INTEGRATED CANDIDATE &middot; EXACT GATE PENDING</span></h2>
   <div class="two-col">
     <div>
       <h3>Authorize before mutation</h3>
@@ -1085,8 +1112,7 @@ flowchart LR
     <div>
       <h3>Measured and bounded</h3>
       <ul class="bullets-tight">
-        <li><strong>Tests:</strong> 35/35 warning-strict path + adjacent checks; 421/421 Git repository family</li>
-        <li><strong>Coverage:</strong> <code>repo.py</code> = 86.00% line + branch aggregate</li>
+        <li><strong>Evidence:</strong> 35/35 warning-strict path + adjacent checks; 421/421 Git repository family; <code>repo.py</code> = 86.00% line + branch aggregate</li>
         <li><strong>Resources:</strong> bounded in-process checks, one existing bounded Git subprocess, zero network or background workers</li>
       </ul>
     </div>
@@ -1094,12 +1120,36 @@ flowchart LR
   <p class="honest-note">
     ZDD uses rolling replacement: old and new workers may overlap because each validates its own request.
     Invalid paths leave no partial worktree; a source-only rollback needs no schema, data, or service migration.
+    The slice is integrated but not formally complete until exact-head gate, CI, and promotion evidence are recorded.
   </p>
-  <p class="cite">Sources: docs/features/GIT_WORKTREE_CREATION_PATHS.md &middot; long-lived Stack Overflow worktree and symlink reports</p>
+  <p class="cite">Code: src/general_ludd/git_automation/repo.py:1119-1189 &middot; Contract: docs/features/GIT_WORKTREE_CREATION_PATHS.md:18-65 &middot; long-lived Stack Overflow worktree and symlink reports</p>
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19f.2: S83.113 QEMU IMPORT ISOLATION -->
+<!-- SLIDE 19f.3: S83.108 + S83.105 CANONICAL BOUNDARIES -->
+<!-- ============================================================ -->
+<section class="feature-sync-slide" data-contract="s83-108-105-boundary-evidence">
+  <p class="stage-kicker">S83.108 / S83.105 &middot; inventory identity and runtime dispatch</p>
+  <h2>Canonical identity before action <span class="badge-yellow">S83.105 CANDIDATE ONLY</span></h2>
+  <div class="diagram-wrap diagram-compact">
+    <div class="mermaid">
+flowchart LR
+  Row["S83.108<br/>worktree inventory"] --> Identity["canonical path<br/>or identity=rejected"]
+  Call["S83.105<br/>one executable API"] --> Union["ProjectType | str<br/>or reject before mutation"]
+    </div>
+  </div>
+  <ul class="bullets-tight feature-sync-grid">
+    <li><strong>S83.108:</strong> reject traversal, symlink escape, and duplicate aliases before path-scoped Git; emit <code>identity=rejected</code> or one canonical active marker.</li>
+    <li><strong>Audit evidence:</strong> 33/33 focused checks with 90% aggregate coverage; the control-plane audit adds no daemon, retry loop, or network request.</li>
+    <li><strong>S83.105:</strong> retain one <code>ProjectType | str</code> runtime declaration; unsupported discriminators now raise before registry mutation.</li>
+    <li><strong>Registration evidence:</strong> 60 passed / 1 conditional skip; 170/170 runtime slice; <code>project_types.py</code> at <strong>96.95%</strong> line + branch coverage.</li>
+  </ul>
+  <p class="honest-note"><strong>No v0.1.2 completion claim:</strong> S83.108 is an integrated candidate; S83.105 exists only on the current candidate branch. Exact-head gate, CI, merge, and promotion proof remain pending.</p>
+  <p class="cite">Code: scripts/check_worktree_health.py:39-70 &middot; src/general_ludd/cloud/project_types.py:899-914 &middot; Contracts: docs/features/WORKTREE_AUDIT_IDENTITY_CONTRACT.md:19-43 &middot; docs/features/SOURCE_OVERLOAD_PLACEMENT_CONTRACT.md:9-28</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19f.4: S83.113 QEMU IMPORT ISOLATION -->
 <!-- ============================================================ -->
 <section data-contract="s83-113-qemu-import-isolation">
   <p class="stage-kicker">Test-isolation contract &middot; reversible module-graph probes</p>
