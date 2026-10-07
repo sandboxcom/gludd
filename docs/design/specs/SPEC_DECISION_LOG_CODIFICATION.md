@@ -1,16 +1,17 @@
 # Decision-log mining and deterministic codification
 
-**Status: CORE, ANALYSIS API, CLI, AND OPT-IN LIVE REVIEW IMPLEMENTED;
-DURABLE INTEGRATION PENDING**
+**Status: CORE, ANALYSIS API/CLI, AND AUTOMATIC DURABLE LIVE REVIEW IMPLEMENTED;
+SIGNED REPLAY CAPTURE AND DEPLOYED PROOF PENDING**
 
 **Scope:** Mine repeated, successful agent decisions into reviewable, versioned
 decision trees that Gludd can execute without an agent/LLM call. This document
 specifies the safe evidence boundary, offline learner, authenticated analysis
 API and CLI, approval lifecycle, runtime lookup, and zero-downtime operation.
-The standalone core, bounded analysis surfaces, and opt-in live REVIEW decision
-point are implemented; durable multiworker operation and deployed proof are not.
+The standalone core, bounded analysis surfaces, and configured live REVIEW
+decision point are implemented with durable same-host multiworker state;
+automatic signed replay capture and deployed proof are not.
 
-## 0. Implementation status (2026-10-06)
+## 0. Implementation status (2026-10-07)
 
 The contract, normalization, similarity, mining, export, replay evaluation,
 authenticated artifact store, human-approval adapter, deterministic runtime,
@@ -21,12 +22,11 @@ verified signed bundles and produces replay-evaluated candidates;
 `DecisionResolver` returns an exact codified decision or invokes the supplied
 agent fallback exactly once after typed abstention. `DecisionCodificationAdapter`
 binds those capabilities to one immutable project/policy scope and is available
-through explicit injection into daemon application state and `EventLoop`.
+through explicit injection or typed default-off daemon configuration.
 `POST /api/v1/decision-codification/analyze` now exposes that adapter through a
 bounded authenticated, analysis-only HTTP surface, and
 `gludd decision-codification analyze` provides its bounded operator client. The
-in-process return-review path can now resolve `DecisionKind.REVIEW` through the
-injected adapter.
+in-process return-review path resolves `DecisionKind.REVIEW` through that adapter.
 
 The core enforces exact observed-context signatures, typed abstention,
 create-only HMAC-authenticated artifacts, digest-bound human approval, stable
@@ -41,11 +41,12 @@ fallback, and atomic rollback. `DecisionLogAnalyzer` alone mints
 
 The adapter is opt-in and disabled by default. Live REVIEW coverage proves that
 exact active rules skip the reviewer while abstention and adapter failures call
-it exactly once off-loop. The remaining single-writer integration is recorder
-emission and terminal outcome feedback plus durable repositories, migration,
-and configuration. Thus durable multiworker configuration, recorder/outcome
-feedback, and deployed live-traffic proof remain pending. No production traffic
-is claimed to use this core today.
+it exactly once off-loop. A versioned SQLite WAL repository now shares atomic
+pointer, use, rollback, revocation, drift, and application-outcome state between
+same-host workers. Terminal REVIEW application feedback is idempotent and can
+place a generation on immediate durable drift hold. Automatic signed replay
+capture, multi-host state, and deployed live-traffic proof remain pending. No
+production traffic is claimed to use this core today.
 
 ## 1. Outcome and non-goals
 
@@ -414,6 +415,29 @@ Audit records add content-free attribution only: resolution source, candidate
 and decision-receipt digests, and closed fallback or normalization reasons,
 never return summaries or feature values.
 
+### 9.2 Automatic configuration and durable worker state
+
+`DecisionCodificationConfig` is strict, immutable, default-off, and secret
+indirect. An enabled block requires one bounded project ID, exact policy digest,
+replay/artifact/state paths, active replay key ID, a replay-key-ID to environment
+name map, artifact-key environment name, rollout-key environment name, and a
+bounded busy timeout. Key bytes never appear in YAML or the model dump.
+
+At daemon construction, enabled configuration builds `RunBundleStore`,
+`DecisionArtifactStore`, `DurableGenerationStore`, `RolloutController`,
+`DecisionRuntime`, and `DecisionCodificationAdapter`. Explicit test/operator
+injection takes precedence. Missing secrets or invalid/unusable state fail closed
+before the event loop starts; disabled configuration leaves behavior unchanged.
+
+`DurableGenerationStore` is a versioned SQLite database in WAL mode for
+same-host workers. Readers use independent connections. Writers use short
+`BEGIN IMMEDIATE` transactions and a bounded busy timeout. CAS epochs, current
+pointers, rollback history, revocation, drift holds, issued application IDs,
+maximum-use enforcement, and outcomes are committed in the same database, so a
+second process cannot observe a process-local generation or overrun the use
+bound. Network-filesystem and multi-host safety are explicitly out of scope
+until a PostgreSQL implementation lands.
+
 ## 10. Drift, expiry, and revocation
 
 Every applied rule receives a terminal outcome when one becomes available.
@@ -433,6 +457,15 @@ occur:
 - a feature schema, action vocabulary, or incompatible policy digest changes;
 - its use count or default 90-day expiry is reached;
 - its source corpus is revoked or placed under an incompatible retention hold.
+
+The implemented REVIEW feedback path carries the issued application's canonical
+digest through `CodifiedDecision` and `DecisionResolution`. Once the downstream
+side effect returns, it writes a strict `DecisionApplicationOutcomeV1` off-loop.
+Known outcomes require a terminal event identifier and evidence digest; unknown
+outcomes must claim neither. A row is accepted only for a previously reserved
+application, identical retries are no-ops, and conflicting retries fail closed.
+The newest 100 outcomes from seven days form the bounded feedback window. One
+unsafe result or a failure rate above 1% writes a durable drift hold immediately.
 
 Revocation is an append-only receipt plus an atomic active-pointer removal; it
 does not delete evidence. Emergency revocation needs no agent call. Renewal runs
@@ -537,8 +570,9 @@ Tests follow TDD and include:
   action mapping, managed self-improvement refusal, and content-free attribution;
 - CLI tests for bounded request construction, existing authentication, response
   size/schema validation, safe output, and fixed content-free errors;
-- multiworker atomic pointer, canary bucketing, in-flight generation binding,
-  ZDD promotion, and rollback tests;
+- multiworker atomic pointer, cross-process use reservation, idempotent outcome
+  recording, canary bucketing, in-flight generation binding, ZDD promotion, and
+  rollback tests;
 - metrics cardinality and privacy tests;
 - end-to-end evidence showing repeated decisions move from model fallback to
   approved rule execution, then safely roll back without task interruption.
@@ -586,6 +620,12 @@ unit, integration, ZDD, replay, privacy, and coverage phases.
 - **DLC-AC-16:** The proposal-only CLI preserves API bounds and existing auth,
   enforces its response cap, validates safe summaries, and exposes no lifecycle,
   key, artifact, or evidence input.
+- **DLC-AC-17:** When typed decision-codification configuration is enabled, the
+  daemon constructs the live adapter automatically from environment-indirected
+  secrets and one durable, project-scoped state path; the default remains off.
+- **DLC-AC-18:** Exact-hit applications are issued atomically across workers and
+  terminal outcomes are idempotent, content-free, and able to place the current
+  generation on an immediate safety or bounded failure-rate drift hold.
 
 ## 16. Landing record and remaining ownership
 
@@ -674,13 +714,17 @@ with exact-hit reviewer bypass, one-call fallback, stable retry identities,
 conservative action mapping, managed self-improvement refusal, and content-free
 attribution.
 
-### Slice R4d: durable production integration (remaining)
+### Slice R4d: durable live-flow integration (partially landed)
 
-One integration owner alone edits the remaining shared surfaces: replay capture,
-outcome feedback, database models/repositories/migration, durable multiworker
-config, and make contracts. Durable multiworker configuration,
-recorder/outcome feedback, and deployed live-traffic proof remain pending. No
-second branch independently creates the migration, config keys, make targets,
+Typed default-off configuration now constructs the live adapter automatically,
+with secrets resolved only from named environment variables. A versioned SQLite
+WAL store provides same-host multiworker compare-and-swap, use reservation,
+rollback, revocation, application issuance, and idempotent outcome recording.
+The REVIEW path records success or failure after the downstream decision receipt
+without changing the already-applied task result; unsafe or excessive-failure
+feedback places the generation on a drift hold. Automatic signed replay capture,
+production database/multi-host coordination, and deployed live-traffic proof
+remain. No second branch independently creates shared migration, config, make,
 or daemon wiring.
 
 ## 17. Primary documentation and user/forum findings
@@ -719,7 +763,18 @@ Research performed 2026-10-05:
   documented since 2019 that decisions depending on time or external calls
   cannot be replayed without captured nondeterministic results. Gludd excludes
   such evidence unless the verified bundle contains the exact bounded facts.
+- [SQLite forum: WAL with multiple processes](https://www.sqlite.org/forum/forumpost/65314c7f1ea8d20d)
+  confirms the same database can be used by multiple processes in WAL mode, with
+  one writer and concurrent readers. Gludd keeps the scope explicitly same-host
+  and gives every operation its own connection.
+- [SQLite forum: `BEGIN IMMEDIATE` behavior](https://sqlite.org/forum/forumpost/04ed1d235b)
+  documents how a deferred read-to-write upgrade can fail with `SQLITE_BUSY`.
+  Gludd begins state mutations immediately and uses a bounded busy timeout.
+- [SQLite forum: multi-process WAL stalls](https://sqlite.org/forum/forumpost/49178f62e9?t=c)
+  reports long-lived operational stalls and close-time checkpoint surprises.
+  Gludd bounds lock waits, surfaces fixed content-free failures, and does not
+  claim network-filesystem or multi-host safety.
 
 These findings favor a small offline learner, strict exported rules, immutable
-provenance, and pervasive abstention over model-object serving or autonomous
-policy activation.
+provenance, bounded same-host durable state, and pervasive abstention over
+model-object serving or autonomous policy activation.
