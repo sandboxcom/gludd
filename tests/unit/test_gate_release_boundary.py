@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 LIVE_RELEASE_CHECKS = {
@@ -14,7 +16,7 @@ LIVE_RELEASE_CHECKS = {
 
 
 def _target_block(target: str) -> str:
-    lines = MAKEFILE.read_text(encoding="utf-8").splitlines()
+    lines = compose_makefile(MAKEFILE).splitlines()
     start = next(index for index, line in enumerate(lines) if line.startswith(f"{target}:"))
     end = next(
         (index for index in range(start + 1, len(lines)) if lines[index] and not lines[index][0].isspace()),

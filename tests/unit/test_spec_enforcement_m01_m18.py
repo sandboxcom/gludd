@@ -12,13 +12,15 @@ M18: Development-status shows merge readiness
 import re
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
 AGENTS = ROOT / "AGENTS.md"
 
 
 def _makefile_content() -> str:
-    return MAKEFILE.read_text() if MAKEFILE.exists() else ""
+    return compose_makefile(MAKEFILE) if MAKEFILE.exists() else ""
 
 
 def _target_names(content: str) -> set[str]:

@@ -11,6 +11,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "gate_run_lock.py"
@@ -126,7 +127,7 @@ def test_assert_inactive_fails_closed_on_unreadable_owner(tmp_path: Path) -> Non
 
 
 def test_gate_and_refresh_acquire_before_running_phases() -> None:
-    text = MAKEFILE.read_text(encoding="utf-8")
+    text = compose_makefile(MAKEFILE)
     gate_header = next(line for line in text.splitlines() if line.startswith("gate:"))
     refresh_header = next(
         line for line in text.splitlines() if line.startswith("gate-refresh:")
@@ -141,7 +142,7 @@ def test_gate_and_refresh_acquire_before_running_phases() -> None:
 
 
 def test_history_mutation_targets_depend_on_active_gate_guard() -> None:
-    text = MAKEFILE.read_text(encoding="utf-8")
+    text = compose_makefile(MAKEFILE)
     guarded_headers = (
         "_commit-lock-acquire:",
         "_merge-strategy-guard:",

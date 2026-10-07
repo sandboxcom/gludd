@@ -20,7 +20,7 @@ interrupted multiple sessions to ask "why is the floor not maintained?".
 
 This audit traces that gap to its root cause and proposes three
 high-leverage fixes. **Fix #1 landed in parallel with this audit**; fixes
-#2 and #3 are the remaining work.
+Issues #2 and #3 are the remaining work.
 
 **TL;DR — the floor plugin is advisory-only by default.** It exports only
 `experimental.chat.response.transform`, which can *inject guidance* into the

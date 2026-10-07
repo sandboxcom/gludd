@@ -11,13 +11,15 @@ References: CP.7, EX.1, CID.8, RC2.4.
 
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
 
 
 def _recipe(target: str) -> str:
     """Extract the full recipe body for a make target. Assert target exists."""
-    content = MAKEFILE.read_text()
+    content = compose_makefile(MAKEFILE)
     marker = f"\n{target}:"
     assert marker in content, f"Makefile target '{target}' not found"
     start = content.index(marker) + len(marker)
@@ -71,7 +73,7 @@ class TestReleaseTagPushPhony:
     """release-tag-push must be discoverable in the Makefile."""
 
     def test_target_in_makefile(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         assert "release-tag-push" in content, (
             "release-tag-push must be present in the Makefile"
         )

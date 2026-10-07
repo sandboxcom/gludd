@@ -234,8 +234,10 @@ def test_python_version_replay_runs_only_the_requested_node() -> None:
     assert "mktemp -d" in block
     assert 'WORK="$$(mktemp -d ' in block
     assert "trap" in block
-    assert '$(UV) sync --python "$(PYTHON_VERSION)"' in block
-    assert '$(UV) run --python "$(PYTHON_VERSION)" python -m pytest $(TESTFILE)' in block
+    assert "scripts/dependency_profiles.py sync" in block
+    assert '--set ci --environment "$$WORK/.venv"' in block
+    assert '--python "$(PYTHON_VERSION)"' in block
+    assert '$(UV) run --no-sync --python "$(PYTHON_VERSION)" python -m pytest $(TESTFILE)' in block
     assert "-W error" in block
     assert "--basetemp=" in block
     assert "tests/" not in block.replace("$(TESTFILE)", "")

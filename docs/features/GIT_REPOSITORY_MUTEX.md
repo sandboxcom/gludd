@@ -11,8 +11,8 @@ repositories remain independently namespaced and can make progress in parallel.
 
 The implementation composes two mature standard-library/platform primitives:
 
-- a per-common-directory `threading.RLock` serializes threads and supports
-  same-thread re-entry;
+- a per-common-directory `threading.RLock` serializes threads, supports
+  same-thread re-entry, and provides a bounded acquire operation;
 - POSIX `fcntl.flock` serializes independent processes on one stable inode.
 
 The contract is mutual exclusion, not FIFO scheduling. Operating-system process
@@ -35,9 +35,13 @@ continues to use the existing inode. The kernel releases ownership when all
 descriptors close, including abnormal owner exit. This makes a crash recoverable
 without creating a second inode that another process could lock concurrently.
 
-Every contended acquisition uses a monotonic deadline. Exceeding it raises
-`TimeoutError` with the bounded duration and lock path. `stale_after` remains an
-API-compatible diagnostic threshold; it never authorizes lock deletion.
+Every contended acquisition uses one monotonic deadline across both layers.
+Time spent waiting for the in-process `RLock` is deducted from the time left for
+`flock`, so the public timeout is a total acquisition budget rather than an
+unbounded thread wait followed by a fresh process wait. Exceeding either layer
+raises `TimeoutError` with the bounded duration and contested identity.
+`stale_after` remains an API-compatible diagnostic threshold; it never
+authorizes lock deletion.
 
 ## Compatibility and limitations
 
@@ -76,6 +80,8 @@ is required, so rolling workers remain compatible throughout a ZDD deployment.
   background thread, socket, semaphore, or untracked script is created.
 - Child-process regressions join and close every process and pipe. A crashed
   child deliberately bypasses Python cleanup, proving kernel-level release.
+- Thread contention uses `RLock.acquire(timeout=...)`; it creates no polling
+  thread and cannot wait indefinitely before reaching the process-lock layer.
 - A timeout is a fail-closed operational error. A stale timestamp is logged once
   per acquisition attempt but never weakens exclusion.
 - Repository common-directory resolution keeps worktrees serialized while
@@ -100,7 +106,8 @@ repository state is transferred between lock implementations.
 
 - `tests/unit/test_git_automation_locking.py` proves PID/thread ownership, fork
   reset, spawn timeout, abnormal-exit recovery, stable-inode behavior, and
-  worktree serialization.
+  worktree serialization. It also proves that same-process contention consumes
+  the same bounded acquisition budget as process contention.
 - `tests/unit/test_git_automation_locking_deep.py`,
   `tests/unit/test_git_automation_deep.py`, and `tests/unit/test_mutex_deep.py`
   verify re-entry, bounded contention, multiple waiters, and no overlap.
@@ -144,3 +151,6 @@ repository state is transferred between lock implementations.
   invalidation for fork-sensitive cached state.
 - The [Python `os.register_at_fork` documentation](https://docs.python.org/3/library/os.html#os.register_at_fork)
   defines the supported child hook used to discard inherited ownership.
+- The [Python `threading.RLock` documentation](https://docs.python.org/3/library/threading.html#threading.RLock.acquire)
+  defines the timed, re-entrant acquire primitive used to bound thread
+  contention without replacing the mature standard-library lock.

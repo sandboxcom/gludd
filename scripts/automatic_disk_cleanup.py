@@ -3,9 +3,10 @@
 
 Generated caches are removed from an idle invoking worktree or from inactive
 worktrees. This includes the invoking checkout's exact regenerable Terraform
-provider cache while preserving state. A complete, clean checkout may also be
-dematerialized after its exact branch and commit are proven durable. The shared
-uv cache is pruned through uv only after ownership is idle.
+provider cache while preserving state and the exact shared Playwright browser
+download root. A complete, clean checkout may also be dematerialized after its
+exact branch and commit are proven durable. The shared uv cache is pruned through
+uv only after ownership is idle.
 """
 
 from __future__ import annotations
@@ -63,6 +64,7 @@ SHARED_UV_CACHE_ROOT = Path("/tmp/gludd-uv-cache-public-v2")
 OWNED_NODE_CACHE_ROOTS = (
     Path("/tmp/gludd-npm-cache"),
     Path("/tmp/gludd-npm-cache-public-v1"),
+    Path("/tmp/gludd-playwright-browsers"),
 )
 OWNED_NODE_CACHE_NAMES = frozenset(path.name for path in OWNED_NODE_CACHE_ROOTS)
 OWNED_TERRAFORM_CACHE_ROOTS = (
@@ -1817,7 +1819,7 @@ def clean_stale_node_download_caches(
     remove_tree: RemoveTree = _remove_tree,
     dry_run: bool = False,
 ) -> CleanupResult:
-    """Remove only exact, stale Gludd npm caches after two idle proofs."""
+    """Remove only exact, stale Gludd node-tool caches after two idle proofs."""
     candidates = tuple(dict.fromkeys(cache_roots))
     print(
         "phase=cleanup action=node-download-cache status=starting "

@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 MAKEFILE = Path(__file__).parent.parent.parent / "Makefile"
 ROOT = MAKEFILE.parent
@@ -26,7 +27,7 @@ _TARGET_LINE_RE = re.compile(r"^[a-zA-Z_][-a-zA-Z0-9_./]*\s*:(?!=)")
 
 
 def _read_makefile() -> str:
-    return MAKEFILE.read_text()
+    return compose_makefile(MAKEFILE)
 
 
 def test_test_files_namespaces_ansible_local_temp() -> None:
@@ -656,7 +657,9 @@ class TestMakeHelpMatchesTargets:
 
     def test_help_invokes_index_script(self) -> None:
         content = _read_makefile()
-        assert "check_make_help.py" in content, "help target must reference scripts/check_make_help.py"
+        assert "-m scripts.check_make_help --print-index" in content, (
+            "help target must invoke the canonical check_make_help module"
+        )
 
 
 class TestTargetRecipeIntegrity:

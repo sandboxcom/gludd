@@ -8,13 +8,15 @@ Mirrors test_gate_background_targets.py.
 import re
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
 
 
 def _content() -> str:
     assert MAKEFILE.exists(), "Makefile must exist"
-    return MAKEFILE.read_text()
+    return compose_makefile(MAKEFILE)
 
 
 def _target_block(content: str, target: str) -> str:

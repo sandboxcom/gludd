@@ -47,6 +47,12 @@
       "tests": [
         "tests/unit/test_event_loop_module_split.py"
       ]
+    },
+    "general_ludd.models.freellmapi_sync_plans": {
+      "via": "general_ludd.models.freellmapi_sync_verifier",
+      "tests": [
+        "tests/unit/test_freellmapi_sync_verifier.py"
+      ]
     }
   }
 }

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 import pytest
@@ -44,7 +44,7 @@ def _payload(
     }
 
 
-def _selector() -> object:
+def _selector() -> await_module.RunSelector:
     return await_module.RunSelector(
         ref=TAG,
         sha=SHA,
@@ -118,7 +118,7 @@ def test_default_runner_uses_nonthrowing_captured_subprocess(
         captured.update(kwargs)
         return subprocess.CompletedProcess(list(argv), 0, "[]", "")
 
-    monkeypatch.setattr(await_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "run", fake_run)
 
     result = await_module._run(["gh", "run", "list"])
 
@@ -216,7 +216,7 @@ def test_ci_await_returns_terminal_result_without_sleeping(
 
 
 def test_ci_await_retries_lookup_errors_then_succeeds() -> None:
-    attempts = iter(
+    attempts: Iterator[await_module.AwaitError | dict[str, object]] = iter(
         [
             await_module.AwaitError("temporary GitHub API failure"),
             _payload(status="completed", conclusion="success"),
@@ -224,7 +224,7 @@ def test_ci_await_retries_lookup_errors_then_succeeds() -> None:
     )
     messages: list[str] = []
 
-    def fetch(_selector: object) -> dict[str, object] | None:
+    def fetch(_selector: await_module.RunSelector) -> dict[str, object] | None:
         value = next(attempts)
         if isinstance(value, Exception):
             raise value
@@ -498,10 +498,19 @@ def test_release_paths_await_exact_tag_run_before_final_verification(target: str
 
 
 def test_feature_doc_records_measured_wait_improvement_and_practitioner_evidence() -> None:
-    documentation = (
-        ROOT / "docs" / "features" / "BETA4_DUAL_TRACK_CI.md"
+    overview = (ROOT / "docs" / "features" / "BETA4_DUAL_TRACK_CI.md").read_text(
+        encoding="utf-8"
+    )
+    operations = (
+        ROOT
+        / "docs"
+        / "features"
+        / "beta4-dual-track-ci"
+        / "exact-sha-promotion.md"
     ).read_text(encoding="utf-8")
+    documentation = f"{overview}\n{operations}"
 
+    assert "(beta4-dual-track-ci/exact-sha-promotion.md)" in overview
     assert "Exact-identity release wait" in documentation
     assert "average discovery latency" in documentation
     assert "github.com/cli/cli/issues/5474" in documentation

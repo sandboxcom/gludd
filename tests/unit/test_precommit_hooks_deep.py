@@ -271,4 +271,7 @@ class TestConfigStructure:
             if entry["hook"]["id"] == "end-of-file-fixer"
         )
 
-        assert hook.get("exclude") == r"^config/self-improve/catalog-truth\.json$"
+        assert hook.get("exclude") == (
+            r"^(config/self-improve/catalog-truth\.json|"
+            r"docs/presentation/deck/vendor/)"
+        )

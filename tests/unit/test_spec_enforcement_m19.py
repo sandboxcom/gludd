@@ -9,6 +9,8 @@ artifact verification cannot drift across promotion paths.
 import re
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 MAKEFILE = Path(__file__).parent.parent.parent / "Makefile"
 SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
 
@@ -27,7 +29,7 @@ class TestM19ReleasePromoteFfOnly:
     """M19 — release-promote is ff-only merge into master."""
 
     def test_release_promote_target_exists_or_is_documented(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         target_names = set()
         for line in content.split("\n"):
             m = re.match(r"^([a-zA-Z_][a-zA-Z0-9_./-]*)\s*:(?!=)", line.strip())
@@ -52,7 +54,7 @@ class TestM19ReleasePromoteFfOnly:
         )
 
     def test_ship_async_uses_ff_only(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         recipe = _find_target_recipe(content, "ship-async")
         if not recipe:
             return
@@ -64,7 +66,7 @@ class TestM19ReleasePromoteFfOnly:
             )
 
     def test_release_branch_new_checks_ci_green(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         target_names = set()
         for line in content.split("\n"):
             m = re.match(r"^([a-zA-Z_][a-zA-Z0-9_./-]*)\s*:(?!=)", line.strip())

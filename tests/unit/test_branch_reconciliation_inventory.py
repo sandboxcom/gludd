@@ -622,6 +622,79 @@ def test_exhaustive_summary_pages_to_terminal_and_deduplicates_heads() -> None:
     assert result["groups"][1]["refs"] == ["refs/heads/feature/c"]
 
 
+@pytest.mark.parametrize(
+    "terminal_refs",
+    [
+        [
+            ("refs/heads/feature/0-created", PAGE_HEADS[3]),
+            ("refs/heads/feature/a", PAGE_HEADS[0]),
+            ("refs/heads/feature/b", PAGE_HEADS[1]),
+        ],
+        [("refs/heads/feature/a", PAGE_HEADS[0])],
+        [
+            ("refs/heads/feature/a", PAGE_HEADS[2]),
+            ("refs/heads/feature/b", PAGE_HEADS[1]),
+        ],
+    ],
+    ids=("created-before-cursor", "deleted-after-page", "head-moved"),
+)
+def test_exhaustive_summary_rejects_stale_terminal_ref_snapshot(
+    terminal_refs: Sequence[tuple[str, str]],
+) -> None:
+    """A terminal claim must not survive branch creation, deletion, or movement."""
+
+    class TerminalSnapshotGit(FakeGit):
+        def __call__(
+            self, argv: Sequence[str], cwd: str | None = None
+        ) -> subprocess.CompletedProcess[str]:
+            args = list(argv)
+            if args[1] == "for-each-ref" and "--sort=refname" in args:
+                original_refs = self.refs
+                self.refs = list(terminal_refs)
+                try:
+                    return super().__call__(args, cwd)
+                finally:
+                    self.refs = original_refs
+            return super().__call__(args, cwd)
+
+    fake = TerminalSnapshotGit(
+        refs=[
+            ("refs/heads/feature/a", PAGE_HEADS[0]),
+            ("refs/heads/feature/b", PAGE_HEADS[1]),
+        ],
+        ancestors=frozenset(PAGE_HEADS),
+    )
+
+    with pytest.raises(inventory.InventoryError, match="changed during exhaustive"):
+        inventory.collect_summary("development", 1, run=fake)
+
+
+def test_exhaustive_summary_rejects_target_move_after_single_page() -> None:
+    """Even a one-page terminal claim must revalidate its target identity."""
+
+    class MovingTargetGit(FakeGit):
+        target_head_resolutions = 0
+
+        def __call__(
+            self, argv: Sequence[str], cwd: str | None = None
+        ) -> subprocess.CompletedProcess[str]:
+            args = list(argv)
+            result = super().__call__(args, cwd)
+            if args[1:4] == ["rev-parse", "--verify", "--quiet"]:
+                self.target_head_resolutions += 1
+                if self.target_head_resolutions > 1:
+                    return self._result(args, 0, f"{PAGE_HEADS[3]}\n")
+            return result
+
+    fake = MovingTargetGit(
+        refs=[("refs/heads/feature/a", ANCESTOR_HEAD)],
+        ancestors=frozenset({ANCESTOR_HEAD}),
+    )
+
+    with pytest.raises(inventory.InventoryError, match="target changed"):
+        inventory.collect_summary("development", 2, run=fake)
+
+
 def test_exhaustive_summary_fails_closed_above_scan_bound(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -738,6 +811,7 @@ def test_main_default_progress_stays_observable(
     assert json.loads(captured.out)["mode"] == "exhaustive-summary"
     assert "BRANCH-RECONCILIATION target=development" in captured.err
     assert "classify=1/1 ref=refs/heads/feature/current" in captured.err
+    assert "verify=terminal-ref-snapshot" in captured.err
 
 
 def test_main_quiet_progress_keeps_current_json_machine_consumable(

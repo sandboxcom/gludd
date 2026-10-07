@@ -39,6 +39,8 @@ else:
 DEFAULT_TIMEOUT_SECONDS = 3600.0
 DEFAULT_POLL_SECONDS = 0.2
 DEFAULT_GRACE_SECONDS = 10.0
+WATCH_HEARTBEAT_SECONDS = 30.0
+TERMINATION_HEARTBEAT_SECONDS = 1.0
 STATE_KIND = "gludd_gate_background"
 STATE_SCHEMA_VERSION = 1
 
@@ -137,10 +139,10 @@ def _read_pid(path: Path) -> int | None:
     return value if value > 1 else None
 
 
-def _pid_started_at(pid: int) -> str | None:
-    """Return the same stable OS token used by the gate-run lock."""
+def _probe_pid_started_at(pid: int) -> tuple[str, str | None]:
+    """Return ``present``, ``absent``, or ``unknown`` with a stable token."""
     if pid <= 1:
-        return None
+        return "absent", None
     try:
         completed = subprocess.run(
             ["/bin/ps", "-p", str(pid), "-o", "lstart="],
@@ -150,9 +152,19 @@ def _pid_started_at(pid: int) -> str | None:
             timeout=2.0,
         )
     except (OSError, subprocess.TimeoutExpired):
-        return None
+        return "unknown", None
     started_at = completed.stdout.strip()
-    return started_at or None
+    if completed.returncode == 0 and started_at:
+        return "present", started_at
+    if completed.returncode == 1:
+        return "absent", None
+    return "unknown", None
+
+
+def _pid_started_at(pid: int) -> str | None:
+    """Return the same stable OS token used by the gate-run lock."""
+    state, started_at = _probe_pid_started_at(pid)
+    return started_at if state == "present" else None
 
 
 def _capture_identity(pid: int, run_id: str) -> GateIdentity | None:
@@ -174,10 +186,12 @@ def _capture_identity(pid: int, run_id: str) -> GateIdentity | None:
 
 
 def _process_state(identity: GateIdentity) -> str:
-    """Return ``owned``, ``gone``, or ``reused`` for an exact identity."""
-    started_at = _pid_started_at(identity.pid)
-    if started_at is None:
+    """Return ``owned``, ``gone``, ``reused``, or ``unknown``."""
+    probe_state, started_at = _probe_pid_started_at(identity.pid)
+    if probe_state == "absent":
         return "gone"
+    if probe_state != "present" or started_at is None:
+        return "unknown"
     if started_at != identity.pid_started_at:
         return "reused"
     try:
@@ -307,27 +321,69 @@ def _terminate_session(
     *,
     grace_seconds: float,
     poll_seconds: float = DEFAULT_POLL_SECONDS,
-) -> None:
-    """TERM then KILL only the launched session after exact revalidation."""
+) -> bool:
+    """TERM then KILL the exact session and report verified terminal state."""
+    print(
+        f"[gate-background-watch] phase=terminate-term pid={identity.pid} "
+        f"grace={_format_seconds(grace_seconds)}s",
+        flush=True,
+    )
     _signal_session(identity, signal.SIGTERM)
     deadline = time.monotonic() + max(0.0, grace_seconds)
+    next_heartbeat = time.monotonic()
     while _process_state(identity) == "owned" and time.monotonic() < deadline:
-        time.sleep(min(max(poll_seconds, 0.001), max(0.0, deadline - time.monotonic())))
+        now = time.monotonic()
+        if now >= next_heartbeat:
+            print(
+                f"[gate-background-watch] phase=terminate-wait pid={identity.pid} "
+                f"remaining={max(0.0, deadline - now):.1f}s",
+                flush=True,
+            )
+            next_heartbeat = now + TERMINATION_HEARTBEAT_SECONDS
+        time.sleep(min(max(poll_seconds, 0.001), max(0.0, deadline - now)))
     if _process_state(identity) == "owned":
+        print(
+            f"[gate-background-watch] phase=terminate-kill pid={identity.pid}",
+            flush=True,
+        )
         _signal_session(identity, signal.SIGKILL)
         kill_deadline = time.monotonic() + max(
             poll_seconds, min(grace_seconds, 1.0)
         )
+        next_heartbeat = time.monotonic()
         while (
             _process_state(identity) == "owned"
             and time.monotonic() < kill_deadline
         ):
+            now = time.monotonic()
+            if now >= next_heartbeat:
+                print(
+                    f"[gate-background-watch] phase=kill-wait pid={identity.pid} "
+                    f"remaining={max(0.0, kill_deadline - now):.1f}s",
+                    flush=True,
+                )
+                next_heartbeat = now + TERMINATION_HEARTBEAT_SECONDS
             time.sleep(
                 min(
                     max(poll_seconds, 0.001),
-                    max(0.0, kill_deadline - time.monotonic()),
+                    max(0.0, kill_deadline - now),
                 )
             )
+    final_state = _process_state(identity)
+    terminated = final_state in {"gone", "reused"}
+    if not terminated:
+        print(
+            f"[gate-background-watch] phase=termination-failed "
+            f"pid={identity.pid} state={final_state}",
+            flush=True,
+        )
+    return terminated
+
+
+def _identity_may_be_live(identity: GateIdentity) -> bool:
+    """Fail closed when identity inspection cannot disprove a live owner."""
+    state = _process_state(identity)
+    return state in {"owned", "unknown"}
 
 
 def _watch_outcome_when_not_owned(identity: GateIdentity) -> str | None:
@@ -337,6 +393,31 @@ def _watch_outcome_when_not_owned(identity: GateIdentity) -> str | None:
     if state == "reused":
         return "superseded"
     return None
+
+
+def _retire_finished_gate(paths: GatePaths, identity: GateIdentity) -> str | None:
+    """Retire only the still-current receipt for a verified terminal gate."""
+    with paths.launch_lock.open("a+b") as launch_lock:
+        fcntl.flock(launch_lock.fileno(), fcntl.LOCK_EX)
+        if not _state_is_current(paths, identity):
+            return "finished"
+        outcome = _watch_outcome_when_not_owned(identity)
+        if outcome != "finished":
+            return outcome
+        merged = _merge_state(
+            paths,
+            identity,
+            {
+                "state": "finished",
+                "finished_at": _utc_now(),
+                "termination_reason": "gate-exited",
+                "watchdog_pid": None,
+            },
+        )
+        if not merged:
+            return "finished"
+        _remove_owned_pid_file(paths, identity)
+        return "finished"
 
 
 def watch_gate(
@@ -350,26 +431,32 @@ def watch_gate(
     """Watch one exact session until exit or timeout, then terminate and retire."""
     if timeout_seconds <= 0 or poll_seconds <= 0 or grace_seconds <= 0:
         raise ValueError("watcher durations must be positive")
-    deadline = time.monotonic() + timeout_seconds
+    started_at = time.monotonic()
+    deadline = started_at + timeout_seconds
+    next_heartbeat = started_at
     while True:
         outcome = _watch_outcome_when_not_owned(identity)
         if outcome is not None:
             if outcome == "finished":
-                _merge_state(
-                    paths,
-                    identity,
-                    {
-                        "state": "finished",
-                        "finished_at": _utc_now(),
-                        "termination_reason": "gate-exited",
-                    },
-                )
+                retired = _retire_finished_gate(paths, identity)
+                if retired is None:
+                    continue
+                return retired
             return outcome
         if not _state_is_current(paths, identity):
             return "superseded"
-        remaining = deadline - time.monotonic()
+        now = time.monotonic()
+        remaining = deadline - now
         if remaining <= 0:
             break
+        if now >= next_heartbeat:
+            print(
+                f"[gate-background-watch] heartbeat run_id={identity.run_id} "
+                f"pid={identity.pid} elapsed={max(0.0, now - started_at):.1f}s "
+                f"remaining={remaining:.1f}s",
+                flush=True,
+            )
+            next_heartbeat = now + WATCH_HEARTBEAT_SECONDS
         time.sleep(min(poll_seconds, remaining))
 
     # Serialize the final identity check and signal with launcher admission.
@@ -384,28 +471,53 @@ def watch_gate(
             return "superseded"
 
         timeout_text = _format_seconds(timeout_seconds)
+        terminated = _terminate_session(
+            identity, grace_seconds=grace_seconds, poll_seconds=poll_seconds
+        )
+        if terminated:
+            _append_log(
+                log_path,
+                f"=== GATE: ABORTED (timeout {timeout_text}s) ===\n",
+            )
+            _atomic_write(
+                paths.status_file,
+                f"GATE_TIMEOUT\n=== GATE: ABORTED (timeout {timeout_text}s) ===\n",
+            )
+            merged = _merge_state(
+                paths,
+                identity,
+                {
+                    "state": "timed_out",
+                    "finished_at": _utc_now(),
+                    "termination_reason": "gate-timeout",
+                    "watchdog_pid": None,
+                },
+            )
+            if merged:
+                _remove_owned_pid_file(paths, identity)
+                return "timed_out"
+            return "superseded"
+
         _append_log(
             log_path,
-            f"=== GATE: ABORTED (timeout {timeout_text}s) ===\n",
-        )
-        _terminate_session(
-            identity, grace_seconds=grace_seconds, poll_seconds=poll_seconds
+            f"=== GATE: TERMINATION FAILED (timeout {timeout_text}s) ===\n",
         )
         _atomic_write(
             paths.status_file,
-            f"GATE_TIMEOUT\n=== GATE: ABORTED (timeout {timeout_text}s) ===\n",
+            "GATE_TIMEOUT_TERMINATION_FAILED\n"
+            f"=== GATE: TERMINATION FAILED (timeout {timeout_text}s) ===\n",
         )
-        _remove_owned_pid_file(paths, identity)
         _merge_state(
             paths,
             identity,
             {
-                "state": "timed_out",
+                "state": "termination_failed",
                 "finished_at": _utc_now(),
-                "termination_reason": "gate-timeout",
+                "termination_reason": "gate-timeout-termination-failed",
+                "watchdog_pid": None,
             },
         )
-    return "timed_out"
+        return "termination_failed"
 
 
 def _existing_identity(paths: GatePaths, pid: int) -> GateIdentity | None:
@@ -518,7 +630,7 @@ def launch_gate(
         existing_pid = _read_pid(paths.pid_file)
         if existing_pid is not None:
             existing = _existing_identity(paths, existing_pid)
-            if existing is not None and process_matches(existing):
+            if existing is not None and _identity_may_be_live(existing):
                 age = _existing_age(paths)
                 print(
                     f"[gate-background] gate already running "
@@ -669,7 +781,11 @@ def _watch_from_state(args: argparse.Namespace, paths: GatePaths) -> int:
         f"run_id={identity.run_id}",
         flush=True,
     )
-    return 124 if outcome == "timed_out" else 0
+    if outcome == "timed_out":
+        return 124
+    if outcome == "termination_failed":
+        return 125
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -463,12 +463,12 @@ class TestFairQueue:
 
 
 class TestCrossProcess:
-    def test_worktree_lock_serializes_independent_processes(self) -> None:
+    def test_worktree_lock_serializes_independent_processes(self, tmp_path: Path) -> None:
         if not locking._HAVE_FCNTL:
             pytest.skip("fcntl not available")
         import subprocess as sp
 
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(dir=tmp_path) as tmpdir:
             main_repo = os.path.join(tmpdir, "main")
             os.mkdir(main_repo)
             sp.run(["git", "init"], cwd=main_repo, check=True, capture_output=True)

@@ -1,3 +1,5 @@
+"""Typed user and agent configuration with safe layered resolution."""
+
 from __future__ import annotations
 
 import ipaddress
@@ -8,12 +10,12 @@ import yaml
 from pydantic import BaseModel, model_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
+from general_ludd.config.decision_codification import DecisionCodificationConfig
 from general_ludd.config.model_routing import ModelRoutingConfig
 
 
 def _parse_bind_ip(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
     """Parse a bind host without embedding scanner-sensitive address literals."""
-
     candidate = host.strip()
     if candidate.startswith("[") and candidate.endswith("]"):
         candidate = candidate[1:-1]
@@ -24,6 +26,8 @@ def _parse_bind_ip(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address |
 
 
 class NetworkConfig(BaseModel):
+    """Network bind settings with explicit external-access safeguards."""
+
     host: str = "127.0.0.1"
     port: int = 8000
     allowed_cidr: list[str] = []
@@ -31,7 +35,6 @@ class NetworkConfig(BaseModel):
     @property
     def is_external_bind(self) -> bool:
         """Whether the configured host is reachable beyond loopback."""
-
         if self.host.strip().lower() == "localhost":
             return False
         parsed = _parse_bind_ip(self.host)
@@ -40,7 +43,6 @@ class NetworkConfig(BaseModel):
     @property
     def is_unspecified_bind(self) -> bool:
         """Whether the host requests every IPv4 or IPv6 interface."""
-
         parsed = _parse_bind_ip(self.host)
         return parsed is not None and parsed.is_unspecified
 
@@ -56,6 +58,8 @@ class NetworkConfig(BaseModel):
 
 
 class ObservabilityConfig(BaseModel):
+    """OpenTelemetry endpoint and service identity settings."""
+
     otel_endpoint: str | None = None
     service_name: str = "general-ludd"
 
@@ -118,8 +122,10 @@ class CompactionConfigBlock(BaseModel):
 
 
 class RemediationSettings(BaseModel):
-    """Operator tunables for the auto-remediation tick phase (#52) and the
-    ``/admin/remediation/*`` HTTP endpoints.
+    """Configure the auto-remediation tick phase and operator endpoints.
+
+    These tunables apply to issue #52 and the ``/admin/remediation/*`` HTTP
+    endpoints.
 
     ``check_interval_ticks`` gates how often
     ``EventLoop._phase_remediate_blocked_tasks`` runs (0 disables the phase —
@@ -219,6 +225,8 @@ class VmSandboxConfig(BaseModel):
 
 
 class HumanInTheLoopConfig(BaseModel):
+    """Configure confidence-based human review escalation."""
+
     enabled: bool = False
     confidence_threshold: float = 0.7
 
@@ -244,6 +252,8 @@ class OrchestrationGuardConfig(BaseModel):
 
 
 class IssuesConfig(BaseModel):
+    """Configure bounded GitHub issue polling."""
+
     polling_enabled: bool = False
     poll_interval_ticks: int = 300
     github_owner: str = ""
@@ -252,6 +262,8 @@ class IssuesConfig(BaseModel):
 
 
 class NotificationsConfig(BaseModel):
+    """Configure notification backends and minimum priority."""
+
     enabled: bool = False
     backends: dict[str, Any] = {"stdout": {}}
     min_priority: str = "high"
@@ -286,6 +298,7 @@ class UserConfig(BaseSettings):
     process_isolation: dict[str, Any] = {}
     budget: dict[str, Any] = {}
     database: dict[str, Any] = {}
+    decision_codification: DecisionCodificationConfig = DecisionCodificationConfig()
     network: NetworkConfig = NetworkConfig()
     observability: ObservabilityConfig = ObservabilityConfig()
     queues: list[dict[str, Any]] = []
@@ -396,6 +409,8 @@ class UserConfig(BaseSettings):
 
 
 class AgentConfig(BaseModel):
+    """Persist agent-owned routing preferences and session notes."""
+
     model_routing: ModelRoutingConfig | None = None
     active_model_profile: str | None = None
     preferred_agents: dict[str, Any] = {}
@@ -407,11 +422,14 @@ class AgentConfig(BaseModel):
 
 
 class ConfigLayer(BaseModel):
+    """Resolve user, agent, and default configuration in precedence order."""
+
     user: UserConfig = UserConfig()
     agent: AgentConfig = AgentConfig()
     defaults: dict[str, Any] = {}
 
     def resolve(self, key: str) -> Any:
+        """Resolve one key through user, agent, then default configuration."""
         user_val = getattr(self.user, key, None)
         if user_val is not None:
             if isinstance(user_val, dict) and user_val:
@@ -427,6 +445,7 @@ class ConfigLayer(BaseModel):
         return self.defaults.get(key)
 
     def resolve_model_routing(self) -> ModelRoutingConfig:
+        """Resolve model routing while preserving a typed default."""
         if self.user.model_routing is not None:
             return self.user.model_routing
         if self.agent.model_routing is not None:

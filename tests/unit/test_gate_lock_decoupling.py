@@ -31,12 +31,14 @@ from __future__ import annotations
 import pathlib
 import re
 
+from scripts.makefile_layout import compose_makefile
+
 MAKEFILE = pathlib.Path(__file__).parents[2] / "Makefile"
 
 
 def _recipe_lines(target: str) -> str:
     """Extract the recipe text for a given Makefile target."""
-    text = MAKEFILE.read_text()
+    text = compose_makefile(MAKEFILE)
     # Find the target header, then collect lines until the next non-indented line
     in_target = False
     recipe_lines: list[str] = []

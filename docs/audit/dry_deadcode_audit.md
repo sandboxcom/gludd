@@ -151,7 +151,7 @@ also makes the `value`/`level_or_status` defaults uniform for free.
 
 **VERIFIED.** `datadog.py:68-88` and `prometheus.py:62-85` contain identical
 `_strip_brackets` + `_is_blocked_ip` bodies (prometheus only adds a comment). Folded into the
-#3 fix by hoisting into `base`.
+Issue #3: fix by hoisting into `base`.
 
 ## 7. LOW (cosmetic) — divergent injectable-transport aliases
 

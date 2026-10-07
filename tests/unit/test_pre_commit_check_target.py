@@ -8,6 +8,7 @@ first error. It is a FAST pre-check intended to run before every commit
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
@@ -15,7 +16,7 @@ MAKEFILE = ROOT / "Makefile"
 
 def _content() -> str:
     assert MAKEFILE.exists(), "Makefile must exist"
-    return MAKEFILE.read_text()
+    return compose_makefile(MAKEFILE)
 
 
 def _target_block(content: str) -> str:

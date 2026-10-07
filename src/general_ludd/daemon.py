@@ -1630,6 +1630,15 @@ def create_daemon_app(
     app.state._network_host = "127.0.0.1"
     app.state._network_port = 8000
     app.state._startup_config = load_startup_config(config_dir)
+    if decision_codification is None:
+        user_config = app.state._startup_config.get("user_config")
+        configured = getattr(user_config, "decision_codification", None)
+        if configured is not None and configured.enabled:
+            from general_ludd.decision_codification.configuration import (
+                build_configured_adapter,
+            )
+
+            decision_codification = build_configured_adapter(configured)
     app.state._project_gludd_dir = app.state._startup_config.get("project_gludd_dir")
     app.state._model_performance_router = None
     app.state._performance_repo = None

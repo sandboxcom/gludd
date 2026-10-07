@@ -30,6 +30,7 @@ import re
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
@@ -47,7 +48,7 @@ def _plugin_source(name: str) -> str:
 
 def _makefile_source() -> str:
     assert MAKEFILE.exists(), "Makefile not found at repo root"
-    return MAKEFILE.read_text()
+    return compose_makefile(MAKEFILE)
 
 
 def _makefile_has_target(makefile_src: str, target: str) -> bool:

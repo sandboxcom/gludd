@@ -13,6 +13,8 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
 GITIGNORE = ROOT / ".gitignore"
@@ -20,7 +22,7 @@ GITIGNORE = ROOT / ".gitignore"
 
 def _makefile_content() -> str:
     assert MAKEFILE.exists(), "Makefile must exist"
-    return MAKEFILE.read_text()
+    return compose_makefile(MAKEFILE)
 
 
 # --- Makefile structural tests ---
