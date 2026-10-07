@@ -105,11 +105,16 @@ class DiskSnapshot:
 
     @property
     def is_high(self) -> bool:
-        """Return whether either established project limit is exceeded."""
+        """Return whether cleanup should run for either project limit."""
         return (
             self.scratch_mb > check_disk_usage.GLUDD_TMP_LIMIT_MB
-            or self.disk_pct > check_disk_usage.DISK_USAGE_PCT_LIMIT
+            or self.has_hard_pressure
         )
+
+    @property
+    def has_hard_pressure(self) -> bool:
+        """Return whether repository-volume use exceeds the hard gate limit."""
+        return self.disk_pct > check_disk_usage.DISK_USAGE_PCT_LIMIT
 
 
 @dataclass(frozen=True)
@@ -2207,8 +2212,10 @@ def _snapshot_text(snapshot: DiskSnapshot) -> str:
     return (
         f"scratch_mb={snapshot.scratch_mb:.1f} "
         f"scratch_limit_mb={check_disk_usage.GLUDD_TMP_LIMIT_MB} "
+        "scratch_limit_kind=soft "
         f"disk_pct={snapshot.disk_pct:.1f} "
-        f"disk_limit_pct={check_disk_usage.DISK_USAGE_PCT_LIMIT}"
+        f"disk_limit_pct={check_disk_usage.DISK_USAGE_PCT_LIMIT} "
+        "disk_limit_kind=hard"
     )
 
 
@@ -2329,6 +2336,14 @@ def run_preflight(
         if not after.is_high:
             print(
                 f"phase=recheck status=healthy pass={pass_number} "
+                f"{_snapshot_text(after)}",
+                flush=True,
+            )
+            return 0
+        if not after.has_hard_pressure:
+            print(
+                "phase=recheck status=soft-cap "
+                f"pass={pass_number} reason=protected-or-recent-scratch "
                 f"{_snapshot_text(after)}",
                 flush=True,
             )
