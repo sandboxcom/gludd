@@ -244,8 +244,8 @@ class TestGitDirWorktree:
             assert locking._git_dir(str(worktree)) is None
             assert not (worktree / locking._LOCK_FILENAME).exists()
 
-    def test_resolves_worktree_to_common_dir(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
+    def test_resolves_worktree_to_common_dir(self, tmp_path: Path) -> None:
+        with tempfile.TemporaryDirectory(dir=tmp_path) as tmpdir:
             main_repo = os.path.join(tmpdir, "main")
             os.mkdir(main_repo)
             subprocess.run(["git", "init"], cwd=main_repo, check=True, capture_output=True)
@@ -482,8 +482,8 @@ class TestGitRepoLock:
 
 
 class TestGitRepoLockWorktree:
-    def test_git_repo_lock_uses_common_dir_inside_worktree(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
+    def test_git_repo_lock_uses_common_dir_inside_worktree(self, tmp_path: Path) -> None:
+        with tempfile.TemporaryDirectory(dir=tmp_path) as tmpdir:
             main_repo = os.path.join(tmpdir, "main")
             os.mkdir(main_repo)
             subprocess.run(["git", "init"], cwd=main_repo, check=True, capture_output=True)
@@ -532,11 +532,14 @@ class TestGitRepoLockWorktree:
                     capture_output=True,
                 )
 
-    def test_git_repo_lock_serializes_concurrent_worktree_processes(self) -> None:
+    def test_git_repo_lock_serializes_concurrent_worktree_processes(
+        self,
+        tmp_path: Path,
+    ) -> None:
         if not locking._HAVE_FCNTL:
             pytest.skip("fcntl not available on this platform")
 
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(dir=tmp_path) as tmpdir:
             main_repo = os.path.join(tmpdir, "main")
             os.mkdir(main_repo)
             subprocess.run(["git", "init"], cwd=main_repo, check=True, capture_output=True)
