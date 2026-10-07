@@ -227,7 +227,7 @@ jobs:
         env:
           GLUDD_AUTH_PSK: ""
       - name: Azure Container App coverage (hermetic)
-        if: ${{ !cancelled() && matrix.python-version == '3.11' }}
+        if: "${{ !cancelled() && matrix.python-version == '3.11' }}"
         run: |
           echo "=== CI PHASE: azure-containerapp-coverage ==="
           make test-azure-containerapp-coverage
