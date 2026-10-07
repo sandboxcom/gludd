@@ -856,6 +856,28 @@ class TestPrepare:
         assert "file \"$(LINUX_BINARY_OUTPUT)\"" in makefile
         assert "ELF" in makefile
 
+    def test_native_linux_build_isolated_from_molecule_environment(self) -> None:
+        """The release sync must not prune Molecule from the CI test venv."""
+        makefile = _makefile_source()
+        build_target = makefile.split("build-executable:", 1)[1].split("\n\n", 1)[0]
+        linux_target = makefile.split("build-linux-executable:", 1)[1].split("\n\n", 1)[0]
+
+        assert (
+            "PYINSTALLER_BUILD_ENVIRONMENT ?= "
+            "$(shell $(PYTHON) scripts/resource_arbiter.py root)/pyinstaller-build-env"
+        ) in makefile
+        assert (
+            'DEPENDENCY_PROFILE_ENVIRONMENT="$(PYINSTALLER_BUILD_ENVIRONMENT)"'
+            in build_target
+        )
+        assert "DEPENDENCY_PROFILE_ENVIRONMENT=.venv" not in build_target
+        assert build_target.count(
+            'UV_PROJECT_ENVIRONMENT="$(PYINSTALLER_BUILD_ENVIRONMENT)"'
+        ) >= 2
+        assert linux_target.count(
+            'UV_PROJECT_ENVIRONMENT="$(PYINSTALLER_BUILD_ENVIRONMENT)"'
+        ) >= 3
+
     def test_locked_profile_binary_builds_install_the_azure_runtime(self) -> None:
         """Every frozen artifact must contain the locked Azure profile."""
         makefile = _makefile_source()
