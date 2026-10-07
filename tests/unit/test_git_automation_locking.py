@@ -7,6 +7,7 @@ registry, public API surface, and cross-process safety on POSIX.
 from __future__ import annotations
 
 import contextlib
+import errno
 import multiprocessing
 import os
 import subprocess
@@ -78,6 +79,31 @@ def _fork_while_holding_repo_lock(repo_path: str, result: Connection) -> None:
         sender.close()
         process.close()
         result.close()
+
+
+class TestForkReset:
+    def test_closes_descriptors_and_discards_parent_ownership(self) -> None:
+        """The child reset must leave no descriptor or Python lock ownership."""
+        key = "fork-reset"
+        read_fd, write_fd = os.pipe()
+        locking._file_lock_fds[key] = write_fd
+        locking._file_lock_depth[key] = 1
+        locking._file_lock_owner[key] = (os.getpid(), threading.get_ident())
+        locking._repo_locks[key] = threading.RLock()
+        try:
+            locking._reset_after_fork()
+
+            assert locking._file_lock_fds == {}
+            assert locking._file_lock_depth == {}
+            assert locking._file_lock_owner == {}
+            assert locking._repo_locks == {}
+            with pytest.raises(OSError):
+                os.fstat(write_fd)
+        finally:
+            with contextlib.suppress(OSError):
+                os.close(read_fd)
+            with contextlib.suppress(OSError):
+                os.close(write_fd)
 
 
 class TestNormalize:
@@ -360,26 +386,99 @@ class TestFileLock:
                     fcntl.flock(fd, fcntl.LOCK_UN)
                 os.close(fd)
 
+    def test_inherited_depth_closes_descriptor_before_new_acquire(self) -> None:
+        if not locking._HAVE_FCNTL:
+            pytest.skip("fcntl not available on this platform")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            git_dir = os.path.join(tmpdir, ".git")
+            os.mkdir(git_dir)
+            inherited_path = os.path.join(tmpdir, "inherited.lock")
+            inherited_fd = os.open(inherited_path, os.O_CREAT | os.O_RDWR, 0o600)
+            key = "inherited-depth"
+            locking._file_lock_fds[key] = inherited_fd
+            locking._file_lock_depth[key] = 1
+            locking._file_lock_owner[key] = (-1, -1)
+            try:
+                with (
+                    patch("general_ludd.git_automation.locking.os.close", wraps=os.close) as close_spy,
+                    locking._file_lock(git_dir, key, timeout=1.0, stale_after=60.0),
+                ):
+                    close_spy.assert_any_call(inherited_fd)
+                    assert locking._file_lock_owner[key] == (
+                        os.getpid(),
+                        threading.get_ident(),
+                    )
+            finally:
+                locking._file_lock_fds.pop(key, None)
+                locking._file_lock_depth.pop(key, None)
+                locking._file_lock_owner.pop(key, None)
+                with contextlib.suppress(OSError):
+                    os.close(inherited_fd)
+
+    def test_unexpected_flock_error_fails_closed(self) -> None:
+        if not locking._HAVE_FCNTL:
+            pytest.skip("fcntl not available on this platform")
+        import fcntl
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            key = "unexpected-flock-error"
+            error = OSError(errno.EBADF, "bad lock descriptor")
+            with (
+                patch.object(fcntl, "flock", side_effect=error),
+                pytest.raises(OSError, match="bad lock descriptor"),
+                locking._file_lock(tmpdir, key, timeout=1.0, stale_after=60.0),
+            ):
+                pass
+
 
 class TestGitRepoLock:
     def test_acquires_and_releases_inprocess_lock(self) -> None:
-        git_dir = locking._git_dir(".")
-        key = locking._normalize(git_dir) if git_dir is not None else locking._normalize(".")
-        with locking.git_repo_lock(".", timeout=1.0, stale_after=60.0):
-            rlock = locking._repo_locks.get(key)
-            assert rlock is not None
-            acquired = rlock.acquire(blocking=False)
-            if acquired:
-                rlock.release()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            key = locking._normalize(tmpdir)
+            with locking.git_repo_lock(tmpdir, timeout=1.0, stale_after=60.0):
+                rlock = locking._repo_locks.get(key)
+                assert rlock is not None
+                acquired = rlock.acquire(blocking=False)
+                if acquired:
+                    rlock.release()
 
     def test_context_manager_contract(self) -> None:
-        with locking.git_repo_lock(".", timeout=1.0, stale_after=60.0):
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            locking.git_repo_lock(tmpdir, timeout=1.0, stale_after=60.0),
+        ):
             pass
 
     def test_no_dot_git_directory_uses_inprocess_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, locking.git_repo_lock(tmpdir, timeout=1.0, stale_after=60.0):
             key = locking._normalize(tmpdir)
             assert key in locking._repo_locks
+
+    def test_timeout_bounds_inprocess_contention(self) -> None:
+        """A competing thread must not bypass the public acquire deadline."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            holder_started = threading.Event()
+
+            def hold_lock() -> None:
+                with locking.git_repo_lock(tmpdir, timeout=1.0, stale_after=60.0):
+                    holder_started.set()
+                    time.sleep(0.25)
+
+            holder = threading.Thread(target=hold_lock)
+            holder.start()
+            try:
+                assert holder_started.wait(timeout=1.0)
+                started = time.monotonic()
+                with (
+                    pytest.raises(TimeoutError, match="in-process"),
+                    locking.git_repo_lock(tmpdir, timeout=0.05, stale_after=60.0),
+                ):
+                    pass
+                assert time.monotonic() - started < 0.2
+            finally:
+                holder.join(timeout=1.0)
+            assert not holder.is_alive()
 
 
 class TestGitRepoLockWorktree:
@@ -590,18 +689,20 @@ class TestGitRepoLockWorktree:
 class TestAsyncGitRepoLock:
     @pytest.mark.asyncio
     async def test_returns_context_manager(self) -> None:
-        cm = await locking.async_git_repo_lock(".", timeout=1.0, stale_after=60.0)
-        try:
-            assert hasattr(cm, "__enter__")
-            assert hasattr(cm, "__exit__")
-        finally:
-            cm.__exit__(None, None, None)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cm = await locking.async_git_repo_lock(tmpdir, timeout=1.0, stale_after=60.0)
+            try:
+                assert hasattr(cm, "__enter__")
+                assert hasattr(cm, "__exit__")
+            finally:
+                cm.__exit__(None, None, None)
 
     @pytest.mark.asyncio
     async def test_context_manager_releases_on_executor_thread(self) -> None:
-        cm = await locking.async_git_repo_lock(".", timeout=1.0, stale_after=60.0)
-        with cm:
-            pass
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cm = await locking.async_git_repo_lock(tmpdir, timeout=1.0, stale_after=60.0)
+            with cm:
+                pass
 
 
 class TestModuleExports:
