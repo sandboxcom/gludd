@@ -25,7 +25,16 @@ def _repository(tmp_path: Path) -> Path:
         "        pass\n",
         encoding="utf-8",
     )
-    (root / "Makefile").write_text("test-files:\n\t@true\n", encoding="utf-8")
+    make_dir = root / "make"
+    make_dir.mkdir(exist_ok=True)
+    (root / "Makefile").write_text(
+        "include make/10-tests.mk\n",
+        encoding="utf-8",
+    )
+    (make_dir / "10-tests.mk").write_text(
+        "test-files:\n\t@true\n",
+        encoding="utf-8",
+    )
     return root
 
 
