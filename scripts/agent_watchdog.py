@@ -34,9 +34,8 @@ Usage:
 
 from __future__ import annotations
 
-import enum
 import glob
-import hashlib
+import hashlib as hashlib
 import json
 import os
 import re
@@ -44,255 +43,93 @@ import signal
 import subprocess
 import sys
 import time
-import uuid
+import uuid as uuid
 from collections.abc import Callable
 from contextlib import suppress
+from typing import TYPE_CHECKING
 
-try:
+if TYPE_CHECKING:
     from scripts import gludd_env_defaults as gludd_env_defaults
-except ModuleNotFoundError:  # pragma: no cover - direct launch from scripts/
-    import gludd_env_defaults
-from dataclasses import dataclass
+else:
+    try:
+        from scripts import gludd_env_defaults as gludd_env_defaults
+    except ModuleNotFoundError:  # pragma: no cover - direct launch from scripts/
+        import gludd_env_defaults
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TypedDict
 
 if __package__ in {None, ""}:  # Direct script execution requires the project root.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.resource_arbiter import project_namespace, resource_path
-
-
-class DeadlineRecord(TypedDict):
-    """Normalized task deadline consumed by anomaly checks."""
-
-    id: str
-    task_id: str
-    type: str
-    description: str
-    dispatched_at: float
-    start_ts: float
-    elapsed: float
-
-
-class DurationFinding(TypedDict, total=False):
-    """Duration anomaly evidence emitted by watchdog checks."""
-
-    id: str
-    task_id: str
-    type: str
-    description: str
-    elapsed_s: float
-    elapsed_seconds: float
-    elapsed_minutes: float
-    dispatched_at: float
-    expected_s: int
-    median_seconds: float
-    ratio: float
-    hard_timeout: bool
-    rolling_avg_s: float | None
-    threshold_3x_s: float | None
-    reason: str
-
-
-class TaskSeenRecord(TypedDict):
-    """Historical state for one observed task."""
-
-    dispatched_at: float
-    type: str
-    seen_at: float
-
-
-class TaskHistory(TypedDict):
-    """Persisted rolling task-duration history."""
-
-    durations: dict[str, list[float]]
-    last_seen: dict[str, TaskSeenRecord]
-
-
-class TaskTimingRecord(TypedDict):
-    """Persisted rolling timing for one named operation."""
-
-    average_duration_seconds: float
-    count: int
-
-
-class DurationStatsRecord(TypedDict):
-    """Persisted duration statistics for one tracked task name."""
-
-    last_duration: float
-    avg_duration: float
-    count: int
-
-
-class TaskStateRecord(TypedDict, total=False):
-    """Normalized running-task state used by the timing monitor."""
-
-    name: str
-    started: float
-    ended: float
-    pid: int
-
-
-class OperationTiming(TypedDict):
-    """Persisted state for one monitored operation."""
-
-    started_at: float
-    last_check: float
-    duration: float
-    status: str
-
-
-class AnomalyFindings(TypedDict, total=False):
-    """Structured findings returned by the task anomaly check."""
-
-    tasks: list[DurationFinding]
-    anomalies: list[DurationFinding]
-    stalled: list[DurationFinding]
-    ts: str
-    escalated: bool
-
-
-class ReleaseData(TypedDict, total=False):
-    """Normalized GitHub release metadata."""
-
-    isDraft: bool
-    isPrerelease: bool
-    assetCount: int
-    publishedAt: str
-    url: str
-    _error: str
-
-
-class ContinueDirective(TypedDict):
-    """Machine-readable watchdog continuation request."""
-
-    action: str
-    pending_items: list[str]
-    required_tool: str
-    dispatch_count: int
-    dispatch_commands: list[dict[str, object]]
-    message: str
-    stop_count: int
-    source: str
-    ts: str
-
-
-def _as_record(value: object) -> dict[str, object] | None:
-    """Return a string-keyed view of a decoded JSON object."""
-    if not isinstance(value, dict):
-        return None
-    return {key: item for key, item in value.items() if isinstance(key, str)}
-
-
-def _read_json_record(path: Path) -> dict[str, object]:
-    """Read one JSON object, returning an empty record on invalid input."""
-    try:
-        value: object = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError, TypeError):
-        return {}
-    return _as_record(value) or {}
-
-
-def _as_float(value: object, default: float = 0.0) -> float:
-    """Convert a JSON scalar to float without accepting containers."""
-    if not isinstance(value, (int, float, str)):
-        return default
-    try:
-        return float(value)
-    except ValueError:
-        return default
-
-
-def _as_int(value: object, default: int = 0) -> int:
-    """Convert a JSON scalar to int without accepting containers."""
-    if not isinstance(value, (int, float, str)):
-        return default
-    try:
-        return int(value)
-    except ValueError:
-        return default
-
-
-def _as_text(value: object, default: str = "") -> str:
-    """Return text for a decoded scalar while rejecting containers."""
-    if isinstance(value, str):
-        return value
-    if isinstance(value, (int, float, bool)):
-        return str(value)
-    return default
-
-# -- Classification API -------------------------------------------------------
-
-DEFAULT_WINDOW_SECS: float = 90.0
-
-DONE_MARKERS = ("result:", "summary:", "complete", "finished", "passed", "failed:")
-STALL_MARKERS = (
-    "continuing",
-    "let me",
-    "next",
+from scripts.resource_arbiter import (
+    project_namespace as project_namespace,
+)
+from scripts.resource_arbiter import (
+    resource_path as resource_path,
+)
+from scripts.watchdog_components import cli as _watchdog_cli
+from scripts.watchdog_components import enforcement as _watchdog_enforcement
+from scripts.watchdog_components import lease as _watchdog_lease
+from scripts.watchdog_components import release as _watchdog_release
+from scripts.watchdog_components import task_health as _watchdog_task_health
+from scripts.watchdog_components.state_store import (
+    _as_float,
+    _as_int,
+    _as_record,
+    _as_text,
+    _read_json_record,
+)
+from scripts.watchdog_components.types import (
+    DEFAULT_WINDOW_SECS as DEFAULT_WINDOW_SECS,
+)
+from scripts.watchdog_components.types import (
+    DONE_MARKERS as DONE_MARKERS,
+)
+from scripts.watchdog_components.types import (
+    STALL_MARKERS as STALL_MARKERS,
+)
+from scripts.watchdog_components.types import (
+    AnomalyFindings,
+    ContinueDirective,
+    DeadlineRecord,
+    DurationFinding,
+    DurationStatsRecord,
+    OperationTiming,
+    ReleaseData,
+    TaskHistory,
+    TaskSeenRecord,
+    TaskStateRecord,
+    TaskTimingRecord,
+)
+from scripts.watchdog_components.types import (
+    State as State,
+)
+from scripts.watchdog_components.types import (
+    classify_tail as classify_tail,
+)
+from scripts.watchdog_components.types import (
+    scan_tasks_dir as scan_tasks_dir,
 )
 
-
-class State(enum.Enum):
-    ACTIVE = "ACTIVE"
-    LIKELY_STALLED_INCOMPLETE = "LIKELY_STALLED_INCOMPLETE"
-    DONE = "DONE"
+WatchdogLease = _watchdog_lease.WatchdogLease
 
 
-def classify_tail(
-    tail: str,
-    age_seconds: float,
-    window_seconds: float = DEFAULT_WINDOW_SECS,
-) -> tuple[State, str]:
-    if age_seconds < window_seconds:
-        return State.ACTIVE, f"age {age_seconds:.1f}s < window {window_seconds}s"
+class _FacadeRuntime:
+    """Resolve every component dependency against this facade at call time."""
 
-    tail_lower = tail.lower()
+    __slots__ = ()
 
-    for marker in DONE_MARKERS:
-        if marker in tail_lower:
-            return State.DONE, f"result: found '{marker}' in tail"
+    def __getattr__(self, name: str) -> object:
+        return globals()[name]
 
-    stripped = tail.strip()
-    if not stripped:
-        return State.LIKELY_STALLED_INCOMPLETE, "empty tail"
-    if stripped.isspace():
-        return State.LIKELY_STALLED_INCOMPLETE, "whitespace-only tail"
-
-    for line in tail_lower.splitlines():
-        for marker in STALL_MARKERS:
-            if marker in line.strip():
-                return State.LIKELY_STALLED_INCOMPLETE, f"let me / continuing: '{marker}' in tail"
-
-    last_line = stripped.splitlines()[-1].rstrip()
-    if last_line.endswith(":"):
-        return State.LIKELY_STALLED_INCOMPLETE, "last line ends with ':'"
-
-    return State.LIKELY_STALLED_INCOMPLETE, "no completion marker"
+    def __setattr__(self, name: str, value: object) -> None:
+        globals()[name] = value
 
 
-def scan_tasks_dir(
-    tasks_dir: Path,
-    window_seconds: float = DEFAULT_WINDOW_SECS,
-) -> list[tuple[str, State, str]]:
-    if not tasks_dir.is_dir():
-        return []
+_WATCHDOG_RUNTIME = _FacadeRuntime()
 
-    results: list[tuple[str, State, str]] = []
-    for entry in sorted(tasks_dir.iterdir()):
-        if not entry.is_file() or not entry.name.endswith(".output"):
-            continue
-        try:
-            tail = entry.read_text(encoding="utf-8")
-        except Exception:
-            continue
-        mtime = entry.stat().st_mtime
-        age = time.time() - mtime
-        state, reason = classify_tail(tail, age, window_seconds)
-        name = entry.name.removesuffix(".output")
-        results.append((name, state, reason))
-    return results
+
+# -- Classification API -------------------------------------------------------
 
 
 # -- Streak-reset watchdog ----------------------------------------------------
@@ -480,20 +317,9 @@ WATCHDOG_VERSION = os.environ.get("GLUDD_WATCHDOG_VERSION", "1.0")
 WATCHDOG_LOCK_RESOURCE = "agent-watchdog"
 
 
-@dataclass
-class WatchdogLease:
-    """An owned watchdog lock; release only removes our own lock record."""
-
-    path: Path
-    fd: int
-    token: str
-
-
 def watchdog_lock_path(workspace: Path | str | None = None) -> Path:
     """Return the project-namespaced singleton lock path."""
-
-    root = Path(workspace) if workspace is not None else _WORKSPACE
-    return resource_path(WATCHDOG_LOCK_RESOURCE, root)
+    return _watchdog_lease.watchdog_lock_path(_WATCHDOG_RUNTIME, workspace)
 
 
 def _process_start_time(pid: int) -> str | None:
@@ -504,86 +330,29 @@ def _process_start_time(pid: int) -> str | None:
     liveness is still checked with ``kill(pid, 0)`` and stale owners recover
     once their process exits.
     """
-
-    try:
-        stat_path = Path(f"/proc/{pid}/stat")
-        if stat_path.exists():
-            fields = stat_path.read_text(encoding="utf-8").rsplit(")", 1)[1].split()
-            if len(fields) > 19:
-                return fields[19]
-    except (OSError, ValueError, IndexError):
-        pass
-    try:
-        result = subprocess.run(
-            ["ps", "-p", str(pid), "-o", "lstart="],
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
-        value = result.stdout.strip()
-        return value or None
-    except (OSError, subprocess.SubprocessError):
-        return None
+    return _watchdog_lease._process_start_time(_WATCHDOG_RUNTIME, pid)
 
 
 def _version_key(version: str) -> tuple[tuple[int, ...], str]:
     """Compare semantic-ish watchdog versions without requiring packaging."""
-
-    value = str(version).strip()
-    numbers = tuple(int(part) for part in re.findall(r"\d+", value))
-    while numbers and numbers[-1] == 0:
-        numbers = numbers[:-1]
-    suffix = re.sub(r"[0-9.]+", "", value).lower()
-    return numbers, suffix
+    return _watchdog_lease._version_key(_WATCHDOG_RUNTIME, version)
 
 
 def _owner_is_alive(owner: dict[str, object]) -> bool:
-    raw_pid = owner.get("pid", 0)
-    if not isinstance(raw_pid, (int, float, str)):
-        return False
-    try:
-        pid = int(raw_pid)
-    except ValueError:
-        return False
-    if pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        pass
-    except OSError:
-        return False
-
-    recorded = owner.get("pid_start_time")
-    current = _process_start_time(pid)
-    return not (recorded and current and str(recorded) != str(current))
+    return _watchdog_lease._owner_is_alive(_WATCHDOG_RUNTIME, owner)
 
 
 def _read_lock_owner(path: Path) -> dict[str, object] | None:
-    try:
-        value: object = json.loads(path.read_text(encoding="utf-8"))
-        return _as_record(value)
-    except (OSError, json.JSONDecodeError, TypeError):
-        return None
+    return _watchdog_lease._read_lock_owner(_WATCHDOG_RUNTIME, path)
 
 
 def _unlink_if_token_matches(path: Path, token: str | None) -> None:
     """Remove a lock only if it still refers to the owner we inspected."""
-
-    current = _read_lock_owner(path)
-    if token is not None and current is not None and current.get("token") != token:
-        return
-    with suppress(FileNotFoundError):
-        path.unlink()
+    return _watchdog_lease._unlink_if_token_matches(_WATCHDOG_RUNTIME, path, token)
 
 
 def acquire_watchdog_lock(
-    *,
-    lock_path: Path | str | None = None,
-    version: str | None = None,
-    pid: int | None = None,
+    *, lock_path: Path | str | None = None, version: str | None = None, pid: int | None = None
 ) -> WatchdogLease | None:
     """Acquire the singleton watchdog lease, recovering stale owners.
 
@@ -592,72 +361,12 @@ def acquire_watchdog_lock(
     token check in :func:`release_watchdog_lock` prevents an old process from
     deleting the replacement lock during shutdown.
     """
-
-    path = Path(lock_path) if lock_path is not None else watchdog_lock_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    owner_pid = int(pid if pid is not None else os.getpid())
-    owner_version = str(version if version is not None else WATCHDOG_VERSION)
-    token = uuid.uuid4().hex
-    metadata = {
-        "pid": owner_pid,
-        "pid_start_time": _process_start_time(owner_pid),
-        "started_at": time.time(),
-        "version": owner_version,
-        "namespace": project_namespace(_WORKSPACE),
-        "token": token,
-    }
-
-    for _ in range(3):
-        try:
-            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        except FileExistsError:
-            previous = _read_lock_owner(path)
-            if previous is None:
-                _unlink_if_token_matches(path, None)
-                continue
-            if _owner_is_alive(previous):
-                old_version = str(previous.get("version", "0"))
-                if _version_key(owner_version) <= _version_key(old_version):
-                    return None
-                with suppress(
-                    KeyError,
-                    TypeError,
-                    ValueError,
-                    ProcessLookupError,
-                    PermissionError,
-                    OSError,
-                ):
-                    previous_pid = _as_int(previous.get("pid"), -1)
-                    if previous_pid > 0:
-                        os.kill(previous_pid, signal.SIGTERM)
-                _unlink_if_token_matches(path, str(previous.get("token", "")))
-                continue
-            _unlink_if_token_matches(path, str(previous.get("token", "")))
-            continue
-        else:
-            try:
-                os.write(fd, json.dumps(metadata).encode("utf-8"))
-                os.fsync(fd)
-            except Exception:
-                os.close(fd)
-                _unlink_if_token_matches(path, token)
-                raise
-            return WatchdogLease(path=path, fd=fd, token=token)
-    return None
+    return _watchdog_lease.acquire_watchdog_lock(_WATCHDOG_RUNTIME, lock_path=lock_path, version=version, pid=pid)
 
 
 def release_watchdog_lock(lease: WatchdogLease | None) -> None:
     """Release a lease without touching a newer owner's lock record."""
-
-    if lease is None:
-        return
-    try:
-        owner = _read_lock_owner(lease.path)
-        if owner is not None and owner.get("token") == lease.token:
-            _unlink_if_token_matches(lease.path, lease.token)
-    finally:
-        with suppress(OSError):
-            os.close(lease.fd)
+    return _watchdog_lease.release_watchdog_lock(_WATCHDOG_RUNTIME, lease)
 
 
 def stop_watchdog(*, lock_path: Path | str | None = None) -> bool:
@@ -666,29 +375,7 @@ def stop_watchdog(*, lock_path: Path | str | None = None) -> bool:
     A live owner's lock is intentionally left in place for its ``finally``
     block to release.  Dead or malformed records are removed immediately.
     """
-
-    path = Path(lock_path) if lock_path is not None else watchdog_lock_path()
-    owner = _read_lock_owner(path)
-    if owner is None:
-        _unlink_if_token_matches(path, None)
-        return False
-    if not _owner_is_alive(owner):
-        _unlink_if_token_matches(path, str(owner.get("token", "")))
-        return False
-    owner_pid = _as_int(owner.get("pid"), -1)
-    if owner_pid <= 0:
-        return False
-    with suppress(
-        KeyError,
-        TypeError,
-        ValueError,
-        ProcessLookupError,
-        PermissionError,
-        OSError,
-    ):
-        os.kill(owner_pid, signal.SIGTERM)
-        return True
-    return False
+    return _watchdog_lease.stop_watchdog(_WATCHDOG_RUNTIME, lock_path=lock_path)
 
 
 _UNCHECKED_PATTERN = re.compile(r"-\s+\[\s*\]|\*\s+\[\s*\]", re.IGNORECASE)
@@ -822,11 +509,7 @@ def _detect_anomalies(
     if not elapsed_values:
         return []
     n = len(elapsed_values)
-    median = (
-        (elapsed_values[n // 2 - 1] + elapsed_values[n // 2]) / 2.0
-        if n % 2 == 0
-        else elapsed_values[n // 2]
-    )
+    median = (elapsed_values[n // 2 - 1] + elapsed_values[n // 2]) / 2.0 if n % 2 == 0 else elapsed_values[n // 2]
     if median <= 0:
         return []
     anomalies: list[DurationFinding] = []
@@ -862,11 +545,7 @@ def _read_task_history() -> TaskHistory:
     raw_durations = _as_record(record.get("durations")) or {}
     for task_type, values in raw_durations.items():
         if isinstance(values, list):
-            durations[task_type] = [
-                _as_float(value)
-                for value in values
-                if isinstance(value, (int, float, str))
-            ]
+            durations[task_type] = [_as_float(value) for value in values if isinstance(value, (int, float, str))]
 
     last_seen: dict[str, TaskSeenRecord] = {}
     raw_last_seen = _as_record(record.get("last_seen")) or {}
@@ -1493,11 +1172,7 @@ def _parse_etime_to_seconds(etime: str) -> float:
 def _plain_directive_priority(text: str) -> int:
     """Return the highest known operational priority present in a directive."""
     return max(
-        (
-            priority
-            for marker, priority in _PLAIN_DIRECTIVE_PRIORITIES.items()
-            if marker in text
-        ),
+        (priority for marker, priority in _PLAIN_DIRECTIVE_PRIORITIES.items() if marker in text),
         default=0,
     )
 
@@ -1612,319 +1287,104 @@ def _check_ci_pending_stall() -> None:
 
 
 def _read_task_deadlines() -> dict[str, object]:
-    return _read_json_record(Path(TASK_DEADLINES_FILE))
+    return _watchdog_task_health._read_task_deadlines(_WATCHDOG_RUNTIME)
 
 
 def _find_expected_duration(command: str) -> int | None:
-    cmd_lower = command.lower()
-    if "git-push" in cmd_lower:
-        return EXPECTED_DURATIONS["git-push"]
-    if "git-status" in cmd_lower:
-        return EXPECTED_DURATIONS["git-status"]
-    if "ci-verdict" in cmd_lower:
-        return EXPECTED_DURATIONS["ci-verdict"]
-    if "lint" in cmd_lower:
-        return EXPECTED_DURATIONS["lint"]
-    if "typecheck" in cmd_lower:
-        return EXPECTED_DURATIONS["typecheck"]
-    if "collect-check" in cmd_lower:
-        return EXPECTED_DURATIONS["collect-check"]
-    if "test-unit" in cmd_lower:
-        return EXPECTED_DURATIONS["test-unit"]
-    if "gate" in cmd_lower:
-        return EXPECTED_DURATIONS["gate"]
-    if "test" in cmd_lower:
-        return EXPECTED_DURATIONS["test-specific"]
-    return None
+    return _watchdog_task_health._find_expected_duration(_WATCHDOG_RUNTIME, command)
 
 
 def _load_stalled_tasks() -> set[str]:
-    try:
-        p = Path(STALLED_TASKS_FILE)
-        if not p.exists():
-            return set()
-        return set(p.read_text(encoding="utf-8").splitlines())
-    except Exception:
-        return set()
+    return _watchdog_task_health._load_stalled_tasks(_WATCHDOG_RUNTIME)
 
 
 def _record_stalled(task_id: str) -> None:
-    already = _load_stalled_tasks()
-    already.add(task_id)
-    Path(STALLED_TASKS_FILE).write_text("\n".join(sorted(already)) + "\n")
+    return _watchdog_task_health._record_stalled(_WATCHDOG_RUNTIME, task_id)
 
 
 def kill_stalled_task(pid: int) -> None:
-    import signal
-
-    try:
-        os.kill(pid, signal.SIGTERM)
-        _log(f"TASK KILL: sent SIGTERM to pid={pid}")
-        time.sleep(5)
-        os.kill(pid, signal.SIGKILL)
-        _log(f"TASK KILL: sent SIGKILL to pid={pid}")
-    except ProcessLookupError:
-        _log(f"TASK KILL: pid={pid} already gone")
-    except Exception as exc:
-        _log(f"TASK KILL: error killing pid={pid}: {exc}")
+    return _watchdog_task_health.kill_stalled_task(_WATCHDOG_RUNTIME, pid)
 
 
 # -- Task timing anomaly detection --------------------------------------------
 
 
 def _read_task_timings() -> dict[str, TaskTimingRecord]:
-    try:
-        p = Path(TASK_TIMING_FILE)
-        if not p.exists():
-            return {}
-        raw = _read_json_record(p)
-        timings: dict[str, TaskTimingRecord] = {}
-        for task_name, value in raw.items():
-            entry = _as_record(value)
-            if entry is None:
-                continue
-            timings[task_name] = {
-                "average_duration_seconds": _as_float(entry.get("average_duration_seconds")),
-                "count": _as_int(entry.get("count")),
-            }
-        return timings
-    except Exception:
-        return {}
+    return _watchdog_task_health._read_task_timings(_WATCHDOG_RUNTIME)
 
 
 def _write_task_timings(data: dict[str, TaskTimingRecord]) -> None:
-    Path(TASK_TIMING_FILE).write_text(json.dumps(data))
+    return _watchdog_task_health._write_task_timings(_WATCHDOG_RUNTIME, data)
 
 
 def _normalize_task_state(value: object) -> TaskStateRecord | None:
-    record = _as_record(value)
-    if record is None or "name" not in record or "started" not in record:
-        return None
-    state: TaskStateRecord = {
-        "name": _as_text(record["name"], "unknown"),
-        "started": _as_float(record["started"]),
-    }
-    if "ended" in record:
-        state["ended"] = _as_float(record["ended"])
-    if "pid" in record:
-        state["pid"] = _as_int(record["pid"])
-    return state
+    return _watchdog_task_health._normalize_task_state(_WATCHDOG_RUNTIME, value)
 
 
 def _read_task_state() -> list[TaskStateRecord]:
-    try:
-        p = Path(TASK_STATE_FILE)
-        if not p.exists():
-            return []
-        data: object = json.loads(p.read_text())
-        state = _normalize_task_state(data)
-        if state is not None and "ended" not in state:
-            return [state]
-        return []
-    except Exception:
-        return []
+    return _watchdog_task_health._read_task_state(_WATCHDOG_RUNTIME)
 
 
 def _write_task_state(data: list[TaskStateRecord]) -> None:
-    Path(TASK_STATE_SNAPSHOT).write_text(json.dumps(data))
+    return _watchdog_task_health._write_task_state(_WATCHDOG_RUNTIME, data)
 
 
 def _read_previous_state() -> list[TaskStateRecord]:
-    try:
-        p = Path(TASK_STATE_SNAPSHOT)
-        if not p.exists():
-            return []
-        data: object = json.loads(p.read_text())
-        if isinstance(data, list):
-            return [state for item in data if (state := _normalize_task_state(item)) is not None]
-        return []
-    except Exception:
-        return []
+    return _watchdog_task_health._read_previous_state(_WATCHDOG_RUNTIME)
 
 
 def _update_timing(task_name: str, duration_secs: float) -> None:
-    timings = _read_task_timings()
-    if task_name in timings:
-        entry = timings[task_name]
-        old_avg = entry["average_duration_seconds"]
-        old_count = entry["count"]
-        new_count = old_count + 1
-        new_avg = (old_avg * old_count + duration_secs) / new_count
-        entry["average_duration_seconds"] = new_avg
-        entry["count"] = new_count
-    else:
-        timings[task_name] = {"average_duration_seconds": duration_secs, "count": 1}
-    _write_task_timings(timings)
+    return _watchdog_task_health._update_timing(_WATCHDOG_RUNTIME, task_name, duration_secs)
 
 
 def _flag_anomaly(task_name: str, expected_secs: float, actual_secs: float) -> None:
-    ratio = actual_secs / expected_secs if expected_secs > 0 else 0
-    _log(f"TASK TIMING ANOMALY: {task_name} took {actual_secs:.0f}s (expected ~{expected_secs:.0f}s, {ratio:.1f}x)")
-    directive_p = Path("/tmp/gludd-continue.txt")
-    existing = ""
-    if directive_p.exists():
-        with suppress(Exception):
-            existing = directive_p.read_text()
-    directive_p.write_text(
-        (
-            existing
-            + f"[{_now()}] TIMING ANOMALY: {task_name} took {actual_secs:.0f}s vs expected {expected_secs:.0f}s\n"
-        ).strip()
-        + "\n"
-    )
+    return _watchdog_task_health._flag_anomaly(_WATCHDOG_RUNTIME, task_name, expected_secs, actual_secs)
 
 
 def _kill_stalled_task(task_name: str, pid: int | None) -> None:
-    if pid is not None:
-        try:
-            os.kill(pid, signal.SIGTERM)
-            _log(f"KILLED STALLED TASK: {task_name} pid={pid} (SIGTERM)")
-            time.sleep(2)
-            os.kill(pid, signal.SIGKILL)
-            _log(f"KILLED STALLED TASK: {task_name} pid={pid} (SIGKILL)")
-        except ProcessLookupError:
-            _log(f"STALLED TASK: {task_name} pid={pid} already exited")
-        except Exception as exc:
-            _log(f"STALLED TASK: {task_name} pid={pid} kill error: {exc}")
-    else:
-        _log(f"STALLED TASK KILLED: {task_name} (no pid available for kill)")
+    return _watchdog_task_health._kill_stalled_task(_WATCHDOG_RUNTIME, task_name, pid)
 
 
 def check_task_timings() -> None:
-    running = _read_task_state()
-    previous = _read_previous_state()
-    now = time.time()
-
-    prev_names = {t.get("name") for t in previous}
-    curr_names = {t.get("name") for t in running}
-    completed_names = prev_names - curr_names
-    for task in previous:
-        name = task.get("name")
-        if name in completed_names:
-            started = task.get("started", 0.0)
-            if started > 0:
-                duration = now - started
-                _update_timing(name or "unknown", duration)
-
-    for task in running:
-        name = task.get("name", "unknown")
-        started = task.get("started", 0.0)
-        pid = task.get("pid")
-        if started <= 0:
-            continue
-        elapsed = now - started
-
-        if elapsed > TASK_STALL_TIMEOUT:
-            _kill_stalled_task(name, pid)
-            _log(f"STALLED TASK KILLED: {name} running {elapsed:.0f}s")
-
-        timings = _read_task_timings()
-        if name in timings:
-            avg = timings[name]["average_duration_seconds"]
-            if avg > 0 and elapsed > avg * ANOMALY_MULTIPLIER:
-                _flag_anomaly(name, avg, elapsed)
-
-    _write_task_state(running)
+    return _watchdog_task_health.check_task_timings(_WATCHDOG_RUNTIME)
 
 
 # -- check_agent_stalled (existing) ------------------------------------------
 
 
-def check_agent_stalled(
-    stop_state_path: Path | None = None,
-    false_done_path: Path | None = None,
-) -> bool:
-    sp = stop_state_path or Path(STOP_STATE)
-    fp = false_done_path or Path(FALSE_DONE_BLOCKS)
-
-    try:
-        if sp.exists():
-            data = json.loads(sp.read_text())
-            if data.get("hasPendingWork"):
-                return True
-    except Exception:
-        pass
-
-    try:
-        if fp.exists():
-            data = json.loads(fp.read_text())
-            if int(data.get("consecutive", 0)) > 0:
-                return True
-    except Exception:
-        pass
-
-    return False
+def check_agent_stalled(stop_state_path: Path | None = None, false_done_path: Path | None = None) -> bool:
+    return _watchdog_task_health.check_agent_stalled(_WATCHDOG_RUNTIME, stop_state_path, false_done_path)
 
 
 # -- Main check loop ---------------------------------------------------------
 
 
 def _guess_task_type(task_id: str) -> str:
-    tid = task_id.lower()
-    if "push" in tid:
-        return "git-push"
-    if "test" in tid:
-        return "test"
-    if "commit" in tid:
-        return "commit"
-    if "gate" in tid:
-        return "gate"
-    return "general"
+    return _watchdog_task_health._guess_task_type(_WATCHDOG_RUNTIME, task_id)
 
 
 def _expected_duration(task_id: str) -> int:
-    return EXPECTED_DURATIONS.get(_guess_task_type(task_id), 300)
+    return _watchdog_task_health._expected_duration(_WATCHDOG_RUNTIME, task_id)
 
 
 def _read_anomaly_count() -> int:
-    try:
-        p = Path(ANOMALY_COUNT_FILE)
-        if not p.exists():
-            return 0
-        data = json.loads(p.read_text())
-        return int(data.get("count", 0))
-    except Exception:
-        return 0
+    return _watchdog_task_health._read_anomaly_count(_WATCHDOG_RUNTIME)
 
 
 def _write_anomaly_count(count: int) -> None:
-    Path(ANOMALY_COUNT_FILE).write_text(json.dumps({"count": count}))
+    return _watchdog_task_health._write_anomaly_count(_WATCHDOG_RUNTIME, count)
 
 
 def _increment_anomaly_count(key: str | None = None, counts: dict[str, int] | None = None) -> int:
-    if key is not None:
-        if counts is None:
-            counts = _read_anomaly_counts()
-        new_val = counts.get(key, 0) + 1
-        counts[key] = new_val
-        Path(ANOMALY_COUNT_FILE).write_text(json.dumps(counts))
-        return new_val
-    new_count = _read_anomaly_count() + 1
-    _write_anomaly_count(new_count)
-    return new_count
+    return _watchdog_task_health._increment_anomaly_count(_WATCHDOG_RUNTIME, key, counts)
 
 
 def _gate_pid_elapsed_seconds() -> float | None:
-    try:
-        if not GATE_PID_FILE.exists():
-            return None
-        mtime = GATE_PID_FILE.stat().st_mtime
-        return time.time() - mtime
-    except Exception:
-        return None
+    return _watchdog_task_health._gate_pid_elapsed_seconds(_WATCHDOG_RUNTIME)
 
 
 def _detect_task_type(task_id: str, tasks_dir: Path | None = None) -> str:
-    tid = task_id.lower()
-    if any(kw in tid for kw in ("gate", "marshal", "build")):
-        return "gate"
-    if any(kw in tid for kw in ("test", "pytest", "collect-check")):
-        return "test"
-    if any(kw in tid for kw in ("research", "read", "audit", "review", "explore", "find", "scan")):
-        return "research"
-    if any(kw in tid for kw in ("push", "ship")):
-        return "push"
-    return "default"
+    return _watchdog_task_health._detect_task_type(_WATCHDOG_RUNTIME, task_id, tasks_dir)
 
 
 EX_TASKS_DIR = os.environ.get("GLUDD_TASKS_DIR", "/tmp/gludd-tasks")
@@ -1942,103 +1402,7 @@ def check_task_anomalies() -> AnomalyFindings:
     Thresholds: >2x expected = ANOMALY, >5x expected = STALLED.
     Returns findings dict for integration by check_and_reset().
     """
-    global _alerted_anomalies
-    findings: AnomalyFindings = {"tasks": [], "anomalies": [], "stalled": [], "ts": _now()}
-
-    dl_path = Path(TASK_DEADLINES_FILE)
-    if dl_path.exists():
-        try:
-            decoded: object = json.loads(dl_path.read_text())
-            raw = _as_record(decoded)
-            if raw is not None:
-                now_epoch = time.time()
-                stalled_set = _load_stalled_tasks()
-
-                for task_id, value in raw.items():
-                    if isinstance(value, (int, float)):
-                        start_ts = float(value / 1000.0 if value > 1e11 else value)
-                        command = ""
-                    elif (details := _as_record(value)) is not None:
-                        start_ts = _as_float(details.get("start_ts"))
-                        if not start_ts:
-                            continue
-                        command = _as_text(details.get("command"))
-                    else:
-                        continue
-
-                    elapsed = now_epoch - start_ts
-
-                    if command:
-                        expected = _find_expected_duration(command)
-                    else:
-                        task_type = _detect_task_type(task_id)
-                        expected = EXPECTED_DURATIONS.get(task_type, EXPECTED_DURATIONS["default"])
-
-                    if expected is None:
-                        continue
-
-                    entry: DurationFinding = {
-                        "task_id": task_id,
-                        "elapsed_s": round(elapsed, 1),
-                        "expected_s": expected,
-                    }
-                    findings["tasks"].append(entry)
-
-                    if elapsed > expected * 5:
-                        findings["stalled"].append(entry)
-                        if task_id not in stalled_set:
-                            _log(f"TASK STALLED: {task_id} ({command}) running {elapsed:.0f}s (expected {expected}s)")
-                            _record_stalled(task_id)
-                    elif elapsed > expected * 2:
-                        findings["anomalies"].append(entry)
-                        if task_id not in _alerted_anomalies:
-                            _log(f"TASK ANOMALY: {task_id} ({command}) running {elapsed:.0f}s (expected {expected}s)")
-                            _alerted_anomalies[task_id] = now_epoch
-
-                with suppress(Exception):
-                    Path(EX_ANOMALIES_FILE).write_text(json.dumps(findings, indent=2))
-        except Exception:
-            pass
-
-    # Check gate background process
-    try:
-        gp = GATE_PID_FILE
-        if gp.exists():
-            gate_elapsed = time.time() - gp.stat().st_mtime
-            if gate_elapsed > 45 * 60:
-                _log(f"GATE STALLED: background gate running {gate_elapsed:.0f}s (>45min)")
-                findings.setdefault("stalled", []).append(
-                    {
-                        "task_id": "gate-process",
-                        "elapsed_s": round(gate_elapsed, 1),
-                        "expected_s": 2700,
-                        "type": "gate",
-                    }
-                )
-    except Exception:
-        pass
-
-    # Detect push stalled
-    for t in findings.get("tasks", []):
-        task_id = t.get("task_id", "")
-        elapsed_s = t.get("elapsed_s", 0.0)
-        if "push" in task_id.lower() and elapsed_s > 60:
-            _log(f"PUSH STALLED — possible network issue: {task_id} elapsed={elapsed_s:.0f}s")
-
-    for a in findings.get("anomalies", []):
-        task_id = a.get("task_id", "unknown")
-        cnt = _increment_anomaly_count(f"anomaly:{task_id}")
-        if cnt >= ANOMALY_ESCALATE_THRESHOLD:
-            _log(f"ANOMALY ESCALATION: {task_id} anomaly {cnt}x (threshold={ANOMALY_ESCALATE_THRESHOLD})")
-            findings["escalated"] = True
-    for s in findings.get("stalled", []):
-        task_id = s.get("task_id", "unknown")
-        cnt = _increment_anomaly_count(f"stalled:{task_id}")
-        if cnt >= ANOMALY_ESCALATE_THRESHOLD:
-            _log(f"ANOMALY ESCALATION: {task_id} stalled {cnt}x (threshold={ANOMALY_ESCALATE_THRESHOLD})")
-            findings["escalated"] = True
-
-    return findings
+    return _watchdog_task_health.check_task_anomalies(_WATCHDOG_RUNTIME)
 
 
 # -- Timing anomaly detection (/tmp/gludd-watchdog-timing.json) ------------
@@ -2271,65 +1635,25 @@ def _write_orchestrator_state(
     ci_run_id: str | None = None,
     stop_detected: bool = False,
 ) -> None:
-    try:
-        health = _compute_health_score(
-            tasks_unchecked,
-            ratchet_count,
-            gate_red,
-            ci_pending,
-            repo_pending,
-            agent_active,
-        )
-        ci_loop = _detect_ci_loop()
-        ci_stall = _detect_ci_true_stall()
-        state = {
-            "ts": _now(),
-            "epoch": time.time(),
-            "health_score": health,
-            "tasks_md_unchecked": tasks_unchecked,
-            "ratchet_entries": ratchet_count,
-            "gate_status_red": gate_red,
-            "ci_pending_or_red": ci_pending,
-            "ci_run_id": ci_run_id,
-            "repo_pending": repo_pending,
-            "agent_active": agent_active,
-            "ci_loop_detected": ci_loop,
-            "ci_true_stall": ci_stall,
-            "stop_detected": stop_detected,
-        }
-        Path(ORCHESTRATOR_STATE_FILE).write_text(json.dumps(state, indent=2))
-        Path(HEALTH_SCORE_FILE).write_text(json.dumps({"score": health, "ts": _now()}))
-    except Exception:
-        pass
+    return _watchdog_enforcement._write_orchestrator_state(
+        _WATCHDOG_RUNTIME,
+        tasks_unchecked,
+        ratchet_count,
+        gate_red,
+        ci_pending,
+        repo_pending,
+        agent_active,
+        ci_run_id,
+        stop_detected,
+    )
 
 
 def _write_disengage_signal(minutes: int = 5, reason: str = "") -> None:
-    try:
-        disengage_until = int(time.time() * 1000 + minutes * 60 * 1000)
-        Path(DISENGAGE_FILE).write_text(
-            json.dumps(
-                {
-                    "disengage_until": disengage_until,
-                    "disengage_until_epoch_ms": disengage_until,
-                    "reason": reason,
-                    "ts": _now(),
-                }
-            )
-        )
-        _log(f"DISENGAGE: sent signal for {minutes}min — {reason}")
-    except Exception:
-        pass
+    return _watchdog_enforcement._write_disengage_signal(_WATCHDOG_RUNTIME, minutes, reason)
 
 
 def _clear_disengage_signal() -> None:
-    try:
-        p = Path(DISENGAGE_FILE)
-        if p.exists():
-            data = json.loads(p.read_text())
-            if data.get("disengage_until", 0) < time.time() * 1000:
-                p.unlink()
-    except Exception:
-        pass
+    return _watchdog_enforcement._clear_disengage_signal(_WATCHDOG_RUNTIME)
 
 
 def _check_plugin_hashes() -> None:
@@ -2339,99 +1663,15 @@ def _check_plugin_hashes() -> None:
     modified since the last manifest write, the script writes the disengage
     signal — the same effect as `make disengage-enforcement`.
     """
-    try:
-        manifest = _WORKSPACE / ".opencode" / "plugin-hashes.json"
-        plugin_dir = _WORKSPACE / ".opencode" / "plugin"
-        current = {}
-        if plugin_dir.is_dir():
-            for f in sorted(plugin_dir.glob("*.ts")):
-                with suppress(Exception):
-                    current[f.name] = hashlib.sha256(f.read_bytes()).hexdigest()
-        plugins_dir = _WORKSPACE / ".opencode" / "plugins"
-        if plugins_dir.is_dir():
-            for f in sorted(plugins_dir.glob("*.ts")):
-                with suppress(Exception):
-                    current[f"plugins/{f.name}"] = hashlib.sha256(f.read_bytes()).hexdigest()
-
-        stored = {}
-        if manifest.is_file():
-            try:
-                data = json.loads(manifest.read_text(encoding="utf-8"))
-                if isinstance(data, dict):
-                    stored = {k: v for k, v in data.items() if isinstance(v, str)}
-            except Exception:
-                pass
-
-        if not current:
-            return
-
-        if not stored:
-            manifest.parent.mkdir(parents=True, exist_ok=True)
-            manifest.write_text(json.dumps(current, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-            return
-
-        if current == stored:
-            return
-
-        changed = [f for f in set(current) & set(stored) if current[f] != stored[f]]
-        new_f = sorted(set(current) - set(stored))
-        removed = sorted(set(stored) - set(current))
-        details = []
-        if new_f:
-            details.append(f"new: {', '.join(new_f)}")
-        if removed:
-            details.append(f"removed: {', '.join(removed)}")
-        if changed:
-            details.append(f"changed: {', '.join(changed)}")
-
-        reason = " | ".join(details) if details else "plugin hashes changed"
-        _write_disengage_signal(minutes=60, reason=f"plugin_version_mismatch: {reason}")
-
-        with suppress(Exception):
-            Path(BLOCK_COUNTER_FILE).write_text(
-                json.dumps(
-                    {
-                        "consecutiveBlocks": 0,
-                        "totalBlocks": 0,
-                        "lastBlockTs": 0,
-                        "disengageUntil": 9999999999999,
-                    }
-                )
-            )
-
-        _log(f"PLUGIN VERSION CHANGED: {reason} — disengage signal written")
-    except Exception:
-        pass
+    return _watchdog_enforcement._check_plugin_hashes(_WATCHDOG_RUNTIME)
 
 
 def _is_disengage_active() -> bool:
-    try:
-        p = Path(DISENGAGE_FILE)
-        if not p.exists():
-            return False
-        data = _read_json_record(p)
-        return _as_float(data.get("disengage_until")) > time.time() * 1000
-    except Exception:
-        return False
+    return _watchdog_enforcement._is_disengage_active(_WATCHDOG_RUNTIME)
 
 
 def _is_push_running() -> bool:
-    push_lock = _WORKSPACE / ".git" / "push.lock"
-    if push_lock.exists():
-        return True
-    try:
-        result = subprocess.run(
-            ["ps", "-eo", "command"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        for line in result.stdout.splitlines():
-            if "git push" in line and "grep" not in line and "ps -eo" not in line:
-                return True
-    except Exception:
-        pass
-    return False
+    return _watchdog_enforcement._is_push_running(_WATCHDOG_RUNTIME)
 
 
 def _auto_reengage_enforcement(mtime_age: float | None) -> None:
@@ -2444,99 +1684,7 @@ def _auto_reengage_enforcement(mtime_age: float | None) -> None:
     Also reads block-counter.json directly so a stale disengage file alone does
     not block re-engagement.
     """
-    # ── Read block-counter.json for disengageUntil ──
-    block_disengage_active = False
-    block_file_age_s = 0.0
-    try:
-        bp = Path(BLOCK_COUNTER_FILE)
-        if bp.exists():
-            block_data = _read_json_record(bp)
-            du = _as_float(block_data.get("disengageUntil"))
-            if du > (time.time() * 1000):
-                block_disengage_active = True
-            block_file_age_s = time.time() - bp.stat().st_mtime
-    except Exception:
-        pass
-
-    if not _is_disengage_active() and not block_disengage_active:
-        return
-
-    p = Path(DISENGAGE_FILE)
-
-    try:
-        file_age_ms = (time.time() - p.stat().st_mtime) * 1000 if p.exists() else 0
-    except Exception:
-        file_age_ms = 0
-
-    # Use block-counter file age as fallback if disengage file missing
-    effective_age_ms = file_age_ms if file_age_ms > 0 else block_file_age_s * 1000
-
-    ci_pending, ci_run_id = _ci_is_pending_or_red()
-    agent_active = mtime_age is not None and mtime_age < AUTO_REENGAGE_AGENT_ACTIVE_SECS
-    push_running = _is_push_running()
-
-    should_reengage = False
-    reason = ""
-
-    # Rule 1: push completed + agent active → re-engage immediately
-    if not push_running and agent_active:
-        rc = _ci_is_pending_or_red()
-        if not rc[0]:
-            should_reengage = True
-            reason = "push completed, CI green, agent active"
-        elif effective_age_ms > DISENGAGE_MAX_SECS_CI_NOT_GREEN * 1000:
-            should_reengage = True
-            reason = f"push completed, disengage capped at {DISENGAGE_MAX_SECS_CI_NOT_GREEN}s (CI pending/red)"
-        # else: push done but CI still pending/red and within 5min cap — leave disengaged
-
-    # Rule 2: disengage >2 min + agent active — re-engage regardless of push state
-    if (
-        not should_reengage
-        and agent_active
-        and effective_age_ms > AUTO_REENGAGE_DISENGAGE_AGE_SECS * 1000
-    ):
-        should_reengage = True
-        reason = (
-            f"disengage >{AUTO_REENGAGE_DISENGAGE_AGE_SECS}s, agent active "
-            f"(mtime_age={mtime_age:.0f}s, ci={'pending/red' if ci_pending else 'green'}, "
-            f"push={'running' if push_running else 'done'})"
-        )
-
-    # Rule 3: 5-minute hard cap — regardless of push state or agent activity
-    if not should_reengage and effective_age_ms > DISENGAGE_MAX_SECS_CI_NOT_GREEN * 1000:
-        should_reengage = True
-        reason = (
-            f"disengage_cap: {DISENGAGE_MAX_SECS_CI_NOT_GREEN}s max "
-            f"(ci={'pending/red' if ci_pending else 'green'}, "
-            f"agent={'active' if agent_active else 'idle'})"
-        )
-
-    if not should_reengage:
-        return
-
-    # -- Re-engage: clear block counter and disengage file --
-    with suppress(Exception):
-        Path(BLOCK_COUNTER_FILE).write_text(
-            json.dumps(
-                {
-                    "consecutiveBlocks": 0,
-                    "totalBlocks": 0,
-                    "lastBlockTs": 0,
-                    "disengageUntil": 0,
-                }
-            )
-        )
-
-    try:
-        if p.exists():
-            p.unlink(missing_ok=True)
-    except Exception:
-        pass
-
-    _log(f"watchdog: auto-re-engaged enforcement — {reason}")
-
-    if ci_pending:
-        _log(f"watchdog: CI still pending (run {ci_run_id}) — enforcement re-engaged; agent must fix CI")
+    return _watchdog_enforcement._auto_reengage_enforcement(_WATCHDOG_RUNTIME, mtime_age)
 
 
 def _write_continue_directive(
@@ -2551,58 +1699,18 @@ def _write_continue_directive(
     extra_message: str = "",
 ) -> None:
     """Write the continue directive to BOTH JSON (for plugins) and plain-text (for visibility)."""
-    directive = _build_continue_directive(
-        work_sources=work_sources,
-        stop_count=stop_count,
-        tasks_unchecked=tasks_unchecked,
-        ratchet_count=ratchet_count,
-        gate_red=gate_red,
-        ci_pending=ci_pending,
-        ci_run_id=ci_run_id,
-        work_hint=work_hint,
-        extra_message=extra_message,
+    return _watchdog_enforcement._write_continue_directive(
+        _WATCHDOG_RUNTIME,
+        work_sources,
+        stop_count,
+        tasks_unchecked,
+        ratchet_count,
+        gate_red,
+        ci_pending,
+        ci_run_id,
+        work_hint,
+        extra_message,
     )
-
-    # JSON for plugin consumption
-    try:
-        Path(CONTINUE_DIRECTIVE).write_text(json.dumps(directive, indent=2))
-        _log(f"directive written to {CONTINUE_DIRECTIVE} (stop_count={stop_count})")
-    except Exception as e:
-        _log(f"ERROR writing JSON directive: {e}")
-
-    # LOUD plain-text directive for agent context injection
-    pending_items_str = "\n".join(f"  - {item}" for item in directive["pending_items"])
-    txt = (
-        "\n"
-        "======================================================================\n"
-        "⛔⛔⛔ WATCHDOG CONTINUE DIRECTIVE ⛔⛔⛔\n"
-        "======================================================================\n"
-        f"ACTION: {directive['action']}\n"
-        f"STOP COUNT: {stop_count} (escalation threshold: {STOP_ESCALATE_THRESHOLD})\n"
-        f"REQUIRED TOOL: {directive['required_tool']}\n"
-        f"SOURCE: {directive['source']}\n"
-        f"TS: {directive['ts']}\n"
-        "----------------------------------------------------------------------\n"
-        "PENDING WORK:\n"
-        f"{pending_items_str}\n"
-        "----------------------------------------------------------------------\n"
-        "MESSAGE:\n"
-        f"  {directive['message']}\n"
-    )
-    if extra_message:
-        txt += (
-            f"\n----------------------------------------------------------------------\nESCALATION: {extra_message}\n"
-        )
-    txt += (
-        "======================================================================\n"
-        "YOU MUST DISPATCH SUBAGENTS NOW. DO NOT SEND TEXT-ONLY RESPONSES.\n"
-        "======================================================================\n"
-    )
-    try:
-        if _write_prioritized_plain_directive(txt):
-            _log(f"loud directive written to {PURE_IDLE_DIRECTIVE}")
-    except Exception as e:
-        _log(f"ERROR writing plain-text directive: {e}")
 
 
 def _build_continue_directive(
@@ -2616,79 +1724,18 @@ def _build_continue_directive(
     work_hint: str = "",
     extra_message: str = "",
 ) -> ContinueDirective:
-    pending_items: list[str] = []
-    if tasks_unchecked:
-        pending_items.append("TASKS.md has unchecked items")
-    if ratchet_count > 0:
-        pending_items.append(f"{ratchet_count} ratchet entries")
-    if gate_red:
-        pending_items.append(".gate-status is red")
-    if ci_pending:
-        suffix = f" (run {ci_run_id})" if ci_run_id else ""
-        pending_items.append(f"CI pending{suffix}")
-
-    # Build SPECIFIC dispatch commands from TASKS.md unchecked items,
-    # ratchet entries, and gate status — so the CONTINUE directive lists
-    # exact tasks to dispatch, not a generic "do work" nudge.
-    dispatch_commands: list[dict[str, object]] = []
-    task_index = 1
-    if tasks_unchecked and _TASKS_MD.exists():
-        try:
-            content = _TASKS_MD.read_text(encoding="utf-8")
-            for line in content.splitlines():
-                if _UNCHECKED_PATTERN.search(line):
-                    item_text = line.strip()
-                    dispatch_commands.append(
-                        {
-                            "index": task_index,
-                            "task_item": item_text,
-                            "tool": "task",
-                            "command": f"dispatch subagent: {item_text}",
-                        }
-                    )
-                    task_index += 1
-        except Exception:
-            pass
-
-    if ratchet_count > 0:
-        dispatch_commands.append(
-            {
-                "index": task_index,
-                "task_item": f"ratchet: {ratchet_count} entries",
-                "tool": "task",
-                "command": f"dispatch subagents to fix {ratchet_count} ratchet entries",
-            }
-        )
-        task_index += 1
-
-    if gate_red:
-        dispatch_commands.append(
-            {
-                "index": task_index,
-                "task_item": "gate: red — fix failures",
-                "tool": "task",
-                "command": "dispatch subagent to investigate and fix red gate",
-            }
-        )
-        task_index += 1
-
-    msg_parts = [f"FORCE DISPATCH: {len(dispatch_commands)} specific tasks below. Dispatch ALL of them NOW."]
-    if work_hint.strip():
-        msg_parts.append(work_hint.strip())
-    if extra_message.strip():
-        msg_parts.append(extra_message.strip())
-
-    return {
-        "action": "FORCE_DISPATCH",
-        "pending_items": pending_items,
-        "required_tool": "task",
-        "dispatch_count": len(dispatch_commands),
-        "dispatch_commands": dispatch_commands,
-        "message": " ".join(msg_parts),
-        "stop_count": stop_count,
-        "source": ", ".join(work_sources) if work_sources else "unknown",
-        "ts": _now(),
-    }
+    return _watchdog_enforcement._build_continue_directive(
+        _WATCHDOG_RUNTIME,
+        work_sources,
+        stop_count,
+        tasks_unchecked,
+        ratchet_count,
+        gate_red,
+        ci_pending,
+        ci_run_id,
+        work_hint,
+        extra_message,
+    )
 
 
 LIVENESS_CHECK_COOLDOWN_SECS = 300
@@ -2704,21 +1751,11 @@ def _liveness_startup_in_backoff() -> bool:
     checked in the last LIVENESS_STARTUP_BACKOFF_SECS, skip the check to
     prevent a tight crash-restart loop from hammering make check-plugin-liveness.
     """
-    try:
-        p = Path(LIVENESS_STARTUP_BACKOFF_FILE)
-        if p.exists():
-            data = json.loads(p.read_text())
-            last_ts = float(data.get("last_check_ts", 0))
-            if time.time() - last_ts < LIVENESS_STARTUP_BACKOFF_SECS:
-                return True
-    except Exception:
-        pass
-    return False
+    return _watchdog_enforcement._liveness_startup_in_backoff(_WATCHDOG_RUNTIME)
 
 
 def _liveness_write_backoff_ts() -> None:
-    with suppress(Exception):
-        Path(LIVENESS_STARTUP_BACKOFF_FILE).write_text(json.dumps({"last_check_ts": time.time()}))
+    return _watchdog_enforcement._liveness_write_backoff_ts(_WATCHDOG_RUNTIME)
 
 
 def _check_plugin_liveness_on_startup() -> None:
@@ -2727,70 +1764,16 @@ def _check_plugin_liveness_on_startup() -> None:
     Skips the check if it was already run within LIVENESS_STARTUP_BACKOFF_SECS
     (file-based backoff persists across watchdog restarts).
     """
-    global _last_liveness_check
-    if _liveness_startup_in_backoff():
-        _log(
-            "plugin-liveness: backoff active — skipping startup check "
-            f"(last check <{LIVENESS_STARTUP_BACKOFF_SECS}s ago)"
-        )
-        _last_liveness_check = time.time()
-        return
-    _log("plugin-liveness: running startup check...")
-    try:
-        result = subprocess.run(
-            ["make", "check-plugin-liveness"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=str(_WORKSPACE),
-        )
-        if result.returncode == 0:
-            _log("plugin-liveness: PASSED — enforce-stop.ts structurally intact and firing")
-        else:
-            _log(
-                f"plugin-liveness: FAILED (exit={result.returncode}) — enforce-stop.ts may be dead or silently disabled"
-            )
-            _log(f"  stderr: {result.stderr.strip()[:300]}")
-        _last_liveness_check = time.time()
-        _liveness_write_backoff_ts()
-    except subprocess.TimeoutExpired:
-        _log("plugin-liveness: TIMEOUT — check took >30s")
-        _liveness_write_backoff_ts()
-    except Exception as e:
-        _log(f"plugin-liveness: ERROR running check: {e}")
-        _liveness_write_backoff_ts()
+    return _watchdog_enforcement._check_plugin_liveness_on_startup(_WATCHDOG_RUNTIME)
 
 
 def _check_plugin_liveness_periodic() -> None:
     """Run plugin liveness check every LIVENESS_CHECK_COOLDOWN_SECS."""
-    global _last_liveness_check
-    now = time.time()
-    if now - _last_liveness_check < LIVENESS_CHECK_COOLDOWN_SECS:
-        return
-    try:
-        result = subprocess.run(
-            ["make", "check-plugin-liveness"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=str(_WORKSPACE),
-        )
-        if result.returncode != 0:
-            _log(f"plugin-liveness: periodic check FAILED (exit={result.returncode})")
-    except Exception:
-        pass
-    _last_liveness_check = now
+    return _watchdog_enforcement._check_plugin_liveness_periodic(_WATCHDOG_RUNTIME)
 
 
 def _is_force_dispatch_active() -> bool:
-    p = Path(FORCE_DISPATCH_FILE)
-    if not p.exists():
-        return False
-    try:
-        age = time.time() - p.stat().st_mtime
-        return age <= FORCE_DISPATCH_MAX_AGE
-    except Exception:
-        return False
+    return _watchdog_enforcement._is_force_dispatch_active(_WATCHDOG_RUNTIME)
 
 
 def _check_force_dispatch() -> bool:
@@ -2802,142 +1785,15 @@ def _check_force_dispatch() -> bool:
 
     Returns True if force-dispatch is active (lower idle threshold).
     """
-    p = Path(FORCE_DISPATCH_FILE)
-    if not p.exists():
-        return False
-
-    try:
-        mtime = p.stat().st_mtime
-        age = time.time() - mtime
-        if age > FORCE_DISPATCH_MAX_AGE:
-            p.unlink(missing_ok=True)
-            return False
-
-        data = _read_json_record(p)
-        level = _as_int(data.get("level"), 3)
-
-        tasks_unchecked = _tasks_md_has_unchecked()
-        ratchet_count = _ratchet_has_entries()
-        gate_red = _gate_status_is_red()
-
-        dispatch_commands: list[dict[str, object]] = []
-        task_index = 1
-
-        if tasks_unchecked and _TASKS_MD.exists():
-            content = _TASKS_MD.read_text(encoding="utf-8")
-            for line in content.splitlines():
-                if _UNCHECKED_PATTERN.search(line):
-                    item_text = line.strip()
-                    dispatch_commands.append(
-                        {
-                            "index": task_index,
-                            "task_item": item_text,
-                            "tool": "task",
-                            "command": f"dispatch subagent: {item_text}",
-                        }
-                    )
-                    task_index += 1
-
-        if ratchet_count > 0:
-            dispatch_commands.append(
-                {
-                    "index": task_index,
-                    "task_item": f"ratchet: {ratchet_count} entries",
-                    "tool": "task",
-                    "command": f"dispatch subagents to fix {ratchet_count} ratchet entries",
-                }
-            )
-
-        if gate_red:
-            dispatch_commands.append(
-                {
-                    "index": task_index + 1,
-                    "task_item": "gate: red — fix failures",
-                    "tool": "task",
-                    "command": "dispatch subagent to investigate and fix red gate",
-                }
-            )
-
-        if dispatch_commands:
-            directive = {
-                "action": "FORCE_DISPATCH",
-                "level": level,
-                "dispatch_count": len(dispatch_commands),
-                "dispatch_commands": dispatch_commands,
-                "message": (
-                    f"FORCE DISPATCH (level {level}): "
-                    f"Dispatch {len(dispatch_commands)} subagents NOW. "
-                    f"Do NOT send text-only responses."
-                ),
-                "ts": _now(),
-            }
-            Path(CONTINUE_DIRECTIVE).write_text(json.dumps(directive, indent=2))
-            _log(f"FORCE DISPATCH: level={level}, {len(dispatch_commands)} commands written")
-        else:
-            p.unlink(missing_ok=True)
-            _log("FORCE DISPATCH: flag cleared — no pending work found")
-
-        return bool(dispatch_commands)
-
-    except Exception as e:
-        _log(f"FORCE DISPATCH: error processing flag: {e}")
-        return False
+    return _watchdog_enforcement._check_force_dispatch(_WATCHDOG_RUNTIME)
 
 
 def _read_multitask_state() -> dict[str, object]:
-    try:
-        p = Path(MULTITASK_STATE_FILE)
-        if not p.exists():
-            return {}
-        return _read_json_record(p)
-    except Exception:
-        return {}
+    return _watchdog_enforcement._read_multitask_state(_WATCHDOG_RUNTIME)
 
 
 def _check_under_floor_dispatch() -> None:
-    state = _read_multitask_state()
-    if not state:
-        return
-
-    dispatch_count = _as_int(state.get("thisMessageDispatches"))
-    zero_streak = _as_int(state.get("zeroStreak"))
-    estimated_in_flight = _as_int(state.get("estimatedInFlight"))
-
-    if dispatch_count >= 10:
-        if zero_streak > 0:
-            _log(
-                f"DISPATCH OK: {dispatch_count} dispatches this wave, "
-                f"{estimated_in_flight} estimated in flight — floor satisfied"
-            )
-        return
-
-    if not _pending_work_exists():
-        return
-
-    pipeline_dry = estimated_in_flight <= 2
-
-    if dispatch_count > 0 and dispatch_count < 10:
-        _log(
-            f"UNDER-FLOOR DETECTED: only {dispatch_count} dispatches this wave "
-            f"(floor=10, zero_streak={zero_streak}, in_flight={estimated_in_flight})"
-        )
-        directive = (
-            f"[{_now()}] UNDER-FLOOR DETECTED: only {dispatch_count} dispatch(es) in current wave.\n"
-            f"Floor is 10. pending work exists. Dispatch {10 - dispatch_count} more subagents NOW.\n"
-            f"zero_streak={zero_streak}, estimated_in_flight={estimated_in_flight}\n"
-        )
-        _write_prioritized_plain_directive(directive)
-    elif pipeline_dry and zero_streak > 0:
-        _log(
-            f"UNDER-FLOOR DETECTED: pipeline dry — zero dispatch streak={zero_streak}, "
-            f"only {estimated_in_flight} estimated in flight (floor=10)"
-        )
-        directive = (
-            f"[{_now()}] UNDER-FLOOR DETECTED: zero dispatch streak={zero_streak}.\n"
-            f"Estimated in flight: {estimated_in_flight}. Floor is 10. pending work exists.\n"
-            f"DISPATCH A FULL WAVE OF 10 SUBAGENTS NOW.\n"
-        )
-        _write_prioritized_plain_directive(directive)
+    return _watchdog_enforcement._check_under_floor_dispatch(_WATCHDOG_RUNTIME)
 
 
 SecretsCheck = Callable[[], dict[str, object] | None]
@@ -2950,422 +1806,7 @@ def check_and_reset(*, secrets_check: SecretsCheck | None = None) -> dict[str, o
     cycles. Production callers omit it and retain the fail-closed, periodic
     repository-wide scan.
     """
-    global _POLL_CYCLE_COUNT
-    streak = _read_streak()
-    result: dict[str, object] = {
-        "ts": _now(),
-        "streak": streak,
-        "pending_todos": [],
-        "reset_applied": False,
-        "hibernating": HIBERNATION_MARKER.exists(),
-        "stop_detected": False,
-    }
-
-    pending = _pending_todos()
-    result["pending_todos"] = pending
-
-    reset_needed = False
-    reason = ""
-
-    # ── ALWAYS CHECK pending work on every poll cycle (not just on state changes) ──
-    tasks_unchecked = _tasks_md_has_unchecked()
-    ratchet_count = _ratchet_has_entries()
-    gate_red = _gate_status_is_red()
-    ci_pending, ci_run_id = _ci_is_pending_or_red()
-    has_pending_work = tasks_unchecked or ratchet_count > 0 or gate_red or ci_pending
-    has_any_work = has_pending_work or ci_pending
-
-    # CI-status injection: record concrete pending/red CI runs without erasing local gate evidence.
-    if ci_pending and ci_run_id is not None:
-        try:
-            stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-            newline = chr(10)
-            _CI_STATUS.parent.mkdir(parents=True, exist_ok=True)
-            _CI_STATUS.write_text(
-                f"=== CI {stamp} ==="
-                + newline
-                + f"CI FAIL pending (run {ci_run_id})"
-                + newline
-                + "suggested_action: wait_for_ci"
-                + newline
-            )
-            has_pending_work = True
-        except Exception:
-            pass
-    mtime_age = _streak_mtime_age_seconds()
-
-    # ── HEARTBEAT: write every poll cycle so operator can see watchdog is alive ──
-    with suppress(Exception):
-        Path(HEARTBEAT_FILE).write_text(
-            json.dumps(
-                {
-                    "ts": _now(),
-                    "epoch": time.time(),
-                    "poll_cycle": _POLL_CYCLE_COUNT + 1,
-                    "streak": streak,
-                    "mtime_age_s": round(mtime_age, 1) if mtime_age else None,
-                    "has_pending_work": has_pending_work,
-                    "tasks_md_unchecked": tasks_unchecked,
-                    "ratchet_entries": ratchet_count,
-                    "gate_status_red": gate_red,
-                    "ci_pending_or_red": ci_pending,
-                    "ci_run_id": ci_run_id,
-                    "pending_todo_count": len(pending),
-                    "stop_count": _read_stop_count(),
-                },
-                indent=2,
-            )
-        )
-
-    if mtime_age is not None and mtime_age < PURE_IDLE_SECS:
-        _write_watchdog_activity()
-
-    idle_threshold = FORCE_DISPATCH_IDLE_SECS if _is_force_dispatch_active() else STOP_IDLE_SECS
-
-    # ── Log pending-work status every cycle so we can observe what the watchdog sees ──
-    if HEARTBEAT_VERBOSE and has_any_work:
-        sources = []
-        if tasks_unchecked:
-            sources.append("TASKS.md")
-        if ratchet_count > 0:
-            sources.append("ratchet")
-        if gate_red:
-            sources.append("gate")
-        if ci_pending:
-            sources.append(f"CI(run={ci_run_id})")
-        _log(
-            f"watchdog: pending work detected — sources={sources} mtime_age={mtime_age:.0f}s"
-            if mtime_age
-            else f"watchdog: pending work detected — sources={sources}"
-        )
-
-    # ── Stop detection via pending-work + streak mtime ───────────────────
-    # Fire when: agent is silent (streak==0/None) + mtime old + work pending
-    if has_any_work and (streak == 0 or streak is None) and mtime_age is not None and mtime_age > idle_threshold:
-        reset_needed = True
-        work_sources = []
-        if has_pending_work:
-            work_sources.append("local")
-        if ci_pending:
-            work_sources.append(f"CI (run {ci_run_id})")
-        reason = (
-            f"STOP DETECTED: agent idle with pending work ({', '.join(work_sources)}) — "
-            f"{mtime_age:.0f}s since last tool (threshold={idle_threshold}s)"
-        )
-        result["stop_detected"] = True
-        _log(reason)
-
-        stop_count = _increment_stop_count()
-        extra_message = ""
-        if stop_count >= STOP_ESCALATE_THRESHOLD:
-            extra_message = f"REPEATED STOP DETECTED ({stop_count}x) — WORK OR FACE RESTART"
-
-        work_hint = ""
-        if ci_pending and not has_pending_work:
-            ci_minutes = _ci_pending_for_too_long_minutes()
-            if ci_minutes and ci_minutes > 10:
-                work_hint = (
-                    f"CI pending >{ci_minutes:.0f}min. "
-                    "Stop pushing new commits — they reset CI. "
-                    "Work on wiring/coding gaps while waiting."
-                )
-            else:
-                work_hint = (
-                    "CI pending. Work on wiring/coding gaps while waiting. Do NOT push new commits until CI is green."
-                )
-
-        _write_continue_directive(
-            work_sources=work_sources,
-            stop_count=stop_count,
-            tasks_unchecked=tasks_unchecked,
-            ratchet_count=ratchet_count,
-            gate_red=gate_red,
-            ci_pending=ci_pending,
-            ci_run_id=ci_run_id,
-            work_hint=work_hint,
-            extra_message=extra_message,
-        )
-
-        # Clear stop-state file if it exists, so plugin doesn't double-block
-        sp = Path(STOP_STATE)
-        if sp.exists():
-            try:
-                sp.unlink()
-                _log(f"cleared stop-state: {sp}")
-            except Exception:
-                pass
-
-    # ── ALSO detect grinding-in-place: agent has streak>0 (making calls) ──
-    # but hasn't cleared pending work and streak file is very stale (>30s)
-    elif (
-        has_pending_work
-        and streak is not None
-        and streak > 0
-        and mtime_age is not None
-        and mtime_age > STOP_IDLE_SECS * 2
-    ):
-        reset_needed = True
-        work_sources = ["local"]
-        reason = (
-            f"STOP DETECTED (grinding): agent has streak={streak} but "
-            f"mtime_age={mtime_age:.0f}s > {STOP_IDLE_SECS * 2}s with pending work — "
-            f"likely stuck in a loop"
-        )
-        result["stop_detected"] = True
-        _log(reason)
-
-        stop_count = _increment_stop_count()
-        extra_message = ""
-        if stop_count >= STOP_ESCALATE_THRESHOLD:
-            extra_message = f"REPEATED STOP DETECTED ({stop_count}x) — AGENT MAY BE LOOPING"
-
-        _write_continue_directive(
-            work_sources=work_sources,
-            stop_count=stop_count,
-            tasks_unchecked=tasks_unchecked,
-            ratchet_count=ratchet_count,
-            gate_red=gate_red,
-            ci_pending=ci_pending,
-            ci_run_id=ci_run_id,
-            work_hint=(
-                "Agent has streak but mtime is stale — likely grinding in a loop. "
-                "Dispatch subagents to break out."
-            ),
-            extra_message=extra_message,
-        )
-
-    # ── Existing: streak threshold ───────────────────────────────────────
-    elif streak is not None and streak >= STREAK_THRESHOLD:
-        reset_needed = True
-        reason = f"streak={streak} >= threshold={STREAK_THRESHOLD}"
-
-    # ── Existing: agent stalled on stop enforcement ──────────────────────
-    elif check_agent_stalled():
-        reset_needed = True
-        reason = "agent stalled on stop enforcement"
-
-    # ── Existing: text-only response with pending todos ──────────────────
-    elif pending and streak is not None and streak > 0:
-        if mtime_age is not None and mtime_age < POLL_SECS:
-            reset_needed = True
-            reason = "text-only response with pending todos"
-
-    # ── Task anomaly detection (plugin format: {task_id: epoch_ms}) ──────
-    task_result = check_task_anomalies()
-    if task_result["anomalies"]:
-        result["task_anomalies"] = task_result["anomalies"]
-    if task_result["stalled"]:
-        result["task_stalled"] = task_result["stalled"]
-        Path(EX_STALLED_TASKS_FILE).write_text(json.dumps({"ts": _now(), "stalled": task_result["stalled"]}, indent=2))
-        _log(f"STALLED TASK DETECTED: {len(task_result['stalled'])} task(s) — writing {EX_STALLED_TASKS_FILE}")
-
-    _check_push_stalled()
-    _check_task_anomaly_300s()
-    _check_ci_pending_stall()
-
-    # ── ALWAYS: Max out false-done block counter to unjam agent ──────────
-    # Item 11: Smart false-done maxout — only when CI-only pending + agent active
-    if (
-        ci_pending and not has_pending_work and mtime_age is not None and mtime_age < PURE_IDLE_SECS
-    ) or has_pending_work:
-        _max_out_false_done()
-    # else: leave false-done blocks alone (agent may be genuinely stopped)
-    # ── Pure idle detection (ANY idle >PURE_IDLE_SECS, regardless of pending work) ──
-    if not reset_needed and mtime_age is not None and mtime_age > PURE_IDLE_SECS:
-        last_flag = _read_last_flag_time()
-        now = time.time()
-        if now - last_flag > FLAG_COOLDOWN_SECS:
-            _log(f"IDLE DETECTED: agent idle >{PURE_IDLE_SECS}s ({mtime_age:.0f}s since last tool)")
-            _write_last_flag_time(now)
-            _write_continue_directive(
-                work_sources=["pure_idle"],
-                stop_count=_read_stop_count(),
-                tasks_unchecked=tasks_unchecked,
-                ratchet_count=ratchet_count,
-                gate_red=gate_red,
-                ci_pending=ci_pending,
-                ci_run_id=ci_run_id,
-                work_hint="",
-                extra_message=f"Pure idle detected — agent silent for {mtime_age:.0f}s",
-            )
-            reset_needed = True
-            reason = f"pure idle detected ({mtime_age:.0f}s)"
-            result["stop_detected"] = True
-
-    # ── Task duration anomaly detection with history tracking ─────────────
-    deadlines = _read_deadlines()
-    _update_task_history(deadlines)
-    history_anomalies = _detect_history_anomalies(deadlines)
-    if history_anomalies:
-        result["history_anomalies"] = history_anomalies
-        with suppress(Exception):
-            Path(TASK_ANOMALIES_FILE).write_text(json.dumps({"ts": _now(), "anomalies": history_anomalies}, indent=2))
-        for a in history_anomalies:
-            rolling_info = f", rolling_avg={a['rolling_avg_s']}s" if a.get("rolling_avg_s") else ""
-            _log(
-                f"TASK ANOMALY: task {a['id']} ({a['type']}) "
-                f"{a['description']} running {a['elapsed_s']}s — "
-                f"reason={a['reason']}{rolling_info}"
-            )
-
-    # ── NEW: CI pipeline health monitoring ───────────────────────────────
-    _check_ci_stall()
-    _check_push_health()
-    check_task_timings()
-
-    # ── NEW: Timing anomaly detection ────────────────────────────────────
-    timing_anomalies = _check_timing_anomalies()
-    push_anomaly = _detect_stalled_push()
-    if push_anomaly:
-        timing_anomalies.append("git-push")
-    if timing_anomalies:
-        result["timing_anomalies"] = timing_anomalies
-        anchored_messages: list[str] = []
-        for op in timing_anomalies:
-            expected = EXPECTED_DURATIONS.get(op, 300)
-            timing = _read_timing_data()
-            actual = timing[op]["duration"] if op in timing else 0.0
-            anchored_messages.append(
-                f"\u26d4 TIMING ANOMALY: {op} running for {actual:.0f}s "
-                f"(expected {expected}s). Check for network issues."
-            )
-        try:
-            existing = ""
-            directive_p = Path(PURE_IDLE_DIRECTIVE)
-            if directive_p.exists():
-                existing = directive_p.read_text()
-            directive_p.write_text(existing + "\n".join(anchored_messages) + "\n")
-        except Exception:
-            pass
-
-    # ── Periodic prune of _alerted_anomalies ──────────────────────────────
-    _POLL_CYCLE_COUNT += 1
-    if _POLL_CYCLE_COUNT % _POLL_CYCLE_PRUNE_INTERVAL == 0:
-        _prune_alerted_anomalies()
-        _check_plugin_hashes()
-
-    # ── Apply reset ──────────────────────────────────────────────────────
-    if reset_needed:
-        _reset_streak()
-        result["reset_applied"] = True
-
-        # If the stop was NOT detected by our new logic, check and write directive
-        if not result.get("stop_detected") and check_agent_stalled():
-            _write_continue_directive(
-                work_sources=["agent_stalled"],
-                stop_count=_read_stop_count(),
-                tasks_unchecked=tasks_unchecked,
-                ratchet_count=ratchet_count,
-                gate_red=gate_red,
-                ci_pending=False,
-                extra_message=f"agent stalled on stop enforcement, pending={len(pending)} todos",
-            )
-
-        if pending:
-            _log(f"UNJAMMED: {reason}, pending={len(pending)} todos: {pending[:3]}")
-        else:
-            _log(f"UNJAMMED: {reason}, no pending todos detected but resetting anyway")
-
-    # ── No reset: stop count decays if agent is active ───────────────────
-    elif not has_any_work and mtime_age is not None and mtime_age < POLL_SECS:
-        _clear_stop_count()
-    elif ci_pending and not has_pending_work:
-        ci_minutes = _ci_pending_for_too_long_minutes()
-        if ci_minutes is not None and ci_minutes > 30:
-            _log(f"CI STALLED: pending >30min (run {ci_run_id}) — may need investigation")
-        elif ci_minutes is not None and ci_minutes > 10:
-            _log(f"CI NOTE: pending {ci_minutes:.0f}min (run {ci_run_id}) — stop pushing new commits")
-        else:
-            _log(f"CI pending (run {ci_run_id}) — work locally while waiting")
-    elif streak is not None:
-        pass
-    else:
-        _log("streak file missing — enforcement may not be tracking")
-
-    # ── Stalled task detection: idle streak + long-running task ──────────
-    if mtime_age is not None and mtime_age > 20:
-        task_state_path = Path(TASK_STATE_FILE)
-        if task_state_path.exists():
-            try:
-                tasks = json.loads(task_state_path.read_text())
-                if isinstance(tasks, dict):
-                    tasks = [tasks]
-                if isinstance(tasks, list):
-                    now = time.time()
-                    for task in tasks:
-                        if not isinstance(task, dict):
-                            continue
-                        started = task.get("started", 0)
-                        name = task.get("name", "unknown")
-                        pid = task.get("pid")
-                        if not started:
-                            continue
-                        elapsed = now - started
-                        if elapsed > 60:
-                            _log(f"STALLED TASK: {name} running {elapsed:.0f}s")
-                            if pid:
-                                kill_stalled_task(pid)
-                            _reset_streak()
-                            result["reset_applied"] = True
-                            result["stop_detected"] = True
-            except Exception:
-                pass
-
-    # ── Items 9-10: CI loop and true stall detection ─────────────────────
-    ci_loop = _detect_ci_loop()
-    ci_true_stall = _detect_ci_true_stall()
-    if ci_loop:
-        _log(
-            f"CI LOOP DETECTED: >{CI_LOOP_THRESHOLD_PUSHES} pushes in "
-            f"<{CI_LOOP_THRESHOLD_MINUTES}min while CI pending. STOP PUSHING."
-        )
-        _write_disengage_signal(minutes=10, reason="ci_loop")
-    if ci_true_stall:
-        _log(
-            f"CI TRUE STALL: pending >{CI_TRUE_STALL_MINUTES}min with no pushes for "
-            f"{CI_TRUE_STALL_NO_PUSH_MINUTES}min. CI may be broken."
-        )
-
-    # ── Under-floor dispatch detection ────────────────────────────────────
-    _check_under_floor_dispatch()
-
-    # ── New: CI red after tag push detection ─────────────────────────────
-    ci_red_after_tag = _check_ci_red_after_tag_push()
-    if ci_red_after_tag:
-        result["ci_red_after_tag"] = ci_red_after_tag
-
-    # ── New: Release completeness verification ───────────────────────────
-    release_status = _check_release_completeness()
-    if release_status:
-        result["release_incomplete"] = release_status
-
-    # ── New: Secrets committed detection ────────────────────────────────
-    selected_secrets_check = _check_secrets_committed if secrets_check is None else secrets_check
-    secrets_violation = selected_secrets_check()
-    if secrets_violation:
-        result["secrets_violation"] = secrets_violation
-
-    # ── New: Stale release detection ────────────────────────────────────
-    stale_release = _check_stale_release()
-    if stale_release:
-        result["stale_release"] = stale_release
-
-    # ── Item 13: Write unified orchestrator state ────────────────────────
-    agent_active = mtime_age is not None and mtime_age < PURE_IDLE_SECS
-    _write_orchestrator_state(
-        tasks_unchecked=tasks_unchecked,
-        ratchet_count=ratchet_count,
-        gate_red=gate_red,
-        ci_pending=ci_pending,
-        repo_pending=False,
-        agent_active=agent_active,
-        ci_run_id=ci_run_id,
-        stop_detected=bool(result.get("stop_detected", False)),
-    )
-    _clear_disengage_signal()
-    _auto_reengage_enforcement(mtime_age)
-
-    return result
+    return _watchdog_enforcement.check_and_reset(_WATCHDOG_RUNTIME, secrets_check=secrets_check)
 
 
 # -- New detection checks: CI red after tag, release completeness, secrets, stale releases --
@@ -3381,43 +1822,12 @@ STALE_RELEASE_FILE = "/tmp/gludd-stale-release.json"
 
 def _get_tags() -> list[str]:
     """Return all annotated/lightweight tags in the repo, newest first."""
-    try:
-        result = subprocess.run(
-            ["git", "tag", "--sort=-creatordate"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            cwd=str(_WORKSPACE),
-        )
-        if result.returncode != 0:
-            return []
-        return [t.strip() for t in result.stdout.strip().split("\n") if t.strip()]
-    except Exception:
-        return []
+    return _watchdog_release._get_tags(_WATCHDOG_RUNTIME)
 
 
 def _get_tags_with_commits() -> list[tuple[str, str]]:
     """Return list of (tag, commit_hash) for all tags, newest first."""
-    try:
-        result = subprocess.run(
-            ["git", "for-each-ref", "--sort=-creatordate", "--format=%(refname:short) %(objectname)", "refs/tags"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            cwd=str(_WORKSPACE),
-        )
-        if result.returncode != 0:
-            return []
-        pairs: list[tuple[str, str]] = []
-        for line in result.stdout.strip().split("\n"):
-            if not line.strip():
-                continue
-            parts = line.split(None, 1)
-            if len(parts) == 2:
-                pairs.append((parts[0], parts[1]))
-        return pairs
-    except Exception:
-        return []
+    return _watchdog_release._get_tags_with_commits(_WATCHDOG_RUNTIME)
 
 
 def _gh_release_exists(tag: str) -> tuple[bool, ReleaseData]:
@@ -3426,32 +1836,7 @@ def _gh_release_exists(tag: str) -> tuple[bool, ReleaseData]:
     Returns (exists, release_data). release_data contains keys:
       - isDraft, isPrerelease, assetCount, publishedAt
     """
-    try:
-        result = subprocess.run(
-            ["gh", "release", "view", tag, "--json", "isDraft,isPrerelease,assets,publishedAt,url"],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        if result.returncode != 0:
-            return False, {}
-        decoded: object = json.loads(result.stdout)
-        data = _as_record(decoded)
-        if data is None:
-            return False, {"_error": "invalid response"}
-        assets = data.get("assets", [])
-        asset_count = len(assets) if isinstance(assets, list) else 0
-        return True, {
-            "isDraft": bool(data.get("isDraft", True)),
-            "isPrerelease": bool(data.get("isPrerelease", False)),
-            "assetCount": asset_count,
-            "publishedAt": _as_text(data.get("publishedAt")),
-            "url": _as_text(data.get("url")),
-        }
-    except subprocess.TimeoutExpired:
-        return False, {"_error": "timeout"}
-    except Exception as e:
-        return False, {"_error": str(e)}
+    return _watchdog_release._gh_release_exists(_WATCHDOG_RUNTIME, tag)
 
 
 def _check_ci_red_after_tag_push() -> dict[str, object] | None:
@@ -3460,62 +1845,7 @@ def _check_ci_red_after_tag_push() -> dict[str, object] | None:
     If a recent tag has a CI run that is FAILURE, the release pipeline is
     blocked. Returns a findings dict or None.
     """
-    if not _should_run_check("ci_red_after_tag", cooldown_secs=CI_CHECK_INTERVAL):
-        return None
-    try:
-        tags = _get_tags_with_commits()
-        if not tags:
-            _mark_check_run("ci_red_after_tag")
-            return None
-
-        latest_tag, tag_sha = tags[0]
-
-        result = subprocess.run(
-            [
-                "gh",
-                "run",
-                "list",
-                f"--commit={tag_sha}",
-                "--json",
-                "status,conclusion,createdAt,databaseId",
-                "--jq",
-                ".[0]",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        _mark_check_run("ci_red_after_tag")
-
-        if not result.stdout.strip():
-            return None
-
-        decoded: object = json.loads(result.stdout)
-        data = _as_record(decoded)
-        if data is None:
-            return None
-
-        conclusion = data.get("conclusion", "")
-        status = data.get("status", "")
-
-        if conclusion == "failure" or (status == "completed" and conclusion != "success"):
-            _log(f"CI RED AFTER TAG PUSH: tag={latest_tag} sha={tag_sha[:8]} conclusion={conclusion}")
-            return {
-                "ci_red_after_tag": True,
-                "tag": latest_tag,
-                "sha": tag_sha,
-                "conclusion": conclusion,
-                "status": status,
-                "run_id": data.get("databaseId"),
-            }
-
-    except subprocess.TimeoutExpired:
-        _mark_check_run("ci_red_after_tag")
-    except Exception as e:
-        _log(f"_check_ci_red_after_tag_push error: {e}")
-        _mark_check_run("ci_red_after_tag")
-
-    return None
+    return _watchdog_release._check_ci_red_after_tag_push(_WATCHDOG_RUNTIME)
 
 
 def _check_release_completeness() -> dict[str, object] | None:
@@ -3524,96 +1854,7 @@ def _check_release_completeness() -> dict[str, object] | None:
     Writes to /tmp/gludd-release-completeness.json for enforce-stop.ts consumption.
     Returns a findings dict or None.
     """
-    if not _should_run_check("release_completeness", cooldown_secs=RELEASE_CHECK_COOLDOWN_SECS):
-        return None
-
-    try:
-        tags = _get_tags()
-        if not tags:
-            _mark_check_run("release_completeness")
-            Path(RELEASE_COMPLETENESS_FILE).write_text(
-                json.dumps(
-                    {
-                        "ts": time.time(),
-                        "incomplete": False,
-                        "reason": "no tags found",
-                    }
-                )
-            )
-            return None
-
-        latest_tag = tags[0]
-        exists, release_data = _gh_release_exists(latest_tag)
-
-        errors = release_data.get("_error")
-        if errors:
-            _log(f"RELEASE CHECK SKIPPED: gh API error for tag {latest_tag}: {errors}")
-            _mark_check_run("release_completeness")
-            return None
-
-        if not exists:
-            _log(f"RELEASE INCOMPLETE: tag {latest_tag} has no GitHub Release")
-            result_data = {
-                "ts": time.time(),
-                "tag": latest_tag,
-                "incomplete": True,
-                "reason": "no release created",
-                "assetCount": 0,
-            }
-            Path(RELEASE_COMPLETENESS_FILE).write_text(json.dumps(result_data))
-            _mark_check_run("release_completeness")
-            return result_data
-
-        is_draft = release_data.get("isDraft", True)
-        asset_count = release_data.get("assetCount", 0)
-
-        if is_draft:
-            _log(f"RELEASE INCOMPLETE: tag {latest_tag} release is still a draft, {asset_count} assets")
-            result_data = {
-                "ts": time.time(),
-                "tag": latest_tag,
-                "incomplete": True,
-                "reason": "release is draft" if asset_count == 0 else f"draft with {asset_count} assets",
-                "assetCount": asset_count,
-                "isDraft": True,
-            }
-            Path(RELEASE_COMPLETENESS_FILE).write_text(json.dumps(result_data))
-            _mark_check_run("release_completeness")
-            return result_data
-
-        if asset_count == 0:
-            _log(f"RELEASE INCOMPLETE: tag {latest_tag} release has 0 artifacts")
-            result_data = {
-                "ts": time.time(),
-                "tag": latest_tag,
-                "incomplete": True,
-                "reason": "zero artifacts",
-                "assetCount": 0,
-                "isDraft": is_draft,
-            }
-            Path(RELEASE_COMPLETENESS_FILE).write_text(json.dumps(result_data))
-            _mark_check_run("release_completeness")
-            return result_data
-
-        Path(RELEASE_COMPLETENESS_FILE).write_text(
-            json.dumps(
-                {
-                    "ts": time.time(),
-                    "tag": latest_tag,
-                    "incomplete": False,
-                    "reason": f"ok — {asset_count} assets",
-                    "assetCount": asset_count,
-                    "isDraft": is_draft,
-                }
-            )
-        )
-        _mark_check_run("release_completeness")
-        return None
-
-    except Exception as e:
-        _log(f"_check_release_completeness error: {e}")
-        _mark_check_run("release_completeness")
-        return None
+    return _watchdog_release._check_release_completeness(_WATCHDOG_RUNTIME)
 
 
 def _check_secrets_committed() -> dict[str, object] | None:
@@ -3622,50 +1863,7 @@ def _check_secrets_committed() -> dict[str, object] | None:
     Runs `make secrets-scan` which checks against `.secrets.baseline`.
     Writes findings to /tmp/gludd-secrets-violation.json.
     """
-    if not _should_run_check("secrets_scan", cooldown_secs=SECRETS_SCAN_COOLDOWN_SECS):
-        return None
-
-    try:
-        result = subprocess.run(
-            ["make", "secrets-scan"],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            cwd=str(_WORKSPACE),
-        )
-        _mark_check_run("secrets_scan")
-
-        output = result.stdout + result.stderr
-
-        if result.returncode != 0:
-            _log(f"SECRETS VIOLATION: secrets-scan exited {result.returncode}")
-            violation_data = {
-                "ts": time.time(),
-                "violation": True,
-                "exit_code": result.returncode,
-                "output_snippet": output[:500],
-            }
-            Path(SECRETS_VIOLATION_FILE).write_text(json.dumps(violation_data))
-            return violation_data
-
-        Path(SECRETS_VIOLATION_FILE).write_text(
-            json.dumps(
-                {
-                    "ts": time.time(),
-                    "violation": False,
-                }
-            )
-        )
-        return None
-
-    except subprocess.TimeoutExpired:
-        _mark_check_run("secrets_scan")
-        _log("SECRETS SCAN TIMEOUT: >60s")
-        return {"ts": time.time(), "violation": None, "reason": "timeout"}
-    except Exception as e:
-        _mark_check_run("secrets_scan")
-        _log(f"_check_secrets_committed error: {e}")
-        return None
+    return _watchdog_release._check_secrets_committed(_WATCHDOG_RUNTIME)
 
 
 def _check_stale_release() -> dict[str, object] | None:
@@ -3675,90 +1873,7 @@ def _check_stale_release() -> dict[str, object] | None:
     release is stale — the CI release pipeline either failed or was never
     triggered. Writes to /tmp/gludd-stale-release.json.
     """
-    if not _should_run_check("stale_release", cooldown_secs=RELEASE_CHECK_COOLDOWN_SECS):
-        return None
-
-    try:
-        tag_commits = _get_tags_with_commits()
-        if not tag_commits:
-            _mark_check_run("stale_release")
-            Path(STALE_RELEASE_FILE).write_text(
-                json.dumps(
-                    {
-                        "ts": time.time(),
-                        "stale": False,
-                    }
-                )
-            )
-            return None
-
-        stale_findings: list[dict[str, object]] = []
-        now = time.time()
-
-        for tag, sha in tag_commits:
-            try:
-                commit_result = subprocess.run(
-                    ["git", "log", "-1", "--format=%ct", sha],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    cwd=str(_WORKSPACE),
-                )
-                commit_ts = float(commit_result.stdout.strip() or 0)
-            except Exception:
-                continue
-
-            tag_age_minutes = (now - commit_ts) / 60.0 if commit_ts > 0 else 0
-            if tag_age_minutes < STALE_RELEASE_MINUTES:
-                continue
-
-            exists, release_data = _gh_release_exists(tag)
-            if exists and not release_data.get("_error"):
-                continue
-
-            error = release_data.get("_error", "")
-            if error:
-                _log(f"STALE RELEASE WARN: tag {tag} (age {tag_age_minutes:.0f}m) — gh error: {error}")
-                continue
-
-            _log(f"STALE RELEASE: tag {tag} (age {tag_age_minutes:.0f}m) has no GitHub Release")
-            stale_findings.append(
-                {
-                    "tag": tag,
-                    "sha": sha,
-                    "age_minutes": round(tag_age_minutes, 1),
-                    "reason": "no release created within timeout",
-                }
-            )
-
-            if len(tag) > 0 and commit_ts > 0:
-                break
-
-        if stale_findings:
-            stale_data = {
-                "ts": time.time(),
-                "stale": True,
-                "findings": stale_findings,
-            }
-            Path(STALE_RELEASE_FILE).write_text(json.dumps(stale_data))
-            _mark_check_run("stale_release")
-            return stale_data
-
-        Path(STALE_RELEASE_FILE).write_text(
-            json.dumps(
-                {
-                    "ts": time.time(),
-                    "stale": False,
-                }
-            )
-        )
-        _mark_check_run("stale_release")
-        return None
-
-    except Exception as e:
-        _log(f"_check_stale_release error: {e}")
-        _mark_check_run("stale_release")
-        return None
+    return _watchdog_release._check_stale_release(_WATCHDOG_RUNTIME)
 
 
 def _check_load_average() -> None:
@@ -3813,71 +1928,11 @@ def _check_load_average() -> None:
 
 def _cli_classification(argv: list[str]) -> int:
     """Handle --once, --count-stalled, --list-stalled, --all flags."""
-    tasks_dir = Path(argv[0]) if argv and not argv[0].startswith("--") else Path("/tmp/gludd-tasks")
-    results = scan_tasks_dir(tasks_dir)
-
-    if "--stop" in argv:
-        stopped = stop_watchdog()
-        print("watchdog stop requested" if stopped else "no watchdog owner")
-        return 0
-
-    if "--once" in argv:
-        result = check_and_reset()
-        print(json.dumps(result, indent=2))
-        return 0
-
-    if "--count-stalled" in argv:
-        count = sum(1 for _, s, _ in results if s == State.LIKELY_STALLED_INCOMPLETE)
-        print(count)
-        return 0
-
-    if "--list-stalled" in argv:
-        for name, state, _reason in results:
-            if state == State.LIKELY_STALLED_INCOMPLETE:
-                print(f"{name}  {state.value}")
-        return 0
-
-    if "--all" in argv:
-        for name, state, reason in results:
-            print(f"{name}  {state.value}  ({reason})")
-        return 0
-
-    return 0
+    return _watchdog_cli._cli_classification(_WATCHDOG_RUNTIME, argv)
 
 
 def main(argv: list[str] | None = None) -> int:
-    if argv is None:
-        argv = sys.argv[1:]
-
-    if argv and any(a.startswith("--") or not a.startswith("-") for a in argv):
-        return _cli_classification(argv)
-
-    lease = acquire_watchdog_lock()
-    if lease is None:
-        _log(f"watchdog already running for namespace {project_namespace(_WORKSPACE)}; refusing duplicate")
-        return 0
-    try:
-        _log(f"watchdog started — poll={POLL_SECS}s, threshold={STREAK_THRESHOLD}")
-        _check_plugin_liveness_on_startup()
-        while True:
-            if HIBERNATION_MARKER.exists():
-                _log("hibernation marker present — sleeping")
-                time.sleep(POLL_SECS)
-                continue
-            try:
-                check_and_reset()
-                _check_force_dispatch()
-                check_running_tasks()
-                check_push_status()
-                _check_gate_background()
-                _check_load_average()
-                _check_plugin_liveness_periodic()
-                _rotate_watchdog_logs()
-            except Exception as exc:
-                _log(f"error: {exc}")
-            time.sleep(POLL_SECS)
-    finally:
-        release_watchdog_lock(lease)
+    return _watchdog_cli.main(_WATCHDOG_RUNTIME, argv)
 
 
 if __name__ == "__main__":

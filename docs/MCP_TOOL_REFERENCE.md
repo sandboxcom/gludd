@@ -1,6 +1,6 @@
 # MCP Tool Reference
 
-**Generated:** 2026-09-20 02:00 UTC | **Version:** `v0.1.0-beta.4-553-g50d744fa0-dirty` | **Tools:** 42
+**Generated:** 2026-10-06 12:41 UTC | **Version:** `v0.1.1-321-gfe05f1068-dirty` | **Tools:** 42
 
 Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automatically surfaced as an MCP tool with a JSON-schema input contract. This reference is regenerated via `make gen-mcp-tool-ref` (which calls `gen-mcp-tools` then this generator).
 
@@ -73,7 +73,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `repo_root` | str | | `"."` |
 | `timeout` | float | | `60.0` |
 | `verdict_path` | str | |  |
-
 ### 2. `gludd_accelerator_facts`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_accelerator_facts`
@@ -86,7 +85,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `psk` | str | | `""` |
 | `scope` | str | | `"all"` |
 | `timeout` | int | | `30` |
-
 ### 3. `gludd_accounting`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_accounting`
@@ -100,7 +98,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `psk` | str | | `""` |
 | `state` | str | | `"all"` |
 | `timeout` | int | | `30` |
-
 ### 4. `gludd_agent_run`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_agent_run`
@@ -117,7 +114,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `system_prompt` | str | | `""` |
 | `timeout` | int | | `120` |
 | `tools` | list | | `[]` |
-
 ### 5. `gludd_break_glass`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_break_glass`
@@ -131,7 +127,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `output_path` | str | | `""` |
 | `restore_source` | str | | `""` |
 | `token` | str | **required** |  |
-
 ### 6. `gludd_db`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_db`
@@ -154,7 +149,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `title` | str | |  |
 | `todo_id` | str | |  |
 | `work_type` | str | | `"code"` |
-
 ### 7. `gludd_dispatch`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_dispatch`
@@ -170,7 +164,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `psk` | str | | `""` |
 | `state` | str | | `"available"` |
 | `timeout` | int | | `30` |
-
 ### 8. `gludd_embed`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_embed`
@@ -192,7 +185,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `timeout` | int | | `30` |
 | `top_k` | int | | `5` |
 | `work_type` | str | |  |
-
 ### 9. `gludd_environment`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_environment`
@@ -207,7 +199,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `psk` | str | | `""` |
 | `timeout` | int | | `30` |
 | `work_type` | str | |  |
-
 ### 10. `gludd_facts`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_facts`
@@ -220,7 +211,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `project_id` | str | |  |
 | `psk` | str | | `""` |
 | `timeout` | int | | `30` |
-
 ### 11. `gludd_features`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_features`
@@ -236,7 +226,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `state` | str | | `"list"` |
 | `status` | str | |  |
 | `timeout` | int | | `30` |
-
 ### 12. `gludd_gate_check`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_gate_check`
@@ -247,7 +236,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 |-----------|------|----------|---------|
 | `gate_path` | str | | `".gate-status"` |
 | `state` | str | | `"check"` |
-
 ### 13. `gludd_git`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_git`
@@ -304,7 +292,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `timeout` | int | | `300` |
 | `todo_id` | str | |  |
 | `worktree_path` | str | |  |
-
 ### 14. `gludd_human_todo`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_human_todo`
@@ -328,7 +315,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `tags` | list | | `[]` |
 | `timeout` | int | | `30` |
 | `title` | str | |  |
-
 ### 15. `gludd_introspect`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_introspect`
@@ -340,7 +326,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `daemon_url` | str | | `"http://localhost:8000"` |
 | `psk` | str | | `""` |
 | `timeout` | int | | `30` |
-
 ### 16. `gludd_langchain_generate`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_langchain_generate`
@@ -358,7 +343,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `route_task_type` | str | |  |
 | `system` | str | | `""` |
 | `timeout` | int | | `120` |
-
 ### 17. `gludd_langgraph_decision`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_langgraph_decision`
@@ -375,7 +359,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `route_task_type` | str | |  |
 | `system` | str | |  |
 | `timeout` | int | | `120` |
-
 ### 18. `gludd_langgraph_workflow`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_langgraph_workflow`
@@ -394,7 +377,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `system` | str | | `""` |
 | `timeout` | int | | `300` |
 | `work_type` | str | | `"code"` |
-
 ### 19. `gludd_local_model`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_local_model`
@@ -419,7 +401,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `source` | str | | `"huggingface"` |
 | `startup_timeout` | int | | `120` |
 | `timeout` | int | | `180` |
-
 ### 20. `gludd_make`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_make`
@@ -437,7 +418,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `stream` | bool | | `false` |
 | `target` | str | **required** |  |
 | `timeout_s` | int | |  |
-
 ### 21. `gludd_mcp_tool`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_mcp_tool`
@@ -452,7 +432,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `server` | str | **required** |  |
 | `timeout` | int | | `30` |
 | `tool` | str | **required** |  |
-
 ### 22. `gludd_message`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_message`
@@ -475,7 +454,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `topic` | str | | `""` |
 | `ttl_seconds` | int | |  |
 | `unread` | bool | | `true` |
-
 ### 23. `gludd_metrics`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_metrics`
@@ -489,7 +467,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `project_id` | str | |  |
 | `psk` | str | | `""` |
 | `timeout` | int | | `30` |
-
 ### 24. `gludd_model_call`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_model_call`
@@ -505,7 +482,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `psk` | str | | `""` |
 | `route_task_type` | str | |  |
 | `timeout` | int | | `120` |
-
 ### 25. `gludd_model_worker_attest`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_model_worker_attest`
@@ -524,7 +500,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `runtime_probe` | list | **required** |  |
 | `source_revision` | str | **required** |  |
 | `timeout_seconds` | int | | `15` |
-
 ### 26. `gludd_observe`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_observe`
@@ -545,7 +520,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 | `start` | float | |  |
 | `timeout` | int | | `30` |
 | `window_s` | float | | `300.0` |
-
 ### 27. `gludd_open_code`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_open_code`
@@ -553,7 +527,6 @@ Every `gludd_*` Ansible module in the `general_ludd.agent` collection is automat
 > Batched opencode agent tool patterns — gate, push, commit, test, status — Codifies the repeated back-and-forth tool-call patterns opencode agents perform by bundling multiple tool calls into single Ansible tasks. Each action maps to a make target that composites the underlying checks. Check-mode safe — all actions report the change they WOULD make without executing the underlying command. All actions run locally via C(ansible.builtin.command) executing make targets in the repository root; no daemon round-trips are needed.
 
 _No parameters._
-
 ### 28. `gludd_ornith`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_ornith`
@@ -575,7 +548,6 @@ _No parameters._
 | `target_files` | list | | `[]` |
 | `task_description` | str | | `""` |
 | `timeout` | int | | `120` |
-
 ### 29. `gludd_osquery`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_osquery`
@@ -589,7 +561,6 @@ _No parameters._
 | `psk` | str | | `""` |
 | `query` | str | **required** |  |
 | `timeout` | int | | `10` |
-
 ### 30. `gludd_ping`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_ping`
@@ -601,7 +572,6 @@ _No parameters._
 | `daemon_url` | str | | `"http://localhost:8000"` |
 | `psk` | str | | `""` |
 | `timeout` | int | | `10` |
-
 ### 31. `gludd_proc_monitor`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_proc_monitor`
@@ -614,7 +584,6 @@ _No parameters._
 | `pid` | int | | `0` |
 | `psk` | str | | `""` |
 | `timeout` | int | | `10` |
-
 ### 32. `gludd_process`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_process`
@@ -630,7 +599,6 @@ _No parameters._
 | `psk` | str | | `""` |
 | `signal` | str | | `"SIGTERM"` |
 | `timeout` | int | | `10` |
-
 ### 33. `gludd_push_guard`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_push_guard`
@@ -643,7 +611,6 @@ _No parameters._
 | `state` | str | | `"check"` |
 | `state_file` | str | | `".gate-logs/force-push-track.json"` |
 | `window_hours` | float | | `12.0` |
-
 ### 34. `gludd_rag`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_rag`
@@ -661,7 +628,6 @@ _No parameters._
 | `text` | str | **required** |  |
 | `timeout` | int | | `120` |
 | `top_k` | int | | `5` |
-
 ### 35. `gludd_reload`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_reload`
@@ -682,7 +648,6 @@ _No parameters._
 | `psk` | str | | `""` |
 | `result_path` | str | |  |
 | `role` | str | |  |
-
 ### 36. `gludd_schedule`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_schedule`
@@ -695,7 +660,6 @@ _No parameters._
 | `items` | list | **required** |  |
 | `psk` | str | | `""` |
 | `timeout` | int | | `30` |
-
 ### 37. `gludd_skill`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_skill`
@@ -711,7 +675,6 @@ _No parameters._
 | `timeout` | int | | `30` |
 | `trigger` | str | |  |
 | `variables` | dict | | `{}` |
-
 ### 38. `gludd_slurm_deploy`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_slurm_deploy`
@@ -737,7 +700,6 @@ _No parameters._
 | `poll_timeout` | int | | `300` |
 | `port` | int | | `8000` |
 | `psk` | str | | `""` |
-
 ### 39. `gludd_spend`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_spend`
@@ -752,7 +714,6 @@ _No parameters._
 | `state` | str | | `"get"` |
 | `timeout` | int | | `30` |
 | `window_seconds` | int | |  |
-
 ### 40. `gludd_stream`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_stream`
@@ -771,7 +732,6 @@ _No parameters._
 | `external_processor` | dict | |  |
 | `psk` | str | | `""` |
 | `stop_condition` | dict | |  |
-
 ### 41. `gludd_traces`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_traces`
@@ -785,7 +745,6 @@ _No parameters._
 | `psk` | str | | `""` |
 | `timeout` | int | | `30` |
 | `todo_id` | str | |  |
-
 ### 42. `gludd_worktree`
 
 **Server:** `ansible` | **FQCN:** `general_ludd.agent.gludd_worktree`

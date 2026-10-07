@@ -53,7 +53,7 @@ def _load_deepseek_key() -> str | None:
 
 
 _KEY_SENTINEL = object()
-_KEY_CACHE: str | None | object = _KEY_SENTINEL
+_KEY_CACHE: str | object | None = _KEY_SENTINEL
 _GATEWAY_CACHE: dict[str, Any] = {}
 
 

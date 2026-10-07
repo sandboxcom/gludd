@@ -13,6 +13,7 @@ from scripts.cache_resource_manager import (
     inventory_cache_children,
     remove_cache_child,
 )
+from scripts.makefile_layout import compose_makefile
 
 
 def _cache_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -207,7 +208,7 @@ def test_remove_rejects_symlink_child(tmp_path: Path, monkeypatch: pytest.Monkey
 
 def test_make_targets_are_validate_first_and_contracted() -> None:
     project_root = Path(__file__).resolve().parents[2]
-    makefile = (project_root / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(project_root / "Makefile")
     contract = json.loads((project_root / "config" / "make_target_contract.json").read_text(encoding="utf-8"))
 
     assert "cache-resource-inventory:" in makefile
@@ -278,7 +279,7 @@ def test_script_runs_under_make_system_python() -> None:
 
 def test_worktree_cache_cleanup_reaches_nested_feature_branches() -> None:
     project_root = Path(__file__).resolve().parents[2]
-    makefile = (project_root / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(project_root / "Makefile")
     venv_section = makefile.split("clean-worktree-venvs:", 1)[1].split("clean-worktree-caches:", 1)[0]
     cache_section = makefile.split("clean-worktree-caches:", 1)[1].split("molecule-clean:", 1)[0]
 
@@ -296,7 +297,7 @@ def test_worktree_cache_cleanup_reaches_nested_feature_branches() -> None:
 
 def test_read_only_resource_targets_do_not_bootstrap_uv() -> None:
     project_root = Path(__file__).resolve().parents[2]
-    makefile = (project_root / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(project_root / "Makefile")
     no_sync = makefile.split("_NO_UV_SYNC_GOALS :=", 1)[1].split("ifneq", 1)[0]
     no_sync_targets = set(no_sync.replace("\\", "").split())
 

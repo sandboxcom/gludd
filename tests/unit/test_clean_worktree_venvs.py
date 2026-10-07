@@ -6,6 +6,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "clean_worktree_venvs.py"
@@ -389,7 +390,7 @@ def test_main_reports_successful_dry_run_actions(
 
 
 def test_make_target_is_validate_first_and_has_no_blanket_find_deletion() -> None:
-    makefile = MAKEFILE.read_text()
+    makefile = compose_makefile(MAKEFILE)
     section = makefile.split("\nclean-worktree-venvs:\n", 1)[1].split(
         "\nclean-worktree-caches:", 1
     )[0]

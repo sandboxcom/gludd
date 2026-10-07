@@ -14,6 +14,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
 
@@ -26,7 +28,7 @@ class TestDistLicensePack:
         )
 
     def _dist_recipe(self) -> str:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         # Grab the dist: recipe block (from 'dist:' to the next top-level target).
         match = re.search(r"\ndist:.*?(?=\n[a-zA-Z0-9_-]+:)", content, re.DOTALL)
         assert match, "Could not locate the dist: recipe in the Makefile"

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 
 def _recipe(target: str) -> str:
-    lines = Path("Makefile").read_text().splitlines()
+    lines = compose_makefile(Path("Makefile")).splitlines()
     start = lines.index(f"{target}:") + 1
     body: list[str] = []
     for line in lines[start:]:

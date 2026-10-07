@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_marker_target_is_development_only_and_has_no_target_branch_input() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     start = makefile.index("self-improve-promotion-marker:")
     block = makefile[start : makefile.find("\n\n", start)]
 

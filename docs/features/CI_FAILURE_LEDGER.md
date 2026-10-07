@@ -107,6 +107,69 @@ make ci-failure-push-guard \
 
 Both guards enumerate every blocker rather than returning after the first.
 
+## Diagnose a completed job while its workflow is active
+
+GitHub exposes logs at the job lifecycle boundary, while `gh run view --log
+--job` can withhold them until every sibling job in the workflow is terminal.
+Use the run-bound diagnostic instead:
+
+```console
+make ci-job-failure-context \
+  RUN=<immutable-run-id> \
+  JOB=<completed-job-id> \
+  PATTERN=SHARD-FAIL \
+  BEFORE=8 \
+  AFTER=12 \
+  MAX_MATCHES=10 \
+  CI_JOB_CONTEXT_VALIDATE_ONLY=0
+```
+
+The target first proves that `JOB` belongs to `RUN`, then uses GitHub's
+authenticated workflow-job log endpoint. The temporary log lives under the
+external Gludd resource namespace and is removed at exit. An API error, empty
+log, missing literal pattern, invalid numeric bound, or run/job mismatch fails
+closed. `BEFORE`, `AFTER`, and `MAX_MATCHES` bound output without silently
+discarding later independent failure batches.
+
+## Terminal reconciliation of an active-run diagnosis
+
+Per-job access accelerates diagnosis, but it does not make an active workflow's
+job inventory complete. Build/Release run `37381218767` demonstrated the
+difference: three completed failed jobs exposed four structural assertions
+while `test-shard (3.11, other)` was still running. The terminal workflow later
+contained four failed jobs, and `other` contributed two parametrized
+self-improvement assertions. The immutable terminal inventory was therefore
+six assertions, not the interim four.
+
+Gludd now describes an active-run extraction as provisional. A completeness
+claim requires a terminal run summary, enumeration of every non-successful job,
+and bounded context from each failed job. On candidate
+`5142ba735f66fbf074a7ec02d80d0d2ced0b582c`, the two late `fake-local` and
+`fake-azure` cases pass together 2/2; that is local repair evidence, not hosted
+resolution. A replacement exact-SHA workflow must still resolve the families.
+
+## Candidate-merge repair preflight
+
+The combined v0.1.1 candidate demonstrated why repair evidence runs before a
+push. Parent branches were independently green, but their merged source set
+contained 222 files below the unchanged maintainability-index floor budget of
+220, and one structural lock test still assumed that `_commit-lock-acquire` had
+no prerequisite. Cohesive extraction restored the existing budget, while the
+test now parses prerequisites and independently requires the active-gate
+history guard. No threshold or production behavior was weakened.
+
+Repair selectors are exact identities. `ci-failure-status` and the central push
+guard therefore emit the complete 64-character `family_id`; the repair command
+accepts that value directly. Short display-only prefixes are not actionable
+repair input. Evidence variables remain structured one-assignment arguments;
+when one family needs multiple node IDs, use a deterministic test target or a
+bounded filename glob rather than embedding shell syntax.
+
+This boundary applies the same practitioner lessons recorded below: duplicate
+checks and partial reruns make branch labels ambiguous, so the candidate SHA,
+failure family, evidence command, and hosted resolution must all be immutable
+and directly reusable.
+
 ## Practitioner findings
 
 This design addresses failure modes reported by GitHub Actions users:
@@ -140,6 +203,15 @@ This design addresses failure modes reported by GitHub Actions users:
   parallelism and bounds only this proven infrastructure retry instead of
   permanently slowing every healthy run
   ([GitHub matrix documentation](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/run-job-variations#defining-the-maximum-number-of-concurrent-jobs)).
+- GitHub CLI users report that selecting a completed job with `gh run view
+  --log --job` can still wait for the entire workflow
+  ([cli/cli #4575](https://github.com/cli/cli/issues/4575)); related reports
+  cover unavailable or inconsistent job-log retrieval
+  ([#4712](https://github.com/cli/cli/issues/4712),
+  [#11059](https://github.com/cli/cli/issues/11059), and
+  [#11109](https://github.com/cli/cli/issues/11109)). GitHub's
+  [workflow jobs REST API](https://docs.github.com/en/rest/actions/workflow-jobs)
+  therefore supplies Gludd's per-job diagnostic boundary.
 
 Consequently, Gludd records the first terminal evidence before any retry,
 keys it by immutable run ID and exact SHA, and treats a retry as an exception

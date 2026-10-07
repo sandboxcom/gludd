@@ -10,6 +10,8 @@ import re
 from pathlib import Path
 
 import pytest
+from scripts.behavioral_specs import load_behavioral_specs
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 SPECS_DIR = ROOT / "docs" / "specs"
@@ -66,7 +68,7 @@ def _parse_makefile_targets() -> set[str]:
     if not MAKEFILE.exists():
         return set()
     targets: set[str] = set()
-    for line in MAKEFILE.read_text(encoding="utf-8").split("\n"):
+    for line in compose_makefile(MAKEFILE).split("\n"):
         m = re.match(r"^([a-zA-Z0-9_.-]+):", line)
         if m:
             targets.add(m.group(1))
@@ -98,7 +100,7 @@ def _enforcement_referenced_files(text: str) -> list[str]:
 
 def test_behavioural_no_duplicate_spec_ids() -> None:
     """Every AA/AB/I/... spec ID must appear exactly once."""
-    text = BEHAVIORAL_SPECS.read_text(encoding="utf-8")
+    text = load_behavioral_specs(BEHAVIORAL_SPECS)
     ids = [e[0] for e in _parse_behavioural_spec_ids(text)]
     seen: dict[str, int] = {}
     for sid in ids:
@@ -112,7 +114,7 @@ def test_behavioural_no_duplicate_spec_ids() -> None:
 
 def test_behavioural_spec_ids_follow_alpha_then_numeric() -> None:
     """Every spec ID must match [A-Z]+\\d+ (e.g. AA001, AB020, I133)."""
-    text = BEHAVIORAL_SPECS.read_text(encoding="utf-8")
+    text = load_behavioral_specs(BEHAVIORAL_SPECS)
     malformed: list[str] = []
     for sid, _, _, _ in _parse_behavioural_spec_ids(text):
         if not re.fullmatch(r"[A-Z]+\d+", sid):
@@ -122,14 +124,14 @@ def test_behavioural_spec_ids_follow_alpha_then_numeric() -> None:
 
 def test_behavioural_spec_count_is_substantial() -> None:
     """BEHAVIORAL_SPECS.md has 200+ parsed spec entries."""
-    text = BEHAVIORAL_SPECS.read_text(encoding="utf-8")
+    text = load_behavioral_specs(BEHAVIORAL_SPECS)
     entries = _parse_behavioural_spec_ids(text)
     assert len(entries) >= 200, f"Expected >=200 behavioural specs, found {len(entries)}"
 
 
 def test_behavioural_spec_count_consistent_with_file_size() -> None:
     """Spec count should be roughly proportional to file line count."""
-    text = BEHAVIORAL_SPECS.read_text(encoding="utf-8")
+    text = load_behavioral_specs(BEHAVIORAL_SPECS)
     lines = text.count("\n")
     entries = _parse_behavioural_spec_ids(text)
     ratio = len(entries) / max(lines, 1)
@@ -138,7 +140,7 @@ def test_behavioural_spec_count_consistent_with_file_size() -> None:
 
 def test_behavioural_first_and_last_spec_ids_are_well_ordered() -> None:
     """First spec starts with AA, last spec is alphabetically after first."""
-    text = BEHAVIORAL_SPECS.read_text(encoding="utf-8")
+    text = load_behavioral_specs(BEHAVIORAL_SPECS)
     entries = _parse_behavioural_spec_ids(text)
     assert entries, "No behavioural specs found"
     assert entries[0][0].startswith("AA"), f"First spec should be AA-series, got {entries[0][0]}"
@@ -149,7 +151,7 @@ def test_behavioural_first_and_last_spec_ids_are_well_ordered() -> None:
 
 def test_behavioural_every_spec_has_title() -> None:
     """Every ### spec heading must have a non-empty title after the em-dash."""
-    text = BEHAVIORAL_SPECS.read_text(encoding="utf-8")
+    text = load_behavioral_specs(BEHAVIORAL_SPECS)
     entries = _parse_behavioural_spec_ids(text)
     empty_titles = [(sid, line) for sid, line, title, _ in entries if not title.strip()]
     assert empty_titles == [], f"Specs with empty titles: {empty_titles}"
@@ -162,7 +164,7 @@ def test_behavioural_every_spec_has_title() -> None:
 
 def test_behavioural_enforcement_references_file_count() -> None:
     """Count enforcement references to files vs actual files — report gap."""
-    text = BEHAVIORAL_SPECS.read_text(encoding="utf-8")
+    text = load_behavioral_specs(BEHAVIORAL_SPECS)
     refs = _enforcement_referenced_files(text)
     all_files = (
         _existing_relative_files(PLUGIN_DIR)
@@ -189,7 +191,7 @@ def test_behavioural_enforcement_references_file_count() -> None:
 
 def test_behavioural_makefile_target_reference_count() -> None:
     """Count Makefile target references vs actual targets — report gap."""
-    text = BEHAVIORAL_SPECS.read_text(encoding="utf-8")
+    text = load_behavioral_specs(BEHAVIORAL_SPECS)
     targets_in_specs: set[str] = set()
     for m in re.finditer(r"`make\s+([a-zA-Z0-9_.-]+)`", text):
         targets_in_specs.add(m.group(1))
@@ -204,7 +206,7 @@ def test_behavioural_makefile_target_reference_count() -> None:
 
 def test_behavioural_enforcement_field_present_in_most_specs() -> None:
     """At least 80% of specs must have an **Enforcement:** field."""
-    text = BEHAVIORAL_SPECS.read_text(encoding="utf-8")
+    text = load_behavioral_specs(BEHAVIORAL_SPECS)
     entries = _parse_behavioural_spec_ids(text)
     has_enforcement = 0
     for _, _, _, body in entries:
@@ -359,7 +361,7 @@ def test_all_spec_files_are_non_empty_and_parseable() -> None:
 
 def test_behavioural_specs_has_version_and_date_header() -> None:
     """BEHAVIORAL_SPECS.md starts with version + date header."""
-    text = BEHAVIORAL_SPECS.read_text(encoding="utf-8")
+    text = load_behavioral_specs(BEHAVIORAL_SPECS)
     assert re.search(r"\*\*Version:\*\*\s*\d+\.\d+", text), "Missing **Version:** header"
     assert re.search(r"\*\*Date:\*\*\s*\d{4}-\d{2}-\d{2}", text), "Missing **Date:** header"
     assert re.search(r"\*\*Status:\*\*\s*Active", text), "Missing **Status:** Active"
@@ -374,7 +376,7 @@ def test_spec_dir_has_reasonable_file_distribution() -> None:
 
 def test_behavioural_boilerplate_filler_ratio() -> None:
     """Less than 30% of specs should be boilerplate filler."""
-    text = BEHAVIORAL_SPECS.read_text(encoding="utf-8")
+    text = load_behavioral_specs(BEHAVIORAL_SPECS)
     entries = _parse_behavioural_spec_ids(text)
     filler_count = 0
     for _, _, _, body in entries:
@@ -397,7 +399,7 @@ def test_behavioural_boilerplate_filler_ratio() -> None:
 
 def test_feature_to_behavioural_spec_cross_references() -> None:
     """FEATURE specs referencing AA### IDs must refer to existing specs."""
-    behavioural_text = BEHAVIORAL_SPECS.read_text(encoding="utf-8")
+    behavioural_text = load_behavioral_specs(BEHAVIORAL_SPECS)
     behavioural_ids = {e[0] for e in _parse_behavioural_spec_ids(behavioural_text)}
     broken_refs: dict[str, list[str]] = {}
     for fp in sorted(SPECS_DIR.glob("FEATURE_*.md")):
@@ -413,7 +415,7 @@ def test_feature_to_behavioural_spec_cross_references() -> None:
 
 def test_behavioural_known_spec_prefixes_are_expected_set() -> None:
     """BEHAVIORAL_SPECS.md spec prefixes are well-known categories."""
-    text = BEHAVIORAL_SPECS.read_text(encoding="utf-8")
+    text = load_behavioral_specs(BEHAVIORAL_SPECS)
     entries = _parse_behavioural_spec_ids(text)
     prefixes = sorted({re.sub(r"\d+", "", e[0]) for e in entries})
     assert "AA" in prefixes, f"AA prefix missing from {prefixes}"

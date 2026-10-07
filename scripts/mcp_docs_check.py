@@ -22,9 +22,17 @@ import argparse
 import ast
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
+
+if TYPE_CHECKING:
+    from scripts.mcp_topics import TopicsManifestError, load_topics
+else:
+    try:
+        from scripts.mcp_topics import TopicsManifestError, load_topics
+    except ModuleNotFoundError:  # Direct ``python scripts/mcp_docs_check.py`` execution.
+        from mcp_topics import TopicsManifestError, load_topics
 
 ROOT = Path(__file__).resolve().parent.parent
 MODULES_DIR = (
@@ -36,6 +44,7 @@ MODULES_DIR = (
     / "plugins"
     / "modules"
 )
+TOPICS_PATH = ROOT / "docs" / "MCP_TOOLS_TOPICS.yml"
 
 
 def iter_module_paths() -> list[Path]:
@@ -236,6 +245,12 @@ def main(argv: list[str] | None = None) -> int:
     paths = iter_module_paths()
     if not paths:
         print(f"ERROR: no gludd_* modules found under {MODULES_DIR}", file=sys.stderr)
+        return 1
+
+    try:
+        load_topics(TOPICS_PATH)
+    except TopicsManifestError as exc:
+        print(f"ERROR: MCP topic artifact set is invalid: {exc}", file=sys.stderr)
         return 1
 
     offenders: dict[str, list[str]] = {}

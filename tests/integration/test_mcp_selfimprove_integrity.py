@@ -68,9 +68,9 @@ class TestSelfImproveIntervalDefault:
         import inspect
         import textwrap
 
-        from general_ludd import daemon as daemon_module
+        from general_ludd.daemon_components import lifecycle as lifecycle_module
 
-        source = inspect.getsource(daemon_module._lifespan)
+        source = inspect.getsource(lifecycle_module.lifespan)
         dedented = textwrap.dedent(source)
         tree = ast.parse(dedented)
 
@@ -200,9 +200,9 @@ class TestMCPClientWiring:
         import inspect
         import textwrap
 
-        from general_ludd import daemon as daemon_module
+        from general_ludd.daemon_components import lifecycle as lifecycle_module
 
-        source = inspect.getsource(daemon_module._lifespan)
+        source = inspect.getsource(lifecycle_module.lifespan)
         dedented = textwrap.dedent(source)
         tree = ast.parse(dedented)
 
@@ -251,9 +251,9 @@ class TestMCPClientWiring:
         """
         import inspect
 
-        from general_ludd import daemon as daemon_module
+        from general_ludd.daemon_components import lifecycle as lifecycle_module
 
-        source = inspect.getsource(daemon_module._lifespan)
+        source = inspect.getsource(lifecycle_module.lifespan)
 
         assert "app.state._mcp_client =" in source, (
             "REGRESSION: 'app.state._mcp_client =' not found inside _lifespan — "

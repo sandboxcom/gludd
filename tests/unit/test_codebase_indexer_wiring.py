@@ -92,13 +92,25 @@ class TestCodebaseIndexerWiring:
 
 class TestDaemonWiresCodebaseIndexer:
     def test_daemon_lifespan_imports_codebase_indexer(self):
-        daemon_source = Path(__file__).parents[2] / "src" / "general_ludd" / "daemon.py"
-        source_text = daemon_source.read_text()
+        lifecycle_source = (
+            Path(__file__).parents[2]
+            / "src"
+            / "general_ludd"
+            / "daemon_components"
+            / "lifecycle.py"
+        )
+        source_text = lifecycle_source.read_text()
         assert "from general_ludd.retrieval.indexer import CodebaseIndexer" in source_text
 
     def test_daemon_lifespan_stores_on_app_state(self):
-        daemon_source = Path(__file__).parents[2] / "src" / "general_ludd" / "daemon.py"
-        source_text = daemon_source.read_text()
+        lifecycle_source = (
+            Path(__file__).parents[2]
+            / "src"
+            / "general_ludd"
+            / "daemon_components"
+            / "lifecycle.py"
+        )
+        source_text = lifecycle_source.read_text()
         assert "app.state._codebase_indexer = _codebase_indexer" in source_text
 
     def test_codebase_indexer_importable_in_daemon_module(self):

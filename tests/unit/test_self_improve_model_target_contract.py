@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 
 def test_self_improve_target_defaults_to_managed_model_acquisition() -> None:
-    makefile = Path("Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(Path("Makefile"))
     target = makefile.split("\ntest-self-improve:", 1)[1].split(
         "\n# Compatibility alias", 1
     )[0]

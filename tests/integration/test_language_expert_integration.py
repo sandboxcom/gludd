@@ -38,7 +38,7 @@ class TestBomEncodingWorkflow:
         from general_ludd.language.charset_map import BOM_BY_SEQUENCE, BOM_SIGNATURES
         from general_ludd.language.unicode_data import UTF8_HEADER_BYTES
 
-        data = BOM_SIGNATURES["UTF-8"] + "Caf\u00e9".encode("utf-8")
+        data = BOM_SIGNATURES["UTF-8"] + "Caf\u00e9".encode()
         encoding = None
         for sig in sorted(BOM_SIGNATURES.values(), key=len, reverse=True):
             if data.startswith(sig):
@@ -79,7 +79,7 @@ class TestMojibakeDetection:
     def test_utf8_viewed_as_latin1_produces_mojibake(self) -> None:
         from general_ludd.language.charset_map import MOJIBAKE_SIGNATURES
 
-        utf8_bytes = "caf\u00e9".encode("utf-8")
+        utf8_bytes = "caf\u00e9".encode()
         misdecoded = utf8_bytes.decode("iso-8859-1")
         sigs = MOJIBAKE_SIGNATURES.get("UTF-8 viewed as ISO-8859-1", [])
         assert any(sig in misdecoded for sig in sigs), f"No mojibake pattern matched '{misdecoded}'"

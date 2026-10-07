@@ -16,17 +16,24 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from general_ludd.db.models import Base, ProjectModel
-from general_ludd.db.repository import ProjectRepository, TodoRepository
+from general_ludd.db.repository import (
+    ProjectRepository,
+    TaskReturnRepository,
+    TodoRepository,
+)
 from general_ludd.event_loop.loop import EventLoop
 from general_ludd.local_model import get_model
 from general_ludd.projects.manager import persist_project
+from general_ludd.schemas.task_decision import TaskDecision
 from general_ludd.schemas.todo import TodoStatus
+from general_ludd.self_improve.approval import SelfImproveApprovalManager
 from general_ludd.self_improve.codex_comparison import (
     CandidateEvidence,
     CodexReference,
     ComparisonResult,
     ProposalManifest,
 )
+from general_ludd.self_improve.harness import SelfImprovementHarness
 from general_ludd.self_improve.managed_runner import (
     ApprovedSelfImprovePlan,
     AttemptResult,
@@ -40,6 +47,8 @@ from general_ludd.self_improve.managed_runner import (
 )
 from general_ludd.self_improve.model_candidate_planner import PlannedModelCandidate
 from general_ludd.self_improve.private_policy import load_self_improve_policy
+from general_ludd.self_improve.promotion import ManagedPromotionReceipt
+from general_ludd.self_improve.staging import ManagedSelfImprovePlanRequest
 
 pytestmark = pytest.mark.e2e
 
@@ -71,11 +80,14 @@ class _Trace:
 class _ComputeLifecycle:
     """Hermetic execution-environment boundary with an auditable call ledger."""
 
-    def __init__(self) -> None:
+    def __init__(self, chain: list[str] | None = None) -> None:
         self.calls: list[dict[str, object]] = []
+        self._chain = chain
 
     def reconcile_execution_environment(self, **kwargs: object) -> dict[str, object]:
         self.calls.append(dict(kwargs))
+        if self._chain is not None:
+            self._chain.append(f"compute_{kwargs['state']}")
         return {"status": "successful", "rc": 0, "events": []}
 
 
@@ -185,9 +197,9 @@ def _write_policy(
     return destination
 
 
-def _task() -> TaskSpec:
+def _task(task_id: str = "S83.145") -> TaskSpec:
     return TaskSpec(
-        task_id="S83.145",
+        task_id=task_id,
         objective="Improve one policy-approved repository file.",
         canonical_make_commands=(
             "make test-specific TESTFILE=tests/public/test_rules.py",
@@ -224,6 +236,7 @@ def _proposal(
     operation: str,
     *,
     tests: tuple[str, ...] = (PUBLIC_TEST_PATH,),
+    task_id: str = "S83.145",
 ) -> ProposalManifest:
     old_text, new_text = {
         "create": ("", PUBLIC_NEW),
@@ -241,7 +254,7 @@ def _proposal(
             {
                 "schema_version": 1,
                 "baseline_sha": "a" * 40,
-                "task_id": "S83.145",
+                "task_id": task_id,
                 "edits": [
                     {
                         "operation": operation,
@@ -263,17 +276,20 @@ def _proposal(
 def _approve(
     root: Path,
     *,
+    todo_id: str = "todo-private-policy-e2e",
+    project_id: str | None = None,
+    task: TaskSpec | None = None,
     path: str = PUBLIC_PATH,
     test_path: str = PUBLIC_TEST_PATH,
     source: str | None = PUBLIC_OLD,
     mechanical_proposal: ProposalManifest | None = None,
 ) -> ApprovedSelfImprovePlan:
     return ApprovedSelfImprovePlan.approve(
-        approval_id="approval-private-policy-e2e",
-        todo_id="todo-private-policy-e2e",
-        project_id=f"project-{root.name}",
+        approval_id=todo_id,
+        todo_id=todo_id,
+        project_id=project_id or f"project-{root.name}",
         repo_root=root,
-        task=_task(),
+        task=task or _task(),
         reference=_reference(path, test_path),
         prompt=_prompt(path, source),
         required_output_tokens=256,
@@ -543,6 +559,262 @@ async def test_self_improvement_uses_common_todo_ranking_compute_and_real_edit(
 
         assert [call["state"] for call in lifecycle.calls] == ["present", "absent"]
         assert loop._tick_state["compute_demand"]["runnable_todos"] == 0
+        _assert_no_private_data_leaked(trace, None)
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.parametrize("mode", PROVIDER_MODES)
+@pytest.mark.asyncio
+async def test_discovered_approved_work_reaches_verified_terminal_release_without_manual_todo_mutation(
+    tmp_path: Path,
+    mode: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Prove the durable producer-to-release chain without injected todo rows."""
+    _write_policy(tmp_path)
+    destination = _prepare_path(tmp_path, PUBLIC_PATH, "replace")
+    project_id = "project-durable-chain"
+    trace = _Trace()
+    chain: list[str] = []
+    lifecycle = _ComputeLifecycle(chain)
+    discovery_runs = 0
+    approved_task_id = ""
+
+    def discover(
+        _harness: SelfImprovementHarness,
+        _recurring: list[object],
+    ) -> list[object]:
+        nonlocal discovery_runs
+        discovery_runs += 1
+        if discovery_runs > 1:
+            return []
+        chain.append("discovered")
+        return [object()]
+
+    def produce(
+        _harness: SelfImprovementHarness,
+        findings: list[object],
+    ) -> list[dict[str, object]]:
+        assert len(findings) == 1
+        return [
+            {
+                "title": "Repair one policy-approved public rule",
+                "description": "Improve one policy-approved repository file.",
+                "source": "durable_chain_acceptance",
+                "gap_type": "accepted_rule_gap",
+                "source_file": PUBLIC_PATH,
+                "work_type": "code",
+                "task_type": "feature",
+                "blocker_kind": "",
+                "incident_count": 1,
+                "recent_todo_ids": [],
+                "test_commands": [
+                    "make test-specific TESTFILE=tests/public/test_rules.py"
+                ],
+                "priority": "critical",
+            }
+        ]
+
+    class _Reviewer:
+        def review_return(
+            self,
+            task_return: Any,
+            *,
+            candidate_todos: list[object],
+            artifacts: list[object],
+        ) -> TaskDecision:
+            assert candidate_todos == []
+            assert artifacts == []
+            chain.append("review_verified")
+            return TaskDecision(
+                return_id=task_return.return_id,
+                matched_todo_id=task_return.todo_id,
+                decision="complete",
+                confidence=1.0,
+                evidence_refs=[f"artifact:{PUBLIC_PATH}"],
+            )
+
+    class _PromotionCoordinator:
+        async def promote(self, **kwargs: object) -> ManagedPromotionReceipt:
+            todo_id = kwargs.get("todo_id")
+            return_id = kwargs.get("return_id")
+            receipt_project_id = kwargs.get("project_id")
+            repo_root = kwargs.get("repo_root")
+            assert isinstance(todo_id, str)
+            assert isinstance(return_id, str)
+            assert receipt_project_id == project_id
+            assert repo_root == tmp_path
+            artifact_digest = "e" * 64
+            chain.append("promotion_verified")
+            return ManagedPromotionReceipt(
+                artifact_digest=artifact_digest,
+                plan_identity_digest="a" * 64,
+                attempt_identity_digest="b" * 64,
+                todo_id=todo_id,
+                project_id=project_id,
+                repo_root=tmp_path,
+                return_id=return_id,
+                development_commit="d" * 40,
+                marker=f"Gludd-Self-Improve-Artifact={artifact_digest}",
+                fencing_token=1,
+                marker_verified=True,
+            )
+
+    monkeypatch.setattr(SelfImprovementHarness, "run_gap_analysis", discover)
+    monkeypatch.setattr(SelfImprovementHarness, "generate_fix_todos", produce)
+
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        async with factory() as session:
+            await persist_project(
+                ProjectRepository(session),
+                project_id=project_id,
+                name="Durable chain acceptance",
+                weight=100.0,
+                dispatch_mode="active",
+            )
+            await session.commit()
+
+        project_manager = SimpleNamespace(
+            select_project=lambda: SimpleNamespace(project_id=project_id)
+        )
+        promotion = _PromotionCoordinator()
+        loop = EventLoop(
+            session=factory,
+            runner=lifecycle,
+            config={
+                "repo_root": str(tmp_path),
+                "self_improve": {
+                    "execution_mode": "local",
+                    "ingest_recurring_failures": False,
+                },
+                "execution_environment": {
+                    "machine_cpus": 2,
+                    "machine_memory_mb": 4096,
+                    "machine_disk_gb": 16,
+                },
+            },
+            project_manager=project_manager,
+            project_workspace={
+                project_id: SimpleNamespace(repo_dir=tmp_path),
+            },
+            floor_controller=cast(Any, SimpleNamespace(get_max_active=lambda: 1)),
+            self_improve_interval=1,
+            self_improve_runner_factory=lambda root: _runner(
+                root,
+                mode,
+                trace,
+                _proposal(PUBLIC_PATH, "replace", task_id=approved_task_id),
+            ),
+            reviewer=_Reviewer(),
+            self_improve_promotion_factory=lambda *_args: promotion,
+        )
+        monkeypatch.setattr(loop, "_detect_grinding_patterns", lambda: [])
+
+        discovery_metrics = await loop.tick()
+
+        assert discovery_metrics["self_improve_todos_persisted"] == 1
+        assert lifecycle.calls == []
+        async with factory() as session:
+            repository = TodoRepository(session)
+            discovered = await repository.list_by_work_type(
+                "self_improve",
+                project_id=project_id,
+            )
+            assert len(discovered) == 1
+            candidate = discovered[0]
+            assert candidate.status == TodoStatus.APPROVAL_REQUIRED.value
+            assert candidate.created_by == "self_improve_harness"
+            assert candidate.priority == 20
+            request = ManagedSelfImprovePlanRequest.from_json(candidate.plan_artifact)
+            approved_task_id = request.task.task_id
+            plan = _approve(
+                tmp_path,
+                todo_id=candidate.todo_id,
+                project_id=project_id,
+                task=request.task,
+            )
+            prepared = await repository.update(
+                candidate.todo_id,
+                {"plan_artifact": plan.to_json()},
+                expected_version=candidate.version,
+                project_id=project_id,
+            )
+
+            def resolve_repo(requested_project_id: str) -> Path:
+                assert requested_project_id == project_id
+                return tmp_path
+
+            approved = await SelfImproveApprovalManager(
+                managed_repo_resolver=resolve_repo
+            ).approve_by_id(
+                repository,
+                prepared.todo_id,
+                project_id=project_id,
+            )
+            await session.commit()
+            assert approved.status == TodoStatus.QUEUED.value
+            chain.append("approved")
+
+        execution_metrics = await loop.tick()
+
+        assert execution_metrics["todos_dispatched"] == 1
+        assert [todo.todo_id for todo in loop._tick_state["claimed_todos"]] == [
+            approved.todo_id
+        ]
+        assert [call["state"] for call in lifecycle.calls] == ["present"]
+        assert destination.read_text(encoding="utf-8") == PUBLIC_NEW
+        assert trace.provider_calls == [mode]
+        assert trace.evaluator_calls == [mode]
+        assert trace.acquisitions == [mode]
+        assert len(trace.outcomes) == 1
+        async with factory() as session:
+            executed = await TodoRepository(session).get_by_id(
+                approved.todo_id,
+                project_id=project_id,
+            )
+            assert executed is not None
+            assert executed.status == TodoStatus.AWAITING_RESULT.value
+            persisted_return = await TaskReturnRepository(session).get_by_id(
+                f"RET-EXEC-{approved.todo_id}"
+            )
+            assert persisted_return is not None
+            assert persisted_return.work_type == "self_improve"
+            assert persisted_return.resource_profile == executed.resource_profile
+
+        review_metrics = await loop.tick()
+
+        assert review_metrics["returns_reviewed"] == 1
+        async with factory() as session:
+            terminal = await TodoRepository(session).get_by_id(
+                approved.todo_id,
+                project_id=project_id,
+            )
+            assert terminal is not None
+            assert terminal.status == TodoStatus.COMPLETE.value
+            assert terminal.status != TodoStatus.CANCELLED.value
+        assert [call["state"] for call in lifecycle.calls] == ["present", "absent"]
+        assert loop._tick_state["compute_demand"] == {
+            "state": "idle",
+            "runnable_todos": 0,
+            "execution_environment": "absent",
+        }
+        assert chain == [
+            "discovered",
+            "approved",
+            "compute_present",
+            "review_verified",
+            "promotion_verified",
+            "compute_absent",
+        ]
         _assert_no_private_data_leaked(trace, None)
     finally:
         await engine.dispose()

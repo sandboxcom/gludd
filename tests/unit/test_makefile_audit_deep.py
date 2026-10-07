@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
@@ -18,7 +19,7 @@ _TARGET_RE = re.compile(r"^([a-zA-Z_][a-zA-Z0-9_./-]*)\s*:(?!=)")
 
 
 def _read_text() -> str:
-    return MAKEFILE.read_text()
+    return compose_makefile(MAKEFILE)
 
 
 def _all_target_lines(content: str) -> dict[str, int]:
@@ -369,7 +370,7 @@ class TestDryRun:
     KEY = ("help", "lint", "typecheck", "test-count", "collect-check", "clean")
 
     def test_clean_dry_run_has_no_recursive_make_escape_hatch(self) -> None:
-        content = MAKEFILE.read_text(encoding="utf-8")
+        content = _read_text()
         recipe = _recipe_body(content, "clean")
 
         assert "$(MAKE)" not in recipe, (
@@ -386,6 +387,8 @@ class TestDryRun:
             [
                 "make",
                 "-n",
+                "-I",
+                str(ROOT),
                 "-f",
                 str(MAKEFILE),
                 "clean",

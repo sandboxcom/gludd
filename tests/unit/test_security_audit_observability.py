@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 from scripts import security_audit_observability as observer
 from scripts import summarize_sast as sast_summarizer
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 OBSERVER = ROOT / "scripts" / "security_audit_observability.py"
@@ -464,7 +465,7 @@ def test_sast_summary_only_retains_scanner_error_count() -> None:
 
 
 def test_make_surface_contract_and_operator_research_are_documented() -> None:
-    makefile = MAKEFILE.read_text(encoding="utf-8")
+    makefile = compose_makefile(MAKEFILE)
     assert "scripts/security_audit_observability.py audit" in makefile
     assert "scripts/summarize_sast.py" in makefile
     assert "bandit -q --ignore-nosec -r src/ -f json" in makefile

@@ -43,9 +43,9 @@ class TestSAST:
     def test_bandit_config_exists(self) -> None:
         import tomllib
 
-        with open(ROOT / "pyproject.toml", "rb") as f:
+        with open(ROOT / "requirements/profiles/dev-security/pyproject.toml", "rb") as f:
             data = tomllib.load(f)
-        dev_deps = data.get("project", {}).get("optional-dependencies", {}).get("dev", [])
+        dev_deps = data["project"]["dependencies"]
         assert any("bandit" in d for d in dev_deps)
 
     def test_bandit_runs_on_source(self) -> None:

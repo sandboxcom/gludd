@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from scripts import build_reviewed_head_integration_receipt as builder
+from scripts.makefile_layout import compose_makefile
 
 from general_ludd.git_release.reviewed_head_integration import (
     load_reviewed_head_integration_receipt,
@@ -603,7 +604,7 @@ def test_rejects_malformed_manifest_shapes(
 
 
 def test_make_target_is_documented_and_has_safe_validate_only_contract() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     contract = json.loads(
         (ROOT / "config" / "make_target_contract.json").read_text(encoding="utf-8")
     )

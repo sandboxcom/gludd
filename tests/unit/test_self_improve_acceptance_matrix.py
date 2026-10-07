@@ -11,6 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 from general_ludd.routing_roles.small_model_policy import DEFAULT_TASK_CONTRACTS
 from general_ludd.schemas.benchmark import TaskType
@@ -807,7 +808,7 @@ def test_runner_cli_returns_bounded_status_for_failed_and_invalid_matrix(
 
 
 def test_git_show_commit_exposes_stable_boundary_metadata_additively() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     target = _target_block(makefile, "git-show-commit")
 
     assert "git log -1 --format='%H%nparent: %P%ncommitter_unix: %ct%n%s' $(C)" in target
@@ -830,7 +831,7 @@ def test_git_show_commit_exposes_stable_boundary_metadata_additively() -> None:
 
 
 def test_git_show_full_pins_host_independent_patch_rendering() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     target = _target_block(makefile, "git-show-full")
 
     assert (
@@ -887,7 +888,7 @@ def test_git_show_full_ignores_host_diff_configuration(
 
 
 def test_make_target_is_pinned_safe_by_default_and_explicitly_live() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     target = _target_block(makefile, "test-self-improve-acceptance-matrix")
 
     assert "SELF_IMPROVE_ACCEPTANCE_MATRIX_LIVE ?= 0" in makefile
@@ -969,7 +970,7 @@ def test_document_has_traceable_fixture_authoring_and_replay_guide() -> None:
     document = DOCUMENT.read_text(encoding="utf-8")
     runner_path = ROOT / "tests/unit/self_improve_acceptance_matrix_runner.py"
     runner = runner_path.read_text(encoding="utf-8")
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
 
     for fact in (
         "## Author an independent reference fixture",

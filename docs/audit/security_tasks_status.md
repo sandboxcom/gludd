@@ -46,7 +46,7 @@ best-score path because all `avg_cost==0.0`). Low blast-radius but real.
 
 ## Tasks needing NO further work (verified DONE)
 
-#52, #53, #54, #56, #58, #43, #60, #61 — each has a concrete passing red-team /
+Issues #52, #53, #54, #56, #58, #43, #60, and #61 — each has a concrete passing red-team /
 unit test asserting the security property against the real source. (#50 Ansible
 SSTI, per the task context, was already-fixed with its own red-team suite and is
 out of scope of this file.)

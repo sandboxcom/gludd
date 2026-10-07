@@ -18,6 +18,8 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+import yaml
+from scripts.mcp_topics import load_topics, topic_artifact_paths
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "scripts"
@@ -278,6 +280,159 @@ def test_docs_check_main_exit_codes(
     assert docs_check.main([]) == 1
 
 
+def test_docs_check_fails_closed_on_invalid_topic_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    manifest = tmp_path / "MCP_TOOLS_TOPICS.yml"
+    manifest.write_text("schema: wrong\nparts: []\n", encoding="utf-8")
+    monkeypatch.setattr(docs_check, "TOPICS_PATH", manifest)
+
+    assert docs_check.main([]) == 1
+    assert "MCP topic artifact set is invalid" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("def broken(:\n", {}),
+        ("value = 1\n", {}),
+        ('"""plain scalar"""\n', {}),
+        ('"""[unterminated"""\n', {}),
+        (
+            '"""short_description: bare docs\noptions:\n  value: {}\n"""\n',
+            {"short_description": "bare docs", "options": {"value": {}}},
+        ),
+        (
+            '"""DOCUMENTATION:\n  short_description: nested docs\n  options:\n    value: {}\n"""\n',
+            {"short_description": "nested docs", "options": {"value": {}}},
+        ),
+    ],
+)
+def test_docs_mapping_fails_closed_and_accepts_bare_forms(
+    source: str,
+    expected: dict[str, object],
+) -> None:
+    assert docs_check._doc_mapping(source) == expected
+
+
+def test_docs_mapping_accepts_annotated_constant_and_skips_dynamic_values() -> None:
+    annotated = '''
+DOCUMENTATION: str = """
+short_description: annotated docs
+options:
+  value: {}
+"""
+'''
+    dynamic_then_docstring = '''"""
+short_description: fallback docs
+options:
+  value: {}
+"""
+DOCUMENTATION = build_docs()
+'''
+
+    assert docs_check._doc_mapping(annotated)["short_description"] == "annotated docs"
+    assert docs_check._doc_mapping(dynamic_then_docstring)["short_description"] == "fallback docs"
+
+
+def test_docs_mapping_recovers_lenient_fields_from_invalid_yaml() -> None:
+    source = '''"""
+DOCUMENTATION:
+  short_description: lenient docs
+  description: [unterminated
+  options:
+    value:
+      type: str
+EXAMPLES: []
+"""
+'''
+
+    assert docs_check._doc_mapping(source) == {
+        "short_description": "lenient docs",
+        "options": {"value": {}},
+    }
+
+
+def test_docs_check_reports_missing_options(tmp_path: Path) -> None:
+    stub = tmp_path / "gludd_partial.py"
+    stub.write_text(
+        '"""short_description: no options\n"""\n',
+        encoding="utf-8",
+    )
+
+    assert docs_check.check_module(stub) == ["missing/empty options"]
+
+
+def test_docs_stub_injection_is_safe_and_preserves_header(tmp_path: Path) -> None:
+    module = tmp_path / "gludd_stub.py"
+    module.write_text(
+        "#!/usr/bin/python\n# -*- coding: utf-8 -*-\nvalue = 1\n",
+        encoding="utf-8",
+    )
+
+    assert docs_check._inject_stub(module) is True
+    source = module.read_text(encoding="utf-8")
+    assert source.startswith("#!/usr/bin/python\n# -*- coding: utf-8 -*-\n\"\"\"")
+    assert docs_check.check_module(module) == []
+
+
+def test_docs_stub_injection_rejects_syntax_errors_and_existing_docstrings(
+    tmp_path: Path,
+) -> None:
+    broken = tmp_path / "gludd_broken.py"
+    broken.write_text("def broken(:\n", encoding="utf-8")
+    documented = tmp_path / "gludd_documented.py"
+    documented.write_text('"""existing"""\n', encoding="utf-8")
+
+    assert docs_check._inject_stub(broken) is False
+    assert docs_check._inject_stub(documented) is False
+
+
+def test_docs_check_main_rejects_empty_module_inventory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(docs_check, "MODULES_DIR", tmp_path)
+
+    assert docs_check.main([]) == 1
+    assert "no gludd_* modules found" in capsys.readouterr().err
+
+
+def test_docs_check_main_can_generate_and_recheck_stub(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = tmp_path / "gludd_missing.py"
+    module.write_text("#!/usr/bin/python\nvalue = 1\n", encoding="utf-8")
+    monkeypatch.setattr(docs_check, "MODULES_DIR", tmp_path)
+    monkeypatch.setattr(docs_check, "load_topics", lambda _path: {})
+
+    assert docs_check.main(["--generate-stub"]) == 0
+    output = capsys.readouterr().out
+    assert "injected stub DOCUMENTATION" in output
+    assert "all 1 gludd_* modules documented" in output
+
+
+def test_docs_check_main_generate_stub_fails_closed_when_docstring_exists(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = tmp_path / "gludd_bad.py"
+    module.write_text('"""existing but incomplete"""\n', encoding="utf-8")
+    monkeypatch.setattr(docs_check, "MODULES_DIR", tmp_path)
+    monkeypatch.setattr(docs_check, "load_topics", lambda _path: {})
+
+    assert docs_check.main(["--generate-stub"]) == 1
+    error = capsys.readouterr().err
+    assert "MCP docs-check FAILED" in error
+    assert "gludd_bad" in error
+
+
 # ---------------------------------------------------------------------------
 # reference artifact validity
 # ---------------------------------------------------------------------------
@@ -285,6 +440,8 @@ def test_reference_generator_emits_no_trailing_whitespace(tmp_path: Path) -> Non
     content = ref_gen.generate(tmp_path / "MCP_TOOL_REFERENCE.md")
     violations = [line for line in content.splitlines() if line != line.rstrip()]
     assert violations == []
+    assert content.endswith("\n")
+    assert not content.endswith("\n\n")
 
 
 def test_reference_generate_rejects_non_array_manifest(
@@ -379,6 +536,16 @@ def test_write_and_reload_manifest(
     for entry in loaded:
         assert set(entry) >= {"name", "description", "input_schema", "server_id"}
         assert entry["name"].startswith("general_ludd.agent.gludd_")
+
+    topics_manifest = yaml.safe_load(topics.read_text(encoding="utf-8"))
+    assert topics_manifest["schema"] == "gludd.mcp-tool-topics.v1"
+    assert topics_manifest["parts"]
+    assert all(set(part) == {"path", "sha256", "topic_count"} for part in topics_manifest["parts"])
+    assert load_topics(topics) == topic_map
+    artifacts = topic_artifact_paths(topics)
+    assert artifacts[0] == topics
+    assert len(artifacts) == len(topics_manifest["parts"]) + 1
+    assert all(path.read_text(encoding="utf-8").count("\n") < 2_500 for path in artifacts)
 
 
 def test_generator_main_check_is_read_only(

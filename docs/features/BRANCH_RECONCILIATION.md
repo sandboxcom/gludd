@@ -48,7 +48,12 @@ The branch limit is restricted to 1 through 100. Sorted `git for-each-ref`
 enumeration reads at most two extra rows to report truncation, and each branch
 gets a 500-commit comparison bound. Counts describe only the returned set;
 `truncated: true` prevents callers from mistaking partial output for a complete
-inventory.
+inventory. The exhaustive summary does not trust cursor completion alone: before
+emitting `terminal: true`, it re-resolves the target and performs one bounded,
+explicitly sorted terminal scan. The exact ordered `(ref, head)` observations
+must match the classified rows. A branch created before the active cursor,
+deleted after an earlier page, or moved to a new head therefore fails closed as
+changed evidence instead of producing a stale release decision.
 
 Pagination follows Git's documented
 [`for-each-ref --start-after`](https://git-scm.com/docs/git-for-each-ref.html)
@@ -56,9 +61,10 @@ lexicographic boundary. The cursor itself is excluded, so every returned ref is
 strictly greater. A truncated page emits its final returned ref as `next_cursor`;
 the terminal page emits `null`. Concatenating pages over a stable ref set yields
 each local branch exactly once, with no duplicate or skipped boundary ref. Git's
-documentation notes that refs can change between invocations, so callers that
-permit concurrent ref mutation must restart their inventory rather than claim a
-cross-mutation snapshot.
+documentation notes that refs can change between invocations. Page-by-page API
+consumers must account for that limitation; the exhaustive summary instead
+verifies the terminal ref/head snapshot and fails closed when its observations
+became stale.
 
 On older Git releases that reject `--start-after`, the same contract falls back
 to `for-each-ref --sort=refname` over local heads with a hard 10,000-ref scan
@@ -140,11 +146,12 @@ home directory, worktree root, commit body, patch content, or untracked helper i
 exposed.
 
 The exhaustive path retains the 10,000-ref ceiling, rejects duplicate refs or a
-non-advancing cursor, and revalidates the target identity on every page. A target
-change or conflicting evidence for one shared head fails closed. As with Git's
-cursor primitive, the guarantee applies to a stable local ref set; concurrent ref
-creation requires restarting the command rather than treating its output as an
-atomic repository snapshot.
+non-advancing cursor, and revalidates the target identity on every page and at
+the terminal boundary. A target change, a terminal local-ref/head mismatch, or
+conflicting evidence for one shared head fails closed. The final verification is
+not a repository lock and does not mutate refs; it proves that every observation
+still matches the terminal state. If concurrent work changes a ref, the operator
+restarts the read-only command after that work settles.
 
 Target resolution happens before enumeration and fails closed. Empty,
 whitespace-containing, option-shaped, invalid, and non-symbolic refs produce a
@@ -208,6 +215,20 @@ analogous design: JSON results on stdout, progress on stderr, and a
 `--quiet-progress` so the suppressed class is unambiguous and real errors remain
 outside the suppression boundary.
 
+The GitLab CLI practitioner request
+[#1089](https://gitlab.com/gitlab-org/cli/-/issues/1089), opened in 2022, calls
+out pagination oddities when the underlying collection changes during an
+operation. Cursor ordering prevents boundary duplication, but it cannot reveal a
+new ref inserted before an already-consumed cursor or a previously observed ref
+that moved. That long-lived operational concern is why the exhaustive path
+compares its ordered observations with a final ref/head snapshot before making a
+terminal claim. The Git project's 2024 performance report
+[#401](https://gitlab.com/gitlab-org/git/-/issues/401) demonstrates that sorted
+`for-each-ref` work scales with repository ref count even when `--count` is
+small. Gludd consequently permits exactly one additional sorted verification
+scan, retains the 10,000-ref ceiling and ten-second timeout, and never retries in
+an unbounded loop.
+
 The long-lived GitHub CLI issue
 [#6642](https://github.com/cli/cli/issues/6642), opened in 2022, records that
 remote file-list queries can be expensive and points practitioners to local
@@ -236,12 +257,16 @@ change the Git command set, scan bounds, result schema, or resource namespace.
 Semantic mode is also read-only and foreground-only: at most two fixed list-form
 Git inspections run per bounded head, with progress on stderr and no files, locks,
 daemons, services, ports, background workers, ref changes, or deploy interruption.
-This preserves ZDD while keeping CPU, memory, subprocess, and JSON growth bounded.
-Rollback is a normal revert of the CLI flag, Make variable, contract, tests, task
-entry, and this document; because the default schema never changed, callers need
-no coordinated migration. The older textual inventory and one-branch patch
-comparison targets remain independently available throughout. No service restart,
-data migration, cleanup, or downtime is needed.
+An exhaustive run adds one terminal target resolution and one explicitly sorted
+local-head scan, emits `verify=terminal-ref-snapshot` progress by default, and
+shares the existing 10,000-ref, output, and timeout bounds. This preserves ZDD
+while keeping CPU, memory, subprocess, and JSON growth bounded. During rollout,
+old and new callers can run concurrently because the schema and Make interface do
+not change; only stale terminal evidence becomes a structured nonzero failure.
+Rollback is a normal revert of the terminal verifier, tests, and this document.
+The older textual inventory and one-branch patch comparison targets remain
+independently available throughout. No service restart, data migration, cleanup,
+or downtime is needed.
 
 ## Makefile integrity
 

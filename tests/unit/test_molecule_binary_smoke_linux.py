@@ -31,15 +31,18 @@ import json
 import os
 import re
 import tomllib
+from pathlib import Path
 from typing import TypeAlias, TypeGuard
 
 import yaml
+from scripts.makefile_layout import compose_makefile
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _SCENARIO_DIR = os.path.join(_ROOT, "molecule", "playbooks", "binary_smoke_linux")
 _MAKEFILE = os.path.join(_ROOT, "Makefile")
 _GITIGNORE = os.path.join(_ROOT, ".gitignore")
 _PYPROJECT = os.path.join(_ROOT, "pyproject.toml")
+_PROFILE_ROOT = os.path.join(_ROOT, "requirements", "profiles")
 _BUILD_WORKFLOW = os.path.join(_ROOT, ".github", "workflows", "build.yml")
 _MAKE_TARGET_CONTRACT = os.path.join(_ROOT, "config", "make_target_contract.json")
 _LIMA_LIFECYCLE_DOC = os.path.join(_ROOT, "docs", "features", "LIMA_DOCKER_LIFECYCLE.md")
@@ -53,6 +56,10 @@ def _load(rel: str) -> str:
     assert os.path.isfile(path), f"missing scenario file: {rel}"
     with open(path) as fh:
         return fh.read()
+
+
+def _makefile_source() -> str:
+    return compose_makefile(Path(_MAKEFILE))
 
 
 def _is_object_list(value: object) -> TypeGuard[list[object]]:
@@ -191,8 +198,7 @@ class TestScenarioShape:
         assert names == {"ansible.posix", "community.docker"}
 
     def test_downloaded_collections_use_ephemeral_path_before_project_source(self) -> None:
-        with open(_MAKEFILE) as fh:
-            makefile = fh.read()
+        makefile = _makefile_source()
 
         assert (
             'export ANSIBLE_COLLECTIONS_PATH="$$ANSIBLE_STATE_DIR/collections:'
@@ -209,22 +215,16 @@ class TestScenarioShape:
         )
 
     def test_docker_driver_dependency_is_declared(self) -> None:
-        with open(_PYPROJECT, "rb") as fh:
+        with open(os.path.join(_PROFILE_ROOT, "dev-ansible", "pyproject.toml"), "rb") as fh:
             project = tomllib.load(fh)
 
-        dependency_sets = (
-            project["project"]["optional-dependencies"]["dev"],
-            project["dependency-groups"]["dev"],
-        )
-        for dependencies in dependency_sets:
-            assert any(
-                dependency.startswith("molecule-plugins[docker]")
-                for dependency in dependencies
-            ), "molecule Docker scenarios require molecule-plugins[docker]"
+        dependencies = project["project"]["dependencies"]
+        assert any(
+            dependency.startswith("molecule-plugins[docker]") for dependency in dependencies
+        ), "molecule Docker scenarios require molecule-plugins[docker]"
 
     def test_make_target_routes_docker_sdk_to_podman_socket(self) -> None:
-        with open(_MAKEFILE) as fh:
-            makefile = fh.read()
+        makefile = _makefile_source()
 
         assert "LIMA_INSTANCE ?= gludd-docker" in makefile
         assert 'limactl list "$(LIMA_INSTANCE)"' in makefile
@@ -249,8 +249,7 @@ class TestScenarioShape:
         assert 'docker pull "$(LIMA_IMAGE)"' in makefile
 
     def test_lima_docker_start_is_bounded_namespaced_and_contracted(self) -> None:
-        with open(_MAKEFILE) as fh:
-            makefile = fh.read()
+        makefile = _makefile_source()
 
         assert "LIMA_DOCKER_START_TIMEOUT_SECS ?= 180" in makefile
         assert "lima-docker-start:" in makefile
@@ -275,8 +274,7 @@ class TestScenarioShape:
         assert target["behavior"].endswith("LIMA_DOCKER_VALIDATE_ONLY=1")
 
     def test_lima_docker_stop_is_bounded_idempotent_and_non_destructive(self) -> None:
-        with open(_MAKEFILE) as fh:
-            makefile = fh.read()
+        makefile = _makefile_source()
 
         assert "LIMA_DOCKER_STOP_TIMEOUT_SECS ?= 200" in makefile
         assert "LIMA_DOCKER_STOP_KILL_AFTER_SECS ?= 10" in makefile
@@ -325,8 +323,7 @@ class TestScenarioShape:
         assert "rollback" in lifecycle_doc.lower()
 
     def test_legacy_default_machine_cleanup_is_bounded_and_opt_in(self) -> None:
-        with open(_MAKEFILE) as fh:
-            makefile = fh.read()
+        makefile = _makefile_source()
 
         assert "podman-legacy-default-delete:" in makefile
         assert "PODMAN_LEGACY_MACHINE ?= podman-machine-default" in makefile
@@ -340,8 +337,7 @@ class TestScenarioShape:
         assert "PODMAN_LEGACY_DELETE_HEARTBEAT" in makefile
 
     def test_molecule_clean_removes_only_generated_dependency_namespaces(self) -> None:
-        with open(_MAKEFILE) as fh:
-            makefile = fh.read()
+        makefile = _makefile_source()
 
         section = makefile.split("molecule-clean:", 1)[1].split(
             "molecule-test:", 1
@@ -353,8 +349,7 @@ class TestScenarioShape:
         assert "general_ludd" not in section
 
     def test_molecule_test_uses_canonical_source_without_copying(self) -> None:
-        with open(_MAKEFILE) as fh:
-            makefile = fh.read()
+        makefile = _makefile_source()
 
         section = makefile.split("molecule-test:", 1)[1].split(
             "git-status:", 1
@@ -772,8 +767,7 @@ class TestPrepare:
         assert "dist/linux/gludd" in out
         assert "ansible.builtin.command" not in out
 
-        with open(_MAKEFILE) as fh:
-            makefile = fh.read()
+        makefile = _makefile_source()
         assert 'if [ "$(SCENARIO)" = "binary_smoke_linux" ]' in makefile
         assert "$(MAKE) --no-print-directory build-linux-executable" in makefile
         assert "build-linux-executable: worktree-guard" in makefile
@@ -852,26 +846,17 @@ class TestPrepare:
         assert "file \"$(LINUX_BINARY_OUTPUT)\"" in makefile
         assert "ELF" in makefile
 
-    def test_frozen_binary_builds_install_the_azure_runtime(self) -> None:
-        """Every frozen artifact must contain the Azure SDK used by Gludd."""
-        with open(_MAKEFILE) as fh:
-            makefile = fh.read()
+    def test_locked_profile_binary_builds_install_the_azure_runtime(self) -> None:
+        """Every frozen artifact must contain the locked Azure profile."""
+        makefile = _makefile_source()
         with open(_BUILD_WORKFLOW) as fh:
             workflow = fh.read()
 
         build_target = makefile.split("build-executable:", 1)[1].split("\n\n", 1)[0]
         linux_target = makefile.split("build-linux-executable:", 1)[1].split("\n\n", 1)[0]
 
-        assert "$(UV) run --frozen --extra azure pyinstaller gludd.spec" in build_target
-        assert "uv sync --frozen --extra azure" in linux_target
-        assert workflow.count("uv sync --frozen --extra azure") >= 2
-        azure_pyinstaller_commands = re.findall(
-            r"uv run --frozen --extra azure(?: --python 3\.12)? "
-            r"pyinstaller gludd\.spec",
-            workflow,
-        )
-        assert len(azure_pyinstaller_commands) >= 3
-        assert (
-            "uv run --frozen --extra azure --python 3.12 "
-            "pyinstaller gludd.spec"
-        ) in workflow
+        assert "DEPENDENCY_PROFILE_SET=build-azure" in build_target
+        assert "--set build-azure" in linux_target
+        assert workflow.count("--set build-azure") >= 3
+        assert workflow.count("uv run --no-sync") >= 3
+        assert "--extra azure" not in workflow

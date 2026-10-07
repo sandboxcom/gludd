@@ -266,7 +266,7 @@ class TestChatCliLanguageExpertCross:
     def test_language_detect_encoding_cli_produces_json(self, tmp_path):
         """``gludd language detect-encoding`` emits valid JSON consumable by chat."""
         test_file = tmp_path / "sample.txt"
-        test_file.write_bytes("Caf\u00e9".encode("utf-8"))
+        test_file.write_bytes("Caf\u00e9".encode())
 
         result = subprocess.run(
             [sys.executable, "-m", "general_ludd.cli", "language", "detect-encoding", str(test_file)],

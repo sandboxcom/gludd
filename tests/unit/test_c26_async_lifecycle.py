@@ -118,7 +118,11 @@ class TestShutdownLogAndReraise:
     must be logged, retained, and raised after the remaining owners drain."""
 
     DAEMON_PATH = (
-        Path(__file__).parent.parent.parent / "src" / "general_ludd" / "daemon.py"
+        Path(__file__).parent.parent.parent
+        / "src"
+        / "general_ludd"
+        / "daemon_components"
+        / "lifecycle.py"
     )
 
     def _scan_except_block(self, marker: str) -> tuple[bool, bool]:

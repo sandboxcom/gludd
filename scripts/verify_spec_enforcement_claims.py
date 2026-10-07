@@ -12,6 +12,13 @@ import re
 import sys
 from pathlib import Path
 
+try:
+    from scripts.behavioral_specs import load_behavioral_specs
+    from scripts.makefile_layout import compose_makefile
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from behavioral_specs import load_behavioral_specs
+    from makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_FILE = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
 MAKEFILE = ROOT / "Makefile"
@@ -19,7 +26,7 @@ MAKEFILE = ROOT / "Makefile"
 SPEC_RE = re.compile(r"^### (A[AB]\d{3}) — (.+)$", re.MULTILINE)
 ENFORCEMENT_RE = re.compile(r"\*\*Enforcement:\*\*\s*(.+)$", re.MULTILINE)
 FILE_REF_RE = re.compile(r"([a-zA-Z0-9_\-./]+\.(?:ts|py|sh|yml|yaml|json|js|mjs))")
-TARGET_REF_RE = re.compile(r"`(?:make\s+)?([a-zA-Z0-9_\-]+)`")
+TARGET_REF_RE = re.compile(r"`(?:make\s+)?([a-z_][a-zA-Z0-9_\-]*)`")
 
 
 def parse_specs(text: str) -> list[tuple[str, str, str]]:
@@ -59,7 +66,7 @@ class EnforcementClaims:
         if self._makefile_targets is None:
             targets = set()
             if MAKEFILE.exists():
-                for line in MAKEFILE.read_text().splitlines():
+                for line in compose_makefile(MAKEFILE).splitlines():
                     m = re.match(r"^([a-zA-Z0-9_\-]+):", line)
                     if m:
                         targets.add(m.group(1))
@@ -72,7 +79,7 @@ def main() -> int:
         print(f"ERROR: {SPECS_FILE} not found")
         return 1
 
-    text = SPECS_FILE.read_text(encoding="utf-8")
+    text = load_behavioral_specs(SPECS_FILE)
     specs = parse_specs(text)
     claims = EnforcementClaims()
 

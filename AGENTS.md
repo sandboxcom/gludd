@@ -2,20 +2,9 @@
 
 ## Make Target Selection Contract
 
-Before running project work, read `make help` and choose the narrowest matching
-target. Set every documented target variable explicitly; do not substitute a bare
-shell command. Each agent-facing target's variables and safe behavioral example are
-tracked in `config/make_target_contract.json`. Run `make check-make-target-contract`
-after changing a target, and run its documented behavioral example before claiming
-the target works. If no suitable target exists, add and test one first.
+Before running project work, read `make help` and choose the narrowest matching target. Set every documented target variable explicitly; do not substitute a bare shell command. Each agent-facing target's variables and safe behavioral example are tracked in `config/make_target_contract.json`. Run `make check-make-target-contract` after changing a target, and run its documented behavioral example before claiming the target works. If no suitable target exists, add and test one first.
 
-Active-work claims require auditable evidence. `make ps` reports Python test/audit
-processes and their PIDs; `make ps-gludd` reports only namespaced Gludd daemons and
-must not be used to infer that agent or audit work is idle. For delegated model work,
-report the agent name/status separately and never invent an OS PID. Use
-`make active-work-status` for a JSON snapshot with logical workstreams, parent/child
-PIDs, gate state, git hash, and open task IDs; its `agent_pids: false` field is
-intentional because model-agent turns are not OS processes.
+Active-work claims require auditable evidence. `make ps` reports Python test/audit processes and their PIDs; `make ps-gludd` reports only namespaced Gludd daemons and must not be used to infer that agent or audit work is idle. For delegated model work, report the agent name/status separately and never invent an OS PID. Use `make active-work-status` for a JSON snapshot with logical workstreams, parent/child PIDs, gate state, git hash, and open task IDs; its `agent_pids: false` field is intentional because model-agent turns are not OS processes.
 
 ## NO-PROMPT PROGRESS DIRECTIVE (READ FIRST)
 
@@ -31,8 +20,7 @@ The enforcement plugins mechanically prevent this:
 - **text.complete nag**: injects "DELEGATE-FIRST" into responses when streak exceeds 2
 - **agent_watchdog.py**: background daemon auto-resets streak every 60s as failsafe
 
-If independent multi-step work exists and you are not dispatching useful subagents,
-you are violating the contract. Simple one-read/one-edit work remains inline.
+If independent multi-step work exists and you are not dispatching useful subagents, you are violating the contract. Simple one-read/one-edit work remains inline.
 
 ## ⛔ COST-EFFICIENCY DIRECTIVE (READ FIRST — OVERRIDES ALL FLOOR RULES BELOW)
 
@@ -69,8 +57,7 @@ you are violating the contract. Simple one-read/one-edit work remains inline.
 
 ### Override precedence
 
-This directive OVERRIDES all higher mandatory-floor rules below. Historical rules
-do not override the adaptive minimum or the hard three-agent ceiling.
+This directive OVERRIDES all higher mandatory-floor rules below. Historical rules do not override the adaptive minimum or the hard three-agent ceiling.
 
 ### CRITICAL: Enhancement/Fix Dispatch Ratio
 
@@ -118,18 +105,11 @@ The `enforce-enhancement-ratio.ts` plugin mechanically enforces the ratio rule:
 ### The six rules
 
 1. **Every subagent MUST produce a concrete fix/deliverable.** A code change committed on a branch, a test file written, a config applied, a PR merged, a make target created — something that persists after the subagent returns. A bullet-point list of findings is NOT a deliverable. "I read 3 files and found 4 issues" is a FAILED subagent task.
-
 2. **"Check CI" subagents are FORBIDDEN.** The task must be "find AND fix the CI failure." A subagent that runs `make ci-verdict`, reports "CI is red, here are the failures," and returns has produced zero value — it consumed a slot to report information one read-only tool call could have returned. The correct subagent task: "Read the CI failure log, identify the root cause, fix the code, commit the fix on a branch, and return the commit hash."
-
 3. **"Audit lint/typecheck" subagents are FORBIDDEN.** The task must be "fix all lint and typecheck errors." Running `make lint` or `make typecheck` inside a subagent and returning the error list is a wasted slot — the orchestrator can run those in <1 second on the main thread. The correct subagent task: "Run `make lint` and `make typecheck`, fix every error found, run them again to confirm green, and return the commit hash."
-
 4. **"Check dirty tree" / "git status" subagents are FORBIDDEN.** `git status` is a read-only tool call that takes <0.1 seconds. Dispatching a subagent to run it burns a floor slot on an operation the orchestrator can do inline. Use the bash tool directly — never dispatch this.
-
 5. **Every subagent prompt MUST end with: "Do NOT just report problems. Fix them."** This is a mechanical prompt suffix — if the subagent receives a task that could be interpreted as "survey and report," this directive forces it to produce a fix instead. A subagent prompt without this suffix is a dispatch bug.
-
-6. **Status-check subagents are false concurrency.** They consume one of only
-   three slots but produce no deliverable. Never pad a wave to a configured
-   minimum; use fewer agents or work inline when fewer independent tasks exist.
+6. **Status-check subagents are false concurrency.** They consume one of only three slots but produce no deliverable. Never pad a wave to a configured minimum; use fewer agents or work inline when fewer independent tasks exist.
 
 ### Forbidden subagent task descriptions (dispatch prompt keywords — any match is a dispatch bug)
 
@@ -158,51 +138,26 @@ Read-only research subagents (e.g., "what does this library do?") that are expli
 
 ## CRITICAL: Single-Source Feature Development
 
-**Every feature, Makefile target, config change, or shared-infrastructure edit MUST
-land on exactly ONE branch first, then be merged/cherry-picked to other branches.
-Never create the same feature independently on two branches.**
+**Every feature, Makefile target, config change, or shared-infrastructure edit MUST land on exactly ONE branch first, then be merged/cherry-picked to other branches. Never create the same feature independently on two branches.**
 
 ### The incident (ci-await duplication, 2026-07-14)
 
-A Makefile target (`ci-await`) was independently created on both `master` and
-`development` by two different subagents working in parallel. When the branches
-merged, the Makefile had duplicate targets and merge conflicts. This is the
-classic "parallel independent development of the same thing" anti-pattern.
+A Makefile target (`ci-await`) was independently created on both `master` and `development` by two different subagents working in parallel. When the branches merged, the Makefile had duplicate targets and merge conflicts. This is the classic "parallel independent development of the same thing" anti-pattern.
 
 ### Rules (each is machine-enforced)
 
-1. **Features land on development first.** Create the feature on `development`,
-   commit, push, then merge `development→master`. Never create the same feature
-   on `master` and `development` independently.
-2. **Emergency fixes on master get backported.** If a fix is urgently needed on
-   `master`, create it there, then IMMEDIATELY cherry-pick or merge it to
-   `development`. The fix must exist on BOTH branches before any further
-   feature work lands on either.
-3. **Shared-infrastructure files are single-writer.** When a subagent is
-   modifying a Makefile, config file, or any shared infrastructure file
-   (Makefile, `opencode.json`, `AGENTS.md`, `.claude/settings.json`,
-   `config/*.yml`, `.github/workflows/*.yml`), it MUST record which branch
-   it is working on, and the orchestrator MUST NOT dispatch another agent to
-   modify the same file on a different branch.
-4. **No parallel Makefile edits on different branches.** Makefile targets,
-   config keys, and shared infrastructure MUST NOT be created independently
-   on both `master` and `development`. If a target is needed on both branches,
-   create it on one, merge it to the other.
-5. **Duplicate target detection at gate time.** `make check-duplicate-targets`
-   scans the Makefile for targets declared more than once. Duplicate targets
-   are a hard gate failure. This catches the ci-await class of bug before it
-   reaches a merge.
+1. **Features land on development first.** Create the feature on `development`, commit, push, then merge `development→master`. Never create the same feature on `master` and `development` independently.
+2. **Emergency fixes on master get backported.** If a fix is urgently needed on `master`, create it there, then IMMEDIATELY cherry-pick or merge it to `development`. The fix must exist on BOTH branches before any further feature work lands on either.
+3. **Shared-infrastructure files are single-writer.** When a subagent is modifying a Makefile, config file, or any shared infrastructure file (Makefile, `opencode.json`, `AGENTS.md`, `.claude/settings.json`, `config/*.yml`, `.github/workflows/*.yml`), it MUST record which branch it is working on, and the orchestrator MUST NOT dispatch another agent to modify the same file on a different branch.
+4. **No parallel Makefile edits on different branches.** Makefile targets, config keys, and shared infrastructure MUST NOT be created independently on both `master` and `development`. If a target is needed on both branches, create it on one, merge it to the other.
+5. **Duplicate target detection at gate time.** `make check-duplicate-targets` scans the Makefile for targets declared more than once. Duplicate targets are a hard gate failure. This catches the ci-await class of bug before it reaches a merge.
 
 ### Enforcement
 
-- **Script:** `scripts/check_duplicate_targets.py` — parses the Makefile,
-  extracts all target declarations (lines matching `^[a-zA-Z_-]+:.*` at
-  column 0), and flags any target that appears more than once. Exit 0 on
-  clean, exit 1 on duplicates found.
+- **Script:** `scripts/check_duplicate_targets.py` — parses the Makefile, extracts all target declarations (lines matching `^[a-zA-Z_-]+:.*` at column 0), and flags any target that appears more than once. Exit 0 on clean, exit 1 on duplicates found.
 - **Make target:** `make check-duplicate-targets` — runs the script.
 - **Gate:** `make gate` includes `check-duplicate-targets` as a prerequisite.
-- **Prompt:** this section — proactive instruction for every agent and
-  subagent reading AGENTS.md.
+- **Prompt:** this section — proactive instruction for every agent and subagent reading AGENTS.md.
 
 ### What this prevents
 
@@ -242,9 +197,7 @@ classic "parallel independent development of the same thing" anti-pattern.
 
 All enforcement plugins are BLOCKING and hot-reload capable via `shared.ts`. Zero advisory-only plugins remain.
 
-**enforce-tdd.ts (2026-07-17)** — the real-time TDD guardrail. Denies `edit`/`write` to `src/general_ludd/**/*.py` when no corresponding test file exists yet. Forces the test-first workflow mechanically: you cannot write implementation code until the test file is on disk. The candidate-test-path logic mirrors `scripts/check_tdd_compliance.py` exactly so the editor gate and the commit-time gate agree. Allowlist matches the script (`__init__.py`, `*.pyi`, `protocols.py`, `typing.py`, `type_defs.py`, `_types.py`). Disable via `GLUDD_TDD_ENFORCE=0`. Tests: `tests/unit/test_enforce_tdd_plugin.py` (structural, 18 cases) + `.opencode/plugin/enforce-tdd.test.node.mjs` (runtime behavioral, 16 cases — invokes the actual compiled hook).
-Runtime verification via `make test-hook-runtime` (52 functional tests across 8 plugins).
-Node v26 `--experimental-strip-types` compatibility verified: 0 `require()` calls, 2/2 compat checks PASS.
+**enforce-tdd.ts (2026-07-17)** — the real-time TDD guardrail. Denies `edit`/`write` to `src/general_ludd/**/*.py` when no corresponding test file exists yet. Forces the test-first workflow mechanically: you cannot write implementation code until the test file is on disk. The candidate-test-path logic mirrors `scripts/check_tdd_compliance.py` exactly so the editor gate and the commit-time gate agree. Allowlist matches the script (`__init__.py`, `*.pyi`, `protocols.py`, `typing.py`, `type_defs.py`, `_types.py`). Disable via `GLUDD_TDD_ENFORCE=0`. Tests: `tests/unit/test_enforce_tdd_plugin.py` (structural, 18 cases) + `.opencode/plugin/enforce-tdd.test.node.mjs` (runtime behavioral, 16 cases — invokes the actual compiled hook). Runtime verification via `make test-hook-runtime` (52 functional tests across 8 plugins). Node v26 `--experimental-strip-types` compatibility verified: 0 `require()` calls, 2/2 compat checks PASS.
 
 **Note:** Enforcement plugin changes take effect on opencode restart. During a session where plugin source was edited, behavioral enforcement may lag until restart.
 
@@ -258,40 +211,20 @@ After restart, verify enforcement is working by attempting a text-only response 
 
 ### 2026-07-15: enforce-stop.ts Disengage Bypass Fix
 
-**Bug:** `make disengage-enforcement` was bypassing ALL `text.complete` enforcement
-in `enforce-stop.ts`, including the fundamental `hasRealPendingWork()` text-only block.
-The disengage signal (written to `/tmp/gludd-watchdog-disengage`) caused the plugin to
-skip the check that blocks text-only responses when unchecked TASKS.md items, ratchet
-entries, red gate, or unreleased tags exist. Agents could respond with text-only
-summaries while work remained — the exact failure mode the plugin was built to prevent.
+**Bug:** `make disengage-enforcement` was bypassing ALL `text.complete` enforcement in `enforce-stop.ts`, including the fundamental `hasRealPendingWork()` text-only block. The disengage signal (written to `/tmp/gludd-watchdog-disengage`) caused the plugin to skip the check that blocks text-only responses when unchecked TASKS.md items, ratchet entries, red gate, or unreleased tags exist. Agents could respond with text-only summaries while work remained — the exact failure mode the plugin was built to prevent.
 
 **Fix (2026-07-15):**
-- Disengage now only skips **heuristic checks**: `COMPLETION_SMELL` patterns,
-  `COMPLETION_WORDS` detection, and `QA_RESPONSE_PATTERNS` matching.
-- The fundamental `hasRealPendingWork()` text-only block is **NEVER bypassed** by
-  disengage. Any text-only response while pending work exists is always blanked,
-  regardless of disengage state.
+- Disengage now only skips **heuristic checks**: `COMPLETION_SMELL` patterns, `COMPLETION_WORDS` detection, and `QA_RESPONSE_PATTERNS` matching.
+- The fundamental `hasRealPendingWork()` text-only block is **NEVER bypassed** by disengage. Any text-only response while pending work exists is always blanked, regardless of disengage state.
 
 **Additional fix — evidence regex narrowed:**
-- `enforce-verified-claims.ts` regex for commit-hash evidence narrowed from
-  `\b[0-9a-f]{7,40}\b` to `\b[0-9a-f]*[a-f][0-9a-f]{6,39}\b`. The old regex
-  matched pure-digit 7+-character strings (CI run numbers, timestamps, build IDs),
-  causing false-positive "evidence present" matches. The new regex requires at
-  least one hex letter (`[a-f]`), ensuring only actual git commit hashes match.
+- `enforce-verified-claims.ts` regex for commit-hash evidence narrowed from `\b[0-9a-f]{7,40}\b` to `\b[0-9a-f]*[a-f][0-9a-f]{6,39}\b`. The old regex matched pure-digit 7+-character strings (CI run numbers, timestamps, build IDs), causing false-positive "evidence present" matches. The new regex requires at least one hex letter (`[a-f]`), ensuring only actual git commit hashes match.
 
 ### 2026-07-15: enforce-session-start.ts isTaskFileRead Input Shape Fix
 
-**Bug:** `isTaskFileRead()` received an input object where the `path` field was
-not at the top level but nested inside a `tool_input` object. The function
-extracted `tool_call.path` directly, which was `undefined`, so no file read was
-ever recognized as a task-tracking file read. This caused the session-start
-protocol to block all initial tool calls — including reads of TASKS.md/BUGS.md/
-ratchet.yml/SESSION.md — defeating the protocol's own escape hatch.
+**Bug:** `isTaskFileRead()` received an input object where the `path` field was not at the top level but nested inside a `tool_input` object. The function extracted `tool_call.path` directly, which was `undefined`, so no file read was ever recognized as a task-tracking file read. This caused the session-start protocol to block all initial tool calls — including reads of TASKS.md/BUGS.md/ ratchet.yml/SESSION.md — defeating the protocol's own escape hatch.
 
-**Fix:** `isTaskFileRead()` now checks both `tool_call.path` and
-`tool_call.tool_input?.path` (the nested form), so file reads are correctly
-identified regardless of input shape. The session-start protocol now allows the
-initial parallel reads to proceed before enforcing the next-useful-action requirement.
+**Fix:** `isTaskFileRead()` now checks both `tool_call.path` and `tool_call.tool_input?.path` (the nested form), so file reads are correctly identified regardless of input shape. The session-start protocol now allows the initial parallel reads to proceed before enforcing the next-useful-action requirement.
 
 ### Subagent Enforcement Isolation
 
@@ -300,13 +233,9 @@ Enforcement plugins MUST NOT interfere with subagent tool calls or output. Subag
 **How isolation works:**
 
 1. **Env var detection**: Plugins check `process.env.OPENCODE_SUBAGENT === "1"` at the top of every hook. When true, the hook returns early (allow all).
-
 2. **File-based fallback**: If the env var is not set by the opencode framework, plugins check for `/tmp/gludd-subagent-${process.pid}.json` as a fallback detection mechanism.
-
 3. **Hot module isolation**: Hot-reload modules at `/tmp/gludd-hot-enforce-*.js` MUST include the subagent guard at the top of every exported hook function. Broken hot modules (ReferenceError) are automatically caught by `loadHotModule()` and the compiled-in `defaultImpl` (with guards) is used instead.
-
 4. **Verification**: `make test-hook-runtime` includes tests that verify subagent context skips enforcement. `make verify-plugin-manifest` checks that every plugin has the subagent guard.
-
 5. **When enforcement leaks into subagents**:
    - Check `/tmp/gludd-hot-enforce-*.js` — stale/broken hot modules can bypass compiled-in guards
    - Run `make hot-reload-plugins` to rebuild hot modules with current guards
@@ -356,8 +285,7 @@ The state-file pattern is the canonical mechanism for runtime enforcement tuning
    - `/tmp/**` (all of `/tmp`, not just `/tmp/gludd-*` session state files)
    - `/Users/shawnwilson/.config/opencode/**` (opencode config directory)
    - `/Users/shawnwilson/.local/share/opencode/**` (opencode data — conversation DB, tool output cache)
-   - `/Users/shawnwilson/.cache/**` (pre-commit hooks, uv cache, build tool caches)
-   Everything else is out of bounds.
+   - `/Users/shawnwilson/.cache/**` (pre-commit hooks, uv cache, build tool caches) Everything else is out of bounds.
 2. **Applies to ALL file tools:** Read, Write, Edit, Glob (`path` parameter), Grep (`path` parameter). A glob/grep with an external `path` is the same violation as an external read.
 3. **Applies to subagents.** Every dispatched subagent inherits this restriction; subagent prompts that reference external paths are a dispatch bug.
 4. **No exceptions for "just reading."** Reading `~/.ssh/...`, `~/.aws/...`, `~/.gnupg/...`, `~/Documents/...`, `~/Desktop/...`, `/etc/...`, another repo, or ANY home-directory file outside the workspace and the opencode config dir prompts the user and blocks work. If external content is genuinely needed, request a make target or ask the user — do not attempt the access.
@@ -376,9 +304,7 @@ The state-file pattern is the canonical mechanism for runtime enforcement tuning
 Before generating ANY character of text, you MUST answer these questions:
 
 1. **Is there pending work?** Check TASKS.md for unchecked items. Check config/ratchet.yml for entries. If either has content, pending work EXISTS.
-
 2. **Does this response include a tool call?** You MUST include a tool call (Read, Write, Edit, Bash, Grep, Glob, Task, Skill) in EVERY response when work is pending.
-
 3. **Am I about to send a text-only summary?** If yes AND work is pending, DELETE the text and replace it with a tool call. Text-only summaries with pending work are silently erased before reaching the user.
 
 ### Self-Check Protocol
@@ -498,11 +424,7 @@ NOTE: `make test-failures` previously masked collection ERRORs by grepping only 
 
 ## CRITICAL: "Done" Claims Require Observable Verification Evidence
 
-A feature, fix, commit, push, or release is "done" ONLY when the SAME message pastes
-the MEASUREMENT that makes it observable. NEVER write done / landed / shipped /
-deployed / released / resolved / fixed / working / complete / successful / ✅ unless
-it is accompanied by a cited, machine-produced measurement. "I wrote the
-code/workflow" is NOT done — authorship is not verification.
+A feature, fix, commit, push, or release is "done" ONLY when the SAME message pastes the MEASUREMENT that makes it observable. NEVER write done / landed / shipped / deployed / released / resolved / fixed / working / complete / successful / ✅ unless it is accompanied by a cited, machine-produced measurement. "I wrote the code/workflow" is NOT done — authorship is not verification.
 
 | Scope | Required measurement |
 |---|---|
@@ -513,64 +435,31 @@ code/workflow" is NOT done — authorship is not verification.
 | CI-green | `make ci-verdict BRANCH=<b>` → `conclusion: success` + headSha == branch tip |
 | Shipped / released | `make verify-release-completeness TAG=<t>` PASS + `gh release view` showing isDraft:false + download URL(s). (`verify-release-artifact` is NOT the gate — it only proves "non-draft + ≥1 asset".) |
 
-An unverified "done" is indistinguishable from a false claim — this project's history
-(false alpha.3 ship, 12 confirmed-inert features, the reviewer silently failing, the
-tool-call loop dead in prod, and a release pipeline reported "✅ Landed" while it was
-uncommitted/unpushed/never-run) proves it. A cited-but-STALE measurement (CI headSha
-!= branch tip; `.gate-status` older than the last edit) is ALSO a false claim.
+An unverified "done" is indistinguishable from a false claim — this project's history (false alpha.3 ship, 12 confirmed-inert features, the reviewer silently failing, the tool-call loop dead in prod, and a release pipeline reported "✅ Landed" while it was uncommitted/unpushed/never-run) proves it. A cited-but-STALE measurement (CI headSha != branch tip; `.gate-status` older than the last edit) is ALSO a false claim.
 
-ENFORCED IN CODE: `.claude/hooks/no_false_completion_stop.sh` (Stop hook) blocks a turn
-that ends on a completion claim carrying no evidence token and no honest hedge
-(`GLUDD_FALSE_DONE_ENFORCE=1`; proof: `make test-no-false-completion`). Mirrors
-Mechanical Contract rule 3 and "A Release is an Artifact, Not a Tag".
-Enforced in opencode by `.opencode/plugin/enforce-stop.ts` (false-done claim detection + stop-pattern block); mirrors `.claude/hooks/no_false_completion_stop.sh`.
-Additionally enforced by `.opencode/plugin/enforce-verified-claims.ts` (`text.complete` hook) — structurally blocks ANY outgoing text containing done-words ("landed", "committed", "pushed", "fixed", "passing", "shipped", "done", "complete", "green", "resolved", "deployed", "verified", "passed", "working") unless it also carries machine-produced evidence (commit hash, `VERIFIED <branch>@<sha>`, `CI GREEN|RED|PENDING`, `N passed`, `=== GATE: PASSED ===`, `Collection OK`). Fail-open; `GLUDD_VERIFIED_CLAIMS_ENFORCE=0` disables. Proof: `make test TESTFILE=tests/unit/test_verified_claims_plugin.py` (23 tests).
+ENFORCED IN CODE: `.claude/hooks/no_false_completion_stop.sh` (Stop hook) blocks a turn that ends on a completion claim carrying no evidence token and no honest hedge (`GLUDD_FALSE_DONE_ENFORCE=1`; proof: `make test-no-false-completion`). Mirrors Mechanical Contract rule 3 and "A Release is an Artifact, Not a Tag". Enforced in opencode by `.opencode/plugin/enforce-stop.ts` (false-done claim detection + stop-pattern block); mirrors `.claude/hooks/no_false_completion_stop.sh`. Additionally enforced by `.opencode/plugin/enforce-verified-claims.ts` (`text.complete` hook) — structurally blocks ANY outgoing text containing done-words ("landed", "committed", "pushed", "fixed", "passing", "shipped", "done", "complete", "green", "resolved", "deployed", "verified", "passed", "working") unless it also carries machine-produced evidence (commit hash, `VERIFIED <branch>@<sha>`, `CI GREEN|RED|PENDING`, `N passed`, `=== GATE: PASSED ===`, `Collection OK`). Fail-open; `GLUDD_VERIFIED_CLAIMS_ENFORCE=0` disables. Proof: `make test TESTFILE=tests/unit/test_verified_claims_plugin.py` (23 tests).
 
 ## No Unseen Events (observability invariant)
 
-**"If an event happens and no one can see it, it is not an event."** This was a
-direct user mandate (2026-06-15) after a `make gate` ran silently for 16 minutes
-(test output buffered to a temp file) and a CI poller slept without a heartbeat —
-both looked hung when they were working. Unobservable ≠ acceptable.
+**"If an event happens and no one can see it, it is not an event."** This was a direct user mandate (2026-06-15) after a `make gate` ran silently for 16 minutes (test output buffered to a temp file) and a CI poller slept without a heartbeat — both looked hung when they were working. Unobservable ≠ acceptable.
 
-Binding rules for any operation in this repo's tooling or daemon that runs longer
-than a few seconds:
+Binding rules for any operation in this repo's tooling or daemon that runs longer than a few seconds:
 
-1. **Stream or heartbeat — never go dark.** Long output must `tee` to stdout; a
-   multi-phase job must print a marker as each phase starts; a poll/wait loop must
-   print a timestamped heartbeat every cycle. A bare `> /dev/null 2>&1` or
-   `> file 2>&1` on a long operation is forbidden.
-2. **Backgrounded ≠ invisible.** When work is moved to a background task, it must
-   still emit progress to its output stream so the launcher can observe it. Do not
-   launch a silent background task and report "it's running."
-3. **Failures must surface their cause.** On failure, tail/print the captured log
-   (see the gate `smoke` phase) — never swallow it.
-4. **Daemon background work emits events.** Daemon-side background jobs (event
-   loop ticks, A/B runs, scheduled tasks) must publish to the message queue /
-   metrics / structured logs so they are observable via `/api/facts`, not silent.
+1. **Stream or heartbeat — never go dark.** Long output must `tee` to stdout; a multi-phase job must print a marker as each phase starts; a poll/wait loop must print a timestamped heartbeat every cycle. A bare `> /dev/null 2>&1` or `> file 2>&1` on a long operation is forbidden.
+2. **Backgrounded ≠ invisible.** When work is moved to a background task, it must still emit progress to its output stream so the launcher can observe it. Do not launch a silent background task and report "it's running."
+3. **Failures must surface their cause.** On failure, tail/print the captured log (see the gate `smoke` phase) — never swallow it.
+4. **Daemon background work emits events.** Daemon-side background jobs (event loop ticks, A/B runs, scheduled tasks) must publish to the message queue / metrics / structured logs so they are observable via `/api/facts`, not silent.
 
-Enforced for tooling by `tests/unit/test_observability_guardrails.py`. Agent
-behavioral mirror: never go silent while the user is waiting — check in the
-foreground and report real state rather than launching a silent task and waiting.
+Enforced for tooling by `tests/unit/test_observability_guardrails.py`. Agent behavioral mirror: never go silent while the user is waiting — check in the foreground and report real state rather than launching a silent task and waiting.
 
-**CRITICAL: Always provide a visual status update.** Every response MUST produce
-visible output that opencode promotes to the UI. If you go silent for more than
-a few seconds without a tool call or status text, the user cannot tell whether
-work is progressing or has stalled — and a stalled-looking session WILL be
-interrupted. Specifically:
+**CRITICAL: Always provide a visual status update.** Every response MUST produce visible output that opencode promotes to the UI. If you go silent for more than a few seconds without a tool call or status text, the user cannot tell whether work is progressing or has stalled — and a stalled-looking session WILL be interrupted. Specifically:
 
 - Between tool calls, output a 1-line status of what you're doing.
-- For long-running operations (gate, build, test suite), stream output via `tee`
-  or dispatch to a subagent that reports back — never run a 40-minute operation
-  silently in the foreground.
+- For long-running operations (gate, build, test suite), stream output via `tee` or dispatch to a subagent that reports back — never run a 40-minute operation silently in the foreground.
 - If you are thinking/planning, say so in one line before the next tool call.
-- If work is blocked, state the blocker and the workaround being attempted —
-  do NOT present options and ask "which do you want?" (that is the stop-and-ask
-  bug, blocked by `enforce-stop.ts` as of 2026-06-22).
+- If work is blocked, state the blocker and the workaround being attempted — do NOT present options and ask "which do you want?" (that is the stop-and-ask bug, blocked by `enforce-stop.ts` as of 2026-06-22).
 
-A response with NO visible output is indistinguishable from a hung session. The
-user will stop the work and ask "what are you working on?" — and that is YOUR
-bug, not theirs.
+A response with NO visible output is indistinguishable from a hung session. The user will stop the work and ask "what are you working on?" — and that is YOUR bug, not theirs.
 
 ---
 
@@ -599,15 +488,13 @@ This is the antidote to the recurring failure mode where the agent answers the f
 
 ### The two-step first action (MANDATORY)
 
-**STEP 1 (FIRST tool-call message of the session): read the task backlog in parallel.**
-In ONE message, dispatch these four reads concurrently:
+**STEP 1 (FIRST tool-call message of the session): read the task backlog in parallel.** In ONE message, dispatch these four reads concurrently:
 - `TASKS.md` — current task ledger
 - `BUGS.md` — premature-stop incidents + process failures
 - `config/ratchet.yml` — known-unfixed work (if this file has ANY entries, the project has pending work)
 - `SESSION.md` — last session's state, known gaps, next steps
 
-**STEP 2 (SECOND tool-call message): identify pending work and right-size ownership.**
-From the backlog reads, identify independent deliverables and dispatch only the useful owners, from zero through three. Keep coupled single-file work inline. The assessment or useful dispatch wave is the deliverable of turn 1 — not a status report or Q&A recap.
+**STEP 2 (SECOND tool-call message): identify pending work and right-size ownership.** From the backlog reads, identify independent deliverables and dispatch only the useful owners, from zero through three. Keep coupled single-file work inline. The assessment or useful dispatch wave is the deliverable of turn 1 — not a status report or Q&A recap.
 
 ### What is FORBIDDEN on turn 1
 
@@ -628,20 +515,14 @@ If the user's first message is a single specific question that does not imply co
 
 ## CRITICAL: Continuous Multitasking Enforcement (During-Run)
 
-The session-start contract gets turn 1 right. During the run, delegation remains
-adaptive and the hard ceiling remains three. Broad independent work should refill
-useful slots; focused single-file work must not manufacture filler agents.
+The session-start contract gets turn 1 right. During the run, delegation remains adaptive and the hard ceiling remains three. Broad independent work should refill useful slots; focused single-file work must not manufacture filler agents.
 
-1. **Three is a hard ceiling, not an unconditional floor.** A configured floor is
-   enforced by `.opencode/plugin/enforce-floor.ts`, but unconfigured simple work may
-   remain inline. Every override is clamped by `HARD_MAX_DISPATCHES=3`.
+1. **Three is a hard ceiling, not an unconditional floor.** A configured floor is enforced by `.opencode/plugin/enforce-floor.ts`, but unconfigured simple work may remain inline. Every override is clamped by `HARD_MAX_DISPATCHES=3`.
 2. **The session-start gate is also default ON.** The first mutating tool call of a session is denied until at least one task-tracking file (`TASKS.md` / `BUGS.md` / `config/ratchet.yml` / `SESSION.md`) has been read. Set `GLUDD_SESSION_START_ENFORCE=0` to disable.
 3. **Message-shape rule (configured floor only).** With a configured floor of two or three, a dispatch wave must meet that minimum in one response. With the default floor of zero, a single useful dispatch is valid and must not be padded.
-4. **Do not fill thin waves.** Read-only status work does not become valuable merely
-   because a slot is open. Dispatch only independent work with a concrete deliverable.
+4. **Do not fill thin waves.** Read-only status work does not become valuable merely because a slot is open. Dispatch only independent work with a concrete deliverable.
 5. **Main-thread grind protection is opt-in with the floor.** When a nonzero floor is configured, repeated main-thread mutations may trigger a delegation block. At the default zero floor, focused inline ownership remains valid.
-6. **Refill only useful work.** When an independent deliverable remains, reuse the
-   available slot; otherwise leave it idle and continue focused work.
+6. **Refill only useful work.** When an independent deliverable remains, reuse the available slot; otherwise leave it idle and continue focused work.
 
 ### Pre-Dispatch Self-Check (MECHANICAL — run before sending EVERY message with tool calls)
 
@@ -730,9 +611,7 @@ Examples of overriding instructions:
 - "codify a process to do X" → codify X immediately, do not start other features
 - "correct your code so that..." → fix your code NOW, not later
 
-DO NOT do both simultaneously if the instruction says "first" or "before".
-DO NOT start a new feature before fixing the thing the user just complained about.
-DO NOT continue your own plan when the user redirects you.
+DO NOT do both simultaneously if the instruction says "first" or "before". DO NOT start a new feature before fixing the thing the user just complained about. DO NOT continue your own plan when the user redirects you.
 
 Cop behavior patterns that trigger this (DO NOT DO THESE):
 - "X passed, Y failed, Z skipped — committed" as final message
@@ -744,21 +623,16 @@ Cop behavior patterns that trigger this (DO NOT DO THESE):
 - Any response listing 3+ gaps/issues and ending with a question
 - Any message ending in "Done." with pending todos
 
-CORRECT: If asked for status, respond briefly (1-2 lines) then IMMEDIATELY make a tool call.
-CORRECT: After committing, immediately start the next pending task.
-CORRECT: Never send text without also continuing work via a tool call.
+CORRECT: If asked for status, respond briefly (1-2 lines) then IMMEDIATELY make a tool call. CORRECT: After committing, immediately start the next pending task. CORRECT: Never send text without also continuing work via a tool call.
 
 ## CRITICAL: Premature-Stop Audit Policy
 
 **At the start of EVERY session, before doing any other work, you MUST:**
 
 1. **Read `BUGS.md`** at the project root. This file tracks all premature-stop incidents.
-2. **Audit your own previous session** for premature stops by reading SESSION.md and
-   cross-referencing the "Next Steps" section. If Next Steps contains items that existed
-   before the last commit, you stopped prematurely.
+2. **Audit your own previous session** for premature stops by reading SESSION.md and cross-referencing the "Next Steps" section. If Next Steps contains items that existed before the last commit, you stopped prematurely.
 3. **Fix the root cause guardrail** before continuing with any project work.
-4. **Log the incident** in `BUGS.md` with: date, what you stopped before finishing,
-   why the guardrail failed, and what you fixed.
+4. **Log the incident** in `BUGS.md` with: date, what you stopped before finishing, why the guardrail failed, and what you fixed.
 
 **A premature stop is ANY session exit where:**
 - Your todo list had items in `pending` or `in_progress` state.
@@ -767,8 +641,7 @@ CORRECT: Never send text without also continuing work via a tool call.
 - You asked "should I continue?" or equivalent.
 - You listed remaining work and stopped without completing it.
 
-**Every premature stop is a BUG.** Bugs in your own process are no different from bugs
-in code — they must be tracked, root-caused, and fixed before moving on.
+**Every premature stop is a BUG.** Bugs in your own process are no different from bugs in code — they must be tracked, root-caused, and fixed before moving on.
 
 **Root cause categories to check:**
 - Missing or weak guardrail (plugin hook doesn't detect the stop pattern)
@@ -785,9 +658,7 @@ in code — they must be tracked, root-caused, and fixed before moving on.
 
 ## CRITICAL: Mechanical Stop Prevention (10-Signal Binary Latch)
 
-**The enforcement plugins use a BINARY LATCH to detect pending work.** Any single
-signal triggers `hasRealPendingWork() = true`, which mechanically blanks ALL
-text-only responses. No scoring, no threshold, no way to "check enough boxes."
+**The enforcement plugins use a BINARY LATCH to detect pending work.** Any single signal triggers `hasRealPendingWork() = true`, which mechanically blanks ALL text-only responses. No scoring, no threshold, no way to "check enough boxes."
 
 ### The signals (any one true === pending work)
 
@@ -828,17 +699,12 @@ text-only responses. No scoring, no threshold, no way to "check enough boxes."
 
 **You MUST complete ALL requested work before stopping. No exceptions.**
 
-1. If given a sprint, objective list, or multi-step task, work through EVERY
-   step until all are complete or genuinely blocked.
-2. Do NOT stop early to report status. Do NOT pause to ask if the user wants
-   you to continue when instructions were explicit.
-3. Do NOT treat infrastructure/tooling setup as the deliverable. Guardrails,
-   hooks, and make targets exist to support the real work.
-4. Do NOT get sidetracked. If you catch yourself spending time on something
-   that is not the requested work, refocus immediately.
+1. If given a sprint, objective list, or multi-step task, work through EVERY step until all are complete or genuinely blocked.
+2. Do NOT stop early to report status. Do NOT pause to ask if the user wants you to continue when instructions were explicit.
+3. Do NOT treat infrastructure/tooling setup as the deliverable. Guardrails, hooks, and make targets exist to support the real work.
+4. Do NOT get sidetracked. If you catch yourself spending time on something that is not the requested work, refocus immediately.
 5. After completing one objective, immediately start the next. No victory laps.
-6. Only stop when ALL objectives are complete or you hit a hard blocker you
-   cannot fix (missing credentials, environment you cannot change).
+6. Only stop when ALL objectives are complete or you hit a hard blocker you cannot fix (missing credentials, environment you cannot change).
 
 **Anti-Stop Patterns — EVERY ONE of these is a policy violation:**
 - Listing remaining tasks and asking "Want me to proceed?" or "What priority?"
@@ -855,24 +721,13 @@ text-only responses. No scoring, no threshold, no way to "check enough boxes."
 - **"Let me check what's left" / "Let me see what remains"** — pausing at a status preamble instead of continuing scoped work. Read the task evidence directly, then work inline or assign up to three concrete independent owners according to task shape. The phrase structure "let me [check/see/look/survey] what's [left/remaining/pending]" is a stop pattern only when it substitutes for the next useful tool action.
 - **Q&A-style summary as terminal response** — framing the final message as a recap with bolded question headers ("**What changed?**", "**Why?**", "**What's left?**") is the same violation as a markdown status table. A recap with no tool call is a premature stop regardless of phrasing. If anything is uncommitted, unpushed, or stale (README version mismatch, TASKS.md missing rows, .secrets.baseline churn, remote tip behind local), the response MUST be a tool call, never prose — even prose that "answers the user's question."
 
-**The ONLY valid response to identifying work that needs to be done is to DO IT.**
-Never ask. Never wait. Just do the work. If the user wants you to stop,
-THEY will tell you. Until then, keep working.
+**The ONLY valid response to identifying work that needs to be done is to DO IT.** Never ask. Never wait. Just do the work. If the user wants you to stop, THEY will tell you. Until then, keep working.
 
-**"Low priority" does NOT mean "skip it."** If an item is in the todo list
-with status `pending`, it MUST be done. Priority only determines ORDER, not
-whether the work happens. The only valid terminal states are `completed` or
-`cancelled`. A `pending` item is unfinished work, period.
+**"Low priority" does NOT mean "skip it."** If an item is in the todo list with status `pending`, it MUST be done. Priority only determines ORDER, not whether the work happens. The only valid terminal states are `completed` or `cancelled`. A `pending` item is unfinished work, period.
 
-**When asked for status:** Answer briefly, then RESUME WORK immediately.
-Do not ask for permission. Do not wait for acknowledgment.
+**When asked for status:** Answer briefly, then RESUME WORK immediately. Do not ask for permission. Do not wait for acknowledgment.
 
-**Self-Directed Work Rule: When you identify a gap, bug, or missing
-integration while working, you MUST fix it immediately. Do NOT stop to ask
-the user whether to proceed. Do NOT list the gap and wait for approval.
-If you found it, you own it. Fix it, test it, commit it, then continue
-with the original task. The only exception is if fixing it would require
-credentials, payment, or environment changes you cannot make.**
+**Self-Directed Work Rule: When you identify a gap, bug, or missing integration while working, you MUST fix it immediately. Do NOT stop to ask the user whether to proceed. Do NOT list the gap and wait for approval. If you found it, you own it. Fix it, test it, commit it, then continue with the original task. The only exception is if fixing it would require credentials, payment, or environment changes you cannot make.**
 
 This is enforced by:
 - `.opencode/plugin/enforce-make.ts` — injects completion policy into system prompt
@@ -955,162 +810,83 @@ This is enforced by:
 
 ## CRITICAL: Nothing-Dropped Guardrail
 
-**Every parallel subagent result MUST be codified BEFORE the agent sends a
-terminal response.** Codified means one of: committed, ticked completed in
-`todowrite`, OR explicitly cancelled-with-reason. The pattern of "dispatch N
-agents → get N results → write summary" is a **bug** — the summary itself is
-NOT the deliverable, and any dispatched work that is not codified is dropped.
+**Every parallel subagent result MUST be codified BEFORE the agent sends a terminal response.** Codified means one of: committed, ticked completed in `todowrite`, OR explicitly cancelled-with-reason. The pattern of "dispatch N agents → get N results → write summary" is a **bug** — the summary itself is NOT the deliverable, and any dispatched work that is not codified is dropped.
 
-This was a recurring incident (2026-06-22 et seq): the agent dispatched a
-6-wide wave, received 6 results, then sent a prose recap. None of the results
-were committed, none were ticked in `todowrite`, none were cancelled — the
-work evaporated at session end. The user had to ask "are you codifying all of
-these efforts?" — that question is itself a bug report.
+This was a recurring incident (2026-06-22 et seq): the agent dispatched a 6-wide wave, received 6 results, then sent a prose recap. None of the results were committed, none were ticked in `todowrite`, none were cancelled — the work evaporated at session end. The user had to ask "are you codifying all of these efforts?" — that question is itself a bug report.
 
-**Enforced by `.opencode/plugin/enforce-stop.ts`** (previously documented as
-`enforce-todos.ts`, which was merged into `enforce-stop.ts`):
+**Enforced by `.opencode/plugin/enforce-stop.ts`** (previously documented as `enforce-todos.ts`, which was merged into `enforce-stop.ts`):
 
-1. **`tool.execute.before`** — the **commit block** (DEFAULT ON via
-   `GLUDD_TODO_GUARD_ENFORCE !== "0"`). When a commit-shaped `make` target
-   (`git-commit`, `commit-no-verify`, `repo-commit`, `ship-commit`,
-   `git-commit-file`, `commit-bootstrap`, `test-and-commit`) runs while
-   pending `todowrite` items exist AND those items are neither referenced in
-   the commit message (`MSG=`) nor addressed by a staged `TASKS.md` update,
-   the commit is DENIED with guidance. The agent must either complete the
-   items, cancel them with a reason, or stage a `TASKS.md` update referencing
-   each one.
-
-2. **`session.idle`** — when an active `todowrite` list has `pending` or
-   `in_progress` items and the session goes idle, a loud `⛔ NOTHING-DROPPED
-   GUARDRAIL` directive is injected telling the agent to resume work.
-   (Note: the former `chat.response.transform` surface was replaced by
-   `session.idle` + `text.complete` per Q3.12.)
+1. **`tool.execute.before`** — the **commit block** (DEFAULT ON via `GLUDD_TODO_GUARD_ENFORCE !== "0"`). When a commit-shaped `make` target (`git-commit`, `commit-no-verify`, `repo-commit`, `ship-commit`, `git-commit-file`, `commit-bootstrap`, `test-and-commit`) runs while pending `todowrite` items exist AND those items are neither referenced in the commit message (`MSG=`) nor addressed by a staged `TASKS.md` update, the commit is DENIED with guidance. The agent must either complete the items, cancel them with a reason, or stage a `TASKS.md` update referencing each one.
+2. **`session.idle`** — when an active `todowrite` list has `pending` or `in_progress` items and the session goes idle, a loud `⛔ NOTHING-DROPPED GUARDRAIL` directive is injected telling the agent to resume work. (Note: the former `chat.response.transform` surface was replaced by `session.idle` + `text.complete` per Q3.12.)
 
 **Opt-outs (never the default):**
 
-- `GLUDD_TODO_GUARD_ENFORCE=0` — makes the plugin advisory-only (directive
-  prepended, no commit block). Use only for focused single-file sessions.
-- `GLUDD_TODO_GUARD_BYPASS=1` — emergency hotfix escape hatch; skips the
-  commit block for a single commit. Documented but never the default.
+- `GLUDD_TODO_GUARD_ENFORCE=0` — makes the plugin advisory-only (directive prepended, no commit block). Use only for focused single-file sessions.
+- `GLUDD_TODO_GUARD_BYPASS=1` — emergency hotfix escape hatch; skips the commit block for a single commit. Documented but never the default.
 
-**The rule, restated:** a subagent result is not "done" when the agent reads
-it — it is done when it is COMMITTED (or explicitly cancelled with a reason
-recorded in `todowrite`). A summary message is never a substitute for
-codification.
+**The rule, restated:** a subagent result is not "done" when the agent reads it — it is done when it is COMMITTED (or explicitly cancelled with a reason recorded in `todowrite`). A summary message is never a substitute for codification.
 
 This is enforced by:
-- `.opencode/plugin/enforce-stop.ts` — tool.execute.before commit block +
-  session.idle guardrail (formerly enforce-todos.ts, merged into enforce-stop.ts)
+- `.opencode/plugin/enforce-stop.ts` — tool.execute.before commit block + session.idle guardrail (formerly enforce-todos.ts, merged into enforce-stop.ts)
 - `tests/unit/test_todo_guard_plugin.py` — structural + behavioral pin
 - This AGENTS.md section — proactive instruction
 
 ## CRITICAL: Human Permission Subjects + Intersection Policy
 
-**Human users carry a `PermissionSpec` just like agents.** Defaults ship in
-`config/permissions/human-admin.yml`, `human-operator.yml`, `human-viewer.yml`.
-The daemon config `default_human_role` (default `human-operator`) selects the
-applied spec when no per-user override exists.
+**Human users carry a `PermissionSpec` just like agents.** Defaults ship in `config/permissions/human-admin.yml`, `human-operator.yml`, `human-viewer.yml`. The daemon config `default_human_role` (default `human-operator`) selects the applied spec when no per-user override exists.
 
-**Intersection rule.** When an agent dispatches a subagent, the effective
-permission is the INTERSECTION (lowest-common-subset):
+**Intersection rule.** When an agent dispatches a subagent, the effective permission is the INTERSECTION (lowest-common-subset):
 
     effective_spec = intersection(human_spec, agent_spec, requested_spec)
 
-Narrowest path-prefix wins; allowed-hosts set-intersected; denied lists
-unioned; TTL is the min. No entity ever exercises a permission outside its own
-spec — intersection only narrows.
+Narrowest path-prefix wins; allowed-hosts set-intersected; denied lists unioned; TTL is the min. No entity ever exercises a permission outside its own spec — intersection only narrows.
 
-**Escalation requests.** An agent may REQUEST additional permissions via
-`POST /admin/perm/escalation-request` ONLY after documenting ≥3 distinct
-alternatives it tried (`alternatives_tried` with `{approach, outcome}` entries).
-Fewer than 3 → 422.
+**Escalation requests.** An agent may REQUEST additional permissions via `POST /admin/perm/escalation-request` ONLY after documenting ≥3 distinct alternatives it tried (`alternatives_tried` with `{approach, outcome}` entries). Fewer than 3 → 422.
 
-**Auto-approval.** Requests within the human ∩ agent intersection are
-auto-approved (the agent is asking for something it would have had but for an
-overly-narrow intersection).
+**Auto-approval.** Requests within the human ∩ agent intersection are auto-approved (the agent is asking for something it would have had but for an overly-narrow intersection).
 
-**Outside-intersection requests.** `pending` → surfaced to the human via a
-`HumanTodo` (`category=permission_escalation`). Human resolves via
-`gludd perm escalations {approve|deny}`. Approval mints an STS scoped to
-`(current + requested) ∩ human_spec` — humans cannot grant more than they have.
+**Outside-intersection requests.** `pending` → surfaced to the human via a `HumanTodo` (`category=permission_escalation`). Human resolves via `gludd perm escalations {approve|deny}`. Approval mints an STS scoped to `(current + requested) ∩ human_spec` — humans cannot grant more than they have.
 
-Enforced by: this section (proactive), the daemon intersection evaluator, and
-the escalation request validator (`tests/unit/test_permission_intersection.py`).
+Enforced by: this section (proactive), the daemon intersection evaluator, and the escalation request validator (`tests/unit/test_permission_intersection.py`).
 
 ## CRITICAL: Human Todo System (bot→human task requests)
 
-**Agents communicate task-blockers to humans via `HumanTodo` records — NOT
-logs, NOT event errors, NOT agent todos.** A log line is not a request; a
-`HumanTodo` is.
+**Agents communicate task-blockers to humans via `HumanTodo` records — NOT logs, NOT event errors, NOT agent todos.** A log line is not a request; a `HumanTodo` is.
 
-**Use cases:** permission escalation requests, external actions ("create an AWS
-account"), decisions ("which of these 3 designs?"), input requests ("paste the
-API token"), generic blockers.
+**Use cases:** permission escalation requests, external actions ("create an AWS account"), decisions ("which of these 3 designs?"), input requests ("paste the API token"), generic blockers.
 
-**Filing.** Use the `general_ludd.agent.gludd_human_todo` ansible module or
-`POST /api/human-todos`.
+**Filing.** Use the `general_ludd.agent.gludd_human_todo` ansible module or `POST /api/human-todos`.
 
-**Parent linkage.** When a human-todo has `parent_agent_todo_id`, the parent
-agent todo transitions to `blocked_on_human` (non-runnable) until the human
-resolves it.
+**Parent linkage.** When a human-todo has `parent_agent_todo_id`, the parent agent todo transitions to `blocked_on_human` (non-runnable) until the human resolves it.
 
-- On `done`: parent → `pending`, agent resumes with the human's
-  `human_resolution` text injected as `human_input`.
-- On `dismissed`: parent cancelled, OR requeued with the dismissal reason so
-  the agent can try a different approach.
+- On `done`: parent → `pending`, agent resumes with the human's `human_resolution` text injected as `human_input`.
+- On `dismissed`: parent cancelled, OR requeued with the dismissal reason so the agent can try a different approach.
 
 **CLI:** `gludd human-todo {list|show|done|dismiss|in-progress|comment|watch|stats}`.
 
-**Distinct from:** `TodoModel` (agent-assigned tasks), event log (system
-occurrences), audit log (security decisions). Don't conflate them.
+**Distinct from:** `TodoModel` (agent-assigned tasks), event log (system occurrences), audit log (security decisions). Don't conflate them.
 
-Enforced by: this section (proactive), the `HumanTodo` model + daemon route,
-and `tests/unit/test_human_todo_*`.
+Enforced by: this section (proactive), the `HumanTodo` model + daemon route, and `tests/unit/test_human_todo_*`.
 
 ## CRITICAL: Don't Block Projects on Stalled Tasks
 
-**The remediation system exists to keep projects moving.** Every blocked task
-older than its threshold triggers an action (`dispatch_agent` /
-`schedule_retry` / `file_human_todo`) so a project never silently stalls on
-a forgotten blocker. The system runs on an hourly schedule and is also
-invokable on demand.
+**The remediation system exists to keep projects moving.** Every blocked task older than its threshold triggers an action (`dispatch_agent` / `schedule_retry` / `file_human_todo`) so a project never silently stalls on a forgotten blocker. The system runs on an hourly schedule and is also invokable on demand.
 
-**Detection (read-only).** `BlockerDetector.scan()` returns a `BlockedTask`
-finding for every todo past its per-category threshold:
+**Detection (read-only).** `BlockerDetector.scan()` returns a `BlockedTask` finding for every todo past its per-category threshold:
 - `permission_escalation` blocks → `permission_escalation_block_hours` (default 4h).
 - `human_input` / generic blocks → `human_input_block_hours` (default 24h).
 - Chronically re-queued todos (`run_count > max_requeues_before_chronic`, default 3) → `resource_contention`.
 - Stale open human-todos past the threshold → `file_human_todo` (escalated reminder).
 
-Each finding carries a `suggested_remediation` (`schedule_retry`,
-`file_human_todo`, `dispatch_agent`, or `no_action`); the dispatcher may
-override based on operator policy.
+Each finding carries a `suggested_remediation` (`schedule_retry`, `file_human_todo`, `dispatch_agent`, or `no_action`); the dispatcher may override based on operator policy.
 
-**Chronic blockers.** `BlockerDetector.chronic_blockers()` groups recent
-`BLOCKED_ON_HUMAN` incidents by `(task_type, blocker_kind)` over a
-configurable lookback (default 7 days). Pairs crossing
-`min_chronic_incidents` (default 5) are surfaced as `ChronicBlocker`
-records — the recurring failure modes that need operator attention, not
-just a one-off.
+**Chronic blockers.** `BlockerDetector.chronic_blockers()` groups recent `BLOCKED_ON_HUMAN` incidents by `(task_type, blocker_kind)` over a configurable lookback (default 7 days). Pairs crossing `min_chronic_incidents` (default 5) are surfaced as `ChronicBlocker` records — the recurring failure modes that need operator attention, not just a one-off.
 
-**Operator surface.** Chronic blockers surface via
-`gludd remediation chronic-blockers`. **Operators should review the
-chronic-blocker report weekly and address the systemic cause** (e.g. switch
-from static to OIDC credentials when `permission_escalation` recurs on the
-same task type; provision more capacity when `resource_contention` recurs).
-Tune the thresholds in `RemediationConfig` (via `config/remediation.yml` or
-env vars) when a category fires too often or too rarely.
+**Operator surface.** Chronic blockers surface via `gludd remediation chronic-blockers`. **Operators should review the chronic-blocker report weekly and address the systemic cause** (e.g. switch from static to OIDC credentials when `permission_escalation` recurs on the same task type; provision more capacity when `resource_contention` recurs). Tune the thresholds in `RemediationConfig` (via `config/remediation.yml` or env vars) when a category fires too often or too rarely.
 
-**Defaults are deliberately conservative** so a healthy project does
-nothing: 24h human-input threshold, 4h permission-escalation threshold, 3
-re-queues before chronic, 5 incidents over 7 days, 4h retry delay. Tune up
-if blockers are surfaced too late; tune down if the system is noisy.
+**Defaults are deliberately conservative** so a healthy project does nothing: 24h human-input threshold, 4h permission-escalation threshold, 3 re-queues before chronic, 5 incidents over 7 days, 4h retry delay. Tune up if blockers are surfaced too late; tune down if the system is noisy.
 
-Enforced by: this section (proactive),
-`src/general_ludd/remediation/blocker_detector.py`,
-`src/general_ludd/remediation/dispatcher.py`,
-`src/general_ludd/remediation/reporter.py`, and
-`tests/unit/test_blocker_detector.py` + `tests/unit/test_remediation_dispatcher.py`
+Enforced by: this section (proactive), `src/general_ludd/remediation/blocker_detector.py`, `src/general_ludd/remediation/dispatcher.py`, `src/general_ludd/remediation/reporter.py`, and `tests/unit/test_blocker_detector.py` + `tests/unit/test_remediation_dispatcher.py`
 + `tests/integration/test_remediation_scheduler.py`.
 
 ## CRITICAL: Project-Collection Precedence Contract
@@ -1135,22 +911,17 @@ Enforced by: `src/general_ludd/ansible/paths.py`, `src/general_ludd/ansible/runn
 
 ## Meta-Rule: Guardrail Policy
 
-When you introduce ANY new restriction or policy on agent behavior, you MUST
-implement it at all three layers. Single-layer restrictions are insufficient.
+When you introduce ANY new restriction or policy on agent behavior, you MUST implement it at all three layers. Single-layer restrictions are insufficient.
 
 1. **Config permission** (`opencode.json` `permission` block) - hard gate
 2. **Runtime hook** (`.opencode/plugin/*.ts`) - contextual error with guidance
 3. **Agent prompt** (`AGENTS.md` prominent section) - proactive instruction
 
-Every guardrail must have all three. If you catch yourself adding only one or
-two, stop and add the missing layers before continuing. See the
-`guardrail-pattern` skill for the full pattern and checklist.
+Every guardrail must have all three. If you catch yourself adding only one or two, stop and add the missing layers before continuing. See the `guardrail-pattern` skill for the full pattern and checklist.
 
 ## CRITICAL: Guardrail Integrity Policy
 
-**You MUST NEVER remove, disable, or weaken a guardrail to fix a symptom.**
-When a guardrail causes noise, errors, or inconvenience, the fix is ALWAYS to
-make the guardrail smarter — never to delete it.
+**You MUST NEVER remove, disable, or weaken a guardrail to fix a symptom.** When a guardrail causes noise, errors, or inconvenience, the fix is ALWAYS to make the guardrail smarter — never to delete it.
 
 ### Forbidden Responses to Guardrail Friction
 
@@ -1168,13 +939,9 @@ make the guardrail smarter — never to delete it.
 
 ### Principle
 
-Guardrails exist because past sessions demonstrated a specific failure mode.
-Every guardrail was added in response to a real bug. Removing a guardrail
-without addressing the failure mode it prevents is a regression.
+Guardrails exist because past sessions demonstrated a specific failure mode. Every guardrail was added in response to a real bug. Removing a guardrail without addressing the failure mode it prevents is a regression.
 
-If you find yourself reaching for `throw new Error(...)` → `{}` or deleting
-a constant because "it's dead code" — STOP. Ask: "What was this guarding
-against?" Then fix the guardrail to be precise, not absent.
+If you find yourself reaching for `throw new Error(...)` → `{}` or deleting a constant because "it's dead code" — STOP. Ask: "What was this guarding against?" Then fix the guardrail to be precise, not absent.
 
 This is enforced by:
 - This `AGENTS.md` section — proactive instruction
@@ -1191,75 +958,38 @@ This is enforced by:
 - `# fmt: off` / `# fmt: skip` / `# fmt: on` — black suppression
 - `# isort:skip` — isort suppression
 
-**Fix the underlying issue; never silence the warning.** A suppression comment
-hides a real problem (an over-long line, a missing type, an unused import) and
-blocks the linter from catching future regressions of the same kind. The
-"fix-means-repair-never-disable" policy applies: if a linter complains, repair
-the code so the linter is satisfied — do NOT paste a directive that tells the
-linter to look the other way.
+**Fix the underlying issue; never silence the warning.** A suppression comment hides a real problem (an over-long line, a missing type, an unused import) and blocks the linter from catching future regressions of the same kind. The "fix-means-repair-never-disable" policy applies: if a linter complains, repair the code so the linter is satisfied — do NOT paste a directive that tells the linter to look the other way.
 
 ### Why this is hard-enforced, not advisory
 
-A prior codification was advisory-only (a `warnings.warn` in
-`test_type_safety_guardrails.py`) and regression went unnoticed — `# noqa` and
-`# type: ignore` re-proliferated across `src/`. Per the **Guardrail Integrity
-Policy** above, an advisory-only check is a weakened guardrail. This policy is
-therefore enforced at all three layers:
+A prior codification was advisory-only (a `warnings.warn` in `test_type_safety_guardrails.py`) and regression went unnoticed — `# noqa` and `# type: ignore` re-proliferated across `src/`. Per the **Guardrail Integrity Policy** above, an advisory-only check is a weakened guardrail. This policy is therefore enforced at all three layers:
 
-1. **Runtime hook** — `.opencode/plugin/enforce-no-suppressions.ts`
-   registers a `tool.execute.before` matcher on `edit` and `write`. If the
-   would-be content matches any of the five patterns, the edit is DENIED with
-   `{"permissionDecision": "deny", "message": "Lint-suppression comments
-   forbidden. Fix the underlying issue. See AGENTS.md Guardrail Integrity
-   Policy."}` and exit 0 (clean deny, never a hook error). Fail-open: any
-   exception → allow (a broken hook is preferable to a wedged editor).
-
-2. **Behavior pin** — `tests/unit/test_no_suppression_comments_plugin.py`
-   extracts the plugin's exported `SUPPRESSION_PATTERNS` and `ALLOWLIST_PATHS`
-   and asserts on each spec test case (deny on `# noqa`, deny on
-   `# type: ignore`, deny on `# pylint: disable=E1101`, allow on plain
-   `# comment`, allow on the two allowlisted files, etc.).
-
-3. **Repo-wide scan** — `tests/unit/test_type_safety_guardrails.py` walks
-   `src/` and fails the gate (assert-based, NOT `warnings.warn`) if any
-   forbidden pattern is found in shipped code.
+1. **Runtime hook** — `.opencode/plugin/enforce-no-suppressions.ts` registers a `tool.execute.before` matcher on `edit` and `write`. If the would-be content matches any of the five patterns, the edit is DENIED with `{"permissionDecision": "deny", "message": "Lint-suppression comments forbidden. Fix the underlying issue. See AGENTS.md Guardrail Integrity Policy."}` and exit 0 (clean deny, never a hook error). Fail-open: any exception → allow (a broken hook is preferable to a wedged editor).
+2. **Behavior pin** — `tests/unit/test_no_suppression_comments_plugin.py` extracts the plugin's exported `SUPPRESSION_PATTERNS` and `ALLOWLIST_PATHS` and asserts on each spec test case (deny on `# noqa`, deny on `# type: ignore`, deny on `# pylint: disable=E1101`, allow on plain `# comment`, allow on the two allowlisted files, etc.).
+3. **Repo-wide scan** — `tests/unit/test_type_safety_guardrails.py` walks `src/` and fails the gate (assert-based, NOT `warnings.warn`) if any forbidden pattern is found in shipped code.
 
 ### Allowlist (string-literal DATA, not suppression comments)
 
-Two files legitimately contain the patterns as DATA inside string literals /
-regex fixtures — they are the policy's own enforcement code:
+Two files legitimately contain the patterns as DATA inside string literals / regex fixtures — they are the policy's own enforcement code:
 
-- `src/general_ludd/security/fix_not_disable.py` — `"# noqa"` is a frozenset
-  entry inside `DISABLE_PATTERNS`, detecting disabling actions. The string
-  literal IS the data; it is not itself a live suppression comment.
-- `tests/unit/test_type_safety_guardrails.py` — the patterns appear as regex
-  fixtures (`re.compile(r"#\s*noqa")`) used to scan other files.
+- `src/general_ludd/security/fix_not_disable.py` — `"# noqa"` is a frozenset entry inside `DISABLE_PATTERNS`, detecting disabling actions. The string literal IS the data; it is not itself a live suppression comment.
+- `tests/unit/test_type_safety_guardrails.py` — the patterns appear as regex fixtures (`re.compile(r"#\s*noqa")`) used to scan other files.
 
-Both paths are listed in the plugin's `ALLOWLIST_PATHS` export so the runtime
-hook skips them. Adding any other path to the allowlist is a guardrail-integrity
-violation — narrow the matcher instead.
+Both paths are listed in the plugin's `ALLOWLIST_PATHS` export so the runtime hook skips them. Adding any other path to the allowlist is a guardrail-integrity violation — narrow the matcher instead.
 
 ### If you genuinely need to silence a linter
 
 You don't. Fix the code. The legitimate options are, in order:
 - **Long line?** Reflow it. Extract a variable. Lower the complexity.
-- **Missing type?** Add the type annotation. If unknown, use `object` (the
-  top type) and narrow — never `Any` (also forbidden, see type-safety skill).
+- **Missing type?** Add the type annotation. If unknown, use `object` (the top type) and narrow — never `Any` (also forbidden, see type-safety skill).
 - **Unused import?** Delete it.
-- **Genuinely unfixable third-party attribute?** `getattr(obj, "attr")` with
-  a typed wrapper, or a `cast(...)` to the correct type — both observable in
-  the source, both lintable, neither a suppression comment.
+- **Genuinely unfixable third-party attribute?** `getattr(obj, "attr")` with a typed wrapper, or a `cast(...)` to the correct type — both observable in the source, both lintable, neither a suppression comment.
 
-There is no "just this once" exception. Every suppression comment in this
-repo's history became a permanent hiding place for a real bug.
+There is no "just this once" exception. Every suppression comment in this repo's history became a permanent hiding place for a real bug.
 
 ## Opencode Plugin Ports (Claude Hook Equivalents)
 
-The Claude Code layer (`.claude/hooks/*.sh`, 23 shell scripts registered in
-`.claude/settings.json`) and the opencode layer (`.opencode/plugin/*.ts` +
-`.opencode/plugins/*.ts`, 11 TypeScript plugins registered in `opencode.json`)
-**enforce the same policies in parallel**. An opencode-only session gets the
-same guardrails as a Claude-only session. The port map:
+The Claude Code layer (`.claude/hooks/*.sh`, 23 shell scripts registered in `.claude/settings.json`) and the opencode layer (`.opencode/plugin/*.ts` + `.opencode/plugins/*.ts`, 11 TypeScript plugins registered in `opencode.json`) **enforce the same policies in parallel**. An opencode-only session gets the same guardrails as a Claude-only session. The port map:
 
 | Opencode plugin | Claude hook(s) ported |
 |---|---|
@@ -1275,89 +1005,48 @@ same guardrails as a Claude-only session. The port map:
 | `enforce-clean-tree.ts` | (denies task/agent/workflow dispatch on a dirty git tree; no direct Claude hook equivalent — see "Verification Before Claim") |
 | `watchdog.ts` | (background daemon watchdog; no direct Claude hook equivalent) |
 
-Both layers are registered and active by default. The env-var knobs are
-shared (`CLAUDE_AGENT_FLOOR`, `GLUDD_FORCE_DELEGATE`, `GLUDD_NO_WAIT_ENFORCE`,
-`GLUDD_FLOOR_ENFORCE`, etc.) so operator configuration applies uniformly.
+Both layers are registered and active by default. The env-var knobs are shared (`CLAUDE_AGENT_FLOOR`, `GLUDD_FORCE_DELEGATE`, `GLUDD_NO_WAIT_ENFORCE`, `GLUDD_FLOOR_ENFORCE`, etc.) so operator configuration applies uniformly.
 
-Coverage tests: `tests/unit/test_opencode_plugin_ports.py` (per-plugin static
-checks), `tests/unit/test_guardrails.py` (3-layer existence checks),
-`scripts/test_*_hook.py` (behavioral harness tests for the shell layer).
+Coverage tests: `tests/unit/test_opencode_plugin_ports.py` (per-plugin static checks), `tests/unit/test_guardrails.py` (3-layer existence checks), `scripts/test_*_hook.py` (behavioral harness tests for the shell layer).
 
 ## CRITICAL: Node v26 `--experimental-strip-types` Compatibility (Plugin Code)
 
-**All `.opencode/plugin/*.ts` and `.opencode/plugins/*.ts` files MUST be
-parseable by Node v26's native TypeScript stripping.** The
-`--experimental-strip-types` flag enables Node to run `.ts` files directly
-but it is a syntax-level transform only (no type checking, no enum/namespace
-support). Certain patterns that are valid in tsc/babel cause parse errors
-under `--experimental-strip-types`.
+**All `.opencode/plugin/*.ts` and `.opencode/plugins/*.ts` files MUST be parseable by Node v26's native TypeScript stripping.** The `--experimental-strip-types` flag enables Node to run `.ts` files directly but it is a syntax-level transform only (no type checking, no enum/namespace support). Certain patterns that are valid in tsc/babel cause parse errors under `--experimental-strip-types`.
 
 ### Known-incompatible patterns (each is a parse error)
 
-1. **`try {` nested inside `catch {` — FORBIDDEN.** The pattern
-   `catch { try {` or `catch (e) { try {` produces
-   `ERR_INVALID_TYPESCRIPT_SYNTAX: Expected a semicolon`. The lexer
-   misparses `try` after a bare `catch` block's opening brace. **Use a
-   bare `catch {}` block with NO inner try-catch.** Restructure so the
-   try-catch is in a helper function called from the catch block, or
-   flatten the control flow so the recovery logic runs outside the catch.
-
-2. **Type-annotated catch variables** (e.g. `catch (e: TypeError)`) —
-   type annotations inside parameter lists of catch clauses may cause
-   parse errors. Use untyped `catch (e)` or bare `catch {}` and cast
-   or narrow the error inside the block via `typeof`/`instanceof` checks.
-
-3. **Enums, namespaces, `export =`, `import =`** — these TypeScript-only
-   constructs are not supported. Use `const` objects or plain interfaces.
+1. **`try {` nested inside `catch {` — FORBIDDEN.** The pattern `catch { try {` or `catch (e) { try {` produces `ERR_INVALID_TYPESCRIPT_SYNTAX: Expected a semicolon`. The lexer misparses `try` after a bare `catch` block's opening brace. **Use a bare `catch {}` block with NO inner try-catch.** Restructure so the try-catch is in a helper function called from the catch block, or flatten the control flow so the recovery logic runs outside the catch.
+2. **Type-annotated catch variables** (e.g. `catch (e: TypeError)`) — type annotations inside parameter lists of catch clauses may cause parse errors. Use untyped `catch (e)` or bare `catch {}` and cast or narrow the error inside the block via `typeof`/`instanceof` checks.
+3. **Enums, namespaces, `export =`, `import =`** — these TypeScript-only constructs are not supported. Use `const` objects or plain interfaces.
 
 ### Compatible patterns (always safe)
 
 - Bare `catch {}` (no inner `try`, no type annotation on catch variable)
 - `catch (e)` with untyped parameter, then `typeof e === "string"` checks
 - ES module syntax (`import`/`export` with `type` keyword stripped)
-- Interfaces, type aliases, `satisfies`, `as` casts — all in type space
-  and stripped before execution
+- Interfaces, type aliases, `satisfies`, `as` casts — all in type space and stripped before execution
 
 ### Enforcement
 
-- **Script:** `scripts/check_node_v26_compat.py` — scans `.ts` files under
-  `.opencode/` for forbidden patterns (`catch { try`, `catch (e) { try`,
-  `catch (e:`, `enum `, `namespace `). Exits 0 on clean; exits 1 with file
+- **Script:** `scripts/check_node_v26_compat.py` — scans `.ts` files under `.opencode/` for forbidden patterns (`catch { try`, `catch (e) { try`, `catch (e:`, `enum `, `namespace `). Exits 0 on clean; exits 1 with file
   + line references on violations.
-- **Make target:** `make check-node-v26-compat` — runs the script; wired
-  as a gate requirement in [[Completion = Green Gate + TASKS.md Evidence]].
-- **Plugin (future):** a `tool.execute.before` matcher in `enforce-node-v26.ts`
-  will deny edits that introduce forbidden patterns into plugin files.
+- **Make target:** `make check-node-v26-compat` — runs the script; wired as a gate requirement in [[Completion = Green Gate + TASKS.md Evidence]].
+- **Plugin (future):** a `tool.execute.before` matcher in `enforce-node-v26.ts` will deny edits that introduce forbidden patterns into plugin files.
 
 ### Why this matters
 
-The enforcement plugins in `.opencode/plugin/` are loaded by opencode's Node
-runtime. If opencode uses Node v26 with `--experimental-strip-types`, a
-single incompatible plugin file causes ALL plugins to fail to load —
-collapsing the entire enforcement layer. A parse error in one plugin is a
-policy gap in every plugin.
+The enforcement plugins in `.opencode/plugin/` are loaded by opencode's Node runtime. If opencode uses Node v26 with `--experimental-strip-types`, a single incompatible plugin file causes ALL plugins to fail to load — collapsing the entire enforcement layer. A parse error in one plugin is a policy gap in every plugin.
 
 ## CRITICAL: "Fix" Means Repair, Never Disable
 
-**When the user asks you to FIX something, "fix" means: make the feature WORK
-as intended. It NEVER means disable, remove, downgrade, stub out, comment out,
-or weaken the feature. Disabling a feature the user asked you to fix is itself a
-NEW BUG — and you must NEVER introduce a bug.**
+**When the user asks you to FIX something, "fix" means: make the feature WORK as intended. It NEVER means disable, remove, downgrade, stub out, comment out, or weaken the feature. Disabling a feature the user asked you to fix is itself a NEW BUG — and you must NEVER introduce a bug.**
 
-This was a direct user mandate (2026-06-18) after the agent was told "fix the
-stop-hook errors" and responded by making the hooks *advisory* (deleting the
-enforcement) instead of fixing the actual error. That turned a working-but-noisy
-feature into a non-working feature — a regression dressed up as a fix.
+This was a direct user mandate (2026-06-18) after the agent was told "fix the stop-hook errors" and responded by making the hooks *advisory* (deleting the enforcement) instead of fixing the actual error. That turned a working-but-noisy feature into a non-working feature — a regression dressed up as a fix.
 
 ### The distinction (internalize this)
 
-- "It errors / is noisy / fires too often" = the feature is **malfunctioning**.
-  The fix is to repair the malfunction while **keeping the feature's purpose
-  intact**. (Stop-hook threw `exit 1` every turn → the bug was the `exit 1`
-  error path, NOT the blocking. Fix = block cleanly via `{"decision":"block"}` +
-  `exit 0`. The enforcement STAYS.)
-- "Disable X" / "turn off X" / "make X advisory" = an **explicit** instruction to
-  remove behavior. Only do this when the user says so in those words.
+- "It errors / is noisy / fires too often" = the feature is **malfunctioning**. The fix is to repair the malfunction while **keeping the feature's purpose intact**. (Stop-hook threw `exit 1` every turn → the bug was the `exit 1` error path, NOT the blocking. Fix = block cleanly via `{"decision":"block"}` + `exit 0`. The enforcement STAYS.)
+- "Disable X" / "turn off X" / "make X advisory" = an **explicit** instruction to remove behavior. Only do this when the user says so in those words.
 
 ### Forbidden "fixes" (every one is a bug you introduced)
 
@@ -1369,40 +1058,23 @@ feature into a non-working feature — a regression dressed up as a fix.
 
 ### Before claiming something is "fixed"
 
-1. Does the feature still DO what it was built to do? If you removed/weakened its
-   core behavior, you did NOT fix it — you broke it. Revert and repair instead.
-2. Did you introduce any NEW failure mode (disabled enforcement, dropped a case,
-   widened access)? If yes, that is a bug — the work is not done.
-3. Prove it: the repaired feature must demonstrably still work (a passing test /
-   a run that shows the behavior firing), not just "no longer errors."
+1. Does the feature still DO what it was built to do? If you removed/weakened its core behavior, you did NOT fix it — you broke it. Revert and repair instead.
+2. Did you introduce any NEW failure mode (disabled enforcement, dropped a case, widened access)? If yes, that is a bug — the work is not done.
+3. Prove it: the repaired feature must demonstrably still work (a passing test / a run that shows the behavior firing), not just "no longer errors."
 
-Overlaps with and strengthens the **Guardrail Integrity Policy** above, but is
-broader: it applies to EVERY feature, not only guardrails. Enforced by this
-section, `.opencode/plugin/enforce-make.ts`, and the `enforce-floor.ts` plugin.
+Overlaps with and strengthens the **Guardrail Integrity Policy** above, but is broader: it applies to EVERY feature, not only guardrails. Enforced by this section, `.opencode/plugin/enforce-make.ts`, and the `enforce-floor.ts` plugin.
 
 ## CRITICAL: Release Cut = Update the README Status Table
 
-**Every release MUST go through `make release-cut TAG='...' MSG='...'`.  Direct use
-of `make git-push-sandboxcom` + `make git-tag-push` without running `release-cut`
-first is a policy violation — it bypasses the README currency gate.**
+**Every release MUST go through `make release-cut TAG='...' MSG='...'`.  Direct use of `make git-push-sandboxcom` + `make git-tag-push` without running `release-cut` first is a policy violation — it bypasses the README currency gate.**
 
 ### Rule
 
-Before any release tag is pushed, the README.md **Feature & Task Completion Status
-table** and its `**Status as of <version>**` line MUST be refreshed to reflect the
-version being cut.  This is enforced as a hard gate, not documentation:
+Before any release tag is pushed, the README.md **Feature & Task Completion Status table** and its `**Status as of <version>**` line MUST be refreshed to reflect the version being cut.  This is enforced as a hard gate, not documentation:
 
-1. **`scripts/check_readme_status_current.py`** — reads `pyproject.toml` (or the
-   `TAG` argument), finds the `Status as of <version>` line in README.md, and
-   exits non-zero with a clear error message if they do not match.  Accepts an
-   optional `TAG` positional argument (`v0.1.0-alpha.2` or `0.1.0-alpha.2`; the
-   leading `v` is normalized away for comparison).
-
-2. **`make check-readme-status [TAG='...']`** — runs the script.  Use this to
-   check readiness before committing.
-
-3. **`make release-cut TAG='...' MSG='...'`** — the single release command.
-   Runs in order and aborts on the first failure:
+1. **`scripts/check_readme_status_current.py`** — reads `pyproject.toml` (or the `TAG` argument), finds the `Status as of <version>` line in README.md, and exits non-zero with a clear error message if they do not match.  Accepts an optional `TAG` positional argument (`v0.1.0-alpha.2` or `0.1.0-alpha.2`; the leading `v` is normalized away for comparison).
+2. **`make check-readme-status [TAG='...']`** — runs the script.  Use this to check readiness before committing.
+3. **`make release-cut TAG='...' MSG='...'`** — the single release command. Runs in order and aborts on the first failure:
    1. `check-readme-status` → README stale = ABORT (unskippable)
    2. `git-push-sandboxcom` → push master branch
    3. `git-tag-push` → create annotated tag + push (triggers CI release job)
@@ -1414,15 +1086,11 @@ Before running `make release-cut`:
 - Edit README.md → find the **Feature & Task Completion Status** table.
 - Update every row that changed since the last release.
 - Change (or add) the `**Status as of v<old>**` line to `**Status as of v<new> — <date>**`.
-- Commit the README change in the same release-bump commit as `pyproject.toml` /
-  `src/general_ludd/__init__.py` / `CHANGELOG.md`.
+- Commit the README change in the same release-bump commit as `pyproject.toml` / `src/general_ludd/__init__.py` / `CHANGELOG.md`.
 
 ### Why this is a hard gate, not documentation
 
-The hooks-over-memory principle: memory and documentation are ignored under time
-pressure; machine enforcement is not.  A stale README status table has been a
-repeated gap after large feature batches.  The gate makes it structurally
-impossible to skip.
+The hooks-over-memory principle: memory and documentation are ignored under time pressure; machine enforcement is not.  A stale README status table has been a repeated gap after large feature batches.  The gate makes it structurally impossible to skip.
 
 ### Enforcement
 
@@ -1433,34 +1101,15 @@ impossible to skip.
 
 ## CRITICAL: Release Branch Lifecycle — Green Branches Are Immutable
 
-**Once a release branch's remote tip is CI-GREEN, no new commits may land on it.**
-Work that cannot be expressed as a tag continues on a NEW branch.
+**Once a release branch's remote tip is CI-GREEN, no new commits may land on it.** Work that cannot be expressed as a tag continues on a NEW branch.
 
 ### Rules (each is machine-enforced)
 
-1. **`make release-branch-new NAME=release/<version>`** — the ONLY sanctioned way to
-   start a release branch.  Verifies that the base (default: `master`) is CI-GREEN
-   before branching, so a release can never start from a red commit.
-
-2. **Green = frozen.** Once the remote tip of a release branch has a CI-GREEN verdict,
-   `make git-push-branch` and `make git-push-branch-nv` both REFUSE pushes that add
-   new commits (`scripts/check_green_branch_guard.py` — exit 0 = allowed, exit 1 = blocked,
-   exit 2 = inconclusive/fail-open).  Enforced in the Makefile via `_push-green-guard`.
-
-3. **Fix-forward on the branch, not around it.** If CI goes RED on a release branch
-   (a regression discovered after the first green run), commit the fix directly on
-   THAT branch, push, wait for green CI, then proceed.  Do NOT create a parallel
-   branch to dodge the guard — the guard only fires when the remote tip is GREEN.
-
-4. **`make release-promote TAG=<tag>`** — the ONLY sanctioned way to ship a release
-   branch to master.  Steps (each fail-closed): require CI GREEN for the branch tip →
-   verify remote tip matches local → annotated tag + push tag → ff-only merge into
-   master + push → verify master remote tip matches the promoted SHA.  The tag is
-   pushed BEFORE the master ff-merge so the tagged commit always exists remotely.
-
-5. **`make release-recut TAG=<tag>`** — re-trigger a CI release job on an existing tag
-   (delete + re-push).  Use when the Build-and-Release job itself failed (e.g. an
-   artifact-upload flake) but the commit is known-good.
+1. **`make release-branch-new NAME=release/<version>`** — the ONLY sanctioned way to start a release branch.  Verifies that the base (default: `master`) is CI-GREEN before branching, so a release can never start from a red commit.
+2. **Green = frozen.** Once the remote tip of a release branch has a CI-GREEN verdict, `make git-push-branch` and `make git-push-branch-nv` both REFUSE pushes that add new commits (`scripts/check_green_branch_guard.py` — exit 0 = allowed, exit 1 = blocked, exit 2 = inconclusive/fail-open).  Enforced in the Makefile via `_push-green-guard`.
+3. **Fix-forward on the branch, not around it.** If CI goes RED on a release branch (a regression discovered after the first green run), commit the fix directly on THAT branch, push, wait for green CI, then proceed.  Do NOT create a parallel branch to dodge the guard — the guard only fires when the remote tip is GREEN.
+4. **`make release-promote TAG=<tag>`** — the ONLY sanctioned way to ship a release branch to master.  Steps (each fail-closed): require CI GREEN for the branch tip → verify remote tip matches local → annotated tag + push tag → ff-only merge into master + push → verify master remote tip matches the promoted SHA.  The tag is pushed BEFORE the master ff-merge so the tagged commit always exists remotely.
+5. **`make release-recut TAG=<tag>`** — re-trigger a CI release job on an existing tag (delete + re-push).  Use when the Build-and-Release job itself failed (e.g. an artifact-upload flake) but the commit is known-good.
 
 ### Forbidden patterns
 
@@ -1480,66 +1129,29 @@ Work that cannot be expressed as a tag continues on a NEW branch.
 
 ## CRITICAL: Release Candidate Discipline — Promote the Green Commit
 
-**When hosted CI is green for the current development HEAD, the next action must
-be local dual-track attestation + `make release-promote`; do NOT add new
-commits, start unrelated feature work, or pause for a status summary first.**
-A green CI result on `development` is the release signal; treating it as an
-invitation to do "one more thing" is the recurring failure mode that leaves
-releases un-promoted and tags un-pushed.
+**When hosted CI is green for the current development HEAD, the next action must be local dual-track attestation + `make release-promote`; do NOT add new commits, start unrelated feature work, or pause for a status summary first.** A green CI result on `development` is the release signal; treating it as an invitation to do "one more thing" is the recurring failure mode that leaves releases un-promoted and tags un-pushed.
 
 ### Rules
 
-1. **Green HEAD → promote immediately.** When `make ci-verdict BRANCH=development`
-   reports `conclusion: success` and `headSha` equals the local development tip,
-   the very next actions are:
-   1. Start or confirm `make test-ci-dual-track-local-bg` has produced an
-      attestation for that SHA.
-   2. Run `make release-promote TAG=<tag>` to merge development into master and
-      cut the release.
-   Do NOT add new commits to development, do NOT start a new feature branch, and
-   do NOT run a long unrelated gate first.
+1. **Green HEAD → promote immediately.** When `make ci-verdict BRANCH=development` reports `conclusion: success` and `headSha` equals the local development tip, the very next actions are:
+   1. Start or confirm `make test-ci-dual-track-local-bg` has produced an attestation for that SHA.
+   2. Run `make release-promote TAG=<tag>` to merge development into master and cut the release. Do NOT add new commits to development, do NOT start a new feature branch, and do NOT run a long unrelated gate first.
 
-2. **Start local dual-track attestation right after pushing the candidate.**
-   As soon as a release candidate is pushed (commit or tag), immediately run
-   `make test-ci-dual-track-local-bg` so the long local attestation runs in
-   parallel with hosted CI. Check progress only at natural breaks with
-   `make test-ci-dual-track-local-status`; never hold the main thread polling it.
-
-3. **Never re-run a full test suite on the same SHA.** The canonical local
-   runner supports incremental resume via `DUAL_TRACK_RESUME=1` (the default).
-   If a prior attestation run was interrupted or partial, resume it; do not
-   discard the work and start from scratch. Re-running from zero on the same
-   SHA wastes hours and cancels the productivity the dual-track pipeline was
-   built to provide.
-
-4. **While CI is pending, only do release-advancing actions.** Allowed:
-   README/status/tag hygiene, release notes, version bumps, or fixes for a CI
-   failure that has already surfaced. Forbidden: new features, refactors,
-   documentation unrelated to the release, or status-only polling. The release
-   is the objective; side work is a stop pattern.
-
-5. **No text-only responses or premature stops while a release is pending.**
-   If a release is in flight (tag pushed, CI running, attestation producing,
-   or promotion not yet verified), every response must include a tool call that
-   advances the release. A text-only summary, a "waiting for CI" message, or a
-   "what's next?" question while release work remains is a premature stop.
+2. **Start local dual-track attestation right after pushing the candidate.** As soon as a release candidate is pushed (commit or tag), immediately run `make test-ci-dual-track-local-bg` so the long local attestation runs in parallel with hosted CI. Check progress only at natural breaks with `make test-ci-dual-track-local-status`; never hold the main thread polling it.
+3. **Never re-run a full test suite on the same SHA.** The canonical local runner supports incremental resume via `DUAL_TRACK_RESUME=1` (the default). If a prior attestation run was interrupted or partial, resume it; do not discard the work and start from scratch. Re-running from zero on the same SHA wastes hours and cancels the productivity the dual-track pipeline was built to provide.
+4. **While CI is pending, only do release-advancing actions.** Allowed: README/status/tag hygiene, release notes, version bumps, or fixes for a CI failure that has already surfaced. Forbidden: new features, refactors, documentation unrelated to the release, or status-only polling. The release is the objective; side work is a stop pattern.
+5. **No text-only responses or premature stops while a release is pending.** If a release is in flight (tag pushed, CI running, attestation producing, or promotion not yet verified), every response must include a tool call that advances the release. A text-only summary, a "waiting for CI" message, or a "what's next?" question while release work remains is a premature stop.
 
 ### Enforcement
 
 - This AGENTS.md section — proactive instruction.
-- `make test-ci-dual-track-local-bg` / `make test-ci-dual-track-local-status` —
-  canonical background local attestation targets.
+- `make test-ci-dual-track-local-bg` / `make test-ci-dual-track-local-status` — canonical background local attestation targets.
 - `make release-promote` — the only sanctioned promotion path.
-- `tests/unit/test_release_candidate_discipline.py` — structural pin on the
-  section and each numbered rule.
+- `tests/unit/test_release_candidate_discipline.py` — structural pin on the section and each numbered rule.
 
 ## CRITICAL: Agent At-Rest / Re-Dispatch Policy
 
-**An agent "coming to rest" does NOT mean it is incomplete.** "At rest" =
-the subagent finished its turn and returned its final result (the `<result>` in
-the completion notification IS its deliverable). Auto-redispatching a *completed*
-agent re-runs finished work, wastes tokens, and can loop forever. So "always
-re-dispatch on rest" is INCORRECT as a blanket rule.
+**An agent "coming to rest" does NOT mean it is incomplete.** "At rest" = the subagent finished its turn and returned its final result (the `<result>` in the completion notification IS its deliverable). Auto-redispatching a *completed* agent re-runs finished work, wastes tokens, and can loop forever. So "always re-dispatch on rest" is INCORRECT as a blanket rule.
 
 **Classify by STATUS, not by the rest event, and act:**
 
@@ -1550,58 +1162,23 @@ re-dispatch on rest" is INCORRECT as a blanket rule.
 | `failed` / stalled / "no progress for Ns" / died | Genuinely incomplete | **Re-dispatch with backoff** (this IS the [[transient-error-retry-with-backoff]] rule). Never abandon the work. |
 | killed by transient API error (529/429/503) | Overload, not done | **Re-dispatch after backoff** (exponential if it repeats). |
 
-The floor hook keeps the POOL full; this policy decides what to do with each
-agent's *result*. They are independent: a completed agent correctly drains the
-pool (the floor hook then asks for a refill of NEW work, not a re-run of the old).
+The floor hook keeps the POOL full; this policy decides what to do with each agent's *result*. They are independent: a completed agent correctly drains the pool (the floor hook then asks for a refill of NEW work, not a re-run of the old).
 
-**Path to automate (optional):** a watcher could scan task statuses and
-auto-re-queue only `status==failed`/stalled tasks with a per-task max-retry cap
-(e.g. 3) and exponential backoff — never `completed` ones, and never without a
-cap (or it loops). Until that exists, the orchestrator applies the table above on
-each completion notification.
+**Path to automate (optional):** a watcher could scan task statuses and auto-re-queue only `status==failed`/stalled tasks with a per-task max-retry cap (e.g. 3) and exponential backoff — never `completed` ones, and never without a cap (or it loops). Until that exists, the orchestrator applies the table above on each completion notification.
 
-**"Come to rest" — what the status means + the ZOMBIE rule.** A task/agent at
-rest is NOT "in error" by default: the harness marks it `completed` (it returned
-normally — its deliverable is the `<result>`) or `failed` (it died: stalled,
-errored, or was killed). So: `completed` ≠ redo; `failed` ≠ abandon. Re-dispatch
-only `failed`/stalled WORK, with a max-retry cap + backoff. Two hard rules from a
-real incident (2026-06-18):
-1. **A background task that "completed" may have been KILLED, not finished** —
-   check its actual exit code / result content, never infer success from the rest
-   event alone. (A gate's `.gate-status` test line / pytest summary is the truth.)
-2. **NEVER arm a self-relaunching watcher for a long task.** A gate-marshal
-   subagent armed `marshal-full-suite` + `marshal-wait-report` watchers that
-   re-launched a `-n auto` gate every time it "completed" — it respawned ~6×, each
-   OOM-killing the host, and killing the gate process alone didn't stop it (had to
-   `TaskStop` the watcher tasks + remove the worktree). A long task that outlives a
-   subagent's turn must be owned by the MAIN LOOP via `run_in_background`
-   (re-invoked exactly once on exit), not a subagent that rests-and-relaunches.
-   Subagent gate/build runs that exceed one turn: rely on polling their
-   `.gate-status`/artifact, and never wire an auto-relaunch.
+**"Come to rest" — what the status means + the ZOMBIE rule.** A task/agent at rest is NOT "in error" by default: the harness marks it `completed` (it returned normally — its deliverable is the `<result>`) or `failed` (it died: stalled, errored, or was killed). So: `completed` ≠ redo; `failed` ≠ abandon. Re-dispatch only `failed`/stalled WORK, with a max-retry cap + backoff. Two hard rules from a real incident (2026-06-18):
+1. **A background task that "completed" may have been KILLED, not finished** — check its actual exit code / result content, never infer success from the rest event alone. (A gate's `.gate-status` test line / pytest summary is the truth.)
+2. **NEVER arm a self-relaunching watcher for a long task.** A gate-marshal subagent armed `marshal-full-suite` + `marshal-wait-report` watchers that re-launched a `-n auto` gate every time it "completed" — it respawned ~6×, each OOM-killing the host, and killing the gate process alone didn't stop it (had to `TaskStop` the watcher tasks + remove the worktree). A long task that outlives a subagent's turn must be owned by the MAIN LOOP via `run_in_background` (re-invoked exactly once on exit), not a subagent that rests-and-relaunches. Subagent gate/build runs that exceed one turn: rely on polling their `.gate-status`/artifact, and never wire an auto-relaunch.
 
 ## CRITICAL: Never Block on Questions — Default to Action
 
-**You MUST NOT interrupt work to ask the user a blocking question.** When you
-hit a decision point, choose the most reasonable option yourself, state the
-assumption you are making in one line, and PROCEED. The user redirects you if
-they disagree — that is cheaper than a blocking question that stalls the work.
+**You MUST NOT interrupt work to ask the user a blocking question.** When you hit a decision point, choose the most reasonable option yourself, state the assumption you are making in one line, and PROCEED. The user redirects you if they disagree — that is cheaper than a blocking question that stalls the work.
 
-This was a direct, repeated user directive (2026-06-18): "stop asking questions
-that interrupt work." A passive memory ([[gludd-never-block-on-questions]]) did
-not stop the relapse, so it is now ENFORCED by a hook.
+This was a direct, repeated user directive (2026-06-18): "stop asking questions that interrupt work." A passive memory ([[gludd-never-block-on-questions]]) did not stop the relapse, so it is now ENFORCED by a hook.
 
-- **Enforcement:** `.claude/hooks/no_blocking_questions_pretool.sh` is a
-  `PreToolUse(AskUserQuestion)` guardrail that DENIES the AskUserQuestion tool
-  (clean `permissionDecision:deny` JSON + exit 0, never a hook error; fail-open).
-  Registered in `.claude/settings.json`. It is context-efficient — it only fires
-  when a blocking question is actually attempted.
-- **What to do instead:** decide → state the assumption → act. If new information
-  changes the right call, change course and say so. Surface options *alongside*
-  continued work, never as a gate in front of it.
-- **The rare exception** (truly destructive/irreversible external action the user
-  has not pre-authorized): state the plan and the risk and proceed with the safe
-  default, or note it and keep going — still do not block. If the user has already
-  authorized the action (e.g. "push to GitHub"), just do it.
+- **Enforcement:** `.claude/hooks/no_blocking_questions_pretool.sh` is a `PreToolUse(AskUserQuestion)` guardrail that DENIES the AskUserQuestion tool (clean `permissionDecision:deny` JSON + exit 0, never a hook error; fail-open). Registered in `.claude/settings.json`. It is context-efficient — it only fires when a blocking question is actually attempted.
+- **What to do instead:** decide → state the assumption → act. If new information changes the right call, change course and say so. Surface options *alongside* continued work, never as a gate in front of it.
+- **The rare exception** (truly destructive/irreversible external action the user has not pre-authorized): state the plan and the risk and proceed with the safe default, or note it and keep going — still do not block. If the user has already authorized the action (e.g. "push to GitHub"), just do it.
 
 ## CRITICAL: Bash Command Policy
 
@@ -1662,8 +1239,7 @@ This is enforced by:
 - This AGENTS.md section — proactive instruction
 - The guardrail-pattern skill — reusable pattern reference
 
-Do not skip steps. Do not write implementation and then retroactively add tests.
-Do not mark work complete unless a test proves the behavior exists.
+Do not skip steps. Do not write implementation and then retroactively add tests. Do not mark work complete unless a test proves the behavior exists.
 
 ### Real-Time TDD Enforcement (2026-07-17)
 
@@ -1688,13 +1264,9 @@ Skip step 1 → step 3 is **DENIED** with a message naming the expected test fil
 **The TDD policy is now mechanically enforced at commit time.**
 
 1. **`scripts/check_tdd_compliance.py`** — blocks commits where modified source files lack test files. Checks that every changed .py file in src/ has a corresponding test file in tests/unit/ that actually imports from it and contains test functions.
-
 2. **`make check-tdd-compliance`** — callable target. Wired into pre-commit hooks. Must pass before any commit with source changes lands.
-
 3. **Coverage threshold**: modified modules below 50% test coverage are blocked. Target: 85%.
-
 4. **Allowlist**: `__init__.py`, type stubs, and explicitly documented exceptions only.
-
 5. **Exception process**: to add a file to the allowlist, it must have a documented reason in `config/tdd_allowlist.yml` — "don't need tests" is not a reason.
 
 **Why this exists**: Multiple enforcement plugins were committed without tests (enforce-make.ts had 0 runtime tests until Wave 13). The self-test gap audit found 800+ tests that verify source code shape but 0 that verify runtime behavior. A TDD-only-by-policy system failed repeatedly. Mechanical enforcement is the fix.
@@ -1708,8 +1280,7 @@ Workflow:
 2. Run `make test-and-commit` — this runs the full test suite and commits only if all tests pass.
 3. If you want a descriptive message, run `make test-and-commit MSG="your message"`.
 
-If you notice uncommitted changes that are test-green, stop what you are doing
-and commit them before starting new work.
+If you notice uncommitted changes that are test-green, stop what you are doing and commit them before starting new work.
 
 This is enforced by:
 - `.opencode/plugin/enforce-make.ts` — prints commit reminder after test runs pass
@@ -1718,13 +1289,9 @@ This is enforced by:
 
 ### Clean Tree Before Dispatch (2026-07-08)
 
-NEVER dispatch a subagent when the git working tree is dirty. Uncommitted
-changes left by a prior subagent cause pre-commit hook stash conflicts on
-the next push, forcing `-nv` (no-verify) bypasses that defeat the lint/secret
-guards.
+NEVER dispatch a subagent when the git working tree is dirty. Uncommitted changes left by a prior subagent cause pre-commit hook stash conflicts on the next push, forcing `-nv` (no-verify) bypasses that defeat the lint/secret guards.
 
-The `enforce-clean-tree.ts` plugin denies dispatch when `git status --porcelain`
-returns non-empty. Commit or stash before dispatching:
+The `enforce-clean-tree.ts` plugin denies dispatch when `git status --porcelain` returns non-empty. Commit or stash before dispatching:
 - `make git-add FILES='...' && make ship-commit MSG='...'` — commit the changes
 - `make git-stash` — stash temporarily, `make git-stash-pop` to restore
 
@@ -1753,33 +1320,19 @@ The 2026-06-22 incident: an agent committed `50dbd1b` with a red gate via `make 
 
 ## CRITICAL: Don't Push Every Commit — Batch Locally, Push Once
 
-**Pushing to master on every commit cancels every prior CI run. Zero validation occurs.**
-The GHA usage data proves this: 0/10 runs succeeded this session because every push
-cancelled the previous one. Nothing was ever tested by CI. This is not "using CI as
-a gate" — it is using CI as a cancellation daemon.
+**Pushing to master on every commit cancels every prior CI run. Zero validation occurs.** The GHA usage data proves this: 0/10 runs succeeded this session because every push cancelled the previous one. Nothing was ever tested by CI. This is not "using CI as a gate" — it is using CI as a cancellation daemon.
 
 ### Rules (each is machine-enforced)
 
-1. **`make batch-push` is the sanctioned push.** Default threshold: 5+ unpushed commits
-   OR `COMMIT_THRESHOLD=1` to push immediately. `GLUDD_FORCE_PUSH=1` bypasses all guards.
-   Direct `make git-push-sandboxcom` is subject to the full rate guard (3-layer: CI-pending,
-   30-min cooldown, cancelled-run cap).
-
-2. **Validate locally before pushing.** Lint + typecheck + collect-check + targeted tests
-   is the real gate. CI is for final validation of batched work, not per-commit testing.
-   Run `make gate-background` locally and wait for it to complete before pushing.
-
-3. **When pushing, WAIT for CI.** Use `make ci-push` (push + ci-wait) so the pipeline
-   actually completes. Never push and immediately push again — that's the cancellation loop.
-
+1. **`make batch-push` is the sanctioned push.** Default threshold: 5+ unpushed commits OR `COMMIT_THRESHOLD=1` to push immediately. `GLUDD_FORCE_PUSH=1` bypasses all guards. Direct `make git-push-sandboxcom` is subject to the full rate guard (3-layer: CI-pending, 30-min cooldown, cancelled-run cap).
+2. **Validate locally before pushing.** Lint + typecheck + collect-check + targeted tests is the real gate. CI is for final validation of batched work, not per-commit testing. Run `make gate-background` locally and wait for it to complete before pushing.
+3. **When pushing, WAIT for CI.** Use `make ci-push` (push + ci-wait) so the pipeline actually completes. Never push and immediately push again — that's the cancellation loop.
 4. **Maximum one CI run in flight at a time.** The `_push-rate-guard` enforces this:
    - CI-pending? BLOCKED. Use `make ci-wait` first.
    - <30 min since last push? BLOCKED (cooldown).
    - >3 cancelled runs in last 2h? BLOCKED (thrash detection).
 
-5. **Prefer local validation.** `make gate-background` runs the full suite locally in
-   the background. It has phase markers, heartbeat, and writes `.gate-status`. This is
-   faster than CI (no queue wait) and doesn't consume shared resources.
+5. **Prefer local validation.** `make gate-background` runs the full suite locally in the background. It has phase markers, heartbeat, and writes `.gate-status`. This is faster than CI (no queue wait) and doesn't consume shared resources.
 
 ### What NOT to do
 
@@ -1806,44 +1359,18 @@ This is enforced by:
 
 ## CRITICAL: Verification Before Claim (Anti-Lying Guardrails)
 
-**NEVER claim work is done/landed/pushed/fixed/green without pasting the
-verification command output in the SAME response.** A status word without its
-measurement in the same message is a lie, regardless of intent — the project's
-history (false alpha.3 ship, 12 confirmed-inert features, the reviewer silently
-failing, the tool-call loop reported "✅ Landed" while uncommitted) proves that
-unverified claims are indistinguishable from false ones.
+**NEVER claim work is done/landed/pushed/fixed/green without pasting the verification command output in the SAME response.** A status word without its measurement in the same message is a lie, regardless of intent — the project's history (false alpha.3 ship, 12 confirmed-inert features, the reviewer silently failing, the tool-call loop reported "✅ Landed" while uncommitted) proves that unverified claims are indistinguishable from false ones.
 
-This section consolidates the three enforcement layers added 2026-07-09
-(commits `ae9861f3`, `71b8edce`, `416b6285`) that make false claims structurally
-impossible, not merely discouraged. It extends "Done Claims Require Observable
-Verification Evidence" (above) with the mechanical guardrails and the research
-basis behind them.
+This section consolidates the three enforcement layers added 2026-07-09 (commits `ae9861f3`, `71b8edce`, `416b6285`) that make false claims structurally impossible, not merely discouraged. It extends "Done Claims Require Observable Verification Evidence" (above) with the mechanical guardrails and the research basis behind them.
 
 ### Three enforcement layers
 
-1. **`enforce-verified-claims.ts`** (`.opencode/plugin/`, `text.complete` hook) —
-   mechanically blocks ANY outgoing text containing done-words ("landed",
-   "committed", "pushed", "fixed", "passing", "shipped", "done", "complete",
-   "green", "resolved", "deployed", "verified", "passed", "working") unless the
-   SAME text carries machine-produced evidence (commit hash, `VERIFIED
+1. **`enforce-verified-claims.ts`** (`.opencode/plugin/`, `text.complete` hook) — mechanically blocks ANY outgoing text containing done-words ("landed", "committed", "pushed", "fixed", "passing", "shipped", "done", "complete", "green", "resolved", "deployed", "verified", "passed", "working") unless the SAME text carries machine-produced evidence (commit hash, `VERIFIED
    <branch>@<sha>`, `CI GREEN|RED|PENDING`, `N passed`, `=== GATE: PASSED ===`,
    `Collection OK`). Fail-open; `GLUDD_VERIFIED_CLAIMS_ENFORCE=0` disables.
    Proof: `make test TESTFILE=tests/unit/test_verified_claims_plugin.py`.
-2. **`enforce-clean-tree.ts`** (`.opencode/plugin/`, `tool.execute.before` hook) —
-   DENIES task/agent/workflow dispatch when `git status --porcelain` is
-   non-empty. Uncommitted changes left by a prior subagent cause pre-commit hook
-   stash conflicts on the next push, forcing `-nv` (no-verify) bypasses that
-   defeat the lint/secret guards. Commit or stash before dispatching. Fail-open;
-   `GLUDD_CLEAN_TREE_ENFORCE=0` disables. Proof:
-   `make test TESTFILE=tests/unit/test_clean_tree_plugin.py`.
-3. **`agent-worktree` targets** (`make agent-worktree` / `agent-merge` /
-   `agent-cleanup` / `agent-worktree-list`) — give every file-editing subagent
-   its own isolated git checkout + branch, so concurrent edits cannot trample
-   the shared `master` tree. The structural prevention of shared-tree races
-   removes the "two agents edited the same file, one commit was lost" failure
-   mode that historically produced false "done" claims. Read-only research
-   tasks stay on the main checkout. Proof:
-   `make test TESTFILE=tests/unit/test_agent_worktree_targets.py`.
+2. **`enforce-clean-tree.ts`** (`.opencode/plugin/`, `tool.execute.before` hook) — DENIES task/agent/workflow dispatch when `git status --porcelain` is non-empty. Uncommitted changes left by a prior subagent cause pre-commit hook stash conflicts on the next push, forcing `-nv` (no-verify) bypasses that defeat the lint/secret guards. Commit or stash before dispatching. Fail-open; `GLUDD_CLEAN_TREE_ENFORCE=0` disables. Proof: `make test TESTFILE=tests/unit/test_clean_tree_plugin.py`.
+3. **`agent-worktree` targets** (`make agent-worktree` / `agent-merge` / `agent-cleanup` / `agent-worktree-list`) — give every file-editing subagent its own isolated git checkout + branch, so concurrent edits cannot trample the shared `master` tree. The structural prevention of shared-tree races removes the "two agents edited the same file, one commit was lost" failure mode that historically produced false "done" claims. Read-only research tasks stay on the main checkout. Proof: `make test TESTFILE=tests/unit/test_agent_worktree_targets.py`.
 
 ### Forbidden patterns (each is a policy violation)
 
@@ -1851,47 +1378,24 @@ basis behind them.
 - Saying "pushed" without `make verify-remote BRANCH=<b> SHA=<sha>` → `VERIFIED <branch>@<sha>` output.
 - Saying "CI green" without `make ci-verdict BRANCH=<b>` output (headSha == branch tip).
 - Saying "tests pass" without the test runner output including the pass count.
-- Using `-nv` / `--no-verify` (no-verify) or `GLUDD_FORCE_PUSH=1` WITHOUT
-  explicit, in-message user authorization for that specific invocation. These
-  flags bypass the lint/secret/gate guards; using them unprompted is the
-  2026-06-22 commit-bypass bug replayed.
+- Using `-nv` / `--no-verify` (no-verify) or `GLUDD_FORCE_PUSH=1` WITHOUT explicit, in-message user authorization for that specific invocation. These flags bypass the lint/secret/gate guards; using them unprompted is the 2026-06-22 commit-bypass bug replayed.
 
 ### Research basis
 
-These guardrails are not ad-hoc — they reflect empirically validated failure
-modes of autonomous coding agents documented in the literature:
+These guardrails are not ad-hoc — they reflect empirically validated failure modes of autonomous coding agents documented in the literature:
 
-- **SWE-bench FAIL_TO_PASS**: the benchmark grades an agent on tests that must
-  flip from failing to passing; an agent that claims "fixed" without running
-  those tests scores zero. "Fixed" is operationally defined as a measurable
-  state transition, not an assertion. `enforce-verified-claims.ts` is the
-  in-session analogue: a claim is only true if its evidence is present.
-- **Chain-of-Verification (CoVe) independence principle**: verification must be
-  independent of generation — the same model that produced a claim cannot also
-  vouch for it without an external check. The requirement that the verification
-  OUTPUT (not the agent's memory) be pasted enforces this separation.
-- **Aider "dirty commits"**: Aider was found to commit unintended/stale
-  working-tree state when the tree was dirty, producing commits that did not
-  match the claimed change. `enforce-clean-tree.ts` makes this impossible at
-  dispatch time.
-- **Cline "shadow git"**: Cline's hidden git operations made changes that were
-  neither observable nor attributable, so "done" claims could not be audited.
-  The `agent-worktree` isolation + `verify-state` bundle make every change
-  observable and attributable.
+- **SWE-bench FAIL_TO_PASS**: the benchmark grades an agent on tests that must flip from failing to passing; an agent that claims "fixed" without running those tests scores zero. "Fixed" is operationally defined as a measurable state transition, not an assertion. `enforce-verified-claims.ts` is the in-session analogue: a claim is only true if its evidence is present.
+- **Chain-of-Verification (CoVe) independence principle**: verification must be independent of generation — the same model that produced a claim cannot also vouch for it without an external check. The requirement that the verification OUTPUT (not the agent's memory) be pasted enforces this separation.
+- **Aider "dirty commits"**: Aider was found to commit unintended/stale working-tree state when the tree was dirty, producing commits that did not match the claimed change. `enforce-clean-tree.ts` makes this impossible at dispatch time.
+- **Cline "shadow git"**: Cline's hidden git operations made changes that were neither observable nor attributable, so "done" claims could not be audited. The `agent-worktree` isolation + `verify-state` bundle make every change observable and attributable.
 
 ### Mandatory verification command
 
-**Before ANY status claim, run `make verify-state` and paste its output.** It
-is a read-only bundle of `git status` + `git log` + HEAD-vs-remote + CI verdict
-— the evidence an agent needs in one command. A response that claims
-done/landed/pushed/green without this output (or the specific per-claim command
-from the "Done Claims" table above) in the same message is a false claim and
-will be blocked by `enforce-verified-claims.ts`.
+**Before ANY status claim, run `make verify-state` and paste its output.** It is a read-only bundle of `git status` + `git log` + HEAD-vs-remote + CI verdict — the evidence an agent needs in one command. A response that claims done/landed/pushed/green without this output (or the specific per-claim command from the "Done Claims" table above) in the same message is a false claim and will be blocked by `enforce-verified-claims.ts`.
 
 Enforced by: this section (proactive), `.opencode/plugin/enforce-verified-claims.ts`
 + `.opencode/plugin/enforce-clean-tree.ts` + the `agent-worktree` Makefile
-targets, and `tests/unit/test_verified_claims_plugin.py` +
-`tests/unit/test_clean_tree_plugin.py` + `tests/unit/test_agent_worktree_targets.py`.
+targets, and `tests/unit/test_verified_claims_plugin.py` + `tests/unit/test_clean_tree_plugin.py` + `tests/unit/test_agent_worktree_targets.py`.
 
 ## Project Overview
 
@@ -1910,142 +1414,7 @@ This is the general-ludd-agent project: an autonomous coding system with Ansible
 
 ## Key Make Targets
 
-Run `make help` for the full categorized list (~100 targets). Key targets below.
-
-### Setup
-- `make init` - Set up the project (dirs + deps)
-- `make sync` - Sync uv dependencies
-- `make bootstrap` - init + lint + test + healthcheck
-- `make install-hooks` - Install pre-commit hooks (secrets, lint, collect)
-- `make clean` - Remove build artifacts
-
-### Quality
-- `make lint` - Run ruff linter
-- `make lint-fix` - Run ruff with auto-fix
-- `make typecheck` - Run mypy
-- `make check-types` - Flag `Any` usage in annotations (tight types)
-- `make healthcheck` - Verify imports work
-- `make collect-check` - Fast collection-error gate (use before every commit)
-- `make preflight` - Preflight quality gate (coverage, lint, mypy, templates)
-- `make gate` - Full gate: lint + typecheck + collect-check + test; writes `.gate-status`
-- `make gate-lite` - Local validation (lint+typecheck+collect+smoke+unit@2w); no OOM. NOT the gate of record. Use between commits for fast feedback.
-- `make gate-audit` - Gate + coverage audit (85% per-file threshold)
-- `make gate-async` - Launch gate detached (non-blocking); writes `.gate-status`
-- `make gate-status` - Print current .gate-status (RUNNING/PASS/FAIL)
-- `make qa` - Run lint + typecheck + test + healthcheck
-- `make validate` - Full validation including ansible syntax
-- `make security` - Full security: sast + sbom + pip-audit
-- `make sast` - Run bandit SAST
-- `make sbom` - Generate CycloneDX SBOM
-- `make pip-audit` - Audit dependencies for vulnerabilities
-- `make check-node-v26-compat` - Check Node v26 `--experimental-strip-types` compatibility for plugin code
-
-### Testing
-- `make test` - Full test suite with coverage
-- `make test-unit` - Unit tests only
-- `make test-integration` - Integration tests
-- `make test-e2e` - End-to-end tests
-- `make test-specific TESTFILE='path::TestClass::test_name'` - Single test
-- `make test-count` - Count collected tests
-- `make test-failures` - Show test failures
-- `make test-guardrails` - Test guardrail infrastructure
-- `make test-hook-runtime` - Functional hook runtime tests
-- `make test-and-commit` - Run tests then commit if green (`MSG="msg"`)
-- `make task CMD='make test-unit'` - Run CMD with timeout (GLUDD_TASK_TIMEOUT=300)
-- `make audit-coverage` - Coverage audit with per-file threshold check
-
-### Secrets + Security
-- `make secrets-scan` - Scan for secrets against baseline (read-only)
-- `make secrets-scrub` - Interactive secret audit + scrub
-- `make secrets-baseline` - Rebuild .secrets.baseline
-- `make security-audit` - Comprehensive: secrets + sast + pip-audit + backlog gate
-- `make clean-artifacts` - Clean build artifacts, caches, temp files
-
-### Git (use ONLY these — NEVER raw git commands)
-- `make git-status` - Show git status
-- `make git-diff` - Show diff stats
-- `make git-staged` - Show staged changes
-- `make git-log` - Show recent commits
-- `make git-show` - Show last commit diff
-- `make git-add FILES='f1 f2 ...'` - Stage specific files
-- `make git-add-all` - Stage all changes
-- `make git-commit MSG='message'` - Commit staged changes
-- `make git-reset FILES='HEAD~1'` - Reset to ref (soft by default)
-- `make git-branch MSG='name'` - Create branch
-- `make git-checkout MSG='branch'` - Switch branch
-- `make git-merge MSG='branch'` - Merge branch with --no-ff
-- `make git-stash` - Stash changes
-- `make git-stash-pop` - Pop stashed changes
-- `make git-rm FILES='...'` - Remove files from git
-- `make git-mv OLD='...' NEW='...'` - Rename/move tracked files
-- `make git-rebranch-onto` - Rebase current branch onto a new base
-
-### Feature Branch & Worktree Workflow
-- `make feature-start MSG='feature/short-name'` - Create and switch to feature branch
-- `make feature-done MSG='feature/short-name'` - Test, merge to master with --no-ff
-- `make agent-worktree BRANCH=<name>` - Isolated git worktree for a subagent
-- `make agent-merge BRANCH=<name>` - Merge a subagent worktree branch into master
-- `make agent-cleanup BRANCH=<name>` - Remove a subagent worktree + branch
-- `make agent-worktree-list` - List active git worktrees
-- `make agent-worktree-dev BRANCH=<name>` - Worktree from development branch
-- `make agent-merge-dev BRANCH=<name>` - Merge worktree branch into development
-
-### Development Branch
-- `make development-start` - Create development branch from master
-- `make development-push` - Push development branch to remote
-- `make development-status` - Show commits on development not yet on master
-- `make development-merge-to-master` - Merge development into master (CI-green required)
-
-### Git Remote (sandboxcom)
-- `make git-remote-sandboxcom` - Configure sandboxcom GitHub remote with SSH key
-- `make git-push-sandboxcom` - Push to sandboxcom/gludd mirror
-- `make git-pull-sandboxcom` - Pull and rebase from sandboxcom/gludd
-- `make git-fetch-sandboxcom` - Fetch from sandboxcom/gludd
-- `make ship-async REF=<hash> [TARGET=master]` - Gate in background; ff-only merge on green
-
-### Build + Deploy
-- `make dist` - Build distribution tarball
-- `make build-executable` - Build standalone executable (pyinstaller)
-- `make container-build` - Build container image
-- `make container-run` - Run container locally
-- `make container-push` - Push container image
-
-### Ansible
-- `make ansible-syntax` - Validate playbook syntax
-- `make playbook-list` - List registered playbooks
-- `make molecule-test` - Run molecule tests
-
-### Terraform
-- `make tf-cache-warm` - Download all providers into shared plugin cache
-- `make tf-init STACK=s/n` - Init a stack using shared cache
-- `make tf-validate STACK=s/n` - Validate a stack
-- `make tf-versions-check` - Enforce stacks match infra/terraform/versions.tf
-- `make tf-clean` - Remove shared plugin cache
-
-### Submodules
-- `make submodule-init` - Initialize all git submodules (recursive)
-- `make submodule-update` - Update submodules to latest remote (--merge)
-- `make submodule-status` - Show status of each submodule
-- `make submodule-pin REPO=.. TAG=..` - Pin a submodule to a tag/commit
-
-### Disk
-- `make disk` - Print disk usage + gludd footprint
-- `make disk-guard` - Check disk + clean caches if above threshold (95%)
-- `make disk-check` - Check disk usage, exit 1 if above threshold
-- `make check-disk` - Pre-commit check (fail if /tmp/gludd-* >100MB or disk >90%)
-- `make clean-tmp` - Clean /tmp/gludd-* files
-
-### Recovery / Other
-- `make crash-recovery` - Reset enforcement state files (`/tmp/gludd-session-start.json` et al.) after a crashed session leaves stale state (PID mismatch / age-gated)
-- `make backup-opencode` - Snapshot .opencode/ -> .opencode.orig/ (run before long sessions)
-- `make check-opencode-backup` - Warn if .opencode.orig/ is stale (>24h older than .opencode/)
-- `make verify-opencode-backup` - Verify backup is current (file listing + shared.ts export parity)
-- `make restore-opencode` - Restore .opencode/ (from .opencode.orig/ first, git HEAD fallback) + clear cache
-- `make smoke` - Quick daemon boot health check
-- `make gated-merge` - Guarded multi-branch merge with manifest
-- `make git-index` - Index git log into SQLite (.gludd/git_history.db)
-- `make git-search Q='...'` - Search indexed git history
-- `make git-stats` - Show git history index statistics
+The complete inventory is a mandatory included reference: [key Make targets](.agents/policy/key-make-targets.md). Read it before selecting or changing a target; the Make Target Selection Contract above remains authoritative.
 
 ## CRITICAL: Session Persistence Policy
 
@@ -2073,11 +1442,8 @@ This is enforced by:
 ### Rules (enforced by the task ledger)
 
 1. **Every dispatched task gets a unique ID recorded in TASKS.md BEFORE dispatch.** Format: `W.N` (wave.item), `G.N` (phase.item), or `FIX-N` (hotfix). The ID must be checkable — grep for it, it exists or it doesn't.
-
 2. **Before each dispatch wave, cross-check against current TASKS.md.** Every task in the wave MUST have a corresponding entry in TASKS.md. Every TASKS.md entry that is "completed" MUST NOT be re-dispatched. This is a mechanical grep — no memory required.
-
 3. **After subagent results land, update TASKS.md status IMMEDIATELY.** Before processing the next result or dispatching the next wave, mark the completed task's status. The task ledger is the single source of truth; stale entries are indistinguishable from false claims.
-
 4. **Never re-dispatch completed tasks.** Before dispatching any task, check TASKS.md for a completed entry with the same description. A completed task re-dispatched is wasted tokens and duplicated work.
 
 ### Anti-forgetting mechanism
@@ -2119,60 +1485,7 @@ Multiple sessions have demonstrated the forgetting pattern: the agent dispatches
 
 ## CRITICAL: Enforcement Plugin Reference (Session-Start Self-Awareness)
 
-Before making ANY tool call, the agent MUST know which plugins are active and
-what they block. Run `make list-plugins` at session start for the current roster.
-
-### Plugin Tool-Execute Blocks (in priority order)
-
-Plugins fire in opencode.json registration order. Earlier plugins win on ties.
-
-| Plugin | What it blocks | Disable via |
-|--------|---------------|-------------|
-| enforce-context.ts | ALL tools when SESSION.md stale >24h (↳ reads excluded) | GLUDD_CONTEXT_ENFORCE=0 |
-| enforce-multitask.ts | ALL non-dispatch tools when <3 dispatches (↳ reads excluded) | GLUDD_MULTITASK_FLOOR_ENFORCE=0 |
-| enforce-delegate.ts | edit/write/bash after 2 consecutive calls; read-grind after serial reads | GLUDD_MAINTHREAD_STREAK_ENFORCE=0 |
-| enforce-floor.ts | ALL non-dispatch tools after 5 calls in 30s (↳ reads excluded) | GLUDD_FLOOR_ENFORCE=0 |
-| enforce-session-start.ts | edit/write/bash until >=3 dispatches made | GLUDD_SESSION_START_ENFORCE=0 |
-| enforce-make.ts | non-make bash commands | (hard-coded ON) |
-| enforce-clean-tree.ts | task/agent dispatch on dirty git tree | GLUDD_CLEAN_TREE_ENFORCE=0 |
-| enforce-tdd.ts | edit/write to src/ when no test file exists | GLUDD_TDD_ENFORCE=0 |
-| enforce-no-suppressions.ts | edit/write with # noqa / # type: ignore | GLUDD_NO_SUPPRESSIONS_ENFORCE=0 |
-| enforce-no-wait.ts | bash sleep/ci-wait/gate-tail on main thread | GLUDD_NO_WAIT_ENFORCE=0 |
-| enforce-deadline.ts | task dispatch past timeout (5min default) | GLUDD_TASK_DEADLINE_ENFORCE=0 |
-| enforce-depth.ts | task/agent dispatch exceeding depth limit | GLUDD_DEPTH_ENFORCE=0 |
-| enforce-enhancement-ratio.ts | task/agent dispatch when fix% > 50% | GLUDD_ENHANCEMENT_RATIO_ENFORCE=0 |
-| enforce-batch-push.ts | bash push while CI pending | GLUDD_BATCH_PUSH_ENFORCE=0 |
-| enforce-branch-discipline.ts | bash push/merge from worktree | GLUDD_BRANCH_DISCIPLINE_ENFORCE=0 |
-| enforce-worktree.ts | bash push/merge/tag from inside worktree | GLUDD_WORKTREE_ENFORCE=0 |
-| enforce-deletion-gate.ts | edit/write that deletes files | GLUDD_DELETION_GATE_ENFORCE=0 |
-| enforce-objective.ts | edit/write/bash when PRIMARY OBJECTIVE unmet | GLUDD_OBJECTIVE_ENFORCE=0 |
-| enforce-verified-claims.ts | bash push without verification | GLUDD_VERIFIED_CLAIMS_ENFORCE=0 |
-| enforce-commit-lock.ts | concurrent git operations | GLUDD_COMMIT_LOCK_ENFORCE=0 |
-| enforce-task-tracking.ts | edit/write to src/ when TASKS.md unchanged | GLUDD_TASK_TRACKING_ENFORCE=0 |
-| enforce-test-integrity.ts | edit/write with CI anti-patterns | GLUDD_TEST_INTEGRITY_ENFORCE=0 |
-
-### Text-Output Plugins (fire on response, not on tool calls)
-
-| Plugin | What it blocks | Disable via |
-|--------|---------------|-------------|
-| enforce-stop.ts | text-only responses when work pending | (hard-coded ON) |
-| enforce-anti-essay.ts | essay-length responses when work pending | GLUDD_ANTI_ESSAY_ENFORCE=0 |
-| enforce-audit.ts | done-words in text when work pending | GLUDD_AUDIT_ENFORCE=0 |
-
-### Quick Reference
-
-```bash
-make list-plugins              # Full roster with hooks and block conditions
-GLUDD_FLOOR_ENFORCE=0 make ... # Temporarily disable floor enforcement
-GLUDD_SESSION_START_ENFORCE=0  # Disable session-start gate (Q&A sessions)
-GLUDD_MAINTHREAD_STREAK_ENFORCE=0  # Disable delegate streak block
-make verify-enforcement        # Check all plugins are healthy
-```
-
-**Key insight:** plugins that only block `edit/write/bash` or `task/agent` do NOT
-block `read`/`grep`/`glob` calls. The agent can always read files to diagnose
-blocked edits. Plugins marked "↳ reads excluded" explicitly skip read tools.
-
+The complete runtime and plugin table is a mandatory included reference: [enforcement plugin reference](.agents/policy/enforcement-plugins.md). Read it before plugin or enforcement work; all restart, verification, and fail-closed requirements in that reference remain authoritative.
 
 ## Working Conventions
 
@@ -2197,19 +1510,14 @@ Run through EVERY item below. Do NOT skip any. Fix all gaps immediately.
 
 1. **Conversation History Audit**: This is the MOST IMPORTANT step. Do it FIRST and THOROUGHLY.
    - Query the opencode conversation database at `~/.local/share/opencode/opencode.db`
-   - Use the Bash tool with a Makefile target (e.g., `make audit-messages`) to extract ALL user messages:
-     `SELECT p.content FROM message m JOIN part p ON m.id = p.message_id WHERE m.role = 'user' ORDER BY m.id;`
+   - Use the Bash tool with a Makefile target (e.g., `make audit-messages`) to extract ALL user messages: `SELECT p.content FROM message m JOIN part p ON m.id = p.message_id WHERE m.role = 'user' ORDER BY m.id;`
    - For EACH user message, identify explicit requests (features, fixes, behaviors, bugs)
    - Cross-reference each request against: (a) code in `src/`, (b) tests in `tests/`, (c) SESSION.md completed items
    - Any request NOT found in implementation is a GAP — fix it immediately
-   - **Common missed patterns**: TUI detach fixes, keybinding changes, view additions, CLI subcommands,
-     daemon endpoint wiring, config defaults. These get requested in early sessions and forgotten.
+   - **Common missed patterns**: TUI detach fixes, keybinding changes, view additions, CLI subcommands, daemon endpoint wiring, config defaults. These get requested in early sessions and forgotten.
    - Do NOT skip this step because "the current conversation doesn't mention it." Prior sessions matter.
 
-2. **Dead Code Audit**: For every new class/module you created, search the ENTIRE `src/` tree
-   for imports of that class. If it is only imported in test files, it is dead code — wire it
-   into the daemon, event loop, worker, or relevant subsystem.
-
+2. **Dead Code Audit**: For every new class/module you created, search the ENTIRE `src/` tree for imports of that class. If it is only imported in test files, it is dead code — wire it into the daemon, event loop, worker, or relevant subsystem.
 3. **Wiring Audit**: For every new field added to a schema/model:
    - Is it populated at creation time? (check the daemon endpoints and event loop)
    - Is it propagated through the pipeline? (check JobSpec construction in EventLoop)
@@ -2238,12 +1546,10 @@ Run through EVERY item below. Do NOT skip any. Fix all gaps immediately.
    - If added to daemon API, is there a CLI command AND a TUI action?
    - If added as a config option, is there a daemon endpoint AND a CLI flag?
    - If added to one view, is it accessible from ALL relevant views?
-   - **Pattern**: "CLI get project add" → MUST also have TUI project management.
-     "CLI get dispatch_mode" → TUI must show and allow setting it.
+   - **Pattern**: "CLI get project add" → MUST also have TUI project management. "CLI get dispatch_mode" → TUI must show and allow setting it.
    - **Anti-pattern**: Declaring a feature done because it exists in ONE interface.
 
-8. **Evidence**: After completing the audit, run `make test` and cite the pass count.
-   Run `make lint` and `make typecheck` and cite the results.
+8. **Evidence**: After completing the audit, run `make test` and cite the pass count. Run `make lint` and `make typecheck` and cite the results.
 
 ### How to Execute
 
@@ -2259,35 +1565,17 @@ Run through EVERY item below. Do NOT skip any. Fix all gaps immediately.
 
 ## Branch-landing integrity (codified)
 
-Three guardrails against the class of failures where commits land on the wrong
-branch, pushes silently no-op, or stale CI runs are misread as verdicts:
+Three guardrails against the class of failures where commits land on the wrong branch, pushes silently no-op, or stale CI runs are misread as verdicts:
 
-**(a) Shared/RC branch mutations: main checkout only.**
-Mutations to a SHARED or RC branch (master, main, release/*) MUST happen on the
-main checkout (/Users/shawnwilson/gludd) or a non-isolated agent running there
-— NEVER in a worktree-isolated agent. A worktree-isolated agent branches off a
-divergent HEAD at creation time; any commits it makes go to its own branch,
-silently failing to advance the shared branch tip. The orchestrator can never
-observe the update via `git log master` on the main checkout.
+**(a) Shared/RC branch mutations: main checkout only.** Mutations to a SHARED or RC branch (master, main, release/*) MUST happen on the main checkout (/Users/shawnwilson/gludd) or a non-isolated agent running there — NEVER in a worktree-isolated agent. A worktree-isolated agent branches off a divergent HEAD at creation time; any commits it makes go to its own branch, silently failing to advance the shared branch tip. The orchestrator can never observe the update via `git log master` on the main checkout.
 
-**(b) Verify the remote after every push.**
-After any push to sandboxcom, run:
+**(b) Verify the remote after every push.** After any push to sandboxcom, run:
 
     make verify-remote BRANCH=<branch> SHA=<local-HEAD>
 
-This calls `git ls-remote sandboxcom` (using the sandboxcom SSH key, same
-pattern as `git-push-sandboxcom`) and asserts the remote tip matches the
-expected SHA. A silent "Everything up-to-date" push (where the branch was not
-actually advanced) exits non-zero with `REMOTE MISMATCH: remote=X expected=Y`.
-Never claim a push succeeded until `VERIFIED <branch>@<sha>` is printed.
+This calls `git ls-remote sandboxcom` (using the sandboxcom SSH key, same pattern as `git-push-sandboxcom`) and asserts the remote tip matches the expected SHA. A silent "Everything up-to-date" push (where the branch was not actually advanced) exits non-zero with `REMOTE MISMATCH: remote=X expected=Y`. Never claim a push succeeded until `VERIFIED <branch>@<sha>` is printed.
 
-**(c) Never report a CI verdict whose headSha != the branch tip.**
-Use `make ci-verdict BRANCH=<branch>` instead of reading raw `ci-status`
-output. `ci-verdict` prints the latest run's headSha alongside its conclusion,
-and emits a loud `STALE RUN WARNING` if that headSha does not match the current
-local HEAD of the branch — making it structurally impossible to misread an old
-run as the verdict for a new push. A run only counts if its headSha matches the
-branch tip; otherwise the run is stale and must be discarded.
+**(c) Never report a CI verdict whose headSha != the branch tip.** Use `make ci-verdict BRANCH=<branch>` instead of reading raw `ci-status` output. `ci-verdict` prints the latest run's headSha alongside its conclusion, and emits a loud `STALE RUN WARNING` if that headSha does not match the current local HEAD of the branch — making it structurally impossible to misread an old run as the verdict for a new push. A run only counts if its headSha matches the branch tip; otherwise the run is stale and must be discarded.
 
 This is enforced by:
 - This AGENTS.md section — proactive instruction
@@ -2295,13 +1583,11 @@ This is enforced by:
 
 ## Model Utilization — Keep Sonnet Dominant
 
-**Standing rule:** `sonnet` is the cost-efficient default model.  The user wants a
-sonnet-dominant dispatch ratio.  The hook operates in two modes:
+**Standing rule:** `sonnet` is the cost-efficient default model.  The user wants a sonnet-dominant dispatch ratio.  The hook operates in two modes:
 
 ### Default mode (10%-band)
 
-When sonnet falls more than 10 percentage points below the combined other-model share in
-recent dispatches, the hook emits an advisory nudge to rebalance toward sonnet.
+When sonnet falls more than 10 percentage points below the combined other-model share in recent dispatches, the hook emits an advisory nudge to rebalance toward sonnet.
 
 ### Time-bound 2:1 target mode
 
@@ -2311,14 +1597,11 @@ A stricter 2:1 sonnet target (67%) can be activated for a fixed duration using:
 make set-sonnet-target HOURS=24 SHARE=0.67
 ```
 
-This writes `.claude/sonnet_ratio_target` with a `target_share` and `until_epoch`.
-While the window is active (i.e. `now < until_epoch`), the hook enforces `target_share`
-instead of the 10%-band.  The target auto-expires — no cleanup needed.
+This writes `.claude/sonnet_ratio_target` with a `target_share` and `until_epoch`. While the window is active (i.e. `now < until_epoch`), the hook enforces `target_share` instead of the 10%-band.  The target auto-expires — no cleanup needed.
 
 - **Config file:** `.claude/sonnet_ratio_target`
 - **Format:** `{"target_share": 0.67, "until_epoch": <unix-timestamp>}`
-- **Env override:** `GLUDD_SONNET_TARGET_CONFIG` overrides the config file path;
-  `GLUDD_SONNET_TARGET_SHARE` overrides `target_share` for that invocation.
+- **Env override:** `GLUDD_SONNET_TARGET_CONFIG` overrides the config file path; `GLUDD_SONNET_TARGET_SHARE` overrides `target_share` for that invocation.
 - **Auto-expiry:** once `until_epoch` is passed, the hook silently reverts to 10%-band mode.
 
 **How this is enforced (3-layer guardrail):**
@@ -2326,47 +1609,26 @@ instead of the 10%-band.  The target auto-expires — no cleanup needed.
 1. **Hook** — `.claude/hooks/model_utilization_pretool.sh` (`PreToolUse` / `Agent` matcher):
    - Maintains a rolling window of the last 20 model dispatches in `/tmp/gludd-model-util.json`.
    - Appends the current dispatch's model *before* computing shares (so it counts).
-   - **Time-bound mode** (active window): if `sonnet_share < target_share` → emits a
-     time-bound advisory nudge with "target is N% (2:1) until YYYY-MM-DD HH:MM".
-   - **Default mode** (expired/absent config): if `sonnet_share < non_share − 0.10` →
-     emits the standard band advisory nudge.
+   - **Time-bound mode** (active window): if `sonnet_share < target_share` → emits a time-bound advisory nudge with "target is N% (2:1) until YYYY-MM-DD HH:MM".
+   - **Default mode** (expired/absent config): if `sonnet_share < non_share − 0.10` → emits the standard band advisory nudge.
    - Silent when sonnet is healthy.  Fail-open on any error.
-2. **Settings** — registered in `.claude/settings.json` under `PreToolUse` with
-   `"matcher": "Agent"` alongside `agent_ceiling_pretool.sh` and `disk_discipline_pretool.sh`.
-3. **Prompt** (this section) — proactive instruction to prefer `sonnet` and treat the
-   nudge as a rebalancing signal, not noise.
+2. **Settings** — registered in `.claude/settings.json` under `PreToolUse` with `"matcher": "Agent"` alongside `agent_ceiling_pretool.sh` and `disk_discipline_pretool.sh`.
+3. **Prompt** (this section) — proactive instruction to prefer `sonnet` and treat the nudge as a rebalancing signal, not noise.
 
-**What to do when the nudge appears:** Use `model:'sonnet'` for the next N dispatches
-that do not specifically require a stronger model (e.g. complex multi-file synthesis →
-`opus`; simple file reads / research → `sonnet` or `haiku`).  Return to the default
-(`sonnet`) once the window re-balances.
+**What to do when the nudge appears:** Use `model:'sonnet'` for the next N dispatches that do not specifically require a stronger model (e.g. complex multi-file synthesis → `opus`; simple file reads / research → `sonnet` or `haiku`).  Return to the default (`sonnet`) once the window re-balances.
 
-**Do NOT** suppress, ignore, or remove the nudge — it is a utilization signal, not an
-error.  Removing the hook without addressing the utilization imbalance is a guardrail
-integrity violation (see "Guardrail Integrity Policy" above).
+**Do NOT** suppress, ignore, or remove the nudge — it is a utilization signal, not an error.  Removing the hook without addressing the utilization imbalance is a guardrail integrity violation (see "Guardrail Integrity Policy" above).
 
 ## Multitasking / Blockers
 
-**Core rule:** work is SERIAL only if it mutates the shared `master` working tree or
-competes for the one gate/commit/push slot. Everything else is PARALLEL — fan it out to
-an isolated git worktree. True blockers: merging to master, running `make gate`/commit/push,
-resolving conflicts in `daemon.py`/`routers/facts.py`/`db/models.py`/`db/repository.py`.
-False blockers (parallelize, do NOT wait): independent features, additive new files,
-CI observation, research/planning. Before ever "waiting," apply the decision checklist:
-(a) mutates shared master tree now? (b) needs gate/commit/push now? (c) depends on
-unmerged code? All NO → not a blocker, spin a worktree agent. Full policy: `docs/ORCHESTRATION.md`.
+**Core rule:** work is SERIAL only if it mutates the shared `master` working tree or competes for the one gate/commit/push slot. Everything else is PARALLEL — fan it out to an isolated git worktree. True blockers: merging to master, running `make gate`/commit/push, resolving conflicts in `daemon.py`/`routers/facts.py`/`db/models.py`/`db/repository.py`. False blockers (parallelize, do NOT wait): independent features, additive new files, CI observation, research/planning. Before ever "waiting," apply the decision checklist: (a) mutates shared master tree now? (b) needs gate/commit/push now? (c) depends on unmerged code? All NO → not a blocker, spin a worktree agent. Full policy: `docs/ORCHESTRATION.md`.
 
 ## CRITICAL: Release Pipeline Must Be CI-Green (codified)
 
-**Every release tag MUST be preceded by a passing "Build and Release" CI run on the
-exact commit being tagged. `make release-cut` enforces this as step 0 and aborts the
-entire release if CI is not green. The CI workflow independently enforces it too: the
-`release` job `needs: [gate]` (transitively via the platform build jobs), so a tag push
-cannot publish a GitHub Release if the gate fails.**
+**Every release tag MUST be preceded by a passing "Build and Release" CI run on the exact commit being tagged. `make release-cut` enforces this as step 0 and aborts the entire release if CI is not green. The CI workflow independently enforces it too: the `release` job `needs: [gate]` (transitively via the platform build jobs), so a tag push cannot publish a GitHub Release if the gate fails.**
 
 ### Rule
-Before `git-push-sandboxcom`/`git-tag-push` run, `scripts/require_ci_green.py` is called
-against HEAD. It queries GitHub Actions via `gh run list` and is fail-closed:
+Before `git-push-sandboxcom`/`git-tag-push` run, `scripts/require_ci_green.py` is called against HEAD. It queries GitHub Actions via `gh run list` and is fail-closed:
 
 | CI state | Exit | release-cut behaviour |
 |---|---|---|
@@ -2376,59 +1638,25 @@ against HEAD. It queries GitHub Actions via `gh run list` and is fail-closed:
 | no matching run found | 1 (RED, fail-closed) | ABORT — push triggers a run; wait |
 
 ### Enforcement (both sides)
-- **Client:** `scripts/require_ci_green.py` (pure `verdict_for()` unit-tested in
-  `tests/unit/test_require_ci_green.py`, 17 tests) → `make require-ci-green [SHA=…]` →
-  `make release-cut` step 0/4. The only sanctioned release command.
-- **CI:** `.github/workflows/build.yml` — `release` job `needs: [version, gate, …]`; the
-  gate runs on `v*` tag pushes. Broken code cannot publish a release.
+- **Client:** `scripts/require_ci_green.py` (pure `verdict_for()` unit-tested in `tests/unit/test_require_ci_green.py`, 17 tests) → `make require-ci-green [SHA=…]` → `make release-cut` step 0/4. The only sanctioned release command.
+- **CI:** `.github/workflows/build.yml` — `release` job `needs: [version, gate, …]`; the gate runs on `v*` tag pushes. Broken code cannot publish a release.
 
 ### Never
 - Never push a release tag manually (bypasses the client gate).
-- Never push fix-forward waves straight to `master` as if releasable. Use a
-  `release-candidate/*` branch, confirm its CI green, then `ship-ff` master to it.
-- Never claim "green" without a CI run id + SUCCESS conclusion for the exact SHA
-  (reinforces the no-unquantified-status-claims rule). Per-file `test-iso` is NOT the gate.
+- Never push fix-forward waves straight to `master` as if releasable. Use a `release-candidate/*` branch, confirm its CI green, then `ship-ff` master to it.
+- Never claim "green" without a CI run id + SUCCESS conclusion for the exact SHA (reinforces the no-unquantified-status-claims rule). Per-file `test-iso` is NOT the gate.
 
 ## CRITICAL: Pipeline Completion Is The Primary Objective
 
-**When a release is pending, getting the build green and the artifacts published
-is the #1 priority — above structural tests, new plugins, documentation, refactors,
-or any other enhancement.** This was codified after multiple sessions where the
-agent spent days adding structural tests and guardrails while the release pipeline
-stayed red or unpushed. The user's explicit feedback: the CI pipeline build has
-NOT been the priority for DAYS, and that is the bug this section exists to prevent.
+**When a release is pending, getting the build green and the artifacts published is the #1 priority — above structural tests, new plugins, documentation, refactors, or any other enhancement.** This was codified after multiple sessions where the agent spent days adding structural tests and guardrails while the release pipeline stayed red or unpushed. The user's explicit feedback: the CI pipeline build has NOT been the priority for DAYS, and that is the bug this section exists to prevent.
 
 ### Rules (each is a hard policy, not a guideline)
 
-1. **First dispatch is pipeline-focused.** When a release is pending (A.4 or
-   equivalent unchecked in TASKS.md), the FIRST dispatch in every wave MUST be
-   pipeline-focused: push unpushed commits, check CI verdict, fix CI failures,
-   or cut the release. Structural tests, new plugins, and documentation come
-   AFTER the pipeline dispatch slot is filled.
-
-2. **Secondary work capped at 50% of the wave.** Adding structural tests, new
-   plugins, or documentation while the pipeline is red or unpushed is a
-   SECONDARY priority — it MUST NEVER consume more than 50% of the dispatch
-   wave. In a three-slot wave, at least two slots must advance the pipeline
-   (push/fix/cut) when the pipeline is not green.
-
-3. **Check push status at session start.** The agent MUST check push status at
-   the start of every session: if commits are unpushed, pushing them is the
-   FIRST action — before any read of TASKS.md, before any dispatch wave, before
-   any structural test. An unpushed pipeline is a blocked pipeline.
-
-4. **"CI is pending" is never a stop.** "CI is pending" is never an excuse to
-   stop working on the pipeline. Use the CI wait to fix test failures, write
-   regression tests for the failures CI surfaces, or prepare the release-cut
-   command — NOT to add unrelated features, plugins, or guardrails. See
-   DC.1 (CI Wait Productivity).
-
-5. **Release is NOT done until 28 categories are verified.** The release is NOT
-   done until `make verify-release-completeness TAG=<tag>` exits 0 with all 28
-   artifact categories and the 30-asset minimum confirmed. A tag push is not
-   done. A green CI run is not done.
-   Only the artifact-completeness gate is done. (Reinforces "A Release is an
-   Artifact, Not a Tag" below.)
+1. **First dispatch is pipeline-focused.** When a release is pending (A.4 or equivalent unchecked in TASKS.md), the FIRST dispatch in every wave MUST be pipeline-focused: push unpushed commits, check CI verdict, fix CI failures, or cut the release. Structural tests, new plugins, and documentation come AFTER the pipeline dispatch slot is filled.
+2. **Secondary work capped at 50% of the wave.** Adding structural tests, new plugins, or documentation while the pipeline is red or unpushed is a SECONDARY priority — it MUST NEVER consume more than 50% of the dispatch wave. In a three-slot wave, at least two slots must advance the pipeline (push/fix/cut) when the pipeline is not green.
+3. **Check push status at session start.** The agent MUST check push status at the start of every session: if commits are unpushed, pushing them is the FIRST action — before any read of TASKS.md, before any dispatch wave, before any structural test. An unpushed pipeline is a blocked pipeline.
+4. **"CI is pending" is never a stop.** "CI is pending" is never an excuse to stop working on the pipeline. Use the CI wait to fix test failures, write regression tests for the failures CI surfaces, or prepare the release-cut command — NOT to add unrelated features, plugins, or guardrails. See DC.1 (CI Wait Productivity).
+5. **Release is NOT done until 28 categories are verified.** The release is NOT done until `make verify-release-completeness TAG=<tag>` exits 0 with all 28 artifact categories and the 30-asset minimum confirmed. A tag push is not done. A green CI run is not done. Only the artifact-completeness gate is done. (Reinforces "A Release is an Artifact, Not a Tag" below.)
 
 ### Anti-patterns (each is a policy violation)
 
@@ -2437,19 +1665,13 @@ NOT been the priority for DAYS, and that is the bug this section exists to preve
 - Writing documentation while CI is failing.
 - Treating "CI is pending" as a reason to start unrelated feature work.
 - Claiming the release is "done" without `verify-release-completeness` exit 0.
-- Letting a single wave pass with 0 pipeline-focused dispatches when a release
-  is pending.
+- Letting a single wave pass with 0 pipeline-focused dispatches when a release is pending.
 
 ### Enforcement (3-layer guardrail)
 
-1. **Prompt** — this section (proactive instruction for every agent reading
-   AGENTS.md).
-2. **Test** — `tests/unit/test_pipeline_priority.py` structurally pins the
-   section heading and key phrases so a regression that strips them is caught
-   at gate time.
-3. **Operational Discipline Rules** — OD.1 (Intermediate Progress Is Not
-   Completion), OD.3 (CI Is Fire-and-Forget), OD.8 (Don't Make Artifacts
-   Optional), and DC.1 (CI Wait Productivity) all reinforce this section.
+1. **Prompt** — this section (proactive instruction for every agent reading AGENTS.md).
+2. **Test** — `tests/unit/test_pipeline_priority.py` structurally pins the section heading and key phrases so a regression that strips them is caught at gate time.
+3. **Operational Discipline Rules** — OD.1 (Intermediate Progress Is Not Completion), OD.3 (CI Is Fire-and-Forget), OD.8 (Don't Make Artifacts Optional), and DC.1 (CI Wait Productivity) all reinforce this section.
 
 ## CRITICAL: A Release is an Artifact, Not a Tag (codified)
 
@@ -2469,43 +1691,23 @@ NOT been the priority for DAYS, and that is the bug this section exists to preve
 > This correction exists because `verify-release-artifact` passing is exactly how
 > v0.1.0-beta.1 was declared shipped with 1 of 12 required assets.
 
-**A version is NOT done until its Build-and-Release CI run is GREEN and
-`make verify-release-completeness TAG=<tag>` exits 0 (all required published assets
-confirmed).**
+**A version is NOT done until its Build-and-Release CI run is GREEN and `make verify-release-completeness TAG=<tag>` exits 0 (all required published assets confirmed).**
 
-This was codified after neither `v0.1.0-alpha.2` nor `v0.1.0-alpha.3` ever
-produced a downloadable artifact: the gate was red on both releases, so the
-`release` job (which `needs: [gate]`) was skipped.  Tags existed; artifacts did
-not.  Both releases were treated as "shipped" — a false claim.  This section is
-the machine-enforceable correction.
+This was codified after neither `v0.1.0-alpha.2` nor `v0.1.0-alpha.3` ever produced a downloadable artifact: the gate was red on both releases, so the `release` job (which `needs: [gate]`) was skipped.  Tags existed; artifacts did not.  Both releases were treated as "shipped" — a false claim.  This section is the machine-enforceable correction.
 
 ### The rule (three bindings)
 
-1. **A version is NOT shipped until `make verify-release-artifact TAG=<tag>` passes.**
-   That command calls `scripts/verify_release_artifact.py` and exits 0 only when
-   `gh release view` returns a non-draft release with at least one downloadable
-   asset.  A tag in the repo with zero assets = NOT shipped.
-
-2. **Never bump to the next version while the current version lacks a green release
-   and confirmed artifact.**  "alpha.3 is done, starting alpha.4" is only valid
-   when `make verify-release-artifact TAG=v0.1.0-alpha.3` returns PASS.
-
-3. **A release/version task may only be marked completed with the artifact URL as
-   evidence.**  The completion entry in TASKS.md must include:
+1. **A version is NOT shipped until `make verify-release-artifact TAG=<tag>` passes.** That command calls `scripts/verify_release_artifact.py` and exits 0 only when `gh release view` returns a non-draft release with at least one downloadable asset.  A tag in the repo with zero assets = NOT shipped.
+2. **Never bump to the next version while the current version lacks a green release and confirmed artifact.**  "alpha.3 is done, starting alpha.4" is only valid when `make verify-release-artifact TAG=v0.1.0-alpha.3` returns PASS.
+3. **A release/version task may only be marked completed with the artifact URL as evidence.**  The completion entry in TASKS.md must include:
    - The `gh release view` output showing `isDraft: false` and `assets: N` (N ≥ 1)
    - The artifact download URL(s)
-   - The CI run id and `conclusion: success`
-   Without all three, the task is NOT complete — marking it done is a false claim
-   (see the no-unquantified-status-claims rule).
+   - The CI run id and `conclusion: success` Without all three, the task is NOT complete — marking it done is a false claim (see the no-unquantified-status-claims rule).
 
 ### Enforcement (three layers)
 
-- **Script:** `scripts/verify_release_artifact.py` — exit 0 only if assets exist.
-  Fail-closed: no gh / no network / release missing = exit 1.
-- **Make:** `make verify-release-artifact TAG=<tag>` — the callable gate target.
-  `make release-cut` calls it as step 4/4 with a poll loop (async CI); if the
-  poll exhausts without seeing assets it exits non-zero with a loud warning so a
-  tag is never mistaken for a shipped release.
+- **Script:** `scripts/verify_release_artifact.py` — exit 0 only if assets exist. Fail-closed: no gh / no network / release missing = exit 1.
+- **Make:** `make verify-release-artifact TAG=<tag>` — the callable gate target. `make release-cut` calls it as step 4/4 with a poll loop (async CI); if the poll exhausts without seeing assets it exits non-zero with a loud warning so a tag is never mistaken for a shipped release.
 - **Prompt (this section):** proactive instruction — the three rules above.
 
 ### Tag vs. artifact — the key distinction
@@ -2522,16 +1724,11 @@ the machine-enforceable correction.
 - Never call a version "done" or "shipped" from a tag alone.
 - Never open a next-version epic/task while the current version has no artifact.
 - Never log a completion entry without the artifact URL and CI run id.
-- Never treat `make release-cut` success as proof of an artifact — only
-  `make verify-release-artifact` is the proof (it queries the actual GitHub Release).
-  If `release-cut` timed out on its poll, run `verify-release-artifact` manually
-  after CI finishes.
+- Never treat `make release-cut` success as proof of an artifact — only `make verify-release-artifact` is the proof (it queries the actual GitHub Release). If `release-cut` timed out on its poll, run `verify-release-artifact` manually after CI finishes.
 
 ## CRITICAL: Three-Agent Dispatch Ceiling and Configurable Floor
 
-**Every dispatch wave MUST contain no more than 3 task/agent/workflow dispatches.**
-The mandatory minimum is adaptive by default and becomes non-zero only when an
-operator explicitly configures it. Pending work alone does not justify filler.
+**Every dispatch wave MUST contain no more than 3 task/agent/workflow dispatches.** The mandatory minimum is adaptive by default and becomes non-zero only when an operator explicitly configures it. Pending work alone does not justify filler.
 
 > **Single source of truth.** `.opencode/lib/multitask_config.ts` defines
 > `MIN_DISPATCHES`, `MAX_DISPATCHES`, and `HARD_MAX_DISPATCHES=3`. Every plugin
@@ -2540,21 +1737,16 @@ operator explicitly configures it. Pending work alone does not justify filler.
 
 ### Why at most 3
 
-Three permits useful parallelism without multiplying coordination, worktree,
-process, and token costs. Fewer agents are correct when the work is coupled or
-small; an idle slot is cheaper than a filler task or duplicate owner.
+Three permits useful parallelism without multiplying coordination, worktree, process, and token costs. Fewer agents are correct when the work is coupled or small; an idle slot is cheaper than a filler task or duplicate owner.
 
 ### Enforcement (machine)
 
-**`enforce-multitask.ts`** mechanically blocks non-dispatch tools (Edit/Write/Bash)
-when:
+**`enforce-multitask.ts`** mechanically blocks non-dispatch tools (Edit/Write/Bash) when:
 - The **prior message** was below an explicitly configured minimum
 - The **current message** has 0 dispatches and pending work exists (INSUFFICIENT DISPATCHES)
 - **MAX_ZERO_STREAK** applies after two zero-dispatch responses only when an operator explicitly configured a positive floor
 
-The plugin's `tool.execute.before` hook fires on every tool call. A dispatch wave
-resets the counters. A non-dispatch tool call with an uncleared breach is denied
-with a message naming the exact count and floor.
+The plugin's `tool.execute.before` hook fires on every tool call. A dispatch wave resets the counters. A non-dispatch tool call with an uncleared breach is denied with a message naming the exact count and floor.
 
 ```text
 MULTITASKING FLOOR BREACH: only 1 dispatch in the prior message.
@@ -2562,33 +1754,20 @@ Configured floor: 3. This is NOT advisory.
 REQUIRED: 3 parallel task/agent/workflow dispatches in ONE message.
 ```
 
-**UNDER-FLOOR HARD BLOCK (2026-07-15):** When a non-zero minimum is
-explicitly configured, the block fires immediately below that value. With no
-configured minimum, this path is inert and the three-agent ceiling still applies.
+**UNDER-FLOOR HARD BLOCK (2026-07-15):** When a non-zero minimum is explicitly configured, the block fires immediately below that value. With no configured minimum, this path is inert and the three-agent ceiling still applies.
 
 ### Subagent quality requirements
 
-**Every dispatched subagent MUST produce a deliverable.** Subagent slots are
-finite — a slot filled with a bogus task is a slot stolen from real work.
+**Every dispatched subagent MUST produce a deliverable.** Subagent slots are finite — a slot filled with a bogus task is a slot stolen from real work.
 
-- **Every subagent MUST be given enough context to do real work.** Full file
-  reads, multi-step tasks — not single grep/check operations that return
-  immediately. A subagent that reports back in 30 seconds with "found nothing"
-  did no work.
-- **Subagents that only do read/grep/return-status are wasted slots.** Use the
-  read/grep/glob tools directly for single searches. Subagents exist for
-  synthesis and production — reading files, reasoning about them, and producing
-  a concrete output (a code change, a test file, a documented analysis).
-- **Each subagent task should be sized for 2–5 minutes of meaningful work.**
-  Shorter = wasteful overhead. Longer = deadline risk.
-- **"Research" subagents are NOT placeholders.** A research subagent that
-  "greps for a pattern" is filler. A research subagent that "reads 3 files,
-  cross-references their callers, and proposes a refactoring plan" does real work.
+- **Every subagent MUST be given enough context to do real work.** Full file reads, multi-step tasks — not single grep/check operations that return immediately. A subagent that reports back in 30 seconds with "found nothing" did no work.
+- **Subagents that only do read/grep/return-status are wasted slots.** Use the read/grep/glob tools directly for single searches. Subagents exist for synthesis and production — reading files, reasoning about them, and producing a concrete output (a code change, a test file, a documented analysis).
+- **Each subagent task should be sized for 2–5 minutes of meaningful work.** Shorter = wasteful overhead. Longer = deadline risk.
+- **"Research" subagents are NOT placeholders.** A research subagent that "greps for a pattern" is filler. A research subagent that "reads 3 files, cross-references their callers, and proposes a refactoring plan" does real work.
 
 ### COST-EFFICIENCY DIRECTIVE interaction
 
-The COST-EFFICIENCY DIRECTIVE and canonical configuration set a hard ceiling of
-three. An operator may configure a minimum from zero through three:
+The COST-EFFICIENCY DIRECTIVE and canonical configuration set a hard ceiling of three. An operator may configure a minimum from zero through three:
 
 | Wave size | Status | Why |
 |---|---|---|
@@ -2596,9 +1775,7 @@ three. An operator may configure a minimum from zero through three:
 | 3 | **MAXIMUM** | Full useful wave; never exceed it. |
 | 4+ | **DENIED** | Above the canonical hard ceiling. |
 
-The COST-EFFICIENCY DIRECTIVE's other rules (terse prompts, serialized research,
-coding subagents ≤2 parallel) remain in force and are NOT overridden by this
-section.
+The COST-EFFICIENCY DIRECTIVE's other rules (terse prompts, serialized research, coding subagents ≤2 parallel) remain in force and are NOT overridden by this section.
 
 ### Override
 
@@ -2608,35 +1785,24 @@ section.
 | `GLUDD_MULTITASK_FLOOR_ENFORCE=0` | Disable ALL multitask enforcement entirely. |
 | `make disengage-enforcement` | Temporary emergency bypass for the current session. Expires after `MAX_DISENGAGE_MS`. |
 
-`GLUDD_MIN_DISPATCHES=0` intentionally disables only mandatory wave width; the
-hard ceiling, ownership, deduplication, and other enforcement remain active.
+`GLUDD_MIN_DISPATCHES=0` intentionally disables only mandatory wave width; the hard ceiling, ownership, deduplication, and other enforcement remain active.
 
 ### "No work to dispatch"
 
-If there is genuinely no work to dispatch, then there is no pending work in
-`TASKS.md` and no entries in `config/ratchet.yml` — and the plugin's
-`hasPendingWork()` gate will not fire. The floor only applies when work exists.
-When all work is done, the plugin is silent.
+If there is genuinely no work to dispatch, then there is no pending work in `TASKS.md` and no entries in `config/ratchet.yml` — and the plugin's `hasPendingWork()` gate will not fire. The floor only applies when work exists. When all work is done, the plugin is silent.
 
 ### Enforcement layers
 
-1. **Config** — `.opencode/lib/multitask_config.ts` (canonical constants:
-   `MIN_DISPATCHES=0`, `MAX_DISPATCHES=3`, `HARD_MAX_DISPATCHES=3`,
-   `MAX_ZERO_STREAK=2`). Edits to the floor/ceiling go here — it is the
-   single source of truth shared by all enforcement plugins.
-2. **Plugin** — `.opencode/plugin/enforce-multitask.ts` imports from
-   `multitask_config.ts` and mechanically enforces the configured limits.
+1. **Config** — `.opencode/lib/multitask_config.ts` (canonical constants: `MIN_DISPATCHES=0`, `MAX_DISPATCHES=3`, `HARD_MAX_DISPATCHES=3`, `MAX_ZERO_STREAK=2`). Edits to the floor/ceiling go here — it is the single source of truth shared by all enforcement plugins.
+2. **Plugin** — `.opencode/plugin/enforce-multitask.ts` imports from `multitask_config.ts` and mechanically enforces the configured limits.
 3. **Prompt** — this section.
-4. **Test** — `tests/unit/test_multitask_plugin.py`
-   `TestAdaptiveMinimumAndHardCeiling`, `tests/unit/test_multitask_min_dispatch.py`.
+4. **Test** — `tests/unit/test_multitask_plugin.py` `TestAdaptiveMinimumAndHardCeiling`, `tests/unit/test_multitask_min_dispatch.py`.
 
 ## CRITICAL: Up to 3 Useful Subagents
 
-**Use up to 3 concurrent subagent threads when the work has that many independent,
-useful deliverables.** Never create filler work merely to occupy a slot.
+**Use up to 3 concurrent subagent threads when the work has that many independent, useful deliverables.** Never create filler work merely to occupy a slot.
 
-**Steady-state dispatch rule:** When a subagent completes, reuse its slot promptly
-only if another independent deliverable is ready. The pipeline must never exceed three.
+**Steady-state dispatch rule:** When a subagent completes, reuse its slot promptly only if another independent deliverable is ready. The pipeline must never exceed three.
 
 **How to maintain useful concurrency:**
 1. After each subagent completion notification, immediately check: how many are still running?
@@ -2644,30 +1810,19 @@ only if another independent deliverable is ready. The pipeline must never exceed
 3. Do not stop while tracked work remains, but do not manufacture parallel ownership.
 4. If no independent task exists, continue the coupled work inline.
 
-**The active harness floor is configured to zero.** The env vars are
-`CLAUDE_AGENT_FLOOR=0` and `GLUDD_MIN_DISPATCHES=0`; delegation becomes mandatory
-only when an operator raises one explicitly. All plugins import the hard ceiling
-of three and clamp overrides to it.
+**The active harness floor is configured to zero.** The env vars are `CLAUDE_AGENT_FLOOR=0` and `GLUDD_MIN_DISPATCHES=0`; delegation becomes mandatory only when an operator raises one explicitly. All plugins import the hard ceiling of three and clamp overrides to it.
 
-**Enforcement mechanism — cap always, minimum only by opt-in.** The plugin cannot
-count live subagents (the harness exposes no live-count API). It always denies a
-fourth dispatch in one wave. Streak, result-phase, refill, session-start dispatch,
-and thin-wave blocks run only when the effective configured floor is nonzero.
+**Enforcement mechanism — cap always, minimum only by opt-in.** The plugin cannot count live subagents (the harness exposes no live-count API). It always denies a fourth dispatch in one wave. Streak, result-phase, refill, session-start dispatch, and thin-wave blocks run only when the effective configured floor is nonzero.
 
 The `scripts/agent_liveness.py` probe (Python-side live counting) informs the shell hooks but is not wired into the TypeScript plugins.
 
-When a configured floor is active and that many independent deliverables exist,
-running a thinner wave is a bug. Coupled or single-file work is not improved by
-duplicate owners and must never be padded with status-only agents.
+When a configured floor is active and that many independent deliverables exist, running a thinner wave is a bug. Coupled or single-file work is not improved by duplicate owners and must never be padded with status-only agents.
 
 **See also:** the *Steady-state dispatch (up to three useful agents)* subsection under Pipeline Orchestration Model below for the concrete behavioral rules (fast result processing, no long foreground ops, and no filler tasks).
 
 ## CRITICAL: Anti-Grinding Enforcement
 
-**When an operator configures a nonzero floor, `enforce-floor.ts` maintains a
-consecutive non-dispatch counter that blocks further inline work after the
-configured threshold.** At the default zero floor this entire mandatory-delegation
-path returns early; only the hard dispatch ceiling remains active.
+**When an operator configures a nonzero floor, `enforce-floor.ts` maintains a consecutive non-dispatch counter that blocks further inline work after the configured threshold.** At the default zero floor this entire mandatory-delegation path returns early; only the hard dispatch ceiling remains active.
 
 ### How it works
 
@@ -2703,104 +1858,47 @@ For focused investigation work, raise the deny threshold: `GLUDD_READ_GRIND_DENY
 
 ## CRITICAL: System-Load Gate Before Dispatch Waves
 
-**Before EVERY dispatch wave, check the system load average. If the 1-minute load
-average exceeds 2x the CPU count, kill background processes and trim the wave
-before dispatching.** A saturated machine runs subagents at a crawl — each
-subagent competes for the same CPU slices, cumulative latency explodes, and the
-orchestrator stalls waiting for results that will never arrive on time.
+**Before EVERY dispatch wave, check the system load average. If the 1-minute load average exceeds 2x the CPU count, kill background processes and trim the wave before dispatching.** A saturated machine runs subagents at a crawl — each subagent competes for the same CPU slices, cumulative latency explodes, and the orchestrator stalls waiting for results that will never arrive on time.
 
 ### The rule
 
-1. **Check load before dispatch.** Run `make check-system-load` (or the
-   equivalent) before composing a dispatch wave. The command must return the
-   1-minute load average and CPU count.
-2. **If load > 2x CPU count: KILL, don't add.** Kill background gate processes
-   (`make gate-kill`), exit polling subagents, and trim the wave below the
-   three-agent ceiling
-   subagents. Do NOT dispatch at full capacity — you are adding load to an
-   already-saturated machine. Each subagent spawns its own CPU-intensive work;
-   piling more on top of an overloaded system makes ALL of them slower.
-3. **If load > 3x CPU count: HALT dispatch entirely.** Run `make clean-tmp`,
-   `make gate-kill`, and wait for the load to drop below 2x before dispatching
-   anything. A machine at 3x+ CPU count is thrashing — subagents will time out
-   or produce garbage output.
-4. **Recovery:** Once load drops below 2x CPU, resume with one useful agent for
-   one wave, then return to a maximum of three after confirming load stays low
-   for 60+ seconds.
-5. **Background gate + subagents = multiplicative load.** A `make gate` runs
-   pytest with `-n auto` (all cores). A single gate + 3 subagents = every
-   CPU core oversubscribed 2-3x. Never run a background gate AND a full
-   dispatch wave simultaneously — pause one or cap the other.
+1. **Check load before dispatch.** Run `make check-system-load` (or the equivalent) before composing a dispatch wave. The command must return the 1-minute load average and CPU count.
+2. **If load > 2x CPU count: KILL, don't add.** Kill background gate processes (`make gate-kill`), exit polling subagents, and trim the wave below the three-agent ceiling subagents. Do NOT dispatch at full capacity — you are adding load to an already-saturated machine. Each subagent spawns its own CPU-intensive work; piling more on top of an overloaded system makes ALL of them slower.
+3. **If load > 3x CPU count: HALT dispatch entirely.** Run `make clean-tmp`, `make gate-kill`, and wait for the load to drop below 2x before dispatching anything. A machine at 3x+ CPU count is thrashing — subagents will time out or produce garbage output.
+4. **Recovery:** Once load drops below 2x CPU, resume with one useful agent for one wave, then return to a maximum of three after confirming load stays low for 60+ seconds.
+5. **Background gate + subagents = multiplicative load.** A `make gate` runs pytest with `-n auto` (all cores). A single gate + 3 subagents = every CPU core oversubscribed 2-3x. Never run a background gate AND a full dispatch wave simultaneously — pause one or cap the other.
 
 ### Enforcement
 
-- **Prompt** — this section (proactive instruction for every agent reading
-  AGENTS.md).
-- **Future plugin** — a `tool.execute.before` matcher on Task/agent/workflow
-  dispatch that checks `/proc/loadavg` (Linux) or `sysctl -n vm.loadavg`
-  (macOS) and denies dispatch when load exceeds threshold.
+- **Prompt** — this section (proactive instruction for every agent reading AGENTS.md).
+- **Future plugin** — a `tool.execute.before` matcher on Task/agent/workflow dispatch that checks `/proc/loadavg` (Linux) or `sysctl -n vm.loadavg` (macOS) and denies dispatch when load exceeds threshold.
 - **Make target** — `make check-system-load` (prints load + CPU count + verdict).
 
 ### Incident history
 
-- **2026-07-28:** 30+ subagents + background gate simultaneously bogged down
-  the hardware. Load average spiked past 4x CPU count. Every subagent ran in
-  slow motion; the orchestrator appeared hung. Root cause: no pre-dispatch load
-  check — the agent dispatched at full capacity onto an already-saturated
-  machine. This section is the codified fix.
+- **2026-07-28:** 30+ subagents + background gate simultaneously bogged down the hardware. Load average spiked past 4x CPU count. Every subagent ran in slow motion; the orchestrator appeared hung. Root cause: no pre-dispatch load check — the agent dispatched at full capacity onto an already-saturated machine. This section is the codified fix.
 
 ## Pipeline Orchestration Model
 
-The goal is a **continuous, pipelined** stream of subagent batches — not a
-sawtooth of "dispatch burst → drain to zero → repeat."  Draining to zero wastes
-the pool; the reconciliation cost is low compared to the dispatch-to-first-result
-latency, so keep batch N+1 in flight while batch N is reconciling.
+The goal is a **continuous, pipelined** stream of subagent batches — not a sawtooth of "dispatch burst → drain to zero → repeat."  Draining to zero wastes the pool; the reconciliation cost is low compared to the dispatch-to-first-result latency, so keep batch N+1 in flight while batch N is reconciling.
 
-**1. Keep the pipeline primed.** As soon as batch N delivers results, the next
-batch of agents must already be running (or launch immediately).  Never let the
-active-agent count drop to zero while independent work remains.
+**1. Keep the pipeline primed.** As soon as batch N delivers results, the next batch of agents must already be running (or launch immediately).  Never let the active-agent count drop to zero while independent work remains.
 
-**2. Bias each new batch toward disjoint / new-file work.**  The real cost of
-pipelining is concurrent edits to the same hot files (`daemon.py`, `loop.py`,
-`gateway.py`) — those edits cannot be trivially unioned and require manual
-conflict resolution.  Work that touches distinct files reconciles cheaply.
-When hot-file edits are unavoidable, serialize them through the integrator (one
-at a time), and fill remaining agent slots with disjoint work.
+**2. Bias each new batch toward disjoint / new-file work.**  The real cost of pipelining is concurrent edits to the same hot files (`daemon.py`, `loop.py`, `gateway.py`) — those edits cannot be trivially unioned and require manual conflict resolution.  Work that touches distinct files reconciles cheaply. When hot-file edits are unavoidable, serialize them through the integrator (one at a time), and fill remaining agent slots with disjoint work.
 
-**3. Run one continuous integrator.**  A single integrator agent drains finished
-worktree commits onto the main branch in a steady stream.  Conflicts are resolved
-by keeping BOTH sides (union of independent fixes); gate must be green after each
-merge before the next one lands.
+**3. Run one continuous integrator.**  A single integrator agent drains finished worktree commits onto the main branch in a steady stream.  Conflicts are resolved by keeping BOTH sides (union of independent fixes); gate must be green after each merge before the next one lands.
 
 **4. Bound the pipeline by two constraints.**
-- **(a) Hot-file concurrency:** at most ONE in-flight agent per hot file
-  (`daemon.py`, `loop.py`, `gateway.py`) at any given time.  More than one is a
-  guaranteed conflict.
-- **(b) Worktree disk:** each worktree-isolated agent creates a ~320 MB venv.
-  Prefer **non-isolated agents** for new-file work and read-only research — they
-  share the main venv and add no disk, but they MUST NOT run `git commit` or any
-  git mutation that would race the integrator.  When no worktree-isolated agents
-  are live, reclaim disk with `make clean-worktree-venvs`.  Cap simultaneous
-  worktree agents at ~5–6 to avoid ENOSPC deadlocks (see
-  [[gludd-disk-discipline]] memory).
+- **(a) Hot-file concurrency:** at most ONE in-flight agent per hot file (`daemon.py`, `loop.py`, `gateway.py`) at any given time.  More than one is a guaranteed conflict.
+- **(b) Worktree disk:** each worktree-isolated agent creates a ~320 MB venv. Prefer **non-isolated agents** for new-file work and read-only research — they share the main venv and add no disk, but they MUST NOT run `git commit` or any git mutation that would race the integrator.  When no worktree-isolated agents are live, reclaim disk with `make clean-worktree-venvs`.  Cap simultaneous worktree agents at ~5–6 to avoid ENOSPC deadlocks (see [[gludd-disk-discipline]] memory).
 
-**Summary:** dispatch disjoint work in parallel → integrator merges continuously
-→ one integrator, one hot-file agent at a time → non-isolated agents for
-new-file / read-only tasks.
+**Summary:** dispatch disjoint work in parallel → integrator merges continuously → one integrator, one hot-file agent at a time → non-isolated agents for new-file / read-only tasks.
 
 ### Worktree-per-subagent (file-editing tasks MANDATORY)
 
-**Any subagent that mutates files MUST work in an isolated git worktree on its
-own branch — NOT on the shared `/Users/shawnwilson/gludd` master checkout.**
-Concurrent edits to the shared tree interleave on disk: dirty-tree problems,
-commit races, and misattributed commits. A per-agent worktree (`git worktree
-add`) makes the problem structurally impossible — each agent has its own
-checkout, its own index, and its own branch.
+**Any subagent that mutates files MUST work in an isolated git worktree on its own branch — NOT on the shared `/Users/shawnwilson/gludd` master checkout.** Concurrent edits to the shared tree interleave on disk: dirty-tree problems, commit races, and misattributed commits. A per-agent worktree (`git worktree add`) makes the problem structurally impossible — each agent has its own checkout, its own index, and its own branch.
 
-**Read-only research / audit tasks stay on the main checkout** — they never
-touch the working tree, so isolation buys nothing and costs disk (~320 MB
-venv per worktree). Apply the decision checklist in `docs/ORCHESTRATION.md`
-§4: if the task does not mutate the shared tree, it does not need a worktree.
+**Read-only research / audit tasks stay on the main checkout** — they never touch the working tree, so isolation buys nothing and costs disk (~320 MB venv per worktree). Apply the decision checklist in `docs/ORCHESTRATION.md` §4: if the task does not mutate the shared tree, it does not need a worktree.
 
 **Lifecycle (run on the main checkout):**
 
@@ -2821,25 +1919,13 @@ venv per worktree). Apply the decision checklist in `docs/ORCHESTRATION.md`
 
 **Rules (machine-supported by the Makefile targets):**
 
-- **One worktree per file-editing subagent, one branch per worktree.** Naming:
-  `agent-<short-descriptive-name>` (e.g. `agent-fix-slurm`, `agent-add-tui-view`).
-- **The subagent works inside its worktree; the orchestrator merges from the
-  main checkout.** Never merge to master from inside a worktree (see
-  `docs/ORCHESTRATION.md` §5 — "Merged from inside a worktree, corrupting
-  integration state").
-- **Re-dispatch is safe.** `make agent-worktree BRANCH=<existing>` attaches a
-  fresh worktree to the existing branch instead of failing, so a resumed
-  subagent picks up where the prior one left off.
-- **Cap concurrent worktree agents at ~5–6** (ENOSPC guard; see constraint 4b
-  above). When no worktree-isolated agents are live, reclaim disk with
-  `make clean-worktree-venvs`.
-- **`make agent-worktree-list`** is the read-only diagnostic — shows every
-  active worktree and its branch.
+- **One worktree per file-editing subagent, one branch per worktree.** Naming: `agent-<short-descriptive-name>` (e.g. `agent-fix-slurm`, `agent-add-tui-view`).
+- **The subagent works inside its worktree; the orchestrator merges from the main checkout.** Never merge to master from inside a worktree (see `docs/ORCHESTRATION.md` §5 — "Merged from inside a worktree, corrupting integration state").
+- **Re-dispatch is safe.** `make agent-worktree BRANCH=<existing>` attaches a fresh worktree to the existing branch instead of failing, so a resumed subagent picks up where the prior one left off.
+- **Cap concurrent worktree agents at ~5–6** (ENOSPC guard; see constraint 4b above). When no worktree-isolated agents are live, reclaim disk with `make clean-worktree-venvs`.
+- **`make agent-worktree-list`** is the read-only diagnostic — shows every active worktree and its branch.
 
-This is the structural fix for the recurring "concurrent subagents trampled the
-shared tree" failure mode. Tests:
-`tests/unit/test_agent_worktree_targets.py`. Make targets: `agent-worktree`,
-`agent-merge`, `agent-cleanup`, `agent-worktree-list`.
+This is the structural fix for the recurring "concurrent subagents trampled the shared tree" failure mode. Tests: `tests/unit/test_agent_worktree_targets.py`. Make targets: `agent-worktree`, `agent-merge`, `agent-cleanup`, `agent-worktree-list`.
 
 ### Git Worktree Lifecycle — Merge or Clean Up
 
@@ -2851,11 +1937,7 @@ shared tree" failure mode. Tests:
 2. **`make agent-worktree-list` shows active worktrees.** Any worktree older than 24 hours with commits not merged into development is a policy violation — the work was abandoned.
 3. **Merge-then-cleanup is one atomic unit.** After `make agent-merge-dev BRANCH=<name>`, immediately run `make agent-cleanup BRANCH=<name>`. Never leave a merged branch with its worktree still on disk.
 4. **A session MUST end with zero active worktrees.** `make agent-worktree-list` at session end must show only the main checkout (`/Users/shawnwilson/gludd`). Lingering worktrees are unmerged or abandoned work — both are bugs.
-5. **`make worktree-health-check`** — the mechanical gate (runs `scripts/check_worktree_health.py`):
-   a. Lists all worktrees (excludes the main checkout)
-   b. Flags any worktree older than 24h whose branch commits are not reachable from `development`
-   c. Flags any worktree whose branch does not exist on the remote (`sandboxcom`)
-   d. Exits non-zero on any violation — the agent MUST resolve before the gate goes green
+5. **`make worktree-health-check`** — the mechanical gate (runs `scripts/check_worktree_health.py`): a. Lists all worktrees (excludes the main checkout) b. Flags any worktree older than 24h whose branch commits are not reachable from `development` c. Flags any worktree whose branch does not exist on the remote (`sandboxcom`) d. Exits non-zero on any violation — the agent MUST resolve before the gate goes green
 6. **`make worktree-merge-all`** — bulk merge: iterates all worktrees, attempts to merge each branch into `development` via `--no-ff`, reports any conflict branches that need manual resolution, then cleans up successfully merged worktrees.
 
 #### Enforcement (3 layers)
@@ -2874,25 +1956,9 @@ Multiple sessions accumulated 18+ stale worktrees (some dating back weeks) becau
 
 **Verified 2026-07-14**, `src/general_ludd/git_automation/locking.py:120-131`
 + `:267-280`. The cross-process lock-file locator (`_git_dir()`) checks
-`os.path.isdir(repo/.git)` to find where to place the flock. **Inside a git
-worktree `.git` is a FILE, not a directory**, so the check fails, `_git_dir()`
-returns `None`, and `git_repo_lock` silently falls back to an in-process
-`threading.RLock`. Because every `make agent-worktree`-spawned subagent is its
-own OS **process**, that fallback gives **zero cross-process serialization**.
-Right now, nothing stops two worktree-agent processes from interleaving writes
-if they both run mutating git operations against this repo at the same time.
+`os.path.isdir(repo/.git)` to find where to place the flock. **Inside a git worktree `.git` is a FILE, not a directory**, so the check fails, `_git_dir()` returns `None`, and `git_repo_lock` silently falls back to an in-process `threading.RLock`. Because every `make agent-worktree`-spawned subagent is its own OS **process**, that fallback gives **zero cross-process serialization**. Right now, nothing stops two worktree-agent processes from interleaving writes if they both run mutating git operations against this repo at the same time.
 
-**What this does NOT affect:** read-only git ops, and the routine case above
-(each agent committing inside its own worktree/branch) — that stays low-risk.
-**What this DOES affect:** running `make agent-merge` / `agent-merge-dev` /
-`git-tag-push` / `git-push-sandboxcom` from more than one place concurrently.
-Those already MUST be serialized through the orchestrator on the main checkout
-per this section — the caveat is that this is currently discipline only, with
-**no mechanical lock backing it** while the worktree bug is open. Do not
-dispatch two subagents in the same wave that both merge/tag/push against this
-repo. Fix: `git rev-parse --git-common-dir` (specced, not yet built — see
-`docs/design/NEXT_RELEASE_BETA2_SPEC.md`). Full writeup:
-`docs/MULTITASKING_POLICY.md`.
+**What this does NOT affect:** read-only git ops, and the routine case above (each agent committing inside its own worktree/branch) — that stays low-risk. **What this DOES affect:** running `make agent-merge` / `agent-merge-dev` / `git-tag-push` / `git-push-sandboxcom` from more than one place concurrently. Those already MUST be serialized through the orchestrator on the main checkout per this section — the caveat is that this is currently discipline only, with **no mechanical lock backing it** while the worktree bug is open. Do not dispatch two subagents in the same wave that both merge/tag/push against this repo. Fix: `git rev-parse --git-common-dir` (specced, not yet built — see `docs/design/NEXT_RELEASE_BETA2_SPEC.md`). Full writeup: `docs/MULTITASKING_POLICY.md`.
 
 ### Subagent dispatch reliability rules
 
@@ -2934,37 +2000,24 @@ Subagents fail when they try to run long operations. To maximize success rate:
 
 #### Background-gate workflow (canonical way to run a long gate)
 
-`make gate` is a ~40-minute operation that MUST NEVER run on the main thread
-(it blocks ALL subagent dispatch — see "Main-thread command restriction" above).
-The canonical replacement is the background-gate target family:
+`make gate` is a ~40-minute operation that MUST NEVER run on the main thread (it blocks ALL subagent dispatch — see "Main-thread command restriction" above). The canonical replacement is the background-gate target family:
 
-- `make gate-background` — launches `make gate` via `nohup` in the background,
-  redirects output to `.gate-logs/gate-<timestamp>.log`, writes the PID to
-  `.gate-background.pid`, and returns in <1 second.
-- `make gate-status-check` — non-blocking probe: prints whether the background
-  gate is still running, the current phase (greps the log for
-  `=== GATE PHASE: <name> ===` markers), the terminal marker
-  (`=== GATE: PASSED ===` / `=== GATE: FAILED ===`), the last 20 log lines,
-  and `.gate-status`.
+- `make gate-background` — launches `make gate` via `nohup` in the background, redirects output to `.gate-logs/gate-<timestamp>.log`, writes the PID to `.gate-background.pid`, and returns in <1 second.
+- `make gate-status-check` — non-blocking probe: prints whether the background gate is still running, the current phase (greps the log for `=== GATE PHASE: <name> ===` markers), the terminal marker (`=== GATE: PASSED ===` / `=== GATE: FAILED ===`), the last 20 log lines, and `.gate-status`.
 - `make gate-tail` — live tail of the latest gate log (Ctrl-C to stop).
 - `make gate-logs` — lists every `.gate-logs/*.log` with mtime + PASS/FAIL/incomplete.
 - `make gate-kill` — SIGTERM then SIGKILL after 5s; removes `.gate-background.pid`.
 
 **Pattern:**
-1. Launch `make gate-background` (foreground is fine — it returns in <1s) or
-   dispatch it via a subagent.
+1. Launch `make gate-background` (foreground is fine — it returns in <1s) or dispatch it via a subagent.
 2. Continue useful independent work in parallel, up to the three-agent ceiling.
 3. Check `make gate-status-check` once at a natural break; never dedicate an agent to polling.
 4. When the terminal marker appears, ingest the log + act on the result.
 
-**NEVER** `make gate` on the main thread. **NEVER** `make gate-background`
-on the main thread either if it would block — but `gate-background` returns in
+**NEVER** `make gate` on the main thread. **NEVER** `make gate-background` on the main thread either if it would block — but `gate-background` returns in
 <1s, so it is allowed on the main thread.
 
-Enforced by: this section (proactive), `.opencode/plugin/enforce-make.ts`
-(the long-running-foreground deny message includes a `SUGGESTION` directive
-pointing to `make gate-background` + `make gate-status-check`), and
-`tests/unit/test_gate_background_targets.py` (target existence + phase markers
+Enforced by: this section (proactive), `.opencode/plugin/enforce-make.ts` (the long-running-foreground deny message includes a `SUGGESTION` directive pointing to `make gate-background` + `make gate-status-check`), and `tests/unit/test_gate_background_targets.py` (target existence + phase markers
 + terminal markers + nohup + PID file).
 
 ### Steady-state dispatch (up to three useful agents)
@@ -2988,8 +2041,7 @@ Every assistant response containing tool calls MUST satisfy ONE of:
 
 A response with exactly one task dispatch is valid when one independent deliverable benefits from delegation. Never widen ownership merely because other queued items exist.
 
-**NOTE:** The cost-efficiency directive sets a hard ceiling of three. A configured
-minimum may require a wider wave, while an unconfigured session remains adaptive.
+**NOTE:** The cost-efficiency directive sets a hard ceiling of three. A configured minimum may require a wider wave, while an unconfigured session remains adaptive.
 
 **Never**: make a single-task-dispatch message and wait for the result when ≥2 work items are known. Either fan out wider, or do non-blocking work inline while the wave runs.
 
@@ -3032,9 +2084,7 @@ The generic anti-wait rule above was not specific enough to stop the CI-poll var
 6. **Release-cut is the single legitimate CI-wait path.** `make release-cut` runs `require-ci-green` → push → tag → release-view as a pipeline, and it owns the wait because a release genuinely requires the artifact the CI run produces. Nothing else does.
 7. **NEVER dispatch a "poll gate-status-check every N seconds" subagent.** A subagent that loops on `make gate-status-check` every N seconds holds a subagent slot doing polling work that could be done with a single `make gate-wait-report` call followed by inspection. Dispatch `make gate-wait-report` once, inspect the result, and re-dispatch only if the gate hasn't finished.
 
-**Why this matters:** A 30-minute CI-poll subagent holds one of only three slots
-while producing nothing. It also encourages the orchestrator to wait instead of
-advancing real work, so polling is both a resource leak and an ownership failure.
+**Why this matters:** A 30-minute CI-poll subagent holds one of only three slots while producing nothing. It also encourages the orchestrator to wait instead of advancing real work, so polling is both a resource leak and an ownership failure.
 
 **Enforcement:**
 - **Prompt** — this subsection (proactive). The generic anti-wait rule above plus the compulsive-check block on standalone `make ci-verdict` (ANTI-LOOP DIRECTIVE, line 5) cover most cases.
@@ -3093,50 +2143,27 @@ The CI-poll anti-pattern above is now blocked by a **machine-enforced cooldown**
 
 ## Codify Improvements (Meta-Rule)
 
-**When you discover a better way to work, codify it IN THE SAME SESSION before
-moving on.**  Applying a better approach once and forgetting it is a bug —
-identical to discovering a better algorithm, using it once, and then reverting
-to the old one.
+**When you discover a better way to work, codify it IN THE SAME SESSION before moving on.**  Applying a better approach once and forgetting it is a bug — identical to discovering a better algorithm, using it once, and then reverting to the old one.
 
 ### The three codification layers (in priority order)
 
-1. **`AGENTS.md` (policy)** — captures the rule for every future agent reading
-   this file.  Add a new section or extend an existing one.  Keep it concise and
-   consistent with the voice of surrounding sections.
-2. **`.claude/hooks/` script (enforced behavior)** — a `PreToolUse` or
-   `PostToolUse` hook that *enforces* the rule mechanically.  Register it in
-   `.claude/settings.json`.  A hook is better than a prompt for patterns that
-   repeat and are hard to notice in the moment.
-3. **Memory (cross-session)** — write a memory entry when the insight needs to
-   survive session resets and applies globally, or is too detailed for AGENTS.md.
+1. **`AGENTS.md` (policy)** — captures the rule for every future agent reading this file.  Add a new section or extend an existing one.  Keep it concise and consistent with the voice of surrounding sections.
+2. **`.claude/hooks/` script (enforced behavior)** — a `PreToolUse` or `PostToolUse` hook that *enforces* the rule mechanically.  Register it in `.claude/settings.json`.  A hook is better than a prompt for patterns that repeat and are hard to notice in the moment.
+3. **Memory (cross-session)** — write a memory entry when the insight needs to survive session resets and applies globally, or is too detailed for AGENTS.md.
 
-Add a test for the guardrail where useful (e.g., for a hook that checks file
-content, add a unit test under `tests/unit/`).
+Add a test for the guardrail where useful (e.g., for a hook that checks file content, add a unit test under `tests/unit/`).
 
 ### Orchestration hooks — current state
 
-The no-wait and floor-enforcement orchestration hooks are **advisory by default**
-(they emit guidance but do not block):
+The no-wait and floor-enforcement orchestration hooks are **advisory by default** (they emit guidance but do not block):
 
-- `GLUDD_NO_WAIT_ENFORCE=1` — elevates the no-wait hook from advisory to
-  blocking (denies the tool call).
+- `GLUDD_NO_WAIT_ENFORCE=1` — elevates the no-wait hook from advisory to blocking (denies the tool call).
 - `GLUDD_FLOOR_ENFORCE=1` — elevates the floor hook from advisory to blocking.
-- **`GLUDD_FORCE_DELEGATE=1`** (`force_delegate_pretool.sh`, matcher `*`) — opt-in grind guard.
-  Denies targeted mutations (Edit/Write to non-memory paths; mutating Bash targets like
-  `git-commit`, `git-add`, `ship`, `gate`) when the live subagent count is below
-  `CLAUDE_AGENT_FLOOR` and the consecutive-targeted-call count exceeds
-  `GLUDD_FORCE_DELEGATE_GRACE` (default 3). Bounded escape after
-  `GLUDD_FORCE_DELEGATE_MAXBLOCK` (default 4) consecutive denials to prevent wedging.
-  Read-only tools (Read/Glob/Grep/Bash read-only targets/memory-path writes) and
-  Agent/Workflow dispatch are always allowed; Agent/Workflow dispatch also resets the
-  consecutive counter. Default off; enable when multitasking discipline is required.
+- **`GLUDD_FORCE_DELEGATE=1`** (`force_delegate_pretool.sh`, matcher `*`) — opt-in grind guard. Denies targeted mutations (Edit/Write to non-memory paths; mutating Bash targets like `git-commit`, `git-add`, `ship`, `gate`) when the live subagent count is below `CLAUDE_AGENT_FLOOR` and the consecutive-targeted-call count exceeds `GLUDD_FORCE_DELEGATE_GRACE` (default 3). Bounded escape after `GLUDD_FORCE_DELEGATE_MAXBLOCK` (default 4) consecutive denials to prevent wedging. Read-only tools (Read/Glob/Grep/Bash read-only targets/memory-path writes) and Agent/Workflow dispatch are always allowed; Agent/Workflow dispatch also resets the consecutive counter. Default off; enable when multitasking discipline is required.
 
-`agent_liveness.py` counts **Workflow subagents** (not just background tasks) as
-live agents for the purposes of the floor check.
+`agent_liveness.py` counts **Workflow subagents** (not just background tasks) as live agents for the purposes of the floor check.
 
-When you discover that a hook fires too aggressively or too rarely, narrow the
-check (see "Guardrail Integrity Policy") — do NOT remove the hook or make it
-permanently advisory when the intent is enforcement.
+When you discover that a hook fires too aggressively or too rarely, narrow the check (see "Guardrail Integrity Policy") — do NOT remove the hook or make it permanently advisory when the intent is enforcement.
 
 ### Todowrite discipline (mandatory for ≥3-ask sessions)
 
@@ -3184,12 +2211,7 @@ The bug caused opencode to crash at boot because the plugin loader evaluated all
 ### The fix (3-layer)
 
 1. **Bug fix:** The missing `incrementTextCompleteCount()` function was inlined into `enforce-floor.ts` with its own `TEXT_COMPLETE_COUNT_FILE` constant, avoiding a cross-plugin dependency on `enforce_stop_impl.ts`.
-2. **Runtime validation script:** `scripts/validate_plugins_runtime.mjs` — for each plugin `.ts` file:
-   a. Dynamically imports the module
-   b. Calls the factory function if `default` export is callable
-   c. Invokes `tool.execute.before`, `experimental.text.complete`, `text.complete`, `session.idle`, and `experimental.chat.system.transform` hooks with null inputs
-   d. Catches `ReferenceError` specifically (undefined symbols are always bugs)
-   e. Ignores other errors (TypeError on null input is expected; not a bug)
+2. **Runtime validation script:** `scripts/validate_plugins_runtime.mjs` — for each plugin `.ts` file: a. Dynamically imports the module b. Calls the factory function if `default` export is callable c. Invokes `tool.execute.before`, `experimental.text.complete`, `text.complete`, `session.idle`, and `experimental.chat.system.transform` hooks with null inputs d. Catches `ReferenceError` specifically (undefined symbols are always bugs) e. Ignores other errors (TypeError on null input is expected; not a bug)
 3. **Static validation script:** `scripts/validate_plugins.py` — fast pre-check for Node v26 compat, dangerous imports, import resolution, and hook shape. The undefined-call static analysis is opt-in (`--strict`) due to inherent false positives from variable-mediated calls.
 
 ### Make targets
@@ -3217,19 +2239,13 @@ All three are in `make gate`. `check-plugin-hook-invoke` is the gate of record f
 
 ## CRITICAL: Root-Cause-Only Fix Policy
 
-**Every issue MUST be fixed at its root cause — never at its symptom.** This
-applies to both gludd application code AND gludd's own tooling, plugins, and
-guardrails.
+**Every issue MUST be fixed at its root cause — never at its symptom.** This applies to both gludd application code AND gludd's own tooling, plugins, and guardrails.
 
-This was a direct user mandate (2026-07-14): "please always fix the root cause
-of ANY issue — both the current instance and gludd should always have that
-prompting in those systems too."
+This was a direct user mandate (2026-07-14): "please always fix the root cause of ANY issue — both the current instance and gludd should always have that prompting in those systems too."
 
 ### The rule
 
-When something breaks, the fix must address WHY it broke, not merely remove the
-observable symptom. A symptom-level fix leaves the root cause intact — the same
-failure mode WILL recur in a slightly different form.
+When something breaks, the fix must address WHY it broke, not merely remove the observable symptom. A symptom-level fix leaves the root cause intact — the same failure mode WILL recur in a slightly different form.
 
 ### Concrete applications
 
@@ -3245,82 +2261,53 @@ failure mode WILL recur in a slightly different form.
 ### Mandatory procedure
 
 Before applying ANY fix, answer:
-1. **What is the ROOT CAUSE?** — Trace the chain of causality to its origin.
-   "The plugin throws" is a symptom. "The plugin checks X but the state file
-   for X is stale because..." is a root cause.
-2. **Does the fix address the root cause?** — If your fix is "disable X" /
-   "skip X" / "bypass X" / "ignore X" / "remove the check for X" / "empty the
-   block body of X", you are fixing a symptom. Redo the fix.
-3. **Will this failure mode recur?** — If the answer could be "yes with a
-   different trigger", the root cause is not addressed.
+1. **What is the ROOT CAUSE?** — Trace the chain of causality to its origin. "The plugin throws" is a symptom. "The plugin checks X but the state file for X is stale because..." is a root cause.
+2. **Does the fix address the root cause?** — If your fix is "disable X" / "skip X" / "bypass X" / "ignore X" / "remove the check for X" / "empty the block body of X", you are fixing a symptom. Redo the fix.
+3. **Will this failure mode recur?** — If the answer could be "yes with a different trigger", the root cause is not addressed.
 
 ### Precedent (why this is hard-enforced)
 
-- **Stop-hook "fix" (2026-06-18):** agent was told "fix the stop-hook errors"
-  and responded by making hooks advisory (deleting enforcement) instead of
-  fixing the `exit 1` error path. The symptom (errors) was removed; the root
-  cause (wrong exit code) persisted. Codified as "Fix Means Repair, Never
-  Disable."
-- **CI-red bypass (2026-06-22):** agent committed `50dbd1b` with a red gate
-  via `--no-verify`, rationalizing "pre-existing failures." The symptom
-  (commit blocked) was bypassed; the root cause (red gate) was not addressed.
-  Codified as "No-Commit-Bypass Policy."
-- **Guardrail weakening (2026-07-08):** advisory-only checks allowed `# noqa`
-  and `# type: ignore` to re-proliferate. The symptom (lint noise) was
-  silenced; the root cause (lack of enforcement) persisted until the 3-layer
-  guardrail was built.
+- **Stop-hook "fix" (2026-06-18):** agent was told "fix the stop-hook errors" and responded by making hooks advisory (deleting enforcement) instead of fixing the `exit 1` error path. The symptom (errors) was removed; the root cause (wrong exit code) persisted. Codified as "Fix Means Repair, Never Disable."
+- **CI-red bypass (2026-06-22):** agent committed `50dbd1b` with a red gate via `--no-verify`, rationalizing "pre-existing failures." The symptom (commit blocked) was bypassed; the root cause (red gate) was not addressed. Codified as "No-Commit-Bypass Policy."
+- **Guardrail weakening (2026-07-08):** advisory-only checks allowed `# noqa` and `# type: ignore` to re-proliferate. The symptom (lint noise) was silenced; the root cause (lack of enforcement) persisted until the 3-layer guardrail was built.
 
 ### Overlaps and reinforcements
 
 This policy sits ABOVE the specific policies below and governs ALL of them:
-- **Guardrail Integrity Policy** (above) — this is one application: when a
-  guardrail fails, fix the logic, not the guardrail.
-- **"Fix" Means Repair, Never Disable** (above) — the same principle applied
-  to user-requested fixes.
-- **Constraints Are To Engineer Around** (below) — the same principle applied
-  to external constraints: the constraint is the problem to solve, not a
-  reason to stop.
-- **No Lint-Suppression Comments** (above) — the same principle applied to
-  code: fix the code so the linter is satisfied, don't silence the linter.
+- **Guardrail Integrity Policy** (above) — this is one application: when a guardrail fails, fix the logic, not the guardrail.
+- **"Fix" Means Repair, Never Disable** (above) — the same principle applied to user-requested fixes.
+- **Constraints Are To Engineer Around** (below) — the same principle applied to external constraints: the constraint is the problem to solve, not a reason to stop.
+- **No Lint-Suppression Comments** (above) — the same principle applied to code: fix the code so the linter is satisfied, don't silence the linter.
 
 ### Enforcement
 
 This is codified at all three layers:
 1. **This section** — proactive instruction for every agent reading AGENTS.md.
-2. **`.opencode/plugin/enforce-stop.ts`** — `experimental.chat.system.transform`
-   injects root-cause directive into the pre-generation gate block.
-3. **`.opencode/plugin/enforce-make.ts`** — `experimental.chat.system.transform`
-   injects root-cause directive into the mechanical contract.
+2. **`.opencode/plugin/enforce-stop.ts`** — `experimental.chat.system.transform` injects root-cause directive into the pre-generation gate block.
+3. **`.opencode/plugin/enforce-make.ts`** — `experimental.chat.system.transform` injects root-cause directive into the mechanical contract.
 
 ## CRITICAL: Operational Discipline Rules (Session 52 Codification)
 
 ### OD.1 — Intermediate Progress Is Not Completion
-Reporting that a build is running, a tag is pushed, or CI is pending is NOT a stopping point.
-Completion = `make verify-release-completeness TAG=<tag>` exits 0.
+Reporting that a build is running, a tag is pushed, or CI is pending is NOT a stopping point. Completion = `make verify-release-completeness TAG=<tag>` exits 0.
 
 ### OD.2 — Follow Explicit Instructions Exactly
-When the user gives a measurable requirement (word count, artifact count, deadline),
-meet it exactly. Do not optimize, substitute, or "improve." If asked for 16000 words,
-write 16000 words. If asked for 12 artifacts, produce 12 artifacts.
+When the user gives a measurable requirement (word count, artifact count, deadline), meet it exactly. Do not optimize, substitute, or "improve." If asked for 16000 words, write 16000 words. If asked for 12 artifacts, produce 12 artifacts.
 
 ### OD.3 — CI Is Fire-and-Forget
-Check CI at natural breaks (15+ minutes apart). Never sleep/wait on main thread for CI.
-The CI run does not need you to watch it.
+Check CI at natural breaks (15+ minutes apart). Never sleep/wait on main thread for CI. The CI run does not need you to watch it.
 
 ### OD.4 — No Text-Only Responses With Pending Work
-If TASKS.md has unchecked items, every response must include a tool call.
-Status updates without action are forbidden.
+If TASKS.md has unchecked items, every response must include a tool call. Status updates without action are forbidden.
 
 ### OD.5 — Answer Direct Questions Directly First
 "Yes" or "No" before explanation. Never lead with context when asked a binary question.
 
 ### OD.6 — Don't Rationalize Stops
-Finding a reason to pause (CI running, waiting for build, explaining behavior) is itself
-a malfunction. There is no valid reason to pause when work remains.
+Finding a reason to pause (CI running, waiting for build, explaining behavior) is itself a malfunction. There is no valid reason to pause when work remains.
 
 ### OD.7 — Don't Override User Instructions
-When user says NO exceptions, every exception is a violation. When user says don't stop,
-don't stop. Your judgment about what's "better" is irrelevant.
+When user says NO exceptions, every exception is a violation. When user says don't stop, don't stop. Your judgment about what's "better" is irrelevant.
 
 ### OD.8 — Don't Make Artifacts Optional
 If user wants 12/12, fix the builds. Never lower the bar to make failure acceptable.
@@ -3329,34 +2316,23 @@ If user wants 12/12, fix the builds. Never lower the bar to make failure accepta
 Run `make lint` before every commit. Pre-commit hooks are backup, not primary defense.
 
 ### OD.10 — No CI Polling as Pretend Work
-Checking ci-status more than 3 times in a row without intervening code changes is a
-stop pattern. The CI poll limiter plugin enforces this mechanically.
+Checking ci-status more than 3 times in a row without intervening code changes is a stop pattern. The CI poll limiter plugin enforces this mechanically.
 
 ## CRITICAL: CI Wait Productivity (DC.1)
 
-During CI waits, continue useful disjoint work: fix tests, write structural tests,
-update docs, or investigate slow shards. Dispatch subagents only for concrete,
-independent deliverables; zero subagents is valid when no such deliverable exists.
-CI waiting never justifies filler. Use up to three useful owners.
+During CI waits, continue useful disjoint work: fix tests, write structural tests, update docs, or investigate slow shards. Dispatch subagents only for concrete, independent deliverables; zero subagents is valid when no such deliverable exists. CI waiting never justifies filler. Use up to three useful owners.
 
 ## CRITICAL: Polling CI Is Not Work (DC.2)
 
-Checking ci-status more than 3 times in a row without intervening code changes is a
-stop pattern. Each poll produces zero progress; only code changes unblock CI.
-If you find yourself polling, dispatch a subagent that produces a deliverable instead.
+Checking ci-status more than 3 times in a row without intervening code changes is a stop pattern. Each poll produces zero progress; only code changes unblock CI. If you find yourself polling, dispatch a subagent that produces a deliverable instead.
 
 ## CRITICAL: CI Status Must Be Actionable — No Passive Polling
 
-`make ci-status` returns only workflow-level ternary state (`in_progress` / `success` /
-`failure`). Reporting that state repeatedly — especially in message after message with
-no other action — is passive polling, not work. It hides the actual signal (which shard
-failed, which step is running, how long jobs are taking) and wastes turns.
+`make ci-status` returns only workflow-level ternary state (`in_progress` / `success` / `failure`). Reporting that state repeatedly — especially in message after message with no other action — is passive polling, not work. It hides the actual signal (which shard failed, which step is running, how long jobs are taking) and wastes turns.
 
 ### Rule
 
-Every CI observation MUST produce actionable insight or trigger an immediate next
-action. After the first high-level check, do not poll again with `make ci-status` until
-you have either:
+Every CI observation MUST produce actionable insight or trigger an immediate next action. After the first high-level check, do not poll again with `make ci-status` until you have either:
 
 1. Used a rich target to see per-job/step state, or
 2. Dispatched a subagent to reproduce a failing shard locally, or
@@ -3368,19 +2344,14 @@ you have either:
 - `make ci-view RUN=<id>` — detailed job/step view (works once terminal).
 - `make ci-dashboard` — compact listing of recent runs across branches.
 - `make ci-active` — JSON of currently in-flight runs.
-- `make ci-annotations-anon RUN=<id>` / `make ci-checkrun-anno CHECK=<id>` —
-  failure annotations for failed jobs.
+- `make ci-annotations-anon RUN=<id>` / `make ci-checkrun-anno CHECK=<id>` — failure annotations for failed jobs.
 - `make ci-job-log RUN=<id> JOB=<substring>` — full tail of a specific job log.
 - `make ci-faillog RUN=<id>` — failed-step logs once the run is terminal.
 - `make ci-diagnose RUN=<id>` — grouped failure annotations/root causes.
 
 ### When a run is in_progress
 
-Use `ci-run-summary` to see which jobs have already completed and whether any have
-failed. A single failed shard is enough to know the run will be red. Do not wait for
-the whole workflow to finish; immediately reproduce that shard locally with
-`make test-ci-shard SHARD=<name>` (or `make test-ci-shard-slice` to narrow it) and
-start fixing.
+Use `ci-run-summary` to see which jobs have already completed and whether any have failed. A single failed shard is enough to know the run will be red. Do not wait for the whole workflow to finish; immediately reproduce that shard locally with `make test-ci-shard SHARD=<name>` (or `make test-ci-shard-slice` to narrow it) and start fixing.
 
 ### When a run has failures
 
@@ -3401,24 +2372,16 @@ are doing next.
 ### Enforcement
 
 - **Prompt** — this section (proactive instruction).
-- **Test** — `tests/unit/test_no_passive_ci_polling.py` pins the section and the rich
-  target list.
-- **Plugin** — future `enforce-no-wait.ts` / `enforce-stop.ts` extension will track
-  consecutive `ci-status` calls and require an actionable target or dispatch.
+- **Test** — `tests/unit/test_no_passive_ci_polling.py` pins the section and the rich target list.
+- **Plugin** — future `enforce-no-wait.ts` / `enforce-stop.ts` extension will track consecutive `ci-status` calls and require an actionable target or dispatch.
 
 ## CRITICAL: Git Operations Are Not Grinding (DC.3)
 
-`make git-add`, `make git-commit`, `make git-push-sandboxcom`, `make batch-push`,
-`make ship-commit`, `make git-tag-push`, and `make release-cut` are TERMINAL actions
-that ship work — they are not "grinding." The `GIT_SHIPPING_TARGETS` allowlist in
-`enforce-delegate.ts` (BP.1) RESETS the streak counter instead of incrementing it, so
-git operations never trigger the main-thread delegation budget. Do NOT disengage
-enforcement to commit or push — the allowlist already exempts them.
+`make git-add`, `make git-commit`, `make git-push-sandboxcom`, `make batch-push`, `make ship-commit`, `make git-tag-push`, and `make release-cut` are TERMINAL actions that ship work — they are not "grinding." The `GIT_SHIPPING_TARGETS` allowlist in `enforce-delegate.ts` (BP.1) RESETS the streak counter instead of incrementing it, so git operations never trigger the main-thread delegation budget. Do NOT disengage enforcement to commit or push — the allowlist already exempts them.
 
 ## CRITICAL: Root Cause Escalation (3-Strike Rule)
 
-When a CI run fails for the third time with the same class of error
-(timeout, cancellation, dependency failure, YAML parse error):
+When a CI run fails for the third time with the same class of error (timeout, cancellation, dependency failure, YAML parse error):
 
 1. STOP patching symptoms (timeout increases, CI cancellations, matrix changes).
 2. Step back and ask: "What SYSTEMIC dependency or structure causes this?"
@@ -3435,17 +2398,11 @@ Forbidden after 3 failures of the same class:
 
 **A constraint is a design prompt, never a dead end.**
 
-GitHub API granularity, local-gate OOM, make-only Bash, rate limits, job timeouts,
-"no make target for X", clock time — these are constraints. Constraints define the
-problem shape; they do not terminate it. When you hit a constraint, your job is to
-engineer around it, not to hand it back to the user.
+GitHub API granularity, local-gate OOM, make-only Bash, rate limits, job timeouts, "no make target for X", clock time — these are constraints. Constraints define the problem shape; they do not terminate it. When you hit a constraint, your job is to engineer around it, not to hand it back to the user.
 
 ### The rule
 
-The phrase *"X isn't possible / it's a limitation / there's no way / we have to
-wait"* is ONLY acceptable when **immediately paired with the workaround being
-implemented OR a research task dispatched to find one.** A naked "can't" — or
-parking the problem in the user's lap — is a bug.
+The phrase *"X isn't possible / it's a limitation / there's no way / we have to wait"* is ONLY acceptable when **immediately paired with the workaround being implemented OR a research task dispatched to find one.** A naked "can't" — or parking the problem in the user's lap — is a bug.
 
 > **If no workaround is obvious, that is a research task to dispatch, not a
 > stopping point.**
@@ -3456,13 +2413,10 @@ parking the problem in the user's lap — is a bug.
 > live per-step status."
 
 Engineered around by:
-1. **Sharding the CI test job** so job-level failures surface within minutes (not
-   after a monolithic run), and
-2. **Live annotation polling** (`gh run watch` / annotation API on each job) so
-   partial results can be read before the overall run completes.
+1. **Sharding the CI test job** so job-level failures surface within minutes (not after a monolithic run), and
+2. **Live annotation polling** (`gh run watch` / annotation API on each job) so partial results can be read before the overall run completes.
 
-The constraint (API granularity) shaped the solution (shard + poll); it did not
-end the conversation.
+The constraint (API granularity) shaped the solution (shard + poll); it did not end the conversation.
 
 ### Forbidden responses
 
@@ -3473,8 +2427,7 @@ end the conversation.
 
 ### Correct responses
 
-- "The API doesn't expose per-step status, but I can shard the job + poll
-  annotations — implementing now."
+- "The API doesn't expose per-step status, but I can shard the job + poll annotations — implementing now."
 - "No make target for X yet. Adding one."
 - "Rate-limited — backing off 60 s, then retrying."
 - "OOM on full gate locally. Running the slow tests in a CI PR instead."
@@ -3483,10 +2436,8 @@ end the conversation.
 
 This is codified at all three levels:
 1. **This section** — proactive instruction for every agent reading AGENTS.md.
-2. **`.claude/hooks/no_wait_stop.sh` constraint-as-stopsign group** — when
-   `GLUDD_NO_WAIT_ENFORCE=1`, naked constraint phrasings block the turn-end.
-3. **`scripts/test_no_wait_hook.py`** — proves the constraint patterns block
-   in enforce mode.
+2. **`.claude/hooks/no_wait_stop.sh` constraint-as-stopsign group** — when `GLUDD_NO_WAIT_ENFORCE=1`, naked constraint phrasings block the turn-end.
+3. **`scripts/test_no_wait_hook.py`** — proves the constraint patterns block in enforce mode.
 
 
 ## CRITICAL: All Bugs Are Your Bugs — No Pre-Existing Exceptions
@@ -3514,27 +2465,14 @@ This is codified at all three levels:
 
 ## Keep Opus Lean — Sonnet Carries the Token Load
 
-The expensive opus main thread must consume far fewer tokens than the cheap
-sonnet subagents.  Target: sonnet subagent tokens >= opus main-thread tokens
-at minimum; cost-weighted (opus ~5× sonnet $/token), aim for sonnet consuming
-SEVERAL TIMES the opus tokens.  Every opus token should buy
-coordination/judgment, not grunt work.
+The expensive opus main thread must consume far fewer tokens than the cheap sonnet subagents.  Target: sonnet subagent tokens >= opus main-thread tokens at minimum; cost-weighted (opus ~5× sonnet $/token), aim for sonnet consuming SEVERAL TIMES the opus tokens.  Every opus token should buy coordination/judgment, not grunt work.
 
 **Levers (the controllable behaviors):**
 
-1. **Delegate ALL heavy reading/editing/testing to `model:'sonnet'` subagents —
-   never grind inline.**  File trawls, large diffs, test runs, research surveys,
-   multi-file edits: dispatch them.  Do not perform grunt work on the main thread.
-2. **Keep main-thread turns terse.**  Short replies; do NOT re-read large tool
-   outputs or transcripts into context; don't re-derive established facts; lean
-   on the memory index for session state.
-3. **Subagents return terse summaries + a file pointer**, keeping detail off the
-   main thread.  The main thread receives a punch-list, not the raw output.
+1. **Delegate ALL heavy reading/editing/testing to `model:'sonnet'` subagents — never grind inline.**  File trawls, large diffs, test runs, research surveys, multi-file edits: dispatch them.  Do not perform grunt work on the main thread.
+2. **Keep main-thread turns terse.**  Short replies; do NOT re-read large tool outputs or transcripts into context; don't re-derive established facts; lean on the memory index for session state.
+3. **Subagents return terse summaries + a file pointer**, keeping detail off the main thread.  The main thread receives a punch-list, not the raw output.
 
-**Honest limit:** there is no live token meter on the main loop and no per-agent
-token accounting in hooks, so a true token-ratio hook is not feasible.  The
-enforceable proxy is the existing `model_utilization` `PreToolUse` hook
-(sonnet : non-sonnet dispatch-count ratio ≥ 10:1), which indirectly drives
-sonnet token dominance — plus the terse-main-thread discipline above.
+**Honest limit:** there is no live token meter on the main loop and no per-agent token accounting in hooks, so a true token-ratio hook is not feasible.  The enforceable proxy is the existing `model_utilization` `PreToolUse` hook (sonnet : non-sonnet dispatch-count ratio ≥ 10:1), which indirectly drives sonnet token dominance — plus the terse-main-thread discipline above.
 
 &lt;!-- session: 2026-08-09 --&gt;

@@ -1608,16 +1608,17 @@ def test_builder_rejects_malformed_management_client_and_closes_credential() -> 
     assert harness.credential.close_calls == 1
 
 
-def test_azure_extras_declare_maintained_management_sdk_not_retired_inference() -> None:
-    project = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]
-    optional = project["optional-dependencies"]
+def test_azure_profile_declares_maintained_management_sdk_not_retired_inference() -> None:
+    azure = tomllib.loads(
+        Path("requirements/profiles/azure/pyproject.toml").read_text(encoding="utf-8")
+    )["project"]["dependencies"]
+    agent_runtime = tomllib.loads(
+        Path("requirements/profiles/agent-runtime/pyproject.toml").read_text(encoding="utf-8")
+    )["project"]["dependencies"]
+    catalog = tomllib.loads(Path("config/dependency_profiles.toml").read_text(encoding="utf-8"))
     expected = "azure-mgmt-cognitiveservices>=14.1.0,<15"
 
-    assert "openai>=1.66.0" in project["dependencies"]
-    assert expected in optional["azure"]
-    assert expected in optional["e2e-all"]
-    assert all(
-        not dependency.startswith("azure-ai-inference")
-        for dependencies in optional.values()
-        for dependency in dependencies
-    )
+    assert "openai>=1.66.0" in agent_runtime
+    assert expected in azure
+    assert "azure" in catalog["sets"]["e2e-all"]["profiles"]
+    assert all(not dependency.startswith("azure-ai-inference") for dependency in azure)

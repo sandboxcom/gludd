@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
+import subprocess
 from pathlib import Path
 
-from scripts.run_self_improve_e2e import TaskSpec
+from scripts.makefile_layout import compose_makefile
+
+from general_ludd.self_improve.runtime import TaskSpec
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "config/self-improve/catalog-truth.json"
 DOCUMENT = ROOT / "docs/features/SELF_IMPROVEMENT_CATALOG_TRUTH_FIXTURE.md"
+COVERAGE_CONFIG = ROOT / "config/coverage_self_improve_catalog_truth.ini"
 BASELINE = "eac05dc88c03f14fbd7dd5f4c6d72943609d9e26"
 REFERENCE = "80b381bd87f32487d784964ce93566e3b016b191"
 FIXTURE_SHA256 = "67e59f242aba0ade9b5992354daf5f0ec2392df3627ef0c929596011cfe5c30e"
@@ -92,8 +97,25 @@ def test_catalog_truth_fixture_bytes_are_immutable() -> None:
     assert hashlib.sha256(FIXTURE.read_bytes()).hexdigest() == FIXTURE_SHA256
 
 
+def test_catalog_truth_coverage_contract_is_narrow_and_branch_aware() -> None:
+    coverage_config = COVERAGE_CONFIG.read_text(encoding="utf-8")
+
+    assert "branch = True" in coverage_config
+    assert "parallel = True" in coverage_config
+    assert "patch = subprocess" in coverage_config
+    assert "*/scripts/run_self_improve_e2e.py" in coverage_config
+    assert "event_loop" not in coverage_config
+
+
+def test_catalog_truth_compatibility_entrypoint_reexports_runtime() -> None:
+    runtime = importlib.import_module("general_ludd.self_improve.runtime")
+    entrypoint = importlib.import_module("scripts.run_self_improve_e2e")
+
+    assert entrypoint is runtime
+
+
 def test_catalog_truth_make_target_is_pinned_and_safe_by_default() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     target = _target_block(makefile, "test-self-improve-catalog-truth")
 
     assert "SELF_IMPROVE_CATALOG_LIVE ?= 0" in makefile
@@ -120,6 +142,37 @@ def test_catalog_truth_make_target_is_pinned_and_safe_by_default() -> None:
     assert "git tag" not in target
 
 
+def test_catalog_truth_make_target_renders_immutable_pins() -> None:
+    hostile_baseline = "0" * 40
+    hostile_reference = "1" * 40
+    result = subprocess.run(
+        [
+            "make",
+            "--no-print-directory",
+            "-f",
+            str(ROOT / "Makefile"),
+            "test-self-improve-catalog-truth",
+            "SELF_IMPROVE_CATALOG_LIVE=0",
+            f"SELF_IMPROVE_BASELINE_REF={hostile_baseline}",
+            f"SELF_IMPROVE_REFERENCE_REF={hostile_reference}",
+            f"SELF_IMPROVE_CATALOG_TRUTH_BASELINE_REF={hostile_baseline}",
+            f"SELF_IMPROVE_CATALOG_TRUTH_REFERENCE_REF={hostile_reference}",
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert f"baseline={BASELINE}" in output
+    assert f"reference={REFERENCE}" in output
+    assert hostile_baseline not in output
+    assert hostile_reference not in output
+
+
 def test_catalog_truth_target_has_complete_safe_make_contract() -> None:
     contract = json.loads(
         (ROOT / "config/make_target_contract.json").read_text(encoding="utf-8")
@@ -138,7 +191,7 @@ def test_catalog_truth_target_has_complete_safe_make_contract() -> None:
             "SELF_IMPROVE_CATALOG_LIVE=0"
         ),
     }
-    help_text = (ROOT / "Makefile").read_text(encoding="utf-8")
+    help_text = compose_makefile(ROOT / "Makefile")
     assert "test-self-improve-catalog-truth" in help_text.split(
         "# --- Git ---", 1
     )[0]
@@ -161,5 +214,8 @@ def test_catalog_truth_fixture_documents_lifecycle_and_central_evidence() -> Non
         "isolated worktree",
         "input parity",
         "same exact acceptance facts",
+        "coverage_self_improve_catalog_truth.ini",
+        "7,398 passed",
+        "84.7%",
     ):
         assert fact in document

@@ -20,6 +20,8 @@ ARG PYTHON_VERSION=3.12
 ############################
 FROM ghcr.io/astral-sh/uv:python${PYTHON_VERSION}-bookworm-slim AS builder
 
+ARG PYTHON_VERSION
+
 # Reproducible, hermetic uv install into a self-contained venv at /app/.venv.
 ENV UV_PROJECT_ENVIRONMENT=/app/.venv \
     UV_COMPILE_BYTECODE=1 \
@@ -36,27 +38,33 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# 1) Resolve and install ONLY third-party dependencies first (cached layer).
-# --frozen (not --locked): CI and stage-2 below inject a timestamp build version
-# into pyproject.toml, which no longer matches uv.lock's pinned project version.
-# --locked would reject that mismatch (exit 1); --frozen installs straight from
-# the lockfile without re-validating it against pyproject.toml. Third-party deps
-# are unchanged, so the resolved dependency set is identical.
-COPY pyproject.toml uv.lock ./
+# 1) Validate and install only the locked core dependency set. The application
+# itself is deliberately excluded until its versioned wheel exists.
+COPY pyproject.toml uv.lock README.md ./
+COPY config/dependency_profiles.toml ./config/dependency_profiles.toml
+COPY scripts/dependency_profiles.py ./scripts/dependency_profiles.py
+COPY requirements/profiles ./requirements/profiles
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-install-project
+    python scripts/dependency_profiles.py sync \
+        --root /app \
+        --manifest config/dependency_profiles.toml \
+        --set core \
+        --environment /app/.venv \
+        --python "${PYTHON_VERSION}" \
+        --uv uv \
+        --no-install-project
 
-# 2) Copy the source + packaging metadata the wheel build needs, inject the
-#    build version (parity with .github/workflows/build.yml), then install the
-#    project itself into the venv.
+# 2) Build the versioned application wheel, then install it without resolving
+# dependencies again. Every third-party package remains bound to the core locks.
 ARG VERSION=0.1.0-alpha.5
 COPY src ./src
 COPY infra/terraform ./infra/terraform
-COPY README.md LICENSE THIRD_PARTY_LICENSES.md ./
+COPY LICENSE THIRD_PARTY_LICENSES.md ./
 RUN sed -i "s/^__version__ = \".*\"/__version__ = \"${VERSION}\"/" src/general_ludd/__init__.py \
  && sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" pyproject.toml
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+    uv build --wheel --out-dir /app/dist \
+ && uv pip install --python /app/.venv/bin/python --no-deps --reinstall /app/dist/*.whl
 
 ############################
 # Stage 2 — runtime        #
@@ -101,11 +109,9 @@ ENV PATH="/app/.venv/bin:${PATH}" \
 
 WORKDIR /app
 
-# The venv installs the project in editable mode, so the source tree must be
-# present at the same path it was built at (/app/src). Bring over the venv,
-# source, and the default config/templates/playbooks asset dirs.
+# Bring over the relocatable locked environment and runtime asset directories.
 COPY --from=builder /app/.venv /app/.venv
-COPY --from=builder /app/src /app/src
+COPY --from=builder /app/LICENSE /app/LICENSE
 COPY config /app/config
 COPY templates /app/templates
 COPY playbooks /app/playbooks

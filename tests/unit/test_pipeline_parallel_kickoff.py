@@ -13,6 +13,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from scripts.behavioral_specs import load_behavioral_specs
+
 ROOT = Path(__file__).resolve().parents[2]
 MODULE = (ROOT / ".opencode" / "lib" / "pipeline_kickoff.ts").as_uri()
 PLUGIN = (ROOT / ".opencode" / "plugin" / "enforce-pipeline-kickoff.ts").as_uri()
@@ -896,7 +898,7 @@ def test_plugin_registered_and_feature_doc_records_forum_evidence() -> None:
     assert "github.com/openai/codex/discussions/3898" in doc
     assert "github.com/openai/codex/issues/38989" in doc
 
-    specs = (ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md").read_text(
-        encoding="utf-8"
+    specs = load_behavioral_specs(
+        ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
     )
     assert specs.count("enforce-pipeline-kickoff.ts") >= 5

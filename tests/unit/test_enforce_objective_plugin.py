@@ -102,6 +102,21 @@ class TestHelperFunctions:
         src = _plugin_source()
         assert '"read"' in src and '"grep"' in src and '"glob"' in src
 
+    def test_spec_velocity_composes_and_verifies_routed_corpus(self):
+        src = _plugin_source()
+
+        assert "function readBehavioralSpecCorpus" in src
+        assert "SPEC_MANIFEST_START" in src
+        assert "SPEC_CONTENT_START" in src
+        assert 'createHash("sha256")' in src
+        assert "behavioral spec source digest mismatch" in src
+
+    def test_spec_velocity_recognizes_shard_writes(self):
+        src = _plugin_source()
+
+        assert "function isBehavioralSpecPath" in src
+        assert 'normalized.includes("/docs/specs/behavioral/")' in src
+
 
 class TestObjectiveExtraction:
     def test_parses_primary_objective_field(self):

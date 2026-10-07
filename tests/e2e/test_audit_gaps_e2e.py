@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from scripts.makefile_layout import compose_makefile
 
 import general_ludd.daemon as daemon_mod
 from general_ludd.daemon import create_daemon_app
@@ -17,7 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 @pytest.fixture(autouse=True)
-def _reset_daemon_state():
+def _reset_daemon_state() -> None:
     if daemon_mod._daemon_state is None:
         daemon_mod._daemon_state = {}
     daemon_mod._daemon_state["todos"] = []
@@ -26,7 +27,7 @@ def _reset_daemon_state():
 
 class TestDaemonDirectDispatch:
     @pytest.mark.asyncio
-    async def test_tick_with_runner_dispatches_via_runner_not_http(self):
+    async def test_tick_with_runner_dispatches_via_runner_not_http(self) -> None:
         mock_runner = MagicMock()
         mock_runner.prepare_job_dirs.return_value = {
             "root": "/tmp/test",
@@ -70,7 +71,7 @@ class TestDaemonDirectDispatch:
 
 
 class TestDaemonAppCreatesEventLoopWithRunner:
-    def test_lifespan_creates_event_loop_with_runner_via_testclient(self):
+    def test_lifespan_creates_event_loop_with_runner_via_testclient(self) -> None:
         mock_runner = MagicMock()
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=mock_runner):
             app = create_daemon_app(tick_interval=0.01)
@@ -80,7 +81,7 @@ class TestDaemonAppCreatesEventLoopWithRunner:
 
 
 class TestHTTPDebugLogging:
-    def test_debug_log_level_sets_httpx_logger_to_debug(self):
+    def test_debug_log_level_sets_httpx_logger_to_debug(self) -> None:
         original_level = logging.getLogger("httpx").level
         try:
             create_daemon_app(log_level="debug")
@@ -88,7 +89,7 @@ class TestHTTPDebugLogging:
         finally:
             logging.getLogger("httpx").setLevel(original_level)
 
-    def test_info_log_level_does_not_set_httpx_logger_to_debug(self):
+    def test_info_log_level_does_not_set_httpx_logger_to_debug(self) -> None:
         original_level = logging.getLogger("httpx").level
         try:
             create_daemon_app(log_level="info")
@@ -98,7 +99,7 @@ class TestHTTPDebugLogging:
 
 
 class TestLogLevelRuntimeSwitch:
-    def test_post_admin_log_level_changes_root_logger(self):
+    def test_post_admin_log_level_changes_root_logger(self) -> None:
         original_level = logging.getLogger().level
         try:
             app = create_daemon_app()
@@ -112,14 +113,11 @@ class TestLogLevelRuntimeSwitch:
 
 
 class TestTarballStructure:
-    def test_makefile_has_dist_target(self):
-        makefile_path = REPO_ROOT / "Makefile"
-        content = makefile_path.read_text()
-        assert "dist:" in content or "dist " in content.split("\n")[0] or any(
-            line.startswith("dist:") for line in content.split("\n")
-        )
+    def test_makefile_has_dist_target(self) -> None:
+        content = compose_makefile(REPO_ROOT / "Makefile")
+        assert any(line.startswith("dist:") for line in content.splitlines())
 
-    def test_systemd_unit_has_security_hardening(self):
+    def test_systemd_unit_has_security_hardening(self) -> None:
         service_path = REPO_ROOT / "dist" / "general-ludd.service"
         if not service_path.exists():
             pytest.skip("dist/general-ludd.service not generated")
@@ -128,7 +126,7 @@ class TestTarballStructure:
         assert "ProtectSystem=strict" in content
         assert "PrivateTmp=true" in content
 
-    def test_install_sh_references_gludd_binary(self):
+    def test_install_sh_references_gludd_binary(self) -> None:
         install_path = REPO_ROOT / "dist" / "install.sh"
         if not install_path.exists():
             pytest.skip("dist/install.sh not generated")
@@ -137,67 +135,71 @@ class TestTarballStructure:
 
 
 class TestReadmeUpdated:
-    def test_readme_references_gludd_daemon(self):
+    def test_readme_references_gludd_daemon(self) -> None:
         readme_path = REPO_ROOT / "README.md"
         content = readme_path.read_text()
         assert "gludd daemon" in content
 
-    def test_readme_does_not_reference_gludd_worker(self):
+    def test_readme_does_not_reference_gludd_worker(self) -> None:
         readme_path = REPO_ROOT / "README.md"
         content = readme_path.read_text()
         assert "gludd-worker" not in content
 
-    def test_readme_does_not_reference_gludd_loop(self):
+    def test_readme_does_not_reference_gludd_loop(self) -> None:
         readme_path = REPO_ROOT / "README.md"
         content = readme_path.read_text()
         assert "gludd-loop" not in content
 
 
 class TestDeprecatedCLIsDeleted:
-    def test_worker_cli_does_not_exist(self):
+    def test_worker_cli_does_not_exist(self) -> None:
         path = REPO_ROOT / "src" / "general_ludd" / "worker" / "cli.py"
         assert not path.exists(), f"Deprecated file should not exist: {path}"
 
-    def test_event_loop_cli_does_not_exist(self):
+    def test_event_loop_cli_does_not_exist(self) -> None:
         path = REPO_ROOT / "src" / "general_ludd" / "event_loop" / "cli.py"
         assert not path.exists(), f"Deprecated file should not exist: {path}"
 
 
 class TestContainerEntrypoint:
-    def test_containerfile_entrypoint_is_gludd_daemon(self):
+    def test_containerfile_entrypoint_is_gludd_daemon(self) -> None:
         containerfile_path = REPO_ROOT / "Containerfile"
         content = containerfile_path.read_text()
         assert 'ENTRYPOINT ["gludd", "daemon"]' in content
 
-    def test_containerfile_does_not_reference_gludd_worker(self):
+    def test_containerfile_does_not_reference_gludd_worker(self) -> None:
         containerfile_path = REPO_ROOT / "Containerfile"
         content = containerfile_path.read_text()
         assert "gludd-worker" not in content
 
 
 class TestPyprojectDeclaresAnsibleRunner:
-    def test_pyproject_depends_on_ansible_runner(self):
-        """ansible-runner is a declared dependency.
+    def test_ansible_controller_profile_depends_on_ansible_runner(self) -> None:
+        """ansible-runner is declared by the controller dependency profile.
 
         It powers the subprocess backend for process_isolation (finding #1
-        real fix). The prior guard asserted it was absent because the
-        in-process PlaybookExecutor was the only backend; now that we delegate
-        to ansible-runner for container confinement, it MUST be declared.
+        real fix). The controller profile owns this dependency so runtime-only
+        installations do not inherit the Ansible control-plane toolchain.
         """
-        pyproject_path = REPO_ROOT / "pyproject.toml"
-        content = pyproject_path.read_text()
-        assert "ansible-runner" in content
+        import tomllib
+
+        profile_path = (
+            REPO_ROOT / "requirements" / "profiles" / "ansible-controller" / "pyproject.toml"
+        )
+        with profile_path.open("rb") as profile_file:
+            dependencies = tomllib.load(profile_file)["project"]["dependencies"]
+        assert "ansible-runner>=2.4.0" in dependencies
 
 
 class TestPyprojectSingleEntrypoint:
-    def test_project_scripts_has_only_gludd(self):
+    def test_project_scripts_has_only_gludd(self) -> None:
         pyproject_path = REPO_ROOT / "pyproject.toml"
         content = pyproject_path.read_text()
         assert "gludd = " in content
         assert "gludd-worker" not in content
         assert "gludd-loop" not in content
 
-    def test_project_scripts_section_exists(self):
+    def test_project_scripts_section_exists(self) -> None:
         import tomllib
 
         pyproject_path = REPO_ROOT / "pyproject.toml"

@@ -58,6 +58,10 @@ confirmation of a platform-side incident
 
 `tests/unit/test_ci_hosted_environment_contract.py` parses both workflows and
 pins the image, startup limits, and every Linux fan-out matrix.
+`tests/unit/test_cross_platform_binary.py` independently requires the same
+Ubuntu 24.04 pin while validating the Linux release artifact, preventing its
+legacy platform assertion from drifting back to the moving `ubuntu-latest`
+alias.
 `tests/unit/test_molecule_parallel.py` independently proves that the Build
 Molecule job remains parallel while staying below its total shard count. The
 broader workflow YAML, action-pin, timeout, and pre-commit suites verify valid

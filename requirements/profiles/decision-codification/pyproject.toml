@@ -1,0 +1,8 @@
+[project]
+name = "gludd-profile-decision-codification"
+version = "0"
+requires-python = ">=3.11"
+dependencies = ["scikit-learn==1.9.0"]
+
+[tool.uv]
+package = false

@@ -6,6 +6,8 @@ import tomllib
 from pathlib import Path
 from typing import Any, cast
 
+from scripts.makefile_layout import compose_makefile
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PYPROJECT = PROJECT_ROOT / "pyproject.toml"
 MYPY_TESTS_CONFIG = PROJECT_ROOT / "config" / "mypy-tests.toml"
@@ -65,7 +67,7 @@ class TestMypyConfigGaps:
                 )
 
     def test_typecheck_target_actually_checks_tests(self) -> None:
-        makefile = (PROJECT_ROOT / "Makefile").read_text(encoding="utf-8")
+        makefile = compose_makefile(PROJECT_ROOT / "Makefile")
         typecheck_recipe = makefile.split("\ntypecheck:\n", 1)[1].split("\n\n", 1)[0]
         assert "mypy -p general_ludd" in typecheck_recipe
         assert "--config-file config/mypy-tests.toml" in typecheck_recipe
@@ -82,7 +84,7 @@ class TestMypyConfigGaps:
         assert "ignore_errors" not in config
 
     def test_make_preserves_capable_terminals_with_deterministic_fallback(self) -> None:
-        makefile = (PROJECT_ROOT / "Makefile").read_text(encoding="utf-8")
+        makefile = compose_makefile(PROJECT_ROOT / "Makefile")
         assert "filter-out dumb unknown" in makefile
         assert "infocmp" in makefile
         assert "override TERM := xterm-256color" in makefile

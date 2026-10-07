@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 import general_ludd.daemon as daemon_mod
 from general_ludd.daemon import create_daemon_app
+from general_ludd.daemon_components import lifecycle as lifecycle_mod
 
 
 @pytest.fixture(autouse=True)
@@ -22,7 +23,7 @@ def _reset_daemon_state():
 
 class TestSecretMigrationInDaemonStartup:
     def test_lifespan_closes_embedding_session_before_engine_disposal(self):
-        source = inspect.getsource(daemon_mod._lifespan)
+        source = inspect.getsource(lifecycle_mod.lifespan)
 
         close_session = source.index("await _embedding_session_ref.close()")
         dispose_engine = source.index("await engine.dispose()", close_session - 500)

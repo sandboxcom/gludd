@@ -12,6 +12,7 @@ from typing import Any, cast
 import pytest
 from scripts import azure_containerapp_live_proof as live_cli
 from scripts.azure_containerapp_live_proof import main
+from scripts.makefile_layout import compose_makefile
 
 from general_ludd.azure.accelerator_credential_source import (
     AzureAcceleratorCredentialLease,
@@ -1634,7 +1635,7 @@ def test_live_cli_treats_client_cleanup_failure_as_terminal_and_censors_detail(
 
 def test_public_make_target_is_ci_safe_and_contract_tracked() -> None:
     root = Path(__file__).resolve().parents[2]
-    makefile = (root / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(root / "Makefile")
     workflow = (root / ".github/workflows/build.yml").read_text(encoding="utf-8")
     contract = json.loads(
         (root / "config/make_target_contract.json").read_text(encoding="utf-8")
@@ -1754,7 +1755,7 @@ def test_cli_builds_workload_identity_from_explicit_federated_inputs(
 def test_azure_containerapp_coverage_has_one_local_and_hosted_contract() -> None:
     """The branch-aware Azure profile must run identically locally and in GHA."""
     root = Path(__file__).resolve().parents[2]
-    makefile = (root / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(root / "Makefile")
     workflow = (root / ".github/workflows/build.yml").read_text(encoding="utf-8")
     contract = json.loads(
         (root / "config/make_target_contract.json").read_text(encoding="utf-8")

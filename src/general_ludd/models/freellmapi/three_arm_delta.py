@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Sequence
 from enum import StrEnum
 from itertools import pairwise
 from typing import NoReturn
@@ -14,6 +13,12 @@ import numpy as np
 from general_ludd.models.freellmapi.three_arm_contracts import (
     ThreeArmCorpus,
     ThreeArmPlan,
+)
+from general_ludd.models.freellmapi.three_arm_types import (
+    ArmComparison,
+    ReplayObservation,
+    ReplayResources,
+    ThreeArmDecision,
 )
 
 _CANDIDATE_ARM = "freellmapi_v0_11_1"
@@ -40,56 +45,6 @@ class ThreeArmDeltaError(ValueError):
         """Create an error exposing only its stable fault category."""
         self.fault = fault
         super().__init__(fault.value)
-
-
-@dataclass(frozen=True, slots=True)
-class ReplayObservation:
-    """Content-free probabilities and timings for one frozen group."""
-
-    group_digest: str
-    truth: bool
-    probabilities: Mapping[str, float]
-    latency_ms: Mapping[str, float]
-    node_candidate_probability: float
-    bridge_fault: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class ReplayResources:
-    """Process-level resource and authority observations."""
-
-    rss_samples_mib: tuple[float, ...]
-    network_calls: int
-    cost_usd: float
-
-
-@dataclass(frozen=True, slots=True)
-class ArmComparison:
-    """Candidate evidence relative to one comparator arm."""
-
-    quality_delta_mean: float
-    quality_lcb: float
-    mcnemar_pvalue: float
-    candidate_only_correct: int
-    comparator_only_correct: int
-    max_stratum_loss: float
-    p95_added_latency_ms: float
-
-
-@dataclass(frozen=True, slots=True)
-class ThreeArmDecision:
-    """Non-promoting evaluation result and exact failed gates."""
-
-    decision: str
-    all_gates_passed: bool
-    promotion_permitted: bool
-    runtime_admitted: bool
-    serving_bundle_sha256: str
-    comparisons: Mapping[str, ArmComparison]
-    failed_gates: tuple[str, ...]
-    candidate_max_latency_ms: float
-    rss_delta_mib: float
-    bridge_fault_count: int
 
 
 def _fail(fault: ThreeArmDeltaFault) -> NoReturn:

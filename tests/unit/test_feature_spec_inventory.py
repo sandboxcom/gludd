@@ -7,6 +7,7 @@ from pathlib import Path
 
 import yaml
 from feature_spec_inventory import build_inventory, render_human
+from scripts.mcp_topics import write_topics
 
 
 def _write(path: Path, text: str) -> None:
@@ -244,6 +245,47 @@ Cost rates are currently zero. Seed them from the catalog.
     }
     assert "doc:design-specs-spec-budget" in records
     assert records["doc:design-specs-spec-budget"]["claim_status"] == "unimplemented"
+
+
+def test_mcp_topic_shards_alias_their_canonical_manifest_record(tmp_path: Path) -> None:
+    repo = _fixture_repo(tmp_path)
+    name = "general_ludd.agent.gludd_ping"
+    _write(
+        repo / "docs/MCP_TOOLS_MANIFEST.json",
+        json.dumps(
+            [
+                {
+                    "name": name,
+                    "description": "Ping the daemon",
+                    "input_schema": {"type": "object"},
+                    "server_id": "ansible",
+                }
+            ]
+        )
+        + "\n",
+    )
+    write_topics(
+        repo / "docs/MCP_TOOLS_TOPICS.yml",
+        {
+            name: {
+                "DOCUMENTATION": {"short_description": "Ping from a topic shard"},
+                "EXAMPLES": [],
+                "RETURN": {},
+                "module": "gludd_ping",
+            }
+        },
+    )
+
+    records = {
+        record["id"]: record
+        for record in build_inventory(repo)["gludd_features"]["records"]
+    }
+    record = records["mcp-tool:general-ludd-agent-gludd-ping"]
+    assert record["title"] == "Ping from a topic shard"
+    assert {source["path"] for source in record["sources"]} == {
+        "docs/MCP_TOOLS_MANIFEST.json",
+        "docs/mcp-tool-topics/topics-001.yml",
+    }
 
 
 def test_human_and_json_contract_expose_distinct_claim_and_verification_counts(

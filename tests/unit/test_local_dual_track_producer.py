@@ -10,6 +10,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNNER = ROOT / "scripts" / "run_ci_shards_serial.py"
@@ -41,7 +42,7 @@ def _load_runner() -> ModuleType:
 
 
 def _target_block(name: str, next_name: str) -> str:
-    source = (ROOT / "Makefile").read_text(encoding="utf-8")
+    source = compose_makefile(ROOT / "Makefile")
     return source.split(f"{name}:", 1)[1].split(f"{next_name}:", 1)[0]
 
 
@@ -52,9 +53,15 @@ def test_local_dual_track_target_delegates_canonical_bounded_run() -> None:
     assert "$(MAKE) node-deps-sync" in block
     assert block.index("$(MAKE) node-deps-sync") < block.index("scripts/run_ci_shards_serial.py")
     assert "scripts/run_ci_shards_serial.py" in block
-    assert "$(UV) run --python 3.11 python scripts/run_ci_shards_serial.py" in block
+    assert "$(UV) run --no-sync --python 3.11 python scripts/run_ci_shards_serial.py" in block
     assert "--require-release-policy" in block
     assert 'TOOLCHAIN_ROOT="$${RESOURCE_ROOT}-toolchain"' in block
+    profile_sync = (
+        'scripts/dependency_profiles.py sync --root "$(CURDIR)" --set ci '
+        '--environment "$$TOOLCHAIN_ROOT/ci-shards/python-3.11" --python 3.11'
+    )
+    assert profile_sync in block
+    assert block.index(profile_sync) < block.index("scripts/run_ci_shards_serial.py")
     assert (
         'UV_PROJECT_ENVIRONMENT="$$TOOLCHAIN_ROOT/ci-shards/python-3.11"'
         in block

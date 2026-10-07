@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -383,7 +384,7 @@ def test_main_reports_signal_error_without_dispatch_retry(
 
 
 def test_release_candidate_push_path_uses_idempotent_signal_script() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     trigger = makefile.split("ci-trigger-committed-head:", 1)[1].split(
         "\nci-push-committed-head:",
         1,

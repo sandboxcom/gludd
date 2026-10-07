@@ -8,6 +8,8 @@ import re
 from configparser import ConfigParser
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 from general_ludd.self_improve.managed_runner import TaskSpec
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -247,7 +249,7 @@ def test_canonical_coverage_runs_every_self_improvement_contract() -> None:
 
 
 def test_multifile_target_is_pinned_and_safe_by_default() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     target = _target_block(makefile, "test-self-improve-multifile")
 
     assert "SELF_IMPROVE_MULTIFILE_LIVE ?= 0" in makefile
@@ -289,7 +291,7 @@ def test_multifile_target_has_complete_make_contract() -> None:
             "make test-self-improve-multifile SELF_IMPROVE_MULTIFILE_LIVE=0"
         ),
     }
-    help_text = (ROOT / "Makefile").read_text(encoding="utf-8")
+    help_text = compose_makefile(ROOT / "Makefile")
     assert "test-self-improve-multifile" in help_text.split("# --- Git ---", 1)[0]
 
 

@@ -656,8 +656,16 @@ class ExecutionEngine:
         is_git = _is_git_repo(self.workspace_path)
         title_slug = _slugify(job.prompt_text or job.todo_id or "untitled")
         branch_name = f"gludd/{job.todo_id}-{title_slug}"
-        if is_git:
-            _git_create_branch(self.workspace_path, branch_name)
+        if is_git and not _git_create_branch(self.workspace_path, branch_name):
+            return TaskReturn(
+                return_id=return_id,
+                todo_id=job.todo_id,
+                job_id=job.job_id,
+                playbook=job.playbook or "code",
+                queue=job.queue or "core",
+                exit_code=1,
+                result_summary="Git branch isolation failed",
+            )
 
         system_prompt = _build_system_prompt(
             job,

@@ -94,6 +94,9 @@ class TestFix1EventLoopOffload:
             def __init__(self, path):
                 self.path = path
 
+            def current_branch(self):
+                return "gludd-x"
+
             def commit(self, msg):
                 commit_calls.append(msg)
                 return "abc123"

@@ -8,6 +8,8 @@ the collection-error check.
 import re
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 MAKEFILE = Path(__file__).parent.parent.parent / "Makefile"
 
 
@@ -34,12 +36,12 @@ class TestT30CollectCheckGatePrerequisite:
     """T30 — collect-check is a prerequisite of gate + commit targets."""
 
     def test_collect_check_target_exists(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         target_names = _target_names(content)
         assert "collect-check" in target_names, "T30: collect-check target must exist in Makefile"
 
     def test_collect_check_is_gate_prerequisite(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         recipe = _find_target_recipe(content, "gate")
         assert recipe, "T30: gate target must exist"
         assert (
@@ -49,13 +51,13 @@ class TestT30CollectCheckGatePrerequisite:
         ), "T30: gate must reference collect-check as a prerequisite"
 
     def test_collect_check_is_gate_fast_prerequisite(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         recipe = _find_target_recipe(content, "gate-fast")
         assert recipe, "T30: gate-fast target must exist"
         assert "collect-check" in recipe, "T30: gate-fast must include collect-check"
 
     def test_collect_check_in_gate_lite(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         recipe = _find_target_recipe(content, "gate-lite")
         assert recipe, "T30: gate-lite target must exist"
         assert (
@@ -65,7 +67,7 @@ class TestT30CollectCheckGatePrerequisite:
         ), "T30: gate-lite must reference collect-check"
 
     def test_commit_targets_reference_collect_check(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         target_names = _target_names(content)
         commit_related = [t for t in target_names if "commit" in t and not t.startswith("_")]
         found = 0
@@ -80,6 +82,6 @@ class TestT30CollectCheckGatePrerequisite:
         )
 
     def test_check_duplicate_targets_references_collect_check(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         recipe = _find_target_recipe(content, "check-duplicate-targets")
         assert recipe, "T30: check-duplicate-targets must exist"

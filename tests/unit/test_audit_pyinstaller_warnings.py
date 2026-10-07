@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 from scripts import audit_pyinstaller_warnings as warning_audit
+from scripts.makefile_layout import compose_makefile
 
 _ROOT = Path(__file__).resolve().parents[2]
 _MAKEFILE = _ROOT / "Makefile"
@@ -21,7 +22,14 @@ _SCRIPT = _ROOT / "scripts" / "audit_pyinstaller_warnings.py"
 _LINUX_POLICY = _ROOT / "config" / "pyinstaller-warning-allowlist-linux.json"
 _LINUX_BUILDER_DOCKERFILE = _ROOT / "config" / "containers" / "linux-binary.Dockerfile"
 _CONNECTOR_REGISTRY = _ROOT / "src" / "general_ludd" / "connectors" / "registry.py"
-_PRICING_SOURCES = _ROOT / "src" / "general_ludd" / "pricing_intel" / "sources.py"
+_CLOUD_COMPUTE_SOURCE = (
+    _ROOT
+    / "src"
+    / "general_ludd"
+    / "pricing_intel"
+    / "source_components"
+    / "cloud_compute.py"
+)
 _PYINSTALLER_VERSION = "6.20.0"
 _EMPTY_TRANSITIVE_DIGEST = hashlib.sha256(b"").hexdigest()
 _CONTROLLER_RUNTIME_EDGES = {
@@ -143,7 +151,7 @@ def test_script_exists() -> None:
 
 
 def test_makefile_exposes_replayable_linux_warning_audit() -> None:
-    makefile = _MAKEFILE.read_text(encoding="utf-8")
+    makefile = compose_makefile(_MAKEFILE)
 
     assert "PYINSTALLER_WARNING_FILE_LINUX ?= dist/linux/warn-gludd.txt" in makefile
     assert "PYINSTALLER_WARNING_ARCHITECTURE_LINUX ?=" in makefile
@@ -170,13 +178,13 @@ def test_molecule_binary_smoke_uses_release_builder_python_minor() -> None:
     assert builder is not None
     assert hosted is not None
     assert hosted.group("minor") == builder.group("minor")
-    assert "uv sync --frozen" in workflow
+    assert "scripts/dependency_profiles.py sync --set ci" in workflow
 
 
 def test_linux_builder_combines_exact_python_and_uv_images() -> None:
     """One cached builder must pin both interpreter and package-manager identity."""
     dockerfile = _LINUX_BUILDER_DOCKERFILE.read_text(encoding="utf-8")
-    makefile = _MAKEFILE.read_text(encoding="utf-8")
+    makefile = compose_makefile(_MAKEFILE)
 
     assert (
         "FROM docker.io/library/python:3.12.14-slim-bookworm@"
@@ -201,7 +209,7 @@ def test_molecule_binary_smoke_pins_hosted_python_patch() -> None:
     assert 'python-version: "3.12.14"' in workflow
 
 
-def test_every_hosted_linux_warning_graph_uses_one_python_and_frozen_lock() -> None:
+def test_every_hosted_linux_warning_graph_uses_one_python_and_locked_profile() -> None:
     """Build, release, and dedicated Molecule lanes must analyze one graph."""
     build = _BUILD_WORKFLOW.read_text(encoding="utf-8")
     molecule = _MOLECULE_WORKFLOW.read_text(encoding="utf-8")
@@ -210,12 +218,13 @@ def test_every_hosted_linux_warning_graph_uses_one_python_and_frozen_lock() -> N
 
     assert 'python-version: "3.12.14"' in build_molecule
     assert 'python-version: "3.12.14"' in build_linux
-    assert "uv sync\n" not in build_molecule
-    assert "uv sync --frozen" in build_molecule
-    assert "uv sync\n" not in build_linux
-    assert "uv sync --frozen" in build_linux
+    assert "uv sync" not in build_molecule
+    assert "scripts/dependency_profiles.py sync --set ci" in build_molecule
+    assert "uv sync" not in build_linux
+    assert "scripts/dependency_profiles.py sync --set build-azure" in build_linux
     assert 'python-version: "3.12.14"' in molecule
-    assert "uv sync --frozen" in molecule
+    assert "uv sync" not in molecule
+    assert "scripts/dependency_profiles.py sync --set ci" in molecule
     assert "Audit Linux PyInstaller warning graph" in build
     assert "Upload Linux PyInstaller warning graph" in build
     assert "Upload Linux PyInstaller warning graph" in molecule
@@ -892,6 +901,6 @@ def test_connector_registry_avoids_pyinstaller_path_pseudo_module() -> None:
 
 
 def test_optional_gcp_sdk_import_is_locally_guarded() -> None:
-    source = _PRICING_SOURCES.read_text(encoding="utf-8")
+    source = _CLOUD_COMPUTE_SOURCE.read_text(encoding="utf-8")
 
     assert ("try:\n            from google.cloud import billing\n        except ImportError as exc:") in source

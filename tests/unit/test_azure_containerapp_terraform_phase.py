@@ -9,6 +9,7 @@ from typing import IO, Any
 import pytest
 import scripts.azure_containerapp_terraform_phase as terraform_phase
 from scripts.azure_containerapp_terraform_phase import main
+from scripts.makefile_layout import compose_makefile
 
 
 class _Process:
@@ -436,7 +437,7 @@ def test_script_is_only_a_wrapper_around_the_production_executor() -> None:
 
 def test_make_target_is_explicit_validate_only_and_contract_tracked() -> None:
     root = Path(__file__).resolve().parents[2]
-    makefile = (root / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(root / "Makefile")
     contract = json.loads(
         (root / "config/make_target_contract.json").read_text(encoding="utf-8")
     )

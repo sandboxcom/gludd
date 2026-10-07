@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def _full_gate_recipe() -> str:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     return makefile.split("\ngate:", maxsplit=1)[1].split("\n# gate-lite:", maxsplit=1)[0]
 
 

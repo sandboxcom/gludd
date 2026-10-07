@@ -2,6 +2,7 @@ import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { execSync } from "node:child_process"
+import { TextDecoder } from "node:util"
 import { isSubagent, reportAlive } from "../../lib/shared.ts"
 import { loadHotModule, type HotModule } from "../../lib/hot_reload.ts"
 
@@ -161,13 +162,77 @@ const ALLOWED_TOP_LEVEL_KEYS: ReadonlySet<string> = new Set([
 const BASETEMP = process.env.GLUDD_GATE_BASETEMP || "/tmp/gludd-gate-basetemp"
 const STALE_SECS = parseInt(process.env.GLUDD_GATE_STALE_SECS || "600", 10)
 
+const MAKE_INCLUDE_PREFIX_RE = /^(?:-include|sinclude|include)(?:\s|$)/
+const EXACT_MAKE_INCLUDE_RE = /^include (make\/[A-Za-z0-9][A-Za-z0-9_.-]*\.mk)$/
+
+function readMakefileText(filePath: string): string {
+  const bytes = fs.readFileSync(filePath)
+  const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes)
+  if (text && !text.endsWith("\n")) {
+    throw new Error("Makefile source lacks a final newline")
+  }
+  return text
+}
+
+function makefileSources(root: string): readonly string[] {
+  const resolvedRoot = path.resolve(root)
+  const realRoot = fs.realpathSync(resolvedRoot)
+  const entrypoint = path.join(resolvedRoot, "Makefile")
+  const realEntrypoint = fs.realpathSync(entrypoint)
+  if (realEntrypoint !== path.join(realRoot, "Makefile")) {
+    throw new Error("Makefile entrypoint resolves outside repository root")
+  }
+  const entrypointText = readMakefileText(realEntrypoint)
+  const makeDirectory = path.join(resolvedRoot, "make")
+  const relativeIncludes: string[] = []
+  const seenIncludes = new Set<string>()
+
+  for (const line of entrypointText.split(/\r?\n/)) {
+    if (!MAKE_INCLUDE_PREFIX_RE.test(line)) continue
+    const match = EXACT_MAKE_INCLUDE_RE.exec(line)
+    if (match === null) {
+      throw new Error("Makefile include is not one explicit make/*.mk path")
+    }
+    const relativePath = match[1]
+    if (seenIncludes.has(relativePath)) {
+      throw new Error("duplicate Makefile fragment include")
+    }
+    seenIncludes.add(relativePath)
+    relativeIncludes.push(relativePath)
+  }
+
+  const sources = [entrypointText]
+  for (const relativePath of relativeIncludes) {
+    const fragmentPath = path.resolve(resolvedRoot, relativePath)
+    if (path.dirname(fragmentPath) !== makeDirectory) {
+      throw new Error("Makefile fragment resolves outside make/")
+    }
+    const realFragmentPath = fs.realpathSync(fragmentPath)
+    const realMakeDirectory = fs.realpathSync(makeDirectory)
+    if (realMakeDirectory !== path.join(realRoot, "make")) {
+      throw new Error("Makefile make/ directory resolves outside repository root")
+    }
+    if (path.dirname(realFragmentPath) !== realMakeDirectory) {
+      throw new Error("Makefile fragment resolves outside repository make/")
+    }
+    const fragmentText = readMakefileText(realFragmentPath)
+    for (const line of fragmentText.split(/\r?\n/)) {
+      if (MAKE_INCLUDE_PREFIX_RE.test(line)) {
+        throw new Error("nested Makefile includes are forbidden")
+      }
+    }
+    sources.push(fragmentText)
+  }
+  return sources
+}
+
 function makeTargetExists(target: string): boolean {
   if (!target) return true
   try {
     const root = process.env.GLUDD_REPO_ROOT || process.cwd()
-    const makefile = fs.readFileSync(path.join(root, "Makefile"), "utf8")
     const escaped = target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-    return new RegExp(`^${escaped}:`, "m").test(makefile)
+    const declaration = new RegExp(`^${escaped}:`, "m")
+    return makefileSources(root).some((source) => declaration.test(source))
   } catch {
     return false
   }

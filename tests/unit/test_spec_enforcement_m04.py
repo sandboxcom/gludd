@@ -8,6 +8,8 @@ or `git merge` without `--no-commit` to ensure atomicity.
 from pathlib import Path
 from typing import ClassVar
 
+from scripts.makefile_layout import compose_makefile
+
 MAKEFILE = Path(__file__).parent.parent.parent / "Makefile"
 
 
@@ -33,7 +35,7 @@ class TestM04MergeIsAtomic:
     ]
 
     def test_merge_targets_use_no_ff(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         violations = []
         for target in self._MERGE_TARGETS:
             recipe = _find_target_recipe(content, target)
@@ -44,7 +46,7 @@ class TestM04MergeIsAtomic:
         assert not violations, "M04 VIOLATION — merge targets missing --no-ff:\n" + "\n".join(violations)
 
     def test_no_merge_target_uses_no_commit(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         violations = []
         for target in self._MERGE_TARGETS:
             recipe = _find_target_recipe(content, target)
@@ -58,12 +60,12 @@ class TestM04MergeIsAtomic:
             )
 
     def test_merge_abort_available(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         recipe = _find_target_recipe(content, "git-merge-abort")
         assert recipe, "M04: git-merge-abort must exist for atomicity recovery"
 
     def test_development_merge_uses_no_ff(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         recipe = _find_target_recipe(content, "development-merge-to-master")
         assert recipe, "M04: development-merge-to-master must exist"
         assert "--no-ff" in recipe, "M04: development-merge-to-master must use --no-ff for atomic merge"

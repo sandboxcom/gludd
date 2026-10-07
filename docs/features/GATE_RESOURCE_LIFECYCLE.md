@@ -144,6 +144,48 @@ Make/test/documentation revert after active new-format gates exit; restoring
 the shared `/tmp` log while concurrent worktrees run would knowingly restore
 cross-run evidence corruption.
 
+### Owned Node download-cache reclamation
+
+The machine-readable disk classification on 2026-10-05 measured 143.1 MiB of
+counted Gludd scratch. Its largest root was an 83.9 MiB generated cache inside a
+registered, dirty worktree with a live pytest process, so that root was not a
+safe cleanup candidate. The next largest proven project-owned class was the
+17.3 MiB `/tmp/gludd-npm-cache-public-v1` download cache. A similarly named
+`gludd-npm-cache-s83-163` root is not part of the canonical contract and remains
+untouched.
+
+The same inspection corrected a misleading initial theory: the accumulated
+`gludd-test-fc-*.sock` paths were zero-byte regular-file lookalikes created by
+mock tests, not Unix socket inodes. The generated-scratch cleaner continues to
+refuse those files as unsupported rather than treating a suffix as ownership.
+Only a real socket inode receives the existing socket-owner checks.
+
+The automatic disk preflight now reclaims only the exact direct children
+`gludd-npm-cache` and `gludd-npm-cache-public-v1` of the canonical temporary
+root. A candidate must be a real directory, not a symlink or special file. A
+bounded walk rejects symlinks, special entries, and trees over 50,000 entries;
+the newest observed entry must be at least six hours old. Two process-table
+checks refuse any `npm`, `npx`, npm CLI, or exact-cache-path owner. The complete
+tree identity is then recomputed, and the root receives an immediate `lstat`
+identity check before removal. Changed, fresh, ambiguous, active, raced, or
+uninspectable candidates fail closed.
+
+Every pass emits candidate, inspected-entry, removed, skipped, and error counts.
+An absent exact cache is a converged state, so repeated pressure checks remain
+idempotent. This is a zero-downtime cleanup: installed dependencies and lockfiles
+are outside the cache, active package-manager work is protected, and a later
+locked `npm ci` recreates the download cache on demand. Rollback is a code and
+test revert; already reclaimed bytes are regenerable and require no data
+migration or service restart.
+
+The policy follows two long-lived practitioner reports. npm CLI issue
+[#3176](https://github.com/npm/cli/issues/3176) shows `_cacache` changing and
+growing across repeated `npm ci` runs. The 2012 npm issue
+[#2500](https://github.com/npm/npm/issues/2500) records shared-cache corruption
+under concurrent installs and explicitly questions whether cleaning in parallel
+is safe. Those reports support an age boundary plus two idle-owner proofs, not
+an unconditional recursive deletion.
+
 ### Distribution cleanup
 
 `make clean CLEAN_VALIDATE_ONLY=1` is the safe behavioral contract. Actual mode
@@ -245,6 +287,134 @@ when intermediate descendants exit. Gludd therefore discovers repository
 membership from Git, protects each recorded owner tree, and verifies command
 identity again immediately before signaling.
 
+#### Identity-verified gate-tree termination
+
+The historical force-kill path selected one PID from a host-global lock or a
+background PID file, sent signals only to that process, and then removed lock
+records whether or not descendants survived. Killing the root was not proof
+that pytest, xdist, coverage, or shard-runner descendants had stopped. A reused
+PID or another checkout's similarly shaped command could also make a broad
+process-group signal destructive. The replacement contract acts only on the
+tree rooted at the checkout's verified gate owner and never treats lock removal
+as termination evidence.
+
+**Marked ownership and legacy migration.** New gates publish
+`.gate-logs/gate-run.lock` atomically with marker `gludd-gate-run-v1`, state
+`active`, the owner PID, its stable `ps` start time, canonical checkout root,
+and derived project namespace. Admission requires every field to match the
+current checkout and live owner command. A marked `termination_failed` record
+is retryable only through the exact target identities retained by the failed
+attempt; normal gate acquisition and repository mutation continue to refuse it.
+
+A rolling upgrade may encounter the exact legacy `{"pid", "started_at"}` lock
+whose second field is the acquisition epoch. It is admitted only when all of
+these independent facts agree:
+
+- the schema has exactly those two fields and the PID is greater than one;
+- the PID is live and its `ps` start time places lock acquisition from two
+  seconds before through 300 seconds after process start;
+- the command is one direct `make` or `gmake` invocation of only `gate` or
+  `gate-refresh`, allowing only the known directory/silence flags and Make
+  assignments;
+- the live process working directory resolves to this canonical checkout; and
+- its explicit `GLUDD_PROJECT_NAMESPACE`, or the default namespace when no
+  override exists, equals this checkout's derived namespace.
+
+Together these checks revalidate PID, start time, command, checkout root, and project namespace
+before a legacy record gains destructive authority.
+
+The complete legacy proof and unchanged two-field lock are checked again
+immediately before the first signal. An ambiguous schema, unreadable working
+directory or environment, extra target, clock mismatch, root mismatch, or
+namespace mismatch refuses without signaling or rewriting the record. A fully
+terminated legacy run removes its lock and records `lock_schema: legacy` in the
+evidence. If any verified survivor remains, the lock is atomically migrated to
+the marked format with state `termination_failed`, stable owner identity,
+canonical root and namespace, and the exact target inventory. Migration never
+turns incomplete cleanup into an active or absent lock.
+
+**Descendant-first measured boundary.** After ownership admission, one bounded
+process-table snapshot builds the owner tree through PPID lineage, including
+descendants in different process groups. The order is deepest descendant first,
+with PID as the deterministic tie-breaker. Immediately before every signal,
+the candidate must still have the same PID, start time, and complete command;
+an exited candidate is converged, while a reused or inaccessible identity is
+skipped and prevents a success claim. Root and namespace come from the admitted
+lock and live owner, and the ownership lock is revalidated again before any
+lock mutation.
+
+Each still-owned candidate receives `SIGTERM`. The production defaults poll at
+100 ms through a 10-second `SIGTERM` grace. Only verified survivors then receive
+`SIGKILL`, followed by a one-second `SIGKILL` observation using the same 100 ms
+poll. No signal is sent to a sibling outside the admitted tree, and no negative
+process-group signal is used. The snapshot is intentionally finite: a process
+created after admission is not guessed into the target set. A replacement gate
+therefore remains forbidden until the recorded owner and every admitted target
+are terminal and the primary ownership lock has been released.
+
+**Terminal evidence, refusal, and resource release.** An applied, admitted
+attempt atomically publishes `.gate-status` with either `gate-kill terminated`
+or `gate-kill termination-failed`, the survivor list, and
+`=== GATE: ABORTED ===`. It also writes
+`.gate-logs/gate-kill-evidence.json` with the lock schema, root, namespace,
+recorded time, outcome, TERM/KILL/skipped/survivor PID sets, and every target's
+PID, PPID, process group, start time, command, and depth. `ABORTED` is the only
+terminal claim for an operator-requested kill; it can never become PASS or
+ordinary test FAIL evidence.
+
+On complete termination, the primary lock remains in place while auxiliary
+`.gate-background.pid` and namespaced `async-gate.lock` / `gate.lock` records
+are removed only when their PID belongs to the verified target set. The primary
+lock is then removed only if its marker, PID, start time, and namespace still
+match the admitted record. A live survivor, permission failure, identity
+replacement, or failed post-KILL observation retains a marked
+`termination_failed` lock and blocks a replacement gate. A missing lock is an
+idempotent no-op; an existing unreadable or mismatched lock is a refusal. Dry
+run reports the exact plan without signals, status changes, evidence writes, or
+lock cleanup.
+
+**Zero-downtime delivery and rollback.** This is a gate control-plane change:
+it adds no application listener, schema, credential, daemon, or production
+restart. New gates write the marked schema while an already-running legacy gate
+keeps its record, so mixed-version rollout needs no hot adoption. To replace a
+gate, stop new admission, terminate the exact old owner, require ABORTED status
+plus JSON evidence with no survivors, and only then start the replacement gate
+through normal acquisition. Application traffic continues throughout that ZDD
+replacement-gate flow.
+
+Rollback is also ordered. Stop new gate admission, use the new terminator to
+finish or retry every marked `active` / `termination_failed` owner, require the
+same terminal evidence and absent ownership lock, and only then revert the
+scripts and tests. Manually deleting a marked lock, starting an overlapping
+gate, or reverting while a marked owner remains live is outside the rollback
+contract because the legacy implementation cannot prove that ownership.
+
+The acceptance replay is warning-strict and covers a four-level tree spanning
+three process groups, TERM-only exits, KILL escalation, PID reuse, wrong roots
+and namespaces, permission/refusal paths, fail-closed retry, auxiliary-lock
+ownership, and an unrelated sibling that receives no signal. The default
+10-second + one-second deadlines and 100 ms observation interval are runtime
+bounds, not estimates derived from test duration. The merged focused family
+passes 47/47 tests with warnings treated as errors; targeted coverage measures
+`kill_owned_gate.py` at 91%, above the 85% aggregate and 75% per-file floors.
+
+Long-lived practitioner reports establish why every boundary is necessary:
+
+- [CPython issue #111873](https://github.com/python/cpython/issues/111873), open
+  since 2023, reproduces `ProcessPoolExecutor` workers surviving a killed parent
+  on Linux and macOS and notes that parent-PID polling can fail after PID reuse.
+- [GitHub Actions runner issue #3341](https://github.com/actions/runner/issues/3341),
+  open since 2024, shows a runner logging "kill entire process tree" while the
+  cited path killed only the root process.
+- [Bazel issue #11910](https://github.com/bazelbuild/bazel/issues/11910), filed
+  in 2020, reports builds and tests killed after a waited PID was reused as a
+  different process-group identity. Gludd therefore revalidates stable process
+  identity and signals individual descendants rather than a recycled group ID.
+- [GitLab Runner issue #6189](https://gitlab.com/gitlab-org/gitlab-runner/-/issues/6189),
+  reported in 2019, records cancellation leaving a stale lock that breaks the
+  next CI job. Gludd removes only unchanged, proven-owned locks and retains a
+  fail-closed record whenever terminal cleanup is incomplete.
+
 #### Legacy-watchdog compatibility shield
 
 Repository-wide owner discovery protects gates only after every task watchdog
@@ -278,50 +448,107 @@ and durable process-group ownership in
 
 #### Automation-owned background gates
 
-`gate-background` remains useful from an interactive terminal because it returns
-immediately after `nohup` creates the recursive Make owner. That is not a safe
-ownership transfer in every automation environment. During the v0.1.1 release,
-two clean launches returned a PID and then lost it before the first gate byte;
-the newest logs were empty and the prior status remained in place. The second
-reproduction occurred with no other project process. The runner's exact reaper
-was not observable, so this contract is based on the demonstrated lifecycle
-boundary rather than attributing a signal without evidence.
+`gate-background` returns immediately, but it no longer delegates ownership to
+`nohup` and an untracked shell sleeper. `scripts/start_gate_background.py`
+starts the recursive Make gate with `start_new_session=True`; the published gate
+PID is therefore also its process-group and session leader. A managed caller can
+receive group `SIGTERM` without forwarding it into the gate session. The gate's
+stdout and stderr remain attached to one exact `.gate-logs/gate-*.log`, so phase
+markers are visible through the unchanged `gate-status-check` and `gate-wait`
+interfaces.
 
-`make gate-background-observed` is the automation entrypoint. Its root Make
-process launches the unchanged nonblocking target and immediately enters the
-existing `gate-wait` heartbeat loop. The managed runner therefore continues to
-own a visible parent until the child writes PASS, FAIL, ABORTED, or timeout
-evidence. `GATE_TIMEOUT` and `GATE_POLL_INTERVAL` are forwarded explicitly; a
-launch failure stops before polling, and the terminal child result becomes the
-composite target's result. `GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY=1` verifies
-the bounded plan without starting a gate.
+Each admission publishes an atomic
+`.gate-logs/gate-background-state.json` receipt containing a unique `run_id`,
+PID, OS process-start token, PGID, SID, checkout root, resource namespace,
+command, timeout, and exact log path. `.gate-background.pid` remains the
+compatibility pointer and contains the real Make gate PID, not a wrapper PID.
+Duplicate admission is serialized by a worktree-local file lock and compares
+the receipt to live OS identity; a reused PID is never treated as the old gate.
+An old watcher may update state or remove the PID pointer only while both the
+`run_id` and exact PID identity still match.
 
-Duplicate admission and launch are one shell transaction. An admitted live PID
-returns before `nohup` or PID publication; a stale PID is removed before one new
-owner is started. Launcher recipes use a Make command expanded before recipe
-execution, avoiding GNU Make's rule that direct `$(MAKE)` recipe references run
-even under `-n`. The observed wrapper captures the PID published by its launch
-and passes it as `GATE_EXPECTED_PID` on every poll rather than following a
-replaceable shared PID file. Real behavioral tests pin both boundaries: a live
-subprocess retains its exact PID record after duplicate refusal, and a dry run
-creates neither the record nor the log directory.
+The timeout watcher is also session-isolated, but unlike the former
+`sleep 3600` sidecar it polls the exact identity and exits as soon as the gate
+does. At the deadline it revalidates the current receipt, sends bounded
+`SIGTERM` then `SIGKILL` to only the gate-owned process group, writes the same
+`GATE_TIMEOUT` / ABORTED status contract, and removes only its own PID pointer.
+If watcher creation fails, launch is rolled back and the gate is reaped before
+the command returns. This closes the orphan-helper path while preserving PID,
+status, timeout, log, namespace, and waiter compatibility.
 
-This is ZDD for application services: it changes only the release-control
-process tree, creates no listener or schema, and leaves the interactive target
-compatible. Existing gates are neither restarted nor adopted. Rollback removes
-the composite target after any live observed owner exits; operators can still
-use `gate-background` interactively or a foreground `gate` while accepting that
-their caller must remain authoritative. GNU Make's
-[POSIX jobserver documentation](https://www.gnu.org/software/make/manual/html_node/POSIX-Jobserver.html)
-records recursive children's dependency on calling-Make resources. GitHub
-Actions runner [issue #4601](https://github.com/actions/runner/issues/4601)
-documents explicit orphan-process cleanup, and runner
-[issue #1309](https://github.com/actions/runner/issues/1309) records externally
-selected termination signals. Those practitioner reports reinforce the rule:
-`nohup` changes terminal behavior; it does not prove durable runner ownership.
-GNU Make's [recursive invocation contract](https://www.gnu.org/software/make/manual/html_node/MAKE-Variable.html)
-additionally explains why direct `MAKE` references require an explicit dry-run
-boundary.
+`make gate-background-observed` remains the automation entrypoint when a runner
+requires a visible top-level owner. It launches the same session-isolated gate
+and enters `gate-wait`; `GATE_TIMEOUT` and `GATE_POLL_INTERVAL` remain explicit,
+and `GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY=1` still verifies the bounded plan
+without starting work. The direct target now also exposes
+`GATE_BACKGROUND_VALIDATE_ONLY=1` for a side-effect-free contract check. GNU
+Make dry-run stays inert because its recipe contains no direct `$(MAKE)` token.
+
+The practitioner history is unusually consistent. A Stack Overflow question
+open since 2011 reports that `nohup` children still died with their caller; its
+maintained answer identifies a distinct process group and Python's modern
+`start_new_session=True` as the relevant boundary
+([Stack Overflow](https://stackoverflow.com/questions/6011235/run-a-program-from-python-and-have-it-continue-to-run-after-the-script-is-kille)).
+GitHub Actions users have reported background build servers being collected at
+job completion since 2020
+([runner issue #598](https://github.com/actions/runner/issues/598)), while a
+later report shows the inverse failure: a snapshot-based cleanup can miss a
+new child and leave it reparented indefinitely
+([runner issue #4601](https://github.com/actions/runner/issues/4601)). Together
+they support explicit session boundaries plus an identity-aware, bounded owner;
+neither `nohup` alone nor broad process-table cleanup supplies both properties.
+
+This rollout is ZDD for application services: it changes only the local
+release-control process tree, opens no listener, changes no schema, and neither
+restarts nor adopts a running gate. Existing PID/status/wait callers keep their
+paths and meanings. Rollback is a Makefile-and-launcher revert performed only
+after the recorded run reaches a terminal state; no service cutover is needed.
+
+#### Terminal receipt retirement and failed-kill ownership
+
+A background watcher previously left `.gate-background.pid` and its own
+`watchdog_pid` behind after a normal gate exit. More seriously, the timeout
+path removed the PID receipt and published `timed_out` after its bounded
+TERM/KILL sequence even when the exact gate session was still alive. That made
+an incomplete kill look terminal, abandoned a live process tree, and allowed a
+later launch to overlap it.
+
+Normal completion now acquires the same launch lock used for admission,
+revalidates the run identity and OS absence, atomically marks the receipt
+finished, clears the terminal watcher identity, and removes only the matching
+PID pointer. A concurrent replacement wins cleanly: the old watcher observes a
+different run identity and changes nothing. If process-start inspection is
+temporarily unavailable while the PID still exists, neither retirement nor a
+duplicate launch is allowed.
+
+At timeout, PID/start-token/session identity is checked through TERM, the grace
+period, KILL, and the final observation. Only verified absence or verified PID
+reuse permits `timed_out` plus PID retirement. Any live or unobservable owner
+instead keeps the PID receipt, records `termination_failed` with
+`gate-timeout-termination-failed`, clears only the exiting watcher PID, writes
+`GATE_TIMEOUT_TERMINATION_FAILED`, and returns infrastructure status 125. The
+next launch therefore refuses until the retained owner is safely terminated;
+an operator never has to reconstruct authority from a process-table guess.
+
+The boundary follows long-lived practitioner evidence. The open GitHub Actions
+runner report [#3341](https://github.com/actions/runner/issues/3341) shows a
+controller claiming to kill an entire process tree while killing only the
+root. The psutil design discussion
+[#2400](https://github.com/giampaolo/psutil/issues/2400) documents the remaining
+PID-reuse race between identity validation and signaling, while runner report
+[#4601](https://github.com/actions/runner/issues/4601) demonstrates descendants
+escaping snapshot-based cleanup and remaining alive for hours. These reports
+support retained ownership plus explicit uncertainty; they do not justify a
+broader signal or a success claim after a failed observation.
+
+This remains ZDD and bounded: it starts no additional process, extends no
+deadline, opens no listener, and changes no application state. Normal runs
+leave less stale control state; failed cleanup retains only the existing small
+JSON/PID evidence and live owner it must describe. Rollout affects the next
+watcher invocation. Before rollback, stop admission, resolve every retained
+`termination_failed` owner with the identity-verified gate terminator, require
+terminal evidence and an absent PID pointer, and only then revert. Reverting
+first would restore the ownership-loss window.
 
 #### Candidate history freeze
 

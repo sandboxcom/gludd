@@ -7,6 +7,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 _ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -173,7 +175,7 @@ def test_non_namespaced_instance_is_rejected_before_any_tool_call(tmp_path: Path
 
 
 def test_linux_build_automatically_ensures_lima_engine() -> None:
-    makefile = (_ROOT / "Makefile").read_text()
+    makefile = compose_makefile(_ROOT / "Makefile")
 
     assert "build-linux-executable: worktree-guard" in makefile
     assert "$(MAKE) --no-print-directory build-linux-binary-image" in makefile

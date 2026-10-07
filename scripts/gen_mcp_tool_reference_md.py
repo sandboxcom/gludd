@@ -120,7 +120,7 @@ def generate(output_path: Path | None = None) -> str:
     for i, tool in enumerate(manifest, 1):
         sections.append(_tool_section(tool, i, tool_count))
 
-    content = "\n".join(sections) + "\n"
+    content = "\n".join(section.rstrip("\n") for section in sections) + "\n"
 
     out = output_path or OUTPUT_PATH
     out.write_text(content, encoding="utf-8")

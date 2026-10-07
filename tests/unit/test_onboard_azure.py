@@ -9,6 +9,7 @@ from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 from general_ludd.onboard import azure as azure_onboard
 
@@ -335,7 +336,7 @@ class TestTerraformModuleLeastPriv:
 
     def test_opa_contract_checks_accelerator_role_resource_group_scope(self) -> None:
         rego_tests = OPA_IAM_TEST_PATH.read_text()
-        makefile = (REPO_ROOT / "Makefile").read_text()
+        makefile = compose_makefile(REPO_ROOT / "Makefile")
 
         assert "test_azure_accelerator_role_resource_group_scope_passes" in rego_tests
         assert ACCELERATOR_ROLE in rego_tests

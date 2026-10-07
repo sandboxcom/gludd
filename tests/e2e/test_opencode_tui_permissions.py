@@ -652,7 +652,7 @@ def test_tui_handles_multiple_permissioned_tool_prompts(
         "denials are applied in the current opencode TUI runtime; the no-wait "
         "matcher itself is pinned by tests/unit/test_no_wait_plugin.py and "
         "the hook-runtime suite; tracked by "
-        "docs/specs/BEHAVIORAL_SPECS.md:6364"
+        "docs/specs/behavioral/03-v01-y100.md#y07--ci-wait-is-only-for-release-cut"
     ),
 )
 @pytest.mark.timeout(420)

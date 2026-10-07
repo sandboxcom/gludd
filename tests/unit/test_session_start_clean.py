@@ -6,6 +6,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 from tests.unit._plugin_contract import plugin_contract_source
 
 PLUGIN_DIR = Path("tools/opencode/plugin")  # symlink or real path
@@ -328,7 +330,7 @@ class TestDisengageSignal:
 
     def test_make_disengage_target_writes_three_files(self):
         target_phrase = "disengage-enforcement"
-        makefile = Path("Makefile").read_text()
+        makefile = compose_makefile(Path("Makefile"))
         assert target_phrase in makefile, (
             f"Makefile missing {target_phrase} target"
         )

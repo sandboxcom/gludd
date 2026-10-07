@@ -4,11 +4,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 _PROJECT = Path(__file__).resolve().parent.parent.parent
 
 
 def _makefile() -> str:
-    return (_PROJECT / "Makefile").read_text(encoding="utf-8")
+    return compose_makefile(_PROJECT / "Makefile")
 
 
 class TestMakeInitInstallsHooks:

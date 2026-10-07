@@ -203,6 +203,28 @@ class TestExecutionEngine:
         assert engine._model_gateway is not None
         assert engine.workspace_path is not None
 
+    def test_git_branch_creation_failure_aborts_before_model(self):
+        gateway = MagicMock()
+        engine = self._make_engine(gateway)
+        job = JobSpec(
+            job_id="JOB-BRANCH-FAIL",
+            todo_id="TODO-BRANCH-FAIL",
+            playbook="code",
+            queue="core",
+            work_type="code",
+            prompt_text="Make an isolated change",
+        )
+
+        with (
+            patch("general_ludd.execution.engine._is_git_repo", return_value=True),
+            patch("general_ludd.execution.engine._git_create_branch", return_value=False),
+        ):
+            result = asyncio.run(engine.execute_async(job))
+
+        assert result.exit_code == 1
+        assert "branch" in result.result_summary.lower()
+        gateway.call_model.assert_not_called()
+
     def test_execute_parses_file_write_blocks(self):
         mock_gateway = MagicMock()
         diff_output = (

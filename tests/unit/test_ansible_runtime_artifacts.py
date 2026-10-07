@@ -14,6 +14,7 @@ from unittest.mock import MagicMock
 import pytest
 import yaml
 from scripts import ansible_runtime_artifacts as artifacts
+from scripts.makefile_layout import compose_makefile
 
 PINNED_IMAGE = "registry.example/gludd-ee:beta4@sha256:" + "b" * 64
 
@@ -199,13 +200,14 @@ def test_validate_reports_missing_artifact(tmp_path: Path, monkeypatch: pytest.M
 def test_validate_reports_dependency_leaks_and_missing_controller(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake_project = {
+    root_project = {
         "project": {
             "dependencies": ["ansible-core==2", "ansible-runner==2", "ansible-builder==3"],
-            "optional-dependencies": {"ansible-controller": []},
         }
     }
-    monkeypatch.setattr(tomllib, "loads", lambda _text: fake_project)
+    controller_project = {"project": {"dependencies": []}}
+    projects = iter((root_project, controller_project))
+    monkeypatch.setattr(tomllib, "loads", lambda _text: next(projects))
     errors = artifacts.validate_files()
     assert {error for error in errors if "dependency" in error} == {
         "core dependency leak: ansible-core",
@@ -522,7 +524,7 @@ def test_cli_refreshes_and_checks_the_base_image(monkeypatch: pytest.MonkeyPatch
 
 
 def test_base_image_refresh_make_target_is_safe_and_contract_registered() -> None:
-    makefile = (artifacts.ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(artifacts.ROOT / "Makefile")
     target = makefile.split("refresh-ansible-base-image:", 1)[1].split("\n\n", 1)[0]
     assert "ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY" in target
     assert "refresh-base-image" in target

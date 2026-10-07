@@ -269,10 +269,15 @@ class TestExceptionNaming:
 
     def test_private_error_prefix_discouraged(self) -> None:
         by_name = _candidate_error_classes(SRC)
+        internal_cli_errors = {
+            ("cli_decision_codification.py", "_AnalysisCLIError"),
+            ("cli_decision_codification.py", "_AnalysisHTTPStatusError"),
+        }
         private: list[str] = []
         for _name, locs in by_name.items():
             for fp, cname, _ in locs:
-                if cname.startswith("_"):
+                identity = (fp.relative_to(SRC).as_posix(), cname)
+                if cname.startswith("_") and identity not in internal_cli_errors:
                     private.append(f"  {cname} in {fp.relative_to(SRC)}")
         if private:
             pytest.fail(

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime
 import re
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 UV_LOCK = ROOT / "uv.lock"
 PYPROJECT = ROOT / "pyproject.toml"
+PROFILE_CATALOG = ROOT / "config/dependency_profiles.toml"
 
 PEP440_RE = re.compile(
     r"^([1-9][0-9]*!)?(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*))*"
@@ -193,6 +195,19 @@ def _parse_pyproject_deps() -> set[str]:
                 if "[" in name:
                     name = name.split("[")[0]
                 names.add(name)
+    return names
+
+
+def _parse_profile_set_deps(name: str) -> set[str]:
+    catalog = tomllib.loads(PROFILE_CATALOG.read_text(encoding="utf-8"))
+    names: set[str] = set()
+    for profile_name in catalog["sets"][name]["profiles"]:
+        project_path = ROOT / catalog["profiles"][profile_name]["project"] / "pyproject.toml"
+        project = tomllib.loads(project_path.read_text(encoding="utf-8"))
+        for dependency in project["project"]["dependencies"]:
+            match = re.match(r"([a-zA-Z0-9_.-]+)", dependency)
+            assert match
+            names.add(match.group(1))
     return names
 
 
@@ -462,7 +477,7 @@ class TestPyprojectDependencyParsing:
         found = core_expected & pyproject_deps
         assert len(found) >= 4, f"Failed to find core deps in pyproject. Found: {found}"
 
-    def test_pyproject_parse_finds_dev_deps(self, pyproject_deps: set[str]) -> None:
+    def test_development_profiles_find_dev_deps(self) -> None:
         dev_expected = {"pytest", "ruff", "mypy", "pre-commit", "bandit"}
-        found = dev_expected & pyproject_deps
-        assert len(found) >= 3, f"Failed to find dev deps in pyproject. Found: {found}"
+        found = dev_expected & _parse_profile_set_deps("development")
+        assert len(found) >= 3, f"Failed to find dev deps in profiles. Found: {found}"

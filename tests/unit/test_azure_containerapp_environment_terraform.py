@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 MODULE = ROOT / "infra/terraform/modules/azure-container-app-environment"
 STACK = ROOT / "infra/terraform/stacks/azure-container-app-environment"
@@ -131,7 +133,7 @@ def test_environment_assets_do_not_claim_to_create_a_shared_operator_resource() 
 
 
 def test_state_free_terraform_validation_target_accepts_environment_stack() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     target = makefile.partition("tf-init-local: tf-cache-setup")[2].partition(
         "# Validates a single stack"
     )[0]

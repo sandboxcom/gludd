@@ -22,9 +22,9 @@ class TestSBOM:
     def test_cyclonedx_in_dev_deps(self) -> None:
         import tomllib
 
-        with open(ROOT / "pyproject.toml", "rb") as f:
+        with open(ROOT / "requirements/profiles/dev-security/pyproject.toml", "rb") as f:
             data = tomllib.load(f)
-        dev_deps = data.get("project", {}).get("optional-dependencies", {}).get("dev", [])
+        dev_deps = data["project"]["dependencies"]
         assert any("cyclonedx" in d for d in dev_deps)
 
     def test_sbom_generation_succeeds(self, tmp_path: Path) -> None:

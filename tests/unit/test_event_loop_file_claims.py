@@ -52,6 +52,12 @@ class _FakeGit:
     def changed_files(self) -> list[str]:
         return list(_FakeGit.files_by_repo.get(self.repo_path, []))
 
+    def current_branch(self) -> str:
+        return "main"
+
+    def create_branch(self, name: str) -> str:
+        return name
+
     def commit(self, message: str) -> str:
         _FakeGit.commits.append(message)
         return "cafef00d" * 5

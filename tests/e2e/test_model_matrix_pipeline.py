@@ -161,9 +161,9 @@ _LOCAL_DEPS_SKIP = _deps_reason()
 # ---------------------------------------------------------------------------
 
 _KEY_SENTINEL = object()
-_DS_KEY_CACHE: str | None | object = _KEY_SENTINEL
-_OR_KEY_CACHE: str | None | object = _KEY_SENTINEL
-_ANTHROPIC_KEY_CACHE: str | None | object = _KEY_SENTINEL
+_DS_KEY_CACHE: str | object | None = _KEY_SENTINEL
+_OR_KEY_CACHE: str | object | None = _KEY_SENTINEL
+_ANTHROPIC_KEY_CACHE: str | object | None = _KEY_SENTINEL
 
 
 def _load_key(env_var: str, filename: str) -> str | None:

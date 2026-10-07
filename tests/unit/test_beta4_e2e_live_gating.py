@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).parents[2]
 
 
@@ -31,7 +33,7 @@ def test_model_matrix_download_classes_require_explicit_live_opt_in() -> None:
 
 
 def test_dedicated_game_pipeline_target_enables_live_mode() -> None:
-    makefile = (ROOT / "Makefile").read_text()
+    makefile = compose_makefile(ROOT / "Makefile")
     start = makefile.index("test-e2e-game-pipeline:")
     recipe = makefile[start : makefile.index("\n\n", start)]
 

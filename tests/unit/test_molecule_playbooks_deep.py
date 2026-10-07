@@ -17,6 +17,7 @@ from typing import Any
 
 import pytest
 import yaml
+from scripts.makefile_layout import compose_makefile
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 PLAYBOOKS_DIR = PROJECT_ROOT / "molecule" / "playbooks"
@@ -641,7 +642,7 @@ class TestMoleculeStructuralCoherence:
                     )
 
     def test_ansible_lint_playbooks_delegates_to_canonical_fail_closed_lint(self) -> None:
-        makefile = (PROJECT_ROOT / "Makefile").read_text(encoding="utf-8")
+        makefile = compose_makefile(PROJECT_ROOT / "Makefile")
         target_body = makefile.split("ansible-lint-playbooks:", 1)[1].split(
             "ansible-collection-test:", 1
         )[0]

@@ -13,6 +13,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 SHARED_TS = ROOT / ".opencode" / "lib" / "shared.ts"
@@ -27,7 +29,7 @@ class TestDisengageNextTarget:
 
     def test_target_exists_in_makefile(self):
         """disengage-next is declared as a target in the Makefile."""
-        content = _read(MAKEFILE)
+        content = compose_makefile(MAKEFILE)
         # target header line
         assert re.search(r"^disengage-next:\s*$", content, re.MULTILINE), (
             "disengage-next target header not found in Makefile"
@@ -35,7 +37,7 @@ class TestDisengageNextTarget:
 
     def test_target_in_phony_list(self):
         """disengage-next is listed alongside the other enforcement targets."""
-        content = _read(MAKEFILE)
+        content = compose_makefile(MAKEFILE)
         # The target appears in the categorized target listing.
         assert "disengage-next" in content, (
             "disengage-next not referenced anywhere in Makefile"
@@ -43,7 +45,7 @@ class TestDisengageNextTarget:
 
     def test_target_writes_disengage_file(self):
         """The recipe writes the dedicated single-use disengage marker."""
-        content = _read(MAKEFILE)
+        content = compose_makefile(MAKEFILE)
         # locate the disengage-next recipe block
         match = re.search(
             r"disengage-next:\n((?:\t[^\n]*\n?)+)",
@@ -84,7 +86,7 @@ class TestDisengageAuditLogging:
 
     def test_audit_append_in_makefile(self):
         """disengage-enforcement appends to /tmp/gludd-disengage-audit.jsonl."""
-        content = _read(MAKEFILE)
+        content = compose_makefile(MAKEFILE)
         # locate the disengage-enforcement recipe block
         match = re.search(
             r"disengage-enforcement:\n((?:\t[^\n]*\n?)+)",
@@ -100,7 +102,7 @@ class TestDisengageAuditLogging:
 
     def test_count_display_in_makefile(self):
         """disengage-enforcement prints a cumulative disengage count."""
-        content = _read(MAKEFILE)
+        content = compose_makefile(MAKEFILE)
         match = re.search(
             r"disengage-enforcement:\n((?:\t[^\n]*\n?)+)",
             content,
@@ -113,7 +115,7 @@ class TestDisengageAuditLogging:
 
     def test_audit_jsonl_path_referenced(self):
         """The audit file path appears in the Makefile."""
-        content = _read(MAKEFILE)
+        content = compose_makefile(MAKEFILE)
         assert "disengage-audit.jsonl" in content
 
 

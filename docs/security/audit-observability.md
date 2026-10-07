@@ -37,6 +37,60 @@ baseline rewrites and failed commit loops. Gludd therefore preserves upstream
 detection but confines its intentional mutation to a disposable copy during
 admission gates.
 
+## Baseline refresh and canonical compaction
+
+`scripts/manage_secrets_baseline.py` keeps `.secrets.baseline` as the one
+supported, non-slim detect-secrets JSON document. Refresh delegates discovery
+and stale-entry pruning to the pinned `detect-secrets scan --baseline` CLI. The
+`--baseline` form is important: it initializes upstream's
+`detect_secrets.filters.common.is_baseline_file` filter with its required
+filename context. Gludd then verifies that the plugin configuration and every
+scan-surviving filename/detector/fingerprint occurrence are unchanged, carries
+forward surviving audit labels, sorts deterministically, and serializes compact
+JSON. It never parses source text or implements a detector.
+
+The exact exclusion regex is versioned in
+`config/detect_secrets_baseline_policy.json`. It excludes the baseline itself;
+the generated `uv.lock`, plugin-hash, and resource-ownership inventories; the
+retired sandboxcom key paths; root Git, virtual-environment, distribution,
+build, worktree, cache, dependency, and vendor directories; plus recursive
+Python/cache, `node_modules`, and vendor directories. Near-name source paths
+such as `build_plan.py` and `vendor-selection.md` remain scanned. A policy test
+pins both sides of that boundary.
+
+Replacement is zero-downtime: the mature scanner updates a disposable copy,
+all semantic checks finish before publication, the compact candidate is flushed
+and `fsync`ed in the destination directory, and one `os.replace` publishes it.
+Any scanner, schema, plugin, filter, or write failure leaves the prior baseline
+in place. Rollback is the inverse single-file Git revert together with the
+policy/manager commit; normal admission continues to use a disposable copy
+during either version.
+
+This is JSON compaction, not upstream `--slim`: audit labels and line metadata
+remain available, and `detect-secrets audit --stats` is tested against the
+compact artifact. It is not an adjudication of existing findings, a claim that
+excluded generated/vendor material is secret-free, or a substitute for live
+verification. A dynamically assembled credential regression proves that the
+upstream hook still blocks a genuinely new finding. Only counts and digests may
+reach logs; neither baseline payloads nor scanner stdout/stderr are emitted.
+
+The separation responds to the long-lived update-versus-hook confusion in
+[detect-secrets issue #246](https://github.com/Yelp/detect-secrets/issues/246)
+without replacing the maintained tool. Issues
+[#149](https://github.com/Yelp/detect-secrets/issues/149) and
+[#212](https://github.com/Yelp/detect-secrets/issues/212) remain the evidence
+for keeping intentional metadata refresh out of commit/push admission.
+
+The manager's direct, content-free behavioral equivalents are:
+
+```console
+uv run python scripts/manage_secrets_baseline.py refresh --baseline .secrets.baseline --policy config/detect_secrets_baseline_policy.json --repo-root . --executable .venv/bin/detect-secrets
+uv run python scripts/manage_secrets_baseline.py check --baseline .secrets.baseline --policy config/detect_secrets_baseline_policy.json --repo-root . --executable .venv/bin/detect-secrets
+```
+
+Project automation exposes these through Make; operators do not run the direct
+commands under the repository's make-only execution policy.
+
 Bandit remains the SAST engine. Its documented
 [JSON formatter](https://bandit.readthedocs.io/en/1.7.3/formatters/json.html)
 feeds `scripts/summarize_sast.py`; the summary intentionally excludes source

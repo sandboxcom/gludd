@@ -14,6 +14,11 @@ import re
 import sys
 from pathlib import Path
 
+try:
+    from scripts.behavioral_specs import load_behavioral_specs
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from behavioral_specs import load_behavioral_specs
+
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_FILE = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
 
@@ -145,7 +150,7 @@ def main() -> int:
         print(f"ERROR: {SPECS_FILE} not found")
         return 1
 
-    text = SPECS_FILE.read_text(encoding="utf-8")
+    text = load_behavioral_specs(SPECS_FILE)
     specs = parse_specs(text)
 
     draft_specs: list[str] = []

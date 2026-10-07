@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import yaml
+from scripts.makefile_layout import compose_makefile
 
 from general_ludd.ansible.core_runner import CoreAnsibleRunner
 from general_ludd.ansible.isolation import ProcessIsolationConfig
@@ -479,19 +480,19 @@ class TestMakefileTargets:
         assert mf_path.exists()
 
     def test_container_build_target_exists(self) -> None:
-        content = (PROJECT_ROOT / "Makefile").read_text()
+        content = compose_makefile(PROJECT_ROOT / "Makefile")
         assert "container-build:" in content
 
     def test_container_run_target_exists(self) -> None:
-        content = (PROJECT_ROOT / "Makefile").read_text()
+        content = compose_makefile(PROJECT_ROOT / "Makefile")
         assert "container-run:" in content
 
     def test_container_push_target_exists(self) -> None:
-        content = (PROJECT_ROOT / "Makefile").read_text()
+        content = compose_makefile(PROJECT_ROOT / "Makefile")
         assert "container-push:" in content
 
     def test_phony_includes_container_targets(self) -> None:
-        content = (PROJECT_ROOT / "Makefile").read_text()
+        content = compose_makefile(PROJECT_ROOT / "Makefile")
         assert "container-build" in content
         assert "container-run" in content
         assert "container-push" in content

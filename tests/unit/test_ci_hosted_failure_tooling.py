@@ -7,6 +7,8 @@ import subprocess
 from configparser import ConfigParser
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -17,12 +19,16 @@ def _target_block(source: str, name: str) -> str:
 
 
 def test_ci_job_failure_context_is_authenticated_bounded_and_fail_closed() -> None:
-    source = (ROOT / "Makefile").read_text(encoding="utf-8")
+    source = compose_makefile(ROOT / "Makefile")
     block = _target_block(source, "ci-job-failure-context")
 
     assert "gh run view -R sandboxcom/gludd" in block
     assert "--json jobs" in block
-    assert "--log --job=" in block
+    assert "gh api --method GET" in block
+    assert "repos/sandboxcom/gludd/actions/jobs/$(JOB)/logs" in block
+    assert "X-GitHub-Api-Version: 2026-03-10" in block
+    assert "--log --job=" not in block
+    assert 'if [ ! -s "$$LOG" ]' in block
     assert "scripts/resource_arbiter.py root" in block
     assert 'mkdir -p "$$RESOURCE_ROOT"' in block
     assert 'mktemp "$$RESOURCE_ROOT/ci-job-$(RUN)-$(JOB).log.XXXXXX"' in block
@@ -37,6 +43,7 @@ def test_ci_job_failure_context_is_authenticated_bounded_and_fail_closed() -> No
         "$(PATTERN)",
         "$(BEFORE)",
         "$(AFTER)",
+        "$(MAX_MATCHES)",
         "$(CI_JOB_CONTEXT_VALIDATE_ONLY)",
     ):
         assert variable in block
@@ -45,7 +52,7 @@ def test_ci_job_failure_context_is_authenticated_bounded_and_fail_closed() -> No
 
 
 def test_ci_artifact_download_is_run_bound_confined_and_atomic() -> None:
-    source = (ROOT / "Makefile").read_text(encoding="utf-8")
+    source = compose_makefile(ROOT / "Makefile")
     block = _target_block(source, "ci-artifact-download")
 
     assert "gh api repos/sandboxcom/gludd/actions/runs/$(RUN)/artifacts" in block
@@ -69,7 +76,7 @@ def test_ci_artifact_download_is_run_bound_confined_and_atomic() -> None:
 
 
 def test_ci_artifact_context_is_run_bound_confined_and_bounded() -> None:
-    source = (ROOT / "Makefile").read_text(encoding="utf-8")
+    source = compose_makefile(ROOT / "Makefile")
     block = _target_block(source, "ci-artifact-context")
 
     assert "scripts/resource_arbiter.py root" in block
@@ -116,7 +123,7 @@ def test_ci_artifact_download_rejects_checkout_output_even_in_validate_only() ->
 
 def test_ci_coverage_artifact_audit_reads_only_the_resource_namespace() -> None:
     """Downloaded hosted coverage must be auditable without re-entering source."""
-    source = (ROOT / "Makefile").read_text(encoding="utf-8")
+    source = compose_makefile(ROOT / "Makefile")
     block = _target_block(source, "ci-coverage-artifact-audit")
 
     assert "scripts/resource_arbiter.py root" in block
@@ -180,7 +187,7 @@ def test_ci_tooling_coverage_profile_measures_the_changed_auditor() -> None:
 
 def test_ci_coverage_gap_plan_is_external_bounded_and_contract_registered() -> None:
     """Coverage remediation must read exact-run evidence without workspace writes."""
-    source = (ROOT / "Makefile").read_text(encoding="utf-8")
+    source = compose_makefile(ROOT / "Makefile")
     block = _target_block(source, "ci-coverage-gap-plan")
 
     assert "scripts/resource_arbiter.py root" in block
@@ -217,7 +224,7 @@ def test_ci_coverage_gap_plan_is_external_bounded_and_contract_registered() -> N
 
 
 def test_python_version_replay_runs_only_the_requested_node() -> None:
-    source = (ROOT / "Makefile").read_text(encoding="utf-8")
+    source = compose_makefile(ROOT / "Makefile")
     block = _target_block(source, "test-specific-pyver")
 
     assert "scripts/resource_arbiter.py root" in block
@@ -227,8 +234,10 @@ def test_python_version_replay_runs_only_the_requested_node() -> None:
     assert "mktemp -d" in block
     assert 'WORK="$$(mktemp -d ' in block
     assert "trap" in block
-    assert '$(UV) sync --python "$(PYTHON_VERSION)"' in block
-    assert '$(UV) run --python "$(PYTHON_VERSION)" python -m pytest $(TESTFILE)' in block
+    assert "scripts/dependency_profiles.py sync" in block
+    assert '--set ci --environment "$$WORK/.venv"' in block
+    assert '--python "$(PYTHON_VERSION)"' in block
+    assert '$(UV) run --no-sync --python "$(PYTHON_VERSION)" python -m pytest $(TESTFILE)' in block
     assert "-W error" in block
     assert "--basetemp=" in block
     assert "tests/" not in block.replace("$(TESTFILE)", "")
@@ -248,11 +257,12 @@ def test_new_ci_targets_have_safe_behavioral_contracts() -> None:
             "PATTERN",
             "BEFORE",
             "AFTER",
+            "MAX_MATCHES",
             "CI_JOB_CONTEXT_VALIDATE_ONLY",
         ],
         "behavior": (
             "make ci-job-failure-context RUN=1 JOB=1 PATTERN=FAILED "
-            "BEFORE=2 AFTER=4 CI_JOB_CONTEXT_VALIDATE_ONLY=1"
+            "BEFORE=2 AFTER=4 MAX_MATCHES=5 CI_JOB_CONTEXT_VALIDATE_ONLY=1"
         ),
     }
     assert contracts["ci-artifact-download"] == {
@@ -363,7 +373,7 @@ def test_molecule_failure_artifact_retains_raw_pyinstaller_warning_graph() -> No
 
 
 def test_ci_pyinstaller_warning_audit_replays_the_exact_downloaded_graph() -> None:
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     block = _target_block(makefile, "ci-pyinstaller-warning-audit")
 
     assert "scripts/resource_arbiter.py root" in block

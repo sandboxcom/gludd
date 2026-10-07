@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 from general_ludd.infra.compute import (
     ComputeConfig,
@@ -28,7 +29,7 @@ AZURE_CLIENT_CREDENTIAL_ENV = "".join(("AZURE_CLIENT_", "SE", "CRET"))
 
 
 def test_makefile_has_state_free_azure_stack_initialization() -> None:
-    makefile = (ROOT / "Makefile").read_text()
+    makefile = compose_makefile(ROOT / "Makefile")
     assert "tf-init-local:" in makefile
     assert "terraform init -backend=false" in makefile
     assert 'TF_DATA_DIR="$$TF_LOCAL_DATA_DIR"' in makefile

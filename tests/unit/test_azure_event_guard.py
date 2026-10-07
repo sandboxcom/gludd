@@ -18,6 +18,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "azure_event_guard.sh"
 
@@ -348,17 +349,17 @@ class TestKillSwitch:
 
 class TestMakefileTargets:
     def test_azure_event_guard_start_target_exists(self):
-        makefile = (SCRIPT_PATH.parents[1] / "Makefile").read_text()
+        makefile = compose_makefile(SCRIPT_PATH.parents[1] / "Makefile")
         assert "azure-event-guard-start:" in makefile, "Makefile missing azure-event-guard-start"
 
     def test_azure_event_guard_stop_target_exists(self):
-        makefile = (SCRIPT_PATH.parents[1] / "Makefile").read_text()
+        makefile = compose_makefile(SCRIPT_PATH.parents[1] / "Makefile")
         assert "azure-event-guard-stop:" in makefile, "Makefile missing azure-event-guard-stop"
 
     def test_azure_event_guard_check_target_exists(self):
-        makefile = (SCRIPT_PATH.parents[1] / "Makefile").read_text()
+        makefile = compose_makefile(SCRIPT_PATH.parents[1] / "Makefile")
         assert "azure-event-guard-check:" in makefile, "Makefile missing azure-event-guard-check"
 
     def test_azure_event_guard_status_target_exists(self):
-        makefile = (SCRIPT_PATH.parents[1] / "Makefile").read_text()
+        makefile = compose_makefile(SCRIPT_PATH.parents[1] / "Makefile")
         assert "azure-event-guard-status:" in makefile, "Makefile missing azure-event-guard-status"

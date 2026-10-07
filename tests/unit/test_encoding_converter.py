@@ -84,7 +84,7 @@ class TestGuessEncoding:
         assert guess_encoding(b"hello") == "ascii"
 
     def test_utf8(self):
-        assert guess_encoding("\u20ac".encode("utf-8")) == "utf-8"
+        assert guess_encoding("\u20ac".encode()) == "utf-8"
 
     def test_utf16_le_from_zeros(self):
         data = b"\x00\xc0\x00\xc1\x00\xc2"

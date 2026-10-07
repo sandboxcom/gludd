@@ -61,6 +61,7 @@ _TEARDOWN_METHODS = {
 }
 _HASH_RE = re.compile(r"[0-9a-f]{64}")
 _SKIP_PARTS = frozenset({".git", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv", "__pycache__"})
+_INVENTORY_POLICY = "counted-path-kind-owner-and-acquisition-teardown-sha256"
 
 
 @dataclass(frozen=True, order=True)
@@ -727,6 +728,28 @@ def validate_inventory(
     return errors
 
 
+def _render_inventory(findings: Sequence[ResourceEvidence]) -> str:
+    """Render canonical JSON with one reviewable resource record per line."""
+    encoded_resources = [
+        json.dumps(item.as_dict(), sort_keys=True, separators=(",", ":"))
+        for item in sorted(findings)
+    ]
+    resource_lines = [
+        f"    {encoded}{',' if index < len(encoded_resources) - 1 else ''}"
+        for index, encoded in enumerate(encoded_resources)
+    ]
+    lines = [
+        "{",
+        '  "schema_version": 1,',
+        f'  "policy": {json.dumps(_INVENTORY_POLICY)},',
+        '  "resources": [',
+        *resource_lines,
+        "  ]",
+        "}",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def write_inventory(path: Path, findings: Sequence[ResourceEvidence]) -> None:
     """Write exact evidence only when every acquisition is structurally owned."""
     unowned = [item for item in findings if not item.owned]
@@ -744,13 +767,8 @@ def write_inventory(path: Path, findings: Sequence[ResourceEvidence]) -> None:
             f"refusing to inventory {len(unowned)} unowned resource(s): {detail}; "
             f"first={examples}"
         )
-    payload = {
-        "schema_version": 1,
-        "policy": "counted-path-kind-owner-and-acquisition-teardown-sha256",
-        "resources": [item.as_dict() for item in findings],
-    }
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    path.write_text(_render_inventory(findings), encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> int:

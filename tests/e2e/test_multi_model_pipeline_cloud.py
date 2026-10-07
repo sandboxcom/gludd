@@ -87,8 +87,8 @@ _SMOKE = bool(_TARGET_GAME)
 # ---------------------------------------------------------------------------
 
 _KEY_SENTINEL = object()
-_DS_KEY_CACHE: str | None | object = _KEY_SENTINEL
-_OR_KEY_CACHE: str | None | object = _KEY_SENTINEL
+_DS_KEY_CACHE: str | object | None = _KEY_SENTINEL
+_OR_KEY_CACHE: str | object | None = _KEY_SENTINEL
 
 
 def _load_ds_key() -> str | None:
@@ -627,7 +627,8 @@ class TestDeepSeekPipeline:
     """DeepSeek API: deepseek-chat for all 3 pipeline phases."""
 
     @pytest.fixture(scope="class")
-    def gateway(self) -> Any:
+    @classmethod
+    def gateway(cls) -> Any:
         if _DS_SKIP:
             pytest.skip(_DS_SKIP)
         return _build_ds_gateway()
@@ -663,7 +664,8 @@ class TestOpenRouterMultiModelPipeline:
     Llama-3.3-70B (reviewer)."""
 
     @pytest.fixture(scope="class")
-    def gateways(self) -> dict[str, Any]:
+    @classmethod
+    def gateways(cls) -> dict[str, Any]:
         if _OR_SKIP:
             pytest.skip(_OR_SKIP)
         gws: dict[str, Any] = {}
@@ -709,7 +711,8 @@ class TestLocalEndpointPipeline:
     """Self-hosted: LOCAL_MODEL_NAME for all 3 pipeline phases."""
 
     @pytest.fixture(scope="class")
-    def gateway(self) -> Any:
+    @classmethod
+    def gateway(cls) -> Any:
         if _LOCAL_SKIP:
             pytest.skip(_LOCAL_SKIP)
         return _build_local_gateway()
@@ -746,7 +749,8 @@ class TestMultiModelComparisonReport:
     """Run all three deployment tiers and produce a comparison table."""
 
     @pytest.fixture(scope="class")
-    def gateways(self) -> dict[str, Any]:
+    @classmethod
+    def gateways(cls) -> dict[str, Any]:
         gws: dict[str, Any] = {}
         if not _DS_SKIP:
             gws["deepseek"] = {

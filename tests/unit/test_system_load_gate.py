@@ -14,6 +14,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 SCRIPT = ROOT / "scripts" / "check_system_load.py"
@@ -23,7 +25,7 @@ AGENTS_MD = ROOT / "AGENTS.md"
 
 
 def _makefile_text() -> str:
-    return MAKEFILE.read_text()
+    return compose_makefile(MAKEFILE)
 
 
 def test_make_target_check_system_load_exists():

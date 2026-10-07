@@ -6,11 +6,13 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "check_disk_usage.py"
 DISK_GUARD_SCRIPT = ROOT / "scripts" / "disk-guard.sh"
 MAKEFILE = ROOT / "Makefile"
+COVERAGE_CONFIG = ROOT / "config" / "coverage_check_disk.ini"
 
 
 def _load_module():
@@ -20,6 +22,12 @@ def _load_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def test_coverage_config_preserves_data_for_canonical_combine_step() -> None:
+    config = COVERAGE_CONFIG.read_text(encoding="utf-8")
+
+    assert "parallel = True" in config
 
 
 def _porcelain_worktree(path: Path, *, prunable: bool = False) -> bytes:
@@ -307,6 +315,34 @@ def test_shared_uv_cache_is_observed_but_not_counted_as_disposable_scratch(
     ) == 0
 
 
+def test_shared_playwright_cache_is_observed_but_not_counted_as_scratch(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    cache = tmp_path / "gludd-playwright-browsers"
+    cache.mkdir()
+    (cache / "browser.bin").write_bytes(b"shared-browser-cache")
+
+    entries = module._classify_gludd_tmp(
+        tmp_root=tmp_path,
+        worktree_root=tmp_path / "gludd-worktrees",
+        observe_exempt=True,
+    )
+
+    assert entries == [
+        module.ScratchClassification(
+            cache,
+            "shared-download-cache",
+            len(b"shared-browser-cache"),
+            0,
+        )
+    ]
+    assert module._gludd_tmp_size_mb(
+        tmp_root=tmp_path,
+        worktree_root=tmp_path / "gludd-worktrees",
+    ) == 0
+
+
 def test_disk_percentage_limit_remains_fail_closed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -434,7 +470,7 @@ def test_main_names_largest_counted_roots(
 
 def test_disk_checks_use_portable_system_tools_without_project_venv() -> None:
     guard_source = DISK_GUARD_SCRIPT.read_text()
-    make_source = MAKEFILE.read_text()
+    make_source = compose_makefile(MAKEFILE)
     no_uv_goals = make_source.split("_NO_UV_SYNC_GOALS :=", 1)[1].split(
         "ifneq", 1
     )[0]

@@ -14,6 +14,11 @@ import sys
 from pathlib import Path
 from typing import TypedDict
 
+try:
+    from scripts.behavioral_specs import load_behavioral_specs
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from behavioral_specs import load_behavioral_specs
+
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_FILE = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
 BUGS_FILE = ROOT / "BUGS.md"
@@ -39,7 +44,7 @@ def parse_specs() -> list[SpecRecord]:
     if not SPECS_FILE.exists():
         return []
 
-    content = SPECS_FILE.read_text()
+    content = load_behavioral_specs(SPECS_FILE)
     specs: list[SpecRecord] = []
     current: SpecRecord | None = None
 

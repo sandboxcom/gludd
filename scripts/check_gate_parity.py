@@ -22,6 +22,8 @@ import re
 import sys
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 REPO = Path(__file__).resolve().parent.parent
 
 # Step-name → canonical phase name patterns.
@@ -100,7 +102,7 @@ def extract_ci_phases(workflow_path: Path) -> set[str]:
 
 def extract_local_phases(makefile_path: Path) -> list[str]:
     """Extract phase markers from the gate-refresh wrapper and its body target."""
-    text = makefile_path.read_text(encoding="utf-8")
+    text = compose_makefile(makefile_path)
     phases: list[str] = []
 
     in_target = False

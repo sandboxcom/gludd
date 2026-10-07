@@ -865,11 +865,16 @@ class TestPagesWorkflow:
         assert permissions["contents"] == "read", (
             f"pages.yml must use least-privilege contents:read; got {permissions['contents']!r}"
         )
-        assert permissions.get("pages") == "write", (
-            "pages.yml must declare pages:write for deployment"
+        assert set(permissions) == {"contents"}, (
+            "validation must not receive Pages or OIDC write permissions"
         )
-        assert permissions.get("id-token") == "write", (
-            "pages.yml must declare id-token:write for OIDC"
+        deploy_permissions = wf["jobs"]["deploy"].get("permissions", {})
+        assert deploy_permissions == {
+            "contents": "read",
+            "pages": "write",
+            "id-token": "write",
+        }, (
+            "only the deployment job may receive Pages and OIDC write permissions"
         )
 
     def test_no_secrets_inherit(self) -> None:

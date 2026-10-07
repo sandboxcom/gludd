@@ -6,7 +6,9 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import os
 import sys
+import tempfile
 import tomllib
 from dataclasses import dataclass
 from importlib.metadata import packages_distributions
@@ -289,7 +291,14 @@ def audit_repository(root: Path) -> list[str]:
     return sorted(errors)
 
 
-def _deptry_import_roots(metadata: dict[str, object]) -> dict[str, tuple[str, ...]]:
+def _deptry_import_roots(root: Path) -> dict[str, tuple[str, ...]]:
+    path = root / "config/deptry_profiles.toml"
+    if not path.is_file():
+        return {}
+    metadata = cast(
+        dict[str, object],
+        tomllib.loads(path.read_text(encoding="utf-8")),
+    )
     tool = _table(metadata.get("tool", {}), "tool")
     deptry = _table(tool.get("deptry", {}), "tool.deptry")
     raw_mapping = _table(
@@ -325,8 +334,8 @@ def observed_inventory(root: Path) -> dict[str, object]:
         JSON-serializable inventory with exact static consumers and empty indirect
         evidence for human adjudication.
     """
-    metadata, dependencies = _direct_dependencies(root)
-    configured_roots = _deptry_import_roots(metadata)
+    _metadata, dependencies = _direct_dependencies(root)
+    configured_roots = _deptry_import_roots(root)
     metadata_roots = _metadata_import_roots()
     core_imports = _static_imports(root, _python_files(root / "src/general_ludd"))
     collection_imports = _static_imports(
@@ -359,6 +368,50 @@ def observed_inventory(root: Path) -> dict[str, object]:
     return {"schema_version": 1, "dependencies": records}
 
 
+def reconciled_inventory(root: Path) -> dict[str, object]:
+    """Refresh mechanical observations while retaining reviewed runtime evidence."""
+
+    observed = observed_inventory(root)
+    previous = _load_inventory(root)
+    dependencies = cast(dict[str, dict[str, object]], observed["dependencies"])
+    for dependency, record in dependencies.items():
+        prior = previous.get(dependency)
+        if prior is None:
+            continue
+        record["runtime_evidence"] = [
+            {"path": item.path, "token": item.token} for item in prior.runtime_evidence
+        ]
+    return observed
+
+
+def _reconciled_text(root: Path) -> str:
+    return json.dumps(reconciled_inventory(root), indent=2, sort_keys=True) + "\n"
+
+
+def write_reconciled_inventory(root: Path) -> None:
+    """Atomically write the reconciled direct-core dependency inventory."""
+
+    destination = root / INVENTORY_PATH
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix=f".{destination.name}.",
+            dir=destination.parent,
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(_reconciled_text(root))
+            handle.flush()
+            os.fsync(handle.fileno())
+        assert temporary is not None
+        os.replace(temporary, destination)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the ownership audit or print a mechanically observed inventory.
 
@@ -371,9 +424,27 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--print-observed", action="store_true")
+    parser.add_argument("--write-reconciled", action="store_true")
+    parser.add_argument("--validate-reconciled", action="store_true")
     args = parser.parse_args(argv)
+    requested = sum(
+        (args.print_observed, args.write_reconciled, args.validate_reconciled)
+    )
+    if requested > 1:
+        parser.error("choose only one inventory operation")
     if args.print_observed:
         print(json.dumps(observed_inventory(args.root), indent=2, sort_keys=True))
+        return 0
+    if args.write_reconciled:
+        write_reconciled_inventory(args.root)
+        print("CORE_DEPENDENCY_OWNERSHIP_RECONCILED")
+        return 0
+    if args.validate_reconciled:
+        destination = args.root / INVENTORY_PATH
+        if destination.read_text(encoding="utf-8") != _reconciled_text(args.root):
+            print("CORE_DEPENDENCY_OWNERSHIP_RECONCILE_REQUIRED", file=sys.stderr)
+            return 1
+        print("CORE_DEPENDENCY_OWNERSHIP_RECONCILE_PASS")
         return 0
     errors = audit_repository(args.root)
     if errors:

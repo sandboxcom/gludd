@@ -14,6 +14,9 @@ from __future__ import annotations
 import inspect
 
 from general_ludd.db import repository as repo_mod
+from general_ludd.db.repositories.shared import current_list_limit
+from general_ludd.routers import human_todos as human_todos_router
+from general_ludd.routers import todos as todos_router
 
 
 def _clamp_router(limit: int) -> int:
@@ -28,7 +31,7 @@ def _clamp_router_offset(offset: int) -> int:
 
 def _clamp_db(limit: int | None) -> int:
     """DB-level clamping: min(limit, _DEFAULT_LIST_LIMIT) or _DEFAULT_LIST_LIMIT."""
-    cap: int = repo_mod._DEFAULT_LIST_LIMIT
+    cap = current_list_limit()
     return min(limit, cap) if limit is not None else cap
 
 
@@ -43,6 +46,7 @@ def _method_src(qualname_parts: tuple[str, str]) -> str:
 def test_default_list_limit_defined() -> None:
     assert isinstance(repo_mod._DEFAULT_LIST_LIMIT, int)
     assert repo_mod._DEFAULT_LIST_LIMIT == 1000
+    assert current_list_limit() == repo_mod._DEFAULT_LIST_LIMIT
 
 
 # ── Router-level clamping ──────────────────────────────────────────────────
@@ -217,7 +221,8 @@ def test_todo_repository_list_all_accepts_limit_offset() -> None:
 
 def test_todo_repository_list_all_applies_db_limit_cap() -> None:
     src = _method_src(("TodoRepository", "list_all"))
-    assert "min(limit, _DEFAULT_LIST_LIMIT)" in src
+    assert "min(limit, current_list_limit())" in src
+    assert "else current_list_limit()" in src
     assert ".offset(offset)" in src
     assert ".limit(" in src
 
@@ -233,7 +238,7 @@ def test_human_todo_repository_list_all_accepts_limit_offset() -> None:
 def test_human_todo_repository_list_all_applies_db_limit_cap() -> None:
     src = _method_src(("HumanTodoRepository", "list_all"))
     assert "max(0, offset)" in src
-    assert "min(limit, _DEFAULT_LIST_LIMIT)" in src
+    assert "min(limit, current_list_limit())" in src
     assert ".offset(" in src
     assert ".limit(" in src
 
@@ -247,7 +252,8 @@ def test_prompt_profile_repository_list_all_accepts_limit_offset() -> None:
 
 def test_prompt_profile_repository_list_all_applies_db_limit_cap() -> None:
     src = _method_src(("PromptProfileRepository", "list_all"))
-    assert "min(limit, _DEFAULT_LIST_LIMIT)" in src
+    assert "min(limit, current_list_limit())" in src
+    assert "else current_list_limit()" in src
     assert ".offset(offset)" in src
     assert ".limit(" in src
 
@@ -261,7 +267,8 @@ def test_queue_repository_list_all_accepts_limit_offset() -> None:
 
 def test_queue_repository_list_all_applies_db_limit_cap() -> None:
     src = _method_src(("QueueRepository", "list_all"))
-    assert "min(limit, _DEFAULT_LIST_LIMIT)" in src
+    assert "min(limit, current_list_limit())" in src
+    assert "else current_list_limit()" in src
     assert ".offset(offset)" in src
     assert ".limit(" in src
 
@@ -270,15 +277,19 @@ def test_queue_repository_list_all_applies_db_limit_cap() -> None:
 
 
 def test_todo_router_list_uses_limit_clamp() -> None:
-    src = inspect.getsource(repo_mod.TodoRepository.list_all)
-    assert "offset" in src
-    assert "limit" in src
+    src = inspect.getsource(todos_router.register)
+    assert "_limit = max(1, min(limit, 500))" in src
+    assert "_offset = max(0, offset)" in src
+    assert "limit=_limit" in src
+    assert "offset=_offset" in src
 
 
 def test_human_todo_router_list_uses_limit_clamp() -> None:
-    src = inspect.getsource(repo_mod.HumanTodoRepository.list_all)
-    assert "max(0, offset)" in src
-    assert "min(limit, _DEFAULT_LIST_LIMIT)" in src
+    src = inspect.getsource(human_todos_router.register)
+    assert "_limit = max(1, min(limit, 500))" in src
+    assert "_offset = max(0, offset)" in src
+    assert "limit=_limit" in src
+    assert "offset=_offset" in src
 
 
 # ── Boundary: max limit scales with item count ─────────────────────────────

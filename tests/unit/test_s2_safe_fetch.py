@@ -234,7 +234,11 @@ def test_redaction_depth_cap() -> None:
         cursor = cursor["nested"]
     cursor["api_key"] = "secret"
     result = _redact_payload(deep)
-    assert result == deep  # untouched past depth 10
+    safe_cursor = result
+    for _ in range(15):
+        safe_cursor = safe_cursor["nested"]
+    assert "api_key" not in safe_cursor
+    assert cursor["api_key"] == "secret"  # source value is never mutated
 
 
 # ── Concurrent webhook deduplication ───────────────────────────────────

@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 from scripts import triage_failures
+from scripts.makefile_layout import compose_makefile
 
 
 def test_parse_runtime_lines_supports_xdist_summary_and_classic_output() -> None:
@@ -427,7 +428,7 @@ def test_runtime_human_format_is_actionable(
 
 def test_make_target_and_contract_expose_runtime_inputs() -> None:
     root = Path(__file__).resolve().parents[2]
-    makefile = (root / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(root / "Makefile")
     body = makefile.split("triage-failures:", 1)[1].split("\n\n", 1)[0]
     contract = json.loads(
         (root / "config" / "make_target_contract.json").read_text(encoding="utf-8")

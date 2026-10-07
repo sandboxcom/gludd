@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 import yaml
+from scripts.makefile_layout import compose_makefile
 
 pytestmark = pytest.mark.xdist_group("ansible_lint_deep")
 
@@ -28,7 +29,7 @@ _discover_task_files_cache: list[Path] | None = None
 
 def test_yaml_lint_target_avoids_schema_network_and_fails_on_warnings() -> None:
     """The release lint must be hermetic and warning-clean on Python 3.14."""
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(ROOT / "Makefile")
     block = makefile.split("yaml-lint:", 1)[1].split("\n\n", 1)[0]
 
     assert "ANSIBLE_LINT_SKIP_SCHEMA_UPDATE=1" in block

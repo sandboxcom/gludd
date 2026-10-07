@@ -2,6 +2,42 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
+## Next release (v0.1.2) — Unreleased
+
+This section is the canonical assignment for completed post-v0.1.1 backlog
+work. An item appears here only after its `TASKS.md` checkbox is formally
+closed with test, coverage, documentation, and exact commit evidence.
+
+### Completed backlog items
+
+- **S83.114 — Fail-closed chemistry entity resolution.** The typed
+  unknown-structure sentinel is now the only permitted empty structure state;
+  inconsistent structures fail closed, and stereo/isotope evidence remains
+  conservative. Implementation: `95b2887d`; closeout: `abf7346e`.
+- **S83.115 — Standards-consistent X.509 chain validation.** Certificate
+  issuance and chain building now enforce proof of possession, issuer/key use,
+  path length, validity, and caller-supplied trust across RSA, ECDSA, and
+  Ed25519. Implementation: `cbda2a47b`.
+- **S83.116 — Monotonic debounce, throttle, and watchdog state.** Production
+  timing APIs now preserve a valid zero clock epoch, independent edge/task
+  ownership, finite delays, moving quiet periods, and idempotent watchdog
+  registration. Implementations: `13b933128`, `dc5082aac`.
+- **S83.117 — Authenticated TLS 1.3 state and directional records.** Exact
+  handshake frames, context-bound CertificateVerify/Finished authentication,
+  poisoned failure state, and independent application record protectors are
+  enforced. Implementation: `06c4c9e25`; reveal sync: `96998fcc9`.
+- **S83.128 — Invoking-worktree-safe virtual-environment reclamation.** Cleanup
+  now preserves the invoking worktree, refuses active peers and stale or
+  unreadable registration evidence, and reclaims only inactive registered
+  peers. Implementation: `a596897e3`; formal closeout: `5ec87af01`.
+
+### Release status
+
+S83.157, S83.158, S83.163, S83.166, and S83.169 have substantial implemented
+evidence but are still open; their recorded exact-head, hosted, or release proof
+remains required. They are implemented but still open and are not counted among
+the five completed v0.1.2 backlog items.
+
 ## [0.1.1] — 2026-10-05
 
 - Source range: `v0.1.0-beta.4..v0.1.1` (826 commits; release source `5dcd2f6931aa6cb13d4de526d6c739891c0240f1`).

@@ -11,6 +11,11 @@ import re
 import sys
 from pathlib import Path
 
+try:
+    from scripts.behavioral_specs import load_behavioral_specs
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from behavioral_specs import load_behavioral_specs
+
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_FILE = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
 
@@ -56,10 +61,10 @@ def parse_specs(text: str) -> list[tuple[str, str, str]]:
 
 def has_measurable_outcome(body: str) -> bool:
     """Check if spec body contains at least one measurable threshold."""
-    for indicator in MEASURABLE_INDICATORS:
-        if re.search(indicator, body, re.IGNORECASE):
-            return True
-    return False
+    return any(
+        re.search(indicator, body, re.IGNORECASE)
+        for indicator in MEASURABLE_INDICATORS
+    )
 
 
 def main() -> int:
@@ -67,7 +72,7 @@ def main() -> int:
         print(f"ERROR: {SPECS_FILE} not found")
         return 1
 
-    text = SPECS_FILE.read_text(encoding="utf-8")
+    text = load_behavioral_specs(SPECS_FILE)
     specs = parse_specs(text)
 
     violations: list[str] = []

@@ -5,14 +5,17 @@
 #   Acquires an exclusive flock on LOCK_FILE (default /tmp/gludd-gate-async.lock).
 #   Refuses immediately (exit 1) if another gate-async is already running.
 #   Writes STATUS_FILE immediately as "RUNNING <epoch> <pid>".
-#   Runs GATE_CMD in a child bash -c process so `exit` inside the cmd cannot
+#   Runs the complete `make gate` in a child bash process so every preflight,
+#   test, smoke, and attestation phase shares one interrupt boundary. `exit`
+#   inside an injected GATE_CMD cannot
 #   kill this status-writer (the ship_async bug pattern: eval in the same shell
 #   lets `exit` bypass the status-writer; a child process cannot).
-#   On completion writes STATUS_FILE as "PASS <epoch>" or "FAIL <epoch> rc=<n>".
+#   On completion preserves the full gate's terminal receipt; injected commands
+#   that do not write one receive "PASS <epoch>" or "FAIL <epoch> rc=<n>".
 #   Releases the lock when done.
 #
 # ENV OVERRIDES (for testing):
-#   GATE_CMD        gate command to run (default: scripts/run_gate.sh)
+#   GATE_CMD        gate command to run (default: complete `make gate`)
 #   STATUS_FILE     file to write status into (default: .gate-status)
 #   LOCK_FILE       flock lock file path (default: /tmp/gludd-gate-async.lock)
 #
@@ -27,9 +30,12 @@ set -euo pipefail
 
 REF="${1:-}"
 
-GATE_CMD="${GATE_CMD:-bash scripts/run_gate.sh}"
+GATE_CMD="${GATE_CMD:-make gate gludd_watchdog_owned_gate=1}"
 STATUS_FILE="${STATUS_FILE:-.gate-status}"
-ARBITER_SCRIPT="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/resource_arbiter.py"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="${GLUDD_PROJECT_ROOT:-$(CDPATH= cd -- "${SCRIPT_DIR}/.." && pwd)}"
+ARBITER_SCRIPT="${SCRIPT_DIR}/resource_arbiter.py"
+GATE_KILL_SCRIPT="${SCRIPT_DIR}/kill_owned_gate.py"
 PROJECT_NAMESPACE="${GLUDD_PROJECT_NAMESPACE:-}"
 if [ -z "${PROJECT_NAMESPACE}" ]; then
     PROJECT_NAMESPACE="$(python3 "${ARBITER_SCRIPT}" namespace)"
@@ -42,6 +48,10 @@ mkdir -p "${RESOURCE_DIR}"
 LOCK_FILE="${LOCK_FILE:-${RESOURCE_DIR}/async-gate.lock}"
 mkdir -p "$(dirname -- "${LOCK_FILE}")"
 RC_FILE="${LOCK_FILE}.rc.$$"
+LOCK_ACQUIRED=0
+RUNNING_PUBLISHED=0
+TERMINAL_PUBLISHED=0
+GATE_CHILD_PID=""
 
 # A PID in a portable lock file is only an owner claim, not proof that the
 # process is still this gate.  PID reuse is common enough that kill -0 alone is
@@ -77,6 +87,31 @@ _write_status() {
     mv -f "${tmp}" "${STATUS_FILE}"
 }
 
+_status_is_successful() {
+    [ -f "${STATUS_FILE}" ] || return 1
+    grep -Eq '^(PASS([[:space:]]|$)|=== GATE: PASSED ===$)' "${STATUS_FILE}" 2>/dev/null
+}
+
+_status_is_terminal() {
+    [ -f "${STATUS_FILE}" ] || return 1
+    grep -Eq \
+        '^(PASS([[:space:]]|$)|FAIL([[:space:]]|$)|ABORTED([[:space:]]|$)|=== GATE: (PASSED|FAILED|ABORTED.*) ===$)' \
+        "${STATUS_FILE}" 2>/dev/null
+}
+
+_publish_non_success_terminal() {
+    local content="$1"
+    # A signal can arrive after PASS was atomically renamed but before the
+    # main path records that publication in memory.  Disk is authoritative:
+    # cleanup must never turn already-successful evidence red.
+    if _status_is_terminal; then
+        TERMINAL_PUBLISHED=1
+        return 0
+    fi
+    _write_status "${content}"
+    TERMINAL_PUBLISHED=1
+}
+
 # ---------------------------------------------------------------------------
 # Lock acquisition (flock-based, same pattern as run_gate.sh)
 # ---------------------------------------------------------------------------
@@ -100,6 +135,7 @@ _acquire_lock() {
         exec 200>"${LOCK_FILE}"
         if flock --nonblock 200; then
             printf '%s\n' "$$" > "${LOCK_FILE}" 2>/dev/null || true
+            LOCK_ACQUIRED=1
             return 0
         fi
         local holder
@@ -113,6 +149,7 @@ _acquire_lock() {
         printf '%s\n' "$$" > "${tmp}"
         mv -n "${tmp}" "${LOCK_FILE}" 2>/dev/null || true
         if [ ! -f "${tmp}" ]; then
+            LOCK_ACQUIRED=1
             return 0
         fi
         rm -f "${tmp}"
@@ -135,6 +172,7 @@ _acquire_lock() {
         printf '%s\n' "$$" > "${tmp}"
         mv -n "${tmp}" "${LOCK_FILE}" 2>/dev/null || true
         if [ ! -f "${tmp}" ]; then
+            LOCK_ACQUIRED=1
             return 0
         fi
         rm -f "${tmp}"
@@ -145,10 +183,81 @@ _acquire_lock() {
 }
 
 _release_lock() {
-    exec 200>&- 2>/dev/null || true
-    rm -f "${LOCK_FILE}" 2>/dev/null || true
+    local holder=""
+    if [ "${LOCK_ACQUIRED}" -eq 1 ]; then
+        holder=$(cat "${LOCK_FILE}" 2>/dev/null || true)
+        # Remove only our own ownership record.  This prevents late cleanup
+        # from unlinking a replacement owner's lock after a status race.
+        if [ "${holder}" = "$$" ]; then
+            rm -f "${LOCK_FILE}" 2>/dev/null || true
+        fi
+        exec 200>&- 2>/dev/null || true
+        LOCK_ACQUIRED=0
+    fi
     rm -f "${RC_FILE}" 2>/dev/null || true
+    rm -f "${STATUS_FILE}.${$}.tmp" 2>/dev/null || true
 }
+
+_terminate_owned_gate() {
+    local cleanup_rc=0
+    # The whole-gate lock proves the descendant tree before any signal.  This
+    # maintained terminator performs bounded TERM/KILL escalation and retains
+    # fail-closed ownership evidence if a survivor cannot be stopped.
+    APPLY=1 GLUDD_PROJECT_ROOT="${PROJECT_ROOT}" \
+        python3 "${GATE_KILL_SCRIPT}" || cleanup_rc=$?
+
+    # A signal can land in the short admission window before `make gate`
+    # publishes gate-run.lock.  The direct child PID is still exact ownership;
+    # TERM it without guessing at unrelated processes.
+    if [ -n "${GATE_CHILD_PID}" ] && kill -0 "${GATE_CHILD_PID}" 2>/dev/null; then
+        kill -TERM "${GATE_CHILD_PID}" 2>/dev/null || true
+    fi
+    return "${cleanup_rc}"
+}
+
+_handle_signal() {
+    local signal_name="$1" signal_rc="$2" finish_epoch cleanup_rc=0
+    # Repeated Ctrl-C/TERM must not interrupt the atomic terminal publication.
+    trap '' INT TERM
+    trap - EXIT
+    set +e
+    _terminate_owned_gate || cleanup_rc=$?
+    finish_epoch=$(date +%s)
+    if _status_is_successful; then
+        TERMINAL_PUBLISHED=1
+    else
+        _write_status \
+            "ABORTED ${finish_epoch} signal=${signal_name} rc=${signal_rc} cleanup_rc=${cleanup_rc}
+=== GATE: ABORTED ==="
+        TERMINAL_PUBLISHED=1
+    fi
+    echo "[gate_async] ABORTED signal=${signal_name} rc=${signal_rc} cleanup_rc=${cleanup_rc} at epoch=${finish_epoch}"
+    _release_lock
+    exit "${signal_rc}"
+}
+
+_handle_exit() {
+    local rc=$? finish_epoch failure_rc
+    trap - EXIT
+    trap '' INT TERM
+    set +e
+    if [ "${RUNNING_PUBLISHED}" -eq 1 ] && [ "${TERMINAL_PUBLISHED}" -eq 0 ]; then
+        finish_epoch=$(date +%s)
+        failure_rc="${rc}"
+        # An unexpected early `exit 0` is still incomplete, so fail closed.
+        [ "${failure_rc}" -ne 0 ] || failure_rc=1
+        _publish_non_success_terminal \
+            "FAIL ${finish_epoch} rc=${failure_rc}
+=== GATE: FAILED ==="
+        rc="${failure_rc}"
+    fi
+    _release_lock
+    exit "${rc}"
+}
+
+trap _handle_exit EXIT
+trap '_handle_signal INT 130' INT
+trap '_handle_signal TERM 143' TERM
 
 # ---------------------------------------------------------------------------
 # Acquire lock (refuses if already held)
@@ -160,6 +269,7 @@ _acquire_lock
 # ---------------------------------------------------------------------------
 EPOCH=$(date +%s)
 _write_status "RUNNING ${EPOCH} $$"
+RUNNING_PUBLISHED=1
 echo "[gate_async] started at epoch=${EPOCH} pid=$$ ref='${REF}' cmd='${GATE_CMD}'"
 
 # ---------------------------------------------------------------------------
@@ -169,20 +279,29 @@ echo "[gate_async] started at epoch=${EPOCH} pid=$$ ref='${REF}' cmd='${GATE_CMD
 # exits the CHILD bash, not this script. This prevents the ship_async bug where
 # `eval "exit 0"` in the same shell would skip the status-writer below.
 #
-# We capture the child's exit code directly from `bash -c` return value.
+# We capture the child's exact PID for signal cleanup and preserve the return
+# value produced by `bash -c` (including 128-plus-signal values).
 # ---------------------------------------------------------------------------
 EXIT=0
-GLUDD_GATE_AUTHORIZED=1 bash -c "${GATE_CMD}" || EXIT=$?
+GLUDD_GATE_AUTHORIZED=1 bash -c "${GATE_CMD}" &
+GATE_CHILD_PID=$!
+wait "${GATE_CHILD_PID}" || EXIT=$?
+GATE_CHILD_PID=""
 
 # ---------------------------------------------------------------------------
 # Write final status and release lock
 # ---------------------------------------------------------------------------
 FINISH_EPOCH=$(date +%s)
 if [ "${EXIT}" -eq 0 ]; then
-    _write_status "PASS ${FINISH_EPOCH}"
+    if ! _status_is_successful; then
+        _write_status "PASS ${FINISH_EPOCH}"
+    fi
+    TERMINAL_PUBLISHED=1
     echo "[gate_async] PASS at epoch=${FINISH_EPOCH}"
 else
-    _write_status "FAIL ${FINISH_EPOCH} rc=${EXIT}"
+    _publish_non_success_terminal \
+        "FAIL ${FINISH_EPOCH} rc=${EXIT}
+=== GATE: FAILED ==="
     echo "[gate_async] FAIL rc=${EXIT} at epoch=${FINISH_EPOCH}"
 fi
 

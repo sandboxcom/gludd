@@ -1,8 +1,8 @@
 """Deep versioning and dependency audit tests.
 
-Covers: minimum-version pinning, git-source prohibition, extras validity,
-Python-version alignment with CI, uv.lock sync, dependency-groups consistency,
-and build-system integrity.
+Covers: minimum-version pinning, git-source prohibition, dependency-profile
+validity, Python-version alignment with CI, uv.lock sync, profile-set
+consistency, and build-system integrity.
 """
 
 from __future__ import annotations
@@ -10,8 +10,10 @@ from __future__ import annotations
 import os
 import re
 import tomllib
+from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 PYPROJECT = os.path.join(PROJECT_ROOT, "pyproject.toml")
@@ -19,6 +21,7 @@ UV_LOCK = os.path.join(PROJECT_ROOT, "uv.lock")
 BUILD_YML = os.path.join(PROJECT_ROOT, ".github", "workflows", "build.yml")
 MOLECULE_YML = os.path.join(PROJECT_ROOT, ".github", "workflows", "molecule.yml")
 PAGES_YML = os.path.join(PROJECT_ROOT, ".github", "workflows", "pages.yml")
+PROFILE_CATALOG = os.path.join(PROJECT_ROOT, "config", "dependency_profiles.toml")
 
 # ── helpers ────────────────────────────────────────────────────────────────
 
@@ -37,6 +40,35 @@ def _load_uvlock() -> dict:
     """Load the standards-compliant TOML lockfile without a shadow parser."""
     with open(UV_LOCK, "rb") as f:
         return tomllib.load(f)
+
+
+def _load_toml(path: str) -> dict:
+    with open(path, "rb") as f:
+        return tomllib.load(f)
+
+
+def _profile_dependencies(name: str) -> list[str]:
+    catalog = _load_toml(PROFILE_CATALOG)
+    project = catalog["profiles"][name]["project"]
+    return _load_toml(os.path.join(PROJECT_ROOT, project, "pyproject.toml"))["project"][
+        "dependencies"
+    ]
+
+
+def _set_dependencies(name: str) -> list[str]:
+    catalog = _load_toml(PROFILE_CATALOG)
+    dependencies = list(_load_pyproject()["project"]["dependencies"])
+    for profile in catalog["sets"][name]["profiles"]:
+        dependencies.extend(_profile_dependencies(profile))
+    return dependencies
+
+
+def _all_profile_projects() -> list[dict]:
+    catalog = _load_toml(PROFILE_CATALOG)
+    return [
+        _load_toml(os.path.join(PROJECT_ROOT, metadata["project"], "pyproject.toml"))
+        for metadata in catalog["profiles"].values()
+    ]
 
 
 PEP440_RE = re.compile(
@@ -104,26 +136,23 @@ def test_no_bare_dependency_names_in_core() -> None:
 
 
 def test_no_bare_dependency_names_in_dev() -> None:
-    data = _load_pyproject()
-    dev_deps: list[str] = data["project"].get("optional-dependencies", {}).get("dev", [])
+    dev_deps = _set_dependencies("development")
     for dep in dev_deps:
         has_constraint = any(op in dep for op in (">=", "==", "~=", ">", "<", "!="))
         assert has_constraint, f"Dev dependency has no version constraint: '{dep}'"
 
 
 def test_no_bare_dependency_names_in_dev_group() -> None:
-    data = _load_pyproject()
-    groups = data.get("dependency-groups", {})
-    dev_group: list[str] = groups.get("dev", [])
+    dev_group = _set_dependencies("development")
     for dep in dev_group:
         has_constraint = any(op in dep for op in (">=", "==", "~=", ">", "<", "!="))
         assert has_constraint, f"dependency-groups.dev entry has no version constraint: '{dep}'"
 
 
 def test_all_extras_have_minimum_versions() -> None:
-    data = _load_pyproject()
-    extras = data["project"].get("optional-dependencies", {})
-    for extra_name, deps in extras.items():
+    catalog = _load_toml(PROFILE_CATALOG)
+    for extra_name in catalog["profiles"]:
+        deps = _profile_dependencies(extra_name)
         for dep in deps:
             if not dep.strip():
                 continue
@@ -135,14 +164,27 @@ def test_all_extras_have_minimum_versions() -> None:
 
 
 def test_no_git_dependencies_in_pyproject() -> None:
-    text = _read(PYPROJECT)
-    assert not GIT_DEP_RE.search(text), "pyproject.toml contains a git-sourced dependency"
+    projects = [_load_pyproject(), *_all_profile_projects()]
+    for project in projects:
+        dependencies = project["project"]["dependencies"]
+        assert not GIT_DEP_RE.search("\n".join(dependencies)), (
+            f"{project['project']['name']} contains a git-sourced dependency"
+        )
 
 
 def test_no_git_dependencies_in_uv_lock() -> None:
-    text = _read(UV_LOCK)
-    assert "source = { git" not in text, "uv.lock contains a git-sourced dependency"
-    assert not re.search(r'git\s*=\s*"', text), "uv.lock contains a git reference in a package entry"
+    catalog = _load_toml(PROFILE_CATALOG)
+    locks = [UV_LOCK]
+    locks.extend(
+        os.path.join(PROJECT_ROOT, metadata["project"], "uv.lock")
+        for metadata in catalog["profiles"].values()
+    )
+    for lock in locks:
+        text = _read(lock)
+        assert "source = { git" not in text, f"{lock} contains a git-sourced dependency"
+        assert not re.search(r'git\s*=\s*"', text), (
+            f"{lock} contains a git reference in a package entry"
+        )
 
 
 # ── Python version constraints ─────────────────────────────────────────────
@@ -244,44 +286,31 @@ def test_uv_lock_package_sources_are_registry_or_workspace() -> None:
 
 
 def test_all_extras_are_valid() -> None:
-    data = _load_pyproject()
-    extras = data["project"].get("optional-dependencies", {})
-    for extra_name in extras:
+    catalog = _load_toml(PROFILE_CATALOG)
+    for extra_name in (*catalog["profiles"], *catalog["sets"]):
         assert re.match(r"^[a-z][a-z0-9-]*$", extra_name), (
             f"Extra name '{extra_name}' is not a valid lowercase hyphenated name"
         )
 
 
-def test_uv_lock_provides_extras_matches_pyproject() -> None:
-    data = _load_pyproject()
-    pyproject_extras = set(data["project"].get("optional-dependencies", {}).keys())
-    text = _read(UV_LOCK)
-    m = re.search(r"provides-extras\s*=\s*\[([^\]]+)\]", text)
-    assert m, "uv.lock missing provides-extras for the project"
-    uv_extras_raw = m.group(1)
-    uv_extras = {s.strip().strip('"').strip("'") for s in uv_extras_raw.split(",")}
-    missing = pyproject_extras - uv_extras
-    assert not missing, f"pyproject.toml extras not in uv.lock provides-extras: {missing}"
-    extra = uv_extras - pyproject_extras
-    assert not extra, f"uv.lock provides-extras has extras not in pyproject.toml: {extra}"
+def test_every_profile_project_has_an_independent_lock() -> None:
+    catalog = _load_toml(PROFILE_CATALOG)
+    for name, metadata in catalog["profiles"].items():
+        lock = os.path.join(PROJECT_ROOT, metadata["project"], "uv.lock")
+        assert os.path.isfile(lock), f"profile {name} is missing its independent lock"
+        assert _load_toml(lock)["package"], f"profile {name} lock is empty"
 
 
-def test_empty_sandbox_extra_still_defined() -> None:
-    """The 'sandbox' extra exists in pyproject.toml and uv.lock even though empty."""
-    data = _load_pyproject()
-    extras = data["project"].get("optional-dependencies", {})
-    assert "sandbox" in extras, "sandbox extra missing from pyproject.toml"
-    assert extras["sandbox"] == [] or extras["sandbox"] == [""], "sandbox extra should be empty list"
+def test_sandbox_set_is_still_defined() -> None:
+    catalog = _load_toml(PROFILE_CATALOG)
+    assert catalog["sets"]["sandbox"]["profiles"] == ["agent-runtime"]
 
 
-def test_e2e_all_includes_game_e2e_deps() -> None:
-    """The e2e-all extra should be a superset of game-e2e."""
-    data = _load_pyproject()
-    extras = data["project"]["optional-dependencies"]
-    game_deps = set(dep.split(">=")[0].split("==")[0].strip() for dep in extras.get("game-e2e", []))
-    e2e_deps = set(dep.split(">=")[0].split("==")[0].strip() for dep in extras.get("e2e-all", []))
-    missing = game_deps - e2e_deps
-    assert not missing, f"e2e-all missing game-e2e dependencies: {missing}"
+def test_e2e_all_includes_game_e2e_profiles() -> None:
+    catalog = _load_toml(PROFILE_CATALOG)
+    game_profiles = set(catalog["sets"]["game-e2e"]["profiles"])
+    e2e_profiles = set(catalog["sets"]["e2e-all"]["profiles"])
+    assert game_profiles <= e2e_profiles
 
 
 # ── build-system ───────────────────────────────────────────────────────────
@@ -300,39 +329,24 @@ def test_build_system_is_hatchling() -> None:
 # ── dependency-groups consistency ──────────────────────────────────────────
 
 
-def test_dependency_groups_are_not_empty() -> None:
-    data = _load_pyproject()
-    groups = data.get("dependency-groups", {})
-    assert groups, "dependency-groups section is missing or empty"
-    for name, deps in groups.items():
-        assert deps, f"dependency-groups.{name} is empty"
+def test_development_profile_projects_are_not_empty() -> None:
+    catalog = _load_toml(PROFILE_CATALOG)
+    for name in catalog["sets"]["development"]["profiles"]:
+        assert _profile_dependencies(name), f"development profile {name} is empty"
 
 
-def test_dependency_groups_dev_overlaps_optional_dev() -> None:
-    data = _load_pyproject()
-    groups = data.get("dependency-groups", {})
-    dev_group = {
-        dep.split(">=")[0].split("==")[0].split("~=")[0].split("[")[0].strip() for dep in groups.get("dev", [])
-    }
-    opt_dev = {
-        dep.split(">=")[0].split("==")[0].split("~=")[0].split("[")[0].strip()
-        for dep in data["project"]["optional-dependencies"].get("dev", [])
-    }
-    overlap = dev_group & opt_dev
-    assert len(overlap) >= 12, (
-        f"dependency-groups.dev and optional-dependencies.dev share only "
-        f"{len(overlap)} packages (overlap={sorted(overlap)}) — "
-        f"expected >=12 core dev tools in common"
-    )
+def test_ci_set_contains_the_complete_development_set() -> None:
+    catalog = _load_toml(PROFILE_CATALOG)
+    development = set(catalog["sets"]["development"]["profiles"])
+    ci = set(catalog["sets"]["ci"]["profiles"])
+    assert development < ci
 
 
 def test_dev_deps_include_test_tooling() -> None:
-    data = _load_pyproject()
-    all_dev = set()
-    for dep in data["project"]["optional-dependencies"].get("dev", []):
-        all_dev.add(dep.split(">=")[0].split("==")[0].split("[")[0].strip())
-    for dep in data.get("dependency-groups", {}).get("dev", []):
-        all_dev.add(dep.split(">=")[0].split("==")[0].split("[")[0].strip())
+    all_dev = {
+        dep.split(">=")[0].split("==")[0].split("[")[0].strip()
+        for dep in _set_dependencies("development")
+    }
 
     essential = {"pytest", "ruff", "mypy", "pre-commit"}
     missing = essential - all_dev
@@ -340,12 +354,10 @@ def test_dev_deps_include_test_tooling() -> None:
 
 
 def test_dev_deps_include_security_tooling() -> None:
-    data = _load_pyproject()
-    all_dev = set()
-    for dep in data["project"]["optional-dependencies"].get("dev", []):
-        all_dev.add(dep.split(">=")[0].split("==")[0].split("[")[0].strip())
-    for dep in data.get("dependency-groups", {}).get("dev", []):
-        all_dev.add(dep.split(">=")[0].split("==")[0].split("[")[0].strip())
+    all_dev = {
+        dep.split(">=")[0].split("==")[0].split("[")[0].strip()
+        for dep in _set_dependencies("development")
+    }
 
     security = {"bandit", "pip-audit", "detect-secrets"}
     missing = security - all_dev
@@ -372,21 +384,20 @@ def test_pyproject_dependency_count_sanity() -> None:
 
 
 def test_dev_extras_count_sanity() -> None:
-    data = _load_pyproject()
-    dev_deps = data["project"].get("optional-dependencies", {}).get("dev", [])
+    dev_deps = _set_dependencies("development")
     assert len(dev_deps) >= 10, f"Only {len(dev_deps)} dev dependencies — suspiciously low"
 
 
 def test_makefile_defines_version_variable() -> None:
-    text = _read(os.path.join(PROJECT_ROOT, "Makefile"))
+    text = compose_makefile(Path(PROJECT_ROOT) / "Makefile")
     assert "VERSION" in text, "Makefile should define VERSION variable"
 
 
 def test_makefile_has_check_version_consistency() -> None:
-    text = _read(os.path.join(PROJECT_ROOT, "Makefile"))
+    text = compose_makefile(Path(PROJECT_ROOT) / "Makefile")
     assert "check-version-consistency" in text, "Makefile missing check-version-consistency target"
 
 
 def test_makefile_has_bump_version() -> None:
-    text = _read(os.path.join(PROJECT_ROOT, "Makefile"))
+    text = compose_makefile(Path(PROJECT_ROOT) / "Makefile")
     assert "bump-version" in text, "Makefile missing bump-version target"

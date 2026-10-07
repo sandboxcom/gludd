@@ -381,7 +381,7 @@ class TestExecutionApprovalPath:
     def test_daemon_wires_human_gate_to_state(self) -> None:
         import ast
 
-        daemon_path = "src/general_ludd/daemon.py"
+        daemon_path = "src/general_ludd/daemon_components/lifecycle.py"
         with open(daemon_path) as fh:
             tree = ast.parse(fh.read())
         human_gate_subscripts = []
@@ -395,13 +395,13 @@ class TestExecutionApprovalPath:
             ):
                 human_gate_subscripts.append(node)
         assert len(human_gate_subscripts) >= 1, (
-            "Expected daemon_state['human_gate'] assignment in daemon.py"
+            "Expected daemon_state['human_gate'] assignment in lifecycle.py"
         )
 
     def test_daemon_stores_approval_gate_on_app_state(self) -> None:
         import ast
 
-        daemon_path = "src/general_ludd/daemon.py"
+        daemon_path = "src/general_ludd/daemon_components/lifecycle.py"
         with open(daemon_path) as fh:
             tree = ast.parse(fh.read())
         approval_gate_assigns = []
@@ -418,5 +418,5 @@ class TestExecutionApprovalPath:
                     ):
                         approval_gate_assigns.append(node)
         assert len(approval_gate_assigns) >= 1, (
-            "Expected app.state._approval_gate assignment in daemon.py"
+            "Expected app.state._approval_gate assignment in lifecycle.py"
         )

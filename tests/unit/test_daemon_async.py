@@ -112,7 +112,7 @@ def test_h3_spend_limiter_constructed_before_create_task_in_source() -> None:
     This catches a future regression where someone moves the SpendLimiter block
     back below create_task.
     """
-    src = Path("src/general_ludd/daemon.py").read_text()
+    src = Path("src/general_ludd/daemon_components/lifecycle.py").read_text()
     tree = ast.parse(src)
 
     # Walk the _lifespan function body to find line numbers for:
@@ -153,8 +153,10 @@ def test_h3_spend_limiter_constructed_before_create_task_in_source() -> None:
 
     _Visitor().visit(tree)
 
-    assert spend_limiter_line is not None, "Could not find 'spend_limiter:' assignment in daemon.py"
-    assert create_task_line is not None, "Could not find asyncio.create_task(event_loop.run_forever(...)) in daemon.py"
+    assert spend_limiter_line is not None, "Could not find 'spend_limiter:' assignment in lifecycle.py"
+    assert create_task_line is not None, (
+        "Could not find asyncio.create_task(event_loop.run_forever(...)) in lifecycle.py"
+    )
     assert spend_limiter_line < create_task_line, (
         f"H3 regression: spend_limiter is declared at line {spend_limiter_line} "
         f"but asyncio.create_task is at line {create_task_line} — "
@@ -172,7 +174,7 @@ def test_h1_lifespan_uses_to_thread_for_build_secrets_resolver() -> None:
 
     This catches a future regression where someone removes the to_thread wrapper.
     """
-    src = Path("src/general_ludd/daemon.py").read_text()
+    src = Path("src/general_ludd/daemon_components/lifecycle.py").read_text()
     tree = ast.parse(src)
 
     # Collect all Call nodes matching asyncio.to_thread(build_secrets_resolver, ...)
@@ -195,5 +197,5 @@ def test_h1_lifespan_uses_to_thread_for_build_secrets_resolver() -> None:
 
     assert found_to_thread, (
         "H1 regression: build_secrets_resolver is not called via asyncio.to_thread "
-        "in daemon.py — a slow OpenBao will block the event loop on startup."
+        "in lifecycle.py — a slow OpenBao will block the event loop on startup."
     )

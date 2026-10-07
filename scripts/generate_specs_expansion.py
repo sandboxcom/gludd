@@ -8,7 +8,7 @@ New group: I (Intent Priority, I01-I100).
 Enforcement mechanisms are varied across:
 - AGENTS.md sections (unique section names)
 - Makefile targets (~150 existing targets)
-- Plugin hooks (tool.execute.before, text.complete, session.idle, system.transform × 14 plugins)
+- Plugin hooks (tool.execute.before, text.complete, session.idle, system.transform x 14 plugins)
 - Script files (scripts/*.py, ~30 existing)
 - CI workflow (.github/workflows/build.yml steps)
 - Ratchet entries (config/ratchet.yml)
@@ -18,6 +18,12 @@ Enforcement mechanisms are varied across:
 
 import os
 import sys
+from pathlib import Path
+
+try:
+    from scripts.behavioral_specs import load_behavioral_specs, write_behavioral_specs
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from behavioral_specs import load_behavioral_specs, write_behavioral_specs
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SPECS_PATH = os.path.join(ROOT, "docs", "specs", "BEHAVIORAL_SPECS.md")
@@ -231,7 +237,7 @@ def make_enforcement(idx: int, group: str) -> str:
     elif pool == 18:
         plug1 = PLUGINS[(idx * 107) % len(PLUGINS)]
         plug2 = PLUGINS[(idx * 109 + 1) % len(PLUGINS)]
-        return f"AGENTS.md `.opencode/plugin/{plug1}` × `.opencode/plugin/{plug2}` cross-plugin"
+        return f"AGENTS.md `.opencode/plugin/{plug1}` x `.opencode/plugin/{plug2}` cross-plugin"
     elif pool == 19:
         sec = AGENTS_SECTIONS[(idx * 113) % len(AGENTS_SECTIONS)]
         scr = SCRIPTS[(idx * 127) % len(SCRIPTS)]
@@ -408,13 +414,16 @@ def group_branch(n: int) -> tuple[str, str, str]:
 def group_spec(name: str, prefix: str, start: int, count: int, title_fn) -> str:
     """Generate a group section for the spec file."""
     lines = []
-    lines.append(f"## Expansion: {name} ({prefix}{start:02d}–{prefix}{count:02d})")
+    lines.append(f"## Expansion: {name} ({prefix}{start:02d}-{prefix}{count:02d})")
     lines.append("")
     for n in range(start, count + 1):
         title, test_id, enforcement = title_fn(n)
         spec_id = f"{prefix}{n:02d}"
         lines.append(f"### {spec_id} — {title}")
-        lines.append(f"{title}. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.")
+        lines.append(
+            f"{title}. This invariant MUST be enforced mechanically at runtime — "
+            "no advisory-only, no opt-in, no silent cancellation."
+        )
         lines.append(f"**Enforcement:** {enforcement}")
         lines.append(f"**Test:** `{test_id}`")
         lines.append("")
@@ -995,17 +1004,16 @@ def main():
     print("Generating 2000 behavioral spec expansions...", file=sys.stderr)
     content = generate_all_expansions()
 
-    # Append to existing spec file
+    # Append to the composed spec corpus and republish bounded shards.
     print(f"\nAppending to {SPECS_PATH}...", file=sys.stderr)
-    with open(SPECS_PATH, "a") as f:
-        f.write("\n")
-        f.write(content)
-        f.write("\n")
+    specs_path = Path(SPECS_PATH)
+    existing = load_behavioral_specs(specs_path)
+    write_behavioral_specs(existing + "\n" + content + "\n", specs_path)
 
     print("Done.", file=sys.stderr)
     # Count total specs now
     import re
-    text = open(SPECS_PATH).read()
+    text = load_behavioral_specs(specs_path)
     ids = re.findall(
         r"^###\s+(P\d{2}|B\d{2}|O\d{2}|T\d{2}|D\d{2}|"
         r"S\d{2}|E\d{2}|M\d{2}|G\d{2}|R\d{2}|"

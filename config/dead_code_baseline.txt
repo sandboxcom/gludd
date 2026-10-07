@@ -502,7 +502,6 @@ src/general_ludd/peak_pricing.py:build_provider_billing_table
 src/general_ludd/peak_pricing.py:load_compute_instances
 src/general_ludd/peak_pricing.py:load_provider_rates
 src/general_ludd/peak_pricing.py:provider_rate_dict
-src/general_ludd/pricing_intel/sources.py:staleness_text
 src/general_ludd/probabilistic/minhash.py:LSH
 src/general_ludd/project_runner/dast.py:run_dast_scan
 src/general_ludd/projects/manager.py:persist_relationships_from_config

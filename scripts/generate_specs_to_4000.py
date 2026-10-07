@@ -16,6 +16,11 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+try:
+    from scripts.behavioral_specs import load_behavioral_specs, write_behavioral_specs
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from behavioral_specs import load_behavioral_specs, write_behavioral_specs
+
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_PATH = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
 
@@ -1923,7 +1928,7 @@ def main() -> None:
         print(f"Error: {filepath} not found", file=sys.stderr)
         sys.exit(1)
 
-    existing_text = filepath.read_text()
+    existing_text = load_behavioral_specs(filepath)
     current_counts = count_current_specs(existing_text)
 
     total_current = sum(current_counts.values())
@@ -1995,15 +2000,11 @@ def main() -> None:
         print("\n[DRY RUN] Not writing to file.")
         return
 
-    # Append to file
+    # Append to the composed corpus before republishing bounded shards.
     content_to_append = "\n".join(new_specs)
-    with open(filepath, "a") as f:
-        f.write("\n")
-        f.write(content_to_append)
-        f.write("\n")
+    full_text = existing_text + "\n" + content_to_append + "\n"
 
     # Update header line
-    full_text = filepath.read_text()
     expected_total = total_current + total_added
     full_text = full_text.replace(
         "# BEHAVIORAL ENFORCEMENT SPECIFICATIONS — 3000 numbered specs",
@@ -2015,7 +2016,7 @@ def main() -> None:
         f"Total: {expected_total} specs across {len(all_groups)} groups.",
         full_text
     )
-    filepath.write_text(full_text)
+    write_behavioral_specs(full_text, filepath)
 
     print(f"\nDone. Wrote {total_added} new specs to {filepath}")
 

@@ -22,6 +22,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = ROOT / "config" / "ansible"
+CONTROLLER_PROFILE = ROOT / "requirements" / "profiles" / "ansible-controller" / "pyproject.toml"
 DEFINITION = CONFIG_ROOT / "execution-environment.yml"
 LOCK = CONFIG_ROOT / "runtime-lock.json"
 MANAGED = CONFIG_ROOT / "managed-host-python.lock.json"
@@ -241,7 +242,11 @@ def _dependency_names(requirements: list[str]) -> set[str]:
 def validate_files() -> list[str]:
     """Return all runtime-boundary artifact validation errors."""
     errors: list[str] = []
-    missing = [_display_path(path) for path in (*INPUTS.values(), LOCK, MANAGED) if not path.is_file()]
+    missing = [
+        _display_path(path)
+        for path in (*INPUTS.values(), LOCK, MANAGED, CONTROLLER_PROFILE)
+        if not path.is_file()
+    ]
     if missing:
         return [f"missing runtime artifact: {path}" for path in missing]
 
@@ -250,7 +255,10 @@ def validate_files() -> list[str]:
     for forbidden in ("ansible-core", "ansible-runner", "ansible-builder"):
         if forbidden in runtime_names:
             errors.append(f"core dependency leak: {forbidden}")
-    controller = project["project"]["optional-dependencies"].get("ansible-controller", [])
+    controller_project = tomllib.loads(
+        CONTROLLER_PROFILE.read_text(encoding="utf-8")
+    )
+    controller = controller_project["project"]["dependencies"]
     controller_names = _dependency_names(controller)
     for required in ("ansible-core", "ansible-runner"):
         if required not in controller_names:

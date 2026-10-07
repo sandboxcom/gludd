@@ -11,6 +11,7 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "ci_failure_ledger.py"
@@ -97,6 +98,18 @@ def test_reobserving_same_terminal_run_is_idempotent() -> None:
     assert module.observe_payload(ledger, payload, observed_at="later") == "unchanged"
     assert len(ledger["runs"]) == 1
     assert all(len(family["occurrences"]) == 1 for family in ledger["families"].values())
+
+
+def test_validate_accepts_attempt_qualified_historical_run_keys() -> None:
+    """Ledgers written for workflow retries remain readable by every guard."""
+    module = _load()
+    ledger = module.new_ledger()
+    module.observe_payload(ledger, _failed_payload(), observed_at="first")
+    retry = ledger["runs"].pop("101")
+    retry["attempt"] = 2
+    ledger["runs"]["101:2"] = retry
+
+    module.validate_ledger(ledger)
 
 
 def test_terminal_run_identity_cannot_be_silently_rewritten() -> None:
@@ -209,6 +222,26 @@ def test_push_guard_reports_all_open_failures_not_only_the_first() -> None:
     }
 
 
+def test_status_and_push_guard_expose_copyable_full_family_ids() -> None:
+    """Repair instructions must not expose an unusable abbreviated selector."""
+    module = _load()
+    ledger = module.new_ledger()
+    module.observe_payload(ledger, _failed_payload(), observed_at="first")
+    family_ids = sorted(ledger["families"])
+
+    status = "\n".join(module.status_lines(ledger))
+    blockers = "\n".join(
+        module.guard_push(
+            ledger,
+            SHA_REPAIR,
+            is_ancestor=lambda _old, _new: True,
+        )
+    )
+
+    assert all(f"family={family_id}" in status for family_id in family_ids)
+    assert all(f"family={family_id}" in blockers for family_id in family_ids)
+
+
 def test_verified_repair_receipts_unlock_descendant_push_but_never_failed_sha() -> None:
     module = _load()
     ledger = module.new_ledger()
@@ -274,7 +307,7 @@ def _target_block(source: str, name: str) -> str:
 
 
 def test_make_wiring_observes_before_rerun_and_guards_every_push_path() -> None:
-    source = (ROOT / "Makefile").read_text(encoding="utf-8")
+    source = compose_makefile(ROOT / "Makefile")
     view = _target_block(source, "ci-view")
     rerun = _target_block(source, "ci-rerun")
     recover = _target_block(source, "ci-recover-runner-acquisition")
@@ -862,7 +895,7 @@ def test_exact_sha_observer_collects_all_fetch_errors_without_short_circuiting()
 
 
 def test_pipeline_status_automatically_observes_all_exact_sha_workflows() -> None:
-    source = (ROOT / "Makefile").read_text(encoding="utf-8")
+    source = compose_makefile(ROOT / "Makefile")
     block = _target_block(source, "pipeline-status")
     assert "scripts/ci_failure_ledger.py observe-sha" in block
     assert block.index("observe-sha") < block.index("scripts/pipeline_status.py")

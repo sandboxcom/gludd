@@ -69,14 +69,17 @@ def test_repository_dependencies_are_not_gludd_release_versions() -> None:
     """A release bump must never rewrite third-party dependency constraints."""
     root = Path(__file__).resolve().parents[2]
     project = tomllib.loads((root / "pyproject.toml").read_text())
-    groups = {
-        "dependencies": project["project"]["dependencies"],
-        **project["project"]["optional-dependencies"],
-        **{
-            f"dependency-group:{name}": requirements
-            for name, requirements in project["dependency-groups"].items()
-        },
-    }
+    catalog = tomllib.loads(
+        (root / "config/dependency_profiles.toml").read_text(encoding="utf-8")
+    )
+    groups = {"dependencies": project["project"]["dependencies"]}
+    for name, metadata in catalog["profiles"].items():
+        profile = tomllib.loads(
+            (root / metadata["project"] / "pyproject.toml").read_text(
+                encoding="utf-8"
+            )
+        )
+        groups[f"profile:{name}"] = profile["project"]["dependencies"]
 
     contaminated = [
         f"{group}: {requirement}"
@@ -94,10 +97,11 @@ def test_repository_dependencies_are_not_gludd_release_versions() -> None:
 def test_repository_declares_starlette_testclient_backend() -> None:
     """Starlette 1.3 deprecates its legacy httpx TestClient backend."""
     root = Path(__file__).resolve().parents[2]
-    project = tomllib.loads((root / "pyproject.toml").read_text())
-    dev_requirements = {
-        *project["project"]["optional-dependencies"]["dev"],
-        *project["dependency-groups"]["dev"],
-    }
+    project = tomllib.loads(
+        (root / "requirements/profiles/dev-test/pyproject.toml").read_text(
+            encoding="utf-8"
+        )
+    )
+    dev_requirements = set(project["project"]["dependencies"])
 
     assert any(requirement.startswith("httpx2>=") for requirement in dev_requirements)

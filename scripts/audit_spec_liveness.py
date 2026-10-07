@@ -11,6 +11,13 @@ import sys
 from difflib import SequenceMatcher
 from pathlib import Path
 
+try:
+    from scripts.behavioral_specs import load_behavioral_specs
+    from scripts.makefile_layout import compose_makefile
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from behavioral_specs import load_behavioral_specs
+    from makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_FILE = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
 
@@ -20,7 +27,7 @@ def _similarity(a: str, b: str) -> float:
 
 
 def _parse_specs() -> list[dict]:
-    text = SPECS_FILE.read_text()
+    text = load_behavioral_specs(SPECS_FILE)
     specs: list[dict] = []
     current: dict | None = None
     in_enforcement = False
@@ -77,7 +84,7 @@ def _classify(spec: dict, all_behaviors: list[str]) -> str:
             target = re.match(r"make\s+(.+)", fname)
             if target:
                 path = ROOT / "Makefile"
-                content = path.read_text() if path.exists() else ""
+                content = compose_makefile(path) if path.exists() else ""
                 if not re.search(rf"^{re.escape(target.group(1))}:", content, re.MULTILINE):
                     continue
                 all_dead = False

@@ -12,6 +12,7 @@ from typing import cast
 
 import pytest
 import scripts.freellmapi_upstream_build as build_cli
+from scripts.makefile_layout import compose_makefile
 
 from general_ludd.models.freellmapi_upstream_build import (
     FreeLLMAPIUpstreamBuildError,
@@ -373,7 +374,7 @@ def test_report_path_must_be_namespaced_and_written_atomically(tmp_path: Path) -
 
 
 def test_make_and_gha_contracts_pin_node_matrix_and_release_dependency() -> None:
-    makefile = (_ROOT / "Makefile").read_text(encoding="utf-8")
+    makefile = compose_makefile(_ROOT / "Makefile")
     target = makefile.split("\nfreellmapi-upstream-build:", 1)[1].split("\n\n", 1)[0]
     assert "scripts.freellmapi_upstream_build" in target
     assert "FREELLMAPI_BUILD_LIVE" in target

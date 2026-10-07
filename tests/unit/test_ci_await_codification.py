@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AGENTS_MD = REPO_ROOT / "AGENTS.md"
 MAKEFILE = REPO_ROOT / "Makefile"
@@ -66,7 +68,7 @@ def test_enforce_no_wait_ts_ci_poll_patterns_include_ci_await() -> None:
 
 
 def _makefile_text() -> str:
-    return MAKEFILE.read_text()
+    return compose_makefile(MAKEFILE)
 
 
 def test_makefile_ci_await_target_exists() -> None:

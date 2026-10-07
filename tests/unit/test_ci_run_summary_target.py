@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_ci_run_summary_target_is_fail_closed_and_id_bound() -> None:
-    source = (ROOT / "Makefile").read_text(encoding="utf-8")
+    source = compose_makefile(ROOT / "Makefile")
     marker = "ci-run-summary:"
     assert marker in source
     block = source.split(marker, maxsplit=1)[1].split("\n\n", maxsplit=1)[0]

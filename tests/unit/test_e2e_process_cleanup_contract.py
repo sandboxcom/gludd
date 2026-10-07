@@ -2,11 +2,13 @@
 
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).parents[2]
 
 
 def test_e2e_tree_cleanup_escalates_when_supervisor_traps_sigterm() -> None:
-    makefile = (ROOT / "Makefile").read_text()
+    makefile = compose_makefile(ROOT / "Makefile")
     start = makefile.index("kill-worktree-e2e:")
     recipe = makefile[start : makefile.index("\n.PHONY:", start)]
 

@@ -415,11 +415,16 @@ class TestLintConfigConsistency:
 class TestEnvironmentParity:
     def test_core_deps_not_duplicated_in_dev(self):
         pyproject = _toml_load(REPO_ROOT / "pyproject.toml")
+        catalog = _toml_load(REPO_ROOT / "config" / "dependency_profiles.toml")
         core_names = set()
         for dep in pyproject["project"]["dependencies"]:
             name = dep.split(">=")[0].split("==")[0].split("[")[0].strip().lower()
             core_names.add(name)
-        dev_deps = pyproject["project"]["optional-dependencies"].get("dev", [])
+        dev_deps = []
+        for profile_name in catalog["sets"]["development"]["profiles"]:
+            profile_path = catalog["profiles"][profile_name]["project"]
+            profile = _toml_load(REPO_ROOT / profile_path / "pyproject.toml")
+            dev_deps.extend(profile["project"]["dependencies"])
         dev_names = set()
         for dep in dev_deps:
             name = dep.split(">=")[0].split("==")[0].split("[")[0].strip().lower()
@@ -438,14 +443,11 @@ class TestEnvironmentParity:
                     break
             assert core_ver == dev_ver, f"{dupe} has different version: core={core_ver} vs dev={dev_ver}"
 
-    def test_dependency_groups_dev_matches_optional_dev(self):
-        pyproject = _toml_load(REPO_ROOT / "pyproject.toml")
-        opt_dev = set(d.lower() for d in pyproject["project"]["optional-dependencies"]["dev"])
-        dep_group_dev = set(d.lower() for d in pyproject.get("dependency-groups", {}).get("dev", []))
-        missing_in_dep_group = opt_dev - dep_group_dev
-        assert not missing_in_dep_group, (
-            f"deps in optional-dependencies.dev but not in dependency-groups.dev: {missing_in_dep_group}"
-        )
+    def test_ci_set_contains_the_development_set(self):
+        catalog = _toml_load(REPO_ROOT / "config" / "dependency_profiles.toml")
+        development = set(catalog["sets"]["development"]["profiles"])
+        ci = set(catalog["sets"]["ci"]["profiles"])
+        assert development < ci
 
     def test_build_system_is_hatchling(self):
         pyproject = _toml_load(REPO_ROOT / "pyproject.toml")

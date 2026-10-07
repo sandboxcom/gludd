@@ -65,7 +65,7 @@ class TestSemanticSearcherWiredInDaemon:
 
     def test_daemon_passes_searcher_to_execution_engine(self):
 
-        daemon_path = "src/general_ludd/daemon.py"
+        daemon_path = "src/general_ludd/daemon_components/lifecycle.py"
         with open(daemon_path) as f:
             tree = ast.parse(f.read(), filename=daemon_path)
 
@@ -78,12 +78,12 @@ class TestSemanticSearcherWiredInDaemon:
                         break
 
         assert searcher_kwarg_found, (
-            "daemon.py must pass searcher=... keyword to ExecutionEngine constructor"
+            "lifecycle.py must pass searcher=... keyword to ExecutionEngine constructor"
         )
 
     def test_semantic_searcher_variable_instantiated_in_daemon(self):
 
-        daemon_path = "src/general_ludd/daemon.py"
+        daemon_path = "src/general_ludd/daemon_components/lifecycle.py"
         with open(daemon_path) as f:
             tree = ast.parse(f.read(), filename=daemon_path)
 
@@ -110,5 +110,5 @@ class TestSemanticSearcherWiredInDaemon:
                         break
 
         assert semantic_searcher_assign, (
-            "daemon.py must instantiate SemanticSearcher into a variable"
+            "lifecycle.py must instantiate SemanticSearcher into a variable"
         )

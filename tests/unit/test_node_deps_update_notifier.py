@@ -8,9 +8,10 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
-MAKEFILE = (ROOT / "Makefile").read_text(encoding="utf-8")
+MAKEFILE = compose_makefile(ROOT / "Makefile")
 CONTRACT = json.loads(
     (ROOT / "config" / "make_target_contract.json").read_text(encoding="utf-8")
 )

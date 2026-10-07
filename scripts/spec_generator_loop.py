@@ -27,6 +27,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import TypedDict
 
+try:
+    from scripts.behavioral_specs import load_behavioral_specs, write_behavioral_specs
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from behavioral_specs import load_behavioral_specs, write_behavioral_specs
+
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_PATH = ROOT / "docs" / "specs" / "BEHAVIORAL_SPECS.md"
 
@@ -75,7 +80,7 @@ class EnforcementStats(TypedDict):
 
 def parse_specs_raw(filepath: Path) -> list[SpecRecord]:
     """Parse BEHAVIORAL_SPECS.md into raw spec dicts with line positions."""
-    text = filepath.read_text()
+    text = load_behavioral_specs(filepath)
     lines = text.split("\n")
 
     specs: list[SpecRecord] = []
@@ -268,7 +273,7 @@ def fix_template_specs(
 
     Returns number of specs fixed.
     """
-    lines = filepath.read_text().split("\n")
+    lines = load_behavioral_specs(filepath).split("\n")
     fixed = 0
 
     for spec in specs:
@@ -289,7 +294,7 @@ def fix_template_specs(
         fixed += 1
 
     if not dry_run and fixed > 0:
-        filepath.write_text("\n".join(lines))
+        write_behavioral_specs("\n".join(lines), filepath)
 
     return fixed
 

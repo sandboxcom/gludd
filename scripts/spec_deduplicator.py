@@ -19,9 +19,13 @@ import os
 import re
 import sys
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+
+try:
+    from scripts.behavioral_specs import load_behavioral_specs, write_behavioral_specs
+except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
+    from behavioral_specs import load_behavioral_specs, write_behavioral_specs
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -57,7 +61,7 @@ class Spec:
 
 def parse_specs(filepath: Path | str) -> list[Spec]:
     """Parse BEHAVIORAL_SPECS.md into a list of Spec objects."""
-    text = Path(filepath).read_text()
+    text = load_behavioral_specs(Path(filepath))
     lines = text.split("\n")
 
     specs: list[Spec] = []
@@ -102,9 +106,8 @@ def parse_specs(filepath: Path | str) -> list[Spec]:
         # Find end line (next ### or ##  or end of file)
         end_line = j
         while end_line < len(lines):
-            if lines[end_line].startswith("###") or lines[end_line].startswith("## "):
-                if lines[end_line].startswith("### "):
-                    break
+            if lines[end_line].startswith("### "):
+                break
             end_line += 1
         if end_line >= len(lines):
             end_line = len(lines)
@@ -150,7 +153,7 @@ def find_duplicates(specs: list[Spec], threshold: float = 0.80) -> list[tuple[Sp
     duplicates: list[tuple[Spec, Spec, float]] = []
 
     # Report exact duplicates (same body hash)
-    for h, group in by_hash.items():
+    for _h, group in by_hash.items():
         if len(group) > 1:
             # All specs with same hash are 1.0 duplicates
             for i in range(len(group)):
@@ -279,7 +282,7 @@ def deduplicate_specs(
     Strategy: For specs with identical body text within the same group,
     keep one representative and merge enforcement mechanisms from all.
     """
-    text_lines = Path(filepath).read_text().split("\n")
+    text_lines = load_behavioral_specs(Path(filepath)).split("\n")
 
     # Group specs by (body_hash, group)
     by_body_group: dict[tuple[str, str], list[Spec]] = defaultdict(list)
@@ -296,8 +299,7 @@ def deduplicate_specs(
     specs_to_remove: set[str] = set()
     merged_enforcements: dict[str, str] = {}  # spec_id -> merged enforcement
 
-    for (h, g), cluster in duplicate_clusters.items():
-        keeper = cluster[0]
+    for (_h, _g), cluster in duplicate_clusters.items():
         removed = cluster[1:]
 
         # Merge enforcement mechanisms from all specs
@@ -361,7 +363,7 @@ def deduplicate_specs(
                 break
 
     new_text = "\n".join(text_lines)
-    Path(filepath).write_text(new_text)
+    write_behavioral_specs(new_text, Path(filepath))
 
     print(f"Removed {len(specs_to_remove)} duplicate specs.")
     print(f"Updated enforcement on {len(kept_spec_ids)} kept specs.")

@@ -14,7 +14,7 @@ def test_reveal_deck_mirrors_canonical_worktree_creation_paths() -> None:
     """The deck must retain path, resource, rollout, and measured boundaries."""
     feature = " ".join(FEATURE.read_text(encoding="utf-8").split())
     content = DECK.read_text(encoding="utf-8")
-    opening = f'<section data-contract="{CONTRACT_TOKEN}">'
+    opening = f'<section class="feature-sync-slide" data-contract="{CONTRACT_TOKEN}">'
 
     assert content.count(opening) == 1
     slide = content.split(opening, 1)[1].split("</section>", 1)[0]
@@ -33,6 +33,7 @@ def test_reveal_deck_mirrors_canonical_worktree_creation_paths() -> None:
 
     for marker in (
         "S83.103",
+        "INTEGRATED CANDIDATE",
         "before any Git mutation",
         "32 lowercase hexadecimal",
         "raw .. traversal",
@@ -44,6 +45,9 @@ def test_reveal_deck_mirrors_canonical_worktree_creation_paths() -> None:
         "zero network",
         "rolling replacement",
         "source-only rollback",
+        "not formally complete",
+        "exact-head gate, CI, and promotion evidence",
+        "src/general_ludd/git_automation/repo.py:1119-1189",
         "docs/features/GIT_WORKTREE_CREATION_PATHS.md",
     ):
         assert marker in slide
