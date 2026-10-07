@@ -38,33 +38,67 @@ The orchestrator performs this audit before composing a wave:
 
 `enforce-delegate.ts` records every `task`, `agent`, and `workflow` dispatch in
 `.gludd/dispatch-ledger.json` before the worker starts. The key is a SHA-256 of
-the tool kind plus the lower-cased, whitespace-normalized task specification.
-Tracked IDs such as `S83.157` are indexed separately, so rewording a prompt does
-not create a second owner for the same tracked item.
+the canonical tool kind, project-root digest, scope digest, and digest of the
+NFKC/lower-case/whitespace-normalized task specification. The operator-owned
+`GLUDD_PROJECT_ROOT` and `GLUDD_DISPATCH_SCOPE` values define those boundaries;
+prompt text cannot change them. Tracked IDs such as `S83.157` are indexed within
+the same project and scope, so rewording a prompt does not create a second owner
+for the same tracked item. Only the repository's dotted, numeric task-ID form is
+indexed; filename-like tokens such as `README.md` are ordinary prompt content.
+
+Ledger v3 stores only project, scope, and specification digests—not prompt text
+or a prompt preview. Denials contain a reason code, fingerprint, state, attempt
+count, and `content_omitted=true`; they never echo the task body. Each claim also
+records a hashed owner identity, PID, approximate process start, and immutable
+claim time. Malformed entries, unavailable state, invalid scope/window settings,
+and ambiguous ownership all fail closed.
 
 An `in_progress` or `completed` fingerprint or tracked ID is denied before the
-tool call. A tool result with an explicit error moves the entry to `failed` and
-permits a bounded retry; a successful result moves it to `completed`. Writes use
-a private temporary file, file and directory synchronization, and atomic
-rename. A process-owned exclusive writer lock prevents two OpenCode processes
-from reading the same generation and losing one owner's update. A live writer
-makes a new dispatch fail closed; a lock is reclaimed only after its 30-second
-lease is stale and its recorded process is dead. Malformed or ambiguous locks
-are never deleted automatically. The gate-facing
-`make check-dispatch-dedup` validates every fingerprint, transition field, task
-ID list, attempt count, and blocked-duplicate count. If the ledger has never
-been created it reports `INACTIVE`; it does not misreport missing evidence as a
-clean history. A malformed ledger fails closed.
+tool call. `failed` and `cancelled` are terminal too: neither is retried unless
+the caller supplies structured `retry_terminal: true`, or appends the transport-
+safe `Retry-Terminal: true` line to the prompt. That control line is removed
+before canonical hashing, so it addresses the same claim rather than creating a
+new fingerprint. `completed` is never retryable. An explicit retry may reclaim
+`in_progress` work only when both conditions hold:
+the immutable claim age exceeds `GLUDD_DISPATCH_STALE_MS` (six hours by default,
+bounded to 1 ms–30 days) and the recorded owner PID is dead. A legacy claim with
+unknown ownership is deliberately not auto-reclaimed. This conservative seam
+prevents a merely slow worker from being mistaken for a crashed worker. Before
+retrying work that may have produced an external side effect, the operator must
+reconcile that effect; the dispatch ledger proves ownership, not transactional
+exactly-once delivery to outside systems.
 
-Untracked work still receives exact normalized-content deduplication. Release
-and backlog work should include its stable task ID so ownership also survives
-prompt rewording. The ledger is Gludd-owned state under the ignored `.gludd/`
-directory, so it survives agent restarts without entering commits or colliding
-with application source. Updating the enforcement plugin requires an OpenCode
-restart; the currently loaded version remains available until the replacement
-is validated and restarted, preserving zero-downtime agent operation. Rollback
-restores the prior plugin and checker together rather than deleting ledger
-evidence.
+Writes use a private temporary file, file and directory synchronization, and
+atomic rename. A process-owned exclusive writer lock prevents two OpenCode
+processes from reading the same generation and losing one owner's update. A live
+writer makes a new dispatch fail closed; its lock is reclaimed only after the
+30-second lease is stale and the recorded process is dead. Malformed or
+ambiguous locks are never deleted automatically.
+
+The gate-facing `make check-dispatch-dedup` validates both legacy v2 and current
+v3 during rollout. It recomputes every applicable fingerprint and validates
+transition fields, owner identity, task IDs, attempt count, stale-recovery count,
+and blocked-duplicate count. If the ledger has never been created it reports
+`INACTIVE`; it does not misreport missing evidence as clean. A malformed ledger
+fails closed.
+
+On the first locked v3 mutation, a valid v2 ledger is converted in memory and
+written by the same fsync-and-rename path. Status, attempts, canonical task IDs,
+counters, and first-dispatch time survive; stored v2 prompt material is replaced
+by digests. Filename-like values accepted by the broader v2 ID parser are
+dropped during migration so they cannot create false cross-prompt collisions.
+Existing processes keep their already-loaded implementation until the planned
+OpenCode restart, so deploy and validation happen before activation.
+During rollout the dual-version checker accepts either durable format; rollback
+must preserve the ledger rather than delete ownership evidence. Because v3 is a
+forward migration, roll back the application only with the matching v3-capable
+owner library/checker or restore the pre-migration ledger snapshot. Never run a
+v2-only owner against a v3 ledger.
+
+Untracked work still receives exact canonical-content deduplication. Release and
+backlog work should include a stable task ID so ownership also survives prompt
+rewording. The ledger is Gludd-owned state under ignored `.gludd/`, so it
+survives agent restarts without entering commits or colliding with source.
 
 ## Practitioner evidence
 
@@ -85,6 +119,19 @@ The bounded policy addresses failure modes reported by tool users:
 - Another LangGraph report documents identical request IDs creating forked
   checkpoints and multiple execution paths:
   <https://github.com/langchain-ai/langgraph/issues/6728>.
+- A Claude Code report from March 2026 describes repeated attempts to resume a
+  still-running background agent. It was eventually closed as stale, but the
+  reproduced loop shows why a live or fresh owner remains non-retryable:
+  <https://github.com/anthropics/claude-code/issues/32085>.
+- A practitioner thread on `r/LangChain` describes crashed workers leaving work
+  `in_progress` forever and warns that an aggressive sweeper can duplicate a
+  merely slow worker. The discussion recommends atomic claims, attempt identity,
+  leases, and reconciliation before retrying possible side effects:
+  <https://www.reddit.com/r/LangChain/comments/1u8a4ts/how_are_you_handling_agent_crashes_midtask_with_a/>.
+- An `r/mcp` operations thread reports long-running jobs being forgotten across
+  sessions and argues that terminality must be durable state, while ambiguous
+  timeouts should be reconciled rather than blindly rerun:
+  <https://www.reddit.com/r/mcp/comments/1wbiem9/how_do_you_guys_keep_an_agent_from_forgetting/>.
 
 These reports do not establish universal performance numbers. They do show why
 Gludd treats concurrency as a bounded resource and delegation as an explicit

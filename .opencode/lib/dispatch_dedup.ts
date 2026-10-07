@@ -1,4 +1,4 @@
-/** Durable, content-addressed ownership for delegated work. */
+/** Durable, project-scoped ownership for delegated work. */
 
 import { createHash, randomUUID } from "node:crypto"
 import * as fs from "node:fs"
@@ -8,26 +8,54 @@ const DISPATCH_DEDUP_STATE = process.env.GLUDD_DISPATCH_DEDUP_STATE
   || path.join(process.cwd(), ".gludd", "dispatch-ledger.json")
 const DISPATCH_DEDUP_ENABLED = (process.env.GLUDD_DISPATCH_DEDUP_ENFORCE || "1") !== "0"
 const LOCK_STALE_MS = 30_000
+const DEFAULT_DISPATCH_STALE_MS = 6 * 60 * 60 * 1000
+const MAX_DISPATCH_STALE_MS = 30 * 24 * 60 * 60 * 1000
 const MAX_LEDGER_BYTES = 2 * 1024 * 1024
+const PROCESS_STARTED_AT_MS = Math.max(0, Math.trunc(Date.now() - process.uptime() * 1000))
 
-type DispatchStatus = "in_progress" | "completed" | "failed"
+type DispatchStatus = "in_progress" | "completed" | "failed" | "cancelled"
+type TerminalReason = "success" | "error" | "cancelled" | "stale_owner"
+
+interface DispatchOwner {
+  owner_id: string
+  pid: number
+  process_started_at_ms: number
+  claimed_at: number
+}
 
 interface DispatchLedgerEntry {
   fingerprint: string
-  normalized_spec: string
-  prompt_head: string
+  project_digest: string
+  scope_digest: string
+  spec_digest: string
   task_ids: string[]
   tool: string
   status: DispatchStatus
   attempts: number
   denied_duplicates: number
+  stale_recoveries: number
   first_dispatched_at: number
   updated_at: number
+  owner: DispatchOwner
+  terminal_reason?: TerminalReason
 }
 
 interface DispatchLedger {
-  version: 2
+  version: 3
   entries: Record<string, DispatchLedgerEntry>
+}
+
+interface DispatchIdentity {
+  fingerprint: string
+  projectDigest: string
+  scopeDigest: string
+  specDigest: string
+  tool: string
+}
+
+interface LoadedLedger {
+  ledger: DispatchLedger
+  migrated: boolean
 }
 
 interface LockRecord {
@@ -36,7 +64,30 @@ interface LockRecord {
   token: string
 }
 
-const TRACKED_TASK_ID_RE = /\b[A-Z][A-Z0-9]*(?:\.[A-Z0-9]+)+\b/g
+const TRACKED_TASK_ID_RE = /\b[A-Z]{1,3}\d*\.\d+(?:\.\d+)*\b/g
+const TRACKED_TASK_ID_FULL_RE = /^[A-Z]{1,3}\d*\.\d+(?:\.\d+)*$/
+const LEGACY_TRACKED_TASK_ID_FULL_RE = /^[A-Z][A-Z0-9]*(?:\.[A-Z0-9]+)+$/
+const RETRY_TERMINAL_DIRECTIVE_RE = /(?:^|\n)\s*retry-terminal:\s*true\s*(?=\n|$)/giu
+const DIGEST_RE = /^[0-9a-f]{64}$/
+const VALID_TOOLS = new Set(["task", "agent", "workflow"])
+const VALID_STATUSES = new Set<DispatchStatus>([
+  "in_progress", "completed", "failed", "cancelled",
+])
+const VALID_TERMINAL_REASONS = new Set<TerminalReason>([
+  "success", "error", "cancelled", "stale_owner",
+])
+
+function digest(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex")
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return Number.isInteger(value) && Number(value) >= 0
+}
 
 function extractTrackedTaskIds(prompt: string): string[] {
   return [...new Set(prompt.toUpperCase().match(TRACKED_TASK_ID_RE) || [])].sort()
@@ -52,23 +103,256 @@ function extractDispatchPrompt(args: Record<string, unknown> | undefined): strin
 }
 
 function normalizeDispatchSpec(tool: string, prompt: string): string {
-  const normalizedPrompt = prompt.trim().replace(/\s+/g, " ").toLowerCase()
+  const normalizedPrompt = prompt
+    .replace(RETRY_TERMINAL_DIRECTIVE_RE, "\n")
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/gu, " ")
+    .toLowerCase()
   return normalizedPrompt ? `${tool.trim().toLowerCase()}\n${normalizedPrompt}` : ""
 }
 
-function dispatchFingerprint(normalizedSpec: string): string {
-  return createHash("sha256").update(normalizedSpec, "utf8").digest("hex")
+function normalizeScope(raw: string): string {
+  const normalized = raw.normalize("NFKC").trim().replace(/\s+/gu, " ").toLowerCase()
+  if (!normalized || normalized.length > 256) throw new Error("dispatch_scope_invalid")
+  return normalized
 }
 
-function loadDispatchLedger(): DispatchLedger {
-  if (!fs.existsSync(DISPATCH_DEDUP_STATE)) return { version: 2, entries: {} }
-  const size = fs.statSync(DISPATCH_DEDUP_STATE).size
-  if (size > MAX_LEDGER_BYTES) throw new Error("dispatch ledger exceeds 2 MiB")
-  const parsed = JSON.parse(fs.readFileSync(DISPATCH_DEDUP_STATE, "utf8")) as Partial<DispatchLedger>
-  if (parsed.version !== 2 || !parsed.entries || typeof parsed.entries !== "object") {
-    throw new Error("unsupported or malformed dispatch ledger")
+function canonicalProjectRoot(): string {
+  const configured = process.env.GLUDD_PROJECT_ROOT || process.cwd()
+  const resolved = path.resolve(configured)
+  try {
+    return fs.realpathSync.native(resolved)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return resolved
+    throw new Error("dispatch_project_unavailable")
   }
-  return { version: 2, entries: parsed.entries }
+}
+
+function buildIdentity(tool: string, prompt: string): DispatchIdentity {
+  const normalizedTool = tool.trim().toLowerCase()
+  if (!VALID_TOOLS.has(normalizedTool)) throw new Error("dispatch_tool_invalid")
+  const normalizedSpec = normalizeDispatchSpec(normalizedTool, prompt)
+  if (!normalizedSpec) throw new Error("dispatch_spec_empty")
+  const projectDigest = digest(canonicalProjectRoot())
+  const scopeDigest = digest(normalizeScope(process.env.GLUDD_DISPATCH_SCOPE || "project"))
+  const specDigest = digest(normalizedSpec)
+  const canonicalIdentity = [
+    "dispatch-ledger-v3",
+    normalizedTool,
+    projectDigest,
+    scopeDigest,
+    specDigest,
+  ].join("\n")
+  return {
+    fingerprint: digest(canonicalIdentity),
+    projectDigest,
+    scopeDigest,
+    specDigest,
+    tool: normalizedTool,
+  }
+}
+
+function dispatchStaleMs(): number {
+  const raw = process.env.GLUDD_DISPATCH_STALE_MS
+  if (raw === undefined || raw === "") return DEFAULT_DISPATCH_STALE_MS
+  if (!/^\d+$/.test(raw)) throw new Error("dispatch_stale_window_invalid")
+  const value = Number(raw)
+  if (!Number.isSafeInteger(value) || value < 1 || value > MAX_DISPATCH_STALE_MS) {
+    throw new Error("dispatch_stale_window_invalid")
+  }
+  return value
+}
+
+function explicitRetryRequested(
+  args: Record<string, unknown> | undefined,
+  prompt: string,
+): boolean {
+  RETRY_TERMINAL_DIRECTIVE_RE.lastIndex = 0
+  return args?.retry_terminal === true || RETRY_TERMINAL_DIRECTIVE_RE.test(prompt)
+}
+
+function ownerIdentity(now: number): DispatchOwner {
+  const sessionSeed = process.env.GLUDD_DISPATCH_OWNER_ID
+    || process.env.OPENCODE_SESSION_ID
+    || `${process.pid}:${PROCESS_STARTED_AT_MS}:${randomUUID()}`
+  return {
+    owner_id: digest(sessionSeed),
+    pid: process.pid,
+    process_started_at_ms: PROCESS_STARTED_AT_MS,
+    claimed_at: now,
+  }
+}
+
+function terminalReasonFor(status: DispatchStatus): TerminalReason | undefined {
+  if (status === "completed") return "success"
+  if (status === "failed") return "error"
+  if (status === "cancelled") return "cancelled"
+  return undefined
+}
+
+function validateTaskIds(
+  value: unknown,
+  pattern = TRACKED_TASK_ID_FULL_RE,
+): value is string[] {
+  if (!Array.isArray(value) || value.some(item => typeof item !== "string")) return false
+  const taskIds = value as string[]
+  return taskIds.every(taskId => pattern.test(taskId))
+    && new Set(taskIds).size === taskIds.length
+    && taskIds.join("\n") === [...taskIds].sort().join("\n")
+}
+
+function validOwner(value: unknown): value is DispatchOwner {
+  if (!isRecord(value)) return false
+  return typeof value.owner_id === "string"
+    && DIGEST_RE.test(value.owner_id)
+    && isNonNegativeInteger(value.pid)
+    && isNonNegativeInteger(value.process_started_at_ms)
+    && isNonNegativeInteger(value.claimed_at)
+}
+
+function expectedFingerprint(entry: DispatchLedgerEntry): string {
+  return digest([
+    "dispatch-ledger-v3",
+    entry.tool,
+    entry.project_digest,
+    entry.scope_digest,
+    entry.spec_digest,
+  ].join("\n"))
+}
+
+function terminalReasonMatches(
+  status: DispatchStatus,
+  reason: TerminalReason | undefined,
+): boolean {
+  if (status === "in_progress") return reason === undefined
+  if (status === "completed") return reason === "success"
+  if (status === "failed") return reason === "error"
+  return reason === "cancelled" || reason === "stale_owner"
+}
+
+function validateV3Entry(key: string, raw: unknown): asserts raw is DispatchLedgerEntry {
+  if (!isRecord(raw)) throw new Error("dispatch_ledger_invalid")
+  const status = raw.status as DispatchStatus
+  const entry = raw as unknown as DispatchLedgerEntry
+  const digestsValid = [raw.project_digest, raw.scope_digest, raw.spec_digest]
+    .every(value => typeof value === "string" && DIGEST_RE.test(value))
+  const countersValid = Number.isInteger(raw.attempts) && Number(raw.attempts) >= 1
+    && isNonNegativeInteger(raw.denied_duplicates)
+    && isNonNegativeInteger(raw.stale_recoveries)
+  const timestampsValid = isNonNegativeInteger(raw.first_dispatched_at)
+    && isNonNegativeInteger(raw.updated_at)
+  const reasonValid = raw.terminal_reason === undefined
+    || (typeof raw.terminal_reason === "string"
+      && VALID_TERMINAL_REASONS.has(raw.terminal_reason as TerminalReason))
+  if (
+    !DIGEST_RE.test(key)
+    || raw.fingerprint !== key
+    || !digestsValid
+    || typeof raw.tool !== "string"
+    || !VALID_TOOLS.has(raw.tool)
+    || !VALID_STATUSES.has(status)
+    || !countersValid
+    || !timestampsValid
+    || !validateTaskIds(raw.task_ids)
+    || !validOwner(raw.owner)
+    || !reasonValid
+    || expectedFingerprint(entry) !== key
+    || !terminalReasonMatches(status, raw.terminal_reason as TerminalReason | undefined)
+    || Number(raw.first_dispatched_at) > Number(raw.updated_at)
+    || Number((raw.owner as DispatchOwner).claimed_at) > Number(raw.updated_at)
+    || Number(raw.stale_recoveries) >= Number(raw.attempts)
+  ) {
+    throw new Error("dispatch_ledger_invalid")
+  }
+}
+
+function migrateV2Entry(
+  key: string,
+  raw: unknown,
+  projectDigest: string,
+  scopeDigest: string,
+): DispatchLedgerEntry {
+  if (!isRecord(raw)) throw new Error("dispatch_ledger_invalid")
+  const normalizedSpec = raw.normalized_spec
+  const tool = raw.tool
+  const status = raw.status as DispatchStatus
+  if (
+    typeof normalizedSpec !== "string"
+    || digest(normalizedSpec) !== key
+    || typeof tool !== "string"
+    || !VALID_TOOLS.has(tool)
+    || !new Set<DispatchStatus>(["in_progress", "completed", "failed"]).has(status)
+    || !validateTaskIds(raw.task_ids, LEGACY_TRACKED_TASK_ID_FULL_RE)
+    || !Number.isInteger(raw.attempts)
+    || Number(raw.attempts) < 1
+    || !isNonNegativeInteger(raw.denied_duplicates)
+    || !isNonNegativeInteger(raw.first_dispatched_at)
+    || !isNonNegativeInteger(raw.updated_at)
+  ) {
+    throw new Error("dispatch_ledger_invalid")
+  }
+  const specDigest = digest(normalizedSpec.normalize("NFKC"))
+  const fingerprint = digest([
+    "dispatch-ledger-v3", tool, projectDigest, scopeDigest, specDigest,
+  ].join("\n"))
+  const migrated: DispatchLedgerEntry = {
+    fingerprint,
+    project_digest: projectDigest,
+    scope_digest: scopeDigest,
+    spec_digest: specDigest,
+    task_ids: (raw.task_ids as string[]).filter(
+      taskId => TRACKED_TASK_ID_FULL_RE.test(taskId),
+    ),
+    tool,
+    status,
+    attempts: Number(raw.attempts),
+    denied_duplicates: Number(raw.denied_duplicates),
+    stale_recoveries: 0,
+    first_dispatched_at: Number(raw.first_dispatched_at),
+    updated_at: Number(raw.updated_at),
+    owner: {
+      owner_id: digest("legacy-v2-owner"),
+      pid: 0,
+      process_started_at_ms: 0,
+      claimed_at: Number(raw.first_dispatched_at),
+    },
+  }
+  const reason = terminalReasonFor(status)
+  if (reason) migrated.terminal_reason = reason
+  return migrated
+}
+
+function loadDispatchLedger(identity: DispatchIdentity): LoadedLedger {
+  if (!fs.existsSync(DISPATCH_DEDUP_STATE)) {
+    return { ledger: { version: 3, entries: {} }, migrated: false }
+  }
+  if (fs.statSync(DISPATCH_DEDUP_STATE).size > MAX_LEDGER_BYTES) {
+    throw new Error("dispatch_ledger_too_large")
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(fs.readFileSync(DISPATCH_DEDUP_STATE, "utf8"))
+  } catch {
+    throw new Error("dispatch_ledger_invalid")
+  }
+  if (!isRecord(parsed) || !isRecord(parsed.entries)) {
+    throw new Error("dispatch_ledger_invalid")
+  }
+  if (parsed.version === 3) {
+    for (const [key, entry] of Object.entries(parsed.entries)) validateV3Entry(key, entry)
+    return { ledger: parsed as unknown as DispatchLedger, migrated: false }
+  }
+  if (parsed.version !== 2) throw new Error("dispatch_ledger_version_unsupported")
+  const entries: Record<string, DispatchLedgerEntry> = {}
+  for (const [legacyKey, raw] of Object.entries(parsed.entries)) {
+    const migrated = migrateV2Entry(
+      legacyKey, raw, identity.projectDigest, identity.scopeDigest,
+    )
+    if (entries[migrated.fingerprint]) throw new Error("dispatch_ledger_invalid")
+    entries[migrated.fingerprint] = migrated
+  }
+  return { ledger: { version: 3, entries }, migrated: true }
 }
 
 function fsyncDirectory(directory: string): void {
@@ -77,7 +361,7 @@ function fsyncDirectory(directory: string): void {
     descriptor = fs.openSync(directory, "r")
     fs.fsyncSync(descriptor)
   } catch {
-    // The atomic rename is still safe on filesystems that reject directory fsync.
+    // Atomic rename remains the portable boundary where directory fsync is unavailable.
   } finally {
     if (descriptor !== undefined) fs.closeSync(descriptor)
   }
@@ -88,7 +372,7 @@ function saveDispatchLedger(ledger: DispatchLedger): void {
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 })
   const encoded = JSON.stringify(ledger)
   if (Buffer.byteLength(encoded, "utf8") > MAX_LEDGER_BYTES) {
-    throw new Error("dispatch ledger exceeds 2 MiB")
+    throw new Error("dispatch_ledger_too_large")
   }
   const temporary = `${DISPATCH_DEDUP_STATE}.${process.pid}.${randomUUID()}.tmp`
   let descriptor: number | undefined
@@ -121,8 +405,8 @@ function staleLockCanBeReclaimed(lockPath: string, now: number): boolean {
   try {
     const decoded = JSON.parse(fs.readFileSync(lockPath, "utf8")) as Partial<LockRecord>
     if (!Number.isInteger(decoded.pid) || !Number.isFinite(decoded.created_at_ms)) return false
-    const age = now - Number(decoded.created_at_ms)
-    return age > LOCK_STALE_MS && !processIsAlive(Number(decoded.pid))
+    return now - Number(decoded.created_at_ms) > LOCK_STALE_MS
+      && !processIsAlive(Number(decoded.pid))
   } catch {
     return false
   }
@@ -145,26 +429,28 @@ function acquireLedgerLock(): () => void {
         fs.unlinkSync(lockPath)
         continue
       }
-      throw new Error("dispatch ledger lock is busy")
+      throw new Error("dispatch_ledger_lock_busy")
     }
-    const record: LockRecord = {
-      pid: process.pid,
-      created_at_ms: Date.now(),
-      token,
+    const record: LockRecord = { pid: process.pid, created_at_ms: Date.now(), token }
+    try {
+      fs.writeFileSync(descriptor, JSON.stringify(record), "utf8")
+      fs.fsyncSync(descriptor)
+      fs.closeSync(descriptor)
+    } catch {
+      try { fs.closeSync(descriptor) } catch { /* already closed */ }
+      try { fs.unlinkSync(lockPath) } catch { /* absent */ }
+      throw new Error("dispatch_ledger_lock_unavailable")
     }
-    fs.writeFileSync(descriptor, JSON.stringify(record), "utf8")
-    fs.fsyncSync(descriptor)
-    fs.closeSync(descriptor)
     return () => {
       try {
         const current = JSON.parse(fs.readFileSync(lockPath, "utf8")) as Partial<LockRecord>
         if (current.token === token) fs.unlinkSync(lockPath)
       } catch {
-        // A missing/replaced lock is never removed by the former owner.
+        // A missing or replaced lock is never removed by the former owner.
       }
     }
   }
-  throw new Error("dispatch ledger lock is busy")
+  throw new Error("dispatch_ledger_lock_busy")
 }
 
 function withLedgerLock<T>(operation: () => T): T {
@@ -176,69 +462,174 @@ function withLedgerLock<T>(operation: () => T): T {
   }
 }
 
+function isSameScope(entry: DispatchLedgerEntry, identity: DispatchIdentity): boolean {
+  return entry.project_digest === identity.projectDigest
+    && entry.scope_digest === identity.scopeDigest
+}
+
+function canRecoverStaleOwner(entry: DispatchLedgerEntry, now: number): boolean {
+  if (entry.status !== "in_progress" || entry.owner.pid < 1) return false
+  return now - entry.owner.claimed_at >= dispatchStaleMs()
+    && !processIsAlive(entry.owner.pid)
+}
+
+function claimEntry(
+  identity: DispatchIdentity,
+  tool: string,
+  taskIds: string[],
+  now: number,
+  predecessor?: DispatchLedgerEntry,
+  staleRecovery = false,
+): DispatchLedgerEntry {
+  return {
+    fingerprint: identity.fingerprint,
+    project_digest: identity.projectDigest,
+    scope_digest: identity.scopeDigest,
+    spec_digest: identity.specDigest,
+    task_ids: taskIds,
+    tool,
+    status: "in_progress",
+    attempts: (predecessor?.attempts ?? 0) + 1,
+    denied_duplicates: predecessor?.denied_duplicates ?? 0,
+    stale_recoveries: (predecessor?.stale_recoveries ?? 0) + (staleRecovery ? 1 : 0),
+    first_dispatched_at: predecessor?.first_dispatched_at ?? now,
+    updated_at: now,
+    owner: ownerIdentity(now),
+  }
+}
+
+function denyDuplicate(
+  ledger: DispatchLedger,
+  entry: DispatchLedgerEntry,
+  reason: string,
+  now: number,
+): string {
+  entry.denied_duplicates += 1
+  entry.updated_at = now
+  saveDispatchLedger(ledger)
+  return [
+    "DUPLICATE DISPATCH DENIED:",
+    `reason=${reason}`,
+    `fingerprint=${entry.fingerprint}`,
+    `status=${entry.status}`,
+    `attempts=${entry.attempts}`,
+    "content_omitted=true",
+  ].join(" ")
+}
+
+function retryOrDenyExact(
+  ledger: DispatchLedger,
+  existing: DispatchLedgerEntry,
+  identity: DispatchIdentity,
+  tool: string,
+  taskIds: string[],
+  retry: boolean,
+  now: number,
+): string | null {
+  if (existing.status === "completed") {
+    return denyDuplicate(ledger, existing, "completed_is_terminal", now)
+  }
+  if (existing.status === "failed" || existing.status === "cancelled") {
+    if (!retry) return denyDuplicate(ledger, existing, "explicit_retry_required", now)
+    ledger.entries[identity.fingerprint] = claimEntry(
+      identity, tool, taskIds, now, existing,
+    )
+    saveDispatchLedger(ledger)
+    return null
+  }
+  if (retry && canRecoverStaleOwner(existing, now)) {
+    ledger.entries[identity.fingerprint] = claimEntry(
+      identity, tool, taskIds, now, existing, true,
+    )
+    saveDispatchLedger(ledger)
+    return null
+  }
+  const reason = retry ? "owner_live_or_claim_fresh" : "existing_owner_active"
+  return denyDuplicate(ledger, existing, reason, now)
+}
+
+function selectTaskCollision(
+  ledger: DispatchLedger,
+  identity: DispatchIdentity,
+  taskIds: string[],
+): DispatchLedgerEntry | undefined {
+  const collisions = Object.values(ledger.entries).filter(entry =>
+    isSameScope(entry, identity)
+    && entry.task_ids.some(taskId => taskIds.includes(taskId))
+  )
+  return collisions.find(entry => entry.status === "completed")
+    || collisions.find(entry => entry.status === "in_progress")
+    || collisions.sort((left, right) => right.updated_at - left.updated_at)[0]
+}
+
 export function registerDispatch(
   tool: string,
   args: Record<string, unknown> | undefined,
 ): string | null {
   if (!DISPATCH_DEDUP_ENABLED) return null
   const prompt = extractDispatchPrompt(args)
-  const normalizedSpec = normalizeDispatchSpec(tool, prompt)
-  if (!normalizedSpec) return null
+  if (!prompt.trim()) return null
   try {
+    dispatchStaleMs()
+    const identity = buildIdentity(tool, prompt)
     return withLedgerLock(() => {
-      const ledger = loadDispatchLedger()
-      const fingerprint = dispatchFingerprint(normalizedSpec)
-      const existing = ledger.entries[fingerprint]
+      const { ledger } = loadDispatchLedger(identity)
+      const existing = ledger.entries[identity.fingerprint]
       const taskIds = extractTrackedTaskIds(prompt)
+      const retry = explicitRetryRequested(args, prompt)
       const now = Date.now()
-      if (existing && (existing.status === "in_progress" || existing.status === "completed")) {
-        existing.denied_duplicates += 1
-        existing.updated_at = now
+      if (existing) {
+        return retryOrDenyExact(
+          ledger, existing, identity, identity.tool, taskIds, retry, now,
+        )
+      }
+      const taskCollision = selectTaskCollision(ledger, identity, taskIds)
+      if (taskCollision) {
+        if (taskCollision.status === "completed") {
+          return denyDuplicate(ledger, taskCollision, "completed_task_id", now)
+        }
+        if (taskCollision.status === "in_progress") {
+          if (!retry || !canRecoverStaleOwner(taskCollision, now)) {
+            const reason = retry ? "owner_live_or_claim_fresh" : "existing_task_owner_active"
+            return denyDuplicate(ledger, taskCollision, reason, now)
+          }
+          taskCollision.status = "cancelled"
+          taskCollision.terminal_reason = "stale_owner"
+          taskCollision.updated_at = now
+          ledger.entries[identity.fingerprint] = claimEntry(
+            identity, identity.tool, taskIds, now, taskCollision, true,
+          )
+          saveDispatchLedger(ledger)
+          return null
+        }
+        if (!retry) {
+          return denyDuplicate(ledger, taskCollision, "explicit_retry_required", now)
+        }
+        ledger.entries[identity.fingerprint] = claimEntry(
+          identity, identity.tool, taskIds, now, taskCollision,
+        )
         saveDispatchLedger(ledger)
-        return [
-          "DUPLICATE DISPATCH DENIED:",
-          `fingerprint=${fingerprint}`,
-          `status=${existing.status}`,
-          `attempts=${existing.attempts}`,
-          "Use the existing result or submit a materially different task specification.",
-        ].join(" ")
+        return null
       }
-      const taskIdCollision = Object.values(ledger.entries).find(entry =>
-        (entry.status === "in_progress" || entry.status === "completed")
-        && entry.task_ids.some(taskId => taskIds.includes(taskId))
-      )
-      if (taskIdCollision) {
-        const taskId = taskIdCollision.task_ids.find(candidate => taskIds.includes(candidate)) || "unknown"
-        taskIdCollision.denied_duplicates += 1
-        taskIdCollision.updated_at = now
-        saveDispatchLedger(ledger)
-        return [
-          "DUPLICATE DISPATCH DENIED:",
-          `task_id=${taskId}`,
-          `fingerprint=${taskIdCollision.fingerprint}`,
-          `status=${taskIdCollision.status}`,
-          "Use the existing owner/result instead of rewording the same tracked task.",
-        ].join(" ")
-      }
-      ledger.entries[fingerprint] = {
-        fingerprint,
-        normalized_spec: normalizedSpec,
-        prompt_head: prompt.trim().replace(/\s+/g, " ").slice(0, 160),
-        task_ids: taskIds,
-        tool,
-        status: "in_progress",
-        attempts: (existing?.attempts || 0) + 1,
-        denied_duplicates: existing?.denied_duplicates || 0,
-        first_dispatched_at: existing?.first_dispatched_at || now,
-        updated_at: now,
-      }
+      ledger.entries[identity.fingerprint] = claimEntry(identity, identity.tool, taskIds, now)
       saveDispatchLedger(ledger)
       return null
     })
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error)
-    return `DISPATCH DEDUP STATE ERROR: ${detail}. Dispatch denied because ownership cannot be proven.`
+    const code = error instanceof Error && /^dispatch_[a-z_]+$/.test(error.message)
+      ? error.message
+      : "dispatch_state_unavailable"
+    const detail = code === "dispatch_ledger_lock_busy" ? " dispatch ledger lock is busy." : ""
+    return `DISPATCH DEDUP STATE ERROR: reason=${code}.${detail} Dispatch denied because ownership cannot be proven.`
   }
+}
+
+function outputWasCancelled(output: Record<string, unknown> | undefined): boolean {
+  const status = typeof output?.status === "string" ? output.status.toLowerCase() : ""
+  return output?.cancelled === true
+    || output?.canceled === true
+    || status === "cancelled"
+    || status === "canceled"
 }
 
 export function finishDispatch(
@@ -246,23 +637,32 @@ export function finishDispatch(
   args: Record<string, unknown> | undefined,
   output: Record<string, unknown> | undefined,
 ): void {
-  if (!DISPATCH_DEDUP_ENABLED) return
-  if (!["task", "agent", "workflow"].includes(tool)) return
-  const normalizedSpec = normalizeDispatchSpec(tool, extractDispatchPrompt(args))
-  if (!normalizedSpec) return
+  if (!DISPATCH_DEDUP_ENABLED || !VALID_TOOLS.has(tool)) return
+  const prompt = extractDispatchPrompt(args)
+  if (!prompt.trim()) return
   try {
+    const identity = buildIdentity(tool, prompt)
     withLedgerLock(() => {
-      const ledger = loadDispatchLedger()
-      const fingerprint = dispatchFingerprint(normalizedSpec)
-      const existing = ledger.entries[fingerprint]
-      if (!existing) return
-      const failed = Boolean(output?.error || output?.isError || output?.is_error)
-      existing.status = failed ? "failed" : "completed"
+      const loaded = loadDispatchLedger(identity)
+      const existing = loaded.ledger.entries[identity.fingerprint]
+      if (!existing || existing.status !== "in_progress") {
+        if (loaded.migrated) saveDispatchLedger(loaded.ledger)
+        return
+      }
+      if (outputWasCancelled(output)) {
+        existing.status = "cancelled"
+        existing.terminal_reason = "cancelled"
+      } else if (Boolean(output?.error || output?.isError || output?.is_error)) {
+        existing.status = "failed"
+        existing.terminal_reason = "error"
+      } else {
+        existing.status = "completed"
+        existing.terminal_reason = "success"
+      }
       existing.updated_at = Date.now()
-      saveDispatchLedger(ledger)
+      saveDispatchLedger(loaded.ledger)
     })
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error)
-    console.warn(`DISPATCH DEDUP COMPLETION ERROR: ${detail}`)
+  } catch {
+    console.warn("DISPATCH DEDUP COMPLETION ERROR: state_unavailable_or_corrupt")
   }
 }
