@@ -52,6 +52,28 @@ body {
   --gludd-diagram-max-height: 320px;
 }
 
+/* Keep the evidence-dense release slide deterministic across browser font
+   metrics by spending vertical space on prose, not default block margins. */
+.reveal .release-resilience-slide h2 {
+  margin-bottom: 0.28em;
+}
+
+.reveal .release-resilience-slide > .bullets-tight,
+.reveal .release-resilience-slide > [data-contract] .bullets-tight {
+  margin-block: 0.16em;
+}
+
+.reveal .release-resilience-slide > [data-contract] h3 {
+  line-height: 1.05;
+  margin: 0.18em 0 0.1em;
+}
+
+.reveal .release-resilience-slide > :is(.honest-note, .cite),
+.reveal .release-resilience-slide > [data-contract] > :is(.honest-note, .cite) {
+  line-height: 1.1;
+  margin-block: 0.16em;
+}
+
 .mermaid-host {
   min-height: 2rem;
   position: relative;

@@ -660,6 +660,40 @@ def test_every_slide_keeps_visible_content_inside_the_reveal_canvas(
     assert failures == []
 
 
+def test_release_resilience_boundary_fits_desktop_landscape_canvas(
+    page: Any,
+    presentation_url: str,
+) -> None:
+    """The densest release slide must fit WebKit's 1280x720 Reveal canvas."""
+    _load(page, presentation_url)
+    slide = page.locator('section[data-contract="release-resilience-boundaries"]')
+    indices = slide.evaluate(
+        "node => { const index = Reveal.getIndices(node); return [index.h, index.v]; }"
+    )
+    _visit_slide(page, indices[0], indices[1])
+    failures = slide.evaluate(
+        """
+        node => {
+          Reveal.layout();
+          const boundary = Reveal.getSlidesElement().getBoundingClientRect();
+          const portabilityReserve = 16;
+          return [node, ...node.querySelectorAll('h2, h3, p, li')].flatMap((item) => {
+            const rect = item.getBoundingClientRect();
+            return rect.bottom > boundary.bottom - portabilityReserve ? [{
+              bottom: rect.bottom,
+              boundaryBottom: boundary.bottom,
+              portabilityReserve,
+              tagName: item.tagName,
+              text: (item.textContent || '').trim().slice(0, 100),
+            }] : [];
+          });
+        }
+        """
+    )
+
+    assert failures == []
+
+
 def test_narrow_tall_canvas_keeps_prose_and_diagram_labels_readable(
     page: Any,
     presentation_url: str,

@@ -387,17 +387,22 @@
     }
   }
 
+  function stableSvgGeometry(container) {
+    return (
+      validSvgMetadata(container) &&
+      svgGeometryStatus(container.querySelector("svg")) === "ok"
+    );
+  }
+
   async function awaitStableSvg(container, deadline) {
-    await animationFrame();
-    await animationFrame();
+    if (stableSvgGeometry(container)) {
+      return true;
+    }
     while (window.performance.now() < deadline) {
-      if (
-        validSvgMetadata(container) &&
-        svgGeometryStatus(container.querySelector("svg")) === "ok"
-      ) {
+      await animationFrame();
+      if (stableSvgGeometry(container)) {
         return true;
       }
-      await animationFrame();
     }
     return false;
   }

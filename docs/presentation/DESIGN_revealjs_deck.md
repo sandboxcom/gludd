@@ -500,6 +500,23 @@ and the long-lived practitioner report
 [`mermaid-js/mermaid#4918`](https://github.com/mermaid-js/mermaid/issues/4918),
 opened in 2023, where exported SVGs truncate longer labels.
 
+Pages run `37692342068` then isolated two WebKit portability regressions without
+weakening either acceptance threshold: cold readiness was `5.161s` against the
+strict `<5s` budget, and slide 43 painted its final replay-schema evidence below
+the 1280x720 canvas. Ready SVG geometry is now accepted synchronously after the
+browser's geometry reads force layout; only geometry that is not yet valid waits
+for another animation frame, under the existing per-diagram deadline. The dense
+release-resilience slide keeps every text size but owns compact block spacing and
+a focused 16px desktop-canvas reserve. That choice follows the long-lived user
+reports in [`reveal.js#16`](https://github.com/hakimel/reveal.js/issues/16) and
+[`reveal.js#3448`](https://github.com/hakimel/reveal.js/discussions/3448): tall
+content can disappear, while a centered overflow workaround can make the top
+unreachable. Short canvases therefore retain their tested top-anchored scroller;
+desktop content fits instead of hiding overflow. This remains ZDD: only static
+HTML/CSS/controller bytes change, readable Mermaid source remains the failure
+fallback, and rollback is one source revert with no schema, service, traffic, or
+persisted-state transition.
+
 ZDD rollback reverts the controller and manifest-bound vendor transform on
 development, validates the last browser-green bytes, then promotes that revert
 through the normal master-only release flow. The deploy job consumes only the
