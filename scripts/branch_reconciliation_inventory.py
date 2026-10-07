@@ -15,6 +15,7 @@ SCHEMA_VERSION = 2
 MAX_LIMIT = 100
 COMMIT_SCAN_LIMIT = 500
 LOCAL_REF_SCAN_LIMIT = 10_000
+MERGE_QUEUE_HEAD_LIMIT = 256
 GIT_TIMEOUT_SECONDS = 10
 # Semantic inspection is exhaustive over the same already-bounded ref snapshot.
 # A smaller independent cap could fail after all refs were safely classified,
@@ -181,6 +182,64 @@ class SemanticCurrentSummaryPayload(CurrentSummaryPayload):
     """Current-only terminal summary with opt-in semantic head evidence."""
 
     head_summaries: list[HeadSemanticSummary]
+
+
+class MergeQueueBounds(InventoryBounds):
+    """Independent bounds for a sequential merge queue."""
+
+    merge_queue_head_limit: int
+
+
+class MergeQueueCounts(TypedDict):
+    """Terminal accounting across queued and already-integrated branches."""
+
+    ancestor_branches: int
+    ancestor_heads: int
+    collapsed_branches: int
+    collapsed_heads: int
+    observed_branches: int
+    observed_heads: int
+    patch_equivalent_branches: int
+    patch_equivalent_heads: int
+    queued_branches: int
+    queued_heads: int
+
+
+class MergeQueueEntry(TypedDict):
+    """One exact novel head to integrate sequentially."""
+
+    branch_count: int
+    expected_tip: str
+    order: int
+    refs: list[str]
+    source_ref: str
+    unique_commits: int
+
+
+class CollapsedMergeQueueGroup(TypedDict):
+    """One historical head excluded from the novel merge queue."""
+
+    branch_count: int
+    classification: Literal["ancestor", "patch-equivalent"]
+    expected_tip: str
+    refs: list[str]
+
+
+class MergeQueuePayload(TypedDict):
+    """Bounded sequential merge plan with exact ref preconditions."""
+
+    bounds: MergeQueueBounds
+    collapsed: list[CollapsedMergeQueueGroup]
+    counts: MergeQueueCounts
+    mode: Literal["sequential-merge-queue"]
+    ok: bool
+    page_size: int
+    pages: int
+    queue: list[MergeQueueEntry]
+    schema_version: int
+    target: TargetRecord
+    terminal: bool
+    truncated: bool
 
 
 def _run(
@@ -748,6 +807,169 @@ def collect_summary(
     }
 
 
+def _verify_merge_queue_preconditions(
+    groups: Sequence[SummaryGroup],
+    target: TargetRecord,
+    *,
+    run: RunFn,
+    cwd: str | None,
+) -> None:
+    """Revalidate the exact target and queued tips immediately before emission."""
+    terminal_target = _resolve_target(target["input"], run=run, cwd=cwd)
+    if terminal_target != target:
+        raise InventoryError("target changed before merge queue emission")
+
+    terminal_heads = dict(_bounded_sorted_local_scan("", run=run, cwd=cwd))
+    expected_refs: dict[str, str] = {}
+    for group in groups:
+        for ref in group["refs"]:
+            previous = expected_refs.setdefault(ref, group["head"])
+            if previous != group["head"]:
+                raise InventoryError("conflicting reconciled tip identities")
+    for ref, expected_tip in expected_refs.items():
+        if terminal_heads.get(ref) != expected_tip:
+            raise InventoryError("reconciled tip changed before merge queue emission")
+
+
+def _build_merge_queue(
+    summary: SummaryPayload,
+    *,
+    run: RunFn,
+    cwd: str | None,
+    progress: ProgressFn | None,
+) -> MergeQueuePayload:
+    """Build one deterministic, fully accounted sequential merge queue."""
+    novel_groups = sorted(
+        (
+            group
+            for group in summary["groups"]
+            if group["classification"] == "unique"
+        ),
+        key=lambda group: (group["refs"][0], group["head"]),
+    )
+    if len(novel_groups) > MERGE_QUEUE_HEAD_LIMIT:
+        raise InventoryError(
+            "merge queue head bound exceeded: "
+            f"{len(novel_groups)} > {MERGE_QUEUE_HEAD_LIMIT}"
+        )
+
+    queue: list[MergeQueueEntry] = []
+    for order, group in enumerate(novel_groups, start=1):
+        refs = sorted(group["refs"])
+        queue.append(
+            {
+                "branch_count": group["branch_count"],
+                "expected_tip": group["head"],
+                "order": order,
+                "refs": refs,
+                "source_ref": refs[0],
+                "unique_commits": group["unique_commits"],
+            }
+        )
+
+    historical_groups = sorted(
+        (
+            group
+            for group in summary["groups"]
+            if group["classification"] != "unique"
+        ),
+        key=lambda group: (group["classification"], group["refs"][0], group["head"]),
+    )
+    collapsed: list[CollapsedMergeQueueGroup] = []
+    for group in historical_groups:
+        classification = group["classification"]
+        if classification == "unique":
+            raise InventoryError("unique head leaked into collapsed merge queue")
+        collapsed.append(
+            {
+                "branch_count": group["branch_count"],
+                "classification": classification,
+                "expected_tip": group["head"],
+                "refs": sorted(group["refs"]),
+            }
+        )
+
+    ancestor_groups = [
+        group for group in collapsed if group["classification"] == "ancestor"
+    ]
+    patch_groups = [
+        group
+        for group in collapsed
+        if group["classification"] == "patch-equivalent"
+    ]
+    counts: MergeQueueCounts = {
+        "ancestor_branches": sum(group["branch_count"] for group in ancestor_groups),
+        "ancestor_heads": len(ancestor_groups),
+        "collapsed_branches": sum(group["branch_count"] for group in collapsed),
+        "collapsed_heads": len(collapsed),
+        "observed_branches": summary["counts"]["returned"],
+        "observed_heads": summary["counts"]["deduplicated_heads"],
+        "patch_equivalent_branches": sum(
+            group["branch_count"] for group in patch_groups
+        ),
+        "patch_equivalent_heads": len(patch_groups),
+        "queued_branches": sum(entry["branch_count"] for entry in queue),
+        "queued_heads": len(queue),
+    }
+    if (
+        counts["queued_branches"] + counts["collapsed_branches"]
+        != counts["observed_branches"]
+        or counts["queued_heads"] + counts["collapsed_heads"]
+        != counts["observed_heads"]
+    ):
+        raise InventoryError("merge queue accounting did not cover every branch")
+
+    if progress is not None:
+        progress("verify=merge-queue-preconditions")
+    _verify_merge_queue_preconditions(
+        summary["groups"],
+        summary["target"],
+        run=run,
+        cwd=cwd,
+    )
+    return {
+        "bounds": {
+            **summary["bounds"],
+            "merge_queue_head_limit": MERGE_QUEUE_HEAD_LIMIT,
+        },
+        "collapsed": collapsed,
+        "counts": counts,
+        "mode": "sequential-merge-queue",
+        "ok": True,
+        "page_size": summary["page_size"],
+        "pages": summary["pages"],
+        "queue": queue,
+        "schema_version": summary["schema_version"],
+        "target": summary["target"],
+        "terminal": True,
+        "truncated": False,
+    }
+
+
+def collect_merge_queue(
+    target: str,
+    page_size: int,
+    *,
+    run: RunFn = _run,
+    cwd: str | None = None,
+    progress: ProgressFn | None = None,
+) -> MergeQueuePayload:
+    """Collect and verify a deterministic queue of novel branch heads."""
+    summary = collect_summary(
+        target,
+        page_size,
+        run=run,
+        cwd=cwd,
+        progress=progress,
+    )
+    return _build_merge_queue(
+        summary,
+        run=run,
+        cwd=cwd,
+        progress=progress,
+    )
+
+
 def _bounded_semantic_stdout(
     argv: Sequence[str],
     *,
@@ -936,6 +1158,11 @@ def main(
         action="store_true",
         help="add bounded commit subjects and changed paths per summary head",
     )
+    parser.add_argument(
+        "--merge-queue",
+        action="store_true",
+        help="emit a verified sequential queue containing only novel heads",
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
     try:
         limit = int(args.limit)
@@ -952,10 +1179,18 @@ def main(
             | CurrentSummaryPayload
             | SemanticSummaryPayload
             | SemanticCurrentSummaryPayload
+            | MergeQueuePayload
         )
         if args.all_pages:
             if args.after:
                 raise InventoryError("all-pages summary requires an empty cursor")
+            if args.merge_queue and (
+                args.counts_only or args.current_only or args.head_semantics
+            ):
+                raise InventoryError(
+                    "merge queue cannot be combined with counts-only, "
+                    "current-only, or head semantics"
+                )
             if args.counts_only and args.current_only:
                 raise InventoryError("current-only cannot be combined with counts-only")
             if args.counts_only and args.head_semantics:
@@ -966,7 +1201,14 @@ def main(
                 run=run,
                 progress=progress,
             )
-            if args.current_only:
+            if args.merge_queue:
+                payload = _build_merge_queue(
+                    summary,
+                    run=run,
+                    cwd=None,
+                    progress=progress,
+                )
+            elif args.current_only:
                 current_groups = [
                     group
                     for group in summary["groups"]
@@ -1027,6 +1269,8 @@ def main(
             else:
                 payload = summary
         else:
+            if args.merge_queue:
+                raise InventoryError("merge queue requires an all-pages summary")
             if args.head_semantics:
                 raise InventoryError("head semantics require an all-pages summary")
             if args.counts_only or args.current_only:

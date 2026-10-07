@@ -695,6 +695,176 @@ def test_exhaustive_summary_rejects_target_move_after_single_page() -> None:
         inventory.collect_summary("development", 2, run=fake)
 
 
+def test_merge_queue_accounts_for_every_branch_and_queues_only_novel_heads() -> None:
+    """Historical tips collapse outside a deterministic one-head merge queue."""
+    refs = [
+        ("refs/heads/feature/ancestor-a", ANCESTOR_HEAD),
+        ("refs/heads/feature/ancestor-b", ANCESTOR_HEAD),
+        ("refs/heads/feature/novel-a", UNIQUE_HEAD),
+        ("refs/heads/feature/novel-z", UNIQUE_HEAD),
+        ("refs/heads/feature/other", PAGE_HEADS[0]),
+        ("refs/heads/feature/patch-copy", PATCH_HEAD),
+    ]
+    fake = FakeGit(
+        refs=refs,
+        ancestors=frozenset({ANCESTOR_HEAD}),
+        cherries={
+            PATCH_HEAD: f"- {PATCH_HEAD}\n",
+            UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n",
+            PAGE_HEADS[0]: f"+ {PAGE_HEADS[0]}\n",
+        },
+    )
+
+    result = inventory.collect_merge_queue("development", 2, run=fake)
+
+    assert result["mode"] == "sequential-merge-queue"
+    assert result["target"] == {
+        "head": TARGET_HEAD,
+        "input": "development",
+        "ref": "refs/heads/development",
+    }
+    assert result["counts"] == {
+        "ancestor_branches": 2,
+        "ancestor_heads": 1,
+        "collapsed_branches": 3,
+        "collapsed_heads": 2,
+        "observed_branches": 6,
+        "observed_heads": 4,
+        "patch_equivalent_branches": 1,
+        "patch_equivalent_heads": 1,
+        "queued_branches": 3,
+        "queued_heads": 2,
+    }
+    assert [entry["source_ref"] for entry in result["queue"]] == [
+        "refs/heads/feature/novel-a",
+        "refs/heads/feature/other",
+    ]
+    assert result["queue"][0] == {
+        "branch_count": 2,
+        "expected_tip": UNIQUE_HEAD,
+        "order": 1,
+        "refs": [
+            "refs/heads/feature/novel-a",
+            "refs/heads/feature/novel-z",
+        ],
+        "source_ref": "refs/heads/feature/novel-a",
+        "unique_commits": 1,
+    }
+    assert [group["classification"] for group in result["collapsed"]] == [
+        "ancestor",
+        "patch-equivalent",
+    ]
+    assert sum(entry["branch_count"] for entry in result["queue"]) + sum(
+        group["branch_count"] for group in result["collapsed"]
+    ) == result["counts"]["observed_branches"]
+
+
+def test_merge_queue_fails_closed_when_queued_tip_moves_before_emission() -> None:
+    """A queued source ref must still resolve to its exact classified tip."""
+
+    class MovingQueueTipGit(FakeGit):
+        sorted_scans = 0
+
+        def __call__(
+            self, argv: Sequence[str], cwd: str | None = None
+        ) -> subprocess.CompletedProcess[str]:
+            args = list(argv)
+            if args[1] == "for-each-ref" and "--sort=refname" in args:
+                self.sorted_scans += 1
+                if self.sorted_scans > 1:
+                    original_refs = self.refs
+                    self.refs = [("refs/heads/feature/novel", PAGE_HEADS[1])]
+                    try:
+                        return super().__call__(args, cwd)
+                    finally:
+                        self.refs = original_refs
+            return super().__call__(args, cwd)
+
+    fake = MovingQueueTipGit(
+        refs=[("refs/heads/feature/novel", PAGE_HEADS[0])],
+        cherries={PAGE_HEADS[0]: f"+ {PAGE_HEADS[0]}\n"},
+    )
+
+    with pytest.raises(inventory.InventoryError, match="reconciled tip changed"):
+        inventory.collect_merge_queue("development", 2, run=fake)
+
+
+def test_merge_queue_fails_closed_when_collapsed_tip_moves_before_emission() -> None:
+    """A historical ref cannot move outside the no-branch-left-behind handoff."""
+
+    class MovingCollapsedTipGit(FakeGit):
+        sorted_scans = 0
+
+        def __call__(
+            self, argv: Sequence[str], cwd: str | None = None
+        ) -> subprocess.CompletedProcess[str]:
+            args = list(argv)
+            if args[1] == "for-each-ref" and "--sort=refname" in args:
+                self.sorted_scans += 1
+                if self.sorted_scans > 1:
+                    original_refs = self.refs
+                    self.refs = [("refs/heads/feature/patch-copy", PAGE_HEADS[1])]
+                    try:
+                        return super().__call__(args, cwd)
+                    finally:
+                        self.refs = original_refs
+            return super().__call__(args, cwd)
+
+    fake = MovingCollapsedTipGit(
+        refs=[("refs/heads/feature/patch-copy", PATCH_HEAD)],
+        cherries={PATCH_HEAD: f"- {PATCH_HEAD}\n"},
+    )
+
+    with pytest.raises(inventory.InventoryError, match="reconciled tip changed"):
+        inventory.collect_merge_queue("development", 2, run=fake)
+
+
+def test_merge_queue_fails_closed_when_target_moves_before_emission() -> None:
+    """The sequential queue binds the exact target observed during classification."""
+
+    class MovingQueueTargetGit(FakeGit):
+        target_head_resolutions = 0
+
+        def __call__(
+            self, argv: Sequence[str], cwd: str | None = None
+        ) -> subprocess.CompletedProcess[str]:
+            args = list(argv)
+            result = super().__call__(args, cwd)
+            if args[1:4] == ["rev-parse", "--verify", "--quiet"]:
+                self.target_head_resolutions += 1
+                if self.target_head_resolutions > 2:
+                    return self._result(args, 0, f"{PAGE_HEADS[3]}\n")
+            return result
+
+    fake = MovingQueueTargetGit(
+        refs=[("refs/heads/feature/novel", UNIQUE_HEAD)],
+        cherries={UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n"},
+    )
+
+    with pytest.raises(inventory.InventoryError, match="target changed"):
+        inventory.collect_merge_queue("development", 2, run=fake)
+
+
+def test_merge_queue_fails_closed_above_output_head_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Queue output must not grow beyond its independent head ceiling."""
+    monkeypatch.setattr(inventory, "MERGE_QUEUE_HEAD_LIMIT", 1)
+    fake = FakeGit(
+        refs=[
+            ("refs/heads/feature/a", PAGE_HEADS[0]),
+            ("refs/heads/feature/b", PAGE_HEADS[1]),
+        ],
+        cherries={
+            PAGE_HEADS[0]: f"+ {PAGE_HEADS[0]}\n",
+            PAGE_HEADS[1]: f"+ {PAGE_HEADS[1]}\n",
+        },
+    )
+
+    with pytest.raises(inventory.InventoryError, match="queue head bound"):
+        inventory.collect_merge_queue("development", 2, run=fake)
+
+
 def test_exhaustive_summary_fails_closed_above_scan_bound(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -727,6 +897,69 @@ def test_main_all_pages_emits_terminal_summary(capsys: pytest.CaptureFixture[str
     payload = json.loads(capsys.readouterr().out)
     assert payload["mode"] == "exhaustive-summary"
     assert payload["terminal"] is True
+
+
+def test_main_emits_machine_readable_sequential_merge_queue(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fake = FakeGit(
+        refs=[("refs/heads/feature/novel", UNIQUE_HEAD)],
+        cherries={UNIQUE_HEAD: f"+ {UNIQUE_HEAD}\n"},
+    )
+
+    rc = inventory.main(
+        [
+            "--target",
+            "development",
+            "--limit",
+            "2",
+            "--after",
+            "",
+            "--all-pages",
+            "--merge-queue",
+            "--quiet-progress",
+        ],
+        run=fake,
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    payload = json.loads(captured.out)
+    assert payload["mode"] == "sequential-merge-queue"
+    assert payload["queue"][0]["expected_tip"] == UNIQUE_HEAD
+    assert captured.err == ""
+
+
+@pytest.mark.parametrize(
+    "conflict",
+    ["--counts-only", "--current-only", "--head-semantics"],
+)
+def test_main_merge_queue_rejects_lossy_or_semantic_summary_modes(
+    conflict: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fake = FakeGit()
+
+    rc = inventory.main(
+        [
+            "--target",
+            "development",
+            "--limit",
+            "2",
+            "--after",
+            "",
+            "--all-pages",
+            "--merge-queue",
+            conflict,
+            "--quiet-progress",
+        ],
+        run=fake,
+    )
+
+    assert rc == 2
+    assert "merge queue cannot be combined" in json.loads(
+        capsys.readouterr().out
+    )["error"]
 
 
 def test_main_counts_only_omits_large_groups(

@@ -114,6 +114,42 @@ Argument, bound, cursor, Git, and classification failures retain their structure
 nonzero result. Operators should therefore keep the default for interactive
 reconciliation and opt into quiet mode only at a JSON consumption boundary.
 
+## Deterministic sequential merge queue
+
+CLI consumers can add `--all-pages --merge-queue` to request an opt-in,
+machine-readable handoff for later sequential integration. The mode first builds
+the exhaustive, terminally verified summary. It then emits exactly one queue
+entry for each `unique` head, in deterministic canonical-ref and full-object-ID
+order. Multiple branch names at the same unique head share one entry: `source_ref`
+is the first canonical ref, `refs` retains every alias, and `expected_tip` retains
+the exact object ID that was classified. Ancestor and patch-equivalent heads do
+not enter the merge queue; they remain fully accounted for under `collapsed`,
+grouped by classification and exact head.
+
+The payload uses schema v2 and mode `sequential-merge-queue`. Its `target`
+object retains the validated input, canonical ref, and exact expected head. The
+`counts` object proves that every observed branch and deduplicated head is either
+queued or collapsed, while `terminal: true` and `truncated: false` distinguish a
+complete handoff from a page. Queue expansion is capped at 256 unique heads in
+addition to the existing 10,000-ref and 500-commit comparison bounds. Exceeding
+any bound fails closed; it never emits a partial queue.
+
+Immediately before emission, the producer re-resolves the target and performs a
+new bounded, sorted local-head scan. The target must still equal
+`target.head`, and every queued or collapsed canonical ref must still equal its
+recorded `expected_tip`. A deleted, renamed, or moved ref, or any target
+movement, returns structured JSON error output and a nonzero status. This second
+check narrows the gap between the terminal inventory snapshot and queue handoff;
+it is not a repository lock.
+
+A sequential merge consumer starts only after verifying the recorded target and
+every queued source identity. It integrates one entry at a time, records the new
+target after each successful merge, and rejects any target movement not caused by
+its own preceding step. It also rechecks `expected_tip` immediately before each
+source is used. On interruption, conflict, or external ref movement, the consumer
+stops without skipping ahead and regenerates the read-only queue from current
+refs. The inventory deliberately performs none of those merges itself.
+
 ## Opt-in semantic head summaries
 
 Semantic review is explicit and terminal. Set `RECONCILE_DETAILS=1` and
@@ -229,6 +265,16 @@ small. Gludd consequently permits exactly one additional sorted verification
 scan, retains the 10,000-ref ceiling and ten-second timeout, and never retries in
 an unbounded loop.
 
+GitLab maintainers also recorded the operational risk in
+[#62793](https://gitlab.com/gitlab-org/gitlab-foss/-/work_items/62793): a merge
+request can have passed tests against one target SHA while the target branch has
+moved, so that evidence does not establish success against its current head.
+That practitioner report motivates preserving both sides of each reconciliation
+decision as exact object identities. The queue therefore records the target head
+and every source tip, rechecks them before emission, and gives a later sequential
+consumer enough evidence to reject stale work rather than merging by a mutable
+branch name alone.
+
 The long-lived GitHub CLI issue
 [#6642](https://github.com/cli/cli/issues/6642), opened in 2022, records that
 remote file-list queries can be expensive and points practitioners to local
@@ -267,6 +313,15 @@ Rollback is a normal revert of the terminal verifier, tests, and this document.
 The older textual inventory and one-branch patch comparison targets remain
 independently available throughout. No service restart, data migration, cleanup,
 or downtime is needed.
+
+Merge-queue mode adds only foreground, read-only Git inspection and bounded JSON
+serialization. It creates no checkout, index, lock, merge, commit, ref update,
+push, file, daemon, port, or service transition, so generation and rollback have
+no runtime outage window. Existing callers remain unchanged because the flag is
+opt-in. Rollback is a normal revert of the queue builder, its focused tests, and
+this documentation; previously emitted payloads can simply be discarded and
+regenerated with the older exhaustive summary. There is no repository repair,
+data migration, service restart, or destructive cleanup step.
 
 ## Makefile integrity
 
