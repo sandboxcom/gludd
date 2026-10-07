@@ -23,8 +23,11 @@ Worktree creation uses the following fail-closed order:
    branch cannot trigger project-state discovery, directory creation, or any
    other filesystem side effect.
 2. The repository, its parent, and the requested destination are resolved with
-   `pathlib.Path.resolve()`. The destination may be the repository, its parent,
-   or a canonical descendant. A symlink redirecting outside is rejected.
+   `pathlib.Path.resolve()`. Because a new destination normally does not exist,
+   its nearest lexically existing ancestor is resolved strictly before the
+   missing suffix is restored. The destination may be the repository, its
+   parent, or a canonical descendant. A symlink redirecting outside, dangling,
+   or forming a loop is rejected.
 3. A secure project-state worktree root is accepted only when its canonical
    identity belongs to the namespace derived from that repository. A sibling
    project's namespace is not authority.
@@ -61,15 +64,17 @@ where the normal worktree root has not yet been provisioned.
 The six-year-old symlink report
 [Git thinks a file within a symlinked directory has been deleted](https://stackoverflow.com/questions/60582087/git-thinks-a-file-within-a-symlinked-directory-has-been-deleted-after-recreating)
 explains the security reason Git avoids writes beyond directory symlinks. That
-experience supports canonical confinement before a worktree-populating command.
+experience supports canonical confinement before a worktree-populating command,
+including rejecting a symlink identity that cannot be resolved at all.
 
 ## Security and resources
 
 Validation performs bounded in-process path and namespace checks before the
 existing bounded Git subprocess. It starts no daemon, retry loop, network
 request, helper script, or additional worker. Canonical comparison closes the
-symlink escape; exact temp-root syntax avoids a broad `/tmp` capability; and
-project-derived namespaces prevent cross-project authorization.
+symlink escape; strict resolution of the nearest existing prefix fails closed
+on dangling links and loops; exact temp-root syntax avoids a broad `/tmp`
+capability; and project-derived namespaces prevent cross-project authorization.
 
 The filesystem can change after validation, so callers should prefer the
 owner-only project-state allocator, whose directory validation narrows that
@@ -93,11 +98,13 @@ namespaced-only helper reintroduces the Gludd temp-root compatibility failure.
 ## Verification
 
 The acceptance set includes the original beta.4 temp-root regression, raw
-traversal, canonical symlink escape, matching and foreign project namespaces,
-invalid branch rejection before secure-directory/project-state acquisition,
-the adjacent Git automation suites under warnings-as-errors, line-and-branch
-coverage floors, Ruff, strict mypy, source docstrings, Markdown/spec lint, task
-ledger integrity, full collection, and the guarded commit gate.
+traversal, canonical symlink escape, unresolvable symlink-loop rejection before
+Git mutation, UUID-shaped loop rejection, matching and foreign project
+namespaces, invalid branch rejection before secure-directory/project-state
+acquisition, the adjacent Git automation suites under warnings-as-errors,
+line-and-branch coverage floors, Ruff, strict mypy, source docstrings,
+Markdown/spec lint, task ledger integrity, full collection, and the guarded
+commit gate.
 
 The reveal.js presentation mirrors this boundary under the stable contract
 token `s83-103-canonical-worktree-paths`. Its focused drift regression pins the

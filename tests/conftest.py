@@ -40,6 +40,7 @@ import importlib
 import importlib.util
 import logging
 import os
+import re
 import shlex
 import shutil
 import socket
@@ -163,6 +164,7 @@ _PYTEST_TEMP_ROOT_PREFIXES = (
     "gludd-xdist-trace-",
     "pytest-",
 )
+_OWNED_GATE_TMPDIR_NAME = re.compile(r"gludd-[0-9a-f]{4}-[a-z0-9_]{8}\Z")
 
 
 @dataclass(frozen=True, slots=True)
@@ -389,15 +391,50 @@ class _WorktreeConfinement:
                 continue
         if relative is None:
             return False
-        if not any(
+        has_named_pytest_root = any(
             component.startswith(_PYTEST_TEMP_ROOT_PREFIXES)
             for component in relative.parts
-        ):
+        )
+        if not has_named_pytest_root and not self._is_owned_gate_pytest_path(resolved):
             return False
         git_marker = resolved / ".git"
         if git_marker.is_symlink():
             return False
         return git_marker.is_dir() or git_marker.is_file()
+
+    @classmethod
+    def _is_owned_gate_pytest_path(cls, resolved: Path) -> bool:
+        """Recognize only the current serial gate's exact pytest subtree."""
+        raw_tmpdir = os.environ.get("TMPDIR")
+        if not raw_tmpdir:
+            return False
+        try:
+            candidate = Path(raw_tmpdir)
+        except (TypeError, ValueError):
+            return False
+        if not candidate.is_absolute() or ".." in candidate.parts:
+            return False
+        try:
+            owned_tmpdir = candidate.resolve(strict=True)
+        except (FileNotFoundError, OSError, RuntimeError, ValueError):
+            return False
+        if _OWNED_GATE_TMPDIR_NAME.fullmatch(owned_tmpdir.name) is None:
+            return False
+        raw_temp_roots = [Path(tempfile.gettempdir()), Path("/tmp")]
+        raw_temp_roots.extend(
+            Path(value)
+            for variable in ("TEMP", "TMP")
+            if (value := os.environ.get(variable))
+        )
+        canonical_temp_roots: set[Path] = set()
+        for raw_temp_root in raw_temp_roots:
+            try:
+                canonical_temp_roots.add(raw_temp_root.resolve(strict=True))
+            except (FileNotFoundError, OSError, RuntimeError, ValueError):
+                continue
+        if owned_tmpdir.parent not in canonical_temp_roots:
+            return False
+        return cls._is_within(resolved, owned_tmpdir / "pytest")
 
     @classmethod
     def _is_side_effect_free_version_probe(cls, value: object) -> bool:

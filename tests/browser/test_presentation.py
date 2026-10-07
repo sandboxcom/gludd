@@ -18,6 +18,9 @@ from scripts import build_deck
 pytestmark = pytest.mark.presentation_browser
 
 FEATURE_SYNC_CONTRACTS = (
+    "s83-101-104-concurrency-authority",
+    "s83-103-canonical-worktree-paths",
+    "s83-108-105-boundary-evidence",
     "s83-109-local-game-boundary",
     "s83-118-122-branch-reconciliation",
     "s91-3-enforcement-executable-modes",
@@ -1063,6 +1066,34 @@ def test_feature_sync_slides_are_source_linked_compact_and_mermaid_ready(
         """
     )
     assert readiness == {"complete": True, "state": "rendered", "viewport": "stable"}
+
+    for contract in FEATURE_SYNC_CONTRACTS:
+        slide = page.locator(f'section[data-contract="{contract}"]')
+        diagrams = slide.locator(".mermaid")
+        if diagrams.count() == 0:
+            continue
+        indices = slide.evaluate(
+            "node => { const index = Reveal.getIndices(node); return [index.h, index.v]; }"
+        )
+        _visit_slide(page, indices[0], indices[1])
+        _assert_visible_diagrams(page)
+        effective_font_pixels = diagrams.first.evaluate(
+            """
+            node => {
+              const image = node.querySelector('img.mermaid-image');
+              const rect = image.getBoundingClientRect();
+              const encoded = image.src.split(',', 2)[1] || '';
+              const parsed = new DOMParser().parseFromString(
+                decodeURIComponent(encoded),
+                'image/svg+xml',
+              );
+              const viewBox = parsed.documentElement.getAttribute('viewBox')
+                ?.trim().split(/[ ,]+/).map(Number) || [];
+              return 16 * Math.min(rect.width / viewBox[2], rect.height / viewBox[3]);
+            }
+            """
+        )
+        assert effective_font_pixels >= 8, contract
 
     for viewport in ({"width": 1024, "height": 768}, {"width": 932, "height": 430}):
         page.set_viewport_size(viewport)
