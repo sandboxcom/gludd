@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "check_plugin_restart_needed.py"
 
@@ -122,6 +123,6 @@ class TestPluginRestartNeeded:
 class TestMakeTargetExists:
     def test_target_in_makefile(self) -> None:
         makefile = Path(__file__).resolve().parents[2] / "Makefile"
-        content = makefile.read_text(encoding="utf-8")
+        content = compose_makefile(makefile)
         assert "check-plugin-restart-needed:" in content
         assert "scripts/check_plugin_restart_needed.py" in content

@@ -7,6 +7,9 @@ plugin denies these reads, the agent cannot onboard and the session deadlocks.
 import json
 import os
 import re
+from pathlib import Path
+
+from scripts.makefile_layout import compose_makefile
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PLUGIN_DIR = os.path.join(PROJECT_ROOT, ".opencode", "plugin")
@@ -186,8 +189,7 @@ class TestPluginToolAwareness:
         """The make list-plugins target must exist and produce output."""
         makefile = os.path.join(PROJECT_ROOT, "Makefile")
         assert os.path.exists(makefile)
-        with open(makefile) as f:
-            content = f.read()
+        content = compose_makefile(Path(makefile))
         assert "list-plugins:" in content, "list-plugins target not in Makefile"
 
     def test_list_plugins_script_exists(self):
