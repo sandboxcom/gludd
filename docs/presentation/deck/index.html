@@ -1075,105 +1075,79 @@ flowchart LR
 <!-- ============================================================ -->
 <section class="feature-sync-slide" data-contract="s83-101-104-concurrency-authority">
   <p class="stage-kicker">S83.101 / S83.104 &middot; database and process authority</p>
-  <h2>Authority must survive concurrency <span class="badge-yellow">INTEGRATED CANDIDATES &middot; EXACT GATE PENDING</span></h2>
-  <div class="diagram-wrap diagram-compact">
-    <div class="mermaid">
-flowchart LR
-  Claim["S83.101<br/>database lease"] --> Exact["owner + token + expiry<br/>exact or reject"] --> Ledger["cost state + outbox"]
-  Owner["S83.104<br/>PID + thread owner"] --> Inode["stable flock inode<br/>one deadline"] --> Git["bounded Git mutation"]
+  <h2>Concurrency authority fails closed <span class="badge-yellow">INTEGRATED CANDIDATES &middot; EXACT GATE PENDING</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>Exact database lease</h3>
+      <ul class="bullets-tight">
+        <li><strong>S83.101:</strong> require the exact owner, positive integer fencing token, and persisted unexpired lease; forged extension and the expiry boundary reject before mutation.</li>
+        <li><strong>Measured:</strong> 110/110 warning-strict at 95.7% line, 88.9% branch, and 94.04% combined coverage.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Bounded repository mutex</h3>
+      <ul class="bullets-tight">
+        <li><strong>S83.104:</strong> bind re-entry to PID + thread, discard fork inheritance, retain one inode, and spend one timeout budget across the in-process and file locks.</li>
+        <li><strong>Measured:</strong> 169/169 warning-strict at 89.0% line, 85.3% branch, and 86.36% combined coverage.</li>
+      </ul>
     </div>
   </div>
-  <ul class="bullets-tight feature-sync-grid">
-    <li><strong>S83.101:</strong> validate the complete <strong>owner + fencing token + persisted expiry</strong>; forged extension and exact-boundary expiry fail before mutation.</li>
-    <li><strong>S83.104:</strong> bind re-entry to <strong>PID + thread ownership</strong>, discard fork inheritance, retain one inode, and claim exclusion rather than FIFO fairness.</li>
-    <li><strong>Lease evidence:</strong> <strong>110/110</strong> warning-strict; 95.7% line, 88.9% branch, 94.04% combined coverage.</li>
-    <li><strong>Mutex evidence:</strong> <strong>169/169</strong> warning-strict; 89.0% line, 85.3% branch, 86.36% combined coverage.</li>
-  </ul>
-  <p class="honest-note">Both implementation slices are integrated candidates, but exact-head gate, CI, and promotion evidence remain pending. Neither task is presented as formally complete.</p>
-  <p class="cite">Code: src/general_ludd/db/azure_cost_repository.py:412-438 &middot; src/general_ludd/git_automation/locking.py:98-113 &middot; Contracts: docs/features/AZURE_COST_LEASE_OWNERSHIP.md:24-47 &middot; docs/features/GIT_REPOSITORY_MUTEX.md:23-44</p>
+  <p class="honest-note">Invalid authority leaves no partial state; rolling replacement and source-only rollback require no schema or service migration. Exact-head gate, CI, and promotion evidence remain pending; neither task is formally closed here.</p>
+  <p class="cite">Code: <a class="source-link" data-source-path="src/general_ludd/db/azure_cost_repository.py" data-source-lines="412-438" href="https://github.com/sandboxcom/gludd/blob/09688ac39586cd67b1175385344cc205b9cfa3f0/src/general_ludd/db/azure_cost_repository.py#L412-L438">azure_cost_repository.py:412-438</a> &middot; <a class="source-link" data-source-path="src/general_ludd/git_automation/locking.py" data-source-lines="98-113" href="https://github.com/sandboxcom/gludd/blob/09688ac39586cd67b1175385344cc205b9cfa3f0/src/general_ludd/git_automation/locking.py#L98-L113">locking.py:98-113</a> &middot; Practitioner evidence: fencing-token, flock/fork, and FIFO reports in the linked feature contracts.</p>
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19f.2: S83.103 CANONICAL WORKTREE CREATION PATHS -->
+<!-- SLIDE 19f.2: S83.103 CANONICAL WORKTREE PATHS -->
 <!-- ============================================================ -->
 <section class="feature-sync-slide" data-contract="s83-103-canonical-worktree-paths">
-  <p class="stage-kicker">Git safety contract &middot; canonical identity to reversible rollout</p>
-  <h2>S83.103 &mdash; Worktree creation paths <span class="badge-yellow">INTEGRATED CANDIDATE &middot; EXACT GATE PENDING</span></h2>
+  <p class="stage-kicker">S83.103 &middot; canonical identity before Git mutation</p>
+  <h2>Worktree paths stay inside the repository <span class="badge-yellow">INTEGRATED CANDIDATE &middot; EXACT GATE PENDING</span></h2>
   <div class="two-col">
     <div>
       <h3>Authorize before mutation</h3>
       <ul class="bullets-tight">
-        <li>Reject a leading dash or <strong>raw .. traversal</strong> before any Git mutation or storage acquisition.</li>
-        <li>Compare resolved filesystem identities so a directory <strong>symlink escape</strong> cannot redirect Git outside the repository boundary.</li>
-        <li>Accept only this repository's state root; a <strong>foreign project namespace</strong> grants no authority.</li>
-        <li>Compatibility stays exact: <code>gludd-worktree-</code> plus <strong>32 lowercase hexadecimal</strong> UUID characters below the canonical platform temp root.</li>
+        <li>Reject a leading dash, raw <code>..</code> traversal, dangling or looping ancestors, symlink escape, and foreign project namespace before Git or storage mutation.</li>
+        <li>Allow only <code>gludd-worktree-</code> plus 32 lowercase hexadecimal UUID characters below the canonical platform temp root.</li>
       </ul>
     </div>
     <div>
-      <h3>Measured and bounded</h3>
+      <h3>Measured and reversible</h3>
       <ul class="bullets-tight">
-        <li><strong>Evidence:</strong> 35/35 warning-strict path + adjacent checks; 421/421 Git repository family; <code>repo.py</code> = 86.00% line + branch aggregate</li>
-        <li><strong>Resources:</strong> bounded in-process checks, one existing bounded Git subprocess, zero network or background workers</li>
+        <li><strong>Evidence:</strong> 35/35 warning-strict path + adjacency checks, 421/421 repository-family checks, and <code>repo.py</code> at 86.00% line + branch coverage.</li>
+        <li><strong>Resources:</strong> bounded checks, one existing bounded Git subprocess, and zero network or background workers.</li>
       </ul>
     </div>
   </div>
-  <p class="honest-note">
-    ZDD uses rolling replacement: old and new workers may overlap because each validates its own request.
-    Invalid paths leave no partial worktree; a source-only rollback needs no schema, data, or service migration.
-    The slice is integrated but not formally complete until exact-head gate, CI, and promotion evidence are recorded.
-  </p>
-  <p class="cite">Code: src/general_ludd/git_automation/repo.py:1119-1189 &middot; Contract: docs/features/GIT_WORKTREE_CREATION_PATHS.md:18-65 &middot; long-lived Stack Overflow worktree and symlink reports</p>
+  <p class="honest-note">Old and new workers validate independently; an invalid path creates no partial worktree, and rollback is source-only. Exact-head gate, CI, and promotion proof remain pending.</p>
+  <p class="cite">Code: <a class="source-link" data-source-path="src/general_ludd/git_automation/repo.py" data-source-lines="1119-1189" href="https://github.com/sandboxcom/gludd/blob/09688ac39586cd67b1175385344cc205b9cfa3f0/src/general_ludd/git_automation/repo.py#L1119-L1189">repo.py:1119-1189</a> &middot; Contract: docs/features/GIT_WORKTREE_CREATION_PATHS.md &middot; Practitioner evidence: long-lived Stack Overflow worktree and symlink reports.</p>
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19f.3: S83.108 + S83.105 CANONICAL BOUNDARIES -->
+<!-- SLIDE 19f.2: S83.108 + S83.105 + S83.113 BOUNDARIES -->
 <!-- ============================================================ -->
 <section class="feature-sync-slide" data-contract="s83-108-105-boundary-evidence">
-  <p class="stage-kicker">S83.108 / S83.105 &middot; inventory identity and runtime dispatch</p>
-  <h2>Canonical identity before action <span class="badge-yellow">S83.105 CANDIDATE ONLY</span></h2>
-  <div class="diagram-wrap diagram-compact">
-    <div class="mermaid">
-flowchart LR
-  Row["S83.108<br/>worktree inventory"] --> Identity["canonical path<br/>or identity=rejected"]
-  Call["S83.105<br/>one executable API"] --> Union["ProjectType | str<br/>or reject before mutation"]
-    </div>
-  </div>
-  <ul class="bullets-tight feature-sync-grid">
-    <li><strong>S83.108:</strong> reject traversal, symlink escape, and duplicate aliases before path-scoped Git; emit <code>identity=rejected</code> or one canonical active marker.</li>
-    <li><strong>Audit evidence:</strong> 33/33 focused checks with 90% aggregate coverage; the control-plane audit adds no daemon, retry loop, or network request.</li>
-    <li><strong>S83.105:</strong> retain one <code>ProjectType | str</code> runtime declaration; unsupported discriminators now raise before registry mutation.</li>
-    <li><strong>Registration evidence:</strong> 60 passed / 1 conditional skip; 170/170 runtime slice; <code>project_types.py</code> at <strong>96.95%</strong> line + branch coverage.</li>
-  </ul>
-  <p class="honest-note"><strong>No v0.1.2 completion claim:</strong> S83.108 is an integrated candidate; S83.105 exists only on the current candidate branch. Exact-head gate, CI, merge, and promotion proof remain pending.</p>
-  <p class="cite">Code: scripts/check_worktree_health.py:39-70 &middot; src/general_ludd/cloud/project_types.py:899-914 &middot; Contracts: docs/features/WORKTREE_AUDIT_IDENTITY_CONTRACT.md:19-43 &middot; docs/features/SOURCE_OVERLOAD_PLACEMENT_CONTRACT.md:9-28</p>
-</section>
-
-<!-- ============================================================ -->
-<!-- SLIDE 19f.4: S83.113 QEMU IMPORT ISOLATION -->
-<!-- ============================================================ -->
-<section data-contract="s83-113-qemu-import-isolation">
-  <p class="stage-kicker">Test-isolation contract &middot; reversible module-graph probes</p>
-  <h2>S83.113 &mdash; QEMU import probes <span class="badge-green">Isolated</span></h2>
+  <p class="stage-kicker">S83.108 / S83.105 / S83.113 &middot; canonical identity and isolated probes</p>
+  <h2>Canonical input, bounded action <span class="badge-yellow">CANDIDATE PROOF PENDING</span></h2>
   <div class="two-col">
     <div>
-      <h3>Restore only what the probe owns</h3>
+      <h3>Inventory and dispatch</h3>
       <ul class="bullets-tight">
-        <li>A <strong>prefix-scoped</strong> <code>sys.modules</code> snapshot removes and restores only the <code>general_ludd</code> family.</li>
-        <li>Saved <strong>parent-to-child bindings</strong> are restored; normally loaded <strong>third-party dependencies stay cached</strong>.</li>
-        <li><strong>QEMU detection semantics remain unchanged</strong>: unsupported hosts and missing binaries still fail closed.</li>
+        <li><strong>S83.108:</strong> reject traversal, symlink escape, duplicate aliases, and Git inventory failure; emit <code>identity=rejected</code>, one canonical active marker, or <code>INCONCLUSIVE</code>.</li>
+        <li><strong>S83.105:</strong> retain one <code>ProjectType | str</code> runtime declaration and reject unsupported discriminators before registry mutation.</li>
+        <li><strong>Measured:</strong> inventory 33/33 at 90% aggregate; registration 60 passed / 1 conditional skip and 170/170 runtime, with <code>project_types.py</code> at 96.95%.</li>
       </ul>
     </div>
-    <div>
-      <h3>Measured and bounded</h3>
+    <div data-contract="s83-113-qemu-import-isolation">
+      <h3>QEMU import probes</h3>
       <ul class="bullets-tight">
-        <li><strong>Tests:</strong> 75/75 warning-strict QEMU + Terraform adjacency</li>
-        <li><strong>Coverage:</strong> QEMU source = 100% line and branch</li>
-        <li><strong>Resources:</strong> process-local snapshot, constant worker count, zero network, files, or services</li>
+        <li>A prefix-scoped <code>sys.modules</code> snapshot restores only <code>general_ludd</code> modules and saved parent-to-child bindings; third-party dependencies stay cached.</li>
+        <li>Unsupported hosts and missing binaries still fail closed; the probe adds no network, file, service, or worker lifecycle.</li>
+        <li><strong>Measured:</strong> 75/75 warning-strict QEMU + Terraform adjacency; QEMU source is 100% line and branch covered.</li>
       </ul>
     </div>
   </div>
-  <p class="honest-note">ZDD has no runtime artifact, API, schema, process, or deployment change; promote with ordered import adjacency and use a source-only test-harness rollback.</p>
-  <p class="cite">Sources: docs/features/QEMU_IMPORT_ISOLATION.md &middot; CPython #27515 and #24029 &middot; Python Help package-alias discussion</p>
+  <p class="honest-note"><strong>No v0.1.2 completion claim:</strong> exact-head gate, CI, merge, and promotion proof remain pending. ZDD adds no runtime artifact or schema; rollback is source-only after canonical inventory and import-adjacency checks.</p>
+  <p class="cite">Code: <a class="source-link" data-source-path="scripts/check_worktree_health.py" data-source-lines="39-70" href="https://github.com/sandboxcom/gludd/blob/09688ac39586cd67b1175385344cc205b9cfa3f0/scripts/check_worktree_health.py#L39-L70">check_worktree_health.py:39-70</a> &middot; <a class="source-link" data-source-path="src/general_ludd/cloud/project_types.py" data-source-lines="899-914" href="https://github.com/sandboxcom/gludd/blob/09688ac39586cd67b1175385344cc205b9cfa3f0/src/general_ludd/cloud/project_types.py#L899-L914">project_types.py:899-914</a> &middot; Practitioner evidence: CPython #27515/#24029, Python Help module aliases, and canonical-path reports in the linked feature contracts.</p>
 </section>
 
 <!-- ============================================================ -->
@@ -1539,7 +1513,7 @@ flowchart LR
 <!-- ============================================================ -->
 <section>
   <h2>Security &mdash; built in, not bolted on</h2>
-  <p>gludd has <strong>three layers of protection</strong> on every action:</p>
+  <p>Every action crosses <strong>three enforceable layers</strong>; no single layer is trusted alone:</p>
   <ul>
     <li><span class="badge-blue">Layer 1</span> <strong>Permissions</strong> &mdash; hard rules on what gludd is allowed to do</li>
     <li><span class="badge-blue">Layer 2</span> <strong>Runtime guards</strong> &mdash; registered blocking plugins watch every action in real time</li>
@@ -1553,25 +1527,7 @@ graph TD
     </div>
   </div>
   <p><strong>Security findings: 14 of 15 fixed</strong> &mdash; one remains open and tracked.</p>
-  <p class="cite">Registered enforcement plugins <span class="badge-green">VERIFIED</span> &middot; hook-runtime suite &middot; 14/15 findings fixed &middot; Source: <code>.opencode/plugin/</code>, <code>docs/audit/</code></p>
-</section>
-
-<!-- ============================================================ -->
-<!-- SLIDE 20b: GUARDRAILS ARCHITECTURE -->
-<!-- ============================================================ -->
-<section>
-  <h2>Guardrails architecture &mdash; 3 enforceable layers</h2>
-  <p>Every agent action passes through <strong>three enforceable layers</strong>. No single layer is trusted alone.</p>
-  <div class="diagram-wrap">
-    <div class="mermaid">
-flowchart LR
-  C["Layer 1 — Config: permission + Make-only gate"]
-  R["Layer 2 — Runtime: blocking hooks"]
-  P["Layer 3 — Prompt: TDD + evidence policy"]
-  C --> R --> P
-    </div>
-  </div>
-  <p class="cite">Source: .opencode/plugin/, opencode.json, tests/unit/test_*_plugin*.py</p>
+  <p class="cite">Registered enforcement plugins <span class="badge-green">VERIFIED</span> &middot; hook-runtime suite &middot; 14/15 findings fixed &middot; Sources: <code>.opencode/plugin/</code>, <code>opencode.json</code>, <code>tests/unit/test_*_plugin*.py</code>, <code>docs/audit/</code></p>
 </section>
 
 <!-- ============================================================ -->

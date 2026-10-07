@@ -42,6 +42,10 @@ EXPECTED_SPLIT_MAPPINGS = {
         "general_ludd.event_loop.loop",
         "tests/unit/test_event_loop_module_split.py",
     ),
+    "general_ludd.models.freellmapi_sync_plans": (
+        "general_ludd.models.freellmapi_sync_verifier",
+        "tests/unit/test_freellmapi_sync_verifier.py",
+    ),
 }
 
 

@@ -11,6 +11,7 @@ from general_ludd.decision_codification.artifact_store import DecisionArtifactSt
 from general_ludd.decision_codification.rollout import (
     AtomicGenerationStore,
     RolloutController,
+    RolloutError,
 )
 from general_ludd.decision_codification.runtime import (
     CodifiedDecision,
@@ -30,6 +31,8 @@ from general_ludd.decision_codification.schema import (
     NormalizationRefusalReason,
     NormalizationRefusalV1,
     OutcomeCountsV1,
+    RolloutStage,
+    VerifiedOutcome,
 )
 
 SHA_A = "sha256:" + "a" * 64
@@ -364,3 +367,50 @@ def test_use_limit_expires_generation_without_double_counting_retries(
     assert isinstance(third, DecisionAbstentionV1)
     assert third.reason is FallbackReason.EXPIRED
     assert controller.use_count(bundle.candidate_digest) == 2
+
+
+def test_application_outcome_is_scope_checked_recorded_and_idempotent(
+    tmp_path: Path,
+) -> None:
+    runtime, _, bundle = _runtime(tmp_path)
+    decision = _lookup(runtime, _context())
+    assert isinstance(decision, CodifiedDecision)
+
+    feedback = runtime.record_application_outcome(
+        project_id="project-1",
+        decision_kind=DecisionKind.REVIEW,
+        candidate_digest=bundle.candidate_digest,
+        application_id=decision.application_id,
+        rollout_stage=RolloutStage.ACTIVE,
+        outcome=VerifiedOutcome.SUCCESS,
+        occurred_at=NOW,
+        terminal_event_id="terminal-1",
+        evidence_digest=SHA_A,
+    )
+    duplicate = runtime.record_application_outcome(
+        project_id="project-1",
+        decision_kind=DecisionKind.REVIEW,
+        candidate_digest=bundle.candidate_digest,
+        application_id=decision.application_id,
+        rollout_stage=RolloutStage.ACTIVE,
+        outcome=VerifiedOutcome.SUCCESS,
+        occurred_at=NOW,
+        terminal_event_id="terminal-1",
+        evidence_digest=SHA_A,
+    )
+
+    assert feedback.recorded is True
+    assert feedback.drift_reason is None
+    assert duplicate.recorded is False
+    with pytest.raises(RolloutError, match="scope does not match"):
+        runtime.record_application_outcome(
+            project_id="project-2",
+            decision_kind=DecisionKind.REVIEW,
+            candidate_digest=bundle.candidate_digest,
+            application_id=decision.application_id,
+            rollout_stage=RolloutStage.ACTIVE,
+            outcome=VerifiedOutcome.SUCCESS,
+            occurred_at=NOW,
+            terminal_event_id="terminal-1",
+            evidence_digest=SHA_A,
+        )

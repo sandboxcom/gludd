@@ -602,7 +602,7 @@ class FrameComparator:
                 val: float = structural_similarity(
                     frame1,
                     frame2,
-                    data_range=frame2.max() - frame2.min() or 255.0,
+                    data_range=float(np.ptp(frame2)) or 255.0,
                     channel_axis=2,
                     win_size=min(7, min(frame1.shape[0], frame1.shape[1]) or 7),
                 )
@@ -614,7 +614,7 @@ class FrameComparator:
         mse = np.mean(diff**2)
         if mse == 0:
             return 1.0
-        max_val = max(frame1.max(), frame2.max(), 1.0)
+        max_val = max(float(np.max(frame1)), float(np.max(frame2)), 1.0)
         return float(1.0 / (1.0 + mse / max_val))
 
     @staticmethod
@@ -628,7 +628,7 @@ class FrameComparator:
         if mse == 0:
             return float("inf")
 
-        max_val = max(frame1.max(), frame2.max(), 255.0)
+        max_val = max(float(np.max(frame1)), float(np.max(frame2)), 255.0)
         import math
 
         return float(20.0 * math.log10(max_val) - 10.0 * math.log10(mse))
