@@ -128,4 +128,4 @@ def test_current_deck_has_the_canonical_section_count() -> None:
     """Keep the global slide-count contract in one presentation-owned test."""
     deck = DECK.read_text(encoding="utf-8")
 
-    assert deck.count("<section") == 61
+    assert deck.count("<section") == 60
