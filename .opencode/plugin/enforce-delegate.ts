@@ -3,7 +3,7 @@ import { createRequire } from "node:module"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { isSubagent, reportAlive, isDisengaged, isDispatchTool, isReadTool, isInPressureRelease, isInInlineRecovery, recordDispatchAttempt, readDispatchOutcomes } from "../lib/shared.ts"
-import { finishDispatch, registerDispatch } from "../lib/dispatch_dedup.ts"
+import { finishDispatch, preflightDispatch, registerDispatch } from "../lib/dispatch_dedup.ts"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 import { HARD_MAX_DISPATCHES, MIN_DISPATCHES, clampDispatchCount } from "../lib/multitask_config.ts"
 const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
@@ -804,14 +804,17 @@ const defaultImpl: HotModule = {
     const tool = input.tool
     const args = output?.args ?? input?.args
     const command = String(args?.command ?? input?.command ?? "")
-    // task/agent/workflow dispatch — model utilization + disk discipline
+    // Dispatch admission is two-phase: reject durable conflicts first, run
+    // independent guards, then persist the owner claim only after they allow.
     if (isDispatchTool(tool)) {
+      const duplicateMsg = preflightDispatch(tool, args)
+      if (duplicateMsg) throw new Error(duplicateMsg)
       const modelMsg = enforceModelUtilization(args)
       if (modelMsg) throw new Error(modelMsg)
       const diskMsg = enforceDiskDiscipline(args)
       if (diskMsg) throw new Error(diskMsg)
-      const duplicateMsg = registerDispatch(tool, args)
-      if (duplicateMsg) throw new Error(duplicateMsg)
+      const registrationMsg = registerDispatch(tool, args)
+      if (registrationMsg) throw new Error(registrationMsg)
     }
     // all tools — force-delegate + mainthread budget
     // (Each of these is FAIL-OPEN internally; they return null on any error.)
