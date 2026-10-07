@@ -123,8 +123,8 @@ class TestGitDirDeepEdgeCases:
 
             assert locking._git_dir(tmpdir) is None
 
-    def test_rev_parse_returns_relative_common_dir(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
+    def test_rev_parse_returns_relative_common_dir(self, tmp_path: Path) -> None:
+        with tempfile.TemporaryDirectory(dir=tmp_path) as tmpdir:
             main_repo = os.path.join(tmpdir, "main")
             os.mkdir(main_repo)
             subprocess.run(["git", "init"], cwd=main_repo, check=True, capture_output=True)
