@@ -5,6 +5,8 @@ import json
 import subprocess
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
 AUDIT_SCRIPT = ROOT / "scripts" / "audit_coverage.py"
@@ -343,24 +345,24 @@ class TestMakefileTargets:
     """Integration-level tests that the Make targets exist and are wired."""
 
     def test_audit_coverage_target_exists(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         assert "audit-coverage:" in content, "Makefile missing audit-coverage target"
 
     def test_gate_audit_target_exists(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         assert "gate-audit:" in content, "Makefile missing gate-audit target"
 
     def test_coverage_json_target_exists(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         assert "coverage-json:" in content, "Makefile missing coverage-json target"
 
     def test_targets_in_phony(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         assert "audit-coverage" in content
         assert "gate-audit" in content
 
     def test_uses_python_variable(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         lines = content.splitlines()
         # Find the audit-coverage target section
         in_target = False
@@ -378,7 +380,7 @@ class TestMakefileTargets:
 
     def test_audit_targets_use_project_environment(self):
         """Coverage must run through uv so imports match the E2E environment."""
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         for target in ("audit-coverage:", "coverage-json:"):
             start = content.index(target)
             recipe = content[start:content.find("\n\n", start)]
@@ -386,7 +388,7 @@ class TestMakefileTargets:
             assert "$(PYTHON) scripts/audit_coverage.py" not in recipe
 
     def test_make_audit_coverage_help_listed(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         assert "audit-coverage" in content
         assert "Run coverage audit" in content
 

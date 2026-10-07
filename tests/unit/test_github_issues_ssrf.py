@@ -22,7 +22,7 @@ class _StubIssueSource(IssueSource):
 
     SOURCE = "stub"
 
-    def fetch(self, spec: dict | None = None) -> list[IssueRecord]:
+    def fetch(self, spec: dict[str, Any] | None = None) -> list[IssueRecord]:
         return []
 
     def write_back(self, external_id: str, transition: Transition) -> bool:
@@ -72,11 +72,13 @@ INTERNAL_BASE_URLS = [
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("base_url", INTERNAL_BASE_URLS)
-def test_internal_base_url_rejected_at_construction(base_url: str) -> None:
+@pytest.mark.parametrize("candidate_url", INTERNAL_BASE_URLS)
+def test_internal_base_url_rejected_at_construction(candidate_url: str) -> None:
     transport = RecordingTransport()
     with pytest.raises(ValueError, match="internal base_url host"):
-        GitHubIssuesSource({"repo": "owner/name", "base_url": base_url}, transport=transport)
+        GitHubIssuesSource(
+            {"repo": "owner/name", "base_url": candidate_url}, transport=transport
+        )
     # The guard fires before any request is attempted.
     assert transport.calls == []
 

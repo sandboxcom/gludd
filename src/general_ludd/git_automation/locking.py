@@ -57,7 +57,7 @@ logger = logging.getLogger(__name__)
 # travels with the repo and is naturally excluded from the work tree.
 _LOCK_FILENAME = "gludd-git.lock"
 
-# How long to wait to acquire the cross-process file lock before giving up.
+# How long to wait across both in-process and cross-process acquisition.
 _DEFAULT_ACQUIRE_TIMEOUT = 60.0
 
 # If the lock file has not been touched in this long, treat the holder as dead
@@ -401,10 +401,10 @@ def git_repo_lock(
     Acquires, in order:
       1. the in-process re-entrant lock for this repo (serializes threads /
          coroutines in THIS process; re-entrant so nested git calls on the same
-         repo in one thread never self-deadlock), then
+         repo in one thread never self-deadlock; bounded by ``timeout``), then
       2. the cross-process flock on ``<repo>/.git/gludd-git.lock`` (serializes
-         across processes; bounded by ``timeout``; crashed ownership is
-         released by kernel descriptor cleanup).
+         across processes; bounded by the time remaining before the same
+         deadline; crashed ownership is released by kernel descriptor cleanup).
 
     The in-process lock is taken FIRST so that, within one process, only one
     thread at a time ever contends for the (more expensive, timeout-bearing)
@@ -420,20 +420,26 @@ def git_repo_lock(
         with git_repo_lock(repo_path):
             subprocess.run(["git", "commit", ...], cwd=repo_path)
 
-    Raises ``TimeoutError`` if the cross-process lock cannot be acquired within
-    ``timeout`` seconds.
+    Raises ``TimeoutError`` if either lock layer cannot be acquired within the
+    single ``timeout`` budget.
     """
     git_dir = _git_dir(repo_path)
     key = _normalize(git_dir) if git_dir is not None else _normalize(repo_path)
     inproc = _get_inprocess_lock(key)
-    inproc.acquire()
+    deadline = time.monotonic() + timeout
+    if not inproc.acquire(timeout=max(0.0, timeout)):
+        raise TimeoutError(
+            f"timed out after {timeout}s acquiring in-process git lock for {key!r} "
+            "(another thread holds the repo)"
+        )
     try:
         if git_dir is None:
             # No .git directory to anchor a cross-process lock; the in-process
             # lock alone still serializes the in-daemon race (the common case).
             yield
         else:
-            with _file_lock(git_dir, key, timeout=timeout, stale_after=stale_after):
+            remaining = max(0.0, deadline - time.monotonic())
+            with _file_lock(git_dir, key, timeout=remaining, stale_after=stale_after):
                 yield
     finally:
         inproc.release()

@@ -12,6 +12,8 @@ from general_ludd.decision_codification.schema import (
     DecisionKind,
     FallbackReason,
     NormalizationRefusalReason,
+    RolloutStage,
+    VerifiedOutcome,
 )
 from general_ludd.decision_codification.service import (
     DecisionCodificationAdapter,
@@ -72,6 +74,10 @@ class _ReviewDecisionAttribution:
     decision_receipt_digest: str | None = None
     fallback_reason: FallbackReason | None = None
     normalization_reason: NormalizationRefusalReason | None = None
+    project_id: str | None = None
+    decision_kind: DecisionKind | None = None
+    rollout_stage: RolloutStage | None = None
+    application_id: str | None = None
 
 
 def is_managed_self_improve_todo(todo: object) -> bool:
@@ -175,6 +181,10 @@ def _attribution_from_resolution(
         normalization_reason=(
             abstention.normalization_reason if abstention is not None else None
         ),
+        project_id=resolution.project_id,
+        decision_kind=resolution.decision_kind,
+        rollout_stage=resolution.rollout_stage,
+        application_id=resolution.application_id,
     )
 
 
@@ -455,6 +465,49 @@ async def _write_review_audit(
         )
 
 
+async def _record_codified_outcome(
+    loop: Any,
+    adapter: DecisionCodificationAdapter,
+    attribution: _ReviewDecisionAttribution | None,
+    *,
+    outcome: VerifiedOutcome,
+) -> None:
+    """Persist content-free live feedback off-loop without changing task outcome."""
+    if (
+        attribution is None
+        or attribution.source is not DecisionResolutionSource.CODIFIED
+        or attribution.project_id is None
+        or attribution.decision_kind is None
+        or attribution.candidate_digest is None
+        or attribution.rollout_stage is None
+        or attribution.application_id is None
+        or attribution.decision_receipt_digest is None
+    ):
+        return
+    recorder = getattr(adapter, "record_application_outcome", None)
+    if not callable(recorder):
+        return
+    try:
+        await loop._bounded_to_thread(
+            recorder,
+            project_id=attribution.project_id,
+            decision_kind=attribution.decision_kind,
+            candidate_digest=attribution.candidate_digest,
+            application_id=attribution.application_id,
+            rollout_stage=attribution.rollout_stage,
+            outcome=outcome,
+            occurred_at=datetime.now(UTC),
+            terminal_event_id=attribution.application_id,
+            evidence_digest=attribution.decision_receipt_digest,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Decision outcome feedback failed closed for %s (%s)",
+            attribution.application_id,
+            type(exc).__name__,
+        )
+
+
 class EventLoopReviewMixin:
     """Provide review orchestration without expanding the scheduling core."""
 
@@ -485,13 +538,23 @@ class EventLoopReviewMixin:
         )
         if not proceed:
             return
-        if not await _apply_review_decision(
+        applied = await _apply_review_decision(
             loop,
             record,
             task_return,
             decision,
             promotion_receipt,
-        ):
+        )
+        if adapter is not None:
+            await _record_codified_outcome(
+                loop,
+                adapter,
+                attribution,
+                outcome=(
+                    VerifiedOutcome.SUCCESS if applied else VerifiedOutcome.FAILURE
+                ),
+            )
+        if not applied:
             return
         await _write_review_audit(
             loop,

@@ -162,7 +162,7 @@ def _decorated_node_docstring(file_path: Path, marker_line: int) -> str:
 # ── 1. Marker registration ─────────────────────────────────────────────────
 
 
-def test_01_all_custom_markers_registered():
+def test_01_all_custom_markers_registered() -> None:
     """Every custom marker must be registered in pyproject.toml."""
     registered = _registered_markers()
     builtin = _builtin_markers()
@@ -177,7 +177,7 @@ def test_01_all_custom_markers_registered():
     assert not violations, "\n".join(violations)
 
 
-def test_02_marker_names_are_valid_identifiers():
+def test_02_marker_names_are_valid_identifiers() -> None:
     """Every marker name must be a valid Python identifier."""
     ident_re = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
     violations: list[str] = []
@@ -187,13 +187,13 @@ def test_02_marker_names_are_valid_identifiers():
     assert not violations, "\n".join(violations)
 
 
-def test_03_marker_count_is_reasonable():
+def test_03_marker_count_is_reasonable() -> None:
     """At least 100 marker usages confirms robust scan."""
     data = _collect()
     assert len(data) > 100, f"Expected >100 marker usages, found {len(data)}"
 
 
-def test_04_no_unknown_underscore_prefixed_markers():
+def test_04_no_unknown_underscore_prefixed_markers() -> None:
     """Markers starting with _ are reserved for internal use."""
     violations: list[str] = []
     for path, line_no, name, _full in _collect():
@@ -205,7 +205,7 @@ def test_04_no_unknown_underscore_prefixed_markers():
 # ── 2. xfail audits ─────────────────────────────────────────────────────────
 
 
-def test_05_xfail_always_has_reason():
+def test_05_xfail_always_has_reason() -> None:
     """Every @pytest.mark.xfail must carry a reason= parameter."""
     violations: list[str] = []
     for path, line_no, name, full_text in _collect():
@@ -217,7 +217,7 @@ def test_05_xfail_always_has_reason():
     assert not violations, "\n".join(violations)
 
 
-def test_06_xfail_reason_is_descriptive():
+def test_06_xfail_reason_is_descriptive() -> None:
     """xfail reason must be at least 10 meaningful characters."""
     violations: list[str] = []
     for path, line_no, name, full_text in _collect():
@@ -230,7 +230,7 @@ def test_06_xfail_reason_is_descriptive():
     assert not violations, "\n".join(violations)
 
 
-def test_07_xfail_reason_has_spec_reference():
+def test_07_xfail_reason_has_spec_reference() -> None:
     """xfail reason should reference a spec section, issue, or task code."""
     patterns = [
         r"E\d+",
@@ -265,7 +265,7 @@ def test_07_xfail_reason_has_spec_reference():
     )
 
 
-def test_08_xfail_strict_is_recommended():
+def test_08_xfail_strict_is_recommended() -> None:
     """Every xfail must explicitly state its strict pass/fail semantics."""
     violations: list[str] = []
     for path, line_no, name, full_text in _collect():
@@ -282,7 +282,7 @@ def test_08_xfail_strict_is_recommended():
 # ── 3. skip / skipif audits ─────────────────────────────────────────────────
 
 
-def test_09_skip_always_has_reason():
+def test_09_skip_always_has_reason() -> None:
     """Every @pytest.mark.skip must carry a reason."""
     violations: list[str] = []
     for path, line_no, name, full_text in _collect():
@@ -296,7 +296,7 @@ def test_09_skip_always_has_reason():
     assert not violations, "\n".join(violations)
 
 
-def test_10_skipif_always_has_reason():
+def test_10_skipif_always_has_reason() -> None:
     """Every @pytest.mark.skipif must carry a reason= parameter."""
     violations: list[str] = []
     for path, line_no, name, full_text in _collect():
@@ -308,7 +308,7 @@ def test_10_skipif_always_has_reason():
     assert not violations, "\n".join(violations)
 
 
-def test_11_skipif_reason_is_descriptive():
+def test_11_skipif_reason_is_descriptive() -> None:
     """skipif reason must be at least 5 characters."""
     violations: list[str] = []
     for path, line_no, name, full_text in _collect():
@@ -324,7 +324,7 @@ def test_11_skipif_reason_is_descriptive():
 # ── 4. Slow test marking ────────────────────────────────────────────────────
 
 
-def test_12_slow_marker_exists_and_registered():
+def test_12_slow_marker_exists_and_registered() -> None:
     """If slow markers are used, they must be registered."""
     registered = _registered_markers()
     uses_slow = any(name == "slow" for _, _, name, _ in _collect())
@@ -332,7 +332,7 @@ def test_12_slow_marker_exists_and_registered():
         assert "slow" in registered, "'slow' marker is used but not registered in pyproject.toml"
 
 
-def test_13_slow_tests_have_explanation():
+def test_13_slow_tests_have_explanation() -> None:
     """slow tests should have an adjacent comment or docstring explaining slowness."""
     violations: list[str] = []
     for path, line_no, name, _full in _collect():
@@ -359,7 +359,7 @@ def test_13_slow_tests_have_explanation():
 # ── 5. timeout marker ───────────────────────────────────────────────────────
 
 
-def test_14_timeout_values_are_reasonable():
+def test_14_timeout_values_are_reasonable() -> None:
     """timeout values must be positive integers <= 7200s (2h)."""
     violations: list[str] = []
     for path, line_no, name, full_text in _collect():
@@ -375,19 +375,36 @@ def test_14_timeout_values_are_reasonable():
     assert not violations, "\n".join(violations)
 
 
-def test_15_pytest_timeout_in_dependencies():
-    """pytest-timeout must be in dev dependencies."""
-    with open(_repo_root() / "pyproject.toml", "rb") as f:
-        cfg = tomllib.load(f)
-    deps = cfg.get("dependency-groups", {}).get("dev", [])
-    has_timeout = any("pytest-timeout" in d for d in deps)
-    assert has_timeout, "pytest-timeout not found in dev dependencies"
+def test_15_pytest_timeout_in_dependencies() -> None:
+    """The dev-test profile must declare and lock exactly one timeout dependency."""
+    profile = _repo_root() / "requirements" / "profiles" / "dev-test"
+    with (profile / "pyproject.toml").open("rb") as stream:
+        profile_project = tomllib.load(stream)
+    timeout_requirements = [
+        dependency
+        for dependency in profile_project["project"]["dependencies"]
+        if dependency.startswith("pytest-timeout")
+    ]
+    assert timeout_requirements == ["pytest-timeout>=2.3.0"], (
+        "dev-test must declare pytest-timeout>=2.3.0 exactly once"
+    )
+
+    with (profile / "uv.lock").open("rb") as stream:
+        profile_lock = tomllib.load(stream)
+    locked_versions = [
+        package["version"]
+        for package in profile_lock["package"]
+        if package["name"] == "pytest-timeout"
+    ]
+    assert locked_versions == ["2.4.0"], (
+        "dev-test must lock exactly one pytest-timeout package at 2.4.0"
+    )
 
 
 # ── 6. deprecated / misused patterns ────────────────────────────────────────
 
 
-def test_16_no_deprecated_marker_apis():
+def test_16_no_deprecated_marker_apis() -> None:
     """No test should use the deprecated pytest1.* or _pytest.* marker API."""
     violations: list[str] = []
     deprecated = re.compile(r"(pytest1|_pytest)\.mark")
@@ -398,7 +415,7 @@ def test_16_no_deprecated_marker_apis():
     assert not violations, "\n".join(violations)
 
 
-def test_17_no_line_level_marker_on_same_line_as_def():
+def test_17_no_line_level_marker_on_same_line_as_def() -> None:
     """@pytest.mark.X should be on its own line, not on the same line as def."""
     violations: list[str] = []
     same_line = re.compile(r"@pytest\.mark\.\w+\(.*\)\s+def\s+")
@@ -412,7 +429,7 @@ def test_17_no_line_level_marker_on_same_line_as_def():
 # ── 7. resource-skips only in appropriate test levels ───────────────────────
 
 
-def test_18_requires_slurm_not_in_unit_tests():
+def test_18_requires_slurm_not_in_unit_tests() -> None:
     """requires_slurm should only be used in integration or e2e tests."""
     violations: list[str] = []
     for path, _, name, _full in _collect():
@@ -424,7 +441,7 @@ def test_18_requires_slurm_not_in_unit_tests():
     assert not violations, "\n".join(violations)
 
 
-def test_19_requires_postgres_not_in_unit_tests():
+def test_19_requires_postgres_not_in_unit_tests() -> None:
     """requires_postgres should only be used in integration or e2e tests."""
     violations: list[str] = []
     for path, _, name, _full in _collect():
@@ -436,7 +453,7 @@ def test_19_requires_postgres_not_in_unit_tests():
     assert not violations, "\n".join(violations)
 
 
-def test_20_e2e_marker_used_in_e2e_tests():
+def test_20_e2e_marker_used_in_e2e_tests() -> None:
     """At least some tests in tests/e2e/ use the e2e marker."""
     e2e_dir = _repo_root() / "tests" / "e2e"
     if not e2e_dir.is_dir():

@@ -6,19 +6,21 @@ import os
 import subprocess
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 _ROOT = Path(__file__).resolve().parents[2]
 _MAKEFILE = _ROOT / "Makefile"
 
 
 def _guard_block() -> str:
-    content = _MAKEFILE.read_text(encoding="utf-8")
+    content = compose_makefile(_MAKEFILE)
     return content.split("_disk-usage-guard:", 1)[1].split(
         "check-worktree-staleness:", 1
     )[0]
 
 
 def test_disk_guard_uses_absolute_headroom_without_bypass() -> None:
-    content = _MAKEFILE.read_text(encoding="utf-8")
+    content = compose_makefile(_MAKEFILE)
     block = _guard_block()
 
     assert "DISK_MIN_FREE_GIB ?= 8" in content
@@ -42,6 +44,8 @@ def test_disk_guard_accepts_sufficient_headroom() -> None:
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "available_gib=" in result.stdout
+    assert "available_bytes=" in result.stdout
+    assert "required_bytes=" in result.stdout
 
 
 def test_disk_guard_fails_closed_below_required_headroom() -> None:

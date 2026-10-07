@@ -7,13 +7,15 @@ import sys
 import threading
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 STREAM_RUNNER = ROOT / "scripts" / "stream_command.py"
 
 
 def _gate_refresh_body() -> str:
-    text = MAKEFILE.read_text(encoding="utf-8")
+    text = compose_makefile(MAKEFILE)
     return text.split("_gate-refresh-body:", 1)[1].split("\n\n", 1)[0]
 
 

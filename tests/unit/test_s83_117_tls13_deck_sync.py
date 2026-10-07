@@ -48,7 +48,7 @@ def test_task_closeout_names_the_landed_tls13_evidence() -> None:
     task = next(
         line
         for line in TASKS.read_text(encoding="utf-8").splitlines()
-        if "S83.117" in line
+        if line.startswith("- [x] S83.117 ")
     )
 
     for marker in (

@@ -1009,7 +1009,7 @@ Primary and normative design sources:
 - [Linux Audit userspace](https://github.com/linux-audit/audit-userspace)
 - [Zeek capture-loss guidance](https://docs.zeek.org/en/current/reference/logs/capture-loss-and-reporter.html)
 - [Suricata EVE JSON](https://docs.suricata.io/en/suricata-8.0.0/output/eve/eve-json-format.html)
-- [Expert expansion domain appendix](../research/EXPERT_EXPANSION_RESEARCH_2026-07-29.md)
+- [Expert expansion domain appendix](../../research/EXPERT_EXPANSION_RESEARCH_2026-07-29.md)
 
 Operational reports and their exact derived regressions are cataloged in the
 companion research document.

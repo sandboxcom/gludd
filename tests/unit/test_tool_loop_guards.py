@@ -23,6 +23,7 @@ import pytest
 from general_ludd.execution.tool_auditor import BadCallSituation
 from general_ludd.execution.tool_loop import ToolCallLoop, ToolLoopExhausted
 from general_ludd.mcp.registry import MCPTool, MCPToolRegistry
+from general_ludd.mcp.transport import MCPTransportError
 
 
 # --------------------------------------------------------------------------- #
@@ -71,6 +72,24 @@ def _wiring():
     job.job_id = "JOB-GUARD"
     job.work_type = "analysis"
     return registry, mcp_client, job
+
+
+class TestToolLoopRegistryResolution:
+    """Registry resolution must fail closed for incomplete wiring."""
+
+    def test_missing_registry_refuses_tool_resolution(self) -> None:
+        loop = ToolCallLoop(MagicMock())
+
+        with pytest.raises(MCPTransportError, match="registry unavailable"):
+            loop._resolve_server_id("read_file")
+
+    def test_registered_tool_without_server_id_is_refused(self) -> None:
+        registry = MagicMock()
+        registry.get_tool.return_value = MagicMock(server_id="")
+        loop = ToolCallLoop(MagicMock(), mcp_registry=registry)
+
+        with pytest.raises(MCPTransportError, match="not a registered MCP tool"):
+            loop._resolve_server_id("read_file")
 
 
 # --------------------------------------------------------------------------- #

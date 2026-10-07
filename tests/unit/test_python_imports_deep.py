@@ -270,24 +270,45 @@ def test_isolated_import_restores_saved_parent_child_binding(
     package = importlib.import_module(PKG_NAME)
     infra_name = "general_ludd.infra"
     qemu_name = f"{infra_name}.qemu_detect"
+    infra_child = infra_name.rsplit(".", maxsplit=1)[-1]
+    qemu_child = qemu_name.rsplit(".", maxsplit=1)[-1]
     infra = importlib.import_module(infra_name)
+    qemu = importlib.import_module(qemu_name)
     replacement_infra = ModuleType(infra_name)
     replacement_qemu = ModuleType(qemu_name)
-    monkeypatch.delitem(sys.modules, qemu_name, raising=False)
+    del sys.modules[qemu_name]
 
     def import_with_mutated_parent(module_name: str) -> ModuleType:
         assert module_name == qemu_name
-        monkeypatch.setattr(package, "infra", replacement_infra)
-        monkeypatch.setitem(sys.modules, infra_name, replacement_infra)
-        monkeypatch.setitem(sys.modules, qemu_name, replacement_qemu)
+        setattr(package, infra_child, replacement_infra)
+        sys.modules[infra_name] = replacement_infra
+        sys.modules[qemu_name] = replacement_qemu
         return replacement_qemu
 
-    monkeypatch.setattr(importlib, "import_module", import_with_mutated_parent)
+    try:
+        with monkeypatch.context() as import_patch:
+            import_patch.setattr(importlib, "import_module", import_with_mutated_parent)
+            test_no_circular_import_isolated(SRC_PKG / "infra" / "qemu_detect.py")
 
-    test_no_circular_import_isolated(SRC_PKG / "infra" / "qemu_detect.py")
+        assert sys.modules[infra_name] is infra
+        assert getattr(package, infra_child) is infra
+    finally:
+        sys.modules[infra_name] = infra
+        sys.modules[qemu_name] = qemu
+        setattr(package, infra_child, infra)
+        setattr(infra, qemu_child, qemu)
 
-    assert sys.modules[infra_name] is infra
-    assert package.infra is infra
+
+def test_isolated_import_restoration_keeps_parent_chain_consistent() -> None:
+    """Deferred fixture cleanup must not detach a restored submodule chain."""
+    package = importlib.import_module(PKG_NAME)
+    infra_name = "general_ludd.infra"
+    qemu_name = f"{infra_name}.qemu_detect"
+    infra = importlib.import_module(infra_name)
+    qemu = importlib.import_module(qemu_name)
+
+    assert getattr(package, infra_name.rsplit(".", maxsplit=1)[-1]) is infra
+    assert getattr(infra, qemu_name.rsplit(".", maxsplit=1)[-1]) is qemu
 
 
 # ═══════════════════════════════════════════════════════════════════

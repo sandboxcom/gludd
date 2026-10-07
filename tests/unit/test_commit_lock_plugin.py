@@ -16,6 +16,7 @@ import re
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode/plugin/enforce-commit-lock.ts"
@@ -126,7 +127,7 @@ class TestCommitTargetsList:
 class TestDenyOnHeld:
     """Simulate the deny path: lock file exists, not stale → DENY."""
 
-    @pytest.fixture(scope="class")
+    @pytest.fixture
     def targets(self) -> list[str]:
         return _extract_commit_targets(_helper_source())
 
@@ -238,34 +239,34 @@ class TestStaleBreak:
 class TestMakefileLockTarget:
     def test_commit_lock_acquire_target_exists(self):
         assert MAKEFILE_PATH.exists()
-        makefile = MAKEFILE_PATH.read_text()
+        makefile = compose_makefile(MAKEFILE_PATH)
         assert "_commit-lock-acquire" in makefile, (
             "_commit-lock-acquire target missing from Makefile"
         )
 
     @pytest.mark.parametrize("target", EXPECTED_COMMIT_TARGETS)
     def test_commit_target_has_lock_prereq(self, target):
-        makefile = MAKEFILE_PATH.read_text()
+        makefile = compose_makefile(MAKEFILE_PATH)
         pattern = rf"^{target}:\s+.*_commit-lock-acquire"
         assert re.search(pattern, makefile, re.MULTILINE), (
             f"Target '{target}' missing _commit-lock-acquire prerequisite"
         )
 
     def test_ship_commit_files_target_exists(self):
-        makefile = MAKEFILE_PATH.read_text()
+        makefile = compose_makefile(MAKEFILE_PATH)
         assert "ship-commit-files" in makefile, (
             "ship-commit-files target missing from Makefile"
         )
 
     def test_ship_commit_files_has_lock_prereq(self):
-        makefile = MAKEFILE_PATH.read_text()
+        makefile = compose_makefile(MAKEFILE_PATH)
         pattern = r"^ship-commit-files:\s+_commit-lock-acquire"
         assert re.search(pattern, makefile, re.MULTILINE), (
             "ship-commit-files missing _commit-lock-acquire prereq"
         )
 
     def test_commit_lock_acquire_uses_flock_or_fcntl(self):
-        makefile = MAKEFILE_PATH.read_text()
+        makefile = compose_makefile(MAKEFILE_PATH)
         target_block = re.search(
             r"_commit-lock-acquire:[^\n]*\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
             makefile,

@@ -18,6 +18,7 @@ import re
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
@@ -155,7 +156,7 @@ _MONITORING_TARGETS = {
 
 class TestMakefileMonitoringTargets:
     def test_monitoring_targets_exist(self) -> None:
-        mk_text = MAKEFILE.read_text()
+        mk_text = compose_makefile(MAKEFILE)
         missing: list[str] = []
         for target, description in _MONITORING_TARGETS.items():
             pattern = rf"^\.PHONY:.*\b{target}\b|^{target}:"
@@ -165,37 +166,37 @@ class TestMakefileMonitoringTargets:
 
     def test_watchdog_auto_is_session_start_requirement(self) -> None:
         """Per Z20: make watchdog-auto must be a session-start protocol step."""
-        assert "watchdog-auto" in MAKEFILE.read_text()
+        assert "watchdog-auto" in compose_makefile(MAKEFILE)
 
     def test_task_watchdog_in_makefile(self) -> None:
         """Per T27/Z22: task watchdog must have start/stop/status targets."""
-        mk = MAKEFILE.read_text()
+        mk = compose_makefile(MAKEFILE)
         for name in ("task-watchdog-start", "task-watchdog-stop", "task-watchdog-status"):
             assert name in mk, f"Missing task watchdog target: {name}"
 
     def test_gate_background_has_phase_markers(self) -> None:
         """Per T25: background gate must emit per-phase progress markers."""
-        mk = MAKEFILE.read_text()
+        mk = compose_makefile(MAKEFILE)
         assert "=== GATE PHASE:" in mk, "Gate must emit per-phase progress markers"
 
     def test_gate_status_check_is_read_only(self) -> None:
         """Per G12/Q06: gate-status-check must not modify files or state."""
-        mk = MAKEFILE.read_text()
+        mk = compose_makefile(MAKEFILE)
         assert "gate-status-check" in mk
 
     def test_active_work_status_is_json(self) -> None:
         """active-work-status must produce a JSON snapshot."""
-        mk = MAKEFILE.read_text()
+        mk = compose_makefile(MAKEFILE)
         assert "active-work-status" in mk
 
     def test_ps_targets_separate_concerns(self) -> None:
         """Per AGENTS.md: ps vs ps-gludd are distinct monitoring surfaces."""
-        mk = MAKEFILE.read_text()
+        mk = compose_makefile(MAKEFILE)
         assert "ps:" in mk and "ps-gludd:" in mk
 
     def test_ps_gludd_surfaces_watchdog_daemons_without_pid_files(self) -> None:
         """An orphaned watchdog must remain visible after ownership-file loss."""
-        mk = MAKEFILE.read_text()
+        mk = compose_makefile(MAKEFILE)
         block = mk.split("\nps-gludd:\n", 1)[1].split("\n\n", 1)[0]
 
         assert r"task_watchdog\.py" in block
@@ -203,7 +204,7 @@ class TestMakefileMonitoringTargets:
 
     def test_ps_delegates_to_cross_worktree_owned_process_inventory(self) -> None:
         """The lightweight process census must not hard-code one checkout."""
-        mk = MAKEFILE.read_text()
+        mk = compose_makefile(MAKEFILE)
         block = mk.split("\nps:\n", 1)[1].split("\n\n", 1)[0]
 
         assert "$(SYSTEM_PYTHON) scripts/active_work_status.py --process-table" in block
@@ -328,7 +329,7 @@ class TestGateStatusFile:
 
     def test_gate_publishes_only_running_or_terminal_snapshots(self) -> None:
         """The public status path must never expose a half-written phase snapshot."""
-        makefile = MAKEFILE.read_text()
+        makefile = compose_makefile(MAKEFILE)
         runner = (ROOT / "scripts" / "run_gate.sh").read_text()
 
         assert "GATE_STATUS_FILE=.gate-status.next GATE_FAILED_FILE=.gate-failed bash scripts/run_gate.sh" in makefile
@@ -359,7 +360,7 @@ class TestWatchdogBehavior:
 
     def test_clean_tmp_target_exists(self) -> None:
         """Per watchdog cleanup: make clean-tmp must exist for state file cleanup."""
-        mk = MAKEFILE.read_text()
+        mk = compose_makefile(MAKEFILE)
         assert "clean-tmp:" in mk, "make clean-tmp must exist for watchdog state cleanup"
 
 
@@ -410,15 +411,15 @@ class TestObservabilityModule:
 class TestDiskMonitoring:
     def test_check_disk_target_exists(self) -> None:
         """Per U22: disk usage must be monitored and enforced."""
-        mk = MAKEFILE.read_text()
+        mk = compose_makefile(MAKEFILE)
         assert "check-disk:" in mk, "make check-disk must enforce disk monitoring"
 
     def test_disk_target_exists(self) -> None:
-        mk = MAKEFILE.read_text()
+        mk = compose_makefile(MAKEFILE)
         assert "disk:" in mk, "make disk must report disk usage"
 
     def test_disk_guard_target_exists(self) -> None:
-        mk = MAKEFILE.read_text()
+        mk = compose_makefile(MAKEFILE)
         assert "disk-guard:" in mk, "make disk-guard (auto-clean at threshold) must exist"
 
     def test_check_disk_script_exists(self) -> None:
@@ -434,11 +435,11 @@ class TestDiskMonitoring:
 class TestNoUnseenEvents:
     def test_makefile_has_deploy_and_forget(self) -> None:
         """Per P23: deploy-and-forget must exist for fire-and-forget CI pushes."""
-        assert "deploy-and-forget" in MAKEFILE.read_text()
+        assert "deploy-and-forget" in compose_makefile(MAKEFILE)
 
     def test_makefile_has_ci_verdict_safe(self) -> None:
         """Per P07: CI checks must use ci-verdict-safe for cooldown enforcement."""
-        assert "ci-verdict-safe:" in MAKEFILE.read_text()
+        assert "ci-verdict-safe:" in compose_makefile(MAKEFILE)
 
     def test_ci_cooldown_script_exists(self) -> None:
         script = ROOT / "scripts" / "ci_check_cooldown.py"

@@ -721,7 +721,7 @@ def create_app(
             from general_ludd.dispatch.dynamic_dispatcher import (
                 structured_tool_calls_to_calls,
             )
-            from general_ludd.routers.dispatch import MAX_CALLS_PER_REQUEST
+            from general_ludd.dispatch.limits import MAX_CALLS_PER_REQUEST
 
             calls = structured_tool_calls_to_calls(model_tool_calls)
             if len(calls) > MAX_CALLS_PER_REQUEST:

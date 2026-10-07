@@ -14,6 +14,109 @@ ROOT = Path(__file__).resolve().parents[2]
 LAYOUT_SCRIPT = ROOT / "scripts" / "makefile_layout.py"
 
 
+def _assigned_names(node: ast.Assign | ast.AnnAssign) -> set[str]:
+    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+    return {
+        child.id
+        for target in targets
+        for child in ast.walk(target)
+        if isinstance(child, ast.Name)
+    }
+
+
+def _contains_makefile_literal(node: ast.AST) -> bool:
+    return any(
+        isinstance(child, ast.Constant) and child.value == "Makefile"
+        for child in ast.walk(node)
+    )
+
+
+def _is_makefile_alias_target(name: str, value: ast.AST) -> bool:
+    if name == name.upper() and "MAKEFILE" in name:
+        return True
+    return "makefile" in name.casefold() and any(
+        isinstance(child, ast.Name) and child.id == "ROOT"
+        for child in ast.walk(value)
+    )
+
+
+def _reads_makefile_alias(node: ast.AST, aliases: set[str]) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in aliases
+    if isinstance(node, ast.Attribute):
+        return node.attr in aliases
+    return _contains_makefile_literal(node)
+
+
+def _opens_root_makefile(node: ast.Call, aliases: set[str]) -> bool:
+    if not isinstance(node.func, ast.Name) or node.func.id != "open" or not node.args:
+        return False
+    candidate = node.args[0]
+    if _reads_makefile_alias(candidate, aliases):
+        return any(
+            isinstance(child, ast.Name) and child.id.upper().endswith("ROOT")
+            for child in ast.walk(candidate)
+        )
+    return False
+
+
+def _read_text_wrappers(tree: ast.Module) -> set[str]:
+    wrappers: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        parameters = {argument.arg for argument in node.args.args}
+        if any(
+            isinstance(child, ast.Call)
+            and isinstance(child.func, ast.Attribute)
+            and child.func.attr == "read_text"
+            and isinstance(child.func.value, ast.Name)
+            and child.func.value.id in parameters
+            for child in ast.walk(node)
+        ):
+            wrappers.add(node.name)
+    return wrappers
+
+
+def _logical_makefile_read_violations(path: Path, source: str) -> list[str]:
+    tree = ast.parse(source, filename=str(path))
+    aliases: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+            continue
+        value = node.value
+        assigned = _assigned_names(node)
+        if value is not None and (
+            _contains_makefile_literal(value)
+            or any(
+                isinstance(child, ast.Name) and child.id in aliases
+                for child in ast.walk(value)
+            )
+        ):
+            aliases.update(
+                name for name in assigned if _is_makefile_alias_target(name, value)
+            )
+
+    wrappers = _read_text_wrappers(tree)
+    violations: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        direct_read = (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr == "read_text"
+            and _reads_makefile_alias(node.func.value, aliases)
+        )
+        wrapped_read = (
+            isinstance(node.func, ast.Name)
+            and node.func.id in wrappers
+            and any(_reads_makefile_alias(argument, aliases) for argument in node.args)
+        )
+        if direct_read or wrapped_read or _opens_root_makefile(node, aliases):
+            violations.append(f"{path}:{node.lineno}")
+    return violations
+
+
 def _load_layout() -> ModuleType:
     assert LAYOUT_SCRIPT.is_file(), "Makefile layout helper must exist"
     spec = importlib.util.spec_from_file_location("makefile_layout", LAYOUT_SCRIPT)
@@ -115,19 +218,66 @@ def test_repository_makefile_is_a_small_explicit_fragment_entrypoint() -> None:
 def test_tests_read_the_logical_makefile_instead_of_only_the_entrypoint() -> None:
     violations: list[str] = []
     for path in sorted((ROOT / "tests").rglob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
-                continue
-            if node.func.attr != "read_text":
-                continue
-            if any(
-                isinstance(part, ast.Constant) and part.value == "Makefile"
-                for part in ast.walk(node.func.value)
-            ):
-                violations.append(f"{path.relative_to(ROOT)}:{node.lineno}")
+        violations.extend(
+            _logical_makefile_read_violations(
+                path.relative_to(ROOT),
+                path.read_text(encoding="utf-8"),
+            )
+        )
 
     assert violations == [], (
         "tests must use scripts.makefile_layout.compose_makefile for logical "
         f"Makefile reads: {violations}"
     )
+
+
+def test_logical_makefile_guard_detects_path_alias_reads() -> None:
+    source = '''\
+from pathlib import Path
+MAKEFILE = Path(__file__).parents[1] / "Makefile"
+CONTENT = MAKEFILE.read_text(encoding="utf-8")
+'''
+
+    assert _logical_makefile_read_violations(Path("fixture.py"), source) == [
+        "fixture.py:3",
+    ]
+
+
+def test_logical_makefile_guard_detects_lowercase_path_alias_reads() -> None:
+    source = '''\
+from pathlib import Path
+ROOT = Path(__file__).parents[1]
+makefile = ROOT / "Makefile"
+content = makefile.read_text(encoding="utf-8")
+'''
+
+    assert _logical_makefile_read_violations(Path("fixture.py"), source) == [
+        "fixture.py:4",
+    ]
+
+
+def test_logical_makefile_guard_detects_aliases_passed_to_read_wrappers() -> None:
+    source = '''\
+from pathlib import Path
+MAKEFILE = Path(__file__).parents[1] / "Makefile"
+def _read(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+CONTENT = _read(MAKEFILE)
+'''
+
+    assert _logical_makefile_read_violations(Path("fixture.py"), source) == [
+        "fixture.py:5",
+    ]
+
+
+def test_logical_makefile_guard_detects_builtin_open_of_root_makefile() -> None:
+    source = '''\
+import os
+PROJECT_ROOT = os.path.dirname(__file__)
+with open(os.path.join(PROJECT_ROOT, "Makefile")) as stream:
+    CONTENT = stream.read()
+'''
+
+    assert _logical_makefile_read_violations(Path("fixture.py"), source) == [
+        "fixture.py:3",
+    ]
