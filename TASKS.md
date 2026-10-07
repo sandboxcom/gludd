@@ -697,6 +697,28 @@ and all 237 resource-ownership entries are green. Collection reports
 complete exact-candidate gate, hosted proof, predecessor live proofs,
 publication, deployment, and rollback remain open.
 
+S83.166 terminal hosted-candidate repair continuation: exact candidate
+`caa43002adb087db388325c695538318f9521e45` was held until Build/Release run
+`37684089683`, Pages run `37684089859`, and Molecule run `37684090064` all
+reached terminal evidence, exposing five independent failure families. The
+integrated repair replaces vulnerable mutable CSS/Markdown tooling with
+exact-pinned ESLint CSS and Rumdl plus a mandatory low-threshold Node audit;
+preserves canonical Mermaid state identity behind a compact visible label;
+isolates PyInstaller from Molecule; reviews the exact x86_64 warning graph; and
+declares test-only runtime authentication/project ownership without weakening
+production fail-closed behavior. The combined replay passes 3,247 tests with
+30 expected skips, the real CSS and Markdown checks, zero Node vulnerabilities,
+199 Make contracts, 1,114 targets with zero duplicates, and all five real
+`runtime_validate` actions. Chromium passes 17/17 desktop assertions plus the
+separate compact 4:3 containment assertion. `BUGS.md`,
+`docs/features/HOSTED_CSS_LINT_CONTRACT.md`,
+`docs/features/MARKDOWN_LINT_TARGET.md`,
+`docs/features/BETA4_DUAL_TRACK_CI.md`, and
+`docs/presentation/DESIGN_revealjs_deck.md` retain the practitioner, resource,
+ZDD, and rollback evidence. Atomic evidence commit, replacement exact-SHA
+push, all-workflow hosted proof, the complete exact-candidate gate,
+predecessor live proofs, publication, deployment, and rollback remain open.
+
 ---
 
 ## Session 86 — v0.1.0-beta4 completion (2026-08-20)
