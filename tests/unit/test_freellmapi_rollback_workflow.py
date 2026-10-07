@@ -180,3 +180,99 @@ def test_rollback_generation_is_immutable() -> None:
     assert isinstance(generation, RollbackGeneration)
     with pytest.raises(AttributeError):
         generation.artifacts = ()  # type: ignore[misc]
+
+
+def test_inflight_lease_stays_on_green_while_rollback_routes_new_work_to_blue() -> None:
+    workflow = FreeLLMAPIRollbackWorkflow(max_active_leases=2)
+    blue = workflow.promote(("sha256:" + "1" * 64,))
+    green = workflow.promote(("sha256:" + "2" * 64,))
+    green_lease = "sha256:" + "a" * 64
+    blue_lease = "sha256:" + "b" * 64
+
+    assert workflow.acquire_lease(green_lease) == green
+    assert workflow.rollback() == blue
+    assert workflow.acquire_lease(blue_lease) == blue
+
+    assert workflow.generation_for_lease(green_lease) == green
+    assert workflow.generation_for_lease(blue_lease) == blue
+    assert workflow.active_lease_count == 2
+
+
+def test_leased_old_generation_is_protected_until_exact_release() -> None:
+    workflow = FreeLLMAPIRollbackWorkflow()
+    oldest_artifact = "sha256:" + "1" * 64
+    oldest = workflow.promote((oldest_artifact,))
+    lease_id = "sha256:" + "a" * 64
+    workflow.acquire_lease(lease_id)
+    workflow.promote(("sha256:" + "2" * 64,))
+    workflow.promote(("sha256:" + "3" * 64,))
+
+    assert oldest not in workflow.cleanup_eligible_generations()
+    assert workflow.is_artifact_protected(oldest_artifact) is True
+
+    assert workflow.release_lease(lease_id) == oldest
+    assert workflow.active_lease_count == 0
+    assert oldest in workflow.cleanup_eligible_generations()
+    assert workflow.is_artifact_protected(oldest_artifact) is False
+
+
+def test_lease_registry_is_bounded_and_duplicate_safe() -> None:
+    workflow = FreeLLMAPIRollbackWorkflow(max_active_leases=1)
+    workflow.promote(("sha256:" + "1" * 64,))
+    first = "sha256:" + "a" * 64
+    workflow.acquire_lease(first)
+
+    with pytest.raises(RollbackWorkflowError, match="lease identity already active"):
+        workflow.acquire_lease(first)
+    with pytest.raises(RollbackWorkflowError, match="lease capacity exhausted"):
+        workflow.acquire_lease("sha256:" + "b" * 64)
+
+    assert workflow.active_lease_count == 1
+
+
+@pytest.mark.parametrize(
+    "lease_id",
+    ["", "task-content", "sha256:" + "A" * 64, "sha256:" + "a" * 63],
+)
+def test_lease_identity_is_content_free_and_fail_closed(lease_id: str) -> None:
+    workflow = FreeLLMAPIRollbackWorkflow()
+    workflow.promote(("sha256:" + "1" * 64,))
+
+    with pytest.raises(RollbackWorkflowError, match="lease identity must be a sha256 uri"):
+        workflow.acquire_lease(lease_id)
+
+
+def test_lease_operations_fail_closed_without_exact_ownership() -> None:
+    workflow = FreeLLMAPIRollbackWorkflow()
+    lease_id = "sha256:" + "a" * 64
+
+    with pytest.raises(RollbackWorkflowError, match="no active generation"):
+        workflow.acquire_lease(lease_id)
+    with pytest.raises(RollbackWorkflowError, match="lease identity is not active"):
+        workflow.generation_for_lease(lease_id)
+    with pytest.raises(RollbackWorkflowError, match="lease identity is not active"):
+        workflow.release_lease(lease_id)
+
+
+def test_lease_context_releases_exact_ownership_after_failure() -> None:
+    workflow = FreeLLMAPIRollbackWorkflow()
+    generation = workflow.promote(("sha256:" + "1" * 64,))
+    lease_id = "sha256:" + "a" * 64
+
+    with (
+        pytest.raises(RuntimeError, match="work failed"),
+        workflow.lease(lease_id) as leased_generation,
+    ):
+        assert leased_generation == generation
+        assert workflow.active_lease_count == 1
+        raise RuntimeError("work failed")
+
+    assert workflow.active_lease_count == 0
+    with pytest.raises(RollbackWorkflowError, match="lease identity is not active"):
+        workflow.generation_for_lease(lease_id)
+
+
+@pytest.mark.parametrize("limit", [True, 0, -1])
+def test_lease_limit_must_be_a_positive_integer(limit: int) -> None:
+    with pytest.raises(RollbackWorkflowError, match="max active leases must be positive"):
+        FreeLLMAPIRollbackWorkflow(max_active_leases=limit)
