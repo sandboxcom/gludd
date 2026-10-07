@@ -39,6 +39,8 @@ else:
 DEFAULT_TIMEOUT_SECONDS = 3600.0
 DEFAULT_POLL_SECONDS = 0.2
 DEFAULT_GRACE_SECONDS = 10.0
+WATCH_HEARTBEAT_SECONDS = 30.0
+TERMINATION_HEARTBEAT_SECONDS = 1.0
 STATE_KIND = "gludd_gate_background"
 STATE_SCHEMA_VERSION = 1
 
@@ -309,23 +311,50 @@ def _terminate_session(
     poll_seconds: float = DEFAULT_POLL_SECONDS,
 ) -> None:
     """TERM then KILL only the launched session after exact revalidation."""
+    print(
+        f"[gate-background-watch] phase=terminate-term pid={identity.pid} "
+        f"grace={_format_seconds(grace_seconds)}s",
+        flush=True,
+    )
     _signal_session(identity, signal.SIGTERM)
     deadline = time.monotonic() + max(0.0, grace_seconds)
+    next_heartbeat = time.monotonic()
     while _process_state(identity) == "owned" and time.monotonic() < deadline:
-        time.sleep(min(max(poll_seconds, 0.001), max(0.0, deadline - time.monotonic())))
+        now = time.monotonic()
+        if now >= next_heartbeat:
+            print(
+                f"[gate-background-watch] phase=terminate-wait pid={identity.pid} "
+                f"remaining={max(0.0, deadline - now):.1f}s",
+                flush=True,
+            )
+            next_heartbeat = now + TERMINATION_HEARTBEAT_SECONDS
+        time.sleep(min(max(poll_seconds, 0.001), max(0.0, deadline - now)))
     if _process_state(identity) == "owned":
+        print(
+            f"[gate-background-watch] phase=terminate-kill pid={identity.pid}",
+            flush=True,
+        )
         _signal_session(identity, signal.SIGKILL)
         kill_deadline = time.monotonic() + max(
             poll_seconds, min(grace_seconds, 1.0)
         )
+        next_heartbeat = time.monotonic()
         while (
             _process_state(identity) == "owned"
             and time.monotonic() < kill_deadline
         ):
+            now = time.monotonic()
+            if now >= next_heartbeat:
+                print(
+                    f"[gate-background-watch] phase=kill-wait pid={identity.pid} "
+                    f"remaining={max(0.0, kill_deadline - now):.1f}s",
+                    flush=True,
+                )
+                next_heartbeat = now + TERMINATION_HEARTBEAT_SECONDS
             time.sleep(
                 min(
                     max(poll_seconds, 0.001),
-                    max(0.0, kill_deadline - time.monotonic()),
+                    max(0.0, kill_deadline - now),
                 )
             )
 
@@ -350,7 +379,9 @@ def watch_gate(
     """Watch one exact session until exit or timeout, then terminate and retire."""
     if timeout_seconds <= 0 or poll_seconds <= 0 or grace_seconds <= 0:
         raise ValueError("watcher durations must be positive")
-    deadline = time.monotonic() + timeout_seconds
+    started_at = time.monotonic()
+    deadline = started_at + timeout_seconds
+    next_heartbeat = started_at
     while True:
         outcome = _watch_outcome_when_not_owned(identity)
         if outcome is not None:
@@ -367,9 +398,18 @@ def watch_gate(
             return outcome
         if not _state_is_current(paths, identity):
             return "superseded"
-        remaining = deadline - time.monotonic()
+        now = time.monotonic()
+        remaining = deadline - now
         if remaining <= 0:
             break
+        if now >= next_heartbeat:
+            print(
+                f"[gate-background-watch] heartbeat run_id={identity.run_id} "
+                f"pid={identity.pid} elapsed={max(0.0, now - started_at):.1f}s "
+                f"remaining={remaining:.1f}s",
+                flush=True,
+            )
+            next_heartbeat = now + WATCH_HEARTBEAT_SECONDS
         time.sleep(min(poll_seconds, remaining))
 
     # Serialize the final identity check and signal with launcher admission.

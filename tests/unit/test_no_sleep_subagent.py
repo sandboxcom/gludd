@@ -24,7 +24,6 @@ SCRIPTS_DIR = REPO_ROOT / "scripts"
 
 ALLOWLIST = frozenset({
     # Daemon/watchdog infrastructure — legitimate sleep-in-loop for background polling.
-    "agent_watchdog.py",
     "task_watchdog.py",
     "azure_event_guard.sh",
     # Background test runners supervise child processes and emit visible heartbeats.
@@ -40,6 +39,13 @@ ALLOWLIST = frozenset({
     # Background lifecycle supervisors are signal-stoppable and continuously observable.
     "disk-guard.sh",
     "e2e_supervisor.py",
+    # Exact gate-tree waits have computed attempt ceilings and emit wait heartbeats.
+    "kill_owned_gate.py",
+    # Native Safari driver readiness has a fixed ten-second deadline and one-second heartbeats.
+    "run_presentation_safari_smoke.py",
+    # The gate watcher has an explicit total timeout and periodic log heartbeats;
+    # termination waits have fixed deadlines and the identity retry is capped at 20 attempts.
+    "start_gate_background.py",
     # Release-only CI observers are bounded, emit heartbeats, and remain blocked
     # from delegated-agent prompts by enforce-no-wait.ts.
     "ci_annotations_poll.py",
