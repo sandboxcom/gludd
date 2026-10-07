@@ -21,6 +21,7 @@ import os
 import re
 import subprocess
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -28,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[2]
 _OPENCODE_DIR = Path(os.environ.get("OPENCODE_DIR", str(ROOT / ".opencode"))).resolve()
 PLUGIN_DIR = _OPENCODE_DIR / "plugin"
 PLUGINS_DIR = _OPENCODE_DIR / "plugins"
+LIB_DIR = _OPENCODE_DIR / "lib"
 
 REQUIRE_RE = re.compile(r"\brequire\s*\(")
 
@@ -91,13 +93,20 @@ def _collect_plugin_files() -> list[Path]:
     return files
 
 
+def _collect_runtime_library_files() -> list[Path]:
+    """Collect imported TypeScript implementation files under .opencode/lib."""
+    if not LIB_DIR.is_dir():
+        return []
+    return sorted(f for f in LIB_DIR.rglob("*.ts") if f.is_file())
+
+
 def _plugin_list_from_config() -> list[str]:
     """Read opencode.json and return the plugin path list."""
     cfg_path = ROOT / "opencode.json"
     if not cfg_path.exists():
         return []
     cfg = json.loads(cfg_path.read_text())
-    return cfg.get("plugin", [])
+    return cast(list[str], cfg.get("plugin", []))
 
 
 def _run_node(ts_code: str, timeout: int = 30) -> tuple[int, str, str]:
@@ -148,7 +157,7 @@ class TestPluginFactoryContract:
     wrong api.tool.execute.before(fn) pattern instead of returning Hooks.
     """
 
-    def test_every_plugin_factory_returns_hooks_object(self):
+    def test_every_plugin_factory_returns_hooks_object(self) -> None:
         plugins = _plugin_list_from_config()
         assert plugins, "opencode.json lists no plugins"
 
@@ -206,7 +215,7 @@ class TestPluginFactoryContract:
             "where Hooks is an object with function values."
         )
 
-    def test_all_hook_keys_are_known(self):
+    def test_all_hook_keys_are_known(self) -> None:
         """Every hook key returned by a plugin must be a known hook name from
         the @opencode-ai/plugin Hooks interface. Unknown keys suggest a typo
         or a plugin using an outdated/invalid hook name.
@@ -242,7 +251,7 @@ class TestPluginFactoryContract:
             + f"\n\nKnown hooks: {sorted(KNOWN_HOOK_NAMES)}"
         )
 
-    def test_hooks_do_not_throw_with_empty_inputs(self):
+    def test_hooks_do_not_throw_with_empty_inputs(self) -> None:
         """Each hook function must not throw when called with empty objects.
         Plugins should fail-open (try/catch) — a hook that throws on unexpected
         input will crash opencode at runtime.
@@ -298,7 +307,24 @@ class TestNodeV26ParseCompat:
     contract test above covers that.
     """
 
-    def test_all_plugin_files_parse(self):
+    def test_no_try_inside_catch_in_runtime_libraries(self) -> None:
+        """Imported libraries obey the verifier's nested-try restriction."""
+        try_in_catch = re.compile(
+            r"\bcatch\s*(?:\([^)]*\))?\s*\{[^}]*\btry\b",
+            re.DOTALL,
+        )
+        runtime_files = _collect_runtime_library_files()
+        assert LIB_DIR / "dispatch_dedup.ts" in runtime_files
+        violations = [
+            str(path.relative_to(ROOT))
+            for path in runtime_files
+            if try_in_catch.search(path.read_text())
+        ]
+        assert not violations, (
+            f"try-inside-catch (Node v26 verifier rejection) in: {violations}"
+        )
+
+    def test_all_plugin_files_parse(self) -> None:
         errors: list[str] = []
         for f in _collect_plugin_files():
             result = subprocess.run(
@@ -316,7 +342,7 @@ class TestNodeV26ParseCompat:
             + "\n".join(errors)
         )
 
-    def test_no_require_calls(self):
+    def test_no_require_calls(self) -> None:
         """require() is not available in ESM context (Node v26)."""
         violations: list[str] = []
         for f in _collect_plugin_files():
