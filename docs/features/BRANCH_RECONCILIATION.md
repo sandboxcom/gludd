@@ -137,7 +137,7 @@ any bound fails closed; it never emits a partial queue.
 Immediately before emission, the producer re-resolves the target and performs a
 new bounded, sorted local-head scan. The target must still equal
 `target.head`, and every queued or collapsed canonical ref must still equal its
-recorded `expected_tip`. A deleted, renamed, or moved ref, or any target
+recorded `expected_tip`. A created, deleted, renamed, or moved ref, or any target
 movement, returns structured JSON error output and a nonzero status. This second
 check narrows the gap between the terminal inventory snapshot and queue handoff;
 it is not a repository lock.
@@ -149,6 +149,41 @@ its own preceding step. It also rechecks `expected_tip` immediately before each
 source is used. On interruption, conflict, or external ref movement, the consumer
 stops without skipping ahead and regenerates the read-only queue from current
 refs. The inventory deliberately performs none of those merges itself.
+
+### Resumable reconciliation receipts
+
+Every merge-queue payload includes a versioned `receipt`. Its canonical SHA-256
+digest covers the original target SHA, latest target checkpoint SHA, ordered
+novel queue entries, collapsed ancestor and patch-equivalent groups, and the
+zero-based integration cursor. Queue entries retain all alias refs and exact
+tips, while collapsed groups preserve the branches intentionally excluded from
+integration. The receipt therefore carries the complete no-branch-left-behind
+accounting across an interrupted sequential run.
+
+The CLI flag `--replay-receipt` reads exactly one JSON receipt from bounded
+standard input. It remains compatible with the existing required target, limit,
+and empty-cursor arguments: the target must equal the receipt target, the limit
+must remain within 1 through 100, and other inventory modes are rejected. Input
+is capped at 16,777,216 characters. Invalid JSON, schema drift, noncanonical
+ordering, bound violations, and digest mismatch all return the same content-free
+`invalid reconciliation receipt` error; received JSON, refs, and object IDs are
+never copied into diagnostics.
+
+Replay re-resolves the symbolic target, compares the complete bounded local-ref
+snapshot with every queued and collapsed `(ref, expected_tip)` pair, and checks
+target ancestry from the recorded checkpoint. Target movement is accepted only
+when it makes an ordered prefix beginning at the receipt cursor reachable. A
+later head becoming reachable before the next head fails as out of order, and a
+target move with no newly integrated queue head also fails closed. A successful
+result marks the complete integrated prefix, separately identifies heads newly
+recognized by this replay, emits one `next` item or `null`, and returns a renewed
+receipt with the updated cursor and checkpoint. It never performs the merge.
+
+SHA-256 makes accidental or unreviewed receipt mutation evident; it is not a
+secret-key signature. Automation must retain the receipt as a trusted release
+artifact and must not accept a digest recomputed by an untrusted party. On a
+movement or integrity failure, operators discard the stale handoff and generate
+a new exhaustive queue after repository activity settles.
 
 ## Opt-in semantic head summaries
 
@@ -275,6 +310,15 @@ and every source tip, rechecks them before emission, and gives a later sequentia
 consumer enough evidence to reject stale work rather than merging by a mutable
 branch name alone.
 
+The GitLab practitioner report
+[#229156](https://gitlab.com/gitlab-org/gitlab/-/issues/229156) documents a
+merge-train interruption that lost the prior successful state and forced a
+source-branch change before work could be queued again. Its expected behavior is
+to remember success for the exact current source revision so the train can be
+resumed. Gludd's receipt applies that durable lesson locally: it preserves the
+exact source tips and completed cursor, but reuses them only after target and
+source identities are proven unchanged or advanced by the next ordered merge.
+
 The long-lived GitHub CLI issue
 [#6642](https://github.com/cli/cli/issues/6642), opened in 2022, records that
 remote file-list queries can be expensive and points practitioners to local
@@ -322,6 +366,14 @@ opt-in. Rollback is a normal revert of the queue builder, its focused tests, and
 this documentation; previously emitted payloads can simply be discarded and
 regenerated with the older exhaustive summary. There is no repository repair,
 data migration, service restart, or destructive cleanup step.
+
+Receipt replay has the same ZDD boundary. It reads bounded stdin, resolves refs,
+performs one bounded sorted scan and at most 256 ancestry probes, and writes one
+JSON result; it creates no file, lock, checkout, index entry, commit, merge, ref
+update, deletion, push, worker, daemon, port, or service transition. Rollback is
+a normal revert of receipt creation/replay, its focused tests, and these sections.
+Existing queue payloads can ignore the additive receipt member, and an operator
+can regenerate a fresh exhaustive queue without repository or runtime cleanup.
 
 ## Makefile integrity
 

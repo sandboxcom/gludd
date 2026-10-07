@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+import io
 import json
 import subprocess
 from collections.abc import Sequence
@@ -17,6 +19,7 @@ ANCESTOR_HEAD = "b" * 40
 PATCH_HEAD = "c" * 40
 UNIQUE_HEAD = "d" * 40
 EMPTY_HEAD = "e" * 40
+FINAL_TARGET_HEAD = "f" * 40
 PAGE_HEADS = tuple(character * 40 for character in "1234")
 
 
@@ -785,7 +788,7 @@ def test_merge_queue_fails_closed_when_queued_tip_moves_before_emission() -> Non
         cherries={PAGE_HEADS[0]: f"+ {PAGE_HEADS[0]}\n"},
     )
 
-    with pytest.raises(inventory.InventoryError, match="reconciled tip changed"):
+    with pytest.raises(inventory.InventoryError, match="reconciled refs changed"):
         inventory.collect_merge_queue("development", 2, run=fake)
 
 
@@ -815,7 +818,40 @@ def test_merge_queue_fails_closed_when_collapsed_tip_moves_before_emission() -> 
         cherries={PATCH_HEAD: f"- {PATCH_HEAD}\n"},
     )
 
-    with pytest.raises(inventory.InventoryError, match="reconciled tip changed"):
+    with pytest.raises(inventory.InventoryError, match="reconciled refs changed"):
+        inventory.collect_merge_queue("development", 2, run=fake)
+
+
+def test_merge_queue_receipt_rejects_new_ref_before_emission() -> None:
+    """Receipt sealing cannot omit a branch created after terminal classification."""
+
+    class NewRefBeforeReceiptGit(FakeGit):
+        sorted_scans = 0
+
+        def __call__(
+            self, argv: Sequence[str], cwd: str | None = None
+        ) -> subprocess.CompletedProcess[str]:
+            args = list(argv)
+            if args[1] == "for-each-ref" and "--sort=refname" in args:
+                self.sorted_scans += 1
+                if self.sorted_scans > 1:
+                    original_refs = self.refs
+                    self.refs = [
+                        *self.refs,
+                        ("refs/heads/feature/new-during-handoff", PAGE_HEADS[1]),
+                    ]
+                    try:
+                        return super().__call__(args, cwd)
+                    finally:
+                        self.refs = original_refs
+            return super().__call__(args, cwd)
+
+    fake = NewRefBeforeReceiptGit(
+        refs=[("refs/heads/feature/novel", PAGE_HEADS[0])],
+        cherries={PAGE_HEADS[0]: f"+ {PAGE_HEADS[0]}\n"},
+    )
+
+    with pytest.raises(inventory.InventoryError, match="reconciled refs changed"):
         inventory.collect_merge_queue("development", 2, run=fake)
 
 
@@ -863,6 +899,233 @@ def test_merge_queue_fails_closed_above_output_head_bound(
 
     with pytest.raises(inventory.InventoryError, match="queue head bound"):
         inventory.collect_merge_queue("development", 2, run=fake)
+
+
+def _receipt_fixture() -> tuple[inventory.MergeQueuePayload, FakeGit]:
+    """Return a queue with two ordered novel heads and one collapsed equivalent."""
+    fake = FakeGit(
+        refs=[
+            ("refs/heads/feature/novel-a", PAGE_HEADS[0]),
+            ("refs/heads/feature/novel-b", PAGE_HEADS[1]),
+            ("refs/heads/feature/patch-copy", PATCH_HEAD),
+        ],
+        cherries={
+            PAGE_HEADS[0]: f"+ {PAGE_HEADS[0]}\n",
+            PAGE_HEADS[1]: f"+ {PAGE_HEADS[1]}\n",
+            PATCH_HEAD: f"- {PATCH_HEAD}\n",
+        },
+    )
+    return inventory.collect_merge_queue("development", 2, run=fake), fake
+
+
+def test_merge_queue_receipt_binds_all_reconciliation_identities() -> None:
+    """The initial receipt covers target, order, equivalents, and cursor."""
+    result, _fake = _receipt_fixture()
+
+    body = result["receipt"]["body"]
+    assert body == {
+        "collapsed": result["collapsed"],
+        "cursor": 0,
+        "queue": result["queue"],
+        "target": {
+            "base_head": TARGET_HEAD,
+            "checkpoint_head": TARGET_HEAD,
+            "input": "development",
+            "ref": "refs/heads/development",
+        },
+        "version": 1,
+    }
+    assert result["receipt"]["algorithm"] == "sha256"
+    assert len(result["receipt"]["digest"]) == 64
+
+
+def test_receipt_replay_marks_integrated_prefix_and_returns_next_item() -> None:
+    """Target ancestry advances only the ordered prefix and renews the checkpoint."""
+
+    class IntegratedPrefixGit(FakeGit):
+        target_head = TARGET_HEAD
+        integrated: frozenset[str] = frozenset()
+
+        def __call__(
+            self, argv: Sequence[str], cwd: str | None = None
+        ) -> subprocess.CompletedProcess[str]:
+            args = list(argv)
+            if args[1:4] == ["rev-parse", "--verify", "--quiet"]:
+                self.calls.append(args)
+                return self._result(args, 0, f"{self.target_head}\n")
+            if args[1:3] == ["merge-base", "--is-ancestor"] and (
+                self.target_head != TARGET_HEAD
+            ):
+                self.calls.append(args)
+                return self._result(args, 0 if args[3] in self.integrated else 1)
+            return super().__call__(args, cwd)
+
+    fake = IntegratedPrefixGit(
+        refs=[
+            ("refs/heads/feature/novel-a", PAGE_HEADS[0]),
+            ("refs/heads/feature/novel-b", PAGE_HEADS[1]),
+            ("refs/heads/feature/patch-copy", PATCH_HEAD),
+        ],
+        cherries={
+            PAGE_HEADS[0]: f"+ {PAGE_HEADS[0]}\n",
+            PAGE_HEADS[1]: f"+ {PAGE_HEADS[1]}\n",
+            PATCH_HEAD: f"- {PATCH_HEAD}\n",
+        },
+    )
+    queued = inventory.collect_merge_queue("development", 2, run=fake)
+    fake.target_head = EMPTY_HEAD
+    fake.integrated = frozenset({TARGET_HEAD, PAGE_HEADS[0]})
+
+    replayed = inventory.replay_merge_receipt(queued["receipt"], run=fake)
+
+    assert replayed["mode"] == "reconciliation-receipt-replay"
+    assert replayed["cursor"] == 1
+    assert [entry["expected_tip"] for entry in replayed["integrated"]] == [
+        PAGE_HEADS[0]
+    ]
+    assert [entry["expected_tip"] for entry in replayed["newly_integrated"]] == [
+        PAGE_HEADS[0]
+    ]
+    assert replayed["next"] == queued["queue"][1]
+    assert replayed["receipt"]["body"]["cursor"] == 1
+    assert (
+        replayed["receipt"]["body"]["target"]["checkpoint_head"] == EMPTY_HEAD
+    )
+
+    stable = inventory.replay_merge_receipt(replayed["receipt"], run=fake)
+    assert stable["cursor"] == 1
+    assert stable["next"] == replayed["next"]
+    assert stable["newly_integrated"] == []
+    assert stable["receipt"] == replayed["receipt"]
+
+    fake.target_head = FINAL_TARGET_HEAD
+    fake.integrated = frozenset({EMPTY_HEAD, PAGE_HEADS[0], PAGE_HEADS[1]})
+    completed = inventory.replay_merge_receipt(replayed["receipt"], run=fake)
+    assert completed["cursor"] == 2
+    assert completed["complete"] is True
+    assert completed["next"] is None
+    assert [
+        entry["expected_tip"] for entry in completed["newly_integrated"]
+    ] == [PAGE_HEADS[1]]
+
+
+def test_receipt_replay_fails_closed_on_unaccounted_target_movement() -> None:
+    """A target move must integrate the next recorded novel head."""
+
+    class MovingTargetGit(FakeGit):
+        target_head = TARGET_HEAD
+
+        def __call__(
+            self, argv: Sequence[str], cwd: str | None = None
+        ) -> subprocess.CompletedProcess[str]:
+            args = list(argv)
+            if args[1:4] == ["rev-parse", "--verify", "--quiet"]:
+                self.calls.append(args)
+                return self._result(args, 0, f"{self.target_head}\n")
+            if args[1:3] == ["merge-base", "--is-ancestor"] and (
+                self.target_head != TARGET_HEAD
+            ):
+                self.calls.append(args)
+                return self._result(args, 0 if args[3] == TARGET_HEAD else 1)
+            return super().__call__(args, cwd)
+
+    queued, original = _receipt_fixture()
+    fake = MovingTargetGit(refs=original.refs, cherries=original.cherries)
+    fake.target_head = EMPTY_HEAD
+
+    with pytest.raises(inventory.InventoryError, match="target movement"):
+        inventory.replay_merge_receipt(queued["receipt"], run=fake)
+
+
+@pytest.mark.parametrize("moved_ref_index", [0, 2], ids=("novel", "collapsed"))
+def test_receipt_replay_fails_closed_on_source_movement(moved_ref_index: int) -> None:
+    """Queued and collapsed refs remain exact throughout receipt replay."""
+    queued, fake = _receipt_fixture()
+    ref, _head = fake.refs[moved_ref_index]
+    fake.refs[moved_ref_index] = (ref, EMPTY_HEAD)
+
+    with pytest.raises(inventory.InventoryError, match="source refs changed"):
+        inventory.replay_merge_receipt(queued["receipt"], run=fake)
+
+
+@pytest.mark.parametrize("field", ["target", "queue", "collapsed", "cursor"])
+def test_receipt_replay_rejects_content_tampering(field: str) -> None:
+    """Every state-bearing receipt field participates in its digest."""
+    queued, fake = _receipt_fixture()
+    tampered = copy.deepcopy(queued["receipt"])
+    if field == "target":
+        tampered["body"]["target"]["checkpoint_head"] = EMPTY_HEAD
+    elif field == "queue":
+        tampered["body"]["queue"][0]["expected_tip"] = EMPTY_HEAD
+    elif field == "collapsed":
+        tampered["body"]["collapsed"][0]["expected_tip"] = EMPTY_HEAD
+    else:
+        tampered["body"]["cursor"] = 1
+
+    with pytest.raises(inventory.InventoryError) as error:
+        inventory.replay_merge_receipt(tampered, run=fake)
+    assert str(error.value) == "invalid reconciliation receipt"
+    assert EMPTY_HEAD not in str(error.value)
+
+
+def test_receipt_replay_rejects_out_of_order_integrated_head() -> None:
+    """A later ancestor cannot skip an earlier queued head."""
+
+    class OutOfOrderGit(FakeGit):
+        target_head = TARGET_HEAD
+
+        def __call__(
+            self, argv: Sequence[str], cwd: str | None = None
+        ) -> subprocess.CompletedProcess[str]:
+            args = list(argv)
+            if args[1:4] == ["rev-parse", "--verify", "--quiet"]:
+                self.calls.append(args)
+                return self._result(args, 0, f"{self.target_head}\n")
+            if args[1:3] == ["merge-base", "--is-ancestor"] and (
+                self.target_head != TARGET_HEAD
+            ):
+                self.calls.append(args)
+                integrated = {TARGET_HEAD, PAGE_HEADS[1]}
+                return self._result(args, 0 if args[3] in integrated else 1)
+            return super().__call__(args, cwd)
+
+    queued, original = _receipt_fixture()
+    fake = OutOfOrderGit(refs=original.refs, cherries=original.cherries)
+    fake.target_head = EMPTY_HEAD
+
+    with pytest.raises(inventory.InventoryError, match="out of order"):
+        inventory.replay_merge_receipt(queued["receipt"], run=fake)
+
+
+def test_main_replays_receipt_from_bounded_stdin(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The CLI consumes one receipt and emits the next queue item as JSON."""
+    queued, fake = _receipt_fixture()
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(queued["receipt"])))
+
+    rc = inventory.main(
+        [
+            "--target",
+            "development",
+            "--limit",
+            "2",
+            "--after",
+            "",
+            "--replay-receipt",
+            "--quiet-progress",
+        ],
+        run=fake,
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    payload = json.loads(captured.out)
+    assert payload["mode"] == "reconciliation-receipt-replay"
+    assert payload["cursor"] == 0
+    assert payload["next"]["expected_tip"] == PAGE_HEADS[0]
+    assert captured.err == ""
 
 
 def test_exhaustive_summary_fails_closed_above_scan_bound(
