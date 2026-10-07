@@ -222,6 +222,15 @@ class TestDynamicRegistration:
 
 
 class TestLegacyRegistrationValidation:
+    def test_non_mapping_definition_is_rejected_without_mutation(self) -> None:
+        invalid_definition = cast(dict[str, Any], [])
+        before = dict(_pt.PROJECT_TYPE_REGISTRY)
+
+        with pytest.raises(TypeError, match="definition must be a mapping"):
+            _pt.register_project_type("dynamic_test_type", invalid_definition)
+
+        assert before == _pt.PROJECT_TYPE_REGISTRY
+
     def test_mismatched_type_id_is_rejected_without_mutation(self) -> None:
         definition = _dynamic_definition()
         definition["type_id"] = "different"
