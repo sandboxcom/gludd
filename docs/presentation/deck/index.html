@@ -80,7 +80,9 @@ section[data-contract^="decision-log-codification"] .cite { font-size: 0.6em; li
   .feature-sync-slide .bullets-tight li { font-size: 0.6em; line-height: 1.14; margin-bottom: 2px; }
   .feature-sync-slide .diagram-wrap { margin: 3px auto; padding: 3px; }
   .feature-sync-slide .diagram-wrap .mermaid-image { max-height: 82px !important; max-width: 100% !important; }
-  section[data-contract="s83-101-104-concurrency-authority"] .diagram-wrap .mermaid-image,
+  section[data-contract="s83-101-104-concurrency-authority"] .diagram-wrap .mermaid-image {
+    max-height: 140px !important;
+  }
   section[data-contract="s83-108-105-boundary-evidence"] .diagram-wrap .mermaid-image {
     max-height: 120px !important;
   }
@@ -201,33 +203,7 @@ section[data-contract^="decision-log-codification"] .cite { font-size: 0.6em; li
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 4: ARCHITECTURE AT A GLANCE -->
-<!-- ============================================================ -->
-<section>
-  <h2>Architecture at a glance</h2>
-  <p><span class="path">daemon.py</span> boots a FastAPI process and wires an <strong>EventLoop</strong> (<span class="path">event_loop/loop.py</span>) that ticks forever.</p>
-  <ul class="bullets-tight">
-    <li class="fragment">Every tick runs <strong>25 named phases</strong> in a fixed order across short database sessions and sessionless provider-effect boundaries</li>
-    <li class="fragment">A todo moves through a state machine: BACKLOG &rarr; SCHEDULED/QUEUED &rarr; ACTIVE &rarr; done/reconciled</li>
-    <li class="fragment">Every state change, dispatch, review verdict, and commit is a database row &mdash; nothing lives only in memory</li>
-  </ul>
-  <div class="diagram-wrap">
-    <div class="mermaid">
-graph TD
-  User["You"] -->|POST /api/todos| Daemon["daemon.py + EventLoop - event_loop/loop.py"]
-  Daemon -->|dispatch| Model["Model gateway - models/gateway.py"]
-  Daemon -->|execute| Runner["Ansible / worker - ansible/runner.py, worker/app.py"]
-  Model --> Review["Reviewer - review/reviewer.py"]
-  Runner --> Review
-  Review -->|approve| Git["git_automation/repo.py - commit + push"]
-  Timer["~1s timer"] -.->|next tick| Daemon
-    </div>
-  </div>
-  <p class="cite">Source: src/general_ludd/daemon.py, src/general_ludd/event_loop/loop.py</p>
-</section>
-
-<!-- ============================================================ -->
-<!-- SLIDE 4b: DAEMON OVERVIEW -->
+<!-- SLIDE 4: DAEMON OVERVIEW -->
 <!-- ============================================================ -->
 <section>
   <h2>Daemon overview &mdash; the central orchestrator</h2>
@@ -263,7 +239,7 @@ graph TD
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 4c: PRESENTATION RENDERING RELIABILITY -->
+<!-- SLIDE 4b: PRESENTATION RENDERING RELIABILITY -->
 <!-- ============================================================ -->
 <section data-contract="presentation-browser-resilience">
   <p class="stage-kicker">Documentation reliability &middot; v0.1.2</p>
@@ -1080,74 +1056,93 @@ flowchart LR
     <div>
       <h3>Exact database lease</h3>
       <ul class="bullets-tight">
-        <li><strong>S83.101:</strong> require the exact owner, positive integer fencing token, and persisted unexpired lease; forged extension and the expiry boundary reject before mutation.</li>
+        <li><strong>S83.101:</strong> require owner + fencing token + persisted expiry as one exact lease authority; forged extension and the expiry boundary reject before mutation.</li>
         <li><strong>Measured:</strong> 110/110 warning-strict at 95.7% line, 88.9% branch, and 94.04% combined coverage.</li>
       </ul>
     </div>
     <div>
       <h3>Bounded repository mutex</h3>
       <ul class="bullets-tight">
-        <li><strong>S83.104:</strong> bind re-entry to PID + thread, discard fork inheritance, retain one inode, and spend one timeout budget across the in-process and file locks.</li>
+        <li><strong>S83.104:</strong> bind re-entry to PID + thread ownership, discard fork inheritance, retain one inode, and spend one timeout budget across the in-process and file locks.</li>
         <li><strong>Measured:</strong> 169/169 warning-strict at 89.0% line, 85.3% branch, and 86.36% combined coverage.</li>
       </ul>
     </div>
   </div>
-  <p class="honest-note">Invalid authority leaves no partial state; rolling replacement and source-only rollback require no schema or service migration. Exact-head gate, CI, and promotion evidence remain pending; neither task is formally closed here.</p>
-  <p class="cite">Code: <a class="source-link" data-source-path="src/general_ludd/db/azure_cost_repository.py" data-source-lines="412-438" href="https://github.com/sandboxcom/gludd/blob/09688ac39586cd67b1175385344cc205b9cfa3f0/src/general_ludd/db/azure_cost_repository.py#L412-L438">azure_cost_repository.py:412-438</a> &middot; <a class="source-link" data-source-path="src/general_ludd/git_automation/locking.py" data-source-lines="98-113" href="https://github.com/sandboxcom/gludd/blob/09688ac39586cd67b1175385344cc205b9cfa3f0/src/general_ludd/git_automation/locking.py#L98-L113">locking.py:98-113</a> &middot; Practitioner evidence: fencing-token, flock/fork, and FIFO reports in the linked feature contracts.</p>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart LR
+  A[Acquire exact authority] --> V{Owner, fence, expiry valid?}
+  V -->|yes| M[Permit bounded mutation]
+  V -->|no| R[Reject without partial state]
+    </div>
+  </div>
+  <p class="honest-note">Invalid authority leaves no partial state; rolling replacement and source-only rollback require no schema or service migration. The exact-head gate, CI, and promotion evidence remain pending; neither task is formally closed here.</p>
+  <p class="cite">Code: src/general_ludd/db/azure_cost_repository.py:412-438 &middot; src/general_ludd/git_automation/locking.py:98-113 &middot; Practitioner evidence: fencing-token, flock/fork, and FIFO reports in the linked feature contracts.</p>
 </section>
 
 <!-- ============================================================ -->
 <!-- SLIDE 19f.2: S83.103 CANONICAL WORKTREE PATHS -->
 <!-- ============================================================ -->
 <section class="feature-sync-slide" data-contract="s83-103-canonical-worktree-paths">
-  <p class="stage-kicker">S83.103 &middot; canonical identity before Git mutation</p>
+  <p class="stage-kicker">S83.103 &middot; canonical identity before any Git mutation</p>
   <h2>Worktree paths stay inside the repository <span class="badge-yellow">INTEGRATED CANDIDATE &middot; EXACT GATE PENDING</span></h2>
   <div class="two-col">
     <div>
       <h3>Authorize before mutation</h3>
       <ul class="bullets-tight">
-        <li>Reject a leading dash, raw <code>..</code> traversal, dangling or looping ancestors, symlink escape, and foreign project namespace before Git or storage mutation.</li>
+        <li>Reject a leading dash, raw .. traversal, dangling or looping ancestors, symlink escape, and foreign project namespace before Git or storage mutation.</li>
         <li>Allow only <code>gludd-worktree-</code> plus 32 lowercase hexadecimal UUID characters below the canonical platform temp root.</li>
       </ul>
     </div>
     <div>
       <h3>Measured and reversible</h3>
       <ul class="bullets-tight">
-        <li><strong>Evidence:</strong> 35/35 warning-strict path + adjacency checks, 421/421 repository-family checks, and <code>repo.py</code> at 86.00% line + branch coverage.</li>
+        <li><strong>Evidence:</strong> 35/35 warning-strict path + adjacency checks, 421/421 Git repository family checks, and <code>repo.py</code> at 86.00% line + branch coverage.</li>
         <li><strong>Resources:</strong> bounded checks, one existing bounded Git subprocess, and zero network or background workers.</li>
       </ul>
     </div>
   </div>
-  <p class="honest-note">Old and new workers validate independently; an invalid path creates no partial worktree, and rollback is source-only. Exact-head gate, CI, and promotion proof remain pending.</p>
-  <p class="cite">Code: <a class="source-link" data-source-path="src/general_ludd/git_automation/repo.py" data-source-lines="1119-1189" href="https://github.com/sandboxcom/gludd/blob/09688ac39586cd67b1175385344cc205b9cfa3f0/src/general_ludd/git_automation/repo.py#L1119-L1189">repo.py:1119-1189</a> &middot; Contract: docs/features/GIT_WORKTREE_CREATION_PATHS.md &middot; Practitioner evidence: long-lived Stack Overflow worktree and symlink reports.</p>
+  <p class="honest-note">A rolling replacement lets old and new workers validate independently; an invalid path creates no partial worktree, and source-only rollback remains available. This candidate is not formally complete: exact-head gate, CI, and promotion evidence remain pending.</p>
+  <p class="cite">Code: src/general_ludd/git_automation/repo.py:1119-1189 &middot; Contract: docs/features/GIT_WORKTREE_CREATION_PATHS.md &middot; Practitioner evidence: long-lived Stack Overflow worktree and symlink reports.</p>
 </section>
 
 <!-- ============================================================ -->
-<!-- SLIDE 19f.2: S83.108 + S83.105 + S83.113 BOUNDARIES -->
+<!-- SLIDE 19f.3: S83.108 + S83.105 BOUNDARIES -->
 <!-- ============================================================ -->
 <section class="feature-sync-slide" data-contract="s83-108-105-boundary-evidence">
-  <p class="stage-kicker">S83.108 / S83.105 / S83.113 &middot; canonical identity and isolated probes</p>
-  <h2>Canonical input, bounded action <span class="badge-yellow">CANDIDATE PROOF PENDING</span></h2>
-  <div class="two-col">
-    <div>
-      <h3>Inventory and dispatch</h3>
-      <ul class="bullets-tight">
-        <li><strong>S83.108:</strong> reject traversal, symlink escape, duplicate aliases, and Git inventory failure; emit <code>identity=rejected</code>, one canonical active marker, or <code>INCONCLUSIVE</code>.</li>
-        <li><strong>S83.105:</strong> retain one <code>ProjectType | str</code> runtime declaration and reject unsupported discriminators before registry mutation.</li>
-        <li><strong>Measured:</strong> inventory 33/33 at 90% aggregate; registration 60 passed / 1 conditional skip and 170/170 runtime, with <code>project_types.py</code> at 96.95%.</li>
-      </ul>
-    </div>
-    <div data-contract="s83-113-qemu-import-isolation">
-      <h3>QEMU import probes</h3>
-      <ul class="bullets-tight">
-        <li>A prefix-scoped <code>sys.modules</code> snapshot restores only <code>general_ludd</code> modules and saved parent-to-child bindings; third-party dependencies stay cached.</li>
-        <li>Unsupported hosts and missing binaries still fail closed; the probe adds no network, file, service, or worker lifecycle.</li>
-        <li><strong>Measured:</strong> 75/75 warning-strict QEMU + Terraform adjacency; QEMU source is 100% line and branch covered.</li>
-      </ul>
+  <p class="stage-kicker">S83.108 / S83.105 &middot; canonical identity and bounded dispatch</p>
+  <h2>Canonical input, bounded action <span class="badge-yellow">S83.105 CANDIDATE ONLY</span></h2>
+  <ul class="bullets-tight">
+    <li><strong>S83.108:</strong> reject traversal, symlink escape, duplicate aliases, and Git inventory failure; emit <code>identity=rejected</code>, one canonical active marker, or <code>INCONCLUSIVE</code>.</li>
+    <li><strong>S83.105:</strong> retain one <code>ProjectType | str</code> runtime declaration and reject unsupported discriminators before registry mutation.</li>
+    <li><strong>Measured:</strong> inventory 33/33 at 90% aggregate; registration 60 passed / 1 conditional skip and 170/170 runtime, with <code>project_types.py</code> at 96.95%.</li>
+  </ul>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart LR
+  I[Untrusted identity] --> C{Canonical and supported?}
+  C -->|yes| D[Bounded dispatch]
+  C -->|no| X[Reject before mutation]
     </div>
   </div>
   <p class="honest-note"><strong>No v0.1.2 completion claim:</strong> exact-head gate, CI, merge, and promotion proof remain pending. ZDD adds no runtime artifact or schema; rollback is source-only after canonical inventory and import-adjacency checks.</p>
-  <p class="cite">Code: <a class="source-link" data-source-path="scripts/check_worktree_health.py" data-source-lines="39-70" href="https://github.com/sandboxcom/gludd/blob/09688ac39586cd67b1175385344cc205b9cfa3f0/scripts/check_worktree_health.py#L39-L70">check_worktree_health.py:39-70</a> &middot; <a class="source-link" data-source-path="src/general_ludd/cloud/project_types.py" data-source-lines="899-914" href="https://github.com/sandboxcom/gludd/blob/09688ac39586cd67b1175385344cc205b9cfa3f0/src/general_ludd/cloud/project_types.py#L899-L914">project_types.py:899-914</a> &middot; Practitioner evidence: CPython #27515/#24029, Python Help module aliases, and canonical-path reports in the linked feature contracts.</p>
+  <p class="cite">Code: scripts/check_worktree_health.py:39-70 &middot; src/general_ludd/cloud/project_types.py:899-914 &middot; Practitioner evidence: canonical-path reports in the linked feature contracts.</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- SLIDE 19f.4: S83.113 QEMU IMPORT ISOLATION -->
+<!-- ============================================================ -->
+<section data-contract="s83-113-qemu-import-isolation">
+  <p class="stage-kicker">S83.113 &middot; process-local import isolation</p>
+  <h2>QEMU probes restore only what they own <span class="badge-yellow">INTEGRATED CANDIDATE</span></h2>
+  <ul class="bullets-tight">
+    <li>A prefix-scoped <code>sys.modules</code> snapshot restores only <code>general_ludd</code> modules and saved parent-to-child bindings; third-party dependencies stay cached.</li>
+    <li>QEMU detection semantics remain unchanged, including fail-closed unsupported-host and missing-binary outcomes.</li>
+    <li><strong>Measured:</strong> 75/75 warning-strict QEMU + Terraform adjacency; QEMU source is 100% line and branch covered.</li>
+    <li><strong>Resource boundary:</strong> process-local state only, zero network, and no runtime artifact, API, schema, process, or deployment change.</li>
+  </ul>
+  <p class="honest-note">A source-only test-harness rollback restores the prior probe without migration or downtime.</p>
+  <p class="cite">Contract: docs/features/QEMU_IMPORT_ISOLATION.md &middot; Practitioner evidence: CPython #27515 and Python Help module-alias reports.</p>
 </section>
 
 <!-- ============================================================ -->
@@ -1305,9 +1300,9 @@ flowchart LR
     <ul class="bullets-tight" style="font-size:0.58em;">
       <li>Reclaim only exact stale, inactive, owned npm caches.</li>
       <li>Refuse regular <code>.sock</code> lookalikes and ambiguous or active caches.</li>
-      <li>Recompute the complete tree identity and perform immediate <code>lstat</code> revalidation before deletion.</li>
+      <li>Recheck tree identity with immediate <code>lstat</code>; gate logs allow one non-symlink child, validation-first, without relaxing 90%.</li>
     </ul>
-    <p class="cite">Source: docs/features/GATE_RESOURCE_LIFECYCLE.md</p>
+    <p class="cite">Source: docs/features/GATE_RESOURCE_LIFECYCLE.md &middot; GitHub Community #205363 / #179725</p>
   </div>
   <div data-contract="gate-tree-termination">
     <p><strong>Identity-verified gate-tree termination</strong> <span class="badge-green">47/47 warning-strict</span></p>
@@ -1477,7 +1472,7 @@ flowchart LR
     </div>
   </div>
   <p class="honest-note">Opt-in/default-off. Automatic signed replay capture pending; deployed live-traffic proof pending. No deployed avoided-call claim.</p>
-  <p class="cite">Code: src/general_ludd/event_loop/review_orchestration.py:222-285 &middot; src/general_ludd/decision_codification/durable.py:40-130 &middot; Contract: docs/features/DECISION_LOG_CODIFICATION.md:161-243</p>
+  <p class="cite">Code: src/general_ludd/event_loop/review_orchestration.py:222-285 &middot; src/general_ludd/decision_codification/durable.py:13-47 &middot; src/general_ludd/decision_codification/durable_storage.py:144-183 &middot; Contract: docs/features/DECISION_LOG_CODIFICATION.md:161-243</p>
 </section>
 
 <!-- ============================================================ -->
@@ -1522,8 +1517,8 @@ flowchart LR
   <div class="diagram-wrap">
     <div class="mermaid">
 graph TD
-  L1["Layer 1 - Permissions: hard config rules"] --> L2["Layer 2 - Runtime Guards: manifest-verified hooks"]
-  L2 --> L3["Layer 3 - Prompt Rules: explicit safety practices"]
+  C["Layer 1 — Config: permission + Make-only gate"] --> R["Layer 2 — Runtime: blocking hooks"]
+  R --> P["Layer 3 — Prompt: TDD + evidence policy"]
     </div>
   </div>
   <p><strong>Security findings: 14 of 15 fixed</strong> &mdash; one remains open and tracked.</p>

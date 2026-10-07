@@ -402,6 +402,17 @@ the target exited `3` and retained a content-free
 Safari compatibility remains pending until the operator enables that setting
 and this target passes; Chromium and Playwright WebKit evidence remains valid.
 
+On 2026-10-07 the pinned Playwright WebKit runtime developed a separate host-level
+failure: two isolated runs stalled in the session-scoped launch fixture before
+the first deck assertion, including after the exact pinned installer returned
+success. This matches the macOS 26.5 sandbox deadlock reported by practitioners
+in [`microsoft/playwright#41870`](https://github.com/microsoft/playwright/issues/41870),
+where a forced reinstall and a fresh home do not repair the bundled runtime and
+native Safari remains independent. Gludd therefore does not misclassify the 17
+fixture errors as chart failures or claim WebKit evidence from this host. The
+Chromium acceptance remains valid; native Safari and Playwright WebKit remain
+pending independent passing runs.
+
 At build time, repository `file:line` citations become immutable GitHub blob
 links for the exact 40-character commit. On the loopback-only preview server,
 plain clicks open the same citation in a vendored read-only Ace viewer with the
