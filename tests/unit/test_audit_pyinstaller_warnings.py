@@ -7,6 +7,7 @@ import json
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ _BUILD_WORKFLOW = _ROOT / ".github" / "workflows" / "build.yml"
 _MOLECULE_WORKFLOW = _ROOT / ".github" / "workflows" / "molecule.yml"
 _SCRIPT = _ROOT / "scripts" / "audit_pyinstaller_warnings.py"
 _LINUX_POLICY = _ROOT / "config" / "pyinstaller-warning-allowlist-linux.json"
+_DEV_BUILD_LOCK = _ROOT / "requirements" / "profiles" / "dev-build" / "uv.lock"
 _LINUX_BUILDER_DOCKERFILE = _ROOT / "config" / "containers" / "linux-binary.Dockerfile"
 _CONNECTOR_REGISTRY = _ROOT / "src" / "general_ludd" / "connectors" / "registry.py"
 _CLOUD_COMPUTE_SOURCE = (
@@ -228,6 +230,12 @@ def test_every_hosted_linux_warning_graph_uses_one_python_and_locked_profile() -
     assert "Audit Linux PyInstaller warning graph" in build
     assert "Upload Linux PyInstaller warning graph" in build
     assert "Upload Linux PyInstaller warning graph" in molecule
+    assert "PYINSTALLER_VERSION_LINUX=6.20.0" not in build
+    assert (
+        "dependency_profiles.py locked-version --root . --profile dev-build "
+        "--package pyinstaller"
+    ) in build
+    assert 'PYINSTALLER_VERSION_LINUX="$$pyinstaller_version"' in build
 
 
 def test_linux_policy_reviews_current_ghe_x86_64_graph() -> None:
@@ -237,6 +245,22 @@ def test_linux_policy_reviews_current_ghe_x86_64_graph() -> None:
 
     assert "346aa57c8d7ac18ead8c3ddc7d2de4f1660dca8051ae04ba79c13831b9ab5814" in alternates
     assert "837c969e07af0acbc4812ec9e417ef42eb941a9184d9aa1731c402c3df1d11ad" in alternates
+
+
+def test_linux_policy_tracks_locked_pyinstaller_version() -> None:
+    """The reviewed graph must identify the exact locked analyzer version."""
+    policy = json.loads(_LINUX_POLICY.read_text(encoding="utf-8"))
+    lock = tomllib.loads(_DEV_BUILD_LOCK.read_text(encoding="utf-8"))
+    locked_versions = [
+        package["version"]
+        for package in lock["package"]
+        if package["name"] == "pyinstaller"
+    ]
+
+    assert len(locked_versions) == 1
+    assert policy["pyinstaller_version"] == locked_versions[0]
+    makefile = compose_makefile(_MAKEFILE)
+    assert f"PYINSTALLER_VERSION_LINUX ?= {locked_versions[0]}" in makefile
 
 
 def test_linux_policy_pins_hosted_and_container_architectures() -> None:
@@ -271,6 +295,30 @@ def test_linux_policy_does_not_allow_missing_bundled_azure_sdk() -> None:
     ]
 
     assert azure_edges == []
+
+
+def test_linux_policy_pins_current_optional_gcp_billing_edge() -> None:
+    """Only the lazy, optional Cloud Billing root import may be absent."""
+    policy = json.loads(_LINUX_POLICY.read_text(encoding="utf-8"))
+    pricing_edges = [
+        entry
+        for entry in policy["allowed_missing_imports"]
+        if entry["importer"].startswith("general_ludd.pricing_intel")
+    ]
+
+    assert pricing_edges == [
+        {
+            "module": "google",
+            "importer": (
+                "general_ludd.pricing_intel.source_components.cloud_compute"
+            ),
+            "flags": ["delayed", "optional"],
+            "category": "optional-dependency",
+            "evidence": (
+                "https://cloud.google.com/python/docs/reference/cloudbilling/latest"
+            ),
+        }
+    ]
 
 
 def test_exact_reviewed_conditional_and_optional_edges_pass(tmp_path: Path) -> None:
