@@ -905,10 +905,12 @@ def register_project_type(
         if definition is not None:
             raise TypeError("definition is only valid with a string type id")
         resolved = project_type
-    else:
+    elif isinstance(project_type, str):
         if definition is None:
             raise TypeError("legacy registration requires a definition mapping")
         resolved = _legacy_project_type(project_type, definition)
+    else:
+        raise TypeError("project_type must be a ProjectType or string type id")
     PROJECT_TYPE_REGISTRY[resolved.type_id] = resolved
 
 

@@ -1,260 +1,220 @@
 {
-  "version": "0.1.0-beta.2",
-  "git_sha": "1d5ec00",
-  "test_count": 38207,
-  "role_count": 111,
+  "version": "0.1.1",
+  "git_sha": "09688ac",
+  "git_sha_full": "09688ac39586cd67b1175385344cc205b9cfa3f0",
+  "test_count": 119685,
+  "role_count": 127,
   "features": [
     {
-      "name": "Subsystem",
-      "pct": "Status",
-      "evidence": "Detail"
+      "name": "NF.1 \u2014 Chat CLI: session state machine, streaming formatter, multi-model, export (180 tests)",
+      "pct": "\u2713 100%",
+      "evidence": "**PASS** *(file-refs only)*: P1-P8 done; commits db2699da..942c0759"
     },
     {
-      "name": "Enforcement plugins",
-      "pct": "manifest-verified BLOCKING",
-      "evidence": "hook-runtime acceptance passes"
+      "name": "NF.2 \u2014 Unikernel sandbox: Firecracker/GVisor, image builder, VM pool, metrics (280 tests)",
+      "pct": "\u2717 100%",
+      "evidence": "**PENDING** *(file-refs only)*: P1-P7 done; 8 src files, 280 tests; commits db2699da..57c11755"
     },
     {
-      "name": "Terraform",
-      "pct": "18 stacks complete",
-      "evidence": "HTTP state backend, workload-aware deployment profiles"
+      "name": "NF.3 \u2014 Binary RE collection: 8 roles (ghidra, radare2, frida, cyberchef, etc.) + 3 knowledge modules (326+ tests)",
+      "pct": "\u2713 100%",
+      "evidence": "**PASS** *(file-refs only)*: 8 roles, 3 module_utils, molecule/playbooks/binary_re/; commits db2699da..84f94fc6"
     },
     {
-      "name": "Ansible collections",
-      "pct": "4 core collections",
-      "evidence": "agent, security, business, networking"
+      "name": "NF.4 \u2014 Radio engineer collection: 10 roles (antenna design, SDR capture, spectrum scan, APRS decode) + 5 knowledge modules (365+ tests)",
+      "pct": "\u2713 100%",
+      "evidence": "**PASS** *(file-refs only)*: 10 roles, 5 module_utils, ITU models, APRS AX.25 decoder; commits db2699da..384e481e"
     },
     {
-      "name": "Model deployment",
-      "pct": "SearX-based model search",
-      "evidence": "WorkloadType profiles, ansible infra deploy"
+      "name": "NF.5 \u2014 E2E test gen: code_path_analyzer, scenario generator, coverage heatmap, prioritize (62 tests)",
+      "pct": "\u2717 100%",
+      "evidence": "**PENDING** *(file-refs only)*: 5 roles (analyze_code_paths..write_e2e_tests); commits db2699da..eba1c51d"
+    },
+    {
+      "name": "NF.6 \u2014 OS expert collection: 12 roles (Android/iOS/Linux/macOS/Windows) + CIS benchmarking (246+ tests)",
+      "pct": "\u2713 100%",
+      "evidence": "**PASS** *(file-refs only)*: 12 roles, 5 module_utils, 6 connectors, CIS control mapping; commits db2699da..57c11755"
+    },
+    {
+      "name": "NF.7 \u2014 STS tokens: minter, store, narrowing, reviver, revoker, reaper, cascade, quotas, rotator (8 src files, 5 test files)",
+      "pct": "~ 100%",
+      "evidence": "**PARTIAL** *(file-refs only)*: P1-P6 done; alembic migration 035; commits db2699da..d3d740bf"
+    },
+    {
+      "name": "NF.8 \u2014 Multitasking enforcement fix: consecutive non-dispatch counter, hardened dispatch detection (125+ e2e tests)",
+      "pct": "~ 100%",
+      "evidence": "**PARTIAL** *(file-refs only)*: enforce-multitask.ts + enforce-delegate.ts hardened, Node v26 compat; commits 6d45df65, db2699da, 816d7be6"
+    },
+    {
+      "name": "NF.9 \u2014 Language expert collection: 8 roles (encoding detect, font analyze, homoglyph scan, polyglot) + benchmarks (438 tests)",
+      "pct": "\u2713 100%",
+      "evidence": "**PASS** *(file-refs only)*: 8 roles, 5 knowledge modules, performance benchmarks; commits db2699da..57c11755"
+    },
+    {
+      "name": "NF.10 \u2014 enforce-stop.ts false-completion fix: CI+release+gate state detection in work-detection",
+      "pct": "~ 100%",
+      "evidence": "**PARTIAL** *(file-refs only)*: Work-detection extended beyond TASKS.md/ratchet.yml to CI, release, gate; commit 816d7be6"
+    },
+    {
+      "name": "S53.42 \u2014 Governance P1-P6: elections, international relations, legal systems, public finance, borders, civic services (759 tests)",
+      "pct": "~ 100%",
+      "evidence": "**PARTIAL** *(file-refs only)*: Full collection scaffold + module_utils; 759 tests pass; commit 97432526"
+    },
+    {
+      "name": "S53.43 \u2014 Postal delivery collection: address validation, routing, tracking (24 tests)",
+      "pct": "\u2717 100%",
+      "evidence": "**PENDING** *(file-refs only)*: Ansible roles + module_utils; commit 97432526"
+    },
+    {
+      "name": "J.1-J.4 \u2014 HTTP state backend (lock/unlock/get/update), daemon wiring, local-to-HTTP migration, HMAC+OpenBao encryption",
+      "pct": "~ 100%",
+      "evidence": "**PARTIAL** *(file-refs only)*: State integrity with HMAC signatures, at-rest encryption via OpenBao"
+    },
+    {
+      "name": "K.1-K.2 \u2014 Resource-aware scheduling (CPU/mem/GPU) + Ansible infra deploy/destroy with pre-flight validation",
+      "pct": "\u2717 100%",
+      "evidence": "**PENDING** *(file-refs only)*: WorkloadType enum, ModelDeploymentProfile, CLI --workload flag; commit bdb63914"
+    },
+    {
+      "name": "L.1-L.3 \u2014 SearX model discovery, managed server deployment, dynamic model registry (TTL-cached, 65+ tests)",
+      "pct": "~ 100%",
+      "evidence": "**PARTIAL** *(file-refs only)*: SearxModelDiscoverer bridges search\u2192gateway with TTL cache + fallback"
+    },
+    {
+      "name": "D.1 \u2014 Real cloud onboard providers (AWS/GCP/Azure replacing stubs, 94 tests)",
+      "pct": "\u2713 100%",
+      "evidence": "**PASS** *(file-refs only)*: boto3, googleapiclient, azure-mgmt-* wired via get_provider()"
+    },
+    {
+      "name": "D.4 \u2014 DAST driver + findings parser (ZAP-baseline wrapper, 97 tests)",
+      "pct": "~ 100%",
+      "evidence": "**PARTIAL** *(file-refs only)*: DastConfig, DastFinding, DastResult, parse_zap_baseline()"
+    },
+    {
+      "name": "D.5 \u2014 Compute discovery + auto-select (k8s, vSphere, 16 providers, 27 tests)",
+      "pct": "\u2713 100%",
+      "evidence": "**PASS** *(file-refs only)*: DiscoveredResource, ProviderRegistry with auto-select get_cheapest()"
+    },
+    {
+      "name": "D.7.1-D.7.4 \u2014 Pause/resume: PauseController, HibernationController, quiesce, CLI (116 tests)",
+      "pct": "~ 100%",
+      "evidence": "**PARTIAL** *(file-refs only)*: Persist-before-mutate, lock-free is_paused(), durable MAC key"
+    },
+    {
+      "name": "D.10 \u2014 Commit-path file-claim livelock fix (total-order + TTL + backoff, 22 tests)",
+      "pct": "~ 100%",
+      "evidence": "**PARTIAL** *(file-refs only)*: FileClaimRegistry.claim_or_conflict atomic total-order"
+    },
+    {
+      "name": "D.11 \u2014 Subagent orchestration max nesting depth, capability non-escalation, spiral detection (40 tests)",
+      "pct": "\u2717 100%",
+      "evidence": "**PENDING** *(file-refs only)*: Dispatch-rate control loop, spiral detection"
+    },
+    {
+      "name": "D.12 \u2014 Slack connector: outbound notifications + channel history read, SSRF-guarded (67 tests)",
+      "pct": "\u2713 100%",
+      "evidence": "**PASS** *(file-refs only)*: SSRF via _assert_safe_url\u2192is_url_blocked; commit 0cccee7f"
+    },
+    {
+      "name": "D.15 \u2014 Pricing sources static\u2192live: CachedSource with TTL cache + static fallback (52 tests)",
+      "pct": "~ 100%",
+      "evidence": "**PARTIAL** *(file-refs only)*: RunPod/AWS/GCP live sources with TTL cache"
+    },
+    {
+      "name": "D.19 \u2014 Postgres path / multi-worker documentation (561-line plan, 34-migration audit)",
+      "pct": "\u2713 100%",
+      "evidence": "**PASS** *(file-refs only)*: Gated on owner + technical prerequisites; 8-row risk matrix"
+    },
+    {
+      "name": "D.20 \u2014 Dedup/coherence cleanups: 8 duplicate pairs, missing __init__.py, model routing gaps, metric module (15 tests)",
+      "pct": "\u2717 100%",
+      "evidence": "**PENDING** *(file-refs only)*: ParetoRouter fix; commit 5a04fffb"
+    },
+    {
+      "name": "E.1 \u2014 Coverage lifting: fail_under 70\u219285, 60-80 files audited",
+      "pct": "\u2713 100%",
+      "evidence": "**PASS** *(file-refs only)*: fail_under raised to 85; commit 7f166439"
+    },
+    {
+      "name": "E.2 \u2014 E2E audit closure: 150 new e2e tests (auth, STS, adversarial, dispatcher, IPC)",
+      "pct": "\u2717 100%",
+      "evidence": "**PENDING** *(file-refs only)*: 5 new e2e test files, 150 tests total"
+    },
+    {
+      "name": "E.4 \u2014 noqa guardrail 3-layer fix: edit-time hook + behavior-pin test + AGENTS.md rule (79 tests)",
+      "pct": "\u2713 100%",
+      "evidence": "**PASS** *(file-refs only)*: L1 plugin deny, L2 54+25 tests, L3 AGENTS.md section"
+    },
+    {
+      "name": "E.5 \u2014 Plugin leanness: deduplication via shared.ts helpers, ratchet 0 entries, 30,718 collected",
+      "pct": "~ 100%",
+      "evidence": "**PARTIAL** *(file-refs only)*: All 6 enforce-*.ts plugins deduplicated; commits ad2f32fb, 1a225981"
+    },
+    {
+      "name": "E.8 \u2014 Router HTTP layer thin: 202 endpoint-level tests across 9 routers",
+      "pct": "\u2717 100%",
+      "evidence": "**PENDING** *(file-refs only)*: Every router endpoint tested individually"
+    },
+    {
+      "name": "E.10 \u2014 Tick DB session pinned across dispatch gather (17 tests)",
+      "pct": "\u2713 100%",
+      "evidence": "**PASS** *(file-refs only)*: Session commit/close BEFORE dispatch gather"
+    },
+    {
+      "name": "E.15 \u2014 Plugin e2e tests: commit-lock, watchdog, enforce-multitask, hot-reload proxy, clean-tree, enforce-stop (217+ tests)",
+      "pct": "\u2717 100%",
+      "evidence": "**PENDING** *(file-refs only)*: All 13 plugins hot-reload proxied; commits a3a6a237..1a225981"
+    },
+    {
+      "name": "F.1-F.4 \u2014 Terraform QEMU e2e, config wiring, DeploymentManager plan/validate, cross-platform detection (38+ tests)",
+      "pct": "\u2717 100%",
+      "evidence": "**PENDING** *(file-refs only)*: vllm + llamacpp QEMU scenarios; TerraformConfig in UserConfig + CLI"
+    },
+    {
+      "name": "I.1.1-I.1.4 \u2014 BACKLOG findings: process_isolation, secret isolation, capability-lattice bypass, broadcast PSK leak",
+      "pct": "\u2717 100%",
+      "evidence": "**PENDING** *(file-refs only)*: All 4 resolved; commit 9c03fd0d"
+    },
+    {
+      "name": "I.2.1-I.2.11 \u2014 TODO(integration) markers: 9 live pricing fetchers + 2 FileClaimRegistry wiring",
+      "pct": "\u2713 100%",
+      "evidence": "**PASS** *(file-refs only)*: Anthropic, OpenAI, RunPod, Lambda Labs, AWS, GCP, HuggingFace, Z.AI + FileClaimRegistry; commit 9c03fd0d"
+    },
+    {
+      "name": "M.1 \u2014 Root-Cause-Only Fix Policy codified (AGENTS.md + enforce-stop.ts + enforce-make.ts, 3-layer)",
+      "pct": "\u2713 100%",
+      "evidence": "**PASS** *(file-refs only)*: 3-layer codification; 2026-07-14 mandate"
+    },
+    {
+      "name": "A.1-A.9 \u2014 CI fixes, push, release v0.1.0-beta.3 ready, shard matrix (6 shards), test-quality threshold",
+      "pct": "\u2713 100%",
+      "evidence": "**PASS** *(file-refs only)*: CI shard matrix (6 shards), fail_under 85, CI GREEN for v0.1.0-beta.3"
+    },
+    {
+      "name": "S53.7-S53.11 \u2014 Prompt profiles, config audit, README config guide, 54-playbook docs, template docs",
+      "pct": "~ 100%",
+      "evidence": "**PARTIAL** *(file-refs only)*: 6 config files documented, README Configuration Guide section; commits 68da61a1, 0a912a72, 704ed529, d145ccaf"
+    },
+    {
+      "name": "S53.1-S53.3, S53.12-S53.15 \u2014 Binary fixes, smoke tests, functional tests, bundled resources, cross-platform specs",
+      "pct": "\u2713 100%",
+      "evidence": "**PASS** *(file-refs only)*: macOS crash fix, smoke tests on all platforms, 21 verified assets; commits bd92fd8a..10f03137"
+    },
+    {
+      "name": "S53.44-S53.45 \u2014 Stop-prevention codification (5 gaps, 3-layer) + CI check cooldown (machine-enforced)",
+      "pct": "\u2713 100%",
+      "evidence": "**PASS** *(file-refs only)*: 5 anti-pattern gaps fixed, CI check cooldown 600s; commits 05d18f6f, b3878d2c, 6992be7d, ad09cc0a"
+    },
+    {
+      "name": "S53.31-S53.32 \u2014 Agentic memory: embedding store, consolidation cascade, hybrid search (97 tests)",
+      "pct": "\u2713 100%",
+      "evidence": "**PASS** *(file-refs only)*: Procedural + semantic + hybrid search + embedding; commit 97432526"
+    },
+    {
+      "name": "S53.33-S53.34 \u2014 PaaS IAM least-privilege roles (AWS/GCP/Azure) + OPA policies for Terraform/IAM (32 tests)",
+      "pct": "\u2717 100%",
+      "evidence": "**PENDING** *(file-refs only)*: 3 provider IAM files, 4 OPA policy files; commit b4612d1a"
     }
   ],
-  "generated_at": "2026-07-14T07:27:30Z",
-  "game_audit": {
-    "report_generated": "2026-07-14T06:33:02Z",
-    "games": {
-      "snake": {
-        "game_id": "snake",
-        "imported": false,
-        "instantiated": false,
-        "checks_passed": 0,
-        "checks_total": 0,
-        "checks": {},
-        "tokens_in": 0,
-        "tokens_out": 0,
-        "tool_calls": 0,
-        "content_len": 0,
-        "model": "",
-        "phases": {
-          "model_call": 0.0,
-          "extract_code": 0.0,
-          "ast_parse": 0.0,
-          "game_verify": 0.0
-        },
-        "errors": [],
-        "gaps": []
-      },
-      "tetris": {
-        "game_id": "tetris",
-        "imported": false,
-        "instantiated": false,
-        "checks_passed": 0,
-        "checks_total": 0,
-        "checks": {},
-        "tokens_in": 0,
-        "tokens_out": 0,
-        "tool_calls": 0,
-        "content_len": 0,
-        "model": "",
-        "phases": {
-          "model_call": 0.0,
-          "extract_code": 0.0,
-          "ast_parse": 0.0,
-          "game_verify": 0.0
-        },
-        "errors": [],
-        "gaps": []
-      },
-      "checkers": {
-        "game_id": "checkers",
-        "imported": false,
-        "instantiated": false,
-        "checks_passed": 0,
-        "checks_total": 0,
-        "checks": {},
-        "tokens_in": 0,
-        "tokens_out": 0,
-        "tool_calls": 0,
-        "content_len": 0,
-        "model": "",
-        "phases": {
-          "model_call": 0.0,
-          "extract_code": 0.0,
-          "ast_parse": 0.0,
-          "game_verify": 0.0
-        },
-        "errors": [],
-        "gaps": []
-      },
-      "breakout": {
-        "game_id": "breakout",
-        "imported": false,
-        "instantiated": false,
-        "checks_passed": 0,
-        "checks_total": 0,
-        "checks": {},
-        "tokens_in": 0,
-        "tokens_out": 0,
-        "tool_calls": 0,
-        "content_len": 0,
-        "model": "",
-        "phases": {
-          "model_call": 0.0,
-          "extract_code": 0.0,
-          "ast_parse": 0.0,
-          "game_verify": 0.0
-        },
-        "errors": [],
-        "gaps": []
-      },
-      "maze_runner": {
-        "game_id": "maze_runner",
-        "imported": false,
-        "instantiated": false,
-        "checks_passed": 0,
-        "checks_total": 0,
-        "checks": {},
-        "tokens_in": 0,
-        "tokens_out": 0,
-        "tool_calls": 0,
-        "content_len": 0,
-        "model": "",
-        "phases": {
-          "model_call": 0.0,
-          "extract_code": 0.0,
-          "ast_parse": 0.0,
-          "game_verify": 0.0
-        },
-        "errors": [],
-        "gaps": []
-      },
-      "memory_match": {
-        "game_id": "memory_match",
-        "imported": false,
-        "instantiated": false,
-        "checks_passed": 0,
-        "checks_total": 0,
-        "checks": {},
-        "tokens_in": 0,
-        "tokens_out": 0,
-        "tool_calls": 0,
-        "content_len": 0,
-        "model": "",
-        "phases": {
-          "model_call": 0.0,
-          "extract_code": 0.0,
-          "ast_parse": 0.0,
-          "game_verify": 0.0
-        },
-        "errors": [],
-        "gaps": []
-      },
-      "minesweeper": {
-        "game_id": "minesweeper",
-        "imported": false,
-        "instantiated": false,
-        "checks_passed": 0,
-        "checks_total": 0,
-        "checks": {},
-        "tokens_in": 0,
-        "tokens_out": 0,
-        "tool_calls": 0,
-        "content_len": 0,
-        "model": "",
-        "phases": {
-          "model_call": 0.0,
-          "extract_code": 0.0,
-          "ast_parse": 0.0,
-          "game_verify": 0.0
-        },
-        "errors": [],
-        "gaps": []
-      },
-      "skifree": {
-        "game_id": "skifree",
-        "imported": false,
-        "instantiated": false,
-        "checks_passed": 0,
-        "checks_total": 0,
-        "checks": {},
-        "tokens_in": 0,
-        "tokens_out": 0,
-        "tool_calls": 0,
-        "content_len": 0,
-        "model": "",
-        "phases": {
-          "model_call": 0.0,
-          "extract_code": 0.0,
-          "ast_parse": 0.0,
-          "game_verify": 0.0
-        },
-        "errors": [],
-        "gaps": []
-      },
-      "pong": {
-        "game_id": "pong",
-        "imported": false,
-        "instantiated": false,
-        "checks_passed": 0,
-        "checks_total": 0,
-        "checks": {},
-        "tokens_in": 0,
-        "tokens_out": 0,
-        "tool_calls": 0,
-        "content_len": 0,
-        "model": "",
-        "phases": {
-          "model_call": 0.0,
-          "extract_code": 0.0,
-          "ast_parse": 0.0,
-          "game_verify": 0.0
-        },
-        "errors": [],
-        "gaps": []
-      },
-      "word_guesser": {
-        "game_id": "word_guesser",
-        "imported": false,
-        "instantiated": false,
-        "checks_passed": 0,
-        "checks_total": 0,
-        "checks": {},
-        "tokens_in": 0,
-        "tokens_out": 0,
-        "tool_calls": 0,
-        "content_len": 0,
-        "model": "",
-        "phases": {
-          "model_call": 0.0,
-          "extract_code": 0.0,
-          "ast_parse": 0.0,
-          "game_verify": 0.0
-        },
-        "errors": [],
-        "gaps": []
-      }
-    },
-    "summary": {
-      "total_games": 10,
-      "games_imported": 0,
-      "games_fully_verified": 10,
-      "total_tokens_in": 0,
-      "total_tokens_out": 0,
-      "total_latency_ms": 0.0,
-      "total_latency_s": 0.0,
-      "most_tokens": "snake",
-      "most_latency": "snake"
-    }
-  }
+  "generated_at": "2026-10-07T09:03:21Z"
 }
