@@ -714,8 +714,16 @@ separate compact 4:3 containment assertion. `BUGS.md`,
 `docs/features/HOSTED_CSS_LINT_CONTRACT.md`,
 `docs/features/MARKDOWN_LINT_TARGET.md`,
 `docs/features/BETA4_DUAL_TRACK_CI.md`, and
+`docs/features/beta4-dual-track-ci/hosted-molecule-isolation.md`,
 `docs/presentation/DESIGN_revealjs_deck.md` retain the practitioner, resource,
-ZDD, and rollback evidence. Atomic evidence commit, replacement exact-SHA
+ZDD, and rollback evidence; `tests/unit/test_oversized_document_splits.py`
+pins the discoverable split and both file limits. Replacement Build/Release run
+`37692294209` then correctly rejected the 2,556-line combined overview before
+later phases; the failing split contract was extended first, the cohesive
+57-line Molecule record now lives in its linked shard, the overview is 2,499
+lines, and the unchanged full Python lint passes. The original run remains
+active to inventory every sibling failure before any rerun. Atomic repair commit,
+replacement exact-SHA
 push, all-workflow hosted proof, the complete exact-candidate gate,
 predecessor live proofs, publication, deployment, and rollback remain open.
 

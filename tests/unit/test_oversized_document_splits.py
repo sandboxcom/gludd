@@ -9,6 +9,7 @@ ML_SPEC = ROOT / "docs/design/specs/SPEC_ML_AI_EXPERT_AND_SAFE_SELF_IMPROVEMENT.
 ML_CONTINUAL = ML_SPEC.parent / "ml-ai-expert" / "continual-evolution.md"
 BETA4_CI = ROOT / "docs/features/BETA4_DUAL_TRACK_CI.md"
 BETA4_PROMOTION = BETA4_CI.parent / "beta4-dual-track-ci" / "exact-sha-promotion.md"
+BETA4_MOLECULE = BETA4_CI.parent / "beta4-dual-track-ci" / "hosted-molecule-isolation.md"
 INTEROP_SPEC = ROOT / "docs/specs/FEATURE_EXPERT_SYSTEM_INTEROPERABILITY.md"
 INTEROP_EXTENSIONS = INTEROP_SPEC.parent / "expert-system-interoperability" / "domain-extensions.md"
 SPRINT0 = ROOT / "docs/internal/sprint0.md"
@@ -35,16 +36,22 @@ def test_beta4_ci_routes_exact_sha_operations_below_line_limit() -> None:
     """Keep the dual-track overview concise without discarding release evidence."""
     overview = BETA4_CI.read_text(encoding="utf-8")
     promotion = BETA4_PROMOTION.read_text(encoding="utf-8")
+    molecule = BETA4_MOLECULE.read_text(encoding="utf-8")
 
     assert len(overview.splitlines()) < 2_500
     assert "[exact-SHA promotion and release operations](beta4-dual-track-ci/exact-sha-promotion.md)" in overview
+    assert "[hosted Molecule build and runtime isolation](beta4-dual-track-ci/hosted-molecule-isolation.md)" in overview
     for marker in (
         "## Exact-SHA promotion contract (2026-08-31)",
         "### Durable plugin state is explicit test input (2026-09-29)",
     ):
         assert marker not in overview
         assert marker in promotion
+    molecule_marker = "Molecule run `37684090064` exposed two shared-environment assumptions."
+    assert molecule_marker not in overview
+    assert molecule_marker in molecule
     assert len(promotion.splitlines()) < 2_500
+    assert len(molecule.splitlines()) < 2_500
 
 
 def test_interoperability_spec_routes_domain_extensions_below_line_limit() -> None:
