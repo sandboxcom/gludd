@@ -247,7 +247,7 @@ rather than in one sweep. Also add the 4 missing `follow_redirects=False`.
 `169.254.169.254` on call #2 → assert the resolver is called exactly **once**
 and the transport connects to the pinned IP, never the re-resolved name (the old
 code path resolves twice and would connect to the metadata IP); blocked-on-call-
-#1 raises `SSRFError` fail-closed, and `health()` surfaces `ok:false` rather than
+Finding #1 raises `SSRFError` fail-closed, and `health()` surfaces `ok:false` rather than
 raising; size cap enforced via `Content-Length` precheck (body never read) and
 via streamed-abort when no `Content-Length` is present; redaction scrubs
 `Authorization`/`X-Nomad-Token`/`token=` from error messages; a 302 response

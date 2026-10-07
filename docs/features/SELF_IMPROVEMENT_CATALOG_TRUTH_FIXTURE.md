@@ -64,6 +64,16 @@ SHAs, the fixture path, and `SELF_IMPROVE_MAX_ATTEMPTS=2`; callers cannot turn
 the sentinel into a different benchmark through inherited variables. The
 target never tags, releases, deploys, promotes, merges, or changes a daemon.
 
+The two comparison refs are literal arguments in the recursive Make call. The
+catalog-bound aliases used as Azure defaults are also declared with GNU Make's
+`override` directive, but the sentinel does not depend on alias expansion or
+ambient recursive-Make propagation. The executable regression invokes the real
+validate-only target with hostile values for both the public refs and the
+catalog aliases, then requires the rendered plan to retain the pinned baseline
+and reference. Keeping those values visible at the delegation boundary is a
+deliberate audit property; the fixture tests bind both copies to this identity
+table so a partial update fails closed.
+
 ## ZDD and resource lifecycle
 
 This is a zero-downtime acceptance path. Each candidate is prepared in an
@@ -93,6 +103,17 @@ plus the long-lived practitioner reports that motivated complete fixture,
 prompt, runtime, hardware, and protocol identity. This fixture cites that
 source instead of copying research that could drift independently.
 
+The Make-specific boundary has its own long-lived evidence. The
+[GNU Make target-specific variable contract](https://www.gnu.org/software/make/manual/html_node/Target_002dspecific.html)
+states that command-line assignments win unless `override` is used. A
+[2015 practitioner report](https://stackoverflow.com/questions/32087102/command-line-variables-in-makefile-expand-to-weird-values)
+demonstrates that command-line values replace target-specific values, while a
+[2025 recursive-Make report](https://github.com/au-ts/sddf/issues/337)
+documents propagation differences between GNU Make 3.81 and 4.4.1 and the need
+to pass the resolved value explicitly to a sub-Make. The sentinel therefore
+uses both mechanisms intentionally: immutable aliases for shared defaults and
+literal explicit arguments for the recursive benchmark boundary.
+
 ## Validation and rollback
 
 The focused contract covers strict parsing, exact fixture bytes, safe Make
@@ -101,8 +122,22 @@ Repository validation additionally runs the Make target contract checker,
 duplicate-target checker, Python and Markdown lint, and collection check before
 commit.
 
+`config/coverage_self_improve_catalog_truth.ini` is the narrow branch-aware
+coverage owner for this Make delegation boundary. It instruments the Python
+compatibility entry point and follows its real recursive subprocess; it does not
+claim coverage for unrelated scheduler code. The broader canonical
+self-improvement replay remains separate evidence: on 2026-10-06 all 7,404
+selected cases completed as 7,398 passed, five skipped, and one expected
+failure, after which the unchanged audit correctly retained active scheduler
+coverage debt (`event_loop/loop.py` at 71.8% branch coverage and aggregate
+branch coverage at 84.7%). That debt is not hidden, waived, or assigned to this
+fixture repair.
+
 The rollback is an ordinary revert of the single fixture commit. Because the
 wrapper has no deployment or daemon side effects, rollback does not interrupt
-service or rewrite historical model outcomes. Restoring the previous fixture
-commit restores its prior digest stratum; cached artifacts remain subject to
-the normal lease-aware quota owner.
+service or rewrite historical model outcomes. A validate-only invocation
+allocates no model or candidate worktree. A live invocation already in progress
+keeps the refs resolved at admission, completes or fails through the existing
+isolated-worktree teardown, and is not restarted by this Makefile-only change.
+Restoring the previous fixture commit restores its prior digest stratum; cached
+artifacts remain subject to the normal lease-aware quota owner.

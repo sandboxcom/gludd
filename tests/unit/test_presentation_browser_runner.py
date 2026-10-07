@@ -239,14 +239,14 @@ def test_run_plan_executes_both_viewports_with_each_process_bounded(
     ]
 
 
-@pytest.mark.parametrize("browser", ("chromium", "webkit"))
+@pytest.mark.parametrize("browser_engine", ("chromium", "webkit"))
 def test_browser_install_is_exact_and_bounded(
     monkeypatch: pytest.MonkeyPatch,
-    browser: str,
+    browser_engine: str,
 ) -> None:
     """Installation acquires one requested engine and verifies its binary."""
     plan = runner.build_plan(
-        browser=browser,
+        browser=browser_engine,
         browser_root=Path("/tmp/gludd-browser-install-test"),
         output_root=Path("/tmp/gludd-presentation-install-test"),
         timeout_seconds=120,
@@ -264,7 +264,9 @@ def test_browser_install_is_exact_and_bounded(
     monkeypatch.setattr(runner.subprocess, "run", complete)
 
     assert runner.install_browser(plan) == 0
-    assert captured == [(runner.sys.executable, "-m", "playwright", "install", browser)]
+    assert captured == [
+        (runner.sys.executable, "-m", "playwright", "install", browser_engine)
+    ]
     assert verified == [plan]
 
 
