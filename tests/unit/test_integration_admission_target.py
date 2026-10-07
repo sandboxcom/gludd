@@ -31,6 +31,7 @@ def test_integration_admission_is_public_and_fail_fast() -> None:
 
     phases = (
         "worktree-guard",
+        "_dead-code-baseline-refresh",
         "validate-task-ledger",
         "check-task-registration",
         "check-task-integrity",
@@ -49,6 +50,15 @@ def test_integration_admission_is_public_and_fail_fast() -> None:
     assert "MARKDOWNLINT_CONFIG=\"$(MARKDOWNLINT_CONFIG)\"" in stanza
     assert "gate-full" not in stanza
     assert "$(MAKE) --no-print-directory gate" not in stanza
+
+    assert (
+        stanza.index('phase=worktree-guard')
+        < stanza.index('phase=_dead-code-baseline-refresh')
+        < stanza.index('phase=validate-task-ledger')
+    )
+    assert (
+        "$(MAKE) --no-print-directory _dead-code-baseline-refresh;" in stanza
+    )
 
     pre_commit = _target_stanza(makefile, "pre-commit-check")
     assert "$(MAKE) --no-print-directory lint" in pre_commit
@@ -134,6 +144,7 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
     assert "INTEGRATION-ADMISSION: VALIDATE-ONLY" in output
     for phase in (
         "worktree-guard",
+        "_dead-code-baseline-refresh",
         "validate-task-ledger",
         "check-task-registration",
         "check-task-integrity",
@@ -157,12 +168,14 @@ def test_integration_admission_document_records_queue_evidence_and_boundaries() 
         "https://github.com/orgs/community/discussions/43988",
         "https://github.com/orgs/community/discussions/103114",
         "https://github.com/ansible/ansible/issues/74917",
+        "https://stackoverflow.com/questions/12101463/is-there-a-simple-way-to-use-vulture-with-django",
     ):
         assert url in content
     for phrase in (
         "does not replace the full gate",
         "zero-downtime",
         "fail-fast",
+        "exact dead-code baseline parity",
         "PRESENTATION_BROWSER_VALIDATE_ONLY=1",
         "247.53 seconds",
         "43.73 seconds",

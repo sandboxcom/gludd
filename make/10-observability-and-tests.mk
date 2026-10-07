@@ -703,6 +703,7 @@ integration-admission:
 	if [ "$(INTEGRATION_ADMISSION_VALIDATE_ONLY)" = "1" ]; then \
 		for phase in \
 			worktree-guard \
+			_dead-code-baseline-refresh \
 			validate-task-ledger \
 			check-task-registration \
 			check-task-integrity \
@@ -719,6 +720,8 @@ integration-admission:
 	fi; \
 	echo "integration-admission phase=worktree-guard"; \
 	$(MAKE) --no-print-directory worktree-guard; \
+	echo "integration-admission phase=_dead-code-baseline-refresh"; \
+	$(MAKE) --no-print-directory _dead-code-baseline-refresh; \
 	echo "integration-admission phase=validate-task-ledger"; \
 	$(MAKE) --no-print-directory validate-task-ledger; \
 	echo "integration-admission phase=check-task-registration"; \

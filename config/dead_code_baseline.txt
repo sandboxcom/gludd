@@ -247,6 +247,7 @@ src/general_ludd/auth/webauthn.py:build_credential_request_options
 src/general_ludd/auth/webauthn.py:verify_authentication_response
 src/general_ludd/auth/webauthn.py:verify_registration_response
 src/general_ludd/azure/rbac_validator.py:all_known_actions
+src/general_ludd/azure_containerapp_environment_guard.py:verify_environment_protection
 src/general_ludd/business/entity_graph.py:build_graph
 src/general_ludd/chat/daemon_runner.py:DaemonChatRunner
 src/general_ludd/cli_account.py:add_account_subparser

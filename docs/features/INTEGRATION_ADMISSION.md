@@ -18,21 +18,24 @@ hosted checks after integration.
 the first nonzero result:
 
 1. `worktree-guard` binds admission to a clean committed candidate.
-2. `validate-task-ledger`, `check-task-registration`, and
+2. `_dead-code-baseline-refresh` checks exact dead-code baseline parity without
+   rewriting reviewed policy. It names added or stale entries and stops the
+   admission plan before broader metadata, documentation, or quality work.
+3. `validate-task-ledger`, `check-task-registration`, and
    `check-task-integrity` reject malformed or unowned work.
-3. `check-generated-artifact-hygiene` catches documentation and generated-data
+4. `check-generated-artifact-hygiene` catches documentation and generated-data
    drift before broader quality work.
-4. `lint-markdown` checks the explicitly supplied feature documents.
-5. `check-make-target-contract` rejects missing help, variables, or safe
+5. `lint-markdown` checks the explicitly supplied feature documents.
+6. `check-make-target-contract` rejects missing help, variables, or safe
    behavioral examples for agent-facing targets.
-6. `yaml-lint` reuses the maintained Ansible YAML validator. It resolves only
+7. `yaml-lint` reuses the maintained Ansible YAML validator. It resolves only
    tracked YAML from the checkout, runs with a disposable namespaced Ansible
    home, and emits ten-second observer heartbeats. A stale user-installed
    collection therefore cannot shadow the candidate or turn a valid branch red.
-7. `presentation-browser-test` runs with
+8. `presentation-browser-test` runs with
    `PRESENTATION_BROWSER_VALIDATE_ONLY=1`, checking the pinned browser plan and
    prerequisites without launching either engine.
-8. `pre-commit-check` runs the existing source lint, collection, and typecheck
+9. `pre-commit-check` runs the existing source lint, collection, and typecheck
    boundary. Its `lint` prerequisite runs `check-file-line-limits` first.
 
 Every documented variable is explicit at the outer invocation and forwarded to
@@ -63,6 +66,10 @@ run again after a branch has already waited for earlier feedback:
 - Ansible's long-lived [collection-resolution report][ansible-collection-path]
   demonstrates how configured collection search state can select a different
   artifact than the source tree an operator intended to execute.
+- The long-lived Stack Overflow [Vulture and Django discussion][vulture-django]
+  records why dynamic Python programs need reviewed dead-code whitelists for
+  false positives. Admission therefore validates the exact reviewed set; it
+  never silently accepts a regenerated allowance.
 
 Those reports support an early local admission layer, but not skipping the final
 integrated-head proof. Gludd therefore rejects syntax, metadata, documentation,
@@ -73,6 +80,7 @@ slot while retaining the full gate as the authoritative integration result.
 [duplicate-checks]: https://github.com/orgs/community/discussions/43988
 [specific-checks]: https://github.com/orgs/community/discussions/103114
 [ansible-collection-path]: https://github.com/ansible/ansible/issues/74917
+[vulture-django]: https://stackoverflow.com/questions/12101463/is-there-a-simple-way-to-use-vulture-with-django
 
 ## Zero-downtime and rollback
 
