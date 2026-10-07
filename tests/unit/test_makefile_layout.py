@@ -31,8 +31,13 @@ def _contains_makefile_literal(node: ast.AST) -> bool:
     )
 
 
-def _is_makefile_alias_target(name: str) -> bool:
-    return name == name.upper() and "MAKEFILE" in name
+def _is_makefile_alias_target(name: str, value: ast.AST) -> bool:
+    if name == name.upper() and "MAKEFILE" in name:
+        return True
+    return "makefile" in name.casefold() and any(
+        isinstance(child, ast.Name) and child.id == "ROOT"
+        for child in ast.walk(value)
+    )
 
 
 def _reads_makefile_alias(node: ast.AST, aliases: set[str]) -> bool:
@@ -88,7 +93,9 @@ def _logical_makefile_read_violations(path: Path, source: str) -> list[str]:
                 for child in ast.walk(value)
             )
         ):
-            aliases.update(name for name in assigned if _is_makefile_alias_target(name))
+            aliases.update(
+                name for name in assigned if _is_makefile_alias_target(name, value)
+            )
 
     wrappers = _read_text_wrappers(tree)
     violations: list[str] = []
@@ -233,6 +240,19 @@ CONTENT = MAKEFILE.read_text(encoding="utf-8")
 
     assert _logical_makefile_read_violations(Path("fixture.py"), source) == [
         "fixture.py:3",
+    ]
+
+
+def test_logical_makefile_guard_detects_lowercase_path_alias_reads() -> None:
+    source = '''\
+from pathlib import Path
+ROOT = Path(__file__).parents[1]
+makefile = ROOT / "Makefile"
+content = makefile.read_text(encoding="utf-8")
+'''
+
+    assert _logical_makefile_read_violations(Path("fixture.py"), source) == [
+        "fixture.py:4",
     ]
 
 

@@ -5,6 +5,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "check_plugin_runtime.py"
 
@@ -19,7 +21,7 @@ def _run_runtime_check_with_plugin(source: str) -> subprocess.CompletedProcess[s
         )
 
 
-def test_check_plugin_runtime_runs_without_crashing():
+def test_check_plugin_runtime_runs_without_crashing() -> None:
     """The script should load all checked plugins cleanly."""
     result = subprocess.run(
         ["python", str(SCRIPT)],
@@ -36,7 +38,7 @@ def test_check_plugin_runtime_runs_without_crashing():
 
 
 
-def test_node_child_process_import_loads():
+def test_node_child_process_import_loads() -> None:
     """Runtime validation accepts resolvable Node builtins.
 
     Forbidden-import policy is covered separately by check_plugin_imports.py.
@@ -52,7 +54,7 @@ def test_node_child_process_import_loads():
     assert "PASS: all plugins load successfully" in result.stdout
 
 
-def test_node_fs_import_loads():
+def test_node_fs_import_loads() -> None:
     """Runtime validation accepts the policy-compliant node:fs specifier."""
     result = _run_runtime_check_with_plugin(
         'import { readFileSync } from "node:fs";\n'
@@ -65,7 +67,7 @@ def test_node_fs_import_loads():
     assert "PASS: all plugins load successfully" in result.stdout
 
 
-def test_wrong_package_detected():
+def test_wrong_package_detected() -> None:
     """A .ts file importing from '@opencode/plugin' should be flagged."""
     result = _run_runtime_check_with_plugin(
         'import { something } from "@opencode/plugin";\n'
@@ -78,10 +80,9 @@ def test_wrong_package_detected():
     assert "wrong package" in result.stdout or "@opencode/plugin" in result.stdout
 
 
-def test_make_target_exists():
+def test_make_target_exists() -> None:
     """The check-plugin-runtime make target should be wired in."""
-    makefile = ROOT / "Makefile"
-    content = makefile.read_text()
+    content = compose_makefile(ROOT / "Makefile")
     assert "check-plugin-runtime:" in content, "Missing check-plugin-runtime target"
     assert "check_plugin_runtime.py" in content, "Missing script reference in Makefile"
 
@@ -104,7 +105,7 @@ def test_make_target_exists():
     )
 
 
-def test_strip_types_load_failure_detected():
+def test_strip_types_load_failure_detected() -> None:
     """Plugin that fails under node --experimental-strip-types should exit 1."""
     result = _run_runtime_check_with_plugin(
         'import * as nonexistent from "nonexistent-module-xyzzy-99913";\n'
@@ -119,7 +120,7 @@ def test_strip_types_load_failure_detected():
     )
 
 
-def test_all_clean_plugins_exit_zero():
+def test_all_clean_plugins_exit_zero() -> None:
     """Script returns 0 when only valid plugins exist."""
     with tempfile.TemporaryDirectory() as tmpdir:
         scripts_dir = Path(tmpdir) / "scripts"
@@ -149,7 +150,7 @@ def test_all_clean_plugins_exit_zero():
         )
 
 
-def test_enforce_stop_loads_under_strip_types():
+def test_enforce_stop_loads_under_strip_types() -> None:
     """The real enforce-stop plugin must pass the canonical runtime loader."""
     result = subprocess.run(
         [
