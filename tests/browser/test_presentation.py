@@ -18,6 +18,7 @@ from scripts import build_deck
 pytestmark = pytest.mark.presentation_browser
 
 FEATURE_SYNC_CONTRACTS = (
+    "s83-157-158-166-177-admission-chain",
     "s83-101-104-concurrency-authority",
     "s83-103-canonical-worktree-paths",
     "s83-108-105-boundary-evidence",
