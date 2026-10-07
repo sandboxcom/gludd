@@ -34,6 +34,9 @@ Every registered path is checked before a path-scoped Git operation:
    **ACTIVE-WORKTREE path=canonical-path identity=canonical**.
    The **no active worktrees** state is emitted only when Git reports no
    validated or rejected secondary entries.
+6. A failed Git inventory is observably distinct from an empty inventory. It
+   emits **WORKTREE HEALTH: INCONCLUSIVE**, exits nonzero with status 2, and
+   never claims that no active worktrees exist.
 
 Tests accept either a populated active inventory or the explicit empty state.
 They validate the shape and canonical identity of populated rows instead of
@@ -86,6 +89,15 @@ worktree remain permitted. A test run started in canonical main installs no
 cross-checkout hook. This makes the active worktree the mutation boundary while
 preserving structural tests that need read-only visibility into main metadata.
 
+The serial gate has one additional owned identity. Its runner creates
+`/tmp/gludd-<four-hex-digest>-<eight-random-characters>/`, exports that exact directory as
+`TMPDIR`, and passes `TMPDIR/pytest` as pytest's explicit base directory. A Git
+mutation is allowed there only when the canonical repository path is below that
+exact `pytest` child, the exported root has the runner's complete name shape,
+and the root is an immediate child of a canonical system temporary directory.
+A broad `gludd-` prefix, another temporary directory, an alias, or a sibling of
+the explicit pytest base remains insufficient.
+
 ## Practitioner evidence
 
 The long-running Stack Overflow Q&A
@@ -115,6 +127,16 @@ exposes the child process's `cwd` on `subprocess.Popen`, while the
 [`sys.addaudithook` contract](https://docs.python.org/3/library/sys.html#sys.addaudithook)
 allows a hook to raise and abort the operation.
 
+The long-lived pytest practitioner report
+[data loss with mistyped `--basetemp`](https://github.com/pytest-dev/pytest/issues/7119)
+was opened in 2020 after an empty option value made pytest select the current
+directory and erase a Git repository, including work in progress. Pytest's
+[temporary-directory documentation](https://github.com/pytest-dev/pytest/blob/main/doc/en/how-to/tmp_path.rst)
+now warns that an explicit base directory is cleared and must be dedicated to
+that run. That history is why the gate exception follows the complete,
+runner-owned `TMPDIR/pytest` identity instead of treating a convenient name
+prefix as proof of ownership.
+
 ## Security and failure behavior
 
 Validation is fail-closed for structurally unsafe identities. Traversal,
@@ -123,6 +145,12 @@ identities produce stable reason codes and a failing terminal state. The raw
 rejected value is retained only for audit evidence; it is never supplied as a
 working directory. Branch and commit arguments retain their existing
 list-form subprocess boundary.
+
+Inventory acquisition is also fail-closed at the gate boundary. An unavailable
+`git worktree list --porcelain` result cannot prove an empty active environment,
+so it produces the dedicated inconclusive terminal state instead of a false
+pass. Operators may retry after Git recovers; the audit does not cache or
+invent inventory state.
 
 The separately recorded **test_create_worktree_validates_path** red-team node
 guards creation-time GitAutomation arguments and was already green. It is a
@@ -162,7 +190,8 @@ temporarily restores the earlier ambiguous evidence format.
 ## Verification
 
 Focused regressions cover traversal rejection, an escaping symlink, a safe
-symlink alias, fail-closed command suppression, and active-environment output.
+symlink alias, fail-closed command suppression, inventory failure truth, and
+active-environment output.
 The complete audit test module, production coverage floors, Ruff, strict mypy,
 docstring lint, Markdown/spec lint, and task-ledger validators form the bounded
 acceptance set. Collection and commit are deliberately separate authorization
@@ -172,7 +201,8 @@ The pytest regressions additionally cover linked-worktree main discovery,
 write-open and atomic-rename denial, process `cwd`/argv/explicit and inherited
 environment denial, symlink-alias `chdir` denial, collection-phase process
 denial with the exact version-probe exception, and branch-backed worktree
-creation denial. The 12 focused regressions pass, the release-integrity suite
-passes from the linked worktree, and the exact guarded `make test-count`
-collected 117,301 tests with zero errors. Canonical main was clean at the same
-development commit before and after the exact-scope replay.
+creation denial. They also pin the serial gate's complete `TMPDIR/pytest`
+identity and deny a sibling directory or mismatched owner even when its name
+looks gate-generated. The 33 focused regressions pass. The bounded guard and
+fixture coverage set reports 111 passed, one intentional skip, 89% aggregate
+branch coverage, and no measured file below 75%.

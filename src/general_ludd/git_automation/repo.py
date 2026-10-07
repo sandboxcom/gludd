@@ -87,6 +87,34 @@ _FORCE_PUSH_PATTERN = re.compile(
 _GLUDD_TEMP_WORKTREE_ROOT = re.compile(r"gludd-worktree-[0-9a-f]{32}\Z")
 
 
+def _resolve_worktree_candidate(path: Path) -> Path:
+    """Resolve an existing prefix and preserve only its missing suffix.
+
+    ``Path.resolve(strict=False)`` retains an unresolvable symlink loop as a
+    lexical path on supported Python versions.  That can make a loop beneath
+    an allowed parent look confined.  Worktree destinations normally do not
+    exist yet, so resolve their nearest lexically existing ancestor strictly,
+    then append the still-missing suffix without following it.
+    """
+    existing = path
+    missing: list[str] = []
+    while not os.path.lexists(existing):
+        parent = existing.parent
+        if parent == existing:
+            raise ValueError(
+                f"unable to resolve canonical worktree path: {path!s}"
+            )
+        missing.append(existing.name)
+        existing = parent
+    try:
+        canonical = existing.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise ValueError(
+            f"unable to resolve canonical worktree path: {path!s}"
+        ) from exc
+    return canonical.joinpath(*reversed(missing))
+
+
 def _reject_leading_dash(value: str, *, kind: str) -> str:
     """Reject a ref/path value that begins with ``-``.
 
@@ -1145,7 +1173,7 @@ class GitAutomation:
             if os.path.isabs(worktree_path)
             else Path(repo_abs) / worktree_path
         )
-        target = target_path.resolve(strict=False)
+        target = _resolve_worktree_candidate(target_path)
         # Compare canonical filesystem identities, not lexical spellings. This
         # keeps a symlink below the repo parent from redirecting Git elsewhere.
         for root in (repo_root, parent):
@@ -1170,7 +1198,10 @@ class GitAutomation:
         candidate = Path(path).expanduser()
         if not candidate.is_absolute():
             return False
-        real_target = candidate.resolve(strict=False)
+        try:
+            real_target = _resolve_worktree_candidate(candidate)
+        except ValueError:
+            return False
         try:
             state = project_state(project_root=project_root, create=False)
             root = state.path("worktrees").resolve(strict=False)
