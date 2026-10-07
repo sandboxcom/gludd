@@ -1301,6 +1301,7 @@ def clean_inactive_worktree_caches(
     for record in sorted(records, key=lambda item: str(item.path)):
         path = record.path
         completion_lease: WorkstreamLease | None = None
+        cache_only_lease: WorkstreamLease | None = None
         if not _inside_approved_root(path, approved_roots):
             skipped.append(f"{path}:outside approved namespace")
             continue
@@ -1323,10 +1324,9 @@ def clean_inactive_worktree_caches(
             if lifecycle.error:
                 errors.append(f"{path}:{lifecycle.reason}")
                 continue
-            if not lifecycle.reclaimable:
-                skipped.append(f"{path}:{lifecycle.reason}")
-                continue
-            if not lifecycle.cache_only:
+            if not lifecycle.reclaimable or lifecycle.cache_only:
+                cache_only_lease = initial_leases.get(record.branch)
+            else:
                 completion_lease = initial_leases.get(record.branch)
 
         try:
@@ -1358,17 +1358,24 @@ def clean_inactive_worktree_caches(
             if lifecycle.error:
                 errors.append(f"{path}:{lifecycle.reason}")
                 continue
+            refreshed_lease = refreshed_leases.get(record.branch)
+            if cache_only_lease is not None and refreshed_lease != cache_only_lease:
+                skipped.append(f"{path}:{lifecycle.reason}")
+                continue
             if not lifecycle.reclaimable:
                 reason = (
                     "became active logical workstream"
                     if active_workstream_leases is None
                     else lifecycle.reason
                 )
-                skipped.append(f"{path}:{reason}")
-                continue
-            if (
+                if completion_lease is not None:
+                    skipped.append(f"{path}:{reason}")
+                    continue
+                skipped.append(f"{path}:{reason}; disposable caches only")
+                completion_lease = None
+            elif (
                 completion_lease is not None
-                and refreshed_leases.get(record.branch) != completion_lease
+                and refreshed_lease != completion_lease
             ):
                 skipped.append(f"{path}:completion lease changed")
                 continue

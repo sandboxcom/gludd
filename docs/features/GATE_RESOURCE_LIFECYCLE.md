@@ -220,6 +220,42 @@ shared browser downloads deliberately. Gludd reconciles those durable needs by
 retaining the cache while healthy and reclaiming only its exact project-owned
 root under measured pressure after repeat idle and identity proofs.
 
+### Registered-worktree disposable-cache reclamation
+
+The canonical disk classifier measured 1,090,775,078 counted bytes across
+3,425 entries after shared uv and Playwright caches were correctly classified
+outside the scratch total. The largest remaining roots were generated
+`.mypy_cache`, `.pytest_cache`, and `.ruff_cache` directories inside registered
+worktrees. A logical workstream lease had protected each whole worktree even
+when no operating-system process owned those disposable caches, so cleanup
+could make no progress toward the 100 MiB admission ceiling.
+
+Under measured pressure, cleanup may now remove only those three exact,
+direct, non-symlink cache directories from a registered worktree. Git
+registration and the logical lease must remain stable across the operation,
+and two process censuses must prove the worktree idle. A changed lease, live
+process, symlink, special file, or identity race fails closed. Source files,
+evidence, `.venv`, and the worktree materialization retain the stronger
+completion-proof requirement; a dirty or active worktree is never retired by
+this cache-only path.
+
+The canonical replay removed 94 proven-idle resources.
+Scratch was healthy at 74.7 MiB after the bounded pass. This is zero-downtime
+delivery: no service,
+listener, database, dependency environment, or active test owner is stopped.
+Rollback removes the cache-only allowance; deleted cache entries are generated
+state and are recreated by the next owning tool invocation without migration.
+
+Long-lived practitioner reports describe the same generated-state pressure.
+[mypy issue #15731](https://github.com/python/mypy/issues/15731) reports cache
+growth making ordinary runs substantially slower, while
+[mypy issue #19489](https://github.com/python/mypy/issues/19489) discusses
+incorrect or stale incremental cache behavior. Ruff users similarly requested
+bounded cache cleanup in
+[Ruff issue #12284](https://github.com/astral-sh/ruff/issues/12284). These
+reports support narrow regeneration of proven-idle tool caches, not deletion of
+worktree source, environments, or evidence.
+
 ### Repository gate-artifact reclamation
 
 The cache resource manager also recognizes this checkout's canonical

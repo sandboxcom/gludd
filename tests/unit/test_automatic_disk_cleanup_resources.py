@@ -1511,3 +1511,9 @@ def test_gate_lifecycle_documents_owned_node_cache_reclamation() -> None:
     assert "github.com/microsoft/playwright/issues/36682" in document
     assert "github.com/microsoft/playwright/issues/5797" in document
     assert "ZDD shape" in document
+    assert "1,090,775,078" in document
+    assert "94 proven-idle resources" in document
+    assert "healthy at 74.7 MiB" in document
+    assert "github.com/python/mypy/issues/15731" in document
+    assert "github.com/python/mypy/issues/19489" in document
+    assert "github.com/astral-sh/ruff/issues/12284" in document
