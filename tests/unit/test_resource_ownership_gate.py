@@ -335,6 +335,18 @@ def run() -> None:
     assert any(error.startswith("stale inventory:") for error in errors)
 
 
+def test_checked_in_inventory_matches_current_application_resources() -> None:
+    """Keep split modules and newly owned resources in the checked-in inventory."""
+    root = Path(__file__).resolve().parents[2]
+    findings = scan_paths(
+        [root / "src" / "general_ludd", root / "scripts"],
+        root=root,
+    )
+    inventory = load_inventory(root / "config" / "resource_ownership_inventory.json")
+
+    assert validate_inventory(findings, inventory) == []
+
+
 def test_inventory_identity_survives_coordinate_only_relocation(tmp_path: Path) -> None:
     """Moving unchanged owned code must not invalidate release evidence."""
     original = _scan(
@@ -552,6 +564,41 @@ def run() -> None:
     assert load_inventory(inventory)
 
 
+def test_inventory_writer_is_deterministic_compact_and_round_trips(
+    tmp_path: Path,
+) -> None:
+    findings = [
+        ResourceEvidence(
+            path=f"app/owned_{index}.py",
+            line=index + 1,
+            column=4,
+            kind="temp-artifact",
+            owner="run",
+            acquisition=f"tempfile.TemporaryDirectory(prefix='{index}-')",
+            teardown="context-manager-exit",
+            source_hash=f"{index:064x}",
+            owned=True,
+        )
+        for index in range(300)
+    ]
+    forward = tmp_path / "forward.json"
+    reversed_order = tmp_path / "reversed.json"
+
+    write_inventory(forward, findings)
+    write_inventory(reversed_order, list(reversed(findings)))
+
+    rendered = forward.read_text(encoding="utf-8")
+    payload = json.loads(rendered)
+    assert rendered == reversed_order.read_text(encoding="utf-8")
+    assert rendered.endswith("\n")
+    assert len(rendered.splitlines()) == len(findings) + 6
+    assert len(rendered.splitlines()) < 2500
+    assert payload["schema_version"] == 1
+    assert payload["policy"] == "counted-path-kind-owner-and-acquisition-teardown-sha256"
+    assert len(payload["resources"]) == len(findings)
+    assert set(load_inventory(forward).values()) == set(findings)
+
+
 def test_cli_reports_inventory_drift_and_input_errors(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -653,4 +700,4 @@ def test_secrets_baseline_regeneration_preserves_exact_inventory_filter() -> Non
         "sandboxcom_github_rsa|sandboxcom_github_rsa.pub|"
         r"^config/resource_ownership_inventory\.json$"
     ) in makefile
-    assert makefile.count("--exclude-files '$(SECRETS_EXCLUDE_FILES)'") == 2
+    assert makefile.count("--exclude-files '$(SECRETS_EXCLUDE_FILES)'") == 1

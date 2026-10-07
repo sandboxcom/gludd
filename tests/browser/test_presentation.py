@@ -8,7 +8,6 @@ import re
 import threading
 import time
 from collections.abc import Generator
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -258,7 +257,7 @@ def presentation_url(tmp_path_factory: pytest.TempPathFactory) -> Generator[str,
         allowlist=frozenset(payload["paths"]),
         url_prefix="/gludd/",
     )
-    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    server = build_deck.DeckThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=server.serve_forever, name="gludd-presentation-browser", daemon=True)
     thread.start()
     host, port = server.server_address
@@ -647,6 +646,255 @@ def test_every_slide_keeps_visible_content_inside_the_reveal_canvas(
             )
     if failures:
         print(f"presentation-layout-overflow diagnostics={json.dumps(failures, sort_keys=True)}")
+    assert failures == []
+
+
+def test_narrow_tall_canvas_keeps_prose_and_diagram_labels_readable(
+    page: Any,
+    presentation_url: str,
+) -> None:
+    """Portrait layouts must contain prose without shrinking chart labels away."""
+    page.set_viewport_size({"width": 430, "height": 932})
+    _load(page, presentation_url)
+    failures = page.evaluate(
+        """
+        () => {
+          Reveal.getSlides().forEach((slide) => {
+            slide.querySelectorAll('.fragment').forEach((fragment) => {
+              fragment.classList.add('visible');
+            });
+          });
+          Reveal.layout();
+          const boundary = document.querySelector('.reveal').getBoundingClientRect();
+          const tolerance = 2;
+          return Reveal.getSlides().flatMap((slide) => {
+              const slideFailures = [];
+              slide.querySelectorAll('.fragment').forEach((fragment) => {
+                fragment.classList.add('visible');
+              });
+              const proseFailures = Array.from(
+                slide.querySelectorAll('h1, h2, h3, p, li, pre, td, th')
+              ).flatMap((node) => {
+                const style = getComputedStyle(node);
+                const range = document.createRange();
+                range.selectNodeContents(node);
+                const lines = Array.from(range.getClientRects());
+                const clipped = lines.some((line) => (
+                  line.left < boundary.left - tolerance ||
+                  line.right > boundary.right + tolerance
+                ));
+                return clipped && style.display !== 'none' && style.visibility !== 'hidden'
+                  ? [{kind: 'prose-horizontal-clip', tagName: node.tagName,
+                      text: (node.textContent || '').trim().slice(0, 100)}]
+                  : [];
+              });
+              const slideStyle = getComputedStyle(slide);
+              if (
+                slide.scrollHeight > slide.clientHeight + tolerance &&
+                !['auto', 'scroll'].includes(slideStyle.overflowY)
+              ) {
+                proseFailures.push({kind: 'prose-vertical-inaccessible'});
+              }
+              const diagramFailures = Array.from(
+                slide.querySelectorAll('img.mermaid-image')
+              ).flatMap((image) => {
+                const imageRect = image.getBoundingClientRect();
+                const scroller = image.closest('.mermaid');
+                const scrollerRect = scroller.getBoundingClientRect();
+                const encoded = image.src.split(',', 2)[1] || '';
+                const parsed = new DOMParser().parseFromString(
+                  decodeURIComponent(encoded),
+                  'image/svg+xml',
+                );
+                const viewBox = parsed.documentElement.getAttribute('viewBox')
+                  ?.trim().split(/[ ,]+/).map(Number) || [];
+                if (viewBox.length !== 4 || viewBox[2] <= 0 || viewBox[3] <= 0) {
+                  return [{kind: 'invalid-viewbox'}];
+                }
+                const effectiveFontPixels = 16 * Math.min(
+                  imageRect.width / viewBox[2],
+                  imageRect.height / viewBox[3],
+                );
+                const horizontallyScrollable =
+                  scroller.scrollWidth > scroller.clientWidth + tolerance &&
+                  ['auto', 'scroll'].includes(getComputedStyle(scroller).overflowX);
+                const centered = Math.abs(
+                  (imageRect.left + imageRect.right) / 2 -
+                  (scrollerRect.left + scrollerRect.right) / 2
+                ) <= tolerance;
+                const issues = [];
+                if (
+                  scrollerRect.left < boundary.left - tolerance ||
+                  scrollerRect.right > boundary.right + tolerance
+                ) {
+                  issues.push('off-canvas');
+                }
+                if (!centered && !horizontallyScrollable) issues.push('unaligned');
+                if (effectiveFontPixels < 8) issues.push('illegible-chart-text');
+                return issues.length ? [{effectiveFontPixels, issues}] : [];
+              });
+              slideFailures.push(...proseFailures, ...diagramFailures);
+              if (!slideFailures.length) return [];
+              const indices = Reveal.getIndices(slide);
+              return [{
+                horizontal: indices.h,
+                vertical: indices.v,
+                failures: slideFailures,
+              }];
+          });
+        }
+        """
+    )
+    if failures:
+        print(f"presentation-portrait-layout diagnostics={json.dumps(failures, sort_keys=True)}")
+    assert failures == []
+
+
+def test_short_landscape_canvas_keeps_rendered_text_readable_and_reachable(
+    page: Any,
+    presentation_url: str,
+) -> None:
+    """A Safari-like landscape canvas must not scale or center text out of reach."""
+    page.set_viewport_size({"width": 932, "height": 430})
+    _load(page, presentation_url)
+    indices = page.evaluate(
+        "Reveal.getSlides().map((slide) => { const i = Reveal.getIndices(slide); return [i.h, i.v]; })"
+    )
+    failures: list[dict[str, Any]] = []
+    output = Path(
+        os.environ.get("GLUDD_PRESENTATION_BROWSER_OUTPUT", "/tmp/gludd-presentation-browser")
+    ) / "short-landscape-layout"
+    for horizontal, vertical in indices:
+        _visit_slide(page, horizontal, vertical)
+        issues = page.evaluate(
+            """
+            () => {
+              const slide = Reveal.getCurrentSlide();
+              slide.querySelectorAll('.fragment').forEach((fragment) => {
+                fragment.classList.add('visible');
+              });
+              Reveal.layout();
+              slide.scrollTop = 0;
+              const boundary = document.querySelector('.reveal').getBoundingClientRect();
+              const tolerance = 2;
+              const selector = [
+                'h1', 'h2', 'h3', 'p', 'li', 'pre', 'td', 'th',
+                '.stage-kicker', '.metric-box .number', '.metric-box .label',
+                '.metric-box .cite',
+              ].join(',');
+              const visibleText = Array.from(slide.querySelectorAll(selector)).filter((node) => {
+                const style = getComputedStyle(node);
+                return style.display !== 'none' && style.visibility !== 'hidden' &&
+                  (node.textContent || '').trim();
+              });
+              const textIssues = visibleText.flatMap((node) => {
+                const range = document.createRange();
+                range.selectNodeContents(node);
+                const lines = Array.from(range.getClientRects());
+                const effectiveFontPixels = lines.length
+                  ? Math.min(...lines.map((line) => line.height))
+                  : 0;
+                const sides = [];
+                if (lines.some((line) => line.left < boundary.left - tolerance)) sides.push('left');
+                if (lines.some((line) => line.right > boundary.right + tolerance)) sides.push('right');
+                if (effectiveFontPixels < 8) sides.push('illegible');
+                return sides.length ? [{
+                  effectiveFontPixels,
+                  kind: 'prose',
+                  sides,
+                  tagName: node.tagName,
+                  text: (node.textContent || '').trim().slice(0, 100),
+                }] : [];
+              });
+              const diagramIssues = Array.from(
+                slide.querySelectorAll('img.mermaid-image')
+              ).flatMap((image) => {
+                const imageRect = image.getBoundingClientRect();
+                const scroller = image.closest('.mermaid');
+                const scrollerRect = scroller.getBoundingClientRect();
+                const encoded = image.src.split(',', 2)[1] || '';
+                const parsed = new DOMParser().parseFromString(
+                  decodeURIComponent(encoded),
+                  'image/svg+xml',
+                );
+                const viewBox = parsed.documentElement.getAttribute('viewBox')
+                  ?.trim().split(/[ ,]+/).map(Number) || [];
+                if (viewBox.length !== 4 || viewBox[2] <= 0 || viewBox[3] <= 0) {
+                  return [{kind: 'diagram-invalid-viewbox'}];
+                }
+                const effectiveFontPixels = 16 * Math.min(
+                  imageRect.width / viewBox[2],
+                  imageRect.height / viewBox[3],
+                );
+                const horizontallyScrollable =
+                  scroller.scrollWidth > scroller.clientWidth + tolerance &&
+                  ['auto', 'scroll'].includes(getComputedStyle(scroller).overflowX);
+                const centered = Math.abs(
+                  (imageRect.left + imageRect.right) / 2 -
+                  (scrollerRect.left + scrollerRect.right) / 2
+                ) <= tolerance;
+                const reasons = [];
+                if (
+                  scrollerRect.left < boundary.left - tolerance ||
+                  scrollerRect.right > boundary.right + tolerance
+                ) reasons.push('off-canvas');
+                if (!centered && !horizontallyScrollable) reasons.push('unaligned');
+                if (effectiveFontPixels < 8) reasons.push('illegible');
+                return reasons.length ? [{effectiveFontPixels, kind: 'diagram', reasons}] : [];
+              });
+              const firstText = visibleText[0];
+              const firstRect = firstText?.getBoundingClientRect();
+              const content = [
+                ...visibleText,
+                ...slide.querySelectorAll('img.mermaid-image'),
+              ];
+              const lastContent = content.reduce((lowest, node) => (
+                !lowest || node.getBoundingClientRect().bottom > lowest.getBoundingClientRect().bottom
+                  ? node
+                  : lowest
+              ), null);
+              const initiallyReachable = !firstRect || (
+                firstRect.bottom > boundary.top - tolerance &&
+                firstRect.top < boundary.bottom + tolerance
+              );
+              const overflows = slide.scrollHeight > slide.clientHeight + tolerance;
+              const overflowY = getComputedStyle(slide).overflowY;
+              slide.scrollTop = slide.scrollHeight;
+              const lastRect = lastContent?.getBoundingClientRect();
+              const finallyReachable = !lastRect || (
+                lastRect.bottom > boundary.top - tolerance &&
+                lastRect.top < boundary.bottom + tolerance
+              );
+              const reachabilityIssues = [];
+              if (!initiallyReachable) reachabilityIssues.push({kind: 'top-unreachable'});
+              if (overflows && !['auto', 'scroll'].includes(overflowY)) {
+                reachabilityIssues.push({kind: 'overflow-not-scrollable'});
+              }
+              if (overflows && slide.scrollTop <= 0) {
+                reachabilityIssues.push({kind: 'scroll-position-unchanged'});
+              }
+              if (overflows && !finallyReachable) {
+                reachabilityIssues.push({kind: 'bottom-unreachable'});
+              }
+              slide.scrollTop = 0;
+              return [...textIssues, ...diagramIssues, ...reachabilityIssues];
+            }
+            """
+        )
+        if issues:
+            output.mkdir(parents=True, exist_ok=True)
+            image = output / f"slide-{horizontal}-{vertical}.png"
+            page.screenshot(path=str(image), full_page=True)
+            failures.append(
+                {
+                    "horizontal": horizontal,
+                    "vertical": vertical,
+                    "issues": issues,
+                    "screenshot": str(image),
+                }
+            )
+    if failures:
+        print(f"presentation-landscape-layout diagnostics={json.dumps(failures, sort_keys=True)}")
     assert failures == []
 
 

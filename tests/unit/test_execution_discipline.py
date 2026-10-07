@@ -12,6 +12,7 @@ plus supporting CP.7, MK.9, MK.10, RL.2, AR.20, PB.7, LM.6, LM.7.
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
@@ -19,7 +20,7 @@ MAKEFILE = ROOT / "Makefile"
 
 def _recipe(target: str) -> str:
     """Extract the full recipe body for a make target. Assert target exists."""
-    content = MAKEFILE.read_text()
+    content = compose_makefile(MAKEFILE)
     marker = f"\n{target}:"
     assert marker in content, f"Makefile target '{target}' not found"
     start = content.index(marker) + len(marker)
@@ -31,7 +32,7 @@ def _recipe(target: str) -> str:
 
 def _content() -> str:
     """Read the full Makefile content."""
-    return MAKEFILE.read_text()
+    return compose_makefile(MAKEFILE)
 
 
 class TestBatchPush:

@@ -7,6 +7,8 @@ import stat
 import subprocess
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = ROOT / "scripts" / "ci_push_and_verify.sh"
 MAKEFILE = ROOT / "Makefile"
@@ -27,7 +29,7 @@ def test_script_exists_and_is_executable() -> None:
 
 def test_makefile_target_exists_and_callable() -> None:
     """Makefile defines ci-push-and-verify and ci-verify-wait targets."""
-    content = MAKEFILE.read_text(encoding="utf-8")
+    content = compose_makefile(MAKEFILE)
 
     for target in ("ci-push-and-verify:", "ci-verify-wait:", "_require-gh:"):
         assert target in content, (

@@ -7,7 +7,7 @@ ci-kill-zombie:
 test-pyver:
 	@if [ -z "$(VER)" ]; then echo "Usage: make test-pyver VER=3.11"; exit 1; fi
 	@echo "=== test-pyver $(VER): syncing ==="
-	@$(UV) sync --python $(VER)
+	@$(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=ci DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON=$(VER) DEPENDENCY_PROFILE_VALIDATE_ONLY=0
 	@echo "=== test-pyver $(VER): ruff ==="
 	@$(UV) run --python $(VER) ruff check src tests
 	@echo "=== test-pyver $(VER): mypy ==="
@@ -28,17 +28,17 @@ ci-test-eventbus:
 
 ci-test-1worker:
 	@if [ -z "$(VER)" ]; then echo "Usage: make ci-test-1worker VER=3.11"; exit 1; fi
-	@$(UV) sync --python $(VER)
+	@$(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=ci DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON=$(VER) DEPENDENCY_PROFILE_VALIDATE_ONLY=0
 	@echo "=== ci-test-1worker $(VER): pytest -n 1 --dist loadgroup (CI ubuntu worker count) ==="
 	@$(UV) run --python $(VER) python -m pytest tests/ -n 1 --dist loadgroup -q 2>&1 | tail -50
 
 # Run the EXACT CI gate command sequence under a given python version:
-#   uv sync --python VER  &&  make lint typecheck test-count test smoke
+#   locked `ci` profile sync under VER, then lint/typecheck/collect/test/smoke.
 # This includes coverage (fail_under=85) which plain test-pyver omits.
 ci-gate-exact:
 	@if [ -z "$(VER)" ]; then echo "Usage: make ci-gate-exact VER=3.11"; exit 1; fi
-	@echo "=== ci-gate-exact $(VER): uv sync ==="
-	@$(UV) sync --python $(VER)
+	@echo "=== ci-gate-exact $(VER): locked profile sync ==="
+	@$(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=ci DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON=$(VER) DEPENDENCY_PROFILE_VALIDATE_ONLY=0
 	@echo "=== ci-gate-exact $(VER): lint ==="
 	@$(UV) run --python $(VER) ruff check src tests
 	@echo "=== ci-gate-exact $(VER): typecheck ==="
@@ -49,9 +49,10 @@ ci-gate-exact:
 	@$(UV) run --python $(VER) python -m pytest tests/ --cov=general_ludd --cov-report=term-missing --cov-report=xml $(_XD) -q 2>&1 | tail -40
 	@echo "=== ci-gate-exact $(VER): DONE (check coverage line above) ==="
 
-# Simulate the CI version-injection + uv sync path to detect lockfile staleness.
+# Simulate CI's lock check before version injection and prove later metadata is stale.
 ci-version-sim:
-	@echo "=== ci-version-sim: injecting PEP440 version then uv sync --locked ==="
+	@echo "=== ci-version-sim: locked profile check before version injection ==="
+	@UV_NO_SYNC=0 $(UV) run --no-project --python 3.11 python scripts/dependency_profiles.py check --root "$(CURDIR)" --set ci
 	@cp pyproject.toml /tmp/gludd-pyproject.bak
 	@cp src/general_ludd/__init__.py /tmp/gludd-init.bak
 	@VER="0.1.0a$$(date -u +%Y%m%d%H%M)"; \
@@ -59,11 +60,9 @@ ci-version-sim:
 		sed -i.tmp "s/^version = \".*\"/version = \"$$VER\"/" pyproject.toml; \
 		rm -f pyproject.toml.tmp src/general_ludd/__init__.py.tmp; \
 		echo "Injected version $$VER"; \
-		echo "--- uv sync --locked (does lockfile go stale?) ---"; \
-		$(UV) sync --locked 2>&1 | tail -20; EXIT=$$?; \
-		echo "uv sync --locked exit: $$EXIT"; \
-		echo "--- uv sync (plain, what CI uses) ---"; \
-		$(UV) sync 2>&1 | tail -10; \
+		echo "--- locked profile check after injection (expected stale) ---"; \
+		UV_NO_SYNC=0 $(UV) run --no-project --python 3.11 python scripts/dependency_profiles.py check --root "$(CURDIR)" --set ci 2>&1 | tail -20; EXIT=$$?; \
+		echo "locked profile check exit: $$EXIT"; \
 		cp /tmp/gludd-pyproject.bak pyproject.toml; \
 		cp /tmp/gludd-init.bak src/general_ludd/__init__.py; \
 		echo "Restored pyproject.toml + __init__.py"
@@ -697,7 +696,8 @@ azure-self-improve-auth-args:
 # LIVE=0 validates locally and constructs no credential or Azure client.
 azure-accelerator-role-apply:
 	@# Inputs: AZURE_ACCELERATOR_SUBSCRIPTION_ID AZURE_ACCELERATOR_RESOURCE_GROUP AZURE_ACCELERATOR_LOCATION AZURE_ACCELERATOR_OPERATOR_AUTH AZURE_ACCELERATOR_PRINCIPAL_OBJECT_ID AZURE_ACCELERATOR_ROLE_APPLY_LIVE
-	@$(UV) run $(if $(filter 1,$(AZURE_ACCELERATOR_ROLE_APPLY_LIVE)),--extra azure,) python -m general_ludd.azure.accelerator_role
+	@if [ "$(AZURE_ACCELERATOR_ROLE_APPLY_LIVE)" = "1" ]; then $(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=azure DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=0; fi
+	@$(UV) run --no-sync python -m general_ludd.azure.accelerator_role
 
 # Deprecated compatibility: stdout is one NUL-delimited Azure CLI argv.
 azure-accelerator-role-args:
@@ -750,7 +750,8 @@ azure-containerapp-preflight:
 	@[ -n "$(AZURE_CONTAINERAPP_LOCATION)" ] || { echo "AZURE_CONTAINERAPP_LOCATION is required" >&2; exit 2; }
 	@[ -n "$(AZURE_CONTAINERAPP_MODEL_ID)" ] || { echo "AZURE_CONTAINERAPP_MODEL_ID is required" >&2; exit 2; }
 	@[ -n "$(AZURE_CONTAINERAPP_MODEL_REVISION)" ] || { echo "AZURE_CONTAINERAPP_MODEL_REVISION is required" >&2; exit 2; }
-	@$(UV) run $(if $(filter 1,$(AZURE_CONTAINERAPP_PREFLIGHT_LIVE)),--extra azure,) python scripts/azure_containerapp_preflight.py \
+	@if [ "$(AZURE_CONTAINERAPP_PREFLIGHT_LIVE)" = "1" ]; then $(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=azure DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=0; fi
+	@$(UV) run --no-sync python scripts/azure_containerapp_preflight.py \
 		--auth-file "$(AZURE_ACCELERATOR_AUTH_FILE)" \
 		--subscription-id "$(AZURE_ACCELERATOR_SUBSCRIPTION_ID)" \
 		--resource-group "$(AZURE_CONTAINERAPP_RESOURCE_GROUP)" \
@@ -804,7 +805,8 @@ azure-containerapp-live-proof:
 	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_SOURCE_PATH is required" >&2; exit 2; }
 	@case "$(AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET)" in always_destroy|zero_cost_only|balanced|latency_first) ;; *) echo "AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_PRESET must be always_destroy, zero_cost_only, balanced, or latency_first" >&2; exit 2;; esac
 	@case "$(AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS)" in ''|*[!0-9]*|0) echo "AZURE_CONTAINERAPP_LIVE_PROOF_RETENTION_SECONDS must be a positive integer" >&2; exit 2;; esac
-	@$(UV) run $(if $(filter 1,$(AZURE_CONTAINERAPP_LIVE_PROOF_LIVE)),--extra azure,) python scripts/azure_containerapp_live_proof.py \
+	@if [ "$(AZURE_CONTAINERAPP_LIVE_PROOF_LIVE)" = "1" ]; then $(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=azure DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=0; fi
+	@$(UV) run --no-sync python scripts/azure_containerapp_live_proof.py \
 		$(if $(filter file,$(AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE)),--auth-file "$(AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_FILE)",--federated-token-file "$(AZURE_CONTAINERAPP_LIVE_PROOF_FEDERATED_TOKEN_FILE)" --azure-client-id "$(AZURE_CONTAINERAPP_LIVE_PROOF_CLIENT_ID)" --azure-tenant-id "$(AZURE_CONTAINERAPP_LIVE_PROOF_TENANT_ID)") \
 		--subscription-id "$(AZURE_CONTAINERAPP_LIVE_PROOF_SUBSCRIPTION_ID)" \
 		--resource-group "$(AZURE_CONTAINERAPP_LIVE_PROOF_RESOURCE_GROUP)" \
@@ -845,12 +847,13 @@ self-improve-local-proposal:
 		[ -n "$(SELF_IMPROVE_MODEL_PATH)" ] || { echo "SELF_IMPROVE_MODEL_PATH is required"; exit 2; }; \
 		[ -n "$(SELF_IMPROVE_PROMPT_FILE)" ] || { echo "SELF_IMPROVE_PROMPT_FILE is required"; exit 2; }; \
 		[ -n "$(SELF_IMPROVE_PROPOSAL_FILE)" ] || { echo "SELF_IMPROVE_PROPOSAL_FILE is required"; exit 2; }; \
+		$(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=local-inference DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=0; \
 		if [ -n "$(SELF_IMPROVE_ENVELOPE_FILE)" ]; then \
-			$(UV) run --extra local-inference python scripts/self_improve_local_proposal.py --model-path "$(SELF_IMPROVE_MODEL_PATH)" --prompt-file "$(SELF_IMPROVE_PROMPT_FILE)" --proposal-file "$(SELF_IMPROVE_PROPOSAL_FILE)" --envelope-file "$(SELF_IMPROVE_ENVELOPE_FILE)"; \
+			$(UV) run --no-sync python scripts/self_improve_local_proposal.py --model-path "$(SELF_IMPROVE_MODEL_PATH)" --prompt-file "$(SELF_IMPROVE_PROMPT_FILE)" --proposal-file "$(SELF_IMPROVE_PROPOSAL_FILE)" --envelope-file "$(SELF_IMPROVE_ENVELOPE_FILE)"; \
 		elif [ -n "$(SELF_IMPROVE_CONTRACT_FILE)" ]; then \
-			$(UV) run --extra local-inference python scripts/self_improve_local_proposal.py --model-path "$(SELF_IMPROVE_MODEL_PATH)" --prompt-file "$(SELF_IMPROVE_PROMPT_FILE)" --proposal-file "$(SELF_IMPROVE_PROPOSAL_FILE)" --contract-file "$(SELF_IMPROVE_CONTRACT_FILE)"; \
+			$(UV) run --no-sync python scripts/self_improve_local_proposal.py --model-path "$(SELF_IMPROVE_MODEL_PATH)" --prompt-file "$(SELF_IMPROVE_PROMPT_FILE)" --proposal-file "$(SELF_IMPROVE_PROPOSAL_FILE)" --contract-file "$(SELF_IMPROVE_CONTRACT_FILE)"; \
 		else \
-			$(UV) run --extra local-inference python scripts/self_improve_local_proposal.py --model-path "$(SELF_IMPROVE_MODEL_PATH)" --prompt-file "$(SELF_IMPROVE_PROMPT_FILE)" --proposal-file "$(SELF_IMPROVE_PROPOSAL_FILE)"; \
+			$(UV) run --no-sync python scripts/self_improve_local_proposal.py --model-path "$(SELF_IMPROVE_MODEL_PATH)" --prompt-file "$(SELF_IMPROVE_PROMPT_FILE)" --proposal-file "$(SELF_IMPROVE_PROPOSAL_FILE)"; \
 		fi; \
 	fi
 
@@ -876,12 +879,13 @@ azure-self-improve-live-proof:
 	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_ALLOWED_CIDR is required" >&2; exit 2; }
 	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_MAX_COST_USD is required" >&2; exit 2; }
 	@[ -n "$(AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES)" ] || { echo "AZURE_CONTAINERAPP_LIVE_PROOF_TTL_MINUTES is required" >&2; exit 2; }
+	@if [ "$(AZURE_CONTAINERAPP_LIVE_PROOF_LIVE)" = "1" ]; then $(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=ci-azure DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=0; fi
 	@set -eu; temporary_directory="$$(mktemp -d "$${TMPDIR:-/tmp}/gludd-azure-self-improve.XXXXXX")"; \
 		trap 'rm -rf "$$temporary_directory"' EXIT INT TERM; \
 		selection_file="$$temporary_directory/model-selection.json"; \
 		runtime_file="$$temporary_directory/runtime.json"; \
 		echo "AZURE_SELF_IMPROVE_PHASE phase=model_selection secret_output=false"; \
-		$(UV) run $(if $(filter 1,$(AZURE_CONTAINERAPP_LIVE_PROOF_LIVE)),--extra azure,) python scripts/select_azure_self_improve_model.py \
+		$(UV) run --no-sync python scripts/select_azure_self_improve_model.py \
 			--task-file "$(AZURE_SELF_IMPROVE_TASK_FILE)" \
 			--policy-file "$(AZURE_SELF_IMPROVE_MODEL_POLICY)" \
 			--evidence-file "$(AZURE_SELF_IMPROVE_EVIDENCE_FILE)" \
@@ -914,7 +918,8 @@ test-self-improve:
 	@[ -n "$(SELF_IMPROVE_BASELINE_REF)" ] || { echo "SELF_IMPROVE_BASELINE_REF is required"; exit 2; }
 	@[ -n "$(SELF_IMPROVE_REFERENCE_REF)" ] || { echo "SELF_IMPROVE_REFERENCE_REF is required"; exit 2; }
 	@[ -n "$(SELF_IMPROVE_TASK_FILE)" ] || { echo "SELF_IMPROVE_TASK_FILE is required"; exit 2; }
-	@$(UV) run $(if $(strip $(SELF_IMPROVE_CONFIG_FILE)),--extra azure,) python scripts/run_self_improve_e2e.py --target "$(TARGET)" --local-model-path "$(SELF_IMPROVE_MODEL_PATH)" --self-improve-config-file "$(SELF_IMPROVE_CONFIG_FILE)" --baseline-ref "$(SELF_IMPROVE_BASELINE_REF)" --reference-ref "$(SELF_IMPROVE_REFERENCE_REF)" --task-file "$(SELF_IMPROVE_TASK_FILE)" --max-attempts "$(SELF_IMPROVE_MAX_ATTEMPTS)" $(if $(filter 1,$(SELF_IMPROVE_VALIDATE_ONLY)),--validate-only,)
+	@if [ -n "$(SELF_IMPROVE_CONFIG_FILE)" ]; then $(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=ci-azure DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=0; fi
+	@$(UV) run --no-sync python scripts/run_self_improve_e2e.py --target "$(TARGET)" --local-model-path "$(SELF_IMPROVE_MODEL_PATH)" --self-improve-config-file "$(SELF_IMPROVE_CONFIG_FILE)" --baseline-ref "$(SELF_IMPROVE_BASELINE_REF)" --reference-ref "$(SELF_IMPROVE_REFERENCE_REF)" --task-file "$(SELF_IMPROVE_TASK_FILE)" --max-attempts "$(SELF_IMPROVE_MAX_ATTEMPTS)" $(if $(filter 1,$(SELF_IMPROVE_VALIDATE_ONLY)),--validate-only,)
 
 # Canonical ten-shape contract; validate-only is safe, live inference is explicit.
 test-self-improve-acceptance-matrix:

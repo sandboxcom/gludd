@@ -177,12 +177,12 @@ def test_monday_transport_narrows_response_shapes(body: bytes, expected: dict[st
 
 
 @pytest.mark.parametrize(
-    "base_url",
+    "candidate_url",
     ["ftp://example.test", "https:///missing", "http://127.0.0.1", "http://224.0.0.1"],
 )
-def test_linear_rejects_unsupported_and_non_global_urls(base_url: str) -> None:
+def test_linear_rejects_unsupported_and_non_global_urls(candidate_url: str) -> None:
     with pytest.raises(ValueError):
-        linear._reject_internal_base_url(base_url)
+        linear._reject_internal_base_url(candidate_url)
 
 
 def test_linear_graphql_and_normalization_failure_branches() -> None:

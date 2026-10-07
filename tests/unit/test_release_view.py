@@ -6,6 +6,8 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "release_view.py"
 MAKEFILE = ROOT / "Makefile"
@@ -75,7 +77,7 @@ def test_valid_release_prints_summary_and_assets(monkeypatch, capsys):
 
 
 def test_make_target_delegates_to_fail_closed_script():
-    content = MAKEFILE.read_text(encoding="utf-8")
+    content = compose_makefile(MAKEFILE)
     recipe = content.split("\nrelease-view:", maxsplit=1)[1].split("\n\n", maxsplit=1)[0]
 
     assert 'scripts/release_view.py "$(TAG)"' in recipe

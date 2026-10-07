@@ -28,16 +28,17 @@ def test_frozen_daemon_runtime_is_bundled() -> None:
     assert "'uvicorn_worker'," in spec
 
 
-def test_gunicorn_type_stubs_are_declared_in_both_dev_sets() -> None:
-    with (_ROOT / "pyproject.toml").open("rb") as stream:
-        project = tomllib.load(stream)
+def test_gunicorn_type_stubs_are_declared_in_all_dev_profile_sets() -> None:
+    with (
+        _ROOT / "requirements/profiles/dev-quality/pyproject.toml"
+    ).open("rb") as stream:
+        profile = tomllib.load(stream)
+    with (_ROOT / "config/dependency_profiles.toml").open("rb") as stream:
+        catalog = tomllib.load(stream)
 
-    dependency_sets = (
-        project["project"]["optional-dependencies"]["dev"],
-        project["dependency-groups"]["dev"],
+    assert any(
+        dependency.startswith("types-gunicorn")
+        for dependency in profile["project"]["dependencies"]
     )
-    for dependencies in dependency_sets:
-        assert any(
-            dependency.startswith("types-gunicorn")
-            for dependency in dependencies
-        )
+    for set_name in ("development", "ci"):
+        assert "dev-quality" in catalog["sets"][set_name]["profiles"]

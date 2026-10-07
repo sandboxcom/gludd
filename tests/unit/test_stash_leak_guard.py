@@ -7,13 +7,15 @@ incident reference must be present.
 
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
 
 
 def _recipe(target: str) -> str:
     """Extract the full recipe body for a make target. Assert target exists."""
-    content = MAKEFILE.read_text()
+    content = compose_makefile(MAKEFILE)
     marker = f"\n{target}:"
     assert marker in content, f"Makefile target '{target}' not found"
     start = content.index(marker) + len(marker)
@@ -95,7 +97,7 @@ class TestStashLeakGuard:
 
         git-commit and ship-commit must list _stash-leak-guard as a dependency.
         """
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
 
         commit_line = [ln for ln in content.split("\n") if ln.startswith("git-commit:") or ln.startswith("git-commit ")]
         assert commit_line, "git-commit target must exist"

@@ -8,13 +8,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
 
 
 def _content() -> str:
     assert MAKEFILE.exists(), "Makefile must exist"
-    return MAKEFILE.read_text()
+    return compose_makefile(MAKEFILE)
 
 
 def test_gate_background_target_exists() -> None:
@@ -168,6 +170,8 @@ def test_gate_background_duplicate_does_not_replace_live_pid(
         result = subprocess.run(
             [
                 "make",
+                "-I",
+                str(ROOT),
                 "-f",
                 str(MAKEFILE),
                 "gate-background",
@@ -194,6 +198,8 @@ def test_gate_background_dry_run_has_no_filesystem_side_effects(
         [
             "make",
             "-n",
+            "-I",
+            str(ROOT),
             "-f",
             str(MAKEFILE),
             "gate-background",

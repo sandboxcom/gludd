@@ -13,6 +13,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 SHARED_TS = ROOT / ".opencode" / "lib" / "shared.ts"
@@ -20,6 +22,10 @@ SHARED_TS = ROOT / ".opencode" / "lib" / "shared.ts"
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _makefile_text() -> str:
+    return compose_makefile(MAKEFILE)
 
 
 def _recipe(name: str, content: str) -> str:
@@ -34,14 +40,14 @@ class TestDisengageEnforcementAuditFile:
 
     def test_audit_jsonl_path_exists_in_makefile(self):
         """The string disengage-audit.jsonl appears in the Makefile."""
-        content = _read(MAKEFILE)
+        content = _makefile_text()
         assert "disengage-audit.jsonl" in content, (
             "disengage-audit.jsonl not found in Makefile"
         )
 
     def test_audit_append_in_disengage_recipe(self):
         """disengage-enforcement appends (>>) to the audit jsonl."""
-        recipe = _recipe("disengage-enforcement", _read(MAKEFILE))
+        recipe = _recipe("disengage-enforcement", _makefile_text())
         assert "/tmp/gludd-disengage-audit.jsonl" in recipe, (
             "disengage-enforcement must reference /tmp/gludd-disengage-audit.jsonl"
         )
@@ -51,7 +57,7 @@ class TestDisengageEnforcementAuditFile:
 
     def test_audit_count_display(self):
         """disengage-enforcement prints the cumulative disengage count."""
-        recipe = _recipe("disengage-enforcement", _read(MAKEFILE))
+        recipe = _recipe("disengage-enforcement", _makefile_text())
         assert "Disengage count" in recipe, (
             "disengage-enforcement must display the cumulative disengage count"
         )
@@ -61,7 +67,7 @@ class TestDisengageEnforcementAuditFile:
 
     def test_audit_max_recommendation(self):
         """The count display includes a max/session recommendation."""
-        recipe = _recipe("disengage-enforcement", _read(MAKEFILE))
+        recipe = _recipe("disengage-enforcement", _makefile_text())
         assert "max" in recipe.lower(), (
             "disengage-enforcement count display should include max/session guidance"
         )

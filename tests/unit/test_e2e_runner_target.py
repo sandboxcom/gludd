@@ -3,11 +3,13 @@
 import subprocess
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 MAKEFILE = Path(__file__).resolve().parents[2] / "Makefile"
 
 
 def _target_body(name: str) -> str:
-    content = MAKEFILE.read_text(encoding="utf-8")
+    content = compose_makefile(MAKEFILE)
     start = content.index(f"{name}:")
     remaining = content[start:]
     return remaining.split("\n\n", 1)[0]
@@ -65,7 +67,7 @@ def test_e2e_runner_releases_its_own_lock_without_killing_owner() -> None:
 
 
 def test_worktree_e2e_cleanup_is_scoped_to_the_requesting_worktree() -> None:
-    content = MAKEFILE.read_text(encoding="utf-8")
+    content = compose_makefile(MAKEFILE)
     assert "kill-worktree-e2e:" in content
     start = content.index("kill-worktree-e2e:")
     body = content[start:].split("\n\n", 1)[0]
@@ -153,7 +155,7 @@ def test_e2e_runner_treats_collection_skip_as_success() -> None:
 
 
 def test_azure_provision_sourced_target_uses_explicit_env_file_contract() -> None:
-    content = MAKEFILE.read_text(encoding="utf-8")
+    content = compose_makefile(MAKEFILE)
     assert "AZURE_E2E_ENV_FILE ?= /tmp/general-ludd.env" in content
     body = _target_body("test-e2e-azure-provision-sourced")
     assert 'test -r "$(AZURE_E2E_ENV_FILE)"' in body
@@ -164,7 +166,7 @@ def test_azure_provision_sourced_target_uses_explicit_env_file_contract() -> Non
 
 
 def test_game_provision_target_uses_env_file_and_hour_long_timeout_contract() -> None:
-    content = MAKEFILE.read_text(encoding="utf-8")
+    content = compose_makefile(MAKEFILE)
     body = _target_body("test-e2e-games-provision")
 
     assert "GAME_E2E_TIMEOUT_SECS ?= 3600" in content
@@ -177,13 +179,21 @@ def test_game_provision_target_uses_env_file_and_hour_long_timeout_contract() ->
     assert ". /tmp/general-ludd.env" not in body
 
 
-def test_game_targets_install_declared_media_extra_instead_of_silently_skipping() -> None:
-    content = (MAKEFILE.parent / "pyproject.toml").read_text(encoding="utf-8")
+def test_game_targets_sync_declared_media_profile_instead_of_silently_skipping() -> None:
+    profile = (
+        MAKEFILE.parent / "requirements/profiles/game-e2e/pyproject.toml"
+    ).read_text(encoding="utf-8")
+    profile_sets = (MAKEFILE.parent / "config/dependency_profiles.toml").read_text(
+        encoding="utf-8"
+    )
 
     for target in ("test-e2e-games", "test-e2e-games-provision", "test-e2e-games-local"):
-        assert "--extra game-e2e" in _target_body(target)
-    assert 'game-e2e = [' in content
-    assert '"yt-dlp>=' in content
+        body = _target_body(target)
+        assert "sync DEPENDENCY_PROFILE_SET=ci-game-e2e" in body
+        assert "--no-sync pytest" in body
+    assert "[sets.ci-game-e2e]" in profile_sets
+    assert '"game-e2e"' in profile_sets
+    assert '"yt-dlp>=' in profile
 
 
 def test_game_provision_target_behavioral_example_never_provisions() -> None:
@@ -228,7 +238,7 @@ def test_game_provision_target_rejects_short_timeout_before_provisioning() -> No
 
 
 def test_azure_cleanup_target_is_bounded_observable_and_env_parameterized() -> None:
-    content = MAKEFILE.read_text(encoding="utf-8")
+    content = compose_makefile(MAKEFILE)
     body = _target_body("azure-cleanup-e2e")
 
     assert "AZURE_CLEANUP_TIMEOUT_SECS ?= 1800" in content

@@ -219,13 +219,18 @@ test-zai-identity:
 CONTAINER_RUNTIME := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 CONTAINER_IMAGE := gl-agent:latest
 
-VERSION = $(shell UV_CACHE_DIR="$(GLUDD_UV_CACHE_DIR)" $(UV) run python -c "from general_ludd import __version__; print(__version__)")
+VERSION = $(shell UV_CACHE_DIR="$(GLUDD_UV_CACHE_DIR)" $(UV) run --no-sync python -c "from general_ludd import __version__; print(__version__)")
 PLATFORM = $(shell uname -s)-$(shell uname -m)
 TARBALL_NAME = general-ludd-agent-$(VERSION)-$(PLATFORM)
 TARBALL_DIR = dist/$(TARBALL_NAME)
 
 build-executable:
-	@$(UV) run --frozen --extra azure pyinstaller gludd.spec --clean --noconfirm
+	@$(MAKE) --no-print-directory sync \
+		DEPENDENCY_PROFILE_SET=build-azure \
+		DEPENDENCY_PROFILE_ENVIRONMENT=.venv \
+		DEPENDENCY_PROFILE_PYTHON=3.12.14 \
+		DEPENDENCY_PROFILE_VALIDATE_ONLY=0
+	@$(UV) run --no-sync pyinstaller gludd.spec --clean --noconfirm
 	@echo "Built dist/gludd"
 
 LINUX_BINARY_IMAGE ?= gludd-linux-binary-build:python3.12.14-uv0.12.19
@@ -359,10 +364,9 @@ build-linux-executable: worktree-guard ## Build and verify a real Linux PyInstal
 	@rm -f "$(LINUX_BINARY_OUTPUT)" "$(dir $(LINUX_BINARY_OUTPUT))warn-gludd.txt"
 	@set -e; source_sha=$$(git rev-parse HEAD); echo "LINUX_BINARY_SOURCE sha=$$source_sha"; if [ "$$(uname -s)" = "Linux" ]; then \
 		echo "Building Linux executable natively"; \
-		python_version=$$($(UV) run python -c 'import platform; print(platform.python_version())'); \
-		test "$$python_version" = "$(PYINSTALLER_PYTHON_VERSION_LINUX)" || { echo "Expected Python $(PYINSTALLER_PYTHON_VERSION_LINUX) for deterministic Linux PyInstaller analysis, found $$python_version"; exit 1; }; \
-		$(UV) sync --frozen --extra azure; \
 		$(MAKE) --no-print-directory build-executable; \
+		python_version=$$($(UV) run --no-sync python -c 'import platform; print(platform.python_version())'); \
+		test "$$python_version" = "$(PYINSTALLER_PYTHON_VERSION_LINUX)" || { echo "Expected Python $(PYINSTALLER_PYTHON_VERSION_LINUX) for deterministic Linux PyInstaller analysis, found $$python_version"; exit 1; }; \
 		pyinstaller_version=$$($(UV) run pyinstaller --version); \
 		architecture=$$(uname -m); \
 		cp build/gludd/warn-gludd.txt "$(dir $(LINUX_BINARY_OUTPUT))warn-gludd.txt"; \
@@ -435,7 +439,8 @@ build-linux-executable: worktree-guard ## Build and verify a real Linux PyInstal
 				cat /tmp/gludd-apt-after.txt; \
 				grep -Fq "0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded." /tmp/gludd-apt-after.txt; \
 				rm -rf /var/lib/apt/lists/*; \
-				uv sync --frozen --extra azure; \
+				python scripts/dependency_profiles.py sync --root /workspace --set build-azure --environment /tmp/gludd-linux-venv --python $(PYINSTALLER_PYTHON_VERSION_LINUX); \
+				export UV_NO_SYNC=1; \
 				python_version=$$(uv run python -c "import platform; print(platform.python_version())"); \
 				test "$$python_version" = "$(PYINSTALLER_PYTHON_VERSION_LINUX)" || { echo "Expected Python $(PYINSTALLER_PYTHON_VERSION_LINUX) for deterministic Linux PyInstaller analysis, found $$python_version"; exit 1; }; \
 				pyinstaller_version=$$(uv run pyinstaller --version); \

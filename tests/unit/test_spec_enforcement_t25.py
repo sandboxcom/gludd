@@ -8,6 +8,8 @@ each phase (lint, typecheck, collect, test, etc.).
 import re
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 MAKEFILE = Path(__file__).parent.parent.parent / "Makefile"
 LAUNCHER = MAKEFILE.parent / "scripts/start_gate_background.py"
 
@@ -16,11 +18,11 @@ class TestT25BackgroundGatePhaseMarkers:
     """T25 — gate-background emits phase markers."""
 
     def test_gate_background_target_exists(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         assert "\ngate-background:" in content, "T25: gate-background target must exist in Makefile"
 
     def test_gate_background_writes_to_gate_logs(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         idx = content.find("\ngate-background:")
         assert idx != -1
         end = content.find("\n\n", idx)
@@ -33,7 +35,7 @@ class TestT25BackgroundGatePhaseMarkers:
         assert "start_new_session=True" in launcher
 
     def test_gate_target_has_minimum_phase_markers(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         idx = content.find("\ngate:")
         assert idx != -1
         next_blank = content.find("\n\n", idx)
@@ -51,7 +53,7 @@ class TestT25BackgroundGatePhaseMarkers:
         )
 
     def test_gate_lite_has_minimum_phase_markers(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         idx = content.find("\ngate-lite:")
         assert idx != -1, "T25: gate-lite target must exist"
         next_blank = content.find("\n\n", idx)
@@ -65,7 +67,7 @@ class TestT25BackgroundGatePhaseMarkers:
         assert not missing, f"T25: gate-lite target missing phase markers: {sorted(missing)}."
 
     def test_gate_status_check_reports_phase(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         idx = content.find("\ngate-status-check:")
         assert idx != -1, "T25: gate-status-check target must exist"
         end = content.find("\n\n", idx)
@@ -75,7 +77,7 @@ class TestT25BackgroundGatePhaseMarkers:
         assert "Phase:" in recipe, "T25: gate-status-check must report the current phase"
 
     def test_gate_background_has_timeout_protection(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         idx = content.find("\ngate-background:")
         assert idx != -1
         end = content.find("\n\n", idx)

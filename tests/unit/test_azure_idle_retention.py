@@ -71,8 +71,8 @@ def _layer(
     p95_seconds: float = 964.0,
     dependencies: tuple[AzureRetentionLayerKind, ...] = (),
     idle_compute_replicas: int = 0,
-    cost: AzureIdleCostEvidence | None | object = ...,
-    latency: AzureProvisioningLatencyEvidence | None | object = ...,
+    cost: AzureIdleCostEvidence | object | None = ...,
+    latency: AzureProvisioningLatencyEvidence | object | None = ...,
 ) -> AzureRetentionLayer:
     selected_cost = _cost(hourly_microusd) if cost is ... else cost
     selected_latency = _latency(p95_seconds) if latency is ... else latency

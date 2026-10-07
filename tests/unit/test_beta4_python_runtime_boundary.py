@@ -38,18 +38,19 @@ def test_core_dependencies_exclude_ansible_controller() -> None:
 
 
 def test_ansible_controller_is_optional_and_available_to_tests() -> None:
-    project = _project()
-    optional = project["project"]["optional-dependencies"]
-    controller = "\n".join(optional["ansible-controller"])
-    dev_extra = "\n".join(optional["dev"])
-    dev_group = "\n".join(project["dependency-groups"]["dev"])
+    project = tomllib.loads(
+        (
+            ROOT / "requirements/profiles/ansible-controller/pyproject.toml"
+        ).read_text(encoding="utf-8")
+    )
+    controller = "\n".join(project["project"]["dependencies"])
+    catalog = tomllib.loads(
+        (ROOT / "config/dependency_profiles.toml").read_text(encoding="utf-8")
+    )
     for dependency in ("ansible-core", "ansible-runner", "ansible-builder"):
         assert dependency in controller
-        assert dependency in dev_extra
-        assert dependency in dev_group
     assert "ansible-builder>=3.1.1,<3.2" in controller
-    assert "ansible-builder>=3.1.1,<3.2" in dev_extra
-    assert "ansible-builder>=3.1.1,<3.2" in dev_group
+    assert "ansible-controller" in catalog["sets"]["development"]["profiles"]
 
 
 def test_core_cli_imports_when_ansible_is_unavailable() -> None:

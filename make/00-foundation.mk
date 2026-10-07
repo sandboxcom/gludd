@@ -103,6 +103,11 @@ export FREELLMAPI_THREE_ARM_REPORT
 GLUDD_UV_CACHE_DIR ?= /tmp/gludd-uv-cache-public-v2
 override UV_CACHE_DIR := $(GLUDD_UV_CACHE_DIR)
 export UV_CACHE_DIR
+# Profile environments are deliberately composed from multiple independent locks.
+# Every automatic `uv run` exact-sync would otherwise erase later profile layers;
+# explicit `make sync` remains the only environment mutation entry point.
+override UV_NO_SYNC := 1
+export UV_NO_SYNC
 RELEASE_READINESS_VALIDATE_ONLY ?= 0
 RELEASE_COMPLETED_STAGES ?=
 RELEASE_OBSERVATIONS ?=
@@ -339,7 +344,7 @@ _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all
          file-executable build-executable deb-package deb-install-deps rpm-package macos-dmg windows-installer release-artifacts dist-clean bundle-binaries bundle-ripgrep \
         sast sast-summary sbom pip-audit security security-backlog-gate \
         audit-messages qa validate collect-check pre-commit-check coverage-files observed-status observed-tail gate gate-refresh gate-lite smoke install-hooks install-workflow-hook feature-spec-inventory check-generated-artifact-hygiene \
-        status-snapshot audit-evidence deps-audit dogfood-features ruff-audit check-make-help \
+        status-snapshot audit-evidence deps-audit core-dependency-ownership-refresh dogfood-features ruff-audit check-make-help \
         skill-install skill-list bootstrap-skills scan-tool-usage \
          scan-secrets scan-secrets-baseline clean-untracked clean-hooks clean-plugins \
          secrets-scrub secrets-scan secrets-baseline secrets-baseline-check security-audit clean-artifacts health-check \
@@ -391,7 +396,7 @@ help:
 	@echo ""
 	@echo "  --- Setup ---"
 	@echo "  init                  Set up project (dirs + deps)"
-	@echo "  sync                  Sync uv dependencies"
+	@echo "  sync                  Atomically sync an explicit locked dependency profile set (DEPENDENCY_PROFILE_*)"
 	@echo "  uv-cache-path         Print the sandbox-writable Gludd uv cache path"
 	@echo "  migrate-up            Upgrade an explicit database URL to a revision (MIGRATE_DATABASE_URL, MIGRATE_REVISION)"
 	@echo "  sync-llama-cpp        Sync locked local-inference extra (SYNC_LLAMA_CPP_VALIDATE_ONLY=0|1)"
@@ -408,6 +413,7 @@ help:
 	@echo "  refresh-ansible-base-image Resolve, verify, and atomically pin the supported EE base (ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY=0|1)"
 	@echo "  update-collection-python-boundary-inventory Refresh exact legacy migration inventory"
 	@echo "  deps-audit            Fail-closed Python dependency truth audit"
+	@echo "  core-dependency-ownership-refresh  Reconcile direct-core ownership (CORE_DEPENDENCY_OWNERSHIP_REFRESH_VALIDATE_ONLY=0|1)"
 	@echo "  node-deps-sync        Install locked Node deps (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY, NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false)"
 	@echo "  node-deps-relock      Regenerate Node lock (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY, NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false)"
 	@echo "  node-deps-audit       Audit locked Node deps (NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false plus NODE_DEPS_AUDIT_LEVEL=low|moderate|high|critical)"
@@ -941,11 +947,25 @@ setup-dirs:
 
 init: setup-dirs
 	@if [ ! -f pyproject.toml ]; then echo "ERROR: pyproject.toml missing"; exit 1; fi
-	@if command -v $(UV) >/dev/null 2>&1; then echo "Using uv..."; $(UV) sync; else echo "uv not found, using pip..."; $(PYTHON) -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"; fi
+	@command -v $(UV) >/dev/null 2>&1 || { echo "uv is required for locked dependency profiles"; exit 1; }
+	@$(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=development DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=0
 	@$(MAKE) --no-print-directory install-hooks
 
+DEPENDENCY_PROFILE_SET ?= development
+DEPENDENCY_PROFILE_ENVIRONMENT ?= .venv
+DEPENDENCY_PROFILE_PYTHON ?=
+DEPENDENCY_PROFILE_VALIDATE_ONLY ?= 0
+
 sync:
-	@$(UV) sync --locked
+	@case "$(DEPENDENCY_PROFILE_VALIDATE_ONLY)" in 0|1) ;; *) echo "DEPENDENCY_PROFILE_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@UV_NO_SYNC=0 $(UV) run --no-project --python 3.11 python scripts/dependency_profiles.py sync \
+		--root "$(CURDIR)" \
+		--manifest config/dependency_profiles.toml \
+		--uv "$(UV)" \
+		--set "$(DEPENDENCY_PROFILE_SET)" \
+		--environment "$(DEPENDENCY_PROFILE_ENVIRONMENT)" \
+		$(if $(strip $(DEPENDENCY_PROFILE_PYTHON)),--python "$(DEPENDENCY_PROFILE_PYTHON)",) \
+		$(if $(filter 1,$(DEPENDENCY_PROFILE_VALIDATE_ONLY)),--validate-only,)
 
 uv-cache-path:
 	@printf '%s\n' "$$UV_CACHE_DIR"
@@ -956,12 +976,20 @@ migrate-up:
 	@DATABASE_URL="$(MIGRATE_DATABASE_URL)" $(UV) run alembic upgrade "$(MIGRATE_REVISION)"
 
 sync-local-inference:
-	@$(UV) sync --locked --extra local-inference
+	@$(MAKE) --no-print-directory sync \
+		DEPENDENCY_PROFILE_SET=local-inference \
+		DEPENDENCY_PROFILE_ENVIRONMENT=.venv \
+		DEPENDENCY_PROFILE_PYTHON= \
+		DEPENDENCY_PROFILE_VALIDATE_ONLY=0
 
 SYNC_LLAMA_CPP_VALIDATE_ONLY ?= 0
 sync-llama-cpp:
 	@case "$(SYNC_LLAMA_CPP_VALIDATE_ONLY)" in 0|1) ;; *) echo "SYNC_LLAMA_CPP_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
-	@$(UV) sync --locked --extra local-inference $(if $(filter 1,$(SYNC_LLAMA_CPP_VALIDATE_ONLY)),--dry-run,)
+	@$(MAKE) --no-print-directory sync \
+		DEPENDENCY_PROFILE_SET=local-inference \
+		DEPENDENCY_PROFILE_ENVIRONMENT=.venv \
+		DEPENDENCY_PROFILE_PYTHON= \
+		DEPENDENCY_PROFILE_VALIDATE_ONLY=$(SYNC_LLAMA_CPP_VALIDATE_ONLY)
 
 ANSIBLE_EE_VALIDATE_ONLY ?= 1
 ANSIBLE_EE_RUNTIME ?= podman
@@ -1016,11 +1044,12 @@ update-collection-python-boundary-inventory:
 sync-models:
 	@$(PYTHON) scripts/sync_local_models.py
 
-# Regenerate uv.lock from pyproject (after adding/removing a dependency) and
-# install it. Use this instead of `sync` when pyproject deps changed.
+# Regenerate the root and every independent profile lock. The profile manager
+# validates the hard line ceiling after uv has generated each artifact.
+DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY ?= 0
 relock:
-	@$(UV) lock
-	@$(UV) sync
+	@case "$(DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY)" in 0|1) ;; *) echo "DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
+	@UV_NO_SYNC=0 $(UV) run --no-project --python 3.11 python scripts/dependency_profiles.py $(if $(filter 1,$(DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY)),check,lock) --root "$(CURDIR)" --manifest config/dependency_profiles.toml --uv "$(UV)"
 
 node-deps-sync:
 	@if [ "$(NODE_DEPS_VALIDATE_ONLY)" = "1" ]; then \
@@ -1088,9 +1117,8 @@ freellmapi-three-arm-replay:
 			--repository-root "$(CURDIR)"
 
 install-pip:
-	@$(PYTHON) -m venv .venv
-	@. .venv/bin/activate && pip install --upgrade pip
-	@. .venv/bin/activate && pip install -e ".[dev]"
+	@echo "install-pip is a compatibility alias for the locked development profile"
+	@$(MAKE) --no-print-directory sync DEPENDENCY_PROFILE_SET=development DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=0
 
 version:
 	@$(UV) run python -c "from general_ludd import __version__; print(f'general-ludd-agent {__version__}')"

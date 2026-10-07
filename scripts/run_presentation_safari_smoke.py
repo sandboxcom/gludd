@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import socket
@@ -21,14 +22,16 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-if __package__:
-    from scripts import build_deck
-else:
-    import build_deck
+build_deck = importlib.import_module(
+    f"{__package__}.build_deck" if __package__ else "build_deck"
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DRIVER = Path("/usr/bin/safaridriver")
 DEFAULT_OUTPUT = Path("/tmp/gludd-presentation-safari")
+DRIVER_READY_TIMEOUT_SECONDS = 10.0
+DRIVER_POLL_SECONDS = 0.1
+DRIVER_HEARTBEAT_SECONDS = 1.0
 REMOTE_AUTOMATION_GUIDANCE = (
     "Native Safari acceptance could not start because Remote Automation is disabled. "
     "In Safari, open Safari > Settings > Advanced and enable the developer-features menu "
@@ -135,10 +138,12 @@ def _free_port() -> int:
 def _error_message(payload: Any) -> str:
     if isinstance(payload, dict):
         value = payload.get("value")
-        if isinstance(value, dict) and isinstance(value.get("message"), str):
-            return value["message"]
-        if isinstance(payload.get("message"), str):
-            return payload["message"]
+        nested_message = value.get("message") if isinstance(value, dict) else None
+        if isinstance(nested_message, str):
+            return nested_message
+        message = payload.get("message")
+        if isinstance(message, str):
+            return message
     return "Safari WebDriver request failed"
 
 
@@ -196,7 +201,13 @@ def _running_driver(plan: SafariPlan, deadline: float) -> Iterator[int]:
         start_new_session=True,
     )
     try:
-        while time.monotonic() < min(deadline, time.monotonic() + 10):
+        started_at = time.monotonic()
+        readiness_deadline = min(
+            deadline,
+            started_at + DRIVER_READY_TIMEOUT_SECONDS,
+        )
+        next_heartbeat = started_at
+        while time.monotonic() < readiness_deadline:
             if process.poll() is not None:
                 output = _driver_output(process)
                 if is_remote_automation_disabled(output):
@@ -206,7 +217,21 @@ def _running_driver(plan: SafariPlan, deadline: float) -> Iterator[int]:
                 _request(port, "GET", "/status", timeout=1)
                 break
             except WebDriverFailure:
-                time.sleep(0.1)
+                now = time.monotonic()
+                if now >= next_heartbeat:
+                    print(
+                        "presentation-safari phase=driver-wait "
+                        f"elapsed={max(0.0, now - started_at):.1f}s "
+                        f"remaining={max(0.0, readiness_deadline - now):.1f}s",
+                        flush=True,
+                    )
+                    next_heartbeat = now + DRIVER_HEARTBEAT_SECONDS
+                time.sleep(
+                    min(
+                        DRIVER_POLL_SECONDS,
+                        max(0.0, readiness_deadline - now),
+                    )
+                )
         else:
             raise WebDriverFailure("safaridriver readiness timed out")
         yield port
@@ -253,7 +278,9 @@ def _served_artifact(output_root: Path) -> Iterator[str]:
             daemon=True,
         )
         thread.start()
-        host, port = server.server_address
+        host_value = server.server_address[0]
+        host = host_value.decode() if isinstance(host_value, bytes) else host_value
+        port = server.server_port
         try:
             yield f"http://{host}:{port}/gludd/"
         finally:

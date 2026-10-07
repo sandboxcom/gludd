@@ -1,3 +1,5 @@
+# ML/AI expert continual-evolution contract
+
 ## 8. Continual research and governed capability evolution
 
 These units operationalize the dossier's primary evidence on

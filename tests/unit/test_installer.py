@@ -2,8 +2,10 @@ import os
 import shutil
 import stat
 import subprocess
+from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -134,18 +136,15 @@ class TestInstallScript:
 
 class TestTarballStructure:
     def test_makefile_has_dist_target(self):
-        with open(os.path.join(PROJECT_ROOT, "Makefile")) as f:
-            makefile = f.read()
+        makefile = compose_makefile(Path(PROJECT_ROOT) / "Makefile")
         assert "\ndist:" in makefile
 
     def test_makefile_has_dist_clean_target(self):
-        with open(os.path.join(PROJECT_ROOT, "Makefile")) as f:
-            makefile = f.read()
+        makefile = compose_makefile(Path(PROJECT_ROOT) / "Makefile")
         assert "dist-clean" in makefile
 
     def test_makefile_dist_builds_pyinstaller(self):
-        with open(os.path.join(PROJECT_ROOT, "Makefile")) as f:
-            makefile = f.read()
+        makefile = compose_makefile(Path(PROJECT_ROOT) / "Makefile")
         # Anchor on the real line-start "dist:" target, not any substring like
         # "test-xdist:" (otherwise an unrelated target whose name ends in "dist"
         # is parsed as the dist recipe).

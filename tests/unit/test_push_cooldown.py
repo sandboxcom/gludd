@@ -28,6 +28,8 @@ import re
 import time
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 
@@ -36,7 +38,7 @@ MAKEFILE_STATE_PATH = Path("/tmp/gludd-watchdog-push-timestamps.json")
 
 
 def _makefile_src() -> str:
-    return MAKEFILE.read_text()
+    return compose_makefile(MAKEFILE)
 
 
 def _cooldown_section() -> str:

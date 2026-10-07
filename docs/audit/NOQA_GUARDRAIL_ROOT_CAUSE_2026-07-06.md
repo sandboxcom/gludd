@@ -18,7 +18,7 @@ the instant a suppression comment is typed, and the red gate it produces has bee
 **bypassed at commit time** (via `commit-no-verify` / `repo-commit` / skipping the
 gate). The failure is architectural — a post-hoc detection layer with no
 preventive layer in front of it — which is the same incident class as BUGS.md
-#21+ ("guardrails that detect but do not block"), applied at a different layer.
+Incident #21+ ("guardrails that detect but do not block"), applied at a different layer.
 
 > **Correction to the original investigation brief.** The brief hypothesized the
 > test used `warnings.warn()` instead of `assert`, which would make it a no-op

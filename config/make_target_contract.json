@@ -561,6 +561,21 @@
       "behavior": "make deps-audit"
     },
     {
+      "name": "core-dependency-ownership-refresh",
+      "make_variables": ["CORE_DEPENDENCY_OWNERSHIP_REFRESH_VALIDATE_ONLY"],
+      "behavior": "make core-dependency-ownership-refresh CORE_DEPENDENCY_OWNERSHIP_REFRESH_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "sync",
+      "make_variables": ["DEPENDENCY_PROFILE_SET", "DEPENDENCY_PROFILE_ENVIRONMENT", "DEPENDENCY_PROFILE_PYTHON", "DEPENDENCY_PROFILE_VALIDATE_ONLY"],
+      "behavior": "make sync DEPENDENCY_PROFILE_SET=development DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON=3.12 DEPENDENCY_PROFILE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "relock",
+      "make_variables": ["DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY"],
+      "behavior": "make relock DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY=1"
+    },
+    {
       "name": "sync-llama-cpp",
       "make_variables": ["SYNC_LLAMA_CPP_VALIDATE_ONLY"],
       "behavior": "make sync-llama-cpp SYNC_LLAMA_CPP_VALIDATE_ONLY=1"

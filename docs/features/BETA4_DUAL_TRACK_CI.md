@@ -528,6 +528,22 @@ and prints the complete plan without inspecting release identity, running pytest
 or writing evidence; an empty pytest selector is consequently safe for contract
 checks.
 
+An isolated Python 3.11 validation later exposed a toolchain bootstrap gap: setting
+`UV_PROJECT_ENVIRONMENT` selected the namespaced environment but did not install
+the test-time `coverage` dependency before the runner imported it. Practitioner
+reports describe the same class of environment-selection surprise: uv users have
+found dependencies unavailable when the selected environment was not the one they
+had populated ([uv issue 9067](https://github.com/astral-sh/uv/issues/9067)), and
+the longer-running active-environment discussion records confusion about adding
+development dependencies to a non-default environment
+([uv issue 6612](https://github.com/astral-sh/uv/issues/6612)). The local producer
+now atomically syncs the repository's locked `ci` dependency profile into its
+namespaced Python 3.11 toolchain, then invokes the runner with `--no-sync`. This is
+zero-downtime for other worktrees and running lanes: profile staging completes
+before replacement, and no shared environment is mutated. Rollback is a recipe
+revert plus removal of only that worktree's namespaced toolchain; the next run
+recreates it from the unchanged locks.
+
 Candidate `cf9fcd3d7154e2a03cf3012db74ca92b51dde796` exposed a peer-lane
 cancellation defect after hosted run `32886106353` failed. Cancelling the local
 producer interrupted its active child and cleaned that batch, but the parent
@@ -2385,6 +2401,39 @@ through its owner after the exact failure was known; its serial runner reaped
 the active worker and removed its namespaced temporary root. The hosted run was
 canceled through `make ci-cancel`. The checker starts no daemon, model, network
 client, or subprocess, so this repair adds no compensating cleanup task.
+
+### Validated split-module coverage ownership (2026-10-06)
+
+The development gate exposed eight false `UNTESTED` reports after the CLI,
+daemon, and event-loop facades were split: the CLI parser, daemon lifecycle
+ports, and six event-loop lifecycle/dispatch mixins. Their tests deliberately
+exercise behavior through the stable compatibility facades or computed module
+names, so a literal-import-only AST index cannot see the real ownership edge.
+`config/coverage_gap_test_mappings.json` now records those indirect edges.
+
+This mapping is not a coverage-gap allowlist. For each entry, the checker proves
+that the target component and facade both exist, the facade directly imports
+the component, the mapped test exists and has test functions, and that test
+statically imports the facade. Missing files or either broken import edge fail
+the audit as mapping errors; unrelated passing tests cannot conceal an untested
+module. The baseline retains only the pre-existing reviewed gaps.
+
+Long-lived practitioner reports support explicit but verified ownership where
+static inference is incomplete. [pytest-testmon issue #12][testmon-explicit-deps],
+opened in 2015 and reviewed 2026-10-06, requests merging explicit file
+dependencies with measured coverage for inputs automatic analysis cannot see.
+The [pytest discussion on imported test functions][pytest-imported-tests],
+reviewed 2026-10-06, notes that definition ownership cannot reliably be inferred
+from an imported name alone. Gludd therefore requires both source and test import
+edges instead of accepting a filename, prose mention, or unrestricted mapping.
+
+ZDD is unchanged: this checker only reads Python and JSON files and never starts
+or mutates a runtime service. Rollback removes the mapping, checker validation,
+tests, and this note together; the coverage gate then fails closed on all eight
+components again.
+
+[testmon-explicit-deps]: https://github.com/tarpas/pytest-testmon/issues/12
+[pytest-imported-tests]: https://github.com/pytest-dev/pytest/discussions/11366
 
 Exact-run artifact inspection is now a first-class bounded operation through
 `make ci-artifact-context`. It resolves only the resource-arbiter namespace

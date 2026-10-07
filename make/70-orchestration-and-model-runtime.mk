@@ -34,11 +34,13 @@ gate-status:
 # atomically publishes the exact PID/start-token/session/log identity, starts a
 # bounded watcher, and returns immediately. The watcher exits with the gate and
 # removes .gate-background.pid only when the receipt still names its exact PID.
+_GATE_ENTRY_MAKEFILE := $(abspath $(firstword $(MAKEFILE_LIST)))
+_GATE_REPOSITORY_ROOT := $(abspath $(dir $(_GATE_ENTRY_MAKEFILE)))
 gate-background:
-	@$(UV) run --project "$(abspath $(dir $(lastword $(MAKEFILE_LIST))))" python "$(abspath $(dir $(lastword $(MAKEFILE_LIST))))/scripts/start_gate_background.py" \
+	@$(UV) run --project "$(_GATE_REPOSITORY_ROOT)" python "$(_GATE_REPOSITORY_ROOT)/scripts/start_gate_background.py" \
 		--project-root "$(CURDIR)" \
 		--make-command "$(_GATE_MAKE)" \
-		--makefile "$(abspath $(lastword $(MAKEFILE_LIST)))" \
+		--makefile "$(_GATE_ENTRY_MAKEFILE)" \
 		--timeout-seconds "$(GATE_TIMEOUT)" \
 		--validate-only "$(GATE_BACKGROUND_VALIDATE_ONLY)"
 

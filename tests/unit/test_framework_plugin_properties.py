@@ -39,6 +39,7 @@ import re
 from pathlib import Path
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
@@ -443,7 +444,7 @@ def test_fw11_makefile_has_verify_plugin_manifest() -> None:
     Catches orphan plugins (in opencode.json but not on disk) and missing
     plugins (on disk but not in opencode.json).
     """
-    text = MAKEFILE.read_text()
+    text = compose_makefile(MAKEFILE)
     assert re.search(r"^verify-plugin-manifest\s*:", text, re.MULTILINE), (
         "Makefile missing 'verify-plugin-manifest:' target"
     )
@@ -502,7 +503,7 @@ def test_fw13_makefile_has_check_node_v26_compat() -> None:
     All plugin .ts files must parse under Node v26 ``--experimental-strip-types``.
     The check forbids enums, namespaces, and nested try-in-catch patterns.
     """
-    text = MAKEFILE.read_text()
+    text = compose_makefile(MAKEFILE)
     assert re.search(r"^check-node-v26-compat\s*:", text, re.MULTILINE), (
         "Makefile missing 'check-node-v26-compat:' target"
     )
@@ -561,7 +562,7 @@ def test_makefile_has_check_plugin_hook_invoke() -> None:
     function with null-safe inputs. Catches the class of bug where a function
     is called but never imported (2026-07-24 incident).
     """
-    text = MAKEFILE.read_text()
+    text = compose_makefile(MAKEFILE)
     assert re.search(r"^check-plugin-hook-invoke\s*:", text, re.MULTILINE), (
         "Makefile missing 'check-plugin-hook-invoke:' target"
     )

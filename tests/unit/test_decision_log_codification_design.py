@@ -11,23 +11,25 @@ SPEC = ROOT / "docs/design/specs/SPEC_DECISION_LOG_CODIFICATION.md"
 
 def test_offline_learner_is_a_direct_pinned_dependency() -> None:
     """Mining must not depend on an accidental benchmark dependency edge."""
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    project = tomllib.loads(
+        (
+            ROOT / "requirements/profiles/decision-codification/pyproject.toml"
+        ).read_text(encoding="utf-8")
+    )
     requirement = "scikit-learn==1.9.0"
 
-    assert requirement in project["project"]["optional-dependencies"][
-        "decision-codification"
-    ]
-    assert requirement in project["dependency-groups"]["dev"]
+    assert requirement in project["project"]["dependencies"]
 
 
 def _spec_text() -> str:
     return SPEC.read_text(encoding="utf-8")
 
 
-def test_spec_is_implementation_ready_and_reuses_repository_components() -> None:
+def test_spec_records_implemented_scope_and_reuses_repository_components() -> None:
     text = _spec_text()
 
-    assert "Status: READY-TO-IMPLEMENT" in text
+    assert "CORE, ANALYSIS API, CLI, AND OPT-IN LIVE REVIEW IMPLEMENTED" in text
+    assert "DURABLE INTEGRATION PENDING" in text
     for path in (
         "src/general_ludd/replay/schema.py",
         "src/general_ludd/replay/store.py",

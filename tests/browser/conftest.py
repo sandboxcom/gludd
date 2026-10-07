@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
@@ -75,13 +76,21 @@ def browser_events(page: Any) -> dict[str, list[str]]:
 
 
 @pytest.fixture(autouse=True)
-def retain_browser_failure_artifacts(page: Any, request: pytest.FixtureRequest) -> Generator[None, None, None]:
-    """Retain browser state when acceptance fails without exposing source text."""
+def _retain_browser_failure_artifacts(
+    page: Any,
+    request: pytest.FixtureRequest,
+) -> Generator[None, None, None]:
+    """Ensure failed acceptance runs retain browser state for diagnosis."""
     yield
     report = getattr(request.node, "rep_call", None)
     if report is None or not report.failed:
         return
-    output = Path(os.environ.get("GLUDD_PRESENTATION_BROWSER_OUTPUT", "/tmp/gludd-presentation-browser"))
+    output = Path(
+        os.environ.get(
+            "GLUDD_PRESENTATION_BROWSER_OUTPUT",
+            str(Path(tempfile.gettempdir()) / "gludd-presentation-browser"),
+        )
+    )
     output.mkdir(parents=True, exist_ok=True)
     stem = re.sub(r"[^A-Za-z0-9_.-]+", "-", request.node.nodeid)[-160:]
     try:

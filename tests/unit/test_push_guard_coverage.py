@@ -10,6 +10,8 @@ import re
 from pathlib import Path
 from typing import ClassVar
 
+from scripts.makefile_layout import compose_makefile
+
 MAKEFILE = Path(__file__).parent.parent.parent / "Makefile"
 
 
@@ -94,7 +96,7 @@ class TestPushGuardCoverage:
         return any(cls._is_guarded(content, dependency, all_names, visited.copy()) for dependency in dependencies)
 
     def test_primary_push_targets_include_guard(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         all_names = self._targets(content)
         violations = []
         for name in self._PRIMARY_PUSH_TARGETS:
@@ -105,7 +107,7 @@ class TestPushGuardCoverage:
         assert not violations, f"Primary push targets missing _push-rate-guard: {violations}"
 
     def test_all_user_push_targets_reference_guard(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         all_names = self._targets(content)
         push_targets = sorted(
             t
@@ -135,7 +137,7 @@ class TestPushGuardCoverage:
             )
 
     def test_ci_push_target_has_rate_guard(self):
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         entry = self._find_entry(content, "ci-push")
         assert entry, "ci-push must exist"
         assert "_push-rate-guard" in entry, "ci-push must include _push-rate-guard"

@@ -12,6 +12,18 @@ import pytest
 from scripts import run_presentation_browser_tests as runner
 
 
+def _write_presentation_profile(root: Path, dependencies: list[str]) -> Path:
+    profile = root / "requirements" / "profiles" / "presentation-test" / "pyproject.toml"
+    profile.parent.mkdir(parents=True, exist_ok=True)
+    rendered = ", ".join(f'"{dependency}"' for dependency in dependencies)
+    profile.write_text(
+        '[project]\nname = "presentation"\nversion = "0"\n'
+        f"dependencies = [{rendered}]\n",
+        encoding="utf-8",
+    )
+    return profile
+
+
 def test_plan_is_serial_pinned_and_namespaced() -> None:
     """The mandatory browser proof cannot collide with another project run."""
     plan = runner.build_plan(
@@ -41,8 +53,60 @@ def test_webkit_plan_is_a_first_class_browser_contract() -> None:
     )
 
     assert plan.browser == "webkit"
-    pairs = tuple(zip(plan.command, plan.command[1:], strict=False))
-    assert ("--browser", "webkit") in pairs
+    for run in plan.runs:
+        pairs = tuple(zip(run.command, run.command[1:], strict=False))
+        assert ("--browser", "webkit") in pairs
+
+
+def test_plan_replays_only_layout_containment_at_a_second_aspect_ratio() -> None:
+    """The viewport matrix must broaden geometry proof without rerunning the suite."""
+    plan = runner.build_plan(
+        browser="chromium",
+        browser_root=Path("/tmp/gludd-browser-viewport-unit"),
+        output_root=Path("/tmp/gludd-presentation-viewport-unit"),
+        timeout_seconds=120,
+    )
+
+    assert [
+        (run.label, run.viewport_width, run.viewport_height, run.scope)
+        for run in plan.runs
+    ] == [
+        ("desktop-landscape", 1280, 720, "full-suite"),
+        ("compact-4x3", 1024, 768, "layout-containment"),
+    ]
+    desktop, compact = plan.runs
+    assert "--device" not in desktop.command
+    assert "--device" not in compact.command
+    compact_pairs = tuple(zip(compact.command, compact.command[1:], strict=False))
+    assert ("-p", "scripts.run_presentation_browser_tests") in compact_pairs
+    assert runner.LAYOUT_CONTAINMENT_TEST in compact.command
+    assert runner.TEST_FILE.relative_to(runner.ROOT).as_posix() in desktop.command
+    assert runner.TEST_FILE.relative_to(runner.ROOT).as_posix() not in compact.command
+    assert desktop.output_root != compact.output_root
+
+
+def test_viewport_plugin_applies_exact_css_dimensions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The focused replay changes viewport only, without mobile-device emulation."""
+
+    class Item:
+        def __init__(self) -> None:
+            self.markers: list[pytest.MarkDecorator] = []
+
+        def add_marker(self, marker: object) -> None:
+            assert isinstance(marker, pytest.MarkDecorator)
+            self.markers.append(marker)
+
+    item = Item()
+    monkeypatch.setenv(runner.VIEWPORT_SIZE_ENV, "1024x768")
+
+    runner.pytest_collection_modifyitems([item])  # type: ignore[list-item]
+
+    assert len(item.markers) == 1
+    marker = item.markers[0]
+    assert marker.mark.name == "browser_context_args"
+    assert marker.mark.kwargs == {"viewport": {"width": 1024, "height": 768}}
 
 
 @pytest.mark.parametrize(
@@ -66,9 +130,9 @@ def test_validate_plan_is_side_effect_free(monkeypatch: pytest.MonkeyPatch, tmp_
     test_file = root / "tests" / "browser" / "test_presentation.py"
     test_file.parent.mkdir(parents=True)
     test_file.write_text("def test_placeholder(): pass\n", encoding="utf-8")
-    (root / "pyproject.toml").write_text(
-        'presentation-test = ["playwright==1.63.0", "pytest-playwright==0.9.0"]\n',
-        encoding="utf-8",
+    _write_presentation_profile(
+        root,
+        ["playwright==1.63.0", "pytest-playwright==0.9.0"],
     )
     monkeypatch.setattr(runner, "ROOT", root)
     monkeypatch.setattr(runner, "TEST_FILE", test_file)
@@ -83,6 +147,35 @@ def test_validate_plan_is_side_effect_free(monkeypatch: pytest.MonkeyPatch, tmp_
     runner.validate_plan(plan)
 
     assert not output.exists()
+
+
+def test_validate_plan_reads_the_isolated_presentation_profile(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The live runner validates the profile used by the Make target."""
+    root = tmp_path / "repo"
+    test_file = root / "tests" / "browser" / "test_presentation.py"
+    test_file.parent.mkdir(parents=True)
+    test_file.write_text("def test_placeholder(): pass\n", encoding="utf-8")
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "root-without-browser-dependencies"\nversion = "0"\n',
+        encoding="utf-8",
+    )
+    _write_presentation_profile(
+        root,
+        ["playwright==1.63.0", "pytest-playwright==0.9.0"],
+    )
+    monkeypatch.setattr(runner, "ROOT", root)
+    monkeypatch.setattr(runner, "TEST_FILE", test_file)
+    plan = runner.build_plan(
+        browser="webkit",
+        browser_root=Path("/tmp/gludd-browser-profile-test"),
+        output_root=Path("/tmp/gludd-presentation-profile-test"),
+        timeout_seconds=120,
+    )
+
+    runner.validate_plan(plan)
 
 
 def test_timeout_returns_observable_124(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -105,14 +198,55 @@ def test_timeout_returns_observable_124(monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert runner.run_plan(plan) == 124
 
 
-@pytest.mark.parametrize("browser", ("chromium", "webkit"))
+def test_run_plan_executes_both_viewports_with_each_process_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The targeted replay retains the process cap and isolated artifacts."""
+    plan = runner.build_plan(
+        browser="webkit",
+        browser_root=Path("/tmp/gludd-browser-viewport-run-test"),
+        output_root=Path("/tmp/gludd-presentation-viewport-run-test"),
+        timeout_seconds=30,
+    )
+    monkeypatch.setattr(runner, "validate_plan", lambda _plan: None)
+    monkeypatch.setattr(runner, "_require_browser_executable", lambda _plan: None)
+    captured: list[tuple[tuple[str, ...], float, str, str | None]] = []
+
+    def complete(
+        command: tuple[str, ...],
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        environment = kwargs["env"]
+        timeout = kwargs["timeout"]
+        assert isinstance(environment, dict)
+        assert isinstance(timeout, (int, float))
+        captured.append(
+            (
+                command,
+                float(timeout),
+                str(environment["GLUDD_PRESENTATION_BROWSER_OUTPUT"]),
+                environment.get(runner.VIEWPORT_SIZE_ENV),
+            )
+        )
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(runner.subprocess, "run", complete)
+
+    assert runner.run_plan(plan) == 0
+    assert captured == [
+        (plan.runs[0].command, 30.0, plan.runs[0].output_root, None),
+        (plan.runs[1].command, 30.0, plan.runs[1].output_root, "1024x768"),
+    ]
+
+
+@pytest.mark.parametrize("browser_engine", ("chromium", "webkit"))
 def test_browser_install_is_exact_and_bounded(
     monkeypatch: pytest.MonkeyPatch,
-    browser: str,
+    browser_engine: str,
 ) -> None:
     """Installation acquires one requested engine and verifies its binary."""
     plan = runner.build_plan(
-        browser=browser,
+        browser=browser_engine,
         browser_root=Path("/tmp/gludd-browser-install-test"),
         output_root=Path("/tmp/gludd-presentation-install-test"),
         timeout_seconds=120,
@@ -130,7 +264,9 @@ def test_browser_install_is_exact_and_bounded(
     monkeypatch.setattr(runner.subprocess, "run", complete)
 
     assert runner.install_browser(plan) == 0
-    assert captured == [(runner.sys.executable, "-m", "playwright", "install", browser)]
+    assert captured == [
+        (runner.sys.executable, "-m", "playwright", "install", browser_engine)
+    ]
     assert verified == [plan]
 
 
@@ -224,16 +360,17 @@ def test_validate_plan_fails_closed_for_missing_inputs(
 
     test_file.parent.mkdir(parents=True)
     test_file.write_text("pass\n", encoding="utf-8")
-    (root / "pyproject.toml").write_text('deps = ["playwright==1.63.0"]\n', encoding="utf-8")
+    _write_presentation_profile(root, ["playwright==1.63.0"])
     with pytest.raises(RuntimeError, match="pytest-playwright"):
         runner.validate_plan(plan)
 
-    (root / "pyproject.toml").write_text(
-        'deps = ["playwright==1.63.0", "pytest-playwright==0.9.0"]\n',
-        encoding="utf-8",
+    _write_presentation_profile(
+        root,
+        ["playwright==1.63.0", "pytest-playwright==0.9.0"],
     )
     with pytest.raises(RuntimeError, match="direct bounded argv"):
-        runner.validate_plan(replace(plan, command=("shell",)))
+        unsafe_run = replace(plan.runs[0], command=("shell",))
+        runner.validate_plan(replace(plan, runs=(unsafe_run, *plan.runs[1:])))
 
 
 def test_browser_executable_check_handles_available_and_missing_binary(

@@ -9,6 +9,41 @@ from pathlib import Path
 import pytest
 from scripts import check_coverage_gaps as checker
 
+EXPECTED_SPLIT_MAPPINGS = {
+    "general_ludd.cli_commands.parser": (
+        "general_ludd.cli",
+        "tests/unit/test_cli_module_split.py",
+    ),
+    "general_ludd.daemon_components.ports": (
+        "general_ludd.daemon",
+        "tests/unit/test_daemon_module_split_compat.py",
+    ),
+    "general_ludd.event_loop.compute_lifecycle": (
+        "general_ludd.event_loop.loop",
+        "tests/unit/test_event_loop_module_split.py",
+    ),
+    "general_ludd.event_loop.decision_completion": (
+        "general_ludd.event_loop.loop",
+        "tests/unit/test_event_loop_module_split.py",
+    ),
+    "general_ludd.event_loop.execution_dispatch": (
+        "general_ludd.event_loop.loop",
+        "tests/unit/test_event_loop_module_split.py",
+    ),
+    "general_ludd.event_loop.review_dispatch": (
+        "general_ludd.event_loop.loop",
+        "tests/unit/test_event_loop_module_split.py",
+    ),
+    "general_ludd.event_loop.self_improve_lifecycle": (
+        "general_ludd.event_loop.loop",
+        "tests/unit/test_event_loop_module_split.py",
+    ),
+    "general_ludd.event_loop.tick_lifecycle": (
+        "general_ludd.event_loop.loop",
+        "tests/unit/test_event_loop_module_split.py",
+    ),
+}
+
 
 @pytest.fixture
 def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -154,6 +189,109 @@ def test_named_candidate_short_circuits_repository_index(
 
     assert result["status"] == "OK"
     assert calls == [(candidate,)]
+
+
+def test_validated_indirect_mapping_follows_facade_dependency(
+    project: Path,
+) -> None:
+    """A behavior test may cover a component through a facade that imports it."""
+    widgets = project / "src" / "general_ludd" / "widgets"
+    (widgets / "facade.py").write_text(
+        "from general_ludd.widgets.engine import Engine as _Engine\n\n"
+        "def build_engine():\n"
+        "    return _Engine()\n"
+    )
+    test_file = project / "tests" / "unit" / "test_widget_facade.py"
+    test_file.write_text(
+        "import general_ludd.widgets.facade as facade\n\n"
+        "def test_engine_through_facade():\n"
+        "    assert facade.build_engine() is not None\n"
+    )
+    config = project / "config" / "coverage_gap_test_mappings.json"
+    config.parent.mkdir()
+    config.write_text(
+        json.dumps(
+            {
+                "indirect_test_mappings": {
+                    "general_ludd.widgets.engine": {
+                        "via": "general_ludd.widgets.facade",
+                        "tests": ["tests/unit/test_widget_facade.py"],
+                    }
+                }
+            }
+        )
+    )
+
+    result = _status(project)
+
+    assert result["status"] == "OK"
+    assert result["test_file"] == "tests/unit/test_widget_facade.py"
+
+
+def test_indirect_mapping_rejects_unrelated_facade_test(project: Path) -> None:
+    """Configuration cannot turn an unrelated passing test into coverage."""
+    widgets = project / "src" / "general_ludd" / "widgets"
+    (widgets / "facade.py").write_text(
+        "from general_ludd.widgets.other import Other as _Other\n\n"
+        "def build_other():\n"
+        "    return _Other()\n"
+    )
+    test_file = project / "tests" / "unit" / "test_widget_facade.py"
+    test_file.write_text(
+        "import general_ludd.widgets.facade as facade\n\n"
+        "def test_other_through_facade():\n"
+        "    assert facade.build_other() is not None\n"
+    )
+    config = project / "config" / "coverage_gap_test_mappings.json"
+    config.parent.mkdir()
+    config.write_text(
+        json.dumps(
+            {
+                "indirect_test_mappings": {
+                    "general_ludd.widgets.engine": {
+                        "via": "general_ludd.widgets.facade",
+                        "tests": ["tests/unit/test_widget_facade.py"],
+                    }
+                }
+            }
+        )
+    )
+
+    with pytest.raises(checker.CoverageMappingError, match="does not import"):
+        _status(project)
+
+
+def test_repository_split_component_mappings_are_exact_and_live(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pin every split component that the development coverage gate reported."""
+    root = Path(__file__).resolve().parents[2]
+    monkeypatch.setattr(checker, "PROJECT_ROOT", root)
+    monkeypatch.setattr(checker, "SRC_DIR", root / "src" / "general_ludd")
+    monkeypatch.setattr(checker, "TESTS_DIR", root / "tests" / "unit")
+
+    mappings = checker._load_test_mappings(
+        root / "config" / "coverage_gap_test_mappings.json"
+    )
+    observed = {
+        module: (entry["via"], entry["tests"][0].relative_to(root).as_posix())
+        for module, entry in mappings.items()
+    }
+
+    assert observed == EXPECTED_SPLIT_MAPPINGS
+    test_index = checker._build_test_index()
+    tests_by_module, test_counts = test_index
+    source_modules = checker._source_module_paths()
+    for module, (_via, expected_test) in EXPECTED_SPLIT_MAPPINGS.items():
+        result = checker._check_module(source_modules[module], test_index)
+        assert result["status"] == "OK", module
+        covering_tests = {
+            path.relative_to(root).as_posix()
+            for path in tests_by_module[module]
+            if test_counts[path] > 0
+        }
+        assert expected_test in covering_tests, module
+        assert result["test_file"] in covering_tests, module
 
 
 def test_repository_chemistry_installed_import_is_mapped(

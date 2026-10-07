@@ -78,7 +78,68 @@ ancestry from drifting independently.
   .opencode/plugins/watchdog.ts
   ```
 
-- [ ] S83.170 - **Keep Reveal.js Mermaid labels aligned and every presentation element inside the visible canvas in Safari-class rendering** across `docs/presentation/DESIGN_revealjs_deck.md`, `docs/presentation/deck-data.json`, `docs/presentation/deck/index.html`, `docs/presentation/deck/presentation.css`, `docs/presentation/deck/presentation.js`, `scripts/build_deck.py`, `scripts/run_presentation_safari_smoke.py`, `tests/browser/test_presentation.py`, `tests/unit/test_presentation_safari_runner.py`, `tests/unit/test_reveal_render_resilience_coverage.py`, and `tests/unit/test_reveal_render_resilience_runtime.py`: normalize multiline SVG anchors, add a bounded padded viewport, render decoded replaced images with explicit intrinsic geometry, split and regroup overloaded charts, use non-sweeping transitions, reject off-canvas text/diagrams across every slide and fragment, require at least eight effective CSS pixels for chart text, and keep local preview diagnostics free of expected browser-disconnect tracebacks without hiding unexpected failures. | evidence: the strengthened post-transition canvas audit reproduced nine overflowing slides before repair; a failing-first guardrail-label regression pinned WebKit-flattened Mermaid breaks; final canonical WebKit acceptance passes 14/14 in 185.35 seconds with every encoded-SVG label, slide, fragment, Pages-subpath navigation, hash reload, source link, and visible failure fallback verified; the focused presentation suite passes 126/126 at 93% aggregate coverage with all five measured production files at 88%-98%, and the disconnect boundary passes for both reset and broken-pipe errors while delegating unexpected exceptions; Chromium acceptance previously passed 14/14; scoped Python and Markdown lint, 16-asset integrity, and the 108-check plugin manifest are green; native Safari remains honestly unclaimed because operator-controlled Remote Automation is disabled; exact-head full gate, commit, and development push remain required before completion or v0.1.2 assignment | priority: high | effort: S | status: in_progress
+- [ ] S83.170 - **Keep Reveal.js Mermaid labels aligned and every presentation element inside the visible canvas in Safari-class rendering** across `docs/presentation/DESIGN_revealjs_deck.md`, `docs/presentation/deck-data.json`, `docs/presentation/deck/index.html`, `docs/presentation/deck/presentation.css`, `docs/presentation/deck/presentation.js`, `scripts/build_deck.py`, `scripts/run_presentation_browser_tests.py`, `scripts/run_presentation_safari_smoke.py`, `tests/browser/test_presentation.py`, `tests/unit/test_presentation_browser_runner.py`, `tests/unit/test_presentation_safari_runner.py`, `tests/unit/test_reveal_render_resilience_coverage.py`, and `tests/unit/test_reveal_render_resilience_runtime.py`: normalize multiline SVG anchors, add a bounded padded viewport, render decoded replaced images with explicit intrinsic geometry, split and regroup overloaded charts, use non-sweeping transitions, reject off-canvas text/diagrams across every slide and fragment, require at least eight effective CSS pixels for chart text, and keep local preview diagnostics free of expected browser-disconnect tracebacks without hiding unexpected failures. | evidence: the strengthened post-transition canvas audit reproduced nine overflowing slides before repair; a failing-first guardrail-label regression pinned WebKit-flattened Mermaid breaks; final canonical WebKit acceptance passes 14/14 in 185.35 seconds with every encoded-SVG label, slide, fragment, Pages-subpath navigation, hash reload, source link, and visible failure fallback verified; the focused presentation suite passes 127/127 at 93% aggregate coverage with all five measured production files at 88%-98%, and the disconnect boundary passes for both reset and broken-pipe errors while delegating unexpected exceptions; after dependency-profile integration, Chromium passes 14/14 in 180.22 seconds and WebKit passes 14/14 in 177.18 seconds through the exact isolated presentation profile, whose fail-first TOML-boundary regression is now pinned; scoped Python and Markdown lint, 16-asset integrity, and the 108-check plugin manifest are green; native Safari remains honestly unclaimed because operator-controlled Remote Automation is disabled; exact-head full gate, follow-up commit, and development push remain required before completion or v0.1.2 assignment | priority: high | effort: S | status: in_progress
+
+S83.170 responsive-layout continuation: portrait canvases now use native-scale
+vertical scrolling while wide Mermaid images retain readable labels inside their
+horizontal scroller. A 430x932 all-slide regression checks prose clipping, chart
+alignment, scroll reachability, and the eight-pixel effective label floor. The
+canonical runner also adds a targeted 1024x768 containment replay after its
+1280x720 suite. On the integrated branch Chromium passes 15/15 plus 1/1 compact
+containment in 182.97 and 39.96 seconds; WebKit passes 15/15 plus 1/1 in 180.88
+and 38.12 seconds. A leaked expected WebKit connection-reset traceback exposed
+that the browser fixture bypassed the production disconnect-safe server; its
+failing-first structural regression is now green, as is the focused WebKit
+replay, without suppressing unexpected server exceptions. The presentation
+unit family passes 98/98, scoped lint and the 10,133-file line-limit check are
+green, and native Safari remains unclaimed until Remote Automation is enabled.
+
+S83.170 short-landscape continuation: a new 932x430 all-slide browser audit
+reproduced Reveal stage shrinkage that the portrait and 4:3 lanes did not expose:
+prose painted at 3.37 CSS pixels and Mermaid labels at 4.78-7.98 pixels. Short
+canvases now retain native scale with vertical reachability, a 21-pixel readable
+base, safe table/path wrapping, and horizontally reachable Mermaid diagrams.
+Chromium and Playwright WebKit each pass 16/16 canonical checks plus the 1/1
+compact replay; native Safari remains unclaimed. The design record cites Reveal
+issue 16 and discussion 3448, and commit `0667355127890fdc84d940b011f531c4c79fdd39`
+contains the fail-first regression and repair.
+
+- [ ] S83.171 - **Keep cleanup, Molecule CI, deep Makefile tests, and event-loop structural checks compatible with the composed module layouts** across `tests/unit/test_clean_worktree_venvs.py`, `tests/integration/test_molecule_ci_e2e.py`, `tests/unit/test_makefile_audit_deep.py`, `tests/unit/test_ab_to_thread_import_smoke.py`, `tests/unit/test_check_coverage_gaps.py`, and the split-aware structural contract suite: derive target recipes and repository-wide target inventories from the canonical Makefile composer instead of assuming every target remains in the root include file; preserve temporary-working-directory dry-run safety by supplying the repository include path explicitly; inspect the extracted execution-dispatch mixin when pinning its bounded filesystem offloads. | evidence: the documented validate-only cleanup example first reproduced an `IndexError` and the complete cleanup suite now passes 16/16; the exact-head gate then reproduced five Molecule target-discovery failures plus three deep-audit target/include failures; after routing both consumers through the composer and retaining the temporary-directory sentinel assertion, the combined warning-strict replay passes 47/47; a later gate caught the stale monolithic event-loop source assertion, and the refactor-aware smoke file now passes 8/8 with scoped Ruff and strict mypy green; task validators, commit, exact-head full gate, and development push remain required | priority: high | effort: XS | status: in_progress
+
+S83.171 gate-integration continuation: the same exact-head gate exposed eight
+split modules without durable coverage mappings, 45 moved/new resource-ownership
+records, and a valid but 2,613-line generated ownership inventory. The repaired
+audits report 1,297/1,297 modules covered and 237/237 owned resources reconciled.
+The canonical deterministic writer round-trips every field while emitting the
+inventory in 243 lines; the global 10,137-file limit, 116 focused integration
+tests, and 119,395-test collection are green. Exact-head full-gate and push
+evidence remain required.
+
+S83.171 composed-contract continuation: commits `fd867327b` and `97cf0b846`
+modernize the split-Makefile and extracted-module contract consumers. Their
+integrated replay passes 1,010 tests with one intentional skip after the isolated
+branches passed 774/775 and 286/286 respectively, with Ruff, strict mypy, and
+119,395-test collection green. The next exact-head gate passed every preflight and
+all 3,409 integration tests with 13 intentional skips, then exposed one stale
+coverage-report assertion: the configured indirect event-loop mapping was still
+exact, but a newer direct import proof was correctly selected for reporting. The
+repaired contract retains the exact configured-mapping assertion and accepts only
+ a live selected covering test; its complete file passes 20/20 with Ruff and strict
+ mypy green. Commit `c0e9f6e53` records that repair. The restarted exact-head gate
+ and development push remain required.
+
+S83.171 exact-gate continuation: the restarted gate again passed every preflight
+and all 3,409 integration tests with 13 intentional skips, then exposed four
+pytest setup errors in the Linear URL rejection matrix. The parametrized name
+`base_url` collided with pytest-base-url's fixture; commit `04d251a6f` renames it
+without weakening any assertion, and the complete file passes 36/36. The same gate
+was then terminated by its own nested signal test because that fixture isolated the
+status and lock files but inherited the enclosing checkout's project root. Commit
+`482e49a98` isolates project, resource, status, and lock roots under the test's
+temporary directory and adds a regression; all 17 gate-async tests pass while the
+foreign candidate gate PID survives. Repository collection is clean at 119,396
+selected tests with 17 intentional deselections. A final exact-head gate and
+development push remain required.
 
 S83.166 2026-09-29 failure-ownership continuation: hosted runs `36524447124` and `36524447101` are now ingested as nine independent failure families instead of one mutable branch verdict. The durable CI failure ledger rejects contradictory terminal payloads and unchanged failed-SHA reruns, preserves sibling and recurrent failures, requires a descendant repair commit plus exact Make evidence, blocks pushes with open/non-ancestral families, and resolves only the matching workflow/job after hosted success. Its replay passes 27/27 at 96% branch-aware coverage with every measured production file above 75%. The same runs exposed two PyInstaller graphs for one SHA because one workflow floated Python and the lock while the other used Python 3.12.14 plus frozen sync; all Linux/molecule producers now pin the exact patch and frozen lock, audit and upload the raw warning graph, and the combined regression surface passes 120/120. The dead Ansible EE base digest now has a fail-fast exact-manifest check and an atomic verified refresh transaction; its 36-test artifact replay and live Quay manifest check are green. Exact repair commits, a complete candidate gate, hosted all-workflow replay, the predecessor live proofs, publication, deployment, and rollback remain open.
 

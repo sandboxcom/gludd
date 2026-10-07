@@ -1,8 +1,8 @@
 """
 Tests for scripts/gate_async.sh — the non-blocking, pollable gate launcher.
 
-All tests use GATE_CMD and STATUS_FILE / LOCK_FILE env overrides so no real
-pytest run is triggered and no real /tmp lock or repo .gate-status is touched.
+All tests use GATE_CMD plus checkout, status, lock, and resource-root overrides,
+so no real pytest run is triggered and no enclosing-worktree state is touched.
 """
 
 from __future__ import annotations
@@ -13,15 +13,42 @@ import subprocess
 import time
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 GATE_ASYNC_SH = Path(__file__).parent.parent.parent / "scripts" / "gate_async.sh"
 MAKEFILE = GATE_ASYNC_SH.parent.parent / "Makefile"
+
+
+def _isolated_gate_env(
+    gate_cmd: str,
+    *,
+    status_file: Path,
+    lock_file: Path,
+    extra_env: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Return an environment whose process cleanup is confined to one fixture."""
+    fixture_root = status_file.parent.resolve()
+    env = os.environ.copy()
+    env.update(
+        {
+            "GATE_CMD": gate_cmd,
+            "STATUS_FILE": str(status_file),
+            "LOCK_FILE": str(lock_file),
+            "GLUDD_GATE_AUTHORIZED": "1",
+            "GLUDD_PROJECT_ROOT": str(fixture_root),
+            "GLUDD_RESOURCE_ROOT": str(fixture_root / "resources"),
+        }
+    )
+    if extra_env:
+        env.update(extra_env)
+    return env
 
 
 def test_default_gate_command_invokes_whole_gate_without_recursion() -> None:
     text = GATE_ASYNC_SH.read_text(encoding="utf-8")
     assert 'GATE_CMD="${GATE_CMD:-make gate gludd_watchdog_owned_gate=1}"' in text
 
-    makefile = MAKEFILE.read_text(encoding="utf-8")
+    makefile = compose_makefile(MAKEFILE)
     gate_start = makefile.index("gate: _gate-run-lock-acquire")
     gate_end = makefile.index("# gate-lite:", gate_start)
     assert "gate_async.sh" not in makefile[gate_start:gate_end]
@@ -36,13 +63,12 @@ def _run(
     extra_env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run gate_async.sh with the given overrides and return the completed process."""
-    env = os.environ.copy()
-    env["GATE_CMD"] = gate_cmd
-    env["STATUS_FILE"] = status_file
-    env["LOCK_FILE"] = lock_file
-    env["GLUDD_GATE_AUTHORIZED"] = "1"
-    if extra_env:
-        env.update(extra_env)
+    env = _isolated_gate_env(
+        gate_cmd,
+        status_file=Path(status_file),
+        lock_file=Path(lock_file),
+        extra_env=extra_env,
+    )
     return subprocess.run(
         ["bash", str(GATE_ASYNC_SH)],
         capture_output=True,
@@ -76,15 +102,11 @@ def _interrupt_running_gate(
     """Start an isolated gate, signal its process group, and collect evidence."""
     status = tmp_path / "gate-status"
     lock = tmp_path / "gate-async.lock"
-    env = os.environ.copy()
-    env.update(
-        {
-            "GATE_CMD": "sleep 30",
-            "STATUS_FILE": str(status),
-            "LOCK_FILE": str(lock),
-            "GLUDD_GATE_AUTHORIZED": "1",
-            "GLUDD_GATE_ASYNC_FORCE_PIDFILE": "1",
-        }
+    env = _isolated_gate_env(
+        "sleep 30",
+        status_file=status,
+        lock_file=lock,
+        extra_env={"GLUDD_GATE_ASYNC_FORCE_PIDFILE": "1"},
     )
     proc = subprocess.Popen(
         ["bash", str(GATE_ASYNC_SH)],
@@ -230,6 +252,18 @@ class TestGateAsyncFailPath:
 class TestGateAsyncSignalTerminalState:
     """Signals must publish terminal evidence before releasing owned resources."""
 
+    def test_signal_cleanup_uses_fixture_project_root(self, tmp_path: Path) -> None:
+        """Nested signal tests must never inspect the enclosing worktree's gate."""
+        result, stdout, stderr, _status, _lock = _interrupt_running_gate(
+            tmp_path,
+            signal.SIGTERM,
+        )
+
+        expected_lock = tmp_path / ".gate-logs" / "gate-run.lock"
+        assert result == 143, f"stdout: {stdout}\nstderr: {stderr}"
+        assert f"no readable owned gate lock at {expected_lock}" in stdout
+        assert str(GATE_ASYNC_SH.parent.parent / ".gate-logs") not in stdout
+
     def test_sigterm_writes_aborted_and_preserves_143(self, tmp_path: Path) -> None:
         result, stdout, stderr, status, lock = _interrupt_running_gate(
             tmp_path,
@@ -363,11 +397,11 @@ class TestGateAsyncConcurrentRefused:
         # First gate: slow enough that the second sees the lock held
         gate_cmd_slow = "sleep 3; exit 0"
 
-        env = os.environ.copy()
-        env["GATE_CMD"] = gate_cmd_slow
-        env["STATUS_FILE"] = status
-        env["LOCK_FILE"] = lock
-        env["GLUDD_GATE_AUTHORIZED"] = "1"
+        env = _isolated_gate_env(
+            gate_cmd_slow,
+            status_file=Path(status),
+            lock_file=Path(lock),
+        )
 
         # Launch first gate in background
         first = subprocess.Popen(
@@ -430,11 +464,11 @@ class TestGateAsyncRunningWrittenImmediately:
         # Gate cmd that waits: if status is already RUNNING when it starts, we know
         # the write was immediate.  We check status from the outside via a poll.
         # Instead, start a slow gate in background and check status quickly.
-        env = os.environ.copy()
-        env["GATE_CMD"] = "sleep 2; exit 0"
-        env["STATUS_FILE"] = status
-        env["LOCK_FILE"] = lock
-        env["GLUDD_GATE_AUTHORIZED"] = "1"
+        env = _isolated_gate_env(
+            "sleep 2; exit 0",
+            status_file=Path(status),
+            lock_file=Path(lock),
+        )
 
         proc = subprocess.Popen(
             ["bash", str(GATE_ASYNC_SH)],

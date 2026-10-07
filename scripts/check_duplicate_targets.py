@@ -21,8 +21,15 @@ import re
 import sys
 from collections import Counter
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from scripts.makefile_layout import compose_makefile
+if TYPE_CHECKING:
+    from scripts.makefile_layout import compose_makefile
+else:
+    try:
+        from scripts.makefile_layout import compose_makefile
+    except ModuleNotFoundError:
+        from makefile_layout import compose_makefile
 
 TARGET_PATTERN = re.compile(r"^([a-zA-Z_][a-zA-Z0-9_.-]*):")
 TARGET_VAR_ASSIGN_PATTERN = re.compile(

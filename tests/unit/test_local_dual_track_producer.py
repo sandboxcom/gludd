@@ -53,9 +53,15 @@ def test_local_dual_track_target_delegates_canonical_bounded_run() -> None:
     assert "$(MAKE) node-deps-sync" in block
     assert block.index("$(MAKE) node-deps-sync") < block.index("scripts/run_ci_shards_serial.py")
     assert "scripts/run_ci_shards_serial.py" in block
-    assert "$(UV) run --python 3.11 python scripts/run_ci_shards_serial.py" in block
+    assert "$(UV) run --no-sync --python 3.11 python scripts/run_ci_shards_serial.py" in block
     assert "--require-release-policy" in block
     assert 'TOOLCHAIN_ROOT="$${RESOURCE_ROOT}-toolchain"' in block
+    profile_sync = (
+        'scripts/dependency_profiles.py sync --root "$(CURDIR)" --set ci '
+        '--environment "$$TOOLCHAIN_ROOT/ci-shards/python-3.11" --python 3.11'
+    )
+    assert profile_sync in block
+    assert block.index(profile_sync) < block.index("scripts/run_ci_shards_serial.py")
     assert (
         'UV_PROJECT_ENVIRONMENT="$$TOOLCHAIN_ROOT/ci-shards/python-3.11"'
         in block

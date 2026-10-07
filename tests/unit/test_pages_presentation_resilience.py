@@ -9,6 +9,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "pages.yml"
 MAKE_FRAGMENT = ROOT / "make" / "90-infrastructure-and-services.mk"
 DESIGN = ROOT / "docs" / "presentation" / "DESIGN_revealjs_deck.md"
 BROWSER_TEST = ROOT / "tests" / "browser" / "test_presentation.py"
+SETUP_PYTHON_V7_SHA = "5fda3b95a4ea91299a34e894583c3862153e4b97"
 
 
 def test_pages_validates_development_and_pull_requests_before_upload() -> None:
@@ -25,6 +26,28 @@ def test_pages_validates_development_and_pull_requests_before_upload() -> None:
     assert build < browser < upload
     assert "path: docs/presentation/deck" in workflow
     assert "continue-on-error" not in workflow
+
+
+def test_pages_syncs_the_ci_profile_that_owns_playwright() -> None:
+    """The browser runner must execute inside the locked presentation environment."""
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    sync = workflow.index("make sync")
+    deps = workflow.index("make presentation-browser-install-deps")
+
+    assert "DEPENDENCY_PROFILE_SET=ci" in workflow
+    assert "DEPENDENCY_PROFILE_ENVIRONMENT=.venv" in workflow
+    assert "DEPENDENCY_PROFILE_PYTHON=3.11" in workflow
+    assert "DEPENDENCY_PROFILE_VALIDATE_ONLY=0" in workflow
+    assert sync < deps
+
+
+def test_pages_uses_node24_setup_python() -> None:
+    """The Pages lane must not emit GitHub's Node 20 deprecation warning."""
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    assert workflow.count(f"actions/setup-python@{SETUP_PYTHON_V7_SHA}") == 2
+    assert workflow.count("# v7.0.0 (node24)") == 2
+    assert "a26af69be951a213d495a4c3e4e4022e16d87065" not in workflow
 
 
 def test_pages_installs_linux_webkit_dependencies_before_launch() -> None:
@@ -85,6 +108,8 @@ def test_implementation_guide_keeps_upstream_regressions_and_operations() -> Non
         "mermaid-js/mermaid#8113",
         "bugs.webkit.org/show_bug.cgi?id=198609",
         "github.com/orgs/community/discussions/12523",
+        "astral-sh/uv/issues/13319",
+        "astral-sh/uv/issues/14645",
     ):
         assert issue in design
     assert "reveal.js-mermaid-plugin@11.15.0" in design

@@ -16,6 +16,8 @@ import json
 import re
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 REPO_ROOT = Path(__file__).parent.parent.parent
 OPENCODE_JSON = REPO_ROOT / "opencode.json"
 SHARED_TS = REPO_ROOT / ".opencode" / "lib" / "shared.ts"
@@ -48,7 +50,7 @@ def _enforcement_plugins() -> list[str]:
 
 def _read_make_target(target_name: str) -> str:
     """Extract a Makefile target's full text from the target line through recipe."""
-    makefile = MAKEFILE.read_text()
+    makefile = compose_makefile(MAKEFILE)
     lines = makefile.splitlines()
     in_target = False
     recipe: list[str] = []
@@ -162,7 +164,7 @@ def test_heartbeat_file_naming_is_consistent() -> None:
     """The path pattern is consistent across shared.ts, liveness script, and Makefile."""
     shared_src = SHARED_TS.read_text()
     script = LIVENESS_SCRIPT.read_text()
-    makefile = MAKEFILE.read_text()
+    makefile = compose_makefile(MAKEFILE)
 
     for label, content in [
         ("shared.ts", shared_src),
@@ -178,7 +180,7 @@ def test_heartbeat_file_naming_is_consistent() -> None:
 
 def test_check_plugin_heartbeats_target_exists() -> None:
     """The check-plugin-heartbeats make target must be defined."""
-    makefile = MAKEFILE.read_text()
+    makefile = compose_makefile(MAKEFILE)
     assert "\ncheck-plugin-heartbeats:" in makefile, (
         "Makefile must define check-plugin-heartbeats target"
     )
@@ -186,7 +188,7 @@ def test_check_plugin_heartbeats_target_exists() -> None:
 
 def test_check_plugin_heartbeats_wired_into_check_all_guardrails() -> None:
     """check-all-guardrails must include check-plugin-heartbeats."""
-    makefile = MAKEFILE.read_text()
+    makefile = compose_makefile(MAKEFILE)
     guardrails_line = None
     for line in makefile.splitlines():
         if line.strip().startswith("check-all-guardrails:"):

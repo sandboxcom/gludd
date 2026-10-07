@@ -16,6 +16,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from scripts.makefile_layout import compose_makefile
+
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 RUN_GATE_SH = ROOT / "scripts" / "run_gate.sh"
@@ -24,7 +26,7 @@ SERIAL_SHARD_RUNNER = ROOT / "scripts" / "run_ci_shards_serial.py"
 
 def _recipe(target: str) -> str:
     """Return the indented recipe body for a single Makefile target."""
-    lines = MAKEFILE.read_text().splitlines()
+    lines = compose_makefile(MAKEFILE).splitlines()
     body: list[str] = []
     in_target = False
     for line in lines:
@@ -88,7 +90,7 @@ class TestNoUnseenEvents:
     def test_env_write_gate_phases_stream_bounded_checker_output(self) -> None:
         invocations = [
             line
-            for line in MAKEFILE.read_text().splitlines()
+            for line in compose_makefile(MAKEFILE).splitlines()
             if "$(MAKE) --no-print-directory check-test-env-writes" in line
         ]
 
@@ -195,7 +197,7 @@ class TestNoUnseenEvents:
         silences the kill, not test output.
         """
         offenders = []
-        for line in MAKEFILE.read_text().splitlines():
+        for line in compose_makefile(MAKEFILE).splitlines():
             if "pkill" in line or "pgrep" in line:
                 continue
             if re.search(r"-m pytest tests/|run pytest tests/", line) and "/dev/null" in line:
@@ -230,11 +232,15 @@ class TestNoSilentStalls:
         )
 
     def test_pytest_timeout_dependency_declared(self) -> None:
-        cfg = (ROOT / "pyproject.toml").read_text()
-        assert "pytest-timeout" in cfg, "pytest-timeout must be a declared dev dependency"
+        cfg = (
+            ROOT / "requirements/profiles/dev-test/pyproject.toml"
+        ).read_text()
+        assert "pytest-timeout" in cfg, (
+            "pytest-timeout must be declared in the dev-test profile"
+        )
 
     def test_run_watched_watchdog_exists(self) -> None:
-        mk = MAKEFILE.read_text()
+        mk = compose_makefile(MAKEFILE)
         assert "run-watched:" in mk, "Makefile must provide the run-watched stall watchdog"
         for token in ("STALL_SECS", "MAX_SECS", "RESULT=STALLED", "kill"):
             assert token in mk, f"run-watched watchdog is missing {token!r}"

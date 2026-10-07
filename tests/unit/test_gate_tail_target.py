@@ -6,13 +6,14 @@ import subprocess
 from pathlib import Path
 
 import psutil
+from scripts.makefile_layout import compose_makefile
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = REPO_ROOT / "Makefile"
 
 
 def _target_body(name: str) -> str:
-    content = MAKEFILE.read_text(encoding="utf-8")
+    content = compose_makefile(MAKEFILE)
     start = content.index(f"{name}:")
     return content[start:].split("\n\n", 1)[0]
 

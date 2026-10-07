@@ -8,6 +8,8 @@ branch-level active-run check via `ci_push_guard.py`.
 from pathlib import Path
 from typing import ClassVar
 
+from scripts.makefile_layout import compose_makefile
+
 MAKEFILE = Path(__file__).parent.parent.parent / "Makefile"
 
 
@@ -38,7 +40,7 @@ class TestP28PushNoShortcutCIInFlight:
     ]
 
     def test_no_push_target_skips_push_rate_guard(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         violations = []
         for target in self._ALL_PUSH_TARGETS:
             recipe = _find_target_recipe(content, target)
@@ -53,7 +55,7 @@ class TestP28PushNoShortcutCIInFlight:
             )
 
     def test_push_rate_guard_uses_ci_push_guard(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         guard_recipe = _find_target_recipe(content, "_push-rate-guard")
         assert guard_recipe, "_push-rate-guard target must exist"
         assert "scripts/ci_push_guard.py" in guard_recipe, (
@@ -62,7 +64,7 @@ class TestP28PushNoShortcutCIInFlight:
         assert "PUSH_BRANCH" in guard_recipe, "P28: _push-rate-guard must check branch-specific CI state"
 
     def test_force_push_delegates_to_guarded_target(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         force_recipe = _find_target_recipe(content, "force-push")
         assert force_recipe, "force-push target must exist"
         assert "git-push-sandboxcom" in force_recipe or "_push-rate-guard" in force_recipe, (
@@ -70,7 +72,7 @@ class TestP28PushNoShortcutCIInFlight:
         )
 
     def test_deploy_and_forget_records_timestamp(self) -> None:
-        content = MAKEFILE.read_text()
+        content = compose_makefile(MAKEFILE)
         if "deploy-and-forget:" in content:
             recipe = _find_target_recipe(content, "deploy-and-forget")
             assert "ci_check_cooldown.py" in recipe or "push-timestamps" in recipe, (
