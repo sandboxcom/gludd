@@ -205,6 +205,21 @@ class ComputeLifecycleMixin:
             }
             return
 
+        if self._active_session is not None:
+            self._tick_metrics["compute_claim_fence_rejections"] = (
+                self._tick_metrics.get("compute_claim_fence_rejections", 0) + 1
+            )
+            self._tick_state["compute_ready"] = False
+            self._tick_state["compute_demand"] = {
+                "state": "claim_transaction_open",
+                "runnable_todos": runnable_todos,
+                "execution_environment": "unchanged",
+            }
+            logger.error(
+                "Compute provisioning skipped while the claim session remains active"
+            )
+            return
+
         runner = self._runner
         if runner is None:
             self._tick_state["compute_ready"] = True
