@@ -17,6 +17,13 @@ from scripts import build_deck
 
 pytestmark = pytest.mark.presentation_browser
 
+FEATURE_SYNC_CONTRACTS = (
+    "s83-109-local-game-boundary",
+    "s83-118-122-branch-reconciliation",
+    "s91-3-enforcement-executable-modes",
+    "decision-log-codification-v1",
+)
+
 
 def test_required_browser_matrix(browser_name: str) -> None:
     """The Pages acceptance is intentionally limited to both supported engines."""
@@ -1004,6 +1011,151 @@ def test_local_source_link_opens_read_only_ace_at_range(page: Any, presentation_
     assert state["start"] == int(start_text)
     assert state["end"] == int(end_text)
     assert state["firstVisible"] <= int(start_text)
+
+
+def test_feature_sync_slides_are_source_linked_compact_and_mermaid_ready(
+    page: Any,
+    presentation_url: str,
+    browser_events: dict[str, list[str]],
+) -> None:
+    """Synced feature slides must stay usable in desktop and short landscape views."""
+    page.set_viewport_size({"width": 1024, "height": 768})
+    _load(page, presentation_url)
+
+    for contract in FEATURE_SYNC_CONTRACTS:
+        slide = page.locator(f'section[data-contract="{contract}"]')
+        assert slide.count() == 1
+        anchors = slide.locator(
+            "a.source-link[data-source-path][data-source-lines]"
+        )
+        assert anchors.count() > 0
+        link_state = anchors.first.evaluate(
+            """
+            node => ({
+              href: node.href,
+              lines: node.dataset.sourceLines,
+              path: node.dataset.sourcePath,
+            })
+            """
+        )
+        assert re.match(
+            r"^https://github\.com/sandboxcom/gludd/blob/[0-9a-f]{40}/.+#L[0-9]+(?:-L[0-9]+)?$",
+            link_state["href"],
+        )
+        assert re.match(r"^[1-9][0-9]*-[1-9][0-9]*$", link_state["lines"])
+        assert link_state["path"]
+
+    branch = page.locator(
+        'section[data-contract="s83-118-122-branch-reconciliation"]'
+    )
+    branch_indices = branch.evaluate(
+        "node => { const index = Reveal.getIndices(node); return [index.h, index.v]; }"
+    )
+    _visit_slide(page, branch_indices[0], branch_indices[1])
+    _assert_visible_diagrams(page)
+    readiness = branch.locator(".mermaid").evaluate(
+        """
+        node => ({
+          complete: node.querySelector('img.mermaid-image')?.complete || false,
+          state: node.dataset.mermaidState,
+          viewport: node.dataset.mermaidViewport,
+        })
+        """
+    )
+    assert readiness == {"complete": True, "state": "rendered", "viewport": "stable"}
+
+    for viewport in ({"width": 1024, "height": 768}, {"width": 932, "height": 430}):
+        page.set_viewport_size(viewport)
+        page.evaluate("window.dispatchEvent(new Event('resize'))")
+        for contract in FEATURE_SYNC_CONTRACTS:
+            slide = page.locator(f'section[data-contract="{contract}"]')
+            indices = slide.evaluate(
+                "node => { const index = Reveal.getIndices(node); return [index.h, index.v]; }"
+            )
+            _visit_slide(page, indices[0], indices[1])
+            issues = page.evaluate(
+                """
+                () => {
+                  const slide = Reveal.getCurrentSlide();
+                  Reveal.layout();
+                  const boundary = document.querySelector('.reveal').getBoundingClientRect();
+                  const tolerance = 2;
+                  const slideRect = slide.getBoundingClientRect();
+                  const scale = slide.offsetWidth > 0 ? slideRect.width / slide.offsetWidth : 1;
+                  const textNodes = Array.from(
+                    slide.querySelectorAll('h2, h3, p, li, .stage-kicker')
+                  ).filter((node) => {
+                    const style = getComputedStyle(node);
+                    return style.display !== 'none' && style.visibility !== 'hidden' &&
+                      (node.textContent || '').trim();
+                  });
+                  const textIssues = textNodes.flatMap((node) => {
+                    const range = document.createRange();
+                    range.selectNodeContents(node);
+                    const lines = Array.from(range.getClientRects());
+                    const sides = [];
+                    if (lines.some((line) => line.left < boundary.left - tolerance)) sides.push('left');
+                    if (lines.some((line) => line.right > boundary.right + tolerance)) sides.push('right');
+                    if (lines.some((line) => line.top < boundary.top - tolerance)) sides.push('top');
+                    if (lines.some((line) => line.bottom > boundary.bottom + tolerance)) sides.push('bottom');
+                    const effectiveFontPixels = parseFloat(getComputedStyle(node).fontSize) * scale;
+                    if (effectiveFontPixels < 8) sides.push('illegible');
+                    return sides.length ? [{
+                      effectiveFontPixels,
+                      sides,
+                      text: (node.textContent || '').trim().slice(0, 100),
+                    }] : [];
+                  });
+                  const containment = [];
+                  if (slide.scrollHeight > slide.clientHeight + tolerance) {
+                    containment.push({
+                      clientHeight: slide.clientHeight,
+                      kind: 'vertical-overflow',
+                      scrollHeight: slide.scrollHeight,
+                    });
+                  }
+                  return [...textIssues, ...containment];
+                }
+                """
+            )
+            assert issues == [], {"contract": contract, "viewport": viewport, "issues": issues}
+
+    first = page.locator(
+        'section[data-contract="s83-109-local-game-boundary"] '
+        'a.source-link[data-source-lines]'
+    ).first
+    details = first.evaluate(
+        "node => ({href: node.href, path: node.dataset.sourcePath, lines: node.dataset.sourceLines})"
+    )
+    first.evaluate("node => node.click()")
+    page.wait_for_function("document.getElementById('source-viewer-dialog').open")
+    viewer = page.evaluate(
+        """
+        () => {
+          const editor = ace.edit('source-viewer-editor');
+          const range = editor.selection.getRange();
+          return {
+            github: document.getElementById('source-viewer-github').href,
+            path: document.getElementById('source-viewer-path').textContent,
+            start: range.start.row + 1,
+            end: range.end.row + 1,
+          };
+        }
+        """
+    )
+    start_text, end_text = details["lines"].split("-")
+    assert viewer == {
+        "github": details["href"],
+        "path": details["path"],
+        "start": int(start_text),
+        "end": int(end_text),
+    }
+    assert browser_events == {
+        "console_errors": [],
+        "page_errors": [],
+        "request_failures": [],
+        "http_failures": [],
+    }
 
 
 def test_invalid_diagram_fails_visible_without_breaking_navigation(
