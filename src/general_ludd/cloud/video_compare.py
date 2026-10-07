@@ -713,13 +713,14 @@ def _average_pool_for_ssim(frame: NDArray[np.float64], factor: int) -> NDArray[n
     height = (frame.shape[0] // factor) * factor
     width = (frame.shape[1] // factor) * factor
     cropped = frame[:height, :width]
-    return cropped.reshape(
+    pooled = cropped.reshape(
         height // factor,
         factor,
         width // factor,
         factor,
         frame.shape[2],
     ).mean(axis=(1, 3))
+    return cast(NDArray[np.float64], pooled)
 
 
 def _global_ssim(frame_a: NDArray[np.float64], frame_b: NDArray[np.float64]) -> float:
