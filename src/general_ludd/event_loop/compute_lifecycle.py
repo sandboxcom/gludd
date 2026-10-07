@@ -205,6 +205,26 @@ class ComputeLifecycleMixin:
             }
             return
 
+        runner = self._runner
+        lifecycle_method = (
+            getattr(type(runner), "reconcile_execution_environment", None)
+            if runner is not None
+            else None
+        )
+        if not callable(lifecycle_method):
+            # The caller-owned session compatibility path commits its claim
+            # before entering this phase, but deliberately keeps the reusable
+            # session attached.  A missing provider lifecycle means there is no
+            # compute side effect to fence, even when a playbook-only runner is
+            # present; dispatch may use the committed claim.
+            self._tick_state["compute_ready"] = True
+            self._tick_state["compute_demand"] = {
+                "state": "externally_managed",
+                "runnable_todos": runnable_todos,
+                "execution_environment": "external",
+            }
+            return
+
         if self._active_session is not None:
             self._tick_metrics["compute_claim_fence_rejections"] = (
                 self._tick_metrics.get("compute_claim_fence_rejections", 0) + 1
@@ -220,23 +240,6 @@ class ComputeLifecycleMixin:
             )
             return
 
-        runner = self._runner
-        if runner is None:
-            self._tick_state["compute_ready"] = True
-            self._tick_state["compute_demand"] = {
-                "state": "externally_managed",
-                "execution_environment": "external",
-            }
-            return
-
-        lifecycle_method = getattr(type(runner), "reconcile_execution_environment", None)
-        if not callable(lifecycle_method):
-            self._tick_state["compute_ready"] = True
-            self._tick_state["compute_demand"] = {
-                "state": "externally_managed",
-                "execution_environment": "external",
-            }
-            return
         project_id = self._tick_project_id
         root_value = self._resolve_repo_root(project_id)
         if root_value is None:

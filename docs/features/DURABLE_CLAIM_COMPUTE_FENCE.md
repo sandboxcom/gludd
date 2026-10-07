@@ -18,13 +18,16 @@ The ordinary session-factory tick already provides this order:
 4. reconcile task-shaped compute for the committed claim batch; and
 5. dispatch, verify, persist the terminal decision, and release exact ownership.
 
-The compatibility path also accepts a caller-owned live `AsyncSession`. That
-session cannot prove the claim transaction committed or closed. If claimed work
-reaches compute reconciliation while `_active_session` is still present, Gludd
-therefore emits the bounded `claim_transaction_open` state, marks compute not
-ready, and makes no provider call. Dispatch remains blocked by the existing
-`compute_ready` fence. Empty demand retains its existing idle/owned-resource
-behavior because it cannot create a new compute side effect.
+The compatibility path also accepts a caller-owned live `AsyncSession`. It now
+commits the claim and execution leases before either compute reconciliation or
+job dispatch, while leaving the reusable caller-owned session attached. If a
+provider runner is configured, that still cannot prove the claim session was
+released: Gludd emits the bounded `claim_transaction_open` state, marks compute
+not ready, makes no provider call, and blocks dispatch. If no provider lifecycle
+exists, reconciliation performs no provider side effect, marks the committed
+claim `externally_managed`, and permits the existing sequential dispatch path.
+Empty demand retains its existing idle/owned-resource behavior because it cannot
+create a new compute side effect.
 
 This check deliberately does not inspect `in_transaction()`. A successful
 driver return, a reusable session, or a caller assertion is weaker evidence than
@@ -42,20 +45,22 @@ claimed batch empty?
 ├─ yes → allocate nothing
 │  ├─ same-loop compute already present → retain; terminal release owns removal
 │  └─ no owned compute → report idle
-└─ no → active claim session still attached?
-   ├─ yes → reject with claim_transaction_open; allocate nothing; dispatch nothing
-   └─ no → runner lifecycle is application-owned and enabled?
-      ├─ no → preserve the existing external/disabled compatibility state
-      └─ yes → exact project root and bounded constraints valid?
+└─ no → provider lifecycle exists?
+   ├─ no → require successful claim commit; allocate nothing; dispatch sequentially
+   └─ yes → active claim session still attached?
+      ├─ yes → reject with claim_transaction_open; allocate and dispatch nothing
+      └─ no → exact project root and bounded constraints valid?
          ├─ no → fail closed; allocate nothing
          └─ yes → reconcile present under the existing deadline and receipt checks
 ```
 
 For `claim_transaction_open`, the first operator action is to identify the caller
-that injected a live session and move it to the supported session-factory tick.
-Do not retry the provider directly and do not clear `_active_session` from caller
-code: either action would manufacture ownership evidence. A later ordinary tick
-may claim the still-durable work and provision after its own successful commit.
+that injected a live session and move provider-managed work to the supported
+session-factory tick. Do not retry the provider directly and do not clear
+`_active_session` from caller code: either action would manufacture ownership
+evidence. Providerless compatibility callers may continue because the tick has
+already committed the claim and the branch performs zero compute lifecycle
+calls.
 
 If rejection rises after rollout, use this rollback tree:
 
@@ -79,8 +84,9 @@ The rejected branch has a deliberately small resource envelope:
 
 - provider calls, subprocesses, threads, network requests, cloud resources, and
   execution environments created: **zero**;
-- database commits, rollbacks, closes, refreshes, or queries added: **zero**;
-- caller-owned session mutations: **zero**;
+- compatibility claim commits added: **one before dispatch**; provider-fence
+  rejection adds no further commit, close, refresh, or query;
+- caller-owned session closes: **zero**;
 - wait/retry loop iterations and sleep time: **zero**; and
 - retained in-memory evidence: one fixed state mapping and one integer metric.
 
@@ -102,16 +108,16 @@ Resource ownership remains separated:
 
 | Resource | Owner | Fence behavior |
 |---|---|---|
-| injected `AsyncSession` | caller | observe presence only; never mutate or close |
+| injected `AsyncSession` | caller | commit the claim boundary; never close it |
 | todo row and execution lease | durable repository | preserve for a later fenced tick |
 | provider runner | application composition | do not invoke before commit/session release |
 | existing owned compute | durable-demand release path | preserve until a fresh terminal-demand read |
 
-Recommended rollout is one ordinary deployment with the rejection metric and
-provider-call count observed together. A rejection is actionable composition
-drift, not a reason to increase a timeout or capacity limit. Alert on any
-rejection in production and on the impossible combination of a rejection plus a
-new provider call in the same tick.
+Recommended rollout is one ordinary deployment with the rejection metric,
+compatibility commit result, and provider-call count observed together. A
+rejection is actionable composition drift, not a reason to increase a timeout or
+capacity limit. Alert on any rejection in production and on the impossible
+combination of a rejection plus a new provider call in the same tick.
 
 ## Zero-downtime delivery and rollback
 
@@ -119,8 +125,9 @@ The fence is evaluated immediately before the existing provider call. It changes
 no schema, listener, credential, deployment shape, or provider receipt. Existing
 session-factory workers continue through the same path because they clear the
 claim session before reconciliation. A legacy caller that retained a live
-session now receives a retryable no-allocation state instead of provisioning
-from uncommitted demand.
+session now commits before dispatch. It receives a retryable no-allocation state
+when a provider is configured, while a providerless caller dispatches without
+attempting compute provisioning.
 
 Rollout therefore needs no drain or restart coordination beyond the normal
 application deployment. Rollback is a source revert, but it must occur only
@@ -139,7 +146,10 @@ long-lived worker communities:
 - Sidekiq discussion [#5725](https://github.com/sidekiq/sidekiq/discussions/5725)
   records operators evaluating transaction-aware pushes for established
   production applications rather than treating process-local enqueue success as
-  durable database authority.
+  durable database authority. One operator later reported enabling the feature
+  after more than 237 million processed jobs with no observed issue, which
+  supports retaining compatibility while moving its enqueue boundary after the
+  commit rather than deleting the path.
 - Celery's maintained
   [task guide](https://github.com/celery/celery/blob/main/docs/userguide/tasks.rst)
   documents the race where a worker starts before a creating transaction commits
@@ -153,10 +163,15 @@ the provider.
 
 ## Verification
 
-`tests/unit/test_todo_compute_demand_lifecycle.py` pins the previously missing
-compatibility case: claimed todos plus a live tick session must produce zero
+`tests/unit/test_todo_compute_demand_lifecycle.py` pins both compatibility cases:
+claimed todos plus a live tick session and provider runner must produce zero
 runner calls, `compute_ready = false`, and the content-free
-`claim_transaction_open` receipt and rejection metric. Existing acceptance tests
-continue to prove the successful committed path, commit-failure rollback,
-competing workers, restart behavior, full self-improvement execution,
-verification, and exact idle release.
+`claim_transaction_open` receipt; without a provider runner, the committed claim
+is externally managed and dispatch-ready. The same contract is pinned for a
+playbook-only runner that has no `reconcile_execution_environment` lifecycle:
+its presence does not manufacture a compute effect or block dispatch.
+`tests/unit/test_tick_session.py` proves that the live-session path commits
+before dispatch. The two exact
+project-isolation integration nodes and the concurrent-tick serialization node
+are also part of `integration-admission` so this compatibility regression fails
+before the long integration phase.

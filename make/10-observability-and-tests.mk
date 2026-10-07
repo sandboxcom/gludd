@@ -711,6 +711,7 @@ integration-admission:
 			lint-markdown \
 			check-make-target-contract \
 			yaml-lint \
+			project-dispatch-integration \
 			presentation-browser-test \
 			pre-commit-check; do \
 			echo "integration-admission phase=$$phase mode=validate-only"; \
@@ -738,6 +739,9 @@ integration-admission:
 	$(MAKE) --no-print-directory check-make-target-contract; \
 	echo "integration-admission phase=yaml-lint"; \
 	$(MAKE) --no-print-directory yaml-lint; \
+	echo "integration-admission phase=project-dispatch-integration"; \
+	$(MAKE) --no-print-directory test-files \
+		TESTFILES="tests/integration/test_multi_project_integration.py::TestEventLoopProjectScopedIntegration::test_event_loop_dispatch_includes_project_id tests/integration/test_worker_isolation.py::TestWorkerProjectIsolation::test_dispatch_job_contains_only_project_data tests/unit/test_event_loop.py::TestEventLoop::test_event_loop_serializes_concurrent_ticks"; \
 	echo "integration-admission phase=presentation-browser-test"; \
 	$(MAKE) --no-print-directory presentation-browser-test \
 		PRESENTATION_BROWSER_VALIDATE_ONLY=1 \

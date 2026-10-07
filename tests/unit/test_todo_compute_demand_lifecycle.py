@@ -254,6 +254,47 @@ async def test_open_claim_transaction_cannot_provision_compute(
 
 
 @pytest.mark.asyncio
+async def test_live_session_without_provider_allows_external_dispatch(
+    tmp_path: Path,
+) -> None:
+    """A committed compatibility claim needs no provider lifecycle call."""
+    loop, _ = _loop(tmp_path, by_status={"active": 1}, runner=None)
+    loop._tick_state["claimed_todos"] = [SimpleNamespace(todo_id="TODO-1")]
+    loop._active_session = AsyncMock()
+
+    await loop._phase_reconcile_compute_demand()
+
+    assert loop._tick_state["compute_ready"] is True
+    assert loop._tick_state["compute_demand"] == {
+        "state": "externally_managed",
+        "runnable_todos": 1,
+        "execution_environment": "external",
+    }
+    assert "compute_claim_fence_rejections" not in loop._tick_metrics
+
+
+@pytest.mark.asyncio
+async def test_live_session_with_playbook_only_runner_allows_external_dispatch(
+    tmp_path: Path,
+) -> None:
+    """A runner without a provider lifecycle cannot allocate compute."""
+    runner = SimpleNamespace(run_playbook=lambda **_kwargs: None)
+    loop, _ = _loop(tmp_path, by_status={"active": 1}, runner=runner)
+    loop._tick_state["claimed_todos"] = [SimpleNamespace(todo_id="TODO-1")]
+    loop._active_session = AsyncMock()
+
+    await loop._phase_reconcile_compute_demand()
+
+    assert loop._tick_state["compute_ready"] is True
+    assert loop._tick_state["compute_demand"] == {
+        "state": "externally_managed",
+        "runnable_todos": 1,
+        "execution_environment": "external",
+    }
+    assert "compute_claim_fence_rejections" not in loop._tick_metrics
+
+
+@pytest.mark.asyncio
 async def test_restart_preserves_foreign_claim_compute_without_replaying_lifecycle(
     tmp_path: Path,
 ) -> None:

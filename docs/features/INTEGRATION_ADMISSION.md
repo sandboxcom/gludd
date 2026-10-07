@@ -32,10 +32,17 @@ the first nonzero result:
    tracked YAML from the checkout, runs with a disposable namespaced Ansible
    home, and emits ten-second observer heartbeats. A stale user-installed
    collection therefore cannot shadow the candidate or turn a valid branch red.
-8. `presentation-browser-test` runs with
+8. `project-dispatch-integration` runs the exact, fast regression nodes that
+   prove a committed caller-owned-session claim still dispatches its exact
+   `project_id`, never reads another project's variable namespace, and preserves
+   the serialized tick lifecycle:
+   `test_event_loop_dispatch_includes_project_id` and
+   `test_dispatch_job_contains_only_project_data`, plus
+   `test_event_loop_serializes_concurrent_ticks`.
+9. `presentation-browser-test` runs with
    `PRESENTATION_BROWSER_VALIDATE_ONLY=1`, checking the pinned browser plan and
    prerequisites without launching either engine.
-9. `pre-commit-check` runs the existing source lint, collection, and typecheck
+10. `pre-commit-check` runs the existing source lint, collection, and typecheck
    boundary. Its `lint` prerequisite runs `check-file-line-limits` first.
 
 Every documented variable is explicit at the outer invocation and forwarded to
@@ -73,8 +80,9 @@ run again after a branch has already waited for earlier feedback:
 
 Those reports support an early local admission layer, but not skipping the final
 integrated-head proof. Gludd therefore rejects syntax, metadata, documentation,
-static browser-plan, collection, and type failures before the scarce full-gate
-slot while retaining the full gate as the authoritative integration result.
+static browser-plan, collection, project-dispatch compatibility, and type
+failures before the scarce full-gate slot while retaining the full gate as the
+authoritative integration result.
 
 [queue-feedback]: https://github.com/orgs/community/discussions/14801
 [duplicate-checks]: https://github.com/orgs/community/discussions/43988

@@ -39,6 +39,7 @@ def test_integration_admission_is_public_and_fail_fast() -> None:
         "lint-markdown",
         "check-make-target-contract",
         "yaml-lint",
+        "project-dispatch-integration",
         "presentation-browser-test",
         "pre-commit-check",
     )
@@ -48,6 +49,20 @@ def test_integration_admission_is_public_and_fail_fast() -> None:
     assert "FILE_LINE_LIMIT_POLICY=\"$(FILE_LINE_LIMIT_POLICY)\"" in stanza
     assert "MARKDOWN_FILES=\"$(MARKDOWN_FILES)\"" in stanza
     assert "MARKDOWNLINT_CONFIG=\"$(MARKDOWNLINT_CONFIG)\"" in stanza
+    assert (
+        "tests/integration/test_multi_project_integration.py::"
+        "TestEventLoopProjectScopedIntegration::"
+        "test_event_loop_dispatch_includes_project_id" in stanza
+    )
+    assert (
+        "tests/integration/test_worker_isolation.py::"
+        "TestWorkerProjectIsolation::test_dispatch_job_contains_only_project_data"
+        in stanza
+    )
+    assert (
+        "tests/unit/test_event_loop.py::TestEventLoop::"
+        "test_event_loop_serializes_concurrent_ticks" in stanza
+    )
     assert "gate-full" not in stanza
     assert "$(MAKE) --no-print-directory gate" not in stanza
 
@@ -152,6 +167,7 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
         "lint-markdown",
         "check-make-target-contract",
         "yaml-lint",
+        "project-dispatch-integration",
         "presentation-browser-test",
         "pre-commit-check",
     ):
@@ -177,6 +193,9 @@ def test_integration_admission_document_records_queue_evidence_and_boundaries() 
         "fail-fast",
         "exact dead-code baseline parity",
         "PRESENTATION_BROWSER_VALIDATE_ONLY=1",
+        "test_event_loop_dispatch_includes_project_id",
+        "test_dispatch_job_contains_only_project_data",
+        "test_event_loop_serializes_concurrent_ticks",
         "247.53 seconds",
         "43.73 seconds",
         "300-second outer bound",
