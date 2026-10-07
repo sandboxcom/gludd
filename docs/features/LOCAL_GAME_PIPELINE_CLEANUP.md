@@ -43,8 +43,9 @@ that floor directly.
 - The PID comes only from daemon state or its server-ID-namespaced path, must
   match `^[1-9][0-9]*$`, and is passed through `ansible.builtin.command.argv`,
   not a shell. No public input expands the kill scope.
-- Cleanup is bounded to one PID read, at most one `SIGTERM`, and one idempotent
-  file removal. It adds no retry loop, daemon, or persistent worker.
+- Cleanup is bounded to one PID read, at most one `SIGTERM`, ten one-second
+  process probes, an optional `SIGKILL`, and one idempotent file removal. It
+  adds no daemon or persistent worker.
 - Pillow remains locked with artifact hashes. The application still restricts
   accepted reference inputs and does not treat a dependency pin as a substitute
   for image-size, format, CPU, or memory limits.
