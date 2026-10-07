@@ -85,8 +85,11 @@ class TestWorkTypeIterationCaps:
         assert result == "done"
 
     @pytest.mark.asyncio
-    async def test_code_work_type_iteration_limit_raises(self):
-        """tool_calls that exceed the code max_iterations raise ToolLoopExhausted."""
+    async def test_code_work_type_iteration_limit_raises(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Exhaustion keeps its diagnostic exception and warning contracts."""
         gateway = MagicMock()
         mcp = AsyncMock()
         mcp.list_tools = AsyncMock(return_value=[
@@ -124,9 +127,14 @@ class TestWorkTypeIterationCaps:
                 work_type_max_iterations={"refactor": 2},
                 mcp_registry=MagicMock(),
             )
-            with pytest.raises(ToolLoopExhausted):
+            with pytest.raises(
+                ToolLoopExhausted,
+                match=r"reached max iterations \(2\).*J-TEST-002",
+            ) as exc_info:
                 await loop.run_with_tools(job, "sys", "user")
             assert mock_ct.call_count == 2
+            assert "no final assistant answer was produced" in str(exc_info.value)
+            assert "Tool call loop reached max iterations (2) for job J-TEST-002" in caplog.messages
 
     @pytest.mark.asyncio
     async def test_analysis_gets_higher_max_iterations(self):
