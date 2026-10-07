@@ -107,10 +107,10 @@ class TestGetWorktreesExcludesMainCheckout:
             wts = cwh.get_worktrees()
         assert wts == []
 
-    def test_git_failure_returns_empty(self) -> None:
+    def test_git_failure_returns_inconclusive(self) -> None:
         with patch("check_worktree_health.run", return_value=(1, "", "error")):
             wts = cwh.get_worktrees()
-        assert wts == []
+        assert wts is None
 
 
 class TestGetTreeAge:

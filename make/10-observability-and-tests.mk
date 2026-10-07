@@ -87,7 +87,8 @@ test-ci-dual-track-local: $(if $(filter 1,$(DUAL_TRACK_LOCAL_VALIDATE_ONLY)),,_c
 	@$(if $(filter 1,$(DUAL_TRACK_LOCAL_VALIDATE_ONLY)),:,$(MAKE) node-deps-sync NODE_DEPS_VALIDATE_ONLY=0 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_NPM_UPDATE_NOTIFIER=false)
 	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
 	TOOLCHAIN_ROOT="$${RESOURCE_ROOT}-toolchain"; \
-	UV_PROJECT_ENVIRONMENT="$$TOOLCHAIN_ROOT/ci-shards/python-3.11" GLUDD_CANDIDATE_SHA="$$(git rev-parse HEAD)" $(UV) run --python 3.11 python scripts/run_ci_shards_serial.py \
+	UV_NO_SYNC=0 $(UV) run --no-project --python 3.11 python scripts/dependency_profiles.py sync --root "$(CURDIR)" --set ci --environment "$$TOOLCHAIN_ROOT/ci-shards/python-3.11" --python 3.11; \
+	UV_PROJECT_ENVIRONMENT="$$TOOLCHAIN_ROOT/ci-shards/python-3.11" GLUDD_CANDIDATE_SHA="$$(git rev-parse HEAD)" $(UV) run --no-sync --python 3.11 python scripts/run_ci_shards_serial.py \
 		--pytest-args="-W error $(PYTEST_ARGS)" \
 		--require-release-policy \
 		--max-files-per-batch "$(or $(MAX_FILES_PER_BATCH),16)" $(if $(filter 1,$(DUAL_TRACK_LOCAL_VALIDATE_ONLY)),--validate-only,) \
@@ -347,17 +348,22 @@ _stash-depth-guard:
 # drops below DISK_MIN_FREE_GIB. Absolute headroom is stable across APFS volume
 # sizes and does not pressure agents to delete another project's namespaced data.
 _disk-usage-guard:
-	@AVAILABLE_KIB=$$(df -Pk "$(CURDIR)" | awk 'END {print $$4}'); \
+	@fail_low_headroom() { \
+		echo "DISK-HEADROOM-GUARD: available=$$AVAILABLE_GIB GiB required=$(DISK_MIN_FREE_GIB) GiB available_bytes=$$AVAILABLE_BYTES required_bytes=$$REQUIRED_BYTES BLOCKED."; \
+		exit 1; \
+	}; \
+	AVAILABLE_KIB=$$(df -Pk "$(CURDIR)" | awk 'END {print $$4}'); \
 	USAGE=$$(df -Pk "$(CURDIR)" | awk 'END {gsub(/%/,"",$$5); print $$5}'); \
 	MIN_FREE_KIB=$$(($(DISK_MIN_FREE_GIB) * 1024 * 1024)); \
+	AVAILABLE_BYTES=$$((AVAILABLE_KIB * 1024)); \
+	REQUIRED_BYTES=$$((MIN_FREE_KIB * 1024)); \
 	AVAILABLE_GIB=$$((AVAILABLE_KIB / 1024 / 1024)); \
 	if [ "$$AVAILABLE_KIB" -lt "$$MIN_FREE_KIB" ]; then \
-		echo "DISK-HEADROOM-GUARD: available=$$AVAILABLE_GIB GiB required=$(DISK_MIN_FREE_GIB) GiB BLOCKED."; \
-		exit 1; \
+		fail_low_headroom; \
 	elif [ "$$USAGE" -gt 90 ]; then \
-		echo "DISK-HEADROOM-GUARD: available_gib=$$AVAILABLE_GIB required_gib=$(DISK_MIN_FREE_GIB) usage=$${USAGE}% — high utilization, headroom sufficient."; \
+		echo "DISK-HEADROOM-GUARD: available_gib=$$AVAILABLE_GIB required_gib=$(DISK_MIN_FREE_GIB) available_bytes=$$AVAILABLE_BYTES required_bytes=$$REQUIRED_BYTES usage=$${USAGE}% — high utilization, headroom sufficient."; \
 	fi; \
-	echo "_disk-usage-guard: PASS available_gib=$$AVAILABLE_GIB required_gib=$(DISK_MIN_FREE_GIB) usage=$${USAGE}%"
+	echo "_disk-usage-guard: PASS available_gib=$$AVAILABLE_GIB required_gib=$(DISK_MIN_FREE_GIB) available_bytes=$$AVAILABLE_BYTES required_bytes=$$REQUIRED_BYTES usage=$${USAGE}%"
 
 # AB027 — check-worktree-staleness: flags git worktrees older than 24h.
 # Stale worktrees consume disk (~320MB each) and must be merged or cleaned up.

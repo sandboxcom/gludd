@@ -44,6 +44,8 @@ def test_disk_guard_accepts_sufficient_headroom() -> None:
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "available_gib=" in result.stdout
+    assert "available_bytes=" in result.stdout
+    assert "required_bytes=" in result.stdout
 
 
 def test_disk_guard_fails_closed_below_required_headroom() -> None:

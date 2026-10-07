@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Annotated, ClassVar, Literal, Self, TypeAlias, cast
+from typing import Annotated, ClassVar, Final, Literal, Self, TypeAlias, cast
 
 from pydantic import (
     BaseModel,
@@ -37,6 +37,9 @@ DECISION_EVALUATION_REPORT_SCHEMA_V1 = "gludd.decision-evaluation-report/v1"
 DECISION_APPROVAL_RECEIPT_SCHEMA_V1 = "gludd.decision-approval-receipt/v1"
 DECISION_ABSTENTION_SCHEMA_V1 = "gludd.decision-abstention/v1"
 NORMALIZATION_REFUSAL_SCHEMA_V1 = "gludd.decision-normalization-refusal/v1"
+DECISION_APPLICATION_OUTCOME_SCHEMA_V1: Final[
+    Literal["gludd.decision-application-outcome/v1"]
+] = "gludd.decision-application-outcome/v1"
 
 MAX_ENVELOPE_BYTES = 16 * 1024
 MAX_RULE_NODES = 31
@@ -322,6 +325,60 @@ class OutcomeEvidenceV1(_StrictDecisionModel):
             raise ValueError(
                 "terminal evidence requires an event ID and a gate/status digest"
             )
+        return self
+
+
+class DecisionApplicationOutcomeV1(_StrictDecisionModel):
+    """Content-free terminal feedback for one issued codified application."""
+
+    schema_version: Literal["gludd.decision-application-outcome/v1"] = Field(
+        alias="schema"
+    )
+    project_id: BoundedIdentifier
+    decision_kind: DecisionKind
+    candidate_digest: Sha256Digest
+    application_id: Sha256Digest
+    rollout_stage: RolloutStage
+    outcome: VerifiedOutcome
+    occurred_at: datetime
+    terminal_event_id: BoundedIdentifier | None
+    evidence_digest: Sha256Digest | None
+
+    @field_validator("decision_kind", mode="before")
+    @classmethod
+    def _parse_application_kind(cls, value: object) -> object:
+        if type(value) is str:
+            return DecisionKind(value)
+        return value
+
+    @field_validator("rollout_stage", mode="before")
+    @classmethod
+    def _parse_application_stage(cls, value: object) -> object:
+        if type(value) is str:
+            return RolloutStage(value)
+        return value
+
+    @field_validator("outcome", mode="before")
+    @classmethod
+    def _parse_application_outcome(cls, value: object) -> object:
+        if type(value) is str:
+            return VerifiedOutcome(value)
+        return value
+
+    @field_validator("occurred_at")
+    @classmethod
+    def _application_time_is_utc(cls, value: datetime) -> datetime:
+        return _utc_timestamp(value)
+
+    @model_validator(mode="after")
+    def _terminal_application_evidence_is_coherent(self) -> Self:
+        has_terminal = self.terminal_event_id is not None
+        has_evidence = self.evidence_digest is not None
+        if self.outcome is VerifiedOutcome.UNKNOWN:
+            if has_terminal or has_evidence:
+                raise ValueError("unknown outcomes must not claim terminal evidence")
+        elif not (has_terminal and has_evidence):
+            raise ValueError("terminal evidence is required for a known outcome")
         return self
 
 
@@ -903,6 +960,7 @@ def parse_approval_receipt(
 __all__ = [
     "DECISION_ABSTENTION_SCHEMA_V1",
     "DECISION_ACTIONS_V1",
+    "DECISION_APPLICATION_OUTCOME_SCHEMA_V1",
     "DECISION_APPROVAL_RECEIPT_SCHEMA_V1",
     "DECISION_CONTEXT_SCHEMA_V1",
     "DECISION_ENVELOPE_SCHEMA_V1",
@@ -916,6 +974,7 @@ __all__ = [
     "NORMALIZATION_REFUSAL_SCHEMA_V1",
     "ApprovalReceiptV1",
     "DecisionAbstentionV1",
+    "DecisionApplicationOutcomeV1",
     "DecisionContextV1",
     "DecisionEnvelopeV1",
     "DecisionKind",

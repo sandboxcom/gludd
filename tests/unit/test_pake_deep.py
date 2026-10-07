@@ -55,6 +55,29 @@ class TestSPAKE2PlusGroup:
         with pytest.raises(AttributeError):
             g.hash_name = "sha512"
 
+    def test_internal_helpers_reject_unknown_group_and_hash(self):
+        unknown = SPAKE2PlusGroup(name="P-999", hash_name="sha999", point_bytes=1, scalar_bytes=1)
+
+        with pytest.raises(PAKEError, match="Unknown curve"):
+            pake_module._group_params(unknown)
+        with pytest.raises(PAKEError, match="Unsupported curve"):
+            pake_module._ec_curve_obj(unknown)
+        with pytest.raises(PAKEError, match="Unsupported hash"):
+            pake_module._hkdf_derive(b"ikm", b"salt", b"info", 1, unknown.hash_name)
+
+
+class TestRawPointArithmetic:
+    def test_p521_identity_inverse_and_doubling_boundaries(self):
+        params = pake_module._group_params(SPAKE2PlusGroup.P521())
+        p, a = params["p"], params["a"]
+        gx, gy = params["gx"], params["gy"]
+
+        assert pake_module._point_add(0, 0, gx, gy, a, p) == (gx, gy)
+        assert pake_module._point_add(gx, gy, 0, 0, a, p) == (gx, gy)
+        assert pake_module._point_add(gx, gy, gx, -gy % p, a, p) == (0, 0)
+        assert pake_module._point_add(gx, gy, gx, gy, a, p) == pake_module._point_double(gx, gy, a, p)
+        assert pake_module._point_double(gx, 0, a, p) == (0, 0)
+
 
 class TestSPAKE2PlusClientServer:
     def test_full_exchange_p256(self):
@@ -229,6 +252,21 @@ class TestSPAKE2PlusRejects:
         group = SPAKE2PlusGroup.P256()
         with pytest.raises(PAKEError, match="server_id"):
             SPAKE2PlusClient(group, b"pw", b"client", b"", b"ctx")
+
+    @pytest.mark.timeout(4)
+    def test_p521_rejects_correct_width_off_curve_peer_points(self):
+        group = SPAKE2PlusGroup.P521()
+        coordinate_bytes = (group.point_bytes - 1) // 2
+        off_curve_point = b"\x04" + b"\x00" * (2 * coordinate_bytes)
+        client = SPAKE2PlusClient(group, b"pw", b"client", b"server", b"ctx")
+        server = SPAKE2PlusServer(group, b"pw", b"server", b"client", b"ctx")
+
+        with pytest.raises(PAKEError, match="invalid server message point"):
+            client.finish(off_curve_point)
+
+        server.start()
+        with pytest.raises(PAKEError, match="invalid client message point"):
+            server.finish(off_curve_point)
 
 
 class TestSPAKE2PlusEdgeCases:
