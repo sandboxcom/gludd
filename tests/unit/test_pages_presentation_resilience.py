@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "pages.yml"
 MAKE_FRAGMENT = ROOT / "make" / "90-infrastructure-and-services.mk"
 DESIGN = ROOT / "docs" / "presentation" / "DESIGN_revealjs_deck.md"
+DECK = ROOT / "docs" / "presentation" / "deck" / "index.html"
 BROWSER_TEST = ROOT / "tests" / "browser" / "test_presentation.py"
 SETUP_PYTHON_V7_SHA = "5fda3b95a4ea91299a34e894583c3862153e4b97"
 
@@ -92,6 +93,23 @@ def test_browser_lane_can_serve_the_resolved_upload_tree() -> None:
     assert "serve_dir=serve_dir" in source
 
 
+def test_todo_state_diagram_keeps_canonical_review_id_behind_compact_label() -> None:
+    """The viewport-safe label must not rename lifecycle transition endpoints."""
+    deck = DECK.read_text(encoding="utf-8")
+    diagram = deck.split("<h2>The todo state machine</h2>", 1)[1].split(
+        "</section>", 1
+    )[0]
+
+    assert 'state "Review result" as REVIEWING_RETURN' in diagram
+    for transition in (
+        "AWAITING_RESULT --> REVIEWING_RETURN: result persisted",
+        "REVIEWING_RETURN --> COMPLETE: approve",
+        "REVIEWING_RETURN --> NEEDS_MORE_WORK: changes",
+        "REVIEWING_RETURN --> FAILED: reject",
+    ):
+        assert transition in diagram
+
+
 def test_implementation_guide_keeps_upstream_regressions_and_operations() -> None:
     """Long-lived practitioner reports remain next to the operating contract."""
     design = DESIGN.read_text(encoding="utf-8")
@@ -106,6 +124,7 @@ def test_implementation_guide_keeps_upstream_regressions_and_operations() -> Non
         "mermaid-js/mermaid#7323",
         "gitlab-org/gitlab-docs#599",
         "mermaid-js/mermaid#8113",
+        "mermaid-js/mermaid#4918",
         "bugs.webkit.org/show_bug.cgi?id=198609",
         "github.com/orgs/community/discussions/12523",
         "astral-sh/uv/issues/13319",
