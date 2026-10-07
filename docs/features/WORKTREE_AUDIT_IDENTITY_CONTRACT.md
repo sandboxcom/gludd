@@ -34,6 +34,9 @@ Every registered path is checked before a path-scoped Git operation:
    **ACTIVE-WORKTREE path=canonical-path identity=canonical**.
    The **no active worktrees** state is emitted only when Git reports no
    validated or rejected secondary entries.
+6. A failed Git inventory is observably distinct from an empty inventory. It
+   emits **WORKTREE HEALTH: INCONCLUSIVE**, exits nonzero with status 2, and
+   never claims that no active worktrees exist.
 
 Tests accept either a populated active inventory or the explicit empty state.
 They validate the shape and canonical identity of populated rows instead of
@@ -124,6 +127,12 @@ rejected value is retained only for audit evidence; it is never supplied as a
 working directory. Branch and commit arguments retain their existing
 list-form subprocess boundary.
 
+Inventory acquisition is also fail-closed at the gate boundary. An unavailable
+`git worktree list --porcelain` result cannot prove an empty active environment,
+so it produces the dedicated inconclusive terminal state instead of a false
+pass. Operators may retry after Git recovers; the audit does not cache or
+invent inventory state.
+
 The separately recorded **test_create_worktree_validates_path** red-team node
 guards creation-time GitAutomation arguments and was already green. It is a
 different boundary and remains unchanged; this contract covers inventory-time
@@ -162,7 +171,8 @@ temporarily restores the earlier ambiguous evidence format.
 ## Verification
 
 Focused regressions cover traversal rejection, an escaping symlink, a safe
-symlink alias, fail-closed command suppression, and active-environment output.
+symlink alias, fail-closed command suppression, inventory failure truth, and
+active-environment output.
 The complete audit test module, production coverage floors, Ruff, strict mypy,
 docstring lint, Markdown/spec lint, and task-ledger validators form the bounded
 acceptance set. Collection and commit are deliberately separate authorization
