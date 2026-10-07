@@ -445,12 +445,15 @@ def _check_d27_sandbox_limits() -> tuple[bool, str]:
 def _check_d18_audit_log() -> tuple[bool, str]:
     """Static probe: audit logging for sensitive operations is wired end-to-end.
 
-    Source-scans (no execution) two things:
+    Source-scans (no execution) four things:
       * ``general_ludd.db.repository.AuditEventRepository`` defines
         ``record_typed`` (the typed entry point for the ``AuditEventType``
         taxonomy).
-      * ``general_ludd.event_loop.decision_reconciliation`` — the delegated
-        central dispatch path
+      * ``general_ludd.event_loop.loop.EventLoop`` still composes the decision
+        completion mixin that owns the reconciliation phase.
+      * ``general_ludd.event_loop.decision_completion`` still delegates that
+        phase to ``reconcile_completed_decisions``.
+      * ``general_ludd.event_loop.decision_reconciliation`` — the central path
         mutating operations flow through — still calls
         ``loop._audit_repo.record_typed(...)``.
     """
@@ -466,10 +469,20 @@ def _check_d18_audit_log() -> tuple[bool, str]:
         return False, "OPEN — AuditEventRepository.record_typed no longer defined (regression)"
 
     loop_src = _read_internal_module_source("event_loop.loop")
-    if "await reconcile_completed_decisions(self)" not in loop_src:
+    event_loop_bases = loop_src.partition("class EventLoop(")[2].partition("):")[0]
+    if not event_loop_bases or "_DecisionCompletionMixin" not in event_loop_bases:
         return False, (
-            "OPEN — event_loop.loop no longer delegates to reconcile_completed_decisions(...) "
-            "(regression — audit logging wiring removed from the dispatch path)"
+            "OPEN — event_loop.loop.EventLoop no longer composes "
+            "DecisionCompletionMixin (regression — audit logging wiring "
+            "removed from the dispatch path)"
+        )
+
+    completion_src = _read_internal_module_source("event_loop.decision_completion")
+    if "await reconcile_completed_decisions(self)" not in completion_src:
+        return False, (
+            "OPEN — event_loop.decision_completion no longer delegates to "
+            "reconcile_completed_decisions(...) (regression — audit logging "
+            "wiring removed from the dispatch path)"
         )
 
     reconciliation_src = _read_internal_module_source("event_loop.decision_reconciliation")
@@ -482,7 +495,7 @@ def _check_d18_audit_log() -> tuple[bool, str]:
 
     return True, (
         "LANDED-VERIFIED — AuditEventRepository.record_typed exists and is "
-        "called through event_loop.loop's delegated reconciliation path"
+        "called through EventLoop's DecisionCompletionMixin reconciliation path"
     )
 
 
