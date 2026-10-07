@@ -233,6 +233,16 @@ events are `review.decided`, `policy.decided`, `budget.decided`, and
 schema owner. Legacy, unsigned, incomplete, corrupt, held, cross-project, and
 missing-policy-digest records remain inspectable but are excluded from mining.
 
+New live evidence separates the immutable decision from terminal proof. A
+decision event contains policy, bounded features, and the closed action. A later
+`decision.outcome` event in the same signed bundle binds the store-computed
+decision-event digest to one closed outcome plus bounded terminal IDs and
+gate/status digests. This avoids a self-referential digest in the decision
+payload. The analyzer accepts exactly one same-project, same-correlation,
+non-backdated outcome link. Missing, duplicate, conflicting, or orphan links are
+content-free refusals, never partial evidence. The global 100,000-event analysis
+ceiling also bounds this join.
+
 A decision counts once per root task/correlation family. Retries, duplicated
 events, replayed runs, and child attempts cannot inflate support. A success is
 eligible only after a terminal gate or application outcome binds back to the
@@ -493,6 +503,14 @@ If none exists, it removes the pointer and all traffic uses agent/LLM fallback.
 In-flight work remains bound to the generation that issued its decision; new
 work sees the new pointer. Rollback must not restart workers, interrupt unrelated
 tasks, or mutate the immutable candidate. This is the ZDD canary contract.
+
+Replay schema expansion follows the same no-downtime discipline. Deploy readers
+that accept `decision.outcome` before enabling any producer. Producer rollback
+comes first: stop new outcome emission, finalize or quarantine in-flight bundles,
+then remove reader support. Existing signed bundles are immutable and must never
+be rewritten for downgrade compatibility. Capture failures do not change the
+active generation or runtime fallback, so this migration remains outside the
+serving decision path.
 
 ## 12. Privacy, resource limits, and observability
 

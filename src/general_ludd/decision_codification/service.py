@@ -26,6 +26,7 @@ from general_ludd.decision_codification.miner import (
 from general_ludd.decision_codification.normalize import (
     normalize_decision_context,
     normalize_verified_decision_event,
+    normalize_verified_decision_outcome_event,
 )
 from general_ludd.decision_codification.rollout import OutcomeFeedback
 from general_ludd.decision_codification.runtime import CodifiedDecision, DecisionRuntime
@@ -36,18 +37,23 @@ from general_ludd.decision_codification.schema import (
     DecisionRuleBundleV1,
     EvaluationReportV1,
     NormalizationRefusalV1,
+    OutcomeEvidenceV1,
     RolloutStage,
     VerifiedDecisionSourceV1,
     VerifiedOutcome,
     canonical_sha256,
 )
-from general_ludd.replay.schema import BoundedIdentifier, Sha256Digest
+from general_ludd.replay.schema import BoundedIdentifier, EventEnvelopeV1, Sha256Digest
 from general_ludd.replay.store import ReplayStoreError, VerifiedBundle
 
 MAX_ANALYSIS_BUNDLES = 10_000
 MAX_ANALYSIS_EVENTS = 100_000
 _PROJECT_ID_ADAPTER = TypeAdapter(BoundedIdentifier, config=ConfigDict(strict=True))
 _POLICY_DIGEST_ADAPTER = TypeAdapter(Sha256Digest, config=ConfigDict(strict=True))
+_DECISION_EVENT_TYPES = frozenset(
+    {"review.decided", "policy.decided", "budget.decided", "reconcile.decided"}
+)
+_EMBEDDED_OUTCOME_FIELDS = frozenset({"verified_outcome", "outcome_evidence"})
 
 
 class VerifiedBundleReader(Protocol):
@@ -71,6 +77,9 @@ class AnalysisRejectionReason(StrEnum):
     EXPORT_REFUSED = "export_refused"
     VALIDATION_REFUSED = "validation_refused"
     HOLDOUT_REFUSED = "holdout_refused"
+    MISSING_OUTCOME = "missing_outcome"
+    CONFLICTING_OUTCOME = "conflicting_outcome"
+    ORPHAN_OUTCOME = "orphan_outcome"
 
 
 class DecisionAnalysisError(ValueError):
@@ -174,11 +183,64 @@ class DecisionLogAnalyzer:
                 integrity="signed",
                 complete=True,
             )
+            linked_outcomes: dict[
+                str, tuple[EventEnvelopeV1, OutcomeEvidenceV1]
+            ] = {}
+            conflicting_outcomes: set[str] = set()
+            for outcome_event in verified.events:
+                if outcome_event.type != "decision.outcome":
+                    continue
+                linked = normalize_verified_decision_outcome_event(
+                    outcome_event,
+                    expected_project_id=project_id,
+                )
+                if isinstance(linked, NormalizationRefusalV1):
+                    rejections[AnalysisRejectionReason.NORMALIZATION_REFUSED] += 1
+                    continue
+                decision_digest = linked.decision_event_digest
+                if (
+                    decision_digest in linked_outcomes
+                    or decision_digest in conflicting_outcomes
+                ):
+                    linked_outcomes.pop(decision_digest, None)
+                    if decision_digest not in conflicting_outcomes:
+                        rejections[
+                            AnalysisRejectionReason.CONFLICTING_OUTCOME
+                        ] += 1
+                    conflicting_outcomes.add(decision_digest)
+                    continue
+                linked_outcomes[decision_digest] = (outcome_event, linked)
+
+            consumed_outcomes: set[str] = set()
             for event in verified.events:
+                if event.type == "decision.outcome":
+                    continue
+                linked_outcome: OutcomeEvidenceV1 | None = None
+                has_embedded_outcome = bool(
+                    _EMBEDDED_OUTCOME_FIELDS.intersection(event.payload)
+                )
+                if event.type in _DECISION_EVENT_TYPES and not has_embedded_outcome:
+                    if event.digest in conflicting_outcomes:
+                        continue
+                    linked_record = linked_outcomes.get(event.digest)
+                    if linked_record is None:
+                        rejections[AnalysisRejectionReason.MISSING_OUTCOME] += 1
+                        continue
+                    outcome_event, linked_outcome = linked_record
+                    consumed_outcomes.add(event.digest)
+                    if (
+                        outcome_event.correlation != event.correlation
+                        or outcome_event.occurred_at < event.occurred_at
+                    ):
+                        rejections[
+                            AnalysisRejectionReason.CONFLICTING_OUTCOME
+                        ] += 1
+                        continue
                 normalized = normalize_verified_decision_event(
                     event,
                     source=source,
                     expected_project_id=project_id,
+                    linked_outcome=linked_outcome,
                 )
                 if isinstance(normalized, NormalizationRefusalV1):
                     rejections[AnalysisRejectionReason.NORMALIZATION_REFUSED] += 1
@@ -194,6 +256,9 @@ class DecisionLogAnalyzer:
                         source_agent_id=None,
                     )
                 )
+            orphaned = set(linked_outcomes) - consumed_outcomes
+            if orphaned:
+                rejections[AnalysisRejectionReason.ORPHAN_OUTCOME] += len(orphaned)
 
         groups = mine_candidate_groups(evidence, floors=self._floors)
         if evidence and not groups:

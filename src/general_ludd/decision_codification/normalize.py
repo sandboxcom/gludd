@@ -39,13 +39,16 @@ _EVENT_KINDS: dict[str, DecisionKind] = {
     "budget.decided": DecisionKind.BUDGET,
     "reconcile.decided": DecisionKind.RECONCILE,
 }
-_ALLOWED_PAYLOAD_FIELDS = frozenset(
+_DECISION_PAYLOAD_FIELDS = frozenset({"policy_digest", "features", "decision"})
+_EMBEDDED_OUTCOME_FIELDS = frozenset({"verified_outcome", "outcome_evidence"})
+_ALLOWED_PAYLOAD_FIELDS = _DECISION_PAYLOAD_FIELDS | _EMBEDDED_OUTCOME_FIELDS
+_OUTCOME_PAYLOAD_FIELDS = frozenset(
     {
-        "policy_digest",
-        "features",
-        "decision",
+        "decision_event_digest",
         "verified_outcome",
-        "outcome_evidence",
+        "terminal_event_ids",
+        "gate_digests",
+        "status_digests",
     }
 )
 _SUPPORTED_REDACTION_KINDS = frozenset(
@@ -370,6 +373,7 @@ def normalize_verified_decision_event(
     *,
     source: VerifiedDecisionSourceV1,
     expected_project_id: str,
+    linked_outcome: OutcomeEvidenceV1 | None = None,
 ) -> DecisionEnvelopeV1 | NormalizationRefusalV1:
     """Build an envelope or return a typed, content-free refusal.
 
@@ -434,23 +438,29 @@ def normalize_verified_decision_event(
     if type(decision) is not str or decision not in DECISION_ACTIONS_V1[kind]:
         return _refusal(NormalizationRefusalReason.INVALID_DECISION, kind)
 
-    raw_outcome = safe_payload.get("verified_outcome")
-    if type(raw_outcome) is not str:
-        return _refusal(NormalizationRefusalReason.INVALID_OUTCOME, kind)
-    try:
-        outcome = VerifiedOutcome(raw_outcome)
-    except ValueError:
-        return _refusal(NormalizationRefusalReason.INVALID_OUTCOME, kind)
+    if linked_outcome is not None:
+        if _EMBEDDED_OUTCOME_FIELDS.intersection(safe_payload):
+            return _refusal(NormalizationRefusalReason.INVALID_OUTCOME_EVIDENCE, kind)
+        outcome = linked_outcome.outcome
+        evidence = linked_outcome
+    else:
+        raw_outcome = safe_payload.get("verified_outcome")
+        if type(raw_outcome) is not str:
+            return _refusal(NormalizationRefusalReason.INVALID_OUTCOME, kind)
+        try:
+            outcome = VerifiedOutcome(raw_outcome)
+        except ValueError:
+            return _refusal(NormalizationRefusalReason.INVALID_OUTCOME, kind)
 
-    raw_evidence = safe_payload.get("outcome_evidence")
-    if type(raw_evidence) is not dict:
-        return _refusal(NormalizationRefusalReason.INVALID_OUTCOME_EVIDENCE, kind)
-    try:
-        evidence = OutcomeEvidenceV1.model_validate_json(
-            canonical_decision_json(raw_evidence)
-        )
-    except ValidationError:
-        return _refusal(NormalizationRefusalReason.INVALID_OUTCOME_EVIDENCE, kind)
+        raw_evidence = safe_payload.get("outcome_evidence")
+        if type(raw_evidence) is not dict:
+            return _refusal(NormalizationRefusalReason.INVALID_OUTCOME_EVIDENCE, kind)
+        try:
+            evidence = OutcomeEvidenceV1.model_validate_json(
+                canonical_decision_json(raw_evidence)
+            )
+        except ValidationError:
+            return _refusal(NormalizationRefusalReason.INVALID_OUTCOME_EVIDENCE, kind)
     if evidence.decision_event_digest != event.digest or evidence.outcome is not outcome:
         return _refusal(NormalizationRefusalReason.INVALID_OUTCOME_EVIDENCE, kind)
 
@@ -481,6 +491,57 @@ def normalize_verified_decision_event(
         return _refusal(NormalizationRefusalReason.BOUNDS_EXCEEDED, kind)
 
 
+def normalize_verified_decision_outcome_event(
+    event: EventEnvelopeV1,
+    *,
+    expected_project_id: str,
+) -> OutcomeEvidenceV1 | NormalizationRefusalV1:
+    """Validate one separately persisted terminal outcome link.
+
+    A replay event digest cannot safely contain a field that refers to that same
+    digest.  Live capture therefore appends the decision first and binds its
+    immutable digest from a second, signed-bundle event.  This parser accepts
+    only that closed, content-free link shape.
+    """
+    if event.type != "decision.outcome":
+        return _refusal(NormalizationRefusalReason.UNSUPPORTED_EVENT, None)
+    if event.project_id is None:
+        return _refusal(NormalizationRefusalReason.MISSING_PROJECT, None)
+    if not expected_project_id or event.project_id != expected_project_id:
+        return _refusal(NormalizationRefusalReason.PROJECT_MISMATCH, None)
+    if set(event.payload) != _OUTCOME_PAYLOAD_FIELDS:
+        return _refusal(NormalizationRefusalReason.UNKNOWN_FIELD, None)
+    if event.redaction.count or event.redaction.kinds:
+        return _refusal(NormalizationRefusalReason.REDACTION_REQUIRED, None)
+
+    redacted = redact_for_persistence(event.payload, limits=_NORMALIZATION_LIMITS)
+    if redacted.metadata.truncated:
+        return _refusal(NormalizationRefusalReason.BOUNDS_EXCEEDED, None)
+    if redacted.metadata.redaction_count or type(redacted.value) is not dict:
+        return _refusal(NormalizationRefusalReason.REDACTION_REQUIRED, None)
+    safe_payload = cast(dict[str, object], redacted.value)
+    raw_outcome = safe_payload.get("verified_outcome")
+    if type(raw_outcome) is not str:
+        return _refusal(NormalizationRefusalReason.INVALID_OUTCOME, None)
+    try:
+        evidence = OutcomeEvidenceV1.model_validate_json(
+            canonical_decision_json(
+                {
+                    "decision_event_digest": safe_payload.get(
+                        "decision_event_digest"
+                    ),
+                    "outcome": raw_outcome,
+                    "terminal_event_ids": safe_payload.get("terminal_event_ids"),
+                    "gate_digests": safe_payload.get("gate_digests"),
+                    "status_digests": safe_payload.get("status_digests"),
+                }
+            )
+        )
+    except ValidationError:
+        return _refusal(NormalizationRefusalReason.INVALID_OUTCOME_EVIDENCE, None)
+    return evidence
+
+
 __all__ = [
     "FEATURE_REGISTRY_SCHEMA_V1",
     "FEATURE_REGISTRY_V1",
@@ -488,4 +549,5 @@ __all__ = [
     "FeatureRuleV1",
     "normalize_decision_context",
     "normalize_verified_decision_event",
+    "normalize_verified_decision_outcome_event",
 ]

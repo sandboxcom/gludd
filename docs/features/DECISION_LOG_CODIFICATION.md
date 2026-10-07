@@ -70,6 +70,24 @@ construct one from an arbitrary log or an unverified bundle. The remaining
 recorder integration supplies the signed decision events; it does not weaken
 this verified-read boundary.
 
+### Durable decision/outcome linking
+
+A live terminal result is recorded as a second `decision.outcome` event in the
+same signed bundle. The decision is appended first, giving it an immutable
+store-computed digest; the outcome then refers to that digest and carries only a
+closed outcome enum, bounded terminal event IDs, and gate/status digests. This
+two-event shape avoids a self-referential digest in which an event's payload
+would need to contain its own final digest.
+
+Analysis joins only within one verified bundle. It requires same-project,
+same-correlation fields, an outcome timestamp no earlier than the decision, and
+exactly one outcome per decision digest. Missing, duplicate, conflicting,
+cross-correlation, and orphan links become closed rejection counters and never
+training rows. The existing 10,000-bundle and 100,000-event analysis limits bound
+the in-memory join; the replay store remains the durable source of truth. Legacy
+self-contained evidence remains readable during migration, but new capture must
+use the non-circular split form.
+
 ## Bounded authenticated analysis API and CLI
 
 `POST /api/v1/decision-codification/analyze` exposes proposal-side analysis
@@ -282,6 +300,16 @@ traffic abstains. In-flight work retains the generation that issued its
 decision, and rollback does not require a worker restart or mutate immutable
 artifacts. Revocation and drift hold also stop new codified hits immediately.
 
+The split-event schema uses an expand/contract ZDD rollout. Deploy readers that
+know `decision.outcome` first while producers continue the old shape; only
+after every analysis worker accepts the additive type may capture producers emit
+it. Producer rollback comes first: stop new outcome emission, drain/finalize
+in-flight bundles, and then roll readers back. Immutable bundles containing the
+new type remain quarantined from older readers rather than being rewritten.
+Runtime decision lookup, active generation pointers, and agent fallback are not
+coupled to capture availability, so capture rollback cannot interrupt serving
+traffic or disable deterministic rollback.
+
 ## Long-lived upstream and user findings
 
 The design was shaped by reports that have remained useful across library
@@ -317,6 +345,11 @@ versions:
   demonstrates how a deferred read-to-write upgrade can return `SQLITE_BUSY`
   without honoring the expected wait. Gludd never upgrades a read transaction:
   every mutation begins with `BEGIN IMMEDIATE` and a bounded busy timeout.
+- [OPA #5054](https://github.com/open-policy-agent/opa/issues/5054) reports that
+  decision logs were absent from the default JSON console-log configuration but
+  visible under other formats. Gludd therefore never treats console visibility
+  as evidence: only events committed into a complete signed replay bundle can
+  enter the analyzer.
 - [SQLite forum: hidden WAL checkpoints](https://sqlite.org/forum/forumpost/49178f62e9?t=c)
   reports multi-process WAL stalls caused by close-time checkpoint behavior.
   Gludd opens short-lived connections, bounds lock waiting, surfaces storage

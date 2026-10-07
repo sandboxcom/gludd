@@ -57,11 +57,34 @@ def test_feature_guide_retains_long_lived_practitioner_findings() -> None:
         "scikit-learn discussion #25411",
         "OPA #2379",
         "OPA #1514",
+        "OPA #5054",
         "SQLite forum: WAL with multiple processes",
         "SQLite forum: `BEGIN IMMEDIATE`",
         "SQLite forum: hidden WAL checkpoints",
     ):
         assert marker in feature
+
+
+def test_docs_pin_non_circular_signed_outcome_ingestion_and_zdd_order() -> None:
+    """Signed live evidence must stay bounded, linkable, and rollback-safe."""
+    feature = FEATURE.read_text(encoding="utf-8")
+    spec = SPEC.read_text(encoding="utf-8")
+
+    for document in (feature, spec):
+        normalized = " ".join(document.replace("`", "").split())
+        for marker in (
+            "decision.outcome",
+            "same signed bundle",
+            "store-computed",
+            "self-referential digest",
+            "same-project",
+            "same-correlation",
+            "100,000-event",
+            "Deploy readers",
+            "Producer rollback",
+            "immutable",
+        ):
+            assert marker.lower() in normalized.lower()
 
 
 def test_design_spec_records_implemented_runtime_and_pending_evidence() -> None:
