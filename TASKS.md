@@ -718,13 +718,19 @@ separate compact 4:3 containment assertion. `BUGS.md`,
 `docs/presentation/DESIGN_revealjs_deck.md` retain the practitioner, resource,
 ZDD, and rollback evidence; `tests/unit/test_oversized_document_splits.py`
 pins the discoverable split and both file limits. Replacement Build/Release run
-`37692294209` then correctly rejected the 2,556-line combined overview before
-later phases; the failing split contract was extended first, the cohesive
-57-line Molecule record now lives in its linked shard, the overview is 2,499
-lines, and the unchanged full Python lint passes. The original run remains
-active to inventory every sibling failure before any rerun. Atomic repair commit,
-replacement exact-SHA
-push, all-workflow hosted proof, the complete exact-candidate gate,
+`37692294209` correctly rejected the 2,556-line combined overview. Pages run
+`37692342068` and Molecule run `37692342280` were also held to terminal state,
+exposing WebKit readiness/layout, ambient prompt-root, and isolated PyInstaller
+hook-root differences while four of six Molecule shards passed. The split
+contract keeps the overview at 2,499 lines; prompt evaluation resolves the
+Molecule project root; exact 861-edge artifacts normalize only the reviewed
+PyInstaller hook prefix to digest `a833e5857ff994bf49d2f83d620d526faadd974306ebc79dc7adae8f02f9e9b6`;
+and the unchanged browser assertions pass Chromium and WebKit 18/18 plus both
+compact profiles, with WebKit readiness at 1.900/1.472 seconds. The continuing
+local gate independently found the paid-Azure Environment guard missing from
+the architecture inventory; its security-layer classification and UI boundary
+now pass, and collection reports zero errors. Atomic descendant push,
+all-workflow hosted proof, the complete exact-candidate gate,
 predecessor live proofs, publication, deployment, and rollback remain open.
 
 ---
