@@ -41,7 +41,7 @@ def test_feature_sync_slides_pin_scope_evidence_and_honest_pending_work() -> Non
             "pillow&gt;=12.3.0",
             "94/94",
             "500 files",
-            "commit and exact-head gate pending",
+            "exact-head full-gate and promotion proof remain pending",
             "Ansible #44318",
             "Pillow #515",
         ),
@@ -55,7 +55,7 @@ def test_feature_sync_slides_pin_scope_evidence_and_honest_pending_work() -> Non
             "terminal snapshot",
             "current-only",
             "30/30",
-            "guarded commit and global gate pending",
+            "exact-head global-gate and promotion proof remain pending",
             "GitHub CLI #8536",
         ),
         "s91-3-enforcement-executable-modes": (
@@ -66,7 +66,7 @@ def test_feature_sync_slides_pin_scope_evidence_and_honest_pending_work() -> Non
             "151 hook-runtime checks",
             "108/108 manifest",
             "source bytes unchanged",
-            "commit and exact-head gate pending",
+            "exact-head full-gate and promotion proof remain pending",
             "OpenCode #7006",
         ),
     }
@@ -136,4 +136,3 @@ def test_feature_sync_citations_build_immutable_file_line_source_links() -> None
     decision = _decision_slide(linked)
     assert 'data-source-path="src/general_ludd/event_loop/review_orchestration.py"' in decision
     assert 'data-source-lines="222-285"' in decision
-
