@@ -591,6 +591,27 @@ S83.166 terminal-hosted reconciliation continuation: immutable run `37381218767`
 
 S83.166 combined-candidate preflight continuation: clean development head `1c29450dbeb0c7115dedf5f8ee9a8ec2240b1505` merged the gate-lifecycle, automatic-cleanup, universal-routing, and master histories before push. The CI-ledger evidence replay then exposed two additional deterministic merge regressions: the unchanged maintainability budget counted 222 files below MI 20 against its 220 ceiling, and the commit-lock parser rejected the intentional active-gate prerequisite. Passive FreeLLMAPI replay value contracts and persistent-vector trie primitives now live in cohesive modules with identity-preserving compatibility imports; the lock regression parses prerequisites and requires `_gate-mutation-guard`; and CI status/push blockers emit complete repairable 64-character family IDs. The focused behavior replay passes 72/72, the exact MI and lock checks pass without budget changes, persistent-vector coverage is 98% for both files, the full 77-test three-arm profile is 92% aggregate with every file above 75%, and scoped lint, types, docstrings, and TDD checks are green. The registered surface is `scripts/ci_failure_ledger.py`, `src/general_ludd/algorithms/persistent_vector.py`, `src/general_ludd/algorithms/persistent_vector_nodes.py`, `src/general_ludd/models/freellmapi/three_arm_delta.py`, `src/general_ludd/models/freellmapi/three_arm_types.py`, `config/coverage_freellmapi_three_arm.ini`, `config/coverage_persistent_vector.ini`, `tests/unit/test_ci_failure_ledger.py`, `tests/unit/test_commit_lock_plugin.py`, `tests/unit/test_freellmapi_three_arm_delta.py`, `tests/unit/test_freellmapi_three_arm_types.py`, `tests/unit/test_persistent_vector.py`, `tests/unit/test_persistent_vector_nodes.py`, `BUGS.md`, `docs/features/CI_FAILURE_LEDGER.md`, and `TASKS.md`. Atomic commit, replacement exact-head gate, hosted proof, predecessor live proofs, publication, deployment, and rollback remain required.
 
+S83.166 terminal predecessor-admission continuation: the promotion target
+delegated to readiness without neutralizing the readiness checker's two
+diagnostic environment overrides. A stale or caller-supplied
+`RELEASE_ALLOW_INCOMPLETE_TASKS=1` or `RELEASE_ALLOW_INVALID_RECEIPT=1` could
+therefore bypass milestone or reviewed-head admission at the terminal boundary.
+The composed-Makefile regression failed first 1/1 and now requires validation
+and live promotion to pass explicit zero values at both readiness calls, while
+direct diagnostic readiness retains its scoped overrides. The unchanged
+regression passes 1/1 after the two-line repair. `make/99-azure-and-local-models.mk`,
+`config/coverage_release_predecessor_admission.ini`,
+`tests/unit/test_release_predecessor_admission.py`,
+`docs/features/RELEASE_PREDECESSOR_ADMISSION.md`, `BUGS.md`, and `TASKS.md` are
+the registered surface. The selected admission/promotion/readiness replay passes
+91/91 under warnings-as-errors; branch-aware coverage is 97% for the measured
+readiness checker, above 85% aggregate and 75% per-file. Scoped Ruff and strict
+mypy, Markdown, Make validation, the 196-target contract, task ledger/integrity,
+and all 237 resource-ownership entries are green. Collection reports
+119,693/119,711 tests with 18 intentional deselections and zero errors. The
+complete exact-candidate gate, hosted proof, predecessor live proofs,
+publication, deployment, and rollback remain open.
+
 ---
 
 ## Session 86 — v0.1.0-beta4 completion (2026-08-20)
