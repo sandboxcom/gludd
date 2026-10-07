@@ -87,7 +87,8 @@ test-ci-dual-track-local: $(if $(filter 1,$(DUAL_TRACK_LOCAL_VALIDATE_ONLY)),,_c
 	@$(if $(filter 1,$(DUAL_TRACK_LOCAL_VALIDATE_ONLY)),:,$(MAKE) node-deps-sync NODE_DEPS_VALIDATE_ONLY=0 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_NPM_UPDATE_NOTIFIER=false)
 	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
 	TOOLCHAIN_ROOT="$${RESOURCE_ROOT}-toolchain"; \
-	UV_PROJECT_ENVIRONMENT="$$TOOLCHAIN_ROOT/ci-shards/python-3.11" GLUDD_CANDIDATE_SHA="$$(git rev-parse HEAD)" $(UV) run --python 3.11 python scripts/run_ci_shards_serial.py \
+	UV_NO_SYNC=0 $(UV) run --no-project --python 3.11 python scripts/dependency_profiles.py sync --root "$(CURDIR)" --set ci --environment "$$TOOLCHAIN_ROOT/ci-shards/python-3.11" --python 3.11; \
+	UV_PROJECT_ENVIRONMENT="$$TOOLCHAIN_ROOT/ci-shards/python-3.11" GLUDD_CANDIDATE_SHA="$$(git rev-parse HEAD)" $(UV) run --no-sync --python 3.11 python scripts/run_ci_shards_serial.py \
 		--pytest-args="-W error $(PYTEST_ARGS)" \
 		--require-release-policy \
 		--max-files-per-batch "$(or $(MAX_FILES_PER_BATCH),16)" $(if $(filter 1,$(DUAL_TRACK_LOCAL_VALIDATE_ONLY)),--validate-only,) \
