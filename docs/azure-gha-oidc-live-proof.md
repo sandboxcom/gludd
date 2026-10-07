@@ -15,9 +15,18 @@ Environment supplies them as configuration variables.
 
 ## One-time configuration
 
-Create a GitHub Environment named `azure-containerapp-live`. Add deployment
-branch/tag restrictions and required reviewers appropriate for paid cloud work.
-Define these Environment variables:
+Create a GitHub Environment named `azure-containerapp-live`. Its protection
+settings are an exact admission contract, not an operator convention:
+
+- require at least one named user or team reviewer;
+- enable **Prevent self-review**;
+- disable **Allow administrators to bypass configured protection rules**; and
+- select custom deployment branches and tags with exactly the patterns
+  `development`, `master`, and `v*`.
+
+Those patterns admit scheduled proof from the default branch, deliberate proof
+from the shared development branch, and versioned release proof. They reject
+feature and pull-request refs. Define these Environment variables:
 
 - `AZURE_CLIENT_ID`
 - `AZURE_TENANT_ID`
@@ -33,6 +42,41 @@ dispatched live proofs should be admitted. Job-level conditions are evaluated
 before Environment variables are loaded, so the enable switch intentionally is
 a repository variable. Removing it or setting it to any other value makes the
 weekly schedule a zero-compute skipped job.
+
+## Protected-Environment admission guard
+
+Before requesting an OIDC assertion, the hosted job runs
+`make azure-containerapp-environment-guard`. The target uses the maintained
+GitHub CLI to make exactly two authenticated `GET` requests: one for the
+Environment and one for its complete custom branch-policy list. Its token has
+only `actions: read` and `contents: read`; the guard has no mutation route.
+
+The guard fails closed when the name differs, administrators can bypass rules,
+the required-reviewer rule is absent or ambiguous, self-review is possible, no
+valid reviewer remains, custom branch policies are disabled, pagination is
+incomplete, or the exact three-pattern set drifts. A rejection occurs before
+GitHub mints the Azure assertion and before any paid resource command runs. A
+successful receipt contains only the reviewer count, allowed policy names, and
+a SHA-256 digest over the verified configuration. Reviewer identities and raw
+API responses never reach logs. GitHub CLI launch failures, timeouts, and
+nonzero responses collapse to content-free lookup rejection codes.
+
+The make-target contract has a network-free behavioral check:
+
+```console
+make azure-containerapp-environment-guard \
+  AZURE_CONTAINERAPP_GITHUB_REPOSITORY=sandboxcom/gludd \
+  AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT=azure-containerapp-live \
+  AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_JSON= \
+  AZURE_CONTAINERAPP_GITHUB_BRANCH_POLICIES_JSON= \
+  AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_VALIDATE_ONLY=1
+```
+
+Configure the Environment before merging the guarded workflow. Configuration
+changes do not interrupt ordinary CI or an already running Container App. If a
+future GitHub response change rejects a scheduled proof, keep the Environment's
+stricter rules, correct the read-only adapter, and rerun the workflow; no Azure
+rollback or resource cleanup is needed because admission failed before compute.
 
 On the existing accelerator Entra application, create one federated identity
 credential with:
@@ -83,6 +127,22 @@ credential prerequisite for untrusted contributions.
 The implementation accounts for recurring operator reports rather than treating
 OIDC setup failures as generic Azure failures:
 
+- [GitHub Community discussion 12241](https://github.com/orgs/community/discussions/12241)
+  records the long-running request to prevent a deployment initiator from
+  approving their own Environment; the guard requires the resulting
+  `prevent_self_review` setting.
+- [GitHub Community discussion 39054](https://github.com/orgs/community/discussions/39054)
+  shows an Environment continuing to allow `master` after the repository moved
+  to `main`, which blocked deployments. The guard compares the complete policy
+  set instead of accepting the generic "custom policies enabled" flag.
+- [GitHub Community discussion 141195](https://github.com/orgs/community/discussions/141195)
+  reports surprising ref selection when Environment branch protection meets a
+  chained workflow. Gludd keeps this paid workflow direct and pins its admitted
+  refs explicitly.
+- [go-github issue 2722](https://github.com/google/go-github/issues/2722)
+  documents that GitHub returned `can_admins_bypass` before its REST schema
+  documented the field. The guard deliberately requires the live field to be
+  present and false rather than treating an omitted value as safe.
 - [Azure Login issue 482](https://github.com/Azure/login/issues/482) demonstrates
   that an almost-correct federated subject still fails because Entra matching is
   exact and case-sensitive.
@@ -102,6 +162,9 @@ OIDC setup failures as generic Azure failures:
 
 GitHub documents the OIDC permission and protected-Environment pattern in
 [Configuring OpenID Connect in Azure](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-azure).
+The read-only verification fields and token permission are documented under
+[REST API endpoints for deployment environments](https://docs.github.com/en/rest/deployments/environments)
+and [deployment branch policies](https://docs.github.com/en/rest/deployments/branch-policies).
 Microsoft documents the Entra federated-credential exchange in
 [Authenticate to Azure from GitHub Actions by OIDC](https://learn.microsoft.com/en-us/azure/developer/github/connect-from-azure-openid-connect).
 The Azure SDK constructor contract is documented under

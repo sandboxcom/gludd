@@ -327,7 +327,7 @@ PYTEST_VERBOSITY ?= -v
         feature-start feature-done test-and-commit preflight \
         agent-worktree agent-worktree-base agent-merge agent-cleanup agent-worktree-list \
         agent-worktree-dev agent-merge-dev \
-        self-improve-local-proposal azure-self-improve-auth-args azure-self-improve-live-proof azure-accelerator-role-apply azure-accelerator-role-args azure-accelerator-role-update-args azure-accelerator-auth-args azure-accelerator-auth-store azure-containerapp-environment-bootstrap-args azure-accelerator-auth-check azure-containerapp-preflight azure-containerapp-terraform-phase azure-containerapp-live-proof test-azure-containerapp-coverage test-self-improve test-self-improve-all test-self-improve-acceptance-matrix test-self-improve-private-policy \
+        self-improve-local-proposal azure-self-improve-auth-args azure-self-improve-live-proof azure-accelerator-role-apply azure-accelerator-role-args azure-accelerator-role-update-args azure-accelerator-auth-args azure-accelerator-auth-store azure-containerapp-environment-bootstrap-args azure-accelerator-auth-check azure-containerapp-preflight azure-containerapp-terraform-phase azure-containerapp-environment-guard azure-containerapp-live-proof test-azure-containerapp-coverage test-self-improve test-self-improve-all test-self-improve-acceptance-matrix test-self-improve-private-policy \
           development-push development-merge-forward development-merge-forward-batch development-merge-to-master development-start development-status require-sandboxcom-ssh-key workstream-register workstream-unregister wt-prune-safe \
         git-commit-no-verify git-amend-msg \
 _commit-lock-acquire _commit-docstring-guard check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
@@ -639,6 +639,7 @@ help:
 	@echo "  azure-accelerator-auth-store Preserve stdin/source JSON as immutable protected generations"
 	@echo "  azure-containerapp-preflight Traced read-only named-environment GPU sizing and quota proof"
 	@echo "  azure-containerapp-terraform-phase  Owned app-only Terraform phase (AZURE_CONTAINERAPP_TF_*)"
+	@echo "  azure-containerapp-environment-guard  Read-only protected GitHub Environment admission"
 	@echo "  azure-containerapp-live-proof  Hermetic/live bounded deploy-infer-destroy proof (AZURE_CONTAINERAPP_LIVE_PROOF_*)"
 	@echo "  test-azure-containerapp-coverage  Hermetic Azure Container Apps tests with 85/75 coverage gates"
 	@echo "  test-self-improve TARGET=<name>  Compare an auto-managed local model with Codex (optional SELF_IMPROVE_MODEL_PATH override)"

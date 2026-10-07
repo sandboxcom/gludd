@@ -110,6 +110,17 @@
       "behavior": "make azure-containerapp-terraform-phase AZURE_CONTAINERAPP_TF_PHASE=plan AZURE_CONTAINERAPP_TF_DIR=/tmp/gludd-azure-containerapp-live-proof/aaaaaaaaaaaaaaaaaaaaaaaa AZURE_CONTAINERAPP_TF_PLAN_FILE=/tmp/gludd-azure-containerapp-live-proof/aaaaaaaaaaaaaaaaaaaaaaaa/gludd.tfplan AZURE_CONTAINERAPP_TF_JSON_FILE=/tmp/gludd-azure-containerapp-live-proof/aaaaaaaaaaaaaaaaaaaaaaaa/gludd.plan.json AZURE_CONTAINERAPP_TF_VALIDATE_ONLY=1"
     },
     {
+      "name": "azure-containerapp-environment-guard",
+      "make_variables": [
+        "AZURE_CONTAINERAPP_GITHUB_REPOSITORY",
+        "AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT",
+        "AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_JSON",
+        "AZURE_CONTAINERAPP_GITHUB_BRANCH_POLICIES_JSON",
+        "AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_VALIDATE_ONLY"
+      ],
+      "behavior": "make azure-containerapp-environment-guard AZURE_CONTAINERAPP_GITHUB_REPOSITORY=sandboxcom/gludd AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT=azure-containerapp-live AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_JSON= AZURE_CONTAINERAPP_GITHUB_BRANCH_POLICIES_JSON= AZURE_CONTAINERAPP_GITHUB_ENVIRONMENT_VALIDATE_ONLY=1"
+    },
+    {
       "name": "azure-containerapp-live-proof",
       "make_variables": [
         "AZURE_CONTAINERAPP_LIVE_PROOF_AUTH_MODE",
