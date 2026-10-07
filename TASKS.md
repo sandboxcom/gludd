@@ -1050,6 +1050,8 @@ S83.158 claim-before-provision evidence: failing-first lifecycle replay reproduc
 
 S83.158 claim-before-provision collection evidence: `make test-count` completed with 117,493/117,494 tests collected, one intentional deselection, and zero collection errors.
 
+S83.158 live-session compute-fence continuation: the compatibility path could carry a non-empty in-memory claim batch into provider reconciliation while a caller-owned `AsyncSession` remained active, so it lacked the production session-factory path's commit-and-close proof. The failing-first regression observed one real `present` runner call. Compute reconciliation now rejects that ambiguous state before every provider effect, leaves the injected session untouched, emits only `claim_transaction_open` plus a rejection metric, and lets a later ordinary tick reclaim the durable work. The registered surface is `src/general_ludd/event_loop/compute_lifecycle.py`, `tests/unit/test_todo_compute_demand_lifecycle.py`, and `docs/features/DURABLE_CLAIM_COMPUTE_FENCE.md`. The warning-strict lifecycle/acceptance/session replay passes 42/42; the expanded 315-test branch-aware profile measures the production file at 96% aggregate coverage with its sole file above 75%. Scoped Ruff and strict mypy are green; task ledger, integrity, registration, and all 237 resource-ownership entries pass. The feature guide records the rollout/rollback tree, zero-allocation resource bound, content-free observability, and long-lived Sidekiq/Celery practitioner evidence. Exact-candidate and hosted execution remain open.
+
 ## Session 79 — Crypto Library Refactor + Behavioral Guardrails (2026-08-05, 86,428 tests)
 
 ### Crypto Refactor — 8/12 files COMPLETE
