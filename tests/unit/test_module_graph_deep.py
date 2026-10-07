@@ -15,12 +15,14 @@ import sys
 from collections import deque
 from collections.abc import Callable
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC_PKG = ROOT / "src" / "general_ludd"
 PKG_NAME = "general_ludd"
+_MISSING_BINDING = object()
 
 # Dependencies every environment must provide for the in-isolation import
 # check; a ModuleNotFoundError for anything outside this set is an optional
@@ -588,9 +590,20 @@ def test_no_circular_imports_in_graph() -> None:
 @pytest.mark.parametrize("mod_name", sorted(_MODULE_NAMES), ids=str)
 def test_each_module_importable_in_isolation(mod_name: str) -> None:
     saved = {k: v for k, v in sys.modules.items() if _subpackage_of(k, PKG_NAME)}
-    for k in saved:
-        if saved[k] is not None:
-            del sys.modules[k]
+    saved_child_bindings: dict[tuple[str, str], object] = {}
+    for name in saved:
+        parent_name, separator, child_name = name.rpartition(".")
+        if not separator:
+            continue
+        parent = saved.get(parent_name)
+        if isinstance(parent, ModuleType):
+            saved_child_bindings[(parent_name, child_name)] = getattr(
+                parent,
+                child_name,
+                _MISSING_BINDING,
+            )
+    for name in saved:
+        del sys.modules[name]
     try:
         import importlib
 
@@ -606,9 +619,19 @@ def test_each_module_importable_in_isolation(mod_name: str) -> None:
             raise
         assert mod is not None
     finally:
-        for k, v in saved.items():
-            if v is not None:
-                sys.modules[k] = v
+        for name in tuple(sys.modules):
+            if _subpackage_of(name, PKG_NAME):
+                del sys.modules[name]
+        sys.modules.update(saved)
+        for (parent_name, child_name), binding in saved_child_bindings.items():
+            parent = saved[parent_name]
+            if not isinstance(parent, ModuleType):
+                continue
+            if binding is _MISSING_BINDING:
+                if hasattr(parent, child_name):
+                    delattr(parent, child_name)
+            else:
+                setattr(parent, child_name, binding)
 
 
 # ═══════════════════════════════════════════════════════════════════
