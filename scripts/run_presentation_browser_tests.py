@@ -11,7 +11,13 @@ import sys as sys
 import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
+
+from general_ludd.util.owned_process import (
+    OwnedProcessPolicy,
+    OwnedProcessTimeout,
+    run_owned_process,
+)
 
 if TYPE_CHECKING:
     import pytest
@@ -21,7 +27,24 @@ TEST_FILE = ROOT / "tests" / "browser" / "test_presentation.py"
 DEFAULT_OUTPUT_ROOT = Path("/tmp/gludd-presentation-browser")
 DEFAULT_BROWSER_ROOT = Path("/tmp/gludd-playwright-browsers")
 SUPPORTED_BROWSERS = frozenset({"chromium", "webkit"})
+RUN_LABELS = ("desktop-landscape", "compact-4x3")
 VIEWPORT_SIZE_ENV = "GLUDD_PRESENTATION_VIEWPORT_SIZE"
+PROBE_TIMEOUT_SECONDS = 15
+PROBE_ACTION_TIMEOUT_MILLISECONDS = 5_000
+PROBE_TITLE = "gludd-presentation-browser-probe"
+PROBE_URL = (
+    "data:text/html,%3Ctitle%3Egludd-presentation-browser-probe%3C/title%3E"
+    "%3Ch1%3Eready%3C/h1%3E"
+)
+WEBKIT_MACOS_DEADLOCK_REFERENCE = (
+    "https://github.com/microsoft/playwright/issues/41870"
+)
+PROBE_PROCESS_POLICY = OwnedProcessPolicy(
+    timeout_seconds=PROBE_TIMEOUT_SECONDS,
+    shutdown_grace_seconds=2,
+    poll_interval_seconds=0.1,
+    heartbeat_interval_seconds=5,
+)
 LAYOUT_CONTAINMENT_TEST = (
     "tests/browser/test_presentation.py::"
     "test_every_slide_keeps_visible_content_inside_the_reveal_canvas"
@@ -59,6 +82,39 @@ class BrowserPlan:
     def command(self) -> tuple[str, ...]:
         """Retain the historical primary-command view for callers and diagnostics."""
         return self.runs[0].command
+
+
+@dataclass(frozen=True)
+class BrowserProbeDiagnostic:
+    """Stable machine-readable root-cause record for a failed browser probe."""
+
+    action: str
+    browser: str
+    detail: str | None
+    event: Literal["presentation-browser-root-cause"]
+    failure_kind: Literal["timeout", "process-error"]
+    phase: Literal["launch-page-probe"]
+    platform: str
+    reference: str | None
+    root_cause: str
+    schema_version: int
+    timeout_seconds: int
+
+
+@dataclass(frozen=True)
+class BrowserStartupProbeEvidence:
+    """Content-free result record for the explicit startup diagnostic mode."""
+
+    browser: str
+    event: Literal["presentation-browser-startup-probe"]
+    exit_code: int
+    failure_kind: Literal["timeout", "process-error"] | None
+    phase: Literal["launch-page-probe"]
+    platform: str
+    reference: str | None
+    schema_version: int
+    status: Literal["passed", "failed"]
+    timeout_seconds: int
 
 
 def _safe_owned_tmp(path: Path, *, label: str) -> Path:
@@ -235,7 +291,7 @@ def _require_browser_executable(plan: BrowserPlan) -> Path:
 
 
 def _require_browser_launchable(plan: BrowserPlan) -> None:
-    """Launch and close one engine so missing host libraries fail immediately."""
+    """Launch one engine and prove that its first page can navigate."""
     os.environ["PLAYWRIGHT_BROWSERS_PATH"] = plan.browser_root
     try:
         from playwright.sync_api import Error as PlaywrightError
@@ -245,10 +301,164 @@ def _require_browser_launchable(plan: BrowserPlan) -> None:
     try:
         with sync_playwright() as playwright:
             runtime = getattr(playwright, plan.browser).launch(headless=True)
-            runtime.close()
+            try:
+                page = runtime.new_page()
+                page.goto(
+                    PROBE_URL,
+                    wait_until="domcontentloaded",
+                    timeout=PROBE_ACTION_TIMEOUT_MILLISECONDS,
+                )
+                if page.title() != PROBE_TITLE:
+                    raise RuntimeError("browser probe returned the wrong document")
+            finally:
+                runtime.close()
     except PlaywrightError as exc:
         label = _browser_label(plan.browser)
-        raise RuntimeError(f"{label} cannot launch after dependency installation") from exc
+        raise RuntimeError(
+            f"{label} cannot launch and navigate the probe page"
+        ) from exc
+
+
+def _emit_probe_supervisor_event(event: str) -> None:
+    """Surface lifecycle progress from the shared owned-process supervisor."""
+    print(f"presentation-browser supervisor={event}", flush=True)
+
+
+def _run_probe_process(plan: BrowserPlan) -> None:
+    """Run the browser/page handshake under Gludd's owned process policy."""
+    run_owned_process(
+        _require_browser_launchable,
+        (plan,),
+        policy=PROBE_PROCESS_POLICY,
+        process_name=f"gludd-presentation-{plan.browser}-probe",
+        event_sink=_emit_probe_supervisor_event,
+    )
+
+
+def _probe_failure_diagnostic(
+    plan: BrowserPlan,
+    *,
+    failure_kind: Literal["timeout", "process-error"],
+    detail: str | None,
+) -> BrowserProbeDiagnostic:
+    """Classify one probe failure without exposing a misleading test timeout."""
+    is_macos_webkit = sys.platform == "darwin" and plan.browser == "webkit"
+    if failure_kind == "timeout" and is_macos_webkit:
+        root_cause = (
+            "Playwright WebKit did not complete first-page creation and navigation "
+            "before the external deadline on macOS; this matches the "
+            "NetworkProcess deadlock signature tracked in issue #41870."
+        )
+        action = (
+            "Keep the WebKit acceptance red; compare system Safari with "
+            "make presentation-safari-test PRESENTATION_SAFARI_VALIDATE_ONLY=0 "
+            "PRESENTATION_SAFARI_DRIVER=/usr/bin/safaridriver "
+            "PRESENTATION_SAFARI_OUTPUT=/tmp/gludd-presentation-safari "
+            "PRESENTATION_SAFARI_TIMEOUT=60; "
+            "then rerun after the macOS or pinned Playwright runtime changes."
+        )
+        reference: str | None = WEBKIT_MACOS_DEADLOCK_REFERENCE
+    else:
+        outcome = "timed out" if failure_kind == "timeout" else "raised an error"
+        root_cause = (
+            f"Playwright {_browser_label(plan.browser)} could not complete the "
+            f"isolated launch/page/navigation handshake: probe {outcome}."
+        )
+        action = (
+            "Keep browser acceptance red; verify the pinned cache with "
+            "make presentation-browser-install "
+            "PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=1 "
+            "PRESENTATION_BROWSER_ENGINES='chromium webkit' "
+            "PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers "
+            "PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser "
+            "PRESENTATION_BROWSER_INSTALL_TIMEOUT=600; repair the runtime before "
+            "rerunning acceptance."
+        )
+        reference = None
+    return BrowserProbeDiagnostic(
+        action=action,
+        browser=plan.browser,
+        detail=detail,
+        event="presentation-browser-root-cause",
+        failure_kind=failure_kind,
+        phase="launch-page-probe",
+        platform=sys.platform,
+        reference=reference,
+        root_cause=root_cause,
+        schema_version=1,
+        timeout_seconds=PROBE_TIMEOUT_SECONDS,
+    )
+
+
+def probe_browser_runtime(plan: BrowserPlan) -> int:
+    """Prove launch plus first-page readiness without letting Playwright hang."""
+    print(
+        f"presentation-browser browser={plan.browser} "
+        "phase=launch-page-probe status=starting",
+        flush=True,
+    )
+    try:
+        _run_probe_process(plan)
+    except OwnedProcessTimeout:
+        failure_kind: Literal["timeout", "process-error"] = "timeout"
+        detail = None
+        status = 124
+    except Exception as exc:
+        failure_kind = "process-error"
+        rendered_detail = str(exc).strip()
+        detail = rendered_detail.splitlines()[-1][-500:] if rendered_detail else None
+        status = 1
+    else:
+        print(
+            f"presentation-browser browser={plan.browser} "
+            "phase=launch-page-probe status=finished exit=0",
+            flush=True,
+        )
+        return 0
+    diagnostic = _probe_failure_diagnostic(
+        plan,
+        failure_kind=failure_kind,
+        detail=detail,
+    )
+    print(json.dumps(asdict(diagnostic), sort_keys=True), file=sys.stderr, flush=True)
+    return status
+
+
+def run_startup_probe_only(plan: BrowserPlan) -> int:
+    """Emit a bounded, content-free readiness result without running pytest."""
+    try:
+        validate_plan(plan)
+        _require_browser_executable(plan)
+        _run_probe_process(plan)
+    except OwnedProcessTimeout:
+        failure_kind: Literal["timeout", "process-error"] | None = "timeout"
+        exit_code = 124
+    except Exception:
+        failure_kind = "process-error"
+        exit_code = 1
+    else:
+        failure_kind = None
+        exit_code = 0
+    evidence = BrowserStartupProbeEvidence(
+        browser=plan.browser,
+        event="presentation-browser-startup-probe",
+        exit_code=exit_code,
+        failure_kind=failure_kind,
+        phase="launch-page-probe",
+        platform=sys.platform,
+        reference=(
+            WEBKIT_MACOS_DEADLOCK_REFERENCE
+            if failure_kind == "timeout"
+            and sys.platform == "darwin"
+            and plan.browser == "webkit"
+            else None
+        ),
+        schema_version=1,
+        status="passed" if exit_code == 0 else "failed",
+        timeout_seconds=PROBE_TIMEOUT_SECONDS,
+    )
+    print(json.dumps(asdict(evidence), sort_keys=True), flush=True)
+    return exit_code
 
 
 def install_browser(plan: BrowserPlan, *, with_dependencies: bool = False) -> int:
@@ -284,33 +494,73 @@ def install_browser(plan: BrowserPlan, *, with_dependencies: bool = False) -> in
             flush=True,
         )
         return 124
-    if completed.returncode == 0:
+    status = completed.returncode
+    if status == 0:
         _require_browser_executable(plan)
         if with_dependencies:
-            _require_browser_launchable(plan)
+            status = probe_browser_runtime(plan)
     print(
         f"presentation-browser browser={plan.browser} phase=install "
-        f"status=finished exit={completed.returncode}",
+        f"status=finished exit={status}",
         flush=True,
+    )
+    return status
+
+
+def _execute_viewport_command(plan: BrowserPlan, run: ViewportRun) -> int:
+    """Execute one pytest lane inside its already isolated process session."""
+    Path(run.output_root).mkdir(parents=True, exist_ok=True)
+    environment = os.environ.copy()
+    environment["PLAYWRIGHT_BROWSERS_PATH"] = plan.browser_root
+    environment["GLUDD_PRESENTATION_BROWSER_OUTPUT"] = run.output_root
+    if run.enforce_viewport:
+        environment[VIEWPORT_SIZE_ENV] = f"{run.viewport_width}x{run.viewport_height}"
+    else:
+        environment.pop(VIEWPORT_SIZE_ENV, None)
+    completed = subprocess.run(
+        run.command,
+        cwd=ROOT,
+        env=environment,
+        timeout=plan.timeout_seconds + 10,
+        check=False,
     )
     return completed.returncode
 
 
-def run_plan(plan: BrowserPlan) -> int:
-    """Run the viewport matrix with each direct subprocess independently bounded."""
+def _viewport_process_policy(plan: BrowserPlan) -> OwnedProcessPolicy:
+    """Return the external deadline that owns pytest and browser descendants."""
+    return OwnedProcessPolicy(
+        timeout_seconds=plan.timeout_seconds,
+        shutdown_grace_seconds=5,
+        poll_interval_seconds=0.25,
+        heartbeat_interval_seconds=15,
+    )
+
+
+def _run_viewport_process(plan: BrowserPlan, run: ViewportRun) -> int:
+    """Run one acceptance lane in a killable, joined process group."""
+    return run_owned_process(
+        _execute_viewport_command,
+        (plan, run),
+        policy=_viewport_process_policy(plan),
+        process_name=f"gludd-presentation-{plan.browser}-{run.label}",
+        event_sink=_emit_probe_supervisor_event,
+    )
+
+
+def run_plan(plan: BrowserPlan, *, run_label: str | None = None) -> int:
+    """Run each viewport in an independently bounded owned process group."""
     validate_plan(plan)
+    selected_runs = tuple(
+        run for run in plan.runs if run_label is None or run.label == run_label
+    )
+    if not selected_runs:
+        raise ValueError(f"unknown presentation run label: {run_label}")
     _require_browser_executable(plan)
-    for run in plan.runs:
-        Path(run.output_root).mkdir(parents=True, exist_ok=True)
-        environment = os.environ.copy()
-        environment["PLAYWRIGHT_BROWSERS_PATH"] = plan.browser_root
-        environment["GLUDD_PRESENTATION_BROWSER_OUTPUT"] = run.output_root
-        if run.enforce_viewport:
-            environment[VIEWPORT_SIZE_ENV] = (
-                f"{run.viewport_width}x{run.viewport_height}"
-            )
-        else:
-            environment.pop(VIEWPORT_SIZE_ENV, None)
+    probe_status = probe_browser_runtime(plan)
+    if probe_status != 0:
+        return probe_status
+    for run in selected_runs:
         print(
             f"presentation-browser browser={plan.browser} run={run.label} "
             f"viewport={run.viewport_width}x{run.viewport_height} "
@@ -318,14 +568,8 @@ def run_plan(plan: BrowserPlan) -> int:
             flush=True,
         )
         try:
-            completed = subprocess.run(
-                run.command,
-                cwd=ROOT,
-                env=environment,
-                timeout=plan.timeout_seconds,
-                check=False,
-            )
-        except subprocess.TimeoutExpired:
+            status = _run_viewport_process(plan, run)
+        except (OwnedProcessTimeout, subprocess.TimeoutExpired):
             print(
                 f"presentation-browser browser={plan.browser} run={run.label} "
                 "phase=pytest status=timeout",
@@ -334,11 +578,11 @@ def run_plan(plan: BrowserPlan) -> int:
             return 124
         print(
             f"presentation-browser browser={plan.browser} run={run.label} "
-            f"phase=pytest status=finished exit={completed.returncode}",
+            f"phase=pytest status=finished exit={status}",
             flush=True,
         )
-        if completed.returncode != 0:
-            return completed.returncode
+        if status != 0:
+            return status
     return 0
 
 
@@ -349,6 +593,11 @@ def main() -> None:
     mode.add_argument("--validate-only", action="store_true", help="print and validate plan without side effects")
     mode.add_argument("--run", action="store_true", help="launch the pinned browser acceptance")
     mode.add_argument("--check-browser", action="store_true", help="verify the pinned browser without writing")
+    mode.add_argument(
+        "--startup-probe-only",
+        action="store_true",
+        help="run only the bounded launch/page readiness diagnostic",
+    )
     mode.add_argument("--install-browser", action="store_true", help="install the pinned browser into the owned cache")
     mode.add_argument(
         "--install-browser-with-deps",
@@ -359,6 +608,11 @@ def main() -> None:
     parser.add_argument("--browser-root", type=Path, default=DEFAULT_BROWSER_ROOT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--timeout-seconds", type=int, default=300)
+    parser.add_argument(
+        "--run-label",
+        choices=RUN_LABELS,
+        help="run one named viewport lane; default acceptance still runs both",
+    )
     args = parser.parse_args()
     plan = build_plan(
         browser=args.browser,
@@ -375,11 +629,13 @@ def main() -> None:
         executable = _require_browser_executable(plan)
         print(json.dumps({"browser": plan.browser, "executable": str(executable), "status": "available"}))
         return
+    if args.startup_probe_only:
+        raise SystemExit(run_startup_probe_only(plan))
     if args.install_browser:
         raise SystemExit(install_browser(plan))
     if args.install_browser_with_deps:
         raise SystemExit(install_browser(plan, with_dependencies=True))
-    raise SystemExit(run_plan(plan))
+    raise SystemExit(run_plan(plan, run_label=args.run_label))
 
 
 if __name__ == "__main__":

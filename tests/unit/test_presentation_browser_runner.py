@@ -2,14 +2,35 @@
 
 from __future__ import annotations
 
+import multiprocessing
 import subprocess
 import sys
+import threading
+import time
 from dataclasses import replace
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
 from scripts import run_presentation_browser_tests as runner
+
+
+def _wedge_startup_probe(_plan: runner.BrowserPlan) -> None:
+    """Remain blocked long enough for the owned-process deadline to fire."""
+    threading.Event().wait(60.0)
+
+
+def _wedge_viewport_command(
+    _plan: runner.BrowserPlan,
+    _run: runner.ViewportRun,
+) -> int:
+    """Model a wedged pytest/browser process beneath the owned supervisor."""
+    threading.Event().wait(60.0)
+    return 0
+
+
+def _owned_probe_children(name: str) -> list[multiprocessing.Process]:
+    return [child for child in multiprocessing.active_children() if child.name == name]
 
 
 def _write_presentation_profile(root: Path, dependencies: list[str]) -> Path:
@@ -109,6 +130,27 @@ def test_viewport_plugin_applies_exact_css_dimensions(
     assert marker.mark.kwargs == {"viewport": {"width": 1024, "height": 768}}
 
 
+@pytest.mark.parametrize("rendered", ("wide", "0x768", "1024"))
+def test_viewport_plugin_rejects_malformed_dimensions(
+    monkeypatch: pytest.MonkeyPatch,
+    rendered: str,
+) -> None:
+    """An invalid focused viewport cannot silently fall back to desktop size."""
+    monkeypatch.setenv(runner.VIEWPORT_SIZE_ENV, rendered)
+
+    with pytest.raises(RuntimeError, match=runner.VIEWPORT_SIZE_ENV):
+        runner.pytest_collection_modifyitems([])
+
+
+def test_viewport_plugin_is_a_noop_without_an_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The full-suite viewport remains owned by pytest-playwright defaults."""
+    monkeypatch.delenv(runner.VIEWPORT_SIZE_ENV, raising=False)
+
+    runner.pytest_collection_modifyitems([])
+
+
 @pytest.mark.parametrize(
     "path",
     (Path("/tmp"), Path("/tmp/presentation"), Path("/var/tmp/gludd-presentation")),
@@ -178,7 +220,7 @@ def test_validate_plan_reads_the_isolated_presentation_profile(
     runner.validate_plan(plan)
 
 
-def test_timeout_returns_observable_124(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_timeout_returns_observable_124(monkeypatch: pytest.MonkeyPatch) -> None:
     """A stuck browser is bounded and uses the conventional timeout status."""
     plan = runner.build_plan(
         browser="chromium",
@@ -188,12 +230,12 @@ def test_timeout_returns_observable_124(monkeypatch: pytest.MonkeyPatch, tmp_pat
     )
     monkeypatch.setattr(runner, "validate_plan", lambda _plan: None)
     monkeypatch.setattr(runner, "_require_browser_executable", lambda _plan: None)
+    monkeypatch.setattr(runner, "probe_browser_runtime", lambda _plan: 0)
 
-    def timeout(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
-        del args, kwargs
-        raise subprocess.TimeoutExpired(plan.command, plan.timeout_seconds)
+    def timeout(_plan: runner.BrowserPlan, _run: runner.ViewportRun) -> int:
+        raise runner.OwnedProcessTimeout("owned process deadline exceeded")
 
-    monkeypatch.setattr(runner.subprocess, "run", timeout)
+    monkeypatch.setattr(runner, "_run_viewport_process", timeout)
 
     assert runner.run_plan(plan) == 124
 
@@ -210,6 +252,68 @@ def test_run_plan_executes_both_viewports_with_each_process_bounded(
     )
     monkeypatch.setattr(runner, "validate_plan", lambda _plan: None)
     monkeypatch.setattr(runner, "_require_browser_executable", lambda _plan: None)
+    probed: list[runner.BrowserPlan] = []
+    monkeypatch.setattr(
+        runner,
+        "probe_browser_runtime",
+        lambda selected_plan: probed.append(selected_plan) or 0,
+    )
+    captured: list[tuple[runner.BrowserPlan, runner.ViewportRun]] = []
+
+    def complete(
+        selected_plan: runner.BrowserPlan,
+        selected_run: runner.ViewportRun,
+    ) -> int:
+        captured.append((selected_plan, selected_run))
+        return 0
+
+    monkeypatch.setattr(runner, "_run_viewport_process", complete)
+
+    assert runner.run_plan(plan) == 0
+    assert probed == [plan]
+    assert captured == [
+        (plan, plan.runs[0]),
+        (plan, plan.runs[1]),
+    ]
+
+
+def test_run_plan_can_focus_one_viewport_without_weakening_the_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Operators can replay compact containment through the same owned launcher."""
+    plan = runner.build_plan(
+        browser="webkit",
+        browser_root=Path("/tmp/gludd-browser-viewport-focus"),
+        output_root=Path("/tmp/gludd-presentation-viewport-focus"),
+        timeout_seconds=30,
+    )
+    monkeypatch.setattr(runner, "validate_plan", lambda _plan: None)
+    monkeypatch.setattr(runner, "_require_browser_executable", lambda _plan: None)
+    monkeypatch.setattr(runner, "probe_browser_runtime", lambda _plan: 0)
+    captured: list[runner.ViewportRun] = []
+    monkeypatch.setattr(
+        runner,
+        "_run_viewport_process",
+        lambda _plan, selected_run: captured.append(selected_run) or 0,
+    )
+
+    assert runner.run_plan(plan, run_label="compact-4x3") == 0
+    assert captured == [plan.runs[1]]
+
+    with pytest.raises(ValueError, match="unknown presentation run label"):
+        runner.run_plan(plan, run_label="not-a-run")
+
+
+def test_viewport_command_sets_engine_artifacts_and_css_viewport(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The supervised child retains exact commands and per-run environment."""
+    plan = runner.build_plan(
+        browser="webkit",
+        browser_root=Path("/tmp/gludd-browser-viewport-command"),
+        output_root=Path("/tmp/gludd-presentation-viewport-command"),
+        timeout_seconds=30,
+    )
     captured: list[tuple[tuple[str, ...], float, str, str | None]] = []
 
     def complete(
@@ -232,11 +336,80 @@ def test_run_plan_executes_both_viewports_with_each_process_bounded(
 
     monkeypatch.setattr(runner.subprocess, "run", complete)
 
-    assert runner.run_plan(plan) == 0
+    assert [runner._execute_viewport_command(plan, run) for run in plan.runs] == [0, 0]
     assert captured == [
-        (plan.runs[0].command, 30.0, plan.runs[0].output_root, None),
-        (plan.runs[1].command, 30.0, plan.runs[1].output_root, "1024x768"),
+        (plan.runs[0].command, 40.0, plan.runs[0].output_root, None),
+        (plan.runs[1].command, 40.0, plan.runs[1].output_root, "1024x768"),
     ]
+
+
+def test_viewport_process_uses_the_shared_owned_supervisor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pytest and its Playwright descendants inherit one killable process group."""
+    plan = runner.build_plan(
+        browser="webkit",
+        browser_root=Path("/tmp/gludd-browser-viewport-owned"),
+        output_root=Path("/tmp/gludd-presentation-viewport-owned"),
+        timeout_seconds=30,
+    )
+    viewport_run = plan.runs[1]
+    captured: dict[str, object] = {}
+
+    def owned_process(
+        operation: object,
+        args: tuple[object, ...],
+        **kwargs: object,
+    ) -> int:
+        captured.update(operation=operation, args=args, **kwargs)
+        return 0
+
+    monkeypatch.setattr(runner, "run_owned_process", owned_process)
+
+    assert runner._run_viewport_process(plan, viewport_run) == 0
+    assert captured["operation"] is runner._execute_viewport_command
+    assert captured["args"] == (plan, viewport_run)
+    assert captured["process_name"] == "gludd-presentation-webkit-compact-4x3"
+    policy = captured["policy"]
+    assert isinstance(policy, runner.OwnedProcessPolicy)
+    assert policy.timeout_seconds == 30
+    assert policy.shutdown_grace_seconds == 5
+
+
+def test_viewport_timeout_reaps_the_exact_owned_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A wedged acceptance child is gone before the timeout returns."""
+    plan = runner.build_plan(
+        browser="webkit",
+        browser_root=Path("/tmp/gludd-browser-viewport-wedge"),
+        output_root=Path("/tmp/gludd-presentation-viewport-wedge"),
+        timeout_seconds=30,
+    )
+    viewport_run = plan.runs[0]
+    process_name = "gludd-presentation-webkit-desktop-landscape"
+    monkeypatch.setattr(
+        runner,
+        "_execute_viewport_command",
+        _wedge_viewport_command,
+    )
+    monkeypatch.setattr(
+        runner,
+        "_viewport_process_policy",
+        lambda _plan: runner.OwnedProcessPolicy(
+            timeout_seconds=0.5,
+            shutdown_grace_seconds=0.25,
+            poll_interval_seconds=0.05,
+            heartbeat_interval_seconds=0.1,
+        ),
+    )
+    started = time.monotonic()
+
+    with pytest.raises(runner.OwnedProcessTimeout, match="deadline exceeded"):
+        runner._run_viewport_process(plan, viewport_run)
+
+    assert time.monotonic() - started < 3.0
+    assert _owned_probe_children(process_name) == []
 
 
 @pytest.mark.parametrize("browser_engine", ("chromium", "webkit"))
@@ -284,7 +457,11 @@ def test_browser_install_with_dependencies_uses_the_locked_runtime_and_launch_pr
     binaries: list[runner.BrowserPlan] = []
     launches: list[runner.BrowserPlan] = []
     monkeypatch.setattr(runner, "_require_browser_executable", binaries.append)
-    monkeypatch.setattr(runner, "_require_browser_launchable", launches.append)
+    monkeypatch.setattr(
+        runner,
+        "probe_browser_runtime",
+        lambda selected_plan: launches.append(selected_plan) or 0,
+    )
     captured: list[tuple[tuple[str, ...], str]] = []
 
     def complete(
@@ -314,6 +491,28 @@ def test_browser_install_with_dependencies_uses_the_locked_runtime_and_launch_pr
     ]
     assert binaries == [plan]
     assert launches == [plan]
+
+
+def test_browser_install_with_dependencies_propagates_probe_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Installing WebKit cannot turn a failed page handshake into success."""
+    plan = runner.build_plan(
+        browser="webkit",
+        browser_root=Path("/tmp/gludd-browser-deps-probe-failure"),
+        output_root=Path("/tmp/gludd-presentation-deps-probe-failure"),
+        timeout_seconds=120,
+    )
+    monkeypatch.setattr(runner, "validate_plan", lambda _plan: None)
+    monkeypatch.setattr(runner, "_require_browser_executable", lambda _plan: None)
+    monkeypatch.setattr(runner, "probe_browser_runtime", lambda _plan: 124)
+    monkeypatch.setattr(
+        runner.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0),
+    )
+
+    assert runner.install_browser(plan, with_dependencies=True) == 124
 
 
 def test_plan_rejects_unbounded_timeout() -> None:
@@ -451,8 +650,20 @@ def test_webkit_launch_probe_closes_runtime_and_reports_missing_host_libraries(
         pass
 
     class FakeBrowser:
+        def new_page(self) -> FakePage:
+            return FakePage()
+
         def close(self) -> None:
             closed.append(True)
+
+    class FakePage:
+        def goto(self, url: str, *, wait_until: str, timeout: int) -> None:
+            assert url == runner.PROBE_URL
+            assert wait_until == "domcontentloaded"
+            assert timeout == runner.PROBE_ACTION_TIMEOUT_MILLISECONDS
+
+        def title(self) -> str:
+            return runner.PROBE_TITLE
 
     class FakeBrowserType:
         def __init__(self, *, failure: bool) -> None:
@@ -494,6 +705,296 @@ def test_webkit_launch_probe_closes_runtime_and_reports_missing_host_libraries(
         runner._require_browser_launchable(plan)
 
 
+def test_webkit_probe_timeout_emits_one_typed_macos_root_cause(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An unresponsive WebKit page handshake becomes one actionable failure."""
+    plan = runner.build_plan(
+        browser="webkit",
+        browser_root=Path("/tmp/gludd-browser-webkit-probe-timeout"),
+        output_root=Path("/tmp/gludd-presentation-webkit-probe-timeout"),
+        timeout_seconds=120,
+    )
+    monkeypatch.setattr(runner.sys, "platform", "darwin")
+
+    def timeout(_plan: runner.BrowserPlan) -> None:
+        raise runner.OwnedProcessTimeout("owned process deadline exceeded")
+
+    monkeypatch.setattr(runner, "_run_probe_process", timeout)
+
+    assert runner.probe_browser_runtime(plan) == 124
+
+    diagnostics = [
+        line
+        for line in capsys.readouterr().err.splitlines()
+        if '"event": "presentation-browser-root-cause"' in line
+    ]
+    assert len(diagnostics) == 1
+    payload = runner.json.loads(diagnostics[0])
+    assert payload == {
+        "action": (
+            "Keep the WebKit acceptance red; compare system Safari with "
+            "make presentation-safari-test PRESENTATION_SAFARI_VALIDATE_ONLY=0 "
+            "PRESENTATION_SAFARI_DRIVER=/usr/bin/safaridriver "
+            "PRESENTATION_SAFARI_OUTPUT=/tmp/gludd-presentation-safari "
+            "PRESENTATION_SAFARI_TIMEOUT=60; "
+            "then rerun after the macOS or pinned Playwright runtime changes."
+        ),
+        "browser": "webkit",
+        "detail": None,
+        "event": "presentation-browser-root-cause",
+        "failure_kind": "timeout",
+        "phase": "launch-page-probe",
+        "platform": "darwin",
+        "reference": "https://github.com/microsoft/playwright/issues/41870",
+        "root_cause": (
+            "Playwright WebKit did not complete first-page creation and navigation "
+            "before the external deadline on macOS; this matches the "
+            "NetworkProcess deadlock signature tracked in issue #41870."
+        ),
+        "schema_version": 1,
+        "timeout_seconds": runner.PROBE_TIMEOUT_SECONDS,
+    }
+
+
+@pytest.mark.parametrize("browser_engine", ("chromium", "webkit"))
+def test_probe_uses_shared_owned_process_policy_for_each_engine(
+    monkeypatch: pytest.MonkeyPatch,
+    browser_engine: str,
+) -> None:
+    """Each mandatory engine gets the same isolated launch/page contract."""
+    plan = runner.build_plan(
+        browser=browser_engine,
+        browser_root=Path("/tmp/gludd-browser-probe-success"),
+        output_root=Path("/tmp/gludd-presentation-probe-success"),
+        timeout_seconds=120,
+    )
+    captured: dict[str, object] = {}
+
+    def owned_process(
+        operation: object,
+        args: tuple[object, ...],
+        **kwargs: object,
+    ) -> None:
+        captured.update(operation=operation, args=args, **kwargs)
+        event_sink = kwargs["event_sink"]
+        assert callable(event_sink)
+        event_sink(f"OWNED_PROCESS_STARTED name={kwargs['process_name']}")
+
+    monkeypatch.setattr(runner, "run_owned_process", owned_process)
+
+    runner._run_probe_process(plan)
+
+    assert captured["operation"] is runner._require_browser_launchable
+    assert captured["args"] == (plan,)
+    assert captured["policy"] == runner.PROBE_PROCESS_POLICY
+    assert captured["process_name"] == f"gludd-presentation-{browser_engine}-probe"
+    assert runner.PROBE_PROCESS_POLICY.timeout_seconds == runner.PROBE_TIMEOUT_SECONDS
+    assert runner.PROBE_PROCESS_POLICY.shutdown_grace_seconds == 2
+
+
+def test_probe_success_is_observable_without_a_diagnostic(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A healthy probe emits progress while reserving stderr for root cause."""
+    plan = runner.build_plan(
+        browser="chromium",
+        browser_root=Path("/tmp/gludd-browser-probe-observable"),
+        output_root=Path("/tmp/gludd-presentation-probe-observable"),
+        timeout_seconds=120,
+    )
+    monkeypatch.setattr(
+        runner,
+        "_run_probe_process",
+        lambda _plan: None,
+    )
+
+    assert runner.probe_browser_runtime(plan) == 0
+
+    captured = capsys.readouterr()
+    assert "phase=launch-page-probe status=finished exit=0" in captured.out
+    assert captured.err == ""
+
+
+def test_probe_process_error_is_one_generic_typed_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Non-timeout startup failures stay actionable without raw traceback noise."""
+    plan = runner.build_plan(
+        browser="chromium",
+        browser_root=Path("/tmp/gludd-browser-probe-exit"),
+        output_root=Path("/tmp/gludd-presentation-probe-exit"),
+        timeout_seconds=120,
+    )
+    def fail(_plan: runner.BrowserPlan) -> None:
+        raise RuntimeError("driver failed")
+
+    monkeypatch.setattr(runner, "_run_probe_process", fail)
+
+    assert runner.probe_browser_runtime(plan) == 1
+
+    diagnostics = capsys.readouterr().err.splitlines()
+    assert len(diagnostics) == 1
+    payload = runner.json.loads(diagnostics[0])
+    assert payload["detail"] == "driver failed"
+    assert payload["failure_kind"] == "process-error"
+    assert payload["reference"] is None
+    assert "probe raised an error" in payload["root_cause"]
+
+
+def test_startup_probe_only_emits_content_free_success_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The operator mode returns one stable record without page or path content."""
+    plan = runner.build_plan(
+        browser="chromium",
+        browser_root=Path("/tmp/gludd-browser-probe-only-success"),
+        output_root=Path("/tmp/gludd-presentation-probe-only-success"),
+        timeout_seconds=120,
+    )
+    validated: list[runner.BrowserPlan] = []
+    monkeypatch.setattr(runner, "validate_plan", validated.append)
+    monkeypatch.setattr(
+        runner,
+        "_require_browser_executable",
+        lambda _plan: Path("/tmp/gludd-browser-probe-only-success/chromium"),
+    )
+    monkeypatch.setattr(runner, "_run_probe_process", lambda _plan: None)
+
+    assert runner.run_startup_probe_only(plan) == 0
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert validated == [plan]
+    assert runner.json.loads(captured.out) == {
+        "browser": "chromium",
+        "event": "presentation-browser-startup-probe",
+        "exit_code": 0,
+        "failure_kind": None,
+        "phase": "launch-page-probe",
+        "platform": runner.sys.platform,
+        "reference": None,
+        "schema_version": 1,
+        "status": "passed",
+        "timeout_seconds": runner.PROBE_TIMEOUT_SECONDS,
+    }
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_kind", "expected_exit"),
+    [
+        (runner.OwnedProcessTimeout("private timeout content"), "timeout", 124),
+        (RuntimeError("private driver content"), "process-error", 1),
+    ],
+)
+def test_startup_probe_only_failure_evidence_never_echoes_content(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failure: Exception,
+    expected_kind: str,
+    expected_exit: int,
+) -> None:
+    """Probe-only failures are typed without transporting child output."""
+    plan = runner.build_plan(
+        browser="webkit",
+        browser_root=Path("/tmp/gludd-browser-probe-only-failure"),
+        output_root=Path("/tmp/gludd-presentation-probe-only-failure"),
+        timeout_seconds=120,
+    )
+    monkeypatch.setattr(runner.sys, "platform", "darwin")
+    monkeypatch.setattr(runner, "validate_plan", lambda _plan: None)
+    monkeypatch.setattr(
+        runner,
+        "_require_browser_executable",
+        lambda _plan: Path("/tmp/gludd-browser-probe-only-failure/pw_run.sh"),
+    )
+
+    def fail(_plan: runner.BrowserPlan) -> None:
+        raise failure
+
+    monkeypatch.setattr(runner, "_run_probe_process", fail)
+
+    assert runner.run_startup_probe_only(plan) == expected_exit
+
+    captured = capsys.readouterr()
+    rendered = captured.out + captured.err
+    assert "private timeout content" not in rendered
+    assert "private driver content" not in rendered
+    assert runner.json.loads(captured.out) == {
+        "browser": "webkit",
+        "event": "presentation-browser-startup-probe",
+        "exit_code": expected_exit,
+        "failure_kind": expected_kind,
+        "phase": "launch-page-probe",
+        "platform": "darwin",
+        "reference": (
+            runner.WEBKIT_MACOS_DEADLOCK_REFERENCE
+            if expected_kind == "timeout"
+            else None
+        ),
+        "schema_version": 1,
+        "status": "failed",
+        "timeout_seconds": runner.PROBE_TIMEOUT_SECONDS,
+    }
+
+
+def test_startup_probe_timeout_reaps_the_exact_owned_child(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A real wedged probe is killed and joined before control returns."""
+    plan = runner.build_plan(
+        browser="webkit",
+        browser_root=Path("/tmp/gludd-browser-probe-only-wedge"),
+        output_root=Path("/tmp/gludd-presentation-probe-only-wedge"),
+        timeout_seconds=120,
+    )
+    process_name = "gludd-presentation-webkit-probe"
+    monkeypatch.setattr(runner, "_require_browser_launchable", _wedge_startup_probe)
+    monkeypatch.setattr(
+        runner,
+        "PROBE_PROCESS_POLICY",
+        runner.OwnedProcessPolicy(
+            timeout_seconds=0.5,
+            shutdown_grace_seconds=0.25,
+            poll_interval_seconds=0.05,
+            heartbeat_interval_seconds=0.1,
+        ),
+    )
+    started = time.monotonic()
+
+    with pytest.raises(runner.OwnedProcessTimeout, match="deadline exceeded"):
+        runner._run_probe_process(plan)
+
+    assert time.monotonic() - started < 3.0
+    assert _owned_probe_children(process_name) == []
+
+
+def test_run_plan_stops_before_pytest_when_probe_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The launch/page root cause wins over a later broad pytest timeout."""
+    plan = runner.build_plan(
+        browser="webkit",
+        browser_root=Path("/tmp/gludd-browser-probe-stop"),
+        output_root=Path("/tmp/gludd-presentation-probe-stop"),
+        timeout_seconds=120,
+    )
+    monkeypatch.setattr(runner, "validate_plan", lambda _plan: None)
+    monkeypatch.setattr(runner, "_require_browser_executable", lambda _plan: None)
+    monkeypatch.setattr(runner, "probe_browser_runtime", lambda _plan: 124)
+    monkeypatch.setattr(
+        runner,
+        "_run_viewport_process",
+        lambda *args, **kwargs: pytest.fail("pytest must not start after probe failure"),
+    )
+
+    assert runner.run_plan(plan) == 124
+
+
 def test_install_and_run_propagate_timeout_and_exit_codes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -506,6 +1007,7 @@ def test_install_and_run_propagate_timeout_and_exit_codes(
     )
     monkeypatch.setattr(runner, "validate_plan", lambda _plan: None)
     monkeypatch.setattr(runner, "_require_browser_executable", lambda _plan: Path("/tmp/chromium"))
+    monkeypatch.setattr(runner, "probe_browser_runtime", lambda _plan: 0)
 
     def timeout(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
         del args, kwargs
@@ -520,6 +1022,7 @@ def test_install_and_run_propagate_timeout_and_exit_codes(
         lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 7),
     )
     assert runner.install_browser(plan) == 7
+    monkeypatch.setattr(runner, "_run_viewport_process", lambda _plan, _run: 7)
     assert runner.run_plan(plan) == 7
 
 
@@ -558,8 +1061,29 @@ def test_main_dispatches_each_explicit_mode(monkeypatch: pytest.MonkeyPatch) -> 
         runner.main()
     assert installed_with_deps.value.code == 29
 
-    monkeypatch.setattr(runner, "run_plan", lambda _plan: 23)
+    selected_labels: list[str | None] = []
+    monkeypatch.setattr(
+        runner,
+        "run_plan",
+        lambda _plan, *, run_label=None: selected_labels.append(run_label) or 23,
+    )
     monkeypatch.setattr(runner.sys, "argv", ["runner", "--run"])
     with pytest.raises(SystemExit) as run:
         runner.main()
     assert run.value.code == 23
+
+    monkeypatch.setattr(
+        runner.sys,
+        "argv",
+        ["runner", "--run", "--run-label", "compact-4x3"],
+    )
+    with pytest.raises(SystemExit) as focused_run:
+        runner.main()
+    assert focused_run.value.code == 23
+    assert selected_labels == [None, "compact-4x3"]
+
+    monkeypatch.setattr(runner, "run_startup_probe_only", lambda _plan: 31)
+    monkeypatch.setattr(runner.sys, "argv", ["runner", "--startup-probe-only"])
+    with pytest.raises(SystemExit) as startup_probe:
+        runner.main()
+    assert startup_probe.value.code == 31
