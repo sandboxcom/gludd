@@ -42,6 +42,10 @@ The build now reads exactly one `pyinstaller` package entry from the independent
 Missing, malformed, or multiply resolved entries fail closed. The warning graph
 is still audited against the reviewed architecture policy, and a failed build
 still copies any produced warning report before refusing to publish the ELF.
+The hosted Linux job resolves the same lock entry immediately before auditing;
+it no longer carries an independently maintained version literal. A version or
+graph transition requires a deterministic architecture-specific comparison
+receipt before the new digest is admitted.
 This changes only candidate artifact construction: running Gludd processes and
 traffic are untouched, so deployment remains ZDD and rollback selects the prior
 artifact without draining healthy instances.

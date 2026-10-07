@@ -235,7 +235,7 @@ def test_every_hosted_linux_warning_graph_uses_one_python_and_locked_profile() -
         "dependency_profiles.py locked-version --root . --profile dev-build "
         "--package pyinstaller"
     ) in build
-    assert 'PYINSTALLER_VERSION_LINUX="$$pyinstaller_version"' in build
+    assert 'PYINSTALLER_VERSION_LINUX="$pyinstaller_version"' in build
 
 
 def test_linux_policy_reviews_current_ghe_x86_64_graph() -> None:
@@ -268,7 +268,7 @@ def test_linux_policy_pins_hosted_and_container_architectures() -> None:
 
     assert policy["schema_version"] == 3
     assert policy["transitive_warning_sha256_by_architecture"] == {
-        "aarch64": ("183b6e569e7b39b185d6ad522c147de657e9a4aff00867a8126494e4cc076f2f"),
+        "aarch64": ("70c6ec35a8d7e0b9095ca2dd7879ef28be05bff279d6d7aca9220e54efbd14ba"),
         "x86_64": ("d4fcb35befd9c6ec6a1890e25f9fe9c0f96e3cdff393cb9bcca4c8952fe51e2d"),
     }
 

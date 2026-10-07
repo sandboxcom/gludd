@@ -458,7 +458,7 @@
         "PYINSTALLER_VERSION_LINUX",
         "CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY"
       ],
-      "behavior": "make ci-pyinstaller-warning-audit RUN=1 ARTIFACT=molecule-logs-shard-1 PYINSTALLER_WARNING_ARCHITECTURE_LINUX=x86_64 PYINSTALLER_VERSION_LINUX=6.20.0 CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=1"
+      "behavior": "make ci-pyinstaller-warning-audit RUN=1 ARTIFACT=molecule-logs-shard-1 PYINSTALLER_WARNING_ARCHITECTURE_LINUX=x86_64 PYINSTALLER_VERSION_LINUX=6.22.3 CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=1"
     },
     {
       "name": "ci-coverage-artifact-audit",
@@ -531,7 +531,7 @@
         "PYINSTALLER_WARNING_ARCHITECTURE_LINUX",
         "PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY"
       ],
-      "behavior": "make audit-linux-pyinstaller-warnings PYINSTALLER_WARNING_FILE_LINUX=dist/linux/warn-gludd.txt PYINSTALLER_WARNING_ALLOWLIST_LINUX=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_VERSION_LINUX=6.20.0 PYINSTALLER_WARNING_ARCHITECTURE_LINUX=x86_64 PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=1"
+      "behavior": "make audit-linux-pyinstaller-warnings PYINSTALLER_WARNING_FILE_LINUX=dist/linux/warn-gludd.txt PYINSTALLER_WARNING_ALLOWLIST_LINUX=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_VERSION_LINUX=6.22.3 PYINSTALLER_WARNING_ARCHITECTURE_LINUX=x86_64 PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY=1"
     },
     {
       "name": "compare-linux-pyinstaller-warnings",
@@ -544,7 +544,7 @@
         "PYINSTALLER_WARNING_REVIEW_RECEIPT",
         "PYINSTALLER_WARNING_COMPARE_VALIDATE_ONLY"
       ],
-      "behavior": "make compare-linux-pyinstaller-warnings PYINSTALLER_WARNING_BEFORE=/tmp/gludd-warning-before.txt PYINSTALLER_WARNING_AFTER=/tmp/gludd-warning-after.txt PYINSTALLER_WARNING_ALLOWLIST_LINUX=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_VERSION_LINUX=6.20.0 PYINSTALLER_WARNING_ARCHITECTURE_LINUX=aarch64 PYINSTALLER_WARNING_REVIEW_RECEIPT=artifacts/pyinstaller-warning-review.json PYINSTALLER_WARNING_COMPARE_VALIDATE_ONLY=1"
+      "behavior": "make compare-linux-pyinstaller-warnings PYINSTALLER_WARNING_BEFORE=/tmp/gludd-warning-before.txt PYINSTALLER_WARNING_AFTER=/tmp/gludd-warning-after.txt PYINSTALLER_WARNING_ALLOWLIST_LINUX=config/pyinstaller-warning-allowlist-linux.json PYINSTALLER_VERSION_LINUX=6.22.3 PYINSTALLER_WARNING_ARCHITECTURE_LINUX=aarch64 PYINSTALLER_WARNING_REVIEW_RECEIPT=artifacts/pyinstaller-warning-review.json PYINSTALLER_WARNING_COMPARE_VALIDATE_ONLY=1"
     },
     {
       "name": "check-pyinstaller-warning-reviews",

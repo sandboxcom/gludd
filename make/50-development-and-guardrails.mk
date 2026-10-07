@@ -249,7 +249,7 @@ LINUX_BINUTILS_VERSION ?= 2.40-2
 LINUX_APT_UTILS_VERSION ?= 2.6.1
 PYINSTALLER_WARNING_ALLOWLIST_LINUX ?= config/pyinstaller-warning-allowlist-linux.json
 PYINSTALLER_WARNING_FILE_LINUX ?= dist/linux/warn-gludd.txt
-PYINSTALLER_VERSION_LINUX ?= 6.20.0
+PYINSTALLER_VERSION_LINUX ?= 6.22.3
 PYINSTALLER_PYTHON_VERSION_LINUX ?= 3.12.14
 PYINSTALLER_UV_VERSION_LINUX ?= 0.12.19
 PYINSTALLER_WARNING_ARCHITECTURE_LINUX ?=
@@ -290,7 +290,7 @@ compare-linux-pyinstaller-warnings: ## Compare accepted/candidate warning graphs
 	@if [ "$(PYINSTALLER_WARNING_COMPARE_VALIDATE_ONLY)" = "1" ]; then \
 		echo "PYINSTALLER_WARNING_COMPARE_VALID before=$(PYINSTALLER_WARNING_BEFORE) after=$(PYINSTALLER_WARNING_AFTER) architecture=$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX) receipt=$(PYINSTALLER_WARNING_REVIEW_RECEIPT)"; \
 	else \
-		$(UV) run python scripts/compare_pyinstaller_warning_graphs.py \
+		$(UV) run python -m scripts.compare_pyinstaller_warning_graphs \
 			--before "$(PYINSTALLER_WARNING_BEFORE)" \
 			--after "$(PYINSTALLER_WARNING_AFTER)" \
 			--allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" \
