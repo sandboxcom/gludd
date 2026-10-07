@@ -2,34 +2,47 @@
 
 ## Contract
 
-The local game-generation role writes the inference server PID beneath its
-namespaced artifact directory. Its terminal cleanup phase tolerates a missing
-PID file, sends `SIGTERM` only when a PID was actually read, and always removes
-the PID file. A failed generation or verification must not turn cleanup into a
-second failure or leave stale process metadata behind.
+The local game-generation role delegates inference ownership to the
+authenticated Gludd daemon. When that daemon selects its Ansible adapter, the
+local-model stop playbook accepts the manager-provided PID or inspects the
+server-ID-namespaced PID file. Its terminal cleanup tolerates a missing file,
+signals only a positive numeric PID, and always removes the PID file. A failed
+generation or verification must not turn cleanup into a second failure or
+leave stale process metadata behind.
 
-The `game-e2e` and `e2e-all` extras explicitly require `pillow>=12.3.0`. The
-project lock retains exact artifacts and hashes, so game-image processing does
-not rely on a weaker transitive dependency floor.
+The isolated `game-e2e` dependency profile explicitly requires
+`pillow>=12.3.0`. Its lock retains exact artifacts and hashes, so game-image
+processing does not rely on a weaker transitive dependency floor. Both the
+`game-e2e` and `e2e-all` installation sets include that one locked profile.
 
 ## Mature behavior and compatibility
 
 Ansible documents that an [`always` section runs regardless of block or rescue
 results](https://docs.ansible.com/projects/ansible/latest/playbook_guide/playbooks_blocks.html).
-The role therefore keeps PID discovery, termination, and idempotent file removal
-in the terminal `always` list. Missing-file tolerance is local to the slurp task;
-other generation and validation errors still fail normally.
+The playbook therefore resolves an optional PID in its main block and keeps
+termination plus idempotent file removal in terminal `always` paths. A `stat`
+guard avoids reading an absent file, while `failed_when: false` closes the
+remaining inspect/read race. Other generation and validation errors still fail
+normally.
+
+Ansible users reported inconsistent historical behavior when
+[`state: absent` encountered a missing path](https://github.com/ansible/ansible/issues/44318),
+despite the documented idempotent contract. That practitioner report was
+reviewed on 2026-10-07. Gludd keeps both the explicit missing-file regression
+and the modern idempotent file module rather than relying on an assumption that
+cleanup was exercised only with an existing PID file.
 
 Pillow's maintained [release policy](https://pillow.readthedocs.io/en/stable/releasenotes/)
 states that functionality and security fixes should not be expected to be
 backported. Version 12.3.0 includes decompression-bomb limits, memory-safety
-repairs, and command-injection hardening, so both image-producing extras declare
+repairs, and command-injection hardening, so the image-producing profile declares
 that floor directly.
 
 ## Security and resources
 
-- The PID comes only from the role-owned artifact path and is passed to
-  `ansible.builtin.command`, not a shell. No public input expands the kill scope.
+- The PID comes only from daemon state or its server-ID-namespaced path, must
+  match `^[1-9][0-9]*$`, and is passed through `ansible.builtin.command.argv`,
+  not a shell. No public input expands the kill scope.
 - Cleanup is bounded to one PID read, at most one `SIGTERM`, and one idempotent
   file removal. It adds no retry loop, daemon, or persistent worker.
 - Pillow remains locked with artifact hashes. The application still restricts
@@ -82,15 +95,16 @@ support a mathematical tiny-frame fallback plus hermetic CI media.
 ## ZDD and rollback
 
 The dependency pin changes installation resolution before runtime traffic. The
-cleanup structure is backward compatible with existing artifact directories and
+cleanup structure is backward compatible with existing daemon PID files and
 also succeeds when no server was started, so rolling workers may use old or new
-role content during promotion. Promote the locked environment first, exercise a
-network-free game-reference preflight, then roll the role.
+playbook content during promotion. Promote the locked environment first,
+exercise a network-free game-reference preflight, then roll the playbook.
 
-Rollback restores the previous role and lock together. Operators should first
-confirm that no namespaced game server remains; stale PID files may be removed
-only through the same ownership-confined cleanup path. A Pillow downgrade must
-not be used as rollback while the older version lacks required security fixes.
+Rollback restores the previous playbook and lock together. Operators should
+first confirm that no namespaced game server remains; stale PID files may be
+removed only through the same ownership-confined cleanup path. A Pillow
+downgrade must not be used as rollback while the older version lacks required
+security fixes.
 
 The motion-input check is stateless and wire-format neutral. Mixed old and new
 workers can overlap during a zero-downtime rollout; the only behavior change is
@@ -110,11 +124,12 @@ until garbage collection.
 
 ## Observability and verification
 
-The role emits explicit cleanup-started and cleanup-completed messages. Missing
-PID files remain visible in task output without failing the play, while attempted
-termination remains a distinct task result. Focused tests pin missing-file
-tolerance, terminal kill and removal, the direct Pillow floor in both extras,
-and the network-free reference-preflight contract.
+The playbook emits explicit cleanup-started and cleanup-completed messages.
+Missing PID files remain visible in task output without failing the play, while
+attempted termination remains a distinct task result. Focused tests pin the
+`stat`/`slurp` race boundary, terminal signal and removal paths, numeric PID
+validation, the direct Pillow floor and hashed lock, and unchanged fail-closed
+game verification.
 Motion tests pin NaN and infinity to the neutral score under warnings-as-errors.
 Lifecycle tests pin success, timeout, repeated cleanup, and delayed garbage
 collection under warnings-as-errors, including closure of both parent-owned
