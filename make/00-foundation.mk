@@ -223,7 +223,10 @@ export _GLUDD_AZURE_CONTAINERAPP_WORKLOAD_PROFILE_TYPE_RAW
 export _GLUDD_AZURE_CONTAINERAPP_LOCATION_RAW
 RECONCILE_QUIET_PROGRESS ?= 0
 MARKDOWN_FILES ?=
-MARKDOWNLINT_CONFIG ?= config/markdownlint-cli2.jsonc
+RUMDL_CONFIG ?=
+MARKDOWNLINT_CONFIG ?=
+CSS_FILES ?=
+ESLINT_CSS_CONFIG ?= config/eslint-css.config.mjs
 DOCSTRING_FILES ?=
 FILE_LINE_LIMIT_POLICY ?= config/file_line_limits.json
 MAKEFILE_SPLIT_APPLY ?= 0
@@ -313,7 +316,7 @@ endif
 PYTEST_VERBOSITY ?= -v
 
 .PHONY: \
-        init sync uv-cache-path migrate-up relock node-deps-sync node-deps-relock node-deps-audit check-ansible-base-image refresh-ansible-base-image install-pip lint lint-files lint-markdown lint-docstrings lint-fix check-file-line-limits split-makefile-layout test test-unit test-unit-shards test-ci-dual-track-local test-specific test-specific-pyver test-files test-count test-integration test-e2e \
+        init sync uv-cache-path migrate-up relock node-deps-sync node-deps-relock node-deps-audit check-ansible-base-image refresh-ansible-base-image install-pip lint lint-files lint-markdown lint-css lint-docstrings lint-fix check-file-line-limits split-makefile-layout test test-unit test-unit-shards test-ci-dual-track-local test-specific test-specific-pyver test-files test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
          test-games test-multi-model-pipeline test-local-model-pipeline test-project-type-pipeline game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
         typecheck _precommit-mypy setup-dirs setup-venv clean healthcheck \
@@ -435,7 +438,8 @@ help:
 	@echo "  lint-python           Run the canonical Python Ruff gate (application + tests)"
 	@echo "  lint-make             Run duplicate-target, parity, and Make dry-run validation"
 	@echo "  lint-files            Run ruff linter on FILES only"
-	@echo "  lint-markdown         Run locked markdownlint-cli2 (MARKDOWN_FILES, MARKDOWNLINT_CONFIG)"
+	@echo "  lint-markdown         Run locked Rumdl checks (MARKDOWN_FILES, RUMDL_CONFIG; MARKDOWNLINT_CONFIG alias)"
+	@echo "  lint-css              Run locked ESLint CSS checks (CSS_FILES, ESLINT_CSS_CONFIG)"
 	@echo "  lint-docstrings       Run locked Ruff docstring rules on DOCSTRING_FILES"
 	@echo "  check-file-line-limits  Require every tracked text file to stay below 2500 lines (FILE_LINE_LIMIT_POLICY)"
 	@echo "  split-makefile-layout  Validate/apply the ordered make/*.mk layout (MAKEFILE_SPLIT_APPLY=0|1)"
@@ -1165,16 +1169,38 @@ lint-docstrings:
 	@$(UV) run ruff check --select D --config pyproject.toml $(DOCSTRING_FILES)
 
 lint-markdown:
-	@if [ -z "$(MARKDOWN_FILES)" ] || [ -z "$(MARKDOWNLINT_CONFIG)" ]; then \
-		echo "Usage: make lint-markdown MARKDOWN_FILES='README.md docs/file.md' MARKDOWNLINT_CONFIG=config/markdownlint-cli2.jsonc"; \
+	@set -eu; \
+	if [ -z "$(MARKDOWN_FILES)" ]; then \
+		echo "Usage: make lint-markdown MARKDOWN_FILES='README.md docs/file.md' RUMDL_CONFIG=config/rumdl.toml [MARKDOWNLINT_CONFIG=config/rumdl.toml]"; \
+		exit 2; \
+	fi; \
+	if [ -n "$(RUMDL_CONFIG)" ] && [ -n "$(MARKDOWNLINT_CONFIG)" ] && [ "$(RUMDL_CONFIG)" != "$(MARKDOWNLINT_CONFIG)" ]; then \
+		echo "ERROR: RUMDL_CONFIG and MARKDOWNLINT_CONFIG disagree"; \
+		exit 2; \
+	fi; \
+	config_path="$(if $(strip $(RUMDL_CONFIG)),$(strip $(RUMDL_CONFIG)),$(if $(strip $(MARKDOWNLINT_CONFIG)),$(strip $(MARKDOWNLINT_CONFIG)),config/rumdl.toml))"; \
+	if [ ! -f "$$config_path" ]; then echo "ERROR: Rumdl config not found: $$config_path"; exit 2; fi; \
+	if grep -En -- '<!--[[:space:]]*((rumdl|markdownlint)-|prettier-ignore)' $(MARKDOWN_FILES); then \
+		echo "ERROR: inline Markdown lint directives are forbidden; configure the tracked Rumdl policy instead"; \
+		exit 2; \
+	fi; \
+	if [ ! -x ".venv/bin/rumdl" ]; then \
+		echo "ERROR: locked Rumdl executable not found. Run: make sync DEPENDENCY_PROFILE_SET=development DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=0"; \
+		exit 2; \
+	fi; \
+	.venv/bin/rumdl check --config "$$config_path" $(MARKDOWN_FILES)
+
+lint-css:
+	@if [ -z "$(CSS_FILES)" ] || [ -z "$(ESLINT_CSS_CONFIG)" ]; then \
+		echo "Usage: make lint-css CSS_FILES='path/to/file.css' ESLINT_CSS_CONFIG=config/eslint-css.config.mjs"; \
 		exit 2; \
 	fi
-	@if [ ! -f "$(MARKDOWNLINT_CONFIG)" ]; then echo "ERROR: Markdown config not found: $(MARKDOWNLINT_CONFIG)"; exit 2; fi
-	@if [ ! -x ".opencode/node_modules/.bin/markdownlint-cli2" ]; then \
-		echo "INFO: locked markdownlint-cli2 not found; syncing locked Node deps"; \
-		$(MAKE) node-deps-sync || { echo "ERROR: locked markdownlint-cli2 is unavailable and node-deps-sync failed"; exit 2; }; \
+	@if [ ! -f "$(ESLINT_CSS_CONFIG)" ]; then echo "ERROR: ESLint CSS config not found: $(ESLINT_CSS_CONFIG)"; exit 2; fi
+	@if [ ! -x ".opencode/node_modules/.bin/eslint" ]; then \
+		echo "INFO: locked ESLint CSS linter not found; syncing locked Node deps"; \
+		$(MAKE) node-deps-sync NODE_DEPS_VALIDATE_ONLY=0 NODE_DEPS_NPM_USERCONFIG="$(NODE_DEPS_NPM_USERCONFIG)" NODE_DEPS_NPM_CACHE="$(NODE_DEPS_NPM_CACHE)" NODE_DEPS_NPM_REGISTRY="$(NODE_DEPS_NPM_REGISTRY)" NODE_DEPS_NPM_UPDATE_NOTIFIER="$(NODE_DEPS_NPM_UPDATE_NOTIFIER)" || { echo "ERROR: locked ESLint CSS linter is unavailable and node-deps-sync failed"; exit 2; }; \
 	fi
-	@.opencode/node_modules/.bin/markdownlint-cli2 --config "$(MARKDOWNLINT_CONFIG)" $(MARKDOWN_FILES)
+	@.opencode/node_modules/.bin/eslint --no-error-on-unmatched-pattern --config "$(ESLINT_CSS_CONFIG)" $(CSS_FILES)
 
 lint-fix:
 	@$(UV) run ruff check --fix --unsafe-fixes src tests

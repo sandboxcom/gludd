@@ -303,8 +303,18 @@ jobs:
       - name: Install locked Node build dependencies
         run: |
           echo "=== CI PHASE: node-deps ==="
-          make node-deps-sync NODE_DEPS_VALIDATE_ONLY=0 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org || {
+          make node-deps-sync NODE_DEPS_VALIDATE_ONLY=0 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_NPM_UPDATE_NOTIFIER=false || {
             echo "::error::NODE DEPS FAILED — npm install failed. Check package.json and package-lock.json."
+            exit 1
+          }
+        env:
+          GLUDD_AUTH_PSK: ""
+
+      - name: Audit locked Node build dependencies
+        run: |
+          echo "=== CI PHASE: node-deps-audit ==="
+          make node-deps-audit NODE_DEPS_VALIDATE_ONLY=0 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_NPM_UPDATE_NOTIFIER=false NODE_DEPS_AUDIT_LEVEL=low || {
+            echo "::error::NODE DEPENDENCY AUDIT FAILED — the locked tree contains a known vulnerability."
             exit 1
           }
         env:
@@ -388,12 +398,12 @@ jobs:
               - '**/*.scss'
               - '**/*.less'
 
-      - name: CSS Lint (stylelint)
+      - name: CSS Lint (ESLint CSS)
         if: steps.css_changes.outputs.css == 'true'
         run: |
           echo "=== CI PHASE: css-lint ==="
-          npx stylelint "**/*.css" "**/*.scss" "**/*.less" --allow-empty-input --config '{"rules":{"block-no-empty":true,"color-no-invalid-hex":true,"declaration-block-no-duplicate-properties":true}}' || {
-            echo "::error::CSS LINT FAILED — stylelint found violations. Fix the CSS above."
+          make lint-css CSS_FILES='"**/*.css" "**/*.scss" "**/*.less"' ESLINT_CSS_CONFIG=config/eslint-css.config.mjs || {
+            echo "::error::CSS LINT FAILED — the locked CSS linters found violations. Fix the CSS above."
             exit 1
           }
         env:
@@ -437,7 +447,7 @@ jobs:
           echo "  Enforcement       : check step 'Enforcement hook runtime tests' above"
           echo "  Status table      : check step 'Check status table current' above"
           echo "  Secrets baseline  : check step 'Verify secrets baseline' above"
-          echo "  CSS Lint          : check step 'CSS Lint (stylelint)' above"
+          echo "  CSS Lint          : check step 'CSS Lint (ESLint CSS)' above"
           if [ "${{ job.status }}" = "failure" ]; then
             echo ""
             echo "::error::GATE FAILED — check failed step(s) above. Failure diagnostics logged above for triage."

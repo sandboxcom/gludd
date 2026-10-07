@@ -694,7 +694,8 @@ integration-admission:
 	@case "$(INTEGRATION_ADMISSION_VALIDATE_ONLY)" in 0|1) ;; *) echo "INTEGRATION_ADMISSION_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
 	@test -n "$(strip $(FILE_LINE_LIMIT_POLICY))" || { echo "FILE_LINE_LIMIT_POLICY is required"; exit 2; }
 	@test -n "$(strip $(MARKDOWN_FILES))" || { echo "MARKDOWN_FILES is required"; exit 2; }
-	@test -n "$(strip $(MARKDOWNLINT_CONFIG))" || { echo "MARKDOWNLINT_CONFIG is required"; exit 2; }
+	@test -n "$(strip $(RUMDL_CONFIG)$(MARKDOWNLINT_CONFIG))" || { echo "RUMDL_CONFIG or MARKDOWNLINT_CONFIG is required"; exit 2; }
+	@if [ -n "$(strip $(RUMDL_CONFIG))" ] && [ -n "$(strip $(MARKDOWNLINT_CONFIG))" ] && [ "$(strip $(RUMDL_CONFIG))" != "$(strip $(MARKDOWNLINT_CONFIG))" ]; then echo "RUMDL_CONFIG and MARKDOWNLINT_CONFIG disagree"; exit 2; fi
 	@test -n "$(strip $(PRESENTATION_BROWSER_ENGINES))" || { echo "PRESENTATION_BROWSER_ENGINES is required"; exit 2; }
 	@test -n "$(strip $(PRESENTATION_BROWSER_ROOT))" || { echo "PRESENTATION_BROWSER_ROOT is required"; exit 2; }
 	@test -n "$(strip $(PRESENTATION_BROWSER_OUTPUT))" || { echo "PRESENTATION_BROWSER_OUTPUT is required"; exit 2; }
@@ -734,6 +735,7 @@ integration-admission:
 	echo "integration-admission phase=lint-markdown"; \
 	$(MAKE) --no-print-directory lint-markdown \
 		MARKDOWN_FILES="$(MARKDOWN_FILES)" \
+		RUMDL_CONFIG="$(RUMDL_CONFIG)" \
 		MARKDOWNLINT_CONFIG="$(MARKDOWNLINT_CONFIG)"; \
 	echo "integration-admission phase=check-make-target-contract"; \
 	$(MAKE) --no-print-directory check-make-target-contract; \

@@ -48,6 +48,7 @@ def test_integration_admission_is_public_and_fail_fast() -> None:
     assert "PRESENTATION_BROWSER_VALIDATE_ONLY=1" in stanza
     assert "FILE_LINE_LIMIT_POLICY=\"$(FILE_LINE_LIMIT_POLICY)\"" in stanza
     assert "MARKDOWN_FILES=\"$(MARKDOWN_FILES)\"" in stanza
+    assert "RUMDL_CONFIG=\"$(RUMDL_CONFIG)\"" in stanza
     assert "MARKDOWNLINT_CONFIG=\"$(MARKDOWNLINT_CONFIG)\"" in stanza
     assert (
         "tests/integration/test_multi_project_integration.py::"
@@ -111,6 +112,7 @@ def test_integration_admission_contract_is_safe_and_explicit() -> None:
                 "INTEGRATION_ADMISSION_VALIDATE_ONLY",
                 "FILE_LINE_LIMIT_POLICY",
                 "MARKDOWN_FILES",
+                "RUMDL_CONFIG",
                 "MARKDOWNLINT_CONFIG",
                 "PRESENTATION_BROWSER_ENGINES",
                 "PRESENTATION_BROWSER_ROOT",
@@ -122,7 +124,8 @@ def test_integration_admission_contract_is_safe_and_explicit() -> None:
                 "INTEGRATION_ADMISSION_VALIDATE_ONLY=1 "
                 "FILE_LINE_LIMIT_POLICY=config/file_line_limits.json "
                 "MARKDOWN_FILES=docs/features/INTEGRATION_ADMISSION.md "
-                "MARKDOWNLINT_CONFIG=config/markdownlint-cli2.jsonc "
+                "RUMDL_CONFIG=config/rumdl.toml "
+                "MARKDOWNLINT_CONFIG=config/rumdl.toml "
                 "PRESENTATION_BROWSER_ENGINES='chromium webkit' "
                 "PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers "
                 "PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-integration-admission-browser "
@@ -141,7 +144,8 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
             "INTEGRATION_ADMISSION_VALIDATE_ONLY=1",
             "FILE_LINE_LIMIT_POLICY=config/file_line_limits.json",
             "MARKDOWN_FILES=docs/features/INTEGRATION_ADMISSION.md",
-            "MARKDOWNLINT_CONFIG=config/markdownlint-cli2.jsonc",
+            "RUMDL_CONFIG=config/rumdl.toml",
+            "MARKDOWNLINT_CONFIG=config/rumdl.toml",
             "PRESENTATION_BROWSER_ENGINES=chromium webkit",
             "PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers",
             "PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-integration-admission-browser",
@@ -173,6 +177,33 @@ def test_integration_admission_validate_only_prints_complete_plan() -> None:
     ):
         assert f"phase={phase}" in output
     assert "INTEGRATION-ADMISSION: PASSED" not in output
+
+
+def test_integration_admission_rejects_conflicting_markdown_config_aliases() -> None:
+    result = subprocess.run(
+        [
+            "make",
+            "integration-admission",
+            "INTEGRATION_ADMISSION_VALIDATE_ONLY=1",
+            "FILE_LINE_LIMIT_POLICY=config/file_line_limits.json",
+            "MARKDOWN_FILES=docs/features/INTEGRATION_ADMISSION.md",
+            "RUMDL_CONFIG=config/rumdl.toml",
+            "MARKDOWNLINT_CONFIG=config/not-the-rumdl-policy.toml",
+            "PRESENTATION_BROWSER_ENGINES=chromium webkit",
+            "PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers",
+            "PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-integration-admission-browser",
+            "PRESENTATION_BROWSER_TIMEOUT=600",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=30,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 2
+    assert "RUMDL_CONFIG and MARKDOWNLINT_CONFIG disagree" in output
 
 
 def test_integration_admission_document_records_queue_evidence_and_boundaries() -> None:
